@@ -5061,6 +5061,29 @@ pub enum ExprError {
         ty: Option<&'static str>,
     },
 
+    /// `<x>.value` where the build has not proven the optional value `<x>`
+    /// present (docs/adr/0055, section 3): no test that proves it holds where
+    /// the read stands, or `<x>` is no subject a test can prove — an element
+    /// read by its index, the value of a call.
+    ///
+    /// There is no read that can fail: a value is read out of an optional one
+    /// only where it is proven present, so no backend has a run-time path for
+    /// reading an absent value. Refused when the document is checked, at the
+    /// read. The record carries no fix: the repair is the author's choice
+    /// between a test around the read and a read with a default.
+    #[error(
+        "{read} reads the value of {optional}, which may be absent here: test it \
+         first (`{optional} !== null` around the read), or read it with a default \
+         (`{optional} ?? <value>`)"
+    )]
+    OptionalReadUnproven {
+        /// The optional value read, as the subject a test would name, or as
+        /// written where it is no subject.
+        optional: String,
+        /// The read as written (`due.value`).
+        read: String,
+    },
+
     /// Loose equality (`==` / `!=`) instead of strict.
     #[error("loose {operator} is not permitted in Extended SCXML. Use {strict} instead.")]
     StrictEquality {

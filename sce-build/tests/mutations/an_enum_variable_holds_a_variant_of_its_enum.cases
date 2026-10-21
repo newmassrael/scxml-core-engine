@@ -22,16 +22,16 @@ mutation_runtime_targets sce-build/src/forge/static_enum.rs sce-build/src/forge/
 # `Unknown`, so only the judge's own check says it may not stand there.
 mutation_case "an enum value is admitted in a number's place" <<'PY'
 edit("sce-build/src/forge/static_datamodel.rs",
-     "                if !matches!(slot, InferredType::Unknown) {\n",
-     "                if matches!(slot, InferredType::Unknown) {\n")
+     "                if !matches!(\n                    slot,\n                    InferredType::Unknown\n",
+     "                if matches!(\n                    slot,\n                    InferredType::Unknown\n")
 PY
 
 # A comparison stops asking that both sides are of one enum: a `Mode` is
 # compared with a `Unit`, which is two unrelated types in the generated code.
 mutation_case "two enums are compared with each other" <<'PY'
 edit("sce-build/src/forge/static_enum.rs",
-     "                (Some(a), Some(b)) if a == b => Ok(None),\n",
-     "                (Some(_), Some(_)) => Ok(None),\n")
+     "                (Held::Enum(a) | Held::Optional(a), Held::Enum(b) | Held::Optional(b))\n                    if a == b =>\n                {\n                    Ok(None)\n                }\n",
+     "                (Held::Enum(_) | Held::Optional(_), Held::Enum(_) | Held::Optional(_)) => Ok(None),\n")
 PY
 
 # An enum value stops being refused as an operand or an argument: it is added
@@ -46,15 +46,15 @@ PY
 # value: `c ? Mode.fast : 1` is stored in a `Mode`.
 mutation_case "a conditional of a variant and a number is an enum value" <<'PY'
 edit("sce-build/src/forge/static_enum.rs",
-     "                (Some(a), Some(b)) if a == b => Ok(Some(a)),\n",
-     "                (Some(a), _) => Ok(Some(a)),\n")
+     "            let otherwise = held(alternate, ctx, reading)?;\n",
+     "            let otherwise = match held(alternate, ctx, reading)? {\n                Held::Neither => then.clone(),\n                other => other,\n            };\n")
 PY
 
 # A variable takes a value of another enum than the one it is declared as.
 mutation_case "a variable holds a value of another enum" <<'PY'
 edit("sce-build/src/forge/static_datamodel.rs",
-     "            Some(held) if held == alias => Ok(()),\n",
-     "            Some(_) => Ok(()),\n")
+     "            Held::Enum(held) if held == alias => Ok(()),\n",
+     "            Held::Enum(held) if held == alias || !held.is_empty() => Ok(()),\n")
 PY
 
 # An open set is held in a variable: its values that no variant names have no

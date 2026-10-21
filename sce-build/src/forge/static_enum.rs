@@ -30,7 +30,9 @@
 // (`fn status_number(s: Status) -> i64 { return s; }`) did not compile.
 
 use crate::forge::error::{ExprError, ForgeError};
-use crate::forge::expr::{dotted_path, parse_to_ast, BinOp, ExprKind, Refusal, TypedExpr};
+use crate::forge::expr::{
+    dotted_path, parse_to_ast, BinOp, ExprKind, Refusal, TypedExpr, OPTIONAL_VALUE,
+};
 use crate::forge::expression_site::ExpressionSite;
 use crate::forge::generator::{AlgorithmTypes, ImportContext};
 use crate::forge::model::{AlgorithmModel, AlgorithmStmt, AlgorithmValueType, SceType};
@@ -70,6 +72,155 @@ pub(crate) fn value_enum(
 ) -> Result<Option<String>, Refusal> {
     let ast = parse_to_ast(expr)?;
     class_of(&ast, ctx, reading)
+}
+
+/// What a value is as far as an enum goes: a value of one, an optional value of
+/// one (docs/adr/0055), `null`, or neither.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Held {
+    /// No enum's: a number, a bool, a text, or an optional value of one.
+    Neither,
+    /// A value of the enum of this alias.
+    Enum(String),
+    /// An optional value of the enum of this alias: absent, or a value of it.
+    Optional(String),
+    /// `null`, which is an optional value of the enum of the place it lands in.
+    Null,
+}
+
+impl Held {
+    /// The alias of the enum this is a value of, when it is a present one: what
+    /// [`value_enum`] answers.
+    pub(crate) fn present_enum(self) -> Option<String> {
+        match self {
+            Held::Enum(alias) => Some(alias),
+            Held::Neither | Held::Optional(_) | Held::Null => None,
+        }
+    }
+}
+
+/// [`Held`] of `expr`, refused when it uses an enum value for what an enum value
+/// is not for, as [`value_enum`] refuses it.
+pub(crate) fn value_held(
+    expr: &str,
+    ctx: &TypeCtx<'_>,
+    reading: &EnumReading<'_>,
+) -> Result<Held, Refusal> {
+    let ast = parse_to_ast(expr)?;
+    held(&ast, ctx, reading)
+}
+
+/// The path the present value of the optional value at `holder` is read at
+/// (`due` gives `due.value`): where the enum an `optional<enum:…>` holds is
+/// registered, since that path, and not the optional value, is a value of it.
+pub(crate) fn present_value_path(holder: &str) -> String {
+    format!("{holder}.{OPTIONAL_VALUE}")
+}
+
+/// The optional value whose present value `path` reads (`due.value` gives
+/// `due`), the inverse of [`present_value_path`].
+pub(crate) fn present_value_of(path: &str) -> Option<&str> {
+    path.strip_suffix(OPTIONAL_VALUE)?.strip_suffix('.')
+}
+
+/// The enum `node` holds an optional value of, when it names a path that does:
+/// a variable, a field of a record or of the payload, a loop item's field, and
+/// the field of the element a list of records is indexed at. The path is one
+/// `ctx` types optional, so a record's field named `value` is that field.
+fn optional_enum_at(
+    node: &TypedExpr,
+    ctx: &TypeCtx<'_>,
+    reading: &EnumReading<'_>,
+) -> Option<String> {
+    let path = match dotted_path(node) {
+        Some(path) => path,
+        None => {
+            let ExprKind::Member { object, property } = &node.kind else {
+                return None;
+            };
+            let ExprKind::Index { object: list, .. } = &object.kind else {
+                return None;
+            };
+            let ExprKind::Ident(name) = &list.kind else {
+                return None;
+            };
+            format!("{name}{INDEXED_ELEMENT}{property}")
+        }
+    };
+    if !ctx.lookup_var(&path).is_optional() {
+        return None;
+    }
+    (reading.var_alias)(&present_value_path(&path))
+}
+
+/// [`Held`] of one node. An optional value of an enum is compared with `===`
+/// and `!==` to `null` and to a value, present or optional, of the same enum;
+/// read with `??` and a default of that enum; and is a branch of a conditional
+/// whose other branch is `null` or a value of that enum, which is then an
+/// optional value of it. A value of an enum is never absent, so `null` beside
+/// one, and `??` on one, are refused.
+fn held(node: &TypedExpr, ctx: &TypeCtx<'_>, reading: &EnumReading<'_>) -> Result<Held, Refusal> {
+    if matches!(node.kind, ExprKind::NullLit) {
+        return Ok(Held::Null);
+    }
+    if let Some(alias) = optional_enum_at(node, ctx, reading) {
+        return Ok(Held::Optional(alias));
+    }
+    match &node.kind {
+        ExprKind::Conditional {
+            condition,
+            consequent,
+            alternate,
+        } => {
+            if class_of(condition, ctx, reading)?.is_some() {
+                return Err(refuse(condition, "an enum value as a condition"));
+            }
+            let then = held(consequent, ctx, reading)?;
+            let otherwise = held(alternate, ctx, reading)?;
+            match (then, otherwise) {
+                (Held::Neither | Held::Null, Held::Neither) | (Held::Neither, Held::Null) => {
+                    Ok(Held::Neither)
+                }
+                (Held::Null, Held::Null) => Ok(Held::Null),
+                (Held::Enum(a), Held::Enum(b)) if a == b => Ok(Held::Enum(a)),
+                (Held::Enum(a) | Held::Optional(a), Held::Null)
+                | (Held::Null, Held::Enum(a) | Held::Optional(a)) => Ok(Held::Optional(a)),
+                (Held::Enum(a) | Held::Optional(a), Held::Enum(b) | Held::Optional(b))
+                    if a == b =>
+                {
+                    Ok(Held::Optional(a))
+                }
+                _ => Err(refuse(
+                    node,
+                    "a conditional whose branches are not both values of one enum (present, \
+                     optional or `null`), or both not enum values",
+                )),
+            }
+        }
+        ExprKind::Binary {
+            op: BinOp::Coalesce,
+            left,
+            right,
+        } => match (held(left, ctx, reading)?, held(right, ctx, reading)?) {
+            (Held::Optional(a), Held::Enum(b)) if a == b => Ok(Held::Enum(a)),
+            (Held::Optional(a), Held::Optional(b)) if a == b => Ok(Held::Optional(a)),
+            (Held::Optional(a), Held::Null) => Ok(Held::Optional(a)),
+            (Held::Optional(a), _) => Err(refuse(
+                right,
+                &format!(
+                    "a default that is not of the enum `{a}` for an optional value of it (write \
+                     `{a}.<variant>`, or another value of that enum)"
+                ),
+            )),
+            (Held::Enum(a), _) => Err(refuse(
+                left,
+                &format!("`??` on a value of the enum `{a}`, which is never absent"),
+            )),
+            (_, Held::Enum(_) | Held::Optional(_)) => Err(refuse(right, NOT_AN_OPERAND)),
+            _ => Ok(Held::Neither),
+        },
+        _ => Ok(class_of(node, ctx, reading)?.map_or(Held::Neither, Held::Enum)),
+    }
 }
 
 /// A refusal placed on `node`.
@@ -128,36 +279,41 @@ fn class_of(
             nothing_but(node, ctx, reading)
         }
         ExprKind::Ident(name) => Ok((reading.var_alias)(name)),
-        ExprKind::Conditional {
-            condition,
-            consequent,
-            alternate,
-        } => {
-            if class_of(condition, ctx, reading)?.is_some() {
-                return Err(refuse(condition, "an enum value as a condition"));
-            }
-            let then = class_of(consequent, ctx, reading)?;
-            let otherwise = class_of(alternate, ctx, reading)?;
-            match (then, otherwise) {
-                (None, None) => Ok(None),
-                (Some(a), Some(b)) if a == b => Ok(Some(a)),
-                _ => Err(refuse(
-                    node,
-                    "a conditional whose branches are not both values of one enum, or both \
-                     not enum values",
-                )),
-            }
-        }
+        // A conditional and a read with a default are values of an enum when
+        // [`held`] says they are present ones; an optional one is no value of it.
+        ExprKind::Conditional { .. }
+        | ExprKind::Binary {
+            op: BinOp::Coalesce,
+            ..
+        } => Ok(match held(node, ctx, reading)? {
+            Held::Enum(alias) => Some(alias),
+            Held::Neither | Held::Optional(_) | Held::Null => None,
+        }),
+        // Equality is total over an optional value (docs/adr/0055): an optional
+        // value of an enum is compared with `null` and with a value, present or
+        // optional, of the same enum.
         ExprKind::Binary {
             op: BinOp::StrictEq | BinOp::StrictNeq,
             left,
             right,
         } => {
-            let l = class_of(left, ctx, reading)?;
-            let r = class_of(right, ctx, reading)?;
+            let l = held(left, ctx, reading)?;
+            let r = held(right, ctx, reading)?;
             match (l, r) {
-                (None, None) => Ok(None),
-                (Some(a), Some(b)) if a == b => Ok(None),
+                (Held::Neither | Held::Null, Held::Neither | Held::Null) => Ok(None),
+                (Held::Optional(_), Held::Null) | (Held::Null, Held::Optional(_)) => Ok(None),
+                (Held::Enum(a) | Held::Optional(a), Held::Enum(b) | Held::Optional(b))
+                    if a == b =>
+                {
+                    Ok(None)
+                }
+                (Held::Enum(a), Held::Null) | (Held::Null, Held::Enum(a)) => Err(refuse(
+                    node,
+                    &format!(
+                        "`null` beside a value of the enum `{a}`, which is never absent (`null` \
+                         is compared with an optional value)"
+                    ),
+                )),
                 _ => Err(refuse(
                     node,
                     "a comparison of an enum value with anything but a value of the same enum",
@@ -271,6 +427,9 @@ fn nothing_but(
 /// list, which is named and not computed, and holds no enum value whole.
 enum Slot {
     Enum(String),
+    /// An optional value of the enum of this alias (docs/adr/0055): `null`, or
+    /// a value, present or optional, of that enum.
+    OptionalEnum(String),
     Scalar,
     Named,
 }
@@ -278,6 +437,15 @@ enum Slot {
 impl Slot {
     /// The place a value of `ty` is declared to stand in.
     fn of(ty: &AlgorithmValueType) -> Self {
+        // An optional value is a place of the kind its present value is.
+        match ty.optional_elem().map(|elem| elem.scalar()) {
+            Some(Some(SceType::Enum(reference))) => {
+                return Self::OptionalEnum(reference.alias.clone())
+            }
+            Some(Some(_)) => return Self::Scalar,
+            Some(None) => return Self::Named,
+            None => {}
+        }
         match ty.scalar() {
             Some(SceType::Enum(reference)) => Self::Enum(reference.alias.clone()),
             Some(_) => Self::Scalar,
@@ -389,10 +557,14 @@ impl AlgorithmWalk<'_, '_> {
                 expr_spelling,
                 ..
             } => {
-                let slot = self
-                    .types
-                    .enum_at(target.trim())
-                    .map_or(Slot::Scalar, |alias| Slot::Enum(alias.to_string()));
+                let target = target.trim();
+                let slot = match self.types.enum_at(target) {
+                    Some(alias) => Slot::Enum(alias.to_string()),
+                    None => self
+                        .types
+                        .enum_at(&present_value_path(target))
+                        .map_or(Slot::Scalar, |alias| Slot::OptionalEnum(alias.to_string())),
+                };
                 self.expect(expr, expr_spelling.as_ref(), &slot)
             }
             AlgorithmStmt::Append {
@@ -484,20 +656,43 @@ impl AlgorithmWalk<'_, '_> {
         slot: &Slot,
     ) -> Result<(), ForgeError> {
         let site = ExpressionSite::new(expr, spelling);
-        let held = value_enum(expr, self.ctx, self.reading).map_err(|r| site.place(r))?;
+        let held = value_held(expr, self.ctx, self.reading).map_err(|r| site.place(r))?;
         let construct = match (slot, held) {
-            (Slot::Named, _) | (Slot::Scalar, None) => return Ok(()),
-            (Slot::Enum(wanted), Some(held)) if *wanted == held => return Ok(()),
-            (Slot::Scalar, Some(held)) => format!(
+            (Slot::Named, _) | (Slot::Scalar, Held::Neither | Held::Null) => return Ok(()),
+            (Slot::Enum(wanted), Held::Enum(held)) if *wanted == held => return Ok(()),
+            (Slot::OptionalEnum(_), Held::Null) => return Ok(()),
+            (Slot::OptionalEnum(wanted), Held::Enum(held) | Held::Optional(held))
+                if *wanted == held =>
+            {
+                return Ok(())
+            }
+            (Slot::Scalar, Held::Enum(held)) => format!(
                 "a value of the enum `{held}` where a number or a bool is expected \
                  (`{held}.toNumber(value)` is the number its variant declares)"
             ),
-            (Slot::Enum(wanted), Some(held)) => format!(
+            (Slot::Scalar, Held::Optional(held)) => format!(
+                "an optional value of the enum `{held}` where a number or a bool is expected"
+            ),
+            (Slot::Enum(wanted) | Slot::OptionalEnum(wanted), Held::Enum(held)) => format!(
                 "a value of the enum `{held}` where a value of the enum `{wanted}` is declared"
             ),
-            (Slot::Enum(wanted), None) => format!(
+            (Slot::Enum(wanted), Held::Optional(held)) => format!(
+                "an optional value of the enum `{held}` where a value of the enum `{wanted}` is \
+                 declared, which is never absent (read it with `??` and a default, or with \
+                 `.value` where a `!== null` test proves it present)"
+            ),
+            (Slot::OptionalEnum(wanted), Held::Optional(held)) => format!(
+                "an optional value of the enum `{held}` where an optional value of the enum \
+                 `{wanted}` is declared"
+            ),
+            (Slot::Enum(wanted), Held::Neither | Held::Null) => format!(
                 "a value that is not of the enum `{wanted}` where a value of it is declared \
                  (write `{wanted}.<variant>`, or a parameter, a local or a field of that enum)"
+            ),
+            (Slot::OptionalEnum(wanted), Held::Neither) => format!(
+                "a value that is neither `null` nor of the enum `{wanted}` where an optional \
+                 value of it is declared (write `{wanted}.<variant>`, `null`, or a parameter, a \
+                 local or a field of that enum)"
             ),
         };
         Err(site.place(

@@ -20,10 +20,25 @@
 use crate::forge::error::{ForgeError, Located};
 use crate::forge::expr::{judge_into, Expected};
 use crate::forge::expression_site::ExpressionSite;
+use crate::forge::narrowing;
 use crate::forge::type_ctx::{StaticEnum, StaticScope};
 use crate::forge::types::{InferredType, TypeCtx};
 use crate::model::{Action, Datamodel, DoneDataParam, Invoke, Param, SCXMLModel, Variable};
 use crate::scxml_semantic::ScxmlSemanticError;
+
+/// `ctx` with `facts` the subjects proven present where an expression of it is
+/// read (docs/adr/0055): `ctx` itself when they are the ones it holds, so a
+/// document that tests no optional value judges in the context it was given.
+fn proving<'r, 'c>(
+    ctx: &'r TypeCtx<'c>,
+    facts: &narrowing::Facts,
+) -> std::borrow::Cow<'r, TypeCtx<'c>> {
+    if ctx.proven == *facts {
+        std::borrow::Cow::Borrowed(ctx)
+    } else {
+        std::borrow::Cow::Owned(ctx.proving(facts.clone()))
+    }
+}
 
 /// A `<param>` whose value crosses as data — a `<send>`'s, a host-run
 /// `<invoke>`'s, a `<donedata>`'s — as the judge and the lowering both read
@@ -128,6 +143,8 @@ struct ContentExpr<'a> {
     /// `<param>`s or a `namelist` stand beside it, which an element that carries
     /// its data one way refuses.
     beside: bool,
+    /// How the element carries the value ([`Carrier`]).
+    carrier: Carrier,
 }
 
 /// The most bytes of the id a machine generates for a `<send idlocation>`:
@@ -198,7 +215,23 @@ pub fn check(
             continue;
         }
         if let Some(alias) = judge.enum_vars.get(&var.id) {
-            judge.enum_variable(&plain, var, alias, &model.imported_enums)?;
+            judge.enum_variable(
+                &plain,
+                var,
+                alias,
+                &model.imported_enums,
+                EnumHolding::Present,
+            )?;
+            continue;
+        }
+        if let Some(alias) = judge.optional_enum_of(&plain, &var.id) {
+            judge.enum_variable(
+                &plain,
+                var,
+                &alias,
+                &model.imported_enums,
+                EnumHolding::Optional,
+            )?;
             continue;
         }
         if let Some(alias) = var
@@ -279,7 +312,15 @@ pub fn check(
                     Expected::Slot(InferredType::Bool),
                 )?;
             }
-            judge.actions(&ctx, &transition.actions, &state.id)?;
+            // A test of a field of the payload in the `cond` proves it in the
+            // transition's content, which reads the same payload; a test of a
+            // variable proves nothing there (docs/adr/0055, section 3).
+            let guarded = if transition.is_cpp_condition || transition.is_kt_condition {
+                narrowing::Facts::none()
+            } else {
+                narrowing::proves_written(&transition.cond, true).of_payload()
+            };
+            judge.actions(&proving(&ctx, &guarded), &transition.actions, &state.id)?;
         }
         judge.open_payload(None);
         for invoke in &state.invokes {
@@ -291,6 +332,7 @@ pub fn check(
                     &plain,
                     &WireParam::of_done_param(param),
                     "<donedata>",
+                    Carrier::Json,
                     &state.id,
                 )?;
             }
@@ -305,6 +347,7 @@ pub fn check(
                         written: expr,
                         spelling: done.content_spelling.as_ref(),
                         beside: !done.params.is_empty(),
+                        carrier: Carrier::Json,
                     },
                     &state.id,
                 )?;
@@ -385,6 +428,42 @@ pub(crate) fn indexed_element(written: &str) -> Option<(&str, &str)> {
     None
 }
 
+/// The conditions of `action`'s `<if>` chain in order — its own, then each
+/// `<elseif>`'s — as [`narrowing::Chain`] reads them; a native condition, which
+/// proves nothing, as empty text. Empty for any other action.
+fn chain_conds(action: &Action) -> Vec<&str> {
+    if action.action_type != "if" {
+        return Vec::new();
+    }
+    let own = if action.is_cpp_condition || action.is_kt_condition {
+        ""
+    } else {
+        action.cond.as_str()
+    };
+    std::iter::once(own)
+        .chain(
+            action
+                .nested_blocks()
+                .into_iter()
+                .filter(|block| block.role == crate::model::BlockRole::ElseIf)
+                .map(|block| {
+                    if block.cond_is_native {
+                        ""
+                    } else {
+                        block.cond.unwrap_or_default()
+                    }
+                }),
+        )
+        .collect()
+}
+
+/// Whether `written` is the literal `null`, an absent optional value
+/// (docs/adr/0055), however it is parenthesised.
+fn is_null_literal(written: &str) -> bool {
+    crate::forge::expr::parse_to_ast(written.trim())
+        .is_ok_and(|ast| matches!(ast.kind, crate::forge::expr::ExprKind::NullLit))
+}
+
 /// Whether `name` is one of the identifiers `text` is made of — `last` is in
 /// `last.n + 1` and `len(last)`, and is not in `lasting`.
 fn names_identifier(text: &str, name: &str) -> bool {
@@ -393,11 +472,17 @@ fn names_identifier(text: &str, name: &str) -> bool {
 }
 
 /// A variable's declared type; `Unknown` for an enum, whose width the
-/// inference layer declines to claim ([`InferredType::from_sce_type`]).
+/// inference layer declines to claim ([`InferredType::from_sce_type`]), and an
+/// optional value of its element for an optional variable (docs/adr/0055).
 fn variable_type(var: &Variable) -> InferredType {
-    var.value_type
-        .as_ref()
-        .and_then(crate::forge::model::AlgorithmValueType::scalar)
+    let Some(value_type) = var.value_type.as_ref() else {
+        return InferredType::Unknown;
+    };
+    if let Some(elem) = value_type.optional_elem() {
+        return InferredType::Optional(crate::forge::types::OptionalElem::of_value(elem));
+    }
+    value_type
+        .scalar()
         .map_or(InferredType::Unknown, InferredType::from_sce_type)
 }
 
@@ -438,6 +523,24 @@ pub(crate) fn seed_slot(var: &Variable) -> Option<InferredType> {
     }
 }
 
+/// The rule that refuses a `<param>` handed to the child's variable `var` when
+/// it holds an optional value (docs/adr/0055), `whose` naming the child as a
+/// refusal does (`the child's`); `None` for any other variable. The arguments
+/// a child is started with already spell a name that is not handed as absent,
+/// so an optional variable needs a second absence inside the first, and no
+/// step has decided its shape: refused by name until one does.
+fn optional_child_variable(var: &Variable, whose: &str) -> Option<String> {
+    let value_type = var.value_type.as_ref()?;
+    value_type.optional_elem()?;
+    Some(format!(
+        "{whose} `{}` is {}, which a <param> hands no value to yet: a child's arguments spell \
+         a name not handed as absent, and a value that may be absent needs a second absence \
+         inside that one. Leave it to its own initial value, and send it the value in an event",
+        var.id,
+        value_type.as_attr()
+    ))
+}
+
 /// The enum each variable declared `enum:<alias>` holds, by the variable's id,
 /// and each enum field of a record variable, by its `<id>.<field>` path —
 /// what [`crate::forge::static_enum`] asks to tell an enum value from a number
@@ -453,6 +556,17 @@ pub(crate) fn enum_variables(
         };
         if let Some(crate::forge::model::SceType::Enum(reference)) = value_type.scalar() {
             held.insert(var.id.clone(), reference.alias.clone());
+        }
+        // An optional enum variable's present value is a value of the enum
+        // (docs/adr/0055): `status.value`, and not `status`, holds it.
+        if let Some(crate::forge::model::SceType::Enum(reference)) = value_type
+            .optional_elem()
+            .and_then(crate::forge::model::OptionalElemType::scalar)
+        {
+            held.insert(
+                crate::forge::static_enum::present_value_path(&var.id),
+                reference.alias.clone(),
+            );
         }
         if let Some(schema) = value_type.record_alias().and_then(|a| records.get(a)) {
             held.extend(enum_fields(&var.id, schema));
@@ -477,21 +591,29 @@ pub(crate) fn enum_variables(
     held
 }
 
-/// Each enum field of a record of `schema`, by the field's id and the alias of
-/// the enum it holds.
+/// Each enum field of a record of `schema`, by the path of the field's value
+/// below the record and the alias of the enum it holds: the field's id, and for
+/// an optional enum field the path of its present value (`status.value`), since
+/// a value of it may be absent and its present value is the value of the enum
+/// (docs/adr/0055, [`crate::forge::static_enum::present_value_path`]).
 fn enum_field_aliases(
     schema: &crate::forge::model::EventSchemaModel,
-) -> impl Iterator<Item = (&str, &str)> {
-    // An optional enum field holds a value of its enum when present
-    // (docs/adr/0055), so it names the enum as a field of the enum does.
+) -> impl Iterator<Item = (String, &str)> {
+    use crate::forge::model::{FieldType, SceType};
     schema
         .fields
         .iter()
-        .filter_map(|field| match field.sce_type.present_type() {
-            crate::forge::model::SceType::Enum(reference) => {
-                Some((field.id.as_str(), reference.alias.as_str()))
+        .filter_map(|field| match &field.sce_type {
+            FieldType::Scalar(SceType::Enum(reference)) => {
+                Some((field.id.clone(), reference.alias.as_str()))
             }
-            _ => None,
+            FieldType::Optional {
+                elem: SceType::Enum(reference),
+            } => Some((
+                crate::forge::static_enum::present_value_path(&field.id),
+                reference.alias.as_str(),
+            )),
+            FieldType::Scalar(_) | FieldType::Optional { .. } => None,
         })
 }
 
@@ -553,6 +675,37 @@ impl<'a> StringHolder<'a> {
         unit: "bytes",
         printable_ascii: true,
     };
+}
+
+/// How the value of a `<param>` crosses (docs/adr/0055, section 4): as JSON,
+/// the event data a `<send>`, a `<donedata>` and a Mesh request carry, where an
+/// absent value is `null`; or as text alone, a BasicHTTP form and the `params`
+/// of an `<invoke>` the host runs, which has no spelling for one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Carrier {
+    Json,
+    Text,
+}
+
+impl Carrier {
+    /// The carrier of a `<send>`'s data: text alone when the send may go
+    /// through the BasicHTTP processor, which posts a form, and JSON otherwise.
+    fn of_send(action: &Action) -> Self {
+        let basic_http = crate::host_processor_analyzer::BASIC_HTTP_EVENT_PROCESSOR_TYPE;
+        if action.send_type == basic_http || action.types.iter().any(|t| t == basic_http) {
+            Self::Text
+        } else {
+            Self::Json
+        }
+    }
+}
+
+/// Whether a variable of an enum holds a value of it always, or an optional
+/// value of it (docs/adr/0055).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum EnumHolding {
+    Present,
+    Optional,
 }
 
 struct Judge<'a> {
@@ -669,6 +822,8 @@ enum SentValue<'m> {
     Enum {
         alias: String,
         model: Option<&'m crate::forge::model::EnumModel>,
+        /// An optional value of the enum (docs/adr/0055), which may be absent.
+        optional: bool,
     },
     Typed {
         ty: InferredType,
@@ -702,8 +857,25 @@ impl SentValue<'_> {
         use crate::forge::model::SceType;
         let declared = field.sce_type.as_attr();
         // A value of `T` sent to a field of `optional<T>` is present
-        // (docs/adr/0055): it fits the field as it fits a field of `T`.
+        // (docs/adr/0055): it fits the field as it fits a field of `T`. An
+        // optional value fits a field of `optional<T>` as its present value
+        // fits one of `T`, and no field of `T`, which refuses an absent one.
         let present = field.sce_type.present_type();
+        let sent_optional = match self {
+            SentValue::Enum { optional, .. } => *optional,
+            SentValue::Typed { ty, .. } => ty.is_optional(),
+        };
+        if sent_optional && field.sce_type.optional_elem().is_none() {
+            let sent = match self {
+                SentValue::Enum { alias, .. } => format!("an optional value of the enum `{alias}`"),
+                SentValue::Typed { ty, .. } => ty.describe(),
+            };
+            return Some(Misfit::Kind(format!(
+                "the value is {sent}, which may be absent, and the field is {declared}, which \
+                 holds no absent value (send it with a default, `?? <value>`, or send its \
+                 `.value` where a `!== null` test proves it present)"
+            )));
+        }
         match (self, present) {
             (SentValue::Enum { model, .. }, SceType::Enum(_)) => {
                 let (Some(sent), Some(read)) = (model, field_enum) else {
@@ -725,6 +897,7 @@ impl SentValue<'_> {
                  its variant declares)"
             ))),
             (SentValue::Typed { ty, bound }, _) => {
+                let ty = &ty.unwrap_optional();
                 let want = InferredType::from_sce_type(present);
                 // A text or a byte string the sender declares a bound for, past the
                 // bound the field declares: refused unless the sender narrows it.
@@ -896,7 +1069,13 @@ impl<'a> Judge<'a> {
         // number's place: say here where it may stand and where it may not.
         if let Some(alias) = self.value_enum(ctx, expr).map_err(place)? {
             if let Expected::Slot(slot) = expected {
-                if !matches!(slot, InferredType::Unknown) {
+                // A place of an optional enum takes a value of the enum, which
+                // [`Self::expr_of_optional_enum`] holds to the one it declares.
+                if !matches!(
+                    slot,
+                    InferredType::Unknown
+                        | InferredType::Optional(crate::forge::types::OptionalElem::Enum)
+                ) {
                     return Err(place(
                         crate::forge::error::ExprError::UnsupportedConstruct {
                             construct: format!(
@@ -920,14 +1099,7 @@ impl<'a> Judge<'a> {
         ctx: &TypeCtx<'_>,
         expr: &str,
     ) -> Result<Option<String>, crate::forge::expr::Refusal> {
-        crate::forge::static_enum::value_enum(
-            expr,
-            ctx,
-            &crate::forge::static_enum::EnumReading {
-                var_alias: &|name| self.enum_of(name),
-                calls: &|name| self.scope.call_enums(name),
-            },
-        )
+        Ok(self.value_held(ctx, expr)?.present_enum())
     }
 
     /// The alias of the enum the variable, record field, loop's record item's
@@ -945,6 +1117,34 @@ impl<'a> Judge<'a> {
             .cloned()
             .or_else(|| held_at(&self.loop_enum_paths))
             .or_else(|| held_at(&self.payload_enum_paths))
+    }
+
+    /// The alias of the enum the optional variable, record field, loop's record
+    /// item's field or payload field at `path` holds an optional value of
+    /// (docs/adr/0055): the enum its present value, `<path>.value`, is a value
+    /// of, for a path `ctx` types optional.
+    fn optional_enum_of(&self, ctx: &TypeCtx<'_>, path: &str) -> Option<String> {
+        if !ctx.lookup_var(path).is_optional() {
+            return None;
+        }
+        self.enum_of(&crate::forge::static_enum::present_value_path(path))
+    }
+
+    /// What `expr` is as far as an enum goes ([`crate::forge::static_enum::Held`]),
+    /// refused when it uses an enum value for what an enum value is not for.
+    fn value_held(
+        &self,
+        ctx: &TypeCtx<'_>,
+        expr: &str,
+    ) -> Result<crate::forge::static_enum::Held, crate::forge::expr::Refusal> {
+        crate::forge::static_enum::value_held(
+            expr,
+            ctx,
+            &crate::forge::static_enum::EnumReading {
+                var_alias: &|name| self.enum_of(name),
+                calls: &|name| self.scope.call_enums(name),
+            },
+        )
     }
 
     /// The alias of the enum the variable, record field or payload field at
@@ -988,14 +1188,73 @@ impl<'a> Judge<'a> {
                 self.diag_label,
             )
         };
+        use crate::forge::static_enum::Held;
         self.expr(ctx, expr, spelling, Expected::Hint(InferredType::Unknown))?;
-        match self.value_enum(ctx, expr).map_err(place)? {
-            Some(held) if held == alias => Ok(()),
-            _ => Err(place(
+        let observed = Some(expr.trim().to_string());
+        match self.value_held(ctx, expr).map_err(place)? {
+            Held::Enum(held) if held == alias => Ok(()),
+            // A value that may be absent, or none, where one that never is is
+            // declared (docs/adr/0055): what the place would hold has no answer.
+            Held::Optional(held) => Err(place(
+                crate::forge::error::ExprError::TypeMismatch {
+                    expected: format!("a value of the enum `{alias}`"),
+                    got: format!(
+                        "an optional value of the enum `{held}`, which may be absent (read it \
+                         with `??` and a default, or with `.value` where a `!== null` test \
+                         proves it present)"
+                    ),
+                    observed,
+                }
+                .at(None),
+            )),
+            Held::Null => Err(place(
+                crate::forge::error::ExprError::TypeMismatch {
+                    expected: format!("a value of the enum `{alias}`"),
+                    got: InferredType::Null.describe(),
+                    observed,
+                }
+                .at(None),
+            )),
+            Held::Enum(_) | Held::Neither => Err(place(
                 crate::forge::error::ExprError::UnsupportedConstruct {
                     construct: format!(
                         "a value that is not of the enum `{alias}` for a variable declared \
                          enum:{alias} (write `{alias}.<variant>`, or another variable of that enum)"
+                    ),
+                    observed,
+                }
+                .at(None),
+            )),
+        }
+    }
+
+    /// `expr`, which a place declared `optional<enum:<alias>>` is to hold
+    /// (docs/adr/0055): `null`, a value of that enum, which is present, or an
+    /// optional value of it.
+    fn expr_of_optional_enum(
+        &self,
+        ctx: &TypeCtx<'_>,
+        expr: &str,
+        spelling: Option<&crate::attribute_spelling::AttributeSpelling>,
+        alias: &str,
+    ) -> Result<(), Located<ForgeError>> {
+        use crate::forge::static_enum::Held;
+        let place = |refusal: crate::forge::expr::Refusal| {
+            Located::in_file(
+                ExpressionSite::new(expr, spelling).place(refusal),
+                self.diag_label,
+            )
+        };
+        self.expr(ctx, expr, spelling, Expected::Hint(InferredType::Unknown))?;
+        match self.value_held(ctx, expr).map_err(place)? {
+            Held::Null => Ok(()),
+            Held::Enum(held) | Held::Optional(held) if held == alias => Ok(()),
+            Held::Enum(_) | Held::Optional(_) | Held::Neither => Err(place(
+                crate::forge::error::ExprError::UnsupportedConstruct {
+                    construct: format!(
+                        "a value that is neither `null` nor of the enum `{alias}` for a place \
+                         declared optional<enum:{alias}> (write `{alias}.<variant>`, `null`, or \
+                         another value of that enum)"
                     ),
                     observed: Some(expr.trim().to_string()),
                 }
@@ -1004,14 +1263,16 @@ impl<'a> Judge<'a> {
         }
     }
 
-    /// A variable declared `enum:<alias>`: the enum is a closed set the
-    /// document imports, and the variable starts at one of its variants.
+    /// A variable declared `enum:<alias>`, or `optional<enum:<alias>>` as
+    /// `holding` says: the enum is a closed set the document imports, and the
+    /// variable starts at one of its variants, or absent where it is optional.
     fn enum_variable(
         &self,
         ctx: &TypeCtx<'_>,
         var: &Variable,
         alias: &str,
         enums: &std::collections::BTreeMap<String, crate::forge::model::EnumModel>,
+        holding: EnumHolding,
     ) -> Result<(), Located<ForgeError>> {
         // An alias the parser admitted names an import; without sibling files
         // it has no enum here, and nothing to judge against.
@@ -1020,8 +1281,12 @@ impl<'a> Judge<'a> {
             // set's value that no variant names has no type to be held in.
             if !model.strict_variants {
                 let spelling = var.value_type_spelling.as_ref();
+                let declared = var
+                    .value_type
+                    .as_ref()
+                    .map_or_else(|| format!("enum:{alias}"), |t| t.as_attr());
                 return Err(self.rule_at(
-                    format!("<data id=\"{}\" sce:type=\"enum:{alias}\">", var.id),
+                    format!("<data id=\"{}\" sce:type=\"{declared}\">", var.id),
                     "a variable holds a closed enum: the enum declares \
                      sce:strict-variants=\"false\", which admits values no variant names",
                     spelling.map(|s| s.row()),
@@ -1033,7 +1298,11 @@ impl<'a> Judge<'a> {
         }
         // A `<data>` with no `expr` is refused before this pass is asked, so
         // the value is written.
-        self.expr_of_enum(ctx, &var.expr, var.expr_spelling.as_ref(), alias)
+        let (expr, spelling) = (&var.expr, var.expr_spelling.as_ref());
+        match holding {
+            EnumHolding::Present => self.expr_of_enum(ctx, expr, spelling, alias),
+            EnumHolding::Optional => self.expr_of_optional_enum(ctx, expr, spelling, alias),
+        }
     }
 
     /// Note every name `expr` reads or calls ([`Judge::read`]).
@@ -1051,11 +1320,17 @@ impl<'a> Judge<'a> {
         let Some(capacity) = var.capacity else {
             return Ok(());
         };
-        let holder = match var
-            .value_type
-            .as_ref()
-            .and_then(crate::forge::model::AlgorithmValueType::scalar)
-        {
+        let Some(value_type) = var.value_type.as_ref() else {
+            return Ok(());
+        };
+        // An optional text starts absent, or present at a literal that fits, as
+        // a text does (docs/adr/0055).
+        let present = match value_type.optional_elem() {
+            Some(_) if is_null_literal(&var.expr) => return Ok(()),
+            Some(elem) => elem.scalar(),
+            None => value_type.scalar(),
+        };
+        let holder = match present {
             Some(crate::forge::model::SceType::String) => StringHolder::STRING_VARIABLE,
             // A byte string starts the same way, at a literal that fits.
             Some(crate::forge::model::SceType::Bytes) => StringHolder::BYTES_VARIABLE,
@@ -1453,14 +1728,28 @@ impl<'a> Judge<'a> {
             use crate::forge::model::{FieldType, SceType};
             // A field of an enum starts at one of its variants, as a variable
             // of it does.
-            if let FieldType::Scalar(SceType::Enum(reference)) = &field.sce_type {
-                self.expr_of_enum(
-                    ctx,
-                    &init.expr,
-                    init.expr_spelling.as_ref(),
-                    &reference.alias,
-                )?;
-                continue;
+            match &field.sce_type {
+                FieldType::Scalar(SceType::Enum(reference)) => {
+                    self.expr_of_enum(
+                        ctx,
+                        &init.expr,
+                        init.expr_spelling.as_ref(),
+                        &reference.alias,
+                    )?;
+                    continue;
+                }
+                FieldType::Optional {
+                    elem: SceType::Enum(reference),
+                } => {
+                    self.expr_of_optional_enum(
+                        ctx,
+                        &init.expr,
+                        init.expr_spelling.as_ref(),
+                        &reference.alias,
+                    )?;
+                    continue;
+                }
+                FieldType::Scalar(_) | FieldType::Optional { .. } => {}
             }
             self.expr(
                 ctx,
@@ -1469,10 +1758,17 @@ impl<'a> Judge<'a> {
                 Expected::Slot(InferredType::of_field(&field.sce_type)),
             )?;
             // A string field starts at a literal that fits its bound; one
-            // that declares none was refused above.
+            // that declares none was refused above. An optional one starts
+            // absent, or at such a literal (docs/adr/0055).
             let holder = match &field.sce_type {
                 FieldType::Scalar(SceType::String) => Some(StringHolder::STRING_FIELD),
                 FieldType::Scalar(SceType::Bytes) => Some(StringHolder::BYTES_FIELD),
+                FieldType::Optional {
+                    elem: SceType::String,
+                } if !is_null_literal(&init.expr) => Some(StringHolder::STRING_FIELD),
+                FieldType::Optional {
+                    elem: SceType::Bytes,
+                } if !is_null_literal(&init.expr) => Some(StringHolder::BYTES_FIELD),
                 FieldType::Scalar(_) | FieldType::Optional { .. } => None,
             };
             if let (Some(holder), Some(max_size)) = (holder, field.max_size) {
@@ -1849,10 +2145,12 @@ impl<'a> Judge<'a> {
             .iter()
             .find(|v| v.id == location)
             .filter(|_| !self.loop_names.borrow().iter().any(|name| name == location));
-        let is_string = variable
-            .and_then(|v| v.value_type.as_ref())
-            .and_then(crate::forge::model::AlgorithmValueType::scalar)
-            == Some(&crate::forge::model::SceType::String);
+        // An `optional<string>` takes the id as a string, which is present
+        // (docs/adr/0055).
+        let is_string = variable.and_then(|v| v.value_type.as_ref()).and_then(|t| {
+            t.scalar()
+                .or_else(|| t.optional_elem().and_then(|elem| elem.scalar()))
+        }) == Some(&crate::forge::model::SceType::String);
         variable.filter(|_| is_string)
     }
 
@@ -1932,6 +2230,7 @@ impl<'a> Judge<'a> {
             written,
             spelling,
             beside,
+            carrier,
         } = *content;
         let written = written.trim();
         let (line, col) = (spelling.map(|s| s.row()), spelling.map(|s| s.col()));
@@ -1957,6 +2256,7 @@ impl<'a> Judge<'a> {
                 ctx,
                 &WireParam::of_content(written, spelling),
                 element,
+                carrier,
                 state,
             );
         };
@@ -1969,7 +2269,7 @@ impl<'a> Judge<'a> {
                 spelling,
                 source_location: None,
             };
-            self.wire_param(ctx, &pair, element, state)?;
+            self.wire_param(ctx, &pair, element, carrier, state)?;
         }
         Ok(())
     }
@@ -2030,6 +2330,7 @@ impl<'a> Judge<'a> {
         ctx: &TypeCtx<'_>,
         param: &WireParam<'_>,
         element: &str,
+        carrier: Carrier,
         state: &str,
     ) -> Result<(), Located<ForgeError>> {
         if param.is_static_literal {
@@ -2091,6 +2392,43 @@ impl<'a> Judge<'a> {
                 ))
             }
         }
+        // An optional value crosses as JSON, `null` when absent and its value
+        // when present; a carrier that is text alone has no spelling for an
+        // absent one (docs/adr/0055, section 4).
+        if let InferredType::Optional(elem) = ty {
+            let rule = match carrier {
+                Carrier::Text => Some(format!(
+                    "{what} of {element} crosses as text alone, which has no spelling for an \
+                     absent value, and `{}` is {}: read it with a default (`{} ?? <value>`), or \
+                     carry its `.value` where a `!== null` test proves it present",
+                    written.trim(),
+                    ty.describe(),
+                    written.trim()
+                )),
+                Carrier::Json => {
+                    let crosses = match elem {
+                        crate::forge::types::OptionalElem::Enum => matches!(
+                            self.wire_value_held(ctx, written),
+                            Ok(crate::forge::static_enum::Held::Optional(_))
+                        ),
+                        crate::forge::types::OptionalElem::Record => false,
+                        present => present.present().wire_param_slot().is_some(),
+                    };
+                    (!crosses).then(|| {
+                        format!(
+                            "{what} crosses as a JSON value, `null` when absent and the value \
+                             when present, and {} has no such spelling yet: an optional record, \
+                             and an optional enum value of a loop's item, cross no value",
+                            ty.describe()
+                        )
+                    })
+                }
+            };
+            return match rule {
+                None => Ok(()),
+                Some(rule) => Err(self.rule_at(construct, &rule, line, col, state, written)),
+            };
+        }
         if ty.wire_param_slot().is_none() {
             return Err(self.rule_at(
                 construct,
@@ -2122,12 +2460,22 @@ impl<'a> Judge<'a> {
         ctx: &TypeCtx<'_>,
         written: &str,
     ) -> Result<Option<String>, crate::forge::expr::Refusal> {
+        Ok(self.wire_value_held(ctx, written)?.present_enum())
+    }
+
+    /// [`Self::wire_value_enum`]'s reading of `written` as an enum value,
+    /// present or optional ([`crate::forge::static_enum::Held`]).
+    fn wire_value_held(
+        &self,
+        ctx: &TypeCtx<'_>,
+        written: &str,
+    ) -> Result<crate::forge::static_enum::Held, crate::forge::expr::Refusal> {
         let held_by_a_variable = |name: &str| self.enum_of_wire_value(name);
         let reading = crate::forge::static_enum::EnumReading {
             var_alias: &held_by_a_variable,
             calls: &|name| self.scope.call_enums(name),
         };
-        crate::forge::static_enum::value_enum(written, ctx, &reading)
+        crate::forge::static_enum::value_held(written, ctx, &reading)
     }
 
     /// The most bytes the text or byte string `written` can hold, where a declaration
@@ -2159,7 +2507,13 @@ impl<'a> Judge<'a> {
             ExprKind::StringLit { value, .. } => u32::try_from(value.len()).ok(),
             ExprKind::Ident(name) => {
                 let var = variable(name)?;
-                match var.value_type.as_ref()?.scalar()? {
+                // An optional text is bounded as its present value is
+                // (docs/adr/0055).
+                let value_type = var.value_type.as_ref()?;
+                let present = value_type
+                    .scalar()
+                    .or_else(|| value_type.optional_elem().and_then(|elem| elem.scalar()));
+                match present? {
                     SceType::String | SceType::Bytes => var.capacity,
                     _ => None,
                 }
@@ -2288,19 +2642,30 @@ impl<'a> Judge<'a> {
         // The value as it crosses: an enum value by the enum the sender holds it
         // in, anything else by its type. A value [`Self::wire_param`] refuses was
         // refused before this is asked.
-        let value = match self.wire_value_enum(ctx, written) {
-            Ok(Some(alias)) => SentValue::Enum {
+        let value = match self.wire_value_held(ctx, written) {
+            Ok(crate::forge::static_enum::Held::Enum(alias)) => SentValue::Enum {
                 model: self.receivers.own_enums.get(&alias),
                 alias,
+                optional: false,
             },
-            Ok(None) => {
+            Ok(crate::forge::static_enum::Held::Optional(alias)) => SentValue::Enum {
+                model: self.receivers.own_enums.get(&alias),
+                alias,
+                optional: true,
+            },
+            Ok(
+                crate::forge::static_enum::Held::Neither | crate::forge::static_enum::Held::Null,
+            ) => {
                 let ty = self.expr(
                     ctx,
                     written,
                     param.spelling,
                     Expected::Hint(InferredType::Unknown),
                 )?;
-                let bound = if matches!(ty, InferredType::Str | InferredType::Bytes) {
+                let bound = if matches!(
+                    ty.unwrap_optional(),
+                    InferredType::Str | InferredType::Bytes
+                ) {
                     self.text_bound(written)
                 } else {
                     None
@@ -2480,14 +2845,22 @@ impl<'a> Judge<'a> {
         }
     }
 
+    /// A block of executable content, each action judged with the subjects
+    /// proven present where it stands (docs/adr/0055, section 3): those the
+    /// block was entered with, less each one an action before it may write
+    /// ([`narrowing::Facts::after`]). Nothing in a statechart's content proves
+    /// a fact for the actions after it: an `<if>` proves its facts inside its
+    /// own blocks only.
     fn actions(
         &self,
         ctx: &TypeCtx<'_>,
         actions: &[Action],
         state: &str,
     ) -> Result<(), Located<ForgeError>> {
+        let mut proven = ctx.proven.clone();
         for action in actions {
-            self.action(ctx, action, state)?;
+            self.action(&proving(ctx, &proven), action, state)?;
+            proven = proven.after(&narrowing::Writes::of(action));
         }
         Ok(())
     }
@@ -2615,6 +2988,28 @@ impl<'a> Judge<'a> {
                         self.diag_label,
                     )
                 })?;
+                // An optional value is written whole: `null` makes it absent and
+                // a value present (docs/adr/0055). Its `.value` is a read.
+                if let Some(holder) = crate::forge::static_enum::present_value_of(location)
+                    .filter(|holder| ctx.lookup_var(holder.trim()).is_optional())
+                {
+                    return Err(Located::in_file(
+                        ExpressionSite::new(&action.location, action.spellings.get("location"))
+                            .place(
+                                crate::forge::error::ExprError::UnsupportedConstruct {
+                                    construct: format!(
+                                        "an assignment to `{location}`, the value of an optional \
+                                         value (an optional value is assigned whole: \
+                                         <assign location=\"{}\"> writes `null` or a value)",
+                                        holder.trim()
+                                    ),
+                                    observed: Some(location.to_string()),
+                                }
+                                .at(None),
+                            ),
+                        self.diag_label,
+                    ));
+                }
                 let slot = self.expr(
                     ctx,
                     &action.location,
@@ -2625,6 +3020,13 @@ impl<'a> Judge<'a> {
                 // names: the value must be one of that enum's.
                 if let Some(alias) = self.enum_of(location) {
                     self.expr_of_enum(ctx, &action.expr, action.spellings.get("expr"), &alias)?;
+                } else if let Some(alias) = self.optional_enum_of(ctx, location) {
+                    self.expr_of_optional_enum(
+                        ctx,
+                        &action.expr,
+                        action.spellings.get("expr"),
+                        &alias,
+                    )?;
                 } else {
                     self.expr(
                         ctx,
@@ -2651,9 +3053,10 @@ impl<'a> Judge<'a> {
                 )?;
             }
             "send" => {
+                let carrier = Carrier::of_send(action);
                 for param in &action.params {
                     let wire = WireParam::of_param(param);
-                    self.wire_param(ctx, &wire, "<send>", state)?;
+                    self.wire_param(ctx, &wire, "<send>", carrier, state)?;
                     self.received(ctx, action, &wire, state)?;
                 }
                 // A `namelist` name is the `<param name="x" expr="x"/>` it
@@ -2662,7 +3065,7 @@ impl<'a> Judge<'a> {
                 for name in action.namelist.split_whitespace() {
                     let namelist =
                         WireParam::of_namelist_name(name, action.spellings.get("namelist"), None);
-                    self.wire_param(ctx, &namelist, "<send>", state)?;
+                    self.wire_param(ctx, &namelist, "<send>", carrier, state)?;
                     self.received(ctx, action, &namelist, state)?;
                 }
                 if !action.eventexpr.is_empty() {
@@ -2688,6 +3091,7 @@ impl<'a> Judge<'a> {
                             written: &action.contentexpr,
                             spelling: action.contentexpr_spelling.as_ref(),
                             beside: !action.params.is_empty() || !action.namelist.trim().is_empty(),
+                            carrier,
                         },
                         state,
                     )?;
@@ -2754,17 +3158,30 @@ impl<'a> Judge<'a> {
         }
         // Everything nested inside, through the model's one definition of
         // what lies inside an action. An `<elseif>`'s condition travels with
-        // its block.
+        // its block. Each condition of an `<if>` chain is read where every
+        // earlier one is false, each block where its own is true besides, and
+        // the `<else>` where all are false ([`narrowing::Chain`]).
+        let chain = narrowing::Chain::of(&ctx.proven, &chain_conds(action));
+        let mut elseif = 0;
         for block in action.nested_blocks() {
+            let (cond_facts, block_facts) = match block.role {
+                crate::model::BlockRole::Body => (ctx.proven.clone(), ctx.proven.clone()),
+                crate::model::BlockRole::Then => (chain.cond(0), chain.block(0)),
+                crate::model::BlockRole::ElseIf => {
+                    elseif += 1;
+                    (chain.cond(elseif), chain.block(elseif))
+                }
+                crate::model::BlockRole::Else => (chain.otherwise(), chain.otherwise()),
+            };
             if let Some(cond) = block.cond.filter(|_| !block.cond_is_native) {
                 self.expr(
-                    ctx,
+                    &proving(ctx, &cond_facts),
                     cond,
                     block.cond_spelling,
                     Expected::Slot(InferredType::Bool),
                 )?;
             }
-            self.actions(ctx, block.actions, state)?;
+            self.actions(&proving(ctx, &block_facts), block.actions, state)?;
         }
         Ok(())
     }
@@ -2859,7 +3276,11 @@ impl<'a> Judge<'a> {
             elem,
             self.schemas,
         );
-        let inner = loop_variables.bind(ctx);
+        let mut inner = loop_variables.bind(ctx);
+        // A fact proven before the loop holds in its body only if nothing in
+        // the body ends it: a turn follows the end of the one before
+        // (docs/adr/0055, section 3).
+        inner.proven = narrowing::loop_entry(&ctx.proven, &action.actions);
         // A record item is a record an append in the body may take by name.
         let record_item = match elem {
             crate::forge::model::ListElemType::Record { alias } => Some(alias.clone()),
@@ -3080,6 +3501,9 @@ impl<'a> Judge<'a> {
                     param.name
                 )));
             };
+            if let Some(rule) = optional_child_variable(variable, "the child's") {
+                return Err(refuse(&rule));
+            }
             let Some(slot) = seed_slot(variable) else {
                 return Err(refuse(&format!(
                     "the child's `{}` is a list, a record, an enum or bytes, and a value is \
@@ -3227,6 +3651,12 @@ impl<'a> Judge<'a> {
                 let Some(variable) = candidate_variable(candidate, &param.name) else {
                     continue;
                 };
+                if let Some(rule) = optional_child_variable(
+                    variable,
+                    &format!("the candidate `{}`'s", candidate.stem),
+                ) {
+                    return Err(refuse(&rule));
+                }
                 let Some(slot) = seed_slot(variable) else {
                     return Err(refuse(&format!(
                         "the candidate `{}`'s `{}` is a list, a record, an enum or bytes, and a \
@@ -3244,7 +3674,13 @@ impl<'a> Judge<'a> {
                 .iter()
                 .any(|candidate| candidate_variable(candidate, &param.name).is_none())
             {
-                self.wire_param(ctx, &WireParam::of_param(&param), &element, state)?;
+                self.wire_param(
+                    ctx,
+                    &WireParam::of_param(&param),
+                    &element,
+                    Carrier::Json,
+                    state,
+                )?;
             }
         }
         Ok(())
@@ -3347,12 +3783,20 @@ impl<'a> Judge<'a> {
                     Expected::Slot(InferredType::Str),
                 )?;
             }
+            // The host is handed the pairs as text, with no spelling for an
+            // absent value (docs/adr/0055).
             for param in &base.params {
-                self.wire_param(ctx, &WireParam::of_param(param), &element, state)?;
+                self.wire_param(
+                    ctx,
+                    &WireParam::of_param(param),
+                    &element,
+                    Carrier::Text,
+                    state,
+                )?;
             }
             for name in info.namelist.split_whitespace() {
                 let pair = WireParam::of_namelist_name(name, None, at);
-                self.wire_param(ctx, &pair, &element, state)?;
+                self.wire_param(ctx, &pair, &element, Carrier::Text, state)?;
             }
             if let Some(request) = self.schemas.get(&info.request_schema) {
                 for param in &base.params {
@@ -3374,7 +3818,13 @@ impl<'a> Judge<'a> {
             }
             let element = format!("<invoke id=\"{}\">", base.invoke_id);
             for param in &base.params {
-                self.wire_param(ctx, &WireParam::of_param(param), &element, state)?;
+                self.wire_param(
+                    ctx,
+                    &WireParam::of_param(param),
+                    &element,
+                    Carrier::Json,
+                    state,
+                )?;
             }
             return Ok(());
         }

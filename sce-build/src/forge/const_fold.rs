@@ -988,6 +988,10 @@ fn eval_binop(
             let v = bitwise_int(op, a, b)?;
             Ok(V::Int(width.map_or(v, |w| w.wrap(v))))
         }
+        // A build-time value is never absent: `??` has no operand to fold.
+        BinOp::Coalesce => Err(ConstFoldKind::NotFoldable(
+            "`??` on a value that is never absent".to_string(),
+        )),
     }
 }
 

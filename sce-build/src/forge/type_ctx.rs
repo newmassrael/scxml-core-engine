@@ -1625,9 +1625,13 @@ fn static_statechart<'a>(
             }
             continue;
         }
-        let ty = value_type
-            .scalar()
-            .map_or(InferredType::Unknown, InferredType::from_sce_type);
+        // An optional variable is the optional value it holds (docs/adr/0055).
+        let ty = match value_type.optional_elem() {
+            Some(elem) => InferredType::Optional(crate::forge::types::OptionalElem::of_value(elem)),
+            None => value_type
+                .scalar()
+                .map_or(InferredType::Unknown, InferredType::from_sce_type),
+        };
         ctx.insert_var(var.id.as_str(), ty);
         // The bound a string is held to is what a value that joins it is sized
         // from, on a target that stores a string in a buffer of its own.

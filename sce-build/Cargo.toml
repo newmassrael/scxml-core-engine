@@ -929,6 +929,22 @@ name = "an_optional_value_is_declared_by_its_type"
 path = "tests/an_optional_value_is_declared_by_its_type.rs"
 required-features = ["cli"]
 
+# An optional value is tested, read with a default, read where proven present
+# and compared (docs/adr/0055, step 3). It runs `sce-codegen check` and
+# `generate`, so it carries the `cli` gate.
+[[test]]
+name = "an_optional_value_is_tested_read_and_compared"
+path = "tests/an_optional_value_is_tested_read_and_compared.rs"
+required-features = ["cli"]
+
+# A value is proven present only where a test proves it (docs/adr/0055, step 3):
+# each narrowing construct and each statement that ends a fact. It runs
+# `sce-codegen check` and `generate`, so it carries the `cli` gate.
+[[test]]
+name = "a_value_is_proven_present_only_where_tested"
+path = "tests/a_value_is_proven_present_only_where_tested.rs"
+required-features = ["cli"]
+
 [[test]]
 name = "a_statechart_calls_the_forge_kinds_that_are_functions"
 path = "tests/a_statechart_calls_the_forge_kinds_that_are_functions.rs"

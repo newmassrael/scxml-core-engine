@@ -3,7 +3,7 @@
 - Status: Accepted (2026-10-21). The owner decided every question the proposal left open ("The
   owner's answers", below), under the standing rule: the most long-term correct structure, cost
   ignored; never a sentinel number and never a companion flag that admits impossible states. Steps
-  1 and 2 are implemented; the others follow in the order section 9 gives. Section 8 and step 12 amended the
+  1, 2 and 3 are implemented; the others follow in the order section 9 gives. Section 8 and step 12 amended the
   same day by that rule: a codec document declares its format, and format 1 is refused for good.
 - Date: 2026-10-21
 - Amends: ADR 0044 decisions 1 and 3 (a revision may widen a field from `T` to `optional<T>`);
@@ -581,7 +581,7 @@ documents, not observed from a backend.
    that refuses one before it reads the schema reads each field's `present_type`, which the
    backend step that lowers the type revisits. An algorithm's record of such a schema is judged
    and then refused where each backend renders the algorithm.
-3. **The expression surface and narrowing.** `InferredType::Optional`; the lift of `T`; `=== null`;
+3. **The expression surface and narrowing** (implemented). `InferredType::Optional`; the lift of `T`; `=== null`;
    `??` (the lexer's refusal removed); conditionals; section 3's narrowing over expressions,
    `<if>` chains, transitions and algorithm bodies, and its invalidation; `.value` proven or refused
    with `expression/optional-read-unproven` (in the appendix of docs/SCE_ACCEPTED_SUBSET.md and
@@ -592,7 +592,18 @@ documents, not observed from a backend.
    2's table and per refusal, and `sce-build/tests/a_value_is_proven_present_only_where_tested.rs`,
    one case per narrowing construct and one per invalidating statement (each read refused after
    it), a transition whose `cond` tests a payload field (proven) and a variable (not), and a loop
-   whose body assigns the subject.
+   whose body assigns the subject. As built, the narrowing is one module, `forge::narrowing`:
+   what a test proves (`proves`), an `<if>` chain (`Chain`), a loop's entry (`loop_entry`), an
+   algorithm's sequencing (`after_algorithm_statement`) and what ends a fact (`Facts::after` over
+   the `Writes` of a statement, one `Statement` implementation for executable content and one for
+   an algorithm's body). The statechart's judge carries the facts on `TypeCtx::proven` into each
+   expression it judges; an algorithm's body is walked by `narrowing::check_algorithm` before any
+   backend renders it, judging only the rules of an optional value, since the renderer that would
+   judge the rest refuses the body by name until step 8. An optional enum is registered with the
+   enum judge at the path of its present value (`status.value`), so `status` is no value of the
+   enum and `status.value` is. An `<invoke>`'s `idlocation` is written when the invocation starts,
+   after every block of the macrostep, so it ends no fact a block holds; a `<send idlocation>` may
+   name an `optional<string>`.
 4. **The shared scenario and the drivers' vocabulary.** `scenarios/static_optional.json` (a variable,
    a record's field, a payload's field and a list of records holding an optional `int64`, an
    `optional<string>` and an `optional<enum:…>`: set, cleared, tested, read where proven, `??` with

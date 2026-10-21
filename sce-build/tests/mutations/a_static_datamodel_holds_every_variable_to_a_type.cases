@@ -360,8 +360,8 @@ PY
 # need again, which the manifest of a pure-static machine would then deny.
 mutation_case "a namelist name is not judged" <<'PY'
 edit("sce-build/src/forge/static_datamodel.rs",
-     "                    self.wire_param(ctx, &namelist, \"<send>\", state)?;\n",
-     "                    let _ = (&namelist, ctx, state);\n")
+     "                    self.wire_param(ctx, &namelist, \"<send>\", carrier, state)?;\n",
+     "                    let _ = (&namelist, ctx, carrier, state);\n")
 PY
 
 mutation_case "a namelist needs a script engine again" <<'PY'
@@ -460,7 +460,7 @@ PY
 # lacks; and the attribute is left standing after the fold, which does the same.
 mutation_case "a host-run invoke's namelist is not judged" <<'PY'
 edit("sce-build/src/forge/static_datamodel.rs",
-     "            for name in info.namelist.split_whitespace() {\n                let pair = WireParam::of_namelist_name(name, None, at);\n                self.wire_param(ctx, &pair, &element, state)?;\n            }\n",
+     "            for name in info.namelist.split_whitespace() {\n                let pair = WireParam::of_namelist_name(name, None, at);\n                self.wire_param(ctx, &pair, &element, Carrier::Text, state)?;\n            }\n",
      "")
 PY
 
@@ -674,7 +674,7 @@ PY
 # The case lets the value through unjudged, and both are accepted.
 mutation_case "a send content value is not held to the rule a param's value is" <<'PY'
 edit("sce-build/src/forge/static_datamodel.rs",
-     "            return self.wire_param(\n                ctx,\n                &WireParam::of_content(written, spelling),\n                element,\n                state,\n            );",
+     "            return self.wire_param(\n                ctx,\n                &WireParam::of_content(written, spelling),\n                element,\n                carrier,\n                state,\n            );",
      "            return Ok(());")
 PY
 
@@ -740,7 +740,7 @@ PY
 # so an undeclared name reaches the lowering, which reads it from no field.
 mutation_case "a Mesh request's params are not judged" <<'PY'
 edit("sce-build/src/forge/static_datamodel.rs",
-     "            for param in &base.params {\n                self.wire_param(ctx, &WireParam::of_param(param), &element, state)?;\n            }\n            return Ok(());\n        }\n        for param in &base.params {",
+     "            for param in &base.params {\n                self.wire_param(\n                    ctx,\n                    &WireParam::of_param(param),\n                    &element,\n                    Carrier::Json,\n                    state,\n                )?;\n            }\n            return Ok(());\n        }\n        for param in &base.params {",
      "            let _ = (element, &base.params);\n            return Ok(());\n        }\n        for param in &base.params {")
 PY
 

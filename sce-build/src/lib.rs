@@ -3301,6 +3301,12 @@ pub fn compile_forge_from_parsed(
     // for the reason the transform check above gives: the verdict must not
     // depend on which backend was asked for.
     if let forge::model::ForgeDocument::Algorithm(m) = &parsed.document {
+        // A value that may be absent is read only where a test proves it
+        // present (docs/adr/0055): the narrowing a statechart's judge keeps,
+        // over the body, before its operations are judged by the values they
+        // read.
+        forge::narrowing::check_algorithm(m, &import_ctx, options)
+            .map_err(|e| Located::in_file(e, label.diagnostic_label))?;
         forge::int_ranges::check(m, &import_ctx, options)
             .map_err(|e| Located::in_file(e, label.diagnostic_label))?;
         // An enum value stands where a value of its enum is declared, and a number

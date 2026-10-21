@@ -30845,21 +30845,27 @@ impl<'a> AlgorithmTypes<'a> {
 
     /// The alias of the enum the parameter, local, loop item or record field at
     /// `path` (`status`, `e.status`) holds, for one that holds a value of an enum.
-    /// A record's optional enum field holds none: a value of it may be absent.
+    /// A record's optional enum field holds none, since a value of it may be
+    /// absent: its present value does, read at `e.status.value` (docs/adr/0055).
     pub(crate) fn enum_at(&self, path: &str) -> Option<&str> {
-        let scalars = self.env.iter().chain(self.members.iter());
-        let records = self
-            .record_members
+        let scalar = self
+            .env
             .iter()
-            .filter_map(|(name, ty)| ty.scalar().map(|ty| (name, ty)));
-        scalars
-            .map(|(name, ty)| (name, ty))
-            .chain(records)
-            .find(|(name, _)| *name == path)
-            .and_then(|(_, ty)| match ty {
-                SceType::Enum(reference) => Some(reference.alias.as_str()),
-                _ => None,
+            .chain(self.members.iter())
+            .find(|(name, _)| name == path)
+            .map(|(_, ty)| ty);
+        let field = || {
+            self.record_members.iter().find_map(|(name, ty)| match ty {
+                FieldType::Scalar(ty) => (name == path).then_some(ty),
+                FieldType::Optional { elem } => crate::forge::static_enum::present_value_of(path)
+                    .is_some_and(|holder| holder == name)
+                    .then_some(elem),
             })
+        };
+        match scalar.or_else(field)? {
+            SceType::Enum(reference) => Some(reference.alias.as_str()),
+            _ => None,
+        }
     }
 
     /// Whether a record the body holds has a field that may be absent

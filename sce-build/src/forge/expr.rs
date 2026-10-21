@@ -59,7 +59,7 @@
 //   use explicit masking. Kotlin has `ushr` and Python promotes to big-int.
 
 use crate::forge::error::{ExprError, Spanned};
-use crate::forge::types::{join_arith, join_int, CallReading, InferredType, TypeCtx};
+use crate::forge::types::{join_arith, join_int, CallReading, InferredType, OptionalElem, TypeCtx};
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::LazyLock;
@@ -706,6 +706,9 @@ fn resolve_then_rename(
     source: &str,
 ) -> Result<(), Refusal> {
     resolve_names(ast, ctx, source)?;
+    // Judged on the tree as the author wrote it: a rename makes a read a
+    // fragment of no type.
+    reject_unlowered_optional(ast, target)?;
     if !lowerings.is_empty() {
         lower_stateful_import_calls(ast, lowerings);
     }
@@ -746,6 +749,7 @@ fn resolve_names(ast: &mut TypedExpr, ctx: &TypeCtx<'_>, source: &str) -> Result
     reject_records_as_operands(ast, source, RecordPlace::Whole)?;
     reject_record_text_misuse(ast, ctx, source, false)?;
     reject_buffers_as_values(ast, source)?;
+    reject_optional_misuse(ast, &ctx.proven, source)?;
     reject_call_argument_mismatches(ast, ctx, source)?;
     lower_bytes_eq(ast, ctx);
     Ok(())
@@ -1049,6 +1053,252 @@ fn reject_buffers_as_values(expr: &TypedExpr, source: &str) -> Result<(), Refusa
     }
 }
 
+/// The member that reads the value an optional value holds, where the build has
+/// proven it present: `x.value` (docs/adr/0055).
+pub(crate) const OPTIONAL_VALUE: &str = "value";
+
+/// Refuse what an optional value (docs/adr/0055) is not for, and a read of one
+/// the build has not proven present:
+///
+/// - `x.value` where `x` is no subject proven present where it is read
+///   ([`ExprError::OptionalReadUnproven`]): `facts` hold the subjects proven
+///   where the expression stands, and inside it the right operand of `a && b`
+///   is read where `a` is true, of `a || b` where `a` is false, and the
+///   branches of `c ? t : e` where `c` is true and false
+///   ([`crate::forge::narrowing::proves`]);
+/// - an optional value as an operand of an ordering, an arithmetic or a
+///   bitwise operator or a text join, as a truth test (`!x`, `x && y`,
+///   `x ? a : b`), as what `len` measures or what is indexed, or as an argument
+///   of a parameter that is not optional — `expression/type-mismatch`, naming
+///   `??` and a test;
+/// - `null` beside an operand of `===` or `!==` that is never absent, and an
+///   optional value compared with one its present value is never equal to;
+/// - `??` on a value that is never absent, or with a default the present value's
+///   type does not take.
+///
+/// Reading the value of an optional record (`pick.value.title`) is refused by
+/// name until the step of the ADR that reads one.
+fn reject_optional_misuse(
+    expr: &TypedExpr,
+    facts: &crate::forge::narrowing::Facts,
+    source: &str,
+) -> Result<(), Refusal> {
+    use crate::forge::narrowing::{proves, subject};
+    let observed = |node: &TypedExpr| {
+        node.span
+            .clone()
+            .and_then(|span| source.get(span))
+            .map(str::to_string)
+    };
+    // An optional value where `expected` is: what an absent one would be there
+    // has no answer.
+    let misused = |node: &TypedExpr, expected: InferredType| -> Refusal {
+        ExprError::TypeMismatch {
+            expected: expected.describe(),
+            got: described(node.ty, expected),
+            observed: observed(node),
+        }
+        .at(node.span.clone())
+    };
+    let truth_test = |node: &TypedExpr| -> Result<(), Refusal> {
+        if node.ty.is_optional() {
+            return Err(misused(node, InferredType::Bool));
+        }
+        Ok(())
+    };
+    match &expr.kind {
+        ExprKind::Member { object, property }
+            if property == OPTIONAL_VALUE && object.ty.is_optional() =>
+        {
+            if object.ty == InferredType::Optional(OptionalElem::Record) {
+                return Err(ExprError::UnsupportedConstruct {
+                    construct: "the value of an optional record, which no step of \
+                                docs/adr/0055 reads yet"
+                        .to_string(),
+                    observed: observed(expr),
+                }
+                .at(expr.span.clone()));
+            }
+            let tested = subject(object);
+            if !tested.as_deref().is_some_and(|s| facts.holds(s)) {
+                return Err(ExprError::OptionalReadUnproven {
+                    optional: tested
+                        .or_else(|| observed(object))
+                        .unwrap_or_else(|| object.ty.describe()),
+                    read: observed(expr).unwrap_or_default(),
+                }
+                .at(expr.span.clone()));
+            }
+            return reject_optional_misuse(object, facts, source);
+        }
+        ExprKind::Binary {
+            op: op @ (BinOp::And | BinOp::Or),
+            left,
+            right,
+        } => {
+            truth_test(left)?;
+            truth_test(right)?;
+            reject_optional_misuse(left, facts, source)?;
+            let when = *op == BinOp::And;
+            return reject_optional_misuse(right, &facts.and(&proves(left, when)), source);
+        }
+        ExprKind::Conditional {
+            condition,
+            consequent,
+            alternate,
+        } => {
+            truth_test(condition)?;
+            reject_optional_misuse(condition, facts, source)?;
+            reject_optional_misuse(consequent, &facts.and(&proves(condition, true)), source)?;
+            return reject_optional_misuse(
+                alternate,
+                &facts.and(&proves(condition, false)),
+                source,
+            );
+        }
+        ExprKind::Binary {
+            op: BinOp::Coalesce,
+            left,
+            right,
+        } => match left.ty {
+            InferredType::Optional(elem) => {
+                let takes = matches!(right.ty, InferredType::Null)
+                    || slot_admits(InferredType::Optional(elem), right.ty);
+                if !takes {
+                    return Err(type_mismatch(elem.present(), right, source));
+                }
+            }
+            // A value whose type this layer does not know is not judged here.
+            InferredType::Unknown => {}
+            never_absent => {
+                return Err(ExprError::TypeMismatch {
+                    expected: "an optional value".to_string(),
+                    got: format!("{}, which is never absent", never_absent.describe()),
+                    observed: observed(left),
+                }
+                .at(left.span.clone()))
+            }
+        },
+        ExprKind::Binary {
+            op: BinOp::StrictEq | BinOp::StrictNeq,
+            left,
+            right,
+        } => {
+            for (side, other) in [(left, right), (right, left)] {
+                let never_absent = !matches!(
+                    other.ty,
+                    InferredType::Optional(_) | InferredType::Null | InferredType::Unknown
+                );
+                if matches!(side.kind, ExprKind::NullLit) && never_absent {
+                    return Err(type_mismatch(other.ty, side, source));
+                }
+            }
+            // Equality is total over an optional value: two absent values are
+            // equal, and an absent one equals no present one. The present values
+            // are compared by the rule of their type.
+            let optional = [left.ty, right.ty].into_iter().find_map(|ty| match ty {
+                InferredType::Optional(elem) => Some(elem),
+                _ => None,
+            });
+            if let Some(elem) = optional {
+                for side in [left, right] {
+                    if !slot_admits(InferredType::Optional(elem), side.ty) {
+                        return Err(type_mismatch(InferredType::Optional(elem), side, source));
+                    }
+                }
+            }
+        }
+        ExprKind::Binary { left, right, .. } => {
+            for side in [left, right] {
+                if let InferredType::Optional(elem) = side.ty {
+                    return Err(misused(side, elem.present()));
+                }
+            }
+        }
+        ExprKind::Unary { op, operand } => {
+            if let InferredType::Optional(elem) = operand.ty {
+                let expected = match op {
+                    UnaryOp::Not => InferredType::Bool,
+                    UnaryOp::Neg | UnaryOp::Pos | UnaryOp::BitNot => elem.present(),
+                };
+                return Err(misused(operand, expected));
+            }
+        }
+        ExprKind::Index { object, .. } => {
+            if let InferredType::Optional(elem) = object.ty {
+                return Err(misused(object, elem.present()));
+            }
+        }
+        ExprKind::Call { args, params, .. } => {
+            for (index, arg) in args.iter().enumerate() {
+                let InferredType::Optional(elem) = arg.ty else {
+                    continue;
+                };
+                // A parameter that is not optional takes a present value, and so
+                // does every builtin (`len`, `abs`, …), whose parameters the
+                // context does not type. A parameter whose type is not known is
+                // the judge of the call's own (an enum's conversion).
+                let expected = match params.get(index) {
+                    None => Some(elem.present()),
+                    Some(param) if param.is_optional() || *param == InferredType::Unknown => None,
+                    Some(param) => Some(*param),
+                };
+                if let Some(expected) = expected {
+                    return Err(misused(arg, expected));
+                }
+            }
+        }
+        _ => {}
+    }
+    expr.children()
+        .into_iter()
+        .try_for_each(|child| reject_optional_misuse(child, facts, source))
+}
+
+/// What a value of `got` is called where `slot` is declared: its type, and —
+/// for an optional value where a value that is never absent is declared — the
+/// two reads that make one present (docs/adr/0055).
+fn described(got: InferredType, slot: InferredType) -> String {
+    if got.is_optional() && !slot.is_optional() && slot != InferredType::Unknown {
+        format!(
+            "{}, which may be absent (read it with `??` and a default, or with `.value` where \
+             a `!== null` test proves it present)",
+            got.describe()
+        )
+    } else {
+        got.describe()
+    }
+}
+
+/// Refuse an expression that holds an optional value (docs/adr/0055) — `x`,
+/// `x.value`, `x ?? d`, `x === null` — on `target`, before an emitter spells it:
+/// no backend lowers one yet, and a document that holds one is refused by name
+/// where it is lowered, so an expression reaches here with one only where no
+/// such refusal ran.
+fn reject_unlowered_optional(expr: &TypedExpr, target: ExprTarget) -> Result<(), Refusal> {
+    let holds_one = expr.ty.is_optional()
+        || matches!(
+            expr.kind,
+            ExprKind::Binary {
+                op: BinOp::Coalesce,
+                ..
+            }
+        );
+    if holds_one {
+        let lang = target
+            .language()
+            .map_or("ecmascript", crate::generator::Language::canonical_name);
+        return Err(ExprError::UnsupportedConstruct {
+            construct: format!("an optional value has no {lang} lowering yet (docs/adr/0055)"),
+            observed: None,
+        }
+        .at(expr.span.clone()));
+    }
+    expr.children()
+        .into_iter()
+        .try_for_each(|child| reject_unlowered_optional(child, target))
+}
+
 /// Whether a value of type `got` may stand where `slot` is declared.
 ///
 /// Extended SCXML is typed and admits no implicit coercion, so a value
@@ -1071,15 +1321,25 @@ fn reject_buffers_as_values(expr: &TypedExpr, source: &str) -> Result<(), Refusa
 /// `uint16` local generated on every backend, and Rust then assigned an
 /// `f32` to a `u16`, which rustc refuses.
 ///
-/// `null` stands only where an optional value is declared (docs/adr/0055), and
-/// no slot this lattice types is one, so a slot that declares a type takes no
-/// `null`. Until 2026-10-21 it was admitted as an unknown value is, and
-/// `<data sce:type="int64" expr="null"/>` was judged fit.
+/// `null` stands only where an optional value is declared (docs/adr/0055), so
+/// a slot that declares any other type takes no `null`. Until 2026-10-21 it was
+/// admitted as an unknown value is, and `<data sce:type="int64" expr="null"/>`
+/// was judged fit.
+///
+/// A slot of `optional<T>` takes `null`, an optional value whose present value
+/// the slot of `T` would take, and a value of `T` itself, which is present —
+/// by the rule that admits it where `T` is. An optional value never stands
+/// where `T` is declared: what an absent one would be there has no answer, so
+/// it is read with `??` or under a test.
 pub(crate) fn slot_admits(slot: InferredType, got: InferredType) -> bool {
     use InferredType as T;
     match (slot, got) {
         (T::Unknown | T::Null, _) | (_, T::Unknown) => true,
+        (T::Optional(_), T::Null) => true,
+        (T::Optional(want), T::Optional(got)) => slot_admits(want.present(), got.present()),
+        (T::Optional(want), got) => slot_admits(want.present(), got),
         (_, T::Null) => false,
+        (_, T::Optional(_)) => false,
         (slot, got) if slot.is_integer_like() => got.is_integer_like(),
         (slot, got) if slot.is_numeric() => got.is_numeric(),
         (T::Bool, got) => got == T::Bool,
@@ -1134,7 +1394,7 @@ pub(crate) fn unreceived_failure_call(target: &str, observed: Option<String>) ->
 fn type_mismatch(slot: InferredType, value: &TypedExpr, source: &str) -> Refusal {
     ExprError::TypeMismatch {
         expected: slot.describe(),
-        got: value.ty.describe(),
+        got: described(value.ty, slot),
         observed: value
             .span
             .clone()
@@ -1156,7 +1416,9 @@ fn judge_value(ast: &TypedExpr, expected: Expected, source: &str) -> Result<(), 
             return Err(type_mismatch(slot, ast, source));
         }
     }
-    reject_out_of_range_literals(ast, expected.ty(), source)
+    // A literal where an optional value is expected is a present value, held to
+    // the type it holds when present (docs/adr/0055).
+    reject_out_of_range_literals(ast, expected.ty().unwrap_optional(), source)
 }
 
 /// Refuse an integer literal the type it takes cannot hold
@@ -1185,8 +1447,24 @@ fn reject_out_of_range_literals(
             _ => reject_out_of_range_literals(operand, context, source),
         },
         ExprKind::Unary { operand, .. } => reject_out_of_range_literals(operand, context, source),
+        // `x ?? d`: the default takes the type `x` holds when present
+        // (docs/adr/0055).
+        ExprKind::Binary {
+            op: BinOp::Coalesce,
+            left,
+            right,
+        } => {
+            reject_out_of_range_literals(left, InferredType::Unknown, source)?;
+            reject_out_of_range_literals(right, left.ty.unwrap_optional(), source)
+        }
         ExprKind::Binary { op, left, right } => {
-            let operand = match binary_operand_type(*op, left.ty, right.ty) {
+            // An optional operand of `===` meets a literal as the value it
+            // holds when present.
+            let operand = match binary_operand_type(
+                *op,
+                left.ty.unwrap_optional(),
+                right.ty.unwrap_optional(),
+            ) {
                 InferredType::UntypedInt if op.is_arith() || op.is_bitwise() => context,
                 joined => joined,
             };
@@ -1502,6 +1780,34 @@ pub(crate) fn judge_into(
     Ok(ast.ty)
 }
 
+/// The rules of an optional value (docs/adr/0055) alone, over `expr` read in
+/// `ctx` — whose [`TypeCtx::proven`] holds the subjects proven present where it
+/// stands — and landing where `expected` says: a `.value` read where nothing
+/// proves it present, an optional value where it has no answer
+/// ([`reject_optional_misuse`]), and an optional value or `null` where a
+/// place that is never absent is declared. For a body no backend renders while
+/// it holds an optional value, whose other refusals are the renderer's.
+pub(crate) fn judge_optional_use(
+    expr: &str,
+    ctx: &TypeCtx<'_>,
+    expected: Expected,
+) -> Result<(), Refusal> {
+    let expr = expr.trim();
+    if expr.is_empty() {
+        return Ok(());
+    }
+    let mut ast = parse_to_ast(expr)?;
+    infer_types(&mut ast, ctx);
+    reject_optional_misuse(&ast, &ctx.proven, expr)?;
+    if let Expected::Slot(slot) = expected {
+        let may_be_absent = ast.ty.is_optional() || ast.ty == InferredType::Null;
+        if may_be_absent && !slot_admits(slot, ast.ty) {
+            return Err(type_mismatch(slot, &ast, expr));
+        }
+    }
+    Ok(())
+}
+
 /// Walk a TypedExpr in place and rewrite every `Call{Member{Ident(alias),
 /// method}, args}` site whose `alias` matches one of `lowerings` into a
 /// free-function form per the [`ImportLowering`] contract.
@@ -1663,6 +1969,7 @@ pub fn transpile_lvalue(
     // collapses them into `Raw` fragments.
     infer_types(&mut ast, ctx);
     let ty = ast.ty;
+    reject_unlowered_optional(&ast, target)?;
     if !renames.is_empty() {
         rename_identifiers(&mut ast, renames);
     }
@@ -2328,6 +2635,10 @@ pub(crate) enum BinOp {
     Shl,
     Shr,
     UShr,
+    /// `x ?? d` — the value of `x`, an optional value, when it is present, and
+    /// `d` when it is absent (docs/adr/0055). `d` is evaluated only then, and
+    /// `x` once.
+    Coalesce,
 }
 
 impl BinOp {
@@ -2335,6 +2646,7 @@ impl BinOp {
     /// quotes, not any backend's spelling of it.
     pub(crate) fn token(self) -> &'static str {
         match self {
+            Self::Coalesce => "??",
             Self::Add => "+",
             Self::Sub => "-",
             Self::Mul => "*",
@@ -2659,6 +2971,10 @@ pub(crate) enum Token {
     Shr,
     UShr,
     Question,
+    /// `??`, the read of an optional value with a default (docs/adr/0055).
+    /// Produced only under [`LexMode::Forge`]: the ECMAScript datamodel keeps
+    /// reading it as a construct outside its subset.
+    QuestionQuestion,
     Colon,
     Dot,
     Comma,
@@ -2735,6 +3051,7 @@ impl fmt::Display for Token {
             Token::Shr => write!(f, ">>"),
             Token::UShr => write!(f, ">>>"),
             Token::Question => write!(f, "?"),
+            Token::QuestionQuestion => write!(f, "??"),
             Token::Colon => write!(f, ":"),
             Token::Dot => write!(f, "."),
             Token::Comma => write!(f, ","),
@@ -2980,10 +3297,17 @@ pub(crate) fn tokenize_spanned(input: &str, mode: LexMode) -> Result<SpannedToke
             i += 2;
             continue;
         }
+        // `??` is the forge expression language's read of an optional value
+        // with a default (docs/adr/0055); the ECMAScript datamodel's subset
+        // still leaves it out.
         if bytes[i..].starts_with(b"??") {
-            tokens.push(Token::Unsupported {
-                construct: "nullish coalescing (??)",
-                spelling: "??",
+            tokens.push(if ecma {
+                Token::Unsupported {
+                    construct: "nullish coalescing (??)",
+                    spelling: "??",
+                }
+            } else {
+                Token::QuestionQuestion
             });
             i += 2;
             continue;
@@ -3294,7 +3618,7 @@ impl<'a> Parser<'a> {
 
     fn parse_conditional(&mut self) -> Result<TypedExpr, Refusal> {
         let start = self.start();
-        let expr = self.parse_logical_or()?;
+        let expr = self.parse_short_circuit()?;
         if *self.peek() == Token::Question {
             self.advance();
             let consequent = self.parse_conditional()?;
@@ -3312,9 +3636,56 @@ impl<'a> Parser<'a> {
         Ok(expr)
     }
 
-    fn parse_logical_or(&mut self) -> Result<TypedExpr, Refusal> {
+    /// ECMAScript's ShortCircuitExpression: a chain of `??` (docs/adr/0055)
+    /// over operands that are no bare `&&` or `||`, or a logical-OR
+    /// expression. The two are never mixed without parentheses, which
+    /// ECMAScript refuses too: which of them is read first is then the
+    /// author's to write.
+    fn parse_short_circuit(&mut self) -> Result<TypedExpr, Refusal> {
         let start = self.start();
-        let mut left = self.parse_logical_and()?;
+        let first = self.parse_bitwise_or()?;
+        if *self.peek() != Token::QuestionQuestion {
+            let logical = self.logical_or_from(start, first)?;
+            if *self.peek() == Token::QuestionQuestion {
+                return Err(self.mixed_coalescing());
+            }
+            return Ok(logical);
+        }
+        let mut left = first;
+        while *self.peek() == Token::QuestionQuestion {
+            self.advance();
+            let right = self.parse_bitwise_or()?;
+            left = self.node(
+                start,
+                ExprKind::Binary {
+                    op: BinOp::Coalesce,
+                    left: Box::new(left),
+                    right: Box::new(right),
+                },
+            );
+        }
+        if matches!(self.peek(), Token::AmpAmp | Token::PipePipe) {
+            return Err(self.mixed_coalescing());
+        }
+        Ok(left)
+    }
+
+    /// The refusal of `??` written beside a bare `&&` or `||`, placed at the
+    /// operator that mixes them.
+    fn mixed_coalescing(&self) -> Refusal {
+        ExprError::UnsupportedConstruct {
+            construct: "`??` beside `&&` or `||` with no parentheses to say which is read \
+                        first (ECMAScript refuses the mix; parenthesise the one meant first)"
+                .to_string(),
+            observed: Some(self.peek().to_string()),
+        }
+        .at(self.span_of(self.pos))
+    }
+
+    /// The `||` chain whose first `&&` operand, `first`, is already read from
+    /// `start`.
+    fn logical_or_from(&mut self, start: usize, first: TypedExpr) -> Result<TypedExpr, Refusal> {
+        let mut left = self.logical_and_from(start, first)?;
         while *self.peek() == Token::PipePipe {
             self.advance();
             let right = self.parse_logical_and()?;
@@ -3332,7 +3703,14 @@ impl<'a> Parser<'a> {
 
     fn parse_logical_and(&mut self) -> Result<TypedExpr, Refusal> {
         let start = self.start();
-        let mut left = self.parse_bitwise_or()?;
+        let first = self.parse_bitwise_or()?;
+        self.logical_and_from(start, first)
+    }
+
+    /// The `&&` chain whose first operand, `first`, is already read from
+    /// `start`.
+    fn logical_and_from(&mut self, start: usize, first: TypedExpr) -> Result<TypedExpr, Refusal> {
+        let mut left = first;
         while *self.peek() == Token::AmpAmp {
             self.advance();
             let right = self.parse_bitwise_or()?;
@@ -4031,6 +4409,7 @@ fn concat_operand(ty: InferredType) -> ConcatOperand {
         }
         InferredType::Bool => ConcatOperand::Refused("a boolean"),
         InferredType::Null => ConcatOperand::Refused("null"),
+        InferredType::Optional(_) => ConcatOperand::Refused("an optional value"),
         InferredType::Bytes | InferredType::BytesBuffer => ConcatOperand::Refused("a byte array"),
         InferredType::List(_) | InferredType::ListBuffer(_) => ConcatOperand::Refused("a list"),
         InferredType::Record(_) => ConcatOperand::Refused("a record"),
@@ -4060,11 +4439,50 @@ fn concat_refusal(what: &'static str, observed: String) -> ExprError {
 /// non-numeric types stay `Unknown`, as a numeric one mixed with a non-numeric
 /// one does: that is an expression the author has not made well typed, and it
 /// is not covered over here.
+///
+/// A branch that may be absent makes the conditional an optional value
+/// (docs/adr/0055): branches of `optional<T>` and `T`, or of `null` and `T`,
+/// are of `optional<T>`. Two `null`s are `null`, which has no type until the
+/// place it lands in gives it one.
 fn join_branches(consequent: InferredType, alternate: InferredType) -> InferredType {
+    use InferredType as T;
     match (consequent, alternate) {
-        (InferredType::Str, InferredType::Str) => InferredType::Str,
-        (InferredType::Bool, InferredType::Bool) => InferredType::Bool,
+        (T::Str, T::Str) => T::Str,
+        (T::Bool, T::Bool) => T::Bool,
+        (T::Null, T::Null) => T::Null,
+        (T::Optional(elem), T::Null) | (T::Null, T::Optional(elem)) => T::Optional(elem),
+        (T::Optional(one), T::Optional(other)) => {
+            if slot_admits(one.present(), other.present()) {
+                T::Optional(one)
+            } else {
+                T::Unknown
+            }
+        }
+        (T::Optional(elem), present) | (present, T::Optional(elem)) => {
+            if slot_admits(elem.present(), present) {
+                T::Optional(elem)
+            } else {
+                T::Unknown
+            }
+        }
+        (T::Null, present) | (present, T::Null) => {
+            OptionalElem::lifting(present).map_or(T::Unknown, T::Optional)
+        }
         _ => join_arith(consequent, alternate),
+    }
+}
+
+/// The type of `x ?? d` (docs/adr/0055): the present value of `x` joined with
+/// `d` as a conditional's branches are, or an optional value of it where `d`
+/// may be absent too. `Unknown` for an `x` that is no optional value, which
+/// [`reject_optional_misuse`] refuses.
+fn coalesced(value: InferredType, fallback: InferredType) -> InferredType {
+    match value {
+        InferredType::Optional(elem) => match fallback {
+            InferredType::Optional(_) | InferredType::Null => InferredType::Optional(elem),
+            present => join_branches(elem.present(), present),
+        },
+        _ => InferredType::Unknown,
     }
 }
 
@@ -4112,7 +4530,9 @@ pub(crate) fn infer_types(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) {
                 reinterpret_string_as_bytes(left, right);
                 reinterpret_string_as_bytes(right, left);
             }
-            if is_string_concatenation(*op, left.ty, right.ty) {
+            if *op == BinOp::Coalesce {
+                coalesced(left.ty, right.ty)
+            } else if is_string_concatenation(*op, left.ty, right.ty) {
                 InferredType::Str
             } else if op.is_arith() {
                 join_arith(left.ty, right.ty)
@@ -4163,15 +4583,25 @@ pub(crate) fn infer_types(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) {
             // so the Member node still carries its `Ident`/`Member` form
             // here; after rename the object may become `Raw(...)` and the
             // qualified-key lookup would no longer resolve.
-            match (flatten_member_path(object), indexed_list_name(object)) {
-                (Some(base), _) => ctx.lookup_var(&format!("{base}.{property}")),
-                // A field of the element a list of records is indexed at: its
-                // type is the schema's, whatever the index is.
-                (None, Some(list)) => ctx.lookup_var(&format!(
-                    "{list}{}{property}",
-                    crate::forge::type_ctx::INDEXED_ELEMENT
-                )),
-                (None, None) => InferredType::Unknown,
+            //
+            // `x.value` of an optional value reads what it holds when present
+            // (docs/adr/0055); whether it may be read where it stands is
+            // [`reject_optional_misuse`]'s. A member is judged by the type of
+            // what it is read from, so a record's field named `value` stays
+            // that field.
+            if let (InferredType::Optional(elem), OPTIONAL_VALUE) = (object.ty, property.as_str()) {
+                elem.present()
+            } else {
+                match (flatten_member_path(object), indexed_list_name(object)) {
+                    (Some(base), _) => ctx.lookup_var(&format!("{base}.{property}")),
+                    // A field of the element a list of records is indexed at: its
+                    // type is the schema's, whatever the index is.
+                    (None, Some(list)) => ctx.lookup_var(&format!(
+                        "{list}{}{property}",
+                        crate::forge::type_ctx::INDEXED_ELEMENT
+                    )),
+                    (None, None) => InferredType::Unknown,
+                }
             }
         }
         ExprKind::Index { object, index } => {
@@ -4417,8 +4847,21 @@ fn portable_number_literal(text: &str) -> String {
 // Operator precedence (per target language) + paren insertion
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+/// The precedence of `??` on every target: below every other binary operator,
+/// as ECMAScript places it (it is never written beside `&&` or `||` without
+/// parentheses, so the two never share a level in a parsed tree).
+const COALESCE_PRECEDENCE: u8 = 0;
+
+/// Why no emitter's operator table spells `??`: an expression that holds an
+/// optional value is refused before it reaches an emitter
+/// ([`reject_unlowered_optional`]), on every target until its step of
+/// docs/adr/0055 lowers one.
+const COALESCE_NOT_SPELLED: &str =
+    "`??` is refused before an emitter spells an operator (reject_unlowered_optional)";
+
 fn ecma_precedence(op: BinOp) -> u8 {
     match op {
+        BinOp::Coalesce => COALESCE_PRECEDENCE,
         BinOp::Or => 1,
         BinOp::And => 2,
         BinOp::BitOr => 3,
@@ -4434,6 +4877,7 @@ fn ecma_precedence(op: BinOp) -> u8 {
 
 fn kotlin_precedence(op: BinOp) -> u8 {
     match op {
+        BinOp::Coalesce => COALESCE_PRECEDENCE,
         BinOp::Or => 1,
         BinOp::And => 2,
         BinOp::StrictEq | BinOp::StrictNeq => 3,
@@ -4446,6 +4890,7 @@ fn kotlin_precedence(op: BinOp) -> u8 {
 
 fn go_precedence(op: BinOp) -> u8 {
     match op {
+        BinOp::Coalesce => COALESCE_PRECEDENCE,
         BinOp::Or => 1,
         BinOp::And => 2,
         BinOp::StrictEq | BinOp::StrictNeq | BinOp::Lt | BinOp::Gt | BinOp::LtEq | BinOp::GtEq => 3,
@@ -4462,6 +4907,7 @@ fn go_precedence(op: BinOp) -> u8 {
 
 fn rust_precedence(op: BinOp) -> u8 {
     match op {
+        BinOp::Coalesce => COALESCE_PRECEDENCE,
         BinOp::Or => 1,
         BinOp::And => 2,
         BinOp::StrictEq | BinOp::StrictNeq | BinOp::Lt | BinOp::Gt | BinOp::LtEq | BinOp::GtEq => 4,
@@ -4476,6 +4922,7 @@ fn rust_precedence(op: BinOp) -> u8 {
 
 fn python_precedence(op: BinOp) -> u8 {
     match op {
+        BinOp::Coalesce => COALESCE_PRECEDENCE,
         BinOp::Or => 1,
         BinOp::And => 2,
         BinOp::StrictEq | BinOp::StrictNeq | BinOp::Lt | BinOp::Gt | BinOp::LtEq | BinOp::GtEq => 4,
@@ -4926,6 +5373,11 @@ fn reject_undeclared_member(
     let Some(&base_ty) = ctx.vars.get(base.as_str()) else {
         return Ok(());
     };
+    // An optional value's one member is the read of what it holds, judged
+    // where it stands ([`reject_optional_misuse`], docs/adr/0055).
+    if base_ty.is_optional() && member == OPTIONAL_VALUE {
+        return Ok(());
+    }
     let path = format!("{base}.{member}");
     if ctx.vars.contains_key(path.as_str()) || ctx.funcs.contains_key(path.as_str()) {
         return Ok(());
@@ -6149,6 +6601,7 @@ fn cpp_binop(op: BinOp) -> &'static str {
         BinOp::Shl => "<<",
         BinOp::Shr => ">>",
         BinOp::UShr => ">>",
+        BinOp::Coalesce => unreachable!("{COALESCE_NOT_SPELLED}"),
     }
 }
 
@@ -6788,6 +7241,7 @@ fn kotlin_binop(op: BinOp) -> &'static str {
         BinOp::Shl => "shl",
         BinOp::Shr => "shr",
         BinOp::UShr => "ushr",
+        BinOp::Coalesce => unreachable!("{COALESCE_NOT_SPELLED}"),
     }
 }
 
@@ -7429,6 +7883,7 @@ fn rust_binop(op: BinOp) -> &'static str {
         BinOp::Shl => "<<",
         BinOp::Shr => ">>",
         BinOp::UShr => ">>",
+        BinOp::Coalesce => unreachable!("{COALESCE_NOT_SPELLED}"),
     }
 }
 
@@ -7921,6 +8376,7 @@ fn go_binop(op: BinOp) -> &'static str {
         BinOp::Shl => "<<",
         BinOp::Shr => ">>",
         BinOp::UShr => ">>",
+        BinOp::Coalesce => unreachable!("{COALESCE_NOT_SPELLED}"),
     }
 }
 
@@ -8537,6 +8993,7 @@ fn python_binop(op: BinOp) -> &'static str {
         BinOp::Shl => "<<",
         BinOp::Shr => ">>",
         BinOp::UShr => ">>",
+        BinOp::Coalesce => unreachable!("{COALESCE_NOT_SPELLED}"),
     }
 }
 
@@ -8591,6 +9048,7 @@ fn js_binop(op: BinOp) -> &'static str {
         BinOp::Shl => "<<",
         BinOp::Shr => ">>",
         BinOp::UShr => ">>>",
+        BinOp::Coalesce => unreachable!("{COALESCE_NOT_SPELLED}"),
     }
 }
 
@@ -10733,10 +11191,52 @@ mod tests {
         assert!(e.contains("template literal"));
     }
 
+    /// `??` reads an optional value with a default (docs/adr/0055): the forge
+    /// language parses it, and an emitter refuses it until its backend's step
+    /// lowers an optional value.
     #[test]
-    fn reject_nullish_coalescing() {
-        let e = tp_err("a ?? b", ExprTarget::Cpp);
-        assert!(e.contains("nullish"));
+    fn coalescing_is_parsed_and_refused_where_no_backend_lowers_it() {
+        assert!(parse_to_ast("a ?? b").is_ok());
+        for target in ExprTarget::ALL.into_iter().chain([ExprTarget::Js]) {
+            let e = tp_err("a ?? b", target);
+            assert!(
+                e.contains("an optional value has no") && e.contains("lowering yet"),
+                "{target:?}: {e}"
+            );
+        }
+    }
+
+    /// ECMAScript refuses `??` written beside a bare `&&` or `||`, and so does
+    /// the forge language: which is read first is the author's to write.
+    #[test]
+    fn coalescing_beside_a_bare_logical_operator_is_refused() {
+        for mixed in ["a ?? b || c", "a || b ?? c", "a && b ?? c", "a ?? b && c"] {
+            let e = parse_to_ast(mixed)
+                .map(|_| ())
+                .unwrap_err()
+                .error
+                .to_string();
+            assert!(e.contains("`??` beside `&&` or `||`"), "{mixed}: {e}");
+        }
+        for grouped in [
+            "(a ?? b) || c",
+            "a ?? (b || c)",
+            "(a && b) ?? c",
+            "a ?? b ?? c",
+        ] {
+            assert!(parse_to_ast(grouped).is_ok(), "{grouped} parses");
+        }
+    }
+
+    /// The ECMAScript datamodel's dialect still leaves `??` out.
+    #[test]
+    fn the_ecmascript_dialect_still_refuses_coalescing() {
+        let tokens = tokenize_as("a ?? b", LexMode::EcmaScript).expect("tokenizes");
+        assert!(tokens
+            .iter()
+            .any(|t| matches!(t, Token::Unsupported { spelling: "??", .. })));
+        let tokens = tokenize_as("a ?? b", LexMode::Forge).expect("tokenizes");
+        assert!(tokens.contains(&Token::QuestionQuestion));
     }
 
     #[test]

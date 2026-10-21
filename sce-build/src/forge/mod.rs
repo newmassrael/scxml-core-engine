@@ -42,6 +42,7 @@ pub mod limits;
 pub mod manifest;
 pub mod model;
 pub mod namespace;
+pub mod narrowing;
 pub mod native_action;
 pub mod ownership_contract;
 pub mod page;

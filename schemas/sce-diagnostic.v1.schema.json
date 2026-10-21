@@ -162,6 +162,7 @@
         "expression/unknown-enum-variant",
         "expression/unknown-member",
         "expression/member-of-non-record",
+        "expression/optional-read-unproven",
         "expression/property-not-callable",
         "expression/namespace-not-callable",
         "expression/namespace-not-a-value",

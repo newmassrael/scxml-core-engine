@@ -55,8 +55,8 @@ PY
 # A record field's start is judged as a number's: `Unit.metric` or `1` starts it.
 mutation_case "an enum field starts at any expression" <<'PY'
 edit("sce-build/src/forge/static_datamodel.rs",
-     "                    &reference.alias,\n                )?;\n                continue;\n",
-     "                    &reference.alias,\n                ).ok();\n                continue;\n")
+     "                        &reference.alias,\n                    )?;\n                    continue;\n                }\n                FieldType::Optional {\n",
+     "                        &reference.alias,\n                    ).ok();\n                    continue;\n                }\n                FieldType::Optional {\n")
 PY
 
 # A `<param>` takes an enum value held by a variable, by a record variable's

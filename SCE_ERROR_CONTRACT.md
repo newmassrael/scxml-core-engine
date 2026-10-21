@@ -782,6 +782,7 @@ references against a real document and drift silently.
 | `expression/member-of-non-record` | `expression` | no | SCE Accepted Subset §2.2 |
 | `expression/namespace-not-a-value` | `expression` | no | W3C SCXML §B.2 |
 | `expression/namespace-not-callable` | `expression` | no | W3C SCXML §B.2 |
+| `expression/optional-read-unproven` | `expression` | no | SCE Accepted Subset §2.15 |
 | `expression/parse-mismatch` | `expression` | no | SCE Forge §3.4 |
 | `expression/property-not-callable` | `expression` | `replace_with` / no | W3C SCXML §B.2 |
 | `expression/strict-equality` | `expression` | `replace_with` | SCE Forge §3.4 |

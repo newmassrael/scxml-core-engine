@@ -105,9 +105,17 @@ pub enum InferredType {
     /// are read as `r.<field>`, each typed by the schema.
     Record(RecordId),
 
-    /// The `null` literal. Has no direct SCE type; mostly used for
-    /// emitter-side null-checks and rejected in arithmetic contexts.
+    /// The `null` literal: the absent value of whatever optional value it
+    /// stands for, typed by the place it lands in (docs/adr/0055). It stands
+    /// only where an optional value is expected.
     Null,
+
+    /// An optional value, `optional<T>` (docs/adr/0055): absent, or a
+    /// present value of `T`. Read only by a test (`x !== null`), `x ?? d`,
+    /// `===`, and `x.value` where the build has proven `x` present; never an
+    /// operand of an ordering, an arithmetic or a text join, never a truth
+    /// test, and never what a place of `T` takes.
+    Optional(OptionalElem),
 
     /// Opaque — type cannot be inferred from the expression alone.
     /// Produced by unresolved identifiers, unresolved member accesses,
@@ -252,7 +260,121 @@ impl ListElem {
     }
 }
 
+/// The element of an [`InferredType::Optional`] (docs/adr/0055): what a
+/// present value of it is. Kept `Copy`, as [`ListElem`] is, so the lattice is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OptionalElem {
+    /// A number of a declared width.
+    Number(NumericBaseType),
+    Bool,
+    Str,
+    Bytes,
+    /// A value of an enum. Which enum is not carried: the lattice names no
+    /// type for an enum ([`InferredType::from_sce_type`]), and
+    /// [`crate::forge::static_enum`] answers which one a path holds.
+    Enum,
+    /// A record of an event schema. Which record is not carried, as a list's
+    /// record element carries none ([`ListElem::Record`]).
+    Record,
+}
+
+impl OptionalElem {
+    /// The element of `optional<ty>` over a scalar.
+    pub fn of(ty: &SceType) -> Self {
+        let int = |signed: bool, bits: u8| Self::Number(NumericBaseType::Int { signed, bits });
+        match ty {
+            SceType::Uint8 => int(false, 8),
+            SceType::Uint16 => int(false, 16),
+            SceType::Uint32 => int(false, 32),
+            SceType::Uint64 => int(false, 64),
+            SceType::Int8 => int(true, 8),
+            SceType::Int16 => int(true, 16),
+            SceType::Int32 => int(true, 32),
+            SceType::Int64 => int(true, 64),
+            SceType::Float32 => Self::Number(NumericBaseType::Float { bits: 32 }),
+            SceType::Float64 => Self::Number(NumericBaseType::Float { bits: 64 }),
+            SceType::Bool => Self::Bool,
+            SceType::String => Self::Str,
+            SceType::Bytes => Self::Bytes,
+            SceType::Enum(_) => Self::Enum,
+        }
+    }
+
+    /// The element of the `optional<elem>` a variable declares.
+    pub fn of_value(elem: &crate::forge::model::OptionalElemType) -> Self {
+        match elem {
+            crate::forge::model::OptionalElemType::Scalar(ty) => Self::of(ty),
+            crate::forge::model::OptionalElemType::Record { .. } => Self::Record,
+        }
+    }
+
+    /// The type a present value is: what a proven `x.value` reads. A value of
+    /// an enum or a record has no operand type of its own (`Unknown`), as it
+    /// has none where it is held whole.
+    pub fn present(self) -> InferredType {
+        match self {
+            Self::Number(NumericBaseType::Int { signed, bits }) => {
+                InferredType::Int { signed, bits }
+            }
+            Self::Number(NumericBaseType::Float { bits }) => InferredType::Float { bits },
+            Self::Bool => InferredType::Bool,
+            Self::Str => InferredType::Str,
+            Self::Bytes => InferredType::Bytes,
+            Self::Enum | Self::Record => InferredType::Unknown,
+        }
+    }
+
+    /// The element an optional value of a present value of `ty` is — what a
+    /// value of `ty` is lifted into where an optional one is expected, and what
+    /// a conditional whose other branch is `null` is of. A literal no context
+    /// typed takes the widest type of its kind, as [`InferredType::to_sce_type`]
+    /// gives it. `None` for a value no optional holds (`null`, an optional
+    /// value, a list) or one whose element the lattice cannot name.
+    pub fn lifting(ty: InferredType) -> Option<Self> {
+        Some(match ty.strip_quantity() {
+            InferredType::Int { signed, bits } => {
+                Self::Number(NumericBaseType::Int { signed, bits })
+            }
+            InferredType::Float { bits } => Self::Number(NumericBaseType::Float { bits }),
+            InferredType::UntypedInt => Self::Number(NumericBaseType::Int {
+                signed: true,
+                bits: 64,
+            }),
+            InferredType::UntypedFloat => Self::Number(NumericBaseType::Float { bits: 64 }),
+            InferredType::Bool => Self::Bool,
+            InferredType::Str => Self::Str,
+            InferredType::Bytes => Self::Bytes,
+            InferredType::Record(_) => Self::Record,
+            _ => return None,
+        })
+    }
+
+    /// The `T` of `optional<T>` as a diagnostic names it.
+    fn describe(self) -> String {
+        match self {
+            Self::Enum => "enum".into(),
+            Self::Record => "record".into(),
+            other => other.present().describe(),
+        }
+    }
+}
+
 impl InferredType {
+    /// The type a present value of an optional value is
+    /// ([`OptionalElem::present`]), and the type itself for any other: what a
+    /// literal in a place that takes an optional value is held to.
+    pub fn unwrap_optional(self) -> Self {
+        match self {
+            Self::Optional(elem) => elem.present(),
+            other => other,
+        }
+    }
+
+    /// Whether this is an optional value ([`Self::Optional`]).
+    pub fn is_optional(self) -> bool {
+        matches!(self, Self::Optional(_))
+    }
+
     /// Is this type a concrete or untyped integer? Looks through a
     /// `Quantity` annotation so `Quantity { base: Int{..}, .. }` still
     /// reports as integer-like.
@@ -312,6 +434,7 @@ impl InferredType {
             Self::Str => "string".into(),
             Self::Bytes => "bytes".into(),
             Self::Null => "null".into(),
+            Self::Optional(elem) => format!("optional<{}>", elem.describe()),
             Self::Unknown => "unknown".into(),
             Self::Quantity { .. } => "quantity".into(),
             Self::List(elem) | Self::ListBuffer(elem) => {
@@ -434,9 +557,11 @@ impl InferredType {
             | Self::Quantity { .. } => return None,
             // Spelled from its element or its schema, so not one of the
             // fixed spellings this returns — [`Self::describe`] names it.
-            Self::List(_) | Self::ListBuffer(_) | Self::BytesBuffer | Self::Record(_) => {
-                return None
-            }
+            Self::List(_)
+            | Self::ListBuffer(_)
+            | Self::BytesBuffer
+            | Self::Record(_)
+            | Self::Optional(_) => return None,
         })
     }
 
@@ -480,13 +605,14 @@ impl InferredType {
                 NumericBaseType::Float { bits } => float(bits),
             },
             // A list or a record is not a scalar a host method or a field
-            // declares.
+            // declares, and an optional value is no scalar: it may be absent.
             Self::Null
             | Self::Unknown
             | Self::List(_)
             | Self::ListBuffer(_)
             | Self::BytesBuffer
-            | Self::Record(_) => None,
+            | Self::Record(_)
+            | Self::Optional(_) => None,
         }
     }
 
@@ -589,13 +715,12 @@ impl InferredType {
     }
 
     /// The type a field of an event schema is read as (docs/adr/0055): a
-    /// scalar field as [`Self::from_sce_type`] maps its type. An optional
-    /// field is a value this layer declines to claim, as an optional variable
-    /// is, until the expression surface reads one.
+    /// scalar field as [`Self::from_sce_type`] maps its type, and an optional
+    /// one as the optional value it is.
     pub fn of_field(ty: &FieldType) -> Self {
         match ty {
             FieldType::Scalar(t) => Self::from_sce_type(t),
-            FieldType::Optional { .. } => Self::Unknown,
+            FieldType::Optional { elem } => Self::Optional(OptionalElem::of(elem)),
         }
     }
 }
@@ -1206,6 +1331,11 @@ pub struct TypeCtx<'a> {
     /// ⚠ Empty everywhere but a lowered `sce-static` statechart, and emptiness is
     /// what keeps every other call exactly what it was.
     pub crossings: HashMap<&'a str, CallCrossing<'a>>,
+    /// The subjects proven present where the expression is read
+    /// ([`crate::forge::narrowing`], docs/adr/0055): `x.value` reads an
+    /// optional `x` only where `x` is one of them. Empty wherever no walker of
+    /// a body has proven one, so a read there is refused.
+    pub proven: crate::forge::narrowing::Facts,
 }
 
 /// How the arguments of one call, and the value it answers, cross between a
@@ -1268,7 +1398,16 @@ impl<'a> TypeCtx<'a> {
             record_text: std::collections::HashSet::new(),
             limits: HashMap::new(),
             crossings: HashMap::new(),
+            proven: crate::forge::narrowing::Facts::none(),
         }
+    }
+
+    /// This context with `facts` the subjects proven present where an
+    /// expression of it is read ([`TypeCtx::proven`]).
+    pub fn proving(&self, facts: crate::forge::narrowing::Facts) -> TypeCtx<'a> {
+        let mut ctx = self.clone();
+        ctx.proven = facts;
+        ctx
     }
 
     /// Declare `path`, a `"<record>.<field>"`, a record's text field. See

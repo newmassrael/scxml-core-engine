@@ -3955,6 +3955,48 @@ refused where it is checked. `null` stands only where an optional value is decla
 `expression/type-mismatch`, where until 2026-10-21 they were judged fit.
 `sce-build/tests/an_optional_value_is_declared_by_its_type.rs` holds this.
 
+**Reading an optional value** (docs/adr/0055, sections 2 and 3). Where an optional
+value is expected, `null` is absent and a value of `T` is present, admitted by the
+rule that admits it where `T` is. `x !== null` and `x === null` test it; `x ?? d`
+is its value when present and `d` (of `T`, or optional itself) when absent, with
+`d` evaluated only then; `x.value` reads its value, and only where the build has
+proven `x` present; equality is total (two absent values are equal, an absent one
+equals no present one). An optional value where a value that is never absent is
+expected, as an operand of ordering, arithmetic, a text join or a truth test, in
+`len`, and as an argument of a parameter that is not optional is
+`expression/type-mismatch`, naming `??` and a test; `null` beside an operand of
+`===` that is never absent, and `??` on one, are too. A conditional whose branches
+are of `T` and of `optional<T>` (or `null`) is of `optional<T>`. An optional value
+of an enum is compared with `null` and with a value of the same enum, and its
+`.value` is a value of the enum. A `<param>` of a `<send>`, a `<donedata>` and a
+Mesh request carries an optional value (as JSON, `null` when absent); a carrier
+that is text alone — a BasicHTTP send, a host-run `<invoke>`'s `params` — refuses
+one as `scxml/static-datamodel-rule`, naming `??`, and a send of one to a field
+that is not optional is refused by the rule that holds a send to its reader. A
+child's optional variable takes no `<param>`, and a host action no optional
+argument, yet. **Proven present** is the narrowing of the ADR's section 3. A
+subject is a variable, a field of a record variable, of the payload or of a
+loop's record item, an algorithm's parameter or local or a field of one — never
+an element read by its index or a call's value. A test proves it: within an
+expression, the right operand of `a && b` where `a` is true, of `a || b` where `a`
+is false, and the branches of `c ? t : e`; in executable content, an `<if>`'s
+block where its `cond` is true, each `<elseif>`'s where the earlier ones are false
+and its own is true, and the `<else>` where all are false; in an algorithm the
+same for `<sce:if>`, `<sce:while>`'s body where its `cond` is true, the statements
+after `<sce:require>`, and those after an `<sce:if>` with no `<sce:else>` whose
+block returns on every path where its `cond` is false. A transition's `cond`
+proves a field of its payload in its content and proves no variable there. A
+fact ends at an assignment to the subject, to a path below it or above it
+(whatever value it writes, a whole record or list an algorithm returns among
+them), at a `<send idlocation>` naming it, and at a `<script>`, which ends them
+all; a loop keeps a fact proven before it only if nothing in its body ends it.
+Anywhere else a `.value` is `expression/optional-read-unproven`, placed at the
+read and naming the optional value and the two repairs, a test around the read or
+`??`; the record carries no `fix`, since the repair is the author's choice. An
+algorithm's body is judged by the same analysis before any backend renders it.
+`sce-build/tests/an_optional_value_is_tested_read_and_compared.rs` and
+`sce-build/tests/a_value_is_proven_present_only_where_tested.rs` hold this.
+
 **Record variables.** `sce:type="record:<alias>"` holds a variable in the
 event-schema the document imports as `<alias>` — the record an algorithm's
 local is held in (SCE_FORGE.md §4.12), by the same rules. It is built whole
@@ -8140,7 +8182,7 @@ directory, or for C a symbol prefix — so the two compile in one build unit;
 
 ---
 
-## Appendix — `DiagnosticCode` index (459 codes)
+## Appendix — `DiagnosticCode` index (460 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -8416,6 +8458,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `expression/unknown-enum-variant` | Expression |
 | `expression/unknown-member` | Expression |
 | `expression/member-of-non-record` | Expression |
+| `expression/optional-read-unproven` | Expression |
 | `expression/property-not-callable` | Expression |
 | `expression/namespace-not-callable` | Expression |
 | `expression/namespace-not-a-value` | Expression |

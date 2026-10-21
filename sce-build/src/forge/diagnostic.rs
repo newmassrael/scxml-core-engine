@@ -1207,6 +1207,13 @@ pub enum DiagnosticCode {
     // value has no members at all, so no member spelling is the repair.
     #[serde(rename = "expression/member-of-non-record")]
     ExpressionMemberOfNonRecord,
+    // `x.value` where the build has not proven the optional value `x` present
+    // (docs/adr/0055): a read that cannot fail is the only read there is, so
+    // one the build cannot prove is refused where it is written. Distinct from
+    // `type-mismatch`, which an optional value where `T` is declared is: here
+    // the read is the right one, in the wrong place.
+    #[serde(rename = "expression/optional-read-unproven")]
+    ExpressionOptionalReadUnproven,
     // A name this datamodel provides, written as a call — `t.length()`,
     // `Math.PI()`. Distinct from `unsupported-builtin`, which says the
     // name is absent: here it is present, so there is nothing to offer
@@ -3692,6 +3699,7 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ExpressionUnknownEnumVariant,
         ExpressionUnknownMember,
         ExpressionMemberOfNonRecord,
+        ExpressionOptionalReadUnproven,
         ExpressionPropertyNotCallable,
         ExpressionNamespaceNotCallable,
         ExpressionNamespaceNotAValue,
@@ -4353,6 +4361,9 @@ impl DiagnosticCode {
             // ones it declares.
             ExpressionUnknownMember => Some("SCE Accepted Subset §2.2"),
             ExpressionMemberOfNonRecord => Some("SCE Accepted Subset §2.2"),
+            // Where an optional value is proven present is written with the
+            // static data model's typed scope it is read in.
+            ExpressionOptionalReadUnproven => Some("SCE Accepted Subset §2.15"),
             // Same anchor again: B.2 is what makes ECMAScript's own
             // rules the datamodel's rules, and calling a value is one
             // ECMAScript answers for itself.
@@ -5207,6 +5218,7 @@ impl DiagnosticCode {
             ExpressionUnknownEnumVariant => "expression/unknown-enum-variant",
             ExpressionUnknownMember => "expression/unknown-member",
             ExpressionMemberOfNonRecord => "expression/member-of-non-record",
+            ExpressionOptionalReadUnproven => "expression/optional-read-unproven",
             ExpressionPropertyNotCallable => "expression/property-not-callable",
             ExpressionNamespaceNotCallable => "expression/namespace-not-callable",
             ExpressionNamespaceNotAValue => "expression/namespace-not-a-value",
@@ -9893,6 +9905,18 @@ fn expression_fields(e: &ExprError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![name.clone(), member.clone()],
         },
+        // The read is what `actual` names, since it is what the author moves
+        // under a test or rewrites with a default. No fix: which of the two is
+        // the author's choice (SCE_ERROR_CONTRACT.md §3), and `expected` stays
+        // absent with it.
+        ExprError::OptionalReadUnproven { optional, read } => DiagnosticPayload {
+            code: DiagnosticCode::ExpressionOptionalReadUnproven,
+            stage: Stage::Expression,
+            expected: None,
+            actual: Some(read.clone()),
+            fix: None,
+            key_fragments: vec![optional.clone(), read.clone()],
+        },
         // The call is what `actual` names, because the call is what the
         // consumer edits: `.length` occurs on the line either way, and a
         // record pointing at it would leave the consumer to work out
@@ -13416,6 +13440,19 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:e5b650bf2691e3aa","code":"expression/member-of-non-record","stage":"expression","spec":"SCE Accepted Subset §2.2","message":"tone has no members, so tone.level names nothing","actual":"tone.level"}"#,
+            ),
+            (
+                // The value of an optional value read where no test proves it
+                // present (docs/adr/0055). The read is `actual`; the record
+                // carries no fix, since a test and a default are the author's
+                // choice.
+                "forge/expression-optional-read-unproven",
+                ExprError::OptionalReadUnproven {
+                    optional: "due".into(),
+                    read: "due.value".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:f884c356090d0840","code":"expression/optional-read-unproven","stage":"expression","spec":"SCE Accepted Subset §2.15","message":"due.value reads the value of due, which may be absent here: test it first (`due !== null` around the read), or read it with a default (`due ?? <value>`)","actual":"due.value"}"#,
             ),
             (
                 // A name the datamodel provides, called. The repair is
@@ -17762,6 +17799,9 @@ mod tests {
             // the author meant does not follow from the member they wrote,
             // so no fix — and `expected` stays absent with it.
             | ExpressionMemberOfNonRecord
+            // A test around the read and a default are the two repairs, and
+            // which one is the author's choice: no fix, no `expected`.
+            | ExpressionOptionalReadUnproven
             | ExpressionStrictEquality
             // The name that was called is the name that repairs it, so
             // there is one replacement rather than a set — and none at
@@ -18564,6 +18604,7 @@ mod tests {
                 | ExpressionUnknownEnumVariant
                 | ExpressionUnknownMember
                 | ExpressionMemberOfNonRecord
+                | ExpressionOptionalReadUnproven
                 | ExpressionPropertyNotCallable
                 | ExpressionNamespaceNotCallable
                 | ExpressionNamespaceNotAValue
@@ -18872,9 +18913,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            459,
+            460,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 459 distinct variants to match the DiagnosticCode \
+             expected 460 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -19575,6 +19616,10 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | ExpressionTypeMismatch
             | ExpressionArgumentCountMismatch
             | ExpressionLiteralOutOfRange
+            // Raised where an optional value is judged (docs/adr/0055): a
+            // `sce-static` statechart's expression and an algorithm's body. No
+            // anchored statechart has been run against it yet.
+            | ExpressionOptionalReadUnproven
             | ExpressionGoTernaryUnsupported
             | ImportFileNotFound
             | ImportKindMismatch

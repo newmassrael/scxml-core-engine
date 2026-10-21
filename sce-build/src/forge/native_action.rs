@@ -269,6 +269,10 @@ enum PayloadScope<'a> {
     Transition {
         event: &'a str,
         schema: Option<&'a EventSchemaModel>,
+        /// The fields of the payload proven present where the action stands
+        /// (docs/adr/0055): those the transition's `cond` tests, less each
+        /// one an action before it writes.
+        proven: crate::forge::narrowing::Facts,
     },
     /// `<onentry>`/`<onexit>`/initial executable content: no triggering event,
     /// hence no typed payload. Only a no-argument action is admissible.
@@ -320,11 +324,20 @@ pub fn validate(
         }
 
         for transition in &state.transitions {
-            let scope = PayloadScope::Transition {
-                event: &transition.event,
-                schema: imported_schemas.get(&transition.event),
+            // A test of a payload field in the `cond` proves it in the content,
+            // as the statechart's judge reads it
+            // ([`crate::forge::narrowing::Facts::of_payload`]).
+            let mut proven = if transition.is_cpp_condition || transition.is_kt_condition {
+                crate::forge::narrowing::Facts::none()
+            } else {
+                crate::forge::narrowing::proves_written(&transition.cond, true).of_payload()
             };
             for action in &transition.actions {
+                let scope = PayloadScope::Transition {
+                    event: &transition.event,
+                    schema: imported_schemas.get(&transition.event),
+                    proven: proven.clone(),
+                };
                 check_placement(
                     action,
                     &scope,
@@ -332,6 +345,7 @@ pub fn validate(
                     &mut signatures,
                     diag_label,
                 )?;
+                proven = proven.after(&crate::forge::narrowing::Writes::of(action));
             }
         }
     }
@@ -629,7 +643,7 @@ fn signature_of(
     diag_label: &str,
 ) -> Result<Vec<String>, Located<ForgeError>> {
     match scope {
-        PayloadScope::Transition { event, schema } => {
+        PayloadScope::Transition { event, schema, .. } => {
             validate_args(action, *schema, event, diag_label)
         }
         PayloadScope::Eventless if action.params.is_empty() => Ok(Vec::new()),
@@ -661,12 +675,12 @@ fn static_signature(
     static_scope: &crate::forge::type_ctx::StaticScope,
     diag_label: &str,
 ) -> Result<Vec<String>, Located<ForgeError>> {
-    let payload = match scope {
-        PayloadScope::Transition { schema, .. } => *schema,
-        PayloadScope::Eventless => None,
+    let (payload, proven) = match scope {
+        PayloadScope::Transition { schema, proven, .. } => (*schema, proven.clone()),
+        PayloadScope::Eventless => (None, crate::forge::narrowing::Facts::none()),
     };
     let paths = static_scope.paths(payload);
-    let ctx = static_scope.ctx(&paths, &[]);
+    let ctx = static_scope.ctx(&paths, &[]).proving(proven);
     let mut sig = Vec::with_capacity(action.params.len());
     for arg in &action.params {
         // A list is not a value a host method takes; refused as it is in
@@ -726,6 +740,18 @@ fn static_signature(
                     arg.expr
                 ),
             ),
+            ArgumentRefusal::Optional(ty) => one_argument_err(
+                action,
+                arg,
+                diag_label,
+                format!(
+                    "argument '{}' is {}, which may be absent, and a host method takes no \
+                     argument that may be absent yet: pass it with a default (`?? <value>`), \
+                     or pass its `.value` where a `!== null` test proves it present",
+                    arg.expr,
+                    ty.describe()
+                ),
+            ),
         })?;
         sig.push(canonical_type(&ty).to_string());
     }
@@ -738,6 +764,8 @@ pub(crate) enum ArgumentRefusal {
     Expression(crate::forge::expr::Refusal),
     /// It was accepted, but its type is not one a host method can declare.
     Untyped,
+    /// It is an optional value (docs/adr/0055), which no host method takes yet.
+    Optional(crate::forge::types::InferredType),
 }
 
 /// The declared type a `<sce:action>` argument is passed as under the static
@@ -755,6 +783,9 @@ pub(crate) fn static_argument_type(
         crate::forge::expr::Expected::Hint(crate::forge::types::InferredType::Unknown),
     )
     .map_err(ArgumentRefusal::Expression)?;
+    if ty.is_optional() {
+        return Err(ArgumentRefusal::Optional(ty));
+    }
     ty.to_sce_type().ok_or(ArgumentRefusal::Untyped)
 }
 
