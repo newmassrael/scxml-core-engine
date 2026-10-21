@@ -12150,9 +12150,11 @@ mod tests {
             kotlin_optional("due === null", &ctx, unknown),
             "due == null"
         );
+        // A test of presence names its subject first, whichever side `null`
+        // was written on (`OptionalForm::Test`).
         assert_eq!(
             kotlin_optional("null !== due", &ctx, unknown),
-            "null != due"
+            "due != null"
         );
         assert_eq!(
             kotlin_optional("due === other", &ctx, unknown),
