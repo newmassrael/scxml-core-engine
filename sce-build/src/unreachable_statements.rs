@@ -15,9 +15,11 @@
 //! a `return`, a `break` or a `throw` in the spelling of the language
 //! ([`ends_its_list`]) — a `{ ... }` block that ends in one, and an `if` with
 //! an `else` whose every branch ends in one. A `case` or `default` label opens
-//! a clause the switch can reach, and a line that starts inside an open `(`
-//! or `[`, or that continues an expression (`.`, `&&`, `?`), continues the
-//! statement before it. A closing `}` on one line and the `else` that
+//! a clause the switch can reach, and a line that starts inside an open `(`,
+//! `[` or initializer `{`, or that continues an expression (`.`, `&&`, `?`),
+//! continues the statement before it; in C and C++ so does every line after
+//! one that does not end its statement (`;`, a brace, a label's `:`). A
+//! closing `}` on one line and the `else` that
 //! continues the chain on the next are read as one `} else`, which is how
 //! the C11 machine writes an `<elseif>`.
 //!
@@ -53,16 +55,36 @@ fn code_only(source: &str, syntax: Syntax) -> String {
         .collect()
 }
 
-/// The bracket depth a line of code moves by: `(` and `[` open, `)` and `]`
-/// close. Braces are the lists the readers track themselves.
+/// The bracket depth a piece of code moves by: `(`, `[` and `{` open, and
+/// `)`, `]` and `}` close. The caller passes the code without the braces that
+/// open or close a list (`opens_a_list`), which the reader tracks as lists; a
+/// brace left in the code is an initializer's, which a statement can span
+/// several lines with.
 fn brackets(code: &str) -> i32 {
     code.chars()
         .map(|c| match c {
-            '(' | '[' => 1,
-            ')' | ']' => -1,
+            '(' | '[' | '{' => 1,
+            ')' | ']' | '}' => -1,
             _ => 0,
         })
         .sum()
+}
+
+/// `line` without the brace that opens a list at its end, and whether it
+/// opens one: a trailing `{`, or in Kotlin a lambda whose parameters follow
+/// its brace (`forEach { item ->`).
+fn opens_a_list(line: &str, syntax: Syntax) -> (&str, bool) {
+    if let Some(head) = line.strip_suffix('{') {
+        return (head, true);
+    }
+    if syntax == Syntax::Kotlin && line.ends_with("->") {
+        if let Some(at) = line.rfind('{') {
+            if !line[at..].contains('}') {
+                return (&line[..at], true);
+            }
+        }
+    }
+    (line, false)
 }
 
 /// Whether `line`, the code of one statement, ends the list it stands in.
@@ -190,8 +212,17 @@ pub(crate) fn unreachable_brace_statements(source: &str, syntax: Syntax) -> Vec<
     let mut found = Vec::new();
     let mut depth = 0i32;
     let mut stack = vec![Frame::new(Opened::Other, 0)];
+    // C and C++ end every statement with `;`, or with the braces of the list
+    // it opens or closes, or with the `:` of a label: a line that ends in
+    // anything else — a bare `return` whose value follows, the `)` of an `if`
+    // whose `{` stands on the next line — is continued by the line after it.
+    let mut statement_open = false;
     for (index, line) in &lines {
         let line = line.as_str();
+        let continues_the_line_before = statement_open;
+        if syntax == Syntax::CFamily {
+            statement_open = !line.ends_with([';', '{', '}', ':']);
+        }
         if line.starts_with('}') {
             let mut rest = line;
             while let Some(after) = rest.strip_prefix('}') {
@@ -221,15 +252,18 @@ pub(crate) fn unreachable_brace_statements(source: &str, syntax: Syntax) -> Vec<
             }
             // `}()`, `})`, `}, {`: the rest belongs to the statement that
             // opened the list just closed.
-            depth += brackets(rest);
-            if rest.ends_with('{') {
+            let (head, opens) = opens_a_list(rest, syntax);
+            depth += brackets(head);
+            if opens {
                 stack.push(Frame::new(Opened::Other, depth));
             }
             continue;
         }
         let starts_statement = stack.last().is_some_and(|frame| frame.depth == depth)
-            && !continues_an_expression(line);
-        depth += brackets(line);
+            && !continues_an_expression(line)
+            && !continues_the_line_before;
+        let (head, opens) = opens_a_list(line, syntax);
+        depth += brackets(head);
         if starts_statement {
             if opens_a_clause(line, syntax) {
                 if let Some(frame) = stack.last_mut() {
@@ -245,7 +279,7 @@ pub(crate) fn unreachable_brace_statements(source: &str, syntax: Syntax) -> Vec<
                 }
             }
         }
-        if line.ends_with('{') {
+        if opens {
             let opened = if !starts_statement || opens_a_clause(line, syntax) {
                 Opened::Other
             } else if line == "{" {
@@ -521,7 +555,9 @@ return
     }
 
     /// Kotlin: `return@run` ends the `run` lambda's list, and a `throw` ends
-    /// its own. An exit the condition of an `if` decides is not one.
+    /// its own. An exit the condition of an `if` decides is not one. A lambda
+    /// whose parameters follow its brace (`forEach { item ->`) opens a list
+    /// of its own, which its exit ends and the list it stands in does not.
     #[test]
     fn the_reader_finds_what_kotlinc_reports() {
         let kotlin = r#"fun f(a: Boolean) {
@@ -543,13 +579,25 @@ return
     }
     later()
 }
+fun g(items: List<Int>) {
+    items.forEach { item ->
+        return@forEach
+        unreached(item)
+    }
+    after()
+}
 "#;
-        assert_eq!(lines(kotlin, Syntax::Kotlin), vec![11, 18], "{kotlin}");
+        assert_eq!(lines(kotlin, Syntax::Kotlin), vec![11, 18, 23], "{kotlin}");
     }
 
     /// C and C++: a `case` label opens a clause the switch reaches, a block
     /// that ends in `return` ends its list, and a `}` and the `else` on the
-    /// line after it continue one chain — the C11 shape of an `<elseif>`.
+    /// line after it continue one chain — the C11 shape of an `<elseif>`. A
+    /// statement goes on until its `;`: a bare `return` whose value is on the
+    /// lines after it (C11's `event_is_error`), the `{` of an `if` written on
+    /// the line after its condition (C11's `first_enabled_transition`), and
+    /// an initializer whose braces span lines (C++'s `TransitionInfo{`) are
+    /// one statement each.
     #[test]
     fn the_reader_finds_what_a_c_compiler_reads_as_unreachable() {
         let c = r#"static void f(int s, bool a, bool b) {
@@ -584,6 +632,21 @@ return
         }
     }
     after();
+}
+static bool g(int event) {
+    return
+        event == 1 ||
+        event == 2
+    ;
+}
+static T h(int event) {
+    if (event == 3)
+    {
+        return T{0};
+    }
+    return T{1,
+             {2},
+             3};
 }
 "#;
         assert_eq!(lines(c, Syntax::CFamily), vec![8, 28], "{c}");
