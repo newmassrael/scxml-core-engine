@@ -4,7 +4,7 @@
 //! A value of an enum is read as the number its variant declares,
 //! `<alias>.toNumber(value)`, and a number back as the variant that declares it,
 //! `<alias>.fromNumber(number)`, which fails for a number no variant declares
-//! (docs/adr/0046), in a `sce-static` statechart and in an algorithm.
+//! (docs/adr/0047), in a `sce-static` statechart and in an algorithm.
 //!
 //! # What was wrong
 //!

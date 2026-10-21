@@ -1,6 +1,6 @@
 {
   "machine": "static_enum_number",
-  "about": "A value of an enum read as the number its variant declares (Status.toNumber), kept in an int64, and a number read back as the variant that declares it (Status.fromNumber), held in a variable of the enum (docs/adr/0046). The enum declares open = 2, in_progress = 5 and done = 7, not the variants' positions. A number no variant declares (3), and one the enum's uint8 carrier cannot hold (300, -1), is no value of the enum: the assignment fails, the variable keeps what it held, and error.execution is counted in refusals. check is guarded by the number of the variant the machine holds. Expected values are derived from the document, not observed from a backend.",
+  "about": "A value of an enum read as the number its variant declares (Status.toNumber), kept in an int64, and a number read back as the variant that declares it (Status.fromNumber), held in a variable of the enum (docs/adr/0047). The enum declares open = 2, in_progress = 5 and done = 7, not the variants' positions. A number no variant declares (3), and one the enum's uint8 carrier cannot hold (300, -1), is no value of the enum: the assignment fails, the variable keeps what it held, and error.execution is counted in refusals. check is guarded by the number of the variant the machine holds. Expected values are derived from the document, not observed from a backend.",
   "steps": [
     { "note": "nothing yet",
       "expect": { "state": "board", "variables": {

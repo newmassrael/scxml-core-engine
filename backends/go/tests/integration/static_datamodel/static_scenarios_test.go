@@ -1057,7 +1057,7 @@ func TestAnEnumVariableHoldsAVariantOfItsEnum(t *testing.T) {
 	}))
 }
 
-// docs/adr/0046: a value of an enum is read as the number its variant declares and
+// docs/adr/0047: a value of an enum is read as the number its variant declares and
 // a number back as the variant that declares it; a number no variant declares is
 // error.execution, and the variable keeps what it held.
 func TestAnEnumIsReadAsItsNumberAndBack(t *testing.T) {

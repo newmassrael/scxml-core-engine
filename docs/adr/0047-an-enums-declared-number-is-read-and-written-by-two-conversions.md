@@ -1,4 +1,4 @@
-# ADR 0046 — An enum's declared number is read and written by two conversions
+# ADR 0047 — An enum's declared number is read and written by two conversions
 
 - Status: Accepted (2026-10-21) and implemented
 - Date: 2026-10-21

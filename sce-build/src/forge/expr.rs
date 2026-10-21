@@ -11903,7 +11903,7 @@ mod tests {
     }
 
     /// A context whose enum `Mode` is carried as a `uint8` and spells its two
-    /// conversions `mode_to` and `mode_from` (docs/adr/0046), `open` saying whether
+    /// conversions `mode_to` and `mode_from` (docs/adr/0047), `open` saying whether
     /// every number is a value of it, with a value `m` of it and a `uint8` `n`.
     fn conversion_ctx<'a>(variants: &'a [String], open: bool) -> TypeCtx<'a> {
         let mut ctx = TypeCtx::new();

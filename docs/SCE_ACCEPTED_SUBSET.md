@@ -1430,7 +1430,7 @@ with the attribute to add as the fix). A read through `previous()` is not
 a dependency, so it cannot close an output cycle: `x = previous(x) + 1`
 is legal where `x = x + 1` is `validation/transform-output-cycle`.
 
-**And, on every enum a document imports, its two conversions** (docs/adr/0046):
+**And, on every enum a document imports, its two conversions** (docs/adr/0047):
 `<alias>.toNumber(value)` is the number the variant of `value` declares, a value
 of the enum's carrier (`sce:underlying-type`), and `<alias>.fromNumber(number)` is
 the variant that declares `number`. `toNumber` takes a value of that same enum
@@ -3975,7 +3975,7 @@ argument of any other call or of a parameter that is not of its enum, a
 comparison with a number or with another enum, a value of one enum stored in a
 variable of another or in a number.
 
-**The number a variant declares** (docs/adr/0046). `Status.toNumber(value)` is the
+**The number a variant declares** (docs/adr/0047). `Status.toNumber(value)` is the
 number the variant of `value` declares, of the enum's carrier, which then stands
 wherever an integer does: kept in an `int64`, compared, sent; it is how an
 application keeps an enum in a numeric field of the standard shared list

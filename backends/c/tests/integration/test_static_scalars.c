@@ -86,7 +86,7 @@
 //     its document declares, not as the constant C spells for it.
 //   * `static_enum_number`: a value of an enum is read as the number its variant
 //     declares and a number back as its variant, and a number no variant declares
-//     is error.execution (docs/adr/0046).
+//     is error.execution (docs/adr/0047).
 //   * `static_forge_calls`: a condition, a transform, two lookups, an interpolation
 //     and a validator called as `Alias(args)`, and a lookup whose miss is an error
 //     failing into error.execution (docs/adr/0048).
@@ -927,7 +927,7 @@ static const variable_t enum_variables[] = {
 };
 STATIC_SCENARIO(static_enum, enum_states, enum_variables, static_enum_text, no_lists, no_records)
 
-// static_enum_number (docs/adr/0046): a value of an enum is read as the number its
+// static_enum_number (docs/adr/0047): a value of an enum is read as the number its
 // variant declares and a number back as the variant that declares it; a number no
 // variant declares is error.execution, and the variable keeps what it held. A value
 // is stated as the name its document declares.

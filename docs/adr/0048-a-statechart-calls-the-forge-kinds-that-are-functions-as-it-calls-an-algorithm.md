@@ -8,8 +8,8 @@
   each generated backend spells the call (`forge::static_lowering::generated_callee`,
   `forge::generator::StatelessFunction`, `validator_check_call`, `c11_lookup_found`), the
   Interpreter's refusal (`forge::static_js`), the Rust validator template; the forge runtimes'
-  `found` (ADR 0046); docs/SCE_ACCEPTED_SUBSET.md §2.15 ("Calling another kind")
-- Related: ADR 0046 (a reading that may find nothing fails as `out-of-range`), ADR 0005
+  `found` (ADR 0047); docs/SCE_ACCEPTED_SUBSET.md §2.15 ("Calling another kind")
+- Related: ADR 0047 (a reading that may find nothing fails as `out-of-range`), ADR 0005
   (`sce-static` closes its gaps by bounding and declaring), SCE_FORGE.md §4.12 (a forge kind calls
   an imported transform, condition, lookup, interpolation or algorithm by its alias)
 
@@ -60,9 +60,9 @@ expression layer reads `valid` (`Valid` on Go) off what it answers (`CallReading
 
 **A lookup whose miss is an error may fail, and a miss is `out-of-range`.** The lookup answers the
 value or that its table holds none, in the backend's own optional shape — the shape an enum's
-`fromNumber` answers in (ADR 0046) — so it is read the same way: through the runtime's `found`
+`fromNumber` answers in (ADR 0047) — so it is read the same way: through the runtime's `found`
 where the call's failure is received (`CallReading::Found`), a failed assignment writing nothing
-and raising `error.execution` (§scxml-4.9). The helper ADR 0046 introduced as `declared` is named
+and raising `error.execution` (§scxml-4.9). The helper ADR 0047 introduced as `declared` is named
 `found` for that reason. C's lookup answers through a pointer, which no expression holds: the
 machine declares `<function>_found`, a reading that answers the result and `_take` every C call
 that may fail answers (`c11_lookup_found`, sharing the result struct and `_take` of a `may-fail`

@@ -2788,7 +2788,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         STAGE_ALSO enum_view_mode.scxml
     )
     # A value of an enum read as the number its variant declares, and a number read
-    # back as the variant that declares it (docs/adr/0046).
+    # back as the variant that declares it (docs/adr/0047).
     sce_generate_static_integration_c_test(static_enum_number
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
         SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_enum_number.scxml"

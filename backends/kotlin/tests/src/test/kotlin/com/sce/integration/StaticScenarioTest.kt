@@ -976,7 +976,7 @@ class StaticScenarioTest {
         }
     }
 
-    // docs/adr/0046: a value of an enum read as the number its variant declares and
+    // docs/adr/0047: a value of an enum read as the number its variant declares and
     // a number read back as the variant that declares it; a number no variant
     // declares is error.execution.
     @Test

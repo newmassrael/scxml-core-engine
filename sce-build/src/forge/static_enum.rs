@@ -19,7 +19,7 @@
 // may be used for is deliberately small: stored in a variable of its own enum,
 // logged, compared with `==` or `!=` to a value of that same enum, handed to an
 // imported algorithm whose parameter takes that same enum, and handed to
-// `<alias>.toNumber`, which reads the number its variant declares (docs/adr/0046).
+// `<alias>.toNumber`, which reads the number its variant declares (docs/adr/0047).
 // No ordering, no arithmetic, no argument to any other call.
 //
 // An algorithm's body is held to the same rule ([`check_algorithm`]): its
@@ -166,7 +166,7 @@ fn class_of(
         }
         // A conversion of an imported enum: `toNumber` takes a value of the enum
         // and is the number its variant declares, and `fromNumber` takes a number
-        // and is a value of the enum (docs/adr/0046).
+        // and is a value of the enum (docs/adr/0047).
         ExprKind::Call { callee, args, .. }
             if crate::forge::expr::is_enum_conversion(callee, ctx) =>
         {

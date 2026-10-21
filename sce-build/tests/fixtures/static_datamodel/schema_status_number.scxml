@@ -3,7 +3,7 @@
   A number that names where an item stands: the field of
   `static_enum_number.scxml`'s `status.number`, an integer wider than the enum's
   carrier, so a number the carrier cannot hold reaches the conversion too
-  (docs/adr/0046).
+  (docs/adr/0047).
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"

@@ -153,7 +153,7 @@ fn every_fixture_is_lowered_or_refused_by_name() {
         "static_cancel_expr",
         "static_wire_enum",
         // ... and the conversions between a value of an enum and the number its
-        // variant declares, which read the library's table (docs/adr/0046).
+        // variant declares, which read the library's table (docs/adr/0047).
         "static_enum_number",
         "static_payload_relay",
         "static_donedata",
