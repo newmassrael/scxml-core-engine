@@ -3019,7 +3019,7 @@ int main(void) {
     bad |= static_forge_calls_scenario("static_forge_calls", 18);
     bad |= static_payload_enum_scenario("static_payload_enum", 8);
     bad |= static_payload_relay_scenario("static_payload_relay", 5);
-    bad |= static_string_capacity_scenario("static_string_capacity", 11);
+    bad |= static_string_capacity_scenario("static_string_capacity", 14);
     bad |= static_bytes_scenario("static_bytes", 12);
     bad |= static_record_bytes_scenario("static_record_bytes", 36);
     bad |= static_payload_bytes_scenario("static_payload_bytes", 15);
@@ -3061,7 +3061,7 @@ int main(void) {
     bad |= record_list_unrouted_scenario("record_list_offline", 8);
     bad |= record_list_scenario("record_list_change", 26);
     bad |= record_list_scenario("record_list_retire", 15);
-    bad |= record_list_parent_scenario("record_list_parent", 24);
+    bad |= record_list_parent_scenario("record_list_parent", 27);
     bad |= sheet_peer_scenario("sheet_peer_alice", 24);
     bad |= sheet_peer_scenario("sheet_peer_bob", 26);
     bad |= sheet_peer_scenario("sheet_peer_server", 26);
