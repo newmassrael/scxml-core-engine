@@ -10,8 +10,30 @@ if(NOT DEFINED LUA_SRC_DIR)
     message(FATAL_ERROR "LUA_SRC_DIR must be set to third_party/lua/src")
 endif()
 
-# Find JNI headers
-find_package(JNI REQUIRED)
+# JNI headers of the JDK that builds and loads this library (passed from
+# Gradle, gradle/sce-jni-headers.gradle.kts). Not find_package(JNI): without
+# COMPONENTS it also requires AWT, which a headless JDK does not ship, and
+# its COMPONENTS are ignored before CMake 3.24. Only the headers are used;
+# the library neither links libjvm nor uses AWT.
+if(NOT DEFINED SCE_JNI_INCLUDE_DIRS)
+    message(FATAL_ERROR
+        "SCE_JNI_INCLUDE_DIRS must be set to <jdk>/include;<jdk>/include/<platform> "
+        "of the JDK that loads this library")
+endif()
+foreach(sce_jni_header jni.h jni_md.h)
+    set(sce_jni_header_found FALSE)
+    foreach(sce_jni_dir IN LISTS SCE_JNI_INCLUDE_DIRS)
+        if(EXISTS "${sce_jni_dir}/${sce_jni_header}")
+            set(sce_jni_header_found TRUE)
+        endif()
+    endforeach()
+    if(NOT sce_jni_header_found)
+        message(FATAL_ERROR
+            "${sce_jni_header} is in none of SCE_JNI_INCLUDE_DIRS "
+            "(${SCE_JNI_INCLUDE_DIRS}); they must be the include directories "
+            "of a full JDK, not a JRE")
+    endif()
+endforeach()
 
 # Collect Lua 5.4 sources (exclude lua.c and luac.c — those are standalone executables)
 file(GLOB LUA_SOURCES "${LUA_SRC_DIR}/*.c")
@@ -27,7 +49,7 @@ add_library(sce_lua_jni SHARED
 
 target_include_directories(sce_lua_jni PRIVATE
     ${LUA_SRC_DIR}
-    ${JNI_INCLUDE_DIRS}
+    ${SCE_JNI_INCLUDE_DIRS}
 )
 
 # Lua needs math library on Linux

@@ -30,6 +30,12 @@ val nativeSrcDir = file("src/main/cpp")
 val nativeBuildDir = layout.buildDirectory.dir("native")
 val nativeLibDir = layout.buildDirectory.dir("native/lib")
 
+// The JNI headers of this module's Java toolchain JDK, the one that loads
+// the library; the script says why CMake is not asked to find a JDK.
+apply(from = rootProject.file("gradle/sce-jni-headers.gradle.kts"))
+val sceJniIncludeDirs: Provider<List<String>> by extra
+val sceJniJdkVersion: Provider<String> by extra
+
 val cmakeConfigure by tasks.registering(Exec::class) {
     group = "native"
     description = "Configure CMake for Lua JNI library"
@@ -37,6 +43,13 @@ val cmakeConfigure by tasks.registering(Exec::class) {
     val buildDir = nativeBuildDir.get().asFile
     val libDir = nativeLibDir.get().asFile
 
+    // Resolved here, after the script set the toolchain, and held as plain
+    // strings. The JDK is an input: another toolchain JDK means other
+    // headers, so the configure reruns instead of keeping a cache that
+    // names the old ones.
+    val jniIncludeDirs = sceJniIncludeDirs.get()
+    inputs.property("jniIncludeDirs", jniIncludeDirs)
+    inputs.property("jniJdkVersion", sceJniJdkVersion.get())
     inputs.dir(nativeSrcDir).withPropertyName("jniSources")
     outputs.file(nativeBuildDir.map { it.file("CMakeCache.txt") })
 
@@ -58,7 +71,7 @@ val cmakeConfigure by tasks.registering(Exec::class) {
         "-DSCE_REPO_ROOT=${rootProjectDirPath}",
         "-DCMAKE_LIBRARY_OUTPUT_DIRECTORY=${libDir.absolutePath}",
         "-DCMAKE_BUILD_TYPE=Release",
-        "-DJAVA_HOME=${System.getProperty("java.home")}")
+        "-DSCE_JNI_INCLUDE_DIRS=${jniIncludeDirs.joinToString(";")}")
 
     onlyIf {
         File("/usr/bin/cmake").exists()
@@ -72,6 +85,9 @@ val buildNativeLib by tasks.registering(Exec::class) {
     description = "Build Lua 5.4 JNI shared library"
     dependsOn(cmakeConfigure)
 
+    // The configure's cache, so a reconfigure that changed it (another
+    // JDK's headers) rebuilds the library rather than answering UP-TO-DATE.
+    inputs.files(cmakeConfigure).withPropertyName("cmakeCache")
     inputs.dir(luaSrcDir).withPropertyName("luaSources")
     inputs.dir(nativeSrcDir).withPropertyName("jniSources")
     outputs.dir(nativeLibDir).withPropertyName("nativeLib")
