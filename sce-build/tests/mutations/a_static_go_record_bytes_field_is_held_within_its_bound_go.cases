@@ -32,6 +32,6 @@ PY
 
 mutation_case "the reader of a bytes field answers the machine's own slice" <<'PY'
 edit("sce-build/src/forge/static_lowering.rs",
-     "                let answer = if matches!(field.sce_type.present_type(), SceType::Bytes) {",
-     "                let answer = if false && matches!(field.sce_type.present_type(), SceType::Bytes) {")
+     "                let answer = match &field.sce_type {\n                    FieldType::Scalar(SceType::Bytes) => {",
+     "                let answer = match &field.sce_type {\n                    FieldType::Scalar(SceType::Bytes) if false => {")
 PY

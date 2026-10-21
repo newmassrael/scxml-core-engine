@@ -34,6 +34,6 @@ PY
 
 mutation_case "a published byte string is handed out as the machine's own slice" <<'PY'
 edit("tools/codegen/templates/go/state_machine.go.jinja2",
-     "{% if field.saved_kind == 'list' or field.saved_type == 'bytes' %}",
-     "{% if field.saved_kind == 'list' %}")
+     "{% elif field.saved_kind == 'list' or field.saved_type == 'bytes' %}",
+     "{% elif field.saved_kind == 'list' %}")
 PY

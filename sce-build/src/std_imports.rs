@@ -40,6 +40,12 @@ pub(crate) const GO_FORGE_RUNTIME_ALIAS: &str = "scealgorithm";
 /// already holds it needs nothing more said.
 pub(crate) const GO_FORGE_RUNTIME_PATH: &str = "github.com/newmassrael/sce-forge-runtime/algorithm";
 
+/// The import path of the Go forge runtime's `optional` package, `optional.Of[T]`
+/// (docs/adr/0055, section 5), bound by its own name. A machine lists it among
+/// its imports where it holds an optional value, and keeps it where its text
+/// names the package ([`go_imports_named_in`]).
+pub(crate) const GO_FORGE_OPTIONAL_PATH: &str = "github.com/newmassrael/sce-forge-runtime/optional";
+
 /// The C++ standard names generated expression code reaches for that are not
 /// already decided from the model, each with the header that declares it, in
 /// the order an include block lists them. `std::vector`, `std::span` and

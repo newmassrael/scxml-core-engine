@@ -128,15 +128,8 @@ impl ExprTarget {
     /// reached ([`reject_unlowered_optional`]). Each target answers `true` in
     /// the step that writes its spellings.
     pub(crate) fn lowers_optional(self) -> bool {
-        match self {
-            ExprTarget::Cpp
-            | ExprTarget::Kotlin
-            | ExprTarget::Rust
-            | ExprTarget::Go
-            | ExprTarget::Python
-            | ExprTarget::C
-            | ExprTarget::Js => false,
-        }
+        // Go: `optional.Of[T]` of the Go forge runtime ([`go_optional`]).
+        matches!(self, ExprTarget::Go)
     }
 
     /// How this target spells a name the author gave a local — a parameter or a
@@ -8231,6 +8224,11 @@ fn emit_go(expr: &TypedExpr, expected: InferredType) -> Result<String, Refusal> 
     // The context a quantity-annotated output asks for is its numeric base
     // (see `rust_coerce`), or the push-down below never sees a float.
     let expected = expected.strip_quantity();
+    // `null` where an optional value is expected is its absent value, which Go
+    // spells with the element's type (docs/adr/0055).
+    if let (ExprKind::NullLit, InferredType::Optional(elem)) = (&expr.kind, expected) {
+        return go_absent(elem).map_err(|e| e.at(expr.span.clone()));
+    }
     if let ExprKind::Conditional {
         condition,
         consequent,
@@ -8317,6 +8315,9 @@ fn emit_go(expr: &TypedExpr, expected: InferredType) -> Result<String, Refusal> 
 }
 
 fn go_emit_node(expr: &TypedExpr) -> Result<String, Refusal> {
+    if let Some(form) = optional_form(expr) {
+        return go_optional(form, expr);
+    }
     Ok(match &expr.kind {
         ExprKind::NumberLit(n) => portable_number_literal(n),
         ExprKind::StringLit { value, .. } => format!("\"{value}\""),
@@ -8564,8 +8565,107 @@ fn go_binop(op: BinOp) -> &'static str {
     }
 }
 
+/// The Go spelling of each construct of an optional value (docs/adr/0055,
+/// section 5) over `optional.Of[T]` of the Go forge runtime
+/// (`github.com/newmassrael/sce-forge-runtime/optional`, imported where the
+/// text names it): `x.IsPresent()`, `x.Proven()`, `x.Equal(y)`, and `x ?? d` as
+/// `optional.Otherwise(x, func() T { return d })`, which evaluates `x` once and
+/// calls the function literal only when `x` is absent, so a failure `d` records
+/// in the statement's `sceFailure` is recorded only then.
+fn go_optional(form: OptionalForm<'_>, whole: &TypedExpr) -> Result<String, Refusal> {
+    let receiver = |node: &TypedExpr| -> Result<String, Refusal> {
+        Ok(wrap_postfix(node, emit_go(node, InferredType::Unknown)?))
+    };
+    Ok(match form {
+        OptionalForm::Test { subject, present } => {
+            let test = format!("{}.IsPresent()", receiver(subject)?);
+            if present {
+                test
+            } else {
+                format!("!{test}")
+            }
+        }
+        OptionalForm::Proven { subject } => format!("{}.Proven()", receiver(subject)?),
+        OptionalForm::Otherwise { value, fallback } => {
+            // The function literal names the type it answers, the type of the
+            // whole read: an optional value where the default may be absent.
+            let result = whole.ty;
+            let helper = if result.is_optional() {
+                "OtherwiseOptional"
+            } else {
+                "Otherwise"
+            };
+            let Some(type_name) = go_nameable_type(result) else {
+                return Err(ExprError::UnsupportedConstruct {
+                    construct: format!(
+                        "a read with a default (`??`) of {}, whose type Go cannot name here: \
+                         test it with `!== null` and read `.value` in its branch",
+                        value.ty.describe()
+                    ),
+                    observed: None,
+                }
+                .at(whole.span.clone()));
+            };
+            format!(
+                "optional.{helper}({}, func() {type_name} {{ return {} }})",
+                emit_go(value, InferredType::Unknown)?,
+                emit_go(fallback, result)?
+            )
+        }
+        OptionalForm::Equality { left, right, equal } => {
+            // Each side as the optional value of the one that is: a side of `T`
+            // is lifted ([`InferredType::lifted_into`]).
+            let optional = [left.ty, right.ty]
+                .into_iter()
+                .find(|ty| ty.is_optional())
+                .unwrap_or(InferredType::Unknown);
+            let equality = format!(
+                "{}.Equal({})",
+                wrap_postfix(left, emit_go(left, optional)?),
+                emit_go(right, optional)?
+            );
+            if equal {
+                equality
+            } else {
+                format!("!{equality}")
+            }
+        }
+        OptionalForm::Constant(answer) => answer.to_string(),
+    })
+}
+
+/// The absent value of an optional value of `elem` in Go:
+/// `optional.None[T]()`, which has to name `T`. An enum's type is the machine's
+/// own, which the lattice does not carry: a `null` of one is written whole where
+/// a variable or a field takes it, where the lowering names the type
+/// ([`crate::forge::static_lowering::StaticTarget::optional_none`]).
+fn go_absent(elem: OptionalElem) -> Result<String, ExprError> {
+    match go_nameable_type(elem.present()) {
+        Some(ty) => Ok(format!("optional.None[{ty}]()")),
+        None => Err(ExprError::UnsupportedConstruct {
+            construct: "`null` of an optional value of an enum or a record inside an \
+                        expression, whose type Go cannot name here: write it as the whole \
+                        value of the variable or the field that takes it"
+                .to_string(),
+            observed: None,
+        }),
+    }
+}
+
 fn go_coerce(raw: String, from: InferredType, to: InferredType, node: &TypedExpr) -> String {
     use InferredType::*;
+    // A value of `T` where an optional value of `T` is expected is lifted
+    // (docs/adr/0055, section 2), converted to the element's type first. Asked
+    // before the early return below: an enum's variant is a value this layer
+    // does not type.
+    if let Some(elem) = from.lifted_into(to) {
+        let present = elem.present();
+        let value = go_coerce(raw, from, present, node);
+        return match go_nameable_type(present) {
+            Some(ty) => format!("optional.Some[{ty}]({value})"),
+            None => format!("optional.Some({value})"),
+        };
+    }
     // A quantity is emitted as its numeric base (see `rust_coerce`): Go has no
     // implicit int-to-float conversion, so `raw_temp * 0.5` with an annotated
     // `int8` input was `0.5 truncated to int8`.
@@ -8764,6 +8864,12 @@ fn go_nameable_type(ty: InferredType) -> Option<String> {
             id.schema_name(),
             crate::generator::Language::Go,
         ),
+        // The backend's one spelling of an optional value (docs/adr/0055) over
+        // its element's, where the lattice names the element.
+        InferredType::Optional(elem) => crate::forge::generator::optional_of(
+            crate::generator::Language::Go,
+            &go_nameable_type(elem.present())?,
+        )?,
         _ => return None,
     })
 }
@@ -12911,6 +13017,73 @@ mod tests {
             );
             assert_eq!(refusal.span, Some(1..9), "{target:?}: placed at `due ?? 0`");
         }
+    }
+
+    /// Go spells each construct of an optional value over `optional.Of[T]`
+    /// (docs/adr/0055, section 5): a test, a proven read, a read with a default
+    /// whose default is a function literal called only when the value is absent,
+    /// total equality with a value of `T` lifted, `null` and a lifted value where
+    /// an optional value is expected, and a conditional of the two.
+    #[test]
+    fn go_spells_each_construct_of_an_optional_value() {
+        let ctx = optional_ctx();
+        let int64 = OptionalElem::Number(crate::forge::quantity::NumericBaseType::Int {
+            signed: true,
+            bits: 64,
+        });
+        let go = |expr: &str, expected: InferredType| {
+            transpile_into(expr, ExprTarget::Go, &ctx, &empty_renames(), expected)
+                .unwrap_or_else(|e| panic!("{expr} lowers for Go: {e:?}"))
+        };
+        let optional = InferredType::Optional(int64);
+        assert_eq!(go("due !== null", InferredType::Bool), "due.IsPresent()");
+        assert_eq!(go("null === due", InferredType::Bool), "!due.IsPresent()");
+        assert_eq!(go("due.value", int(true, 64)), "due.Proven()");
+        assert_eq!(
+            go("due ?? 0", int(true, 64)),
+            "optional.Otherwise(due, func() int64 { return 0 })"
+        );
+        assert_eq!(go("due === other", InferredType::Bool), "due.Equal(other)");
+        assert_eq!(
+            go("due !== 3", InferredType::Bool),
+            "!due.Equal(optional.Some[int64](3))"
+        );
+        assert_eq!(go("null === null", InferredType::Bool), "true");
+        assert_eq!(go("null", optional), "optional.None[int64]()");
+        assert_eq!(go("3", optional), "optional.Some[int64](3)");
+        assert_eq!(go("other", optional), "other");
+        assert_eq!(
+            go("count === 1 ? null : 5", optional),
+            "func() optional.Of[int64] { if count == 1 { return optional.None[int64]() }; \
+             return optional.Some[int64](5) }()"
+        );
+    }
+
+    /// Go names the type of a `null` and of a read with a default; where the
+    /// lattice does not name it — an optional value of an enum inside an
+    /// expression — the expression is refused by name rather than spelled with
+    /// no type.
+    #[test]
+    fn go_refuses_an_optional_enum_it_cannot_name_inside_an_expression() {
+        let variants = ["Idle".to_string(), "Run".to_string()];
+        let mut ctx = conversion_ctx(&variants, false);
+        ctx.insert_var("mode", InferredType::Optional(OptionalElem::Enum));
+        let refusal = transpile_into(
+            "null",
+            ExprTarget::Go,
+            &ctx,
+            &empty_renames(),
+            InferredType::Optional(OptionalElem::Enum),
+        )
+        .expect_err("a `null` of an enum has no type here");
+        assert!(
+            refusal
+                .error
+                .to_string()
+                .contains("whose type Go cannot name here"),
+            "{}",
+            refusal.error
+        );
     }
 
     /// A conditional of `null` and a variant of an enum is an optional value of

@@ -6271,17 +6271,24 @@ pub fn lower_cpp(model: &mut SCXMLModel, machine: &str) -> Result<StaticLowering
     lower(model, machine, &CppTarget)
 }
 
+/// The name a Go function literal binds the present value of an optional value
+/// to ([`StaticTarget::optional_map`], [`StaticTarget::wire_optional`]): a name no
+/// document's variable or local is spelled as, since a local keeps the author's
+/// spelling and a variable is a field of the policy.
+const GO_PRESENT: &str = "scePresent";
+
 /// Go: a variable is a field of the machine's policy struct, set by the
 /// machine's own statements. A failed checked operation is a value (zero, with
 /// a flag raised in `sceFailure`) rather than a jump, as in C++, so a value that
 /// can fail is computed into a local first and written only when it did not.
 ///
-/// Lowers scalar, enum, list and record variables, guards, `<assign>`, `<if>`,
-/// `<foreach>`, `<log>`, `<raise>`, `In()`, a typed payload, a call of an
-/// imported algorithm and a `<sce:action>` whose arguments are typed
-/// expressions of the machine's variables; every construct past those is
-/// refused by name ([`StaticTarget::unsupported`]) until its spelling is
-/// written, rather than left as an undefined name in generated code.
+/// Lowers scalar, enum, list and record variables, an optional value of a scalar
+/// (docs/adr/0055), guards, `<assign>`, `<if>`, `<foreach>`, `<log>`, `<raise>`,
+/// `In()`, a typed payload, a call of an imported algorithm and a `<sce:action>`
+/// whose arguments are typed expressions of the machine's variables; every
+/// construct past those is refused by name ([`StaticTarget::unsupported`]) until
+/// its spelling is written, rather than left as an undefined name in generated
+/// code.
 pub struct GoTarget<'a> {
     /// The Go module path the generated packages live under, which an import
     /// line of an algorithm's package is written from. `None` for a target
@@ -6335,6 +6342,50 @@ impl StaticTarget for GoTarget<'_> {
     }
     fn lowers_state_calls(&self) -> bool {
         true
+    }
+    // `optional.Of[T]` of the Go forge runtime (docs/adr/0055, section 5): the
+    // type is the default spelling ([`crate::forge::generator::optional_of`]),
+    // each value one of the package's constructors, which name `T`.
+    fn optional_none(&self, present: &str) -> Option<String> {
+        Some(format!("optional.None[{present}]()"))
+    }
+    fn optional_some(&self, present: &str, value: &str) -> Option<String> {
+        Some(format!("optional.Some[{present}]({value})"))
+    }
+    // The present value is bound by a function literal the package calls only
+    // where the value is present; what it records in the statement's
+    // `sceFailure` is the statement's.
+    fn optional_map(
+        &self,
+        value: &str,
+        present: &str,
+        map: &dyn Fn(&str) -> String,
+    ) -> Option<String> {
+        Some(format!(
+            "optional.Map({value}, func({GO_PRESENT} {present}) {present} {{ return {} }})",
+            map(GO_PRESENT)
+        ))
+    }
+    // `nil`, which `ScriptValueToJSON` and `PayloadJSON` write as `null`, where
+    // the value is absent.
+    fn wire_optional(
+        &self,
+        value: &str,
+        present: &str,
+        wire: &dyn Fn(&str) -> String,
+    ) -> Option<String> {
+        Some(format!(
+            "optional.Wire({value}, func({GO_PRESENT} {present}) any {{ return {} }})",
+            wire(GO_PRESENT)
+        ))
+    }
+    // Kept only where the machine's text names the package
+    // ([`crate::std_imports::go_imports_named_in`]).
+    fn optional_import(&self) -> Option<String> {
+        Some(format!(
+            "\t\"{}\"",
+            crate::std_imports::GO_FORGE_OPTIONAL_PATH
+        ))
     }
     fn state_argument(&self, _machine: &str, _arg: &StateArg, held: &str) -> String {
         held.to_string()
@@ -6705,11 +6756,20 @@ impl StaticTarget for GoTarget<'_> {
         schema: &EventSchemaModel,
         enum_types: &std::collections::BTreeMap<String, String>,
     ) -> String {
-        let go_field_type =
-            |field: &crate::forge::model::SchemaField| match field.sce_type.present_type() {
+        // An optional field is held in the optional type over its present
+        // value's (docs/adr/0055).
+        let go_field_type = |field: &crate::forge::model::SchemaField| {
+            let present = match field.sce_type.present_type() {
                 SceType::Enum(reference) => enum_types[&reference.alias].clone(),
                 other => crate::forge::generator::go_type(other).to_string(),
             };
+            match field.sce_type {
+                FieldType::Optional { .. } => self
+                    .optional_type(&present)
+                    .expect("Go spells an optional value"),
+                FieldType::Scalar(_) => present,
+            }
+        };
         let fields: String = schema
             .fields
             .iter()
@@ -6728,10 +6788,21 @@ impl StaticTarget for GoTarget<'_> {
                 // A byte string is answered as a copy, so a host cannot write
                 // through the slice into what the machine holds
                 // (docs/adr/0005, decision 2).
-                let answer = if matches!(field.sce_type.present_type(), SceType::Bytes) {
-                    format!("append([]byte{{}}, r.{}...)", self.record_field(&field.id))
-                } else {
-                    format!("r.{}", self.record_field(&field.id))
+                let answer = match &field.sce_type {
+                    FieldType::Scalar(SceType::Bytes) => {
+                        format!("append([]byte{{}}, r.{}...)", self.record_field(&field.id))
+                    }
+                    // ... and so is the present value of an optional one.
+                    FieldType::Optional {
+                        elem: SceType::Bytes,
+                    } => self
+                        .optional_map(
+                            &format!("r.{}", self.record_field(&field.id)),
+                            "[]byte",
+                            &|v| format!("append([]byte{{}}, {v}...)"),
+                        )
+                        .expect("Go maps an optional value"),
+                    _ => format!("r.{}", self.record_field(&field.id)),
                 };
                 format!(
                     "\n// {reader} reports the `{id}` field.\nfunc (r {ty}) {reader}() {} {{\n\treturn {answer}\n}}\n",
@@ -10954,6 +11025,83 @@ mod tests {
         assert!(!holds_an_optional_value(&read(COUNTER)));
         assert!(holds_an_optional_value(&read(&optional)));
         assert!(!a_tree_can_hold(&read(&optional)));
+    }
+
+    /// Go holds an optional value in `optional.Of[T]` and writes the whole value
+    /// of an optional place by the walk's one rule (docs/adr/0055): `null` its
+    /// absent value, a value of `T` lowered into `T` (a text held to its bound)
+    /// and lifted, an optional value as it is; a read under an `<if>` whose
+    /// condition proves the value present is a proven read, and the runtime's
+    /// package is imported.
+    #[test]
+    fn go_writes_an_optional_place_whole_by_the_walks_one_rule() {
+        const OPTIONAL: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="s" datamodel="sce-static" name="m">
+  <datamodel>
+    <data id="due" sce:type="optional&lt;int64&gt;" expr="null"/>
+    <data id="other" sce:type="optional&lt;int64&gt;" expr="7"/>
+    <data id="title" sce:type="optional&lt;string&gt;" sce:capacity="4" expr="null"/>
+    <data id="days" sce:type="int64" expr="0"/>
+  </datamodel>
+  <state id="s">
+    <transition event="read" type="internal">
+      <if cond="due !== null">
+        <assign location="days" expr="due.value"/>
+      </if>
+    </transition>
+    <transition event="write" type="internal">
+      <assign location="due" expr="null"/>
+      <assign location="title" expr="'abc'"/>
+      <assign location="other" expr="due"/>
+    </transition>
+  </state>
+</scxml>"#;
+        let mut model = SCXMLParser::new()
+            .parse_string(OPTIONAL, "m")
+            .expect("parses");
+        crate::analyzer::analyze(&mut model, "m.scxml");
+        let lowered = lower_go(&mut model, "M", None).expect("Go lowers an optional value");
+        let field = |id: &str| {
+            lowered
+                .fields
+                .iter()
+                .find(|f| f.id == id)
+                .unwrap_or_else(|| panic!("a field `{id}`"))
+        };
+        assert_eq!(field("due").ty, "optional.Of[int64]");
+        assert_eq!(field("due").init, "optional.None[int64]()");
+        assert_eq!(field("other").init, "optional.Some[int64](7)");
+        assert_eq!(field("title").ty, "optional.Of[string]");
+        assert_eq!(field("title").saved_kind, "optional");
+        assert!(
+            lowered.saved_shape.is_none(),
+            "no saved shape before step 6"
+        );
+        assert!(
+            lowered.imports.contains(&format!(
+                "\t\"{}\"",
+                crate::std_imports::GO_FORGE_OPTIONAL_PATH
+            )),
+            "{:?}",
+            lowered.imports
+        );
+        let state = model.states.get("s").expect("the state");
+        let read = &state.transitions[0].actions[0];
+        assert_eq!(read.native_cond, "p.vDue.IsPresent()");
+        assert_eq!(
+            read.then_actions[0].native_code,
+            "p.vDays = p.vDue.Proven()"
+        );
+        let write = &state.transitions[1].actions;
+        assert_eq!(write[0].native_code, "p.vDue = optional.None[int64]()");
+        assert!(
+            write[1].native_code.contains(
+                "sceValue := optional.Some[string](scealgorithm.Bounded(&sceFailure, \"abc\", 4))"
+            ),
+            "{}",
+            write[1].native_code
+        );
+        assert_eq!(write[2].native_code, "p.vOther = p.vDue");
     }
 
     fn shape(document: &str) -> Option<String> {

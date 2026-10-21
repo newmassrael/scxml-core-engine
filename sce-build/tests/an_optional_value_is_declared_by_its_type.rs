@@ -128,6 +128,18 @@ fn every_backend() -> Vec<Vec<&'static str>> {
 /// the step that lowers one there (`StaticTarget::lowers_optional`).
 const NOT_LOWERED: &str = "an optional value has no";
 
+/// The backends whose step of docs/adr/0055 lowers a statechart's optional value,
+/// by the language `generate -l` names: each generates what the others refuse.
+/// A backend joins in the step that lowers the type on it.
+const LOWERS_OPTIONAL: &[&str] = &["go"];
+
+/// Whether the backend `args` (one of [`every_backend`]) lowers a statechart's
+/// optional value.
+fn lowers_optional(args: &[&str]) -> bool {
+    args.get(2)
+        .is_some_and(|lang| LOWERS_OPTIONAL.contains(lang))
+}
+
 // ── The type in the model ────────────────────────────────────────────────
 
 #[test]
@@ -255,6 +267,10 @@ fn every_backend_refuses_a_document_that_holds_an_optional_value_by_name() {
     );
     for args in every_backend() {
         let (ok, out) = run(&args, &[("probe.scxml", &text)], "probe.scxml");
+        if lowers_optional(&args) {
+            assert!(ok, "{args:?} lowers an optional value:\n{out}");
+            continue;
+        }
         assert!(!ok, "{args:?} must refuse the document:\n{out}");
         assert!(
             out.contains(NOT_LOWERED) && out.contains("optional<int64>"),
@@ -573,6 +589,10 @@ fn every_backend_refuses_a_statechart_that_imports_a_schema_with_an_optional_fie
     ];
     for args in every_backend() {
         let (ok, out) = run(&args, &documents, "probe.scxml");
+        if lowers_optional(&args) {
+            assert!(ok, "{args:?} lowers the payload's optional field:\n{out}");
+            continue;
+        }
         assert!(!ok, "{args:?} must refuse the machine:\n{out}");
         assert!(
             out.contains(NOT_LOWERED)

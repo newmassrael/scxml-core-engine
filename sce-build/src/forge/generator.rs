@@ -4016,9 +4016,40 @@ fn go_payload_reader(
     obj: &str,
     static_enums: &[crate::forge::static_lowering::StaticEnumType],
 ) -> String {
+    let present = go_payload_present_reader(f, obj, static_enums);
+    match &f.sce_type {
+        FieldType::Scalar(_) => present,
+        // An optional field (docs/adr/0055) is `null` absent, a value present,
+        // and refused where the delivery lacks it; its present value is read as
+        // a field of `T` is, only where it is carried.
+        FieldType::Optional { elem } => format!(
+            "optional.Lift({obj}, \"{}\", func() ({}, error) {{ return {present} }})",
+            f.id,
+            go_payload_present_type(elem, static_enums)
+        ),
+    }
+}
+
+/// The Go type a present value of a payload field of `ty` is held in: the
+/// machine's own type for an enum, the scalar's own type otherwise.
+fn go_payload_present_type(
+    ty: &SceType,
+    static_enums: &[crate::forge::static_lowering::StaticEnumType],
+) -> String {
+    match ty {
+        SceType::Enum(r) => static_enum_of(static_enums, &r.alias).ty.clone(),
+        other => go_type(other).to_string(),
+    }
+}
+
+/// [`go_payload_reader`] of the present value of `f`: the call that reads it at
+/// the width its schema declares.
+fn go_payload_present_reader(
+    f: &SchemaField,
+    obj: &str,
+    static_enums: &[crate::forge::static_lowering::StaticEnumType],
+) -> String {
     let id = &f.id;
-    // A schema with an optional field was refused where the machine was
-    // lowered (docs/adr/0055), so the field is read as a present value.
     let present = f.sce_type.present_type();
     match present {
         // A 64-bit integer is read from the text of its digits, or from a number
@@ -4069,16 +4100,30 @@ fn go_payload_reader(
 ///
 /// ⚠ JSON has no byte string, so a `bytes` field rides as its byte-exact
 /// Latin-1 text and `sce.PayloadBytes` reads it back the same way.
-fn go_payload_data_value(f: &SchemaField) -> String {
-    match f.sce_type.present_type() {
-        SceType::Bytes => format!("sce.BytesAsPayloadText({})", f.id),
+fn go_payload_data_value(
+    f: &SchemaField,
+    static_enums: &[crate::forge::static_lowering::StaticEnumType],
+) -> String {
+    let present = |value: &str| match f.sce_type.present_type() {
+        SceType::Bytes => format!("sce.BytesAsPayloadText({value})"),
         // The name the enum document declares for the value, which is what
         // the enum's `String` answers.
-        SceType::Enum(_) => format!("{}.String()", f.id),
+        SceType::Enum(_) => format!("{value}.String()"),
         // A 64-bit integer crosses as the text of its digits.
-        SceType::Uint64 => format!("sce.Uint64PayloadText({})", f.id),
-        SceType::Int64 => format!("sce.Int64PayloadText({})", f.id),
-        _ => f.id.clone(),
+        SceType::Uint64 => format!("sce.Uint64PayloadText({value})"),
+        SceType::Int64 => format!("sce.Int64PayloadText({value})"),
+        _ => value.to_string(),
+    };
+    match &f.sce_type {
+        FieldType::Scalar(_) => present(&f.id),
+        // An optional field is written as `null` where it is absent: the key is
+        // always written (docs/adr/0055, section 4).
+        FieldType::Optional { elem } => format!(
+            "optional.Wire({}, func(v {}) any {{ return {} }})",
+            f.id,
+            go_payload_present_type(elem, static_enums),
+            present("v")
+        ),
     }
 }
 
@@ -4186,9 +4231,15 @@ pub fn build_go_event_payload(
         let mut field_reads = String::new();
         let mut data_items = String::new();
         for f in &schema.fields {
-            // A schema with an optional field was refused where the machine was
-            // lowered (docs/adr/0055), so each field holds a present value.
-            let ty = l.type_name(f.sce_type.present_type()).into_owned();
+            // An optional field is held in the one optional type over its
+            // present value's (docs/adr/0055).
+            let present = l.type_name(f.sce_type.present_type()).into_owned();
+            let ty = match &f.sce_type {
+                FieldType::Scalar(_) => present,
+                FieldType::Optional { .. } => l
+                    .optional_of(&present)
+                    .expect("Go spells an optional value"),
+            };
             field_lines.push_str(&format!("\t{} {ty}\n", f.id));
             params.push_str(&format!(", {} {ty}", f.id));
             struct_lits.push_str(&format!("{}: {}, ", f.id, f.id));
@@ -4201,7 +4252,7 @@ pub fn build_go_event_payload(
             data_items.push_str(&format!(
                 "sce.Pair(\"{}\", {}), ",
                 f.id,
-                go_payload_data_value(f)
+                go_payload_data_value(f, static_enums)
             ));
         }
         // A field a later revision of the schema added is read out of the

@@ -28,6 +28,7 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/newmassrael/sce-forge-runtime/optional"
 	sce "github.com/newmassrael/sce-go-runtime"
 
 	_ "github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_history"
@@ -65,6 +66,7 @@ import (
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_list"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_list_assign"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_list_index"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_optional"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_overflow"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_payload"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_payload_bytes"
@@ -1456,6 +1458,73 @@ func TestARecordHoldsAnEnumField(t *testing.T) {
 		"weeks": func() any { return policy.Weeks() },
 		"flips": func() any { return policy.Flips() },
 		"leads": func() any { return policy.Leads() },
+	}))
+}
+
+// optionalJSON is an optional value as a scenario states it (docs/adr/0055):
+// `null` where it is absent, and its value where it is present.
+func optionalJSON[T any](value optional.Of[T]) any {
+	if v, ok := value.Get(); ok {
+		return v
+	}
+	return nil
+}
+
+// optionalNameJSON is an optional value of an enum as a scenario states it:
+// `null`, or the name the enum document declares for the value.
+func optionalNameJSON[T fmt.Stringer](value optional.Of[T]) any {
+	if v, ok := value.Get(); ok {
+		return v.String()
+	}
+	return nil
+}
+
+// A value that may be absent (docs/adr/0055) is held in a variable, a record's
+// field and a list of records, carried by a payload, a send and the done data
+// as `null` or a value, read only where a test proves it present, compared
+// totally, and read with a default that is evaluated only where it is absent.
+func TestAValueThatMayBeAbsentIsHeldTestedAndRead(t *testing.T) {
+	policy := static_optional.NewStaticOptionalPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	dueJSON := func(item static_optional.StaticOptionalDueRecord) any {
+		return map[string]any{
+			"id":     item.Id(),
+			"due":    optionalJSON(item.Due()),
+			"title":  optionalJSON(item.Title()),
+			"status": optionalNameJSON(item.Status()),
+		}
+	}
+	replay(t, "static_optional", drive[static_optional.StaticOptionalState, static_optional.StaticOptionalEvent](&policy, map[string]func() any{
+		"due":    func() any { return optionalJSON(policy.Due()) },
+		"other":  func() any { return optionalJSON(policy.Other()) },
+		"title":  func() any { return optionalJSON(policy.Title()) },
+		"status": func() any { return optionalNameJSON(policy.Status()) },
+		"item":   func() any { return dueJSON(policy.Item()) },
+		"items": func() any {
+			items := policy.Items()
+			out := make([]any, len(items))
+			for i, item := range items {
+				out[i] = dueJSON(item)
+			}
+			return out
+		},
+		"days":       func() any { return policy.Days() },
+		"following":  func() any { return policy.Following() },
+		"late":       func() any { return policy.Late() },
+		"early":      func() any { return policy.Early() },
+		"label":      func() any { return policy.Label() },
+		"plain":      func() any { return policy.Plain().String() },
+		"kept":       func() any { return policy.Kept() },
+		"listed":     func() any { return policy.Listed() },
+		"missing":    func() any { return policy.Missing() },
+		"same":       func() any { return policy.Same() },
+		"absent":     func() any { return policy.Absent() },
+		"statusDone": func() any { return policy.StatusDone() },
+		"echoed":     func() any { return policy.Echoed() },
+		"echoTitle":  func() any { return optionalJSON(policy.EchoTitle()) },
+		"echoStatus": func() any { return optionalNameJSON(policy.EchoStatus()) },
+		"fallbacks":  func() any { return policy.Fallbacks() },
+		"errors":     func() any { return policy.Errors() },
 	}))
 }
 
