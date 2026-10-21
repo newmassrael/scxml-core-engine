@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
+// source-hash: ca67d4fa2cf4dbcd6617a3b32561c9b8257bc03aaa65978435303ccf35bae7b3
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_payload_relay.scxml
@@ -168,6 +168,8 @@ class StaticPayloadRelayStateMachine(
     val savedShape: SavedShape = SavedShape(
         first = "46a1d9b8bf0bd4bc55ac5b3b8080579e9e13beba2911ad0c38119420f6b7529a",
         revised = "b62b50537b02adc8c64ddc624169fd1ecd9b11141e9f0fd35dd775e192d7895f",
+        format2First = "5944e62bcf2f3e9f69840baf245d92f6f5a418b398518647d7920951786609d8",
+        format2Revised = "33d6229addd77a4755f7ccb8b0c45e742db7b525ed6cb7b0c38eac6437990519",
         records = listOf(
         ),
         enums = listOf(

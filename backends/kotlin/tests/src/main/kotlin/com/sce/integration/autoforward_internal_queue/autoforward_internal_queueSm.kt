@@ -217,7 +217,7 @@ class AutoforwardInternalQueueStateMachine(
                 val generatedInvokeId = "phase.${nextInvokeStart("inv_watch")}.inv_watch"
                 deferInvoke(state, generatedInvokeId) {
 
-                    val childSM = AutoforwardInternalQueueSceSynthInvokeInvWatchStateMachine()
+                    val childSM = adoptChild(AutoforwardInternalQueueSceSynthInvokeInvWatchStateMachine(), generatedInvokeId)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
                     startInvoke("inv_watch", childSM, true, AutoforwardInternalQueueEvent.Done.Invoke, "", generatedInvokeId, "")
                 }

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
+// source-hash: ca67d4fa2cf4dbcd6617a3b32561c9b8257bc03aaa65978435303ccf35bae7b3
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_invoke_string.scxml
@@ -122,6 +122,8 @@ class StaticInvokeStringStateMachine(
     val savedShape: SavedShape = SavedShape(
         first = "e9a22043aaf9b92bc7cb8f09f41bafcbd0cab178ab3d26e9e39d7ab73b453106",
         revised = "17ae5c17673c1da8161a1df07e130299c5c8d02e0e338535b2beac1b311a3116",
+        format2First = "e9a22043aaf9b92bc7cb8f09f41bafcbd0cab178ab3d26e9e39d7ab73b453106",
+        format2Revised = "17ae5c17673c1da8161a1df07e130299c5c8d02e0e338535b2beac1b311a3116",
         records = listOf(
         ),
         enums = listOf(
@@ -351,7 +353,7 @@ class StaticInvokeStringStateMachine(
                 val generatedInvokeId = "running.${nextInvokeStart("fits")}.fits"
                 deferInvoke(state, generatedInvokeId) {
 
-                    val childSM = StaticInvokeStringSceSynthInvokeFitsStateMachine()
+                    val childSM = adoptChild(StaticInvokeStringSceSynthInvokeFitsStateMachine(), generatedInvokeId)
                     // W3C SCXML 6.4.1: hand the child the values this invoke names
                     val childSeed = StaticInvokeStringSceSynthInvokeFitsStateMachine.InvokeParams()
                     try {
@@ -372,7 +374,7 @@ class StaticInvokeStringStateMachine(
                 val generatedInvokeId = "running.${nextInvokeStart("over")}.over"
                 deferInvoke(state, generatedInvokeId) {
 
-                    val childSM = StaticInvokeStringSceSynthInvokeOverStateMachine()
+                    val childSM = adoptChild(StaticInvokeStringSceSynthInvokeOverStateMachine(), generatedInvokeId)
                     // W3C SCXML 6.4.1: hand the child the values this invoke names
                     val childSeed = StaticInvokeStringSceSynthInvokeOverStateMachine.InvokeParams()
                     try {
@@ -393,7 +395,7 @@ class StaticInvokeStringStateMachine(
                 val generatedInvokeId = "running.${nextInvokeStart("wide")}.wide"
                 deferInvoke(state, generatedInvokeId) {
 
-                    val childSM = StaticInvokeStringSceSynthInvokeWideStateMachine()
+                    val childSM = adoptChild(StaticInvokeStringSceSynthInvokeWideStateMachine(), generatedInvokeId)
                     // W3C SCXML 6.4.1: hand the child the values this invoke names
                     val childSeed = StaticInvokeStringSceSynthInvokeWideStateMachine.InvokeParams()
                     try {

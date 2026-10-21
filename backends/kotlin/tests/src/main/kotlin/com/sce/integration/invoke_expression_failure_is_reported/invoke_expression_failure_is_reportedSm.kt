@@ -449,7 +449,8 @@ class InvokeExpressionFailureIsReportedStateMachine(
                             // evaluates, and what the value NAMES is a residue this
                             // path does not honour (SCE_ACCEPTED_SUBSET.md §2.13).
                             @Suppress("UNUSED_VARIABLE") val _evaluated = filePath
-                            val childSM = InvokeExpressionFailureIsReportedHybrid0StateMachine()
+                            // docs/adr/0045: the child takes its id where it is built.
+                            val childSM = adoptChild(InvokeExpressionFailureIsReportedHybrid0StateMachine(), generatedInvokeId)
 
                             startInvoke("_invoke_0", childSM, false, InvokeExpressionFailureIsReportedEvent.Done.Invoke, "", generatedInvokeId, "")
                         } catch (_: Exception) {

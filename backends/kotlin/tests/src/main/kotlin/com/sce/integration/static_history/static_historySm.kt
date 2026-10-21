@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
+// source-hash: ca67d4fa2cf4dbcd6617a3b32561c9b8257bc03aaa65978435303ccf35bae7b3
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_history.scxml
@@ -121,6 +121,8 @@ class StaticHistoryStateMachine(
     val savedShape: SavedShape = SavedShape(
         first = "a694bcc2c6fbd3a4168fa70c9081522dc8979d50a9c363686a4968d6ea77308d",
         revised = "c389dbae2c171ae0448bcc1888d41b21d85b54e0c576fba7a5c56fe11f31580b",
+        format2First = "a694bcc2c6fbd3a4168fa70c9081522dc8979d50a9c363686a4968d6ea77308d",
+        format2Revised = "c389dbae2c171ae0448bcc1888d41b21d85b54e0c576fba7a5c56fe11f31580b",
         records = listOf(
         ),
         enums = listOf(

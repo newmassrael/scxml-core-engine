@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: ca3b055deba6b38537c3642140f701b5f98f1b971d59425d3c780765d8a6a19b
+// source-hash: 75f0d3c43c82c6af748dd1f1aba98de1b9c4f7c51e43e8850cdf3b0490c95be4
 
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/235/test235.scxml
@@ -208,7 +208,7 @@ class Test235StateMachine(
                 val generatedInvokeId = "s0.${nextInvokeStart("foo")}.foo"
                 deferInvoke(state, generatedInvokeId) {
 
-                    val childSM = Test235SceSynthInvokeFooStateMachine()
+                    val childSM = adoptChild(Test235SceSynthInvokeFooStateMachine(), generatedInvokeId)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
                     startInvoke("foo", childSM, false, Test235Event.Done.Invoke.Foo, "", generatedInvokeId, "")
                 }

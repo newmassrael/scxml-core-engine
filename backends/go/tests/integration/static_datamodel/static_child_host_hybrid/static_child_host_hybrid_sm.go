@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
+// source-hash: ca67d4fa2cf4dbcd6617a3b32561c9b8257bc03aaa65978435303ccf35bae7b3
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -169,13 +169,31 @@ func (e StaticChildHostHybridEvent) String() string {
 	return "unknown"
 }
 
+// ── SCE Accepted Subset §2.15: what a format-2 saved state of it is bound to ──
+
+// StaticChildHostHybridSavedShapeFormat2 is the shape a format-2 saved state of
+// this machine names when every record schema it holds is in its first
+// revision (docs/adr/0045, section 2). The generator computes it once, so it is
+// the text every backend's constant is.
+const StaticChildHostHybridSavedShapeFormat2 = "2a6b932ecb9cccbb0f8ab9a2240ee9869d2a0cfc9784a29c0c34179f7233c3a7"
+
+// StaticChildHostHybridSavedShapeFormat2Revised is the shape a format-2 saved state
+// of this machine names when it names a later revision of a record schema or
+// an enum.
+const StaticChildHostHybridSavedShapeFormat2Revised = "a9ff088d356eecf3d7894cb19058246e32c6f105acea5a0cee1c3f6edee1665a"
+
+// StaticChildHostHybridSavedEnumKeys names each enum a value of a saved state of
+// this machine is of, by its document (docs/adr/0044): the key `revisions`
+// names it by, and the format-2 shape spells it by.
+var StaticChildHostHybridSavedEnumKeys = [...]string{}
+
 // ── W3C SCXML G.7: `<sce:action>` host dispatch ───────────────────────
 // W3C SCXML G.7: host operations dispatched by `<sce:action>`.
 // The host supplies the side effects while the statechart keeps each
 // operation symbolic. No runtime script engine is involved.
 type StaticChildHostHybridActions interface {
-	ActionsForWorkStaticHostedFirst() StaticHostedFirstActions
-	ActionsForWorkStaticHostedSecond() StaticHostedSecondActions
+	ActionsForWork0jStaticHostedFirst() StaticHostedFirstActions
+	ActionsForWork0jStaticHostedSecond() StaticHostedSecondActions
 }
 
 // ======================================================================
@@ -300,7 +318,7 @@ func (p *StaticChildHostHybridPolicy) ExecutePendingInvokes(engine *sce.Engine[S
 			// W3C SCXML 6.5: Generate child session ID
 			childSessionID := fmt.Sprintf("%s.%s", p.SessionID, pending.InvokeID)
 
-			childPolicy := NewStaticHostedFirstPolicy(p.actions.ActionsForWorkStaticHostedFirst())
+			childPolicy := NewStaticHostedFirstPolicy(p.actions.ActionsForWork0jStaticHostedFirst())
 			childPolicy.ParentExternalQueue = sce.NewParentEventQueue()
 			childPolicy.InvokeID = pending.InvokeID
 			childPolicy.ChildSessionID = childSessionID
@@ -341,7 +359,7 @@ func (p *StaticChildHostHybridPolicy) ExecutePendingInvokes(engine *sce.Engine[S
 			engine.StartChildMesh(childEngine, "work", "static_hosted_first")
 			childEngine.Initialize()
 
-			wrapper := &childEngineWrapperStaticChildHostHybrid_WorkStaticHostedFirst{engine: childEngine, policy: &childPolicy}
+			wrapper := &childEngineWrapperStaticChildHostHybrid_Work0jStaticHostedFirst{engine: childEngine, policy: &childPolicy}
 			p.childWork = wrapper
 
 			sce.DrainAndRaiseChildEvents(wrapper, p.activeInvokes, "work", engine)
@@ -361,7 +379,7 @@ func (p *StaticChildHostHybridPolicy) ExecutePendingInvokes(engine *sce.Engine[S
 			// W3C SCXML 6.5: Generate child session ID
 			childSessionID := fmt.Sprintf("%s.%s", p.SessionID, pending.InvokeID)
 
-			childPolicy := NewStaticHostedSecondPolicy(p.actions.ActionsForWorkStaticHostedSecond())
+			childPolicy := NewStaticHostedSecondPolicy(p.actions.ActionsForWork0jStaticHostedSecond())
 			childPolicy.ParentExternalQueue = sce.NewParentEventQueue()
 			childPolicy.InvokeID = pending.InvokeID
 			childPolicy.ChildSessionID = childSessionID
@@ -402,7 +420,7 @@ func (p *StaticChildHostHybridPolicy) ExecutePendingInvokes(engine *sce.Engine[S
 			engine.StartChildMesh(childEngine, "work", "static_hosted_second")
 			childEngine.Initialize()
 
-			wrapper := &childEngineWrapperStaticChildHostHybrid_WorkStaticHostedSecond{engine: childEngine, policy: &childPolicy}
+			wrapper := &childEngineWrapperStaticChildHostHybrid_Work0jStaticHostedSecond{engine: childEngine, policy: &childPolicy}
 			p.childWork = wrapper
 
 			sce.DrainAndRaiseChildEvents(wrapper, p.activeInvokes, "work", engine)
@@ -493,40 +511,40 @@ func (p *StaticChildHostHybridPolicy) IsInvocationRunning(invokeID string) bool 
 
 // ── Child engine wrappers (implement sce.ChildEngine interface) ──
 
-type childEngineWrapperStaticChildHostHybrid_WorkStaticHostedFirst struct {
+type childEngineWrapperStaticChildHostHybrid_Work0jStaticHostedFirst struct {
 	engine *sce.Engine[StaticHostedFirstState, StaticHostedFirstEvent]
 	policy *StaticHostedFirstPolicy
 }
-func (w *childEngineWrapperStaticChildHostHybrid_WorkStaticHostedFirst) Initialize() { w.engine.Initialize() }
-func (w *childEngineWrapperStaticChildHostHybrid_WorkStaticHostedFirst) Tick() { w.engine.Tick() }
-func (w *childEngineWrapperStaticChildHostHybrid_WorkStaticHostedFirst) Step() { w.engine.Step() }
-func (w *childEngineWrapperStaticChildHostHybrid_WorkStaticHostedFirst) Stop() { w.engine.Stop() }
-func (w *childEngineWrapperStaticChildHostHybrid_WorkStaticHostedFirst) IsInFinalState() bool { return w.engine.IsInFinalState() }
-func (w *childEngineWrapperStaticChildHostHybrid_WorkStaticHostedFirst) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
-func (w *childEngineWrapperStaticChildHostHybrid_WorkStaticHostedFirst) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
-func (w *childEngineWrapperStaticChildHostHybrid_WorkStaticHostedFirst) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
-func (w *childEngineWrapperStaticChildHostHybrid_WorkStaticHostedFirst) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
-func (w *childEngineWrapperStaticChildHostHybrid_WorkStaticHostedFirst) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
-func (w *childEngineWrapperStaticChildHostHybrid_WorkStaticHostedFirst) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
-func (w *childEngineWrapperStaticChildHostHybrid_WorkStaticHostedFirst) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
-func (w *childEngineWrapperStaticChildHostHybrid_WorkStaticHostedFirst) DetachMesh() { w.engine.DetachMesh() }
-type childEngineWrapperStaticChildHostHybrid_WorkStaticHostedSecond struct {
+func (w *childEngineWrapperStaticChildHostHybrid_Work0jStaticHostedFirst) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperStaticChildHostHybrid_Work0jStaticHostedFirst) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperStaticChildHostHybrid_Work0jStaticHostedFirst) Step() { w.engine.Step() }
+func (w *childEngineWrapperStaticChildHostHybrid_Work0jStaticHostedFirst) Stop() { w.engine.Stop() }
+func (w *childEngineWrapperStaticChildHostHybrid_Work0jStaticHostedFirst) IsInFinalState() bool { return w.engine.IsInFinalState() }
+func (w *childEngineWrapperStaticChildHostHybrid_Work0jStaticHostedFirst) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
+func (w *childEngineWrapperStaticChildHostHybrid_Work0jStaticHostedFirst) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
+func (w *childEngineWrapperStaticChildHostHybrid_Work0jStaticHostedFirst) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
+func (w *childEngineWrapperStaticChildHostHybrid_Work0jStaticHostedFirst) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
+func (w *childEngineWrapperStaticChildHostHybrid_Work0jStaticHostedFirst) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
+func (w *childEngineWrapperStaticChildHostHybrid_Work0jStaticHostedFirst) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
+func (w *childEngineWrapperStaticChildHostHybrid_Work0jStaticHostedFirst) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
+func (w *childEngineWrapperStaticChildHostHybrid_Work0jStaticHostedFirst) DetachMesh() { w.engine.DetachMesh() }
+type childEngineWrapperStaticChildHostHybrid_Work0jStaticHostedSecond struct {
 	engine *sce.Engine[StaticHostedSecondState, StaticHostedSecondEvent]
 	policy *StaticHostedSecondPolicy
 }
-func (w *childEngineWrapperStaticChildHostHybrid_WorkStaticHostedSecond) Initialize() { w.engine.Initialize() }
-func (w *childEngineWrapperStaticChildHostHybrid_WorkStaticHostedSecond) Tick() { w.engine.Tick() }
-func (w *childEngineWrapperStaticChildHostHybrid_WorkStaticHostedSecond) Step() { w.engine.Step() }
-func (w *childEngineWrapperStaticChildHostHybrid_WorkStaticHostedSecond) Stop() { w.engine.Stop() }
-func (w *childEngineWrapperStaticChildHostHybrid_WorkStaticHostedSecond) IsInFinalState() bool { return w.engine.IsInFinalState() }
-func (w *childEngineWrapperStaticChildHostHybrid_WorkStaticHostedSecond) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
-func (w *childEngineWrapperStaticChildHostHybrid_WorkStaticHostedSecond) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
-func (w *childEngineWrapperStaticChildHostHybrid_WorkStaticHostedSecond) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
-func (w *childEngineWrapperStaticChildHostHybrid_WorkStaticHostedSecond) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
-func (w *childEngineWrapperStaticChildHostHybrid_WorkStaticHostedSecond) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
-func (w *childEngineWrapperStaticChildHostHybrid_WorkStaticHostedSecond) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
-func (w *childEngineWrapperStaticChildHostHybrid_WorkStaticHostedSecond) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
-func (w *childEngineWrapperStaticChildHostHybrid_WorkStaticHostedSecond) DetachMesh() { w.engine.DetachMesh() }
+func (w *childEngineWrapperStaticChildHostHybrid_Work0jStaticHostedSecond) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperStaticChildHostHybrid_Work0jStaticHostedSecond) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperStaticChildHostHybrid_Work0jStaticHostedSecond) Step() { w.engine.Step() }
+func (w *childEngineWrapperStaticChildHostHybrid_Work0jStaticHostedSecond) Stop() { w.engine.Stop() }
+func (w *childEngineWrapperStaticChildHostHybrid_Work0jStaticHostedSecond) IsInFinalState() bool { return w.engine.IsInFinalState() }
+func (w *childEngineWrapperStaticChildHostHybrid_Work0jStaticHostedSecond) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
+func (w *childEngineWrapperStaticChildHostHybrid_Work0jStaticHostedSecond) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
+func (w *childEngineWrapperStaticChildHostHybrid_Work0jStaticHostedSecond) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
+func (w *childEngineWrapperStaticChildHostHybrid_Work0jStaticHostedSecond) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
+func (w *childEngineWrapperStaticChildHostHybrid_Work0jStaticHostedSecond) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
+func (w *childEngineWrapperStaticChildHostHybrid_Work0jStaticHostedSecond) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
+func (w *childEngineWrapperStaticChildHostHybrid_Work0jStaticHostedSecond) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
+func (w *childEngineWrapperStaticChildHostHybrid_Work0jStaticHostedSecond) DetachMesh() { w.engine.DetachMesh() }
 
 
 // DeliverToParent delivers a delayed `<send target="#_parent">` whose wait is

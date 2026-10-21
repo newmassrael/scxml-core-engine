@@ -105,6 +105,8 @@ pub mod static_invoke_string__sce_synth_invoke__fits_sm;
 pub mod static_invoke_string__sce_synth_invoke__over_sm;
 pub mod static_invoke_string__sce_synth_invoke__wide_sm;
 pub mod static_invoke_string_sm;
+pub mod static_invoke_tree__sce_synth_invoke__worker_sm;
+pub mod static_invoke_tree_sm;
 pub mod static_list_assign_sm;
 pub mod static_list_index_sm;
 pub mod static_list_sm;

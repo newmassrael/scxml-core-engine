@@ -271,7 +271,7 @@ class HostEventReachesTheChildStateMachine(
                 val generatedInvokeId = "phase.${nextInvokeStart("inv_probe")}.inv_probe"
                 deferInvoke(state, generatedInvokeId) {
 
-                    val childSM = HostEventReachesTheChildSceSynthInvokeInvProbeStateMachine()
+                    val childSM = adoptChild(HostEventReachesTheChildSceSynthInvokeInvProbeStateMachine(), generatedInvokeId)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
                     startInvoke("inv_probe", childSM, true, HostEventReachesTheChildEvent.Done.Invoke, "", generatedInvokeId, "")
                 }

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
+// source-hash: ca67d4fa2cf4dbcd6617a3b32561c9b8257bc03aaa65978435303ccf35bae7b3
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_host_notify.scxml
@@ -368,6 +368,8 @@ class StaticHostNotifyStateMachine(
     val savedShape: SavedShape = SavedShape(
         first = "aacb68b4caadf48158b4802424684c04db0f2ce532b000706210688c7dbdc377",
         revised = "f69e00d7b93736246a373797c7ed9feb7becad59326b3a6f673ffa13fd0c1c0c",
+        format2First = "aacb68b4caadf48158b4802424684c04db0f2ce532b000706210688c7dbdc377",
+        format2Revised = "f69e00d7b93736246a373797c7ed9feb7becad59326b3a6f673ffa13fd0c1c0c",
         records = listOf(
         ),
         enums = listOf(

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
+// source-hash: ca67d4fa2cf4dbcd6617a3b32561c9b8257bc03aaa65978435303ccf35bae7b3
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_invoke_string__sce_synth_invoke__wide.scxml
@@ -86,6 +86,8 @@ class StaticInvokeStringSceSynthInvokeWideStateMachine(
     val savedShape: SavedShape = SavedShape(
         first = "df593c22f28e9dcc20fc1d7f3cbca51bf67ceb27334d1bfff4b7ca7538f7adf8",
         revised = "55a0dc0121ca3585f6254e493e826f2ba027941d30e0e84a637606cd437ec5ae",
+        format2First = "df593c22f28e9dcc20fc1d7f3cbca51bf67ceb27334d1bfff4b7ca7538f7adf8",
+        format2Revised = "55a0dc0121ca3585f6254e493e826f2ba027941d30e0e84a637606cd437ec5ae",
         records = listOf(
         ),
         enums = listOf(

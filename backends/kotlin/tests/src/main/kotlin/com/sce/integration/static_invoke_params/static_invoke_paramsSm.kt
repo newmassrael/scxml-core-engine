@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
+// source-hash: ca67d4fa2cf4dbcd6617a3b32561c9b8257bc03aaa65978435303ccf35bae7b3
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_invoke_params.scxml
@@ -119,6 +119,8 @@ class StaticInvokeParamsStateMachine(
     val savedShape: SavedShape = SavedShape(
         first = "f9ab3ba81430cdbce450cf0b6fad5b6cee7263ce0ffd9390d2bba6fd2bba3847",
         revised = "7e605508ff2f4284ef9bb702b856d86b91d58fa56e933f10a11e727f9553c9c2",
+        format2First = "f9ab3ba81430cdbce450cf0b6fad5b6cee7263ce0ffd9390d2bba6fd2bba3847",
+        format2Revised = "7e605508ff2f4284ef9bb702b856d86b91d58fa56e933f10a11e727f9553c9c2",
         records = listOf(
         ),
         enums = listOf(
@@ -366,7 +368,7 @@ class StaticInvokeParamsStateMachine(
                 val generatedInvokeId = "plain.${nextInvokeStart("control")}.control"
                 deferInvoke(state, generatedInvokeId) {
 
-                    val childSM = StaticInvokeParamsSceSynthInvokeControlStateMachine()
+                    val childSM = adoptChild(StaticInvokeParamsSceSynthInvokeControlStateMachine(), generatedInvokeId)
 
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
                     startInvoke("control", childSM, false, StaticInvokeParamsEvent.Done.Invoke.Control, "", generatedInvokeId, "")
@@ -378,7 +380,7 @@ class StaticInvokeParamsStateMachine(
                 val generatedInvokeId = "plain.${nextInvokeStart("watcher")}.watcher"
                 deferInvoke(state, generatedInvokeId) {
 
-                    val childSM = StaticInvokeParamsSceSynthInvokeWatcherStateMachine()
+                    val childSM = adoptChild(StaticInvokeParamsSceSynthInvokeWatcherStateMachine(), generatedInvokeId)
                     // W3C SCXML 6.4.1: hand the child the values this invoke names
                     val childSeed = StaticInvokeParamsSceSynthInvokeWatcherStateMachine.InvokeParams()
                     childSeed.start = vBase
@@ -394,7 +396,7 @@ class StaticInvokeParamsStateMachine(
                 val generatedInvokeId = "working.${nextInvokeStart("worker")}.worker"
                 deferInvoke(state, generatedInvokeId) {
 
-                    val childSM = StaticInvokeParamsSceSynthInvokeWorkerStateMachine()
+                    val childSM = adoptChild(StaticInvokeParamsSceSynthInvokeWorkerStateMachine(), generatedInvokeId)
                     // W3C SCXML 6.4.1: hand the child the values this invoke names
                     val childSeed = StaticInvokeParamsSceSynthInvokeWorkerStateMachine.InvokeParams()
                     childSeed.start = vBase

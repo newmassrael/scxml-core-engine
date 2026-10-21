@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
+// source-hash: ca67d4fa2cf4dbcd6617a3b32561c9b8257bc03aaa65978435303ccf35bae7b3
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_send_http.scxml
@@ -125,6 +125,8 @@ class StaticSendHttpStateMachine(
     val savedShape: SavedShape = SavedShape(
         first = "00fa415a572dac70afc92855a696126c6cba10c087c24cf7bb2a7d49fa3af55e",
         revised = "d427bc0c830426e6e58b59700bf6df2e93a80bd1c187d436535a9a141233963f",
+        format2First = "00fa415a572dac70afc92855a696126c6cba10c087c24cf7bb2a7d49fa3af55e",
+        format2Revised = "d427bc0c830426e6e58b59700bf6df2e93a80bd1c187d436535a9a141233963f",
         records = listOf(
         ),
         enums = listOf(

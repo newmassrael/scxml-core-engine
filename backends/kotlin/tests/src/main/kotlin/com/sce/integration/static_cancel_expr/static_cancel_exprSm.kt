@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
+// source-hash: ca67d4fa2cf4dbcd6617a3b32561c9b8257bc03aaa65978435303ccf35bae7b3
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_cancel_expr.scxml
@@ -140,6 +140,8 @@ class StaticCancelExprStateMachine(
     val savedShape: SavedShape = SavedShape(
         first = "3931ee52e0ca82c24127717dc9133799a7f0ac200b2fbd10b7fb89b77838dc7f",
         revised = "17bda9c93136de5ecc612c39876f588c68fca5ef1340164058fe13f2de780e16",
+        format2First = "3931ee52e0ca82c24127717dc9133799a7f0ac200b2fbd10b7fb89b77838dc7f",
+        format2Revised = "17bda9c93136de5ecc612c39876f588c68fca5ef1340164058fe13f2de780e16",
         records = listOf(
         ),
         enums = listOf(

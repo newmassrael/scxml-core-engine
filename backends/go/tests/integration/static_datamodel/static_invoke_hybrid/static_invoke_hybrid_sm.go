@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
+// source-hash: ca67d4fa2cf4dbcd6617a3b32561c9b8257bc03aaa65978435303ccf35bae7b3
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -206,6 +206,24 @@ func (e StaticInvokeHybridEvent) String() string {
 	}
 	return "unknown"
 }
+
+// ── SCE Accepted Subset §2.15: what a format-2 saved state of it is bound to ──
+
+// StaticInvokeHybridSavedShapeFormat2 is the shape a format-2 saved state of
+// this machine names when every record schema it holds is in its first
+// revision (docs/adr/0045, section 2). The generator computes it once, so it is
+// the text every backend's constant is.
+const StaticInvokeHybridSavedShapeFormat2 = "972ab8ed39c25ae07affaee242de1ae666cf4699c734a946880fc52a11084868"
+
+// StaticInvokeHybridSavedShapeFormat2Revised is the shape a format-2 saved state
+// of this machine names when it names a later revision of a record schema or
+// an enum.
+const StaticInvokeHybridSavedShapeFormat2Revised = "039391213c4d9db4886165effd4737cd44a24b3e626866ecb867a40301922e58"
+
+// StaticInvokeHybridSavedEnumKeys names each enum a value of a saved state of
+// this machine is of, by its document (docs/adr/0044): the key `revisions`
+// names it by, and the format-2 shape spells it by.
+var StaticInvokeHybridSavedEnumKeys = [...]string{}
 
 // ======================================================================
 // Policy struct
@@ -428,7 +446,7 @@ func (p *StaticInvokeHybridPolicy) ExecutePendingInvokes(engine *sce.Engine[Stat
 			engine.StartChildMesh(childEngine, "first_run", "static_hybrid_first")
 			childEngine.Initialize()
 
-			wrapper := &childEngineWrapperStaticInvokeHybrid_FirstRunStaticHybridFirst{engine: childEngine, policy: &childPolicy}
+			wrapper := &childEngineWrapperStaticInvokeHybrid_FirstRun0jStaticHybridFirst{engine: childEngine, policy: &childPolicy}
 			p.childFirstRun = wrapper
 
 			sce.DrainAndRaiseChildEvents(wrapper, p.activeInvokes, "first_run", engine)
@@ -510,7 +528,7 @@ func (p *StaticInvokeHybridPolicy) ExecutePendingInvokes(engine *sce.Engine[Stat
 			engine.StartChildMesh(childEngine, "first_run", "static_hybrid_second")
 			childEngine.Initialize()
 
-			wrapper := &childEngineWrapperStaticInvokeHybrid_FirstRunStaticHybridSecond{engine: childEngine, policy: &childPolicy}
+			wrapper := &childEngineWrapperStaticInvokeHybrid_FirstRun0jStaticHybridSecond{engine: childEngine, policy: &childPolicy}
 			p.childFirstRun = wrapper
 
 			sce.DrainAndRaiseChildEvents(wrapper, p.activeInvokes, "first_run", engine)
@@ -618,7 +636,7 @@ func (p *StaticInvokeHybridPolicy) ExecutePendingInvokes(engine *sce.Engine[Stat
 			engine.StartChildMesh(childEngine, "lossy_run", "static_hybrid_first")
 			childEngine.Initialize()
 
-			wrapper := &childEngineWrapperStaticInvokeHybrid_LossyRunStaticHybridFirst{engine: childEngine, policy: &childPolicy}
+			wrapper := &childEngineWrapperStaticInvokeHybrid_LossyRun0jStaticHybridFirst{engine: childEngine, policy: &childPolicy}
 			p.childLossyRun = wrapper
 
 			sce.DrainAndRaiseChildEvents(wrapper, p.activeInvokes, "lossy_run", engine)
@@ -700,7 +718,7 @@ func (p *StaticInvokeHybridPolicy) ExecutePendingInvokes(engine *sce.Engine[Stat
 			engine.StartChildMesh(childEngine, "lossy_run", "static_hybrid_second")
 			childEngine.Initialize()
 
-			wrapper := &childEngineWrapperStaticInvokeHybrid_LossyRunStaticHybridSecond{engine: childEngine, policy: &childPolicy}
+			wrapper := &childEngineWrapperStaticInvokeHybrid_LossyRun0jStaticHybridSecond{engine: childEngine, policy: &childPolicy}
 			p.childLossyRun = wrapper
 
 			sce.DrainAndRaiseChildEvents(wrapper, p.activeInvokes, "lossy_run", engine)
@@ -798,7 +816,7 @@ func (p *StaticInvokeHybridPolicy) ExecutePendingInvokes(engine *sce.Engine[Stat
 			engine.StartChildMesh(childEngine, "missing_run", "static_hybrid_first")
 			childEngine.Initialize()
 
-			wrapper := &childEngineWrapperStaticInvokeHybrid_MissingRunStaticHybridFirst{engine: childEngine, policy: &childPolicy}
+			wrapper := &childEngineWrapperStaticInvokeHybrid_MissingRun0jStaticHybridFirst{engine: childEngine, policy: &childPolicy}
 			p.childMissingRun = wrapper
 
 			sce.DrainAndRaiseChildEvents(wrapper, p.activeInvokes, "missing_run", engine)
@@ -869,7 +887,7 @@ func (p *StaticInvokeHybridPolicy) ExecutePendingInvokes(engine *sce.Engine[Stat
 			engine.StartChildMesh(childEngine, "missing_run", "static_hybrid_second")
 			childEngine.Initialize()
 
-			wrapper := &childEngineWrapperStaticInvokeHybrid_MissingRunStaticHybridSecond{engine: childEngine, policy: &childPolicy}
+			wrapper := &childEngineWrapperStaticInvokeHybrid_MissingRun0jStaticHybridSecond{engine: childEngine, policy: &childPolicy}
 			p.childMissingRun = wrapper
 
 			sce.DrainAndRaiseChildEvents(wrapper, p.activeInvokes, "missing_run", engine)
@@ -977,7 +995,7 @@ func (p *StaticInvokeHybridPolicy) ExecutePendingInvokes(engine *sce.Engine[Stat
 			engine.StartChildMesh(childEngine, "second_run", "static_hybrid_first")
 			childEngine.Initialize()
 
-			wrapper := &childEngineWrapperStaticInvokeHybrid_SecondRunStaticHybridFirst{engine: childEngine, policy: &childPolicy}
+			wrapper := &childEngineWrapperStaticInvokeHybrid_SecondRun0jStaticHybridFirst{engine: childEngine, policy: &childPolicy}
 			p.childSecondRun = wrapper
 
 			sce.DrainAndRaiseChildEvents(wrapper, p.activeInvokes, "second_run", engine)
@@ -1059,7 +1077,7 @@ func (p *StaticInvokeHybridPolicy) ExecutePendingInvokes(engine *sce.Engine[Stat
 			engine.StartChildMesh(childEngine, "second_run", "static_hybrid_second")
 			childEngine.Initialize()
 
-			wrapper := &childEngineWrapperStaticInvokeHybrid_SecondRunStaticHybridSecond{engine: childEngine, policy: &childPolicy}
+			wrapper := &childEngineWrapperStaticInvokeHybrid_SecondRun0jStaticHybridSecond{engine: childEngine, policy: &childPolicy}
 			p.childSecondRun = wrapper
 
 			sce.DrainAndRaiseChildEvents(wrapper, p.activeInvokes, "second_run", engine)
@@ -1249,142 +1267,142 @@ func (p *StaticInvokeHybridPolicy) IsInvocationRunning(invokeID string) bool {
 
 // ── Child engine wrappers (implement sce.ChildEngine interface) ──
 
-type childEngineWrapperStaticInvokeHybrid_FirstRunStaticHybridFirst struct {
+type childEngineWrapperStaticInvokeHybrid_FirstRun0jStaticHybridFirst struct {
 	engine *sce.Engine[StaticHybridFirstState, StaticHybridFirstEvent]
 	policy *StaticHybridFirstPolicy
 }
-func (w *childEngineWrapperStaticInvokeHybrid_FirstRunStaticHybridFirst) Initialize() { w.engine.Initialize() }
-func (w *childEngineWrapperStaticInvokeHybrid_FirstRunStaticHybridFirst) Tick() { w.engine.Tick() }
-func (w *childEngineWrapperStaticInvokeHybrid_FirstRunStaticHybridFirst) Step() { w.engine.Step() }
-func (w *childEngineWrapperStaticInvokeHybrid_FirstRunStaticHybridFirst) Stop() { w.engine.Stop() }
-func (w *childEngineWrapperStaticInvokeHybrid_FirstRunStaticHybridFirst) IsInFinalState() bool { return w.engine.IsInFinalState() }
-func (w *childEngineWrapperStaticInvokeHybrid_FirstRunStaticHybridFirst) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
-func (w *childEngineWrapperStaticInvokeHybrid_FirstRunStaticHybridFirst) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
-func (w *childEngineWrapperStaticInvokeHybrid_FirstRunStaticHybridFirst) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
-func (w *childEngineWrapperStaticInvokeHybrid_FirstRunStaticHybridFirst) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
-func (w *childEngineWrapperStaticInvokeHybrid_FirstRunStaticHybridFirst) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
-func (w *childEngineWrapperStaticInvokeHybrid_FirstRunStaticHybridFirst) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
-func (w *childEngineWrapperStaticInvokeHybrid_FirstRunStaticHybridFirst) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
-func (w *childEngineWrapperStaticInvokeHybrid_FirstRunStaticHybridFirst) DetachMesh() { w.engine.DetachMesh() }
-type childEngineWrapperStaticInvokeHybrid_FirstRunStaticHybridSecond struct {
+func (w *childEngineWrapperStaticInvokeHybrid_FirstRun0jStaticHybridFirst) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperStaticInvokeHybrid_FirstRun0jStaticHybridFirst) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperStaticInvokeHybrid_FirstRun0jStaticHybridFirst) Step() { w.engine.Step() }
+func (w *childEngineWrapperStaticInvokeHybrid_FirstRun0jStaticHybridFirst) Stop() { w.engine.Stop() }
+func (w *childEngineWrapperStaticInvokeHybrid_FirstRun0jStaticHybridFirst) IsInFinalState() bool { return w.engine.IsInFinalState() }
+func (w *childEngineWrapperStaticInvokeHybrid_FirstRun0jStaticHybridFirst) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
+func (w *childEngineWrapperStaticInvokeHybrid_FirstRun0jStaticHybridFirst) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
+func (w *childEngineWrapperStaticInvokeHybrid_FirstRun0jStaticHybridFirst) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
+func (w *childEngineWrapperStaticInvokeHybrid_FirstRun0jStaticHybridFirst) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
+func (w *childEngineWrapperStaticInvokeHybrid_FirstRun0jStaticHybridFirst) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
+func (w *childEngineWrapperStaticInvokeHybrid_FirstRun0jStaticHybridFirst) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
+func (w *childEngineWrapperStaticInvokeHybrid_FirstRun0jStaticHybridFirst) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
+func (w *childEngineWrapperStaticInvokeHybrid_FirstRun0jStaticHybridFirst) DetachMesh() { w.engine.DetachMesh() }
+type childEngineWrapperStaticInvokeHybrid_FirstRun0jStaticHybridSecond struct {
 	engine *sce.Engine[StaticHybridSecondState, StaticHybridSecondEvent]
 	policy *StaticHybridSecondPolicy
 }
-func (w *childEngineWrapperStaticInvokeHybrid_FirstRunStaticHybridSecond) Initialize() { w.engine.Initialize() }
-func (w *childEngineWrapperStaticInvokeHybrid_FirstRunStaticHybridSecond) Tick() { w.engine.Tick() }
-func (w *childEngineWrapperStaticInvokeHybrid_FirstRunStaticHybridSecond) Step() { w.engine.Step() }
-func (w *childEngineWrapperStaticInvokeHybrid_FirstRunStaticHybridSecond) Stop() { w.engine.Stop() }
-func (w *childEngineWrapperStaticInvokeHybrid_FirstRunStaticHybridSecond) IsInFinalState() bool { return w.engine.IsInFinalState() }
-func (w *childEngineWrapperStaticInvokeHybrid_FirstRunStaticHybridSecond) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
-func (w *childEngineWrapperStaticInvokeHybrid_FirstRunStaticHybridSecond) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
-func (w *childEngineWrapperStaticInvokeHybrid_FirstRunStaticHybridSecond) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
-func (w *childEngineWrapperStaticInvokeHybrid_FirstRunStaticHybridSecond) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
-func (w *childEngineWrapperStaticInvokeHybrid_FirstRunStaticHybridSecond) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
-func (w *childEngineWrapperStaticInvokeHybrid_FirstRunStaticHybridSecond) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
-func (w *childEngineWrapperStaticInvokeHybrid_FirstRunStaticHybridSecond) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
-func (w *childEngineWrapperStaticInvokeHybrid_FirstRunStaticHybridSecond) DetachMesh() { w.engine.DetachMesh() }
-type childEngineWrapperStaticInvokeHybrid_SecondRunStaticHybridFirst struct {
+func (w *childEngineWrapperStaticInvokeHybrid_FirstRun0jStaticHybridSecond) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperStaticInvokeHybrid_FirstRun0jStaticHybridSecond) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperStaticInvokeHybrid_FirstRun0jStaticHybridSecond) Step() { w.engine.Step() }
+func (w *childEngineWrapperStaticInvokeHybrid_FirstRun0jStaticHybridSecond) Stop() { w.engine.Stop() }
+func (w *childEngineWrapperStaticInvokeHybrid_FirstRun0jStaticHybridSecond) IsInFinalState() bool { return w.engine.IsInFinalState() }
+func (w *childEngineWrapperStaticInvokeHybrid_FirstRun0jStaticHybridSecond) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
+func (w *childEngineWrapperStaticInvokeHybrid_FirstRun0jStaticHybridSecond) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
+func (w *childEngineWrapperStaticInvokeHybrid_FirstRun0jStaticHybridSecond) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
+func (w *childEngineWrapperStaticInvokeHybrid_FirstRun0jStaticHybridSecond) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
+func (w *childEngineWrapperStaticInvokeHybrid_FirstRun0jStaticHybridSecond) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
+func (w *childEngineWrapperStaticInvokeHybrid_FirstRun0jStaticHybridSecond) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
+func (w *childEngineWrapperStaticInvokeHybrid_FirstRun0jStaticHybridSecond) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
+func (w *childEngineWrapperStaticInvokeHybrid_FirstRun0jStaticHybridSecond) DetachMesh() { w.engine.DetachMesh() }
+type childEngineWrapperStaticInvokeHybrid_SecondRun0jStaticHybridFirst struct {
 	engine *sce.Engine[StaticHybridFirstState, StaticHybridFirstEvent]
 	policy *StaticHybridFirstPolicy
 }
-func (w *childEngineWrapperStaticInvokeHybrid_SecondRunStaticHybridFirst) Initialize() { w.engine.Initialize() }
-func (w *childEngineWrapperStaticInvokeHybrid_SecondRunStaticHybridFirst) Tick() { w.engine.Tick() }
-func (w *childEngineWrapperStaticInvokeHybrid_SecondRunStaticHybridFirst) Step() { w.engine.Step() }
-func (w *childEngineWrapperStaticInvokeHybrid_SecondRunStaticHybridFirst) Stop() { w.engine.Stop() }
-func (w *childEngineWrapperStaticInvokeHybrid_SecondRunStaticHybridFirst) IsInFinalState() bool { return w.engine.IsInFinalState() }
-func (w *childEngineWrapperStaticInvokeHybrid_SecondRunStaticHybridFirst) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
-func (w *childEngineWrapperStaticInvokeHybrid_SecondRunStaticHybridFirst) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
-func (w *childEngineWrapperStaticInvokeHybrid_SecondRunStaticHybridFirst) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
-func (w *childEngineWrapperStaticInvokeHybrid_SecondRunStaticHybridFirst) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
-func (w *childEngineWrapperStaticInvokeHybrid_SecondRunStaticHybridFirst) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
-func (w *childEngineWrapperStaticInvokeHybrid_SecondRunStaticHybridFirst) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
-func (w *childEngineWrapperStaticInvokeHybrid_SecondRunStaticHybridFirst) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
-func (w *childEngineWrapperStaticInvokeHybrid_SecondRunStaticHybridFirst) DetachMesh() { w.engine.DetachMesh() }
-type childEngineWrapperStaticInvokeHybrid_SecondRunStaticHybridSecond struct {
+func (w *childEngineWrapperStaticInvokeHybrid_SecondRun0jStaticHybridFirst) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperStaticInvokeHybrid_SecondRun0jStaticHybridFirst) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperStaticInvokeHybrid_SecondRun0jStaticHybridFirst) Step() { w.engine.Step() }
+func (w *childEngineWrapperStaticInvokeHybrid_SecondRun0jStaticHybridFirst) Stop() { w.engine.Stop() }
+func (w *childEngineWrapperStaticInvokeHybrid_SecondRun0jStaticHybridFirst) IsInFinalState() bool { return w.engine.IsInFinalState() }
+func (w *childEngineWrapperStaticInvokeHybrid_SecondRun0jStaticHybridFirst) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
+func (w *childEngineWrapperStaticInvokeHybrid_SecondRun0jStaticHybridFirst) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
+func (w *childEngineWrapperStaticInvokeHybrid_SecondRun0jStaticHybridFirst) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
+func (w *childEngineWrapperStaticInvokeHybrid_SecondRun0jStaticHybridFirst) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
+func (w *childEngineWrapperStaticInvokeHybrid_SecondRun0jStaticHybridFirst) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
+func (w *childEngineWrapperStaticInvokeHybrid_SecondRun0jStaticHybridFirst) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
+func (w *childEngineWrapperStaticInvokeHybrid_SecondRun0jStaticHybridFirst) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
+func (w *childEngineWrapperStaticInvokeHybrid_SecondRun0jStaticHybridFirst) DetachMesh() { w.engine.DetachMesh() }
+type childEngineWrapperStaticInvokeHybrid_SecondRun0jStaticHybridSecond struct {
 	engine *sce.Engine[StaticHybridSecondState, StaticHybridSecondEvent]
 	policy *StaticHybridSecondPolicy
 }
-func (w *childEngineWrapperStaticInvokeHybrid_SecondRunStaticHybridSecond) Initialize() { w.engine.Initialize() }
-func (w *childEngineWrapperStaticInvokeHybrid_SecondRunStaticHybridSecond) Tick() { w.engine.Tick() }
-func (w *childEngineWrapperStaticInvokeHybrid_SecondRunStaticHybridSecond) Step() { w.engine.Step() }
-func (w *childEngineWrapperStaticInvokeHybrid_SecondRunStaticHybridSecond) Stop() { w.engine.Stop() }
-func (w *childEngineWrapperStaticInvokeHybrid_SecondRunStaticHybridSecond) IsInFinalState() bool { return w.engine.IsInFinalState() }
-func (w *childEngineWrapperStaticInvokeHybrid_SecondRunStaticHybridSecond) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
-func (w *childEngineWrapperStaticInvokeHybrid_SecondRunStaticHybridSecond) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
-func (w *childEngineWrapperStaticInvokeHybrid_SecondRunStaticHybridSecond) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
-func (w *childEngineWrapperStaticInvokeHybrid_SecondRunStaticHybridSecond) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
-func (w *childEngineWrapperStaticInvokeHybrid_SecondRunStaticHybridSecond) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
-func (w *childEngineWrapperStaticInvokeHybrid_SecondRunStaticHybridSecond) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
-func (w *childEngineWrapperStaticInvokeHybrid_SecondRunStaticHybridSecond) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
-func (w *childEngineWrapperStaticInvokeHybrid_SecondRunStaticHybridSecond) DetachMesh() { w.engine.DetachMesh() }
-type childEngineWrapperStaticInvokeHybrid_LossyRunStaticHybridFirst struct {
+func (w *childEngineWrapperStaticInvokeHybrid_SecondRun0jStaticHybridSecond) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperStaticInvokeHybrid_SecondRun0jStaticHybridSecond) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperStaticInvokeHybrid_SecondRun0jStaticHybridSecond) Step() { w.engine.Step() }
+func (w *childEngineWrapperStaticInvokeHybrid_SecondRun0jStaticHybridSecond) Stop() { w.engine.Stop() }
+func (w *childEngineWrapperStaticInvokeHybrid_SecondRun0jStaticHybridSecond) IsInFinalState() bool { return w.engine.IsInFinalState() }
+func (w *childEngineWrapperStaticInvokeHybrid_SecondRun0jStaticHybridSecond) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
+func (w *childEngineWrapperStaticInvokeHybrid_SecondRun0jStaticHybridSecond) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
+func (w *childEngineWrapperStaticInvokeHybrid_SecondRun0jStaticHybridSecond) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
+func (w *childEngineWrapperStaticInvokeHybrid_SecondRun0jStaticHybridSecond) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
+func (w *childEngineWrapperStaticInvokeHybrid_SecondRun0jStaticHybridSecond) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
+func (w *childEngineWrapperStaticInvokeHybrid_SecondRun0jStaticHybridSecond) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
+func (w *childEngineWrapperStaticInvokeHybrid_SecondRun0jStaticHybridSecond) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
+func (w *childEngineWrapperStaticInvokeHybrid_SecondRun0jStaticHybridSecond) DetachMesh() { w.engine.DetachMesh() }
+type childEngineWrapperStaticInvokeHybrid_LossyRun0jStaticHybridFirst struct {
 	engine *sce.Engine[StaticHybridFirstState, StaticHybridFirstEvent]
 	policy *StaticHybridFirstPolicy
 }
-func (w *childEngineWrapperStaticInvokeHybrid_LossyRunStaticHybridFirst) Initialize() { w.engine.Initialize() }
-func (w *childEngineWrapperStaticInvokeHybrid_LossyRunStaticHybridFirst) Tick() { w.engine.Tick() }
-func (w *childEngineWrapperStaticInvokeHybrid_LossyRunStaticHybridFirst) Step() { w.engine.Step() }
-func (w *childEngineWrapperStaticInvokeHybrid_LossyRunStaticHybridFirst) Stop() { w.engine.Stop() }
-func (w *childEngineWrapperStaticInvokeHybrid_LossyRunStaticHybridFirst) IsInFinalState() bool { return w.engine.IsInFinalState() }
-func (w *childEngineWrapperStaticInvokeHybrid_LossyRunStaticHybridFirst) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
-func (w *childEngineWrapperStaticInvokeHybrid_LossyRunStaticHybridFirst) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
-func (w *childEngineWrapperStaticInvokeHybrid_LossyRunStaticHybridFirst) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
-func (w *childEngineWrapperStaticInvokeHybrid_LossyRunStaticHybridFirst) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
-func (w *childEngineWrapperStaticInvokeHybrid_LossyRunStaticHybridFirst) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
-func (w *childEngineWrapperStaticInvokeHybrid_LossyRunStaticHybridFirst) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
-func (w *childEngineWrapperStaticInvokeHybrid_LossyRunStaticHybridFirst) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
-func (w *childEngineWrapperStaticInvokeHybrid_LossyRunStaticHybridFirst) DetachMesh() { w.engine.DetachMesh() }
-type childEngineWrapperStaticInvokeHybrid_LossyRunStaticHybridSecond struct {
+func (w *childEngineWrapperStaticInvokeHybrid_LossyRun0jStaticHybridFirst) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperStaticInvokeHybrid_LossyRun0jStaticHybridFirst) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperStaticInvokeHybrid_LossyRun0jStaticHybridFirst) Step() { w.engine.Step() }
+func (w *childEngineWrapperStaticInvokeHybrid_LossyRun0jStaticHybridFirst) Stop() { w.engine.Stop() }
+func (w *childEngineWrapperStaticInvokeHybrid_LossyRun0jStaticHybridFirst) IsInFinalState() bool { return w.engine.IsInFinalState() }
+func (w *childEngineWrapperStaticInvokeHybrid_LossyRun0jStaticHybridFirst) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
+func (w *childEngineWrapperStaticInvokeHybrid_LossyRun0jStaticHybridFirst) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
+func (w *childEngineWrapperStaticInvokeHybrid_LossyRun0jStaticHybridFirst) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
+func (w *childEngineWrapperStaticInvokeHybrid_LossyRun0jStaticHybridFirst) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
+func (w *childEngineWrapperStaticInvokeHybrid_LossyRun0jStaticHybridFirst) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
+func (w *childEngineWrapperStaticInvokeHybrid_LossyRun0jStaticHybridFirst) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
+func (w *childEngineWrapperStaticInvokeHybrid_LossyRun0jStaticHybridFirst) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
+func (w *childEngineWrapperStaticInvokeHybrid_LossyRun0jStaticHybridFirst) DetachMesh() { w.engine.DetachMesh() }
+type childEngineWrapperStaticInvokeHybrid_LossyRun0jStaticHybridSecond struct {
 	engine *sce.Engine[StaticHybridSecondState, StaticHybridSecondEvent]
 	policy *StaticHybridSecondPolicy
 }
-func (w *childEngineWrapperStaticInvokeHybrid_LossyRunStaticHybridSecond) Initialize() { w.engine.Initialize() }
-func (w *childEngineWrapperStaticInvokeHybrid_LossyRunStaticHybridSecond) Tick() { w.engine.Tick() }
-func (w *childEngineWrapperStaticInvokeHybrid_LossyRunStaticHybridSecond) Step() { w.engine.Step() }
-func (w *childEngineWrapperStaticInvokeHybrid_LossyRunStaticHybridSecond) Stop() { w.engine.Stop() }
-func (w *childEngineWrapperStaticInvokeHybrid_LossyRunStaticHybridSecond) IsInFinalState() bool { return w.engine.IsInFinalState() }
-func (w *childEngineWrapperStaticInvokeHybrid_LossyRunStaticHybridSecond) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
-func (w *childEngineWrapperStaticInvokeHybrid_LossyRunStaticHybridSecond) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
-func (w *childEngineWrapperStaticInvokeHybrid_LossyRunStaticHybridSecond) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
-func (w *childEngineWrapperStaticInvokeHybrid_LossyRunStaticHybridSecond) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
-func (w *childEngineWrapperStaticInvokeHybrid_LossyRunStaticHybridSecond) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
-func (w *childEngineWrapperStaticInvokeHybrid_LossyRunStaticHybridSecond) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
-func (w *childEngineWrapperStaticInvokeHybrid_LossyRunStaticHybridSecond) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
-func (w *childEngineWrapperStaticInvokeHybrid_LossyRunStaticHybridSecond) DetachMesh() { w.engine.DetachMesh() }
-type childEngineWrapperStaticInvokeHybrid_MissingRunStaticHybridFirst struct {
+func (w *childEngineWrapperStaticInvokeHybrid_LossyRun0jStaticHybridSecond) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperStaticInvokeHybrid_LossyRun0jStaticHybridSecond) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperStaticInvokeHybrid_LossyRun0jStaticHybridSecond) Step() { w.engine.Step() }
+func (w *childEngineWrapperStaticInvokeHybrid_LossyRun0jStaticHybridSecond) Stop() { w.engine.Stop() }
+func (w *childEngineWrapperStaticInvokeHybrid_LossyRun0jStaticHybridSecond) IsInFinalState() bool { return w.engine.IsInFinalState() }
+func (w *childEngineWrapperStaticInvokeHybrid_LossyRun0jStaticHybridSecond) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
+func (w *childEngineWrapperStaticInvokeHybrid_LossyRun0jStaticHybridSecond) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
+func (w *childEngineWrapperStaticInvokeHybrid_LossyRun0jStaticHybridSecond) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
+func (w *childEngineWrapperStaticInvokeHybrid_LossyRun0jStaticHybridSecond) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
+func (w *childEngineWrapperStaticInvokeHybrid_LossyRun0jStaticHybridSecond) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
+func (w *childEngineWrapperStaticInvokeHybrid_LossyRun0jStaticHybridSecond) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
+func (w *childEngineWrapperStaticInvokeHybrid_LossyRun0jStaticHybridSecond) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
+func (w *childEngineWrapperStaticInvokeHybrid_LossyRun0jStaticHybridSecond) DetachMesh() { w.engine.DetachMesh() }
+type childEngineWrapperStaticInvokeHybrid_MissingRun0jStaticHybridFirst struct {
 	engine *sce.Engine[StaticHybridFirstState, StaticHybridFirstEvent]
 	policy *StaticHybridFirstPolicy
 }
-func (w *childEngineWrapperStaticInvokeHybrid_MissingRunStaticHybridFirst) Initialize() { w.engine.Initialize() }
-func (w *childEngineWrapperStaticInvokeHybrid_MissingRunStaticHybridFirst) Tick() { w.engine.Tick() }
-func (w *childEngineWrapperStaticInvokeHybrid_MissingRunStaticHybridFirst) Step() { w.engine.Step() }
-func (w *childEngineWrapperStaticInvokeHybrid_MissingRunStaticHybridFirst) Stop() { w.engine.Stop() }
-func (w *childEngineWrapperStaticInvokeHybrid_MissingRunStaticHybridFirst) IsInFinalState() bool { return w.engine.IsInFinalState() }
-func (w *childEngineWrapperStaticInvokeHybrid_MissingRunStaticHybridFirst) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
-func (w *childEngineWrapperStaticInvokeHybrid_MissingRunStaticHybridFirst) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
-func (w *childEngineWrapperStaticInvokeHybrid_MissingRunStaticHybridFirst) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
-func (w *childEngineWrapperStaticInvokeHybrid_MissingRunStaticHybridFirst) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
-func (w *childEngineWrapperStaticInvokeHybrid_MissingRunStaticHybridFirst) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
-func (w *childEngineWrapperStaticInvokeHybrid_MissingRunStaticHybridFirst) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
-func (w *childEngineWrapperStaticInvokeHybrid_MissingRunStaticHybridFirst) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
-func (w *childEngineWrapperStaticInvokeHybrid_MissingRunStaticHybridFirst) DetachMesh() { w.engine.DetachMesh() }
-type childEngineWrapperStaticInvokeHybrid_MissingRunStaticHybridSecond struct {
+func (w *childEngineWrapperStaticInvokeHybrid_MissingRun0jStaticHybridFirst) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperStaticInvokeHybrid_MissingRun0jStaticHybridFirst) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperStaticInvokeHybrid_MissingRun0jStaticHybridFirst) Step() { w.engine.Step() }
+func (w *childEngineWrapperStaticInvokeHybrid_MissingRun0jStaticHybridFirst) Stop() { w.engine.Stop() }
+func (w *childEngineWrapperStaticInvokeHybrid_MissingRun0jStaticHybridFirst) IsInFinalState() bool { return w.engine.IsInFinalState() }
+func (w *childEngineWrapperStaticInvokeHybrid_MissingRun0jStaticHybridFirst) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
+func (w *childEngineWrapperStaticInvokeHybrid_MissingRun0jStaticHybridFirst) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
+func (w *childEngineWrapperStaticInvokeHybrid_MissingRun0jStaticHybridFirst) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
+func (w *childEngineWrapperStaticInvokeHybrid_MissingRun0jStaticHybridFirst) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
+func (w *childEngineWrapperStaticInvokeHybrid_MissingRun0jStaticHybridFirst) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
+func (w *childEngineWrapperStaticInvokeHybrid_MissingRun0jStaticHybridFirst) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
+func (w *childEngineWrapperStaticInvokeHybrid_MissingRun0jStaticHybridFirst) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
+func (w *childEngineWrapperStaticInvokeHybrid_MissingRun0jStaticHybridFirst) DetachMesh() { w.engine.DetachMesh() }
+type childEngineWrapperStaticInvokeHybrid_MissingRun0jStaticHybridSecond struct {
 	engine *sce.Engine[StaticHybridSecondState, StaticHybridSecondEvent]
 	policy *StaticHybridSecondPolicy
 }
-func (w *childEngineWrapperStaticInvokeHybrid_MissingRunStaticHybridSecond) Initialize() { w.engine.Initialize() }
-func (w *childEngineWrapperStaticInvokeHybrid_MissingRunStaticHybridSecond) Tick() { w.engine.Tick() }
-func (w *childEngineWrapperStaticInvokeHybrid_MissingRunStaticHybridSecond) Step() { w.engine.Step() }
-func (w *childEngineWrapperStaticInvokeHybrid_MissingRunStaticHybridSecond) Stop() { w.engine.Stop() }
-func (w *childEngineWrapperStaticInvokeHybrid_MissingRunStaticHybridSecond) IsInFinalState() bool { return w.engine.IsInFinalState() }
-func (w *childEngineWrapperStaticInvokeHybrid_MissingRunStaticHybridSecond) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
-func (w *childEngineWrapperStaticInvokeHybrid_MissingRunStaticHybridSecond) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
-func (w *childEngineWrapperStaticInvokeHybrid_MissingRunStaticHybridSecond) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
-func (w *childEngineWrapperStaticInvokeHybrid_MissingRunStaticHybridSecond) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
-func (w *childEngineWrapperStaticInvokeHybrid_MissingRunStaticHybridSecond) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
-func (w *childEngineWrapperStaticInvokeHybrid_MissingRunStaticHybridSecond) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
-func (w *childEngineWrapperStaticInvokeHybrid_MissingRunStaticHybridSecond) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
-func (w *childEngineWrapperStaticInvokeHybrid_MissingRunStaticHybridSecond) DetachMesh() { w.engine.DetachMesh() }
+func (w *childEngineWrapperStaticInvokeHybrid_MissingRun0jStaticHybridSecond) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperStaticInvokeHybrid_MissingRun0jStaticHybridSecond) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperStaticInvokeHybrid_MissingRun0jStaticHybridSecond) Step() { w.engine.Step() }
+func (w *childEngineWrapperStaticInvokeHybrid_MissingRun0jStaticHybridSecond) Stop() { w.engine.Stop() }
+func (w *childEngineWrapperStaticInvokeHybrid_MissingRun0jStaticHybridSecond) IsInFinalState() bool { return w.engine.IsInFinalState() }
+func (w *childEngineWrapperStaticInvokeHybrid_MissingRun0jStaticHybridSecond) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
+func (w *childEngineWrapperStaticInvokeHybrid_MissingRun0jStaticHybridSecond) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
+func (w *childEngineWrapperStaticInvokeHybrid_MissingRun0jStaticHybridSecond) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
+func (w *childEngineWrapperStaticInvokeHybrid_MissingRun0jStaticHybridSecond) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
+func (w *childEngineWrapperStaticInvokeHybrid_MissingRun0jStaticHybridSecond) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
+func (w *childEngineWrapperStaticInvokeHybrid_MissingRun0jStaticHybridSecond) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
+func (w *childEngineWrapperStaticInvokeHybrid_MissingRun0jStaticHybridSecond) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
+func (w *childEngineWrapperStaticInvokeHybrid_MissingRun0jStaticHybridSecond) DetachMesh() { w.engine.DetachMesh() }
 
 
 // DeliverToParent delivers a delayed `<send target="#_parent">` whose wait is

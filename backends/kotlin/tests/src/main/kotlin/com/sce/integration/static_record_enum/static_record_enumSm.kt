@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
+// source-hash: ca67d4fa2cf4dbcd6617a3b32561c9b8257bc03aaa65978435303ccf35bae7b3
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_record_enum.scxml
@@ -173,6 +173,8 @@ class StaticRecordEnumStateMachine(
     val savedShape: SavedShape = SavedShape(
         first = "5badf5f6ffa55e8a6f26846fbf63d8ca259130207872c648bab3f3409f8e1f2d",
         revised = "eff355fd92e600e6884c26774ee3427b6462f1bc44eea6ef5815eed90de08699",
+        format2First = "53ac1c2171b6036049abade6e69f7a185458bd5da1cbdcbcb4f7d189f01e7223",
+        format2Revised = "22904e1b1af8b2718c84d1c67c153536ef878fcce7962c8e3b46bade94c12474",
         records = listOf(
             RecordLineage(
                 event = "view.shown",

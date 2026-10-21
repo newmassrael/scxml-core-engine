@@ -1,10 +1,10 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
+// source-hash: ca67d4fa2cf4dbcd6617a3b32561c9b8257bc03aaa65978435303ccf35bae7b3
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/record_list_parent__sce_synth_invoke__list.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: record_list.scxml:156 :: _machine
+// SCE-MAP: record_list.scxml:208 :: _machine
 
 package com.sce.integration.record_list_parent
 
@@ -44,20 +44,27 @@ sealed interface RecordListParentSceSynthInvokeListEvent : Event {
     sealed interface RecordList : RecordListParentSceSynthInvokeListEvent {
         data object Ack : RecordList
         data object Announce : RecordList
+        data object Arrive : RecordList
+        data object Clear : RecordList
+        data object Close : RecordList
         data object Compact : RecordList
         data object Edit : RecordList
         data object Floor : RecordList
         data object Join : RecordList
         data object Keep : RecordList
         data object Node : RecordList
+        data object Pass : RecordList
         data object Propose : RecordList
+        data object Refused : RecordList
         data object Register : RecordList
         data object Resync : RecordList
+        data object Retire : RecordList
         data object Role : RecordList
         data object Room : RecordList
         data object Settle : RecordList
         data object Share : RecordList
         data object Supersede : RecordList
+        data object Take : RecordList
         data object Tell : RecordList
         data object Value : RecordList
         data object Visit : RecordList
@@ -81,6 +88,11 @@ data class RecordListParentSceSynthInvokeListRecordListAckPayload(val sender: UL
 // on the machine — they never name this class directly.
 data class RecordListParentSceSynthInvokeListRecordListAnnouncePayload(val id: UInt, val field: UShort)
 
+// RecordListParentSceSynthInvokeListRecordListClearPayload is the NL→IR Item C1 Path A typed `_event.data`
+// payload for `record_list.clear`. Consumers inject it via the `raiseRecordListClear` seam
+// on the machine — they never name this class directly.
+data class RecordListParentSceSynthInvokeListRecordListClearPayload(val id: UInt, val field: UShort, val now: Long, val more: Boolean)
+
 // RecordListParentSceSynthInvokeListRecordListCompactPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `record_list.compact`. Consumers inject it via the `raiseRecordListCompact` seam
 // on the machine — they never name this class directly.
@@ -89,7 +101,7 @@ data class RecordListParentSceSynthInvokeListRecordListCompactPayload(val before
 // RecordListParentSceSynthInvokeListRecordListEditPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `record_list.edit`. Consumers inject it via the `raiseRecordListEdit` seam
 // on the machine — they never name this class directly.
-data class RecordListParentSceSynthInvokeListRecordListEditPayload(val id: UInt, val field: UShort, val value: Long, val text: String, val now: Long)
+data class RecordListParentSceSynthInvokeListRecordListEditPayload(val id: UInt, val field: UShort, val value: Long, val text: String, val now: Long, val more: Boolean)
 
 // RecordListParentSceSynthInvokeListRecordListFloorPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `record_list.floor`. Consumers inject it via the `raiseRecordListFloor` seam
@@ -116,6 +128,11 @@ data class RecordListParentSceSynthInvokeListRecordListNodePayload(val sender: U
 // on the machine — they never name this class directly.
 data class RecordListParentSceSynthInvokeListRecordListProposePayload(val before: Long)
 
+// RecordListParentSceSynthInvokeListRecordListRetirePayload is the NL→IR Item C1 Path A typed `_event.data`
+// payload for `record_list.retire`. Consumers inject it via the `raiseRecordListRetire` seam
+// on the machine — they never name this class directly.
+data class RecordListParentSceSynthInvokeListRecordListRetirePayload(val id: UInt, val now: Long, val more: Boolean)
+
 // RecordListParentSceSynthInvokeListRecordListRolePayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `record_list.role`. Consumers inject it via the `raiseRecordListRole` seam
 // on the machine — they never name this class directly.
@@ -139,7 +156,7 @@ data class RecordListParentSceSynthInvokeListRecordListSharePayload(val to: ULon
 // RecordListParentSceSynthInvokeListRecordListSupersedePayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `record_list.supersede`. Consumers inject it via the `raiseRecordListSupersede` seam
 // on the machine — they never name this class directly.
-data class RecordListParentSceSynthInvokeListRecordListSupersedePayload(val id: UInt, val field: UShort, val wallTime: Long, val counter: UInt, val nodeId: ULong, val by: ULong)
+data class RecordListParentSceSynthInvokeListRecordListSupersedePayload(val id: UInt, val field: UShort, val wallTime: Long, val counter: UInt, val nodeId: ULong, val by: ULong, val parts: UInt, val atWallTime: Long, val atCounter: UInt)
 
 // RecordListParentSceSynthInvokeListRecordListVisitPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `record_list.visit`. Consumers inject it via the `raiseRecordListVisit` seam
@@ -149,7 +166,7 @@ data class RecordListParentSceSynthInvokeListRecordListVisitPayload(val to: ULon
 // RecordListParentSceSynthInvokeListRecordListWritePayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `record_list.write`. Consumers inject it via the `raiseRecordListWrite` seam
 // on the machine — they never name this class directly.
-data class RecordListParentSceSynthInvokeListRecordListWritePayload(val id: UInt, val field: UShort, val value: Long, val text: String, val wallTime: Long, val counter: UInt, val nodeId: ULong)
+data class RecordListParentSceSynthInvokeListRecordListWritePayload(val id: UInt, val field: UShort, val value: Long, val text: String, val wallTime: Long, val counter: UInt, val nodeId: ULong, val parts: UInt)
 
 
 // ── SCE Accepted Subset §2.15: sce-static enum and record variable classes ─────
@@ -211,6 +228,39 @@ data class RecordListParentSceSynthInvokeListMemberRecord(val node: ULong, val r
     companion object {
         /** The value a saved state holds, refused unless it is one. */
         fun fromSaved(value: Any?, what: String): RecordListParentSceSynthInvokeListMemberRecord = RecordListParentSceSynthInvokeListMemberRecord(node = SavedValues.uint64(SavedValues.field(value, what, "node"), "$what.node"), role = SavedValues.uint8(SavedValues.field(value, what, "role"), "$what.role"))
+    }
+}
+/** SCE Accepted Subset §2.15: a `record:Part` datamodel value. */
+data class RecordListParentSceSynthInvokeListPartRecord(val kind: UByte, val id: UInt, val field: UShort, val value: Long, val text: String, val wallTime: Long, val counter: UInt, val nodeId: ULong, val by: ULong, val atWallTime: Long, val atCounter: UInt, val parts: UInt) {
+    /** This value as a saved state writes it. */
+    fun toSaved(): Any = linkedMapOf("kind" to SavedValues.of(kind), "id" to SavedValues.of(id), "field" to SavedValues.of(field), "value" to SavedValues.of(value), "text" to SavedValues.of(text), "wallTime" to SavedValues.of(wallTime), "counter" to SavedValues.of(counter), "nodeId" to SavedValues.of(nodeId), "by" to SavedValues.of(by), "atWallTime" to SavedValues.of(atWallTime), "atCounter" to SavedValues.of(atCounter), "parts" to SavedValues.of(parts))
+
+    companion object {
+        /** The value a saved state holds, refused unless it is one. */
+        fun fromSaved(value: Any?, what: String): RecordListParentSceSynthInvokeListPartRecord = RecordListParentSceSynthInvokeListPartRecord(kind = SavedValues.uint8(SavedValues.field(value, what, "kind"), "$what.kind"), id = SavedValues.uint32(SavedValues.field(value, what, "id"), "$what.id"), field = SavedValues.uint16(SavedValues.field(value, what, "field"), "$what.field"), value = SavedValues.int64(SavedValues.field(value, what, "value"), "$what.value"), text = SavedValues.string(SavedValues.field(value, what, "text"), "$what.text", 96), wallTime = SavedValues.int64(SavedValues.field(value, what, "wallTime"), "$what.wallTime"), counter = SavedValues.uint32(SavedValues.field(value, what, "counter"), "$what.counter"), nodeId = SavedValues.uint64(SavedValues.field(value, what, "nodeId"), "$what.nodeId"), by = SavedValues.uint64(SavedValues.field(value, what, "by"), "$what.by"), atWallTime = SavedValues.int64(SavedValues.field(value, what, "atWallTime"), "$what.atWallTime"), atCounter = SavedValues.uint32(SavedValues.field(value, what, "atCounter"), "$what.atCounter"), parts = SavedValues.uint32(SavedValues.field(value, what, "parts"), "$what.parts"))
+    }
+}
+/** SCE Accepted Subset §2.15: an `enum:Refusal` datamodel value. */
+enum class RecordListParentSceSynthInvokeListRefusalEnum(val declaredName: String) {
+    NOT_WRITER("notWriter"),
+    NO_ROOM_FOR_VALUE("noRoomForValue"),
+    NO_ROOM_FOR_HISTORY("noRoomForHistory"),
+    NO_ROOM_FOR_DIGEST("noRoomForDigest"),
+    TEXT_TOO_LONG("textTooLong"),
+    CHANGE_TOO_LARGE("changeTooLarge"),
+    REGISTER_NAMED_TWICE("registerNamedTwice"),
+    CLOCK_EXHAUSTED("clockExhausted");
+
+    /** This value as a saved state writes it. */
+    fun toSaved(): Any = declaredName
+
+    companion object {
+        /** The value a saved state holds, refused unless it is one. */
+        fun fromSaved(value: Any?, what: String): RecordListParentSceSynthInvokeListRefusalEnum {
+            val declared = SavedValues.string(value, what)
+            return entries.firstOrNull { it.declaredName == declared }
+                ?: throw StateRefusal("'$what' ($declared) is not a variant of Refusal")
+        }
     }
 }
 // ── SCE Accepted Subset §2.15: calls of an algorithm that takes or returns state ──
@@ -390,10 +440,6 @@ class RecordListParentSceSynthInvokeListStateMachine(
 
     /** What the published `full` holds. */
     val full: UInt get() = vFull
-    /** W3C SCXML 5.2: the `fresh` datamodel variable, the machine's own. */
-    private var vFresh: Boolean = false
-    /** W3C SCXML 5.2: the `blocked` datamodel variable, the machine's own. */
-    private var vBlocked: Boolean = false
     /** W3C SCXML 5.2: the `roster` datamodel variable, the machine's own. */
     private var vRoster: List<RecordListParentSceSynthInvokeListMemberRecord> = emptyList()
     /** W3C SCXML 5.2: the `denied` datamodel variable, published (`sce:direction="out"`). */
@@ -422,6 +468,52 @@ class RecordListParentSceSynthInvokeListStateMachine(
     private var vOrdinal: UInt = 0.toUInt()
     /** W3C SCXML 5.2: the `empty` datamodel variable, the machine's own. */
     private var vEmpty: RecordListParentSceSynthInvokeListValueRecord = RecordListParentSceSynthInvokeListValueRecord(id = 0.toULong(), field = 0.toULong(), value = 0, text = "", wallTime = 0, counter = 0.toUInt(), nodeId = 0.toULong())
+    /** W3C SCXML 5.2: the `staged` datamodel variable, the machine's own. */
+    private var vStaged: List<RecordListParentSceSynthInvokeListPartRecord> = emptyList()
+    /** W3C SCXML 5.2: the `holding` datamodel variable, the machine's own. */
+    private var vHolding: Boolean = false
+    /** W3C SCXML 5.2: the `closingNow` datamodel variable, the machine's own. */
+    private var vClosingNow: Long = 0
+    /** W3C SCXML 5.2: the `spoiled` datamodel variable, the machine's own. */
+    private var vSpoiled: Boolean = false
+    /** W3C SCXML 5.2: the `probing` datamodel variable, the machine's own. */
+    private var vProbing: Boolean = false
+    /** W3C SCXML 5.2: the `gone` datamodel variable, the machine's own. */
+    private var vGone: UInt = 0.toUInt()
+    /** W3C SCXML 5.2: the `writes` datamodel variable, the machine's own. */
+    private var vWrites: UInt = 0.toUInt()
+    /** W3C SCXML 5.2: the `covered` datamodel variable, the machine's own. */
+    private var vCovered: Boolean = false
+    /** W3C SCXML 5.2: the `probe` datamodel variable, the machine's own. */
+    private var vProbe: RecordListParentSceSynthInvokeListRefusalEnum = RecordListParentSceSynthInvokeListRefusalEnum.CHANGE_TOO_LARGE
+    /** W3C SCXML 5.2: the `spoiledFor` datamodel variable, the machine's own. */
+    private var vSpoiledFor: RecordListParentSceSynthInvokeListRefusalEnum = RecordListParentSceSynthInvokeListRefusalEnum.CHANGE_TOO_LARGE
+    /** W3C SCXML 5.2: the `namedId` datamodel variable, the machine's own. */
+    private var vNamedId: UInt = 0.toUInt()
+    /** W3C SCXML 5.2: the `namedField` datamodel variable, the machine's own. */
+    private var vNamedField: UShort = 0.toUShort()
+    /** W3C SCXML 5.2: the `namedKind` datamodel variable, the machine's own. */
+    private var vNamedKind: UByte = 0.toUByte()
+    /** W3C SCXML 5.2: the `taking` datamodel variable, the machine's own. */
+    private var vTaking: List<RecordListParentSceSynthInvokeListPartRecord> = emptyList()
+    /** W3C SCXML 5.2: the `took` datamodel variable, the machine's own. */
+    private var vTook: UInt = 0.toUInt()
+    /** W3C SCXML 5.2: the `passing` datamodel variable, the machine's own. */
+    private var vPassing: List<RecordListParentSceSynthInvokeListPartRecord> = emptyList()
+    /** W3C SCXML 5.2: the `passed` datamodel variable, the machine's own. */
+    private var vPassed: UInt = 0.toUInt()
+    /** W3C SCXML 5.2: the `waiting` datamodel variable, the machine's own. */
+    private var vWaiting: List<RecordListParentSceSynthInvokeListPartRecord> = emptyList()
+    /** W3C SCXML 5.2: the `kept` datamodel variable, the machine's own. */
+    private var vKept: List<RecordListParentSceSynthInvokeListPartRecord> = emptyList()
+    /** W3C SCXML 5.2: the `part` datamodel variable, the machine's own. */
+    private var vPart: RecordListParentSceSynthInvokeListPartRecord = RecordListParentSceSynthInvokeListPartRecord(kind = 0.toUByte(), id = 0.toUInt(), field = 0.toUShort(), value = 0, text = "", wallTime = 0, counter = 0.toUInt(), nodeId = 0.toULong(), by = 0.toULong(), atWallTime = 0, atCounter = 0.toUInt(), parts = 1.toUInt())
+    /** W3C SCXML 5.2: the `op` datamodel variable, the machine's own. */
+    private var vOp: RecordListParentSceSynthInvokeListPartRecord = RecordListParentSceSynthInvokeListPartRecord(kind = 0.toUByte(), id = 0.toUInt(), field = 0.toUShort(), value = 0, text = "", wallTime = 0, counter = 0.toUInt(), nodeId = 0.toULong(), by = 0.toULong(), atWallTime = 0, atCounter = 0.toUInt(), parts = 1.toUInt())
+    /** W3C SCXML 5.2: the `already` datamodel variable, the machine's own. */
+    private var vAlready: Boolean = false
+    /** W3C SCXML 5.2: the `count` datamodel variable, the machine's own. */
+    private var vCount: UInt = 0.toUInt()
 
     /**
      * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
@@ -453,8 +545,6 @@ class RecordListParentSceSynthInvokeListStateMachine(
         var roomHistory: UInt? = null
         var roomDigest: UInt? = null
         var full: UInt? = null
-        var fresh: Boolean? = null
-        var blocked: Boolean? = null
         var denied: UInt? = null
         var forbidden: Boolean? = null
         var authorized: Boolean? = null
@@ -462,6 +552,20 @@ class RecordListParentSceSynthInvokeListStateMachine(
         var announced: UInt? = null
         var listed: Boolean? = null
         var ordinal: UInt? = null
+        var holding: Boolean? = null
+        var closingNow: Long? = null
+        var spoiled: Boolean? = null
+        var probing: Boolean? = null
+        var gone: UInt? = null
+        var writes: UInt? = null
+        var covered: Boolean? = null
+        var namedId: UInt? = null
+        var namedField: UShort? = null
+        var namedKind: UByte? = null
+        var took: UInt? = null
+        var passed: UInt? = null
+        var already: Boolean? = null
+        var count: UInt? = null
     }
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
@@ -490,8 +594,6 @@ class RecordListParentSceSynthInvokeListStateMachine(
         params.roomHistory?.let { vRoomHistory = it }
         params.roomDigest?.let { vRoomDigest = it }
         params.full?.let { vFull = it }
-        params.fresh?.let { vFresh = it }
-        params.blocked?.let { vBlocked = it }
         params.denied?.let { vDenied = it }
         params.forbidden?.let { vForbidden = it }
         params.authorized?.let { vAuthorized = it }
@@ -499,6 +601,20 @@ class RecordListParentSceSynthInvokeListStateMachine(
         params.announced?.let { vAnnounced = it }
         params.listed?.let { vListed = it }
         params.ordinal?.let { vOrdinal = it }
+        params.holding?.let { vHolding = it }
+        params.closingNow?.let { vClosingNow = it }
+        params.spoiled?.let { vSpoiled = it }
+        params.probing?.let { vProbing = it }
+        params.gone?.let { vGone = it }
+        params.writes?.let { vWrites = it }
+        params.covered?.let { vCovered = it }
+        params.namedId?.let { vNamedId = it }
+        params.namedField?.let { vNamedField = it }
+        params.namedKind?.let { vNamedKind = it }
+        params.took?.let { vTook = it }
+        params.passed?.let { vPassed = it }
+        params.already?.let { vAlready = it }
+        params.count?.let { vCount = it }
     }
 
     /** The published variables as one immutable value, in declaration order. */
@@ -576,8 +692,10 @@ class RecordListParentSceSynthInvokeListStateMachine(
      * later revision added at its default.
      */
     val savedShape: SavedShape = SavedShape(
-        first = "5dc7614d1325a4df4b3e5f02c9118a98386acef5798da6ee07a0a213bee98b14",
-        revised = "da0b6da5dff444c8bbc3da0b1c703a8ce54c2ad5c4ce3ca5f731502eeaaa44ff",
+        first = "f733c5c2690cb4ca1dbf3607bb081a3c032a1f1b93633700a40598fc659576de",
+        revised = "7e56b8a9182869160387a323048e611f5ad8395205cf7f6c8f044b2e76695d4b",
+        format2First = "9319a4cd33521f9a673ae2ed8973dcc03d9d5433db676f5bca4f1819a67ca7c0",
+        format2Revised = "66b8be46e87750d5eb4aa82addfe01f4de33de51b83417d2c14314e5c3064967",
         records = listOf(
             RecordLineage(
                 event = "merge.hlc_timestamp",
@@ -648,8 +766,35 @@ class RecordListParentSceSynthInvokeListStateMachine(
                     RecordHolder("roster", true),
                 ),
             ),
+            RecordLineage(
+                event = "record_list.part",
+                revision = 1,
+                revisions = listOf(),
+                added = listOf(
+                ),
+                holders = listOf(
+                    RecordHolder("staged", true),
+                    RecordHolder("taking", true),
+                    RecordHolder("passing", true),
+                    RecordHolder("waiting", true),
+                    RecordHolder("kept", true),
+                    RecordHolder("part", false),
+                    RecordHolder("op", false),
+                ),
+            ),
         ),
         enums = listOf(
+            EnumLineage(
+                key = "enum:sce:std/shared/record_refusal.scxml",
+                revision = 1,
+                revisions = listOf(),
+                added = listOf(
+                ),
+                holders = listOf(
+                    EnumHolder("probe", null, false),
+                    EnumHolder("spoiledFor", null, false),
+                ),
+            ),
         ),
     )
 
@@ -703,8 +848,6 @@ class RecordListParentSceSynthInvokeListStateMachine(
             "roomHistory" to SavedValues.of(vRoomHistory),
             "roomDigest" to SavedValues.of(vRoomDigest),
             "full" to SavedValues.of(vFull),
-            "fresh" to SavedValues.of(vFresh),
-            "blocked" to SavedValues.of(vBlocked),
             "roster" to SavedValues.list(vRoster) { it.toSaved() },
             "denied" to SavedValues.of(vDenied),
             "forbidden" to SavedValues.of(vForbidden),
@@ -716,6 +859,29 @@ class RecordListParentSceSynthInvokeListStateMachine(
             "live" to SavedValues.list(vLive) { it.toSaved() },
             "ordinal" to SavedValues.of(vOrdinal),
             "empty" to vEmpty.toSaved(),
+            "staged" to SavedValues.list(vStaged) { it.toSaved() },
+            "holding" to SavedValues.of(vHolding),
+            "closingNow" to SavedValues.of(vClosingNow),
+            "spoiled" to SavedValues.of(vSpoiled),
+            "probing" to SavedValues.of(vProbing),
+            "gone" to SavedValues.of(vGone),
+            "writes" to SavedValues.of(vWrites),
+            "covered" to SavedValues.of(vCovered),
+            "probe" to vProbe.toSaved(),
+            "spoiledFor" to vSpoiledFor.toSaved(),
+            "namedId" to SavedValues.of(vNamedId),
+            "namedField" to SavedValues.of(vNamedField),
+            "namedKind" to SavedValues.of(vNamedKind),
+            "taking" to SavedValues.list(vTaking) { it.toSaved() },
+            "took" to SavedValues.of(vTook),
+            "passing" to SavedValues.list(vPassing) { it.toSaved() },
+            "passed" to SavedValues.of(vPassed),
+            "waiting" to SavedValues.list(vWaiting) { it.toSaved() },
+            "kept" to SavedValues.list(vKept) { it.toSaved() },
+            "part" to vPart.toSaved(),
+            "op" to vOp.toSaved(),
+            "already" to SavedValues.of(vAlready),
+            "count" to SavedValues.of(vCount),
         ),
         wallNowMs,
     )
@@ -779,19 +945,40 @@ class RecordListParentSceSynthInvokeListStateMachine(
         val saved34 = SavedValues.uint32(savedGrown.variable("roomHistory"), "roomHistory")
         val saved35 = SavedValues.uint32(savedGrown.variable("roomDigest"), "roomDigest")
         val saved36 = SavedValues.uint32(savedGrown.variable("full"), "full")
-        val saved37 = SavedValues.bool(savedGrown.variable("fresh"), "fresh")
-        val saved38 = SavedValues.bool(savedGrown.variable("blocked"), "blocked")
-        val saved39 = SavedValues.list(savedGrown.variable("roster"), "roster", 64) { e, w -> RecordListParentSceSynthInvokeListMemberRecord.fromSaved(e, w) }
-        val saved40 = SavedValues.uint32(savedGrown.variable("denied"), "denied")
-        val saved41 = SavedValues.bool(savedGrown.variable("forbidden"), "forbidden")
-        val saved42 = SavedValues.bool(savedGrown.variable("authorized"), "authorized")
-        val saved43 = SavedValues.bool(savedGrown.variable("announce"), "announce")
-        val saved44 = SavedValues.uint32(savedGrown.variable("announced"), "announced")
-        val saved45 = SavedValues.list(savedGrown.variable("moved"), "moved", 16) { e, w -> SavedValues.uint64(e, w) }
-        val saved46 = SavedValues.bool(savedGrown.variable("listed"), "listed")
-        val saved47 = SavedValues.list(savedGrown.variable("live"), "live", 512) { e, w -> RecordListParentSceSynthInvokeListValueRecord.fromSaved(e, w) }
-        val saved48 = SavedValues.uint32(savedGrown.variable("ordinal"), "ordinal")
-        val saved49 = RecordListParentSceSynthInvokeListValueRecord.fromSaved(savedGrown.variable("empty"), "empty")
+        val saved37 = SavedValues.list(savedGrown.variable("roster"), "roster", 64) { e, w -> RecordListParentSceSynthInvokeListMemberRecord.fromSaved(e, w) }
+        val saved38 = SavedValues.uint32(savedGrown.variable("denied"), "denied")
+        val saved39 = SavedValues.bool(savedGrown.variable("forbidden"), "forbidden")
+        val saved40 = SavedValues.bool(savedGrown.variable("authorized"), "authorized")
+        val saved41 = SavedValues.bool(savedGrown.variable("announce"), "announce")
+        val saved42 = SavedValues.uint32(savedGrown.variable("announced"), "announced")
+        val saved43 = SavedValues.list(savedGrown.variable("moved"), "moved", 64) { e, w -> SavedValues.uint64(e, w) }
+        val saved44 = SavedValues.bool(savedGrown.variable("listed"), "listed")
+        val saved45 = SavedValues.list(savedGrown.variable("live"), "live", 512) { e, w -> RecordListParentSceSynthInvokeListValueRecord.fromSaved(e, w) }
+        val saved46 = SavedValues.uint32(savedGrown.variable("ordinal"), "ordinal")
+        val saved47 = RecordListParentSceSynthInvokeListValueRecord.fromSaved(savedGrown.variable("empty"), "empty")
+        val saved48 = SavedValues.list(savedGrown.variable("staged"), "staged", 32) { e, w -> RecordListParentSceSynthInvokeListPartRecord.fromSaved(e, w) }
+        val saved49 = SavedValues.bool(savedGrown.variable("holding"), "holding")
+        val saved50 = SavedValues.int64(savedGrown.variable("closingNow"), "closingNow")
+        val saved51 = SavedValues.bool(savedGrown.variable("spoiled"), "spoiled")
+        val saved52 = SavedValues.bool(savedGrown.variable("probing"), "probing")
+        val saved53 = SavedValues.uint32(savedGrown.variable("gone"), "gone")
+        val saved54 = SavedValues.uint32(savedGrown.variable("writes"), "writes")
+        val saved55 = SavedValues.bool(savedGrown.variable("covered"), "covered")
+        val saved56 = RecordListParentSceSynthInvokeListRefusalEnum.fromSaved(savedGrown.variable("probe"), "probe")
+        val saved57 = RecordListParentSceSynthInvokeListRefusalEnum.fromSaved(savedGrown.variable("spoiledFor"), "spoiledFor")
+        val saved58 = SavedValues.uint32(savedGrown.variable("namedId"), "namedId")
+        val saved59 = SavedValues.uint16(savedGrown.variable("namedField"), "namedField")
+        val saved60 = SavedValues.uint8(savedGrown.variable("namedKind"), "namedKind")
+        val saved61 = SavedValues.list(savedGrown.variable("taking"), "taking", 64) { e, w -> RecordListParentSceSynthInvokeListPartRecord.fromSaved(e, w) }
+        val saved62 = SavedValues.uint32(savedGrown.variable("took"), "took")
+        val saved63 = SavedValues.list(savedGrown.variable("passing"), "passing", 64) { e, w -> RecordListParentSceSynthInvokeListPartRecord.fromSaved(e, w) }
+        val saved64 = SavedValues.uint32(savedGrown.variable("passed"), "passed")
+        val saved65 = SavedValues.list(savedGrown.variable("waiting"), "waiting", 64) { e, w -> RecordListParentSceSynthInvokeListPartRecord.fromSaved(e, w) }
+        val saved66 = SavedValues.list(savedGrown.variable("kept"), "kept", 64) { e, w -> RecordListParentSceSynthInvokeListPartRecord.fromSaved(e, w) }
+        val saved67 = RecordListParentSceSynthInvokeListPartRecord.fromSaved(savedGrown.variable("part"), "part")
+        val saved68 = RecordListParentSceSynthInvokeListPartRecord.fromSaved(savedGrown.variable("op"), "op")
+        val saved69 = SavedValues.bool(savedGrown.variable("already"), "already")
+        val saved70 = SavedValues.uint32(savedGrown.variable("count"), "count")
         vNode = saved1
         vHub = saved2
         vClock = saved3
@@ -828,19 +1015,40 @@ class RecordListParentSceSynthInvokeListStateMachine(
         vRoomHistory = saved34
         vRoomDigest = saved35
         vFull = saved36
-        vFresh = saved37
-        vBlocked = saved38
-        vRoster = saved39
-        vDenied = saved40
-        vForbidden = saved41
-        vAuthorized = saved42
-        vAnnounce = saved43
-        vAnnounced = saved44
-        vMoved = saved45
-        vListed = saved46
-        vLive = saved47
-        vOrdinal = saved48
-        vEmpty = saved49
+        vRoster = saved37
+        vDenied = saved38
+        vForbidden = saved39
+        vAuthorized = saved40
+        vAnnounce = saved41
+        vAnnounced = saved42
+        vMoved = saved43
+        vListed = saved44
+        vLive = saved45
+        vOrdinal = saved46
+        vEmpty = saved47
+        vStaged = saved48
+        vHolding = saved49
+        vClosingNow = saved50
+        vSpoiled = saved51
+        vProbing = saved52
+        vGone = saved53
+        vWrites = saved54
+        vCovered = saved55
+        vProbe = saved56
+        vSpoiledFor = saved57
+        vNamedId = saved58
+        vNamedField = saved59
+        vNamedKind = saved60
+        vTaking = saved61
+        vTook = saved62
+        vPassing = saved63
+        vPassed = saved64
+        vWaiting = saved65
+        vKept = saved66
+        vPart = saved67
+        vOp = saved68
+        vAlready = saved69
+        vCount = saved70
         enterSaved(savedGrown, wallNowMs)
     }
 
@@ -852,6 +1060,7 @@ class RecordListParentSceSynthInvokeListStateMachine(
     // native transition guards. `null` between events / for untyped events.
     private var pendingRecordListAckPayload: RecordListParentSceSynthInvokeListRecordListAckPayload? = null
     private var pendingRecordListAnnouncePayload: RecordListParentSceSynthInvokeListRecordListAnnouncePayload? = null
+    private var pendingRecordListClearPayload: RecordListParentSceSynthInvokeListRecordListClearPayload? = null
     private var pendingRecordListCompactPayload: RecordListParentSceSynthInvokeListRecordListCompactPayload? = null
     private var pendingRecordListEditPayload: RecordListParentSceSynthInvokeListRecordListEditPayload? = null
     private var pendingRecordListFloorPayload: RecordListParentSceSynthInvokeListRecordListFloorPayload? = null
@@ -859,6 +1068,7 @@ class RecordListParentSceSynthInvokeListStateMachine(
     private var pendingRecordListKeepPayload: RecordListParentSceSynthInvokeListRecordListKeepPayload? = null
     private var pendingRecordListNodePayload: RecordListParentSceSynthInvokeListRecordListNodePayload? = null
     private var pendingRecordListProposePayload: RecordListParentSceSynthInvokeListRecordListProposePayload? = null
+    private var pendingRecordListRetirePayload: RecordListParentSceSynthInvokeListRecordListRetirePayload? = null
     private var pendingRecordListRolePayload: RecordListParentSceSynthInvokeListRecordListRolePayload? = null
     private var pendingRecordListRoomPayload: RecordListParentSceSynthInvokeListRecordListRoomPayload? = null
     private var pendingRecordListSettlePayload: RecordListParentSceSynthInvokeListRecordListSettlePayload? = null
@@ -878,6 +1088,7 @@ class RecordListParentSceSynthInvokeListStateMachine(
     override fun populateTypedPayload(event: RecordListParentSceSynthInvokeListEvent, metadata: EventMetadata) {
         pendingRecordListAckPayload = null
         pendingRecordListAnnouncePayload = null
+        pendingRecordListClearPayload = null
         pendingRecordListCompactPayload = null
         pendingRecordListEditPayload = null
         pendingRecordListFloorPayload = null
@@ -885,6 +1096,7 @@ class RecordListParentSceSynthInvokeListStateMachine(
         pendingRecordListKeepPayload = null
         pendingRecordListNodePayload = null
         pendingRecordListProposePayload = null
+        pendingRecordListRetirePayload = null
         pendingRecordListRolePayload = null
         pendingRecordListRoomPayload = null
         pendingRecordListSettlePayload = null
@@ -895,6 +1107,7 @@ class RecordListParentSceSynthInvokeListStateMachine(
         when (val tp = metadata.typedPayload) {
             is RecordListParentSceSynthInvokeListRecordListAckPayload -> pendingRecordListAckPayload = tp
             is RecordListParentSceSynthInvokeListRecordListAnnouncePayload -> pendingRecordListAnnouncePayload = tp
+            is RecordListParentSceSynthInvokeListRecordListClearPayload -> pendingRecordListClearPayload = tp
             is RecordListParentSceSynthInvokeListRecordListCompactPayload -> pendingRecordListCompactPayload = tp
             is RecordListParentSceSynthInvokeListRecordListEditPayload -> pendingRecordListEditPayload = tp
             is RecordListParentSceSynthInvokeListRecordListFloorPayload -> pendingRecordListFloorPayload = tp
@@ -902,6 +1115,7 @@ class RecordListParentSceSynthInvokeListStateMachine(
             is RecordListParentSceSynthInvokeListRecordListKeepPayload -> pendingRecordListKeepPayload = tp
             is RecordListParentSceSynthInvokeListRecordListNodePayload -> pendingRecordListNodePayload = tp
             is RecordListParentSceSynthInvokeListRecordListProposePayload -> pendingRecordListProposePayload = tp
+            is RecordListParentSceSynthInvokeListRecordListRetirePayload -> pendingRecordListRetirePayload = tp
             is RecordListParentSceSynthInvokeListRecordListRolePayload -> pendingRecordListRolePayload = tp
             is RecordListParentSceSynthInvokeListRecordListRoomPayload -> pendingRecordListRoomPayload = tp
             is RecordListParentSceSynthInvokeListRecordListSettlePayload -> pendingRecordListSettlePayload = tp
@@ -918,12 +1132,15 @@ class RecordListParentSceSynthInvokeListStateMachine(
                 } else if (event == RecordListParentSceSynthInvokeListEvent.RecordList.Announce) {
                     val fields = EventPayload.decode(metadata.data)
                     pendingRecordListAnnouncePayload = RecordListParentSceSynthInvokeListRecordListAnnouncePayload(fields.uint32("id"), fields.uint16("field"))
+                } else if (event == RecordListParentSceSynthInvokeListEvent.RecordList.Clear) {
+                    val fields = EventPayload.decode(metadata.data)
+                    pendingRecordListClearPayload = RecordListParentSceSynthInvokeListRecordListClearPayload(fields.uint32("id"), fields.uint16("field"), fields.int64("now"), fields.boolean("more"))
                 } else if (event == RecordListParentSceSynthInvokeListEvent.RecordList.Compact) {
                     val fields = EventPayload.decode(metadata.data)
                     pendingRecordListCompactPayload = RecordListParentSceSynthInvokeListRecordListCompactPayload(fields.int64("before"))
                 } else if (event == RecordListParentSceSynthInvokeListEvent.RecordList.Edit) {
-                    val fields = EventPayload.decode(metadata.data)
-                    pendingRecordListEditPayload = RecordListParentSceSynthInvokeListRecordListEditPayload(fields.uint32("id"), fields.uint16("field"), fields.int64("value"), fields.string("text"), fields.int64("now"))
+                    val fields = EventPayload.decode(metadata.data, "{\"more\":false}")
+                    pendingRecordListEditPayload = RecordListParentSceSynthInvokeListRecordListEditPayload(fields.uint32("id"), fields.uint16("field"), fields.int64("value"), fields.string("text"), fields.int64("now"), fields.boolean("more"))
                 } else if (event == RecordListParentSceSynthInvokeListEvent.RecordList.Floor) {
                     val fields = EventPayload.decode(metadata.data)
                     pendingRecordListFloorPayload = RecordListParentSceSynthInvokeListRecordListFloorPayload(fields.int64("before"), fields.uint32("hash"))
@@ -939,6 +1156,9 @@ class RecordListParentSceSynthInvokeListStateMachine(
                 } else if (event == RecordListParentSceSynthInvokeListEvent.RecordList.Propose) {
                     val fields = EventPayload.decode(metadata.data)
                     pendingRecordListProposePayload = RecordListParentSceSynthInvokeListRecordListProposePayload(fields.int64("before"))
+                } else if (event == RecordListParentSceSynthInvokeListEvent.RecordList.Retire) {
+                    val fields = EventPayload.decode(metadata.data)
+                    pendingRecordListRetirePayload = RecordListParentSceSynthInvokeListRecordListRetirePayload(fields.uint32("id"), fields.int64("now"), fields.boolean("more"))
                 } else if (event == RecordListParentSceSynthInvokeListEvent.RecordList.Role) {
                     val fields = EventPayload.decode(metadata.data)
                     pendingRecordListRolePayload = RecordListParentSceSynthInvokeListRecordListRolePayload(fields.uint64("node"), fields.uint8("role"))
@@ -952,14 +1172,14 @@ class RecordListParentSceSynthInvokeListStateMachine(
                     val fields = EventPayload.decode(metadata.data)
                     pendingRecordListSharePayload = RecordListParentSceSynthInvokeListRecordListSharePayload(fields.uint64("to"), fields.uint64("minute"))
                 } else if (event == RecordListParentSceSynthInvokeListEvent.RecordList.Supersede) {
-                    val fields = EventPayload.decode(metadata.data)
-                    pendingRecordListSupersedePayload = RecordListParentSceSynthInvokeListRecordListSupersedePayload(fields.uint32("id"), fields.uint16("field"), fields.int64("wallTime"), fields.uint32("counter"), fields.uint64("nodeId"), fields.uint64("by"))
+                    val fields = EventPayload.decode(metadata.data, "{\"parts\":1,\"atWallTime\":\"0\",\"atCounter\":0}")
+                    pendingRecordListSupersedePayload = RecordListParentSceSynthInvokeListRecordListSupersedePayload(fields.uint32("id"), fields.uint16("field"), fields.int64("wallTime"), fields.uint32("counter"), fields.uint64("nodeId"), fields.uint64("by"), fields.uint32("parts"), fields.int64("atWallTime"), fields.uint32("atCounter"))
                 } else if (event == RecordListParentSceSynthInvokeListEvent.RecordList.Visit) {
                     val fields = EventPayload.decode(metadata.data)
                     pendingRecordListVisitPayload = RecordListParentSceSynthInvokeListRecordListVisitPayload(fields.uint64("to"), fields.uint8("depth"), fields.uint64("prefix"), fields.boolean("reply"))
                 } else if (event == RecordListParentSceSynthInvokeListEvent.RecordList.Write) {
-                    val fields = EventPayload.decode(metadata.data)
-                    pendingRecordListWritePayload = RecordListParentSceSynthInvokeListRecordListWritePayload(fields.uint32("id"), fields.uint16("field"), fields.int64("value"), fields.string("text"), fields.int64("wallTime"), fields.uint32("counter"), fields.uint64("nodeId"))
+                    val fields = EventPayload.decode(metadata.data, "{\"parts\":1}")
+                    pendingRecordListWritePayload = RecordListParentSceSynthInvokeListRecordListWritePayload(fields.uint32("id"), fields.uint16("field"), fields.int64("value"), fields.string("text"), fields.int64("wallTime"), fields.uint32("counter"), fields.uint64("nodeId"), fields.uint32("parts"))
                 }
             }
         }
@@ -999,6 +1219,22 @@ class RecordListParentSceSynthInvokeListStateMachine(
         )
     }
     // NL→IR Item C1 Path A typed `_event.data` inject seam for
+    // `record_list.clear` — binds the event name and the payload field values in one call.
+    fun raiseRecordListClear(id: UInt, field: UShort, now: Long, more: Boolean) {
+        send(
+            RecordListParentSceSynthInvokeListEvent.RecordList.Clear,
+            EventMetadata(
+                type = "external",
+                typedPayload = RecordListParentSceSynthInvokeListRecordListClearPayload(id, field, now, more),
+                // Both carriers are filled: the typed one a native guard reads, and
+                // `data`, which is what the script engine binds `_event.data` from.
+                // Filling only the first left an `<assign expr="_event.data.x">` on
+                // this event reading nothing, on every backend alike.
+                data = EventPayload.encode(mapOf("id" to id, "field" to field, "now" to now, "more" to more))
+            )
+        )
+    }
+    // NL→IR Item C1 Path A typed `_event.data` inject seam for
     // `record_list.compact` — binds the event name and the payload field values in one call.
     fun raiseRecordListCompact(before: Long) {
         send(
@@ -1016,17 +1252,17 @@ class RecordListParentSceSynthInvokeListStateMachine(
     }
     // NL→IR Item C1 Path A typed `_event.data` inject seam for
     // `record_list.edit` — binds the event name and the payload field values in one call.
-    fun raiseRecordListEdit(id: UInt, field: UShort, value: Long, text: String, now: Long) {
+    fun raiseRecordListEdit(id: UInt, field: UShort, value: Long, text: String, now: Long, more: Boolean) {
         send(
             RecordListParentSceSynthInvokeListEvent.RecordList.Edit,
             EventMetadata(
                 type = "external",
-                typedPayload = RecordListParentSceSynthInvokeListRecordListEditPayload(id, field, value, text, now),
+                typedPayload = RecordListParentSceSynthInvokeListRecordListEditPayload(id, field, value, text, now, more),
                 // Both carriers are filled: the typed one a native guard reads, and
                 // `data`, which is what the script engine binds `_event.data` from.
                 // Filling only the first left an `<assign expr="_event.data.x">` on
                 // this event reading nothing, on every backend alike.
-                data = EventPayload.encode(mapOf("id" to id, "field" to field, "value" to value, "text" to text, "now" to now))
+                data = EventPayload.encode(mapOf("id" to id, "field" to field, "value" to value, "text" to text, "now" to now, "more" to more))
             )
         )
     }
@@ -1111,6 +1347,22 @@ class RecordListParentSceSynthInvokeListStateMachine(
         )
     }
     // NL→IR Item C1 Path A typed `_event.data` inject seam for
+    // `record_list.retire` — binds the event name and the payload field values in one call.
+    fun raiseRecordListRetire(id: UInt, now: Long, more: Boolean) {
+        send(
+            RecordListParentSceSynthInvokeListEvent.RecordList.Retire,
+            EventMetadata(
+                type = "external",
+                typedPayload = RecordListParentSceSynthInvokeListRecordListRetirePayload(id, now, more),
+                // Both carriers are filled: the typed one a native guard reads, and
+                // `data`, which is what the script engine binds `_event.data` from.
+                // Filling only the first left an `<assign expr="_event.data.x">` on
+                // this event reading nothing, on every backend alike.
+                data = EventPayload.encode(mapOf("id" to id, "now" to now, "more" to more))
+            )
+        )
+    }
+    // NL→IR Item C1 Path A typed `_event.data` inject seam for
     // `record_list.role` — binds the event name and the payload field values in one call.
     fun raiseRecordListRole(node: ULong, role: UByte) {
         send(
@@ -1176,17 +1428,17 @@ class RecordListParentSceSynthInvokeListStateMachine(
     }
     // NL→IR Item C1 Path A typed `_event.data` inject seam for
     // `record_list.supersede` — binds the event name and the payload field values in one call.
-    fun raiseRecordListSupersede(id: UInt, field: UShort, wallTime: Long, counter: UInt, nodeId: ULong, by: ULong) {
+    fun raiseRecordListSupersede(id: UInt, field: UShort, wallTime: Long, counter: UInt, nodeId: ULong, by: ULong, parts: UInt, atWallTime: Long, atCounter: UInt) {
         send(
             RecordListParentSceSynthInvokeListEvent.RecordList.Supersede,
             EventMetadata(
                 type = "external",
-                typedPayload = RecordListParentSceSynthInvokeListRecordListSupersedePayload(id, field, wallTime, counter, nodeId, by),
+                typedPayload = RecordListParentSceSynthInvokeListRecordListSupersedePayload(id, field, wallTime, counter, nodeId, by, parts, atWallTime, atCounter),
                 // Both carriers are filled: the typed one a native guard reads, and
                 // `data`, which is what the script engine binds `_event.data` from.
                 // Filling only the first left an `<assign expr="_event.data.x">` on
                 // this event reading nothing, on every backend alike.
-                data = EventPayload.encode(mapOf("id" to id, "field" to field, "wallTime" to wallTime, "counter" to counter, "nodeId" to nodeId, "by" to by))
+                data = EventPayload.encode(mapOf("id" to id, "field" to field, "wallTime" to wallTime, "counter" to counter, "nodeId" to nodeId, "by" to by, "parts" to parts, "atWallTime" to atWallTime, "atCounter" to atCounter))
             )
         )
     }
@@ -1208,17 +1460,17 @@ class RecordListParentSceSynthInvokeListStateMachine(
     }
     // NL→IR Item C1 Path A typed `_event.data` inject seam for
     // `record_list.write` — binds the event name and the payload field values in one call.
-    fun raiseRecordListWrite(id: UInt, field: UShort, value: Long, text: String, wallTime: Long, counter: UInt, nodeId: ULong) {
+    fun raiseRecordListWrite(id: UInt, field: UShort, value: Long, text: String, wallTime: Long, counter: UInt, nodeId: ULong, parts: UInt) {
         send(
             RecordListParentSceSynthInvokeListEvent.RecordList.Write,
             EventMetadata(
                 type = "external",
-                typedPayload = RecordListParentSceSynthInvokeListRecordListWritePayload(id, field, value, text, wallTime, counter, nodeId),
+                typedPayload = RecordListParentSceSynthInvokeListRecordListWritePayload(id, field, value, text, wallTime, counter, nodeId, parts),
                 // Both carriers are filled: the typed one a native guard reads, and
                 // `data`, which is what the script engine binds `_event.data` from.
                 // Filling only the first left an `<assign expr="_event.data.x">` on
                 // this event reading nothing, on every backend alike.
-                data = EventPayload.encode(mapOf("id" to id, "field" to field, "value" to value, "text" to text, "wallTime" to wallTime, "counter" to counter, "nodeId" to nodeId))
+                data = EventPayload.encode(mapOf("id" to id, "field" to field, "value" to value, "text" to text, "wallTime" to wallTime, "counter" to counter, "nodeId" to nodeId, "parts" to parts))
             )
         )
     }
@@ -1429,6 +1681,69 @@ class RecordListParentSceSynthInvokeListStateMachine(
             hasActions = true,
             isInternal = true,
         )
+
+        // W3C SCXML 3.13: open's transition 20, as the microstep reads it.
+        val transitionOpenAt20 = EnabledTransition<RecordListParentSceSynthInvokeListState, HistoryId>(
+            RecordListParentSceSynthInvokeListState.Open,
+            emptyList(),
+            20,
+            hasActions = true,
+            isInternal = true,
+        )
+
+        // W3C SCXML 3.13: open's transition 21, as the microstep reads it.
+        val transitionOpenAt21 = EnabledTransition<RecordListParentSceSynthInvokeListState, HistoryId>(
+            RecordListParentSceSynthInvokeListState.Open,
+            emptyList(),
+            21,
+            hasActions = true,
+            isInternal = true,
+        )
+
+        // W3C SCXML 3.13: open's transition 22, as the microstep reads it.
+        val transitionOpenAt22 = EnabledTransition<RecordListParentSceSynthInvokeListState, HistoryId>(
+            RecordListParentSceSynthInvokeListState.Open,
+            emptyList(),
+            22,
+            hasActions = true,
+            isInternal = true,
+        )
+
+        // W3C SCXML 3.13: open's transition 23, as the microstep reads it.
+        val transitionOpenAt23 = EnabledTransition<RecordListParentSceSynthInvokeListState, HistoryId>(
+            RecordListParentSceSynthInvokeListState.Open,
+            emptyList(),
+            23,
+            hasActions = true,
+            isInternal = true,
+        )
+
+        // W3C SCXML 3.13: open's transition 24, as the microstep reads it.
+        val transitionOpenAt24 = EnabledTransition<RecordListParentSceSynthInvokeListState, HistoryId>(
+            RecordListParentSceSynthInvokeListState.Open,
+            emptyList(),
+            24,
+            hasActions = true,
+            isInternal = true,
+        )
+
+        // W3C SCXML 3.13: open's transition 25, as the microstep reads it.
+        val transitionOpenAt25 = EnabledTransition<RecordListParentSceSynthInvokeListState, HistoryId>(
+            RecordListParentSceSynthInvokeListState.Open,
+            emptyList(),
+            25,
+            hasActions = true,
+            isInternal = true,
+        )
+
+        // W3C SCXML 3.13: open's transition 26, as the microstep reads it.
+        val transitionOpenAt26 = EnabledTransition<RecordListParentSceSynthInvokeListState, HistoryId>(
+            RecordListParentSceSynthInvokeListState.Open,
+            emptyList(),
+            26,
+            hasActions = true,
+            isInternal = true,
+        )
     }
 
     // W3C SCXML: Resolve state ID string to State object
@@ -1453,20 +1768,27 @@ class RecordListParentSceSynthInvokeListStateMachine(
         "error.execution" -> RecordListParentSceSynthInvokeListEvent.Error.Execution
         "record_list.ack" -> RecordListParentSceSynthInvokeListEvent.RecordList.Ack
         "record_list.announce" -> RecordListParentSceSynthInvokeListEvent.RecordList.Announce
+        "record_list.arrive" -> RecordListParentSceSynthInvokeListEvent.RecordList.Arrive
+        "record_list.clear" -> RecordListParentSceSynthInvokeListEvent.RecordList.Clear
+        "record_list.close" -> RecordListParentSceSynthInvokeListEvent.RecordList.Close
         "record_list.compact" -> RecordListParentSceSynthInvokeListEvent.RecordList.Compact
         "record_list.edit" -> RecordListParentSceSynthInvokeListEvent.RecordList.Edit
         "record_list.floor" -> RecordListParentSceSynthInvokeListEvent.RecordList.Floor
         "record_list.join" -> RecordListParentSceSynthInvokeListEvent.RecordList.Join
         "record_list.keep" -> RecordListParentSceSynthInvokeListEvent.RecordList.Keep
         "record_list.node" -> RecordListParentSceSynthInvokeListEvent.RecordList.Node
+        "record_list.pass" -> RecordListParentSceSynthInvokeListEvent.RecordList.Pass
         "record_list.propose" -> RecordListParentSceSynthInvokeListEvent.RecordList.Propose
+        "record_list.refused" -> RecordListParentSceSynthInvokeListEvent.RecordList.Refused
         "record_list.register" -> RecordListParentSceSynthInvokeListEvent.RecordList.Register
         "record_list.resync" -> RecordListParentSceSynthInvokeListEvent.RecordList.Resync
+        "record_list.retire" -> RecordListParentSceSynthInvokeListEvent.RecordList.Retire
         "record_list.role" -> RecordListParentSceSynthInvokeListEvent.RecordList.Role
         "record_list.room" -> RecordListParentSceSynthInvokeListEvent.RecordList.Room
         "record_list.settle" -> RecordListParentSceSynthInvokeListEvent.RecordList.Settle
         "record_list.share" -> RecordListParentSceSynthInvokeListEvent.RecordList.Share
         "record_list.supersede" -> RecordListParentSceSynthInvokeListEvent.RecordList.Supersede
+        "record_list.take" -> RecordListParentSceSynthInvokeListEvent.RecordList.Take
         "record_list.tell" -> RecordListParentSceSynthInvokeListEvent.RecordList.Tell
         "record_list.value" -> RecordListParentSceSynthInvokeListEvent.RecordList.Value
         "record_list.visit" -> RecordListParentSceSynthInvokeListEvent.RecordList.Visit
@@ -1480,20 +1802,27 @@ class RecordListParentSceSynthInvokeListStateMachine(
         is RecordListParentSceSynthInvokeListEvent.Error.Execution -> "error.execution"
         is RecordListParentSceSynthInvokeListEvent.RecordList.Ack -> "record_list.ack"
         is RecordListParentSceSynthInvokeListEvent.RecordList.Announce -> "record_list.announce"
+        is RecordListParentSceSynthInvokeListEvent.RecordList.Arrive -> "record_list.arrive"
+        is RecordListParentSceSynthInvokeListEvent.RecordList.Clear -> "record_list.clear"
+        is RecordListParentSceSynthInvokeListEvent.RecordList.Close -> "record_list.close"
         is RecordListParentSceSynthInvokeListEvent.RecordList.Compact -> "record_list.compact"
         is RecordListParentSceSynthInvokeListEvent.RecordList.Edit -> "record_list.edit"
         is RecordListParentSceSynthInvokeListEvent.RecordList.Floor -> "record_list.floor"
         is RecordListParentSceSynthInvokeListEvent.RecordList.Join -> "record_list.join"
         is RecordListParentSceSynthInvokeListEvent.RecordList.Keep -> "record_list.keep"
         is RecordListParentSceSynthInvokeListEvent.RecordList.Node -> "record_list.node"
+        is RecordListParentSceSynthInvokeListEvent.RecordList.Pass -> "record_list.pass"
         is RecordListParentSceSynthInvokeListEvent.RecordList.Propose -> "record_list.propose"
+        is RecordListParentSceSynthInvokeListEvent.RecordList.Refused -> "record_list.refused"
         is RecordListParentSceSynthInvokeListEvent.RecordList.Register -> "record_list.register"
         is RecordListParentSceSynthInvokeListEvent.RecordList.Resync -> "record_list.resync"
+        is RecordListParentSceSynthInvokeListEvent.RecordList.Retire -> "record_list.retire"
         is RecordListParentSceSynthInvokeListEvent.RecordList.Role -> "record_list.role"
         is RecordListParentSceSynthInvokeListEvent.RecordList.Room -> "record_list.room"
         is RecordListParentSceSynthInvokeListEvent.RecordList.Settle -> "record_list.settle"
         is RecordListParentSceSynthInvokeListEvent.RecordList.Share -> "record_list.share"
         is RecordListParentSceSynthInvokeListEvent.RecordList.Supersede -> "record_list.supersede"
+        is RecordListParentSceSynthInvokeListEvent.RecordList.Take -> "record_list.take"
         is RecordListParentSceSynthInvokeListEvent.RecordList.Tell -> "record_list.tell"
         is RecordListParentSceSynthInvokeListEvent.RecordList.Value -> "record_list.value"
         is RecordListParentSceSynthInvokeListEvent.RecordList.Visit -> "record_list.visit"
@@ -1518,55 +1847,62 @@ class RecordListParentSceSynthInvokeListStateMachine(
             event is RecordListParentSceSynthInvokeListEvent.RecordList.Room -> transitionOpenAt1
             event is RecordListParentSceSynthInvokeListEvent.RecordList.Role -> transitionOpenAt2
             event is RecordListParentSceSynthInvokeListEvent.RecordList.Edit -> transitionOpenAt3
-            event is RecordListParentSceSynthInvokeListEvent.RecordList.Write && pendingRecordListWritePayload != null && (vFloor > 0 && pendingRecordListWritePayload!!.wallTime <= vFloor) -> transitionOpenAt4
-            event is RecordListParentSceSynthInvokeListEvent.RecordList.Write -> transitionOpenAt5
-            event is RecordListParentSceSynthInvokeListEvent.RecordList.Supersede -> transitionOpenAt6
-            event is RecordListParentSceSynthInvokeListEvent.RecordList.Announce && vAnnounce -> transitionOpenAt7
-            event is RecordListParentSceSynthInvokeListEvent.RecordList.Tell && vAnnounce -> transitionOpenAt8
-            event is RecordListParentSceSynthInvokeListEvent.RecordList.Keep -> transitionOpenAt9
-            event is RecordListParentSceSynthInvokeListEvent.RecordList.Compact -> transitionOpenAt10
-            event is RecordListParentSceSynthInvokeListEvent.RecordList.Settle -> transitionOpenAt11
-            event is RecordListParentSceSynthInvokeListEvent.RecordList.Propose -> transitionOpenAt12
-            event is RecordListParentSceSynthInvokeListEvent.RecordList.Ack -> transitionOpenAt13
-            event is RecordListParentSceSynthInvokeListEvent.RecordList.Floor -> transitionOpenAt14
-            event is RecordListParentSceSynthInvokeListEvent.RecordList.Resync -> transitionOpenAt15
-            event is RecordListParentSceSynthInvokeListEvent.RecordList.Visit -> transitionOpenAt16
-            event is RecordListParentSceSynthInvokeListEvent.RecordList.Node -> transitionOpenAt17
-            event is RecordListParentSceSynthInvokeListEvent.RecordList.Share -> transitionOpenAt18
-            event is RecordListParentSceSynthInvokeListEvent.Error.Execution -> transitionOpenAt19
+            event is RecordListParentSceSynthInvokeListEvent.RecordList.Clear -> transitionOpenAt4
+            event is RecordListParentSceSynthInvokeListEvent.RecordList.Retire -> transitionOpenAt5
+            event is RecordListParentSceSynthInvokeListEvent.RecordList.Close -> transitionOpenAt6
+            event is RecordListParentSceSynthInvokeListEvent.RecordList.Take -> transitionOpenAt7
+            event is RecordListParentSceSynthInvokeListEvent.RecordList.Pass -> transitionOpenAt8
+            event is RecordListParentSceSynthInvokeListEvent.RecordList.Write && pendingRecordListWritePayload != null && (vFloor > 0 && pendingRecordListWritePayload!!.wallTime <= vFloor) -> transitionOpenAt9
+            event is RecordListParentSceSynthInvokeListEvent.RecordList.Write -> transitionOpenAt10
+            event is RecordListParentSceSynthInvokeListEvent.RecordList.Supersede && pendingRecordListSupersedePayload != null && (vFloor > 0 && pendingRecordListSupersedePayload!!.parts > 1.toUInt() && pendingRecordListSupersedePayload!!.atWallTime <= vFloor) -> transitionOpenAt11
+            event is RecordListParentSceSynthInvokeListEvent.RecordList.Supersede -> transitionOpenAt12
+            event is RecordListParentSceSynthInvokeListEvent.RecordList.Arrive -> transitionOpenAt13
+            event is RecordListParentSceSynthInvokeListEvent.RecordList.Announce && vAnnounce -> transitionOpenAt14
+            event is RecordListParentSceSynthInvokeListEvent.RecordList.Tell && vAnnounce -> transitionOpenAt15
+            event is RecordListParentSceSynthInvokeListEvent.RecordList.Keep -> transitionOpenAt16
+            event is RecordListParentSceSynthInvokeListEvent.RecordList.Compact -> transitionOpenAt17
+            event is RecordListParentSceSynthInvokeListEvent.RecordList.Settle -> transitionOpenAt18
+            event is RecordListParentSceSynthInvokeListEvent.RecordList.Propose -> transitionOpenAt19
+            event is RecordListParentSceSynthInvokeListEvent.RecordList.Ack -> transitionOpenAt20
+            event is RecordListParentSceSynthInvokeListEvent.RecordList.Floor -> transitionOpenAt21
+            event is RecordListParentSceSynthInvokeListEvent.RecordList.Resync -> transitionOpenAt22
+            event is RecordListParentSceSynthInvokeListEvent.RecordList.Visit -> transitionOpenAt23
+            event is RecordListParentSceSynthInvokeListEvent.RecordList.Node -> transitionOpenAt24
+            event is RecordListParentSceSynthInvokeListEvent.RecordList.Share -> transitionOpenAt25
+            event is RecordListParentSceSynthInvokeListEvent.Error.Execution -> transitionOpenAt26
             else -> null
         }
     }
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: record_list.scxml:156 :: _machine
+    // SCE-MAP: record_list.scxml:208 :: _machine
     override fun onEntry(state: RecordListParentSceSynthInvokeListState, isDefaultEntry: Boolean) {
         when (state) {
             is RecordListParentSceSynthInvokeListState.Open -> {
-                // SCE-MAP: record_list.scxml:309 :: open :: _state_body
+                // SCE-MAP: record_list.scxml:430 :: open :: _state_body
             }
         }
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: record_list.scxml:156 :: _machine
+    // SCE-MAP: record_list.scxml:208 :: _machine
     override fun onExit(state: RecordListParentSceSynthInvokeListState) {
         when (state) {
             is RecordListParentSceSynthInvokeListState.Open -> {
-                // SCE-MAP: record_list.scxml:309 :: open :: _state_body
+                // SCE-MAP: record_list.scxml:430 :: open :: _state_body
             }
         }
     }
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: record_list.scxml:156 :: _machine
+    // SCE-MAP: record_list.scxml:208 :: _machine
     override fun executeTransitionContent(source: RecordListParentSceSynthInvokeListState, transitionIndex: Int) {
         when (source) {
         is RecordListParentSceSynthInvokeListState.Open -> when (transitionIndex) {
             0 -> {
-                // SCE-MAP: record_list.scxml:310 :: open :: _transition_0
+                // SCE-MAP: record_list.scxml:431 :: open :: _transition_0
                 if (pendingRecordListJoinPayload == null) {
                     return
                 }
@@ -1576,7 +1912,7 @@ class RecordListParentSceSynthInvokeListStateMachine(
             vHub = pendingRecordListJoinPayload!!.hub
             }
             1 -> {
-                // SCE-MAP: record_list.scxml:317 :: open :: _transition_1
+                // SCE-MAP: record_list.scxml:438 :: open :: _transition_1
                 if (pendingRecordListRoomPayload == null) {
                     return
                 }
@@ -1588,7 +1924,7 @@ class RecordListParentSceSynthInvokeListStateMachine(
             vRoomDigest = pendingRecordListRoomPayload!!.digest
             }
             2 -> {
-                // SCE-MAP: record_list.scxml:328 :: open :: _transition_2
+                // SCE-MAP: record_list.scxml:449 :: open :: _transition_2
                 if (pendingRecordListRolePayload == null) {
                     return
                 }
@@ -1598,41 +1934,193 @@ class RecordListParentSceSynthInvokeListStateMachine(
             }
             }
             3 -> {
-                // SCE-MAP: record_list.scxml:343 :: open :: _transition_3
+                // SCE-MAP: record_list.scxml:460 :: open :: _transition_3
                 if (pendingRecordListEditPayload == null) {
                     return
                 }
+
+            vHolding = pendingRecordListEditPayload!!.more
+
+
+            if (!vSpoiled) {
+
+            vNamedId = pendingRecordListEditPayload!!.id
+
+            vNamedField = pendingRecordListEditPayload!!.field
+
+            vNamedKind = 0.toUByte()
+
+            vProbing = true
+
+            vProbe = RecordListParentSceSynthInvokeListRefusalEnum.TEXT_TOO_LONG
 
             if (try { vTyped = com.sce.forge.runtime.SceChecked.bounded(pendingRecordListEditPayload!!.text, 32); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='typed'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            if (try { vHeld = vHeld.copy(text = com.sce.forge.runtime.SceChecked.bounded(pendingRecordListEditPayload!!.text, 96)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='held.text'>: an integer operation overflowed or failed"); true }) {
+            vPart = vPart.copy(kind = 0.toUByte())
+
+            vPart = vPart.copy(id = pendingRecordListEditPayload!!.id)
+
+            vPart = vPart.copy(field = pendingRecordListEditPayload!!.field)
+
+            vPart = vPart.copy(value = pendingRecordListEditPayload!!.value)
+
+            if (try { vPart = vPart.copy(text = com.sce.forge.runtime.SceChecked.bounded(pendingRecordListEditPayload!!.text, 96)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='part.text'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            vEntry = vEntry.copy(element = pendingRecordListEditPayload!!.id.toULong())
+            vProbe = RecordListParentSceSynthInvokeListRefusalEnum.CHANGE_TOO_LARGE
 
-            if (try { vEntry = vEntry.copy(element = com.sce.forge.runtime.SceChecked.add(com.sce.forge.runtime.SceChecked.mul(vEntry.element, 65536.toULong()), pendingRecordListEditPayload!!.field.toULong())); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='entry.element'>: an integer operation overflowed or failed"); true }) {
+            if (if (vStaged.size < 32) { vStaged = vStaged + (vPart); false } else { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<sce:append target='staged'>: the list already holds its capacity of 32"); true }) {
                 return
             }
 
-            vFresh = true
-
-
-            for (o in vAdds) {
-
-
-            if (o.element == vEntry.element) {
-
-            vFresh = false
-            }
+            vProbing = false
             }
 
-            vForbidden = false
+
+            if (!vHolding) {
+
+            vClosingNow = pendingRecordListEditPayload!!.now
 
 
-            if ((vRoster).size.toUInt() > 0.toUInt()) {
+            if (run send@{
+            val sendData = ""
+            // W3C SCXML 5.10: an internal send carries `_event.data` just as an
+            // external one does.
+            raiseInternal(RecordListParentSceSynthInvokeListEvent.RecordList.Close, EventMetadata.internal(sendData))
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
+            }
+            }
+            4 -> {
+                // SCE-MAP: record_list.scxml:487 :: open :: _transition_4
+                if (pendingRecordListClearPayload == null) {
+                    return
+                }
+
+            vHolding = pendingRecordListClearPayload!!.more
+
+
+            if (!vSpoiled) {
+
+            vNamedId = pendingRecordListClearPayload!!.id
+
+            vNamedField = pendingRecordListClearPayload!!.field
+
+            vNamedKind = 1.toUByte()
+
+            vProbing = true
+
+            vProbe = RecordListParentSceSynthInvokeListRefusalEnum.CHANGE_TOO_LARGE
+
+            vPart = vPart.copy(kind = 1.toUByte())
+
+            vPart = vPart.copy(id = pendingRecordListClearPayload!!.id)
+
+            vPart = vPart.copy(field = pendingRecordListClearPayload!!.field)
+
+            vPart = vPart.copy(value = 0)
+
+            if (try { vPart = vPart.copy(text = com.sce.forge.runtime.SceChecked.bounded("", 96)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='part.text'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+
+            if (if (vStaged.size < 32) { vStaged = vStaged + (vPart); false } else { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<sce:append target='staged'>: the list already holds its capacity of 32"); true }) {
+                return
+            }
+
+            vProbing = false
+            }
+
+
+            if (!vHolding) {
+
+            vClosingNow = pendingRecordListClearPayload!!.now
+
+
+            if (run send@{
+            val sendData = ""
+            // W3C SCXML 5.10: an internal send carries `_event.data` just as an
+            // external one does.
+            raiseInternal(RecordListParentSceSynthInvokeListEvent.RecordList.Close, EventMetadata.internal(sendData))
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
+            }
+            }
+            5 -> {
+                // SCE-MAP: record_list.scxml:512 :: open :: _transition_5
+                if (pendingRecordListRetirePayload == null) {
+                    return
+                }
+
+            vHolding = pendingRecordListRetirePayload!!.more
+
+
+            if (!vSpoiled) {
+
+            vNamedId = pendingRecordListRetirePayload!!.id
+
+            vNamedField = 0.toUShort()
+
+            vNamedKind = 2.toUByte()
+
+            vProbing = true
+
+            vProbe = RecordListParentSceSynthInvokeListRefusalEnum.CHANGE_TOO_LARGE
+
+            vPart = vPart.copy(kind = 2.toUByte())
+
+            vPart = vPart.copy(id = pendingRecordListRetirePayload!!.id)
+
+            vPart = vPart.copy(field = 0.toUShort())
+
+            vPart = vPart.copy(value = 0)
+
+            if (try { vPart = vPart.copy(text = com.sce.forge.runtime.SceChecked.bounded("", 96)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='part.text'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+
+            if (if (vStaged.size < 32) { vStaged = vStaged + (vPart); false } else { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<sce:append target='staged'>: the list already holds its capacity of 32"); true }) {
+                return
+            }
+
+            vProbing = false
+            }
+
+
+            if (!vHolding) {
+
+            vClosingNow = pendingRecordListRetirePayload!!.now
+
+
+            if (run send@{
+            val sendData = ""
+            // W3C SCXML 5.10: an internal send carries `_event.data` just as an
+            // external one does.
+            raiseInternal(RecordListParentSceSynthInvokeListEvent.RecordList.Close, EventMetadata.internal(sendData))
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
+            }
+            }
+            6 -> {
+                // SCE-MAP: record_list.scxml:554 :: open :: _transition_6
+
+
+            if (!vSpoiled && (vRoster).size.toUInt() > 0.toUInt()) {
 
             vForbidden = true
 
@@ -1645,9 +2133,6 @@ class RecordListParentSceSynthInvokeListStateMachine(
             vForbidden = false
             }
             }
-            }
-
-            vBlocked = !vForbidden && (vRoomValues > 0.toUInt() && vFresh && (vValues).size.toUInt() >= vRoomValues || vRoomHistory > 0.toUInt() && (vTombstones).size.toUInt() >= vRoomHistory || vRoomDigest > 0.toUInt() && (vDigest).size.toUInt() >= vRoomDigest)
 
 
             if (vForbidden) {
@@ -1655,106 +2140,506 @@ class RecordListParentSceSynthInvokeListStateMachine(
             if (try { vDenied = com.sce.forge.runtime.SceChecked.add(vDenied, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='denied'>: an integer operation overflowed or failed"); true }) {
                 return
             }
+
+            vSpoiled = true
+
+            vSpoiledFor = RecordListParentSceSynthInvokeListRefusalEnum.NOT_WRITER
+            }
             }
 
 
-            if (vBlocked) {
+            if (!vSpoiled) {
+
+
+            for ((sce_position_of_earlierAt, earlier) in vStaged.withIndex()) {
+                @Suppress("UNUSED_VARIABLE") val earlierAt = sce_position_of_earlierAt.toUInt()
+
+
+            for ((sce_position_of_laterAt, later) in vStaged.withIndex()) {
+                @Suppress("UNUSED_VARIABLE") val laterAt = sce_position_of_laterAt.toUInt()
+
+
+            if (!vSpoiled && laterAt > earlierAt && earlier.kind != 2.toUByte() && later.kind != 2.toUByte() && earlier.id == later.id && earlier.field == later.field) {
+
+            vSpoiled = true
+
+            vSpoiledFor = RecordListParentSceSynthInvokeListRefusalEnum.REGISTER_NAMED_TWICE
+
+            vNamedId = later.id
+
+            vNamedField = later.field
+
+            vNamedKind = later.kind
+            }
+            }
+            }
+            }
+
+            vGone = 0.toUInt()
+
+            vWrites = 0.toUInt()
+
+
+            if (!vSpoiled) {
+
+
+            for (a in vAdds) {
+
+            vCovered = false
+
+
+            for (s in vStaged) {
+
+
+            var ifCondFailed13 = false
+            if ((try { com.sce.forge.runtime.SceChecked.div(a.element, 65536.toULong()) == s.id.toULong() && (s.kind == 2.toUByte() || com.sce.forge.runtime.SceChecked.rem(a.element, 65536.toULong()) == s.field.toULong()) } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<if cond='a.element / 65536 === s.id && (s.kind === 2 || a.element % 65536 === s.field)'>: an integer operation overflowed or failed"); ifCondFailed13 = true; false })) {
+
+            vCovered = true
+            }
+            if (ifCondFailed13) {
+                return
+            }
+            }
+
+
+            if (vCovered) {
+
+            if (try { vGone = com.sce.forge.runtime.SceChecked.add(vGone, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='gone'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+            }
+            }
+
+
+            for (s in vStaged) {
+
+
+            if (s.kind == 0.toUByte()) {
+
+            if (try { vWrites = com.sce.forge.runtime.SceChecked.add(vWrites, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='writes'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+            }
+            }
+            }
+
+
+            var ifCondFailed16 = false
+            if ((try { !vSpoiled && com.sce.forge.runtime.SceChecked.add(vGone, vWrites) > 0.toUInt() && vRoomValues > 0.toUInt() && vWrites > vGone && com.sce.forge.runtime.SceChecked.add((vValues).size.toUInt(), vWrites) > com.sce.forge.runtime.SceChecked.add(vRoomValues, vGone) } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<if cond='!spoiled && gone + writes > 0 && roomValues > 0 && writes > gone && len(values) + writes > roomValues + gone'>: an integer operation overflowed or failed"); ifCondFailed16 = true; false })) {
 
             if (try { vFull = com.sce.forge.runtime.SceChecked.add(vFull, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='full'>: an integer operation overflowed or failed"); true }) {
                 return
             }
+
+            vSpoiled = true
+
+            vSpoiledFor = RecordListParentSceSynthInvokeListRefusalEnum.NO_ROOM_FOR_VALUE
             }
-
-
-            if (!vBlocked && !vForbidden) {
-
-            if (try { vClock = com.sce.forge.runtime.SceChecked.take(call_HlcSend__v(vClock, pendingRecordListEditPayload!!.now, vNode)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='clock'>: an integer operation overflowed or failed"); true }) {
+            if (ifCondFailed16) {
                 return
             }
 
 
-            for (o in vAdds) {
+            var ifCondFailed17 = false
+            if ((try { !vSpoiled && com.sce.forge.runtime.SceChecked.add(vGone, vWrites) > 0.toUInt() && vRoomHistory > 0.toUInt() && (vTombstones).size.toUInt() >= vRoomHistory } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<if cond='!spoiled && gone + writes > 0 && roomHistory > 0 && len(tombstones) >= roomHistory'>: an integer operation overflowed or failed"); ifCondFailed17 = true; false })) {
+
+            if (try { vFull = com.sce.forge.runtime.SceChecked.add(vFull, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='full'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+
+            vSpoiled = true
+
+            vSpoiledFor = RecordListParentSceSynthInvokeListRefusalEnum.NO_ROOM_FOR_HISTORY
+            }
+            if (ifCondFailed17) {
+                return
+            }
 
 
-            if (o.element == vEntry.element) {
+            var ifCondFailed18 = false
+            if ((try { !vSpoiled && com.sce.forge.runtime.SceChecked.add(vGone, vWrites) > 0.toUInt() && vRoomDigest > 0.toUInt() && (vDigest).size.toUInt() >= vRoomDigest } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<if cond='!spoiled && gone + writes > 0 && roomDigest > 0 && len(digest) >= roomDigest'>: an integer operation overflowed or failed"); ifCondFailed18 = true; false })) {
+
+            if (try { vFull = com.sce.forge.runtime.SceChecked.add(vFull, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='full'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+
+            vSpoiled = true
+
+            vSpoiledFor = RecordListParentSceSynthInvokeListRefusalEnum.NO_ROOM_FOR_DIGEST
+            }
+            if (ifCondFailed18) {
+                return
+            }
+
+
+            var ifCondFailed19 = false
+            if ((try { !vSpoiled && com.sce.forge.runtime.SceChecked.add(vGone, vWrites) > 0.toUInt() } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<if cond='!spoiled && gone + writes > 0'>: an integer operation overflowed or failed"); ifCondFailed19 = true; false })) {
+
+            vProbing = true
+
+            vProbe = RecordListParentSceSynthInvokeListRefusalEnum.CLOCK_EXHAUSTED
+
+            if (try { vStamp = com.sce.forge.runtime.SceChecked.take(call_HlcSend__v(vClock, vClosingNow, vNode)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='stamp'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+
+            vProbe = RecordListParentSceSynthInvokeListRefusalEnum.CHANGE_TOO_LARGE
+
+            vTaking = emptyList()
+
+            vTook = 0.toUInt()
+
+
+            for (a in vAdds) {
+
+            vCovered = false
+
+
+            for (s in vStaged) {
+
+
+            var ifCondFailed20 = false
+            if ((try { com.sce.forge.runtime.SceChecked.div(a.element, 65536.toULong()) == s.id.toULong() && (s.kind == 2.toUByte() || com.sce.forge.runtime.SceChecked.rem(a.element, 65536.toULong()) == s.field.toULong()) } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<if cond='a.element / 65536 === s.id && (s.kind === 2 || a.element % 65536 === s.field)'>: an integer operation overflowed or failed"); ifCondFailed20 = true; false })) {
+
+            vCovered = true
+            }
+            if (ifCondFailed20) {
+                return
+            }
+            }
+
+
+            if (vCovered) {
+
+            vPart = vPart.copy(kind = 1.toUByte())
+
+            if (try { vPart = vPart.copy(id = com.sce.forge.runtime.SceChecked.narrowToUInt(com.sce.forge.runtime.SceChecked.div(a.element, 65536.toULong()))); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='part.id'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+
+            if (try { vPart = vPart.copy(field = com.sce.forge.runtime.SceChecked.narrowToUShort(com.sce.forge.runtime.SceChecked.rem(a.element, 65536.toULong()))); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='part.field'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+
+            vPart = vPart.copy(value = 0)
+
+            if (try { vPart = vPart.copy(text = com.sce.forge.runtime.SceChecked.bounded("", 96)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='part.text'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+
+            vPart = vPart.copy(wallTime = a.wallTime)
+
+            vPart = vPart.copy(counter = a.counter)
+
+            vPart = vPart.copy(nodeId = a.nodeId)
+
+            vPart = vPart.copy(by = vNode)
+
+            vPart = vPart.copy(atWallTime = vStamp.wallTime)
+
+            vPart = vPart.copy(atCounter = vStamp.counter)
+
+            if (try { vPart = vPart.copy(parts = com.sce.forge.runtime.SceChecked.add(vGone, vWrites)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='part.parts'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+
+            if (if (vTaking.size < 64) { vTaking = vTaking + (vPart); false } else { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<sce:append target='taking'>: the list already holds its capacity of 64"); true }) {
+                return
+            }
+            }
+            }
+
+
+            for (s in vStaged) {
+
+
+            if (s.kind == 0.toUByte()) {
+
+            vPart = vPart.copy(kind = 0.toUByte())
+
+            vPart = vPart.copy(id = s.id)
+
+            vPart = vPart.copy(field = s.field)
+
+            vPart = vPart.copy(value = s.value)
+
+            if (try { vPart = vPart.copy(text = com.sce.forge.runtime.SceChecked.bounded(s.text, 96)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='part.text'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+
+            vPart = vPart.copy(wallTime = vStamp.wallTime)
+
+            vPart = vPart.copy(counter = vStamp.counter)
+
+            vPart = vPart.copy(nodeId = vNode)
+
+            vPart = vPart.copy(by = vNode)
+
+            vPart = vPart.copy(atWallTime = vStamp.wallTime)
+
+            vPart = vPart.copy(atCounter = vStamp.counter)
+
+            if (try { vPart = vPart.copy(parts = com.sce.forge.runtime.SceChecked.add(vGone, vWrites)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='part.parts'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+
+            if (if (vTaking.size < 64) { vTaking = vTaking + (vPart); false } else { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<sce:append target='taking'>: the list already holds its capacity of 64"); true }) {
+                return
+            }
+            }
+            }
+
+            vProbing = false
+
+            vStaged = emptyList()
+
+            vClock = vStamp
+
+            vPassing = emptyList()
+
+            vPassed = 0.toUInt()
+
+
+            for (t in vTaking) {
+
+            if (if (vPassing.size < 64) { vPassing = vPassing + (t); false } else { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<sce:append target='passing'>: the list already holds its capacity of 64"); true }) {
+                return
+            }
+            }
+
+
+            for (t in vTaking) {
+
+
+            if (run send@{
+            val sendData = ""
+            // W3C SCXML 5.10: an internal send carries `_event.data` just as an
+            // external one does.
+            raiseInternal(RecordListParentSceSynthInvokeListEvent.RecordList.Take, EventMetadata.internal(sendData))
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
+            }
+
+
+            for (t in vPassing) {
+
+
+            if (run send@{
+            val sendData = ""
+            // W3C SCXML 5.10: an internal send carries `_event.data` just as an
+            // external one does.
+            raiseInternal(RecordListParentSceSynthInvokeListEvent.RecordList.Pass, EventMetadata.internal(sendData))
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
+            }
+            }
+            if (ifCondFailed19) {
+                return
+            }
+
+
+            var ifCondFailed23 = false
+            if ((try { !vSpoiled && com.sce.forge.runtime.SceChecked.add(vGone, vWrites) == 0.toUInt() } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<if cond='!spoiled && gone + writes === 0'>: an integer operation overflowed or failed"); ifCondFailed23 = true; false })) {
+
+            vStaged = emptyList()
+            }
+            if (ifCondFailed23) {
+                return
+            }
+
+
+            if (vSpoiled) {
+
+            vStaged = emptyList()
+
+            vSpoiled = false
+
+
+            if (vAnnounce) {
+
+
+            if (run send@{
+            // docs/adr/0005, decision 3: the target is a string computed from the
+            // machine's fields now, and the send goes only by a route the document
+            // declared as `sce:targets`. A value in none of them names no route this
+            // send may take — an address nobody answers at, which is reported below as
+            // error.communication (W3C SCXML C.1) — and an operation that fails cannot
+            // be evaluated, the argument error.
+            val _computed: String = "#_parent"
+            val _rt: String = if (_computed == "#_parent") _computed else ""
+            if (com.sce.runtime.SendHelper.isUnreachableTarget(_rt)) {
+                // W3C SCXML C.1 (test496): a target that names nothing is not
+                // reachable — error.communication, nothing delivered, and the
+                // error ends the block as any other would (W3C SCXML 4.9).
+                raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Communication, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach", "__send_5")
+                return@send true
+            }
+            val sendPayload = mutableMapOf<String, Any?>()
+            putParam(sendPayload, "id", (vNamedId).toLong())
+
+            putParam(sendPayload, "field", (vNamedField).toLong())
+
+            putParam(sendPayload, "kind", (vNamedKind).toLong())
+
+            putParam(sendPayload, "reason", (vSpoiledFor).declaredName)
+
+            val sendData = buildJsonFromParams(sendPayload)
+            // W3C SCXML 6.2.4 + C.1: a targetexpr is a target — the value is
+            // routed as the same value written in `target` is, at once or after
+            // the delay, by the table SendHelper.classifyTarget holds (C++
+            // `SendHelper::classifyTarget`).
+            when (sendToTarget(
+                _rt,
+RecordListParentSceSynthInvokeListEvent.RecordList.Refused,
+"record_list.refused",
+                sendData,
+0L,
+                "__send_5",
+                RecordListParentSceSynthInvokeListEvent.Error.Communication,
+            )) {
+                com.sce.runtime.TargetSendOutcome.UNSUPPORTED -> {
+                    raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<send> targetexpr produced a value that is not a target", "__send_5")
+                    return@send true
+                }
+                com.sce.runtime.TargetSendOutcome.UNREACHABLE -> {
+                    raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Communication, "<send> targetexpr names a session this processor cannot reach", "__send_5")
+                    return@send true
+                }
+                com.sce.runtime.TargetSendOutcome.SENT -> {}
+            }
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
+            }
+            }
+            }
+            7 -> {
+                // SCE-MAP: record_list.scxml:701 :: open :: _transition_7
+
+            if ((try { vOp = vOp.copy(kind = com.sce.forge.runtime.SceChecked.at(vTaking, (vTook).toLong()).kind); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='op.kind'>: an integer operation overflowed or failed"); true }) || (try { vOp = vOp.copy(id = com.sce.forge.runtime.SceChecked.at(vTaking, (vTook).toLong()).id); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='op.id'>: an integer operation overflowed or failed"); true }) || (try { vOp = vOp.copy(field = com.sce.forge.runtime.SceChecked.at(vTaking, (vTook).toLong()).field); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='op.field'>: an integer operation overflowed or failed"); true }) || (try { vOp = vOp.copy(value = com.sce.forge.runtime.SceChecked.at(vTaking, (vTook).toLong()).value); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='op.value'>: an integer operation overflowed or failed"); true }) || (try { vOp = vOp.copy(text = com.sce.forge.runtime.SceChecked.bounded(com.sce.forge.runtime.SceChecked.at(vTaking, (vTook).toLong()).text, 96)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='op.text'>: an integer operation overflowed or failed"); true }) || (try { vOp = vOp.copy(wallTime = com.sce.forge.runtime.SceChecked.at(vTaking, (vTook).toLong()).wallTime); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='op.wallTime'>: an integer operation overflowed or failed"); true }) || (try { vOp = vOp.copy(counter = com.sce.forge.runtime.SceChecked.at(vTaking, (vTook).toLong()).counter); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='op.counter'>: an integer operation overflowed or failed"); true }) || (try { vOp = vOp.copy(nodeId = com.sce.forge.runtime.SceChecked.at(vTaking, (vTook).toLong()).nodeId); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='op.nodeId'>: an integer operation overflowed or failed"); true }) || (try { vOp = vOp.copy(by = com.sce.forge.runtime.SceChecked.at(vTaking, (vTook).toLong()).by); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='op.by'>: an integer operation overflowed or failed"); true }) || (try { vOp = vOp.copy(atWallTime = com.sce.forge.runtime.SceChecked.at(vTaking, (vTook).toLong()).atWallTime); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='op.atWallTime'>: an integer operation overflowed or failed"); true }) || (try { vOp = vOp.copy(atCounter = com.sce.forge.runtime.SceChecked.at(vTaking, (vTook).toLong()).atCounter); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='op.atCounter'>: an integer operation overflowed or failed"); true }) || (try { vOp = vOp.copy(parts = com.sce.forge.runtime.SceChecked.at(vTaking, (vTook).toLong()).parts); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='op.parts'>: an integer operation overflowed or failed"); true })) {
+                return
+            }
+
+            if (try { vTook = com.sce.forge.runtime.SceChecked.add(vTook, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='took'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+
+
+            if (vOp.kind == 0.toUByte()) {
+
+            if (try { vHeld = vHeld.copy(text = com.sce.forge.runtime.SceChecked.bounded(vOp.text, 96)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='held.text'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+
+
+            if (vOp.nodeId != vNode) {
+
+            vStamp = vStamp.copy(wallTime = vOp.wallTime)
+
+            vStamp = vStamp.copy(counter = vOp.counter)
+
+            vStamp = vStamp.copy(nodeId = vOp.nodeId)
+
+            if (try { vClock = com.sce.forge.runtime.SceChecked.take(call_HlcReceive__vv(vClock, vStamp, vClock.wallTime, vNode)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='clock'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+            }
+
+
+            if (vOp.nodeId == vNode && (vOp.wallTime > vClock.wallTime || vOp.wallTime == vClock.wallTime && vOp.counter > vClock.counter)) {
+
+            vClock = vClock.copy(wallTime = vOp.wallTime)
+
+            vClock = vClock.copy(counter = vOp.counter)
+            }
+
+            vEntry = vEntry.copy(element = vOp.id.toULong())
+
+            if (try { vEntry = vEntry.copy(element = com.sce.forge.runtime.SceChecked.add(com.sce.forge.runtime.SceChecked.mul(vEntry.element, 65536.toULong()), vOp.field.toULong())); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='entry.element'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+
+            vEntry = vEntry.copy(wallTime = vOp.wallTime)
+
+            vEntry = vEntry.copy(counter = vOp.counter)
+
+            vEntry = vEntry.copy(nodeId = vOp.nodeId)
+
+            vIsLive = true
+
+
+            for (t in vTombstones) {
+
+
+            if (t.element == vEntry.element && t.wallTime == vEntry.wallTime && t.counter == vEntry.counter && t.nodeId == vEntry.nodeId) {
+
+            vIsLive = false
+            }
+            }
+
+
+            if (vIsLive) {
+
+            vOne = emptyList()
+
+            if (if (vOne.size < 1024) { vOne = vOne + (vEntry); false } else { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<sce:append target='one'>: the list already holds its capacity of 1024"); true }) {
+                return
+            }
+
+            if (try { vAdds = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_OrsetUnion__vv(vAdds, vOne)), 1024); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='adds'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+            }
+
+            vHeld = vHeld.copy(id = vOp.id.toULong())
+
+            vHeld = vHeld.copy(field = vOp.field.toULong())
+
+            vHeld = vHeld.copy(value = vOp.value)
+
+            vHeld = vHeld.copy(wallTime = vOp.wallTime)
+
+            vHeld = vHeld.copy(counter = vOp.counter)
+
+            vHeld = vHeld.copy(nodeId = vOp.nodeId)
+
+            vPresent = call_MvValueHolds__vv(vValues, vHeld)
+
+
+            if (vIsLive && !vPresent) {
+
+            if (try { vValues = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_MvValueKeep__vv(vValues, vHeld)), 512); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='values'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
 
 
             if (run send@{
             val sendPayload = mutableMapOf<String, Any?>()
-            putParam(sendPayload, "id", (pendingRecordListEditPayload!!.id).toLong())
+            putParam(sendPayload, "kind", (0).toLong())
 
-            putParam(sendPayload, "field", (pendingRecordListEditPayload!!.field).toLong())
+            putParam(sendPayload, "element", (vEntry.element).toString())
 
-            putParam(sendPayload, "wallTime", (o.wallTime).toString())
+            putParam(sendPayload, "wallTime", (vOp.wallTime).toString())
 
-            putParam(sendPayload, "counter", (o.counter).toLong())
+            putParam(sendPayload, "counter", (vOp.counter).toLong())
 
-            putParam(sendPayload, "nodeId", (o.nodeId).toString())
-
-            putParam(sendPayload, "by", (vNode).toString())
+            putParam(sendPayload, "nodeId", (vOp.nodeId).toString())
 
             val sendData = buildJsonFromParams(sendPayload)
             // W3C SCXML 5.10: an internal send carries `_event.data` just as an
             // external one does.
-            raiseInternal(RecordListParentSceSynthInvokeListEvent.RecordList.Supersede, EventMetadata.internal(sendData))
-            false
-            }) {
-                // W3C SCXML 4.9: an error raised while this element was
-                // processed ends the block.
-                return
-            } // end of run send@ (W3C SCXML 6.2: a discarded message)
-
-
-            if (!vHub) {
-
-
-            if (run send@{
-            val sendPayload = mutableMapOf<String, Any?>()
-            putParam(sendPayload, "id", (pendingRecordListEditPayload!!.id).toLong())
-
-            putParam(sendPayload, "field", (pendingRecordListEditPayload!!.field).toLong())
-
-            putParam(sendPayload, "wallTime", (o.wallTime).toString())
-
-            putParam(sendPayload, "counter", (o.counter).toLong())
-
-            putParam(sendPayload, "nodeId", (o.nodeId).toString())
-
-            putParam(sendPayload, "by", (vNode).toString())
-
-            val sendData = buildJsonFromParams(sendPayload)
-            // The same pairs as the text a form carries (W3C SCXML C.2), so no
-            // `<param>` is evaluated twice.
-            val sendWireParams = sendPayload.mapValues { (_, v) ->
-                if (v is RepeatedParam) v.values.map { valueToWireString(it) } else listOf(valueToWireString(v))
-            }
-            // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
-            // which declared it to this build. Dispatch rather than refuse —
-            // and take the whole send, because a processor the host serves
-            // owns delivery; falling through would also enqueue the event
-            // locally and the document would see the act twice.
-            val hostRequest = HostSendRequest(
-                processorType = "sce:mesh",
-                eventName = "record_list.supersede",
-                target = "#hub",
-                content = "",
-                params = sendWireParams,
-                sendId = "__send_1",
-                eventData = sendData,
-                // SCE_MESH.md §mesh-10.7: the invokeid of the event being
-                // processed now, carried back out as a W3C child's send to its
-                // parent carries it (§scxml-6.4.1).
-                invokeId = currentEventMetadata.invokeId
-            )
-            val hostServed = performHostSend(hostRequest)
-            // W3C SCXML 6.2: a declared type with no handler registered is,
-            // from the document's side, a processor the platform does not
-            // support — the act it asked for was performed by nobody. Same
-            // event as an undeclared type, so a wiring mistake cannot read
-            // as success.
-            if (hostServed == null && !hasEventProcessor("sce:mesh")) {
-                raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_1")
-            }
+            raiseInternal(RecordListParentSceSynthInvokeListEvent.RecordList.Keep, EventMetadata.internal(sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -1762,56 +2647,210 @@ class RecordListParentSceSynthInvokeListStateMachine(
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
-            }
-            }
+
+
+            if (vIsLive && !vPresent && vAnnounce) {
 
 
             if (run send@{
             val sendPayload = mutableMapOf<String, Any?>()
-            putParam(sendPayload, "id", (pendingRecordListEditPayload!!.id).toLong())
+            putParam(sendPayload, "id", (vOp.id).toLong())
 
-            putParam(sendPayload, "field", (pendingRecordListEditPayload!!.field).toLong())
-
-            putParam(sendPayload, "value", (pendingRecordListEditPayload!!.value).toString())
-
-            putParam(sendPayload, "text", pendingRecordListEditPayload!!.text)
-
-            putParam(sendPayload, "wallTime", (vClock.wallTime).toString())
-
-            putParam(sendPayload, "counter", (vClock.counter).toLong())
-
-            putParam(sendPayload, "nodeId", (vNode).toString())
+            putParam(sendPayload, "field", (vOp.field).toLong())
 
             val sendData = buildJsonFromParams(sendPayload)
             // W3C SCXML 5.10: an internal send carries `_event.data` just as an
             // external one does.
-            raiseInternal(RecordListParentSceSynthInvokeListEvent.RecordList.Write, EventMetadata.internal(sendData))
+            raiseInternal(RecordListParentSceSynthInvokeListEvent.RecordList.Announce, EventMetadata.internal(sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
                 // processed ends the block.
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
+            }
+            }
 
 
-            if (!vHub) {
+            if (vOp.kind == 1.toUByte()) {
+
+
+            if (vOp.atWallTime > 0 && vOp.by != vNode) {
+
+            vStamp = vStamp.copy(wallTime = vOp.atWallTime)
+
+            vStamp = vStamp.copy(counter = vOp.atCounter)
+
+            vStamp = vStamp.copy(nodeId = vOp.by)
+
+            if (try { vClock = com.sce.forge.runtime.SceChecked.take(call_HlcReceive__vv(vClock, vStamp, vClock.wallTime, vNode)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='clock'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+            }
+
+            vEntry = vEntry.copy(element = vOp.id.toULong())
+
+            if (try { vEntry = vEntry.copy(element = com.sce.forge.runtime.SceChecked.add(com.sce.forge.runtime.SceChecked.mul(vEntry.element, 65536.toULong()), vOp.field.toULong())); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='entry.element'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+
+            vEntry = vEntry.copy(wallTime = vOp.wallTime)
+
+            vEntry = vEntry.copy(counter = vOp.counter)
+
+            vEntry = vEntry.copy(nodeId = vOp.nodeId)
+
+            vKnown = false
+
+
+            for (t in vTombstones) {
+
+
+            if (t.element == vEntry.element && t.wallTime == vEntry.wallTime && t.counter == vEntry.counter && t.nodeId == vEntry.nodeId) {
+
+            vKnown = true
+            }
+            }
+
+            vOne = emptyList()
+
+            if (if (vOne.size < 1024) { vOne = vOne + (vEntry); false } else { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<sce:append target='one'>: the list already holds its capacity of 1024"); true }) {
+                return
+            }
+
+            if (try { vTombstones = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_OrsetUnion__vv(vTombstones, vOne)), 1024); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='tombstones'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+
+            if (try { vAdds = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_OrsetLive__vv(vAdds, vOne)), 1024); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='adds'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+
+            vHeld = vHeld.copy(id = vOp.id.toULong())
+
+            vHeld = vHeld.copy(field = vOp.field.toULong())
+
+            vHeld = vHeld.copy(wallTime = vOp.wallTime)
+
+            vHeld = vHeld.copy(counter = vOp.counter)
+
+            vHeld = vHeld.copy(nodeId = vOp.nodeId)
+
+            vWasLive = call_MvValueHolds__vv(vValues, vHeld)
+
+            if (try { vValues = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_MvValueDrop__vv(vValues, vHeld)), 512); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='values'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+
+
+            if (!vKnown) {
 
 
             if (run send@{
             val sendPayload = mutableMapOf<String, Any?>()
-            putParam(sendPayload, "id", (pendingRecordListEditPayload!!.id).toLong())
+            putParam(sendPayload, "kind", (1).toLong())
 
-            putParam(sendPayload, "field", (pendingRecordListEditPayload!!.field).toLong())
+            putParam(sendPayload, "element", (vEntry.element).toString())
 
-            putParam(sendPayload, "value", (pendingRecordListEditPayload!!.value).toString())
+            putParam(sendPayload, "wallTime", (vOp.wallTime).toString())
 
-            putParam(sendPayload, "text", pendingRecordListEditPayload!!.text)
+            putParam(sendPayload, "counter", (vOp.counter).toLong())
 
-            putParam(sendPayload, "wallTime", (vClock.wallTime).toString())
+            putParam(sendPayload, "nodeId", (vOp.nodeId).toString())
 
-            putParam(sendPayload, "counter", (vClock.counter).toLong())
+            val sendData = buildJsonFromParams(sendPayload)
+            // W3C SCXML 5.10: an internal send carries `_event.data` just as an
+            // external one does.
+            raiseInternal(RecordListParentSceSynthInvokeListEvent.RecordList.Keep, EventMetadata.internal(sendData))
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
+            }
 
-            putParam(sendPayload, "nodeId", (vNode).toString())
+
+            if (vWasLive) {
+
+
+            if (run send@{
+            val sendPayload = mutableMapOf<String, Any?>()
+            putParam(sendPayload, "kind", (0).toLong())
+
+            putParam(sendPayload, "element", (vEntry.element).toString())
+
+            putParam(sendPayload, "wallTime", (vOp.wallTime).toString())
+
+            putParam(sendPayload, "counter", (vOp.counter).toLong())
+
+            putParam(sendPayload, "nodeId", (vOp.nodeId).toString())
+
+            val sendData = buildJsonFromParams(sendPayload)
+            // W3C SCXML 5.10: an internal send carries `_event.data` just as an
+            // external one does.
+            raiseInternal(RecordListParentSceSynthInvokeListEvent.RecordList.Keep, EventMetadata.internal(sendData))
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
+            }
+
+
+            if (vWasLive && vAnnounce) {
+
+
+            if (run send@{
+            val sendPayload = mutableMapOf<String, Any?>()
+            putParam(sendPayload, "id", (vOp.id).toLong())
+
+            putParam(sendPayload, "field", (vOp.field).toLong())
+
+            val sendData = buildJsonFromParams(sendPayload)
+            // W3C SCXML 5.10: an internal send carries `_event.data` just as an
+            // external one does.
+            raiseInternal(RecordListParentSceSynthInvokeListEvent.RecordList.Announce, EventMetadata.internal(sendData))
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
+            }
+            }
+            }
+            8 -> {
+                // SCE-MAP: record_list.scxml:837 :: open :: _transition_8
+
+            if ((try { vOp = vOp.copy(kind = com.sce.forge.runtime.SceChecked.at(vPassing, (vPassed).toLong()).kind); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='op.kind'>: an integer operation overflowed or failed"); true }) || (try { vOp = vOp.copy(id = com.sce.forge.runtime.SceChecked.at(vPassing, (vPassed).toLong()).id); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='op.id'>: an integer operation overflowed or failed"); true }) || (try { vOp = vOp.copy(field = com.sce.forge.runtime.SceChecked.at(vPassing, (vPassed).toLong()).field); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='op.field'>: an integer operation overflowed or failed"); true }) || (try { vOp = vOp.copy(value = com.sce.forge.runtime.SceChecked.at(vPassing, (vPassed).toLong()).value); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='op.value'>: an integer operation overflowed or failed"); true }) || (try { vOp = vOp.copy(text = com.sce.forge.runtime.SceChecked.bounded(com.sce.forge.runtime.SceChecked.at(vPassing, (vPassed).toLong()).text, 96)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='op.text'>: an integer operation overflowed or failed"); true }) || (try { vOp = vOp.copy(wallTime = com.sce.forge.runtime.SceChecked.at(vPassing, (vPassed).toLong()).wallTime); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='op.wallTime'>: an integer operation overflowed or failed"); true }) || (try { vOp = vOp.copy(counter = com.sce.forge.runtime.SceChecked.at(vPassing, (vPassed).toLong()).counter); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='op.counter'>: an integer operation overflowed or failed"); true }) || (try { vOp = vOp.copy(nodeId = com.sce.forge.runtime.SceChecked.at(vPassing, (vPassed).toLong()).nodeId); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='op.nodeId'>: an integer operation overflowed or failed"); true }) || (try { vOp = vOp.copy(by = com.sce.forge.runtime.SceChecked.at(vPassing, (vPassed).toLong()).by); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='op.by'>: an integer operation overflowed or failed"); true }) || (try { vOp = vOp.copy(atWallTime = com.sce.forge.runtime.SceChecked.at(vPassing, (vPassed).toLong()).atWallTime); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='op.atWallTime'>: an integer operation overflowed or failed"); true }) || (try { vOp = vOp.copy(atCounter = com.sce.forge.runtime.SceChecked.at(vPassing, (vPassed).toLong()).atCounter); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='op.atCounter'>: an integer operation overflowed or failed"); true }) || (try { vOp = vOp.copy(parts = com.sce.forge.runtime.SceChecked.at(vPassing, (vPassed).toLong()).parts); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='op.parts'>: an integer operation overflowed or failed"); true })) {
+                return
+            }
+
+            if (try { vPassed = com.sce.forge.runtime.SceChecked.add(vPassed, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='passed'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+
+
+            if (vOp.kind == 0.toUByte() && vOp.parts <= 1.toUInt() && !vHub) {
+
+
+            if (run send@{
+            val sendPayload = mutableMapOf<String, Any?>()
+            putParam(sendPayload, "id", (vOp.id).toLong())
+
+            putParam(sendPayload, "field", (vOp.field).toLong())
+
+            putParam(sendPayload, "value", (vOp.value).toString())
+
+            putParam(sendPayload, "text", vOp.text)
+
+            putParam(sendPayload, "wallTime", (vOp.wallTime).toString())
+
+            putParam(sendPayload, "counter", (vOp.counter).toLong())
+
+            putParam(sendPayload, "nodeId", (vOp.nodeId).toString())
 
             val sendData = buildJsonFromParams(sendPayload)
             // The same pairs as the text a form carries (W3C SCXML C.2), so no
@@ -1830,7 +2869,7 @@ class RecordListParentSceSynthInvokeListStateMachine(
                 target = "#hub",
                 content = "",
                 params = sendWireParams,
-                sendId = "__send_3",
+                sendId = "__send_11",
                 eventData = sendData,
                 // SCE_MESH.md §mesh-10.7: the invokeid of the event being
                 // processed now, carried back out as a W3C child's send to its
@@ -1844,7 +2883,442 @@ class RecordListParentSceSynthInvokeListStateMachine(
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("sce:mesh")) {
-                raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_3")
+                raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_11")
+            }
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
+            }
+
+
+            if (vOp.kind == 0.toUByte() && vOp.parts > 1.toUInt() && !vHub) {
+
+
+            if (run send@{
+            val sendPayload = mutableMapOf<String, Any?>()
+            putParam(sendPayload, "id", (vOp.id).toLong())
+
+            putParam(sendPayload, "field", (vOp.field).toLong())
+
+            putParam(sendPayload, "value", (vOp.value).toString())
+
+            putParam(sendPayload, "text", vOp.text)
+
+            putParam(sendPayload, "wallTime", (vOp.wallTime).toString())
+
+            putParam(sendPayload, "counter", (vOp.counter).toLong())
+
+            putParam(sendPayload, "nodeId", (vOp.nodeId).toString())
+
+            putParam(sendPayload, "parts", (vOp.parts).toLong())
+
+            val sendData = buildJsonFromParams(sendPayload)
+            // The same pairs as the text a form carries (W3C SCXML C.2), so no
+            // `<param>` is evaluated twice.
+            val sendWireParams = sendPayload.mapValues { (_, v) ->
+                if (v is RepeatedParam) v.values.map { valueToWireString(it) } else listOf(valueToWireString(v))
+            }
+            // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
+            // which declared it to this build. Dispatch rather than refuse —
+            // and take the whole send, because a processor the host serves
+            // owns delivery; falling through would also enqueue the event
+            // locally and the document would see the act twice.
+            val hostRequest = HostSendRequest(
+                processorType = "sce:mesh",
+                eventName = "record_list.write",
+                target = "#hub",
+                content = "",
+                params = sendWireParams,
+                sendId = "__send_12",
+                eventData = sendData,
+                // SCE_MESH.md §mesh-10.7: the invokeid of the event being
+                // processed now, carried back out as a W3C child's send to its
+                // parent carries it (§scxml-6.4.1).
+                invokeId = currentEventMetadata.invokeId
+            )
+            val hostServed = performHostSend(hostRequest)
+            // W3C SCXML 6.2: a declared type with no handler registered is,
+            // from the document's side, a processor the platform does not
+            // support — the act it asked for was performed by nobody. Same
+            // event as an undeclared type, so a wiring mistake cannot read
+            // as success.
+            if (hostServed == null && !hasEventProcessor("sce:mesh")) {
+                raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_12")
+            }
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
+            }
+
+
+            if (vOp.kind == 0.toUByte() && vOp.parts <= 1.toUInt() && vHub) {
+
+
+            if (run send@{
+            val sendPayload = mutableMapOf<String, Any?>()
+            putParam(sendPayload, "id", (vOp.id).toLong())
+
+            putParam(sendPayload, "field", (vOp.field).toLong())
+
+            putParam(sendPayload, "value", (vOp.value).toString())
+
+            putParam(sendPayload, "text", vOp.text)
+
+            putParam(sendPayload, "wallTime", (vOp.wallTime).toString())
+
+            putParam(sendPayload, "counter", (vOp.counter).toLong())
+
+            putParam(sendPayload, "nodeId", (vOp.nodeId).toString())
+
+            val sendData = buildJsonFromParams(sendPayload)
+            // The same pairs as the text a form carries (W3C SCXML C.2), so no
+            // `<param>` is evaluated twice.
+            val sendWireParams = sendPayload.mapValues { (_, v) ->
+                if (v is RepeatedParam) v.values.map { valueToWireString(it) } else listOf(valueToWireString(v))
+            }
+            // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
+            // which declared it to this build. Dispatch rather than refuse —
+            // and take the whole send, because a processor the host serves
+            // owns delivery; falling through would also enqueue the event
+            // locally and the document would see the act twice.
+            val hostRequest = HostSendRequest(
+                processorType = "sce:mesh",
+                eventName = "record_list.write",
+                target = "#people",
+                content = "",
+                params = sendWireParams,
+                sendId = "__send_13",
+                eventData = sendData,
+                // SCE_MESH.md §mesh-10.7: the invokeid of the event being
+                // processed now, carried back out as a W3C child's send to its
+                // parent carries it (§scxml-6.4.1).
+                invokeId = currentEventMetadata.invokeId
+            )
+            val hostServed = performHostSend(hostRequest)
+            // W3C SCXML 6.2: a declared type with no handler registered is,
+            // from the document's side, a processor the platform does not
+            // support — the act it asked for was performed by nobody. Same
+            // event as an undeclared type, so a wiring mistake cannot read
+            // as success.
+            if (hostServed == null && !hasEventProcessor("sce:mesh")) {
+                raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_13")
+            }
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
+            }
+
+
+            if (vOp.kind == 0.toUByte() && vOp.parts > 1.toUInt() && vHub) {
+
+
+            if (run send@{
+            val sendPayload = mutableMapOf<String, Any?>()
+            putParam(sendPayload, "id", (vOp.id).toLong())
+
+            putParam(sendPayload, "field", (vOp.field).toLong())
+
+            putParam(sendPayload, "value", (vOp.value).toString())
+
+            putParam(sendPayload, "text", vOp.text)
+
+            putParam(sendPayload, "wallTime", (vOp.wallTime).toString())
+
+            putParam(sendPayload, "counter", (vOp.counter).toLong())
+
+            putParam(sendPayload, "nodeId", (vOp.nodeId).toString())
+
+            putParam(sendPayload, "parts", (vOp.parts).toLong())
+
+            val sendData = buildJsonFromParams(sendPayload)
+            // The same pairs as the text a form carries (W3C SCXML C.2), so no
+            // `<param>` is evaluated twice.
+            val sendWireParams = sendPayload.mapValues { (_, v) ->
+                if (v is RepeatedParam) v.values.map { valueToWireString(it) } else listOf(valueToWireString(v))
+            }
+            // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
+            // which declared it to this build. Dispatch rather than refuse —
+            // and take the whole send, because a processor the host serves
+            // owns delivery; falling through would also enqueue the event
+            // locally and the document would see the act twice.
+            val hostRequest = HostSendRequest(
+                processorType = "sce:mesh",
+                eventName = "record_list.write",
+                target = "#people",
+                content = "",
+                params = sendWireParams,
+                sendId = "__send_14",
+                eventData = sendData,
+                // SCE_MESH.md §mesh-10.7: the invokeid of the event being
+                // processed now, carried back out as a W3C child's send to its
+                // parent carries it (§scxml-6.4.1).
+                invokeId = currentEventMetadata.invokeId
+            )
+            val hostServed = performHostSend(hostRequest)
+            // W3C SCXML 6.2: a declared type with no handler registered is,
+            // from the document's side, a processor the platform does not
+            // support — the act it asked for was performed by nobody. Same
+            // event as an undeclared type, so a wiring mistake cannot read
+            // as success.
+            if (hostServed == null && !hasEventProcessor("sce:mesh")) {
+                raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_14")
+            }
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
+            }
+
+
+            if (vOp.kind == 1.toUByte() && vOp.parts <= 1.toUInt() && !vHub) {
+
+
+            if (run send@{
+            val sendPayload = mutableMapOf<String, Any?>()
+            putParam(sendPayload, "id", (vOp.id).toLong())
+
+            putParam(sendPayload, "field", (vOp.field).toLong())
+
+            putParam(sendPayload, "wallTime", (vOp.wallTime).toString())
+
+            putParam(sendPayload, "counter", (vOp.counter).toLong())
+
+            putParam(sendPayload, "nodeId", (vOp.nodeId).toString())
+
+            putParam(sendPayload, "by", (vOp.by).toString())
+
+            val sendData = buildJsonFromParams(sendPayload)
+            // The same pairs as the text a form carries (W3C SCXML C.2), so no
+            // `<param>` is evaluated twice.
+            val sendWireParams = sendPayload.mapValues { (_, v) ->
+                if (v is RepeatedParam) v.values.map { valueToWireString(it) } else listOf(valueToWireString(v))
+            }
+            // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
+            // which declared it to this build. Dispatch rather than refuse —
+            // and take the whole send, because a processor the host serves
+            // owns delivery; falling through would also enqueue the event
+            // locally and the document would see the act twice.
+            val hostRequest = HostSendRequest(
+                processorType = "sce:mesh",
+                eventName = "record_list.supersede",
+                target = "#hub",
+                content = "",
+                params = sendWireParams,
+                sendId = "__send_15",
+                eventData = sendData,
+                // SCE_MESH.md §mesh-10.7: the invokeid of the event being
+                // processed now, carried back out as a W3C child's send to its
+                // parent carries it (§scxml-6.4.1).
+                invokeId = currentEventMetadata.invokeId
+            )
+            val hostServed = performHostSend(hostRequest)
+            // W3C SCXML 6.2: a declared type with no handler registered is,
+            // from the document's side, a processor the platform does not
+            // support — the act it asked for was performed by nobody. Same
+            // event as an undeclared type, so a wiring mistake cannot read
+            // as success.
+            if (hostServed == null && !hasEventProcessor("sce:mesh")) {
+                raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_15")
+            }
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
+            }
+
+
+            if (vOp.kind == 1.toUByte() && vOp.parts > 1.toUInt() && !vHub) {
+
+
+            if (run send@{
+            val sendPayload = mutableMapOf<String, Any?>()
+            putParam(sendPayload, "id", (vOp.id).toLong())
+
+            putParam(sendPayload, "field", (vOp.field).toLong())
+
+            putParam(sendPayload, "wallTime", (vOp.wallTime).toString())
+
+            putParam(sendPayload, "counter", (vOp.counter).toLong())
+
+            putParam(sendPayload, "nodeId", (vOp.nodeId).toString())
+
+            putParam(sendPayload, "by", (vOp.by).toString())
+
+            putParam(sendPayload, "parts", (vOp.parts).toLong())
+
+            putParam(sendPayload, "atWallTime", (vOp.atWallTime).toString())
+
+            putParam(sendPayload, "atCounter", (vOp.atCounter).toLong())
+
+            val sendData = buildJsonFromParams(sendPayload)
+            // The same pairs as the text a form carries (W3C SCXML C.2), so no
+            // `<param>` is evaluated twice.
+            val sendWireParams = sendPayload.mapValues { (_, v) ->
+                if (v is RepeatedParam) v.values.map { valueToWireString(it) } else listOf(valueToWireString(v))
+            }
+            // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
+            // which declared it to this build. Dispatch rather than refuse —
+            // and take the whole send, because a processor the host serves
+            // owns delivery; falling through would also enqueue the event
+            // locally and the document would see the act twice.
+            val hostRequest = HostSendRequest(
+                processorType = "sce:mesh",
+                eventName = "record_list.supersede",
+                target = "#hub",
+                content = "",
+                params = sendWireParams,
+                sendId = "__send_16",
+                eventData = sendData,
+                // SCE_MESH.md §mesh-10.7: the invokeid of the event being
+                // processed now, carried back out as a W3C child's send to its
+                // parent carries it (§scxml-6.4.1).
+                invokeId = currentEventMetadata.invokeId
+            )
+            val hostServed = performHostSend(hostRequest)
+            // W3C SCXML 6.2: a declared type with no handler registered is,
+            // from the document's side, a processor the platform does not
+            // support — the act it asked for was performed by nobody. Same
+            // event as an undeclared type, so a wiring mistake cannot read
+            // as success.
+            if (hostServed == null && !hasEventProcessor("sce:mesh")) {
+                raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_16")
+            }
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
+            }
+
+
+            if (vOp.kind == 1.toUByte() && vOp.parts <= 1.toUInt() && vHub) {
+
+
+            if (run send@{
+            val sendPayload = mutableMapOf<String, Any?>()
+            putParam(sendPayload, "id", (vOp.id).toLong())
+
+            putParam(sendPayload, "field", (vOp.field).toLong())
+
+            putParam(sendPayload, "wallTime", (vOp.wallTime).toString())
+
+            putParam(sendPayload, "counter", (vOp.counter).toLong())
+
+            putParam(sendPayload, "nodeId", (vOp.nodeId).toString())
+
+            putParam(sendPayload, "by", (vOp.by).toString())
+
+            val sendData = buildJsonFromParams(sendPayload)
+            // The same pairs as the text a form carries (W3C SCXML C.2), so no
+            // `<param>` is evaluated twice.
+            val sendWireParams = sendPayload.mapValues { (_, v) ->
+                if (v is RepeatedParam) v.values.map { valueToWireString(it) } else listOf(valueToWireString(v))
+            }
+            // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
+            // which declared it to this build. Dispatch rather than refuse —
+            // and take the whole send, because a processor the host serves
+            // owns delivery; falling through would also enqueue the event
+            // locally and the document would see the act twice.
+            val hostRequest = HostSendRequest(
+                processorType = "sce:mesh",
+                eventName = "record_list.supersede",
+                target = "#people",
+                content = "",
+                params = sendWireParams,
+                sendId = "__send_17",
+                eventData = sendData,
+                // SCE_MESH.md §mesh-10.7: the invokeid of the event being
+                // processed now, carried back out as a W3C child's send to its
+                // parent carries it (§scxml-6.4.1).
+                invokeId = currentEventMetadata.invokeId
+            )
+            val hostServed = performHostSend(hostRequest)
+            // W3C SCXML 6.2: a declared type with no handler registered is,
+            // from the document's side, a processor the platform does not
+            // support — the act it asked for was performed by nobody. Same
+            // event as an undeclared type, so a wiring mistake cannot read
+            // as success.
+            if (hostServed == null && !hasEventProcessor("sce:mesh")) {
+                raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_17")
+            }
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
+            }
+
+
+            if (vOp.kind == 1.toUByte() && vOp.parts > 1.toUInt() && vHub) {
+
+
+            if (run send@{
+            val sendPayload = mutableMapOf<String, Any?>()
+            putParam(sendPayload, "id", (vOp.id).toLong())
+
+            putParam(sendPayload, "field", (vOp.field).toLong())
+
+            putParam(sendPayload, "wallTime", (vOp.wallTime).toString())
+
+            putParam(sendPayload, "counter", (vOp.counter).toLong())
+
+            putParam(sendPayload, "nodeId", (vOp.nodeId).toString())
+
+            putParam(sendPayload, "by", (vOp.by).toString())
+
+            putParam(sendPayload, "parts", (vOp.parts).toLong())
+
+            putParam(sendPayload, "atWallTime", (vOp.atWallTime).toString())
+
+            putParam(sendPayload, "atCounter", (vOp.atCounter).toLong())
+
+            val sendData = buildJsonFromParams(sendPayload)
+            // The same pairs as the text a form carries (W3C SCXML C.2), so no
+            // `<param>` is evaluated twice.
+            val sendWireParams = sendPayload.mapValues { (_, v) ->
+                if (v is RepeatedParam) v.values.map { valueToWireString(it) } else listOf(valueToWireString(v))
+            }
+            // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
+            // which declared it to this build. Dispatch rather than refuse —
+            // and take the whole send, because a processor the host serves
+            // owns delivery; falling through would also enqueue the event
+            // locally and the document would see the act twice.
+            val hostRequest = HostSendRequest(
+                processorType = "sce:mesh",
+                eventName = "record_list.supersede",
+                target = "#people",
+                content = "",
+                params = sendWireParams,
+                sendId = "__send_18",
+                eventData = sendData,
+                // SCE_MESH.md §mesh-10.7: the invokeid of the event being
+                // processed now, carried back out as a W3C child's send to its
+                // parent carries it (§scxml-6.4.1).
+                invokeId = currentEventMetadata.invokeId
+            )
+            val hostServed = performHostSend(hostRequest)
+            // W3C SCXML 6.2: a declared type with no handler registered is,
+            // from the document's side, a processor the platform does not
+            // support — the act it asked for was performed by nobody. Same
+            // event as an undeclared type, so a wiring mistake cannot read
+            // as success.
+            if (hostServed == null && !hasEventProcessor("sce:mesh")) {
+                raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_18")
             }
             false
             }) {
@@ -1854,9 +3328,8 @@ class RecordListParentSceSynthInvokeListStateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             }
-            }
-            4 -> {
-                // SCE-MAP: record_list.scxml:433 :: open :: _transition_4
+            9 -> {
+                // SCE-MAP: record_list.scxml:940 :: open :: _transition_9
                 if (pendingRecordListWritePayload == null) {
                     return
                 }
@@ -1881,8 +3354,8 @@ class RecordListParentSceSynthInvokeListStateMachine(
             }
             }
             }
-            5 -> {
-                // SCE-MAP: record_list.scxml:454 :: open :: _transition_5
+            10 -> {
+                // SCE-MAP: record_list.scxml:963 :: open :: _transition_10
                 if (pendingRecordListWritePayload == null) {
                     return
                 }
@@ -1916,191 +3389,38 @@ class RecordListParentSceSynthInvokeListStateMachine(
 
             if (vAuthorized) {
 
-            if (try { vHeld = vHeld.copy(text = com.sce.forge.runtime.SceChecked.bounded(pendingRecordListWritePayload!!.text, 96)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='held.text'>: an integer operation overflowed or failed"); true }) {
+            if (try { vPart = vPart.copy(text = com.sce.forge.runtime.SceChecked.bounded(pendingRecordListWritePayload!!.text, 96)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='part.text'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
+            vPart = vPart.copy(kind = 0.toUByte())
 
-            if (pendingRecordListWritePayload!!.nodeId != vNode) {
+            vPart = vPart.copy(id = pendingRecordListWritePayload!!.id)
 
-            vStamp = vStamp.copy(wallTime = pendingRecordListWritePayload!!.wallTime)
+            vPart = vPart.copy(field = pendingRecordListWritePayload!!.field)
 
-            vStamp = vStamp.copy(counter = pendingRecordListWritePayload!!.counter)
+            vPart = vPart.copy(value = pendingRecordListWritePayload!!.value)
 
-            vStamp = vStamp.copy(nodeId = pendingRecordListWritePayload!!.nodeId)
+            vPart = vPart.copy(wallTime = pendingRecordListWritePayload!!.wallTime)
 
-            if (try { vClock = com.sce.forge.runtime.SceChecked.take(call_HlcReceive__vv(vClock, vStamp, vClock.wallTime, vNode)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='clock'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
-            }
+            vPart = vPart.copy(counter = pendingRecordListWritePayload!!.counter)
 
+            vPart = vPart.copy(nodeId = pendingRecordListWritePayload!!.nodeId)
 
-            if (pendingRecordListWritePayload!!.nodeId == vNode && (pendingRecordListWritePayload!!.wallTime > vClock.wallTime || pendingRecordListWritePayload!!.wallTime == vClock.wallTime && pendingRecordListWritePayload!!.counter > vClock.counter)) {
+            vPart = vPart.copy(by = pendingRecordListWritePayload!!.nodeId)
 
-            vClock = vClock.copy(wallTime = pendingRecordListWritePayload!!.wallTime)
+            vPart = vPart.copy(atWallTime = pendingRecordListWritePayload!!.wallTime)
 
-            vClock = vClock.copy(counter = pendingRecordListWritePayload!!.counter)
-            }
+            vPart = vPart.copy(atCounter = pendingRecordListWritePayload!!.counter)
 
-            vEntry = vEntry.copy(element = pendingRecordListWritePayload!!.id.toULong())
-
-            if (try { vEntry = vEntry.copy(element = com.sce.forge.runtime.SceChecked.add(com.sce.forge.runtime.SceChecked.mul(vEntry.element, 65536.toULong()), pendingRecordListWritePayload!!.field.toULong())); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='entry.element'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
-
-            vEntry = vEntry.copy(wallTime = pendingRecordListWritePayload!!.wallTime)
-
-            vEntry = vEntry.copy(counter = pendingRecordListWritePayload!!.counter)
-
-            vEntry = vEntry.copy(nodeId = pendingRecordListWritePayload!!.nodeId)
-
-            vIsLive = true
-
-
-            for (t in vTombstones) {
-
-
-            if (t.element == vEntry.element && t.wallTime == vEntry.wallTime && t.counter == vEntry.counter && t.nodeId == vEntry.nodeId) {
-
-            vIsLive = false
-            }
-            }
-
-
-            if (vIsLive) {
-
-            vOne = emptyList()
-
-            if (if (vOne.size < 1024) { vOne = vOne + (vEntry); false } else { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<sce:append target='one'>: the list already holds its capacity of 1024"); true }) {
-                return
-            }
-
-            if (try { vAdds = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_OrsetUnion__vv(vAdds, vOne)), 1024); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='adds'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
-            }
-
-            vHeld = vHeld.copy(id = pendingRecordListWritePayload!!.id.toULong())
-
-            vHeld = vHeld.copy(field = pendingRecordListWritePayload!!.field.toULong())
-
-            vHeld = vHeld.copy(value = pendingRecordListWritePayload!!.value)
-
-            vHeld = vHeld.copy(wallTime = pendingRecordListWritePayload!!.wallTime)
-
-            vHeld = vHeld.copy(counter = pendingRecordListWritePayload!!.counter)
-
-            vHeld = vHeld.copy(nodeId = pendingRecordListWritePayload!!.nodeId)
-
-            vPresent = call_MvValueHolds__vv(vValues, vHeld)
-
-
-            if (vIsLive && !vPresent) {
-
-            if (try { vValues = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_MvValueKeep__vv(vValues, vHeld)), 512); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='values'>: an integer operation overflowed or failed"); true }) {
-                return
-            }
+            vPart = vPart.copy(parts = pendingRecordListWritePayload!!.parts)
 
 
             if (run send@{
-            val sendPayload = mutableMapOf<String, Any?>()
-            putParam(sendPayload, "kind", (0).toLong())
-
-            putParam(sendPayload, "element", (vEntry.element).toString())
-
-            putParam(sendPayload, "wallTime", (pendingRecordListWritePayload!!.wallTime).toString())
-
-            putParam(sendPayload, "counter", (pendingRecordListWritePayload!!.counter).toLong())
-
-            putParam(sendPayload, "nodeId", (pendingRecordListWritePayload!!.nodeId).toString())
-
-            val sendData = buildJsonFromParams(sendPayload)
+            val sendData = ""
             // W3C SCXML 5.10: an internal send carries `_event.data` just as an
             // external one does.
-            raiseInternal(RecordListParentSceSynthInvokeListEvent.RecordList.Keep, EventMetadata.internal(sendData))
-            false
-            }) {
-                // W3C SCXML 4.9: an error raised while this element was
-                // processed ends the block.
-                return
-            } // end of run send@ (W3C SCXML 6.2: a discarded message)
-            }
-
-
-            if (vIsLive && !vPresent && vAnnounce) {
-
-
-            if (run send@{
-            val sendPayload = mutableMapOf<String, Any?>()
-            putParam(sendPayload, "id", (pendingRecordListWritePayload!!.id).toLong())
-
-            putParam(sendPayload, "field", (pendingRecordListWritePayload!!.field).toLong())
-
-            val sendData = buildJsonFromParams(sendPayload)
-            // W3C SCXML 5.10: an internal send carries `_event.data` just as an
-            // external one does.
-            raiseInternal(RecordListParentSceSynthInvokeListEvent.RecordList.Announce, EventMetadata.internal(sendData))
-            false
-            }) {
-                // W3C SCXML 4.9: an error raised while this element was
-                // processed ends the block.
-                return
-            } // end of run send@ (W3C SCXML 6.2: a discarded message)
-            }
-
-
-            if (vHub) {
-
-
-            if (run send@{
-            val sendPayload = mutableMapOf<String, Any?>()
-            putParam(sendPayload, "id", (pendingRecordListWritePayload!!.id).toLong())
-
-            putParam(sendPayload, "field", (pendingRecordListWritePayload!!.field).toLong())
-
-            putParam(sendPayload, "value", (pendingRecordListWritePayload!!.value).toString())
-
-            putParam(sendPayload, "text", pendingRecordListWritePayload!!.text)
-
-            putParam(sendPayload, "wallTime", (pendingRecordListWritePayload!!.wallTime).toString())
-
-            putParam(sendPayload, "counter", (pendingRecordListWritePayload!!.counter).toLong())
-
-            putParam(sendPayload, "nodeId", (pendingRecordListWritePayload!!.nodeId).toString())
-
-            val sendData = buildJsonFromParams(sendPayload)
-            // The same pairs as the text a form carries (W3C SCXML C.2), so no
-            // `<param>` is evaluated twice.
-            val sendWireParams = sendPayload.mapValues { (_, v) ->
-                if (v is RepeatedParam) v.values.map { valueToWireString(it) } else listOf(valueToWireString(v))
-            }
-            // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
-            // which declared it to this build. Dispatch rather than refuse —
-            // and take the whole send, because a processor the host serves
-            // owns delivery; falling through would also enqueue the event
-            // locally and the document would see the act twice.
-            val hostRequest = HostSendRequest(
-                processorType = "sce:mesh",
-                eventName = "record_list.write",
-                target = "#people",
-                content = "",
-                params = sendWireParams,
-                sendId = "__send_6",
-                eventData = sendData,
-                // SCE_MESH.md §mesh-10.7: the invokeid of the event being
-                // processed now, carried back out as a W3C child's send to its
-                // parent carries it (§scxml-6.4.1).
-                invokeId = currentEventMetadata.invokeId
-            )
-            val hostServed = performHostSend(hostRequest)
-            // W3C SCXML 6.2: a declared type with no handler registered is,
-            // from the document's side, a processor the platform does not
-            // support — the act it asked for was performed by nobody. Same
-            // event as an undeclared type, so a wiring mistake cannot read
-            // as success.
-            if (hostServed == null && !hasEventProcessor("sce:mesh")) {
-                raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_6")
-            }
+            raiseInternal(RecordListParentSceSynthInvokeListEvent.RecordList.Arrive, EventMetadata.internal(sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -2109,9 +3429,15 @@ class RecordListParentSceSynthInvokeListStateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             }
+            11 -> {
+                // SCE-MAP: record_list.scxml:998 :: open :: _transition_11
+
+            if (try { vLate = com.sce.forge.runtime.SceChecked.add(vLate, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='late'>: an integer operation overflowed or failed"); true }) {
+                return
             }
-            6 -> {
-                // SCE-MAP: record_list.scxml:549 :: open :: _transition_6
+            }
+            12 -> {
+                // SCE-MAP: record_list.scxml:1005 :: open :: _transition_12
                 if (pendingRecordListSupersedePayload == null) {
                     return
                 }
@@ -2145,19 +3471,65 @@ class RecordListParentSceSynthInvokeListStateMachine(
 
             if (vAuthorized) {
 
-            vEntry = vEntry.copy(element = pendingRecordListSupersedePayload!!.id.toULong())
+            vPart = vPart.copy(kind = 1.toUByte())
 
-            if (try { vEntry = vEntry.copy(element = com.sce.forge.runtime.SceChecked.add(com.sce.forge.runtime.SceChecked.mul(vEntry.element, 65536.toULong()), pendingRecordListSupersedePayload!!.field.toULong())); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='entry.element'>: an integer operation overflowed or failed"); true }) {
+            vPart = vPart.copy(id = pendingRecordListSupersedePayload!!.id)
+
+            vPart = vPart.copy(field = pendingRecordListSupersedePayload!!.field)
+
+            vPart = vPart.copy(value = 0)
+
+            if (try { vPart = vPart.copy(text = com.sce.forge.runtime.SceChecked.bounded("", 96)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='part.text'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            vEntry = vEntry.copy(wallTime = pendingRecordListSupersedePayload!!.wallTime)
+            vPart = vPart.copy(wallTime = pendingRecordListSupersedePayload!!.wallTime)
 
-            vEntry = vEntry.copy(counter = pendingRecordListSupersedePayload!!.counter)
+            vPart = vPart.copy(counter = pendingRecordListSupersedePayload!!.counter)
 
-            vEntry = vEntry.copy(nodeId = pendingRecordListSupersedePayload!!.nodeId)
+            vPart = vPart.copy(nodeId = pendingRecordListSupersedePayload!!.nodeId)
 
-            vKnown = false
+            vPart = vPart.copy(by = pendingRecordListSupersedePayload!!.by)
+
+            vPart = vPart.copy(atWallTime = pendingRecordListSupersedePayload!!.atWallTime)
+
+            vPart = vPart.copy(atCounter = pendingRecordListSupersedePayload!!.atCounter)
+
+            vPart = vPart.copy(parts = pendingRecordListSupersedePayload!!.parts)
+
+
+            if (run send@{
+            val sendData = ""
+            // W3C SCXML 5.10: an internal send carries `_event.data` just as an
+            // external one does.
+            raiseInternal(RecordListParentSceSynthInvokeListEvent.RecordList.Arrive, EventMetadata.internal(sendData))
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
+            }
+            }
+            13 -> {
+                // SCE-MAP: record_list.scxml:1045 :: open :: _transition_13
+
+
+            if (vPart.parts > 1.toUInt()) {
+
+            vEntry = vEntry.copy(element = vPart.id.toULong())
+
+            if (try { vEntry = vEntry.copy(element = com.sce.forge.runtime.SceChecked.add(com.sce.forge.runtime.SceChecked.mul(vEntry.element, 65536.toULong()), vPart.field.toULong())); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='entry.element'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+
+            vEntry = vEntry.copy(wallTime = vPart.wallTime)
+
+            vEntry = vEntry.copy(counter = vPart.counter)
+
+            vEntry = vEntry.copy(nodeId = vPart.nodeId)
+
+            vAlready = false
 
 
             for (t in vTombstones) {
@@ -2165,60 +3537,114 @@ class RecordListParentSceSynthInvokeListStateMachine(
 
             if (t.element == vEntry.element && t.wallTime == vEntry.wallTime && t.counter == vEntry.counter && t.nodeId == vEntry.nodeId) {
 
-            vKnown = true
+            vAlready = true
             }
             }
 
-            vOne = emptyList()
 
-            if (if (vOne.size < 1024) { vOne = vOne + (vEntry); false } else { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<sce:append target='one'>: the list already holds its capacity of 1024"); true }) {
+            if (vPart.kind == 0.toUByte()) {
+
+            vHeld = vHeld.copy(id = vPart.id.toULong())
+
+            vHeld = vHeld.copy(field = vPart.field.toULong())
+
+            vHeld = vHeld.copy(wallTime = vPart.wallTime)
+
+            vHeld = vHeld.copy(counter = vPart.counter)
+
+            vHeld = vHeld.copy(nodeId = vPart.nodeId)
+
+            vPresent = call_MvValueHolds__vv(vValues, vHeld)
+
+
+            if (vPresent) {
+
+            vAlready = true
+            }
+            }
+
+            vListed = false
+
+
+            for (w in vWaiting) {
+
+
+            if (w.kind == vPart.kind && w.id == vPart.id && w.field == vPart.field && w.wallTime == vPart.wallTime && w.counter == vPart.counter && w.nodeId == vPart.nodeId) {
+
+            vListed = true
+            }
+            }
+
+
+            if (!vAlready && !vListed) {
+
+            if (if (vWaiting.size < 64) { vWaiting = vWaiting + (vPart); false } else { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<sce:append target='waiting'>: the list already holds its capacity of 64"); true }) {
                 return
             }
-
-            if (try { vTombstones = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_OrsetUnion__vv(vTombstones, vOne)), 1024); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='tombstones'>: an integer operation overflowed or failed"); true }) {
-                return
             }
 
-            if (try { vAdds = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_OrsetLive__vv(vAdds, vOne)), 1024); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='adds'>: an integer operation overflowed or failed"); true }) {
+            vCount = 0.toUInt()
+
+
+            for (w in vWaiting) {
+
+
+            if (w.atWallTime == vPart.atWallTime && w.atCounter == vPart.atCounter && w.by == vPart.by) {
+
+            if (try { vCount = com.sce.forge.runtime.SceChecked.add(vCount, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='count'>: an integer operation overflowed or failed"); true }) {
                 return
             }
-
-            vHeld = vHeld.copy(id = pendingRecordListSupersedePayload!!.id.toULong())
-
-            vHeld = vHeld.copy(field = pendingRecordListSupersedePayload!!.field.toULong())
-
-            vHeld = vHeld.copy(wallTime = pendingRecordListSupersedePayload!!.wallTime)
-
-            vHeld = vHeld.copy(counter = pendingRecordListSupersedePayload!!.counter)
-
-            vHeld = vHeld.copy(nodeId = pendingRecordListSupersedePayload!!.nodeId)
-
-            vWasLive = call_MvValueHolds__vv(vValues, vHeld)
-
-            if (try { vValues = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_MvValueDrop__vv(vValues, vHeld)), 512); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='values'>: an integer operation overflowed or failed"); true }) {
-                return
+            }
             }
 
 
-            if (!vKnown) {
+            if (vAlready || vCount >= vPart.parts) {
+
+            vTaking = emptyList()
+
+            vTook = 0.toUInt()
+
+            vKept = emptyList()
+
+
+            for (w in vWaiting) {
+
+
+            if (w.atWallTime == vPart.atWallTime && w.atCounter == vPart.atCounter && w.by == vPart.by) {
+
+            if (if (vTaking.size < 64) { vTaking = vTaking + (w); false } else { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<sce:append target='taking'>: the list already holds its capacity of 64"); true }) {
+                return
+            }
+            }
+
+
+            if (w.atWallTime != vPart.atWallTime || w.atCounter != vPart.atCounter || w.by != vPart.by) {
+
+            if (if (vKept.size < 64) { vKept = vKept + (w); false } else { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<sce:append target='kept'>: the list already holds its capacity of 64"); true }) {
+                return
+            }
+            }
+            }
+
+            vWaiting = emptyList()
+
+
+            for (k in vKept) {
+
+            if (if (vWaiting.size < 64) { vWaiting = vWaiting + (k); false } else { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<sce:append target='waiting'>: the list already holds its capacity of 64"); true }) {
+                return
+            }
+            }
+
+
+            for (t in vTaking) {
 
 
             if (run send@{
-            val sendPayload = mutableMapOf<String, Any?>()
-            putParam(sendPayload, "kind", (1).toLong())
-
-            putParam(sendPayload, "element", (vEntry.element).toString())
-
-            putParam(sendPayload, "wallTime", (pendingRecordListSupersedePayload!!.wallTime).toString())
-
-            putParam(sendPayload, "counter", (pendingRecordListSupersedePayload!!.counter).toLong())
-
-            putParam(sendPayload, "nodeId", (pendingRecordListSupersedePayload!!.nodeId).toString())
-
-            val sendData = buildJsonFromParams(sendPayload)
+            val sendData = ""
             // W3C SCXML 5.10: an internal send carries `_event.data` just as an
             // external one does.
-            raiseInternal(RecordListParentSceSynthInvokeListEvent.RecordList.Keep, EventMetadata.internal(sendData))
+            raiseInternal(RecordListParentSceSynthInvokeListEvent.RecordList.Take, EventMetadata.internal(sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -2226,49 +3652,26 @@ class RecordListParentSceSynthInvokeListStateMachine(
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
-
-
-            if (vWasLive) {
-
-
-            if (run send@{
-            val sendPayload = mutableMapOf<String, Any?>()
-            putParam(sendPayload, "kind", (0).toLong())
-
-            putParam(sendPayload, "element", (vEntry.element).toString())
-
-            putParam(sendPayload, "wallTime", (pendingRecordListSupersedePayload!!.wallTime).toString())
-
-            putParam(sendPayload, "counter", (pendingRecordListSupersedePayload!!.counter).toLong())
-
-            putParam(sendPayload, "nodeId", (pendingRecordListSupersedePayload!!.nodeId).toString())
-
-            val sendData = buildJsonFromParams(sendPayload)
-            // W3C SCXML 5.10: an internal send carries `_event.data` just as an
-            // external one does.
-            raiseInternal(RecordListParentSceSynthInvokeListEvent.RecordList.Keep, EventMetadata.internal(sendData))
-            false
-            }) {
-                // W3C SCXML 4.9: an error raised while this element was
-                // processed ends the block.
-                return
-            } // end of run send@ (W3C SCXML 6.2: a discarded message)
+            }
             }
 
 
-            if (vWasLive && vAnnounce) {
+            if (vPart.parts <= 1.toUInt()) {
+
+            vTaking = emptyList()
+
+            vTook = 0.toUInt()
+
+            if (if (vTaking.size < 64) { vTaking = vTaking + (vPart); false } else { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<sce:append target='taking'>: the list already holds its capacity of 64"); true }) {
+                return
+            }
 
 
             if (run send@{
-            val sendPayload = mutableMapOf<String, Any?>()
-            putParam(sendPayload, "id", (pendingRecordListSupersedePayload!!.id).toLong())
-
-            putParam(sendPayload, "field", (pendingRecordListSupersedePayload!!.field).toLong())
-
-            val sendData = buildJsonFromParams(sendPayload)
+            val sendData = ""
             // W3C SCXML 5.10: an internal send carries `_event.data` just as an
             // external one does.
-            raiseInternal(RecordListParentSceSynthInvokeListEvent.RecordList.Announce, EventMetadata.internal(sendData))
+            raiseInternal(RecordListParentSceSynthInvokeListEvent.RecordList.Take, EventMetadata.internal(sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -2280,54 +3683,20 @@ class RecordListParentSceSynthInvokeListStateMachine(
 
             if (vHub) {
 
+            vPassing = emptyList()
+
+            vPassed = 0.toUInt()
+
+            if (if (vPassing.size < 64) { vPassing = vPassing + (vPart); false } else { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<sce:append target='passing'>: the list already holds its capacity of 64"); true }) {
+                return
+            }
+
 
             if (run send@{
-            val sendPayload = mutableMapOf<String, Any?>()
-            putParam(sendPayload, "id", (pendingRecordListSupersedePayload!!.id).toLong())
-
-            putParam(sendPayload, "field", (pendingRecordListSupersedePayload!!.field).toLong())
-
-            putParam(sendPayload, "wallTime", (pendingRecordListSupersedePayload!!.wallTime).toString())
-
-            putParam(sendPayload, "counter", (pendingRecordListSupersedePayload!!.counter).toLong())
-
-            putParam(sendPayload, "nodeId", (pendingRecordListSupersedePayload!!.nodeId).toString())
-
-            putParam(sendPayload, "by", (pendingRecordListSupersedePayload!!.by).toString())
-
-            val sendData = buildJsonFromParams(sendPayload)
-            // The same pairs as the text a form carries (W3C SCXML C.2), so no
-            // `<param>` is evaluated twice.
-            val sendWireParams = sendPayload.mapValues { (_, v) ->
-                if (v is RepeatedParam) v.values.map { valueToWireString(it) } else listOf(valueToWireString(v))
-            }
-            // W3C SCXML 6.2.5: "sce:mesh" is served by the host,
-            // which declared it to this build. Dispatch rather than refuse —
-            // and take the whole send, because a processor the host serves
-            // owns delivery; falling through would also enqueue the event
-            // locally and the document would see the act twice.
-            val hostRequest = HostSendRequest(
-                processorType = "sce:mesh",
-                eventName = "record_list.supersede",
-                target = "#people",
-                content = "",
-                params = sendWireParams,
-                sendId = "__send_10",
-                eventData = sendData,
-                // SCE_MESH.md §mesh-10.7: the invokeid of the event being
-                // processed now, carried back out as a W3C child's send to its
-                // parent carries it (§scxml-6.4.1).
-                invokeId = currentEventMetadata.invokeId
-            )
-            val hostServed = performHostSend(hostRequest)
-            // W3C SCXML 6.2: a declared type with no handler registered is,
-            // from the document's side, a processor the platform does not
-            // support — the act it asked for was performed by nobody. Same
-            // event as an undeclared type, so a wiring mistake cannot read
-            // as success.
-            if (hostServed == null && !hasEventProcessor("sce:mesh")) {
-                raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_10")
-            }
+            val sendData = ""
+            // W3C SCXML 5.10: an internal send carries `_event.data` just as an
+            // external one does.
+            raiseInternal(RecordListParentSceSynthInvokeListEvent.RecordList.Pass, EventMetadata.internal(sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -2336,9 +3705,8 @@ class RecordListParentSceSynthInvokeListStateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             }
-            }
-            7 -> {
-                // SCE-MAP: record_list.scxml:634 :: open :: _transition_7
+            14 -> {
+                // SCE-MAP: record_list.scxml:1124 :: open :: _transition_14
                 if (pendingRecordListAnnouncePayload == null) {
                     return
                 }
@@ -2381,13 +3749,13 @@ class RecordListParentSceSynthInvokeListStateMachine(
 
             if (!vListed) {
 
-            if (if (vMoved.size < 16) { vMoved = vMoved + (vEntry.element); false } else { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<sce:append target='moved'>: the list already holds its capacity of 16"); true }) {
+            if (if (vMoved.size < 64) { vMoved = vMoved + (vEntry.element); false } else { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<sce:append target='moved'>: the list already holds its capacity of 64"); true }) {
                 return
             }
             }
             }
-            8 -> {
-                // SCE-MAP: record_list.scxml:657 :: open :: _transition_8
+            15 -> {
+                // SCE-MAP: record_list.scxml:1147 :: open :: _transition_15
 
 
             for (named in vMoved) {
@@ -2421,7 +3789,7 @@ class RecordListParentSceSynthInvokeListStateMachine(
                 // W3C SCXML C.1 (test496): a target that names nothing is not
                 // reachable — error.communication, nothing delivered, and the
                 // error ends the block as any other would (W3C SCXML 4.9).
-                raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Communication, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach", "__send_12")
+                raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Communication, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach", "__send_25")
                 return@send true
             }
             val sendPayload = mutableMapOf<String, Any?>()
@@ -2452,15 +3820,15 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Register,
 "record_list.register",
                 sendData,
 0L,
-                "__send_12",
+                "__send_25",
                 RecordListParentSceSynthInvokeListEvent.Error.Communication,
             )) {
                 com.sce.runtime.TargetSendOutcome.UNSUPPORTED -> {
-                    raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<send> targetexpr produced a value that is not a target", "__send_12")
+                    raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<send> targetexpr produced a value that is not a target", "__send_25")
                     return@send true
                 }
                 com.sce.runtime.TargetSendOutcome.UNREACHABLE -> {
-                    raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Communication, "<send> targetexpr names a session this processor cannot reach", "__send_12")
+                    raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Communication, "<send> targetexpr names a session this processor cannot reach", "__send_25")
                     return@send true
                 }
                 com.sce.runtime.TargetSendOutcome.SENT -> {}
@@ -2499,7 +3867,7 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Register,
                 // W3C SCXML C.1 (test496): a target that names nothing is not
                 // reachable — error.communication, nothing delivered, and the
                 // error ends the block as any other would (W3C SCXML 4.9).
-                raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Communication, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach", "__send_13")
+                raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Communication, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach", "__send_26")
                 return@send true
             }
             val sendPayload = mutableMapOf<String, Any?>()
@@ -2530,15 +3898,15 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Register,
 "record_list.register",
                 sendData,
 0L,
-                "__send_13",
+                "__send_26",
                 RecordListParentSceSynthInvokeListEvent.Error.Communication,
             )) {
                 com.sce.runtime.TargetSendOutcome.UNSUPPORTED -> {
-                    raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<send> targetexpr produced a value that is not a target", "__send_13")
+                    raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<send> targetexpr produced a value that is not a target", "__send_26")
                     return@send true
                 }
                 com.sce.runtime.TargetSendOutcome.UNREACHABLE -> {
-                    raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Communication, "<send> targetexpr names a session this processor cannot reach", "__send_13")
+                    raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Communication, "<send> targetexpr names a session this processor cannot reach", "__send_26")
                     return@send true
                 }
                 com.sce.runtime.TargetSendOutcome.SENT -> {}
@@ -2568,7 +3936,7 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Register,
                 // W3C SCXML C.1 (test496): a target that names nothing is not
                 // reachable — error.communication, nothing delivered, and the
                 // error ends the block as any other would (W3C SCXML 4.9).
-                raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Communication, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach", "__send_14")
+                raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Communication, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach", "__send_27")
                 return@send true
             }
             val sendPayload = mutableMapOf<String, Any?>()
@@ -2599,15 +3967,15 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Value,
 "record_list.value",
                 sendData,
 0L,
-                "__send_14",
+                "__send_27",
                 RecordListParentSceSynthInvokeListEvent.Error.Communication,
             )) {
                 com.sce.runtime.TargetSendOutcome.UNSUPPORTED -> {
-                    raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<send> targetexpr produced a value that is not a target", "__send_14")
+                    raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<send> targetexpr produced a value that is not a target", "__send_27")
                     return@send true
                 }
                 com.sce.runtime.TargetSendOutcome.UNREACHABLE -> {
-                    raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Communication, "<send> targetexpr names a session this processor cannot reach", "__send_14")
+                    raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Communication, "<send> targetexpr names a session this processor cannot reach", "__send_27")
                     return@send true
                 }
                 com.sce.runtime.TargetSendOutcome.SENT -> {}
@@ -2632,8 +4000,8 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Value,
 
             vMoved = emptyList()
             }
-            9 -> {
-                // SCE-MAP: record_list.scxml:712 :: open :: _transition_9
+            16 -> {
+                // SCE-MAP: record_list.scxml:1202 :: open :: _transition_16
                 if (pendingRecordListKeepPayload == null) {
                     return
                 }
@@ -2654,8 +4022,8 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Value,
                 return
             }
             }
-            10 -> {
-                // SCE-MAP: record_list.scxml:729 :: open :: _transition_10
+            17 -> {
+                // SCE-MAP: record_list.scxml:1219 :: open :: _transition_17
                 if (pendingRecordListCompactPayload == null) {
                     return
                 }
@@ -2693,9 +4061,33 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Value,
 
             vFloor = pendingRecordListCompactPayload!!.before
             }
+
+            vKept = emptyList()
+
+
+            for (w in vWaiting) {
+
+
+            if (w.atWallTime > pendingRecordListCompactPayload!!.before) {
+
+            if (if (vKept.size < 64) { vKept = vKept + (w); false } else { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<sce:append target='kept'>: the list already holds its capacity of 64"); true }) {
+                return
             }
-            11 -> {
-                // SCE-MAP: record_list.scxml:750 :: open :: _transition_11
+            }
+            }
+
+            vWaiting = emptyList()
+
+
+            for (k in vKept) {
+
+            if (if (vWaiting.size < 64) { vWaiting = vWaiting + (k); false } else { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<sce:append target='waiting'>: the list already holds its capacity of 64"); true }) {
+                return
+            }
+            }
+            }
+            18 -> {
+                // SCE-MAP: record_list.scxml:1253 :: open :: _transition_18
                 if (pendingRecordListSettlePayload == null) {
                     return
                 }
@@ -2741,7 +4133,7 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Value,
                 target = "#people",
                 content = "",
                 params = sendWireParams,
-                sendId = "__send_15",
+                sendId = "__send_28",
                 eventData = sendData,
                 // SCE_MESH.md §mesh-10.7: the invokeid of the event being
                 // processed now, carried back out as a W3C child's send to its
@@ -2755,7 +4147,7 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Value,
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("sce:mesh")) {
-                raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_15")
+                raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_28")
             }
             false
             }) {
@@ -2765,8 +4157,8 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Value,
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             }
-            12 -> {
-                // SCE-MAP: record_list.scxml:771 :: open :: _transition_12
+            19 -> {
+                // SCE-MAP: record_list.scxml:1274 :: open :: _transition_19
                 if (pendingRecordListProposePayload == null) {
                     return
                 }
@@ -2830,7 +4222,7 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Value,
                 target = "#hub",
                 content = "",
                 params = sendWireParams,
-                sendId = "__send_16",
+                sendId = "__send_29",
                 eventData = sendData,
                 // SCE_MESH.md §mesh-10.7: the invokeid of the event being
                 // processed now, carried back out as a W3C child's send to its
@@ -2844,7 +4236,7 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Value,
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("sce:mesh")) {
-                raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_16")
+                raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_29")
             }
             false
             }) {
@@ -2854,8 +4246,8 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Value,
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             }
-            13 -> {
-                // SCE-MAP: record_list.scxml:801 :: open :: _transition_13
+            20 -> {
+                // SCE-MAP: record_list.scxml:1304 :: open :: _transition_20
                 if (pendingRecordListAckPayload == null) {
                     return
                 }
@@ -2934,6 +4326,26 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Value,
             putParam(sendPayload, "hash", (vMine).toLong())
 
             val sendData = buildJsonFromParams(sendPayload)
+            // W3C SCXML 5.10: an internal send carries `_event.data` just as an
+            // external one does.
+            raiseInternal(RecordListParentSceSynthInvokeListEvent.RecordList.Floor, EventMetadata.internal(sendData))
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
+
+            vPending = -1
+
+
+            if (run send@{
+            val sendPayload = mutableMapOf<String, Any?>()
+            putParam(sendPayload, "before", (vFrozenFor).toString())
+
+            putParam(sendPayload, "hash", (vMine).toLong())
+
+            val sendData = buildJsonFromParams(sendPayload)
             // The same pairs as the text a form carries (W3C SCXML C.2), so no
             // `<param>` is evaluated twice.
             val sendWireParams = sendPayload.mapValues { (_, v) ->
@@ -2950,7 +4362,7 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Value,
                 target = "#people",
                 content = "",
                 params = sendWireParams,
-                sendId = "__send_17",
+                sendId = "__send_31",
                 eventData = sendData,
                 // SCE_MESH.md §mesh-10.7: the invokeid of the event being
                 // processed now, carried back out as a W3C child's send to its
@@ -2964,7 +4376,7 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Value,
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("sce:mesh")) {
-                raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_17")
+                raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_31")
             }
             false
             }) {
@@ -2972,26 +4384,6 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Value,
                 // processed ends the block.
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
-
-
-            if (run send@{
-            val sendPayload = mutableMapOf<String, Any?>()
-            putParam(sendPayload, "before", (vPending).toString())
-
-            putParam(sendPayload, "hash", (vMine).toLong())
-
-            val sendData = buildJsonFromParams(sendPayload)
-            // W3C SCXML 5.10: an internal send carries `_event.data` just as an
-            // external one does.
-            raiseInternal(RecordListParentSceSynthInvokeListEvent.RecordList.Floor, EventMetadata.internal(sendData))
-            false
-            }) {
-                // W3C SCXML 4.9: an error raised while this element was
-                // processed ends the block.
-                return
-            } // end of run send@ (W3C SCXML 6.2: a discarded message)
-
-            vPending = -1
             }
 
 
@@ -3021,7 +4413,7 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Value,
                 target = "#people",
                 content = "",
                 params = sendWireParams,
-                sendId = "__send_19",
+                sendId = "__send_32",
                 eventData = sendData,
                 // SCE_MESH.md §mesh-10.7: the invokeid of the event being
                 // processed now, carried back out as a W3C child's send to its
@@ -3035,7 +4427,7 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Value,
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("sce:mesh")) {
-                raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_19")
+                raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_32")
             }
             false
             }) {
@@ -3046,8 +4438,8 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Value,
             }
             }
             }
-            14 -> {
-                // SCE-MAP: record_list.scxml:862 :: open :: _transition_14
+            21 -> {
+                // SCE-MAP: record_list.scxml:1368 :: open :: _transition_21
                 if (pendingRecordListFloorPayload == null) {
                     return
                 }
@@ -3115,6 +4507,30 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Value,
             vStale = false
 
             vFrozenFor = -1
+
+            vKept = emptyList()
+
+
+            for (w in vWaiting) {
+
+
+            if (w.atWallTime > pendingRecordListFloorPayload!!.before) {
+
+            if (if (vKept.size < 64) { vKept = vKept + (w); false } else { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<sce:append target='kept'>: the list already holds its capacity of 64"); true }) {
+                return
+            }
+            }
+            }
+
+            vWaiting = emptyList()
+
+
+            for (k in vKept) {
+
+            if (if (vWaiting.size < 64) { vWaiting = vWaiting + (k); false } else { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<sce:append target='waiting'>: the list already holds its capacity of 64"); true }) {
+                return
+            }
+            }
             }
 
 
@@ -3124,8 +4540,39 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Value,
             }
             }
             }
-            15 -> {
-                // SCE-MAP: record_list.scxml:898 :: open :: _transition_15
+            22 -> {
+                // SCE-MAP: record_list.scxml:1418 :: open :: _transition_22
+
+            vTaking = emptyList()
+
+            vTook = 0.toUInt()
+
+
+            for (w in vWaiting) {
+
+            if (if (vTaking.size < 64) { vTaking = vTaking + (w); false } else { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<sce:append target='taking'>: the list already holds its capacity of 64"); true }) {
+                return
+            }
+            }
+
+            vWaiting = emptyList()
+
+
+            for (t in vTaking) {
+
+
+            if (run send@{
+            val sendData = ""
+            // W3C SCXML 5.10: an internal send carries `_event.data` just as an
+            // external one does.
+            raiseInternal(RecordListParentSceSynthInvokeListEvent.RecordList.Take, EventMetadata.internal(sendData))
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
+            }
 
 
             if (run send@{
@@ -3149,8 +4596,8 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Value,
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
-            16 -> {
-                // SCE-MAP: record_list.scxml:909 :: open :: _transition_16
+            23 -> {
+                // SCE-MAP: record_list.scxml:1438 :: open :: _transition_23
                 if (pendingRecordListVisitPayload == null) {
                     return
                 }
@@ -3202,7 +4649,7 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Value,
                 target = "#hub",
                 content = "",
                 params = sendWireParams,
-                sendId = "__send_21",
+                sendId = "__send_35",
                 eventData = sendData,
                 // SCE_MESH.md §mesh-10.7: the invokeid of the event being
                 // processed now, carried back out as a W3C child's send to its
@@ -3216,7 +4663,7 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Value,
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("sce:mesh")) {
-                raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_21")
+                raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_35")
             }
             false
             }) {
@@ -3261,7 +4708,7 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Value,
                 target = "#people",
                 content = "",
                 params = sendWireParams,
-                sendId = "__send_22",
+                sendId = "__send_36",
                 eventData = sendData,
                 // SCE_MESH.md §mesh-10.7: the invokeid of the event being
                 // processed now, carried back out as a W3C child's send to its
@@ -3275,7 +4722,7 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Value,
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("sce:mesh")) {
-                raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_22")
+                raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_36")
             }
             false
             }) {
@@ -3285,8 +4732,8 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Value,
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             }
-            17 -> {
-                // SCE-MAP: record_list.scxml:946 :: open :: _transition_17
+            24 -> {
+                // SCE-MAP: record_list.scxml:1475 :: open :: _transition_24
                 if (pendingRecordListNodePayload == null) {
                     return
                 }
@@ -3458,8 +4905,8 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Value,
             }
             }
             }
-            18 -> {
-                // SCE-MAP: record_list.scxml:995 :: open :: _transition_18
+            25 -> {
+                // SCE-MAP: record_list.scxml:1524 :: open :: _transition_25
                 if (pendingRecordListSharePayload == null) {
                     return
                 }
@@ -3468,8 +4915,8 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Value,
             for (v in vValues) {
 
 
-            var ifCondFailed65 = false
-            if ((try { com.sce.forge.runtime.SceChecked.div(v.wallTime, 60000) == pendingRecordListSharePayload!!.minute.toLong() } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<if cond='v.wallTime / 60000 === _event.data.minute'>: an integer operation overflowed or failed"); ifCondFailed65 = true; false })) {
+            var ifCondFailed104 = false
+            if ((try { com.sce.forge.runtime.SceChecked.div(v.wallTime, 60000) == pendingRecordListSharePayload!!.minute.toLong() } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<if cond='v.wallTime / 60000 === _event.data.minute'>: an integer operation overflowed or failed"); ifCondFailed104 = true; false })) {
 
             if (try { vShareId = com.sce.forge.runtime.SceChecked.narrowToUInt(v.id); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='shareId'>: an integer operation overflowed or failed"); true }) {
                 return
@@ -3516,7 +4963,7 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Value,
                 target = "#hub",
                 content = "",
                 params = sendWireParams,
-                sendId = "__send_28",
+                sendId = "__send_42",
                 eventData = sendData,
                 // SCE_MESH.md §mesh-10.7: the invokeid of the event being
                 // processed now, carried back out as a W3C child's send to its
@@ -3530,7 +4977,7 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Value,
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("sce:mesh")) {
-                raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_28")
+                raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_42")
             }
             false
             }) {
@@ -3577,7 +5024,7 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Value,
                 target = "#people",
                 content = "",
                 params = sendWireParams,
-                sendId = "__send_29",
+                sendId = "__send_43",
                 eventData = sendData,
                 // SCE_MESH.md §mesh-10.7: the invokeid of the event being
                 // processed now, carried back out as a W3C child's send to its
@@ -3591,7 +5038,7 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Value,
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("sce:mesh")) {
-                raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_29")
+                raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_43")
             }
             false
             }) {
@@ -3601,7 +5048,7 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Value,
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             }
-            if (ifCondFailed65) {
+            if (ifCondFailed104) {
                 return
             }
             }
@@ -3610,8 +5057,8 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Value,
             for (t in vTombstones) {
 
 
-            var ifCondFailed68 = false
-            if ((try { com.sce.forge.runtime.SceChecked.div(t.wallTime, 60000) == pendingRecordListSharePayload!!.minute.toLong() } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<if cond='t.wallTime / 60000 === _event.data.minute'>: an integer operation overflowed or failed"); ifCondFailed68 = true; false })) {
+            var ifCondFailed107 = false
+            if ((try { com.sce.forge.runtime.SceChecked.div(t.wallTime, 60000) == pendingRecordListSharePayload!!.minute.toLong() } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<if cond='t.wallTime / 60000 === _event.data.minute'>: an integer operation overflowed or failed"); ifCondFailed107 = true; false })) {
 
             if (try { vShareId = com.sce.forge.runtime.SceChecked.narrowToUInt(com.sce.forge.runtime.SceChecked.div(t.element, 65536.toULong())); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='shareId'>: an integer operation overflowed or failed"); true }) {
                 return
@@ -3656,7 +5103,7 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Value,
                 target = "#hub",
                 content = "",
                 params = sendWireParams,
-                sendId = "__send_30",
+                sendId = "__send_44",
                 eventData = sendData,
                 // SCE_MESH.md §mesh-10.7: the invokeid of the event being
                 // processed now, carried back out as a W3C child's send to its
@@ -3670,7 +5117,7 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Value,
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("sce:mesh")) {
-                raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_30")
+                raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_44")
             }
             false
             }) {
@@ -3715,7 +5162,7 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Value,
                 target = "#people",
                 content = "",
                 params = sendWireParams,
-                sendId = "__send_31",
+                sendId = "__send_45",
                 eventData = sendData,
                 // SCE_MESH.md §mesh-10.7: the invokeid of the event being
                 // processed now, carried back out as a W3C child's send to its
@@ -3729,7 +5176,7 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Value,
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("sce:mesh")) {
-                raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_31")
+                raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_45")
             }
             false
             }) {
@@ -3739,16 +5186,43 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Value,
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             }
-            if (ifCondFailed68) {
+            if (ifCondFailed107) {
                 return
             }
             }
             }
-            19 -> {
-                // SCE-MAP: record_list.scxml:1052 :: open :: _transition_19
+            26 -> {
+                // SCE-MAP: record_list.scxml:1586 :: open :: _transition_26
 
             if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return
+            }
+
+
+            if (vProbing) {
+
+            vProbing = false
+
+            vSpoiled = true
+
+            vSpoiledFor = vProbe
+
+
+            if (!vHolding) {
+
+
+            if (run send@{
+            val sendData = ""
+            // W3C SCXML 5.10: an internal send carries `_event.data` just as an
+            // external one does.
+            raiseInternal(RecordListParentSceSynthInvokeListEvent.RecordList.Close, EventMetadata.internal(sendData))
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
+            }
             }
             }
             else -> {}

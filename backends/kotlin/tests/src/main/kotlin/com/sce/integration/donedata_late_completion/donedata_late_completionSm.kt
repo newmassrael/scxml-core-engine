@@ -447,7 +447,7 @@ class DonedataLateCompletionStateMachine(
                 val generatedInvokeId = "phase.${nextInvokeStart("inv_late")}.inv_late"
                 deferInvoke(state, generatedInvokeId) {
 
-                    val childSM = DonedataLateCompletionSceSynthInvokeInvLateStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
+                    val childSM = adoptChild(DonedataLateCompletionSceSynthInvokeInvLateStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)")), generatedInvokeId)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
                     startInvoke("inv_late", childSM, false, DonedataLateCompletionEvent.Done.Invoke.InvLate, "", generatedInvokeId, "")
                 }

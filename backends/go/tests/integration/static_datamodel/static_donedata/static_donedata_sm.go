@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
+// source-hash: ca67d4fa2cf4dbcd6617a3b32561c9b8257bc03aaa65978435303ccf35bae7b3
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -193,6 +193,26 @@ func (v StaticDonedataViewModeEnum) String() string {
 		return "agenda_list"
 	}
 	return ""
+}
+
+// ── SCE Accepted Subset §2.15: what a format-2 saved state of it is bound to ──
+
+// StaticDonedataSavedShapeFormat2 is the shape a format-2 saved state of
+// this machine names when every record schema it holds is in its first
+// revision (docs/adr/0045, section 2). The generator computes it once, so it is
+// the text every backend's constant is.
+const StaticDonedataSavedShapeFormat2 = "35e6bdb9f8bdfe06bc168111a18d43678c65e4ae45b4e7780d761df46ff34de2"
+
+// StaticDonedataSavedShapeFormat2Revised is the shape a format-2 saved state
+// of this machine names when it names a later revision of a record schema or
+// an enum.
+const StaticDonedataSavedShapeFormat2Revised = "aa75f4a4d744b247fc26347060f6bca356dfffde8e6be6b3b4d57799f7483b93"
+
+// StaticDonedataSavedEnumKeys names each enum a value of a saved state of
+// this machine is of, by its document (docs/adr/0044): the key `revisions`
+// names it by, and the format-2 shape spells it by.
+var StaticDonedataSavedEnumKeys = [...]string{
+	"enum:enum_view_mode.scxml",
 }
 
 // ======================================================================

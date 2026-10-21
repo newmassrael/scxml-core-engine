@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
+// source-hash: ca67d4fa2cf4dbcd6617a3b32561c9b8257bc03aaa65978435303ccf35bae7b3
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_wire_wide.scxml
@@ -168,6 +168,8 @@ class StaticWireWideStateMachine(
     val savedShape: SavedShape = SavedShape(
         first = "e5c2a79f4a67f967a86bc7c09af85d1e1482468f8ce173db72d9c3e90c6c7fbf",
         revised = "e5554aa626dd97594f1f67371b7e9975e5ac74460f1206f3003d8988dbbfdf93",
+        format2First = "e5c2a79f4a67f967a86bc7c09af85d1e1482468f8ce173db72d9c3e90c6c7fbf",
+        format2Revised = "e5554aa626dd97594f1f67371b7e9975e5ac74460f1206f3003d8988dbbfdf93",
         records = listOf(
         ),
         enums = listOf(

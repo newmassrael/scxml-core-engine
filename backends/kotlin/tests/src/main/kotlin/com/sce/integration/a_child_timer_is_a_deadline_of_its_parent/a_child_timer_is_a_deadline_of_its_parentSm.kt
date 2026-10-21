@@ -168,7 +168,7 @@ class AChildTimerIsADeadlineOfItsParentStateMachine(
                 val generatedInvokeId = "waiting.${nextInvokeStart("kid")}.kid"
                 deferInvoke(state, generatedInvokeId) {
 
-                    val childSM = AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidStateMachine()
+                    val childSM = adoptChild(AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidStateMachine(), generatedInvokeId)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
                     startInvoke("kid", childSM, false, AChildTimerIsADeadlineOfItsParentEvent.Done.Invoke.Kid, "", generatedInvokeId, "")
                 }

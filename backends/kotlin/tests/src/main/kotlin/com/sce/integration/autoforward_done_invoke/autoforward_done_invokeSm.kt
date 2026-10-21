@@ -218,7 +218,7 @@ class AutoforwardDoneInvokeStateMachine(
                 val generatedInvokeId = "phase.${nextInvokeStart("inv_watch")}.inv_watch"
                 deferInvoke(state, generatedInvokeId) {
 
-                    val childSM = AutoforwardDoneInvokeSceSynthInvokeInvWatchStateMachine()
+                    val childSM = adoptChild(AutoforwardDoneInvokeSceSynthInvokeInvWatchStateMachine(), generatedInvokeId)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
                     startInvoke("inv_watch", childSM, true, AutoforwardDoneInvokeEvent.Done.Invoke.Self, "", generatedInvokeId, "")
                 }
@@ -229,7 +229,7 @@ class AutoforwardDoneInvokeStateMachine(
                 val generatedInvokeId = "phase.${nextInvokeStart("inv_short")}.inv_short"
                 deferInvoke(state, generatedInvokeId) {
 
-                    val childSM = AutoforwardDoneInvokeSceSynthInvokeInvShortStateMachine()
+                    val childSM = adoptChild(AutoforwardDoneInvokeSceSynthInvokeInvShortStateMachine(), generatedInvokeId)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
                     startInvoke("inv_short", childSM, false, AutoforwardDoneInvokeEvent.Done.Invoke.InvShort, "", generatedInvokeId, "")
                 }

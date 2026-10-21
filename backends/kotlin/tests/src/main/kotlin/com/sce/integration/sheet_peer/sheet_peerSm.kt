@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
+// source-hash: ca67d4fa2cf4dbcd6617a3b32561c9b8257bc03aaa65978435303ccf35bae7b3
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/sheet_peer.scxml
@@ -394,6 +394,8 @@ class SheetPeerStateMachine(
     val savedShape: SavedShape = SavedShape(
         first = "1ac6b3f2603c6108cd17580f835aab53156fb15bf1be7c02a34b837cfb45cf6f",
         revised = "39d5b3f2c18c95ec3df531f209693d1fb88669a01f6dae41d6c56ccffbef3d08",
+        format2First = "1ac6b3f2603c6108cd17580f835aab53156fb15bf1be7c02a34b837cfb45cf6f",
+        format2Revised = "39d5b3f2c18c95ec3df531f209693d1fb88669a01f6dae41d6c56ccffbef3d08",
         records = listOf(
             RecordLineage(
                 event = "merge.hlc_timestamp",

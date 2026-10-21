@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
+// source-hash: ca67d4fa2cf4dbcd6617a3b32561c9b8257bc03aaa65978435303ccf35bae7b3
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_record_string.scxml
@@ -166,6 +166,8 @@ class StaticRecordStringStateMachine(
     val savedShape: SavedShape = SavedShape(
         first = "2d4abb7c5b44b37484e095adbc16d0d2cd766c64317344ff2d6da5cfe3032c86",
         revised = "99115f5e5956fca06cf060ea01da1957f57b5efdd9a0b4372efbc4580cc98e25",
+        format2First = "2d4abb7c5b44b37484e095adbc16d0d2cd766c64317344ff2d6da5cfe3032c86",
+        format2Revised = "99115f5e5956fca06cf060ea01da1957f57b5efdd9a0b4372efbc4580cc98e25",
         records = listOf(
             RecordLineage(
                 event = "labelled.taken",

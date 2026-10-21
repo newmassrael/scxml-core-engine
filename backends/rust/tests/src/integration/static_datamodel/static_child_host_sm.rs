@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
+// source-hash: ca67d4fa2cf4dbcd6617a3b32561c9b8257bc03aaa65978435303ccf35bae7b3
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -26,10 +26,10 @@
 // warning on a real fixture and recording it in the same form. Removing an
 // allow is safe whenever its justifying pattern stops being emitted.
 
-// Source-faithful identifier names: W3C SCXML 6.4.1 lets users supply
-// arbitrary id strings (e.g. `<invoke id="invokedChild">`); preserving the
-// camelCase verbatim into Rust field names like `child_invokedChild`
-// keeps the generated code traceable back to the SCXML source.
+// Source-faithful identifier names: generated names embed names the document
+// wrote, which need not be snake case. An `<invoke id>` is the exception: its
+// identifier (`crate::model::invoke_identifier` in sce-build) is lowercase,
+// so `<invoke id="invokedChild">` gives `child_0zinvokedzuchild`.
 #![allow(non_snake_case)]
 // Codegen always emits `use core::time::Duration` and the umbrella
 // `use sce_rust_runtime::{Engine, StatePolicy};`; fixtures with no
@@ -207,9 +207,11 @@ pub trait StaticChildHostPersist: Sized {
 
     /// The machine's whole state, each delayed `<send>` still waiting written
     /// as the moment it comes due on the wall clock whose reading now is
-    /// `wall_now_ms`, in milliseconds since the Unix epoch. Refused for a
-    /// machine that is not running, and for one whose last macrostep stopped
-    /// at the microstep ceiling.
+    /// `wall_now_ms`, in milliseconds since the Unix epoch, and each running
+    /// child saved inside it with its own whole state (docs/adr/0045). Refused
+    /// for a machine that is not running, and for one whose last macrostep, or
+    /// a child's, stopped at the microstep ceiling. The session id it writes is
+    /// the one the machine was built under, or the one a restore bound.
     fn save_at(
         &self,
         wall_now_ms: u64,
@@ -232,12 +234,24 @@ pub trait StaticChildHostPersist: Sized {
         self.save_at(::sce_rust_runtime::saved_state::wall_clock_ms())
     }
 
+    /// Refuse `saved` unless a machine of this document could restore it —
+    /// its shape and revisions, its history, every variable, its
+    /// configuration, queues and invocations, and each running child by the
+    /// document that child runs, to any depth — building nothing
+    /// (docs/adr/0045, section 3, step 1). What a parent's restore asks of
+    /// each child it holds before it builds any of them.
+    fn judge(
+        saved: &::sce_rust_runtime::saved_state::SavedState,
+    ) -> Result<(), ::sce_rust_runtime::saved_state::StateRefusal>;
+
     /// A machine of `policy` standing where `saved` left one, measuring time
     /// by `clock` and told by `wall_now_ms` what time it is on the wall clock
     /// the saved `due`s were written against: a waiting send comes due when
     /// its saved moment does, and one already due comes due now. No
     /// `<onentry>` runs and no `<data>` is evaluated: the saved run already
-    /// did both.
+    /// did both. The session carries on under its saved id, and each running
+    /// child a format-2 state holds is resumed where it stood; a format-1
+    /// state's children start again from their beginning.
     fn restore_with(
         policy: Self::Policy,
         saved: &::sce_rust_runtime::saved_state::SavedState,
@@ -274,6 +288,8 @@ impl<A: StaticChildHostActions + 'static> StaticChildHostPersist
         ::sce_rust_runtime::saved_state::SavedShape {
             first: "6065267cb1641307cbbf9f1bbd2c34f384a0b55362be9f25c4c9d54a5f2cf8e2",
             revised: "45c5ae841923b95967f51b12ef271c7439133cf013284e4149f4bcea20128716",
+            format2_first: "6065267cb1641307cbbf9f1bbd2c34f384a0b55362be9f25c4c9d54a5f2cf8e2",
+            format2_revised: "45c5ae841923b95967f51b12ef271c7439133cf013284e4149f4bcea20128716",
             records: &[],
             enums: &[],
         };
@@ -298,8 +314,28 @@ impl<A: StaticChildHostActions + 'static> StaticChildHostPersist
                 ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.completed),
             )],
             ::sce_rust_runtime::saved_state::save_history(self.policy(), Self::HISTORIES),
+            // docs/adr/0045: each running child, with its whole state.
+            self.policy().saved_children(wall_now_ms)?,
             wall_now_ms,
         )
+    }
+
+    fn judge(
+        saved: &::sce_rust_runtime::saved_state::SavedState,
+    ) -> Result<(), ::sce_rust_runtime::saved_state::StateRefusal> {
+        // What a restore reads, read and let go: the shape and the revisions,
+        // the history, every variable, and then the configuration, the queues,
+        // the invocations and each running child by its own document.
+        let saved = &::sce_rust_runtime::saved_state::upgrade(saved, &Self::SHAPE)?;
+        ::sce_rust_runtime::saved_state::restore_history::<StaticChildHostPolicy<A>>(
+            saved,
+            Self::HISTORIES,
+        )?;
+        let _: u32 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("completed")?,
+            "completed",
+        )?;
+        ::sce_rust_runtime::saved_state::judge::<StaticChildHostPolicy<A>>(saved)
     }
 
     fn restore_with(
@@ -323,6 +359,8 @@ impl<A: StaticChildHostActions + 'static> StaticChildHostPersist
             saved.variable("completed")?,
             "completed",
         )?;
+        // A start after the restore is numbered on from the saved count.
+        policy.invoke_starts_worker = saved.invoke_start("worker");
         ::sce_rust_runtime::saved_state::enter(policy, saved, clock, wall_now_ms)
     }
 }
@@ -399,12 +437,9 @@ pub struct StaticChildHostPolicy<A: StaticChildHostActions + 'static> {
     actions: A,
     /// W3C SCXML 5.2: the `completed` datamodel variable, published (`sce:direction="out"`).
     completed: u32,
-    // W3C SCXML 5.10: Session ID (script engine + invoke tracking).
-    //
-    // SCE Protocol-Synthesis RFC §synth-5-J-2: gated to !no_std. Under `--no-std` both the
-    // script engine (`codegen/no-std-script-not-supported`) and `<invoke>`
-    // (`codegen/no-std-invoke-not-supported`) are codegen-rejected, so no
-    // session identity is ever tracked and the alloc-coupled `String` is omitted.
+    // W3C SCXML 5.10: the session's id (script engine, invoke tracking, the
+    // saved state), bound when the machine is built and never empty
+    // (docs/adr/0045): drawn, given by the host, or given by the parent.
     pub session_id: Option<String>,
     // W3C SCXML 6.4: Pending invoke queue (deferred until macrostep end).
     // §scxml-6.4.1 unsupported-type invokes ride it too — their execute step
@@ -435,12 +470,12 @@ pub struct StaticChildHostPolicy<A: StaticChildHostActions + 'static> {
 }
 
 impl<A: StaticChildHostActions + 'static> StaticChildHostPolicy<A> {
-    pub fn new(actions: A) -> Self {
+    fn build(session_id: String, actions: A) -> Self {
         let completed: u32 = 0;
         Self {
             actions,
             completed,
-            session_id: None,
+            session_id: Some(session_id),
             pending_invokes: Vec::new(),
             active_invokes: std::collections::HashMap::new(),
             child_worker: None,
@@ -450,6 +485,46 @@ impl<A: StaticChildHostActions + 'static> StaticChildHostPolicy<A> {
             invoke_id: String::new(),
             child_session_id: String::new(),
         }
+    }
+
+    /// Build the machine under a session id drawn from the operating system's
+    /// randomness, a UUID version 4 (docs/adr/0045).    ///
+    /// Absent on a target with no source of randomness the runtime reads
+    /// (`wasm32-unknown-unknown`): a host there gives the id, through
+    /// [`new_with_session_id`](Self::new_with_session_id).
+    #[cfg(not(any(target_os = "none", all(target_arch = "wasm32", target_os = "unknown"))))]
+    pub fn new(actions: A) -> Self {
+        Self::build(::sce_rust_runtime::helpers::session_id::drawn(), actions)
+    }
+
+    /// Build the machine under the session id its host gives: the host's own
+    /// name for the machine, say, or a fixed id a test holds a saved text to
+    /// (docs/adr/0045, "Questions the owner answered" 2). `_sessionid` is bound
+    /// here and kept until the session ends; a restore binds the saved id in
+    /// its place, since the session carries on.    ///
+    /// The one way this machine is built on `wasm32-unknown-unknown`, which has
+    /// no source of randomness the runtime reads.
+    ///
+    /// # Errors
+    ///
+    /// An id that is not an XML Nmtoken (the empty text, a space, a `#`) is
+    /// refused with the reason, and no machine is built.
+    pub fn new_with_session_id(
+        session_id: &str,
+        actions: A,
+    ) -> Result<Self, ::sce_rust_runtime::helpers::session_id::SessionIdRefusal> {
+        Ok(Self::build(
+            ::sce_rust_runtime::helpers::session_id::given(session_id)?,
+            actions,
+        ))
+    }
+
+    /// The policy of a child its parent invokes, under the id the tree gives it,
+    /// `<parent>.<invokeid>` (docs/adr/0045): formed by the parent from its own
+    /// id and the invoke id, both held to the rule already, so it is not
+    /// judged again.
+    pub(crate) fn for_child(session_id: String, actions: A) -> Self {
+        Self::build(session_id, actions)
     }
 
     /// W3C SCXML G.7: the host the `<sce:action>` operations are dispatched
@@ -523,23 +598,21 @@ impl<A: StaticChildHostActions + 'static> StaticChildHostPolicy<A> {
                 // W3C SCXML 6.4: Create child state machine
                 // Engine DI Parity RFC: forward parent's script engine to child when the
                 // child Policy was generated with `model.needs_script_engine = true`.
-                let mut child_policy = super::static_child_host__sce_synth_invoke__worker_sm::StaticChildHostSceSynthInvokeWorkerPolicy::new(self.actions.actions_for_worker());
+                //
+                // W3C SCXML C.1: the child is built under the id its parent
+                // recorded for it. The parent mints `parentSession.invokeId` and
+                // keys `active_invokes` on it, so an event from this child
+                // reaches the parent carrying that id as its origin; had the
+                // child an id of its own, the location it publishes in
+                // `_ioprocessors` and the origin the parent sees would be two
+                // names for one session that can never be compared — which is
+                // exactly what C.1 requires of them. A child's id comes from the
+                // tree alone, and nothing is drawn for it (docs/adr/0045).
+                let mut child_policy = super::static_child_host__sce_synth_invoke__worker_sm::StaticChildHostSceSynthInvokeWorkerPolicy::for_child(child_session_id.clone(), self.actions.actions_for_worker());
                 // W3C SCXML 6.4: Pass parent session info to child for #_parent routing
                 child_policy.parent_external_queue = Some(engine.get_external_queue_handle());
                 child_policy.invoke_id = pending.invoke_id.clone();
                 child_policy.child_session_id = child_session_id.clone();
-
-                // W3C SCXML C.1: the child adopts the id its parent recorded
-                // for it. The parent mints `parentSession.invokeId` and keys
-                // `active_invokes` on it, so an event from this child reaches
-                // the parent carrying that id as its origin; if the child also
-                // minted an id of its own, the location it publishes in
-                // `_ioprocessors` and the origin the parent sees would be two
-                // names for one session that can never be compared — which is
-                // exactly what C.1 requires of them.
-                if child_policy.session_id.is_none() {
-                    child_policy.session_id = Some(child_session_id.clone());
-                }
 
                 // W3C SCXML 6.4.1: Track active invoke session BEFORE initialize
                 self.active_invokes.insert(
@@ -571,48 +644,17 @@ impl<A: StaticChildHostActions + 'static> StaticChildHostPolicy<A> {
                 // and installed before the child initializes, since its first
                 // `<onentry>` may already send to a peer.
                 engine.start_child_mesh(&mut child_engine, "worker", "");
+                // docs/adr/0045: the tree's host invokers serve the child, whose
+                // host-run invocations name it by its session id.
+                engine.share_host_invokers_with(&mut child_engine);
                 child_engine.initialize();
 
                 // W3C SCXML 6.4: Store child BEFORE draining events so autoforward can find it
                 self.child_worker = Some(Box::new(child_engine));
 
-                // W3C SCXML 6.4: Drain child-to-parent events raised during initialize
-                sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
-                    &self
-                        .child_worker
-                        .as_ref()
-                        .unwrap()
-                        .policy()
-                        .parent_external_queue,
-                    &self.active_invokes,
-                    "worker",
-                    engine,
-                );
-
-                // W3C SCXML 6.4: Check if child completed during initialize (test 236)
-                if self
-                    .child_worker
-                    .as_ref()
-                    .map_or(false, |c| c.is_in_final_state())
-                {
-                    self.pending_done_invoke_worker = true;
-                    // The session ended: its Mesh router is told so.
-                    if let Some(child) = self.child_worker.as_mut() {
-                        child.detach_mesh();
-                    }
-                    // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
-                    // done.invoke.<id>._event.data. Mirrors the C++ AOT contract in
-                    // tools/codegen/templates/invoke_methods.jinja2 (child->donedataAtFinal()
-                    // + EventMetadataHelper::createDoneInvokeEvent).
-                    let donedata = self
-                        .child_worker
-                        .as_ref()
-                        .map(|c| c.donedata_at_final().to_string())
-                        .unwrap_or_default();
-                    sce_rust_runtime::helpers::invoke_processing::raise_done_invoke(
-                        "worker", donedata, engine,
-                    );
-                }
+                // W3C SCXML 6.4: what the child sent as it initialized, and an
+                // ending during initialize (test 236), settled as after any drive.
+                self.settle_child_worker(engine);
                 continue;
             }
         }
@@ -620,46 +662,40 @@ impl<A: StaticChildHostActions + 'static> StaticChildHostPolicy<A> {
 
     // W3C SCXML 6.4: Tick child state machines (propagate scheduler ticks)
     fn do_tick_children(&mut self, engine: &mut sce_rust_runtime::Engine<Self>) {
-        if !self.pending_done_invoke_worker {
-            // W3C SCXML 6.4: Take child out temporarily to avoid split-borrow
-            if let Some(mut child) = self.child_worker.take() {
-                // W3C SCXML 6.4: Drain parent events sent by child via #_parent BEFORE tick
-                sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
-                    &child.policy().parent_external_queue,
-                    &self.active_invokes,
-                    "worker",
-                    engine,
-                );
-
+        if !self.pending_done_invoke_worker && self.child_worker.is_some() {
+            self.settle_child_worker(engine);
+            if let Some(child) = self.child_worker.as_mut() {
                 // Child sessions in Mesh (SCE_MESH.md): what arrived for the
                 // child on the router it was given, before its macrostep.
                 child.apply_mesh_calls();
                 child.tick();
-
-                // W3C SCXML 6.4: Drain parent events sent by child AFTER tick
-                sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
-                    &child.policy().parent_external_queue,
-                    &self.active_invokes,
-                    "worker",
-                    engine,
-                );
-
-                // W3C SCXML 6.4: Check if child reached final state after tick
-                if child.is_in_final_state() && !self.pending_done_invoke_worker {
-                    self.pending_done_invoke_worker = true;
-                    // The session ended: its Mesh router is told so.
-                    child.detach_mesh();
-                    // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
-                    // done.invoke.<id>._event.data.
-                    let donedata = child.donedata_at_final().to_string();
-                    sce_rust_runtime::helpers::invoke_processing::raise_done_invoke(
-                        "worker", donedata, engine,
-                    );
-                }
-
-                // Put child back
-                self.child_worker = Some(child);
             }
+            self.settle_child_worker(engine);
+        }
+    }
+
+    fn settle_child_worker(&mut self, engine: &mut sce_rust_runtime::Engine<Self>) {
+        let Some(child) = self.child_worker.as_mut() else {
+            return;
+        };
+        sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
+            &child.policy().parent_external_queue,
+            &self.active_invokes,
+            "worker",
+            engine,
+        );
+        if child.is_in_final_state() && !self.pending_done_invoke_worker {
+            self.pending_done_invoke_worker = true;
+            // The session ended: its Mesh router is told so.
+            child.detach_mesh();
+            // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
+            // done.invoke.<id>._event.data. Mirrors the C++ AOT contract in
+            // tools/codegen/templates/invoke_methods.jinja2 (child->donedataAtFinal()
+            // + EventMetadataHelper::createDoneInvokeEvent).
+            let donedata = child.donedata_at_final().to_string();
+            sce_rust_runtime::helpers::invoke_processing::raise_done_invoke(
+                "worker", donedata, engine,
+            );
         }
     }
 
@@ -701,6 +737,110 @@ impl<A: StaticChildHostActions + 'static> StaticChildHostPolicy<A> {
                     child.raise_external_by_name_with_meta(event_name, metadata);
                 }
             }
+        }
+    }
+
+    /// docs/adr/0045: each running child, saved through the document it runs
+    /// with its whole state, in document order — what a saved state holds in
+    /// place of the ids of format 1, and what a restore resumes.
+    pub fn saved_children(
+        &self,
+        wall_now_ms: u64,
+    ) -> Result<
+        Vec<::sce_rust_runtime::saved_state::SavedChild>,
+        ::sce_rust_runtime::saved_state::StateRefusal,
+    > {
+        let mut children = Vec::new();
+        if !self.pending_done_invoke_worker {
+            if let Some(ref child) = self.child_worker {
+                ::sce_rust_runtime::helpers::invoke_processing::nothing_in_transit(
+                    &child.policy().parent_external_queue,
+                    "worker",
+                )?;
+                let index = children.len();
+                children.push(::sce_rust_runtime::saved_state::SavedChild {
+                    id: "worker".to_string(),
+                    start: self.invoke_starts_worker,
+                    invoke_id: child.policy().invoke_id.clone(),
+                    document: "static_child_host__sce_synth_invoke__worker".to_string(),
+                    session: <::sce_rust_runtime::Engine<super::static_child_host__sce_synth_invoke__worker_sm::StaticChildHostSceSynthInvokeWorkerPolicy<<A as StaticChildHostActions>::ActionsForWorker>> as super::static_child_host__sce_synth_invoke__worker_sm::StaticChildHostSceSynthInvokeWorkerPersist>::save_at(child, wall_now_ms)
+                        .map_err(|refusal| refusal.within(&format!("invokes[{index}].session")))?,
+                });
+            }
+        }
+
+        Ok(children)
+    }
+
+    // docs/adr/0045, section 3, step 3: the child a saved state holds, built as
+    // its start builds it and restored where it stood.
+    fn do_resume_child(
+        &mut self,
+        child: &::sce_rust_runtime::saved_state::SavedChild,
+        engine: &mut sce_rust_runtime::Engine<Self>,
+        wall_now_ms: u64,
+    ) -> Result<(), ::sce_rust_runtime::saved_state::StateRefusal> {
+        match (child.id.as_str(), child.document.as_str()) {
+            ("worker", "static_child_host__sce_synth_invoke__worker") => {
+                // W3C SCXML 6.5: Generate child session ID for finalize origin matching
+                let child_session_id = format!("{}.{}",
+                    self.session_id.as_deref().unwrap_or(""),
+                    child.invoke_id);
+
+                // W3C SCXML 6.4: Create child state machine
+                // Engine DI Parity RFC: forward parent's script engine to child when the
+                // child Policy was generated with `model.needs_script_engine = true`.
+                //
+                // W3C SCXML C.1: the child is built under the id its parent
+                // recorded for it. The parent mints `parentSession.invokeId` and
+                // keys `active_invokes` on it, so an event from this child
+                // reaches the parent carrying that id as its origin; had the
+                // child an id of its own, the location it publishes in
+                // `_ioprocessors` and the origin the parent sees would be two
+                // names for one session that can never be compared — which is
+                // exactly what C.1 requires of them. A child's id comes from the
+                // tree alone, and nothing is drawn for it (docs/adr/0045).
+                let mut child_policy = super::static_child_host__sce_synth_invoke__worker_sm::StaticChildHostSceSynthInvokeWorkerPolicy::for_child(child_session_id.clone(), self.actions.actions_for_worker());
+                // W3C SCXML 6.4: Pass parent session info to child for #_parent routing
+                child_policy.parent_external_queue = Some(engine.get_external_queue_handle());
+                child_policy.invoke_id = child.invoke_id.clone();
+                child_policy.child_session_id = child_session_id.clone();
+
+                self.active_invokes.insert("worker".to_string(),
+                    sce_rust_runtime::invoke::ChildSession {
+                        session_id: child_session_id,
+                        // W3C SCXML 6.4: Element invoke_id for _event.invokeid (test 228)
+                        invoke_id: "worker".to_string(),
+                        parent_session_id: self.session_id.clone().unwrap_or_default(),
+                        autoforward: true,
+                        finalize_script: "".to_string(),
+                    },
+                );
+
+                let mut child_engine = <::sce_rust_runtime::Engine<super::static_child_host__sce_synth_invoke__worker_sm::StaticChildHostSceSynthInvokeWorkerPolicy<<A as StaticChildHostActions>::ActionsForWorker>> as super::static_child_host__sce_synth_invoke__worker_sm::StaticChildHostSceSynthInvokeWorkerPersist>::restore_with(
+                    child_policy,
+                    &child.session,
+                    engine.clock(),
+                    wall_now_ms,
+                )?;
+                child_engine.set_completion_callback(|| {});
+                // Child sessions in Mesh (SCE_MESH.md; docs/adr/0043): the
+                // router of the resumed child is owed, not asked here. This
+                // machine is being restored, and its host registers the
+                // factory of its children's routers only once the restore has
+                // returned it; the factory is asked for this child then
+                // (`start_owed_child_meshes`), before anything drives it.
+                child_engine.owe_child_mesh();
+                // docs/adr/0045: the tree's host invokers, handed on before the
+                // child's re-armed invocations start at its first drive.
+                engine.share_host_invokers_with(&mut child_engine);
+                self.child_worker = Some(Box::new(child_engine));
+                Ok(())
+            }
+
+            (id, document) => Err(::sce_rust_runtime::saved_state::StateRefusal::new(format!(
+                "invokes names '{id}' running '{document}', a document that `<invoke>` does not start"
+            ))),
         }
     }
 }
@@ -1127,9 +1267,11 @@ impl<A: StaticChildHostActions + 'static> StatePolicy for StaticChildHostPolicy<
     }
 
     // SCE Accepted Subset 2.15, "Saving and restoring": a saved state names the
-    // `<invoke>`s whose child is running, and a restore starts each again. This
-    // document saves only when every invoke is a static child session, a hybrid
-    // one among declared candidates, or one a declared host invoker serves.
+    // `<invoke>`s whose child is running — a format-2 one with the child's whole
+    // state, which a restore resumes; a format-1 one by id, which a restore
+    // starts again. This document saves only when every invoke is a static
+    // child session, a hybrid one among declared candidates, or one a declared
+    // host invoker serves, and every child it can start saves too.
     fn invoke_owner(invoke_id: &str) -> Option<Self::State> {
         match invoke_id {
             "worker" => Some(StaticChildHostState::Working),
@@ -1157,21 +1299,73 @@ impl<A: StaticChildHostActions + 'static> StatePolicy for StaticChildHostPolicy<
         }
     }
 
+    // docs/adr/0045: how many times each `<invoke>` has started here, for each
+    // started at least once, in document order.
+    fn invoke_starts(&self) -> Vec<(&'static str, u64)> {
+        let mut starts = Vec::new();
+        if self.invoke_starts_worker > 0 {
+            starts.push(("worker", self.invoke_starts_worker));
+        }
+        starts
+    }
+
+    // docs/adr/0045, section 3, step 1: a running child a saved state holds,
+    // judged by the document its `<invoke>` starts there, building nothing.
+    fn judge_child(
+        child: &::sce_rust_runtime::saved_state::SavedChild,
+    ) -> Result<(), ::sce_rust_runtime::saved_state::StateRefusal> {
+        match (child.id.as_str(), child.document.as_str()) {
+            ("worker", "static_child_host__sce_synth_invoke__worker") => <::sce_rust_runtime::Engine<super::static_child_host__sce_synth_invoke__worker_sm::StaticChildHostSceSynthInvokeWorkerPolicy<<A as StaticChildHostActions>::ActionsForWorker>> as super::static_child_host__sce_synth_invoke__worker_sm::StaticChildHostSceSynthInvokeWorkerPersist>::judge(&child.session),
+            (id, document) => Err(::sce_rust_runtime::saved_state::StateRefusal::new(format!(
+                "invokes names '{id}' running '{document}', a document that `<invoke>` does not start"
+            ))),
+        }
+    }
+
+    // docs/adr/0045, section 3, step 3: a running child built as starting it
+    // builds it, then restored where it stood in place of initialized.
+    fn resume_child(
+        &mut self,
+        child: &::sce_rust_runtime::saved_state::SavedChild,
+        engine: &mut Engine<Self>,
+        wall_now_ms: u64,
+    ) -> Result<(), ::sce_rust_runtime::saved_state::StateRefusal> {
+        self.do_resume_child(child, engine, wall_now_ms)
+    }
+
+    // docs/adr/0043 + docs/adr/0045: the router of each running child a
+    // restore resumed, asked of the factory now that there is one, with the
+    // invoke id and the document stem a start asks it with. A child that has
+    // ended is not asked for.
+    fn start_owed_child_meshes(&mut self, engine: &mut Engine<Self>) {
+        if !self.pending_done_invoke_worker {
+            if let Some(child) = self.child_worker.as_mut() {
+                engine.start_owed_child_mesh(&mut **child, "worker", "");
+            }
+        }
+    }
+
     // W3C SCXML 6.2 + 6.4: a delayed `<send target="#_<invokeid>">` whose wait
     // is over, delivered by name. A child whose session has reached its final
     // state has ended, and is not there to take it (W3C SCXML C.1).
+    // What the child sent its parent as it took the event, and its ending,
+    // reach this session within the delivery (docs/adr/0045).
     fn deliver_to_invocation(
         &mut self,
         invoke_id: &str,
         event_name: &str,
         event_data: &str,
+        engine: &mut Engine<Self>,
     ) -> bool {
         if invoke_id == "worker" {
-            if let Some(ref mut child) = self.child_worker {
-                if !child.is_in_final_state() {
-                    child.deliver_by_name(event_name, event_data);
-                    return true;
-                }
+            if let Some(child) = self
+                .child_worker
+                .as_mut()
+                .filter(|child| !child.is_in_final_state())
+            {
+                child.deliver_by_name(event_name, event_data);
+                self.settle_child_worker(engine);
+                return true;
             }
             return false;
         }
@@ -1203,6 +1397,7 @@ impl<A: StaticChildHostActions + 'static> StatePolicy for StaticChildHostPolicy<
         child_session_id: &str,
         event_name: &str,
         event_data: &str,
+        engine: &mut Engine<Self>,
     ) -> bool {
         if !self.is_child_session_running(child_session_id) {
             return false;
@@ -1214,6 +1409,8 @@ impl<A: StaticChildHostActions + 'static> StatePolicy for StaticChildHostPolicy<
         {
             if let Some(ref mut child) = self.child_worker {
                 child.deliver_by_name(event_name, event_data);
+                // docs/adr/0045: its replies and its ending, within the delivery.
+                self.settle_child_worker(engine);
                 return true;
             }
         }
@@ -1260,6 +1457,16 @@ impl<A: StaticChildHostActions + 'static> StatePolicy for StaticChildHostPolicy<
         self.parent_external_queue.is_some()
     }
 
+    // docs/adr/0045: this session's own id, as a saved state holds it.
+    fn own_session_id(&self) -> &str {
+        self.session_id.as_deref().unwrap_or("")
+    }
+
+    // docs/adr/0045: a restored session carries on under its saved id.
+    fn bind_session_id(&mut self, session_id: &str) {
+        self.session_id = Some(session_id.to_string());
+    }
+
     // W3C SCXML 6.4: Tick child state machines
     fn tick_children(&mut self, engine: &mut Engine<Self>) {
         self.do_tick_children(engine);
@@ -1277,6 +1484,40 @@ impl<A: StaticChildHostActions + 'static> StatePolicy for StaticChildHostPolicy<
         if let Some(ref mut child) = self.child_worker {
             child.follow_clock(clock);
         }
+    }
+
+    // docs/adr/0045: the tree's host invokers, handed to each child this
+    // session holds, and by each child to its own.
+    fn adopt_host_invokers_in_children(&mut self, invokers: &::sce_rust_runtime::TreeInvokers) {
+        if let Some(ref mut child) = self.child_worker {
+            child.adopt_host_invokers(invokers);
+        }
+    }
+
+    // docs/adr/0045: a host's ending of a host-run invocation of session
+    // `session_id`, to the child that is that session or holds it below. A
+    // child's id is `<parent>.<invokeid>`, so a session below a child has the
+    // child's id and a dot in front of the rest.
+    fn route_host_invoke_end_to_child(
+        &mut self,
+        session_id: &str,
+        ending: ::sce_rust_runtime::HostInvokeEnding<'_>,
+    ) -> Option<Result<(), ::sce_rust_runtime::HostInvokeEndRefusal>> {
+        if let Some(ref mut child) = self.child_worker {
+            let holds = {
+                let child_id = child.policy().own_session_id();
+                session_id == child_id
+                    || session_id
+                        .strip_prefix(child_id)
+                        .is_some_and(|below| below.starts_with('.'))
+            };
+            if holds {
+                if let Some(routed) = child.route_host_invoke_end(session_id, ending) {
+                    return Some(routed);
+                }
+            }
+        }
+        None
     }
     // W3C SCXML 6.4.1: Forward external events to autoforward children
     fn forward_to_autoforward_children(

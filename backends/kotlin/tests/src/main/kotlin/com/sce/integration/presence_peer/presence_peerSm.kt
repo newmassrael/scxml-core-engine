@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
+// source-hash: ca67d4fa2cf4dbcd6617a3b32561c9b8257bc03aaa65978435303ccf35bae7b3
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/presence_peer.scxml
@@ -232,6 +232,8 @@ class PresencePeerStateMachine(
     val savedShape: SavedShape = SavedShape(
         first = "61319fa1be44c43d13305ba3a241a6aa058882da0d4c2736fb3c896d16fad0e3",
         revised = "b0d96ebe733fde22663f4d265dac2287795efe126ca751ed6753da1ff2c53a4a",
+        format2First = "61319fa1be44c43d13305ba3a241a6aa058882da0d4c2736fb3c896d16fad0e3",
+        format2Revised = "b0d96ebe733fde22663f4d265dac2287795efe126ca751ed6753da1ff2c53a4a",
         records = listOf(
             RecordLineage(
                 event = "presence.seen",

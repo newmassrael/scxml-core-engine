@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
+// source-hash: ca67d4fa2cf4dbcd6617a3b32561c9b8257bc03aaa65978435303ccf35bae7b3
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -165,6 +165,24 @@ func (e StaticInvokeHybridSavedEvent) String() string {
 	}
 	return "unknown"
 }
+
+// ── SCE Accepted Subset §2.15: what a format-2 saved state of it is bound to ──
+
+// StaticInvokeHybridSavedSavedShapeFormat2 is the shape a format-2 saved state of
+// this machine names when every record schema it holds is in its first
+// revision (docs/adr/0045, section 2). The generator computes it once, so it is
+// the text every backend's constant is.
+const StaticInvokeHybridSavedSavedShapeFormat2 = "f86ee6b2a368019b8e1fdad9e63e1a2c94c4fe8037e7a0815c468753bfd23715"
+
+// StaticInvokeHybridSavedSavedShapeFormat2Revised is the shape a format-2 saved state
+// of this machine names when it names a later revision of a record schema or
+// an enum.
+const StaticInvokeHybridSavedSavedShapeFormat2Revised = "f58e4e0ef0bd5c4afde2c75a7f3bd909a92ae6b85dc2f2e96a794adb38e370d9"
+
+// StaticInvokeHybridSavedSavedEnumKeys names each enum a value of a saved state of
+// this machine is of, by its document (docs/adr/0044): the key `revisions`
+// names it by, and the format-2 shape spells it by.
+var StaticInvokeHybridSavedSavedEnumKeys = [...]string{}
 
 // ======================================================================
 // Policy struct
@@ -334,7 +352,7 @@ func (p *StaticInvokeHybridSavedPolicy) ExecutePendingInvokes(engine *sce.Engine
 			engine.StartChildMesh(childEngine, "watch", "static_hybrid_watcher")
 			childEngine.Initialize()
 
-			wrapper := &childEngineWrapperStaticInvokeHybridSaved_WatchStaticHybridWatcher{engine: childEngine, policy: &childPolicy}
+			wrapper := &childEngineWrapperStaticInvokeHybridSaved_Watch0jStaticHybridWatcher{engine: childEngine, policy: &childPolicy}
 			p.childWatch = wrapper
 
 			sce.DrainAndRaiseChildEvents(wrapper, p.activeInvokes, "watch", engine)
@@ -405,7 +423,7 @@ func (p *StaticInvokeHybridSavedPolicy) ExecutePendingInvokes(engine *sce.Engine
 			engine.StartChildMesh(childEngine, "watch", "static_hybrid_holder")
 			childEngine.Initialize()
 
-			wrapper := &childEngineWrapperStaticInvokeHybridSaved_WatchStaticHybridHolder{engine: childEngine, policy: &childPolicy}
+			wrapper := &childEngineWrapperStaticInvokeHybridSaved_Watch0jStaticHybridHolder{engine: childEngine, policy: &childPolicy}
 			p.childWatch = wrapper
 
 			sce.DrainAndRaiseChildEvents(wrapper, p.activeInvokes, "watch", engine)
@@ -496,40 +514,40 @@ func (p *StaticInvokeHybridSavedPolicy) IsInvocationRunning(invokeID string) boo
 
 // ── Child engine wrappers (implement sce.ChildEngine interface) ──
 
-type childEngineWrapperStaticInvokeHybridSaved_WatchStaticHybridWatcher struct {
+type childEngineWrapperStaticInvokeHybridSaved_Watch0jStaticHybridWatcher struct {
 	engine *sce.Engine[StaticHybridWatcherState, StaticHybridWatcherEvent]
 	policy *StaticHybridWatcherPolicy
 }
-func (w *childEngineWrapperStaticInvokeHybridSaved_WatchStaticHybridWatcher) Initialize() { w.engine.Initialize() }
-func (w *childEngineWrapperStaticInvokeHybridSaved_WatchStaticHybridWatcher) Tick() { w.engine.Tick() }
-func (w *childEngineWrapperStaticInvokeHybridSaved_WatchStaticHybridWatcher) Step() { w.engine.Step() }
-func (w *childEngineWrapperStaticInvokeHybridSaved_WatchStaticHybridWatcher) Stop() { w.engine.Stop() }
-func (w *childEngineWrapperStaticInvokeHybridSaved_WatchStaticHybridWatcher) IsInFinalState() bool { return w.engine.IsInFinalState() }
-func (w *childEngineWrapperStaticInvokeHybridSaved_WatchStaticHybridWatcher) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
-func (w *childEngineWrapperStaticInvokeHybridSaved_WatchStaticHybridWatcher) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
-func (w *childEngineWrapperStaticInvokeHybridSaved_WatchStaticHybridWatcher) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
-func (w *childEngineWrapperStaticInvokeHybridSaved_WatchStaticHybridWatcher) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
-func (w *childEngineWrapperStaticInvokeHybridSaved_WatchStaticHybridWatcher) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
-func (w *childEngineWrapperStaticInvokeHybridSaved_WatchStaticHybridWatcher) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
-func (w *childEngineWrapperStaticInvokeHybridSaved_WatchStaticHybridWatcher) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
-func (w *childEngineWrapperStaticInvokeHybridSaved_WatchStaticHybridWatcher) DetachMesh() { w.engine.DetachMesh() }
-type childEngineWrapperStaticInvokeHybridSaved_WatchStaticHybridHolder struct {
+func (w *childEngineWrapperStaticInvokeHybridSaved_Watch0jStaticHybridWatcher) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperStaticInvokeHybridSaved_Watch0jStaticHybridWatcher) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperStaticInvokeHybridSaved_Watch0jStaticHybridWatcher) Step() { w.engine.Step() }
+func (w *childEngineWrapperStaticInvokeHybridSaved_Watch0jStaticHybridWatcher) Stop() { w.engine.Stop() }
+func (w *childEngineWrapperStaticInvokeHybridSaved_Watch0jStaticHybridWatcher) IsInFinalState() bool { return w.engine.IsInFinalState() }
+func (w *childEngineWrapperStaticInvokeHybridSaved_Watch0jStaticHybridWatcher) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
+func (w *childEngineWrapperStaticInvokeHybridSaved_Watch0jStaticHybridWatcher) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
+func (w *childEngineWrapperStaticInvokeHybridSaved_Watch0jStaticHybridWatcher) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
+func (w *childEngineWrapperStaticInvokeHybridSaved_Watch0jStaticHybridWatcher) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
+func (w *childEngineWrapperStaticInvokeHybridSaved_Watch0jStaticHybridWatcher) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
+func (w *childEngineWrapperStaticInvokeHybridSaved_Watch0jStaticHybridWatcher) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
+func (w *childEngineWrapperStaticInvokeHybridSaved_Watch0jStaticHybridWatcher) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
+func (w *childEngineWrapperStaticInvokeHybridSaved_Watch0jStaticHybridWatcher) DetachMesh() { w.engine.DetachMesh() }
+type childEngineWrapperStaticInvokeHybridSaved_Watch0jStaticHybridHolder struct {
 	engine *sce.Engine[StaticHybridHolderState, StaticHybridHolderEvent]
 	policy *StaticHybridHolderPolicy
 }
-func (w *childEngineWrapperStaticInvokeHybridSaved_WatchStaticHybridHolder) Initialize() { w.engine.Initialize() }
-func (w *childEngineWrapperStaticInvokeHybridSaved_WatchStaticHybridHolder) Tick() { w.engine.Tick() }
-func (w *childEngineWrapperStaticInvokeHybridSaved_WatchStaticHybridHolder) Step() { w.engine.Step() }
-func (w *childEngineWrapperStaticInvokeHybridSaved_WatchStaticHybridHolder) Stop() { w.engine.Stop() }
-func (w *childEngineWrapperStaticInvokeHybridSaved_WatchStaticHybridHolder) IsInFinalState() bool { return w.engine.IsInFinalState() }
-func (w *childEngineWrapperStaticInvokeHybridSaved_WatchStaticHybridHolder) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
-func (w *childEngineWrapperStaticInvokeHybridSaved_WatchStaticHybridHolder) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
-func (w *childEngineWrapperStaticInvokeHybridSaved_WatchStaticHybridHolder) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
-func (w *childEngineWrapperStaticInvokeHybridSaved_WatchStaticHybridHolder) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
-func (w *childEngineWrapperStaticInvokeHybridSaved_WatchStaticHybridHolder) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
-func (w *childEngineWrapperStaticInvokeHybridSaved_WatchStaticHybridHolder) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
-func (w *childEngineWrapperStaticInvokeHybridSaved_WatchStaticHybridHolder) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
-func (w *childEngineWrapperStaticInvokeHybridSaved_WatchStaticHybridHolder) DetachMesh() { w.engine.DetachMesh() }
+func (w *childEngineWrapperStaticInvokeHybridSaved_Watch0jStaticHybridHolder) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperStaticInvokeHybridSaved_Watch0jStaticHybridHolder) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperStaticInvokeHybridSaved_Watch0jStaticHybridHolder) Step() { w.engine.Step() }
+func (w *childEngineWrapperStaticInvokeHybridSaved_Watch0jStaticHybridHolder) Stop() { w.engine.Stop() }
+func (w *childEngineWrapperStaticInvokeHybridSaved_Watch0jStaticHybridHolder) IsInFinalState() bool { return w.engine.IsInFinalState() }
+func (w *childEngineWrapperStaticInvokeHybridSaved_Watch0jStaticHybridHolder) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
+func (w *childEngineWrapperStaticInvokeHybridSaved_Watch0jStaticHybridHolder) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
+func (w *childEngineWrapperStaticInvokeHybridSaved_Watch0jStaticHybridHolder) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
+func (w *childEngineWrapperStaticInvokeHybridSaved_Watch0jStaticHybridHolder) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
+func (w *childEngineWrapperStaticInvokeHybridSaved_Watch0jStaticHybridHolder) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
+func (w *childEngineWrapperStaticInvokeHybridSaved_Watch0jStaticHybridHolder) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
+func (w *childEngineWrapperStaticInvokeHybridSaved_Watch0jStaticHybridHolder) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
+func (w *childEngineWrapperStaticInvokeHybridSaved_Watch0jStaticHybridHolder) DetachMesh() { w.engine.DetachMesh() }
 
 
 // DeliverToParent delivers a delayed `<send target="#_parent">` whose wait is

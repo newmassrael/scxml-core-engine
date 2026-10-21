@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
+// source-hash: ca67d4fa2cf4dbcd6617a3b32561c9b8257bc03aaa65978435303ccf35bae7b3
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_wire_enum.scxml
@@ -174,6 +174,8 @@ class StaticWireEnumStateMachine(
     val savedShape: SavedShape = SavedShape(
         first = "c9a87f3c40076e0e661152c1c51fc9f5bab2cc48d50cc9aedc07d730e887d3ce",
         revised = "fbe8dae8a62e3cd95f9b387047b050003b24228f9d4ae84bbfe22bda18c1fd98",
+        format2First = "78445a09acf694cb490c6eb144464277b5f79d54bbbc3a183fdc310a75e79492",
+        format2Revised = "c9033f9dff50f0277e04dd2a71973d9afcbd7eb9c46e79fb71d0febfc4029379",
         records = listOf(
             RecordLineage(
                 event = "view.shown",

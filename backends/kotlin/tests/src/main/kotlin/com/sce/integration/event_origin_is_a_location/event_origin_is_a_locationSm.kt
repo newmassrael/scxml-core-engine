@@ -483,7 +483,7 @@ class EventOriginIsALocationStateMachine(
                 val generatedInvokeId = "phase.${nextInvokeStart("inv_peer")}.inv_peer"
                 deferInvoke(state, generatedInvokeId) {
 
-                    val childSM = EventOriginIsALocationSceSynthInvokeInvPeerStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
+                    val childSM = adoptChild(EventOriginIsALocationSceSynthInvokeInvPeerStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)")), generatedInvokeId)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
                     startInvoke("inv_peer", childSM, false, EventOriginIsALocationEvent.Done.Invoke, "", generatedInvokeId, "")
                 }

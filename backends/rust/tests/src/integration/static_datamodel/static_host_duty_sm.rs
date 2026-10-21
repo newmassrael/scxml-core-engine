@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
+// source-hash: ca67d4fa2cf4dbcd6617a3b32561c9b8257bc03aaa65978435303ccf35bae7b3
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -26,10 +26,10 @@
 // warning on a real fixture and recording it in the same form. Removing an
 // allow is safe whenever its justifying pattern stops being emitted.
 
-// Source-faithful identifier names: W3C SCXML 6.4.1 lets users supply
-// arbitrary id strings (e.g. `<invoke id="invokedChild">`); preserving the
-// camelCase verbatim into Rust field names like `child_invokedChild`
-// keeps the generated code traceable back to the SCXML source.
+// Source-faithful identifier names: generated names embed names the document
+// wrote, which need not be snake case. An `<invoke id>` is the exception: its
+// identifier (`crate::model::invoke_identifier` in sce-build) is lowercase,
+// so `<invoke id="invokedChild">` gives `child_0zinvokedzuchild`.
 #![allow(non_snake_case)]
 // Codegen always emits `use core::time::Duration` and the umbrella
 // `use sce_rust_runtime::{Engine, StatePolicy};`; fixtures with no
@@ -180,9 +180,11 @@ pub trait StaticHostDutyPersist: Sized {
 
     /// The machine's whole state, each delayed `<send>` still waiting written
     /// as the moment it comes due on the wall clock whose reading now is
-    /// `wall_now_ms`, in milliseconds since the Unix epoch. Refused for a
-    /// machine that is not running, and for one whose last macrostep stopped
-    /// at the microstep ceiling.
+    /// `wall_now_ms`, in milliseconds since the Unix epoch, and each running
+    /// child saved inside it with its own whole state (docs/adr/0045). Refused
+    /// for a machine that is not running, and for one whose last macrostep, or
+    /// a child's, stopped at the microstep ceiling. The session id it writes is
+    /// the one the machine was built under, or the one a restore bound.
     fn save_at(
         &self,
         wall_now_ms: u64,
@@ -205,12 +207,24 @@ pub trait StaticHostDutyPersist: Sized {
         self.save_at(::sce_rust_runtime::saved_state::wall_clock_ms())
     }
 
+    /// Refuse `saved` unless a machine of this document could restore it —
+    /// its shape and revisions, its history, every variable, its
+    /// configuration, queues and invocations, and each running child by the
+    /// document that child runs, to any depth — building nothing
+    /// (docs/adr/0045, section 3, step 1). What a parent's restore asks of
+    /// each child it holds before it builds any of them.
+    fn judge(
+        saved: &::sce_rust_runtime::saved_state::SavedState,
+    ) -> Result<(), ::sce_rust_runtime::saved_state::StateRefusal>;
+
     /// A machine of `policy` standing where `saved` left one, measuring time
     /// by `clock` and told by `wall_now_ms` what time it is on the wall clock
     /// the saved `due`s were written against: a waiting send comes due when
     /// its saved moment does, and one already due comes due now. No
     /// `<onentry>` runs and no `<data>` is evaluated: the saved run already
-    /// did both.
+    /// did both. The session carries on under its saved id, and each running
+    /// child a format-2 state holds is resumed where it stood; a format-1
+    /// state's children start again from their beginning.
     fn restore_with(
         policy: Self::Policy,
         saved: &::sce_rust_runtime::saved_state::SavedState,
@@ -245,6 +259,8 @@ impl<A: StaticHostDutyActions + 'static> StaticHostDutyPersist for Engine<Static
         ::sce_rust_runtime::saved_state::SavedShape {
             first: "5d52249374bda754d71b700a06673eba7505416f31282d135d0709089191effa",
             revised: "4c7995c5d033d96a315e1875fae1059c6dd6971fad03cd0a0a8e70b72b749d1a",
+            format2_first: "5d52249374bda754d71b700a06673eba7505416f31282d135d0709089191effa",
+            format2_revised: "4c7995c5d033d96a315e1875fae1059c6dd6971fad03cd0a0a8e70b72b749d1a",
             records: &[],
             enums: &[],
         };
@@ -265,8 +281,23 @@ impl<A: StaticHostDutyActions + 'static> StaticHostDutyPersist for Engine<Static
             &Self::SHAPE,
             vec![],
             ::sce_rust_runtime::saved_state::save_history(self.policy(), Self::HISTORIES),
+            Vec::new(),
             wall_now_ms,
         )
+    }
+
+    fn judge(
+        saved: &::sce_rust_runtime::saved_state::SavedState,
+    ) -> Result<(), ::sce_rust_runtime::saved_state::StateRefusal> {
+        // What a restore reads, read and let go: the shape and the revisions,
+        // the history, every variable, and then the configuration, the queues,
+        // the invocations and each running child by its own document.
+        let saved = &::sce_rust_runtime::saved_state::upgrade(saved, &Self::SHAPE)?;
+        ::sce_rust_runtime::saved_state::restore_history::<StaticHostDutyPolicy<A>>(
+            saved,
+            Self::HISTORIES,
+        )?;
+        ::sce_rust_runtime::saved_state::judge::<StaticHostDutyPolicy<A>>(saved)
     }
 
     fn restore_with(
@@ -353,12 +384,9 @@ pub struct StaticHostDutyPolicy<A: StaticHostDutyActions + 'static> {
     // The generated machine dispatches each native action through this field
     // (`self.actions.<op>(…)`) instead of a runtime script engine.
     actions: A,
-    // W3C SCXML 5.10: Session ID (script engine + invoke tracking).
-    //
-    // SCE Protocol-Synthesis RFC §synth-5-J-2: gated to !no_std. Under `--no-std` both the
-    // script engine (`codegen/no-std-script-not-supported`) and `<invoke>`
-    // (`codegen/no-std-invoke-not-supported`) are codegen-rejected, so no
-    // session identity is ever tracked and the alloc-coupled `String` is omitted.
+    // W3C SCXML 5.10: the session's id (script engine, invoke tracking, the
+    // saved state), bound when the machine is built and never empty
+    // (docs/adr/0045): drawn, given by the host, or given by the parent.
     pub session_id: Option<String>,
     // W3C SCXML 6.4: Parent engine external queue for #_parent send routing
     // Always generated under std — any SM can be invoked as a child. Under
@@ -376,10 +404,10 @@ pub struct StaticHostDutyPolicy<A: StaticHostDutyActions + 'static> {
 }
 
 impl<A: StaticHostDutyActions + 'static> StaticHostDutyPolicy<A> {
-    fn construct(actions: A) -> Self {
+    fn build(session_id: String, actions: A) -> Self {
         Self {
             actions,
-            session_id: None,
+            session_id: Some(session_id),
             parent_external_queue: None,
             invoke_id: String::new(),
             child_session_id: String::new(),
@@ -389,24 +417,81 @@ impl<A: StaticHostDutyActions + 'static> StaticHostDutyPolicy<A> {
     /// docs/adr/0038: the compile-time refusal of a host that only simulates the
     /// duties this machine states. Evaluated where a machine is built with a
     /// host type, so a recorder or a test double does not reach production
-    /// by accident; build one on purpose with [`Self::new_simulated`].
+    /// by accident; build one on purpose with
+    /// [`Self::new_simulated_with_session_id`] or `new_simulated`.
     const HOST_PERFORMS_DUTIES: () = assert!(
         A::REALIZATION.is_performing(),
         "this machine states a duty and its host declares REALIZATION = Simulates: \
-         build it with `new_simulated` to run it on a test double on purpose"
+         build it with a `_simulated` constructor to run it on a test double on purpose"
     );
 
-    /// Build the machine with a host that performs its duties. A host whose
-    /// `REALIZATION` is `Simulates` does not compile here.
+    /// Build the machine under a session id drawn from the operating system's
+    /// randomness, a UUID version 4 (docs/adr/0045). A host whose
+    /// `REALIZATION` is `Simulates` does not compile here.    ///
+    /// Absent on a target with no source of randomness the runtime reads
+    /// (`wasm32-unknown-unknown`): a host there gives the id, through
+    /// [`new_with_session_id`](Self::new_with_session_id).
+    #[cfg(not(any(target_os = "none", all(target_arch = "wasm32", target_os = "unknown"))))]
     pub fn new(actions: A) -> Self {
         let () = Self::HOST_PERFORMS_DUTIES;
-        Self::construct(actions)
+        Self::build(::sce_rust_runtime::helpers::session_id::drawn(), actions)
     }
 
-    /// Build the machine with a host that only simulates its duties — a
+    /// [`new`](Self::new) with a host that only simulates its duties — a
     /// recorder, a test double — as the caller's statement that it means to.
+    #[cfg(not(any(target_os = "none", all(target_arch = "wasm32", target_os = "unknown"))))]
     pub fn new_simulated(actions: A) -> Self {
-        Self::construct(actions)
+        Self::build(::sce_rust_runtime::helpers::session_id::drawn(), actions)
+    }
+
+    /// Build the machine under the session id its host gives: the host's own
+    /// name for the machine, say, or a fixed id a test holds a saved text to
+    /// (docs/adr/0045, "Questions the owner answered" 2). `_sessionid` is bound
+    /// here and kept until the session ends; a restore binds the saved id in
+    /// its place, since the session carries on. A host whose
+    /// `REALIZATION` is `Simulates` does not compile here.    ///
+    /// The one way this machine is built on `wasm32-unknown-unknown`, which has
+    /// no source of randomness the runtime reads.
+    ///
+    /// # Errors
+    ///
+    /// An id that is not an XML Nmtoken (the empty text, a space, a `#`) is
+    /// refused with the reason, and no machine is built.
+    pub fn new_with_session_id(
+        session_id: &str,
+        actions: A,
+    ) -> Result<Self, ::sce_rust_runtime::helpers::session_id::SessionIdRefusal> {
+        let () = Self::HOST_PERFORMS_DUTIES;
+        Ok(Self::build(
+            ::sce_rust_runtime::helpers::session_id::given(session_id)?,
+            actions,
+        ))
+    }
+
+    /// [`new_with_session_id`](Self::new_with_session_id) with a host that only
+    /// simulates its duties — a recorder, a test double — as the caller's
+    /// statement that it means to.
+    ///
+    /// # Errors
+    ///
+    /// As [`new_with_session_id`](Self::new_with_session_id).
+    pub fn new_simulated_with_session_id(
+        session_id: &str,
+        actions: A,
+    ) -> Result<Self, ::sce_rust_runtime::helpers::session_id::SessionIdRefusal> {
+        Ok(Self::build(
+            ::sce_rust_runtime::helpers::session_id::given(session_id)?,
+            actions,
+        ))
+    }
+
+    /// The policy of a child its parent invokes, under the id the tree gives it,
+    /// `<parent>.<invokeid>` (docs/adr/0045): formed by the parent from its own
+    /// id and the invoke id, both held to the rule already, so it is not
+    /// judged again.
+    pub(crate) fn for_child(session_id: String, actions: A) -> Self {
+        let () = Self::HOST_PERFORMS_DUTIES;
+        Self::build(session_id, actions)
     }
 
     /// W3C SCXML G.7: the host the `<sce:action>` operations are dispatched
@@ -733,5 +818,15 @@ impl<A: StaticHostDutyActions + 'static> StatePolicy for StaticHostDutyPolicy<A>
     // invoking parent installs is the link to it.
     fn has_parent_session(&self) -> bool {
         self.parent_external_queue.is_some()
+    }
+
+    // docs/adr/0045: this session's own id, as a saved state holds it.
+    fn own_session_id(&self) -> &str {
+        self.session_id.as_deref().unwrap_or("")
+    }
+
+    // docs/adr/0045: a restored session carries on under its saved id.
+    fn bind_session_id(&mut self, session_id: &str) {
+        self.session_id = Some(session_id.to_string());
     }
 }

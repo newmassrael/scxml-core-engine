@@ -726,7 +726,7 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) ExecutePendingInvokes(engine *s
 			engine.StartChildMesh(childEngine, "_invoke_1", "keeper")
 			childEngine.Initialize()
 
-			wrapper := &childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke1Keeper{engine: childEngine, policy: &childPolicy}
+			wrapper := &childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke10jKeeper{engine: childEngine, policy: &childPolicy}
 			p.childInvoke1 = wrapper
 
 			sce.DrainAndRaiseChildEvents(wrapper, p.activeInvokes, "_invoke_1", engine)
@@ -797,7 +797,7 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) ExecutePendingInvokes(engine *s
 			engine.StartChildMesh(childEngine, "_invoke_1", "bare")
 			childEngine.Initialize()
 
-			wrapper := &childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke1Bare{engine: childEngine, policy: &childPolicy}
+			wrapper := &childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke10jBare{engine: childEngine, policy: &childPolicy}
 			p.childInvoke1 = wrapper
 
 			sce.DrainAndRaiseChildEvents(wrapper, p.activeInvokes, "_invoke_1", engine)
@@ -939,7 +939,7 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) ExecutePendingInvokes(engine *s
 			engine.StartChildMesh(childEngine, "_invoke_0", "keeper")
 			childEngine.Initialize()
 
-			wrapper := &childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke0Keeper{engine: childEngine, policy: &childPolicy}
+			wrapper := &childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke00jKeeper{engine: childEngine, policy: &childPolicy}
 			p.childInvoke0 = wrapper
 
 			sce.DrainAndRaiseChildEvents(wrapper, p.activeInvokes, "_invoke_0", engine)
@@ -1049,7 +1049,7 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) ExecutePendingInvokes(engine *s
 			engine.StartChildMesh(childEngine, "_invoke_0", "bare")
 			childEngine.Initialize()
 
-			wrapper := &childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke0Bare{engine: childEngine, policy: &childPolicy}
+			wrapper := &childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke00jBare{engine: childEngine, policy: &childPolicy}
 			p.childInvoke0 = wrapper
 
 			sce.DrainAndRaiseChildEvents(wrapper, p.activeInvokes, "_invoke_0", engine)
@@ -1183,7 +1183,7 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) ExecutePendingInvokes(engine *s
 			engine.StartChildMesh(childEngine, "_invoke_2", "keeper")
 			childEngine.Initialize()
 
-			wrapper := &childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke2Keeper{engine: childEngine, policy: &childPolicy}
+			wrapper := &childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke20jKeeper{engine: childEngine, policy: &childPolicy}
 			p.childInvoke2 = wrapper
 
 			sce.DrainAndRaiseChildEvents(wrapper, p.activeInvokes, "_invoke_2", engine)
@@ -1273,7 +1273,7 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) ExecutePendingInvokes(engine *s
 			engine.StartChildMesh(childEngine, "_invoke_2", "bare")
 			childEngine.Initialize()
 
-			wrapper := &childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke2Bare{engine: childEngine, policy: &childPolicy}
+			wrapper := &childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke20jBare{engine: childEngine, policy: &childPolicy}
 			p.childInvoke2 = wrapper
 
 			sce.DrainAndRaiseChildEvents(wrapper, p.activeInvokes, "_invoke_2", engine)
@@ -1430,108 +1430,108 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) IsInvocationRunning(invokeID st
 
 // ── Child engine wrappers (implement sce.ChildEngine interface) ──
 
-type childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke0Keeper struct {
+type childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke00jKeeper struct {
 	engine *sce.Engine[KeeperState, KeeperEvent]
 	policy *KeeperPolicy
 }
-func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke0Keeper) Initialize() { w.engine.Initialize() }
-func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke0Keeper) Tick() { w.engine.Tick() }
-func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke0Keeper) Step() { w.engine.Step() }
-func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke0Keeper) Stop() { w.engine.Stop() }
-func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke0Keeper) IsInFinalState() bool { return w.engine.IsInFinalState() }
-func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke0Keeper) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
-func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke0Keeper) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
-func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke0Keeper) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
-func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke0Keeper) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
-func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke0Keeper) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
-func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke0Keeper) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
-func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke0Keeper) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
-func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke0Keeper) DetachMesh() { w.engine.DetachMesh() }
-type childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke0Bare struct {
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke00jKeeper) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke00jKeeper) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke00jKeeper) Step() { w.engine.Step() }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke00jKeeper) Stop() { w.engine.Stop() }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke00jKeeper) IsInFinalState() bool { return w.engine.IsInFinalState() }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke00jKeeper) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke00jKeeper) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke00jKeeper) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke00jKeeper) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke00jKeeper) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke00jKeeper) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke00jKeeper) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke00jKeeper) DetachMesh() { w.engine.DetachMesh() }
+type childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke00jBare struct {
 	engine *sce.Engine[BareState, BareEvent]
 	policy *BarePolicy
 }
-func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke0Bare) Initialize() { w.engine.Initialize() }
-func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke0Bare) Tick() { w.engine.Tick() }
-func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke0Bare) Step() { w.engine.Step() }
-func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke0Bare) Stop() { w.engine.Stop() }
-func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke0Bare) IsInFinalState() bool { return w.engine.IsInFinalState() }
-func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke0Bare) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
-func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke0Bare) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
-func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke0Bare) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
-func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke0Bare) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
-func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke0Bare) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
-func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke0Bare) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
-func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke0Bare) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
-func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke0Bare) DetachMesh() { w.engine.DetachMesh() }
-type childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke1Keeper struct {
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke00jBare) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke00jBare) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke00jBare) Step() { w.engine.Step() }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke00jBare) Stop() { w.engine.Stop() }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke00jBare) IsInFinalState() bool { return w.engine.IsInFinalState() }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke00jBare) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke00jBare) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke00jBare) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke00jBare) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke00jBare) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke00jBare) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke00jBare) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke00jBare) DetachMesh() { w.engine.DetachMesh() }
+type childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke10jKeeper struct {
 	engine *sce.Engine[KeeperState, KeeperEvent]
 	policy *KeeperPolicy
 }
-func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke1Keeper) Initialize() { w.engine.Initialize() }
-func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke1Keeper) Tick() { w.engine.Tick() }
-func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke1Keeper) Step() { w.engine.Step() }
-func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke1Keeper) Stop() { w.engine.Stop() }
-func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke1Keeper) IsInFinalState() bool { return w.engine.IsInFinalState() }
-func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke1Keeper) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
-func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke1Keeper) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
-func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke1Keeper) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
-func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke1Keeper) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
-func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke1Keeper) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
-func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke1Keeper) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
-func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke1Keeper) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
-func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke1Keeper) DetachMesh() { w.engine.DetachMesh() }
-type childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke1Bare struct {
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke10jKeeper) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke10jKeeper) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke10jKeeper) Step() { w.engine.Step() }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke10jKeeper) Stop() { w.engine.Stop() }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke10jKeeper) IsInFinalState() bool { return w.engine.IsInFinalState() }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke10jKeeper) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke10jKeeper) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke10jKeeper) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke10jKeeper) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke10jKeeper) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke10jKeeper) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke10jKeeper) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke10jKeeper) DetachMesh() { w.engine.DetachMesh() }
+type childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke10jBare struct {
 	engine *sce.Engine[BareState, BareEvent]
 	policy *BarePolicy
 }
-func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke1Bare) Initialize() { w.engine.Initialize() }
-func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke1Bare) Tick() { w.engine.Tick() }
-func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke1Bare) Step() { w.engine.Step() }
-func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke1Bare) Stop() { w.engine.Stop() }
-func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke1Bare) IsInFinalState() bool { return w.engine.IsInFinalState() }
-func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke1Bare) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
-func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke1Bare) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
-func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke1Bare) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
-func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke1Bare) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
-func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke1Bare) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
-func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke1Bare) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
-func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke1Bare) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
-func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke1Bare) DetachMesh() { w.engine.DetachMesh() }
-type childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke2Keeper struct {
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke10jBare) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke10jBare) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke10jBare) Step() { w.engine.Step() }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke10jBare) Stop() { w.engine.Stop() }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke10jBare) IsInFinalState() bool { return w.engine.IsInFinalState() }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke10jBare) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke10jBare) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke10jBare) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke10jBare) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke10jBare) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke10jBare) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke10jBare) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke10jBare) DetachMesh() { w.engine.DetachMesh() }
+type childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke20jKeeper struct {
 	engine *sce.Engine[KeeperState, KeeperEvent]
 	policy *KeeperPolicy
 }
-func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke2Keeper) Initialize() { w.engine.Initialize() }
-func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke2Keeper) Tick() { w.engine.Tick() }
-func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke2Keeper) Step() { w.engine.Step() }
-func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke2Keeper) Stop() { w.engine.Stop() }
-func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke2Keeper) IsInFinalState() bool { return w.engine.IsInFinalState() }
-func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke2Keeper) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
-func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke2Keeper) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
-func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke2Keeper) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
-func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke2Keeper) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
-func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke2Keeper) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
-func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke2Keeper) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
-func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke2Keeper) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
-func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke2Keeper) DetachMesh() { w.engine.DetachMesh() }
-type childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke2Bare struct {
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke20jKeeper) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke20jKeeper) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke20jKeeper) Step() { w.engine.Step() }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke20jKeeper) Stop() { w.engine.Stop() }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke20jKeeper) IsInFinalState() bool { return w.engine.IsInFinalState() }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke20jKeeper) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke20jKeeper) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke20jKeeper) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke20jKeeper) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke20jKeeper) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke20jKeeper) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke20jKeeper) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke20jKeeper) DetachMesh() { w.engine.DetachMesh() }
+type childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke20jBare struct {
 	engine *sce.Engine[BareState, BareEvent]
 	policy *BarePolicy
 }
-func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke2Bare) Initialize() { w.engine.Initialize() }
-func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke2Bare) Tick() { w.engine.Tick() }
-func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke2Bare) Step() { w.engine.Step() }
-func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke2Bare) Stop() { w.engine.Stop() }
-func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke2Bare) IsInFinalState() bool { return w.engine.IsInFinalState() }
-func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke2Bare) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
-func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke2Bare) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
-func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke2Bare) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
-func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke2Bare) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
-func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke2Bare) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
-func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke2Bare) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
-func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke2Bare) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
-func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke2Bare) DetachMesh() { w.engine.DetachMesh() }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke20jBare) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke20jBare) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke20jBare) Step() { w.engine.Step() }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke20jBare) Stop() { w.engine.Stop() }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke20jBare) IsInFinalState() bool { return w.engine.IsInFinalState() }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke20jBare) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke20jBare) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke20jBare) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke20jBare) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke20jBare) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke20jBare) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke20jBare) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke20jBare) DetachMesh() { w.engine.DetachMesh() }
 
 
 // DeliverToParent delivers a delayed `<send target="#_parent">` whose wait is

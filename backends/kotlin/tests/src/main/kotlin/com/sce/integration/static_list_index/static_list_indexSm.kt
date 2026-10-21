@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
+// source-hash: ca67d4fa2cf4dbcd6617a3b32561c9b8257bc03aaa65978435303ccf35bae7b3
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_list_index.scxml
@@ -195,6 +195,8 @@ class StaticListIndexStateMachine(
     val savedShape: SavedShape = SavedShape(
         first = "fcee04d52d8557a799792a90fbe66c3f0417605379d6e8342226dec4bc4d5ffe",
         revised = "d229329fa1f24558f82650d7947582795dbc2f535893cb7186b5bd44f3a29a69",
+        format2First = "fcee04d52d8557a799792a90fbe66c3f0417605379d6e8342226dec4bc4d5ffe",
+        format2Revised = "d229329fa1f24558f82650d7947582795dbc2f535893cb7186b5bd44f3a29a69",
         records = listOf(
         ),
         enums = listOf(

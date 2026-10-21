@@ -757,7 +757,7 @@ class InvokeParamSeedsDeclaredChildDataStateMachine(
                             raisePlatformError(InvokeParamSeedsDeclaredChildDataEvent.Error.Execution, "<invoke> <param name='seen'> could not be read")
                         }
 
-                    val childSM = InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
+                    val childSM = adoptChild(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)")), generatedInvokeId)
                     setInvokeParams(childSM, invokeParams)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
                     startInvoke("inv_infinite", childSM, false, InvokeParamSeedsDeclaredChildDataEvent.Done.Invoke, "", generatedInvokeId, "")
@@ -781,7 +781,7 @@ class InvokeParamSeedsDeclaredChildDataStateMachine(
                         }
                         invokeParams["token"] = engineInv.getVariable(sidInv, "token")
 
-                    val childSM = InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
+                    val childSM = adoptChild(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)")), generatedInvokeId)
                     setInvokeParams(childSM, invokeParams)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
                     startInvoke("inv_namelist", childSM, false, InvokeParamSeedsDeclaredChildDataEvent.Done.Invoke, "", generatedInvokeId, "")
@@ -809,7 +809,7 @@ class InvokeParamSeedsDeclaredChildDataStateMachine(
                             raisePlatformError(InvokeParamSeedsDeclaredChildDataEvent.Error.Execution, "<invoke> <param name='seen'> could not be read")
                         }
 
-                    val childSM = InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
+                    val childSM = adoptChild(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)")), generatedInvokeId)
                     setInvokeParams(childSM, invokeParams)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
                     startInvoke("inv_shadow", childSM, false, InvokeParamSeedsDeclaredChildDataEvent.Done.Invoke, "", generatedInvokeId, "")
@@ -837,7 +837,7 @@ class InvokeParamSeedsDeclaredChildDataStateMachine(
                             raisePlatformError(InvokeParamSeedsDeclaredChildDataEvent.Error.Execution, "<invoke> <param name='seen'> could not be read")
                         }
 
-                    val childSM = InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
+                    val childSM = adoptChild(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)")), generatedInvokeId)
                     setInvokeParams(childSM, invokeParams)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
                     startInvoke("inv_sole", childSM, false, InvokeParamSeedsDeclaredChildDataEvent.Done.Invoke, "", generatedInvokeId, "")
@@ -874,7 +874,7 @@ class InvokeParamSeedsDeclaredChildDataStateMachine(
                             raisePlatformError(InvokeParamSeedsDeclaredChildDataEvent.Error.Execution, "<invoke> <param name='nowhere'> could not be read")
                         }
 
-                    val childSM = InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
+                    val childSM = adoptChild(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)")), generatedInvokeId)
                     setInvokeParams(childSM, invokeParams)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
                     startInvoke("inv_unmatched", childSM, false, InvokeParamSeedsDeclaredChildDataEvent.Done.Invoke, "", generatedInvokeId, "")

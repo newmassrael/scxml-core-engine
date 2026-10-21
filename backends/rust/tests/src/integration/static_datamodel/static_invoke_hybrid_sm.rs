@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
+// source-hash: ca67d4fa2cf4dbcd6617a3b32561c9b8257bc03aaa65978435303ccf35bae7b3
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -26,10 +26,10 @@
 // warning on a real fixture and recording it in the same form. Removing an
 // allow is safe whenever its justifying pattern stops being emitted.
 
-// Source-faithful identifier names: W3C SCXML 6.4.1 lets users supply
-// arbitrary id strings (e.g. `<invoke id="invokedChild">`); preserving the
-// camelCase verbatim into Rust field names like `child_invokedChild`
-// keeps the generated code traceable back to the SCXML source.
+// Source-faithful identifier names: generated names embed names the document
+// wrote, which need not be snake case. An `<invoke id>` is the exception: its
+// identifier (`crate::model::invoke_identifier` in sce-build) is lowercase,
+// so `<invoke id="invokedChild">` gives `child_0zinvokedzuchild`.
 #![allow(non_snake_case)]
 // Codegen always emits `use core::time::Duration` and the umbrella
 // `use sce_rust_runtime::{Engine, StatePolicy};`; fixtures with no
@@ -201,9 +201,11 @@ pub trait StaticInvokeHybridPersist: Sized {
 
     /// The machine's whole state, each delayed `<send>` still waiting written
     /// as the moment it comes due on the wall clock whose reading now is
-    /// `wall_now_ms`, in milliseconds since the Unix epoch. Refused for a
-    /// machine that is not running, and for one whose last macrostep stopped
-    /// at the microstep ceiling.
+    /// `wall_now_ms`, in milliseconds since the Unix epoch, and each running
+    /// child saved inside it with its own whole state (docs/adr/0045). Refused
+    /// for a machine that is not running, and for one whose last macrostep, or
+    /// a child's, stopped at the microstep ceiling. The session id it writes is
+    /// the one the machine was built under, or the one a restore bound.
     fn save_at(
         &self,
         wall_now_ms: u64,
@@ -226,12 +228,24 @@ pub trait StaticInvokeHybridPersist: Sized {
         self.save_at(::sce_rust_runtime::saved_state::wall_clock_ms())
     }
 
+    /// Refuse `saved` unless a machine of this document could restore it —
+    /// its shape and revisions, its history, every variable, its
+    /// configuration, queues and invocations, and each running child by the
+    /// document that child runs, to any depth — building nothing
+    /// (docs/adr/0045, section 3, step 1). What a parent's restore asks of
+    /// each child it holds before it builds any of them.
+    fn judge(
+        saved: &::sce_rust_runtime::saved_state::SavedState,
+    ) -> Result<(), ::sce_rust_runtime::saved_state::StateRefusal>;
+
     /// A machine of `policy` standing where `saved` left one, measuring time
     /// by `clock` and told by `wall_now_ms` what time it is on the wall clock
     /// the saved `due`s were written against: a waiting send comes due when
     /// its saved moment does, and one already due comes due now. No
     /// `<onentry>` runs and no `<data>` is evaluated: the saved run already
-    /// did both.
+    /// did both. The session carries on under its saved id, and each running
+    /// child a format-2 state holds is resumed where it stood; a format-1
+    /// state's children start again from their beginning.
     fn restore_with(
         policy: Self::Policy,
         saved: &::sce_rust_runtime::saved_state::SavedState,
@@ -266,6 +280,8 @@ impl StaticInvokeHybridPersist for Engine<StaticInvokeHybridPolicy> {
         ::sce_rust_runtime::saved_state::SavedShape {
             first: "972ab8ed39c25ae07affaee242de1ae666cf4699c734a946880fc52a11084868",
             revised: "039391213c4d9db4886165effd4737cd44a24b3e626866ecb867a40301922e58",
+            format2_first: "972ab8ed39c25ae07affaee242de1ae666cf4699c734a946880fc52a11084868",
+            format2_revised: "039391213c4d9db4886165effd4737cd44a24b3e626866ecb867a40301922e58",
             records: &[],
             enums: &[],
         };
@@ -308,8 +324,42 @@ impl StaticInvokeHybridPersist for Engine<StaticInvokeHybridPolicy> {
                 ),
             ],
             ::sce_rust_runtime::saved_state::save_history(self.policy(), Self::HISTORIES),
+            // docs/adr/0045: each running child, with its whole state.
+            self.policy().saved_children(wall_now_ms)?,
             wall_now_ms,
         )
+    }
+
+    fn judge(
+        saved: &::sce_rust_runtime::saved_state::SavedState,
+    ) -> Result<(), ::sce_rust_runtime::saved_state::StateRefusal> {
+        // What a restore reads, read and let go: the shape and the revisions,
+        // the history, every variable, and then the configuration, the queues,
+        // the invocations and each running child by its own document.
+        let saved = &::sce_rust_runtime::saved_state::upgrade(saved, &Self::SHAPE)?;
+        ::sce_rust_runtime::saved_state::restore_history::<StaticInvokeHybridPolicy>(
+            saved,
+            Self::HISTORIES,
+        )?;
+        let _: String =
+            ::sce_rust_runtime::saved_state::bounded_string(saved.variable("pick")?, "pick", 48)?;
+        let _: u32 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("base")?,
+            "base",
+        )?;
+        let _: bool = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("enabled")?,
+            "enabled",
+        )?;
+        let _: u32 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("completed")?,
+            "completed",
+        )?;
+        let _: u32 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("errors")?,
+            "errors",
+        )?;
+        ::sce_rust_runtime::saved_state::judge::<StaticInvokeHybridPolicy>(saved)
     }
 
     fn restore_with(
@@ -347,6 +397,14 @@ impl StaticInvokeHybridPersist for Engine<StaticInvokeHybridPolicy> {
             saved.variable("errors")?,
             "errors",
         )?;
+        // A start after the restore is numbered on from the saved count.
+        policy.invoke_starts_first_run = saved.invoke_start("first_run");
+        // A start after the restore is numbered on from the saved count.
+        policy.invoke_starts_second_run = saved.invoke_start("second_run");
+        // A start after the restore is numbered on from the saved count.
+        policy.invoke_starts_lossy_run = saved.invoke_start("lossy_run");
+        // A start after the restore is numbered on from the saved count.
+        policy.invoke_starts_missing_run = saved.invoke_start("missing_run");
         ::sce_rust_runtime::saved_state::enter(policy, saved, clock, wall_now_ms)
     }
 }
@@ -378,12 +436,9 @@ pub struct StaticInvokeHybridPolicy {
     completed: u32,
     /// W3C SCXML 5.2: the `errors` datamodel variable, published (`sce:direction="out"`).
     errors: u32,
-    // W3C SCXML 5.10: Session ID (script engine + invoke tracking).
-    //
-    // SCE Protocol-Synthesis RFC §synth-5-J-2: gated to !no_std. Under `--no-std` both the
-    // script engine (`codegen/no-std-script-not-supported`) and `<invoke>`
-    // (`codegen/no-std-invoke-not-supported`) are codegen-rejected, so no
-    // session identity is ever tracked and the alloc-coupled `String` is omitted.
+    // W3C SCXML 5.10: the session's id (script engine, invoke tracking, the
+    // saved state), bound when the machine is built and never empty
+    // (docs/adr/0045): drawn, given by the host, or given by the parent.
     pub session_id: Option<String>,
     // W3C SCXML 6.4: Pending invoke queue (deferred until macrostep end).
     // §scxml-6.4.1 unsupported-type invokes ride it too — their execute step
@@ -393,37 +448,37 @@ pub struct StaticInvokeHybridPolicy {
     active_invokes: std::collections::HashMap<String, sce_rust_runtime::invoke::ChildSession>,
     // W3C SCXML 6.4 + SCE_ACCEPTED_SUBSET.md §2.13: one slot per declared
     // candidate for 'first_run', at most one ever filled.
-    child_first_run_static_hybrid_first: Option<
+    child_first_run_0j_static_hybrid_first: Option<
         Box<sce_rust_runtime::Engine<super::static_hybrid_first_sm::StaticHybridFirstPolicy>>,
     >,
-    child_first_run_static_hybrid_second: Option<
+    child_first_run_0j_static_hybrid_second: Option<
         Box<sce_rust_runtime::Engine<super::static_hybrid_second_sm::StaticHybridSecondPolicy>>,
     >,
     pending_done_invoke_first_run: bool,
     // W3C SCXML 6.4 + SCE_ACCEPTED_SUBSET.md §2.13: one slot per declared
     // candidate for 'second_run', at most one ever filled.
-    child_second_run_static_hybrid_first: Option<
+    child_second_run_0j_static_hybrid_first: Option<
         Box<sce_rust_runtime::Engine<super::static_hybrid_first_sm::StaticHybridFirstPolicy>>,
     >,
-    child_second_run_static_hybrid_second: Option<
+    child_second_run_0j_static_hybrid_second: Option<
         Box<sce_rust_runtime::Engine<super::static_hybrid_second_sm::StaticHybridSecondPolicy>>,
     >,
     pending_done_invoke_second_run: bool,
     // W3C SCXML 6.4 + SCE_ACCEPTED_SUBSET.md §2.13: one slot per declared
     // candidate for 'lossy_run', at most one ever filled.
-    child_lossy_run_static_hybrid_first: Option<
+    child_lossy_run_0j_static_hybrid_first: Option<
         Box<sce_rust_runtime::Engine<super::static_hybrid_first_sm::StaticHybridFirstPolicy>>,
     >,
-    child_lossy_run_static_hybrid_second: Option<
+    child_lossy_run_0j_static_hybrid_second: Option<
         Box<sce_rust_runtime::Engine<super::static_hybrid_second_sm::StaticHybridSecondPolicy>>,
     >,
     pending_done_invoke_lossy_run: bool,
     // W3C SCXML 6.4 + SCE_ACCEPTED_SUBSET.md §2.13: one slot per declared
     // candidate for 'missing_run', at most one ever filled.
-    child_missing_run_static_hybrid_first: Option<
+    child_missing_run_0j_static_hybrid_first: Option<
         Box<sce_rust_runtime::Engine<super::static_hybrid_first_sm::StaticHybridFirstPolicy>>,
     >,
-    child_missing_run_static_hybrid_second: Option<
+    child_missing_run_0j_static_hybrid_second: Option<
         Box<sce_rust_runtime::Engine<super::static_hybrid_second_sm::StaticHybridSecondPolicy>>,
     >,
     pending_done_invoke_missing_run: bool,
@@ -459,7 +514,7 @@ pub struct StaticInvokeHybridPolicy {
 }
 
 impl StaticInvokeHybridPolicy {
-    pub fn new() -> Self {
+    fn build(session_id: String) -> Self {
         let pick: String = "file:static_hybrid_first.scxml".to_string();
         let base: u32 = 4;
         let enabled: bool = true;
@@ -471,20 +526,20 @@ impl StaticInvokeHybridPolicy {
             enabled,
             completed,
             errors,
-            session_id: None,
+            session_id: Some(session_id),
             pending_invokes: Vec::new(),
             active_invokes: std::collections::HashMap::new(),
-            child_first_run_static_hybrid_first: None,
-            child_first_run_static_hybrid_second: None,
+            child_first_run_0j_static_hybrid_first: None,
+            child_first_run_0j_static_hybrid_second: None,
             pending_done_invoke_first_run: false,
-            child_second_run_static_hybrid_first: None,
-            child_second_run_static_hybrid_second: None,
+            child_second_run_0j_static_hybrid_first: None,
+            child_second_run_0j_static_hybrid_second: None,
             pending_done_invoke_second_run: false,
-            child_lossy_run_static_hybrid_first: None,
-            child_lossy_run_static_hybrid_second: None,
+            child_lossy_run_0j_static_hybrid_first: None,
+            child_lossy_run_0j_static_hybrid_second: None,
             pending_done_invoke_lossy_run: false,
-            child_missing_run_static_hybrid_first: None,
-            child_missing_run_static_hybrid_second: None,
+            child_missing_run_0j_static_hybrid_first: None,
+            child_missing_run_0j_static_hybrid_second: None,
             pending_done_invoke_missing_run: false,
             invoke_starts_first_run: 0,
             invoke_starts_second_run: 0,
@@ -494,6 +549,44 @@ impl StaticInvokeHybridPolicy {
             invoke_id: String::new(),
             child_session_id: String::new(),
         }
+    }
+
+    /// Build the machine under a session id drawn from the operating system's
+    /// randomness, a UUID version 4 (docs/adr/0045).    ///
+    /// Absent on a target with no source of randomness the runtime reads
+    /// (`wasm32-unknown-unknown`): a host there gives the id, through
+    /// [`new_with_session_id`](Self::new_with_session_id).
+    #[cfg(not(any(target_os = "none", all(target_arch = "wasm32", target_os = "unknown"))))]
+    pub fn new() -> Self {
+        Self::build(::sce_rust_runtime::helpers::session_id::drawn())
+    }
+
+    /// Build the machine under the session id its host gives: the host's own
+    /// name for the machine, say, or a fixed id a test holds a saved text to
+    /// (docs/adr/0045, "Questions the owner answered" 2). `_sessionid` is bound
+    /// here and kept until the session ends; a restore binds the saved id in
+    /// its place, since the session carries on.    ///
+    /// The one way this machine is built on `wasm32-unknown-unknown`, which has
+    /// no source of randomness the runtime reads.
+    ///
+    /// # Errors
+    ///
+    /// An id that is not an XML Nmtoken (the empty text, a space, a `#`) is
+    /// refused with the reason, and no machine is built.
+    pub fn new_with_session_id(
+        session_id: &str,
+    ) -> Result<Self, ::sce_rust_runtime::helpers::session_id::SessionIdRefusal> {
+        Ok(Self::build(::sce_rust_runtime::helpers::session_id::given(
+            session_id,
+        )?))
+    }
+
+    /// The policy of a child its parent invokes, under the id the tree gives it,
+    /// `<parent>.<invokeid>` (docs/adr/0045): formed by the parent from its own
+    /// id and the invoke id, both held to the rule already, so it is not
+    /// judged again.
+    pub(crate) fn for_child(session_id: String) -> Self {
+        Self::build(session_id)
     }
 
     /// §scxml-6.4.1: give this machine the values `params` carries, in place of
@@ -671,30 +764,38 @@ impl StaticInvokeHybridPolicy {
                     continue;
                 }
 
-                // W3C SCXML 6.5: Generate child session ID
-                let child_session_id = format!(
-                    "{}.{}",
-                    self.session_id.as_deref().unwrap_or(""),
-                    pending.invoke_id
-                );
-
                 // §scxml-6.4 + SCE_ACCEPTED_SUBSET.md §2.13: the value chooses
                 // among the declared candidates, each with a slot of its own.
                 if __sce_selected == "static_hybrid_first" {
                     // W3C SCXML 6.4: Create pre-generated child (Rust AOT: child resolved at codegen time)
-                    // Engine DI Parity RFC: pass parent's script engine when child needs it.
+                    // W3C SCXML 6.5: Generate child session ID for finalize origin matching
+                    let child_session_id = format!(
+                        "{}.{}",
+                        self.session_id.as_deref().unwrap_or(""),
+                        pending.invoke_id
+                    );
+
+                    // W3C SCXML 6.4: Create child state machine
+                    // Engine DI Parity RFC: forward parent's script engine to child when the
+                    // child Policy was generated with `model.needs_script_engine = true`.
+                    //
+                    // W3C SCXML C.1: the child is built under the id its parent
+                    // recorded for it. The parent mints `parentSession.invokeId` and
+                    // keys `active_invokes` on it, so an event from this child
+                    // reaches the parent carrying that id as its origin; had the
+                    // child an id of its own, the location it publishes in
+                    // `_ioprocessors` and the origin the parent sees would be two
+                    // names for one session that can never be compared — which is
+                    // exactly what C.1 requires of them. A child's id comes from the
+                    // tree alone, and nothing is drawn for it (docs/adr/0045).
                     let mut child_policy =
-                        super::static_hybrid_first_sm::StaticHybridFirstPolicy::new();
+                        super::static_hybrid_first_sm::StaticHybridFirstPolicy::for_child(
+                            child_session_id.clone(),
+                        );
+                    // W3C SCXML 6.4: Pass parent session info to child for #_parent routing
                     child_policy.parent_external_queue = Some(engine.get_external_queue_handle());
                     child_policy.invoke_id = pending.invoke_id.clone();
                     child_policy.child_session_id = child_session_id.clone();
-
-                    // W3C SCXML C.1, as for a static child: the candidate adopts the
-                    // id its parent recorded for it, which comes from the tree alone
-                    // (docs/adr/0045) — this session's id and the id of this start.
-                    if child_policy.session_id.is_none() {
-                        child_policy.session_id = Some(child_session_id.clone());
-                    }
 
                     // W3C SCXML 6.4.1: hand the child the values this invoke names
                     {
@@ -729,6 +830,7 @@ impl StaticInvokeHybridPolicy {
                         "first_run".to_string(),
                         sce_rust_runtime::invoke::ChildSession {
                             session_id: child_session_id,
+                            // W3C SCXML 6.4: Element invoke_id for _event.invokeid (test 228)
                             invoke_id: "first_run".to_string(),
                             parent_session_id: self.session_id.clone().unwrap_or_default(),
                             autoforward: false,
@@ -751,65 +853,49 @@ impl StaticInvokeHybridPolicy {
                     // and installed before the child initializes, since its first
                     // `<onentry>` may already send to a peer.
                     engine.start_child_mesh(&mut child_engine, "first_run", "static_hybrid_first");
+                    // docs/adr/0045: the tree's host invokers serve the child, whose
+                    // host-run invocations name it by its session id.
+                    engine.share_host_invokers_with(&mut child_engine);
                     child_engine.initialize();
 
-                    self.child_first_run_static_hybrid_first = Some(Box::new(child_engine));
+                    self.child_first_run_0j_static_hybrid_first = Some(Box::new(child_engine));
 
-                    // W3C SCXML 6.4: Drain child-to-parent events raised during initialize
-                    sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
-                        &self
-                            .child_first_run_static_hybrid_first
-                            .as_ref()
-                            .unwrap()
-                            .policy()
-                            .parent_external_queue,
-                        &self.active_invokes,
-                        "first_run",
-                        engine,
-                    );
-
-                    // W3C SCXML 6.4: Check if child completed during initialize
-                    if self
-                        .child_first_run_static_hybrid_first
-                        .as_ref()
-                        .map_or(false, |c| c.is_in_final_state())
-                    {
-                        self.pending_done_invoke_first_run = true;
-                        // The session ended: its Mesh router is told so.
-                        if let Some(child) = self.child_first_run_static_hybrid_first.as_mut() {
-                            child.detach_mesh();
-                        }
-                        // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
-                        // done.invoke.<id>._event.data.
-                        let donedata = self
-                            .child_first_run_static_hybrid_first
-                            .as_ref()
-                            .map(|c| c.donedata_at_final().to_string())
-                            .unwrap_or_default();
-                        sce_rust_runtime::helpers::invoke_processing::raise_done_invoke(
-                            "first_run",
-                            donedata,
-                            engine,
-                        );
-                    }
+                    // W3C SCXML 6.4: what the child sent as it initialized, and an
+                    // ending during initialize, settled as after any drive.
+                    self.settle_child_first_run_0j_static_hybrid_first(engine);
 
                     continue;
                 }
                 if __sce_selected == "static_hybrid_second" {
                     // W3C SCXML 6.4: Create pre-generated child (Rust AOT: child resolved at codegen time)
-                    // Engine DI Parity RFC: pass parent's script engine when child needs it.
+                    // W3C SCXML 6.5: Generate child session ID for finalize origin matching
+                    let child_session_id = format!(
+                        "{}.{}",
+                        self.session_id.as_deref().unwrap_or(""),
+                        pending.invoke_id
+                    );
+
+                    // W3C SCXML 6.4: Create child state machine
+                    // Engine DI Parity RFC: forward parent's script engine to child when the
+                    // child Policy was generated with `model.needs_script_engine = true`.
+                    //
+                    // W3C SCXML C.1: the child is built under the id its parent
+                    // recorded for it. The parent mints `parentSession.invokeId` and
+                    // keys `active_invokes` on it, so an event from this child
+                    // reaches the parent carrying that id as its origin; had the
+                    // child an id of its own, the location it publishes in
+                    // `_ioprocessors` and the origin the parent sees would be two
+                    // names for one session that can never be compared — which is
+                    // exactly what C.1 requires of them. A child's id comes from the
+                    // tree alone, and nothing is drawn for it (docs/adr/0045).
                     let mut child_policy =
-                        super::static_hybrid_second_sm::StaticHybridSecondPolicy::new();
+                        super::static_hybrid_second_sm::StaticHybridSecondPolicy::for_child(
+                            child_session_id.clone(),
+                        );
+                    // W3C SCXML 6.4: Pass parent session info to child for #_parent routing
                     child_policy.parent_external_queue = Some(engine.get_external_queue_handle());
                     child_policy.invoke_id = pending.invoke_id.clone();
                     child_policy.child_session_id = child_session_id.clone();
-
-                    // W3C SCXML C.1, as for a static child: the candidate adopts the
-                    // id its parent recorded for it, which comes from the tree alone
-                    // (docs/adr/0045) — this session's id and the id of this start.
-                    if child_policy.session_id.is_none() {
-                        child_policy.session_id = Some(child_session_id.clone());
-                    }
 
                     // W3C SCXML 6.4.1: hand the child the values this invoke names
                     {
@@ -840,6 +926,7 @@ impl StaticInvokeHybridPolicy {
                         "first_run".to_string(),
                         sce_rust_runtime::invoke::ChildSession {
                             session_id: child_session_id,
+                            // W3C SCXML 6.4: Element invoke_id for _event.invokeid (test 228)
                             invoke_id: "first_run".to_string(),
                             parent_session_id: self.session_id.clone().unwrap_or_default(),
                             autoforward: false,
@@ -862,47 +949,16 @@ impl StaticInvokeHybridPolicy {
                     // and installed before the child initializes, since its first
                     // `<onentry>` may already send to a peer.
                     engine.start_child_mesh(&mut child_engine, "first_run", "static_hybrid_second");
+                    // docs/adr/0045: the tree's host invokers serve the child, whose
+                    // host-run invocations name it by its session id.
+                    engine.share_host_invokers_with(&mut child_engine);
                     child_engine.initialize();
 
-                    self.child_first_run_static_hybrid_second = Some(Box::new(child_engine));
+                    self.child_first_run_0j_static_hybrid_second = Some(Box::new(child_engine));
 
-                    // W3C SCXML 6.4: Drain child-to-parent events raised during initialize
-                    sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
-                        &self
-                            .child_first_run_static_hybrid_second
-                            .as_ref()
-                            .unwrap()
-                            .policy()
-                            .parent_external_queue,
-                        &self.active_invokes,
-                        "first_run",
-                        engine,
-                    );
-
-                    // W3C SCXML 6.4: Check if child completed during initialize
-                    if self
-                        .child_first_run_static_hybrid_second
-                        .as_ref()
-                        .map_or(false, |c| c.is_in_final_state())
-                    {
-                        self.pending_done_invoke_first_run = true;
-                        // The session ended: its Mesh router is told so.
-                        if let Some(child) = self.child_first_run_static_hybrid_second.as_mut() {
-                            child.detach_mesh();
-                        }
-                        // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
-                        // done.invoke.<id>._event.data.
-                        let donedata = self
-                            .child_first_run_static_hybrid_second
-                            .as_ref()
-                            .map(|c| c.donedata_at_final().to_string())
-                            .unwrap_or_default();
-                        sce_rust_runtime::helpers::invoke_processing::raise_done_invoke(
-                            "first_run",
-                            donedata,
-                            engine,
-                        );
-                    }
+                    // W3C SCXML 6.4: what the child sent as it initialized, and an
+                    // ending during initialize, settled as after any drive.
+                    self.settle_child_first_run_0j_static_hybrid_second(engine);
 
                     continue;
                 }
@@ -936,30 +992,38 @@ impl StaticInvokeHybridPolicy {
                     continue;
                 }
 
-                // W3C SCXML 6.5: Generate child session ID
-                let child_session_id = format!(
-                    "{}.{}",
-                    self.session_id.as_deref().unwrap_or(""),
-                    pending.invoke_id
-                );
-
                 // §scxml-6.4 + SCE_ACCEPTED_SUBSET.md §2.13: the value chooses
                 // among the declared candidates, each with a slot of its own.
                 if __sce_selected == "static_hybrid_first" {
                     // W3C SCXML 6.4: Create pre-generated child (Rust AOT: child resolved at codegen time)
-                    // Engine DI Parity RFC: pass parent's script engine when child needs it.
+                    // W3C SCXML 6.5: Generate child session ID for finalize origin matching
+                    let child_session_id = format!(
+                        "{}.{}",
+                        self.session_id.as_deref().unwrap_or(""),
+                        pending.invoke_id
+                    );
+
+                    // W3C SCXML 6.4: Create child state machine
+                    // Engine DI Parity RFC: forward parent's script engine to child when the
+                    // child Policy was generated with `model.needs_script_engine = true`.
+                    //
+                    // W3C SCXML C.1: the child is built under the id its parent
+                    // recorded for it. The parent mints `parentSession.invokeId` and
+                    // keys `active_invokes` on it, so an event from this child
+                    // reaches the parent carrying that id as its origin; had the
+                    // child an id of its own, the location it publishes in
+                    // `_ioprocessors` and the origin the parent sees would be two
+                    // names for one session that can never be compared — which is
+                    // exactly what C.1 requires of them. A child's id comes from the
+                    // tree alone, and nothing is drawn for it (docs/adr/0045).
                     let mut child_policy =
-                        super::static_hybrid_first_sm::StaticHybridFirstPolicy::new();
+                        super::static_hybrid_first_sm::StaticHybridFirstPolicy::for_child(
+                            child_session_id.clone(),
+                        );
+                    // W3C SCXML 6.4: Pass parent session info to child for #_parent routing
                     child_policy.parent_external_queue = Some(engine.get_external_queue_handle());
                     child_policy.invoke_id = pending.invoke_id.clone();
                     child_policy.child_session_id = child_session_id.clone();
-
-                    // W3C SCXML C.1, as for a static child: the candidate adopts the
-                    // id its parent recorded for it, which comes from the tree alone
-                    // (docs/adr/0045) — this session's id and the id of this start.
-                    if child_policy.session_id.is_none() {
-                        child_policy.session_id = Some(child_session_id.clone());
-                    }
 
                     // W3C SCXML 6.4.1: hand the child the values this invoke names
                     {
@@ -994,6 +1058,7 @@ impl StaticInvokeHybridPolicy {
                         "lossy_run".to_string(),
                         sce_rust_runtime::invoke::ChildSession {
                             session_id: child_session_id,
+                            // W3C SCXML 6.4: Element invoke_id for _event.invokeid (test 228)
                             invoke_id: "lossy_run".to_string(),
                             parent_session_id: self.session_id.clone().unwrap_or_default(),
                             autoforward: false,
@@ -1016,65 +1081,49 @@ impl StaticInvokeHybridPolicy {
                     // and installed before the child initializes, since its first
                     // `<onentry>` may already send to a peer.
                     engine.start_child_mesh(&mut child_engine, "lossy_run", "static_hybrid_first");
+                    // docs/adr/0045: the tree's host invokers serve the child, whose
+                    // host-run invocations name it by its session id.
+                    engine.share_host_invokers_with(&mut child_engine);
                     child_engine.initialize();
 
-                    self.child_lossy_run_static_hybrid_first = Some(Box::new(child_engine));
+                    self.child_lossy_run_0j_static_hybrid_first = Some(Box::new(child_engine));
 
-                    // W3C SCXML 6.4: Drain child-to-parent events raised during initialize
-                    sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
-                        &self
-                            .child_lossy_run_static_hybrid_first
-                            .as_ref()
-                            .unwrap()
-                            .policy()
-                            .parent_external_queue,
-                        &self.active_invokes,
-                        "lossy_run",
-                        engine,
-                    );
-
-                    // W3C SCXML 6.4: Check if child completed during initialize
-                    if self
-                        .child_lossy_run_static_hybrid_first
-                        .as_ref()
-                        .map_or(false, |c| c.is_in_final_state())
-                    {
-                        self.pending_done_invoke_lossy_run = true;
-                        // The session ended: its Mesh router is told so.
-                        if let Some(child) = self.child_lossy_run_static_hybrid_first.as_mut() {
-                            child.detach_mesh();
-                        }
-                        // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
-                        // done.invoke.<id>._event.data.
-                        let donedata = self
-                            .child_lossy_run_static_hybrid_first
-                            .as_ref()
-                            .map(|c| c.donedata_at_final().to_string())
-                            .unwrap_or_default();
-                        sce_rust_runtime::helpers::invoke_processing::raise_done_invoke(
-                            "lossy_run",
-                            donedata,
-                            engine,
-                        );
-                    }
+                    // W3C SCXML 6.4: what the child sent as it initialized, and an
+                    // ending during initialize, settled as after any drive.
+                    self.settle_child_lossy_run_0j_static_hybrid_first(engine);
 
                     continue;
                 }
                 if __sce_selected == "static_hybrid_second" {
                     // W3C SCXML 6.4: Create pre-generated child (Rust AOT: child resolved at codegen time)
-                    // Engine DI Parity RFC: pass parent's script engine when child needs it.
+                    // W3C SCXML 6.5: Generate child session ID for finalize origin matching
+                    let child_session_id = format!(
+                        "{}.{}",
+                        self.session_id.as_deref().unwrap_or(""),
+                        pending.invoke_id
+                    );
+
+                    // W3C SCXML 6.4: Create child state machine
+                    // Engine DI Parity RFC: forward parent's script engine to child when the
+                    // child Policy was generated with `model.needs_script_engine = true`.
+                    //
+                    // W3C SCXML C.1: the child is built under the id its parent
+                    // recorded for it. The parent mints `parentSession.invokeId` and
+                    // keys `active_invokes` on it, so an event from this child
+                    // reaches the parent carrying that id as its origin; had the
+                    // child an id of its own, the location it publishes in
+                    // `_ioprocessors` and the origin the parent sees would be two
+                    // names for one session that can never be compared — which is
+                    // exactly what C.1 requires of them. A child's id comes from the
+                    // tree alone, and nothing is drawn for it (docs/adr/0045).
                     let mut child_policy =
-                        super::static_hybrid_second_sm::StaticHybridSecondPolicy::new();
+                        super::static_hybrid_second_sm::StaticHybridSecondPolicy::for_child(
+                            child_session_id.clone(),
+                        );
+                    // W3C SCXML 6.4: Pass parent session info to child for #_parent routing
                     child_policy.parent_external_queue = Some(engine.get_external_queue_handle());
                     child_policy.invoke_id = pending.invoke_id.clone();
                     child_policy.child_session_id = child_session_id.clone();
-
-                    // W3C SCXML C.1, as for a static child: the candidate adopts the
-                    // id its parent recorded for it, which comes from the tree alone
-                    // (docs/adr/0045) — this session's id and the id of this start.
-                    if child_policy.session_id.is_none() {
-                        child_policy.session_id = Some(child_session_id.clone());
-                    }
 
                     // W3C SCXML 6.4.1: hand the child the values this invoke names
                     {
@@ -1107,6 +1156,7 @@ impl StaticInvokeHybridPolicy {
                         "lossy_run".to_string(),
                         sce_rust_runtime::invoke::ChildSession {
                             session_id: child_session_id,
+                            // W3C SCXML 6.4: Element invoke_id for _event.invokeid (test 228)
                             invoke_id: "lossy_run".to_string(),
                             parent_session_id: self.session_id.clone().unwrap_or_default(),
                             autoforward: false,
@@ -1129,47 +1179,16 @@ impl StaticInvokeHybridPolicy {
                     // and installed before the child initializes, since its first
                     // `<onentry>` may already send to a peer.
                     engine.start_child_mesh(&mut child_engine, "lossy_run", "static_hybrid_second");
+                    // docs/adr/0045: the tree's host invokers serve the child, whose
+                    // host-run invocations name it by its session id.
+                    engine.share_host_invokers_with(&mut child_engine);
                     child_engine.initialize();
 
-                    self.child_lossy_run_static_hybrid_second = Some(Box::new(child_engine));
+                    self.child_lossy_run_0j_static_hybrid_second = Some(Box::new(child_engine));
 
-                    // W3C SCXML 6.4: Drain child-to-parent events raised during initialize
-                    sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
-                        &self
-                            .child_lossy_run_static_hybrid_second
-                            .as_ref()
-                            .unwrap()
-                            .policy()
-                            .parent_external_queue,
-                        &self.active_invokes,
-                        "lossy_run",
-                        engine,
-                    );
-
-                    // W3C SCXML 6.4: Check if child completed during initialize
-                    if self
-                        .child_lossy_run_static_hybrid_second
-                        .as_ref()
-                        .map_or(false, |c| c.is_in_final_state())
-                    {
-                        self.pending_done_invoke_lossy_run = true;
-                        // The session ended: its Mesh router is told so.
-                        if let Some(child) = self.child_lossy_run_static_hybrid_second.as_mut() {
-                            child.detach_mesh();
-                        }
-                        // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
-                        // done.invoke.<id>._event.data.
-                        let donedata = self
-                            .child_lossy_run_static_hybrid_second
-                            .as_ref()
-                            .map(|c| c.donedata_at_final().to_string())
-                            .unwrap_or_default();
-                        sce_rust_runtime::helpers::invoke_processing::raise_done_invoke(
-                            "lossy_run",
-                            donedata,
-                            engine,
-                        );
-                    }
+                    // W3C SCXML 6.4: what the child sent as it initialized, and an
+                    // ending during initialize, settled as after any drive.
+                    self.settle_child_lossy_run_0j_static_hybrid_second(engine);
 
                     continue;
                 }
@@ -1203,30 +1222,38 @@ impl StaticInvokeHybridPolicy {
                     continue;
                 }
 
-                // W3C SCXML 6.5: Generate child session ID
-                let child_session_id = format!(
-                    "{}.{}",
-                    self.session_id.as_deref().unwrap_or(""),
-                    pending.invoke_id
-                );
-
                 // §scxml-6.4 + SCE_ACCEPTED_SUBSET.md §2.13: the value chooses
                 // among the declared candidates, each with a slot of its own.
                 if __sce_selected == "static_hybrid_first" {
                     // W3C SCXML 6.4: Create pre-generated child (Rust AOT: child resolved at codegen time)
-                    // Engine DI Parity RFC: pass parent's script engine when child needs it.
+                    // W3C SCXML 6.5: Generate child session ID for finalize origin matching
+                    let child_session_id = format!(
+                        "{}.{}",
+                        self.session_id.as_deref().unwrap_or(""),
+                        pending.invoke_id
+                    );
+
+                    // W3C SCXML 6.4: Create child state machine
+                    // Engine DI Parity RFC: forward parent's script engine to child when the
+                    // child Policy was generated with `model.needs_script_engine = true`.
+                    //
+                    // W3C SCXML C.1: the child is built under the id its parent
+                    // recorded for it. The parent mints `parentSession.invokeId` and
+                    // keys `active_invokes` on it, so an event from this child
+                    // reaches the parent carrying that id as its origin; had the
+                    // child an id of its own, the location it publishes in
+                    // `_ioprocessors` and the origin the parent sees would be two
+                    // names for one session that can never be compared — which is
+                    // exactly what C.1 requires of them. A child's id comes from the
+                    // tree alone, and nothing is drawn for it (docs/adr/0045).
                     let mut child_policy =
-                        super::static_hybrid_first_sm::StaticHybridFirstPolicy::new();
+                        super::static_hybrid_first_sm::StaticHybridFirstPolicy::for_child(
+                            child_session_id.clone(),
+                        );
+                    // W3C SCXML 6.4: Pass parent session info to child for #_parent routing
                     child_policy.parent_external_queue = Some(engine.get_external_queue_handle());
                     child_policy.invoke_id = pending.invoke_id.clone();
                     child_policy.child_session_id = child_session_id.clone();
-
-                    // W3C SCXML C.1, as for a static child: the candidate adopts the
-                    // id its parent recorded for it, which comes from the tree alone
-                    // (docs/adr/0045) — this session's id and the id of this start.
-                    if child_policy.session_id.is_none() {
-                        child_policy.session_id = Some(child_session_id.clone());
-                    }
 
                     // W3C SCXML 6.4.1: hand the child the values this invoke names
                     {
@@ -1242,6 +1269,7 @@ impl StaticInvokeHybridPolicy {
                         "missing_run".to_string(),
                         sce_rust_runtime::invoke::ChildSession {
                             session_id: child_session_id,
+                            // W3C SCXML 6.4: Element invoke_id for _event.invokeid (test 228)
                             invoke_id: "missing_run".to_string(),
                             parent_session_id: self.session_id.clone().unwrap_or_default(),
                             autoforward: false,
@@ -1268,65 +1296,49 @@ impl StaticInvokeHybridPolicy {
                         "missing_run",
                         "static_hybrid_first",
                     );
+                    // docs/adr/0045: the tree's host invokers serve the child, whose
+                    // host-run invocations name it by its session id.
+                    engine.share_host_invokers_with(&mut child_engine);
                     child_engine.initialize();
 
-                    self.child_missing_run_static_hybrid_first = Some(Box::new(child_engine));
+                    self.child_missing_run_0j_static_hybrid_first = Some(Box::new(child_engine));
 
-                    // W3C SCXML 6.4: Drain child-to-parent events raised during initialize
-                    sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
-                        &self
-                            .child_missing_run_static_hybrid_first
-                            .as_ref()
-                            .unwrap()
-                            .policy()
-                            .parent_external_queue,
-                        &self.active_invokes,
-                        "missing_run",
-                        engine,
-                    );
-
-                    // W3C SCXML 6.4: Check if child completed during initialize
-                    if self
-                        .child_missing_run_static_hybrid_first
-                        .as_ref()
-                        .map_or(false, |c| c.is_in_final_state())
-                    {
-                        self.pending_done_invoke_missing_run = true;
-                        // The session ended: its Mesh router is told so.
-                        if let Some(child) = self.child_missing_run_static_hybrid_first.as_mut() {
-                            child.detach_mesh();
-                        }
-                        // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
-                        // done.invoke.<id>._event.data.
-                        let donedata = self
-                            .child_missing_run_static_hybrid_first
-                            .as_ref()
-                            .map(|c| c.donedata_at_final().to_string())
-                            .unwrap_or_default();
-                        sce_rust_runtime::helpers::invoke_processing::raise_done_invoke(
-                            "missing_run",
-                            donedata,
-                            engine,
-                        );
-                    }
+                    // W3C SCXML 6.4: what the child sent as it initialized, and an
+                    // ending during initialize, settled as after any drive.
+                    self.settle_child_missing_run_0j_static_hybrid_first(engine);
 
                     continue;
                 }
                 if __sce_selected == "static_hybrid_second" {
                     // W3C SCXML 6.4: Create pre-generated child (Rust AOT: child resolved at codegen time)
-                    // Engine DI Parity RFC: pass parent's script engine when child needs it.
+                    // W3C SCXML 6.5: Generate child session ID for finalize origin matching
+                    let child_session_id = format!(
+                        "{}.{}",
+                        self.session_id.as_deref().unwrap_or(""),
+                        pending.invoke_id
+                    );
+
+                    // W3C SCXML 6.4: Create child state machine
+                    // Engine DI Parity RFC: forward parent's script engine to child when the
+                    // child Policy was generated with `model.needs_script_engine = true`.
+                    //
+                    // W3C SCXML C.1: the child is built under the id its parent
+                    // recorded for it. The parent mints `parentSession.invokeId` and
+                    // keys `active_invokes` on it, so an event from this child
+                    // reaches the parent carrying that id as its origin; had the
+                    // child an id of its own, the location it publishes in
+                    // `_ioprocessors` and the origin the parent sees would be two
+                    // names for one session that can never be compared — which is
+                    // exactly what C.1 requires of them. A child's id comes from the
+                    // tree alone, and nothing is drawn for it (docs/adr/0045).
                     let mut child_policy =
-                        super::static_hybrid_second_sm::StaticHybridSecondPolicy::new();
+                        super::static_hybrid_second_sm::StaticHybridSecondPolicy::for_child(
+                            child_session_id.clone(),
+                        );
+                    // W3C SCXML 6.4: Pass parent session info to child for #_parent routing
                     child_policy.parent_external_queue = Some(engine.get_external_queue_handle());
                     child_policy.invoke_id = pending.invoke_id.clone();
                     child_policy.child_session_id = child_session_id.clone();
-
-                    // W3C SCXML C.1, as for a static child: the candidate adopts the
-                    // id its parent recorded for it, which comes from the tree alone
-                    // (docs/adr/0045) — this session's id and the id of this start.
-                    if child_policy.session_id.is_none() {
-                        child_policy.session_id = Some(child_session_id.clone());
-                    }
 
                     // W3C SCXML 6.4.1: hand the child the values this invoke names
                     {
@@ -1342,6 +1354,7 @@ impl StaticInvokeHybridPolicy {
                         "missing_run".to_string(),
                         sce_rust_runtime::invoke::ChildSession {
                             session_id: child_session_id,
+                            // W3C SCXML 6.4: Element invoke_id for _event.invokeid (test 228)
                             invoke_id: "missing_run".to_string(),
                             parent_session_id: self.session_id.clone().unwrap_or_default(),
                             autoforward: false,
@@ -1368,47 +1381,16 @@ impl StaticInvokeHybridPolicy {
                         "missing_run",
                         "static_hybrid_second",
                     );
+                    // docs/adr/0045: the tree's host invokers serve the child, whose
+                    // host-run invocations name it by its session id.
+                    engine.share_host_invokers_with(&mut child_engine);
                     child_engine.initialize();
 
-                    self.child_missing_run_static_hybrid_second = Some(Box::new(child_engine));
+                    self.child_missing_run_0j_static_hybrid_second = Some(Box::new(child_engine));
 
-                    // W3C SCXML 6.4: Drain child-to-parent events raised during initialize
-                    sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
-                        &self
-                            .child_missing_run_static_hybrid_second
-                            .as_ref()
-                            .unwrap()
-                            .policy()
-                            .parent_external_queue,
-                        &self.active_invokes,
-                        "missing_run",
-                        engine,
-                    );
-
-                    // W3C SCXML 6.4: Check if child completed during initialize
-                    if self
-                        .child_missing_run_static_hybrid_second
-                        .as_ref()
-                        .map_or(false, |c| c.is_in_final_state())
-                    {
-                        self.pending_done_invoke_missing_run = true;
-                        // The session ended: its Mesh router is told so.
-                        if let Some(child) = self.child_missing_run_static_hybrid_second.as_mut() {
-                            child.detach_mesh();
-                        }
-                        // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
-                        // done.invoke.<id>._event.data.
-                        let donedata = self
-                            .child_missing_run_static_hybrid_second
-                            .as_ref()
-                            .map(|c| c.donedata_at_final().to_string())
-                            .unwrap_or_default();
-                        sce_rust_runtime::helpers::invoke_processing::raise_done_invoke(
-                            "missing_run",
-                            donedata,
-                            engine,
-                        );
-                    }
+                    // W3C SCXML 6.4: what the child sent as it initialized, and an
+                    // ending during initialize, settled as after any drive.
+                    self.settle_child_missing_run_0j_static_hybrid_second(engine);
 
                     continue;
                 }
@@ -1442,30 +1424,38 @@ impl StaticInvokeHybridPolicy {
                     continue;
                 }
 
-                // W3C SCXML 6.5: Generate child session ID
-                let child_session_id = format!(
-                    "{}.{}",
-                    self.session_id.as_deref().unwrap_or(""),
-                    pending.invoke_id
-                );
-
                 // §scxml-6.4 + SCE_ACCEPTED_SUBSET.md §2.13: the value chooses
                 // among the declared candidates, each with a slot of its own.
                 if __sce_selected == "static_hybrid_first" {
                     // W3C SCXML 6.4: Create pre-generated child (Rust AOT: child resolved at codegen time)
-                    // Engine DI Parity RFC: pass parent's script engine when child needs it.
+                    // W3C SCXML 6.5: Generate child session ID for finalize origin matching
+                    let child_session_id = format!(
+                        "{}.{}",
+                        self.session_id.as_deref().unwrap_or(""),
+                        pending.invoke_id
+                    );
+
+                    // W3C SCXML 6.4: Create child state machine
+                    // Engine DI Parity RFC: forward parent's script engine to child when the
+                    // child Policy was generated with `model.needs_script_engine = true`.
+                    //
+                    // W3C SCXML C.1: the child is built under the id its parent
+                    // recorded for it. The parent mints `parentSession.invokeId` and
+                    // keys `active_invokes` on it, so an event from this child
+                    // reaches the parent carrying that id as its origin; had the
+                    // child an id of its own, the location it publishes in
+                    // `_ioprocessors` and the origin the parent sees would be two
+                    // names for one session that can never be compared — which is
+                    // exactly what C.1 requires of them. A child's id comes from the
+                    // tree alone, and nothing is drawn for it (docs/adr/0045).
                     let mut child_policy =
-                        super::static_hybrid_first_sm::StaticHybridFirstPolicy::new();
+                        super::static_hybrid_first_sm::StaticHybridFirstPolicy::for_child(
+                            child_session_id.clone(),
+                        );
+                    // W3C SCXML 6.4: Pass parent session info to child for #_parent routing
                     child_policy.parent_external_queue = Some(engine.get_external_queue_handle());
                     child_policy.invoke_id = pending.invoke_id.clone();
                     child_policy.child_session_id = child_session_id.clone();
-
-                    // W3C SCXML C.1, as for a static child: the candidate adopts the
-                    // id its parent recorded for it, which comes from the tree alone
-                    // (docs/adr/0045) — this session's id and the id of this start.
-                    if child_policy.session_id.is_none() {
-                        child_policy.session_id = Some(child_session_id.clone());
-                    }
 
                     // W3C SCXML 6.4.1: hand the child the values this invoke names
                     {
@@ -1500,6 +1490,7 @@ impl StaticInvokeHybridPolicy {
                         "second_run".to_string(),
                         sce_rust_runtime::invoke::ChildSession {
                             session_id: child_session_id,
+                            // W3C SCXML 6.4: Element invoke_id for _event.invokeid (test 228)
                             invoke_id: "second_run".to_string(),
                             parent_session_id: self.session_id.clone().unwrap_or_default(),
                             autoforward: false,
@@ -1522,65 +1513,49 @@ impl StaticInvokeHybridPolicy {
                     // and installed before the child initializes, since its first
                     // `<onentry>` may already send to a peer.
                     engine.start_child_mesh(&mut child_engine, "second_run", "static_hybrid_first");
+                    // docs/adr/0045: the tree's host invokers serve the child, whose
+                    // host-run invocations name it by its session id.
+                    engine.share_host_invokers_with(&mut child_engine);
                     child_engine.initialize();
 
-                    self.child_second_run_static_hybrid_first = Some(Box::new(child_engine));
+                    self.child_second_run_0j_static_hybrid_first = Some(Box::new(child_engine));
 
-                    // W3C SCXML 6.4: Drain child-to-parent events raised during initialize
-                    sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
-                        &self
-                            .child_second_run_static_hybrid_first
-                            .as_ref()
-                            .unwrap()
-                            .policy()
-                            .parent_external_queue,
-                        &self.active_invokes,
-                        "second_run",
-                        engine,
-                    );
-
-                    // W3C SCXML 6.4: Check if child completed during initialize
-                    if self
-                        .child_second_run_static_hybrid_first
-                        .as_ref()
-                        .map_or(false, |c| c.is_in_final_state())
-                    {
-                        self.pending_done_invoke_second_run = true;
-                        // The session ended: its Mesh router is told so.
-                        if let Some(child) = self.child_second_run_static_hybrid_first.as_mut() {
-                            child.detach_mesh();
-                        }
-                        // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
-                        // done.invoke.<id>._event.data.
-                        let donedata = self
-                            .child_second_run_static_hybrid_first
-                            .as_ref()
-                            .map(|c| c.donedata_at_final().to_string())
-                            .unwrap_or_default();
-                        sce_rust_runtime::helpers::invoke_processing::raise_done_invoke(
-                            "second_run",
-                            donedata,
-                            engine,
-                        );
-                    }
+                    // W3C SCXML 6.4: what the child sent as it initialized, and an
+                    // ending during initialize, settled as after any drive.
+                    self.settle_child_second_run_0j_static_hybrid_first(engine);
 
                     continue;
                 }
                 if __sce_selected == "static_hybrid_second" {
                     // W3C SCXML 6.4: Create pre-generated child (Rust AOT: child resolved at codegen time)
-                    // Engine DI Parity RFC: pass parent's script engine when child needs it.
+                    // W3C SCXML 6.5: Generate child session ID for finalize origin matching
+                    let child_session_id = format!(
+                        "{}.{}",
+                        self.session_id.as_deref().unwrap_or(""),
+                        pending.invoke_id
+                    );
+
+                    // W3C SCXML 6.4: Create child state machine
+                    // Engine DI Parity RFC: forward parent's script engine to child when the
+                    // child Policy was generated with `model.needs_script_engine = true`.
+                    //
+                    // W3C SCXML C.1: the child is built under the id its parent
+                    // recorded for it. The parent mints `parentSession.invokeId` and
+                    // keys `active_invokes` on it, so an event from this child
+                    // reaches the parent carrying that id as its origin; had the
+                    // child an id of its own, the location it publishes in
+                    // `_ioprocessors` and the origin the parent sees would be two
+                    // names for one session that can never be compared — which is
+                    // exactly what C.1 requires of them. A child's id comes from the
+                    // tree alone, and nothing is drawn for it (docs/adr/0045).
                     let mut child_policy =
-                        super::static_hybrid_second_sm::StaticHybridSecondPolicy::new();
+                        super::static_hybrid_second_sm::StaticHybridSecondPolicy::for_child(
+                            child_session_id.clone(),
+                        );
+                    // W3C SCXML 6.4: Pass parent session info to child for #_parent routing
                     child_policy.parent_external_queue = Some(engine.get_external_queue_handle());
                     child_policy.invoke_id = pending.invoke_id.clone();
                     child_policy.child_session_id = child_session_id.clone();
-
-                    // W3C SCXML C.1, as for a static child: the candidate adopts the
-                    // id its parent recorded for it, which comes from the tree alone
-                    // (docs/adr/0045) — this session's id and the id of this start.
-                    if child_policy.session_id.is_none() {
-                        child_policy.session_id = Some(child_session_id.clone());
-                    }
 
                     // W3C SCXML 6.4.1: hand the child the values this invoke names
                     {
@@ -1611,6 +1586,7 @@ impl StaticInvokeHybridPolicy {
                         "second_run".to_string(),
                         sce_rust_runtime::invoke::ChildSession {
                             session_id: child_session_id,
+                            // W3C SCXML 6.4: Element invoke_id for _event.invokeid (test 228)
                             invoke_id: "second_run".to_string(),
                             parent_session_id: self.session_id.clone().unwrap_or_default(),
                             autoforward: false,
@@ -1637,47 +1613,16 @@ impl StaticInvokeHybridPolicy {
                         "second_run",
                         "static_hybrid_second",
                     );
+                    // docs/adr/0045: the tree's host invokers serve the child, whose
+                    // host-run invocations name it by its session id.
+                    engine.share_host_invokers_with(&mut child_engine);
                     child_engine.initialize();
 
-                    self.child_second_run_static_hybrid_second = Some(Box::new(child_engine));
+                    self.child_second_run_0j_static_hybrid_second = Some(Box::new(child_engine));
 
-                    // W3C SCXML 6.4: Drain child-to-parent events raised during initialize
-                    sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
-                        &self
-                            .child_second_run_static_hybrid_second
-                            .as_ref()
-                            .unwrap()
-                            .policy()
-                            .parent_external_queue,
-                        &self.active_invokes,
-                        "second_run",
-                        engine,
-                    );
-
-                    // W3C SCXML 6.4: Check if child completed during initialize
-                    if self
-                        .child_second_run_static_hybrid_second
-                        .as_ref()
-                        .map_or(false, |c| c.is_in_final_state())
-                    {
-                        self.pending_done_invoke_second_run = true;
-                        // The session ended: its Mesh router is told so.
-                        if let Some(child) = self.child_second_run_static_hybrid_second.as_mut() {
-                            child.detach_mesh();
-                        }
-                        // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
-                        // done.invoke.<id>._event.data.
-                        let donedata = self
-                            .child_second_run_static_hybrid_second
-                            .as_ref()
-                            .map(|c| c.donedata_at_final().to_string())
-                            .unwrap_or_default();
-                        sce_rust_runtime::helpers::invoke_processing::raise_done_invoke(
-                            "second_run",
-                            donedata,
-                            engine,
-                        );
-                    }
+                    // W3C SCXML 6.4: what the child sent as it initialized, and an
+                    // ending during initialize, settled as after any drive.
+                    self.settle_child_second_run_0j_static_hybrid_second(engine);
 
                     continue;
                 }
@@ -1688,284 +1633,348 @@ impl StaticInvokeHybridPolicy {
 
     // W3C SCXML 6.4: Tick child state machines (propagate scheduler ticks)
     fn do_tick_children(&mut self, engine: &mut sce_rust_runtime::Engine<Self>) {
-        if !self.pending_done_invoke_first_run {
-            if let Some(mut child) = self.child_first_run_static_hybrid_first.take() {
-                sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
-                    &child.policy().parent_external_queue,
-                    &self.active_invokes,
-                    "first_run",
-                    engine,
-                );
+        if !self.pending_done_invoke_first_run
+            && self.child_first_run_0j_static_hybrid_first.is_some()
+        {
+            self.settle_child_first_run_0j_static_hybrid_first(engine);
+            if let Some(child) = self.child_first_run_0j_static_hybrid_first.as_mut() {
                 // Child sessions in Mesh (SCE_MESH.md): what arrived for the
                 // child on the router it was given, before its macrostep.
                 child.apply_mesh_calls();
                 child.tick();
-                sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
-                    &child.policy().parent_external_queue,
-                    &self.active_invokes,
-                    "first_run",
-                    engine,
-                );
-                if child.is_in_final_state() && !self.pending_done_invoke_first_run {
-                    self.pending_done_invoke_first_run = true;
-                    // The session ended: its Mesh router is told so.
-                    child.detach_mesh();
-                    // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
-                    // done.invoke.<id>._event.data.
-                    let donedata = child.donedata_at_final().to_string();
-                    sce_rust_runtime::helpers::invoke_processing::raise_done_invoke(
-                        "first_run",
-                        donedata,
-                        engine,
-                    );
-                }
-                self.child_first_run_static_hybrid_first = Some(child);
             }
+            self.settle_child_first_run_0j_static_hybrid_first(engine);
         }
 
-        if !self.pending_done_invoke_first_run {
-            if let Some(mut child) = self.child_first_run_static_hybrid_second.take() {
-                sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
-                    &child.policy().parent_external_queue,
-                    &self.active_invokes,
-                    "first_run",
-                    engine,
-                );
+        if !self.pending_done_invoke_first_run
+            && self.child_first_run_0j_static_hybrid_second.is_some()
+        {
+            self.settle_child_first_run_0j_static_hybrid_second(engine);
+            if let Some(child) = self.child_first_run_0j_static_hybrid_second.as_mut() {
                 // Child sessions in Mesh (SCE_MESH.md): what arrived for the
                 // child on the router it was given, before its macrostep.
                 child.apply_mesh_calls();
                 child.tick();
-                sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
-                    &child.policy().parent_external_queue,
-                    &self.active_invokes,
-                    "first_run",
-                    engine,
-                );
-                if child.is_in_final_state() && !self.pending_done_invoke_first_run {
-                    self.pending_done_invoke_first_run = true;
-                    // The session ended: its Mesh router is told so.
-                    child.detach_mesh();
-                    // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
-                    // done.invoke.<id>._event.data.
-                    let donedata = child.donedata_at_final().to_string();
-                    sce_rust_runtime::helpers::invoke_processing::raise_done_invoke(
-                        "first_run",
-                        donedata,
-                        engine,
-                    );
-                }
-                self.child_first_run_static_hybrid_second = Some(child);
             }
+            self.settle_child_first_run_0j_static_hybrid_second(engine);
         }
 
-        if !self.pending_done_invoke_second_run {
-            if let Some(mut child) = self.child_second_run_static_hybrid_first.take() {
-                sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
-                    &child.policy().parent_external_queue,
-                    &self.active_invokes,
-                    "second_run",
-                    engine,
-                );
+        if !self.pending_done_invoke_second_run
+            && self.child_second_run_0j_static_hybrid_first.is_some()
+        {
+            self.settle_child_second_run_0j_static_hybrid_first(engine);
+            if let Some(child) = self.child_second_run_0j_static_hybrid_first.as_mut() {
                 // Child sessions in Mesh (SCE_MESH.md): what arrived for the
                 // child on the router it was given, before its macrostep.
                 child.apply_mesh_calls();
                 child.tick();
-                sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
-                    &child.policy().parent_external_queue,
-                    &self.active_invokes,
-                    "second_run",
-                    engine,
-                );
-                if child.is_in_final_state() && !self.pending_done_invoke_second_run {
-                    self.pending_done_invoke_second_run = true;
-                    // The session ended: its Mesh router is told so.
-                    child.detach_mesh();
-                    // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
-                    // done.invoke.<id>._event.data.
-                    let donedata = child.donedata_at_final().to_string();
-                    sce_rust_runtime::helpers::invoke_processing::raise_done_invoke(
-                        "second_run",
-                        donedata,
-                        engine,
-                    );
-                }
-                self.child_second_run_static_hybrid_first = Some(child);
             }
+            self.settle_child_second_run_0j_static_hybrid_first(engine);
         }
 
-        if !self.pending_done_invoke_second_run {
-            if let Some(mut child) = self.child_second_run_static_hybrid_second.take() {
-                sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
-                    &child.policy().parent_external_queue,
-                    &self.active_invokes,
-                    "second_run",
-                    engine,
-                );
+        if !self.pending_done_invoke_second_run
+            && self.child_second_run_0j_static_hybrid_second.is_some()
+        {
+            self.settle_child_second_run_0j_static_hybrid_second(engine);
+            if let Some(child) = self.child_second_run_0j_static_hybrid_second.as_mut() {
                 // Child sessions in Mesh (SCE_MESH.md): what arrived for the
                 // child on the router it was given, before its macrostep.
                 child.apply_mesh_calls();
                 child.tick();
-                sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
-                    &child.policy().parent_external_queue,
-                    &self.active_invokes,
-                    "second_run",
-                    engine,
-                );
-                if child.is_in_final_state() && !self.pending_done_invoke_second_run {
-                    self.pending_done_invoke_second_run = true;
-                    // The session ended: its Mesh router is told so.
-                    child.detach_mesh();
-                    // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
-                    // done.invoke.<id>._event.data.
-                    let donedata = child.donedata_at_final().to_string();
-                    sce_rust_runtime::helpers::invoke_processing::raise_done_invoke(
-                        "second_run",
-                        donedata,
-                        engine,
-                    );
-                }
-                self.child_second_run_static_hybrid_second = Some(child);
             }
+            self.settle_child_second_run_0j_static_hybrid_second(engine);
         }
 
-        if !self.pending_done_invoke_lossy_run {
-            if let Some(mut child) = self.child_lossy_run_static_hybrid_first.take() {
-                sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
-                    &child.policy().parent_external_queue,
-                    &self.active_invokes,
-                    "lossy_run",
-                    engine,
-                );
+        if !self.pending_done_invoke_lossy_run
+            && self.child_lossy_run_0j_static_hybrid_first.is_some()
+        {
+            self.settle_child_lossy_run_0j_static_hybrid_first(engine);
+            if let Some(child) = self.child_lossy_run_0j_static_hybrid_first.as_mut() {
                 // Child sessions in Mesh (SCE_MESH.md): what arrived for the
                 // child on the router it was given, before its macrostep.
                 child.apply_mesh_calls();
                 child.tick();
-                sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
-                    &child.policy().parent_external_queue,
-                    &self.active_invokes,
-                    "lossy_run",
-                    engine,
-                );
-                if child.is_in_final_state() && !self.pending_done_invoke_lossy_run {
-                    self.pending_done_invoke_lossy_run = true;
-                    // The session ended: its Mesh router is told so.
-                    child.detach_mesh();
-                    // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
-                    // done.invoke.<id>._event.data.
-                    let donedata = child.donedata_at_final().to_string();
-                    sce_rust_runtime::helpers::invoke_processing::raise_done_invoke(
-                        "lossy_run",
-                        donedata,
-                        engine,
-                    );
-                }
-                self.child_lossy_run_static_hybrid_first = Some(child);
             }
+            self.settle_child_lossy_run_0j_static_hybrid_first(engine);
         }
 
-        if !self.pending_done_invoke_lossy_run {
-            if let Some(mut child) = self.child_lossy_run_static_hybrid_second.take() {
-                sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
-                    &child.policy().parent_external_queue,
-                    &self.active_invokes,
-                    "lossy_run",
-                    engine,
-                );
+        if !self.pending_done_invoke_lossy_run
+            && self.child_lossy_run_0j_static_hybrid_second.is_some()
+        {
+            self.settle_child_lossy_run_0j_static_hybrid_second(engine);
+            if let Some(child) = self.child_lossy_run_0j_static_hybrid_second.as_mut() {
                 // Child sessions in Mesh (SCE_MESH.md): what arrived for the
                 // child on the router it was given, before its macrostep.
                 child.apply_mesh_calls();
                 child.tick();
-                sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
-                    &child.policy().parent_external_queue,
-                    &self.active_invokes,
-                    "lossy_run",
-                    engine,
-                );
-                if child.is_in_final_state() && !self.pending_done_invoke_lossy_run {
-                    self.pending_done_invoke_lossy_run = true;
-                    // The session ended: its Mesh router is told so.
-                    child.detach_mesh();
-                    // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
-                    // done.invoke.<id>._event.data.
-                    let donedata = child.donedata_at_final().to_string();
-                    sce_rust_runtime::helpers::invoke_processing::raise_done_invoke(
-                        "lossy_run",
-                        donedata,
-                        engine,
-                    );
-                }
-                self.child_lossy_run_static_hybrid_second = Some(child);
             }
+            self.settle_child_lossy_run_0j_static_hybrid_second(engine);
         }
 
-        if !self.pending_done_invoke_missing_run {
-            if let Some(mut child) = self.child_missing_run_static_hybrid_first.take() {
-                sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
-                    &child.policy().parent_external_queue,
-                    &self.active_invokes,
-                    "missing_run",
-                    engine,
-                );
+        if !self.pending_done_invoke_missing_run
+            && self.child_missing_run_0j_static_hybrid_first.is_some()
+        {
+            self.settle_child_missing_run_0j_static_hybrid_first(engine);
+            if let Some(child) = self.child_missing_run_0j_static_hybrid_first.as_mut() {
                 // Child sessions in Mesh (SCE_MESH.md): what arrived for the
                 // child on the router it was given, before its macrostep.
                 child.apply_mesh_calls();
                 child.tick();
-                sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
-                    &child.policy().parent_external_queue,
-                    &self.active_invokes,
-                    "missing_run",
-                    engine,
-                );
-                if child.is_in_final_state() && !self.pending_done_invoke_missing_run {
-                    self.pending_done_invoke_missing_run = true;
-                    // The session ended: its Mesh router is told so.
-                    child.detach_mesh();
-                    // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
-                    // done.invoke.<id>._event.data.
-                    let donedata = child.donedata_at_final().to_string();
-                    sce_rust_runtime::helpers::invoke_processing::raise_done_invoke(
-                        "missing_run",
-                        donedata,
-                        engine,
-                    );
-                }
-                self.child_missing_run_static_hybrid_first = Some(child);
             }
+            self.settle_child_missing_run_0j_static_hybrid_first(engine);
         }
 
-        if !self.pending_done_invoke_missing_run {
-            if let Some(mut child) = self.child_missing_run_static_hybrid_second.take() {
-                sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
-                    &child.policy().parent_external_queue,
-                    &self.active_invokes,
-                    "missing_run",
-                    engine,
-                );
+        if !self.pending_done_invoke_missing_run
+            && self.child_missing_run_0j_static_hybrid_second.is_some()
+        {
+            self.settle_child_missing_run_0j_static_hybrid_second(engine);
+            if let Some(child) = self.child_missing_run_0j_static_hybrid_second.as_mut() {
                 // Child sessions in Mesh (SCE_MESH.md): what arrived for the
                 // child on the router it was given, before its macrostep.
                 child.apply_mesh_calls();
                 child.tick();
-                sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
-                    &child.policy().parent_external_queue,
-                    &self.active_invokes,
-                    "missing_run",
-                    engine,
-                );
-                if child.is_in_final_state() && !self.pending_done_invoke_missing_run {
-                    self.pending_done_invoke_missing_run = true;
-                    // The session ended: its Mesh router is told so.
-                    child.detach_mesh();
-                    // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
-                    // done.invoke.<id>._event.data.
-                    let donedata = child.donedata_at_final().to_string();
-                    sce_rust_runtime::helpers::invoke_processing::raise_done_invoke(
-                        "missing_run",
-                        donedata,
-                        engine,
-                    );
-                }
-                self.child_missing_run_static_hybrid_second = Some(child);
             }
+            self.settle_child_missing_run_0j_static_hybrid_second(engine);
+        }
+    }
+
+    fn settle_child_first_run_0j_static_hybrid_first(
+        &mut self,
+        engine: &mut sce_rust_runtime::Engine<Self>,
+    ) {
+        let Some(child) = self.child_first_run_0j_static_hybrid_first.as_mut() else {
+            return;
+        };
+        sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
+            &child.policy().parent_external_queue,
+            &self.active_invokes,
+            "first_run",
+            engine,
+        );
+        if child.is_in_final_state() && !self.pending_done_invoke_first_run {
+            self.pending_done_invoke_first_run = true;
+            // The session ended: its Mesh router is told so.
+            child.detach_mesh();
+            // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
+            // done.invoke.<id>._event.data. Mirrors the C++ AOT contract in
+            // tools/codegen/templates/invoke_methods.jinja2 (child->donedataAtFinal()
+            // + EventMetadataHelper::createDoneInvokeEvent).
+            let donedata = child.donedata_at_final().to_string();
+            sce_rust_runtime::helpers::invoke_processing::raise_done_invoke(
+                "first_run",
+                donedata,
+                engine,
+            );
+        }
+    }
+
+    fn settle_child_first_run_0j_static_hybrid_second(
+        &mut self,
+        engine: &mut sce_rust_runtime::Engine<Self>,
+    ) {
+        let Some(child) = self.child_first_run_0j_static_hybrid_second.as_mut() else {
+            return;
+        };
+        sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
+            &child.policy().parent_external_queue,
+            &self.active_invokes,
+            "first_run",
+            engine,
+        );
+        if child.is_in_final_state() && !self.pending_done_invoke_first_run {
+            self.pending_done_invoke_first_run = true;
+            // The session ended: its Mesh router is told so.
+            child.detach_mesh();
+            // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
+            // done.invoke.<id>._event.data. Mirrors the C++ AOT contract in
+            // tools/codegen/templates/invoke_methods.jinja2 (child->donedataAtFinal()
+            // + EventMetadataHelper::createDoneInvokeEvent).
+            let donedata = child.donedata_at_final().to_string();
+            sce_rust_runtime::helpers::invoke_processing::raise_done_invoke(
+                "first_run",
+                donedata,
+                engine,
+            );
+        }
+    }
+
+    fn settle_child_second_run_0j_static_hybrid_first(
+        &mut self,
+        engine: &mut sce_rust_runtime::Engine<Self>,
+    ) {
+        let Some(child) = self.child_second_run_0j_static_hybrid_first.as_mut() else {
+            return;
+        };
+        sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
+            &child.policy().parent_external_queue,
+            &self.active_invokes,
+            "second_run",
+            engine,
+        );
+        if child.is_in_final_state() && !self.pending_done_invoke_second_run {
+            self.pending_done_invoke_second_run = true;
+            // The session ended: its Mesh router is told so.
+            child.detach_mesh();
+            // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
+            // done.invoke.<id>._event.data. Mirrors the C++ AOT contract in
+            // tools/codegen/templates/invoke_methods.jinja2 (child->donedataAtFinal()
+            // + EventMetadataHelper::createDoneInvokeEvent).
+            let donedata = child.donedata_at_final().to_string();
+            sce_rust_runtime::helpers::invoke_processing::raise_done_invoke(
+                "second_run",
+                donedata,
+                engine,
+            );
+        }
+    }
+
+    fn settle_child_second_run_0j_static_hybrid_second(
+        &mut self,
+        engine: &mut sce_rust_runtime::Engine<Self>,
+    ) {
+        let Some(child) = self.child_second_run_0j_static_hybrid_second.as_mut() else {
+            return;
+        };
+        sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
+            &child.policy().parent_external_queue,
+            &self.active_invokes,
+            "second_run",
+            engine,
+        );
+        if child.is_in_final_state() && !self.pending_done_invoke_second_run {
+            self.pending_done_invoke_second_run = true;
+            // The session ended: its Mesh router is told so.
+            child.detach_mesh();
+            // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
+            // done.invoke.<id>._event.data. Mirrors the C++ AOT contract in
+            // tools/codegen/templates/invoke_methods.jinja2 (child->donedataAtFinal()
+            // + EventMetadataHelper::createDoneInvokeEvent).
+            let donedata = child.donedata_at_final().to_string();
+            sce_rust_runtime::helpers::invoke_processing::raise_done_invoke(
+                "second_run",
+                donedata,
+                engine,
+            );
+        }
+    }
+
+    fn settle_child_lossy_run_0j_static_hybrid_first(
+        &mut self,
+        engine: &mut sce_rust_runtime::Engine<Self>,
+    ) {
+        let Some(child) = self.child_lossy_run_0j_static_hybrid_first.as_mut() else {
+            return;
+        };
+        sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
+            &child.policy().parent_external_queue,
+            &self.active_invokes,
+            "lossy_run",
+            engine,
+        );
+        if child.is_in_final_state() && !self.pending_done_invoke_lossy_run {
+            self.pending_done_invoke_lossy_run = true;
+            // The session ended: its Mesh router is told so.
+            child.detach_mesh();
+            // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
+            // done.invoke.<id>._event.data. Mirrors the C++ AOT contract in
+            // tools/codegen/templates/invoke_methods.jinja2 (child->donedataAtFinal()
+            // + EventMetadataHelper::createDoneInvokeEvent).
+            let donedata = child.donedata_at_final().to_string();
+            sce_rust_runtime::helpers::invoke_processing::raise_done_invoke(
+                "lossy_run",
+                donedata,
+                engine,
+            );
+        }
+    }
+
+    fn settle_child_lossy_run_0j_static_hybrid_second(
+        &mut self,
+        engine: &mut sce_rust_runtime::Engine<Self>,
+    ) {
+        let Some(child) = self.child_lossy_run_0j_static_hybrid_second.as_mut() else {
+            return;
+        };
+        sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
+            &child.policy().parent_external_queue,
+            &self.active_invokes,
+            "lossy_run",
+            engine,
+        );
+        if child.is_in_final_state() && !self.pending_done_invoke_lossy_run {
+            self.pending_done_invoke_lossy_run = true;
+            // The session ended: its Mesh router is told so.
+            child.detach_mesh();
+            // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
+            // done.invoke.<id>._event.data. Mirrors the C++ AOT contract in
+            // tools/codegen/templates/invoke_methods.jinja2 (child->donedataAtFinal()
+            // + EventMetadataHelper::createDoneInvokeEvent).
+            let donedata = child.donedata_at_final().to_string();
+            sce_rust_runtime::helpers::invoke_processing::raise_done_invoke(
+                "lossy_run",
+                donedata,
+                engine,
+            );
+        }
+    }
+
+    fn settle_child_missing_run_0j_static_hybrid_first(
+        &mut self,
+        engine: &mut sce_rust_runtime::Engine<Self>,
+    ) {
+        let Some(child) = self.child_missing_run_0j_static_hybrid_first.as_mut() else {
+            return;
+        };
+        sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
+            &child.policy().parent_external_queue,
+            &self.active_invokes,
+            "missing_run",
+            engine,
+        );
+        if child.is_in_final_state() && !self.pending_done_invoke_missing_run {
+            self.pending_done_invoke_missing_run = true;
+            // The session ended: its Mesh router is told so.
+            child.detach_mesh();
+            // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
+            // done.invoke.<id>._event.data. Mirrors the C++ AOT contract in
+            // tools/codegen/templates/invoke_methods.jinja2 (child->donedataAtFinal()
+            // + EventMetadataHelper::createDoneInvokeEvent).
+            let donedata = child.donedata_at_final().to_string();
+            sce_rust_runtime::helpers::invoke_processing::raise_done_invoke(
+                "missing_run",
+                donedata,
+                engine,
+            );
+        }
+    }
+
+    fn settle_child_missing_run_0j_static_hybrid_second(
+        &mut self,
+        engine: &mut sce_rust_runtime::Engine<Self>,
+    ) {
+        let Some(child) = self.child_missing_run_0j_static_hybrid_second.as_mut() else {
+            return;
+        };
+        sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
+            &child.policy().parent_external_queue,
+            &self.active_invokes,
+            "missing_run",
+            engine,
+        );
+        if child.is_in_final_state() && !self.pending_done_invoke_missing_run {
+            self.pending_done_invoke_missing_run = true;
+            // The session ended: its Mesh router is told so.
+            child.detach_mesh();
+            // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
+            // done.invoke.<id>._event.data. Mirrors the C++ AOT contract in
+            // tools/codegen/templates/invoke_methods.jinja2 (child->donedataAtFinal()
+            // + EventMetadataHelper::createDoneInvokeEvent).
+            let donedata = child.donedata_at_final().to_string();
+            sce_rust_runtime::helpers::invoke_processing::raise_done_invoke(
+                "missing_run",
+                donedata,
+                engine,
+            );
         }
     }
 
@@ -1975,7 +1984,7 @@ impl StaticInvokeHybridPolicy {
     fn do_next_child_deadline_ms(&self) -> Option<u64> {
         let mut soonest: Option<u64> = None;
         if !self.pending_done_invoke_first_run {
-            if let Some(ref child) = self.child_first_run_static_hybrid_first {
+            if let Some(ref child) = self.child_first_run_0j_static_hybrid_first {
                 if let Some(due) = child.time_until_next_scheduled_ms() {
                     soonest = Some(soonest.map_or(due, |nearest| nearest.min(due)));
                 }
@@ -1983,7 +1992,7 @@ impl StaticInvokeHybridPolicy {
         }
 
         if !self.pending_done_invoke_first_run {
-            if let Some(ref child) = self.child_first_run_static_hybrid_second {
+            if let Some(ref child) = self.child_first_run_0j_static_hybrid_second {
                 if let Some(due) = child.time_until_next_scheduled_ms() {
                     soonest = Some(soonest.map_or(due, |nearest| nearest.min(due)));
                 }
@@ -1991,7 +2000,7 @@ impl StaticInvokeHybridPolicy {
         }
 
         if !self.pending_done_invoke_second_run {
-            if let Some(ref child) = self.child_second_run_static_hybrid_first {
+            if let Some(ref child) = self.child_second_run_0j_static_hybrid_first {
                 if let Some(due) = child.time_until_next_scheduled_ms() {
                     soonest = Some(soonest.map_or(due, |nearest| nearest.min(due)));
                 }
@@ -1999,7 +2008,7 @@ impl StaticInvokeHybridPolicy {
         }
 
         if !self.pending_done_invoke_second_run {
-            if let Some(ref child) = self.child_second_run_static_hybrid_second {
+            if let Some(ref child) = self.child_second_run_0j_static_hybrid_second {
                 if let Some(due) = child.time_until_next_scheduled_ms() {
                     soonest = Some(soonest.map_or(due, |nearest| nearest.min(due)));
                 }
@@ -2007,7 +2016,7 @@ impl StaticInvokeHybridPolicy {
         }
 
         if !self.pending_done_invoke_lossy_run {
-            if let Some(ref child) = self.child_lossy_run_static_hybrid_first {
+            if let Some(ref child) = self.child_lossy_run_0j_static_hybrid_first {
                 if let Some(due) = child.time_until_next_scheduled_ms() {
                     soonest = Some(soonest.map_or(due, |nearest| nearest.min(due)));
                 }
@@ -2015,7 +2024,7 @@ impl StaticInvokeHybridPolicy {
         }
 
         if !self.pending_done_invoke_lossy_run {
-            if let Some(ref child) = self.child_lossy_run_static_hybrid_second {
+            if let Some(ref child) = self.child_lossy_run_0j_static_hybrid_second {
                 if let Some(due) = child.time_until_next_scheduled_ms() {
                     soonest = Some(soonest.map_or(due, |nearest| nearest.min(due)));
                 }
@@ -2023,7 +2032,7 @@ impl StaticInvokeHybridPolicy {
         }
 
         if !self.pending_done_invoke_missing_run {
-            if let Some(ref child) = self.child_missing_run_static_hybrid_first {
+            if let Some(ref child) = self.child_missing_run_0j_static_hybrid_first {
                 if let Some(due) = child.time_until_next_scheduled_ms() {
                     soonest = Some(soonest.map_or(due, |nearest| nearest.min(due)));
                 }
@@ -2031,7 +2040,7 @@ impl StaticInvokeHybridPolicy {
         }
 
         if !self.pending_done_invoke_missing_run {
-            if let Some(ref child) = self.child_missing_run_static_hybrid_second {
+            if let Some(ref child) = self.child_missing_run_0j_static_hybrid_second {
                 if let Some(due) = child.time_until_next_scheduled_ms() {
                     soonest = Some(soonest.map_or(due, |nearest| nearest.min(due)));
                 }
@@ -2040,8 +2049,680 @@ impl StaticInvokeHybridPolicy {
 
         soonest
     }
+
+    /// docs/adr/0045: each running child, saved through the document it runs
+    /// with its whole state, in document order — what a saved state holds in
+    /// place of the ids of format 1, and what a restore resumes.
+    pub fn saved_children(
+        &self,
+        wall_now_ms: u64,
+    ) -> Result<
+        Vec<::sce_rust_runtime::saved_state::SavedChild>,
+        ::sce_rust_runtime::saved_state::StateRefusal,
+    > {
+        let mut children = Vec::new();
+        if !self.pending_done_invoke_first_run {
+            if let Some(ref child) = self.child_first_run_0j_static_hybrid_first {
+                ::sce_rust_runtime::helpers::invoke_processing::nothing_in_transit(
+                    &child.policy().parent_external_queue,
+                    "first_run",
+                )?;
+                let index = children.len();
+                children.push(::sce_rust_runtime::saved_state::SavedChild {
+                    id: "first_run".to_string(),
+                    start: self.invoke_starts_first_run,
+                    invoke_id: child.policy().invoke_id.clone(),
+                    document: "static_hybrid_first".to_string(),
+                    session: <::sce_rust_runtime::Engine<
+                        super::static_hybrid_first_sm::StaticHybridFirstPolicy,
+                    > as super::static_hybrid_first_sm::StaticHybridFirstPersist>::save_at(
+                        child,
+                        wall_now_ms,
+                    )
+                    .map_err(|refusal| refusal.within(&format!("invokes[{index}].session")))?,
+                });
+            }
+        }
+
+        if !self.pending_done_invoke_first_run {
+            if let Some(ref child) = self.child_first_run_0j_static_hybrid_second {
+                ::sce_rust_runtime::helpers::invoke_processing::nothing_in_transit(
+                    &child.policy().parent_external_queue,
+                    "first_run",
+                )?;
+                let index = children.len();
+                children.push(::sce_rust_runtime::saved_state::SavedChild {
+                    id: "first_run".to_string(),
+                    start: self.invoke_starts_first_run,
+                    invoke_id: child.policy().invoke_id.clone(),
+                    document: "static_hybrid_second".to_string(),
+                    session: <::sce_rust_runtime::Engine<
+                        super::static_hybrid_second_sm::StaticHybridSecondPolicy,
+                    > as super::static_hybrid_second_sm::StaticHybridSecondPersist>::save_at(
+                        child,
+                        wall_now_ms,
+                    )
+                    .map_err(|refusal| refusal.within(&format!("invokes[{index}].session")))?,
+                });
+            }
+        }
+
+        if !self.pending_done_invoke_second_run {
+            if let Some(ref child) = self.child_second_run_0j_static_hybrid_first {
+                ::sce_rust_runtime::helpers::invoke_processing::nothing_in_transit(
+                    &child.policy().parent_external_queue,
+                    "second_run",
+                )?;
+                let index = children.len();
+                children.push(::sce_rust_runtime::saved_state::SavedChild {
+                    id: "second_run".to_string(),
+                    start: self.invoke_starts_second_run,
+                    invoke_id: child.policy().invoke_id.clone(),
+                    document: "static_hybrid_first".to_string(),
+                    session: <::sce_rust_runtime::Engine<
+                        super::static_hybrid_first_sm::StaticHybridFirstPolicy,
+                    > as super::static_hybrid_first_sm::StaticHybridFirstPersist>::save_at(
+                        child,
+                        wall_now_ms,
+                    )
+                    .map_err(|refusal| refusal.within(&format!("invokes[{index}].session")))?,
+                });
+            }
+        }
+
+        if !self.pending_done_invoke_second_run {
+            if let Some(ref child) = self.child_second_run_0j_static_hybrid_second {
+                ::sce_rust_runtime::helpers::invoke_processing::nothing_in_transit(
+                    &child.policy().parent_external_queue,
+                    "second_run",
+                )?;
+                let index = children.len();
+                children.push(::sce_rust_runtime::saved_state::SavedChild {
+                    id: "second_run".to_string(),
+                    start: self.invoke_starts_second_run,
+                    invoke_id: child.policy().invoke_id.clone(),
+                    document: "static_hybrid_second".to_string(),
+                    session: <::sce_rust_runtime::Engine<
+                        super::static_hybrid_second_sm::StaticHybridSecondPolicy,
+                    > as super::static_hybrid_second_sm::StaticHybridSecondPersist>::save_at(
+                        child,
+                        wall_now_ms,
+                    )
+                    .map_err(|refusal| refusal.within(&format!("invokes[{index}].session")))?,
+                });
+            }
+        }
+
+        if !self.pending_done_invoke_lossy_run {
+            if let Some(ref child) = self.child_lossy_run_0j_static_hybrid_first {
+                ::sce_rust_runtime::helpers::invoke_processing::nothing_in_transit(
+                    &child.policy().parent_external_queue,
+                    "lossy_run",
+                )?;
+                let index = children.len();
+                children.push(::sce_rust_runtime::saved_state::SavedChild {
+                    id: "lossy_run".to_string(),
+                    start: self.invoke_starts_lossy_run,
+                    invoke_id: child.policy().invoke_id.clone(),
+                    document: "static_hybrid_first".to_string(),
+                    session: <::sce_rust_runtime::Engine<
+                        super::static_hybrid_first_sm::StaticHybridFirstPolicy,
+                    > as super::static_hybrid_first_sm::StaticHybridFirstPersist>::save_at(
+                        child,
+                        wall_now_ms,
+                    )
+                    .map_err(|refusal| refusal.within(&format!("invokes[{index}].session")))?,
+                });
+            }
+        }
+
+        if !self.pending_done_invoke_lossy_run {
+            if let Some(ref child) = self.child_lossy_run_0j_static_hybrid_second {
+                ::sce_rust_runtime::helpers::invoke_processing::nothing_in_transit(
+                    &child.policy().parent_external_queue,
+                    "lossy_run",
+                )?;
+                let index = children.len();
+                children.push(::sce_rust_runtime::saved_state::SavedChild {
+                    id: "lossy_run".to_string(),
+                    start: self.invoke_starts_lossy_run,
+                    invoke_id: child.policy().invoke_id.clone(),
+                    document: "static_hybrid_second".to_string(),
+                    session: <::sce_rust_runtime::Engine<
+                        super::static_hybrid_second_sm::StaticHybridSecondPolicy,
+                    > as super::static_hybrid_second_sm::StaticHybridSecondPersist>::save_at(
+                        child,
+                        wall_now_ms,
+                    )
+                    .map_err(|refusal| refusal.within(&format!("invokes[{index}].session")))?,
+                });
+            }
+        }
+
+        if !self.pending_done_invoke_missing_run {
+            if let Some(ref child) = self.child_missing_run_0j_static_hybrid_first {
+                ::sce_rust_runtime::helpers::invoke_processing::nothing_in_transit(
+                    &child.policy().parent_external_queue,
+                    "missing_run",
+                )?;
+                let index = children.len();
+                children.push(::sce_rust_runtime::saved_state::SavedChild {
+                    id: "missing_run".to_string(),
+                    start: self.invoke_starts_missing_run,
+                    invoke_id: child.policy().invoke_id.clone(),
+                    document: "static_hybrid_first".to_string(),
+                    session: <::sce_rust_runtime::Engine<
+                        super::static_hybrid_first_sm::StaticHybridFirstPolicy,
+                    > as super::static_hybrid_first_sm::StaticHybridFirstPersist>::save_at(
+                        child,
+                        wall_now_ms,
+                    )
+                    .map_err(|refusal| refusal.within(&format!("invokes[{index}].session")))?,
+                });
+            }
+        }
+
+        if !self.pending_done_invoke_missing_run {
+            if let Some(ref child) = self.child_missing_run_0j_static_hybrid_second {
+                ::sce_rust_runtime::helpers::invoke_processing::nothing_in_transit(
+                    &child.policy().parent_external_queue,
+                    "missing_run",
+                )?;
+                let index = children.len();
+                children.push(::sce_rust_runtime::saved_state::SavedChild {
+                    id: "missing_run".to_string(),
+                    start: self.invoke_starts_missing_run,
+                    invoke_id: child.policy().invoke_id.clone(),
+                    document: "static_hybrid_second".to_string(),
+                    session: <::sce_rust_runtime::Engine<
+                        super::static_hybrid_second_sm::StaticHybridSecondPolicy,
+                    > as super::static_hybrid_second_sm::StaticHybridSecondPersist>::save_at(
+                        child,
+                        wall_now_ms,
+                    )
+                    .map_err(|refusal| refusal.within(&format!("invokes[{index}].session")))?,
+                });
+            }
+        }
+
+        Ok(children)
+    }
+
+    // docs/adr/0045, section 3, step 3: the child a saved state holds, built as
+    // its start builds it and restored where it stood.
+    fn do_resume_child(
+        &mut self,
+        child: &::sce_rust_runtime::saved_state::SavedChild,
+        engine: &mut sce_rust_runtime::Engine<Self>,
+        wall_now_ms: u64,
+    ) -> Result<(), ::sce_rust_runtime::saved_state::StateRefusal> {
+        match (child.id.as_str(), child.document.as_str()) {
+            ("first_run", "static_hybrid_first") => {
+                // W3C SCXML 6.5: Generate child session ID for finalize origin matching
+                let child_session_id = format!("{}.{}",
+                    self.session_id.as_deref().unwrap_or(""),
+                    child.invoke_id);
+
+                // W3C SCXML 6.4: Create child state machine
+                // Engine DI Parity RFC: forward parent's script engine to child when the
+                // child Policy was generated with `model.needs_script_engine = true`.
+                //
+                // W3C SCXML C.1: the child is built under the id its parent
+                // recorded for it. The parent mints `parentSession.invokeId` and
+                // keys `active_invokes` on it, so an event from this child
+                // reaches the parent carrying that id as its origin; had the
+                // child an id of its own, the location it publishes in
+                // `_ioprocessors` and the origin the parent sees would be two
+                // names for one session that can never be compared — which is
+                // exactly what C.1 requires of them. A child's id comes from the
+                // tree alone, and nothing is drawn for it (docs/adr/0045).
+                let mut child_policy = super::static_hybrid_first_sm::StaticHybridFirstPolicy::for_child(child_session_id.clone());
+                // W3C SCXML 6.4: Pass parent session info to child for #_parent routing
+                child_policy.parent_external_queue = Some(engine.get_external_queue_handle());
+                child_policy.invoke_id = child.invoke_id.clone();
+                child_policy.child_session_id = child_session_id.clone();
+
+                self.active_invokes.insert("first_run".to_string(),
+                    sce_rust_runtime::invoke::ChildSession {
+                        session_id: child_session_id,
+                        // W3C SCXML 6.4: Element invoke_id for _event.invokeid (test 228)
+                        invoke_id: "first_run".to_string(),
+                        parent_session_id: self.session_id.clone().unwrap_or_default(),
+                        autoforward: false,
+                        finalize_script: String::new(),
+                    },
+                );
+
+                let mut child_engine = <::sce_rust_runtime::Engine<super::static_hybrid_first_sm::StaticHybridFirstPolicy> as super::static_hybrid_first_sm::StaticHybridFirstPersist>::restore_with(
+                    child_policy,
+                    &child.session,
+                    engine.clock(),
+                    wall_now_ms,
+                )?;
+                child_engine.set_completion_callback(|| {});
+                // Child sessions in Mesh (SCE_MESH.md; docs/adr/0043): the
+                // router of the resumed child is owed, not asked here. This
+                // machine is being restored, and its host registers the
+                // factory of its children's routers only once the restore has
+                // returned it; the factory is asked for this child then
+                // (`start_owed_child_meshes`), before anything drives it.
+                child_engine.owe_child_mesh();
+                // docs/adr/0045: the tree's host invokers, handed on before the
+                // child's re-armed invocations start at its first drive.
+                engine.share_host_invokers_with(&mut child_engine);
+                self.child_first_run_0j_static_hybrid_first = Some(Box::new(child_engine));
+                Ok(())
+            }
+
+            ("first_run", "static_hybrid_second") => {
+                // W3C SCXML 6.5: Generate child session ID for finalize origin matching
+                let child_session_id = format!("{}.{}",
+                    self.session_id.as_deref().unwrap_or(""),
+                    child.invoke_id);
+
+                // W3C SCXML 6.4: Create child state machine
+                // Engine DI Parity RFC: forward parent's script engine to child when the
+                // child Policy was generated with `model.needs_script_engine = true`.
+                //
+                // W3C SCXML C.1: the child is built under the id its parent
+                // recorded for it. The parent mints `parentSession.invokeId` and
+                // keys `active_invokes` on it, so an event from this child
+                // reaches the parent carrying that id as its origin; had the
+                // child an id of its own, the location it publishes in
+                // `_ioprocessors` and the origin the parent sees would be two
+                // names for one session that can never be compared — which is
+                // exactly what C.1 requires of them. A child's id comes from the
+                // tree alone, and nothing is drawn for it (docs/adr/0045).
+                let mut child_policy = super::static_hybrid_second_sm::StaticHybridSecondPolicy::for_child(child_session_id.clone());
+                // W3C SCXML 6.4: Pass parent session info to child for #_parent routing
+                child_policy.parent_external_queue = Some(engine.get_external_queue_handle());
+                child_policy.invoke_id = child.invoke_id.clone();
+                child_policy.child_session_id = child_session_id.clone();
+
+                self.active_invokes.insert("first_run".to_string(),
+                    sce_rust_runtime::invoke::ChildSession {
+                        session_id: child_session_id,
+                        // W3C SCXML 6.4: Element invoke_id for _event.invokeid (test 228)
+                        invoke_id: "first_run".to_string(),
+                        parent_session_id: self.session_id.clone().unwrap_or_default(),
+                        autoforward: false,
+                        finalize_script: String::new(),
+                    },
+                );
+
+                let mut child_engine = <::sce_rust_runtime::Engine<super::static_hybrid_second_sm::StaticHybridSecondPolicy> as super::static_hybrid_second_sm::StaticHybridSecondPersist>::restore_with(
+                    child_policy,
+                    &child.session,
+                    engine.clock(),
+                    wall_now_ms,
+                )?;
+                child_engine.set_completion_callback(|| {});
+                // Child sessions in Mesh (SCE_MESH.md; docs/adr/0043): the
+                // router of the resumed child is owed, not asked here. This
+                // machine is being restored, and its host registers the
+                // factory of its children's routers only once the restore has
+                // returned it; the factory is asked for this child then
+                // (`start_owed_child_meshes`), before anything drives it.
+                child_engine.owe_child_mesh();
+                // docs/adr/0045: the tree's host invokers, handed on before the
+                // child's re-armed invocations start at its first drive.
+                engine.share_host_invokers_with(&mut child_engine);
+                self.child_first_run_0j_static_hybrid_second = Some(Box::new(child_engine));
+                Ok(())
+            }
+
+            ("second_run", "static_hybrid_first") => {
+                // W3C SCXML 6.5: Generate child session ID for finalize origin matching
+                let child_session_id = format!("{}.{}",
+                    self.session_id.as_deref().unwrap_or(""),
+                    child.invoke_id);
+
+                // W3C SCXML 6.4: Create child state machine
+                // Engine DI Parity RFC: forward parent's script engine to child when the
+                // child Policy was generated with `model.needs_script_engine = true`.
+                //
+                // W3C SCXML C.1: the child is built under the id its parent
+                // recorded for it. The parent mints `parentSession.invokeId` and
+                // keys `active_invokes` on it, so an event from this child
+                // reaches the parent carrying that id as its origin; had the
+                // child an id of its own, the location it publishes in
+                // `_ioprocessors` and the origin the parent sees would be two
+                // names for one session that can never be compared — which is
+                // exactly what C.1 requires of them. A child's id comes from the
+                // tree alone, and nothing is drawn for it (docs/adr/0045).
+                let mut child_policy = super::static_hybrid_first_sm::StaticHybridFirstPolicy::for_child(child_session_id.clone());
+                // W3C SCXML 6.4: Pass parent session info to child for #_parent routing
+                child_policy.parent_external_queue = Some(engine.get_external_queue_handle());
+                child_policy.invoke_id = child.invoke_id.clone();
+                child_policy.child_session_id = child_session_id.clone();
+
+                self.active_invokes.insert("second_run".to_string(),
+                    sce_rust_runtime::invoke::ChildSession {
+                        session_id: child_session_id,
+                        // W3C SCXML 6.4: Element invoke_id for _event.invokeid (test 228)
+                        invoke_id: "second_run".to_string(),
+                        parent_session_id: self.session_id.clone().unwrap_or_default(),
+                        autoforward: false,
+                        finalize_script: String::new(),
+                    },
+                );
+
+                let mut child_engine = <::sce_rust_runtime::Engine<super::static_hybrid_first_sm::StaticHybridFirstPolicy> as super::static_hybrid_first_sm::StaticHybridFirstPersist>::restore_with(
+                    child_policy,
+                    &child.session,
+                    engine.clock(),
+                    wall_now_ms,
+                )?;
+                child_engine.set_completion_callback(|| {});
+                // Child sessions in Mesh (SCE_MESH.md; docs/adr/0043): the
+                // router of the resumed child is owed, not asked here. This
+                // machine is being restored, and its host registers the
+                // factory of its children's routers only once the restore has
+                // returned it; the factory is asked for this child then
+                // (`start_owed_child_meshes`), before anything drives it.
+                child_engine.owe_child_mesh();
+                // docs/adr/0045: the tree's host invokers, handed on before the
+                // child's re-armed invocations start at its first drive.
+                engine.share_host_invokers_with(&mut child_engine);
+                self.child_second_run_0j_static_hybrid_first = Some(Box::new(child_engine));
+                Ok(())
+            }
+
+            ("second_run", "static_hybrid_second") => {
+                // W3C SCXML 6.5: Generate child session ID for finalize origin matching
+                let child_session_id = format!("{}.{}",
+                    self.session_id.as_deref().unwrap_or(""),
+                    child.invoke_id);
+
+                // W3C SCXML 6.4: Create child state machine
+                // Engine DI Parity RFC: forward parent's script engine to child when the
+                // child Policy was generated with `model.needs_script_engine = true`.
+                //
+                // W3C SCXML C.1: the child is built under the id its parent
+                // recorded for it. The parent mints `parentSession.invokeId` and
+                // keys `active_invokes` on it, so an event from this child
+                // reaches the parent carrying that id as its origin; had the
+                // child an id of its own, the location it publishes in
+                // `_ioprocessors` and the origin the parent sees would be two
+                // names for one session that can never be compared — which is
+                // exactly what C.1 requires of them. A child's id comes from the
+                // tree alone, and nothing is drawn for it (docs/adr/0045).
+                let mut child_policy = super::static_hybrid_second_sm::StaticHybridSecondPolicy::for_child(child_session_id.clone());
+                // W3C SCXML 6.4: Pass parent session info to child for #_parent routing
+                child_policy.parent_external_queue = Some(engine.get_external_queue_handle());
+                child_policy.invoke_id = child.invoke_id.clone();
+                child_policy.child_session_id = child_session_id.clone();
+
+                self.active_invokes.insert("second_run".to_string(),
+                    sce_rust_runtime::invoke::ChildSession {
+                        session_id: child_session_id,
+                        // W3C SCXML 6.4: Element invoke_id for _event.invokeid (test 228)
+                        invoke_id: "second_run".to_string(),
+                        parent_session_id: self.session_id.clone().unwrap_or_default(),
+                        autoforward: false,
+                        finalize_script: String::new(),
+                    },
+                );
+
+                let mut child_engine = <::sce_rust_runtime::Engine<super::static_hybrid_second_sm::StaticHybridSecondPolicy> as super::static_hybrid_second_sm::StaticHybridSecondPersist>::restore_with(
+                    child_policy,
+                    &child.session,
+                    engine.clock(),
+                    wall_now_ms,
+                )?;
+                child_engine.set_completion_callback(|| {});
+                // Child sessions in Mesh (SCE_MESH.md; docs/adr/0043): the
+                // router of the resumed child is owed, not asked here. This
+                // machine is being restored, and its host registers the
+                // factory of its children's routers only once the restore has
+                // returned it; the factory is asked for this child then
+                // (`start_owed_child_meshes`), before anything drives it.
+                child_engine.owe_child_mesh();
+                // docs/adr/0045: the tree's host invokers, handed on before the
+                // child's re-armed invocations start at its first drive.
+                engine.share_host_invokers_with(&mut child_engine);
+                self.child_second_run_0j_static_hybrid_second = Some(Box::new(child_engine));
+                Ok(())
+            }
+
+            ("lossy_run", "static_hybrid_first") => {
+                // W3C SCXML 6.5: Generate child session ID for finalize origin matching
+                let child_session_id = format!("{}.{}",
+                    self.session_id.as_deref().unwrap_or(""),
+                    child.invoke_id);
+
+                // W3C SCXML 6.4: Create child state machine
+                // Engine DI Parity RFC: forward parent's script engine to child when the
+                // child Policy was generated with `model.needs_script_engine = true`.
+                //
+                // W3C SCXML C.1: the child is built under the id its parent
+                // recorded for it. The parent mints `parentSession.invokeId` and
+                // keys `active_invokes` on it, so an event from this child
+                // reaches the parent carrying that id as its origin; had the
+                // child an id of its own, the location it publishes in
+                // `_ioprocessors` and the origin the parent sees would be two
+                // names for one session that can never be compared — which is
+                // exactly what C.1 requires of them. A child's id comes from the
+                // tree alone, and nothing is drawn for it (docs/adr/0045).
+                let mut child_policy = super::static_hybrid_first_sm::StaticHybridFirstPolicy::for_child(child_session_id.clone());
+                // W3C SCXML 6.4: Pass parent session info to child for #_parent routing
+                child_policy.parent_external_queue = Some(engine.get_external_queue_handle());
+                child_policy.invoke_id = child.invoke_id.clone();
+                child_policy.child_session_id = child_session_id.clone();
+
+                self.active_invokes.insert("lossy_run".to_string(),
+                    sce_rust_runtime::invoke::ChildSession {
+                        session_id: child_session_id,
+                        // W3C SCXML 6.4: Element invoke_id for _event.invokeid (test 228)
+                        invoke_id: "lossy_run".to_string(),
+                        parent_session_id: self.session_id.clone().unwrap_or_default(),
+                        autoforward: false,
+                        finalize_script: String::new(),
+                    },
+                );
+
+                let mut child_engine = <::sce_rust_runtime::Engine<super::static_hybrid_first_sm::StaticHybridFirstPolicy> as super::static_hybrid_first_sm::StaticHybridFirstPersist>::restore_with(
+                    child_policy,
+                    &child.session,
+                    engine.clock(),
+                    wall_now_ms,
+                )?;
+                child_engine.set_completion_callback(|| {});
+                // Child sessions in Mesh (SCE_MESH.md; docs/adr/0043): the
+                // router of the resumed child is owed, not asked here. This
+                // machine is being restored, and its host registers the
+                // factory of its children's routers only once the restore has
+                // returned it; the factory is asked for this child then
+                // (`start_owed_child_meshes`), before anything drives it.
+                child_engine.owe_child_mesh();
+                // docs/adr/0045: the tree's host invokers, handed on before the
+                // child's re-armed invocations start at its first drive.
+                engine.share_host_invokers_with(&mut child_engine);
+                self.child_lossy_run_0j_static_hybrid_first = Some(Box::new(child_engine));
+                Ok(())
+            }
+
+            ("lossy_run", "static_hybrid_second") => {
+                // W3C SCXML 6.5: Generate child session ID for finalize origin matching
+                let child_session_id = format!("{}.{}",
+                    self.session_id.as_deref().unwrap_or(""),
+                    child.invoke_id);
+
+                // W3C SCXML 6.4: Create child state machine
+                // Engine DI Parity RFC: forward parent's script engine to child when the
+                // child Policy was generated with `model.needs_script_engine = true`.
+                //
+                // W3C SCXML C.1: the child is built under the id its parent
+                // recorded for it. The parent mints `parentSession.invokeId` and
+                // keys `active_invokes` on it, so an event from this child
+                // reaches the parent carrying that id as its origin; had the
+                // child an id of its own, the location it publishes in
+                // `_ioprocessors` and the origin the parent sees would be two
+                // names for one session that can never be compared — which is
+                // exactly what C.1 requires of them. A child's id comes from the
+                // tree alone, and nothing is drawn for it (docs/adr/0045).
+                let mut child_policy = super::static_hybrid_second_sm::StaticHybridSecondPolicy::for_child(child_session_id.clone());
+                // W3C SCXML 6.4: Pass parent session info to child for #_parent routing
+                child_policy.parent_external_queue = Some(engine.get_external_queue_handle());
+                child_policy.invoke_id = child.invoke_id.clone();
+                child_policy.child_session_id = child_session_id.clone();
+
+                self.active_invokes.insert("lossy_run".to_string(),
+                    sce_rust_runtime::invoke::ChildSession {
+                        session_id: child_session_id,
+                        // W3C SCXML 6.4: Element invoke_id for _event.invokeid (test 228)
+                        invoke_id: "lossy_run".to_string(),
+                        parent_session_id: self.session_id.clone().unwrap_or_default(),
+                        autoforward: false,
+                        finalize_script: String::new(),
+                    },
+                );
+
+                let mut child_engine = <::sce_rust_runtime::Engine<super::static_hybrid_second_sm::StaticHybridSecondPolicy> as super::static_hybrid_second_sm::StaticHybridSecondPersist>::restore_with(
+                    child_policy,
+                    &child.session,
+                    engine.clock(),
+                    wall_now_ms,
+                )?;
+                child_engine.set_completion_callback(|| {});
+                // Child sessions in Mesh (SCE_MESH.md; docs/adr/0043): the
+                // router of the resumed child is owed, not asked here. This
+                // machine is being restored, and its host registers the
+                // factory of its children's routers only once the restore has
+                // returned it; the factory is asked for this child then
+                // (`start_owed_child_meshes`), before anything drives it.
+                child_engine.owe_child_mesh();
+                // docs/adr/0045: the tree's host invokers, handed on before the
+                // child's re-armed invocations start at its first drive.
+                engine.share_host_invokers_with(&mut child_engine);
+                self.child_lossy_run_0j_static_hybrid_second = Some(Box::new(child_engine));
+                Ok(())
+            }
+
+            ("missing_run", "static_hybrid_first") => {
+                // W3C SCXML 6.5: Generate child session ID for finalize origin matching
+                let child_session_id = format!("{}.{}",
+                    self.session_id.as_deref().unwrap_or(""),
+                    child.invoke_id);
+
+                // W3C SCXML 6.4: Create child state machine
+                // Engine DI Parity RFC: forward parent's script engine to child when the
+                // child Policy was generated with `model.needs_script_engine = true`.
+                //
+                // W3C SCXML C.1: the child is built under the id its parent
+                // recorded for it. The parent mints `parentSession.invokeId` and
+                // keys `active_invokes` on it, so an event from this child
+                // reaches the parent carrying that id as its origin; had the
+                // child an id of its own, the location it publishes in
+                // `_ioprocessors` and the origin the parent sees would be two
+                // names for one session that can never be compared — which is
+                // exactly what C.1 requires of them. A child's id comes from the
+                // tree alone, and nothing is drawn for it (docs/adr/0045).
+                let mut child_policy = super::static_hybrid_first_sm::StaticHybridFirstPolicy::for_child(child_session_id.clone());
+                // W3C SCXML 6.4: Pass parent session info to child for #_parent routing
+                child_policy.parent_external_queue = Some(engine.get_external_queue_handle());
+                child_policy.invoke_id = child.invoke_id.clone();
+                child_policy.child_session_id = child_session_id.clone();
+
+                self.active_invokes.insert("missing_run".to_string(),
+                    sce_rust_runtime::invoke::ChildSession {
+                        session_id: child_session_id,
+                        // W3C SCXML 6.4: Element invoke_id for _event.invokeid (test 228)
+                        invoke_id: "missing_run".to_string(),
+                        parent_session_id: self.session_id.clone().unwrap_or_default(),
+                        autoforward: false,
+                        finalize_script: String::new(),
+                    },
+                );
+
+                let mut child_engine = <::sce_rust_runtime::Engine<super::static_hybrid_first_sm::StaticHybridFirstPolicy> as super::static_hybrid_first_sm::StaticHybridFirstPersist>::restore_with(
+                    child_policy,
+                    &child.session,
+                    engine.clock(),
+                    wall_now_ms,
+                )?;
+                child_engine.set_completion_callback(|| {});
+                // Child sessions in Mesh (SCE_MESH.md; docs/adr/0043): the
+                // router of the resumed child is owed, not asked here. This
+                // machine is being restored, and its host registers the
+                // factory of its children's routers only once the restore has
+                // returned it; the factory is asked for this child then
+                // (`start_owed_child_meshes`), before anything drives it.
+                child_engine.owe_child_mesh();
+                // docs/adr/0045: the tree's host invokers, handed on before the
+                // child's re-armed invocations start at its first drive.
+                engine.share_host_invokers_with(&mut child_engine);
+                self.child_missing_run_0j_static_hybrid_first = Some(Box::new(child_engine));
+                Ok(())
+            }
+
+            ("missing_run", "static_hybrid_second") => {
+                // W3C SCXML 6.5: Generate child session ID for finalize origin matching
+                let child_session_id = format!("{}.{}",
+                    self.session_id.as_deref().unwrap_or(""),
+                    child.invoke_id);
+
+                // W3C SCXML 6.4: Create child state machine
+                // Engine DI Parity RFC: forward parent's script engine to child when the
+                // child Policy was generated with `model.needs_script_engine = true`.
+                //
+                // W3C SCXML C.1: the child is built under the id its parent
+                // recorded for it. The parent mints `parentSession.invokeId` and
+                // keys `active_invokes` on it, so an event from this child
+                // reaches the parent carrying that id as its origin; had the
+                // child an id of its own, the location it publishes in
+                // `_ioprocessors` and the origin the parent sees would be two
+                // names for one session that can never be compared — which is
+                // exactly what C.1 requires of them. A child's id comes from the
+                // tree alone, and nothing is drawn for it (docs/adr/0045).
+                let mut child_policy = super::static_hybrid_second_sm::StaticHybridSecondPolicy::for_child(child_session_id.clone());
+                // W3C SCXML 6.4: Pass parent session info to child for #_parent routing
+                child_policy.parent_external_queue = Some(engine.get_external_queue_handle());
+                child_policy.invoke_id = child.invoke_id.clone();
+                child_policy.child_session_id = child_session_id.clone();
+
+                self.active_invokes.insert("missing_run".to_string(),
+                    sce_rust_runtime::invoke::ChildSession {
+                        session_id: child_session_id,
+                        // W3C SCXML 6.4: Element invoke_id for _event.invokeid (test 228)
+                        invoke_id: "missing_run".to_string(),
+                        parent_session_id: self.session_id.clone().unwrap_or_default(),
+                        autoforward: false,
+                        finalize_script: String::new(),
+                    },
+                );
+
+                let mut child_engine = <::sce_rust_runtime::Engine<super::static_hybrid_second_sm::StaticHybridSecondPolicy> as super::static_hybrid_second_sm::StaticHybridSecondPersist>::restore_with(
+                    child_policy,
+                    &child.session,
+                    engine.clock(),
+                    wall_now_ms,
+                )?;
+                child_engine.set_completion_callback(|| {});
+                // Child sessions in Mesh (SCE_MESH.md; docs/adr/0043): the
+                // router of the resumed child is owed, not asked here. This
+                // machine is being restored, and its host registers the
+                // factory of its children's routers only once the restore has
+                // returned it; the factory is asked for this child then
+                // (`start_owed_child_meshes`), before anything drives it.
+                child_engine.owe_child_mesh();
+                // docs/adr/0045: the tree's host invokers, handed on before the
+                // child's re-armed invocations start at its first drive.
+                engine.share_host_invokers_with(&mut child_engine);
+                self.child_missing_run_0j_static_hybrid_second = Some(Box::new(child_engine));
+                Ok(())
+            }
+
+            (id, document) => Err(::sce_rust_runtime::saved_state::StateRefusal::new(format!(
+                "invokes names '{id}' running '{document}', a document that `<invoke>` does not start"
+            ))),
+        }
+    }
 }
 
+// docs/adr/0045: a machine built with no arguments draws its session id, so it
+// has a default only where `new` can draw one.
+#[cfg(not(any(target_os = "none", all(target_arch = "wasm32", target_os = "unknown"))))]
 impl Default for StaticInvokeHybridPolicy {
     fn default() -> Self {
         Self::new()
@@ -2429,11 +3110,11 @@ impl StatePolicy for StaticInvokeHybridPolicy {
                     StaticInvokeHybridState::First,
                 );
                 // W3C SCXML 6.4: Cleanup running hybrid child 'first_run'
-                if let Some(mut child) = self.child_first_run_static_hybrid_first.take() {
+                if let Some(mut child) = self.child_first_run_0j_static_hybrid_first.take() {
                     child.stop();
                     child.detach_mesh();
                 }
-                if let Some(mut child) = self.child_first_run_static_hybrid_second.take() {
+                if let Some(mut child) = self.child_first_run_0j_static_hybrid_second.take() {
                     child.stop();
                     child.detach_mesh();
                 }
@@ -2449,11 +3130,11 @@ impl StatePolicy for StaticInvokeHybridPolicy {
                     StaticInvokeHybridState::Lossy,
                 );
                 // W3C SCXML 6.4: Cleanup running hybrid child 'lossy_run'
-                if let Some(mut child) = self.child_lossy_run_static_hybrid_first.take() {
+                if let Some(mut child) = self.child_lossy_run_0j_static_hybrid_first.take() {
                     child.stop();
                     child.detach_mesh();
                 }
-                if let Some(mut child) = self.child_lossy_run_static_hybrid_second.take() {
+                if let Some(mut child) = self.child_lossy_run_0j_static_hybrid_second.take() {
                     child.stop();
                     child.detach_mesh();
                 }
@@ -2469,11 +3150,11 @@ impl StatePolicy for StaticInvokeHybridPolicy {
                     StaticInvokeHybridState::Missing,
                 );
                 // W3C SCXML 6.4: Cleanup running hybrid child 'missing_run'
-                if let Some(mut child) = self.child_missing_run_static_hybrid_first.take() {
+                if let Some(mut child) = self.child_missing_run_0j_static_hybrid_first.take() {
                     child.stop();
                     child.detach_mesh();
                 }
-                if let Some(mut child) = self.child_missing_run_static_hybrid_second.take() {
+                if let Some(mut child) = self.child_missing_run_0j_static_hybrid_second.take() {
                     child.stop();
                     child.detach_mesh();
                 }
@@ -2489,11 +3170,11 @@ impl StatePolicy for StaticInvokeHybridPolicy {
                     StaticInvokeHybridState::Second,
                 );
                 // W3C SCXML 6.4: Cleanup running hybrid child 'second_run'
-                if let Some(mut child) = self.child_second_run_static_hybrid_first.take() {
+                if let Some(mut child) = self.child_second_run_0j_static_hybrid_first.take() {
                     child.stop();
                     child.detach_mesh();
                 }
-                if let Some(mut child) = self.child_second_run_static_hybrid_second.take() {
+                if let Some(mut child) = self.child_second_run_0j_static_hybrid_second.take() {
                     child.stop();
                     child.detach_mesh();
                 }
@@ -2782,9 +3463,11 @@ impl StatePolicy for StaticInvokeHybridPolicy {
     }
 
     // SCE Accepted Subset 2.15, "Saving and restoring": a saved state names the
-    // `<invoke>`s whose child is running, and a restore starts each again. This
-    // document saves only when every invoke is a static child session, a hybrid
-    // one among declared candidates, or one a declared host invoker serves.
+    // `<invoke>`s whose child is running — a format-2 one with the child's whole
+    // state, which a restore resumes; a format-1 one by id, which a restore
+    // starts again. This document saves only when every invoke is a static
+    // child session, a hybrid one among declared candidates, or one a declared
+    // host invoker serves, and every child it can start saves too.
     fn invoke_owner(invoke_id: &str) -> Option<Self::State> {
         match invoke_id {
             "first_run" => Some(StaticInvokeHybridState::First),
@@ -2802,26 +3485,26 @@ impl StatePolicy for StaticInvokeHybridPolicy {
     // at most one is filled.
     fn running_invokes(&self) -> Vec<&'static str> {
         let mut running = Vec::new();
-        if (self.child_first_run_static_hybrid_first.is_some()
-            || self.child_first_run_static_hybrid_second.is_some())
+        if (self.child_first_run_0j_static_hybrid_first.is_some()
+            || self.child_first_run_0j_static_hybrid_second.is_some())
             && !self.pending_done_invoke_first_run
         {
             running.push("first_run");
         }
-        if (self.child_second_run_static_hybrid_first.is_some()
-            || self.child_second_run_static_hybrid_second.is_some())
+        if (self.child_second_run_0j_static_hybrid_first.is_some()
+            || self.child_second_run_0j_static_hybrid_second.is_some())
             && !self.pending_done_invoke_second_run
         {
             running.push("second_run");
         }
-        if (self.child_lossy_run_static_hybrid_first.is_some()
-            || self.child_lossy_run_static_hybrid_second.is_some())
+        if (self.child_lossy_run_0j_static_hybrid_first.is_some()
+            || self.child_lossy_run_0j_static_hybrid_second.is_some())
             && !self.pending_done_invoke_lossy_run
         {
             running.push("lossy_run");
         }
-        if (self.child_missing_run_static_hybrid_first.is_some()
-            || self.child_missing_run_static_hybrid_second.is_some())
+        if (self.child_missing_run_0j_static_hybrid_first.is_some()
+            || self.child_missing_run_0j_static_hybrid_second.is_some())
             && !self.pending_done_invoke_missing_run
         {
             running.push("missing_run");
@@ -2839,72 +3522,196 @@ impl StatePolicy for StaticInvokeHybridPolicy {
         }
     }
 
+    // docs/adr/0045: how many times each `<invoke>` has started here, for each
+    // started at least once, in document order.
+    fn invoke_starts(&self) -> Vec<(&'static str, u64)> {
+        let mut starts = Vec::new();
+        if self.invoke_starts_first_run > 0 {
+            starts.push(("first_run", self.invoke_starts_first_run));
+        }
+        if self.invoke_starts_second_run > 0 {
+            starts.push(("second_run", self.invoke_starts_second_run));
+        }
+        if self.invoke_starts_lossy_run > 0 {
+            starts.push(("lossy_run", self.invoke_starts_lossy_run));
+        }
+        if self.invoke_starts_missing_run > 0 {
+            starts.push(("missing_run", self.invoke_starts_missing_run));
+        }
+        starts
+    }
+
+    // docs/adr/0045, section 3, step 1: a running child a saved state holds,
+    // judged by the document its `<invoke>` starts there, building nothing.
+    fn judge_child(
+        child: &::sce_rust_runtime::saved_state::SavedChild,
+    ) -> Result<(), ::sce_rust_runtime::saved_state::StateRefusal> {
+        match (child.id.as_str(), child.document.as_str()) {
+            ("first_run", "static_hybrid_first") => <::sce_rust_runtime::Engine<super::static_hybrid_first_sm::StaticHybridFirstPolicy> as super::static_hybrid_first_sm::StaticHybridFirstPersist>::judge(&child.session),
+            ("first_run", "static_hybrid_second") => <::sce_rust_runtime::Engine<super::static_hybrid_second_sm::StaticHybridSecondPolicy> as super::static_hybrid_second_sm::StaticHybridSecondPersist>::judge(&child.session),
+            ("second_run", "static_hybrid_first") => <::sce_rust_runtime::Engine<super::static_hybrid_first_sm::StaticHybridFirstPolicy> as super::static_hybrid_first_sm::StaticHybridFirstPersist>::judge(&child.session),
+            ("second_run", "static_hybrid_second") => <::sce_rust_runtime::Engine<super::static_hybrid_second_sm::StaticHybridSecondPolicy> as super::static_hybrid_second_sm::StaticHybridSecondPersist>::judge(&child.session),
+            ("lossy_run", "static_hybrid_first") => <::sce_rust_runtime::Engine<super::static_hybrid_first_sm::StaticHybridFirstPolicy> as super::static_hybrid_first_sm::StaticHybridFirstPersist>::judge(&child.session),
+            ("lossy_run", "static_hybrid_second") => <::sce_rust_runtime::Engine<super::static_hybrid_second_sm::StaticHybridSecondPolicy> as super::static_hybrid_second_sm::StaticHybridSecondPersist>::judge(&child.session),
+            ("missing_run", "static_hybrid_first") => <::sce_rust_runtime::Engine<super::static_hybrid_first_sm::StaticHybridFirstPolicy> as super::static_hybrid_first_sm::StaticHybridFirstPersist>::judge(&child.session),
+            ("missing_run", "static_hybrid_second") => <::sce_rust_runtime::Engine<super::static_hybrid_second_sm::StaticHybridSecondPolicy> as super::static_hybrid_second_sm::StaticHybridSecondPersist>::judge(&child.session),
+            (id, document) => Err(::sce_rust_runtime::saved_state::StateRefusal::new(format!(
+                "invokes names '{id}' running '{document}', a document that `<invoke>` does not start"
+            ))),
+        }
+    }
+
+    // docs/adr/0045, section 3, step 3: a running child built as starting it
+    // builds it, then restored where it stood in place of initialized.
+    fn resume_child(
+        &mut self,
+        child: &::sce_rust_runtime::saved_state::SavedChild,
+        engine: &mut Engine<Self>,
+        wall_now_ms: u64,
+    ) -> Result<(), ::sce_rust_runtime::saved_state::StateRefusal> {
+        self.do_resume_child(child, engine, wall_now_ms)
+    }
+
+    // docs/adr/0043 + docs/adr/0045: the router of each running child a
+    // restore resumed, asked of the factory now that there is one, with the
+    // invoke id and the document stem a start asks it with. A child that has
+    // ended is not asked for.
+    fn start_owed_child_meshes(&mut self, engine: &mut Engine<Self>) {
+        if !self.pending_done_invoke_first_run {
+            if let Some(child) = self.child_first_run_0j_static_hybrid_first.as_mut() {
+                engine.start_owed_child_mesh(&mut **child, "first_run", "static_hybrid_first");
+            }
+        }
+        if !self.pending_done_invoke_first_run {
+            if let Some(child) = self.child_first_run_0j_static_hybrid_second.as_mut() {
+                engine.start_owed_child_mesh(&mut **child, "first_run", "static_hybrid_second");
+            }
+        }
+        if !self.pending_done_invoke_second_run {
+            if let Some(child) = self.child_second_run_0j_static_hybrid_first.as_mut() {
+                engine.start_owed_child_mesh(&mut **child, "second_run", "static_hybrid_first");
+            }
+        }
+        if !self.pending_done_invoke_second_run {
+            if let Some(child) = self.child_second_run_0j_static_hybrid_second.as_mut() {
+                engine.start_owed_child_mesh(&mut **child, "second_run", "static_hybrid_second");
+            }
+        }
+        if !self.pending_done_invoke_lossy_run {
+            if let Some(child) = self.child_lossy_run_0j_static_hybrid_first.as_mut() {
+                engine.start_owed_child_mesh(&mut **child, "lossy_run", "static_hybrid_first");
+            }
+        }
+        if !self.pending_done_invoke_lossy_run {
+            if let Some(child) = self.child_lossy_run_0j_static_hybrid_second.as_mut() {
+                engine.start_owed_child_mesh(&mut **child, "lossy_run", "static_hybrid_second");
+            }
+        }
+        if !self.pending_done_invoke_missing_run {
+            if let Some(child) = self.child_missing_run_0j_static_hybrid_first.as_mut() {
+                engine.start_owed_child_mesh(&mut **child, "missing_run", "static_hybrid_first");
+            }
+        }
+        if !self.pending_done_invoke_missing_run {
+            if let Some(child) = self.child_missing_run_0j_static_hybrid_second.as_mut() {
+                engine.start_owed_child_mesh(&mut **child, "missing_run", "static_hybrid_second");
+            }
+        }
+    }
+
     // W3C SCXML 6.2 + 6.4: a delayed `<send target="#_<invokeid>">` whose wait
     // is over, delivered by name. A child whose session has reached its final
     // state has ended, and is not there to take it (W3C SCXML C.1).
+    // What the child sent its parent as it took the event, and its ending,
+    // reach this session within the delivery (docs/adr/0045).
     fn deliver_to_invocation(
         &mut self,
         invoke_id: &str,
         event_name: &str,
         event_data: &str,
+        engine: &mut Engine<Self>,
     ) -> bool {
         if invoke_id == "first_run" {
-            if let Some(ref mut child) = self.child_first_run_static_hybrid_first {
-                if !child.is_in_final_state() {
-                    child.deliver_by_name(event_name, event_data);
-                    return true;
-                }
+            if let Some(child) = self
+                .child_first_run_0j_static_hybrid_first
+                .as_mut()
+                .filter(|child| !child.is_in_final_state())
+            {
+                child.deliver_by_name(event_name, event_data);
+                self.settle_child_first_run_0j_static_hybrid_first(engine);
+                return true;
             }
-            if let Some(ref mut child) = self.child_first_run_static_hybrid_second {
-                if !child.is_in_final_state() {
-                    child.deliver_by_name(event_name, event_data);
-                    return true;
-                }
+            if let Some(child) = self
+                .child_first_run_0j_static_hybrid_second
+                .as_mut()
+                .filter(|child| !child.is_in_final_state())
+            {
+                child.deliver_by_name(event_name, event_data);
+                self.settle_child_first_run_0j_static_hybrid_second(engine);
+                return true;
             }
             return false;
         }
         if invoke_id == "second_run" {
-            if let Some(ref mut child) = self.child_second_run_static_hybrid_first {
-                if !child.is_in_final_state() {
-                    child.deliver_by_name(event_name, event_data);
-                    return true;
-                }
+            if let Some(child) = self
+                .child_second_run_0j_static_hybrid_first
+                .as_mut()
+                .filter(|child| !child.is_in_final_state())
+            {
+                child.deliver_by_name(event_name, event_data);
+                self.settle_child_second_run_0j_static_hybrid_first(engine);
+                return true;
             }
-            if let Some(ref mut child) = self.child_second_run_static_hybrid_second {
-                if !child.is_in_final_state() {
-                    child.deliver_by_name(event_name, event_data);
-                    return true;
-                }
+            if let Some(child) = self
+                .child_second_run_0j_static_hybrid_second
+                .as_mut()
+                .filter(|child| !child.is_in_final_state())
+            {
+                child.deliver_by_name(event_name, event_data);
+                self.settle_child_second_run_0j_static_hybrid_second(engine);
+                return true;
             }
             return false;
         }
         if invoke_id == "lossy_run" {
-            if let Some(ref mut child) = self.child_lossy_run_static_hybrid_first {
-                if !child.is_in_final_state() {
-                    child.deliver_by_name(event_name, event_data);
-                    return true;
-                }
+            if let Some(child) = self
+                .child_lossy_run_0j_static_hybrid_first
+                .as_mut()
+                .filter(|child| !child.is_in_final_state())
+            {
+                child.deliver_by_name(event_name, event_data);
+                self.settle_child_lossy_run_0j_static_hybrid_first(engine);
+                return true;
             }
-            if let Some(ref mut child) = self.child_lossy_run_static_hybrid_second {
-                if !child.is_in_final_state() {
-                    child.deliver_by_name(event_name, event_data);
-                    return true;
-                }
+            if let Some(child) = self
+                .child_lossy_run_0j_static_hybrid_second
+                .as_mut()
+                .filter(|child| !child.is_in_final_state())
+            {
+                child.deliver_by_name(event_name, event_data);
+                self.settle_child_lossy_run_0j_static_hybrid_second(engine);
+                return true;
             }
             return false;
         }
         if invoke_id == "missing_run" {
-            if let Some(ref mut child) = self.child_missing_run_static_hybrid_first {
-                if !child.is_in_final_state() {
-                    child.deliver_by_name(event_name, event_data);
-                    return true;
-                }
+            if let Some(child) = self
+                .child_missing_run_0j_static_hybrid_first
+                .as_mut()
+                .filter(|child| !child.is_in_final_state())
+            {
+                child.deliver_by_name(event_name, event_data);
+                self.settle_child_missing_run_0j_static_hybrid_first(engine);
+                return true;
             }
-            if let Some(ref mut child) = self.child_missing_run_static_hybrid_second {
-                if !child.is_in_final_state() {
-                    child.deliver_by_name(event_name, event_data);
-                    return true;
-                }
+            if let Some(child) = self
+                .child_missing_run_0j_static_hybrid_second
+                .as_mut()
+                .filter(|child| !child.is_in_final_state())
+            {
+                child.deliver_by_name(event_name, event_data);
+                self.settle_child_missing_run_0j_static_hybrid_second(engine);
+                return true;
             }
             return false;
         }
@@ -2915,12 +3722,12 @@ impl StatePolicy for StaticInvokeHybridPolicy {
     // now — one whose session has reached its final state has ended.
     fn is_invocation_running(&self, invoke_id: &str) -> bool {
         if invoke_id == "first_run" {
-            if let Some(ref child) = self.child_first_run_static_hybrid_first {
+            if let Some(ref child) = self.child_first_run_0j_static_hybrid_first {
                 if !child.is_in_final_state() {
                     return true;
                 }
             }
-            if let Some(ref child) = self.child_first_run_static_hybrid_second {
+            if let Some(ref child) = self.child_first_run_0j_static_hybrid_second {
                 if !child.is_in_final_state() {
                     return true;
                 }
@@ -2928,12 +3735,12 @@ impl StatePolicy for StaticInvokeHybridPolicy {
             return false;
         }
         if invoke_id == "second_run" {
-            if let Some(ref child) = self.child_second_run_static_hybrid_first {
+            if let Some(ref child) = self.child_second_run_0j_static_hybrid_first {
                 if !child.is_in_final_state() {
                     return true;
                 }
             }
-            if let Some(ref child) = self.child_second_run_static_hybrid_second {
+            if let Some(ref child) = self.child_second_run_0j_static_hybrid_second {
                 if !child.is_in_final_state() {
                     return true;
                 }
@@ -2941,12 +3748,12 @@ impl StatePolicy for StaticInvokeHybridPolicy {
             return false;
         }
         if invoke_id == "lossy_run" {
-            if let Some(ref child) = self.child_lossy_run_static_hybrid_first {
+            if let Some(ref child) = self.child_lossy_run_0j_static_hybrid_first {
                 if !child.is_in_final_state() {
                     return true;
                 }
             }
-            if let Some(ref child) = self.child_lossy_run_static_hybrid_second {
+            if let Some(ref child) = self.child_lossy_run_0j_static_hybrid_second {
                 if !child.is_in_final_state() {
                     return true;
                 }
@@ -2954,12 +3761,12 @@ impl StatePolicy for StaticInvokeHybridPolicy {
             return false;
         }
         if invoke_id == "missing_run" {
-            if let Some(ref child) = self.child_missing_run_static_hybrid_first {
+            if let Some(ref child) = self.child_missing_run_0j_static_hybrid_first {
                 if !child.is_in_final_state() {
                     return true;
                 }
             }
-            if let Some(ref child) = self.child_missing_run_static_hybrid_second {
+            if let Some(ref child) = self.child_missing_run_0j_static_hybrid_second {
                 if !child.is_in_final_state() {
                     return true;
                 }
@@ -2989,6 +3796,16 @@ impl StatePolicy for StaticInvokeHybridPolicy {
         self.parent_external_queue.is_some()
     }
 
+    // docs/adr/0045: this session's own id, as a saved state holds it.
+    fn own_session_id(&self) -> &str {
+        self.session_id.as_deref().unwrap_or("")
+    }
+
+    // docs/adr/0045: a restored session carries on under its saved id.
+    fn bind_session_id(&mut self, session_id: &str) {
+        self.session_id = Some(session_id.to_string());
+    }
+
     // W3C SCXML 6.4: Tick child state machines
     fn tick_children(&mut self, engine: &mut Engine<Self>) {
         self.do_tick_children(engine);
@@ -3003,29 +3820,182 @@ impl StatePolicy for StaticInvokeHybridPolicy {
     // W3C SCXML 6.4: an invoked session reads its parent's time — on a
     // host-owned clock that is a value, moved here as the parent opens a turn.
     fn follow_clock_in_children(&mut self, clock: sce_rust_runtime::SceClock) {
-        if let Some(ref mut child) = self.child_first_run_static_hybrid_first {
+        if let Some(ref mut child) = self.child_first_run_0j_static_hybrid_first {
             child.follow_clock(clock);
         }
-        if let Some(ref mut child) = self.child_first_run_static_hybrid_second {
+        if let Some(ref mut child) = self.child_first_run_0j_static_hybrid_second {
             child.follow_clock(clock);
         }
-        if let Some(ref mut child) = self.child_second_run_static_hybrid_first {
+        if let Some(ref mut child) = self.child_second_run_0j_static_hybrid_first {
             child.follow_clock(clock);
         }
-        if let Some(ref mut child) = self.child_second_run_static_hybrid_second {
+        if let Some(ref mut child) = self.child_second_run_0j_static_hybrid_second {
             child.follow_clock(clock);
         }
-        if let Some(ref mut child) = self.child_lossy_run_static_hybrid_first {
+        if let Some(ref mut child) = self.child_lossy_run_0j_static_hybrid_first {
             child.follow_clock(clock);
         }
-        if let Some(ref mut child) = self.child_lossy_run_static_hybrid_second {
+        if let Some(ref mut child) = self.child_lossy_run_0j_static_hybrid_second {
             child.follow_clock(clock);
         }
-        if let Some(ref mut child) = self.child_missing_run_static_hybrid_first {
+        if let Some(ref mut child) = self.child_missing_run_0j_static_hybrid_first {
             child.follow_clock(clock);
         }
-        if let Some(ref mut child) = self.child_missing_run_static_hybrid_second {
+        if let Some(ref mut child) = self.child_missing_run_0j_static_hybrid_second {
             child.follow_clock(clock);
         }
+    }
+
+    // docs/adr/0045: the tree's host invokers, handed to each child this
+    // session holds, and by each child to its own.
+    fn adopt_host_invokers_in_children(&mut self, invokers: &::sce_rust_runtime::TreeInvokers) {
+        if let Some(ref mut child) = self.child_first_run_0j_static_hybrid_first {
+            child.adopt_host_invokers(invokers);
+        }
+        if let Some(ref mut child) = self.child_first_run_0j_static_hybrid_second {
+            child.adopt_host_invokers(invokers);
+        }
+        if let Some(ref mut child) = self.child_second_run_0j_static_hybrid_first {
+            child.adopt_host_invokers(invokers);
+        }
+        if let Some(ref mut child) = self.child_second_run_0j_static_hybrid_second {
+            child.adopt_host_invokers(invokers);
+        }
+        if let Some(ref mut child) = self.child_lossy_run_0j_static_hybrid_first {
+            child.adopt_host_invokers(invokers);
+        }
+        if let Some(ref mut child) = self.child_lossy_run_0j_static_hybrid_second {
+            child.adopt_host_invokers(invokers);
+        }
+        if let Some(ref mut child) = self.child_missing_run_0j_static_hybrid_first {
+            child.adopt_host_invokers(invokers);
+        }
+        if let Some(ref mut child) = self.child_missing_run_0j_static_hybrid_second {
+            child.adopt_host_invokers(invokers);
+        }
+    }
+
+    // docs/adr/0045: a host's ending of a host-run invocation of session
+    // `session_id`, to the child that is that session or holds it below. A
+    // child's id is `<parent>.<invokeid>`, so a session below a child has the
+    // child's id and a dot in front of the rest.
+    fn route_host_invoke_end_to_child(
+        &mut self,
+        session_id: &str,
+        ending: ::sce_rust_runtime::HostInvokeEnding<'_>,
+    ) -> Option<Result<(), ::sce_rust_runtime::HostInvokeEndRefusal>> {
+        if let Some(ref mut child) = self.child_first_run_0j_static_hybrid_first {
+            let holds = {
+                let child_id = child.policy().own_session_id();
+                session_id == child_id
+                    || session_id
+                        .strip_prefix(child_id)
+                        .is_some_and(|below| below.starts_with('.'))
+            };
+            if holds {
+                if let Some(routed) = child.route_host_invoke_end(session_id, ending) {
+                    return Some(routed);
+                }
+            }
+        }
+        if let Some(ref mut child) = self.child_first_run_0j_static_hybrid_second {
+            let holds = {
+                let child_id = child.policy().own_session_id();
+                session_id == child_id
+                    || session_id
+                        .strip_prefix(child_id)
+                        .is_some_and(|below| below.starts_with('.'))
+            };
+            if holds {
+                if let Some(routed) = child.route_host_invoke_end(session_id, ending) {
+                    return Some(routed);
+                }
+            }
+        }
+        if let Some(ref mut child) = self.child_second_run_0j_static_hybrid_first {
+            let holds = {
+                let child_id = child.policy().own_session_id();
+                session_id == child_id
+                    || session_id
+                        .strip_prefix(child_id)
+                        .is_some_and(|below| below.starts_with('.'))
+            };
+            if holds {
+                if let Some(routed) = child.route_host_invoke_end(session_id, ending) {
+                    return Some(routed);
+                }
+            }
+        }
+        if let Some(ref mut child) = self.child_second_run_0j_static_hybrid_second {
+            let holds = {
+                let child_id = child.policy().own_session_id();
+                session_id == child_id
+                    || session_id
+                        .strip_prefix(child_id)
+                        .is_some_and(|below| below.starts_with('.'))
+            };
+            if holds {
+                if let Some(routed) = child.route_host_invoke_end(session_id, ending) {
+                    return Some(routed);
+                }
+            }
+        }
+        if let Some(ref mut child) = self.child_lossy_run_0j_static_hybrid_first {
+            let holds = {
+                let child_id = child.policy().own_session_id();
+                session_id == child_id
+                    || session_id
+                        .strip_prefix(child_id)
+                        .is_some_and(|below| below.starts_with('.'))
+            };
+            if holds {
+                if let Some(routed) = child.route_host_invoke_end(session_id, ending) {
+                    return Some(routed);
+                }
+            }
+        }
+        if let Some(ref mut child) = self.child_lossy_run_0j_static_hybrid_second {
+            let holds = {
+                let child_id = child.policy().own_session_id();
+                session_id == child_id
+                    || session_id
+                        .strip_prefix(child_id)
+                        .is_some_and(|below| below.starts_with('.'))
+            };
+            if holds {
+                if let Some(routed) = child.route_host_invoke_end(session_id, ending) {
+                    return Some(routed);
+                }
+            }
+        }
+        if let Some(ref mut child) = self.child_missing_run_0j_static_hybrid_first {
+            let holds = {
+                let child_id = child.policy().own_session_id();
+                session_id == child_id
+                    || session_id
+                        .strip_prefix(child_id)
+                        .is_some_and(|below| below.starts_with('.'))
+            };
+            if holds {
+                if let Some(routed) = child.route_host_invoke_end(session_id, ending) {
+                    return Some(routed);
+                }
+            }
+        }
+        if let Some(ref mut child) = self.child_missing_run_0j_static_hybrid_second {
+            let holds = {
+                let child_id = child.policy().own_session_id();
+                session_id == child_id
+                    || session_id
+                        .strip_prefix(child_id)
+                        .is_some_and(|below| below.starts_with('.'))
+            };
+            if holds {
+                if let Some(routed) = child.route_host_invoke_end(session_id, ending) {
+                    return Some(routed);
+                }
+            }
+        }
+        None
     }
 }

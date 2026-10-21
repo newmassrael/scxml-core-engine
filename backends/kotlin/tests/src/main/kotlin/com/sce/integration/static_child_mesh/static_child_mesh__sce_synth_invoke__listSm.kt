@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
+// source-hash: ca67d4fa2cf4dbcd6617a3b32561c9b8257bc03aaa65978435303ccf35bae7b3
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_child_mesh__sce_synth_invoke__list.scxml
@@ -47,6 +47,8 @@ class StaticChildMeshSceSynthInvokeListStateMachine(
     val savedShape: SavedShape = SavedShape(
         first = "122742c57881dae3ec3f8b89ce662c07f3fbb4e3b790bf678535d302495d35f5",
         revised = "d99f34c48133b948c9fb435a8a811deca997a01968f8e13825f23343e2f4614f",
+        format2First = "122742c57881dae3ec3f8b89ce662c07f3fbb4e3b790bf678535d302495d35f5",
+        format2Revised = "d99f34c48133b948c9fb435a8a811deca997a01968f8e13825f23343e2f4614f",
         records = listOf(
         ),
         enums = listOf(

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
+// source-hash: ca67d4fa2cf4dbcd6617a3b32561c9b8257bc03aaa65978435303ccf35bae7b3
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -20,7 +20,7 @@
 // entry/exit actions, and event processing.
 
 
-// SCE-MAP: static_invoke.scxml:26 :: _machine
+// SCE-MAP: static_invoke.scxml:27 :: _machine
 
 package static_invoke
 
@@ -184,6 +184,24 @@ func (e StaticInvokeEvent) String() string {
 	}
 	return "unknown"
 }
+
+// ── SCE Accepted Subset §2.15: what a format-2 saved state of it is bound to ──
+
+// StaticInvokeSavedShapeFormat2 is the shape a format-2 saved state of
+// this machine names when every record schema it holds is in its first
+// revision (docs/adr/0045, section 2). The generator computes it once, so it is
+// the text every backend's constant is.
+const StaticInvokeSavedShapeFormat2 = "6065267cb1641307cbbf9f1bbd2c34f384a0b55362be9f25c4c9d54a5f2cf8e2"
+
+// StaticInvokeSavedShapeFormat2Revised is the shape a format-2 saved state
+// of this machine names when it names a later revision of a record schema or
+// an enum.
+const StaticInvokeSavedShapeFormat2Revised = "45c5ae841923b95967f51b12ef271c7439133cf013284e4149f4bcea20128716"
+
+// StaticInvokeSavedEnumKeys names each enum a value of a saved state of
+// this machine is of, by its document (docs/adr/0044): the key `revisions`
+// names it by, and the format-2 shape spells it by.
+var StaticInvokeSavedEnumKeys = [...]string{}
 
 // ======================================================================
 // Policy struct
@@ -698,11 +716,11 @@ func (p *StaticInvokePolicy) ClearEventMetadata() {
 // ExecuteEntryActions enters one state (W3C SCXML 3.8): adds it to the
 // configuration, runs its <onentry>, and its <initial> transition's content when
 // its initial state is entered by default.
-//line static_invoke.scxml:26
+//line static_invoke.scxml:27
 func (p *StaticInvokePolicy) ExecuteEntryActions(state StaticInvokeState, engine *sce.Engine[StaticInvokeState, StaticInvokeEvent], isDefaultEntry bool) {
 	switch state {
 	case StaticInvokeStateWorking:
-		//line static_invoke.scxml:31
+		//line static_invoke.scxml:32
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 		{
 			// docs/adr/0045: the platform part of the id is the number of this
@@ -725,7 +743,7 @@ func (p *StaticInvokePolicy) ExecuteEntryActions(state StaticInvokeState, engine
 // <initial> content) when the history was taken with nothing recorded. The
 // engine asks for it by the entry set's defaultHistoryContent answer; a history
 // that restored what it recorded runs nothing.
-//line static_invoke.scxml:26
+//line static_invoke.scxml:27
 func (p *StaticInvokePolicy) ExecuteHistoryDefaultContent(history sce.HistoryID, engine *sce.Engine[StaticInvokeState, StaticInvokeEvent]) {
 	// W3C SCXML 3.10.2: no <history> in this document has default content.
 }
@@ -733,7 +751,7 @@ func (p *StaticInvokePolicy) ExecuteHistoryDefaultContent(history sce.HistoryID,
 // ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
 // runs its <onexit>, cancels its invocations and removes it from the
 // configuration — §scxml-D-exitStates's order.
-//line static_invoke.scxml:26
+//line static_invoke.scxml:27
 func (p *StaticInvokePolicy) ExecuteExitActions(state StaticInvokeState, engine *sce.Engine[StaticInvokeState, StaticInvokeEvent], configurationBeforeExit []StaticInvokeState) {
 	// §scxml-D-exitStates orders one state's exit as onexit, then
 	// cancelInvoke, then configuration.delete(s), so `In(s)` inside s's own
@@ -768,7 +786,7 @@ func (p *StaticInvokePolicy) ExecuteExitActions(state StaticInvokeState, engine 
 // BindCurrentEvent binds the event whose transitions are about to be selected as
 // the _event their guards read (W3C SCXML 5.10) — before the first guard runs,
 // and not for an eventless selection, which has no event of its own.
-//line static_invoke.scxml:26
+//line static_invoke.scxml:27
 func (p *StaticInvokePolicy) BindCurrentEvent(event StaticInvokeEvent, engine *sce.Engine[StaticInvokeState, StaticInvokeEvent]) {
 	// This document's guards never read _event, so there is nothing to bind.
 }
@@ -778,7 +796,7 @@ func (p *StaticInvokePolicy) BindCurrentEvent(event StaticInvokeEvent, engine *s
 // that event enables and whose guard holds. The engine walks the atomic states
 // and their ancestors and keeps the ordered set; the null event asks for
 // eventless transitions.
-//line static_invoke.scxml:26
+//line static_invoke.scxml:27
 func (p *StaticInvokePolicy) FirstEnabledTransition(state StaticInvokeState, event StaticInvokeEvent, engine *sce.Engine[StaticInvokeState, StaticInvokeEvent]) (sce.EnabledTransition[StaticInvokeState, sce.HistoryID], bool) {
 	switch state {
 	case StaticInvokeStateWorking:
@@ -840,13 +858,13 @@ func (p *StaticInvokePolicy) FirstEnabledTransition(state StaticInvokeState, eve
 
 // ExecuteTransitionContent runs one transition's executable content (W3C SCXML
 // 3.13), between the microstep's exits and its entries.
-//line static_invoke.scxml:26
+//line static_invoke.scxml:27
 func (p *StaticInvokePolicy) ExecuteTransitionContent(source StaticInvokeState, transitionIndex int, engine *sce.Engine[StaticInvokeState, StaticInvokeEvent]) {
 	switch source {
 	case StaticInvokeStateWorking:
 		switch transitionIndex {
 		case 2:
-			//line static_invoke.scxml:50
+			//line static_invoke.scxml:51
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

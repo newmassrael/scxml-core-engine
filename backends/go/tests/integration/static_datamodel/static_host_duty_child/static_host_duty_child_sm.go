@@ -160,6 +160,24 @@ func (e StaticHostDutyChildEvent) String() string {
 	return "unknown"
 }
 
+// ── SCE Accepted Subset §2.15: what a format-2 saved state of it is bound to ──
+
+// StaticHostDutyChildSavedShapeFormat2 is the shape a format-2 saved state of
+// this machine names when every record schema it holds is in its first
+// revision (docs/adr/0045, section 2). The generator computes it once, so it is
+// the text every backend's constant is.
+const StaticHostDutyChildSavedShapeFormat2 = "32b4482bd42d1ea6eb089e6ecbf62edae9d0b91f6dda24dbe0502f1a60dc304f"
+
+// StaticHostDutyChildSavedShapeFormat2Revised is the shape a format-2 saved state
+// of this machine names when it names a later revision of a record schema or
+// an enum.
+const StaticHostDutyChildSavedShapeFormat2Revised = "28b1aa9c43667f684274ee213910cdcc4d4ff6e73d09bb17cfed098d1979b47e"
+
+// StaticHostDutyChildSavedEnumKeys names each enum a value of a saved state of
+// this machine is of, by its document (docs/adr/0044): the key `revisions`
+// names it by, and the format-2 shape spells it by.
+var StaticHostDutyChildSavedEnumKeys = [...]string{}
+
 // ── W3C SCXML G.7: `<sce:action>` host dispatch ───────────────────────
 // W3C SCXML G.7: host operations dispatched by `<sce:action>`.
 // The host supplies the side effects while the statechart keeps each

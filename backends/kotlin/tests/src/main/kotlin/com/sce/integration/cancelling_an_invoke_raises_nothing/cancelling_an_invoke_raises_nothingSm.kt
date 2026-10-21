@@ -471,7 +471,7 @@ class CancellingAnInvokeRaisesNothingStateMachine(
                 val generatedInvokeId = "p.${nextInvokeStart("child")}.child"
                 deferInvoke(state, generatedInvokeId) {
 
-                    val childSM = CancellingAnInvokeRaisesNothingSceSynthInvokeChildStateMachine()
+                    val childSM = adoptChild(CancellingAnInvokeRaisesNothingSceSynthInvokeChildStateMachine(), generatedInvokeId)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
                     startInvoke("child", childSM, false, CancellingAnInvokeRaisesNothingEvent.Done.Invoke, "", generatedInvokeId, "")
                 }

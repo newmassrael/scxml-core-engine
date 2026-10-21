@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: ca3b055deba6b38537c3642140f701b5f98f1b971d59425d3c780765d8a6a19b
+// source-hash: 75f0d3c43c82c6af748dd1f1aba98de1b9c4f7c51e43e8850cdf3b0490c95be4
 
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/239/test239.scxml
@@ -263,7 +263,7 @@ class Test239StateMachine(
                 val generatedInvokeId = "s01.${nextInvokeStart("_invoke_0")}._invoke_0"
                 deferInvoke(state, generatedInvokeId) {
 
-                    val childSM = Test239sub1StateMachine()
+                    val childSM = adoptChild(Test239sub1StateMachine(), generatedInvokeId)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
                     startInvoke("_invoke_0", childSM, false, Test239Event.Done.Invoke, "", generatedInvokeId, "test239sub1")
                 }
@@ -274,7 +274,7 @@ class Test239StateMachine(
                 val generatedInvokeId = "s02.${nextInvokeStart("_invoke_1")}._invoke_1"
                 deferInvoke(state, generatedInvokeId) {
 
-                    val childSM = Test239SceSynthInvokeInvoke1StateMachine()
+                    val childSM = adoptChild(Test239SceSynthInvokeInvoke1StateMachine(), generatedInvokeId)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
                     startInvoke("_invoke_1", childSM, false, Test239Event.Done.Invoke, "", generatedInvokeId, "")
                 }

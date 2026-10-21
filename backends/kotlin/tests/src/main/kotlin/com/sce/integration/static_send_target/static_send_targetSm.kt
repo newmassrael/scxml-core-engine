@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
+// source-hash: ca67d4fa2cf4dbcd6617a3b32561c9b8257bc03aaa65978435303ccf35bae7b3
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_send_target.scxml
@@ -123,6 +123,8 @@ class StaticSendTargetStateMachine(
     val savedShape: SavedShape = SavedShape(
         first = "bc863388d4492ecbc92204f377e9e4bb03c09312cb692c262c1b41146eab182d",
         revised = "60bbf82df8219cee9dfc10640d609b39d8f38d3101bb4758e6d5e5665cb9236e",
+        format2First = "bc863388d4492ecbc92204f377e9e4bb03c09312cb692c262c1b41146eab182d",
+        format2Revised = "60bbf82df8219cee9dfc10640d609b39d8f38d3101bb4758e6d5e5665cb9236e",
         records = listOf(
         ),
         enums = listOf(

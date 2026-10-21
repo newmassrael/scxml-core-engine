@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
+// source-hash: ca67d4fa2cf4dbcd6617a3b32561c9b8257bc03aaa65978435303ccf35bae7b3
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -227,6 +227,24 @@ func StaticWireWideRaiseWideRelayed(e *sce.Engine[StaticWireWideState, StaticWir
 	})
 }
 
+
+// ── SCE Accepted Subset §2.15: what a format-2 saved state of it is bound to ──
+
+// StaticWireWideSavedShapeFormat2 is the shape a format-2 saved state of
+// this machine names when every record schema it holds is in its first
+// revision (docs/adr/0045, section 2). The generator computes it once, so it is
+// the text every backend's constant is.
+const StaticWireWideSavedShapeFormat2 = "e5c2a79f4a67f967a86bc7c09af85d1e1482468f8ce173db72d9c3e90c6c7fbf"
+
+// StaticWireWideSavedShapeFormat2Revised is the shape a format-2 saved state
+// of this machine names when it names a later revision of a record schema or
+// an enum.
+const StaticWireWideSavedShapeFormat2Revised = "e5554aa626dd97594f1f67371b7e9975e5ac74460f1206f3003d8988dbbfdf93"
+
+// StaticWireWideSavedEnumKeys names each enum a value of a saved state of
+// this machine is of, by its document (docs/adr/0044): the key `revisions`
+// names it by, and the format-2 shape spells it by.
+var StaticWireWideSavedEnumKeys = [...]string{}
 
 // ======================================================================
 // Policy struct

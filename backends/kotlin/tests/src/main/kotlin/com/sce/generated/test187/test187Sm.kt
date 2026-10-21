@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: ca3b055deba6b38537c3642140f701b5f98f1b971d59425d3c780765d8a6a19b
+// source-hash: 75f0d3c43c82c6af748dd1f1aba98de1b9c4f7c51e43e8850cdf3b0490c95be4
 
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/187/test187.scxml
@@ -203,7 +203,7 @@ class Test187StateMachine(
                 val generatedInvokeId = "s0.${nextInvokeStart("_invoke_0")}._invoke_0"
                 deferInvoke(state, generatedInvokeId) {
 
-                    val childSM = Test187SceSynthInvokeInvoke0StateMachine()
+                    val childSM = adoptChild(Test187SceSynthInvokeInvoke0StateMachine(), generatedInvokeId)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
                     startInvoke("_invoke_0", childSM, false, Test187Event.Done.Invoke, "", generatedInvokeId, "")
                 }

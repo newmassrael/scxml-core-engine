@@ -484,10 +484,12 @@ class InvokeCandidateSelectsTheChildStateMachine(
                             // document stem so `file:x.scxml` and `./x.scxml` name
                             // one child. `startInvoke` takes a star-projected
                             // machine, so only the construction differs here.
+                            // docs/adr/0045: each candidate takes its id where it
+                            // is built, before it is handed an argument.
                             val __sceSelected = DocumentStem.of(filePath)
                             val childSM = when (__sceSelected) {
-                                "chosen" -> ChosenStateMachine()
-                                "other" -> OtherStateMachine()
+                                "chosen" -> adoptChild(ChosenStateMachine(), generatedInvokeId)
+                                "other" -> adoptChild(OtherStateMachine(), generatedInvokeId)
                                 else -> {
                                     // The failure the Interpreter reports when a
                                     // document will not load: nothing to create.

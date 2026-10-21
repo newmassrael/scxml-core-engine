@@ -431,7 +431,7 @@ class AChildMaySendManyEventsInOneTickStateMachine(
                 val generatedInvokeId = "s0.${nextInvokeStart("chatty")}.chatty"
                 deferInvoke(state, generatedInvokeId) {
 
-                    val childSM = AChildMaySendManyEventsInOneTickSceSynthInvokeChattyStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
+                    val childSM = adoptChild(AChildMaySendManyEventsInOneTickSceSynthInvokeChattyStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)")), generatedInvokeId)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
                     startInvoke("chatty", childSM, false, AChildMaySendManyEventsInOneTickEvent.Done.Invoke, "", generatedInvokeId, "")
                 }

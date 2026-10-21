@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
+// source-hash: ca67d4fa2cf4dbcd6617a3b32561c9b8257bc03aaa65978435303ccf35bae7b3
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_send_content.scxml
@@ -180,6 +180,8 @@ class StaticSendContentStateMachine(
     val savedShape: SavedShape = SavedShape(
         first = "6f33e5b00a3a440af82bab37051ecfb5a5a93fab315376e997123933d7aa034e",
         revised = "cde129524ee5f351001fc3bfe85e45638f9602adfb1eafc0335c4aeb2f6ec51b",
+        format2First = "4bf189c4ee8d5e8b3e8fedae3e4a2c1e29e96ae199286f52d04877741cd5c027",
+        format2Revised = "fa1c69819a3e2f8e92cb2938fa14c111813365c6eea453a634f658cdb689cc01",
         records = listOf(
             RecordLineage(
                 event = "view.shown",

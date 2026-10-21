@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
+// source-hash: ca67d4fa2cf4dbcd6617a3b32561c9b8257bc03aaa65978435303ccf35bae7b3
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_foreach.scxml
@@ -172,6 +172,8 @@ class StaticForeachStateMachine(
     val savedShape: SavedShape = SavedShape(
         first = "9a550dcd196beac21c3a3402db563b982c37d0f7ef094afdc6f5cd8d7c71375f",
         revised = "c5cf66a11bd05de77e01ceaa0675c38b3551d147105fbb8e9542254dd6df39d4",
+        format2First = "9a550dcd196beac21c3a3402db563b982c37d0f7ef094afdc6f5cd8d7c71375f",
+        format2Revised = "c5cf66a11bd05de77e01ceaa0675c38b3551d147105fbb8e9542254dd6df39d4",
         records = listOf(
         ),
         enums = listOf(

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
+// source-hash: ca67d4fa2cf4dbcd6617a3b32561c9b8257bc03aaa65978435303ccf35bae7b3
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_timers.scxml
@@ -107,6 +107,8 @@ class StaticTimersStateMachine(
     val savedShape: SavedShape = SavedShape(
         first = "4ccb8b35ee15410c2fa524072e0d2cc992b50980b7db00f5ea7bd0635c1a5b68",
         revised = "2731bb99fc2272ab231f5242141b5f33d19d42112b0aded156f8f129fc40e0dc",
+        format2First = "4ccb8b35ee15410c2fa524072e0d2cc992b50980b7db00f5ea7bd0635c1a5b68",
+        format2Revised = "2731bb99fc2272ab231f5242141b5f33d19d42112b0aded156f8f129fc40e0dc",
         records = listOf(
         ),
         enums = listOf(

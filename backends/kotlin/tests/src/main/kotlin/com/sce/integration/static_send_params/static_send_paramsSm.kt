@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
+// source-hash: ca67d4fa2cf4dbcd6617a3b32561c9b8257bc03aaa65978435303ccf35bae7b3
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_send_params.scxml
@@ -175,6 +175,8 @@ class StaticSendParamsStateMachine(
     val savedShape: SavedShape = SavedShape(
         first = "7e5e95cee8de997396fe13304f2b1d4514e4e762405c5db762384b1df906a243",
         revised = "7e38631c4ad4fb4e0086252d3257a27fbbe316fe81cc222ff55b9a23a0a9825e",
+        format2First = "7e5e95cee8de997396fe13304f2b1d4514e4e762405c5db762384b1df906a243",
+        format2Revised = "7e38631c4ad4fb4e0086252d3257a27fbbe316fe81cc222ff55b9a23a0a9825e",
         records = listOf(
         ),
         enums = listOf(

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
+// source-hash: ca67d4fa2cf4dbcd6617a3b32561c9b8257bc03aaa65978435303ccf35bae7b3
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -180,6 +180,24 @@ func (e StaticRealEvent) String() string {
 	}
 	return "unknown"
 }
+
+// ── SCE Accepted Subset §2.15: what a format-2 saved state of it is bound to ──
+
+// StaticRealSavedShapeFormat2 is the shape a format-2 saved state of
+// this machine names when every record schema it holds is in its first
+// revision (docs/adr/0045, section 2). The generator computes it once, so it is
+// the text every backend's constant is.
+const StaticRealSavedShapeFormat2 = "f44ab1df16ee701bda26935e1acf131aaf19f648ffc8db1be27381c1a76a4133"
+
+// StaticRealSavedShapeFormat2Revised is the shape a format-2 saved state
+// of this machine names when it names a later revision of a record schema or
+// an enum.
+const StaticRealSavedShapeFormat2Revised = "2587ba0a8cc82b3651360f544a67d759659dde6552f8fcdf2cc117fe60bbdf1f"
+
+// StaticRealSavedEnumKeys names each enum a value of a saved state of
+// this machine is of, by its document (docs/adr/0044): the key `revisions`
+// names it by, and the format-2 shape spells it by.
+var StaticRealSavedEnumKeys = [...]string{}
 
 // ======================================================================
 // Policy struct

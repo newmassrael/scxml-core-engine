@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: ca3b055deba6b38537c3642140f701b5f98f1b971d59425d3c780765d8a6a19b
+// source-hash: 75f0d3c43c82c6af748dd1f1aba98de1b9c4f7c51e43e8850cdf3b0490c95be4
 
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/242/test242.scxml
@@ -313,7 +313,7 @@ class Test242StateMachine(
                 val generatedInvokeId = "s0.${nextInvokeStart("_invoke_0")}._invoke_0"
                 deferInvoke(state, generatedInvokeId) {
 
-                    val childSM = Test242sub1StateMachine()
+                    val childSM = adoptChild(Test242sub1StateMachine(), generatedInvokeId)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
                     startInvoke("_invoke_0", childSM, false, Test242Event.Done.Invoke, "", generatedInvokeId, "test242sub1")
                 }
@@ -324,7 +324,7 @@ class Test242StateMachine(
                 val generatedInvokeId = "s02.${nextInvokeStart("_invoke_1")}._invoke_1"
                 deferInvoke(state, generatedInvokeId) {
 
-                    val childSM = Test242SceSynthInvokeInvoke1StateMachine()
+                    val childSM = adoptChild(Test242SceSynthInvokeInvoke1StateMachine(), generatedInvokeId)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
                     startInvoke("_invoke_1", childSM, false, Test242Event.Done.Invoke, "", generatedInvokeId, "")
                 }
@@ -335,7 +335,7 @@ class Test242StateMachine(
                 val generatedInvokeId = "s03.${nextInvokeStart("_invoke_2")}._invoke_2"
                 deferInvoke(state, generatedInvokeId) {
 
-                    val childSM = Test242SceSynthInvokeInvoke2StateMachine()
+                    val childSM = adoptChild(Test242SceSynthInvokeInvoke2StateMachine(), generatedInvokeId)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
                     startInvoke("_invoke_2", childSM, false, Test242Event.Done.Invoke, "", generatedInvokeId, "")
                 }

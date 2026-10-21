@@ -97,6 +97,8 @@ class StatechartStaticDelayedHostSendStateMachine(
     val savedShape: SavedShape = SavedShape(
         first = "3dd18182ce8f84df8c1ae5222a201ee2019781e2717fef02bdf86519c43df534",
         revised = "eeef36f37f7020ec93667ca4414f5eb99e868b95be3aac83cee972aebde5cce9",
+        format2First = "3dd18182ce8f84df8c1ae5222a201ee2019781e2717fef02bdf86519c43df534",
+        format2Revised = "eeef36f37f7020ec93667ca4414f5eb99e868b95be3aac83cee972aebde5cce9",
         records = listOf(
         ),
         enums = listOf(

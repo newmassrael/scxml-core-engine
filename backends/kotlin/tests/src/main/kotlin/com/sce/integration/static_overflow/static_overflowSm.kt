@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
+// source-hash: ca67d4fa2cf4dbcd6617a3b32561c9b8257bc03aaa65978435303ccf35bae7b3
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_overflow.scxml
@@ -113,6 +113,8 @@ class StaticOverflowStateMachine(
     val savedShape: SavedShape = SavedShape(
         first = "36f152960236f7d9e2f8944e15cfae5bbe7d8b406bb28cf433b9deb7f761512e",
         revised = "c9149ea7ca6640067163c12b233a0cbbba485e8e488f6c63351c63b6c2823101",
+        format2First = "36f152960236f7d9e2f8944e15cfae5bbe7d8b406bb28cf433b9deb7f761512e",
+        format2Revised = "c9149ea7ca6640067163c12b233a0cbbba485e8e488f6c63351c63b6c2823101",
         records = listOf(
         ),
         enums = listOf(

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
+// source-hash: ca67d4fa2cf4dbcd6617a3b32561c9b8257bc03aaa65978435303ccf35bae7b3
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_whole_payload.scxml
@@ -177,6 +177,8 @@ class StaticWholePayloadStateMachine(
     val savedShape: SavedShape = SavedShape(
         first = "b012d52eed2aa7c4c21026e8b9a1e1e55411a4dccd8a7ff7e6a30934ff248236",
         revised = "4ff99c413cce990942da692970977ab9e43384c109f943d60a83941cddf3d590",
+        format2First = "630f70df52332fd1d901f9e652918616f8b5296268086f555c35dc7c21951176",
+        format2Revised = "46e2a51975b77a21618ab3fbbddc6bd11c97ec93b0cbe15c7894469c4f57f604",
         records = listOf(
             RecordLineage(
                 event = "view.shown",

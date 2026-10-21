@@ -223,7 +223,7 @@ class AutoforwardDequeuePointStateMachine(
                 val generatedInvokeId = "phase.${nextInvokeStart("inv_probe")}.inv_probe"
                 deferInvoke(state, generatedInvokeId) {
 
-                    val childSM = AutoforwardDequeuePointSceSynthInvokeInvProbeStateMachine()
+                    val childSM = adoptChild(AutoforwardDequeuePointSceSynthInvokeInvProbeStateMachine(), generatedInvokeId)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
                     startInvoke("inv_probe", childSM, true, AutoforwardDequeuePointEvent.Done.Invoke, "", generatedInvokeId, "")
                 }

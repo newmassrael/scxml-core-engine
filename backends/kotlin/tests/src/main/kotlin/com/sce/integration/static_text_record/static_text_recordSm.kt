@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
+// source-hash: ca67d4fa2cf4dbcd6617a3b32561c9b8257bc03aaa65978435303ccf35bae7b3
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_text_record.scxml
@@ -178,6 +178,8 @@ class StaticTextRecordStateMachine(
     val savedShape: SavedShape = SavedShape(
         first = "58fff1e777041e7697c25e2df69b4fe0c77d445be391d30ae03c3f285ae9076d",
         revised = "2cde5acaac7e84bf9fcd80e0d7634ff9754198115b76527014df8fd4758406bf",
+        format2First = "58fff1e777041e7697c25e2df69b4fe0c77d445be391d30ae03c3f285ae9076d",
+        format2Revised = "2cde5acaac7e84bf9fcd80e0d7634ff9754198115b76527014df8fd4758406bf",
         records = listOf(
             RecordLineage(
                 event = "text.slot",

@@ -129,6 +129,8 @@ class StatechartStaticHostInvokeStateMachine(
     val savedShape: SavedShape = SavedShape(
         first = "647781765f19981584d6277b376df1cb577a70c191c4983ee2d71737b9f93ac9",
         revised = "919f78480d6684c23f3346c8c52ce39ea292a6c52e231bbd5e748199175b2f42",
+        format2First = "647781765f19981584d6277b376df1cb577a70c191c4983ee2d71737b9f93ac9",
+        format2Revised = "919f78480d6684c23f3346c8c52ce39ea292a6c52e231bbd5e748199175b2f42",
         records = listOf(
         ),
         enums = listOf(

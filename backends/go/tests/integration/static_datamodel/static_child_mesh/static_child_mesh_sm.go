@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
+// source-hash: ca67d4fa2cf4dbcd6617a3b32561c9b8257bc03aaa65978435303ccf35bae7b3
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -194,6 +194,24 @@ func (e StaticChildMeshEvent) String() string {
 	}
 	return "unknown"
 }
+
+// ── SCE Accepted Subset §2.15: what a format-2 saved state of it is bound to ──
+
+// StaticChildMeshSavedShapeFormat2 is the shape a format-2 saved state of
+// this machine names when every record schema it holds is in its first
+// revision (docs/adr/0045, section 2). The generator computes it once, so it is
+// the text every backend's constant is.
+const StaticChildMeshSavedShapeFormat2 = "da543ed16b83c929a0920b9a9aac50cd56e51ff437dd739e049e2f87b699a9fe"
+
+// StaticChildMeshSavedShapeFormat2Revised is the shape a format-2 saved state
+// of this machine names when it names a later revision of a record schema or
+// an enum.
+const StaticChildMeshSavedShapeFormat2Revised = "b428739571d63d80edb7874f3bddb4b4c6c3d1f4c245f5a2cc0f5c72da4fd05e"
+
+// StaticChildMeshSavedEnumKeys names each enum a value of a saved state of
+// this machine is of, by its document (docs/adr/0044): the key `revisions`
+// names it by, and the format-2 shape spells it by.
+var StaticChildMeshSavedEnumKeys = [...]string{}
 
 // ======================================================================
 // Policy struct
@@ -422,7 +440,7 @@ func (p *StaticChildMeshPolicy) ExecutePendingInvokes(engine *sce.Engine[StaticC
 			engine.StartChildMesh(childEngine, "peer", "static_mesh_relay")
 			childEngine.Initialize()
 
-			wrapper := &childEngineWrapperStaticChildMesh_PeerStaticMeshRelay{engine: childEngine, policy: &childPolicy}
+			wrapper := &childEngineWrapperStaticChildMesh_Peer0jStaticMeshRelay{engine: childEngine, policy: &childPolicy}
 			p.childPeer = wrapper
 
 			sce.DrainAndRaiseChildEvents(wrapper, p.activeInvokes, "peer", engine)
@@ -596,23 +614,23 @@ func (w *childEngineWrapperStaticChildMesh_List) DonedataAtFinal() string { retu
 func (w *childEngineWrapperStaticChildMesh_List) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
 func (w *childEngineWrapperStaticChildMesh_List) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
 func (w *childEngineWrapperStaticChildMesh_List) DetachMesh() { w.engine.DetachMesh() }
-type childEngineWrapperStaticChildMesh_PeerStaticMeshRelay struct {
+type childEngineWrapperStaticChildMesh_Peer0jStaticMeshRelay struct {
 	engine *sce.Engine[StaticMeshRelayState, StaticMeshRelayEvent]
 	policy *StaticMeshRelayPolicy
 }
-func (w *childEngineWrapperStaticChildMesh_PeerStaticMeshRelay) Initialize() { w.engine.Initialize() }
-func (w *childEngineWrapperStaticChildMesh_PeerStaticMeshRelay) Tick() { w.engine.Tick() }
-func (w *childEngineWrapperStaticChildMesh_PeerStaticMeshRelay) Step() { w.engine.Step() }
-func (w *childEngineWrapperStaticChildMesh_PeerStaticMeshRelay) Stop() { w.engine.Stop() }
-func (w *childEngineWrapperStaticChildMesh_PeerStaticMeshRelay) IsInFinalState() bool { return w.engine.IsInFinalState() }
-func (w *childEngineWrapperStaticChildMesh_PeerStaticMeshRelay) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
-func (w *childEngineWrapperStaticChildMesh_PeerStaticMeshRelay) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
-func (w *childEngineWrapperStaticChildMesh_PeerStaticMeshRelay) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
-func (w *childEngineWrapperStaticChildMesh_PeerStaticMeshRelay) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
-func (w *childEngineWrapperStaticChildMesh_PeerStaticMeshRelay) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
-func (w *childEngineWrapperStaticChildMesh_PeerStaticMeshRelay) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
-func (w *childEngineWrapperStaticChildMesh_PeerStaticMeshRelay) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
-func (w *childEngineWrapperStaticChildMesh_PeerStaticMeshRelay) DetachMesh() { w.engine.DetachMesh() }
+func (w *childEngineWrapperStaticChildMesh_Peer0jStaticMeshRelay) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperStaticChildMesh_Peer0jStaticMeshRelay) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperStaticChildMesh_Peer0jStaticMeshRelay) Step() { w.engine.Step() }
+func (w *childEngineWrapperStaticChildMesh_Peer0jStaticMeshRelay) Stop() { w.engine.Stop() }
+func (w *childEngineWrapperStaticChildMesh_Peer0jStaticMeshRelay) IsInFinalState() bool { return w.engine.IsInFinalState() }
+func (w *childEngineWrapperStaticChildMesh_Peer0jStaticMeshRelay) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
+func (w *childEngineWrapperStaticChildMesh_Peer0jStaticMeshRelay) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
+func (w *childEngineWrapperStaticChildMesh_Peer0jStaticMeshRelay) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
+func (w *childEngineWrapperStaticChildMesh_Peer0jStaticMeshRelay) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
+func (w *childEngineWrapperStaticChildMesh_Peer0jStaticMeshRelay) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
+func (w *childEngineWrapperStaticChildMesh_Peer0jStaticMeshRelay) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
+func (w *childEngineWrapperStaticChildMesh_Peer0jStaticMeshRelay) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
+func (w *childEngineWrapperStaticChildMesh_Peer0jStaticMeshRelay) DetachMesh() { w.engine.DetachMesh() }
 
 
 // DeliverToParent delivers a delayed `<send target="#_parent">` whose wait is

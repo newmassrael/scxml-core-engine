@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
+// source-hash: ca67d4fa2cf4dbcd6617a3b32561c9b8257bc03aaa65978435303ccf35bae7b3
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_real.scxml
@@ -150,6 +150,8 @@ class StaticRealStateMachine(
     val savedShape: SavedShape = SavedShape(
         first = "f44ab1df16ee701bda26935e1acf131aaf19f648ffc8db1be27381c1a76a4133",
         revised = "2587ba0a8cc82b3651360f544a67d759659dde6552f8fcdf2cc117fe60bbdf1f",
+        format2First = "f44ab1df16ee701bda26935e1acf131aaf19f648ffc8db1be27381c1a76a4133",
+        format2Revised = "2587ba0a8cc82b3651360f544a67d759659dde6552f8fcdf2cc117fe60bbdf1f",
         records = listOf(
         ),
         enums = listOf(

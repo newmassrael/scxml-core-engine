@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
+// source-hash: ca67d4fa2cf4dbcd6617a3b32561c9b8257bc03aaa65978435303ccf35bae7b3
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_record_bytes.scxml
@@ -194,6 +194,8 @@ class StaticRecordBytesStateMachine(
     val savedShape: SavedShape = SavedShape(
         first = "0f24f88f0f95e9cba72cf2c8194a035f79adde795a2ee38234a238dd2ed59cb8",
         revised = "a4673fed412eef9b82de968dadba304e219c25bfc193ba1b4a9a8579adf08aab",
+        format2First = "0f24f88f0f95e9cba72cf2c8194a035f79adde795a2ee38234a238dd2ed59cb8",
+        format2Revised = "a4673fed412eef9b82de968dadba304e219c25bfc193ba1b4a9a8579adf08aab",
         records = listOf(
             RecordLineage(
                 event = "framed.taken",

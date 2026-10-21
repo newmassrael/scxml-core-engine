@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
+// source-hash: ca67d4fa2cf4dbcd6617a3b32561c9b8257bc03aaa65978435303ccf35bae7b3
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_send_delay.scxml
@@ -124,6 +124,8 @@ class StaticSendDelayStateMachine(
     val savedShape: SavedShape = SavedShape(
         first = "33de80ca2278bece82d234d06b1ff17a944a2b9ecc07ab8fc5ffd37a81a7fa93",
         revised = "0f1c5653ad66d39e7577e79f285e18c08b7143f72e60ca9e774beafbb9602739",
+        format2First = "33de80ca2278bece82d234d06b1ff17a944a2b9ecc07ab8fc5ffd37a81a7fa93",
+        format2Revised = "0f1c5653ad66d39e7577e79f285e18c08b7143f72e60ca9e774beafbb9602739",
         records = listOf(
         ),
         enums = listOf(

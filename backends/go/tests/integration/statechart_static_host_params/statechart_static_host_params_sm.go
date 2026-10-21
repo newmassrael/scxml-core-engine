@@ -202,6 +202,24 @@ func (e StatechartStaticHostParamsEvent) String() string {
 	return "unknown"
 }
 
+// ── SCE Accepted Subset §2.15: what a format-2 saved state of it is bound to ──
+
+// StatechartStaticHostParamsSavedShapeFormat2 is the shape a format-2 saved state of
+// this machine names when every record schema it holds is in its first
+// revision (docs/adr/0045, section 2). The generator computes it once, so it is
+// the text every backend's constant is.
+const StatechartStaticHostParamsSavedShapeFormat2 = "b286785fdef50776d9642d37e26700602e2eff4718258424a77f400ff92c5e20"
+
+// StatechartStaticHostParamsSavedShapeFormat2Revised is the shape a format-2 saved state
+// of this machine names when it names a later revision of a record schema or
+// an enum.
+const StatechartStaticHostParamsSavedShapeFormat2Revised = "93ef05f6eb9aadfc384df76112d432c484e071a161d90eb0cbd084451f589d59"
+
+// StatechartStaticHostParamsSavedEnumKeys names each enum a value of a saved state of
+// this machine is of, by its document (docs/adr/0044): the key `revisions`
+// names it by, and the format-2 shape spells it by.
+var StatechartStaticHostParamsSavedEnumKeys = [...]string{}
+
 // ======================================================================
 // Policy struct
 // ======================================================================

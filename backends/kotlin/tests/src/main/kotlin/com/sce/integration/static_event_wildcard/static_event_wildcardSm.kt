@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
+// source-hash: ca67d4fa2cf4dbcd6617a3b32561c9b8257bc03aaa65978435303ccf35bae7b3
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_event_wildcard.scxml
@@ -109,6 +109,8 @@ class StaticEventWildcardStateMachine(
     val savedShape: SavedShape = SavedShape(
         first = "2f459497a93c6d27a1e149454e8c0aa8082dc34f16a7390624a758f009e3bebd",
         revised = "304fba8306d0087182ef0d9a58369c76da774d8d11e8cd144304072574eaa505",
+        format2First = "2f459497a93c6d27a1e149454e8c0aa8082dc34f16a7390624a758f009e3bebd",
+        format2Revised = "304fba8306d0087182ef0d9a58369c76da774d8d11e8cd144304072574eaa505",
         records = listOf(
         ),
         enums = listOf(

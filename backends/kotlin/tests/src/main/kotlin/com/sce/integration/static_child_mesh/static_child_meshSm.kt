@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
+// source-hash: ca67d4fa2cf4dbcd6617a3b32561c9b8257bc03aaa65978435303ccf35bae7b3
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_child_mesh.scxml
@@ -117,6 +117,8 @@ class StaticChildMeshStateMachine(
     val savedShape: SavedShape = SavedShape(
         first = "da543ed16b83c929a0920b9a9aac50cd56e51ff437dd739e049e2f87b699a9fe",
         revised = "b428739571d63d80edb7874f3bddb4b4c6c3d1f4c245f5a2cc0f5c72da4fd05e",
+        format2First = "da543ed16b83c929a0920b9a9aac50cd56e51ff437dd739e049e2f87b699a9fe",
+        format2Revised = "b428739571d63d80edb7874f3bddb4b4c6c3d1f4c245f5a2cc0f5c72da4fd05e",
         records = listOf(
         ),
         enums = listOf(
@@ -410,9 +412,11 @@ class StaticChildMeshStateMachine(
                             // document stem so `file:x.scxml` and `./x.scxml` name
                             // one child. `startInvoke` takes a star-projected
                             // machine, so only the construction differs here.
+                            // docs/adr/0045: each candidate takes its id where it
+                            // is built, before it is handed an argument.
                             val __sceSelected = DocumentStem.of(filePath)
                             val childSM = when (__sceSelected) {
-                                "static_mesh_relay" -> StaticMeshRelayStateMachine()
+                                "static_mesh_relay" -> adoptChild(StaticMeshRelayStateMachine(), generatedInvokeId)
                                 else -> {
                                     // The failure the Interpreter reports when a
                                     // document will not load: nothing to create.
@@ -437,7 +441,7 @@ class StaticChildMeshStateMachine(
                 val generatedInvokeId = "working.${nextInvokeStart("list")}.list"
                 deferInvoke(state, generatedInvokeId) {
 
-                    val childSM = StaticChildMeshSceSynthInvokeListStateMachine()
+                    val childSM = adoptChild(StaticChildMeshSceSynthInvokeListStateMachine(), generatedInvokeId)
 
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
                     startInvoke("list", childSM, false, StaticChildMeshEvent.Done.Invoke.List, "", generatedInvokeId, "")

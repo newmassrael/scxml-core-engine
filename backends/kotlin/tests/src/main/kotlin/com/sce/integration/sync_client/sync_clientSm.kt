@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
+// source-hash: ca67d4fa2cf4dbcd6617a3b32561c9b8257bc03aaa65978435303ccf35bae7b3
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/sync_client.scxml
@@ -212,6 +212,8 @@ class SyncClientStateMachine(
     val savedShape: SavedShape = SavedShape(
         first = "b07ee998a49953bb6dcbd8a8f1b5201424834bdf432224e225a612af803dcbe2",
         revised = "59efa08979bdda6f4ee18d6353512b4c4be9f0964013cc38a9000088eddfdeda",
+        format2First = "b07ee998a49953bb6dcbd8a8f1b5201424834bdf432224e225a612af803dcbe2",
+        format2Revised = "59efa08979bdda6f4ee18d6353512b4c4be9f0964013cc38a9000088eddfdeda",
         records = listOf(
         ),
         enums = listOf(

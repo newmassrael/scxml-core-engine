@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
+// source-hash: ca67d4fa2cf4dbcd6617a3b32561c9b8257bc03aaa65978435303ccf35bae7b3
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_schema_pending.scxml
@@ -163,6 +163,8 @@ class StaticSchemaPendingStateMachine(
     val savedShape: SavedShape = SavedShape(
         first = "f7e359f42783c9931d2c1dbf44f80fee16a403f0e56b70bbc26ff6874c901834",
         revised = "2619b075d4aa2597ecf884cba0f3b6d95715e5dbdca9bb22dc2d20be2f4dead2",
+        format2First = "c0a487fdd7e3380c9c4044d0fa1211b81a23cbe90c581ff9490a619a0447a749",
+        format2Revised = "3fbeae2b4200145eef7af1a2e393f315a5466a7f5ff65b7bcabbb7ed2e75c9fa",
         records = listOf(
             RecordLineage(
                 event = "signal.raised",

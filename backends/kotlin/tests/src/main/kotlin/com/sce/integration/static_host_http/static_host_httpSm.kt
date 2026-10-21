@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
+// source-hash: ca67d4fa2cf4dbcd6617a3b32561c9b8257bc03aaa65978435303ccf35bae7b3
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_host_http.scxml
@@ -217,6 +217,8 @@ class StaticHostHttpStateMachine(
     val savedShape: SavedShape = SavedShape(
         first = "448e3c50f8d63de0f3a6240edee966889d1d15938aedd4a15fc2e2e733f46d5e",
         revised = "4ea95f1cb7f5532c4fb84d343bb273dae3034a36d54fa2c946a9b541f7508478",
+        format2First = "448e3c50f8d63de0f3a6240edee966889d1d15938aedd4a15fc2e2e733f46d5e",
+        format2Revised = "4ea95f1cb7f5532c4fb84d343bb273dae3034a36d54fa2c946a9b541f7508478",
         records = listOf(
         ),
         enums = listOf(

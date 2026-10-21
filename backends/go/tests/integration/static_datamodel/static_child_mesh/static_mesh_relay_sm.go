@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
+// source-hash: ca67d4fa2cf4dbcd6617a3b32561c9b8257bc03aaa65978435303ccf35bae7b3
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -151,6 +151,24 @@ func (e StaticMeshRelayEvent) String() string {
 	}
 	return "unknown"
 }
+
+// ── SCE Accepted Subset §2.15: what a format-2 saved state of it is bound to ──
+
+// StaticMeshRelaySavedShapeFormat2 is the shape a format-2 saved state of
+// this machine names when every record schema it holds is in its first
+// revision (docs/adr/0045, section 2). The generator computes it once, so it is
+// the text every backend's constant is.
+const StaticMeshRelaySavedShapeFormat2 = "29091e95d2e4b2df2c5e529bc91941e15de2224bf0bfd73c5823bbd35cb19aac"
+
+// StaticMeshRelaySavedShapeFormat2Revised is the shape a format-2 saved state
+// of this machine names when it names a later revision of a record schema or
+// an enum.
+const StaticMeshRelaySavedShapeFormat2Revised = "3bba4cf36f6c537811121f0618bcdf648a685c1fe51ab027cf283e142dd5ab9f"
+
+// StaticMeshRelaySavedEnumKeys names each enum a value of a saved state of
+// this machine is of, by its document (docs/adr/0044): the key `revisions`
+// names it by, and the format-2 shape spells it by.
+var StaticMeshRelaySavedEnumKeys = [...]string{}
 
 // ======================================================================
 // Policy struct

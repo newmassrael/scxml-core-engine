@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
+// source-hash: ca67d4fa2cf4dbcd6617a3b32561c9b8257bc03aaa65978435303ccf35bae7b3
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_send_namelist.scxml
@@ -174,6 +174,8 @@ class StaticSendNamelistStateMachine(
     val savedShape: SavedShape = SavedShape(
         first = "4c5fcd09ccb548a79be78a0a5ea36c3c9f17a5dfb4706bc3b43fd85462ba40d9",
         revised = "87f4f5810c33f9a12f673899e60ceb33c0f6a149ce6aa220e3ab32c3a77c8f23",
+        format2First = "16febb7498164599d53f3e3d58a01519e95524ba7cefbf3bad4f9cc092be55be",
+        format2Revised = "269f7e6c12c145c071ff88e74b99934e502cee8877afee65ddedea936e511571",
         records = listOf(
         ),
         enums = listOf(

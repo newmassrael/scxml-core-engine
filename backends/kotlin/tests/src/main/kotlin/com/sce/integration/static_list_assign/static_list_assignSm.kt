@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
+// source-hash: ca67d4fa2cf4dbcd6617a3b32561c9b8257bc03aaa65978435303ccf35bae7b3
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_list_assign.scxml
@@ -151,6 +151,8 @@ class StaticListAssignStateMachine(
     val savedShape: SavedShape = SavedShape(
         first = "704ea29d83b5e4780aa3cc7bc865bc34003021157288ecd831acb8e6099dc5cd",
         revised = "ff760fa00992202918c7b80277a12dcd2910e7ab04f30611f9e7cd36d8bbd5f6",
+        format2First = "704ea29d83b5e4780aa3cc7bc865bc34003021157288ecd831acb8e6099dc5cd",
+        format2Revised = "ff760fa00992202918c7b80277a12dcd2910e7ab04f30611f9e7cd36d8bbd5f6",
         records = listOf(
         ),
         enums = listOf(

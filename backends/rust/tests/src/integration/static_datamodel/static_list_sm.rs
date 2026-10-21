@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
+// source-hash: ca67d4fa2cf4dbcd6617a3b32561c9b8257bc03aaa65978435303ccf35bae7b3
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -26,10 +26,10 @@
 // warning on a real fixture and recording it in the same form. Removing an
 // allow is safe whenever its justifying pattern stops being emitted.
 
-// Source-faithful identifier names: W3C SCXML 6.4.1 lets users supply
-// arbitrary id strings (e.g. `<invoke id="invokedChild">`); preserving the
-// camelCase verbatim into Rust field names like `child_invokedChild`
-// keeps the generated code traceable back to the SCXML source.
+// Source-faithful identifier names: generated names embed names the document
+// wrote, which need not be snake case. An `<invoke id>` is the exception: its
+// identifier (`crate::model::invoke_identifier` in sce-build) is lowercase,
+// so `<invoke id="invokedChild">` gives `child_0zinvokedzuchild`.
 #![allow(non_snake_case)]
 // Codegen always emits `use core::time::Duration` and the umbrella
 // `use sce_rust_runtime::{Engine, StatePolicy};`; fixtures with no
@@ -243,9 +243,11 @@ pub trait StaticListPersist: Sized {
 
     /// The machine's whole state, each delayed `<send>` still waiting written
     /// as the moment it comes due on the wall clock whose reading now is
-    /// `wall_now_ms`, in milliseconds since the Unix epoch. Refused for a
-    /// machine that is not running, and for one whose last macrostep stopped
-    /// at the microstep ceiling.
+    /// `wall_now_ms`, in milliseconds since the Unix epoch, and each running
+    /// child saved inside it with its own whole state (docs/adr/0045). Refused
+    /// for a machine that is not running, and for one whose last macrostep, or
+    /// a child's, stopped at the microstep ceiling. The session id it writes is
+    /// the one the machine was built under, or the one a restore bound.
     fn save_at(
         &self,
         wall_now_ms: u64,
@@ -268,12 +270,24 @@ pub trait StaticListPersist: Sized {
         self.save_at(::sce_rust_runtime::saved_state::wall_clock_ms())
     }
 
+    /// Refuse `saved` unless a machine of this document could restore it —
+    /// its shape and revisions, its history, every variable, its
+    /// configuration, queues and invocations, and each running child by the
+    /// document that child runs, to any depth — building nothing
+    /// (docs/adr/0045, section 3, step 1). What a parent's restore asks of
+    /// each child it holds before it builds any of them.
+    fn judge(
+        saved: &::sce_rust_runtime::saved_state::SavedState,
+    ) -> Result<(), ::sce_rust_runtime::saved_state::StateRefusal>;
+
     /// A machine of `policy` standing where `saved` left one, measuring time
     /// by `clock` and told by `wall_now_ms` what time it is on the wall clock
     /// the saved `due`s were written against: a waiting send comes due when
     /// its saved moment does, and one already due comes due now. No
     /// `<onentry>` runs and no `<data>` is evaluated: the saved run already
-    /// did both.
+    /// did both. The session carries on under its saved id, and each running
+    /// child a format-2 state holds is resumed where it stood; a format-1
+    /// state's children start again from their beginning.
     fn restore_with(
         policy: Self::Policy,
         saved: &::sce_rust_runtime::saved_state::SavedState,
@@ -308,6 +322,8 @@ impl StaticListPersist for Engine<StaticListPolicy> {
         ::sce_rust_runtime::saved_state::SavedShape {
             first: "ae704abc4c29a63e76bfe2707c4d0e0ce4717e731dba9b74c000c278e6cca9c2",
             revised: "8aa0f9aed42bda64f1637b1852cbd2b0e2641bc6998c82f0b07ad4b7bad23b6b",
+            format2_first: "ae704abc4c29a63e76bfe2707c4d0e0ce4717e731dba9b74c000c278e6cca9c2",
+            format2_revised: "8aa0f9aed42bda64f1637b1852cbd2b0e2641bc6998c82f0b07ad4b7bad23b6b",
             records: &[],
             enums: &[],
         };
@@ -342,8 +358,33 @@ impl StaticListPersist for Engine<StaticListPolicy> {
                 ),
             ],
             ::sce_rust_runtime::saved_state::save_history(self.policy(), Self::HISTORIES),
+            Vec::new(),
             wall_now_ms,
         )
+    }
+
+    fn judge(
+        saved: &::sce_rust_runtime::saved_state::SavedState,
+    ) -> Result<(), ::sce_rust_runtime::saved_state::StateRefusal> {
+        // What a restore reads, read and let go: the shape and the revisions,
+        // the history, every variable, and then the configuration, the queues,
+        // the invocations and each running child by its own document.
+        let saved = &::sce_rust_runtime::saved_state::upgrade(saved, &Self::SHAPE)?;
+        ::sce_rust_runtime::saved_state::restore_history::<StaticListPolicy>(
+            saved,
+            Self::HISTORIES,
+        )?;
+        let _: Vec<u8> =
+            ::sce_rust_runtime::saved_state::bounded(saved.variable("picked")?, "picked", 3)?;
+        let _: u32 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("refusals")?,
+            "refusals",
+        )?;
+        let _: u32 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("count")?,
+            "count",
+        )?;
+        ::sce_rust_runtime::saved_state::judge::<StaticListPolicy>(saved)
     }
 
     fn restore_with(
@@ -401,12 +442,9 @@ pub struct StaticListPolicy {
     refusals: u32,
     /// W3C SCXML 5.2: the `count` datamodel variable, published (`sce:direction="out"`).
     count: u32,
-    // W3C SCXML 5.10: Session ID (script engine + invoke tracking).
-    //
-    // SCE Protocol-Synthesis RFC §synth-5-J-2: gated to !no_std. Under `--no-std` both the
-    // script engine (`codegen/no-std-script-not-supported`) and `<invoke>`
-    // (`codegen/no-std-invoke-not-supported`) are codegen-rejected, so no
-    // session identity is ever tracked and the alloc-coupled `String` is omitted.
+    // W3C SCXML 5.10: the session's id (script engine, invoke tracking, the
+    // saved state), bound when the machine is built and never empty
+    // (docs/adr/0045): drawn, given by the host, or given by the parent.
     pub session_id: Option<String>,
     // W3C SCXML 6.4: Parent engine external queue for #_parent send routing
     // Always generated under std — any SM can be invoked as a child. Under
@@ -424,7 +462,7 @@ pub struct StaticListPolicy {
 }
 
 impl StaticListPolicy {
-    pub fn new() -> Self {
+    fn build(session_id: String) -> Self {
         let picked: Vec<u8> = Vec::new();
         let refusals: u32 = 0;
         let count: u32 = 0;
@@ -433,11 +471,49 @@ impl StaticListPolicy {
             picked,
             refusals,
             count,
-            session_id: None,
+            session_id: Some(session_id),
             parent_external_queue: None,
             invoke_id: String::new(),
             child_session_id: String::new(),
         }
+    }
+
+    /// Build the machine under a session id drawn from the operating system's
+    /// randomness, a UUID version 4 (docs/adr/0045).    ///
+    /// Absent on a target with no source of randomness the runtime reads
+    /// (`wasm32-unknown-unknown`): a host there gives the id, through
+    /// [`new_with_session_id`](Self::new_with_session_id).
+    #[cfg(not(any(target_os = "none", all(target_arch = "wasm32", target_os = "unknown"))))]
+    pub fn new() -> Self {
+        Self::build(::sce_rust_runtime::helpers::session_id::drawn())
+    }
+
+    /// Build the machine under the session id its host gives: the host's own
+    /// name for the machine, say, or a fixed id a test holds a saved text to
+    /// (docs/adr/0045, "Questions the owner answered" 2). `_sessionid` is bound
+    /// here and kept until the session ends; a restore binds the saved id in
+    /// its place, since the session carries on.    ///
+    /// The one way this machine is built on `wasm32-unknown-unknown`, which has
+    /// no source of randomness the runtime reads.
+    ///
+    /// # Errors
+    ///
+    /// An id that is not an XML Nmtoken (the empty text, a space, a `#`) is
+    /// refused with the reason, and no machine is built.
+    pub fn new_with_session_id(
+        session_id: &str,
+    ) -> Result<Self, ::sce_rust_runtime::helpers::session_id::SessionIdRefusal> {
+        Ok(Self::build(::sce_rust_runtime::helpers::session_id::given(
+            session_id,
+        )?))
+    }
+
+    /// The policy of a child its parent invokes, under the id the tree gives it,
+    /// `<parent>.<invokeid>` (docs/adr/0045): formed by the parent from its own
+    /// id and the invoke id, both held to the rule already, so it is not
+    /// judged again.
+    pub(crate) fn for_child(session_id: String) -> Self {
+        Self::build(session_id)
     }
 
     /// §scxml-6.4.1: give this machine the values `params` carries, in place of
@@ -470,6 +546,9 @@ impl StaticListPolicy {
     }
 }
 
+// docs/adr/0045: a machine built with no arguments draws its session id, so it
+// has a default only where `new` can draw one.
+#[cfg(not(any(target_os = "none", all(target_arch = "wasm32", target_os = "unknown"))))]
 impl Default for StaticListPolicy {
     fn default() -> Self {
         Self::new()
@@ -887,5 +966,15 @@ impl StatePolicy for StaticListPolicy {
     // invoking parent installs is the link to it.
     fn has_parent_session(&self) -> bool {
         self.parent_external_queue.is_some()
+    }
+
+    // docs/adr/0045: this session's own id, as a saved state holds it.
+    fn own_session_id(&self) -> &str {
+        self.session_id.as_deref().unwrap_or("")
+    }
+
+    // docs/adr/0045: a restored session carries on under its saved id.
+    fn bind_session_id(&mut self, session_id: &str) {
+        self.session_id = Some(session_id.to_string());
     }
 }

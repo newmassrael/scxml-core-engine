@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: ca3b055deba6b38537c3642140f701b5f98f1b971d59425d3c780765d8a6a19b
+// source-hash: 75f0d3c43c82c6af748dd1f1aba98de1b9c4f7c51e43e8850cdf3b0490c95be4
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -26,10 +26,10 @@
 // warning on a real fixture and recording it in the same form. Removing an
 // allow is safe whenever its justifying pattern stops being emitted.
 
-// Source-faithful identifier names: W3C SCXML 6.4.1 lets users supply
-// arbitrary id strings (e.g. `<invoke id="invokedChild">`); preserving the
-// camelCase verbatim into Rust field names like `child_invokedChild`
-// keeps the generated code traceable back to the SCXML source.
+// Source-faithful identifier names: generated names embed names the document
+// wrote, which need not be snake case. An `<invoke id>` is the exception: its
+// identifier (`crate::model::invoke_identifier` in sce-build) is lowercase,
+// so `<invoke id="invokedChild">` gives `child_0zinvokedzuchild`.
 #![allow(non_snake_case)]
 // Codegen always emits `use core::time::Duration` and the umbrella
 // `use sce_rust_runtime::{Engine, StatePolicy};`; fixtures with no
@@ -138,12 +138,9 @@ impl Test242Event {
 // ======================================================================
 
 pub struct Test242Policy {
-    // W3C SCXML 5.10: Session ID (script engine + invoke tracking).
-    //
-    // SCE Protocol-Synthesis RFC §synth-5-J-2: gated to !no_std. Under `--no-std` both the
-    // script engine (`codegen/no-std-script-not-supported`) and `<invoke>`
-    // (`codegen/no-std-invoke-not-supported`) are codegen-rejected, so no
-    // session identity is ever tracked and the alloc-coupled `String` is omitted.
+    // W3C SCXML 5.10: the session's id (script engine, invoke tracking, the
+    // saved state), bound when the machine is built and never empty
+    // (docs/adr/0045): drawn, given by the host, or given by the parent.
     pub session_id: Option<String>,
     // W3C SCXML 6.4: Pending invoke queue (deferred until macrostep end).
     // §scxml-6.4.1 unsupported-type invokes ride it too — their execute step
@@ -200,9 +197,9 @@ pub struct Test242Policy {
 }
 
 impl Test242Policy {
-    pub fn new() -> Self {
+    fn build(session_id: String) -> Self {
         Self {
-            session_id: None,
+            session_id: Some(session_id),
             pending_invokes: Vec::new(),
             active_invokes: std::collections::HashMap::new(),
             child_invoke_0: None,
@@ -218,6 +215,44 @@ impl Test242Policy {
             invoke_id: String::new(),
             child_session_id: String::new(),
         }
+    }
+
+    /// Build the machine under a session id drawn from the operating system's
+    /// randomness, a UUID version 4 (docs/adr/0045).    ///
+    /// Absent on a target with no source of randomness the runtime reads
+    /// (`wasm32-unknown-unknown`): a host there gives the id, through
+    /// [`new_with_session_id`](Self::new_with_session_id).
+    #[cfg(not(any(target_os = "none", all(target_arch = "wasm32", target_os = "unknown"))))]
+    pub fn new() -> Self {
+        Self::build(::sce_rust_runtime::helpers::session_id::drawn())
+    }
+
+    /// Build the machine under the session id its host gives: the host's own
+    /// name for the machine, say, or a fixed id a test holds a saved text to
+    /// (docs/adr/0045, "Questions the owner answered" 2). `_sessionid` is bound
+    /// here and kept until the session ends; a restore binds the saved id in
+    /// its place, since the session carries on.    ///
+    /// The one way this machine is built on `wasm32-unknown-unknown`, which has
+    /// no source of randomness the runtime reads.
+    ///
+    /// # Errors
+    ///
+    /// An id that is not an XML Nmtoken (the empty text, a space, a `#`) is
+    /// refused with the reason, and no machine is built.
+    pub fn new_with_session_id(
+        session_id: &str,
+    ) -> Result<Self, ::sce_rust_runtime::helpers::session_id::SessionIdRefusal> {
+        Ok(Self::build(::sce_rust_runtime::helpers::session_id::given(
+            session_id,
+        )?))
+    }
+
+    /// The policy of a child its parent invokes, under the id the tree gives it,
+    /// `<parent>.<invokeid>` (docs/adr/0045): formed by the parent from its own
+    /// id and the invoke id, both held to the rule already, so it is not
+    /// judged again.
+    pub(crate) fn for_child(session_id: String) -> Self {
+        Self::build(session_id)
     }
 
     // W3C SCXML 6.4: Defer the start of invoke '_invoke_0' of state 's0' to macrostep end
@@ -319,23 +354,22 @@ impl Test242Policy {
                 // W3C SCXML 6.4: Create child state machine
                 // Engine DI Parity RFC: forward parent's script engine to child when the
                 // child Policy was generated with `model.needs_script_engine = true`.
-                let mut child_policy = super::test242sub1_sm::Test242sub1Policy::new();
+                //
+                // W3C SCXML C.1: the child is built under the id its parent
+                // recorded for it. The parent mints `parentSession.invokeId` and
+                // keys `active_invokes` on it, so an event from this child
+                // reaches the parent carrying that id as its origin; had the
+                // child an id of its own, the location it publishes in
+                // `_ioprocessors` and the origin the parent sees would be two
+                // names for one session that can never be compared — which is
+                // exactly what C.1 requires of them. A child's id comes from the
+                // tree alone, and nothing is drawn for it (docs/adr/0045).
+                let mut child_policy =
+                    super::test242sub1_sm::Test242sub1Policy::for_child(child_session_id.clone());
                 // W3C SCXML 6.4: Pass parent session info to child for #_parent routing
                 child_policy.parent_external_queue = Some(engine.get_external_queue_handle());
                 child_policy.invoke_id = pending.invoke_id.clone();
                 child_policy.child_session_id = child_session_id.clone();
-
-                // W3C SCXML C.1: the child adopts the id its parent recorded
-                // for it. The parent mints `parentSession.invokeId` and keys
-                // `active_invokes` on it, so an event from this child reaches
-                // the parent carrying that id as its origin; if the child also
-                // minted an id of its own, the location it publishes in
-                // `_ioprocessors` and the origin the parent sees would be two
-                // names for one session that can never be compared — which is
-                // exactly what C.1 requires of them.
-                if child_policy.session_id.is_none() {
-                    child_policy.session_id = Some(child_session_id.clone());
-                }
 
                 // W3C SCXML 6.4.1: Track active invoke session BEFORE initialize
                 self.active_invokes.insert(
@@ -367,50 +401,17 @@ impl Test242Policy {
                 // and installed before the child initializes, since its first
                 // `<onentry>` may already send to a peer.
                 engine.start_child_mesh(&mut child_engine, "_invoke_0", "test242sub1");
+                // docs/adr/0045: the tree's host invokers serve the child, whose
+                // host-run invocations name it by its session id.
+                engine.share_host_invokers_with(&mut child_engine);
                 child_engine.initialize();
 
                 // W3C SCXML 6.4: Store child BEFORE draining events so autoforward can find it
                 self.child_invoke_0 = Some(Box::new(child_engine));
 
-                // W3C SCXML 6.4: Drain child-to-parent events raised during initialize
-                sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
-                    &self
-                        .child_invoke_0
-                        .as_ref()
-                        .unwrap()
-                        .policy()
-                        .parent_external_queue,
-                    &self.active_invokes,
-                    "_invoke_0",
-                    engine,
-                );
-
-                // W3C SCXML 6.4: Check if child completed during initialize (test 236)
-                if self
-                    .child_invoke_0
-                    .as_ref()
-                    .map_or(false, |c| c.is_in_final_state())
-                {
-                    self.pending_done_invoke_invoke_0 = true;
-                    // The session ended: its Mesh router is told so.
-                    if let Some(child) = self.child_invoke_0.as_mut() {
-                        child.detach_mesh();
-                    }
-                    // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
-                    // done.invoke.<id>._event.data. Mirrors the C++ AOT contract in
-                    // tools/codegen/templates/invoke_methods.jinja2 (child->donedataAtFinal()
-                    // + EventMetadataHelper::createDoneInvokeEvent).
-                    let donedata = self
-                        .child_invoke_0
-                        .as_ref()
-                        .map(|c| c.donedata_at_final().to_string())
-                        .unwrap_or_default();
-                    sce_rust_runtime::helpers::invoke_processing::raise_done_invoke(
-                        "_invoke_0",
-                        donedata,
-                        engine,
-                    );
-                }
+                // W3C SCXML 6.4: what the child sent as it initialized, and an
+                // ending during initialize (test 236), settled as after any drive.
+                self.settle_child_invoke_0(engine);
                 continue;
             }
             if pending.document_id == "_invoke_1" {
@@ -424,23 +425,21 @@ impl Test242Policy {
                 // W3C SCXML 6.4: Create child state machine
                 // Engine DI Parity RFC: forward parent's script engine to child when the
                 // child Policy was generated with `model.needs_script_engine = true`.
-                let mut child_policy = super::test242__sce_synth_invoke__invoke_1_sm::Test242SceSynthInvokeInvoke1Policy::new();
+                //
+                // W3C SCXML C.1: the child is built under the id its parent
+                // recorded for it. The parent mints `parentSession.invokeId` and
+                // keys `active_invokes` on it, so an event from this child
+                // reaches the parent carrying that id as its origin; had the
+                // child an id of its own, the location it publishes in
+                // `_ioprocessors` and the origin the parent sees would be two
+                // names for one session that can never be compared — which is
+                // exactly what C.1 requires of them. A child's id comes from the
+                // tree alone, and nothing is drawn for it (docs/adr/0045).
+                let mut child_policy = super::test242__sce_synth_invoke__invoke_1_sm::Test242SceSynthInvokeInvoke1Policy::for_child(child_session_id.clone());
                 // W3C SCXML 6.4: Pass parent session info to child for #_parent routing
                 child_policy.parent_external_queue = Some(engine.get_external_queue_handle());
                 child_policy.invoke_id = pending.invoke_id.clone();
                 child_policy.child_session_id = child_session_id.clone();
-
-                // W3C SCXML C.1: the child adopts the id its parent recorded
-                // for it. The parent mints `parentSession.invokeId` and keys
-                // `active_invokes` on it, so an event from this child reaches
-                // the parent carrying that id as its origin; if the child also
-                // minted an id of its own, the location it publishes in
-                // `_ioprocessors` and the origin the parent sees would be two
-                // names for one session that can never be compared — which is
-                // exactly what C.1 requires of them.
-                if child_policy.session_id.is_none() {
-                    child_policy.session_id = Some(child_session_id.clone());
-                }
 
                 // W3C SCXML 6.4.1: Track active invoke session BEFORE initialize
                 self.active_invokes.insert(
@@ -472,50 +471,17 @@ impl Test242Policy {
                 // and installed before the child initializes, since its first
                 // `<onentry>` may already send to a peer.
                 engine.start_child_mesh(&mut child_engine, "_invoke_1", "");
+                // docs/adr/0045: the tree's host invokers serve the child, whose
+                // host-run invocations name it by its session id.
+                engine.share_host_invokers_with(&mut child_engine);
                 child_engine.initialize();
 
                 // W3C SCXML 6.4: Store child BEFORE draining events so autoforward can find it
                 self.child_invoke_1 = Some(Box::new(child_engine));
 
-                // W3C SCXML 6.4: Drain child-to-parent events raised during initialize
-                sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
-                    &self
-                        .child_invoke_1
-                        .as_ref()
-                        .unwrap()
-                        .policy()
-                        .parent_external_queue,
-                    &self.active_invokes,
-                    "_invoke_1",
-                    engine,
-                );
-
-                // W3C SCXML 6.4: Check if child completed during initialize (test 236)
-                if self
-                    .child_invoke_1
-                    .as_ref()
-                    .map_or(false, |c| c.is_in_final_state())
-                {
-                    self.pending_done_invoke_invoke_1 = true;
-                    // The session ended: its Mesh router is told so.
-                    if let Some(child) = self.child_invoke_1.as_mut() {
-                        child.detach_mesh();
-                    }
-                    // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
-                    // done.invoke.<id>._event.data. Mirrors the C++ AOT contract in
-                    // tools/codegen/templates/invoke_methods.jinja2 (child->donedataAtFinal()
-                    // + EventMetadataHelper::createDoneInvokeEvent).
-                    let donedata = self
-                        .child_invoke_1
-                        .as_ref()
-                        .map(|c| c.donedata_at_final().to_string())
-                        .unwrap_or_default();
-                    sce_rust_runtime::helpers::invoke_processing::raise_done_invoke(
-                        "_invoke_1",
-                        donedata,
-                        engine,
-                    );
-                }
+                // W3C SCXML 6.4: what the child sent as it initialized, and an
+                // ending during initialize (test 236), settled as after any drive.
+                self.settle_child_invoke_1(engine);
                 continue;
             }
             if pending.document_id == "_invoke_2" {
@@ -529,23 +495,21 @@ impl Test242Policy {
                 // W3C SCXML 6.4: Create child state machine
                 // Engine DI Parity RFC: forward parent's script engine to child when the
                 // child Policy was generated with `model.needs_script_engine = true`.
-                let mut child_policy = super::test242__sce_synth_invoke__invoke_2_sm::Test242SceSynthInvokeInvoke2Policy::new();
+                //
+                // W3C SCXML C.1: the child is built under the id its parent
+                // recorded for it. The parent mints `parentSession.invokeId` and
+                // keys `active_invokes` on it, so an event from this child
+                // reaches the parent carrying that id as its origin; had the
+                // child an id of its own, the location it publishes in
+                // `_ioprocessors` and the origin the parent sees would be two
+                // names for one session that can never be compared — which is
+                // exactly what C.1 requires of them. A child's id comes from the
+                // tree alone, and nothing is drawn for it (docs/adr/0045).
+                let mut child_policy = super::test242__sce_synth_invoke__invoke_2_sm::Test242SceSynthInvokeInvoke2Policy::for_child(child_session_id.clone());
                 // W3C SCXML 6.4: Pass parent session info to child for #_parent routing
                 child_policy.parent_external_queue = Some(engine.get_external_queue_handle());
                 child_policy.invoke_id = pending.invoke_id.clone();
                 child_policy.child_session_id = child_session_id.clone();
-
-                // W3C SCXML C.1: the child adopts the id its parent recorded
-                // for it. The parent mints `parentSession.invokeId` and keys
-                // `active_invokes` on it, so an event from this child reaches
-                // the parent carrying that id as its origin; if the child also
-                // minted an id of its own, the location it publishes in
-                // `_ioprocessors` and the origin the parent sees would be two
-                // names for one session that can never be compared — which is
-                // exactly what C.1 requires of them.
-                if child_policy.session_id.is_none() {
-                    child_policy.session_id = Some(child_session_id.clone());
-                }
 
                 // W3C SCXML 6.4.1: Track active invoke session BEFORE initialize
                 self.active_invokes.insert(
@@ -577,50 +541,17 @@ impl Test242Policy {
                 // and installed before the child initializes, since its first
                 // `<onentry>` may already send to a peer.
                 engine.start_child_mesh(&mut child_engine, "_invoke_2", "");
+                // docs/adr/0045: the tree's host invokers serve the child, whose
+                // host-run invocations name it by its session id.
+                engine.share_host_invokers_with(&mut child_engine);
                 child_engine.initialize();
 
                 // W3C SCXML 6.4: Store child BEFORE draining events so autoforward can find it
                 self.child_invoke_2 = Some(Box::new(child_engine));
 
-                // W3C SCXML 6.4: Drain child-to-parent events raised during initialize
-                sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
-                    &self
-                        .child_invoke_2
-                        .as_ref()
-                        .unwrap()
-                        .policy()
-                        .parent_external_queue,
-                    &self.active_invokes,
-                    "_invoke_2",
-                    engine,
-                );
-
-                // W3C SCXML 6.4: Check if child completed during initialize (test 236)
-                if self
-                    .child_invoke_2
-                    .as_ref()
-                    .map_or(false, |c| c.is_in_final_state())
-                {
-                    self.pending_done_invoke_invoke_2 = true;
-                    // The session ended: its Mesh router is told so.
-                    if let Some(child) = self.child_invoke_2.as_mut() {
-                        child.detach_mesh();
-                    }
-                    // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
-                    // done.invoke.<id>._event.data. Mirrors the C++ AOT contract in
-                    // tools/codegen/templates/invoke_methods.jinja2 (child->donedataAtFinal()
-                    // + EventMetadataHelper::createDoneInvokeEvent).
-                    let donedata = self
-                        .child_invoke_2
-                        .as_ref()
-                        .map(|c| c.donedata_at_final().to_string())
-                        .unwrap_or_default();
-                    sce_rust_runtime::helpers::invoke_processing::raise_done_invoke(
-                        "_invoke_2",
-                        donedata,
-                        engine,
-                    );
-                }
+                // W3C SCXML 6.4: what the child sent as it initialized, and an
+                // ending during initialize (test 236), settled as after any drive.
+                self.settle_child_invoke_2(engine);
                 continue;
             }
         }
@@ -628,134 +559,118 @@ impl Test242Policy {
 
     // W3C SCXML 6.4: Tick child state machines (propagate scheduler ticks)
     fn do_tick_children(&mut self, engine: &mut sce_rust_runtime::Engine<Self>) {
-        if !self.pending_done_invoke_invoke_0 {
-            // W3C SCXML 6.4: Take child out temporarily to avoid split-borrow
-            if let Some(mut child) = self.child_invoke_0.take() {
-                // W3C SCXML 6.4: Drain parent events sent by child via #_parent BEFORE tick
-                sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
-                    &child.policy().parent_external_queue,
-                    &self.active_invokes,
-                    "_invoke_0",
-                    engine,
-                );
-
+        if !self.pending_done_invoke_invoke_0 && self.child_invoke_0.is_some() {
+            self.settle_child_invoke_0(engine);
+            if let Some(child) = self.child_invoke_0.as_mut() {
                 // Child sessions in Mesh (SCE_MESH.md): what arrived for the
                 // child on the router it was given, before its macrostep.
                 child.apply_mesh_calls();
                 child.tick();
-
-                // W3C SCXML 6.4: Drain parent events sent by child AFTER tick
-                sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
-                    &child.policy().parent_external_queue,
-                    &self.active_invokes,
-                    "_invoke_0",
-                    engine,
-                );
-
-                // W3C SCXML 6.4: Check if child reached final state after tick
-                if child.is_in_final_state() && !self.pending_done_invoke_invoke_0 {
-                    self.pending_done_invoke_invoke_0 = true;
-                    // The session ended: its Mesh router is told so.
-                    child.detach_mesh();
-                    // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
-                    // done.invoke.<id>._event.data.
-                    let donedata = child.donedata_at_final().to_string();
-                    sce_rust_runtime::helpers::invoke_processing::raise_done_invoke(
-                        "_invoke_0",
-                        donedata,
-                        engine,
-                    );
-                }
-
-                // Put child back
-                self.child_invoke_0 = Some(child);
             }
+            self.settle_child_invoke_0(engine);
         }
-        if !self.pending_done_invoke_invoke_1 {
-            // W3C SCXML 6.4: Take child out temporarily to avoid split-borrow
-            if let Some(mut child) = self.child_invoke_1.take() {
-                // W3C SCXML 6.4: Drain parent events sent by child via #_parent BEFORE tick
-                sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
-                    &child.policy().parent_external_queue,
-                    &self.active_invokes,
-                    "_invoke_1",
-                    engine,
-                );
 
+        if !self.pending_done_invoke_invoke_1 && self.child_invoke_1.is_some() {
+            self.settle_child_invoke_1(engine);
+            if let Some(child) = self.child_invoke_1.as_mut() {
                 // Child sessions in Mesh (SCE_MESH.md): what arrived for the
                 // child on the router it was given, before its macrostep.
                 child.apply_mesh_calls();
                 child.tick();
-
-                // W3C SCXML 6.4: Drain parent events sent by child AFTER tick
-                sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
-                    &child.policy().parent_external_queue,
-                    &self.active_invokes,
-                    "_invoke_1",
-                    engine,
-                );
-
-                // W3C SCXML 6.4: Check if child reached final state after tick
-                if child.is_in_final_state() && !self.pending_done_invoke_invoke_1 {
-                    self.pending_done_invoke_invoke_1 = true;
-                    // The session ended: its Mesh router is told so.
-                    child.detach_mesh();
-                    // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
-                    // done.invoke.<id>._event.data.
-                    let donedata = child.donedata_at_final().to_string();
-                    sce_rust_runtime::helpers::invoke_processing::raise_done_invoke(
-                        "_invoke_1",
-                        donedata,
-                        engine,
-                    );
-                }
-
-                // Put child back
-                self.child_invoke_1 = Some(child);
             }
+            self.settle_child_invoke_1(engine);
         }
-        if !self.pending_done_invoke_invoke_2 {
-            // W3C SCXML 6.4: Take child out temporarily to avoid split-borrow
-            if let Some(mut child) = self.child_invoke_2.take() {
-                // W3C SCXML 6.4: Drain parent events sent by child via #_parent BEFORE tick
-                sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
-                    &child.policy().parent_external_queue,
-                    &self.active_invokes,
-                    "_invoke_2",
-                    engine,
-                );
 
+        if !self.pending_done_invoke_invoke_2 && self.child_invoke_2.is_some() {
+            self.settle_child_invoke_2(engine);
+            if let Some(child) = self.child_invoke_2.as_mut() {
                 // Child sessions in Mesh (SCE_MESH.md): what arrived for the
                 // child on the router it was given, before its macrostep.
                 child.apply_mesh_calls();
                 child.tick();
-
-                // W3C SCXML 6.4: Drain parent events sent by child AFTER tick
-                sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
-                    &child.policy().parent_external_queue,
-                    &self.active_invokes,
-                    "_invoke_2",
-                    engine,
-                );
-
-                // W3C SCXML 6.4: Check if child reached final state after tick
-                if child.is_in_final_state() && !self.pending_done_invoke_invoke_2 {
-                    self.pending_done_invoke_invoke_2 = true;
-                    // The session ended: its Mesh router is told so.
-                    child.detach_mesh();
-                    // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
-                    // done.invoke.<id>._event.data.
-                    let donedata = child.donedata_at_final().to_string();
-                    sce_rust_runtime::helpers::invoke_processing::raise_done_invoke(
-                        "_invoke_2",
-                        donedata,
-                        engine,
-                    );
-                }
-
-                // Put child back
-                self.child_invoke_2 = Some(child);
             }
+            self.settle_child_invoke_2(engine);
+        }
+    }
+
+    fn settle_child_invoke_0(&mut self, engine: &mut sce_rust_runtime::Engine<Self>) {
+        let Some(child) = self.child_invoke_0.as_mut() else {
+            return;
+        };
+        sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
+            &child.policy().parent_external_queue,
+            &self.active_invokes,
+            "_invoke_0",
+            engine,
+        );
+        if child.is_in_final_state() && !self.pending_done_invoke_invoke_0 {
+            self.pending_done_invoke_invoke_0 = true;
+            // The session ended: its Mesh router is told so.
+            child.detach_mesh();
+            // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
+            // done.invoke.<id>._event.data. Mirrors the C++ AOT contract in
+            // tools/codegen/templates/invoke_methods.jinja2 (child->donedataAtFinal()
+            // + EventMetadataHelper::createDoneInvokeEvent).
+            let donedata = child.donedata_at_final().to_string();
+            sce_rust_runtime::helpers::invoke_processing::raise_done_invoke(
+                "_invoke_0",
+                donedata,
+                engine,
+            );
+        }
+    }
+
+    fn settle_child_invoke_1(&mut self, engine: &mut sce_rust_runtime::Engine<Self>) {
+        let Some(child) = self.child_invoke_1.as_mut() else {
+            return;
+        };
+        sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
+            &child.policy().parent_external_queue,
+            &self.active_invokes,
+            "_invoke_1",
+            engine,
+        );
+        if child.is_in_final_state() && !self.pending_done_invoke_invoke_1 {
+            self.pending_done_invoke_invoke_1 = true;
+            // The session ended: its Mesh router is told so.
+            child.detach_mesh();
+            // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
+            // done.invoke.<id>._event.data. Mirrors the C++ AOT contract in
+            // tools/codegen/templates/invoke_methods.jinja2 (child->donedataAtFinal()
+            // + EventMetadataHelper::createDoneInvokeEvent).
+            let donedata = child.donedata_at_final().to_string();
+            sce_rust_runtime::helpers::invoke_processing::raise_done_invoke(
+                "_invoke_1",
+                donedata,
+                engine,
+            );
+        }
+    }
+
+    fn settle_child_invoke_2(&mut self, engine: &mut sce_rust_runtime::Engine<Self>) {
+        let Some(child) = self.child_invoke_2.as_mut() else {
+            return;
+        };
+        sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
+            &child.policy().parent_external_queue,
+            &self.active_invokes,
+            "_invoke_2",
+            engine,
+        );
+        if child.is_in_final_state() && !self.pending_done_invoke_invoke_2 {
+            self.pending_done_invoke_invoke_2 = true;
+            // The session ended: its Mesh router is told so.
+            child.detach_mesh();
+            // W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
+            // done.invoke.<id>._event.data. Mirrors the C++ AOT contract in
+            // tools/codegen/templates/invoke_methods.jinja2 (child->donedataAtFinal()
+            // + EventMetadataHelper::createDoneInvokeEvent).
+            let donedata = child.donedata_at_final().to_string();
+            sce_rust_runtime::helpers::invoke_processing::raise_done_invoke(
+                "_invoke_2",
+                donedata,
+                engine,
+            );
         }
     }
 
@@ -792,6 +707,9 @@ impl Test242Policy {
     }
 }
 
+// docs/adr/0045: a machine built with no arguments draws its session id, so it
+// has a default only where `new` can draw one.
+#[cfg(not(any(target_os = "none", all(target_arch = "wasm32", target_os = "unknown"))))]
 impl Default for Test242Policy {
     fn default() -> Self {
         Self::new()
@@ -1352,36 +1270,48 @@ impl StatePolicy for Test242Policy {
     // W3C SCXML 6.2 + 6.4: a delayed `<send target="#_<invokeid>">` whose wait
     // is over, delivered by name. A child whose session has reached its final
     // state has ended, and is not there to take it (W3C SCXML C.1).
+    // What the child sent its parent as it took the event, and its ending,
+    // reach this session within the delivery (docs/adr/0045).
     fn deliver_to_invocation(
         &mut self,
         invoke_id: &str,
         event_name: &str,
         event_data: &str,
+        engine: &mut Engine<Self>,
     ) -> bool {
         if invoke_id == "_invoke_0" {
-            if let Some(ref mut child) = self.child_invoke_0 {
-                if !child.is_in_final_state() {
-                    child.deliver_by_name(event_name, event_data);
-                    return true;
-                }
+            if let Some(child) = self
+                .child_invoke_0
+                .as_mut()
+                .filter(|child| !child.is_in_final_state())
+            {
+                child.deliver_by_name(event_name, event_data);
+                self.settle_child_invoke_0(engine);
+                return true;
             }
             return false;
         }
         if invoke_id == "_invoke_1" {
-            if let Some(ref mut child) = self.child_invoke_1 {
-                if !child.is_in_final_state() {
-                    child.deliver_by_name(event_name, event_data);
-                    return true;
-                }
+            if let Some(child) = self
+                .child_invoke_1
+                .as_mut()
+                .filter(|child| !child.is_in_final_state())
+            {
+                child.deliver_by_name(event_name, event_data);
+                self.settle_child_invoke_1(engine);
+                return true;
             }
             return false;
         }
         if invoke_id == "_invoke_2" {
-            if let Some(ref mut child) = self.child_invoke_2 {
-                if !child.is_in_final_state() {
-                    child.deliver_by_name(event_name, event_data);
-                    return true;
-                }
+            if let Some(child) = self
+                .child_invoke_2
+                .as_mut()
+                .filter(|child| !child.is_in_final_state())
+            {
+                child.deliver_by_name(event_name, event_data);
+                self.settle_child_invoke_2(engine);
+                return true;
             }
             return false;
         }
@@ -1429,6 +1359,7 @@ impl StatePolicy for Test242Policy {
         child_session_id: &str,
         event_name: &str,
         event_data: &str,
+        engine: &mut Engine<Self>,
     ) -> bool {
         if !self.is_child_session_running(child_session_id) {
             return false;
@@ -1440,6 +1371,8 @@ impl StatePolicy for Test242Policy {
         {
             if let Some(ref mut child) = self.child_invoke_0 {
                 child.deliver_by_name(event_name, event_data);
+                // docs/adr/0045: its replies and its ending, within the delivery.
+                self.settle_child_invoke_0(engine);
                 return true;
             }
         }
@@ -1450,6 +1383,8 @@ impl StatePolicy for Test242Policy {
         {
             if let Some(ref mut child) = self.child_invoke_1 {
                 child.deliver_by_name(event_name, event_data);
+                // docs/adr/0045: its replies and its ending, within the delivery.
+                self.settle_child_invoke_1(engine);
                 return true;
             }
         }
@@ -1460,6 +1395,8 @@ impl StatePolicy for Test242Policy {
         {
             if let Some(ref mut child) = self.child_invoke_2 {
                 child.deliver_by_name(event_name, event_data);
+                // docs/adr/0045: its replies and its ending, within the delivery.
+                self.settle_child_invoke_2(engine);
                 return true;
             }
         }
@@ -1528,6 +1465,16 @@ impl StatePolicy for Test242Policy {
         self.parent_external_queue.is_some()
     }
 
+    // docs/adr/0045: this session's own id, as a saved state holds it.
+    fn own_session_id(&self) -> &str {
+        self.session_id.as_deref().unwrap_or("")
+    }
+
+    // docs/adr/0045: a restored session carries on under its saved id.
+    fn bind_session_id(&mut self, session_id: &str) {
+        self.session_id = Some(session_id.to_string());
+    }
+
     // W3C SCXML 6.4: Tick child state machines
     fn tick_children(&mut self, engine: &mut Engine<Self>) {
         self.do_tick_children(engine);
@@ -1551,5 +1498,73 @@ impl StatePolicy for Test242Policy {
         if let Some(ref mut child) = self.child_invoke_2 {
             child.follow_clock(clock);
         }
+    }
+
+    // docs/adr/0045: the tree's host invokers, handed to each child this
+    // session holds, and by each child to its own.
+    fn adopt_host_invokers_in_children(&mut self, invokers: &::sce_rust_runtime::TreeInvokers) {
+        if let Some(ref mut child) = self.child_invoke_0 {
+            child.adopt_host_invokers(invokers);
+        }
+        if let Some(ref mut child) = self.child_invoke_1 {
+            child.adopt_host_invokers(invokers);
+        }
+        if let Some(ref mut child) = self.child_invoke_2 {
+            child.adopt_host_invokers(invokers);
+        }
+    }
+
+    // docs/adr/0045: a host's ending of a host-run invocation of session
+    // `session_id`, to the child that is that session or holds it below. A
+    // child's id is `<parent>.<invokeid>`, so a session below a child has the
+    // child's id and a dot in front of the rest.
+    fn route_host_invoke_end_to_child(
+        &mut self,
+        session_id: &str,
+        ending: ::sce_rust_runtime::HostInvokeEnding<'_>,
+    ) -> Option<Result<(), ::sce_rust_runtime::HostInvokeEndRefusal>> {
+        if let Some(ref mut child) = self.child_invoke_0 {
+            let holds = {
+                let child_id = child.policy().own_session_id();
+                session_id == child_id
+                    || session_id
+                        .strip_prefix(child_id)
+                        .is_some_and(|below| below.starts_with('.'))
+            };
+            if holds {
+                if let Some(routed) = child.route_host_invoke_end(session_id, ending) {
+                    return Some(routed);
+                }
+            }
+        }
+        if let Some(ref mut child) = self.child_invoke_1 {
+            let holds = {
+                let child_id = child.policy().own_session_id();
+                session_id == child_id
+                    || session_id
+                        .strip_prefix(child_id)
+                        .is_some_and(|below| below.starts_with('.'))
+            };
+            if holds {
+                if let Some(routed) = child.route_host_invoke_end(session_id, ending) {
+                    return Some(routed);
+                }
+            }
+        }
+        if let Some(ref mut child) = self.child_invoke_2 {
+            let holds = {
+                let child_id = child.policy().own_session_id();
+                session_id == child_id
+                    || session_id
+                        .strip_prefix(child_id)
+                        .is_some_and(|below| below.starts_with('.'))
+            };
+            if holds {
+                if let Some(routed) = child.route_host_invoke_end(session_id, ending) {
+                    return Some(routed);
+                }
+            }
+        }
+        None
     }
 }

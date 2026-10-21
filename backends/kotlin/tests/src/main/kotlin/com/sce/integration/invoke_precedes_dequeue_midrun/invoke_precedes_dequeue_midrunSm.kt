@@ -273,7 +273,7 @@ class InvokePrecedesDequeueMidrunStateMachine(
                 val generatedInvokeId = "phase.${nextInvokeStart("inv_watch")}.inv_watch"
                 deferInvoke(state, generatedInvokeId) {
 
-                    val childSM = InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchStateMachine()
+                    val childSM = adoptChild(InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchStateMachine(), generatedInvokeId)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
                     startInvoke("inv_watch", childSM, true, InvokePrecedesDequeueMidrunEvent.Done.Invoke, "", generatedInvokeId, "")
                 }

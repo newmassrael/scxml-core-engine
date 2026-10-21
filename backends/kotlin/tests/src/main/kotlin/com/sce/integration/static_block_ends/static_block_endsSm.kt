@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
+// source-hash: ca67d4fa2cf4dbcd6617a3b32561c9b8257bc03aaa65978435303ccf35bae7b3
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_block_ends.scxml
@@ -188,6 +188,8 @@ class StaticBlockEndsStateMachine(
     val savedShape: SavedShape = SavedShape(
         first = "3392e4c39beb56ba9cc0d257d4b7e2fe3e78865fd9251747ebba45ab05882c51",
         revised = "49722041863d35d2b2ef736d0a7663d2462f845efe740a017d404a4897ec0292",
+        format2First = "3392e4c39beb56ba9cc0d257d4b7e2fe3e78865fd9251747ebba45ab05882c51",
+        format2Revised = "49722041863d35d2b2ef736d0a7663d2462f845efe740a017d404a4897ec0292",
         records = listOf(
         ),
         enums = listOf(

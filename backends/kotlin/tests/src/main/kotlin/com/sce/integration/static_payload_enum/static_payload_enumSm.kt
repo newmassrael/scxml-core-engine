@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
+// source-hash: ca67d4fa2cf4dbcd6617a3b32561c9b8257bc03aaa65978435303ccf35bae7b3
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_payload_enum.scxml
@@ -159,6 +159,8 @@ class StaticPayloadEnumStateMachine(
     val savedShape: SavedShape = SavedShape(
         first = "1b285f0009995c3b4881af97d94c25e4e3673020ba3c53351fd4a413ae0ac64f",
         revised = "31e2fa158b14337ea1e405a1b1f9ced4a60c1c4fd4ea0410219e80e6a74b592b",
+        format2First = "aae91d478539bd99337e05e9f505a402677de9616f66ecd9e05ef34b97826db5",
+        format2Revised = "5bdea80956eb1aecd3e03d1b9d61af320561a0a4e2288b05c8cd5ce910877677",
         records = listOf(
         ),
         enums = listOf(

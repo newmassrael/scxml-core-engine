@@ -146,6 +146,8 @@ class StatechartStaticMeshRequestStateMachine(
     val savedShape: SavedShape = SavedShape(
         first = "d4fc8b35c38b20ad10aa11be11d5f07569eb9d8721c7120f1a810d27608af7db",
         revised = "d3738709582b65e60555168c61077ca2d1dc40123f6c88652f8d4882a10a3e3c",
+        format2First = "d4fc8b35c38b20ad10aa11be11d5f07569eb9d8721c7120f1a810d27608af7db",
+        format2Revised = "d3738709582b65e60555168c61077ca2d1dc40123f6c88652f8d4882a10a3e3c",
         records = listOf(
         ),
         enums = listOf(

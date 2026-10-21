@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
+// source-hash: ca67d4fa2cf4dbcd6617a3b32561c9b8257bc03aaa65978435303ccf35bae7b3
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_record_list_index.scxml
@@ -191,6 +191,8 @@ class StaticRecordListIndexStateMachine(
     val savedShape: SavedShape = SavedShape(
         first = "61da1e53bacb07a726bb31390dd73254464024a8045abcda447f2ae9c0a2c9d8",
         revised = "f8bd629347138fed4eef08c8e38f31d2583238f54c1aa4deb4acb2039f0fe050",
+        format2First = "61da1e53bacb07a726bb31390dd73254464024a8045abcda447f2ae9c0a2c9d8",
+        format2Revised = "f8bd629347138fed4eef08c8e38f31d2583238f54c1aa4deb4acb2039f0fe050",
         records = listOf(
             RecordLineage(
                 event = "day.picked",

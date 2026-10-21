@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
+// source-hash: ca67d4fa2cf4dbcd6617a3b32561c9b8257bc03aaa65978435303ccf35bae7b3
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_child_host_hybrid.scxml
@@ -38,8 +38,8 @@ sealed interface StaticChildHostHybridEvent : Event {
  * operation symbolic. No runtime script engine is involved.
  */
 interface StaticChildHostHybridActions {
-    fun actionsForWorkStaticHostedFirst(): StaticHostedFirstActions
-    fun actionsForWorkStaticHostedSecond(): StaticHostedSecondActions
+    fun actionsForWork0jStaticHostedFirst(): StaticHostedFirstActions
+    fun actionsForWork0jStaticHostedSecond(): StaticHostedSecondActions
 }
 
 /**
@@ -49,14 +49,14 @@ interface StaticChildHostHybridActions {
  */
 class RecordingStaticChildHostHybridActions(
     /** Answers the host [StaticHostedFirstActions] is asked for; the test keeps what it answers. */
-    private val actionsForWorkStaticHostedFirstSource: () -> StaticHostedFirstActions,
+    private val actionsForWork0jStaticHostedFirstSource: () -> StaticHostedFirstActions,
     /** Answers the host [StaticHostedSecondActions] is asked for; the test keeps what it answers. */
-    private val actionsForWorkStaticHostedSecondSource: () -> StaticHostedSecondActions,
+    private val actionsForWork0jStaticHostedSecondSource: () -> StaticHostedSecondActions,
 ) : StaticChildHostHybridActions {
     /** One recorded host call. */
     sealed interface Call {
-        data object ActionsForWorkStaticHostedFirst : Call
-        data object ActionsForWorkStaticHostedSecond : Call
+        data object ActionsForWork0jStaticHostedFirst : Call
+        data object ActionsForWork0jStaticHostedSecond : Call
     }
 
     private val recorded = mutableListOf<Call>()
@@ -70,13 +70,13 @@ class RecordingStaticChildHostHybridActions(
         recorded.clear()
     }
 
-    override fun actionsForWorkStaticHostedFirst(): StaticHostedFirstActions {
-        recorded += Call.ActionsForWorkStaticHostedFirst
-        return actionsForWorkStaticHostedFirstSource()
+    override fun actionsForWork0jStaticHostedFirst(): StaticHostedFirstActions {
+        recorded += Call.ActionsForWork0jStaticHostedFirst
+        return actionsForWork0jStaticHostedFirstSource()
     }
-    override fun actionsForWorkStaticHostedSecond(): StaticHostedSecondActions {
-        recorded += Call.ActionsForWorkStaticHostedSecond
-        return actionsForWorkStaticHostedSecondSource()
+    override fun actionsForWork0jStaticHostedSecond(): StaticHostedSecondActions {
+        recorded += Call.ActionsForWork0jStaticHostedSecond
+        return actionsForWork0jStaticHostedSecondSource()
     }
 }
 
@@ -171,6 +171,8 @@ class StaticChildHostHybridStateMachine(
     val savedShape: SavedShape = SavedShape(
         first = "2a6b932ecb9cccbb0f8ab9a2240ee9869d2a0cfc9784a29c0c34179f7233c3a7",
         revised = "a9ff088d356eecf3d7894cb19058246e32c6f105acea5a0cee1c3f6edee1665a",
+        format2First = "2a6b932ecb9cccbb0f8ab9a2240ee9869d2a0cfc9784a29c0c34179f7233c3a7",
+        format2Revised = "a9ff088d356eecf3d7894cb19058246e32c6f105acea5a0cee1c3f6edee1665a",
         records = listOf(
         ),
         enums = listOf(
@@ -398,10 +400,12 @@ class StaticChildHostHybridStateMachine(
                             // document stem so `file:x.scxml` and `./x.scxml` name
                             // one child. `startInvoke` takes a star-projected
                             // machine, so only the construction differs here.
+                            // docs/adr/0045: each candidate takes its id where it
+                            // is built, before it is handed an argument.
                             val __sceSelected = DocumentStem.of(filePath)
                             val childSM = when (__sceSelected) {
-                                "static_hosted_first" -> StaticHostedFirstStateMachine(actions.actionsForWorkStaticHostedFirst())
-                                "static_hosted_second" -> StaticHostedSecondStateMachine(actions.actionsForWorkStaticHostedSecond())
+                                "static_hosted_first" -> adoptChild(StaticHostedFirstStateMachine(actions.actionsForWork0jStaticHostedFirst()), generatedInvokeId)
+                                "static_hosted_second" -> adoptChild(StaticHostedSecondStateMachine(actions.actionsForWork0jStaticHostedSecond()), generatedInvokeId)
                                 else -> {
                                     // The failure the Interpreter reports when a
                                     // document will not load: nothing to create.

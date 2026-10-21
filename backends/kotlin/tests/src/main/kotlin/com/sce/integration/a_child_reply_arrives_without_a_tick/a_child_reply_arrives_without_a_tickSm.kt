@@ -431,7 +431,7 @@ class AChildReplyArrivesWithoutATickStateMachine(
                 val generatedInvokeId = "s0.${nextInvokeStart("kid")}.kid"
                 deferInvoke(state, generatedInvokeId) {
 
-                    val childSM = AChildReplyArrivesWithoutATickSceSynthInvokeKidStateMachine()
+                    val childSM = adoptChild(AChildReplyArrivesWithoutATickSceSynthInvokeKidStateMachine(), generatedInvokeId)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
                     startInvoke("kid", childSM, false, AChildReplyArrivesWithoutATickEvent.Done.Invoke, "", generatedInvokeId, "")
                 }

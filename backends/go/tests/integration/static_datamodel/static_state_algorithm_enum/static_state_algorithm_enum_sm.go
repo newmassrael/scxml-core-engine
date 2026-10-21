@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
+// source-hash: ca67d4fa2cf4dbcd6617a3b32561c9b8257bc03aaa65978435303ccf35bae7b3
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -278,6 +278,26 @@ func (r StaticStateAlgorithmEnumItemRecord) Status() StaticStateAlgorithmEnumSta
 	return r.status
 }
 
+
+// ── SCE Accepted Subset §2.15: what a format-2 saved state of it is bound to ──
+
+// StaticStateAlgorithmEnumSavedShapeFormat2 is the shape a format-2 saved state of
+// this machine names when every record schema it holds is in its first
+// revision (docs/adr/0045, section 2). The generator computes it once, so it is
+// the text every backend's constant is.
+const StaticStateAlgorithmEnumSavedShapeFormat2 = "5addb038b50a9b6dd7ccc1d18de4809fbaed360a881124cf17816629947adb50"
+
+// StaticStateAlgorithmEnumSavedShapeFormat2Revised is the shape a format-2 saved state
+// of this machine names when it names a later revision of a record schema or
+// an enum.
+const StaticStateAlgorithmEnumSavedShapeFormat2Revised = "5aa2ed9946edb35a3b75bb5bd278885e9d4926e0c2409ccf94c0221fbf435c3c"
+
+// StaticStateAlgorithmEnumSavedEnumKeys names each enum a value of a saved state of
+// this machine is of, by its document (docs/adr/0044): the key `revisions`
+// names it by, and the format-2 shape spells it by.
+var StaticStateAlgorithmEnumSavedEnumKeys = [...]string{
+	"enum:enum_item_status.scxml",
+}
 
 // ── SCE Accepted Subset §2.15: calls of an algorithm that takes or returns state ──
 func sceAdapt_StaticStateAlgorithmEnum_CountStatus__v(p0 []StaticStateAlgorithmEnumItemRecord, p1 StaticStateAlgorithmEnumStatusEnum) scealgorithm.Outcome[uint32] {

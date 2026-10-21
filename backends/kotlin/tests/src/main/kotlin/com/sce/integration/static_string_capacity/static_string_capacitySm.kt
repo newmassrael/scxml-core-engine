@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
+// source-hash: ca67d4fa2cf4dbcd6617a3b32561c9b8257bc03aaa65978435303ccf35bae7b3
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_string_capacity.scxml
@@ -134,6 +134,8 @@ class StaticStringCapacityStateMachine(
     val savedShape: SavedShape = SavedShape(
         first = "135ad12b6f68018262518e29d4184121311cd30e7c5a354debfd73c4d828b891",
         revised = "c32875621b2dfd2a7a1704592c176705b7a13d6fff45be9abc55e412dc45ed9d",
+        format2First = "135ad12b6f68018262518e29d4184121311cd30e7c5a354debfd73c4d828b891",
+        format2Revised = "c32875621b2dfd2a7a1704592c176705b7a13d6fff45be9abc55e412dc45ed9d",
         records = listOf(
         ),
         enums = listOf(

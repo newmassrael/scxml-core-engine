@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
+// source-hash: ca67d4fa2cf4dbcd6617a3b32561c9b8257bc03aaa65978435303ccf35bae7b3
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_mesh_relay__sce_synth_invoke__inner.scxml
@@ -45,6 +45,8 @@ class StaticMeshRelaySceSynthInvokeInnerStateMachine(
     val savedShape: SavedShape = SavedShape(
         first = "fcde5ccc7bbe96d580c215a7dd7a771f26a24d604aa198c1a6ac1f7b88663205",
         revised = "4ea0e0e30338d81d9fbe2eabbbf391c38461f625b495ef1c6480c3c246ff5130",
+        format2First = "fcde5ccc7bbe96d580c215a7dd7a771f26a24d604aa198c1a6ac1f7b88663205",
+        format2Revised = "4ea0e0e30338d81d9fbe2eabbbf391c38461f625b495ef1c6480c3c246ff5130",
         records = listOf(
         ),
         enums = listOf(

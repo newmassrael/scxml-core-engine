@@ -26,10 +26,10 @@
 // warning on a real fixture and recording it in the same form. Removing an
 // allow is safe whenever its justifying pattern stops being emitted.
 
-// Source-faithful identifier names: W3C SCXML 6.4.1 lets users supply
-// arbitrary id strings (e.g. `<invoke id="invokedChild">`); preserving the
-// camelCase verbatim into Rust field names like `child_invokedChild`
-// keeps the generated code traceable back to the SCXML source.
+// Source-faithful identifier names: generated names embed names the document
+// wrote, which need not be snake case. An `<invoke id>` is the exception: its
+// identifier (`crate::model::invoke_identifier` in sce-build) is lowercase,
+// so `<invoke id="invokedChild">` gives `child_0zinvokedzuchild`.
 #![allow(non_snake_case)]
 // Codegen always emits `use core::time::Duration` and the umbrella
 // `use sce_rust_runtime::{Engine, StatePolicy};`; fixtures with no
@@ -160,12 +160,9 @@ pub struct TheRunEndsByExitingEveryStatePolicy {
     pending_event_origintype: ::sce_rust_runtime::SceString,
     // W3C SCXML 5.10.1: Event invokeid for _event.invokeid binding
     pending_event_invokeid: ::sce_rust_runtime::SceString,
-    // W3C SCXML 5.10: Session ID (script engine + invoke tracking).
-    //
-    // SCE Protocol-Synthesis RFC §synth-5-J-2: gated to !no_std. Under `--no-std` both the
-    // script engine (`codegen/no-std-script-not-supported`) and `<invoke>`
-    // (`codegen/no-std-invoke-not-supported`) are codegen-rejected, so no
-    // session identity is ever tracked and the alloc-coupled `String` is omitted.
+    // W3C SCXML 5.10: the session's id (script engine, invoke tracking, the
+    // saved state), bound when the machine is built and never empty
+    // (docs/adr/0045): drawn, given by the host, or given by the parent.
     pub session_id: Option<String>,
     // Engine DI Parity RFC (Path B+): per-instance script engine. The
     // constructor parameter is mandatory whenever `model.needs_script_engine`
@@ -248,7 +245,10 @@ impl TheRunEndsByExitingEveryStatePolicy {
         self.basic_http_access_uri = access_uri.into();
     }
 
-    pub fn new(script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine>) -> Self {
+    fn build(
+        session_id: String,
+        script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine>,
+    ) -> Self {
         Self {
             script_engine,
             active_states: ::sce_rust_runtime::helpers::hierarchy::new_chain(),
@@ -260,7 +260,7 @@ impl TheRunEndsByExitingEveryStatePolicy {
             pending_event_origin: ::sce_rust_runtime::SceString::new(),
             pending_event_origintype: ::sce_rust_runtime::SceString::new(),
             pending_event_invokeid: ::sce_rust_runtime::SceString::new(),
-            session_id: None,
+            session_id: Some(session_id),
             script_engine_initialized: false,
             basic_http_access_uri: String::new(),
             in_predicate_states: None,
@@ -268,6 +268,52 @@ impl TheRunEndsByExitingEveryStatePolicy {
             invoke_id: String::new(),
             child_session_id: String::new(),
         }
+    }
+
+    /// Build the machine under a session id drawn from the operating system's
+    /// randomness, a UUID version 4 (docs/adr/0045).    ///
+    /// Absent on a target with no source of randomness the runtime reads
+    /// (`wasm32-unknown-unknown`): a host there gives the id, through
+    /// [`new_with_session_id`](Self::new_with_session_id).
+    #[cfg(not(any(target_os = "none", all(target_arch = "wasm32", target_os = "unknown"))))]
+    pub fn new(script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine>) -> Self {
+        Self::build(
+            ::sce_rust_runtime::helpers::session_id::drawn(),
+            script_engine,
+        )
+    }
+
+    /// Build the machine under the session id its host gives: the host's own
+    /// name for the machine, say, or a fixed id a test holds a saved text to
+    /// (docs/adr/0045, "Questions the owner answered" 2). `_sessionid` is bound
+    /// here and kept until the session ends; a restore binds the saved id in
+    /// its place, since the session carries on.    ///
+    /// The one way this machine is built on `wasm32-unknown-unknown`, which has
+    /// no source of randomness the runtime reads.
+    ///
+    /// # Errors
+    ///
+    /// An id that is not an XML Nmtoken (the empty text, a space, a `#`) is
+    /// refused with the reason, and no machine is built.
+    pub fn new_with_session_id(
+        session_id: &str,
+        script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine>,
+    ) -> Result<Self, ::sce_rust_runtime::helpers::session_id::SessionIdRefusal> {
+        Ok(Self::build(
+            ::sce_rust_runtime::helpers::session_id::given(session_id)?,
+            script_engine,
+        ))
+    }
+
+    /// The policy of a child its parent invokes, under the id the tree gives it,
+    /// `<parent>.<invokeid>` (docs/adr/0045): formed by the parent from its own
+    /// id and the invoke id, both held to the rule already, so it is not
+    /// judged again.
+    pub(crate) fn for_child(
+        session_id: String,
+        script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine>,
+    ) -> Self {
+        Self::build(session_id, script_engine)
     }
 
     // W3C SCXML 5.9.2: Check if state is active (for In() predicate)
@@ -311,23 +357,13 @@ impl TheRunEndsByExitingEveryStatePolicy {
         }
     }
 
-    // W3C SCXML 5.10: Ensure session ID is initialized
-    // Uses atomic counter (1:1 with C++ UniqueIdGenerator::generateSessionId)
-    fn ensure_session_id(&mut self) {
-        if self.session_id.is_none() {
-            static SESSION_COUNTER: core::sync::atomic::AtomicU64 =
-                core::sync::atomic::AtomicU64::new(0);
-            let id = SESSION_COUNTER.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-            self.session_id = Some(format!("session_{}", id));
-        }
-    }
-
-    // W3C SCXML 5.2: Lazy script engine initialization
+    // W3C SCXML 5.2: Lazy script engine initialization. The script engine's
+    // session is named by the session's id (W3C SCXML 5.10), which every
+    // constructor bound when the policy was built (docs/adr/0045).
     fn ensure_script_engine(&mut self) {
         if self.script_engine_initialized {
             return;
         }
-        self.ensure_session_id();
         let sid = self.session_id.as_ref().unwrap().clone();
         let se = self.script_engine.clone();
         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
@@ -400,7 +436,6 @@ impl TheRunEndsByExitingEveryStatePolicy {
         if self.script_engine_initialized {
             return;
         }
-        self.ensure_session_id();
         let sid = self.session_id.as_ref().unwrap().clone();
         let se = self.script_engine.clone();
         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
@@ -1135,5 +1170,15 @@ impl StatePolicy for TheRunEndsByExitingEveryStatePolicy {
     // invoking parent installs is the link to it.
     fn has_parent_session(&self) -> bool {
         self.parent_external_queue.is_some()
+    }
+
+    // docs/adr/0045: this session's own id, as a saved state holds it.
+    fn own_session_id(&self) -> &str {
+        self.session_id.as_deref().unwrap_or("")
+    }
+
+    // docs/adr/0045: a restored session carries on under its saved id.
+    fn bind_session_id(&mut self, session_id: &str) {
+        self.session_id = Some(session_id.to_string());
     }
 }

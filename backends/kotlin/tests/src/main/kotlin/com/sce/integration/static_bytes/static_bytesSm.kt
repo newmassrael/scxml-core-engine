@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
+// source-hash: ca67d4fa2cf4dbcd6617a3b32561c9b8257bc03aaa65978435303ccf35bae7b3
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_bytes.scxml
@@ -149,6 +149,8 @@ class StaticBytesStateMachine(
     val savedShape: SavedShape = SavedShape(
         first = "fcf32d76d2b60386c38cfd8fd7745bc78c43607cdef76f053c793de0e1e93351",
         revised = "ee9457b9f547d6f6e940839a148d86a62fc21b6f656ea74ab5d368c162cf3487",
+        format2First = "fcf32d76d2b60386c38cfd8fd7745bc78c43607cdef76f053c793de0e1e93351",
+        format2Revised = "ee9457b9f547d6f6e940839a148d86a62fc21b6f656ea74ab5d368c162cf3487",
         records = listOf(
         ),
         enums = listOf(

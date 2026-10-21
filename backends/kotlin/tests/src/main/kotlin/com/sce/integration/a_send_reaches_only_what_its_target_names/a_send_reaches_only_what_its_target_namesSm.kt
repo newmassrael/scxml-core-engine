@@ -1011,7 +1011,7 @@ ASendReachesOnlyWhatItsTargetNamesEvent.Lost,
                 val generatedInvokeId = "run.${nextInvokeStart("kid")}.kid"
                 deferInvoke(state, generatedInvokeId) {
 
-                    val childSM = ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
+                    val childSM = adoptChild(ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)")), generatedInvokeId)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
                     startInvoke("kid", childSM, false, ASendReachesOnlyWhatItsTargetNamesEvent.Done.Invoke, "", generatedInvokeId, "")
                 }

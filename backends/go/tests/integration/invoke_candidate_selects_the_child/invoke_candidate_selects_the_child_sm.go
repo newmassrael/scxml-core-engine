@@ -532,7 +532,7 @@ func (p *InvokeCandidateSelectsTheChildPolicy) ExecutePendingInvokes(engine *sce
 			engine.StartChildMesh(childEngine, "_invoke_0", "chosen")
 			childEngine.Initialize()
 
-			wrapper := &childEngineWrapperInvokeCandidateSelectsTheChild_Invoke0Chosen{engine: childEngine, policy: &childPolicy}
+			wrapper := &childEngineWrapperInvokeCandidateSelectsTheChild_Invoke00jChosen{engine: childEngine, policy: &childPolicy}
 			p.childInvoke0 = wrapper
 
 			sce.DrainAndRaiseChildEvents(wrapper, p.activeInvokes, "_invoke_0", engine)
@@ -593,7 +593,7 @@ func (p *InvokeCandidateSelectsTheChildPolicy) ExecutePendingInvokes(engine *sce
 			engine.StartChildMesh(childEngine, "_invoke_0", "other")
 			childEngine.Initialize()
 
-			wrapper := &childEngineWrapperInvokeCandidateSelectsTheChild_Invoke0Other{engine: childEngine, policy: &childPolicy}
+			wrapper := &childEngineWrapperInvokeCandidateSelectsTheChild_Invoke00jOther{engine: childEngine, policy: &childPolicy}
 			p.childInvoke0 = wrapper
 
 			sce.DrainAndRaiseChildEvents(wrapper, p.activeInvokes, "_invoke_0", engine)
@@ -684,40 +684,40 @@ func (p *InvokeCandidateSelectsTheChildPolicy) IsInvocationRunning(invokeID stri
 
 // ── Child engine wrappers (implement sce.ChildEngine interface) ──
 
-type childEngineWrapperInvokeCandidateSelectsTheChild_Invoke0Chosen struct {
+type childEngineWrapperInvokeCandidateSelectsTheChild_Invoke00jChosen struct {
 	engine *sce.Engine[ChosenState, ChosenEvent]
 	policy *ChosenPolicy
 }
-func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke0Chosen) Initialize() { w.engine.Initialize() }
-func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke0Chosen) Tick() { w.engine.Tick() }
-func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke0Chosen) Step() { w.engine.Step() }
-func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke0Chosen) Stop() { w.engine.Stop() }
-func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke0Chosen) IsInFinalState() bool { return w.engine.IsInFinalState() }
-func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke0Chosen) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
-func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke0Chosen) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
-func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke0Chosen) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
-func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke0Chosen) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
-func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke0Chosen) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
-func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke0Chosen) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
-func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke0Chosen) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
-func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke0Chosen) DetachMesh() { w.engine.DetachMesh() }
-type childEngineWrapperInvokeCandidateSelectsTheChild_Invoke0Other struct {
+func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke00jChosen) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke00jChosen) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke00jChosen) Step() { w.engine.Step() }
+func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke00jChosen) Stop() { w.engine.Stop() }
+func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke00jChosen) IsInFinalState() bool { return w.engine.IsInFinalState() }
+func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke00jChosen) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
+func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke00jChosen) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
+func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke00jChosen) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
+func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke00jChosen) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
+func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke00jChosen) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
+func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke00jChosen) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
+func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke00jChosen) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
+func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke00jChosen) DetachMesh() { w.engine.DetachMesh() }
+type childEngineWrapperInvokeCandidateSelectsTheChild_Invoke00jOther struct {
 	engine *sce.Engine[OtherState, OtherEvent]
 	policy *OtherPolicy
 }
-func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke0Other) Initialize() { w.engine.Initialize() }
-func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke0Other) Tick() { w.engine.Tick() }
-func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke0Other) Step() { w.engine.Step() }
-func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke0Other) Stop() { w.engine.Stop() }
-func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke0Other) IsInFinalState() bool { return w.engine.IsInFinalState() }
-func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke0Other) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
-func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke0Other) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
-func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke0Other) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
-func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke0Other) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
-func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke0Other) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
-func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke0Other) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
-func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke0Other) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
-func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke0Other) DetachMesh() { w.engine.DetachMesh() }
+func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke00jOther) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke00jOther) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke00jOther) Step() { w.engine.Step() }
+func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke00jOther) Stop() { w.engine.Stop() }
+func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke00jOther) IsInFinalState() bool { return w.engine.IsInFinalState() }
+func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke00jOther) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
+func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke00jOther) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
+func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke00jOther) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
+func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke00jOther) GetParentEventQueue() *sce.ParentEventQueue { return w.policy.ParentExternalQueue }
+func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke00jOther) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
+func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke00jOther) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
+func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke00jOther) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
+func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke00jOther) DetachMesh() { w.engine.DetachMesh() }
 
 
 // DeliverToParent delivers a delayed `<send target="#_parent">` whose wait is

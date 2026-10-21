@@ -740,7 +740,7 @@ class ADelayedSendReachesWhatItsTargetNamesStateMachine(
                 val generatedInvokeId = "run.${nextInvokeStart("kid")}.kid"
                 deferInvoke(state, generatedInvokeId) {
 
-                    val childSM = ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeKidStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
+                    val childSM = adoptChild(ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeKidStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)")), generatedInvokeId)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
                     startInvoke("kid", childSM, false, ADelayedSendReachesWhatItsTargetNamesEvent.Done.Invoke, "", generatedInvokeId, "")
                 }
@@ -751,7 +751,7 @@ class ADelayedSendReachesWhatItsTargetNamesStateMachine(
                 val generatedInvokeId = "run.${nextInvokeStart("gone")}.gone"
                 deferInvoke(state, generatedInvokeId) {
 
-                    val childSM = ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneStateMachine()
+                    val childSM = adoptChild(ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneStateMachine(), generatedInvokeId)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
                     startInvoke("gone", childSM, false, ADelayedSendReachesWhatItsTargetNamesEvent.Done.Invoke, "", generatedInvokeId, "")
                 }

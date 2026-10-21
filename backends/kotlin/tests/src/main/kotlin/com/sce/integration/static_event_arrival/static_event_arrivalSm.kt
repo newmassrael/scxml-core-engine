@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
+// source-hash: ca67d4fa2cf4dbcd6617a3b32561c9b8257bc03aaa65978435303ccf35bae7b3
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_event_arrival.scxml
@@ -111,6 +111,8 @@ class StaticEventArrivalStateMachine(
     val savedShape: SavedShape = SavedShape(
         first = "992cff77681778bf2a87af21f6ccd7e484e625e43a95c41373c35b22f2f582e1",
         revised = "b2b27da7c053410d9d935db94a7672a9167844a5d8c0ac1ead305a6df3156464",
+        format2First = "992cff77681778bf2a87af21f6ccd7e484e625e43a95c41373c35b22f2f582e1",
+        format2Revised = "b2b27da7c053410d9d935db94a7672a9167844a5d8c0ac1ead305a6df3156464",
         records = listOf(
         ),
         enums = listOf(

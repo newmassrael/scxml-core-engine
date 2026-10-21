@@ -686,7 +686,7 @@ class EmptyFinalizeUpdatesTheLocationStateMachine(
                         }
                         invokeParams["guard"] = engineInv.getVariable(sidInv, "guard")
 
-                    val childSM = EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
+                    val childSM = adoptChild(EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)")), generatedInvokeId)
                     setInvokeParams(childSM, invokeParams)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
                     startInvoke("inv_absent", childSM, false, EmptyFinalizeUpdatesTheLocationEvent.Done.Invoke, "", generatedInvokeId, "")
@@ -710,7 +710,7 @@ class EmptyFinalizeUpdatesTheLocationStateMachine(
                         }
                         invokeParams["tally"] = engineInv.getVariable(sidInv, "tally")
 
-                    val childSM = EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvEmptyStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
+                    val childSM = adoptChild(EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvEmptyStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)")), generatedInvokeId)
                     setInvokeParams(childSM, invokeParams)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
                     startInvoke("inv_empty", childSM, false, EmptyFinalizeUpdatesTheLocationEvent.Done.Invoke, "if (_event.data && _event.data.tally !== undefined) { tally = _event.data.tally; }", generatedInvokeId, "")
@@ -734,7 +734,7 @@ class EmptyFinalizeUpdatesTheLocationStateMachine(
                         }
                         invokeParams["keeper"] = engineInv.getVariable(sidInv, "keeper")
 
-                    val childSM = EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
+                    val childSM = adoptChild(EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)")), generatedInvokeId)
                     setInvokeParams(childSM, invokeParams)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
                     startInvoke("inv_unmatched", childSM, false, EmptyFinalizeUpdatesTheLocationEvent.Done.Invoke, "if (_event.data && _event.data.keeper !== undefined) { keeper = _event.data.keeper; }", generatedInvokeId, "")

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
+// source-hash: ca67d4fa2cf4dbcd6617a3b32561c9b8257bc03aaa65978435303ccf35bae7b3
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_record_fields.scxml
@@ -137,6 +137,8 @@ class StaticRecordFieldsStateMachine(
     val savedShape: SavedShape = SavedShape(
         first = "23e94bbee0f8862f1ad51a0f614fe3df492096ccaf6676d9eb8cd371639f9fba",
         revised = "d6fc801793f9575ceaff9c00d28636af536443c5cca8199f8353e6fa4d99c1b9",
+        format2First = "23e94bbee0f8862f1ad51a0f614fe3df492096ccaf6676d9eb8cd371639f9fba",
+        format2Revised = "d6fc801793f9575ceaff9c00d28636af536443c5cca8199f8353e6fa4d99c1b9",
         records = listOf(
             RecordLineage(
                 event = "day.picked",

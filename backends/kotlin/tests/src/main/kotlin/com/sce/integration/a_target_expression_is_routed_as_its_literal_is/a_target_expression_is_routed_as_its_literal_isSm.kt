@@ -1472,7 +1472,7 @@ ATargetExpressionIsRoutedAsItsLiteralIsEvent.Lost,
                 val generatedInvokeId = "run.${nextInvokeStart("kid")}.kid"
                 deferInvoke(state, generatedInvokeId) {
 
-                    val childSM = ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
+                    val childSM = adoptChild(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)")), generatedInvokeId)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
                     startInvoke("kid", childSM, false, ATargetExpressionIsRoutedAsItsLiteralIsEvent.Done.Invoke, "", generatedInvokeId, "")
                 }

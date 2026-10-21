@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
+// source-hash: ca67d4fa2cf4dbcd6617a3b32561c9b8257bc03aaa65978435303ccf35bae7b3
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_donedata_record.scxml
@@ -120,6 +120,8 @@ class StaticDonedataRecordStateMachine(
     val savedShape: SavedShape = SavedShape(
         first = "fd144745a4a7d0c2313c4f28ec7184ffb7a698b5ed3361febe933a4c30ecea2b",
         revised = "ebd993c1f24e924115faaa5e255372a3b115e2f411bf7ecb2a7916d2d3f9d9d6",
+        format2First = "d970d9ee33befac8cf9cc4a9714612ec08f38f4a62dfb180819023d45115ddd8",
+        format2Revised = "1e9cc61e79646577eca59b39e3156b57111c0d74f7e15e1b9a14d676d63dcf21",
         records = listOf(
             RecordLineage(
                 event = "view.shown",

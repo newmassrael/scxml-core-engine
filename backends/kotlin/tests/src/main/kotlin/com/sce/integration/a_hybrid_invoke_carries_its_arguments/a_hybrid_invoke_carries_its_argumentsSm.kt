@@ -696,10 +696,12 @@ class AHybridInvokeCarriesItsArgumentsStateMachine(
                             // document stem so `file:x.scxml` and `./x.scxml` name
                             // one child. `startInvoke` takes a star-projected
                             // machine, so only the construction differs here.
+                            // docs/adr/0045: each candidate takes its id where it
+                            // is built, before it is handed an argument.
                             val __sceSelected = DocumentStem.of(filePath)
                             val childSM = when (__sceSelected) {
-                                "keeper" -> KeeperStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
-                                "bare" -> BareStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
+                                "keeper" -> adoptChild(KeeperStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)")), generatedInvokeId)
+                                "bare" -> adoptChild(BareStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)")), generatedInvokeId)
                                 else -> {
                                     // The failure the Interpreter reports when a
                                     // document will not load: nothing to create.
@@ -763,10 +765,12 @@ class AHybridInvokeCarriesItsArgumentsStateMachine(
                             // document stem so `file:x.scxml` and `./x.scxml` name
                             // one child. `startInvoke` takes a star-projected
                             // machine, so only the construction differs here.
+                            // docs/adr/0045: each candidate takes its id where it
+                            // is built, before it is handed an argument.
                             val __sceSelected = DocumentStem.of(filePath)
                             val childSM = when (__sceSelected) {
-                                "keeper" -> KeeperStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
-                                "bare" -> BareStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
+                                "keeper" -> adoptChild(KeeperStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)")), generatedInvokeId)
+                                "bare" -> adoptChild(BareStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)")), generatedInvokeId)
                                 else -> {
                                     // The failure the Interpreter reports when a
                                     // document will not load: nothing to create.
@@ -853,10 +857,12 @@ class AHybridInvokeCarriesItsArgumentsStateMachine(
                             // document stem so `file:x.scxml` and `./x.scxml` name
                             // one child. `startInvoke` takes a star-projected
                             // machine, so only the construction differs here.
+                            // docs/adr/0045: each candidate takes its id where it
+                            // is built, before it is handed an argument.
                             val __sceSelected = DocumentStem.of(filePath)
                             val childSM = when (__sceSelected) {
-                                "keeper" -> KeeperStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
-                                "bare" -> BareStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
+                                "keeper" -> adoptChild(KeeperStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)")), generatedInvokeId)
+                                "bare" -> adoptChild(BareStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)")), generatedInvokeId)
                                 else -> {
                                     // The failure the Interpreter reports when a
                                     // document will not load: nothing to create.

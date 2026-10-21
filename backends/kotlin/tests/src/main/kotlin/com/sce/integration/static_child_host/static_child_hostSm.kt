@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
+// source-hash: ca67d4fa2cf4dbcd6617a3b32561c9b8257bc03aaa65978435303ccf35bae7b3
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_child_host.scxml
@@ -167,6 +167,8 @@ class StaticChildHostStateMachine(
     val savedShape: SavedShape = SavedShape(
         first = "6065267cb1641307cbbf9f1bbd2c34f384a0b55362be9f25c4c9d54a5f2cf8e2",
         revised = "45c5ae841923b95967f51b12ef271c7439133cf013284e4149f4bcea20128716",
+        format2First = "6065267cb1641307cbbf9f1bbd2c34f384a0b55362be9f25c4c9d54a5f2cf8e2",
+        format2Revised = "45c5ae841923b95967f51b12ef271c7439133cf013284e4149f4bcea20128716",
         records = listOf(
         ),
         enums = listOf(
@@ -434,7 +436,7 @@ class StaticChildHostStateMachine(
                 val generatedInvokeId = "working.${nextInvokeStart("worker")}.worker"
                 deferInvoke(state, generatedInvokeId) {
 
-                    val childSM = StaticChildHostSceSynthInvokeWorkerStateMachine(actions.actionsForWorker())
+                    val childSM = adoptChild(StaticChildHostSceSynthInvokeWorkerStateMachine(actions.actionsForWorker()), generatedInvokeId)
 
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
                     startInvoke("worker", childSM, true, StaticChildHostEvent.Done.Invoke.Worker, "", generatedInvokeId, "")

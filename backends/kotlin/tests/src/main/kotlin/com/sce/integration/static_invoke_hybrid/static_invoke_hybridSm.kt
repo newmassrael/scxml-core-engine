@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
+// source-hash: ca67d4fa2cf4dbcd6617a3b32561c9b8257bc03aaa65978435303ccf35bae7b3
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_invoke_hybrid.scxml
@@ -135,6 +135,8 @@ class StaticInvokeHybridStateMachine(
     val savedShape: SavedShape = SavedShape(
         first = "972ab8ed39c25ae07affaee242de1ae666cf4699c734a946880fc52a11084868",
         revised = "039391213c4d9db4886165effd4737cd44a24b3e626866ecb867a40301922e58",
+        format2First = "972ab8ed39c25ae07affaee242de1ae666cf4699c734a946880fc52a11084868",
+        format2Revised = "039391213c4d9db4886165effd4737cd44a24b3e626866ecb867a40301922e58",
         records = listOf(
         ),
         enums = listOf(
@@ -523,9 +525,11 @@ class StaticInvokeHybridStateMachine(
                             // document stem so `file:x.scxml` and `./x.scxml` name
                             // one child. `startInvoke` takes a star-projected
                             // machine, so only the construction differs here.
+                            // docs/adr/0045: each candidate takes its id where it
+                            // is built, before it is handed an argument.
                             val __sceSelected = DocumentStem.of(filePath)
                             val childSM = when (__sceSelected) {
-                                "static_hybrid_first" -> StaticHybridFirstStateMachine().also { child ->
+                                "static_hybrid_first" -> adoptChild(StaticHybridFirstStateMachine(), generatedInvokeId).also { child ->
                                     // W3C SCXML 6.4.1: hand the child the values this invoke names
                                     val childSeed = StaticHybridFirstStateMachine.InvokeParams()
                                     childSeed.start = vBase
@@ -541,7 +545,7 @@ class StaticInvokeHybridStateMachine(
                                     }
 
                                 }
-                                "static_hybrid_second" -> StaticHybridSecondStateMachine().also { child ->
+                                "static_hybrid_second" -> adoptChild(StaticHybridSecondStateMachine(), generatedInvokeId).also { child ->
                                     // W3C SCXML 6.4.1: hand the child the values this invoke names
                                     val childSeed = StaticHybridSecondStateMachine.InvokeParams()
                                     childSeed.start = vBase
@@ -588,9 +592,11 @@ class StaticInvokeHybridStateMachine(
                             // document stem so `file:x.scxml` and `./x.scxml` name
                             // one child. `startInvoke` takes a star-projected
                             // machine, so only the construction differs here.
+                            // docs/adr/0045: each candidate takes its id where it
+                            // is built, before it is handed an argument.
                             val __sceSelected = DocumentStem.of(filePath)
                             val childSM = when (__sceSelected) {
-                                "static_hybrid_first" -> StaticHybridFirstStateMachine().also { child ->
+                                "static_hybrid_first" -> adoptChild(StaticHybridFirstStateMachine(), generatedInvokeId).also { child ->
                                     // W3C SCXML 6.4.1: hand the child the values this invoke names
                                     val childSeed = StaticHybridFirstStateMachine.InvokeParams()
                                     childSeed.start = vBase
@@ -606,7 +612,7 @@ class StaticInvokeHybridStateMachine(
                                     }
 
                                 }
-                                "static_hybrid_second" -> StaticHybridSecondStateMachine().also { child ->
+                                "static_hybrid_second" -> adoptChild(StaticHybridSecondStateMachine(), generatedInvokeId).also { child ->
                                     // W3C SCXML 6.4.1: hand the child the values this invoke names
                                     val childSeed = StaticHybridSecondStateMachine.InvokeParams()
                                     childSeed.start = vBase
@@ -653,9 +659,11 @@ class StaticInvokeHybridStateMachine(
                             // document stem so `file:x.scxml` and `./x.scxml` name
                             // one child. `startInvoke` takes a star-projected
                             // machine, so only the construction differs here.
+                            // docs/adr/0045: each candidate takes its id where it
+                            // is built, before it is handed an argument.
                             val __sceSelected = DocumentStem.of(filePath)
                             val childSM = when (__sceSelected) {
-                                "static_hybrid_first" -> StaticHybridFirstStateMachine().also { child ->
+                                "static_hybrid_first" -> adoptChild(StaticHybridFirstStateMachine(), generatedInvokeId).also { child ->
                                     // W3C SCXML 6.4.1: hand the child the values this invoke names
                                     val childSeed = StaticHybridFirstStateMachine.InvokeParams()
                                     childSeed.start = vBase
@@ -663,7 +671,7 @@ class StaticInvokeHybridStateMachine(
                                     child.acceptParams(childSeed)
 
                                 }
-                                "static_hybrid_second" -> StaticHybridSecondStateMachine().also { child ->
+                                "static_hybrid_second" -> adoptChild(StaticHybridSecondStateMachine(), generatedInvokeId).also { child ->
                                     // W3C SCXML 6.4.1: hand the child the values this invoke names
                                     val childSeed = StaticHybridSecondStateMachine.InvokeParams()
                                     childSeed.start = vBase
@@ -704,9 +712,11 @@ class StaticInvokeHybridStateMachine(
                             // document stem so `file:x.scxml` and `./x.scxml` name
                             // one child. `startInvoke` takes a star-projected
                             // machine, so only the construction differs here.
+                            // docs/adr/0045: each candidate takes its id where it
+                            // is built, before it is handed an argument.
                             val __sceSelected = DocumentStem.of(filePath)
                             val childSM = when (__sceSelected) {
-                                "static_hybrid_first" -> StaticHybridFirstStateMachine().also { child ->
+                                "static_hybrid_first" -> adoptChild(StaticHybridFirstStateMachine(), generatedInvokeId).also { child ->
                                     // W3C SCXML 6.4.1: hand the child the values this invoke names
                                     val childSeed = StaticHybridFirstStateMachine.InvokeParams()
                                     childSeed.start = vBase
@@ -722,7 +732,7 @@ class StaticInvokeHybridStateMachine(
                                     }
 
                                 }
-                                "static_hybrid_second" -> StaticHybridSecondStateMachine().also { child ->
+                                "static_hybrid_second" -> adoptChild(StaticHybridSecondStateMachine(), generatedInvokeId).also { child ->
                                     // W3C SCXML 6.4.1: hand the child the values this invoke names
                                     val childSeed = StaticHybridSecondStateMachine.InvokeParams()
                                     childSeed.start = vBase

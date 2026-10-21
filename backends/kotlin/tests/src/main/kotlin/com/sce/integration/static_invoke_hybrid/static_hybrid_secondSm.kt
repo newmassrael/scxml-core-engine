@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
+// source-hash: ca67d4fa2cf4dbcd6617a3b32561c9b8257bc03aaa65978435303ccf35bae7b3
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_hybrid_second.scxml
@@ -90,6 +90,8 @@ class StaticHybridSecondStateMachine(
     val savedShape: SavedShape = SavedShape(
         first = "2c3c418e82c7bdcdbb7440ceadf6a9bb76ed0f4a55b1598eccd2df2a3f07dd99",
         revised = "657eb997cc3609461a6e6c92e51d465fc2202432d5977d38c9e16d032ce371f5",
+        format2First = "2c3c418e82c7bdcdbb7440ceadf6a9bb76ed0f4a55b1598eccd2df2a3f07dd99",
+        format2Revised = "657eb997cc3609461a6e6c92e51d465fc2202432d5977d38c9e16d032ce371f5",
         records = listOf(
         ),
         enums = listOf(

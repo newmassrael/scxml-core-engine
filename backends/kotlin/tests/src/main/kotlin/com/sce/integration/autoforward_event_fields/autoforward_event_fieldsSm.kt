@@ -442,7 +442,7 @@ class AutoforwardEventFieldsStateMachine(
                 val generatedInvokeId = "phase.${nextInvokeStart("inv_echo")}.inv_echo"
                 deferInvoke(state, generatedInvokeId) {
 
-                    val childSM = AutoforwardEventFieldsSceSynthInvokeInvEchoStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
+                    val childSM = adoptChild(AutoforwardEventFieldsSceSynthInvokeInvEchoStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)")), generatedInvokeId)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
                     startInvoke("inv_echo", childSM, true, AutoforwardEventFieldsEvent.Done.Invoke, "", generatedInvokeId, "")
                 }

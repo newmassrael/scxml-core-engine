@@ -460,7 +460,7 @@ class AnEventKeepsTheNameItWasSentUnderStateMachine(
                 val generatedInvokeId = "phase.${nextInvokeStart("listener")}.listener"
                 deferInvoke(state, generatedInvokeId) {
 
-                    val childSM = AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
+                    val childSM = adoptChild(AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)")), generatedInvokeId)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
                     startInvoke("listener", childSM, false, AnEventKeepsTheNameItWasSentUnderEvent.Done.Invoke, "", generatedInvokeId, "")
                 }

@@ -192,6 +192,24 @@ func (e StatechartStaticMeshRequestEvent) String() string {
 	return "unknown"
 }
 
+// ── SCE Accepted Subset §2.15: what a format-2 saved state of it is bound to ──
+
+// StatechartStaticMeshRequestSavedShapeFormat2 is the shape a format-2 saved state of
+// this machine names when every record schema it holds is in its first
+// revision (docs/adr/0045, section 2). The generator computes it once, so it is
+// the text every backend's constant is.
+const StatechartStaticMeshRequestSavedShapeFormat2 = "d4fc8b35c38b20ad10aa11be11d5f07569eb9d8721c7120f1a810d27608af7db"
+
+// StatechartStaticMeshRequestSavedShapeFormat2Revised is the shape a format-2 saved state
+// of this machine names when it names a later revision of a record schema or
+// an enum.
+const StatechartStaticMeshRequestSavedShapeFormat2Revised = "d3738709582b65e60555168c61077ca2d1dc40123f6c88652f8d4882a10a3e3c"
+
+// StatechartStaticMeshRequestSavedEnumKeys names each enum a value of a saved state of
+// this machine is of, by its document (docs/adr/0044): the key `revisions`
+// names it by, and the format-2 shape spells it by.
+var StatechartStaticMeshRequestSavedEnumKeys = [...]string{}
+
 // ======================================================================
 // Policy struct
 // ======================================================================

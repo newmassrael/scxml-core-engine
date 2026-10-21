@@ -668,7 +668,7 @@ class ABadInvokeArgumentIsReportedOnceStateMachine(
                             raisePlatformError(ABadInvokeArgumentIsReportedOnceEvent.Error.Execution, "<invoke> <param name='notInChild'> could not be read")
                         }
 
-                    val childSM = ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1StateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
+                    val childSM = adoptChild(ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1StateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)")), generatedInvokeId)
                     setInvokeParams(childSM, invokeParams)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
                     startInvoke("inv1", childSM, false, ABadInvokeArgumentIsReportedOnceEvent.Done.Invoke, "", generatedInvokeId, "")
@@ -693,7 +693,7 @@ class ABadInvokeArgumentIsReportedOnceStateMachine(
                         invokeParams["undeclaredA"] = engineInv.getVariable(sidInv, "undeclaredA")
                         invokeParams["undeclaredB"] = engineInv.getVariable(sidInv, "undeclaredB")
 
-                    val childSM = ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv2StateMachine()
+                    val childSM = adoptChild(ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv2StateMachine(), generatedInvokeId)
                     setInvokeParams(childSM, invokeParams)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
                     startInvoke("inv2", childSM, false, ABadInvokeArgumentIsReportedOnceEvent.Done.Invoke, "", generatedInvokeId, "")
@@ -726,7 +726,7 @@ class ABadInvokeArgumentIsReportedOnceStateMachine(
                             raisePlatformError(ABadInvokeArgumentIsReportedOnceEvent.Error.Execution, "<invoke> <param name='alsoBroken'> could not be read")
                         }
 
-                    val childSM = ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3StateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"))
+                    val childSM = adoptChild(ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3StateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)")), generatedInvokeId)
                     setInvokeParams(childSM, invokeParams)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
                     startInvoke("inv3", childSM, false, ABadInvokeArgumentIsReportedOnceEvent.Done.Invoke, "", generatedInvokeId, "")

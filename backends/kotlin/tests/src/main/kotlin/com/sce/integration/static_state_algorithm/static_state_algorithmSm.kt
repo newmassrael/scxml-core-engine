@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
+// source-hash: ca67d4fa2cf4dbcd6617a3b32561c9b8257bc03aaa65978435303ccf35bae7b3
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_state_algorithm.scxml
@@ -220,6 +220,8 @@ class StaticStateAlgorithmStateMachine(
     val savedShape: SavedShape = SavedShape(
         first = "9974bd59dfcaa3327314694f10c51b9c6ca6182a91e88cc96fb36c167a4eb0da",
         revised = "4fb501ba430e00423e29ccdd50010c6e3c4909d1de3df4c575ac6341cb1d2a5f",
+        format2First = "9974bd59dfcaa3327314694f10c51b9c6ca6182a91e88cc96fb36c167a4eb0da",
+        format2Revised = "4fb501ba430e00423e29ccdd50010c6e3c4909d1de3df4c575ac6341cb1d2a5f",
         records = listOf(
             RecordLineage(
                 event = "ledger.entry",

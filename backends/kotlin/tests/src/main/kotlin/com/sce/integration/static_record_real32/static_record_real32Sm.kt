@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
+// source-hash: ca67d4fa2cf4dbcd6617a3b32561c9b8257bc03aaa65978435303ccf35bae7b3
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_record_real32.scxml
@@ -145,6 +145,8 @@ class StaticRecordReal32StateMachine(
     val savedShape: SavedShape = SavedShape(
         first = "c893e233c9dc158798b2e4ba26c92528fbf675fb7b763ec6857c744284638233",
         revised = "ab6931a3750df3c6618dfe4e9b369c7863961c31f997f70a686f66cd7c8eda90",
+        format2First = "c893e233c9dc158798b2e4ba26c92528fbf675fb7b763ec6857c744284638233",
+        format2Revised = "ab6931a3750df3c6618dfe4e9b369c7863961c31f997f70a686f66cd7c8eda90",
         records = listOf(
             RecordLineage(
                 event = "reading32.taken",

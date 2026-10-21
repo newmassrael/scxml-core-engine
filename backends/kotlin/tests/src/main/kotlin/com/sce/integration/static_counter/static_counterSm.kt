@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
+// source-hash: ca67d4fa2cf4dbcd6617a3b32561c9b8257bc03aaa65978435303ccf35bae7b3
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_counter.scxml
@@ -114,6 +114,8 @@ class StaticCounterStateMachine(
     val savedShape: SavedShape = SavedShape(
         first = "b1e55a5fb4149b2224d189f552488790e62394135415d7e93c3423ce7d4f4da6",
         revised = "9e81e07793879a193c502fb56f49ebf7e9ef54bf8e9258775a47df18e340aac0",
+        format2First = "b1e55a5fb4149b2224d189f552488790e62394135415d7e93c3423ce7d4f4da6",
+        format2Revised = "9e81e07793879a193c502fb56f49ebf7e9ef54bf8e9258775a47df18e340aac0",
         records = listOf(
         ),
         enums = listOf(

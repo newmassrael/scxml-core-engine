@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: ca3b055deba6b38537c3642140f701b5f98f1b971d59425d3c780765d8a6a19b
+// source-hash: 75f0d3c43c82c6af748dd1f1aba98de1b9c4f7c51e43e8850cdf3b0490c95be4
 
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/225/test225.scxml
@@ -491,7 +491,7 @@ class Test225StateMachine(
                 if (!storeIdInLocation(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), generatedInvokeId, "<invoke>")) return@run
                 deferInvoke(state, generatedInvokeId) {
 
-                    val childSM = Test225SceSynthInvokeInvoke0StateMachine()
+                    val childSM = adoptChild(Test225SceSynthInvokeInvoke0StateMachine(), generatedInvokeId)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
                     startInvoke("_invoke_0", childSM, false, Test225Event.Done.Invoke, "", generatedInvokeId, "")
                 }
@@ -507,7 +507,7 @@ class Test225StateMachine(
                 if (!storeIdInLocation(com.sce.runtime.ScriptSource.lua("Var2", "Var2"), generatedInvokeId, "<invoke>")) return@run
                 deferInvoke(state, generatedInvokeId) {
 
-                    val childSM = Test225SceSynthInvokeInvoke1StateMachine()
+                    val childSM = adoptChild(Test225SceSynthInvokeInvoke1StateMachine(), generatedInvokeId)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
                     startInvoke("_invoke_1", childSM, false, Test225Event.Done.Invoke, "", generatedInvokeId, "")
                 }

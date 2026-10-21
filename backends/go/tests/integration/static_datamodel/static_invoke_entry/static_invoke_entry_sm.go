@@ -172,6 +172,24 @@ func (e StaticInvokeEntryEvent) String() string {
 	return "unknown"
 }
 
+// ── SCE Accepted Subset §2.15: what a format-2 saved state of it is bound to ──
+
+// StaticInvokeEntrySavedShapeFormat2 is the shape a format-2 saved state of
+// this machine names when every record schema it holds is in its first
+// revision (docs/adr/0045, section 2). The generator computes it once, so it is
+// the text every backend's constant is.
+const StaticInvokeEntrySavedShapeFormat2 = "f7f070b9834211c785c4ed0e26fe35b0421d9ebe8d636befd0b3628dd0b46728"
+
+// StaticInvokeEntrySavedShapeFormat2Revised is the shape a format-2 saved state
+// of this machine names when it names a later revision of a record schema or
+// an enum.
+const StaticInvokeEntrySavedShapeFormat2Revised = "21469587a0d6f15201e1f1cedd15548a232a4bb56399aa8743192c6092844106"
+
+// StaticInvokeEntrySavedEnumKeys names each enum a value of a saved state of
+// this machine is of, by its document (docs/adr/0044): the key `revisions`
+// names it by, and the format-2 shape spells it by.
+var StaticInvokeEntrySavedEnumKeys = [...]string{}
+
 // ======================================================================
 // Policy struct
 // ======================================================================

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
+// source-hash: ca67d4fa2cf4dbcd6617a3b32561c9b8257bc03aaa65978435303ccf35bae7b3
 #![doc = "SCE-MAP: event_agenda.scxml:71 :: _forge_body"]
 // SCE-MAP: event_agenda.scxml:71 :: _forge_body
 

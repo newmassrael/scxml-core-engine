@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 70f0d81e5e7371651dd76e3fbe2c4947104cadff25fef82829c73b390a84662d
+// source-hash: ca67d4fa2cf4dbcd6617a3b32561c9b8257bc03aaa65978435303ccf35bae7b3
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -241,6 +241,24 @@ func (r StaticRecordListIndexDayRecord) DayOfMonth() uint8 {
 	return r.dayOfMonth
 }
 
+
+// ── SCE Accepted Subset §2.15: what a format-2 saved state of it is bound to ──
+
+// StaticRecordListIndexSavedShapeFormat2 is the shape a format-2 saved state of
+// this machine names when every record schema it holds is in its first
+// revision (docs/adr/0045, section 2). The generator computes it once, so it is
+// the text every backend's constant is.
+const StaticRecordListIndexSavedShapeFormat2 = "61da1e53bacb07a726bb31390dd73254464024a8045abcda447f2ae9c0a2c9d8"
+
+// StaticRecordListIndexSavedShapeFormat2Revised is the shape a format-2 saved state
+// of this machine names when it names a later revision of a record schema or
+// an enum.
+const StaticRecordListIndexSavedShapeFormat2Revised = "f8bd629347138fed4eef08c8e38f31d2583238f54c1aa4deb4acb2039f0fe050"
+
+// StaticRecordListIndexSavedEnumKeys names each enum a value of a saved state of
+// this machine is of, by its document (docs/adr/0044): the key `revisions`
+// names it by, and the format-2 shape spells it by.
+var StaticRecordListIndexSavedEnumKeys = [...]string{}
 
 // ======================================================================
 // Policy struct
