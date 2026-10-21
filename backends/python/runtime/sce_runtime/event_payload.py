@@ -62,6 +62,38 @@ class Wide(int):
     same payload gives the same field wherever it is read."""
 
 
+class OptionalOf:
+    """Names a payload field a schema declares `optional<T>` in a field spec,
+    around what the spec names `T` by (`int`, `str`, `Wide`, `Single`, an enum
+    type): the field holds a value of `T`, or `None` for absent
+    (docs/adr/0055, section 4).
+
+    On the wire absence is JSON `null` and nothing else. A delivery that lacks
+    the key is not an absent value: the key's absence says the sender's revision
+    of the schema does not have the field, so it is refused as a missing field
+    of `T` is, unless the schema's defaults name it (a field a later revision
+    added, whose default `null` reads absent)."""
+
+    __slots__ = ("declared",)
+
+    def __init__(self, declared: Any) -> None:
+        self.declared = declared
+
+    def __repr__(self) -> str:
+        return f"OptionalOf({self.declared!r})"
+
+
+def write_optional(value: Any, write: Any) -> Any:
+    """What the wire carries of a value that may be absent (docs/adr/0055,
+    section 4): `None`, which `json.dumps` and `ScriptValue.of` write as JSON
+    `null`, for an absent value, and `write(value)`, what a present value of its
+    type is written as, otherwise. The key is always written: a writer that left
+    it out would say its revision does not have the field. Presence is
+    `is not None`, never a truth test: a present `0`, `''` or `False` is
+    written as the value it is."""
+    return None if value is None else write(value)
+
+
 # The largest whole number every engine holds exactly as a number (`2^53 - 1`,
 # ECMAScript's `Number.MAX_SAFE_INTEGER`).
 _EXACT_IN_A_DOUBLE = (1 << 53) - 1
@@ -235,6 +267,12 @@ def lift(data: Any, fields: Sequence[tuple], defaults: str | None = None) -> lis
     grows"). A delivery with no data at all then lacks every field and reads as
     one that names none, so a field of the first revision is refused by name.
 
+    A field of `optional<T>` is `(name, OptionalOf(declared), ...)`: JSON `null`
+    reads `None`, any other value is read and held to its width as a field of
+    `T` is, and a missing key is refused as any missing field is (a default of
+    `null` in `defaults` reads `None`). A field of `T` that receives `null` is
+    refused as a value of another type is.
+
     Raises `TypedPayloadError` naming the first thing that is wrong, which the
     caller reports as `error.execution` — the answer W3C SCXML 3.13 gives for
     a guard that cannot be evaluated, and the one the script engine gives for
@@ -250,10 +288,17 @@ def lift(data: Any, fields: Sequence[tuple], defaults: str | None = None) -> lis
     for name, declared, *width in fields:
         if name not in decoded:
             raise TypedPayloadError(f"the event's data has no {name!r}")
+        carried = decoded[name]
+        if isinstance(declared, OptionalOf):
+            # Absence is the one JSON `null` (docs/adr/0055, section 4).
+            if carried is None:
+                values.append(None)
+                continue
+            declared = declared.declared
         if declared is Wide:
-            value = as_wide(name, decoded[name], width[0] < 0)
+            value = as_wide(name, carried, width[0] < 0)
         else:
-            value = _as(name, declared, decoded[name])
+            value = _as(name, declared, carried)
         if width and not width[0] <= value <= width[1]:
             raise TypedPayloadError(
                 f"{name!r} does not fit the width its schema declares ({value!r})")

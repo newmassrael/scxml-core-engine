@@ -347,8 +347,11 @@ SAVED_ENUM_KEYS = ()
 # ======================================================================
 
 def _sce_log_name(value):
-    """What a `<log>` shows of `value`: the name the enum document declares for
-    an enum member, and any other value as it is."""
+    """What a `<log>` shows of `value`: `null` for an absent optional value, as
+    every engine logs one (docs/adr/0055), the name the enum document declares
+    for an enum member, and any other value as it is."""
+    if value is None:
+        return "null"
     return value.sce_name if hasattr(value, "sce_name") else value
 
 

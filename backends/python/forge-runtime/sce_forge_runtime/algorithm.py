@@ -128,6 +128,19 @@ def found(value):
     return value
 
 
+def otherwise(value, default):
+    """``value`` when it is present, and what ``default()`` computes when it is
+    absent (``None``): ``x ?? d`` of a value that may be absent
+    (docs/adr/0055). The generator hands ``d`` as a ``lambda``, so it is
+    computed only when ``value`` is absent and a failure of it (an
+    :class:`AlgorithmFailure`) is raised only then; ``value`` is read once,
+    as the argument it is. Presence is ``is not None`` and never a truth
+    test: a present ``0``, ``''`` or ``False`` is the value."""
+    if value is not None:
+        return value
+    return default()
+
+
 def to_f32(value: float) -> float:
     """``value`` rounded to the nearest binary32, as the double that holds it
     exactly — what a 32-bit real is on the backends that have one. Python's
