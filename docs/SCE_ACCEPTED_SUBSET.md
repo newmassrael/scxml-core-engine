@@ -5719,6 +5719,7 @@ the Interpreter. These are the first three of the six steps of
 |---|---|---|
 | `machine` | scenario | the fixture the scenario drives, by its stem, or a statechart of the standard library, by its library name without `.scxml` (`sce:std/shared/record_list`), whose machine is generated under the last segment of it; several scenarios may drive one (`static_timers_stop` drives `static_timers`), so a scenario is told by its file name |
 | `about` | scenario | prose for the reader; no driver reads it |
+| `router` | scenario | `false` for a machine whose host attached no link (docs/adr/0046): its driver registers no Mesh router and no factory for its children, so every send to a peer is refused where it is made, as `error.execution`; such a scenario states no `sent` and no step's `invoke`, and a driver that records sends refuses it. Absent or `true` is the recording router every other scenario has |
 | `steps` | scenario | the steps, in order; a scenario with none judges nothing |
 | `note` | step | prose, shown when the step fails |
 | `event` | step | an external event, by the name the document gives it; a name no event of the machine matches (W3C SCXML 3.12.1) fails the step unless `dropped` is true |
@@ -5765,11 +5766,13 @@ compared as a value. The peer is not there, so nothing answers. A send to
 in `sent`. A machine with a peer send that is given no router has the send refused
 as `error.execution` by every engine (SCE_MESH.md, Errors), the generated C++ and
 the Interpreter included: the event does not come back to the machine that sent it,
-which would take a peer's event for its own. No scenario can say so, because every
-driver registers a router; each engine's tests hold it to that apart from the
-scenarios (the `a_peer_named_at_run_time_reaches_the_router` tests of Rust, Kotlin,
-Python, Go and C11, and `ASendToAMeshPeerWithNoRouterRegisteredIsErrorExecution`
-in each of the two C++ ones).
+which would take a peer's event for its own. Each engine's tests hold it to that
+apart from the scenarios (the `a_peer_named_at_run_time_reaches_the_router` tests of
+Rust, Kotlin, Python, Go and C11, and
+`ASendToAMeshPeerWithNoRouterRegisteredIsErrorExecution` in each of the two C++
+ones), and a scenario that says `"router": false` is replayed with no router on all
+seven, which is how `record_list_offline` holds what a machine on one device with no
+link keeps of its own changes.
 
 A child session is given none of its machine's router (SCE_MESH.md, Child Sessions
 in Mesh): its parent asks the factory the host registered beside the router, each
@@ -5881,14 +5884,17 @@ own while its member may only read both refused whole); `record_list_hub` is the
 on to `#people`, its roster refusing a reader's write and supersede, its own change,
 a settle counted to its end and a differing answer told the last floor, the walk);
 `record_list_alone` is the list a host started, which tells no parent and fails at
-nothing; and `record_list_parent` is a statechart that invokes it and publishes what
+nothing; `record_list_offline` is a copy given no Mesh router (`"router": false`), a
+person's and then a hub, which keeps every change it makes because what a copy does
+to itself is queued before anything it sends to a peer (docs/adr/0046); and
+`record_list_parent` is a statechart that invokes it and publishes what
 it was told: a register's one value, two values written at once told as a count of 2
 with the earlier dot first, a register written over value by value told as a count of
 0, a write already held told nothing, and the hub's own change told once. The model the
 expected values come from was first held to every step `todo_peer` took in the world's
 to-do afternoon. The world test replays that afternoon on the standard part's Rust
 machine in its own process, the sends by their routes, and writes no file of it. The
-Interpreter replays the first three, and refuses the parent as an invoke by `src`.
+Interpreter replays all but the parent, which it refuses as an invoke by `src`.
 
 A copy need not be a Rust machine. `World::add_external` hosts one in another
 process behind the Mesh endpoint the world keeps for it, driven over a

@@ -13,8 +13,11 @@
 
 use serde_json::{Map, Value};
 
-/// The members of a scenario.
-pub const TOP: &[&str] = &["machine", "about", "steps"];
+/// The members of a scenario. `router`, when `false`, says the driver registers no
+/// Mesh router and no factory for the machine's children, so every send to a peer is
+/// refused where it is made (`error.execution`): what a machine does on a device with
+/// no link (docs/adr/0046, section 4). Absent or `true` is the router that records.
+pub const TOP: &[&str] = &["machine", "about", "router", "steps"];
 
 /// The members of a step. `invoke` sends the step's `event` to the running
 /// child session of that invoke, through the Mesh router the child was given,
@@ -80,8 +83,39 @@ pub fn check(scenario: &Value) -> Result<(), String> {
     if steps.is_empty() {
         return Err("a scenario with no steps judges nothing".into());
     }
+    let routed = match scenario.get("router") {
+        None => true,
+        Some(router) => router
+            .as_bool()
+            .ok_or("`router` is `true` or `false`, whether the driver gives the machine one")?,
+    };
     for (n, step) in steps.iter().enumerate() {
         check_step(step).map_err(|why| format!("step {n}: {why}"))?;
+        if !routed {
+            without_router(step).map_err(|why| format!("step {n}: {why}"))?;
+        }
+    }
+    Ok(())
+}
+
+/// What a step of a scenario run with no router may not state: a send to a peer is
+/// refused before anything records it, so a `sent` would judge nothing, and a child
+/// is given no router for a step's `invoke` to reach it through.
+fn without_router(step: &Value) -> Result<(), String> {
+    if step.get("invoke").is_some() {
+        return Err(
+            "a scenario with no router gives no child one, so no step reaches a child by `invoke`"
+                .into(),
+        );
+    }
+    if step
+        .get("expect")
+        .and_then(|expect| expect.get("sent"))
+        .is_some()
+    {
+        return Err(
+            "a scenario with no router records no send, so no step states what was `sent`".into(),
+        );
     }
     Ok(())
 }

@@ -374,15 +374,20 @@ def replay(name: str, machine: str | None = None) -> None:
     engine = module.create_engine() if host is None else module.create_engine(host, **opt_in)
     # Every machine is given the router that records, before it starts, so that
     # what its start sends is recorded too: one with no send to a Mesh peer never
-    # calls it.
+    # calls it. A scenario that says `"router": false` is of a machine whose host
+    # attached no link (docs/adr/0046, section 4): it is given no router and no
+    # factory for its children, so every send to a peer is refused where it is made.
+    routed = scenario.get("router", True) is not False
     peers = _ScenarioPeers()
-    engine.register_mesh_router(peers.route)
+    if routed:
+        engine.register_mesh_router(peers.route)
     # A child session the machine starts is given a router of its own by the
     # factory its host registers (SCE_MESH.md, Child Sessions in Mesh), never the
     # machine's: what a child sends is written into the same list, told by the
     # invoke that started it and the start.
     routers = _ChildRouters(peers)
-    engine.register_child_mesh_routers(routers.factory)
+    if routed:
+        engine.register_child_mesh_routers(routers.factory)
     engine.initialize()
     policy = engine.policy
     readers = module.SCE_HOST_NAMES["readers"]
@@ -772,6 +777,12 @@ def test_the_standard_record_list_as_the_hub_its_people_send_to() -> None:
 # registers its changes move, and nothing fails.
 def test_a_standard_record_list_started_by_a_host_tells_no_parent() -> None:
     replay("record_list_alone")
+
+
+# A copy given no Mesh router keeps every change it makes: what it does to itself is
+# queued before a send to a peer is refused where it is made (docs/adr/0046).
+def test_a_standard_record_list_with_no_router_keeps_its_changes() -> None:
+    replay("record_list_offline")
 
 
 # A statechart that invokes the standard record list by its library name is told what

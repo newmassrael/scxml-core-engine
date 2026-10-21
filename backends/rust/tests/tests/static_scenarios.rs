@@ -1161,4 +1161,7 @@ a_copy_does_what_it_did_in_the_world! {
     record_list_is_a_persons_copy: record_list_sm::{RecordListPolicy, RecordListPersist} => "static_datamodel/scenarios/record_list_person.json";
     record_list_is_the_hub_its_people_send_to: record_list_sm::{RecordListPolicy, RecordListPersist} => "static_datamodel/scenarios/record_list_hub.json";
     record_list_started_by_a_host_tells_no_parent: record_list_sm::{RecordListPolicy, RecordListPersist} => "static_datamodel/scenarios/record_list_alone.json";
+    // A copy given no Mesh router (`"router": false`) keeps every change it makes:
+    // what it does to itself is queued before a send to a peer fails (docs/adr/0046).
+    record_list_holds_its_changes_with_no_router: record_list_sm::{RecordListPolicy, RecordListPersist} => "static_datamodel/scenarios/record_list_offline.json";
 }

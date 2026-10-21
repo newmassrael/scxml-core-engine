@@ -395,23 +395,31 @@ public:
     /// not there, and what a scenario holds a step to is that the machine asked
     /// for the send. It is registered before the machine starts, because the
     /// first entry can already send.
-    void start() {
+    ///
+    /// A scenario that says `"router": false` is of a machine whose host attached no
+    /// link (docs/adr/0046, section 4): `routed` is false, the machine is given no
+    /// callback and no factory for its children, and every send to a peer is
+    /// refused where it is made.
+    void start(bool routed = true) {
         machine_.setClock(std::make_shared<SCE::ManualClock>(0));
-        machine_.setMeshSendCallback([sent = sent_](const std::string &target, const std::string &event,
-                                                    const std::string &data, const std::string &, const std::string &) {
-            json send = {{"target", target}, {"event", event}};
-            if (!data.empty()) {
-                send["data"] = json::parse(data);
-            }
-            sent->push_back(std::move(send));
-            return true;
-        });
-        // A child session the machine starts is given a router of its own by the
-        // factory its host registers (SCE_MESH.md, Child Sessions in Mesh), never
-        // the machine's: what a child sends is written into the same list, told
-        // by the invoke that started it and the start, and a step's `invoke`
-        // hands its event to the child through it.
-        machine_.registerChildMeshRouters(children_.factory());
+        if (routed) {
+            machine_.setMeshSendCallback([sent = sent_](const std::string &target, const std::string &event,
+                                                        const std::string &data, const std::string &,
+                                                        const std::string &) {
+                json send = {{"target", target}, {"event", event}};
+                if (!data.empty()) {
+                    send["data"] = json::parse(data);
+                }
+                sent->push_back(std::move(send));
+                return true;
+            });
+            // A child session the machine starts is given a router of its own by
+            // the factory its host registers (SCE_MESH.md, Child Sessions in Mesh),
+            // never the machine's: what a child sends is written into the same list,
+            // told by the invoke that started it and the start, and a step's
+            // `invoke` hands its event to the child through it.
+            machine_.registerChildMeshRouters(children_.factory());
+        }
         machine_.initialize();
         // A machine that starts a child session in its first state has that child
         // running, and maybe ended, before any event arrives; it is read as the
@@ -544,7 +552,7 @@ private:
 template <typename Machine> void replay(const std::string &machine, Driver<Machine> &driver) {
     const json scenario = readScenario(machine);
     ASSERT_TRUE(scenario.contains("steps")) << machine;
-    driver.start();
+    driver.start(scenario.value("router", true));
     int index = 0;
     for (const auto &step : scenario["steps"]) {
         SCOPED_TRACE(machine + " step " + std::to_string(index++) + ": " + step.value("note", std::string{}));
@@ -2210,6 +2218,13 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, TheHubOfTheStandardRecordListPassesEa
 TEST(AStaticDatamodelRunsGeneratedCppTest, AStandardRecordListStartedByAHostTellsNoParent) {
     auto driver = recordListDriver();
     replay("record_list_alone", driver);
+}
+
+// A copy given no Mesh router (`"router": false`) keeps every change it makes: what
+// it does to itself is queued before a send to a peer is refused (docs/adr/0046).
+TEST(AStaticDatamodelRunsGeneratedCppTest, AStandardRecordListWithNoRouterKeepsItsChanges) {
+    auto driver = recordListDriver();
+    replay("record_list_offline", driver);
 }
 
 // A statechart that invokes the standard record list by its library name is told what

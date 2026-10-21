@@ -618,18 +618,25 @@ protected:
         // from. Wired before the machine starts, because its first entry can
         // already send.
         const auto sentToPeers = std::make_shared<SentToPeers>();
+        // A scenario that says `"router": false` is of a machine whose host attached
+        // no link (docs/adr/0046, section 4): it is given no router for a peer and no
+        // factory for its children, so every send to a peer is refused where it is
+        // made.
+        const bool routed = scenario.value("router", true);
         // A child session the machine starts is given a router of its own by the
         // factory its host registers (SCE_MESH.md, Child Sessions in Mesh), never
         // the machine's: what a child sends is written into the same list, told by
         // the invoke that started it and the start, and a step's `invoke` hands its
         // event to the child through it.
         const ChildRouters children(sentToPeers);
-        machine->registerChildMeshRouters(children.factory());
+        if (routed) {
+            machine->registerChildMeshRouters(children.factory());
+        }
         // The time a step's `advance_ms` moves is this scheduler's logical clock,
         // not the wall: the scenario says how far time goes, and the delayed sends
         // that fall due in that span are released, with nothing waited out.
         const auto scheduler = makeScheduler(SchedulerMode::MANUAL);
-        const auto eventRaiser = wire(*machine, sentToPeers, scheduler);
+        const auto eventRaiser = wire(*machine, routed ? sentToPeers : std::shared_ptr<SentToPeers>(), scheduler);
         ASSERT_TRUE(machine->loadSCXML(document.string())) << "the Interpreter does not load the lowered document";
         ASSERT_TRUE(machine->start());
         eventRaiser->processQueuedEvents();
@@ -850,7 +857,7 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, TheInterpreterDoesWha
     // anything. The statechart that invokes it by its library name is not among them:
     // the lowering rewrites a child where its text stands in its parent, and a standard
     // child has none there, so it is refused as an invoke by `src`.
-    for (const char *copy : {"record_list_person", "record_list_hub", "record_list_alone"}) {
+    for (const char *copy : {"record_list_person", "record_list_hub", "record_list_alone", "record_list_offline"}) {
         EXPECT_NE(std::find(replayed.begin(), replayed.end(), copy), replayed.end())
             << copy << " was not replayed: the standard shared record list has no lowering for the Interpreter";
     }

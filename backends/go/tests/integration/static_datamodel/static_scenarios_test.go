@@ -599,11 +599,24 @@ func sentToPeer(request sce.HostSendRequest) any {
 // give a machine, and a round that finds nothing to do changes nothing.
 const settleTicks = 5
 
-// drive starts `policy` and returns it as a machine.
+// drive starts `policy` with the router that records what it sends its peers, and
+// returns it as a machine.
 func drive[S interface {
 	comparable
 	String() string
 }, E comparable](policy sce.StatePolicy[S, E], variables map[string]func() any) machine {
+	return driveRouted(policy, variables, true)
+}
+
+// driveRouted starts `policy`, with the routers that record when `routed`, and
+// returns it as a machine. Not `routed` is how a host that attached no link starts
+// it: with no Mesh router and no factory for its children, so every send to a peer
+// is refused where it is made (docs/adr/0046, section 4); such a machine replays a
+// scenario that says `"router": false`, and records no send.
+func driveRouted[S interface {
+	comparable
+	String() string
+}, E comparable](policy sce.StatePolicy[S, E], variables map[string]func() any, routed bool) machine {
 	engine := sce.NewEngine[S, E](policy)
 	engine.SetClock(sce.NewManualClock(0))
 	// A machine with no Mesh router fails each send to a peer as error.execution,
@@ -611,18 +624,20 @@ func drive[S interface {
 	// its start sends belongs to the first step. A machine that sends to no peer
 	// never reaches it.
 	var sent []any
-	engine.RegisterMeshRouter(func(request sce.HostSendRequest) []sce.HostSendResponse {
-		sent = append(sent, sentToPeer(request))
-		return nil
-	})
 	// A child session the machine starts is given a router of its own by the
 	// factory its host registers (SCE_MESH.md, Child Sessions in Mesh), never the
 	// machine's: what a child sends is written into the same list, told by the
 	// invoke that started it and the start.
 	children := &childRouters{sent: &sent, starts: map[string]int{}, running: map[string]*childRouter{}}
-	engine.RegisterChildMeshRouters(func(invokeID, _ string) sce.ChildMeshRouter {
-		return children.open(invokeID)
-	})
+	if routed {
+		engine.RegisterMeshRouter(func(request sce.HostSendRequest) []sce.HostSendResponse {
+			sent = append(sent, sentToPeer(request))
+			return nil
+		})
+		engine.RegisterChildMeshRouters(func(invokeID, _ string) sce.ChildMeshRouter {
+			return children.open(invokeID)
+		})
+	}
 	engine.Initialize()
 	// The generated policy says which call the machine needs: `Step` drains the
 	// queues and nothing else, and a machine with a delayed send or a child
@@ -644,7 +659,7 @@ func drive[S interface {
 	if needsScheduler {
 		settle()
 	}
-	return machine{
+	driven := machine{
 		send: func(name, data string) {
 			engine.RaiseExternalByName(name, data)
 			settle()
@@ -695,6 +710,12 @@ func drive[S interface {
 			return taken
 		},
 	}
+	// A machine given no router records no send and reaches no child.
+	if !routed {
+		driven.sent = nil
+		driven.deliver = nil
+	}
+	return driven
 }
 
 // elements is a slice as the list of its elements — a `[]uint8` is a list of
@@ -737,7 +758,10 @@ func replay(t *testing.T, name string, m machine) {
 		t.Fatalf("scenario %s is not readable: %v", name, err)
 	}
 	var scenario struct {
-		Steps []struct {
+		// Router is false for the scenario of a machine whose host attached no link
+		// (docs/adr/0046, section 4), which its driver gives no router.
+		Router *bool `json:"router"`
+		Steps  []struct {
 			Note      string          `json:"note"`
 			Event     *string         `json:"event"`
 			Invoke    *string         `json:"invoke"`
@@ -761,6 +785,12 @@ func replay(t *testing.T, name string, m machine) {
 	}
 	if len(scenario.Steps) == 0 {
 		t.Fatalf("scenario %s has no steps, which judges nothing", name)
+	}
+	// A scenario that gives its machine no router is replayed by a driver that
+	// registered none (driveRouted, not routed): one that records sends registered a
+	// router, and would replay another machine.
+	if scenario.Router != nil && !*scenario.Router && (m.sent != nil || m.deliver != nil) {
+		t.Fatalf("scenario %s gives the machine no Mesh router, and this driver gave it one", name)
 	}
 	for n, step := range scenario.Steps {
 		where := func() string { return fmt.Sprintf("%s step %d: %s", name, n, step.Note) }
@@ -1986,9 +2016,15 @@ func TestACopyOfASharedTodoListIsReplayedAsEachPeerSawIt(t *testing.T) {
 // recordListCopy is one copy of the standard shared record list
 // (sce:std/shared/record_list.scxml), as a scenario reads it.
 func recordListCopy() machine {
+	return recordListMachine(true)
+}
+
+// recordListMachine is that copy, given the router that records when `routed`, and
+// no router when not, as a host that attached no link starts it.
+func recordListMachine(routed bool) machine {
 	policy := record_list.NewRecordListPolicy()
 	policy.SessionID = sce.GenerateSessionID()
-	return drive[record_list.RecordListState, record_list.RecordListEvent](&policy, map[string]func() any{
+	return driveRouted[record_list.RecordListState, record_list.RecordListEvent](&policy, map[string]func() any{
 		"node":       func() any { return digits(policy.Node()) },
 		"hub":        func() any { return policy.Hub() },
 		"clock":      func() any { return hlcJSON(policy.Clock()) },
@@ -2003,17 +2039,19 @@ func recordListCopy() machine {
 		"full":       func() any { return policy.Full() },
 		"denied":     func() any { return policy.Denied() },
 		"announced":  func() any { return policy.Announced() },
-	})
+	}, routed)
 }
 
 // The standard shared record list, its scenarios' machine named by its library name:
 // a person's copy, which sends its changes to the hub by `#hub`, and the hub, which
 // passes every change on to the people by `#people`. A list a host started tells no
-// parent of the registers its changes move, and nothing fails.
+// parent of the registers its changes move, and nothing fails. A copy given no
+// router keeps every change it makes (docs/adr/0046).
 func TestACopyOfTheStandardRecordListIsReplayedAsEachPeerSawIt(t *testing.T) {
 	t.Run("a person", func(t *testing.T) { replay(t, "record_list_person", recordListCopy()) })
 	t.Run("the hub", func(t *testing.T) { replay(t, "record_list_hub", recordListCopy()) })
 	t.Run("alone", func(t *testing.T) { replay(t, "record_list_alone", recordListCopy()) })
+	t.Run("offline", func(t *testing.T) { replay(t, "record_list_offline", recordListMachine(false)) })
 }
 
 // registerRecord is a `record:Register` (sce:std/shared/record_register) as a host

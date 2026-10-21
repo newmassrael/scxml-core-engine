@@ -130,6 +130,32 @@ class ReplayTest {
     }
 
     /**
+     * A scenario of a machine given no router (`"router": false`) is refused by a
+     * driver that records sends, which registered a router, and is replayed by one
+     * that records none. Red if [routed] stops reading the member, or the replay
+     * stops holding the driver to it.
+     */
+    @Test
+    fun aScenarioWithNoRouterIsReplayedOnlyByADriverThatGaveNone() {
+        val text = """{"machine": "fake", "router": false, "steps": [{"note": "start", "expect": {"state": "idle"}}]}"""
+        assertFalse(routed(parseScenario(text)))
+        assertTrue(routed(parseScenario("""{"machine": "fake", "steps": []}""")))
+        val machine = Machine()
+        val mismatch = assertFailsWith<ScenarioMismatch> {
+            replay(
+                parseScenario(text),
+                send = machine::send,
+                tick = { machine.ticks++ },
+                save = machine::save,
+                ended = { machine.ended },
+                sent = { emptyList() },
+            )
+        }
+        assertNull(mismatch.step)
+        replayOn(machine, text)
+    }
+
+    /**
      * A step's `invoke` is a child's event: a driver that gives children no routers
      * fails the step rather than hand the event to the machine. Red if the replay
      * sends it to the machine instead.

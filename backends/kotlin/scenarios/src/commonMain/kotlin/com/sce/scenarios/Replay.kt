@@ -23,6 +23,7 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -39,6 +40,15 @@ const val SETTLE_TICKS: Int = 5
 
 /** The scenario [text] holds, read as the JSON object a scenario is. */
 fun parseScenario(text: String): JsonObject = Json.parseToJsonElement(text).jsonObject
+
+/**
+ * Whether [scenario] has its machine given a Mesh router: true unless it says
+ * `"router": false`, the scenario of a machine whose host attached no link
+ * (docs/adr/0046, section 4). A driver registers neither a router nor a factory for
+ * the machine's children for such a scenario, so every send to a peer is refused
+ * where it is made, and it passes [replay] no `sent`.
+ */
+fun routed(scenario: JsonObject): Boolean = scenario["router"]?.jsonPrimitive?.booleanOrNull != false
 
 /**
  * Replay [scenario] against a machine driven by [send] and [tick], read back with
@@ -98,6 +108,15 @@ fun replay(
     val steps = scenario.getValue("steps").jsonArray
     if (steps.isEmpty()) {
         throw ScenarioMismatch(null, "", "a scenario with no steps judges nothing")
+    }
+    // A scenario of a machine given no router is replayed by a driver that registered
+    // none: one that records sends registered a router, and would replay another machine.
+    if (!routed(scenario) && (sent != null || children != null)) {
+        throw ScenarioMismatch(
+            null,
+            "",
+            "the scenario gives the machine no Mesh router, and this driver gave it one",
+        )
     }
     tick()
     steps.forEachIndexed { n, element ->

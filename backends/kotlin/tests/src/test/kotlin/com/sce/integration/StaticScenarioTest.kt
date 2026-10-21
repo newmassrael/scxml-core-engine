@@ -103,6 +103,7 @@ import com.sce.scenarios.SETTLE_TICKS
 import com.sce.scenarios.hostCall
 import com.sce.scenarios.parseScenario
 import com.sce.scenarios.replay
+import com.sce.scenarios.routed
 import java.io.File
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -1501,11 +1502,29 @@ class StaticScenarioTest {
         replayRecordList(scenario("record_list_alone"))
     }
 
-    /** One run of `record_list`, on a machine of its own whose sends to its peers are recorded. */
+    // A copy given no Mesh router keeps every change it makes: what it does to itself is
+    // queued before a send to a peer is refused where it is made (docs/adr/0046).
+    @Test
+    fun recordListHoldsItsChangesWithNoRouter() {
+        replayRecordList(scenario("record_list_offline"))
+    }
+
+    /**
+     * One run of `record_list`, on a machine of its own whose sends to its peers are
+     * recorded, or, for a scenario that gives it no router, that is given none.
+     */
     private fun replayRecordList(scenario: JsonObject) {
         val sends = RecordedSends()
         val sm = RecordListStateMachine()
-        sm.registerMeshRouter(sends.router)
+        val routed = routed(scenario)
+        if (routed) {
+            sm.registerMeshRouter(sends.router)
+        }
+        val sent: (() -> List<JsonElement>)? = if (routed) {
+            { sends.take() }
+        } else {
+            null
+        }
         sm.initialize()
         try {
             replay(
@@ -1514,7 +1533,7 @@ class StaticScenarioTest {
                 tick = { sm.tick() },
                 save = { sm.save() },
                 ended = { sm.isInFinalState },
-                sent = { sends.take() },
+                sent = sent,
             )
         } finally {
             sm.cleanup()

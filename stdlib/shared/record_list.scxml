@@ -151,6 +151,14 @@
   one it relays: it is taken in here and sent on to `#people` as any change is, and never
   sent to `#hub`, which is the hub itself.
 
+  What a copy does to itself never waits on what it sends (docs/adr/0046). A send to a
+  peer the host gave no route to (no Mesh router: a copy on one device, or one whose link
+  was never attached) is `error.execution` where it is made, which ends its block. So in
+  every transition the copy queues what it does to itself before it sends anything to a
+  peer, and a send to a peer is the last act of its block: a copy with no router takes
+  every change it makes in, and counts each send it could not make in `refusals`. Its
+  first `record_list.resync` on a link shares what it holds.
+
   `values` and `digest` are what a run compares across copies.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
@@ -377,6 +385,10 @@
       </if>
       <if cond="!blocked &amp;&amp; !forbidden">
         <assign location="clock" expr="HlcSend(clock, _event.data.now, node)"/>
+        <!-- What the copy does to itself is queued before anything is sent to a peer
+             (docs/adr/0046, section 4): a send to the hub that fails where it is made
+             (a copy with no Mesh router) ends the block, and must find the change
+             taken in here already. -->
         <foreach array="adds" item="o">
           <if cond="o.element === entry.element">
             <send target="#_internal" event="record_list.supersede">
@@ -387,16 +399,6 @@
               <param name="nodeId" expr="o.nodeId"/>
               <param name="by" expr="node"/>
             </send>
-            <if cond="!hub">
-              <send target="#hub" event="record_list.supersede">
-                <param name="id" expr="_event.data.id"/>
-                <param name="field" expr="_event.data.field"/>
-                <param name="wallTime" expr="o.wallTime"/>
-                <param name="counter" expr="o.counter"/>
-                <param name="nodeId" expr="o.nodeId"/>
-                <param name="by" expr="node"/>
-              </send>
-            </if>
           </if>
         </foreach>
         <send target="#_internal" event="record_list.write">
@@ -408,9 +410,22 @@
           <param name="counter" expr="clock.counter"/>
           <param name="nodeId" expr="node"/>
         </send>
-        <!-- A person's change goes to the hub; the hub's own is relayed to the people
-             by the write and the supersedes it takes in here, as any change is. -->
+        <!-- A person's change goes to the hub, each value it wrote over and then the
+             write; the hub's own is relayed to the people by the write and the
+             supersedes it takes in here, as any change is. -->
         <if cond="!hub">
+          <foreach array="adds" item="o">
+            <if cond="o.element === entry.element">
+              <send target="#hub" event="record_list.supersede">
+                <param name="id" expr="_event.data.id"/>
+                <param name="field" expr="_event.data.field"/>
+                <param name="wallTime" expr="o.wallTime"/>
+                <param name="counter" expr="o.counter"/>
+                <param name="nodeId" expr="o.nodeId"/>
+                <param name="by" expr="node"/>
+              </send>
+            </if>
+          </foreach>
           <send target="#hub" event="record_list.write">
             <param name="id" expr="_event.data.id"/>
             <param name="field" expr="_event.data.field"/>
@@ -829,15 +844,18 @@
           </foreach>
           <assign location="frozenFor" expr="pending"/>
           <assign location="frozenHash" expr="mine"/>
-          <send target="#people" event="record_list.floor">
-            <param name="before" expr="pending"/>
-            <param name="hash" expr="mine"/>
-          </send>
+          <!-- The hub's own floor first, and the round closed, then the people told:
+               a hub that cannot reach them still settles itself. The instant told is
+               `frozenFor`, which holds it until the hub's own floor is taken. -->
           <send target="#_internal" event="record_list.floor">
             <param name="before" expr="pending"/>
             <param name="hash" expr="mine"/>
           </send>
           <assign location="pending" expr="-1"/>
+          <send target="#people" event="record_list.floor">
+            <param name="before" expr="frozenFor"/>
+            <param name="hash" expr="mine"/>
+          </send>
         </if>
         <!-- The copies are told the last instant settled when an answer is not the hub's
              and there was one: a copy that took part in it finds that it holds what was

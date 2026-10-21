@@ -1349,6 +1349,19 @@ static int sce_scenario_replay(const char *path, const sce_scenario_driver_t *d,
             if (strcmp(stem, d->machine) != 0) {
                 return sce_scenario_fail(d, 0, "the scenario is of another machine");
             }
+        } else if (strcmp(key, "router") == 0) {
+            /* `false` is the scenario of a machine whose host attached no link
+               (docs/adr/0046, section 4): replayed by a driver that installed no
+               router, which records no send. One that records sends installed a
+               router, and would replay another machine. */
+            int64_t routed = 1;
+            if (!sce_scenario_number(&c, &routed)) {
+                return sce_scenario_fail(d, 0, "`router` is not a bool");
+            }
+            if (routed == 0 && d->sent != NULL) {
+                return sce_scenario_fail(d, 0,
+                                         "the scenario gives the machine no Mesh router, and this driver gave it one");
+            }
         } else if (strcmp(key, "steps") == 0) {
             if (!sce_scenario_take(&c, '[')) {
                 return sce_scenario_fail(d, 0, "`steps` is not an array");

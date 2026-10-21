@@ -246,6 +246,18 @@ fn each_rule_of_the_vocabulary_refuses_what_it_is_for() {
             json!({"machine": "m", "steps": [{"expect": {"sent": [{"target": "#peer", "event": "e", "invoke": "list", "start": 0}]}}]}),
             "counts the starts of its invoke from 1",
         ),
+        (
+            json!({"machine": "m", "router": "none", "steps": [{"expect": {}}]}),
+            "`router` is `true` or `false`",
+        ),
+        (
+            json!({"machine": "m", "router": false, "steps": [{"expect": {"sent": []}}]}),
+            "records no send",
+        ),
+        (
+            json!({"machine": "m", "router": false, "steps": [{"event": "e", "invoke": "list", "expect": {}}]}),
+            "gives no child one",
+        ),
     ];
     for (scenario, reason) in cases {
         match vocabulary::check(&scenario) {

@@ -155,8 +155,19 @@ type Sent = std::sync::Arc<std::sync::Mutex<Vec<Value>>>;
 
 /// The registrations a replay makes on the machine it drives, as a host makes
 /// them on a machine it starts: on the first machine, and again on one a step
-/// restored, which a host is handed without them.
-fn register<P: StatePolicy>(engine: &mut Engine<P>, sent: &Sent, children: &child_mesh::Children) {
+/// restored, which a host is handed without them. A machine that is not
+/// `routed` is of a host that attached no link (docs/adr/0046, section 4): it is
+/// given no router and no factory for its children, so every send to a peer is
+/// refused where it is made.
+fn register<P: StatePolicy>(
+    engine: &mut Engine<P>,
+    sent: &Sent,
+    children: &child_mesh::Children,
+    routed: bool,
+) {
+    if !routed {
+        return;
+    }
     // What the machine sends a Mesh peer (`<send target="#name">`) reaches its host
     // through the router the host registers, and a machine with no router has the
     // send refused as error.execution. A replay is every machine's host, so it
@@ -195,9 +206,12 @@ fn replay_recording<P: StatePolicy>(
     let scenario: Value = serde_json::from_str(scenario).expect("a scenario is JSON");
     let steps = scenario["steps"].as_array().expect("steps");
     assert!(!steps.is_empty(), "a scenario with no steps judges nothing");
+    // A scenario that says `"router": false` is of a machine whose host attached no
+    // link (docs/adr/0046, section 4).
+    let routed = scenario.get("router").and_then(Value::as_bool) != Some(false);
     let sent: Sent = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
     let children = child_mesh::Children::new(std::sync::Arc::clone(&sent));
-    register(&mut engine, &sent, &children);
+    register(&mut engine, &sent, &children, routed);
     engine.initialize();
     // A machine that starts a child session in its first state has that child
     // running, and maybe ended, before any event arrives; it is read as the
@@ -227,7 +241,7 @@ fn replay_recording<P: StatePolicy>(
             engine = restore(&saved);
             // The factory is asked for the resumed children's routers as it is
             // registered: those are the sessions that were running, not starts.
-            children.resuming(|| register(&mut engine, &sent, &children));
+            children.resuming(|| register(&mut engine, &sent, &children, routed));
         }
         // A step that moves the machine's time on, for a scenario of a delayed
         // send: the engine is handed a manual clock by its caller, so the wait

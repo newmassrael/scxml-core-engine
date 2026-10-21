@@ -94,7 +94,8 @@
 //     order, through the router a host installs before the machine starts.
 //   * `record_list`: the standard shared record list (sce:std/shared/record_list), a
 //     scenario's machine named by its library name, as a person's copy and as the
-//     hub, and started by a host, when it tells no parent anything; and
+//     hub, started by a host, when it tells no parent anything, and started with no
+//     Mesh router, when it keeps every change it makes; and
 //     `record_list_parent`, which
 //     invokes it by its library name and publishes what it was told of each
 //     register.
@@ -414,11 +415,9 @@ static bool find(const name_value_t *table, size_t count, const char *name, int 
         }                                                                                                              \
         return false;                                                                                                  \
     }                                                                                                                  \
-    static int M##_scenario(const char *scenario, int min_steps) {                                                     \
-        M##_t sm;                                                                                                      \
-        INIT;                                                                                                          \
+    static int M##_replay(M##_t *started, const char *(*sent)(void *), const char *scenario, int min_steps) {          \
         const sce_scenario_driver_t driver = {#M,                                                                      \
-                                              &sm,                                                                     \
+                                              started,                                                                 \
                                               M##_raise_event,                                                         \
                                               M##_state_active,                                                        \
                                               M##_run_ended,                                                           \
@@ -435,7 +434,7 @@ static bool find(const name_value_t *table, size_t count, const char *name, int 
                                               ADVANCE,                                                                 \
                                               M##_active_count,                                                        \
                                               HOST_CALLS,                                                              \
-                                              SENT,                                                                    \
+                                              sent,                                                                    \
                                               CHILD_HOSTS,                                                             \
                                               DELIVER};                                                                \
         char path[512];                                                                                                \
@@ -449,6 +448,11 @@ static bool find(const name_value_t *table, size_t count, const char *name, int 
             bad = 1;                                                                                                   \
         }                                                                                                              \
         return bad;                                                                                                    \
+    }                                                                                                                  \
+    static int M##_scenario(const char *scenario, int min_steps) {                                                     \
+        M##_t sm;                                                                                                      \
+        INIT;                                                                                                          \
+        return M##_replay(&sm, SENT, scenario, min_steps);                                                             \
     }
 
 // A machine that waits on no clock, started as `_init` starts it.
@@ -567,6 +571,17 @@ static const char *peers_sent(void *sm) {
     }                                                                                                                  \
     STATIC_SCENARIO_CORE(M, STATES, VARIABLES, TEXT, LISTS, RECORDS, NULL, NULL, NULL, NULL,                           \
                          M##_start_with_router(&sm), NULL, NULL, peers_sent, NULL, NULL)
+
+// The same machine, started as a host that attached no link starts it (docs/adr/0046,
+// section 4): with no Mesh router installed, so every send to a peer is refused where
+// it is made, and no record of what it sent. It replays a scenario that says
+// `"router": false`, which the reader refuses for a driver that records sends.
+#define STATIC_SCENARIO_UNROUTED(M)                                                                                    \
+    static int M##_unrouted_scenario(const char *scenario, int min_steps) {                                            \
+        M##_t sm;                                                                                                      \
+        M##_init(&sm);                                                                                                 \
+        return M##_replay(&sm, NULL, scenario, min_steps);                                                             \
+    }
 
 // A machine whose delayed sends wait on a clock the scenario owns: it is started
 // on a manual one, and an `advance_ms` step moves it on and runs what came due.
@@ -2658,6 +2673,7 @@ static const record_variable_t record_list_records[] = {
     RECORD_LIST_ROW(record_list, digest),     {NULL, NULL, NULL, NULL}};
 STATIC_SCENARIO_PEERED(record_list, record_list_states, record_list_variables, record_list_text, no_lists,
                        record_list_records)
+STATIC_SCENARIO_UNROUTED(record_list)
 
 // record_list_parent: a statechart that invokes the standard record list by its
 // library name, passes it the host's writes and supersedes, and publishes what it
@@ -2949,6 +2965,7 @@ int main(void) {
     bad |= record_list_scenario("record_list_person", 29);
     bad |= record_list_scenario("record_list_hub", 21);
     bad |= record_list_scenario("record_list_alone", 5);
+    bad |= record_list_unrouted_scenario("record_list_offline", 8);
     bad |= record_list_parent_scenario("record_list_parent", 11);
     bad |= sheet_peer_scenario("sheet_peer_alice", 24);
     bad |= sheet_peer_scenario("sheet_peer_bob", 26);
