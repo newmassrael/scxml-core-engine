@@ -118,6 +118,27 @@ impl ExprTarget {
         }
     }
 
+    /// Whether this target's emitter spells an optional value (docs/adr/0055):
+    /// `null`, a value of `T` lifted into `optional<T>`, a test of presence, a
+    /// proven `x.value`, `x ?? d` and equality between optional values
+    /// ([`OptionalForm`], [`InferredType::lifted_into`]). The one answer a
+    /// target gives: its `sce-static` lowering asks it too
+    /// ([`crate::forge::static_lowering::StaticTarget::lowers_optional`]), and a
+    /// target that answers `false` is refused by name before its emitter is
+    /// reached ([`reject_unlowered_optional`]). Each target answers `true` in
+    /// the step that writes its spellings.
+    pub(crate) fn lowers_optional(self) -> bool {
+        match self {
+            ExprTarget::Cpp
+            | ExprTarget::Kotlin
+            | ExprTarget::Rust
+            | ExprTarget::Go
+            | ExprTarget::Python
+            | ExprTarget::C
+            | ExprTarget::Js => false,
+        }
+    }
+
     /// How this target spells a name the author gave a local — a parameter or a
     /// variable of an algorithm, the item or the index of a `<foreach>` — where
     /// it is declared and where an expression reads it. The emitter's `Ident`
@@ -1271,32 +1292,164 @@ fn described(got: InferredType, slot: InferredType) -> String {
 }
 
 /// Refuse an expression that holds an optional value (docs/adr/0055) — `x`,
-/// `x.value`, `x ?? d`, `x === null` — on `target`, before an emitter spells it:
-/// no backend lowers one yet, and a document that holds one is refused by name
-/// where it is lowered, so an expression reaches here with one only where no
-/// such refusal ran.
+/// `x.value`, `x ?? d`, `x === null` — on a `target` whose emitter does not
+/// spell one yet ([`ExprTarget::lowers_optional`]), before the emitter is
+/// reached, naming the construct ([`OptionalForm`]) and placed at it. A document
+/// that holds one is refused by name where it is lowered for such a target, so
+/// an expression reaches here with one only where no such refusal ran.
 fn reject_unlowered_optional(expr: &TypedExpr, target: ExprTarget) -> Result<(), Refusal> {
-    let holds_one = expr.ty.is_optional()
-        || matches!(
-            expr.kind,
-            ExprKind::Binary {
-                op: BinOp::Coalesce,
-                ..
-            }
-        );
-    if holds_one {
+    if target.lowers_optional() {
+        return Ok(());
+    }
+    // `null === null` reads no optional value, and is left as it was.
+    let refused = match optional_form(expr) {
+        Some(OptionalForm::Constant(_)) => None,
+        Some(form) => Some((form.describe(), form.span(expr))),
+        None if expr.ty.is_optional() => Some(("an optional value".to_string(), expr.span.clone())),
+        None => None,
+    };
+    if let Some((what, at)) = refused {
         let lang = target
             .language()
             .map_or("ecmascript", crate::generator::Language::canonical_name);
         return Err(ExprError::UnsupportedConstruct {
-            construct: format!("an optional value has no {lang} lowering yet (docs/adr/0055)"),
+            construct: format!(
+                "{what}: an optional value has no {lang} lowering yet (docs/adr/0055)"
+            ),
             observed: None,
         }
-        .at(expr.span.clone()));
+        .at(at));
     }
     expr.children()
         .into_iter()
         .try_for_each(|child| reject_unlowered_optional(child, target))
+}
+
+/// What a node does with an optional value (docs/adr/0055, section 2), as
+/// every emitter that lowers one reads it ([`optional_form`]): the one
+/// classification of the constructs the expression surface admits, so the
+/// emitters differ only in how each is spelled (ADR 0055, section 5).
+///
+/// A value of `T` that stands where an `optional<T>` is expected is no node of
+/// its own: it is lifted where the emitter coerces it to the type its place
+/// expects ([`InferredType::lifted_into`]).
+/// `null` is no form either: it is the absent value of the optional value its
+/// place expects, which the emitter is handed as the type it coerces to, and is
+/// spelled as it was where the place expects none.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum OptionalForm<'e> {
+    /// `subject !== null` (`present`) or `subject === null`, either side of the
+    /// operator, where `subject` is an optional value: whether it is present.
+    Test {
+        subject: &'e TypedExpr,
+        present: bool,
+    },
+    /// `subject.value`, where the build has proven `subject` present
+    /// ([`reject_optional_misuse`]): a read with no failure path.
+    Proven { subject: &'e TypedExpr },
+    /// `value ?? fallback`: the present value of `value`, or `fallback`, which
+    /// is evaluated only when `value` is absent. `value` is evaluated once. The
+    /// node is of `T`, or of `optional<T>` when `fallback` is optional itself.
+    Otherwise {
+        value: &'e TypedExpr,
+        fallback: &'e TypedExpr,
+    },
+    /// `left === right` (`equal`) or `left !== right`, where either side is an
+    /// optional value and neither is `null`: total equality, two absent values
+    /// equal and an absent one equal to no present one. A side of `T` is lifted
+    /// into the optional value the other side is.
+    Equality {
+        left: &'e TypedExpr,
+        right: &'e TypedExpr,
+        equal: bool,
+    },
+    /// `null === null` (`true`) or `null !== null`: a comparison of two absent
+    /// values of no type, whose answer is known.
+    Constant(bool),
+}
+
+impl OptionalForm<'_> {
+    /// The construct, as a refusal names it.
+    pub(crate) fn describe(&self) -> String {
+        match self {
+            Self::Test { present: true, .. } => {
+                "a test that a value is present (`!== null`)".into()
+            }
+            Self::Test { present: false, .. } => {
+                "a test that a value is absent (`=== null`)".into()
+            }
+            Self::Proven { .. } => "a read of a value proven present (`.value`)".to_string(),
+            Self::Otherwise { .. } => "a read with a default (`??`)".to_string(),
+            Self::Equality { equal: true, .. } => "`===` of an optional value".to_string(),
+            Self::Equality { equal: false, .. } => "`!==` of an optional value".to_string(),
+            Self::Constant(true) => "`null === null`".to_string(),
+            Self::Constant(false) => "`null !== null`".to_string(),
+        }
+    }
+
+    /// Where the construct is written in `whole`, the node it is the form of:
+    /// the optional value it reads, or the range of its two operands.
+    pub(crate) fn span(&self, whole: &TypedExpr) -> Option<std::ops::Range<usize>> {
+        let between = |first: &TypedExpr, last: &TypedExpr| match (&first.span, &last.span) {
+            (Some(first), Some(last)) => Some(first.start.min(last.start)..first.end.max(last.end)),
+            _ => whole.span.clone(),
+        };
+        match self {
+            Self::Constant(_) => whole.span.clone(),
+            Self::Test { subject, .. } | Self::Proven { subject } => {
+                subject.span.clone().or_else(|| whole.span.clone())
+            }
+            Self::Otherwise { value, fallback } => between(value, fallback),
+            Self::Equality { left, right, .. } => between(left, right),
+        }
+    }
+}
+
+/// The [`OptionalForm`] of `expr`, or `None` for a node that is none of them —
+/// one whose operands may hold an optional value all the same, each of which is
+/// a node of its own.
+pub(crate) fn optional_form(expr: &TypedExpr) -> Option<OptionalForm<'_>> {
+    let is_null = |node: &TypedExpr| matches!(node.kind, ExprKind::NullLit);
+    match &expr.kind {
+        ExprKind::Member { object, property }
+            if property == OPTIONAL_VALUE && object.ty.is_optional() =>
+        {
+            Some(OptionalForm::Proven { subject: object })
+        }
+        ExprKind::Binary {
+            op: BinOp::Coalesce,
+            left,
+            right,
+        } => Some(OptionalForm::Otherwise {
+            value: left,
+            fallback: right,
+        }),
+        ExprKind::Binary {
+            op: op @ (BinOp::StrictEq | BinOp::StrictNeq),
+            left,
+            right,
+        } => {
+            let equal = *op == BinOp::StrictEq;
+            // A test of a value that is not optional (one this layer does not
+            // type, in a data model that is not `sce-static`) is left as it was.
+            match (is_null(left), is_null(right)) {
+                (true, true) => Some(OptionalForm::Constant(equal)),
+                (true, false) => right.ty.is_optional().then_some(OptionalForm::Test {
+                    subject: right,
+                    present: !equal,
+                }),
+                (false, true) => left.ty.is_optional().then_some(OptionalForm::Test {
+                    subject: left,
+                    present: !equal,
+                }),
+                (false, false) if left.ty.is_optional() || right.ty.is_optional() => {
+                    Some(OptionalForm::Equality { left, right, equal })
+                }
+                (false, false) => None,
+            }
+        }
+        _ => None,
+    }
 }
 
 /// Whether a value of type `got` may stand where `slot` is declared.
@@ -4472,6 +4625,27 @@ fn join_branches(consequent: InferredType, alternate: InferredType) -> InferredT
     }
 }
 
+/// Whether `node`, already typed, is a value of an enum the typer can tell by its
+/// form: a variant `Alias.v` of an enum `ctx` holds, the proven present value of
+/// an optional enum (`status.value`), or a conditional of two of them. A variable
+/// of an enum is typed `Unknown` as every enum value is
+/// ([`InferredType::from_sce_type`]), and is not told here.
+fn is_enum_value(node: &TypedExpr, ctx: &TypeCtx<'_>) -> bool {
+    match &node.kind {
+        ExprKind::Member { object, property } => {
+            matches!(&object.kind, ExprKind::Ident(alias) if ctx.lookup_enum(alias).is_some())
+                || (property == OPTIONAL_VALUE
+                    && object.ty == InferredType::Optional(OptionalElem::Enum))
+        }
+        ExprKind::Conditional {
+            consequent,
+            alternate,
+            ..
+        } => is_enum_value(consequent, ctx) && is_enum_value(alternate, ctx),
+        _ => false,
+    }
+}
+
 /// The type of `x ?? d` (docs/adr/0055): the present value of `x` joined with
 /// `d` as a conditional's branches are, or an optional value of it where `d`
 /// may be absent too. `Unknown` for an `x` that is no optional value, which
@@ -4560,7 +4734,17 @@ pub(crate) fn infer_types(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) {
             infer_types(condition, ctx);
             infer_types(consequent, ctx);
             infer_types(alternate, ctx);
-            join_branches(consequent.ty, alternate.ty)
+            // `c ? null : Alias.v` is an optional value of the enum
+            // (docs/adr/0055, section 2), though the lattice names no type for
+            // the enum value itself.
+            let null_beside_enum = |one: &TypedExpr, other: &TypedExpr| {
+                matches!(one.kind, ExprKind::NullLit) && is_enum_value(other, ctx)
+            };
+            if null_beside_enum(consequent, alternate) || null_beside_enum(alternate, consequent) {
+                InferredType::Optional(OptionalElem::Enum)
+            } else {
+                join_branches(consequent.ty, alternate.ty)
+            }
         }
         ExprKind::Member { object, property } => {
             infer_types(object, ctx);
@@ -12645,6 +12829,119 @@ mod tests {
         )
         .expect("an enum variant lowers for the Interpreter");
         assert_eq!(lowered, "'Idle'");
+    }
+
+    /// A context holding two optional `int64`s, `due` and `other`, a `uint32`
+    /// `count`, and `due` proven present.
+    fn optional_ctx() -> TypeCtx<'static> {
+        let int64 = OptionalElem::Number(crate::forge::quantity::NumericBaseType::Int {
+            signed: true,
+            bits: 64,
+        });
+        let mut ctx = TypeCtx::new();
+        ctx.insert_var("due", InferredType::Optional(int64));
+        ctx.insert_var("other", InferredType::Optional(int64));
+        ctx.insert_var("count", int(false, 32));
+        ctx.proving(crate::forge::narrowing::proves_written(
+            "due !== null",
+            true,
+        ))
+    }
+
+    /// Each construct of an optional value is the one form every emitter spells
+    /// (docs/adr/0055, section 2), whichever side of the operator `null` is on;
+    /// a test of `null` beside a value that is not optional is none.
+    #[test]
+    fn each_construct_of_an_optional_value_is_one_form() {
+        let ctx = optional_ctx();
+        let form = |expr: &str| {
+            let ast = resolve(expr, &ctx).unwrap_or_else(|e| panic!("{expr} resolves: {e:?}"));
+            optional_form(&ast).map(|form| form.describe())
+        };
+        let present = Some("a test that a value is present (`!== null`)".to_string());
+        let absent = Some("a test that a value is absent (`=== null`)".to_string());
+        assert_eq!(form("due !== null"), present);
+        assert_eq!(form("null !== due"), present);
+        assert_eq!(form("due === null"), absent);
+        assert_eq!(form("null === due"), absent);
+        assert_eq!(
+            form("due.value"),
+            Some("a read of a value proven present (`.value`)".to_string())
+        );
+        assert_eq!(
+            form("due ?? 0"),
+            Some("a read with a default (`??`)".to_string())
+        );
+        assert_eq!(
+            form("due === other"),
+            Some("`===` of an optional value".to_string())
+        );
+        assert_eq!(
+            form("due !== 3"),
+            Some("`!==` of an optional value".to_string())
+        );
+        assert_eq!(form("count === 3"), None);
+        assert_eq!(form("count + 1"), None);
+    }
+
+    /// A target whose emitter spells no optional value yet refuses each
+    /// construct by name before the emitter is reached, placed at it.
+    #[test]
+    fn a_target_that_lowers_no_optional_value_names_the_construct_it_refuses() {
+        let ctx = optional_ctx();
+        for target in ExprTarget::ALL
+            .into_iter()
+            .chain([ExprTarget::Js])
+            .filter(|t| !t.lowers_optional())
+        {
+            let refusal = transpile_typed(
+                "(due ?? 0) === 5",
+                target,
+                &ctx,
+                &empty_renames(),
+                InferredType::Unknown,
+            )
+            .expect_err("an optional value is refused where it is not lowered");
+            let text = refusal.error.to_string();
+            assert!(
+                text.contains("a read with a default (`??`)")
+                    && text.contains("an optional value has no")
+                    && text.contains("lowering yet"),
+                "{target:?}: {text}"
+            );
+            assert_eq!(refusal.span, Some(1..9), "{target:?}: placed at `due ?? 0`");
+        }
+    }
+
+    /// A conditional of `null` and a variant of an enum is an optional value of
+    /// the enum (docs/adr/0055, section 2), whichever branch is `null`, as one of
+    /// `null` and a number is an optional number; a conditional of a variant and
+    /// a value the typer cannot tell is no optional value.
+    #[test]
+    fn null_beside_a_variant_is_an_optional_value_of_the_enum() {
+        let variants = ["Idle".to_string(), "Run".to_string()];
+        let mut ctx = conversion_ctx(&variants, false);
+        ctx.insert_var("flag", InferredType::Bool);
+        let typed = |expr: &str| {
+            infer_expr_type(expr, &ctx).unwrap_or_else(|e| panic!("{expr} types: {e:?}"))
+        };
+        let optional_enum = InferredType::Optional(OptionalElem::Enum);
+        assert_eq!(typed("flag ? null : Mode.Idle"), optional_enum);
+        assert_eq!(typed("flag ? Mode.Run : null"), optional_enum);
+        assert_eq!(
+            typed("flag ? null : (flag ? Mode.Idle : Mode.Run)"),
+            optional_enum
+        );
+        assert_eq!(
+            typed("flag ? null : n"),
+            InferredType::Optional(OptionalElem::Number(
+                crate::forge::quantity::NumericBaseType::Int {
+                    signed: false,
+                    bits: 8
+                }
+            ))
+        );
+        assert_eq!(typed("flag ? m : null"), InferredType::Unknown);
     }
 
     /// A context whose enum `Mode` is carried as a `uint8` and spells its two

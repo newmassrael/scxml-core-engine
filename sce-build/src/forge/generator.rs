@@ -6260,14 +6260,18 @@ fn render_codec(
                     let wrapped = if f.present_if.is_some() {
                         match lang {
                             crate::generator::Language::Swift => no_swift_emitter("render_codec"),
-                            crate::generator::Language::Rust => format!("Option<{bare}>"),
-                            crate::generator::Language::Cpp => format!("std::optional<{bare}>"),
-                            crate::generator::Language::Kotlin => format!("{bare}?"),
+                            // The one spelling of the backend's optional type
+                            // (docs/adr/0055, section 5).
+                            crate::generator::Language::Rust
+                            | crate::generator::Language::Cpp
+                            | crate::generator::Language::Kotlin
+                            | crate::generator::Language::Python => l
+                                .optional_of(&bare)
+                                .expect("these backends wrap the present type"),
                             // Go bare slice already encodes nilness as
                             // absent (matches item B2 tail/length-ref
                             // present-if precedent — no pointer wrap).
                             crate::generator::Language::Go => bare.clone(),
-                            crate::generator::Language::Python => format!("Optional[{bare}]"),
                             // C11 carrier-bit-as-truth: wire presence is
                             // the parent flag, not the C-side `_len`.
                             // Bare body_type (template renders the
@@ -6686,11 +6690,18 @@ fn render_codec(
                     let host_type = if f.present_if.is_some() {
                         match lang {
                             crate::generator::Language::Swift => no_swift_emitter("render_codec"),
-                            crate::generator::Language::Rust => format!("Option<{body_type_ty}>"),
-                            crate::generator::Language::Cpp => format!("std::optional<{body_type}>"),
-                            crate::generator::Language::Kotlin => format!("{body_type}?"),
+                            // The one spelling of the backend's optional type
+                            // (docs/adr/0055, section 5), over the type a
+                            // field of the body is written as.
+                            crate::generator::Language::Rust => l
+                                .optional_of(&body_type_ty)
+                                .expect("Rust wraps the present type"),
+                            crate::generator::Language::Cpp
+                            | crate::generator::Language::Kotlin
+                            | crate::generator::Language::Python => l
+                                .optional_of(&body_type)
+                                .expect("these backends wrap the present type"),
                             crate::generator::Language::Go => format!("*{body_type}"),
-                            crate::generator::Language::Python => format!("Optional[{body_type}]"),
                             crate::generator::Language::C11 => body_type.clone(),
                         }
                     } else {
@@ -6727,7 +6738,8 @@ fn render_codec(
                         obj.insert(
                             "view_rs_type".into(),
                             if f.present_if.is_some() {
-                                format!("Option<{view_ty}>")
+                                l.optional_of(&view_ty)
+                                    .expect("Rust wraps the present type")
                             } else {
                                 view_ty
                             }
@@ -7145,16 +7157,17 @@ fn render_codec(
                     let inner = codec_scalar_type(&l, &f.sce_type);
                     let wrapped = match lang {
                         crate::generator::Language::Swift => no_swift_emitter("render_codec"),
-                        crate::generator::Language::Rust => {
-                            format!("Option<{inner}>")
-                        }
-                        crate::generator::Language::Cpp => {
-                            format!("std::optional<{inner}>")
-                        }
-                        crate::generator::Language::Kotlin => {
-                            format!("{inner}?")
-                        }
+                        // The one spelling of the backend's optional type
+                        // (docs/adr/0055, section 5).
+                        crate::generator::Language::Rust
+                        | crate::generator::Language::Cpp
+                        | crate::generator::Language::Kotlin
+                        | crate::generator::Language::Python => l
+                            .optional_of(&inner)
+                            .expect("these backends wrap the present type"),
                         crate::generator::Language::Go => {
+                            // The codec's own shape until step 13 of
+                            // docs/adr/0055 moves it to `optional.Of[T]`.
                             // Go has no native optional; the canonical
                             // shape for "value-or-absent" is a pointer
                             // (`nil` ⇔ absent). For BYTES Tail / LengthRef
@@ -7180,13 +7193,6 @@ fn render_codec(
                             } else {
                                 format!("*{inner}")
                             }
-                        }
-                        crate::generator::Language::Python => {
-                            // Python's PEP 604 union (`int | None`) is
-                            // 3.10+; `Optional[T]` is the broader-compat
-                            // form and matches every existing typing
-                            // import in the codec template.
-                            format!("Optional[{inner}]")
                         }
                         // C11 has no nullable wrapper — the gated field
                         // stays as plain `T` and presence is encoded by
@@ -25458,6 +25464,29 @@ struct EnumImport {
     carrier: Option<SceType>,
 }
 
+/// The type an optional value (docs/adr/0055, section 5) is held in by `lang`,
+/// given `present`, the type its present value is spelled as there: the one
+/// spelling of the type per backend, which a statechart's variable, a record's
+/// field and a payload's field take, and a codec's gated field on every backend
+/// but Go and C11, whose codecs move to it in steps 13 and 14 of the ADR
+/// ([`LangCtx::optional_of`]; the `sce-static` lowering asks it through
+/// [`crate::forge::static_lowering::StaticTarget::optional_type`]).
+///
+/// `None` for a backend whose spelling is not a wrap of the present type: C11
+/// declares one struct per element (`sce_optional_<elem>_t`) in the step that
+/// lowers it there, and Swift has no emitter.
+pub(crate) fn optional_of(lang: crate::generator::Language, present: &str) -> Option<String> {
+    use crate::generator::Language;
+    match lang {
+        Language::Rust => Some(format!("Option<{present}>")),
+        Language::Kotlin => Some(format!("{present}?")),
+        Language::Cpp => Some(format!("std::optional<{present}>")),
+        Language::Go => Some(format!("optional.Of[{present}]")),
+        Language::Python => Some(format!("Optional[{present}]")),
+        Language::C11 | Language::Swift => None,
+    }
+}
+
 pub(crate) struct LangCtx {
     lang: crate::generator::Language,
     /// Every enum this document imports, in this language's spelling.
@@ -25739,6 +25768,12 @@ impl LangCtx {
             crate::generator::Language::C11 => c_type(ty),
             crate::generator::Language::Swift => no_swift_emitter("LangCtx::type_name"),
         })
+    }
+
+    /// The type of an optional value whose present value is of the type
+    /// `present` spells in this language ([`optional_of`]).
+    pub(crate) fn optional_of(&self, present: &str) -> Option<String> {
+        optional_of(self.lang, present)
     }
 
     /// Parameter type for function signatures (uses references/borrows for
@@ -32748,6 +32783,22 @@ fn to_rust_variant(s: &str) -> String {
 mod tests {
     use super::*;
     use crate::forge::model::{ForgeKind, SceType};
+
+    /// Each backend spells an optional value by one type over its present
+    /// value's (docs/adr/0055, section 5); C11 declares one per element in its
+    /// own step, and Swift has no emitter.
+    #[test]
+    fn an_optional_value_is_one_type_over_its_present_one() {
+        use crate::generator::Language;
+        let spelled = |lang: Language| optional_of(lang, "T");
+        assert_eq!(spelled(Language::Rust).as_deref(), Some("Option<T>"));
+        assert_eq!(spelled(Language::Kotlin).as_deref(), Some("T?"));
+        assert_eq!(spelled(Language::Cpp).as_deref(), Some("std::optional<T>"));
+        assert_eq!(spelled(Language::Go).as_deref(), Some("optional.Of[T]"));
+        assert_eq!(spelled(Language::Python).as_deref(), Some("Optional[T]"));
+        assert_eq!(spelled(Language::C11), None);
+        assert_eq!(spelled(Language::Swift), None);
+    }
 
     /// The package a Kotlin forge unit declares, the one its importers name
     /// and the directory `generate --with-imports` places it in are one rule

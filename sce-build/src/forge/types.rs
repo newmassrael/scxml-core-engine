@@ -300,6 +300,30 @@ impl OptionalElem {
         }
     }
 
+    /// The scalar a present value is, the inverse of [`Self::of`] — or `None`
+    /// for an enum and a record, whose type the lattice does not carry (the
+    /// place that holds one names it).
+    pub fn scalar(self) -> Option<SceType> {
+        Some(match self {
+            Self::Number(NumericBaseType::Int { signed, bits }) => match (signed, bits) {
+                (false, 8) => SceType::Uint8,
+                (false, 16) => SceType::Uint16,
+                (false, 32) => SceType::Uint32,
+                (false, _) => SceType::Uint64,
+                (true, 8) => SceType::Int8,
+                (true, 16) => SceType::Int16,
+                (true, 32) => SceType::Int32,
+                (true, _) => SceType::Int64,
+            },
+            Self::Number(NumericBaseType::Float { bits: 32 }) => SceType::Float32,
+            Self::Number(NumericBaseType::Float { .. }) => SceType::Float64,
+            Self::Bool => SceType::Bool,
+            Self::Str => SceType::String,
+            Self::Bytes => SceType::Bytes,
+            Self::Enum | Self::Record => return None,
+        })
+    }
+
     /// The element of the `optional<elem>` a variable declares.
     pub fn of_value(elem: &crate::forge::model::OptionalElemType) -> Self {
         match elem {
@@ -367,6 +391,24 @@ impl InferredType {
         match self {
             Self::Optional(elem) => elem.present(),
             other => other,
+        }
+    }
+
+    /// The element of the optional value a value of this type is lifted into
+    /// where a place of `slot` takes it (docs/adr/0055, section 2: a value of `T`
+    /// is a present value of `optional<T>`), or `None` where nothing is lifted:
+    /// the place expects no optional value, or the value is one already, or is
+    /// `null`, the absent value the place's type spells. A value this layer does
+    /// not type (an enum's variant, a field of an enum) is lifted all the same:
+    /// the judge has held it to the element where it stands.
+    ///
+    /// The one rule every emitter that lowers an optional value lifts by, where
+    /// it coerces a value to the type its place expects.
+    pub fn lifted_into(self, slot: InferredType) -> Option<OptionalElem> {
+        match (self, slot) {
+            (Self::Optional(_) | Self::Null, _) => None,
+            (_, Self::Optional(elem)) => Some(elem),
+            _ => None,
         }
     }
 

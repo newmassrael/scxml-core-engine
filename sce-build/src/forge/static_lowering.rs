@@ -27,7 +27,8 @@ use crate::forge::expr::{
     transpile_into_owned, transpile_into_receiving, ExprTarget, Receiving, Refusal,
 };
 use crate::forge::model::{EnumModel, EventSchemaModel, FieldType, SceType, SchemaField};
-use crate::forge::static_datamodel::indexed_element;
+use crate::forge::narrowing::{Chain, Facts, Writes};
+use crate::forge::static_datamodel::{indexed_element, is_null_literal, proving};
 use crate::forge::type_ctx::{
     CalleeKind, StateArg, StateCallRefusal, StateContext, StateRewrite, StaticCallee, StaticEnum,
     StaticScope, StaticSlot,
@@ -670,10 +671,103 @@ pub trait StaticTarget {
     /// Whether this target lowers a variable that holds an optional value
     /// (docs/adr/0055). A target that does not refuses the document that
     /// declares one, by name, rather than generate a machine whose variable has
-    /// no type that can hold absence. Each target answers `true` in the step that
-    /// lowers the type on it.
+    /// no type that can hold absence. The target's expression emitter answers
+    /// ([`ExprTarget::lowers_optional`]), so the walk and the emitter cannot
+    /// disagree; each answers `true` in the step that lowers the type on it, and
+    /// a target that does writes every hook below that a refusal names.
     fn lowers_optional(&self) -> bool {
-        false
+        self.expr_target().lowers_optional()
+    }
+    /// The type an optional value is held in, given `present`, the type its
+    /// present value is held in here ([`optional_present`]: the scalar's type,
+    /// the machine's own type for an enum, the buffer a target holds a bounded
+    /// text in). The backend's one spelling of the type
+    /// ([`crate::forge::generator::optional_of`]) by default; `None` for a
+    /// target that has none, which refuses the document by name.
+    fn optional_type(&self, present: &str) -> Option<String> {
+        self.expr_target()
+            .language()
+            .and_then(|lang| crate::forge::generator::optional_of(lang, present))
+    }
+    /// The absent value of the optional value whose present value is held in
+    /// `present`: what `null` is where the whole value an `<assign>`, a `<data>`
+    /// or an `<sce:set>` writes is the literal `null`, the place's type known.
+    /// (A `null` inside an expression is the emitter's, which is handed the
+    /// type its place expects.) `None` for a target with no spelling yet, which
+    /// refuses the document by name.
+    fn optional_none(&self, _present: &str) -> Option<String> {
+        None
+    }
+    /// `value`, a present value held in `present`, lifted into the optional
+    /// value of its element: what a value of `T` is where the whole value an
+    /// `<assign>`, a `<data>` or an `<sce:set>` writes to a place of
+    /// `optional<T>` is one of `T` (docs/adr/0055, section 2). `value` is
+    /// already what the place's present value is held as (a text held to its
+    /// bound, the buffer a target holds it in). (A value lifted inside an
+    /// expression is the emitter's, [`crate::forge::types::InferredType::lifted_into`].)
+    /// `None` for a target with no spelling yet, which refuses the document by
+    /// name.
+    fn optional_some(&self, _present: &str, _value: &str) -> Option<String> {
+        None
+    }
+    /// The declaration the machine's own unit makes of the optional type over
+    /// `present` (the type of the element `elem`), once however many places hold
+    /// one, after the declaration of `present` itself: C11's one struct per
+    /// element. `None` for a target whose optional type is the language's or its
+    /// runtime's own, which is every other.
+    fn optional_def(&self, _present: &str, _elem: &SceType) -> Option<String> {
+        None
+    }
+    /// The line that brings the runtime's optional type into scope in a unit
+    /// that holds an optional value, for a target whose import is not read off
+    /// the generated text. `None` for a target that needs none.
+    fn optional_import(&self) -> Option<String> {
+        None
+    }
+    /// `value`, an optional value whose present value is held in `present`,
+    /// with `map` applied to its present value — `map(v)` spells it for a
+    /// present value named `v`, a name the target binds — and absent where it
+    /// is absent: how a present text is held to the bound of the place it is
+    /// written to. `map` is the statement's own expression, so a failure it
+    /// records is the statement's. `None` for a target with no spelling yet,
+    /// which refuses the document by name.
+    fn optional_map(
+        &self,
+        _value: &str,
+        _present: &str,
+        _map: &dyn Fn(&str) -> String,
+    ) -> Option<String> {
+        None
+    }
+    /// `value`, an optional value whose present value is held in `present`, as
+    /// the typed value this backend's wire helpers take
+    /// ([`Self::wire_value`]): JSON `null` where it is absent, and `wire(v)`
+    /// where it is present — `wire(v)` spells the wire value of a present value
+    /// named `v`, a name the target binds (docs/adr/0055, section 4). What a
+    /// `<send>`'s and a `<donedata>`'s `<param>` carry. `None` for a target with
+    /// no spelling yet, which refuses the `<param>` by name.
+    fn wire_optional(
+        &self,
+        _value: &str,
+        _present: &str,
+        _wire: &dyn Fn(&str) -> String,
+    ) -> Option<String> {
+        None
+    }
+    /// How a target whose payload is untyped data reads the optional field
+    /// `field` of the payload `accessor` as the optional value it is: `null`
+    /// absent, a value of the field's element present (held to `variants` for an
+    /// enum), and a delivery that lacks the key refused, since a field of the
+    /// first revision is carried by every delivery (docs/adr/0055, section 4).
+    /// `None` for a target whose generated lift reads the payload into a struct
+    /// of its own, whose optional field an expression reads as it is.
+    fn payload_optional_read(
+        &self,
+        _accessor: &str,
+        _field: &SchemaField,
+        _variants: &[&str],
+    ) -> Option<String> {
+        None
     }
     /// How the state argument `arg` is handed to the adapter of its call, given
     /// `held`: how this target spells the variable, payload or loop item that
@@ -2946,9 +3040,11 @@ fn record_field_bounds<'a>(
             .as_ref()
             .and_then(crate::forge::model::AlgorithmValueType::record_alias)
             .and_then(|alias| records.get(alias));
+        // An optional field is held to its bound as its present value is, where
+        // it is present ([`OptionalPlace`]).
         schema.into_iter().flat_map(move |schema| {
             schema.fields.iter().filter_map(move |field| {
-                kind(field.sce_type.present_type())
+                kind(field.sce_type.scalar()?)
                     .then_some((format!("{}.{}", v.id, field.id), field.max_size?))
             })
         })
@@ -3014,6 +3110,193 @@ pub(crate) fn optional_not_lowered(what: &str, lang: &str) -> GenerateError {
     GenerateError::unsupported(format!(
         "{what}: an optional value has no {lang} lowering yet"
     ))
+}
+
+/// The refusal of the first optional value of `model` that a later step of
+/// docs/adr/0055 lowers, on any target: a variable of an optional record
+/// (step 9), and a field of a schema that a revision past the first added as an
+/// optional field (step 7: what a delivery that lacks it reads). The rest of
+/// what a later step lowers is refused where it is judged: a child session's
+/// optional variable as a `<param>`, an algorithm's optional slot, a typed
+/// request's optional field. `None` for a document that holds none of them.
+fn optional_beyond_this_step(
+    model: &SCXMLModel,
+    scope: &StaticScope,
+    lang: &str,
+) -> Option<GenerateError> {
+    use crate::forge::model::AlgorithmValueType;
+    if let Some(variable) = scope.variables.iter().find(|v| {
+        v.value_type
+            .as_ref()
+            .and_then(AlgorithmValueType::optional_elem)
+            .is_some_and(|elem| elem.record_alias().is_some())
+    }) {
+        return Some(GenerateError::unsupported(format!(
+            "<data id=\"{}\" sce:type=\"{}\">: an optional record has no {lang} lowering yet \
+             (docs/adr/0055, step 9)",
+            variable.id,
+            variable
+                .value_type
+                .as_ref()
+                .map(AlgorithmValueType::as_attr)
+                .unwrap_or_default()
+        )));
+    }
+    model
+        .imported_event_schemas
+        .values()
+        .chain(model.imported_records.values())
+        .find_map(|schema| {
+            let field = schema
+                .fields
+                .iter()
+                .find(|f| f.since.is_some() && f.sce_type.optional_elem().is_some())?;
+            Some(GenerateError::unsupported(format!(
+                "the field `{}` of the event schema `{}`, sce:type=\"{}\" added by revision {}: \
+                 an optional field a later revision adds has no {lang} lowering yet \
+                 (docs/adr/0055, step 7)",
+                field.id,
+                schema.name,
+                field.sce_type.as_attr(),
+                field.since.unwrap_or_default()
+            )))
+        })
+}
+
+/// The type the present value of an optional value (docs/adr/0055) of the
+/// element `elem` is held in by `target`, in `machine`: the machine's own type
+/// for an enum ([`StaticTarget::enum_type`]), the buffer a target holds a text
+/// of the bound `bound` in ([`StaticTarget::string_storage`],
+/// [`StaticTarget::bytes_storage`]), and the scalar's own type otherwise
+/// ([`StaticTarget::scalar_type`]). What every hook of an optional value is
+/// handed as `present`, so each place spells the one type
+/// ([`StaticTarget::optional_type`]) the same way.
+pub fn optional_present(
+    target: &dyn StaticTarget,
+    machine: &str,
+    elem: &SceType,
+    bound: Option<u32>,
+) -> String {
+    let storage = match (elem, bound) {
+        (SceType::String, Some(bound)) => target.string_storage(bound, "\"\""),
+        (SceType::Bytes, Some(bound)) => target.bytes_storage(bound, "{ 0 }"),
+        _ => None,
+    };
+    match (elem, storage) {
+        (_, Some(storage)) => storage.ty,
+        (SceType::Enum(reference), None) => target
+            .enum_type(machine, &reference.alias)
+            .unwrap_or_else(|| reference.alias.clone()),
+        (_, None) => target.scalar_type(elem),
+    }
+}
+
+/// An optional variable, or an optional field of a record variable, as an
+/// `<assign>` to it is lowered (docs/adr/0055): what its present value is
+/// ([`optional_present`]), and the bound a text it holds is held to.
+#[derive(Debug, Clone)]
+struct OptionalPlace {
+    elem: SceType,
+    present: String,
+    /// The bound of a `string` or `bytes` element: the variable's
+    /// `sce:capacity`, or the field's `sce:max-size`. `None` for any other.
+    bound: Option<u32>,
+}
+
+/// A `sce-static` document's optional places ([`OptionalPlace`]), each under the
+/// location an `<assign>` names it by: `due`, `item.due`.
+type OptionalPlaces = std::collections::BTreeMap<String, OptionalPlace>;
+
+/// The optional places of `variables` ([`OptionalPlaces`]): each optional
+/// variable of a scalar element, and each optional field of a record variable.
+fn optional_places(
+    variables: &[crate::model::Variable],
+    records: &std::collections::BTreeMap<String, EventSchemaModel>,
+    target: &dyn StaticTarget,
+    machine: &str,
+) -> OptionalPlaces {
+    let text_bound = |elem: &SceType, bound: Option<u32>| {
+        matches!(elem, SceType::String | SceType::Bytes)
+            .then_some(bound)
+            .flatten()
+    };
+    let place = |elem: &SceType, bound: Option<u32>| OptionalPlace {
+        elem: elem.clone(),
+        present: optional_present(target, machine, elem, bound),
+        bound: text_bound(elem, bound),
+    };
+    let mut places = OptionalPlaces::new();
+    for var in variables {
+        let Some(value_type) = var.value_type.as_ref() else {
+            continue;
+        };
+        if let Some(elem) = value_type.optional_elem().and_then(|e| e.scalar()) {
+            places.insert(var.id.clone(), place(elem, var.capacity));
+        }
+        let schema = value_type
+            .record_alias()
+            .and_then(|alias| records.get(alias));
+        for field in schema.iter().flat_map(|schema| schema.fields.iter()) {
+            if let Some(elem) = field.sce_type.optional_elem() {
+                places.insert(
+                    format!("{}.{}", var.id, field.id),
+                    place(elem, field.max_size),
+                );
+            }
+        }
+    }
+    places
+}
+
+/// The absent value of the optional value whose present value is held in
+/// `present`, on `target`, or the refusal of `what` by name for a target with no
+/// spelling of it yet.
+fn absent_value(
+    target: &dyn StaticTarget,
+    present: &str,
+    what: &str,
+) -> Result<String, GenerateError> {
+    target
+        .optional_none(present)
+        .ok_or_else(|| optional_not_lowered(what, target.name()))
+}
+
+/// `value`, a present value held in `present`, lifted into the optional value
+/// of its element on `target` ([`StaticTarget::optional_some`]), or the refusal
+/// of `what` by name for a target with no spelling of it yet.
+fn present_value(
+    target: &dyn StaticTarget,
+    present: &str,
+    value: &str,
+    what: &str,
+) -> Result<String, GenerateError> {
+    target
+        .optional_some(present, value)
+        .ok_or_else(|| optional_not_lowered(what, target.name()))
+}
+
+/// The whole value `written` gives the optional place `place` where the machine
+/// is built — a variable's `<data expr>`, a record field's `<sce:set>`
+/// (docs/adr/0055) — on `target`: the absent value for `null`, and otherwise the
+/// value lowered by `initial` into the type its present value is and lifted.
+/// `literal` makes the present value what the place holds it as (a target that
+/// holds a text in a buffer is given the buffer its literal fills), which the
+/// judge already held to the place's bound. An initial value is never one that
+/// may be absent other than `null`: the judge admits a literal or a variant
+/// there.
+fn optional_initial(
+    written: &str,
+    place: &OptionalPlace,
+    target: &dyn StaticTarget,
+    what: &str,
+    initial: &dyn Fn(&str, InferredType) -> Result<String, GenerateError>,
+    literal: &dyn Fn(&str) -> String,
+) -> Result<String, GenerateError> {
+    if is_null_literal(written) {
+        return absent_value(target, &place.present, what);
+    }
+    let value = initial(written, InferredType::from_sce_type(&place.elem))?;
+    present_value(target, &place.present, &literal(&value), what)
 }
 
 /// Rewrite `model` — a clone the Kotlin backend renders — so every
@@ -3089,6 +3372,11 @@ pub fn lower(
             ));
         }
     }
+    // What a later step of docs/adr/0055 lowers stays refused by name on every
+    // target, the ones that lower an optional value included.
+    if let Some(refusal) = optional_beyond_this_step(model, &scope, lang) {
+        return Err(refusal);
+    }
     let variables = &scope.variables;
     let schemas = model.imported_event_schemas.clone();
     let records = model.imported_records.clone();
@@ -3158,10 +3446,16 @@ pub fn lower(
         }
     }
     let names = names(&scope, target);
+    // The runtime's optional type, for a target whose unit imports it by a line
+    // of its own, in a machine that holds an optional value.
+    let optional_import = holds_an_optional_value(model)
+        .then(|| target.optional_import())
+        .flatten();
     let imports: Vec<String> = scope
         .callees
         .iter()
         .filter_map(|c| target.callee(c).and_then(|callee| callee.import))
+        .chain(optional_import)
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect();
@@ -3212,6 +3506,7 @@ pub fn lower(
         lists: list_vars,
         strings: string_vars,
         bytes: bytes_vars,
+        optionals: optional_places(variables, &records, target, machine),
         machine,
         raises_error: model.events.contains("error.execution"),
         target,
@@ -3278,25 +3573,42 @@ pub fn lower(
                                 var.id, field.id
                             ))
                         })?;
-                    let value = initial_value(
-                        &init.expr,
-                        target,
-                        &ctx,
-                        &renames,
-                        InferredType::of_field(&field.sce_type),
-                    )
-                    .map_err(|r| refused("the field value", &init.expr, r))?;
                     // A string field starts at its literal, which the judge held
                     // to the bound; a target that holds it in a buffer is given
                     // the buffer as that literal fills it.
-                    let value = match (&field.sce_type, field.max_size) {
-                        (FieldType::Scalar(SceType::String), Some(bound)) => {
-                            target.record_string_literal(bound, &value)
-                        }
-                        (FieldType::Scalar(SceType::Bytes), Some(bound)) => {
-                            target.record_bytes_literal(bound, &value)
-                        }
-                        _ => value,
+                    let literal =
+                        |value: &str| match (field.sce_type.present_type(), field.max_size) {
+                            (SceType::String, Some(bound)) => {
+                                target.record_string_literal(bound, value)
+                            }
+                            (SceType::Bytes, Some(bound)) => {
+                                target.record_bytes_literal(bound, value)
+                            }
+                            _ => value.to_string(),
+                        };
+                    let initial = |written: &str, slot: InferredType| {
+                        initial_value(written, target, &ctx, &renames, slot)
+                            .map_err(|r| refused("the field value", written, r))
+                    };
+                    let place = rewrites.optionals.get(&format!("{}.{}", var.id, field.id));
+                    let value = match place {
+                        // An optional field starts absent, or at a present value
+                        // lifted (docs/adr/0055).
+                        Some(place) => optional_initial(
+                            &init.expr,
+                            place,
+                            target,
+                            &format!(
+                                "<sce:set name=\"{}\"> of <data id=\"{}\">",
+                                field.id, var.id
+                            ),
+                            &initial,
+                            &literal,
+                        )?,
+                        None => literal(&initial(
+                            &init.expr,
+                            InferredType::of_field(&field.sce_type),
+                        )?),
                     };
                     values.push((target.record_field(&field.id), value));
                 }
@@ -3373,6 +3685,59 @@ pub fn lower(
                     saved_type,
                     reader: None,
                     holds_bytes: holds,
+                });
+                continue;
+            }
+            // An optional value is held in the target's one optional type over
+            // the type its present value is held in, which is declared as a
+            // present value of it is, and starts absent or at a present value,
+            // lifted (docs/adr/0055). `optional_beyond_this_step` refused an
+            // optional record, so every place here is of a scalar.
+            if let Some(place) = rewrites.optionals.get(&var.id) {
+                let what = format!(
+                    "<data id=\"{}\" sce:type=\"optional<{}>\">",
+                    var.id,
+                    place.elem.as_attr()
+                );
+                declarations.optional(place)?;
+                let ty = target
+                    .optional_type(&place.present)
+                    .ok_or_else(|| optional_not_lowered(&what, lang))?;
+                let initial = |written: &str, slot: InferredType| {
+                    initial_value(written, target, &ctx, &renames, slot)
+                        .map_err(|r| refused("the initial value", written, r))
+                };
+                // A text a target holds in a buffer starts at the buffer its
+                // literal fills.
+                let literal = |value: &str| {
+                    place
+                        .bound
+                        .and_then(|bound| match place.elem {
+                            SceType::String => target.string_storage(bound, value),
+                            SceType::Bytes => target.bytes_storage(bound, value),
+                            _ => None,
+                        })
+                        .map_or_else(|| value.to_string(), |storage| storage.init)
+                };
+                let init = optional_initial(&var.expr, place, target, &what, &initial, &literal)?;
+                rewrites.note(&var.expr, var.expr_spelling.as_ref(), &init);
+                fields.push(StaticField {
+                    id: var.id.clone(),
+                    name,
+                    ty,
+                    init,
+                    published,
+                    view: None,
+                    read: None,
+                    bound: place.bound,
+                    // No saved state holds an optional value before step 6 of
+                    // the ADR ([`holds_an_optional_value`]); the kind names it
+                    // apart from a scalar, which a child's `<param>` seeds and
+                    // an optional value it does not.
+                    saved_kind: "optional",
+                    saved_type: place.elem.as_attr(),
+                    reader: None,
+                    holds_bytes: false,
                 });
                 continue;
             }
@@ -3653,8 +4018,20 @@ pub fn lower(
             // Content that reads the payload cannot run for a delivery that
             // did not carry one; the template opens it with the check that
             // says so ([`crate::model::Transition::content_reads_payload`]).
-            if lower_actions(&mut transition.actions, &ctx, &renames, &rewrites)?
-                && schema.is_some()
+            //
+            // A test of a field of the payload in the `cond` proves it in the
+            // content, as the judge read it (docs/adr/0055, section 3).
+            let guarded = if transition.is_cpp_condition || transition.is_kt_condition {
+                Facts::none()
+            } else {
+                crate::forge::narrowing::proves_written(&transition.cond, true).of_payload()
+            };
+            if lower_actions(
+                &mut transition.actions,
+                &ctx.proving(guarded),
+                &renames,
+                &rewrites,
+            )? && schema.is_some()
             {
                 payload_events.insert(transition.event.clone());
                 transition.content_reads_payload = true;
@@ -3711,6 +4088,15 @@ pub fn lower(
                     field.id
                 ))
             })?;
+        }
+        // An optional field is held in the optional type over its present
+        // value's, which a target that declares one declares here once
+        // (docs/adr/0055).
+        for field in &schema.fields {
+            if let Some(elem) = field.sce_type.optional_elem() {
+                let present = optional_present(target, machine, elem, field.max_size);
+                declarations.optional_def(&present, elem);
+            }
         }
     }
     // A target that passes an algorithm's list by value on the stack is refused a list of
@@ -4046,6 +4432,12 @@ impl<'t> TypeDeclarations<'t> {
                 if let Some(storage) = storage {
                     self.string_storage(&storage);
                 }
+                // ... and so is an optional field's type, over its present value's
+                // (docs/adr/0055).
+                if let Some(elem) = field.sce_type.optional_elem() {
+                    let present = optional_present(self.target, self.machine, elem, field.max_size);
+                    self.optional_def(&present, elem);
+                }
             }
             self.type_defs
                 .push(self.target.record_def(&ty, alias, schema, &enum_types));
@@ -4074,6 +4466,45 @@ impl<'t> TypeDeclarations<'t> {
             });
         }
         Ok(ty)
+    }
+
+    /// The types an optional variable of `place` names (docs/adr/0055), each
+    /// declared the first time any variable names it: its present value's — the
+    /// machine's own type for an enum, the buffer a target holds a bounded text
+    /// in — and then the optional type over it, for a target that declares one
+    /// ([`StaticTarget::optional_def`]).
+    fn optional(&mut self, place: &OptionalPlace) -> Result<(), GenerateError> {
+        let storage = match (&place.elem, place.bound) {
+            (SceType::Enum(reference), _) => {
+                self.enum_type(&reference.alias).map_err(|alias| {
+                    GenerateError::unsupported(format!(
+                        "optional<enum:{alias}>: {} has no enum type for it, or the enum \
+                         document could not be read",
+                        self.target.name()
+                    ))
+                })?;
+                None
+            }
+            (SceType::String, Some(bound)) => self.target.string_storage(bound, "\"\""),
+            (SceType::Bytes, Some(bound)) => self.target.bytes_storage(bound, "{ 0 }"),
+            _ => None,
+        };
+        if let Some(storage) = storage {
+            self.string_storage(&storage);
+        }
+        self.optional_def(&place.present, &place.elem);
+        Ok(())
+    }
+
+    /// The declaration of the optional type over `present`, of the element
+    /// `elem`, for a target that declares one ([`StaticTarget::optional_def`]),
+    /// made once however many places hold one.
+    fn optional_def(&mut self, present: &str, elem: &SceType) {
+        if let Some(def) = self.target.optional_def(present, elem) {
+            if self.declared.insert(format!("optional<{present}>")) {
+                self.type_defs.push(def);
+            }
+        }
     }
 
     /// The type a string variable is held in ([`StaticTarget::string_storage`]),
@@ -4576,6 +5007,7 @@ fn write_variants(text: &mut String, model: &SCXMLModel, alias: &str, holder: &s
 /// starts a document nobody judged, and answers no as well.
 pub(crate) fn a_tree_can_hold(model: &SCXMLModel) -> bool {
     model.datamodel == crate::model::Datamodel::SceStatic
+        && !holds_an_optional_value(model)
         && !invokes_what_a_restore_cannot_start(model)
         && !delays_a_send_to_another_session(model)
         && model
@@ -4589,6 +5021,32 @@ pub(crate) fn a_tree_can_hold(model: &SCXMLModel) -> bool {
                 }
                 crate::model::Invoke::Unsupported(_) | crate::model::Invoke::MeshRpc(_) => true,
             })
+}
+
+/// Whether the document holds an optional value (docs/adr/0055): a variable of
+/// one, or a field of a schema it holds a record of or reads a payload by. A
+/// saved state holds no optional value before step 6 of the ADR, which writes
+/// `null` into the saved-state schemas and spells an optional value by its shape
+/// type; until then such a machine is one a saved state cannot hold
+/// ([`a_tree_can_hold`]), the same answer on every backend, and is generated
+/// without the save API rather than with one that could not write its values.
+fn holds_an_optional_value(model: &SCXMLModel) -> bool {
+    let optional_variable = model
+        .variables
+        .iter()
+        .chain(model.states.values().flat_map(|s| s.datamodel.iter()))
+        .any(|v| {
+            v.value_type
+                .as_ref()
+                .and_then(crate::forge::model::AlgorithmValueType::optional_elem)
+                .is_some()
+        });
+    optional_variable
+        || model
+            .imported_event_schemas
+            .values()
+            .chain(model.imported_records.values())
+            .any(|schema| schema.first_optional_field().is_some())
 }
 
 /// Whether the document makes a delayed `<send>` that, when it comes due, is
@@ -4757,6 +5215,10 @@ struct Rewrites<'m> {
     strings: StringVars,
     /// The byte-string variables, each held to its bound as a string is.
     bytes: BytesVars,
+    /// The optional variables and the optional fields of the record variables
+    /// (docs/adr/0055): what an `<assign>` to one writes the absent value of, a
+    /// present value lifted into, and a text held to the bound of.
+    optionals: OptionalPlaces,
     machine: &'m str,
     raises_error: bool,
     target: &'m dyn StaticTarget,
@@ -8830,6 +9292,31 @@ fn payload_record_value(
                 let held = target.bounded_bytes(&read.text, bound);
                 target.record_bytes_runtime(bound, &held)
             }
+            // An optional text is held to the bound where it is present, and
+            // absent where it is absent (docs/adr/0055).
+            (
+                FieldType::Optional {
+                    elem: elem @ (SceType::String | SceType::Bytes),
+                },
+                Some(bound),
+            ) => {
+                bounded = true;
+                let held = |v: &str| match elem {
+                    SceType::Bytes => {
+                        target.record_bytes_runtime(bound, &target.bounded_bytes(v, bound))
+                    }
+                    _ => target.record_string_runtime(bound, &target.bounded_string(v, bound)),
+                };
+                let present = optional_present(target, machine, elem, Some(bound));
+                target
+                    .optional_map(&read.text, &present, &held)
+                    .ok_or_else(|| {
+                        optional_not_lowered(
+                            &format!("the field `{}` of `_event.data` taken whole", field.id),
+                            target.name(),
+                        )
+                    })?
+            }
             _ => read.text,
         };
         values.push((target.record_field(&field.id), text));
@@ -8863,8 +9350,6 @@ fn payload_enum_reads(
         .fields
         .iter()
         .filter_map(|field| {
-            // `lower` refused an optional field before any read is asked for
-            // (docs/adr/0055), so each field here holds a present value.
             let variants: Vec<&str> = match field.sce_type.present_type() {
                 SceType::Enum(reference) => enums
                     .get(&reference.alias)?
@@ -8874,6 +9359,19 @@ fn payload_enum_reads(
                     .collect(),
                 _ => Vec::new(),
             };
+            let path = format!(
+                "{}.{}",
+                crate::forge::event_schema_check::EVENT_DATA_PATH,
+                field.id
+            );
+            // An optional field is read as the optional value it is
+            // (docs/adr/0055), by its own read; a later revision that adds one
+            // was refused where the machine was lowered.
+            if field.sce_type.optional_elem().is_some() {
+                return target
+                    .payload_optional_read(accessor, field, &variants)
+                    .map(|read| (path, read));
+            }
             let revised = if field.since.is_some() {
                 crate::forge::schema_revision::default_wire(field).and_then(|default| {
                     target.payload_revised_read(accessor, field, &variants, &default)
@@ -8889,14 +9387,7 @@ fn payload_enum_reads(
                 (None, SceType::Bytes) => target.payload_bytes_read(accessor, &field.id)?,
                 (None, _) => return None,
             };
-            Some((
-                format!(
-                    "{}.{}",
-                    crate::forge::event_schema_check::EVENT_DATA_PATH,
-                    field.id
-                ),
-                read,
-            ))
+            Some((path, read))
         })
         .collect()
 }
@@ -9007,6 +9498,13 @@ fn expand_computed_type(send: &Action, if_ordinal: u32) -> Action {
 
 /// Lower every action of `actions` in place. `true` when any expression
 /// lowered reads the triggering event's payload.
+///
+/// Each action is lowered with the subjects proven present where it stands
+/// (docs/adr/0055, section 3): those `ctx` holds where the block is entered,
+/// less each one an action before it may write ([`Facts::after`]) — the walk
+/// the judge took ([`crate::forge::static_datamodel`]), by the one analysis
+/// ([`crate::forge::narrowing`]), so a `.value` the judge admitted is lowered
+/// and not refused.
 fn lower_actions(
     actions: &mut [Action],
     ctx: &crate::forge::types::TypeCtx<'_>,
@@ -9014,8 +9512,12 @@ fn lower_actions(
     rewrites: &Rewrites<'_>,
 ) -> Result<bool, GenerateError> {
     let mut reads_payload = false;
+    let mut proven = ctx.proven.clone();
     for action in actions {
-        reads_payload |= lower_action(action, ctx, renames, rewrites)?;
+        // What the action writes, read before the walk rewrites it.
+        let writes = Writes::of(&*action);
+        reads_payload |= lower_action(action, &proving(ctx, &proven), renames, rewrites)?;
+        proven = proven.after(&writes);
     }
     Ok(reads_payload)
 }
@@ -9090,6 +9592,12 @@ fn lower_action(
         // ([`payload_record_value`]).
         "assign" => {
             reads_payload = reads(&action.expr);
+            // A place of an optional value takes its whole value by the rule of
+            // one (docs/adr/0055).
+            if let Some(place) = rewrites.optionals.get(action.location.trim()) {
+                lower_optional_assign(action, place, ctx, renames, rewrites)?;
+                return Ok(reads_payload);
+            }
             let slot = crate::forge::expr::infer_expr_type(&action.location, ctx)
                 .unwrap_or(InferredType::Unknown);
             let location = action.location.trim();
@@ -9464,7 +9972,10 @@ fn lower_action(
             }
             let loop_variables =
                 crate::forge::type_ctx::LoopVariables::new(item, index, elem, &rewrites.schemas);
-            let inner = loop_variables.bind(ctx);
+            let mut inner = loop_variables.bind(ctx);
+            // A fact proven before the loop holds in its body only if nothing in
+            // the body ends it, as the judge read it (docs/adr/0055, section 3).
+            inner.proven = crate::forge::narrowing::loop_entry(&ctx.proven, &action.actions);
             let name = renames.get(list).copied().unwrap_or(list);
             // What a target that has to name the item's type and the list it
             // copies is told: the element's type and the list's own.
@@ -9715,6 +10226,129 @@ fn lower_action(
     Ok(lower_nested(action, ctx, renames, rewrites)? || reads_payload)
 }
 
+/// An `<assign>` to `place`, an optional variable or an optional field of a
+/// record variable (docs/adr/0055), in place: the one rule every target writes
+/// the whole value of an optional place by. The literal `null` is the absent
+/// value ([`StaticTarget::optional_none`]); an optional value is written as it
+/// is, its present text held to the place's bound ([`StaticTarget::optional_map`]);
+/// a value of `T` is lowered into the place's element — so the narrowing of an
+/// integer and the bound of a text are the element's, as a write of a place of
+/// `T` is held to them — and lifted ([`StaticTarget::optional_some`]). What
+/// inside an expression is absent, lifted, tested, read or compared is the
+/// emitter's ([`crate::forge::expr::OptionalForm`]).
+fn lower_optional_assign(
+    action: &mut Action,
+    place: &OptionalPlace,
+    ctx: &crate::forge::types::TypeCtx<'_>,
+    renames: &HashMap<&str, &str>,
+    rewrites: &Rewrites<'_>,
+) -> Result<(), GenerateError> {
+    let target = rewrites.target;
+    let lang = target.name();
+    let location = action.location.trim().to_string();
+    let construct = format!("<assign location='{location}'>");
+    let lower = |text: &str, slot: InferredType| {
+        rewrites.owned(text, ctx, renames, slot).map_err(|r| {
+            GenerateError::unsupported(format!("`{text}` has no {lang} lowering: {}", r.error))
+        })
+    };
+    let optional = InferredType::Optional(crate::forge::types::OptionalElem::of(&place.elem));
+    // A present text, held to the bound of the place it is written to.
+    let held = |value: &str| match (&place.elem, place.bound) {
+        (SceType::Bytes, Some(bound)) => target.bounded_bytes(value, bound),
+        (_, Some(bound)) => target.bounded_string(value, bound),
+        (_, None) => value.to_string(),
+    };
+    let value = if is_null_literal(&action.expr) {
+        Receiving {
+            text: absent_value(target, &place.present, &construct)?,
+            can_fail: false,
+        }
+    } else {
+        let written =
+            crate::forge::expr::infer_expr_type(&action.expr, ctx).unwrap_or(InferredType::Unknown);
+        if written.is_optional() {
+            // The judge admits an optional value of another width; no target
+            // spells the narrowing of a present value inside one yet.
+            if written != optional {
+                return Err(GenerateError::unsupported(format!(
+                    "{construct}: `{}` is {}, written to {}: an optional value of another \
+                     element has no {lang} lowering yet (docs/adr/0055)",
+                    action.expr.trim(),
+                    written.describe(),
+                    optional.describe()
+                )));
+            }
+            let value = lower(&action.expr, optional)?;
+            if place.bound.is_some() {
+                Receiving {
+                    text: target
+                        .optional_map(&value.text, &place.present, &held)
+                        .ok_or_else(|| optional_not_lowered(&construct, lang))?,
+                    can_fail: true,
+                }
+            } else {
+                value
+            }
+        } else {
+            let value = lower(&action.expr, InferredType::from_sce_type(&place.elem))?;
+            let (text, can_fail) = if place.bound.is_some() {
+                (held(&value.text), true)
+            } else {
+                (value.text, value.can_fail)
+            };
+            Receiving {
+                text: present_value(target, &place.present, &text, &construct)?,
+                can_fail,
+            }
+        }
+    };
+    let record_field = location
+        .split_once('.')
+        .filter(|(var, _)| rewrites.records.contains_key(*var));
+    // A target that rewrites the document itself writes a record's field as an
+    // `<assign>` of the whole record, changed in that field.
+    let rewritten = record_field.and_then(|(var, field)| {
+        let name = renames.get(var).copied().unwrap_or(var);
+        target.field_assignment(name, field.trim(), &value.text)
+    });
+    match &rewritten {
+        Some((record, expr)) => {
+            rewrites.note(&action.location, action.spellings.get("location"), record);
+            rewrites.note(&action.expr, action.spellings.get("expr"), expr);
+        }
+        None => rewrites.note(&action.expr, action.spellings.get("expr"), &value.text),
+    }
+    let write = |v: &str| match record_field {
+        Some((var, field)) => target.assign_field(
+            renames.get(var).copied().unwrap_or(var),
+            &target.record_field(field.trim()),
+            v,
+        ),
+        None => target.assign(
+            renames
+                .get(location.as_str())
+                .copied()
+                .unwrap_or(location.as_str()),
+            v,
+        ),
+    };
+    (action.native_code, action.native_fails) = if value.can_fail {
+        (
+            target.receiving_write(
+                &write,
+                &value.text,
+                optional,
+                &execution_failure(rewrites, &construct),
+            ),
+            true,
+        )
+    } else {
+        (write(&value.text), false)
+    };
+    Ok(())
+}
+
 /// `<assign location="last" expr="days[i]">` for a target that cannot read an element
 /// whole: one `<assign location="last.f" expr="days[i].f">` for each field `f` of the
 /// schema, lowered as any such assignment is and written one after another in the
@@ -9814,6 +10448,63 @@ fn lower_wire_value(
         var_alias: &held_by_a_variable,
         calls: &|name| rewrites.scope.call_enums(name),
     };
+    // An optional value crosses as JSON: `null` where it is absent, and the
+    // wire value of its present value where it is present (docs/adr/0055,
+    // section 4). The judge refused it on a carrier that is text alone. Which
+    // enum an optional enum value is of is what the judge read of it
+    // ([`crate::forge::static_enum::Held`]).
+    if let InferredType::Optional(elem) = ty {
+        let held = crate::forge::static_enum::value_held(written, ctx, &reading)
+            .map_err(|r| refused(r.error.to_string()))?;
+        // The present value's type, and the enum it is of, if it is one.
+        let (present, enum_alias) = match (&held, elem.scalar()) {
+            (crate::forge::static_enum::Held::Optional(alias), _) => {
+                let present = target.enum_type(rewrites.machine, alias).ok_or_else(|| {
+                    refused("an optional value of an enum has no type here".to_string())
+                })?;
+                (present, Some(alias.clone()))
+            }
+            (_, Some(scalar)) => (target.scalar_type(&scalar), None),
+            (_, None) => {
+                return Err(refused(format!("{} has no wire spelling", ty.describe())));
+            }
+        };
+        // The wire value of a present value named `v`, as a present value of
+        // `T` crosses (the rest of this function).
+        let slot = elem.present();
+        let bytes = slot == InferredType::Bytes;
+        let wire = |v: &str| match &enum_alias {
+            Some(alias) => target.wire_value(
+                InferredType::Str,
+                &target.enum_wire_name(alias, v).unwrap_or_default(),
+            ),
+            None if bytes => target.wire_bytes(v).unwrap_or_default(),
+            None => target.wire_value(slot, v),
+        };
+        let spelled = match &enum_alias {
+            Some(alias) => target.enum_wire_name(alias, "v").is_some(),
+            None if bytes => target.wire_bytes("v").is_some(),
+            None => target.wire_admits(slot),
+        };
+        if !spelled {
+            return Err(refused(format!(
+                "a present value of {} has no wire spelling here yet",
+                ty.describe()
+            )));
+        }
+        let value = rewrites
+            .owned(written, ctx, renames, ty)
+            .map_err(|r| refused(r.error.to_string()))?;
+        let wired = target
+            .wire_optional(&value.text, &present, &wire)
+            .ok_or_else(|| optional_not_lowered(&construct, lang))?;
+        if target.lowers_host_action_arguments() {
+            rewrites.note(written, param.spelling, &wired);
+        } else {
+            rewrites.note(written, param.spelling, &value.text);
+        }
+        return Ok(Some((wired, value.can_fail)));
+    }
     if let Some(alias) = crate::forge::static_enum::value_enum(written, ctx, &reading)
         .map_err(|r| refused(r.error.to_string()))?
     {
@@ -10167,15 +10858,24 @@ fn lower_nested(
 ) -> Result<bool, GenerateError> {
     let target = rewrites.target;
     let mut reads_payload = false;
+    // Each condition of an `<if>` chain is read where every earlier one is
+    // false, each block where its own is true besides, and the `<else>` where
+    // all are false (docs/adr/0055, section 3): the chain the judge read, taken
+    // before any of its conditions is lowered.
+    let chain = Chain::of(
+        &ctx.proven,
+        &crate::forge::static_datamodel::chain_conds(action),
+    );
     // Every condition of the chain sets the flag of the `<if>` it belongs to.
     let flag = target.condition_failed_flag(action.if_ordinal);
-    for branch in action.branch_conditions_mut() {
+    for (k, branch) in action.branch_conditions_mut().enumerate() {
         if branch.is_cpp_condition || branch.is_kt_condition || branch.cond.trim().is_empty() {
             continue;
         }
+        let ctx = proving(ctx, &chain.cond(k + 1));
         reads_payload |= crate::forge::expr::references_event_data_lexically(&branch.cond);
         let cond = rewrites
-            .receiving(&branch.cond, ctx, renames, InferredType::Bool)
+            .receiving(&branch.cond, &ctx, renames, InferredType::Bool)
             .map_err(|r| {
                 GenerateError::unsupported(format!(
                     "`{}` has no {} lowering: {}",
@@ -10197,8 +10897,18 @@ fn lower_nested(
         };
         branch.cond_constant = None;
     }
-    for block in action.nested_blocks_mut() {
-        reads_payload |= lower_actions(block, ctx, renames, rewrites)?;
+    // The blocks in the model's one order ([`Action::nested_blocks_mut`]): the
+    // body of an action that is no `<if>`, the `then` block, each `<elseif>`'s,
+    // and the `<else>`.
+    let blocks = action.nested_blocks_mut();
+    let last = blocks.len().saturating_sub(1);
+    for (k, block) in blocks.into_iter().enumerate() {
+        let facts = match k {
+            0 => ctx.proven.clone(),
+            k if k == last => chain.otherwise(),
+            k => chain.block(k - 1),
+        };
+        reads_payload |= lower_actions(block, &proving(ctx, &facts), renames, rewrites)?;
     }
     Ok(reads_payload)
 }
@@ -10221,6 +10931,30 @@ mod tests {
   </state>
   <final id="done"/>
 </scxml>"#;
+
+    /// A machine that holds an optional value is one a saved state cannot hold
+    /// before step 6 of docs/adr/0055, on every backend alike, so it declares no
+    /// saved shape; the same machine with the variable of `T` can.
+    #[test]
+    fn a_machine_holding_an_optional_value_declares_no_saved_shape() {
+        let read = |document: &str| {
+            let mut model = SCXMLParser::new()
+                .parse_string(document, "m")
+                .expect("parses");
+            crate::analyzer::analyze(&mut model, "m.scxml");
+            model
+        };
+        let optional = COUNTER.replace(
+            r#"<data id="count" sce:type="uint32" expr="0"/>"#,
+            r#"<data id="count" sce:type="uint32" expr="0"/>
+    <data id="due" sce:type="optional&lt;int64&gt;" expr="null"/>"#,
+        );
+        assert_ne!(optional, COUNTER, "the variable is added");
+        assert!(a_tree_can_hold(&read(COUNTER)));
+        assert!(!holds_an_optional_value(&read(COUNTER)));
+        assert!(holds_an_optional_value(&read(&optional)));
+        assert!(!a_tree_can_hold(&read(&optional)));
+    }
 
     fn shape(document: &str) -> Option<String> {
         let mut model = SCXMLParser::new()

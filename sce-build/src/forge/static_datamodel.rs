@@ -29,7 +29,9 @@ use crate::scxml_semantic::ScxmlSemanticError;
 /// `ctx` with `facts` the subjects proven present where an expression of it is
 /// read (docs/adr/0055): `ctx` itself when they are the ones it holds, so a
 /// document that tests no optional value judges in the context it was given.
-fn proving<'r, 'c>(
+/// The lowering reads expressions in the same contexts
+/// ([`crate::forge::static_lowering`]).
+pub(crate) fn proving<'r, 'c>(
     ctx: &'r TypeCtx<'c>,
     facts: &narrowing::Facts,
 ) -> std::borrow::Cow<'r, TypeCtx<'c>> {
@@ -430,8 +432,9 @@ pub(crate) fn indexed_element(written: &str) -> Option<(&str, &str)> {
 
 /// The conditions of `action`'s `<if>` chain in order — its own, then each
 /// `<elseif>`'s — as [`narrowing::Chain`] reads them; a native condition, which
-/// proves nothing, as empty text. Empty for any other action.
-fn chain_conds(action: &Action) -> Vec<&str> {
+/// proves nothing, as empty text. Empty for any other action. The lowering reads
+/// the same conditions ([`crate::forge::static_lowering`]).
+pub(crate) fn chain_conds(action: &Action) -> Vec<&str> {
     if action.action_type != "if" {
         return Vec::new();
     }
@@ -458,8 +461,10 @@ fn chain_conds(action: &Action) -> Vec<&str> {
 }
 
 /// Whether `written` is the literal `null`, an absent optional value
-/// (docs/adr/0055), however it is parenthesised.
-fn is_null_literal(written: &str) -> bool {
+/// (docs/adr/0055), however it is parenthesised: what the lowering gives a
+/// place of a known optional type whole as its absent value
+/// ([`crate::forge::static_lowering::StaticTarget::optional_none`]).
+pub(crate) fn is_null_literal(written: &str) -> bool {
     crate::forge::expr::parse_to_ast(written.trim())
         .is_ok_and(|ast| matches!(ast.kind, crate::forge::expr::ExprKind::NullLit))
 }
