@@ -8093,7 +8093,7 @@ pub(crate) fn c_string_storage_def(capacity: u32) -> String {
 /// The type a byte string of at most `capacity` bytes is held in: a buffer and
 /// the length it holds, named by the bound so that two variables, or a variable
 /// and a record's field, of one bound share it ([`CTarget::bytes_storage`]).
-fn c_bytes_storage_type(capacity: u32) -> String {
+pub(crate) fn c_bytes_storage_type(capacity: u32) -> String {
     format!("sce_static_bytes_{capacity}_t")
 }
 
@@ -8589,6 +8589,14 @@ impl StaticTarget for CTarget {
             if value_type.record_alias().is_some() {
                 return false;
             }
+            // An optional value of what a variable holds is held as the struct
+            // `sce/forge/optional.h` declares over it (docs/adr/0055); an optional
+            // record is refused for every target before this is asked.
+            if let Some(elem) = value_type.optional_elem().and_then(|e| e.scalar()) {
+                return !(held_scalar(elem)
+                    || matches!(elem, SceType::Enum(_) | SceType::Float32 | SceType::Float64)
+                    || (matches!(elem, SceType::String | SceType::Bytes) && v.capacity.is_some()));
+            }
             if let Some(elem) = value_type.list_elem() {
                 return !(v.capacity.is_some()
                     && match elem {
@@ -8606,6 +8614,7 @@ impl StaticTarget for CTarget {
             )
         }) {
             let ty = match &var.value_type {
+                Some(t) if t.optional_elem().is_some() => t.as_attr(),
                 Some(t) => t.scalar().map_or_else(
                     || {
                         t.record_alias()
@@ -8649,6 +8658,35 @@ impl StaticTarget for CTarget {
                     field.sce_type.as_attr()
                 ));
             }
+        }
+        // An optional text or byte string of a schema the machine holds a record
+        // of or reads a payload by is held in the buffer of its `sce:max-size`
+        // (docs/adr/0055, section 1: a text keeps the bound its type declares);
+        // one that declares none has no buffer to be held in.
+        if let Some((schema, field)) = model
+            .imported_records
+            .values()
+            .chain(model.imported_event_schemas.values())
+            .find_map(|schema| {
+                schema
+                    .fields
+                    .iter()
+                    .find(|f| {
+                        f.max_size.is_none()
+                            && matches!(
+                                f.sce_type.optional_elem(),
+                                Some(SceType::String | SceType::Bytes)
+                            )
+                    })
+                    .map(|field| (schema, field))
+            })
+        {
+            return Some(format!(
+                "the field `{}` of the event schema `{}`, sce:type=\"{}\" with no sce:max-size",
+                field.id,
+                schema.name,
+                field.sce_type.as_attr()
+            ));
         }
         if !model.global_scripts.is_empty() {
             return Some("a <script>".to_string());
@@ -8844,13 +8882,21 @@ impl StaticTarget for CTarget {
             .fields
             .iter()
             .map(|field| {
-                let field_ty = match (field.sce_type.present_type(), field.max_size) {
+                let present_ty = match (field.sce_type.present_type(), field.max_size) {
                     (SceType::Enum(reference), _) => enum_types[&reference.alias].clone(),
                     // A string is the buffer of the bound its schema declares, and a
                     // byte string that buffer with the length it holds.
                     (SceType::String, Some(bound)) => c_string_storage_type(bound),
                     (SceType::Bytes, Some(bound)) => c_bytes_storage_type(bound),
                     (other, _) => crate::forge::generator::c_type(other).to_string(),
+                };
+                // An optional field is the struct over its present value's type
+                // (docs/adr/0055), declared before the record
+                // ([`StaticTarget::optional_def`]); `unsupported` refused one with
+                // no type to be held over.
+                let field_ty = match field.sce_type.optional_elem() {
+                    Some(_) => c11_optional_type(&present_ty).unwrap_or(present_ty),
+                    None => present_ty,
                 };
                 format!("    {field_ty} {};\n", self.record_field(&field.id))
             })
@@ -9125,6 +9171,25 @@ impl StaticTarget for CTarget {
     // bool to its word. The label is an argument, not part of the format, so a
     // `%` in it is text.
     fn log(&self, label: &str, value: &str, ty: InferredType) -> String {
+        // An optional value is logged as its present value, and as `null` where
+        // it is absent, as on every engine (docs/adr/0055, section 2).
+        if let InferredType::Optional(elem) = ty {
+            let held = format!("({value})");
+            let present = self.log(
+                label,
+                &crate::forge::expr::c_present_read(&held, ty),
+                elem.present(),
+            );
+            let absent = if label.is_empty() {
+                "(void)fprintf(stderr, \"null\\n\");".to_string()
+            } else {
+                format!(
+                    "(void)fprintf(stderr, \"%s: null\\n\", \"{}\");",
+                    filters::escape_c(label.to_string())
+                )
+            };
+            return format!("if ({held}.present) {{ {present} }} else {{ {absent} }}");
+        }
         let (conversion, argument) = match ty {
             InferredType::Bool => ("%s", format!("({value}) ? \"true\" : \"false\"")),
             InferredType::Str => ("%s", value.to_string()),
@@ -9201,10 +9266,17 @@ impl StaticTarget for CTarget {
         ty: InferredType,
         failed: &str,
     ) -> String {
+        // An optional value's type carries a bound or a document its inferred type
+        // does not (docs/adr/0055), so its local is declared of the value's own
+        // type, as a failed index read of an aggregate names its type.
+        let local = if ty.is_optional() {
+            format!("__typeof__({value})")
+        } else {
+            Self::value_type(ty)
+        };
         format!(
-            "{{ sce_forge_algorithm_failure_t sce_failure_ = {{0}}; {} sce_value = {value}; \
+            "{{ sce_forge_algorithm_failure_t sce_failure_ = {{0}}; {local} sce_value = {value}; \
              if (sce_failure_.failed) {{ {failed} return; }} {} }}",
-            Self::value_type(ty),
             write("sce_value")
         )
     }
@@ -9399,6 +9471,173 @@ impl StaticTarget for CTarget {
     // hold a 0x00 (`sce/forge/wire.h`).
     fn wire_bytes(&self, value: &str) -> Option<String> {
         Some(format!("sce_forge_wire_bytes({value})"))
+    }
+    // The one struct `sce/forge/optional.h` declares for each element
+    // (docs/adr/0055, section 5), named by the type the present value is held in.
+    fn optional_type(&self, present: &str) -> Option<String> {
+        c11_optional_type(present)
+    }
+    fn optional_none(&self, present: &str) -> Option<String> {
+        Some(format!(
+            "sce_optional_{}_none()",
+            c11_optional_elem(present)?
+        ))
+    }
+    fn optional_some(&self, present: &str, value: &str) -> Option<String> {
+        Some(format!(
+            "sce_optional_{}_some({value})",
+            c11_optional_elem(present)?
+        ))
+    }
+    // A number's and a `bool`'s are the runtime's own. A text's and a byte
+    // string's are declared beside the buffer of the bound, which is declared
+    // first under its own guard however many places hold one, and an enum's under
+    // the guard of its document, after the enum: two machines of one program
+    // that hold the same one declare it once.
+    fn optional_def(&self, present: &str, elem: &SceType) -> Option<String> {
+        let name = c11_optional_elem(present)?;
+        let guard = format!("SCE_OPTIONAL_{}", name.to_uppercase());
+        let bound = |prefix: &str| -> Option<u32> {
+            present
+                .strip_prefix(prefix)?
+                .strip_suffix("_t")?
+                .parse()
+                .ok()
+        };
+        let (storage, declaration) = match elem {
+            SceType::String => {
+                let bound = bound("sce_static_string_")?;
+                (
+                    c_string_storage_def(bound),
+                    format!("SCE_OPTIONAL_DECLARE_STRING({bound})"),
+                )
+            }
+            SceType::Bytes => {
+                let bound = bound("sce_static_bytes_")?;
+                (
+                    self.bytes_storage(bound, "{ 0 }")?.def,
+                    format!("SCE_OPTIONAL_DECLARE_BYTES({bound})"),
+                )
+            }
+            SceType::Enum(_) => (
+                String::new(),
+                format!("SCE_OPTIONAL_DECLARE({name}, {present}, SCE_OPTIONAL_SAME_VALUE)"),
+            ),
+            _ => return None,
+        };
+        let storage = if storage.is_empty() {
+            storage
+        } else {
+            format!("{storage}\n")
+        };
+        Some(format!(
+            "#ifndef {guard}\n#define {guard}\n{storage}\
+             /* docs/adr/0055: a value of `{present}` that may be absent. */\n\
+             {declaration}\n#endif"
+        ))
+    }
+    fn optional_import(&self) -> Option<String> {
+        Some(C11_OPTIONAL_INCLUDE.to_string())
+    }
+    // C has no closure: the present value is mapped under a test of the flag,
+    // which reads the value twice, as `??` does (`sce/forge/optional.h`).
+    fn optional_map(
+        &self,
+        value: &str,
+        present: &str,
+        map: &dyn Fn(&str) -> String,
+    ) -> Option<String> {
+        let name = c11_optional_elem(present)?;
+        let held = format!("({value})");
+        let read = crate::forge::expr::c_present_read(&held, c11_present_kind(present));
+        Some(format!(
+            "({held}.present ? sce_optional_{name}_some({}) : sce_optional_{name}_none())",
+            map(&read)
+        ))
+    }
+    // `null` where the value is absent, and the wire value of its present value
+    // where it is present: the writer writes the key either way.
+    fn wire_optional(
+        &self,
+        value: &str,
+        present: &str,
+        wire: &dyn Fn(&str) -> String,
+    ) -> Option<String> {
+        let held = format!("({value})");
+        let read = crate::forge::expr::c_present_read(&held, c11_present_kind(present));
+        Some(format!(
+            "({held}.present ? {} : sce_forge_wire_null())",
+            wire(&read)
+        ))
+    }
+}
+
+/// The line a C11 unit that holds an optional value (docs/adr/0055) includes the
+/// runtime's optional type by: the machine's header, whose policy and records hold
+/// one, and its source.
+pub(crate) const C11_OPTIONAL_INCLUDE: &str = "#include <sce/forge/optional.h>";
+
+/// The name `sce/forge/optional.h` declares the optional value whose present
+/// value is held in the C type `present` under (`sce_optional_<name>_t`,
+/// docs/adr/0055): the type the document writes for a number or a `bool`
+/// (`int64`, `float64`, `bool`), `string_<N>` and `bytes_<N>` over the buffer of
+/// a bound, and `enum_<document>` over the machine's type for an enum
+/// ([`StaticTarget::enum_type`]). `None` for a type no optional value is held
+/// over: a text or a byte string with no bound, whose present value has no
+/// buffer.
+pub(crate) fn c11_optional_elem(present: &str) -> Option<String> {
+    if let Some(bound) = present
+        .strip_prefix("sce_static_string_")
+        .and_then(|rest| rest.strip_suffix("_t"))
+    {
+        return Some(format!("string_{bound}"));
+    }
+    if let Some(bound) = present
+        .strip_prefix("sce_static_bytes_")
+        .and_then(|rest| rest.strip_suffix("_t"))
+    {
+        return Some(format!("bytes_{bound}"));
+    }
+    if let Some(document) = present.strip_suffix("_enum_t") {
+        return Some(format!("enum_{document}"));
+    }
+    let scalar = match present {
+        "bool" => "bool",
+        "int8_t" => "int8",
+        "int16_t" => "int16",
+        "int32_t" => "int32",
+        "int64_t" => "int64",
+        "uint8_t" => "uint8",
+        "uint16_t" => "uint16",
+        "uint32_t" => "uint32",
+        "uint64_t" => "uint64",
+        "float" => "float32",
+        "double" => "float64",
+        _ => return None,
+    };
+    Some(scalar.to_string())
+}
+
+/// The C11 type of an optional value whose present value is held in `present`
+/// ([`c11_optional_elem`]): the one spelling the policy, a record, a payload and
+/// a host's reader name it by.
+pub(crate) fn c11_optional_type(present: &str) -> Option<String> {
+    c11_optional_elem(present).map(|name| format!("sce_optional_{name}_t"))
+}
+
+/// The type of an optional value whose present value is held in the C type
+/// `present`, as far as how it is read tells them apart
+/// ([`crate::forge::expr::c_present_read`]): an optional text — over a buffer, or
+/// over the pointer a wire value takes — read as its text, an optional byte
+/// string read as its view, and `Unknown` for any other, read as itself.
+fn c11_present_kind(present: &str) -> InferredType {
+    use crate::forge::types::OptionalElem;
+    if present.starts_with("sce_static_string_") || present == "const char *" {
+        InferredType::Optional(OptionalElem::Str)
+    } else if present.starts_with("sce_static_bytes_") || present == "const uint8_t *" {
+        InferredType::Optional(OptionalElem::Bytes)
+    } else {
+        InferredType::Unknown
     }
 }
 
@@ -11217,6 +11456,108 @@ fn lower_nested(
 mod tests {
     use super::*;
     use crate::parser::SCXMLParser;
+
+    /// C11 holds an optional value in the struct `sce/forge/optional.h` declares
+    /// over the type its present value is held in (docs/adr/0055, section 5): one
+    /// name per element, the runtime's own for a number or a `bool`, declared
+    /// beside the buffer for a text and under the enum for an enum; a whole value
+    /// mapped or written to the wire under a test of its flag, `null` where it is
+    /// absent, and logged as `null` where it is absent.
+    #[test]
+    fn c11_spells_an_optional_value_over_its_present_type() {
+        let c = CTarget::arguments();
+        let spelled = |present: &str| c.optional_type(present);
+        assert_eq!(spelled("int64_t").as_deref(), Some("sce_optional_int64_t"));
+        assert_eq!(spelled("double").as_deref(), Some("sce_optional_float64_t"));
+        assert_eq!(spelled("bool").as_deref(), Some("sce_optional_bool_t"));
+        assert_eq!(
+            spelled("sce_static_string_16_t").as_deref(),
+            Some("sce_optional_string_16_t")
+        );
+        assert_eq!(
+            spelled("sce_static_bytes_8_t").as_deref(),
+            Some("sce_optional_bytes_8_t")
+        );
+        assert_eq!(
+            spelled("enum_item_status_enum_t").as_deref(),
+            Some("sce_optional_enum_enum_item_status_t")
+        );
+        // A text with no bound has no buffer to be held over.
+        assert_eq!(spelled("const char *"), None);
+        assert_eq!(
+            c.optional_none("int64_t").as_deref(),
+            Some("sce_optional_int64_none()")
+        );
+        assert_eq!(
+            c.optional_some("double", "x").as_deref(),
+            Some("sce_optional_float64_some(x)")
+        );
+        assert_eq!(
+            c.optional_import().as_deref(),
+            Some("#include <sce/forge/optional.h>")
+        );
+        // A number's type is the runtime's; a text's is declared with its buffer,
+        // and an enum's after the enum, each under a guard of its own.
+        assert_eq!(c.optional_def("int64_t", &SceType::Int64), None);
+        let text = c
+            .optional_def("sce_static_string_16_t", &SceType::String)
+            .expect("a bounded text declares its optional type");
+        assert!(
+            text.starts_with("#ifndef SCE_OPTIONAL_STRING_16\n")
+                && text.contains("sce_static_string_16_t")
+                && text.contains("SCE_OPTIONAL_DECLARE_STRING(16)"),
+            "{text}"
+        );
+        let status = c
+            .optional_def(
+                "enum_item_status_enum_t",
+                &SceType::Enum(crate::forge::model::EnumRef {
+                    alias: "Status".to_string(),
+                }),
+            )
+            .expect("an enum declares its optional type");
+        assert!(
+            status.contains("#ifndef SCE_OPTIONAL_ENUM_ENUM_ITEM_STATUS")
+                && status.contains(
+                    "SCE_OPTIONAL_DECLARE(enum_enum_item_status, enum_item_status_enum_t, \
+                     SCE_OPTIONAL_SAME_VALUE)"
+                ),
+            "{status}"
+        );
+        assert_eq!(
+            c.optional_map("title", "sce_static_string_16_t", &|v: &str| format!(
+                "hold({v})"
+            ))
+            .as_deref(),
+            Some(
+                "((title).present ? sce_optional_string_16_some(hold((title).value.data)) \
+                 : sce_optional_string_16_none())"
+            )
+        );
+        assert_eq!(
+            c.wire_optional("due", "int64_t", &|v: &str| format!("wire({v})"))
+                .as_deref(),
+            Some("((due).present ? wire((due).value) : sce_forge_wire_null())")
+        );
+        assert_eq!(
+            c.wire_optional("title", "const char *", &|v: &str| format!("wire({v})"))
+                .as_deref(),
+            Some("((title).present ? wire((title).value.data) : sce_forge_wire_null())")
+        );
+        let int64 = crate::forge::types::OptionalElem::Number(
+            crate::forge::quantity::NumericBaseType::Int {
+                signed: true,
+                bits: 64,
+            },
+        );
+        let logged = c.log("due", "due", InferredType::Optional(int64));
+        assert!(
+            logged.starts_with("if ((due).present) {")
+                && logged.contains("(long long)((due).value)")
+                && logged.contains("\"%s: null\\n\", \"due\""),
+            "{logged}"
+        );
+    }
 
     const COUNTER: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0" initial="counting" datamodel="sce-static" name="m">

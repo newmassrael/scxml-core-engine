@@ -114,6 +114,16 @@ static void equality_is_total(void) {
     expect(!sce_optional_bytes_4_eq(sce_optional_bytes_4_some(ab), sce_optional_bytes_4_some(ab0)),
            "bytes ab !== ab 0x00, by length");
     expect(!sce_optional_bytes_4_eq(sce_optional_bytes_4_some(ab), sce_optional_bytes_4_none()), "bytes ab !== null");
+
+    // The comparisons an expression spells with no type of its own.
+    expect(SCE_OPTIONAL_SAME(seven, also_seven, SCE_OPTIONAL_SAME_VALUE), "SAME: 7 === 7");
+    expect(SCE_OPTIONAL_SAME(absent, absent, SCE_OPTIONAL_SAME_VALUE), "SAME: null === null");
+    expect(!SCE_OPTIONAL_SAME(absent, zero, SCE_OPTIONAL_SAME_VALUE), "SAME: null !== 0");
+    expect(SCE_OPTIONAL_HOLDS(seven, 7), "HOLDS: 7 === 7");
+    expect(!SCE_OPTIONAL_HOLDS(seven, 8), "HOLDS: 7 !== 8");
+    expect(!SCE_OPTIONAL_HOLDS(absent, 0), "HOLDS: null !== 0");
+    expect(SCE_OPTIONAL_HOLDS_TEXT(title, "soon"), "HOLDS_TEXT: 'soon' === 'soon'");
+    expect(!SCE_OPTIONAL_HOLDS_TEXT(sce_optional_string_8_none(), ""), "HOLDS_TEXT: null !== ''");
 }
 
 static void the_default_is_evaluated_only_when_absent(void) {
@@ -133,6 +143,17 @@ static void the_default_is_evaluated_only_when_absent(void) {
     expect(defaults_evaluated == 0, "the default of a present text is not evaluated");
     expect_text("null ?? 'none'", SCE_OPTIONAL_TEXT_OR(sce_optional_string_8_none(), counted_text("none")), "none");
     expect(defaults_evaluated == 1, "the default of an absent text is evaluated once");
+
+    // A byte string's default is its view.
+    sce_static_bytes_4_t ab = {{'a', 'b', 0u, 0u}, 2u};
+    static const uint8_t none_bytes[] = {'n'};
+    const sce_forge_bytes_view_t fallback = {none_bytes, sizeof(none_bytes)};
+    // Held in a variable: the view borrows the buffer of the value it reads.
+    const sce_optional_bytes_4_t present_ab = sce_optional_bytes_4_some(ab);
+    const sce_forge_bytes_view_t held = SCE_OPTIONAL_BYTES_OR(present_ab, fallback);
+    expect(held.len == 2u && held.data[0] == 'a' && held.data[1] == 'b', "bytes ab ?? 'n' is ab");
+    const sce_forge_bytes_view_t defaulted = SCE_OPTIONAL_BYTES_OR(sce_optional_bytes_4_none(), fallback);
+    expect(defaulted.len == 1u && defaulted.data[0] == 'n', "bytes null ?? 'n' is 'n'");
 
     // A default that may be absent too: the value is optional.
     const sce_optional_int64_t either = SCE_OPTIONAL_EITHER(absent, twelve);

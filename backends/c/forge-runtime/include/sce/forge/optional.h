@@ -39,8 +39,12 @@
  * is read twice, once for its flag and once for its value; a forge expression
  * writes nothing, so the two reads are the one value.
  *
+ * Equality is read the same way: `SCE_OPTIONAL_SAME(a, b, same)` of two optional
+ * values, the comparison every `_eq` makes, and `SCE_OPTIONAL_HOLDS(x, v)` of an
+ * optional value and a present one, which needs no type of its own.
+ *
  * Header-only, with no allocator: freestanding `<stdbool.h>`, `<stddef.h>`,
- * `<stdint.h>` and `<string.h>` only.
+ * `<stdint.h>` and `<string.h>` only, and the runtime's byte view.
  */
 #ifndef SCE_FORGE_OPTIONAL_H
 #define SCE_FORGE_OPTIONAL_H
@@ -49,6 +53,8 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
+
+#include "sce/forge/bytes.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -66,6 +72,17 @@ extern "C" {
 /* Two present byte strings, each a buffer and the length it holds, are the same
  * value when they hold the same bytes. */
 #define SCE_OPTIONAL_SAME_BYTES(a, b) ((a).len == (b).len && memcmp((a).data, (b).data, (a).len) == 0)
+
+/* `a === b` of two optional values: both absent, or both present and the same
+ * value by `same`. */
+#define SCE_OPTIONAL_SAME(a, b, same) ((a).present == (b).present && (!(a).present || same((a).value, (b).value)))
+
+/* `x === v` of an optional value and a present value of a number, a `bool` or an
+ * enum: `x` present and holding `v`. An absent value equals no present one. */
+#define SCE_OPTIONAL_HOLDS(x, v) ((x).present && (x).value == (v))
+
+/* `x === t` of an optional text and a present text. */
+#define SCE_OPTIONAL_HOLDS_TEXT(x, t) ((x).present && strcmp((x).value.data, (t)) == 0)
 
 /* The optional value of the element type `T`, named `sce_optional_<elem>_t`, with
  * its two constructors and its `_eq`; `same(a, b)` answers whether two present
@@ -93,7 +110,7 @@ extern "C" {
                                                                                                                        \
     /* `a === b`: both absent, or both present and the same value. */                                                  \
     static inline bool sce_optional_##elem##_eq(sce_optional_##elem##_t a, sce_optional_##elem##_t b) {                \
-        return a.present == b.present && (!a.present || same(a.value, b.value));                                       \
+        return SCE_OPTIONAL_SAME(a, b, same);                                                                          \
     }
 
 /* A text of at most `capacity` UTF-8 bytes that may be absent, over the buffer
@@ -124,6 +141,10 @@ SCE_OPTIONAL_DECLARE(float64, double, SCE_OPTIONAL_SAME_VALUE)
 
 /* `x ?? d` of a text: the text a present `x` holds, and `d` of an absent one. */
 #define SCE_OPTIONAL_TEXT_OR(x, d) ((x).present ? (const char *)(x).value.data : (d))
+
+/* `x ?? d` of a byte string: the view of the bytes a present `x` holds, and `d`
+ * of an absent one. */
+#define SCE_OPTIONAL_BYTES_OR(x, d) ((x).present ? (sce_forge_bytes_view_t){(x).value.data, (x).value.len} : (d))
 
 /* `x ?? y` where the default `y` may be absent too: `x` when it is present, and
  * `y`, evaluated only then, when it is not. */

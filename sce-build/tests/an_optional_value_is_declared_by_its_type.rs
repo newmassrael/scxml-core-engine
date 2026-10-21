@@ -131,7 +131,7 @@ const NOT_LOWERED: &str = "an optional value has no";
 /// The backends whose step of docs/adr/0055 lowers a statechart's optional value,
 /// by the language `generate -l` names: each generates what the others refuse.
 /// A backend joins in the step that lowers the type on it.
-const LOWERS_OPTIONAL: &[&str] = &["go", "python", "cpp", "kotlin", "rust"];
+const LOWERS_OPTIONAL: &[&str] = &["go", "python", "cpp", "kotlin", "rust", "c11"];
 
 /// Whether the backend `args` (one of [`every_backend`]) lowers a statechart's
 /// optional value.
@@ -609,6 +609,81 @@ fn every_backend_refuses_a_statechart_that_imports_a_schema_with_an_optional_fie
         ok,
         "the ecmascript lowering lowers the machine that imports the schema:\n{out}"
     );
+}
+
+/// C11 holds an optional variable and a payload's optional field in the struct
+/// `sce/forge/optional.h` declares over the present value's type (docs/adr/0055,
+/// section 5) — the runtime's own for a number, declared beside the buffer for a
+/// text and under the enum for an enum — and lifts the payload's field through
+/// the reader that tells a value, `null` and a missing key apart.
+#[test]
+fn a_c11_machine_holds_each_optional_value_in_the_runtime_struct() {
+    let text = statechart_due(
+        r#"<data id="due" sce:type="optional&lt;int64&gt;" expr="null"/>
+    <data id="title" sce:type="optional&lt;string&gt;" sce:capacity="16" expr="'soon'"/>
+    <data id="days" sce:type="int64" expr="0"/>"#,
+        r#"<transition event="item.due" type="internal">
+      <assign location="due" expr="_event.data.due"/>
+      <assign location="days" expr="due ?? 0"/>
+    </transition>"#,
+    );
+    let dir = tempdir().expect("tempdir");
+    for name in SIBLINGS {
+        std::fs::copy(fixtures().join(name), dir.path().join(name)).expect("copy a sibling");
+    }
+    std::fs::write(dir.path().join("probe.scxml"), &text).expect("write the probe");
+    std::fs::write(dir.path().join(SCHEMA_DUE_FILE), SCHEMA_DUE).expect("write the schema");
+    let out_dir = tempdir().expect("tempdir");
+    let out = Command::new(sce_codegen_bin())
+        .arg("--workspace-root")
+        .arg(repo_root())
+        .args(["generate", "-l", "c11"])
+        .arg(dir.path().join("probe.scxml"))
+        .arg("-o")
+        .arg(out_dir.path())
+        .output()
+        .expect("invoke sce-codegen");
+    assert!(
+        out.status.success(),
+        "C11 lowers the machine:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let read = |suffix: &str| -> String {
+        let path = std::fs::read_dir(out_dir.path())
+            .expect("the output directory")
+            .map(|entry| entry.expect("an entry").path())
+            .find(|path| path.to_string_lossy().ends_with(suffix))
+            .unwrap_or_else(|| panic!("no generated file ending in {suffix}"));
+        std::fs::read_to_string(path).expect("a generated file")
+    };
+    let header = read("_sm.h");
+    let source = read("_sm.c");
+    for spelled in [
+        "#include <sce/forge/optional.h>",
+        "sce_optional_int64_t v_due;",
+        "SCE_OPTIONAL_DECLARE_STRING(16)",
+        "sce_optional_string_16_t v_title;",
+        // The payload's fields, a text in the buffer of its bound.
+        "sce_optional_int64_t due;",
+        "sce_optional_string_16_t title;",
+        "sce_optional_enum_enum_item_status_t status;",
+    ] {
+        assert!(
+            header.contains(spelled),
+            "the header holds `{spelled}`:\n{header}"
+        );
+    }
+    for spelled in [
+        "sce_optional_int64_none()",
+        "sce_optional_string_16_some(",
+        "sce_payload_read_presence(&_fields, \"due\"",
+        "SCE_OPTIONAL_VALUE_OR(",
+    ] {
+        assert!(
+            source.contains(spelled),
+            "the source holds `{spelled}`:\n{source}"
+        );
+    }
 }
 
 /// An algorithm whose record is of the schema is judged, and refused where

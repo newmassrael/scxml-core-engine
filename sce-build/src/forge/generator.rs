@@ -3538,8 +3538,61 @@ fn c11_record_wire_of(
         if !format.is_empty() {
             format.push(',');
         }
-        // A record with an optional field (docs/adr/0055) is refused before its
-        // wire is written, so each field is written as a present value.
+        // An optional field (docs/adr/0055, section 4) is written with its key
+        // always, `null` where it is absent, through the wire writer of a
+        // `sce-static` machine, the one kind of machine whose payload holds one.
+        if let FieldType::Optional { elem } = &f.sce_type {
+            let field = format!("{receiver}->{id}");
+            let present = match elem {
+                SceType::Bool => format!("sce_forge_wire_bool({field}.value)"),
+                SceType::Int64 => format!("sce_forge_wire_wide_int({field}.value)"),
+                SceType::Uint64 => format!("sce_forge_wire_wide_uint({field}.value)"),
+                SceType::Int8 | SceType::Int16 | SceType::Int32 => {
+                    format!("sce_forge_wire_int((int64_t){field}.value)")
+                }
+                SceType::Uint8 | SceType::Uint16 | SceType::Uint32 => {
+                    format!("sce_forge_wire_uint((uint64_t){field}.value)")
+                }
+                SceType::Float32 | SceType::Float64 => {
+                    format!("sce_forge_wire_real((double){field}.value)")
+                }
+                SceType::String => format!("sce_forge_wire_string({field}.value.data)"),
+                SceType::Bytes => format!(
+                    "sce_forge_wire_bytes((sce_forge_bytes_view_t){{ {field}.value.data, {field}.value.len }})"
+                ),
+                // The name the enum declares for the value, which the wire carries
+                // as a string; a value no variant names is written as none is.
+                SceType::Enum(r) => {
+                    let e = static_enum_of(static_enums, &r.alias);
+                    let arms: String = e
+                        .variants
+                        .iter()
+                        .map(|v| {
+                            format!(
+                                "case {}: _name_{id} = \"{}\"; break; ",
+                                v.ident,
+                                filters::escape_c(v.declared.clone())
+                            )
+                        })
+                        .collect();
+                    locals.push_str(&format!(
+                        "    const char *_name_{id} = NULL;\n    \
+if ({field}.present) {{\n        \
+switch ({field}.value) {{ {arms}default: break; }}\n        \
+if (_name_{id} == NULL) {{\n            return false;\n        }}\n    }}\n"
+                    ));
+                    format!("sce_forge_wire_string(_name_{id})")
+                }
+            };
+            locals.push_str(&format!(
+                "    char _wire_{id}[SCE_MAX_DATA_LEN];\n    \
+if (!sce_forge_wire_json({field}.present ? {present} : sce_forge_wire_null(), _wire_{id},\n                             \
+sizeof(_wire_{id}))) {{\n        return false;\n    }}\n"
+            ));
+            format.push_str(&format!("\\\"{id}\\\":%s"));
+            args.push_str(&format!(", _wire_{id}"));
+            continue;
+        }
         match f.sce_type.present_type() {
             SceType::Bytes => {
                 locals.push_str(&format!(
@@ -3636,6 +3689,21 @@ if (_name_{id} == NULL) {{\n        return false;\n    }}\n"
     }
 }
 
+/// The C type the present value of `f`, an optional field of the element `elem`
+/// (docs/adr/0055), is held in: the buffer of its `sce:max-size` for a text or a
+/// byte string, as a record's field is, and the element's own type otherwise —
+/// the machine's type for an enum. What [`crate::forge::static_lowering::optional_present`]
+/// answers for the C11 target, so a payload's field and a record's are one type.
+fn c11_optional_present(l: &LangCtx, elem: &SceType, f: &SchemaField) -> String {
+    match (elem, f.max_size) {
+        (SceType::String, Some(bound)) => {
+            crate::forge::static_lowering::c_string_storage_type(bound)
+        }
+        (SceType::Bytes, Some(bound)) => crate::forge::static_lowering::c_bytes_storage_type(bound),
+        _ => l.type_name(elem).into_owned(),
+    }
+}
+
 /// [`c11_payload_field_decl`] for a caller outside this module, which has no
 /// [`LangCtx`] of its own: the primitive C11 context.
 pub(crate) fn c11_record_field_decl(f: &SchemaField) -> String {
@@ -3653,8 +3721,18 @@ pub(crate) fn c11_record_field_decl(f: &SchemaField) -> String {
 /// lowering in [`crate::forge::expr`]). RFC §bytesguard-3 B4. Every other field type
 /// is a self-contained scalar via [`LangCtx::type_name`].
 fn c11_payload_field_decl(l: &LangCtx, f: &SchemaField) -> String {
-    // A schema with an optional field (docs/adr/0055) is refused before its
-    // struct is declared, so the field is declared as the value it holds.
+    // An optional field (docs/adr/0055) is the struct `sce/forge/optional.h`
+    // declares over its present value's type, which a text holds in the buffer of
+    // its bound, so a record taken whole from the payload holds the same type.
+    if let FieldType::Optional { elem } = &f.sce_type {
+        let ty =
+            crate::forge::static_lowering::c11_optional_type(&c11_optional_present(l, elem, f))
+                .expect(
+                    "an optional text or byte string with no sce:max-size is refused where the \
+                 machine is lowered (CTarget::unsupported)",
+                );
+        return format!("    {ty} {};\n", f.id);
+    }
     let present = f.sce_type.present_type();
     if matches!(present, SceType::Bytes) {
         let cap = crate::forge::limits::resolve_bytes_max(f.max_size);
@@ -3663,6 +3741,121 @@ fn c11_payload_field_decl(l: &LangCtx, f: &SchemaField) -> String {
         let ty = l.type_name(present).into_owned();
         format!("    {ty} {};\n", f.id)
     }
+}
+
+/// The call that reads the payload field `id`, a number or a `bool` of the width
+/// `ty` declares, into `dest`: what the lift asks of `sce/event_payload.h`, which
+/// refuses a value its width cannot hold.
+fn c11_scalar_payload_read(ty: &SceType, id: &str, dest: &str) -> String {
+    let reader = match ty {
+        SceType::Uint8 => "u8",
+        SceType::Uint16 => "u16",
+        SceType::Uint32 => "u32",
+        SceType::Uint64 => "u64",
+        SceType::Int8 => "i8",
+        SceType::Int16 => "i16",
+        SceType::Int32 => "i32",
+        SceType::Int64 => "i64",
+        SceType::Float32 => "f32",
+        SceType::Float64 => "f64",
+        SceType::Bool => "bool",
+        SceType::String | SceType::Bytes | SceType::Enum(_) => {
+            unreachable!("a text, a byte string and an enum are each read by a reader of their own")
+        }
+    };
+    format!("sce_payload_read_{reader}(&_fields, \"{id}\", &{dest})")
+}
+
+/// The statements that read the payload field `id` of `event`, a value of the
+/// enum `e` the machine holds as `alias`, into `dest`: the machine's own type,
+/// lifted from the variant's declared name. A name the enum does not declare is
+/// a payload that does not fit its schema, refused as a number out of range is.
+/// The text is read into a buffer the length of the longest name, so a longer
+/// one is refused before it is compared.
+fn c11_payload_enum_read(
+    e: &crate::forge::static_lowering::StaticEnumType,
+    alias: &str,
+    event: &str,
+    id: &str,
+    dest: &str,
+) -> String {
+    let longest = e
+        .variants
+        .iter()
+        .map(|v| v.declared.len())
+        .max()
+        .unwrap_or(0);
+    let mut chain = String::new();
+    for v in &e.variants {
+        chain.push_str(&format!(
+            "if (strcmp(_name_{id}, \"{}\") == 0) {{\n            \
+{dest} = {};\n        }} else ",
+            filters::escape_c(v.declared.clone()),
+            v.ident
+        ));
+    }
+    format!(
+        "    {{\n        char _name_{id}[{}u];\n        \
+_refusal = sce_payload_read_text(&_fields, \"{id}\", _name_{id}, sizeof(_name_{id}));\n        \
+if (_refusal != NULL) {{\n            \
+snprintf(_message, _message_cap, \"`{event}` payload: '{id}' %s\", _refusal);\n            \
+return false;\n        }}\n        \
+{chain}{{\n            \
+snprintf(_message, _message_cap, \"`{event}` payload: '{id}' (%.32s) is not a variant of {alias}\",\n                     \
+_name_{id});\n            \
+return false;\n        }}\n    }}\n",
+        longest + 1
+    )
+}
+
+/// The statements that read `f`, an optional payload field of the element `elem`
+/// (docs/adr/0055, section 4), out of the data `event` carries: `null` is absent,
+/// a value is present and read as a field of `elem` is, into the buffer of the
+/// field's bound for a text or a byte string, and a delivery that lacks the key
+/// is refused (`sce_payload_read_presence`), since a field of the first revision
+/// is carried by every delivery. The payload was zeroed before the lift, so an
+/// absent field's value is zero, as an absent value always is.
+fn c11_optional_payload_read(
+    f: &SchemaField,
+    elem: &SceType,
+    event: &str,
+    static_enums: &[crate::forge::static_lowering::StaticEnumType],
+) -> String {
+    let id = &f.id;
+    let dest = format!("out->{id}.value");
+    let refused = |read: &str| {
+        format!(
+            "            _refusal = {read};\n            if (_refusal != NULL) {{\n                \
+snprintf(_message, _message_cap, \"`{event}` payload: '{id}' %s\", _refusal);\n                \
+return false;\n            }}\n"
+        )
+    };
+    let present = match elem {
+        SceType::String => refused(&format!(
+            "sce_payload_read_text(&_fields, \"{id}\", {dest}.data, sizeof({dest}.data))"
+        )),
+        SceType::Bytes => refused(&format!(
+            "sce_payload_read_bytes(&_fields, \"{id}\", {dest}.data, sizeof({dest}.data), \
+&{dest}.len)"
+        )),
+        SceType::Enum(r) => c11_payload_enum_read(
+            static_enum_of(static_enums, &r.alias),
+            &r.alias,
+            event,
+            id,
+            &dest,
+        ),
+        scalar => refused(&c11_scalar_payload_read(scalar, id, &dest)),
+    };
+    format!(
+        "    {{\n        bool _present_{id} = false;\n        \
+_refusal = sce_payload_read_presence(&_fields, \"{id}\", &_present_{id});\n        \
+if (_refusal != NULL) {{\n            \
+snprintf(_message, _message_cap, \"`{event}` payload: '{id}' %s\", _refusal);\n            \
+return false;\n        }}\n        \
+out->{id}.present = _present_{id};\n        \
+if (_present_{id}) {{\n{present}        }}\n    }}\n"
+    )
 }
 
 /// Build the [`C11EventPayload`] for `model`. See
@@ -3771,59 +3964,25 @@ pub fn build_c11_event_payload(
         let mut field_reads = String::new();
         for f in &schema.fields {
             let id = &f.id;
-            // A schema with an optional field was refused where the machine was
-            // lowered (docs/adr/0055), so each field is read as a present value.
+            // An optional field (docs/adr/0055) is `null` absent and a value
+            // present, and a delivery that lacks it is refused: its own read.
+            if let FieldType::Optional { elem } = &f.sce_type {
+                field_reads.push_str(&c11_optional_payload_read(f, elem, event, static_enums));
+                field_lines.push_str(&c11_payload_field_decl(&l, f));
+                continue;
+            }
             let read = match f.sce_type.present_type() {
-                SceType::Uint8 => format!("sce_payload_read_u8(&_fields, \"{id}\", &out->{id})"),
-                SceType::Uint16 => format!("sce_payload_read_u16(&_fields, \"{id}\", &out->{id})"),
-                SceType::Uint32 => format!("sce_payload_read_u32(&_fields, \"{id}\", &out->{id})"),
-                SceType::Uint64 => format!("sce_payload_read_u64(&_fields, \"{id}\", &out->{id})"),
-                SceType::Int8 => format!("sce_payload_read_i8(&_fields, \"{id}\", &out->{id})"),
-                SceType::Int16 => format!("sce_payload_read_i16(&_fields, \"{id}\", &out->{id})"),
-                SceType::Int32 => format!("sce_payload_read_i32(&_fields, \"{id}\", &out->{id})"),
-                SceType::Int64 => format!("sce_payload_read_i64(&_fields, \"{id}\", &out->{id})"),
-                SceType::Float32 => format!("sce_payload_read_f32(&_fields, \"{id}\", &out->{id})"),
-                SceType::Float64 => format!("sce_payload_read_f64(&_fields, \"{id}\", &out->{id})"),
-                SceType::Bool => format!("sce_payload_read_bool(&_fields, \"{id}\", &out->{id})"),
                 SceType::Bytes => format!(
                     "sce_payload_read_bytes(&_fields, \"{id}\", out->{id}, sizeof(out->{id}), \
 &out->{id}_len)"
                 ),
-                // An enum is the machine's own, lifted from the variant's
-                // declared name; a name the enum does not declare is a payload
-                // that does not fit its schema, refused as a number out of
-                // range is. The text is read into a buffer the length of the
-                // longest name, so a longer one is refused before it is
-                // compared.
                 SceType::Enum(r) => {
-                    let e = static_enum_of(static_enums, &r.alias);
-                    let longest = e
-                        .variants
-                        .iter()
-                        .map(|v| v.declared.len())
-                        .max()
-                        .unwrap_or(0);
-                    let mut chain = String::new();
-                    for v in &e.variants {
-                        chain.push_str(&format!(
-                            "if (strcmp(_name_{id}, \"{}\") == 0) {{\n            \
-out->{id} = {};\n        }} else ",
-                            filters::escape_c(v.declared.clone()),
-                            v.ident
-                        ));
-                    }
-                    field_reads.push_str(&format!(
-                        "    {{\n        char _name_{id}[{}u];\n        \
-_refusal = sce_payload_read_text(&_fields, \"{id}\", _name_{id}, sizeof(_name_{id}));\n        \
-if (_refusal != NULL) {{\n            \
-snprintf(_message, _message_cap, \"`{event}` payload: '{id}' %s\", _refusal);\n            \
-return false;\n        }}\n        \
-{chain}{{\n            \
-snprintf(_message, _message_cap, \"`{event}` payload: '{id}' (%.32s) is not a variant of {alias}\",\n                     \
-_name_{id});\n            \
-return false;\n        }}\n    }}\n",
-                        longest + 1,
-                        alias = r.alias
+                    field_reads.push_str(&c11_payload_enum_read(
+                        static_enum_of(static_enums, &r.alias),
+                        &r.alias,
+                        event,
+                        id,
+                        &format!("out->{id}"),
                     ));
                     String::new()
                 }
@@ -3852,6 +4011,7 @@ out->{id} = sm->lifted_{member}_{id};\n"
                     ));
                     String::new()
                 }
+                scalar => c11_scalar_payload_read(scalar, id, &format!("out->{id}")),
             };
             if !read.is_empty() {
                 field_reads.push_str(&format!(

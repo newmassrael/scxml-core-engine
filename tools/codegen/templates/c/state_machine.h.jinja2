@@ -62,6 +62,12 @@
    them, is the same buffer. #}
 #include "sce/forge/bytes.h"
 {% endif %}
+{% if static_optional_include %}
+{# docs/adr/0055: a value that may be absent is the struct of a flag and a value
+   the runtime declares for its element, which the policy, a record and a payload
+   below hold. #}
+{{ static_optional_include }}
+{% endif %}
 {# `SCE_STATIC_ASSERT`, used by the compile-time invariants at the
    bottom of this header. This header opens `extern "C"`, so a C++
    application linking the generated machine compiles it as C++ —

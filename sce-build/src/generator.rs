@@ -3561,6 +3561,15 @@ fn render_c11(
         static_format2_shape => format2_keys(&static_lowering),
         static_done_data => static_done_data,
         static_datamodel => model.datamodel == crate::model::Datamodel::SceStatic,
+        // docs/adr/0055: the runtime's optional type, which the policy, a record
+        // and a payload of a machine that holds an optional value name, included
+        // by the header that declares them.
+        static_optional_include => static_lowering
+            .imports
+            .iter()
+            .find(|line| line.as_str() == crate::forge::static_lowering::C11_OPTIONAL_INCLUDE)
+            .cloned()
+            .unwrap_or_default(),
     };
     let source_ctx = minijinja::context! {
         model => &model_val,

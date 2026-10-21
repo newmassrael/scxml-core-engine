@@ -143,7 +143,8 @@ impl ExprTarget {
             ExprTarget::Kotlin => true,
             // Rust: `core`'s `Option<T>` ([`rust_optional`]).
             ExprTarget::Rust => true,
-            ExprTarget::C => false,
+            // C11: `sce_optional_<elem>_t` of `sce/forge/optional.h` ([`c_optional`]).
+            ExprTarget::C => true,
         }
     }
 
@@ -10263,6 +10264,17 @@ fn c_element_accessor(collection: InferredType) -> &'static str {
 }
 
 fn emit_c(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprError> {
+    // `null` where an optional value is expected is its absent value, and a value
+    // of `T` there is lifted into it (docs/adr/0055, section 2), each by the
+    // constructor of the element's type. Asked before anything coerces the value:
+    // an enum's variant is a value this layer does not type.
+    if let (ExprKind::NullLit, InferredType::Optional(elem)) = (&expr.kind, expected) {
+        return c_optional_constructor(elem, None);
+    }
+    if let Some(elem) = expr.ty.lifted_into(expected) {
+        let present = emit_c(expr, elem.present())?;
+        return c_optional_constructor(elem, Some(&present));
+    }
     // Push-down: arithmetic + Float expectation propagates into operands so
     // decimal-integer literals pick up `.0` and avoid integer division.
     if let ExprKind::Binary { op, left, right } = &expr.kind {
@@ -10391,6 +10403,9 @@ fn c_length(arg: &TypedExpr) -> Result<String, ExprError> {
 }
 
 fn c_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
+    if let Some(form) = optional_form(expr) {
+        return c_optional(form, expr);
+    }
     Ok(match &expr.kind {
         ExprKind::NumberLit(n) => portable_number_literal(n),
         ExprKind::StringLit { value, .. } => format!("\"{value}\""),
@@ -10708,6 +10723,152 @@ fn c_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
                 operands.join(", ")
             )
         }
+    })
+}
+
+/// The name `sce/forge/optional.h` declares the optional value of `elem` under
+/// (`sce_optional_<name>_t`) where the lattice names the element whole: a number
+/// or a `bool`, by the type the document writes (`int64`, `float64`, `bool`).
+/// `None` for a text, a byte string, an enum and a record, whose optional type
+/// carries a bound or a document the expression does not name (docs/adr/0055,
+/// section 5).
+fn c_optional_scalar_name(elem: OptionalElem) -> Option<String> {
+    use crate::forge::model::SceType;
+    elem.scalar()
+        .filter(|ty| !matches!(ty, SceType::String | SceType::Bytes | SceType::Enum(_)))
+        .map(|ty| ty.as_attr())
+}
+
+/// An optional value of `elem` built inside an expression: the absent one for
+/// `None` (what `null` is where the place expects an optional value), and
+/// `present`, a value of the element, lifted for `Some` (docs/adr/0055,
+/// section 2). An optional value whose type the expression cannot name — of a
+/// text, a byte string, an enum or a record — is refused by name: the walk
+/// writes such a value whole where a variable or a field takes it, where the
+/// place names the type
+/// ([`crate::forge::static_lowering::StaticTarget::optional_none`]).
+fn c_optional_constructor(elem: OptionalElem, present: Option<&str>) -> Result<String, ExprError> {
+    let Some(name) = c_optional_scalar_name(elem) else {
+        return Err(ExprError::UnsupportedConstruct {
+            construct: format!(
+                "{} of an optional text, byte string, enum or record inside an expression, \
+                 whose C type carries a bound or a document the expression does not name: write \
+                 it as the whole value of the variable or the field that takes it",
+                if present.is_some() {
+                    "a present value lifted into one"
+                } else {
+                    "`null`"
+                }
+            ),
+            observed: None,
+        });
+    };
+    Ok(match present {
+        Some(value) => format!("sce_optional_{name}_some({value})"),
+        None => format!("sce_optional_{name}_none()"),
+    })
+}
+
+/// The present value `subject`, an optional value of type `ty`, holds, read as
+/// an expression reads a value of its element: a text as the text of its buffer,
+/// a byte string as the view of its buffer and length, and any other as the
+/// value itself. Read only where the build proved it present (docs/adr/0055,
+/// section 3), or under a test of its flag: the C11 lowering's map and wire
+/// value of an optional value read it the same way.
+pub(crate) fn c_present_read(subject: &str, ty: InferredType) -> String {
+    match ty {
+        InferredType::Optional(OptionalElem::Str) => format!("{subject}.value.data"),
+        InferredType::Optional(OptionalElem::Bytes) => {
+            format!("(sce_forge_bytes_view_t){{ {subject}.value.data, {subject}.value.len }}")
+        }
+        _ => format!("{subject}.value"),
+    }
+}
+
+/// The C11 spelling of each construct of an optional value (docs/adr/0055,
+/// section 5) over `sce_optional_<elem>_t` of `sce/forge/optional.h`: a test of
+/// `.present`, a proven read of `.value`, `x ?? d` as the conditional over the
+/// flag the runtime's `SCE_OPTIONAL_*_OR` spells, which evaluates `d` only when
+/// `x` is absent, and total equality through `SCE_OPTIONAL_SAME` of two optional
+/// values or `SCE_OPTIONAL_HOLDS` of one and a present value, which name no type.
+fn c_optional(form: OptionalForm<'_>, whole: &TypedExpr) -> Result<String, ExprError> {
+    let subject = |node: &TypedExpr| -> Result<String, ExprError> {
+        Ok(wrap_postfix(node, emit_c(node, InferredType::Unknown)?))
+    };
+    Ok(match form {
+        OptionalForm::Test {
+            subject: s,
+            present,
+        } => {
+            let test = format!("{}.present", subject(s)?);
+            if present {
+                test
+            } else {
+                format!("!{test}")
+            }
+        }
+        OptionalForm::Proven { subject: s } => c_present_read(&subject(s)?, s.ty),
+        OptionalForm::Otherwise { value, fallback } => {
+            let read = if whole.ty.is_optional() {
+                "SCE_OPTIONAL_EITHER"
+            } else {
+                match value.ty {
+                    InferredType::Optional(OptionalElem::Str) => "SCE_OPTIONAL_TEXT_OR",
+                    InferredType::Optional(OptionalElem::Bytes) => "SCE_OPTIONAL_BYTES_OR",
+                    _ => "SCE_OPTIONAL_VALUE_OR",
+                }
+            };
+            format!(
+                "{read}({}, {})",
+                emit_c(value, InferredType::Unknown)?,
+                emit_c(fallback, whole.ty)?
+            )
+        }
+        OptionalForm::Equality { left, right, equal } => {
+            // The optional side, and the other: an optional value too, or a
+            // present value of the element, which needs no lift to be compared.
+            let (optional, other) = if left.ty.is_optional() {
+                (left, right)
+            } else {
+                (right, left)
+            };
+            let InferredType::Optional(elem) = optional.ty else {
+                unreachable!("an equality of an optional value has an optional side")
+            };
+            let held = emit_c(optional, InferredType::Unknown)?;
+            let comparison = if other.ty.is_optional() {
+                let same = match elem {
+                    OptionalElem::Str => "SCE_OPTIONAL_SAME_STRING",
+                    OptionalElem::Bytes => "SCE_OPTIONAL_SAME_BYTES",
+                    _ => "SCE_OPTIONAL_SAME_VALUE",
+                };
+                format!(
+                    "SCE_OPTIONAL_SAME({held}, {}, {same})",
+                    emit_c(other, InferredType::Unknown)?
+                )
+            } else {
+                let value = emit_c(other, elem.present())?;
+                match elem {
+                    OptionalElem::Str => format!("SCE_OPTIONAL_HOLDS_TEXT({held}, {value})"),
+                    OptionalElem::Bytes => {
+                        return Err(ExprError::UnsupportedConstruct {
+                            construct: "`===` of an optional byte string and a present one in \
+                                        C: test it with `!== null` and compare `.value` in its \
+                                        branch"
+                                .to_string(),
+                            observed: None,
+                        })
+                    }
+                    _ => format!("SCE_OPTIONAL_HOLDS({held}, {value})"),
+                }
+            };
+            if equal {
+                comparison
+            } else {
+                format!("!{comparison}")
+            }
+        }
+        OptionalForm::Constant(answer) => answer.to_string(),
     })
 }
 
@@ -14068,6 +14229,86 @@ mod tests {
         };
         assert_eq!(owned("title", text), "title.as_deref().map(str::to_string)");
         assert_eq!(owned("due", optional), "due");
+    }
+
+    /// C11 spells each construct of an optional value over `sce_optional_<elem>_t`
+    /// of `sce/forge/optional.h` (docs/adr/0055, section 5): a test of the flag, a
+    /// proven read of `.value`, a read with a default through the runtime's
+    /// conditional over the flag, total equality with no type named, and `null`
+    /// and a lifted value by the element's constructors where an optional value is
+    /// expected.
+    #[test]
+    fn c_spells_each_construct_of_an_optional_value() {
+        let mut ctx = optional_ctx();
+        ctx.insert_var("title", InferredType::Optional(OptionalElem::Str));
+        let int64 = OptionalElem::Number(crate::forge::quantity::NumericBaseType::Int {
+            signed: true,
+            bits: 64,
+        });
+        let c = |expr: &str, expected: InferredType| {
+            transpile_into(expr, ExprTarget::C, &ctx, &empty_renames(), expected)
+                .unwrap_or_else(|e| panic!("{expr} lowers for C11: {e:?}"))
+        };
+        let optional = InferredType::Optional(int64);
+        assert_eq!(c("due !== null", InferredType::Bool), "due.present");
+        assert_eq!(c("null === due", InferredType::Bool), "!due.present");
+        assert_eq!(c("due.value", int(true, 64)), "due.value");
+        assert_eq!(
+            c("due ?? 0", int(true, 64)),
+            "SCE_OPTIONAL_VALUE_OR(due, 0)"
+        );
+        assert_eq!(
+            c("title ?? 'none'", InferredType::Str),
+            "SCE_OPTIONAL_TEXT_OR(title, \"none\")"
+        );
+        assert_eq!(
+            c("due === other", InferredType::Bool),
+            "SCE_OPTIONAL_SAME(due, other, SCE_OPTIONAL_SAME_VALUE)"
+        );
+        assert_eq!(
+            c("due !== 3", InferredType::Bool),
+            "!SCE_OPTIONAL_HOLDS(due, 3)"
+        );
+        assert_eq!(
+            c("title === 'soon'", InferredType::Bool),
+            "SCE_OPTIONAL_HOLDS_TEXT(title, \"soon\")"
+        );
+        assert_eq!(c("null === null", InferredType::Bool), "true");
+        assert_eq!(c("null", optional), "sce_optional_int64_none()");
+        assert_eq!(c("3", optional), "sce_optional_int64_some(3)");
+        assert_eq!(c("other", optional), "other");
+        let conditional = c("count === 1 ? null : 5", optional);
+        assert!(
+            conditional.contains("? sce_optional_int64_none() : sce_optional_int64_some(5)"),
+            "{conditional}"
+        );
+    }
+
+    /// An optional value whose C type carries a bound or a document — a text, a
+    /// byte string, an enum — cannot be built inside an expression, which names
+    /// neither: `null` of one is refused by name there, and written whole where
+    /// a variable or a field takes it.
+    #[test]
+    fn c_refuses_an_optional_value_it_cannot_name_inside_an_expression() {
+        let ctx = optional_ctx();
+        for elem in [OptionalElem::Str, OptionalElem::Bytes, OptionalElem::Enum] {
+            let refusal = transpile_into(
+                "null",
+                ExprTarget::C,
+                &ctx,
+                &empty_renames(),
+                InferredType::Optional(elem),
+            )
+            .expect_err("a `null` of this element has no type here");
+            assert!(
+                refusal
+                    .error
+                    .to_string()
+                    .contains("whose C type carries a bound or a document"),
+                "{elem:?}: {}",
+                refusal.error
+            );
+        }
     }
 
     /// Go names the type of a `null` and of a read with a default; where the

@@ -337,7 +337,7 @@ helper for each concern:
 | C++ | `std::optional<T>` | `std::nullopt` | `v` | `has_value()` | `*x` | a runtime helper handed `d` as a lambda | `==` (C++17 defines it over `optional`) |
 | Go | `optional.Of[T]` | `optional.None[T]()` | `optional.Some(v)` | `x.IsPresent()` | `x.Proven()` | a runtime helper handed `d` as a function literal | `x.Equal(y)` |
 | Python | `Optional[T]` | `None` | `v` | `is not None` | `x` | a runtime helper handed `d` as a `lambda` | `==` |
-| C11 | `sce_optional_<elem>_t`, `{ bool present; T value; }` | `sce_optional_<elem>_none()` | `sce_optional_<elem>_some(v)` | `.present` | `.value` | `SCE_OPTIONAL_VALUE_OR(x, d)`, a conditional over the flag (step 5) | `sce_optional_<elem>_eq` |
+| C11 | `sce_optional_<elem>_t`, `{ bool present; T value; }` | `sce_optional_<elem>_none()` | `sce_optional_<elem>_some(v)` | `.present` | `.value` | `SCE_OPTIONAL_VALUE_OR(x, d)`, a conditional over the flag (step 5) | `SCE_OPTIONAL_SAME`, `sce_optional_<elem>_eq` |
 | Interpreter | the JSON value or `null` | `null` | `v` | `!== null` | `x` | `SceStatic.otherwise(x, function () { return d; })` | `===` |
 
 Whatever the spelling, `x ?? d` evaluates `x` once and `d` only when `x` is absent, and a failure
@@ -658,7 +658,14 @@ documents, not observed from a backend.
    to name a value inside an expression (a statement expression is a GNU extension) and a
    forge expression writes nothing, so the two reads are one value. On the wire an absent
    value is `sce_forge_wire_null()`, and the lift tells a value, `null` and a missing key
-   apart through `sce_payload_read_presence`.
+   apart through `sce_payload_read_presence`. Equality is `SCE_OPTIONAL_SAME(a, b, same)`
+   of two optional values and `SCE_OPTIONAL_HOLDS(x, v)` of one and a present value, so an
+   expression names no type; `null` and a lifted value inside an expression are spelled
+   only for a number or a `bool`, whose type the element names, and refused by name for a
+   text, a byte string or an enum, whose type carries a bound or a document (written whole
+   where a variable or a field takes them, they are the walk's). A payload's optional text
+   is the buffer of its `sce:max-size`, as a record's field is, so one taken whole is one
+   type; an optional text with no `sce:max-size` is refused on C11.
 6. **The saved state (Rust, Kotlin).** `null` in the two saved-state schemas; the shape type;
    the per-value check of a `null`; `saved/static_optional.json` and
    `saved/format1/static_optional.json` (one absent and one present value of each element),
