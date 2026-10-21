@@ -160,6 +160,35 @@ pub fn build(symbols: &BTreeMap<String, SymbolEntry>, source_hash_hex: String) -
     }
 }
 
+/// The `source_hash` of a sidecar that describes the machines of one
+/// directory, each generated under the `source-hash` in `hashes`.
+///
+/// There is one `sce_sourcemap.json` per directory, and the machines a run
+/// writes into one directory usually share one source set, and so one hash,
+/// which is then the sidecar's, byte-equal to every header beside it. A run
+/// that generates documents of several source sets into one directory — a
+/// project's machine and a standard statechart, side by side where a
+/// language's units all share the root — has no single header hash to copy,
+/// so the sidecar carries the sha256 of the distinct hashes in sorted order,
+/// one per line: a value that moves whenever any machine's inputs move,
+/// which is what the field is read for, and that does not depend on which
+/// machine was written last.
+pub fn source_hash_of_machines(hashes: &std::collections::BTreeSet<String>) -> String {
+    use sha2::{Digest, Sha256};
+    use std::fmt::Write as _;
+
+    if let (1, Some(only)) = (hashes.len(), hashes.first()) {
+        return only.clone();
+    }
+    let joined: Vec<&str> = hashes.iter().map(String::as_str).collect();
+    let digest = Sha256::digest(joined.join("\n").as_bytes());
+    let mut hex = String::with_capacity(64);
+    for byte in digest {
+        let _ = write!(hex, "{byte:02x}");
+    }
+    hex
+}
+
 /// Map an artifact suffix produced by `symbol_mangling::build_symbol_
 /// table` to a spec-named kind string. The artifact convention is
 /// internal to SCE; the kind string is part of the wire contract.
@@ -628,6 +657,24 @@ pub(crate) fn synth_symbol(loc: &SourceLocation, state_path: &str, kind: &str) -
 mod tests {
     use super::*;
     use crate::forge::symbol_mangling::{build_symbol_table, mangle};
+
+    #[test]
+    fn machines_of_one_source_set_keep_its_hash_and_of_several_a_digest_of_theirs() {
+        use std::collections::BTreeSet;
+        let one: BTreeSet<String> = ["ab".repeat(32)].into_iter().collect();
+        assert_eq!(source_hash_of_machines(&one), "ab".repeat(32));
+
+        let two: BTreeSet<String> = ["ab".repeat(32), "cd".repeat(32)].into_iter().collect();
+        let combined = source_hash_of_machines(&two);
+        assert_eq!(combined.len(), 64, "a sha256 in hex");
+        assert!(!two.contains(&combined), "neither machine's hash alone");
+        let moved: BTreeSet<String> = ["ab".repeat(32), "ef".repeat(32)].into_iter().collect();
+        assert_ne!(
+            source_hash_of_machines(&moved),
+            combined,
+            "a machine whose inputs moved moves the sidecar's hash"
+        );
+    }
 
     #[test]
     fn empty_sourcemap_serialises() {

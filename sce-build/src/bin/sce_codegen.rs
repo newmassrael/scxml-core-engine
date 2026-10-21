@@ -608,12 +608,54 @@ fn collect_sourcemap_symbols(model: &SCXMLModel, acc: &mut SymbolAccumulator) {
 /// symbols (forge-only output, a rejected document) leaves no sidecar
 /// rather than an empty one.
 fn flush_sourcemap(acc: &SymbolAccumulator, target_dir: &Path, drift_ctx: &DriftContext) {
+    write_sourcemap(acc, target_dir, drift_ctx.header.source_hex());
+}
+
+/// The symbols one `generate` of one document emitted into one directory,
+/// with the `source-hash` its files carry: held on the run's report and
+/// written by [`write_sourcemaps`], so a directory several documents of one
+/// run write machines into gets one sidecar naming every machine, rather than
+/// the last one's.
+struct SourcemapShare {
+    directory: PathBuf,
+    symbols: SymbolAccumulator,
+    source_hash: String,
+}
+
+/// Every machine's symbols one directory's sidecar names, and the hashes
+/// they were generated under.
+type DirectorySidecar = (SymbolAccumulator, BTreeSet<String>);
+
+/// Write one sidecar per directory the shares name, with every machine of
+/// that directory in it (`sourcemap::source_hash_of_machines` for its hash).
+fn write_sourcemaps(shares: Vec<SourcemapShare>) {
+    let mut by_directory: BTreeMap<PathBuf, DirectorySidecar> = BTreeMap::new();
+    for share in shares {
+        let (symbols, hashes) = by_directory.entry(tree_key(&share.directory)).or_default();
+        symbols.extend(share.symbols);
+        hashes.insert(share.source_hash);
+    }
+    for (directory, (symbols, hashes)) in &by_directory {
+        write_sourcemap(
+            symbols,
+            directory,
+            sce_build::forge::sourcemap::source_hash_of_machines(hashes),
+        );
+    }
+}
+
+/// Write `acc` as the sidecar of `target_dir`, under `source_hash`.
+///
+/// A no-op on an empty accumulator so a run that emitted no statechart
+/// symbols (forge-only output, a rejected document) leaves no sidecar
+/// rather than an empty one.
+fn write_sourcemap(acc: &SymbolAccumulator, target_dir: &Path, source_hash: String) {
     use sce_build::forge::sourcemap;
 
     if acc.is_empty() {
         return;
     }
-    let map = sourcemap::build(acc, drift_ctx.header.source_hex());
+    let map = sourcemap::build(acc, source_hash);
     let json = match sourcemap::to_json(&map) {
         Ok(s) => s,
         Err(_e) => return,
@@ -1113,6 +1155,9 @@ struct GenerateReport {
     /// so a `--with-imports` run writes one depfile for every document it
     /// generated rather than each document's over the last.
     depfile: Option<DepfileEntry>,
+    /// The symbols the run's machines emitted, per directory, held for the
+    /// caller of [`cmd_generate`] to write once per run ([`write_sourcemaps`]).
+    sourcemaps: Vec<SourcemapShare>,
 }
 
 impl GenerateReport {
@@ -1184,6 +1229,7 @@ impl GenerateReport {
                 None => self.depfile = Some(theirs),
             }
         }
+        self.sourcemaps.extend(member.sourcemaps);
     }
 }
 
@@ -5512,7 +5558,8 @@ fn run_generate(args: GenerateArgs, error_format: ErrorFormat) {
         });
     }
     let depfile = args.write_deps.clone();
-    let report = cmd_generate(args, error_format);
+    let mut report = cmd_generate(args, error_format);
+    write_sourcemaps(std::mem::take(&mut report.sourcemaps));
     write_run_depfile(depfile.as_deref(), &report);
     emit_generate_manifest(&report);
 }
@@ -5632,6 +5679,8 @@ fn cmd_generate_with_imports(args: GenerateArgs, error_format: ErrorFormat) {
         set_reached_from(Vec::new());
         set.absorb(report);
     }
+    // One sidecar per directory, naming every machine any member wrote there.
+    write_sourcemaps(std::mem::take(&mut set.sourcemaps));
     // One depfile for the run: its target the first file the run wrote, its
     // prerequisites every document and template any member read, less every
     // file any member wrote.
@@ -6251,7 +6300,11 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
         // `generate` on the same input produced none.
         let mut sourcemap_acc = SymbolAccumulator::new();
         collect_sourcemap_symbols(&model, &mut sourcemap_acc);
-        flush_sourcemap(&sourcemap_acc, out, &drift_ctx);
+        report.sourcemaps.push(SourcemapShare {
+            directory: out.to_path_buf(),
+            symbols: sourcemap_acc,
+            source_hash: drift_ctx.header.source_hex(),
+        });
 
         report.rejected = Some(RejectedDocument {
             spec: "W3C SCXML 5.8",
@@ -6663,8 +6716,14 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
 
         // Every machine this invocation emitted into `out_path` is now
         // in the table, so the sidecar covers the whole directory
-        // rather than whichever machine was written last.
-        flush_sourcemap(&sourcemap_acc, out_path, &drift_ctx);
+        // rather than whichever machine was written last. Held for the
+        // run's caller, which writes it with every other document's of the
+        // same run (`write_sourcemaps`).
+        report.sourcemaps.push(SourcemapShare {
+            directory: out_path.to_path_buf(),
+            symbols: sourcemap_acc,
+            source_hash: drift_ctx.header.source_hex(),
+        });
 
         report.needs_script_engine = Some(model.needs_script_engine);
         report.needs_event_scheduler = Some(model.needs_event_scheduler_driving());

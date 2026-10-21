@@ -32,6 +32,8 @@
 //     parent's package, and not as a machine of its own;
 //   - `--write-deps` writes one depfile for the run, declaring what every
 //     document read and none of what the run wrote;
+//   - machines written into one directory share one sourcemap naming them
+//     all;
 //   - `orchestrate --document` takes a standard document by its library name.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -656,6 +658,52 @@ fn one_depfile_declares_what_every_document_of_the_run_read() {
             "{path} is written by the run and declared as its prerequisite"
         );
     }
+}
+
+#[test]
+fn one_sourcemap_names_every_machine_a_run_writes_into_one_directory() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let src = tmp.path().join("src");
+    fs::create_dir_all(&src).expect("create the source directory");
+    let documents: Vec<PathBuf> = ["door_one", "door_two"]
+        .iter()
+        .map(|name| {
+            let path = src.join(format!("{name}.scxml"));
+            fs::write(&path, plain_statechart(name, "")).expect("write");
+            path
+        })
+        .collect();
+    let out = tmp.path().join("out");
+
+    let run = generate_documents(&documents, &out, "rust", &[]);
+    succeeded(&run, "the run over two machines");
+    let sidecar: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(out.join("sce_sourcemap.json")).expect("the run wrote a sidecar"),
+    )
+    .expect("the sidecar parses");
+    let files: BTreeSet<String> = sidecar["symbols"]
+        .as_object()
+        .expect("the sidecar lists symbols")
+        .values()
+        .map(|symbol| {
+            symbol["scxml_file"]
+                .as_str()
+                .expect("each symbol names its file")
+                .to_string()
+        })
+        .collect();
+    for name in ["door_one", "door_two"] {
+        assert!(
+            files.iter().any(|file| file.contains(name)),
+            "{name}'s symbols are not in the directory's sidecar: {files:?}"
+        );
+    }
+    let hash = sidecar["source_hash"].as_str().expect("a source hash");
+    let machine = fs::read_to_string(out.join("door_one_sm.rs")).expect("read a machine");
+    assert!(
+        machine.contains(hash),
+        "two machines of one source set: the sidecar carries the hash their headers do"
+    );
 }
 
 #[test]
