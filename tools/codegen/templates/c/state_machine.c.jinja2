@@ -1183,7 +1183,7 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
     written as `id`, or one `idlocation` handed over. Both are C expressions
     (`send_id_c_expr`, `send_meta_id_c_expr`): a literal, or the local that holds
     the id a `sce-static` machine generated. -#}
-{% macro send_lowered(action, in_foreach) %}
+{% macro send_lowered(action, in_foreach, flow=none) %}
 {% set P = csym_prefix ~ model.name %}
 {% set PU = csym_prefix | upper ~ model.name | upper %}
 {% set send_id_c = send_id_c_expr(action) %}
@@ -1245,6 +1245,11 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
                 "<send> uses a combination of attributes this backend cannot emit",
                 {{ send_id_c }});
             return;
+{# This arm and each build-time refusal below end the block unconditionally:
+   the list emits nothing after this element (`flow`, `emit_action`). #}
+{% if flow is not none %}
+{% set flow.ended = true %}
+{% endif %}
 {% else %}
 {% if has_delay and has_payload and route != 'http' and not refused_at_build and not (model.needs_script_engine or model.has_delayed_send_payload) %}
 #error "SCE codegen drift: a delayed <send> carries a payload, yet this machine's scheduled entry has no `data[]` to hold it. analyzer::analyze_action must set has_delayed_send_payload for every delayed send with a <param>, namelist or <content>."
@@ -1464,6 +1469,9 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
                 "<send type='{{ action.send_type | escape_c }}'> names a processor this platform does not support",
                 {{ send_id_c }});
             return;
+{% if flow is not none %}
+{% set flow.ended = true %}
+{% endif %}
 {% elif action.target_unsupported %}
             /* W3C SCXML 6.2.4 (test159, 194, 332): a target this processor
                cannot address — `Action::target_unsupported`, decided once at
@@ -1473,6 +1481,9 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
                 "<send target='{{ action.target | escape_c }}'> is not a target this processor can address",
                 {{ send_id_c }});
             return;
+{% if flow is not none %}
+{% set flow.ended = true %}
+{% endif %}
 {% elif is_http and not action.target and not action.targetexpr %}
             /* W3C SCXML C.2 (test577): BasicHTTP names no target to post to. */
             {{ P }}_raise_platform_error_with_send_id(
@@ -1480,6 +1491,9 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
                 "<send> over BasicHTTPEventProcessor has no target to post to",
                 {{ send_id_c }});
             return;
+{% if flow is not none %}
+{% set flow.ended = true %}
+{% endif %}
 {% elif names_no_invocation %}
             /* W3C SCXML C.1 + 6.4: no invocation of this document is called
                "{{ static_target[2:] }}", so the target reaches
@@ -1490,6 +1504,9 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
                 "<send target='{{ static_target | escape_c }}'> names no invocation of this session",
                 {{ send_id_c }});
             return;
+{% if flow is not none %}
+{% set flow.ended = true %}
+{% endif %}
 {% else %}
 {{ send_param_failed_open(action) }}
 {% if route == 'http' %}
@@ -1846,7 +1863,18 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
 {% endif %}
                 }
 {%- endmacro %}
-{% macro emit_action(action, in_foreach=false, foreach_depth=0) %}
+{# `flow` is what the list the action is emitted into knows about its own end:
+   a `namespace(ended=false)` the caller binds, one per list — a block, a
+   branch of an <if>, a <foreach> body. An element the build has already
+   decided will raise — a `<send>` whose type, target or delay is refused, an
+   `<assign>` to a read-only location — ends the block with a `return` that no
+   condition guards, and sets `flow.ended` where it writes it. Nothing after
+   it can run (W3C SCXML 4.9: the error ends the block), so the caller emits
+   nothing more into the list — not the next element, and not the `break`
+   that closes a `case`. A macro does not see its caller's names, so the
+   namespace is passed in; `none` is a list that tracks nothing. The Go
+   templates follow the same rule (go/entry_exit_actions.go.jinja2). #}
+{% macro emit_action(action, in_foreach=false, foreach_depth=0, flow=none) %}
 {% if action.native_code %}
         /* SCE Accepted Subset §2.15: <{{ action.type }}> lowered at build time; one that can fail ends its block itself. */
         {{ action.native_code | to_in_predicate_c11(csym_prefix ~ model.name, model.history_states | list) }}
@@ -1881,6 +1909,9 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
                 sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
                 "<assign> has an invalid or read-only location '{{ action.location | escape_c }}'");
             return;  /* W3C 4.9: the error ends the block (and any <foreach> in it) */
+{% if flow is not none %}
+{% set flow.ended = true %}
+{% endif %}
 {% elif (not action.expr) and action.content %}
             /* W3C SCXML 5.4.2: `<assign location="{{ action.location }}">` with
                in-line children. The children "provide an in-line specification
@@ -1907,8 +1938,14 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
         /* W3C SCXML 4.6: <foreach array="{{ action.array }}" item="{{ action.item }}"{% if action.index %} index="{{ action.index }}"{% endif %}>, a native loop over a copy of a sce-static list. A body element that raised its own error leaves the block from inside the loop, which ends the block that holds the <foreach> (§scxml-4.9). */
         {{ action.native_loop }} {
             {{ action.native_loop_prologue }}
+{# The body is a list of its own (`flow`): an element in it that ends the
+   block unconditionally ends what the body emits, and not the list the
+   <foreach> is in — the loop may run no times. #}
+{% set body_flow = namespace(ended=false) %}
 {% for sub in action.actions %}
-            {{ emit_action(sub, true, foreach_depth + 1) }}
+{% if not body_flow.ended %}
+            {{ emit_action(sub, true, foreach_depth + 1, body_flow) }}
+{% endif %}
 {% endfor %}
         }
 {% elif action.type == 'foreach' %}
@@ -1952,8 +1989,11 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
             }
             for (int _i = 0; _i < _sce_n; ++_i) {
 {{ se.lua_foreach_body_iter(action.item, action.index, foreach_slot) }}
+                {% set body_flow = namespace(ended=false) %}
                 {% for sub in action.actions %}
-                {{ emit_action(sub, true, foreach_depth + 1) }}
+                {% if not body_flow.ended %}
+                {{ emit_action(sub, true, foreach_depth + 1, body_flow) }}
+                {% endif %}
                 {% endfor %}
             }
 {{ se.lua_foreach_body_epilogue(foreach_slot) }}
@@ -1990,6 +2030,9 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
                 "<send> delay is not a CSS2 time",
                 {{ send_id_c_expr(action) }});
             return;
+{% if flow is not none %}
+{% set flow.ended = true %}
+{% endif %}
 {% elif action.send_type_host_served %}
             /* §scxml-6.2.5: "{{ action.send_type }}" is served by the HOST,
                which declared it to this build. Dispatch rather than refuse.
@@ -2014,19 +2057,26 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
 {# Every other delivery, the BasicHTTP post included: it is one more act
    `send_lowered` hands a request to, and the machine's own HTTP client makes
    it (`_perform_basic_http`). #}
-{{ send_lowered(action, in_foreach) }}
+{{ send_lowered(action, in_foreach, flow) }}
 {% endif %}
         }
 {% elif action.type == 'if' %}
 {% set if_can_fail = (model.needs_script_engine and (not action.is_pure_in_predicate or (action.elseif_branches | rejectattr("is_pure_in_predicate") | list | length > 0))) or action.native_cond_fails or (action.elseif_branches | selectattr("native_cond_fails") | list | length > 0) %}
-        {
-            /* W3C SCXML 4.3: <if cond="{{ action.cond }}"> */
-{% if if_can_fail %}
-            /* W3C SCXML 5.9.1 + 4.9: a cond that cannot be evaluated is false,
-               so the selection goes on; the <if> then ends its block, as any
-               element that raised does — every block is its own C function. */
-            bool _if_cond_failed = false;
+{# Each branch is a list of its own (`flow`, `emit_action`). When the <if> has
+   an <else> and every branch ends the block unconditionally, whichever branch
+   the selection reaches ends it — a cond that failed only moves the selection
+   on — so the chain is itself the end of the block: the check of
+   `_if_cond_failed` that would follow it, and every element after the <if>,
+   could never run. `if_flow.ends` records it, and the chain is rendered first
+   (`if_chain`) so that the flag, which the conds write and nothing then
+   reads, is read once where it is declared: GCC and Clang report a variable
+   that is only ever set. #}
+{% set if_flow = namespace(ends=true) %}
+{% if not action.else_actions %}
+{% set if_flow.ends = false %}
 {% endif %}
+{% set then_flow = namespace(ended=false) %}
+{% set if_chain %}
 {% if action.native_cond %}
             /* SCE Accepted Subset §2.15: the cond was lowered at build time. One
                that can fail is the head of this `if`: it evaluates the cond, and
@@ -2038,7 +2088,9 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
             if ({{ action.native_cond | to_in_predicate_c11(csym_prefix ~ model.name, model.history_states | list) }}) {
 {% endif %}
                 {% for sub in action.then_actions %}
-                {{ emit_action(sub, in_foreach, foreach_depth) }}
+                {% if not then_flow.ended %}
+                {{ emit_action(sub, in_foreach, foreach_depth, then_flow) }}
+                {% endif %}
                 {% endfor %}
             }
 {% elif action.is_pure_in_predicate %}
@@ -2048,7 +2100,9 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
                otherwise lua-free) and a phantom lua trampoline (jinja2-inline). */
             if ({{ action.cond | to_in_predicate_c11(csym_prefix ~ model.name, model.history_states | list) }}) {
                 {% for sub in action.then_actions %}
-                {{ emit_action(sub, in_foreach, foreach_depth) }}
+                {% if not then_flow.ended %}
+                {{ emit_action(sub, in_foreach, foreach_depth, then_flow) }}
+                {% endif %}
                 {% endfor %}
             }
 {% elif model.needs_script_engine %}
@@ -2056,7 +2110,9 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
 {{ se.lua_eval_guard(action.cond, '_if_pass', '_if_cond_failed', 'an <if>') }}
             if (_if_pass) {
                 {% for sub in action.then_actions %}
-                {{ emit_action(sub, in_foreach, foreach_depth) }}
+                {% if not then_flow.ended %}
+                {{ emit_action(sub, in_foreach, foreach_depth, then_flow) }}
+                {% endif %}
                 {% endfor %}
             }
 {% else %}
@@ -2066,11 +2122,17 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
                emitting a state reference the header never declares. */
             if ({{ 'true' if action.cond_constant else 'false' }}) {
                 {% for sub in action.then_actions %}
-                {{ emit_action(sub, in_foreach, foreach_depth) }}
+                {% if not then_flow.ended %}
+                {{ emit_action(sub, in_foreach, foreach_depth, then_flow) }}
+                {% endif %}
                 {% endfor %}
             }
 {% endif %}
+{% if not then_flow.ended %}
+{% set if_flow.ends = false %}
+{% endif %}
 {% for elif in action.elseif_branches %}
+{% set elif_flow = namespace(ended=false) %}
             else {
                 /* W3C SCXML 4.3: <elseif cond="{{ elif.cond }}"> */
 {% if elif.native_cond %}
@@ -2080,13 +2142,17 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
                 if ({{ elif.native_cond | to_in_predicate_c11(csym_prefix ~ model.name, model.history_states | list) }}) {
 {% endif %}
                     {% for sub in elif.actions %}
-                    {{ emit_action(sub, in_foreach, foreach_depth) }}
+                    {% if not elif_flow.ended %}
+                    {{ emit_action(sub, in_foreach, foreach_depth, elif_flow) }}
+                    {% endif %}
                     {% endfor %}
                 }
 {% elif elif.is_pure_in_predicate %}
                 if ({{ elif.cond | to_in_predicate_c11(csym_prefix ~ model.name, model.history_states | list) }}) {
                     {% for sub in elif.actions %}
-                    {{ emit_action(sub, in_foreach, foreach_depth) }}
+                    {% if not elif_flow.ended %}
+                    {{ emit_action(sub, in_foreach, foreach_depth, elif_flow) }}
+                    {% endif %}
                     {% endfor %}
                 }
 {% elif model.needs_script_engine %}
@@ -2094,35 +2160,63 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
 {{ se.lua_eval_guard(elif.cond, '_elif_pass', '_if_cond_failed', 'an <elseif>') }}
                 if (_elif_pass) {
                     {% for sub in elif.actions %}
-                    {{ emit_action(sub, in_foreach, foreach_depth) }}
+                    {% if not elif_flow.ended %}
+                    {{ emit_action(sub, in_foreach, foreach_depth, elif_flow) }}
+                    {% endif %}
                     {% endfor %}
                 }
 {% else %}
                 /* W3C SCXML 4.3: decided at build time — see the `<if>` arm. */
                 if ({{ 'true' if elif.cond_constant else 'false' }}) {
                     {% for sub in elif.actions %}
-                    {{ emit_action(sub, in_foreach, foreach_depth) }}
+                    {% if not elif_flow.ended %}
+                    {{ emit_action(sub, in_foreach, foreach_depth, elif_flow) }}
+                    {% endif %}
                     {% endfor %}
                 }
 {% endif %}
+{% if not elif_flow.ended %}
+{% set if_flow.ends = false %}
+{% endif %}
 {% endfor %}
 {% if action.else_actions %}
+{% set else_flow = namespace(ended=false) %}
             else {
                 /* W3C SCXML 4.3: <else> */
                 {% for sub in action.else_actions %}
-                {{ emit_action(sub, in_foreach, foreach_depth) }}
+                {% if not else_flow.ended %}
+                {{ emit_action(sub, in_foreach, foreach_depth, else_flow) }}
+                {% endif %}
                 {% endfor %}
             }
+{% if not else_flow.ended %}
+{% set if_flow.ends = false %}
+{% endif %}
 {% endif %}
 {% for elif in action.elseif_branches %}
             }
 {% endfor %}
+{% endset %}
+        {
+            /* W3C SCXML 4.3: <if cond="{{ action.cond }}"> */
 {% if if_can_fail %}
+            /* W3C SCXML 5.9.1 + 4.9: a cond that cannot be evaluated is false,
+               so the selection goes on; the <if> then ends its block, as any
+               element that raised does — every block is its own C function. */
+            bool _if_cond_failed = false;
+{% if if_flow.ends %}
+            (void)_if_cond_failed;  /* every branch ends the block, so no check reads it */
+{% endif %}
+{% endif %}
+{{ if_chain }}{% if if_can_fail and not if_flow.ends %}
             if (_if_cond_failed) {
                 return;
             }
 {% endif %}
         }
+{% if if_flow.ends and flow is not none %}
+{% set flow.ended = true %}
+{% endif %}
 {% elif action.type == 'log' %}
         /* W3C SCXML 4.7: <log{% if action.label %} label="{{ action.label }}"{% endif %}{% if action.expr %} expr="{{ action.expr }}"{% endif %}>
            Logging is observable side-effect only — the W3C spec mandates no
@@ -2684,11 +2778,16 @@ SCE_SM_FN static void record_unseen_external_events({{ csym_prefix }}{{ model.na
 {% endif %}
 SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_on_entry_{{ state_id | to_c11_lower_ident }}_block_{{ loop.index }}({{ csym_prefix }}{{ model.name }}_t *sm) {  {{- annot.annotation_comment(state, "c", "    ") }}
     (void)sm;
+{# `block_flow`: an element that ends the block unconditionally sets it, and
+   nothing after that element is emitted (`flow`, `emit_action`). #}
+{% set block_flow = namespace(ended=false) %}
     {% for action in block %}
+{% if not block_flow.ended %}
 {%- if action.req or action.unresolved %}
 {{ annot.annotation_block(action, "c", "    ") -}}
 {%- endif %}
-    {{ emit_action(action) }}
+    {{ emit_action(action, flow=block_flow) }}
+{% endif %}
     {% endfor %}
 }
 {% endfor %}
@@ -2703,11 +2802,14 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_on_entry_{{ state_id | t
 {% endif %}
 SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_on_exit_{{ state_id | to_c11_lower_ident }}_block_{{ loop.index }}({{ csym_prefix }}{{ model.name }}_t *sm) {  {{- annot.annotation_comment(state, "c", "    ") }}
     (void)sm;
+{% set block_flow = namespace(ended=false) %}
     {% for action in block %}
+{% if not block_flow.ended %}
 {%- if action.req or action.unresolved %}
 {{ annot.annotation_block(action, "c", "    ") -}}
 {%- endif %}
-    {{ emit_action(action) }}
+    {{ emit_action(action, flow=block_flow) }}
+{% endif %}
     {% endfor %}
 }
 {% endfor %}
@@ -3229,13 +3331,21 @@ SCE_SM_FN static void execute_transition_actions({{ csym_prefix }}{{ model.name 
                 break;
             }
 {% endif %}
+{# `block_flow`: an element that ends the block unconditionally sets it, and
+   nothing after that element is emitted — the `break` that closes the case
+   included (`flow`, `emit_action`). #}
+{% set block_flow = namespace(ended=false) %}
             {% for action in trans.actions %}
+{% if not block_flow.ended %}
 {%- if action.req or action.unresolved %}
 {{ annot.annotation_block(action, "c", "            ") -}}
 {%- endif %}
-            {{ emit_action(action) }}
+            {{ emit_action(action, flow=block_flow) }}
+{% endif %}
             {% endfor %}
+{% if not block_flow.ended %}
             break;
+{% endif %}
         }
         {% endif %}
         {% endfor %}
@@ -3264,10 +3374,15 @@ SCE_SM_FN static void execute_initial_transition_content({{ csym_prefix }}{{ mod
     {% for state_id, state in model.states | dictsort %}
     {% if state.initial_transition_actions %}
     case {{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_id | to_c11_upper_ident }}: {
+{% set block_flow = namespace(ended=false) %}
         {% for action in state.initial_transition_actions %}
-        {{ emit_action(action) }}
+{% if not block_flow.ended %}
+        {{ emit_action(action, flow=block_flow) }}
+{% endif %}
         {% endfor %}
+{% if not block_flow.ended %}
         break;
+{% endif %}
     }
     {% endif %}
     {% endfor %}
@@ -3288,10 +3403,15 @@ SCE_SM_FN static void execute_history_default_content({{ csym_prefix }}{{ model.
     {% for hid, info in model.history_states | dictsort %}
     {% if info.default_actions %}
     case {{ csym_prefix | upper }}{{ model.name | upper }}_HIST_{{ hid | to_c11_upper_ident }}: {
+{% set block_flow = namespace(ended=false) %}
         {% for action in info.default_actions %}
-        {{ emit_action(action) }}
+{% if not block_flow.ended %}
+        {{ emit_action(action, flow=block_flow) }}
+{% endif %}
         {% endfor %}
+{% if not block_flow.ended %}
         break;
+{% endif %}
     }
     {% endif %}
     {% endfor %}

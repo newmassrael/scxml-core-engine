@@ -5628,6 +5628,94 @@ mod tests {
         );
     }
 
+    /// The C11 list a refusal is emitted into emits nothing after its
+    /// `return`, and neither does the `case` that list stands in: the `break`
+    /// that closed it could never run. The C11 templates refuse a read-only
+    /// `<assign>` at build time too, so the Go fixture holds every arm. The
+    /// `<if>` whose branches all end is the end of its block, so no check of
+    /// `_if_cond_failed` follows it, and the flag is read where it is declared
+    /// instead; the one without `<else>` keeps its check. A delivery C11 has
+    /// no route for — a BasicHTTP post from a `<foreach>` body — ends its
+    /// block the same way. What runs is unchanged.
+    #[test]
+    fn c11_emits_nothing_after_an_element_that_always_ends_its_block() {
+        let base = crate::find_template_base();
+        let mut model = parse(ENDED_BLOCKS_SCXML);
+        crate::analyzer::analyze(&mut model, "");
+        let output = generate_c11(&model, &base, "refusals", None).expect("c11");
+        let c: String = output.files.iter().map(|(_, text)| text.as_str()).collect();
+
+        let unreachable = unreachable_in_files(&output);
+        assert!(
+            unreachable.is_empty(),
+            "statements after a terminating statement: {unreachable:?}\n{c}"
+        );
+        let raises = |spelled: &str| raises_of(&c, "evt.event =", spelled);
+        assert_eq!(
+            raises("_EVENT_NEVER;"),
+            0,
+            "an element after a refusal\n{c}"
+        );
+        assert_eq!(raises("_EVENT_FIRST;"), 1, "an element before one\n{c}");
+        assert_eq!(
+            raises("_EVENT_KEPT;"),
+            1,
+            "after an <if> without <else>\n{c}"
+        );
+        assert_eq!(raises("_EVENT_LOOPED;"), 1, "after a <foreach>\n{c}");
+
+        // Each refusal is still written: the eight `<send>`s, and the six
+        // `<assign>`s to a read-only location.
+        assert_eq!(
+            c.matches(": <send event=\"x\"").count(),
+            8,
+            "each refused <send> is still written\n{c}"
+        );
+        assert_eq!(
+            c.matches("\"<assign> has an invalid or read-only location '")
+                .count(),
+            6,
+            "each refused <assign> still raises\n{c}"
+        );
+        assert_eq!(c.matches("bool _if_cond_failed = false;").count(), 2, "{c}");
+        assert_eq!(c.matches("if (_if_cond_failed) {").count(), 1, "{c}");
+        assert_eq!(c.matches("(void)_if_cond_failed;").count(), 1, "{c}");
+
+        let no_route = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       datamodel="ecmascript" name="no_route" initial="s0">
+  <datamodel>
+    <data id="items" expr="[1, 2]"/>
+  </datamodel>
+  <state id="s0">
+    <onentry>
+      <foreach array="items" item="item">
+        <send event="x" type="http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor"
+              target="http://localhost:1/"/>
+        <raise event="never"/>
+      </foreach>
+      <raise event="looped"/>
+    </onentry>
+  </state>
+</scxml>"##;
+        let mut model = parse(no_route);
+        crate::analyzer::analyze(&mut model, "");
+        let output = generate_c11(&model, &base, "no_route", None).expect("c11");
+        let c: String = output.files.iter().map(|(_, text)| text.as_str()).collect();
+        let unreachable = unreachable_in_files(&output);
+        assert!(
+            unreachable.is_empty(),
+            "statements after a terminating statement: {unreachable:?}\n{c}"
+        );
+        assert!(
+            c.contains("a combination of attributes this backend cannot emit"),
+            "the send still raises\n{c}"
+        );
+        let raises = |spelled: &str| raises_of(&c, "evt.event =", spelled);
+        assert_eq!(raises("_EVENT_NEVER;"), 0, "an element after the send\n{c}");
+        assert_eq!(raises("_EVENT_LOOPED;"), 1, "after the <foreach>\n{c}");
+    }
+
     /// `docs/SCE_ACCEPTED_SUBSET.md` §2.12 is the surface a consumer reads to
     /// learn which engines honour the §6.4.1 raise, and nothing was reading
     /// it. The table shipped claiming five AOT backends refuse the document
