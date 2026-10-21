@@ -208,6 +208,7 @@ scenarios! {
     "static_event_arrival" => static_event_arrival_sm::{StaticEventArrivalPolicy, StaticEventArrivalPersist};
     "static_event_wildcard" => static_event_wildcard_sm::{StaticEventWildcardPolicy, StaticEventWildcardPersist};
     "static_foreach" => static_foreach_sm::{StaticForeachPolicy, StaticForeachPersist};
+    "static_forge_calls" => static_forge_calls_sm::{StaticForgeCallsPolicy, StaticForgeCallsPersist};
     "static_history" => static_history_sm::{StaticHistoryPolicy, StaticHistoryPersist};
     "static_host_call" => static_host_call_sm::{StaticHostCallPolicy, StaticHostCallPersist} + RecordingStaticHostCallActions => static_host_call;
     "static_host_duty" => static_host_duty_sm::{StaticHostDutyPolicy, StaticHostDutyPersist} ~ RecordingStaticHostDutyActions => static_host_duty;

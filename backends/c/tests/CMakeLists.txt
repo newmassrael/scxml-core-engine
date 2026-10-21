@@ -2794,6 +2794,34 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_enum_number.scxml"
         STAGE_ALSO schema_item_move.scxml schema_status_number.scxml enum_item_status.scxml
     )
+    # A machine that calls a condition, a transform, two lookups, an interpolation and a
+    # validator as the functions of their inputs they are (docs/adr/0048). Each is a
+    # document of its own kind, whose header is generated once beside the machine that
+    # includes it, as an algorithm's is.
+    sce_generate_static_integration_c_test(static_forge_calls
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_forge_calls.scxml"
+        STAGE_ALSO forge_call_high.scxml forge_call_offset.scxml forge_call_ratio.scxml
+                   forge_call_code.scxml forge_call_limit.scxml forge_call_range.scxml
+    )
+    set(_CALLED_HEADERS "")
+    foreach(_CALLED_DOCUMENT forge_call_high forge_call_offset forge_call_ratio forge_call_code
+                             forge_call_limit forge_call_range)
+        set(_CALLED_SOURCE
+            "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/${_CALLED_DOCUMENT}.scxml")
+        set(_CALLED_OUTPUT "${SCE_C_INTEGRATION_GENERATED_DIR}/${_CALLED_DOCUMENT}.h")
+        add_custom_command(
+            OUTPUT "${_CALLED_OUTPUT}"
+            COMMAND "${SCE_CODEGEN}" generate "${_CALLED_SOURCE}"
+                    -l c11 -o "${SCE_C_INTEGRATION_GENERATED_DIR}"
+                    --write-deps "${_CALLED_OUTPUT}.d"
+            DEPENDS "${_CALLED_SOURCE}" "${SCE_CODEGEN}"
+            DEPFILE "${_CALLED_OUTPUT}.d"
+            COMMENT "Generating C11 header: ${_CALLED_DOCUMENT}.h"
+            VERBATIM
+        )
+        list(APPEND _CALLED_HEADERS "${_CALLED_OUTPUT}")
+    endforeach()
     # A machine that calls imported algorithms includes their headers, and does
     # not generate them: an algorithm is a document of its own kind, generated
     # once however many machines call it. The four sync rules `sync_client`
@@ -3101,6 +3129,8 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         ${INTEGRATION_C_TEST_static_payload_relay_SOURCES}
         ${INTEGRATION_C_TEST_static_enum_SOURCES}
         ${INTEGRATION_C_TEST_static_enum_number_SOURCES}
+        ${INTEGRATION_C_TEST_static_forge_calls_SOURCES}
+        ${_CALLED_HEADERS}
         ${INTEGRATION_C_TEST_sync_client_SOURCES}
         ${_STATIC_SYNC_ALGORITHM_HEADERS}
         ${INTEGRATION_C_TEST_todo_peer_SOURCES}

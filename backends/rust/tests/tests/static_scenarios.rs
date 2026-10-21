@@ -65,6 +65,9 @@ use sce_rust_tests::integration::static_datamodel::static_event_wildcard_sm::{
 use sce_rust_tests::integration::static_datamodel::static_foreach_sm::{
     StaticForeachPersist, StaticForeachPolicy,
 };
+use sce_rust_tests::integration::static_datamodel::static_forge_calls_sm::{
+    StaticForgeCallsPersist, StaticForgeCallsPolicy,
+};
 use sce_rust_tests::integration::static_datamodel::static_history_sm::{
     StaticHistoryPersist, StaticHistoryPolicy,
 };
@@ -795,6 +798,20 @@ fn static_foreach_walks_a_list_and_a_failing_body_ends_the_block() {
         |engine| engine.save().expect("saves"),
         include_str!(
             "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_foreach.json"
+        ),
+    );
+}
+
+// docs/adr/0048: a condition, a transform, two lookups, an interpolation and a
+// validator called as `Alias(args)`; a lookup whose miss is an error fails into
+// error.execution.
+#[test]
+fn static_forge_calls_calls_the_kinds_that_are_functions() {
+    replay(
+        Engine::new(StaticForgeCallsPolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_forge_calls.json"
         ),
     );
 }

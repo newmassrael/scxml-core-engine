@@ -54,6 +54,7 @@ import (
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_event_arrival"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_event_wildcard"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_foreach"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_forge_calls"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_history"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_host_call"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_host_call_arguments"
@@ -1067,6 +1068,26 @@ func TestAnEnumIsReadAsItsNumberAndBack(t *testing.T) {
 		"status":   func() any { return policy.Status().String() },
 		"checks":   func() any { return policy.Checks() },
 		"refusals": func() any { return policy.Refusals() },
+	}))
+}
+
+// docs/adr/0048: a condition, a transform, two lookups, an interpolation and a
+// validator called as `Alias(args)`; a lookup whose miss is an error fails into
+// error.execution, and the variable keeps what it held.
+func TestTheKindsThatAreFunctionsAreCalledAsAnAlgorithmIs(t *testing.T) {
+	policy := static_forge_calls.NewStaticForgeCallsPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	replay(t, "static_forge_calls", drive[static_forge_calls.StaticForgeCallsState, static_forge_calls.StaticForgeCallsEvent](&policy, map[string]func() any{
+		"gear":     func() any { return policy.Gear() },
+		"ratio":    func() any { return policy.Ratio() },
+		"code":     func() any { return policy.Code() },
+		"misses":   func() any { return policy.Misses() },
+		"level":    func() any { return policy.Level() },
+		"offset":   func() any { return policy.Offset() },
+		"accepted": func() any { return policy.Accepted() },
+		"rpm":      func() any { return policy.Rpm() },
+		"limit":    func() any { return policy.Limit() },
+		"highs":    func() any { return policy.Highs() },
 	}))
 }
 

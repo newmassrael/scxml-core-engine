@@ -403,7 +403,7 @@ target_compile_definitions(static_datamodel_generated_cpp_test
 
 apply_sce_test_policies(static_datamodel_generated_cpp_test)
 
-foreach(_STATIC_CPP_MACHINE static_child_host static_child_host_hybrid static_child_mesh static_counter static_event_arrival static_event_wildcard static_overflow static_block_ends static_host_call static_host_duty static_payload static_enum static_enum_number static_list static_list_assign static_list_index static_foreach static_history static_block_ends_list static_bytes static_bytes_wire static_record_fields static_record_list static_record_list_index static_record_enum static_record sync_client static_donedata static_donedata_content static_donedata_record static_invoke static_invoke_hybrid static_invoke_hybrid_saved static_invoke_params static_invoke_string static_cancel_expr static_send_content static_send_delay static_send_event static_send_http static_send_idlocation static_send_namelist static_send_params static_send_target static_send_type static_string_capacity static_timers static_real static_real32 static_record_real static_record_real32 static_record_bytes static_record_string static_payload_bytes static_payload_enum static_payload_relay static_whole_payload static_schema_revision static_wire_enum static_state_algorithm static_state_algorithm_enum static_text_record static_wire_wide todo_peer sheet_peer presence_peer record_list_parent)
+foreach(_STATIC_CPP_MACHINE static_child_host static_child_host_hybrid static_child_mesh static_counter static_event_arrival static_event_wildcard static_overflow static_block_ends static_host_call static_host_duty static_payload static_enum static_enum_number static_forge_calls static_list static_list_assign static_list_index static_foreach static_history static_block_ends_list static_bytes static_bytes_wire static_record_fields static_record_list static_record_list_index static_record_enum static_record sync_client static_donedata static_donedata_content static_donedata_record static_invoke static_invoke_hybrid static_invoke_hybrid_saved static_invoke_params static_invoke_string static_cancel_expr static_send_content static_send_delay static_send_event static_send_http static_send_idlocation static_send_namelist static_send_params static_send_target static_send_type static_string_capacity static_timers static_real static_real32 static_record_real static_record_real32 static_record_bytes static_record_string static_payload_bytes static_payload_enum static_payload_relay static_whole_payload static_schema_revision static_wire_enum static_state_algorithm static_state_algorithm_enum static_text_record static_wire_wide todo_peer sheet_peer presence_peer record_list_parent)
     sce_add_state_machine(
         TARGET static_datamodel_generated_cpp_test
         SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/${_STATIC_CPP_MACHINE}.scxml
@@ -538,6 +538,18 @@ foreach(_STD_TEXT_DOCUMENT text_slot text_slot_latest text_slot_retitled text_sl
         TARGET static_datamodel_generated_cpp_test
         SCXML_FILE sce:std/text/${_STD_TEXT_DOCUMENT}.scxml
         HEADER ${_STD_TEXT_DOCUMENT}.h
+    )
+endforeach()
+# static_forge_calls's: a condition, a transform, two lookups, an interpolation and a
+# validator, which it calls as the functions of their inputs they are
+# (docs/adr/0048). Each is a document of its own kind, generated beside the machine
+# that includes its header, as an algorithm is.
+foreach(_CALLED_DOCUMENT forge_call_high forge_call_offset forge_call_ratio forge_call_code
+                         forge_call_limit forge_call_range)
+    sce_add_algorithm(
+        TARGET static_datamodel_generated_cpp_test
+        SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/${_CALLED_DOCUMENT}.scxml
+        HEADER ${_CALLED_DOCUMENT}.h
     )
 endforeach()
 

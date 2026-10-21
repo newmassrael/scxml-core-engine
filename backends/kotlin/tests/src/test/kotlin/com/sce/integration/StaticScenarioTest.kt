@@ -45,6 +45,7 @@ import com.sce.integration.static_enum_number.StaticEnumNumberStateMachine
 import com.sce.integration.static_event_arrival.StaticEventArrivalStateMachine
 import com.sce.integration.static_event_wildcard.StaticEventWildcardStateMachine
 import com.sce.integration.static_foreach.StaticForeachStateMachine
+import com.sce.integration.static_forge_calls.StaticForgeCallsStateMachine
 import com.sce.integration.static_history.StaticHistoryStateMachine
 import com.sce.integration.static_host_call.RecordingStaticHostCallActions
 import com.sce.integration.static_host_call.StaticHostCallStateMachine
@@ -985,6 +986,26 @@ class StaticScenarioTest {
         try {
             replay(
                 scenario("static_enum_number"),
+                send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
+                tick = { sm.tick() },
+                save = { sm.save() },
+                ended = { sm.isInFinalState },
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    // docs/adr/0048: a condition, a transform, two lookups, an interpolation and a
+    // validator called as `Alias(args)`; a lookup whose miss is an error fails into
+    // error.execution.
+    @Test
+    fun staticForgeCallsCallsTheKindsThatAreFunctions() {
+        val sm = StaticForgeCallsStateMachine()
+        sm.initialize()
+        try {
+            replay(
+                scenario("static_forge_calls"),
                 send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
                 tick = { sm.tick() },
                 save = { sm.save() },

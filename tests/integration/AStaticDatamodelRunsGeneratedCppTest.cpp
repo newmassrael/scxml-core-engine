@@ -50,6 +50,7 @@
 #include "static_event_arrival_sm.h"
 #include "static_event_wildcard_sm.h"
 #include "static_foreach_sm.h"
+#include "static_forge_calls_sm.h"
 #include "static_history_sm.h"
 #include "static_host_call_arguments_sm.h"
 #include "static_host_call_sm.h"
@@ -975,6 +976,26 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, AnEnumIsReadAsItsNumberAndBack) {
         {"refusals", [](const Machine &m) { return json(m.refusals()); }},
     });
     replay("static_enum_number", driver);
+}
+
+// docs/adr/0048: a condition, a transform, two lookups, an interpolation and a
+// validator called as `Alias(args)`; a lookup whose miss is an error fails into
+// error.execution, and the variable keeps what it held.
+TEST(AStaticDatamodelRunsGeneratedCppTest, TheKindsThatAreFunctionsAreCalledAsAnAlgorithmIs) {
+    using Machine = G::static_forge_calls::static_forge_calls;
+    Driver<Machine> driver({
+        {"gear", [](const Machine &m) { return json(m.gear()); }},
+        {"ratio", [](const Machine &m) { return json(m.ratio()); }},
+        {"code", [](const Machine &m) { return json(m.code()); }},
+        {"misses", [](const Machine &m) { return json(m.misses()); }},
+        {"level", [](const Machine &m) { return json(m.level()); }},
+        {"offset", [](const Machine &m) { return json(m.offset()); }},
+        {"accepted", [](const Machine &m) { return json(m.accepted()); }},
+        {"rpm", [](const Machine &m) { return json(m.rpm()); }},
+        {"limit", [](const Machine &m) { return json(m.limit()); }},
+        {"highs", [](const Machine &m) { return json(m.highs()); }},
+    });
+    replay("static_forge_calls", driver);
 }
 
 // An event's payload carries an enum field, the variant's declared name: a guard

@@ -560,6 +560,13 @@ def test_an_enum_is_read_as_its_number_and_back() -> None:
     replay("static_enum_number")
 
 
+# docs/adr/0048: a condition, a transform, two lookups, an interpolation and a
+# validator called as `Alias(args)`; a lookup whose miss is an error fails into
+# error.execution.
+def test_the_kinds_that_are_functions_are_called_as_an_algorithm_is() -> None:
+    replay("static_forge_calls")
+
+
 # A list is filled to its bound and emptied.
 def test_a_list_is_filled_to_its_bound_and_emptied() -> None:
     replay("static_list")

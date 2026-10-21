@@ -1,0 +1,70 @@
+{
+  "machine": "static_forge_calls",
+  "about": "The kinds that are functions of their inputs, called as Alias(args) the way an algorithm is (docs/adr/0048). shift steps the gear and reads two lookups of it: Ratio, which answers 0 for a gear its table does not list, and Code, whose miss is an error, so a gear its table does not list fails the assignment, code keeps what it held, and error.execution is counted in misses. rise steps the level by 7, takes it through the transform Offset (the level less 10) and asks the validator Range whether the two are valid (a level of at most 30, an offset of at least 0). spin steps the engine speed by 500 and reads the interpolation Limit, 100 at 0, 150 at 1000 and 120 at 2000, clamped past 2000. probe is guarded by the condition High (a level above 20). Expected values are derived from the documents, not observed from a backend.",
+  "steps": [
+    { "note": "nothing yet",
+      "expect": { "state": "run", "variables": {
+        "gear": 0, "ratio": 0, "code": 0, "misses": 0,
+        "level": 0, "offset": 0, "accepted": false,
+        "rpm": 0, "limit": 0.0, "highs": 0 } } },
+
+    { "note": "both tables list gear 1",
+      "event": "shift",
+      "expect": { "variables": { "gear": 1, "ratio": 35, "code": 100, "misses": 0 } } },
+
+    { "event": "shift",
+      "expect": { "variables": { "gear": 2, "ratio": 20, "code": 200, "misses": 0 } } },
+
+    { "note": "Code lists no gear 3: the assignment fails and code keeps 200",
+      "event": "shift",
+      "expect": { "variables": { "gear": 3, "ratio": 14, "code": 200, "misses": 1 } } },
+
+    { "note": "Ratio lists no gear 4 either, and answers its default",
+      "event": "shift",
+      "expect": { "variables": { "gear": 4, "ratio": 0, "code": 200, "misses": 2 } } },
+
+    { "note": "an offset below 0 is not valid",
+      "event": "rise",
+      "expect": { "variables": { "level": 7, "offset": -3, "accepted": false } } },
+
+    { "note": "7 is not above 20",
+      "event": "probe",
+      "expect": { "variables": { "highs": 0 } } },
+
+    { "event": "rise",
+      "expect": { "variables": { "level": 14, "offset": 4, "accepted": true } } },
+
+    { "event": "rise",
+      "expect": { "variables": { "level": 21, "offset": 11, "accepted": true } } },
+
+    { "event": "probe",
+      "expect": { "variables": { "highs": 1 } } },
+
+    { "event": "rise",
+      "expect": { "variables": { "level": 28, "offset": 18, "accepted": true } } },
+
+    { "note": "a level above 30 is not valid",
+      "event": "rise",
+      "expect": { "variables": { "level": 35, "offset": 25, "accepted": false } } },
+
+    { "event": "probe",
+      "expect": { "variables": { "highs": 2, "misses": 2 } } },
+
+    { "note": "halfway between the breakpoints 0 and 1000",
+      "event": "spin",
+      "expect": { "variables": { "rpm": 500, "limit": 125.0 } } },
+
+    { "event": "spin",
+      "expect": { "variables": { "rpm": 1000, "limit": 150.0 } } },
+
+    { "event": "spin",
+      "expect": { "variables": { "rpm": 1500, "limit": 135.0 } } },
+
+    { "event": "spin",
+      "expect": { "variables": { "rpm": 2000, "limit": 120.0 } } },
+
+    { "note": "past the last breakpoint the limit is clamped to it",
+      "event": "spin",
+      "expect": { "variables": { "rpm": 2500, "limit": 120.0 } } }
+  ]
+}

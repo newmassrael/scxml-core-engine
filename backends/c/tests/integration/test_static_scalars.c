@@ -87,6 +87,9 @@
 //   * `static_enum_number`: a value of an enum is read as the number its variant
 //     declares and a number back as its variant, and a number no variant declares
 //     is error.execution (docs/adr/0046).
+//   * `static_forge_calls`: a condition, a transform, two lookups, an interpolation
+//     and a validator called as `Alias(args)`, and a lookup whose miss is an error
+//     failing into error.execution (docs/adr/0048).
 //   * `presence_peer`: a machine whose entries expire by its own delayed send, so
 //     it runs on a manual clock the scenario moves on, and sends its Mesh peers
 //     through the same router.
@@ -135,6 +138,7 @@
 #include "static_event_arrival_sm.h"
 #include "static_event_wildcard_sm.h"
 #include "static_foreach_sm.h"
+#include "static_forge_calls_sm.h"
 #include "static_history_sm.h"
 #include "static_host_call_sm.h"
 #include "static_host_duty_sm.h"
@@ -955,6 +959,41 @@ static const variable_t enum_number_variables[] = {
 };
 STATIC_SCENARIO(static_enum_number, enum_number_states, enum_number_variables, static_enum_number_text, no_lists,
                 no_records)
+
+// static_forge_calls (docs/adr/0048): a condition, a transform, two lookups, an
+// interpolation and a validator called as `Alias(args)`; a lookup whose miss is an
+// error fails into error.execution, and the variable keeps what it held. The limit
+// an interpolation answers is a `double` field, read as the double itself.
+VARIABLE_READER(static_forge_calls, gear)
+VARIABLE_READER(static_forge_calls, ratio)
+VARIABLE_READER(static_forge_calls, code)
+VARIABLE_READER(static_forge_calls, misses)
+VARIABLE_READER(static_forge_calls, level)
+VARIABLE_READER(static_forge_calls, offset)
+VARIABLE_READER(static_forge_calls, accepted)
+VARIABLE_READER(static_forge_calls, rpm)
+VARIABLE_READER(static_forge_calls, highs)
+
+static bool static_forge_calls_read_real(void *sm, const char *name, double *out) {
+    if (strcmp(name, "limit") == 0) {
+        *out = static_forge_calls_get_limit((const static_forge_calls_t *)sm);
+        return true;
+    }
+    return false;
+}
+
+static const name_value_t forge_calls_states[] = {
+    {"run", STATIC_FORGE_CALLS_STATE_RUN},
+};
+static const variable_t forge_calls_variables[] = {
+    {"gear", static_forge_calls_read_gear},         {"ratio", static_forge_calls_read_ratio},
+    {"code", static_forge_calls_read_code},         {"misses", static_forge_calls_read_misses},
+    {"level", static_forge_calls_read_level},       {"offset", static_forge_calls_read_offset},
+    {"accepted", static_forge_calls_read_accepted}, {"rpm", static_forge_calls_read_rpm},
+    {"highs", static_forge_calls_read_highs},
+};
+STATIC_SCENARIO_FULL(static_forge_calls, forge_calls_states, forge_calls_variables, NULL, no_lists, no_records, NULL,
+                     static_forge_calls_read_real, NULL, NULL)
 
 // static_payload_enum: an event's payload carries an enum field, the variant's
 // declared name, held in the machine's own enum and lifted from the data it
@@ -2975,6 +3014,7 @@ int main(void) {
     bad |= static_payload_scenario("static_payload", 5);
     bad |= static_enum_scenario("static_enum", 11);
     bad |= static_enum_number_scenario("static_enum_number", 12);
+    bad |= static_forge_calls_scenario("static_forge_calls", 18);
     bad |= static_payload_enum_scenario("static_payload_enum", 8);
     bad |= static_payload_relay_scenario("static_payload_relay", 5);
     bad |= static_string_capacity_scenario("static_string_capacity", 11);
