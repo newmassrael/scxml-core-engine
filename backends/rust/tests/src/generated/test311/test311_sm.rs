@@ -686,10 +686,6 @@ impl StatePolicy for Test311Policy {
 
                     {
                         // W3C SCXML 5.3: <assign location="">
-                        self.ensure_script_engine();
-                        let sid = self.session_id.as_ref().unwrap().clone();
-                        let se = self.script_engine.clone();
-                        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
                         // W3C SCXML 5.3/B.2: Invalid or read-only location ""
                         ::sce_rust_runtime::sce_log_error!(
                             "W3C SCXML 5.3: Invalid assign location ''"

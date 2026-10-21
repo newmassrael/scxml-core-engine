@@ -724,10 +724,6 @@ impl StatePolicy for Test329Policy {
 
                     {
                         // W3C SCXML 5.3: <assign location="_sessionid">
-                        self.ensure_script_engine();
-                        let sid = self.session_id.as_ref().unwrap().clone();
-                        let se = self.script_engine.clone();
-                        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
                         // W3C SCXML 5.3/B.2: Invalid or read-only location "_sessionid"
                         ::sce_rust_runtime::sce_log_error!(
                             "W3C SCXML 5.3: Invalid assign location '_sessionid'"
@@ -771,10 +767,6 @@ impl StatePolicy for Test329Policy {
 
                     {
                         // W3C SCXML 5.3: <assign location="_event">
-                        self.ensure_script_engine();
-                        let sid = self.session_id.as_ref().unwrap().clone();
-                        let se = self.script_engine.clone();
-                        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
                         // W3C SCXML 5.3/B.2: Invalid or read-only location "_event"
                         ::sce_rust_runtime::sce_log_error!(
                             "W3C SCXML 5.3: Invalid assign location '_event'"
@@ -818,10 +810,6 @@ impl StatePolicy for Test329Policy {
 
                     {
                         // W3C SCXML 5.3: <assign location="_name">
-                        self.ensure_script_engine();
-                        let sid = self.session_id.as_ref().unwrap().clone();
-                        let se = self.script_engine.clone();
-                        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
                         // W3C SCXML 5.3/B.2: Invalid or read-only location "_name"
                         ::sce_rust_runtime::sce_log_error!(
                             "W3C SCXML 5.3: Invalid assign location '_name'"
@@ -865,10 +853,6 @@ impl StatePolicy for Test329Policy {
 
                     {
                         // W3C SCXML 5.3: <assign location="_ioprocessors">
-                        self.ensure_script_engine();
-                        let sid = self.session_id.as_ref().unwrap().clone();
-                        let se = self.script_engine.clone();
-                        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
                         // W3C SCXML 5.3/B.2: Invalid or read-only location "_ioprocessors"
                         ::sce_rust_runtime::sce_log_error!(
                             "W3C SCXML 5.3: Invalid assign location '_ioprocessors'"
