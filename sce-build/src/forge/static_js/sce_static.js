@@ -41,6 +41,18 @@
      carries no data at all, reads that value in its place and holds it to the
      field's type as a delivered one, which is what the generated lifts read.
 
+     A value that may be absent (docs/adr/0055) is null when it is absent and
+     the value itself when it is present, in a variable, a record's field, a
+     payload and the wire alike. field() reads an optional field when its type
+     is written {optional: T}: a delivered null is absent, a delivered value is
+     held to T, and a delivery that lacks the key is refused unless the read is
+     handed a default, which a field added by a later revision is; there a
+     default of null is absent, and no fourth argument at all means no default.
+     otherwise() is x ?? d: it answers x when x is present and calls d, the
+     function the default is written in, only when x is absent, so the default
+     is evaluated, and fails, only then. wireInteger() writes a 64-bit integer
+     that may be absent as it crosses: the text of its digits, or null.
+
      A failure names itself. The thrown Error carries sceFailure, one of the
      names a generated backend reports (SCE_FORGE.md 3.4.1): overflow,
      divide-by-zero, precondition, out-of-range, capacity-exceeded. A caller that
@@ -183,7 +195,8 @@
   }
 
   function field(data, name, type, fallback) {
-    var revised = arguments.length > 3;
+    var revised = fallback !== undefined;
+    var optional = type !== null && typeof type === 'object' && !Array.isArray(type);
     if (data === undefined || data === null || (revised && data === '')) {
       if (!revised) {
         fail('the event carries no data');
@@ -200,6 +213,12 @@
       value = fallback;
     } else {
       fail('the event data has no ' + name);
+    }
+    if (optional) {
+      if (value === null) {
+        return null;
+      }
+      type = type.optional;
     }
     if (Array.isArray(type)) {
       if (typeof value !== 'string') {
@@ -319,6 +338,12 @@
     U32: integer(false, 32),
     U64: integer(false, 64),
     field: field,
+    otherwise: function (value, fallback) {
+      return value === null ? fallback() : value;
+    },
+    wireInteger: function (value) {
+      return value === null ? null : String(value);
+    },
     out: function (value) {
       check(value);
       return value;

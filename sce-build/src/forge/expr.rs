@@ -503,11 +503,22 @@ fn lower_at(
 /// make it run, and has to pass the library's `out` before the Interpreter's
 /// data model can take it, which loses a BigInt without a word.
 fn js_value_may_be_wide(ast: &TypedExpr, expected: InferredType) -> bool {
+    use crate::forge::quantity::NumericBaseType;
     match ast.ty {
         InferredType::Int { bits: 64, .. } | InferredType::Record(_) | InferredType::List(_) => {
             true
         }
-        InferredType::UntypedInt => matches!(expected, InferredType::Int { bits: 64, .. }),
+        // An optional value is `null` or its present value (docs/adr/0055), so
+        // one of a 64-bit integer, or of a record, may be wide when present.
+        InferredType::Optional(
+            OptionalElem::Number(NumericBaseType::Int { bits: 64, .. }) | OptionalElem::Record,
+        ) => true,
+        // A literal lands as the type of its place, or as the present value of
+        // an optional place.
+        InferredType::UntypedInt => matches!(
+            expected.unwrap_optional(),
+            InferredType::Int { bits: 64, .. }
+        ),
         _ => false,
     }
 }
@@ -9448,6 +9459,20 @@ fn emit_js(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprError
         ExprKind::BoolLit(b) => b.to_string(),
         ExprKind::NullLit => "null".to_string(),
         ExprKind::Ident(s) | ExprKind::Raw(s) => s.clone(),
+        // `x ?? d` (docs/adr/0055) is the library's `otherwise`, handed `d` as
+        // the function it is written in: `x` is evaluated once, as the argument,
+        // and `d` only when `x` is absent, so a default that fails fails only
+        // then. Not the engine's own `??`, which the lowered document would then
+        // need an engine of that edition to read.
+        ExprKind::Binary {
+            op: BinOp::Coalesce,
+            left,
+            right,
+        } => format!(
+            "{RUNTIME_GLOBAL}.otherwise({}, function () {{ return {}; }})",
+            emit_js(left, left.ty)?,
+            emit_js(right, expr.ty.unwrap_optional())?
+        ),
         ExprKind::Binary { op, left, right } => {
             // Bitwise operations and shifts are outside the integer contract and
             // wrap at their width (SCE_FORGE.md §3.4.1), which is the library's
@@ -9586,13 +9611,30 @@ fn emit_js(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprError
                 emit_js(alternate, expr.ty)?,
             )
         }
+        // The value of an optional value where the build has proven it present
+        // (docs/adr/0055): absent is `null` and a present value is the value
+        // itself, so the read is the optional value as it stands.
+        ExprKind::Member { object, property }
+            if property == OPTIONAL_VALUE && object.ty.is_optional() =>
+        {
+            emit_js(object, expected)?
+        }
         // A field of the event's data. Under `sce-static` it is typed by the
         // event's schema, and an event's data reaches the Interpreter as
         // untyped JSON, so the read goes through the library's `field`, which
-        // refuses what a generated machine's lift of the payload refuses.
+        // refuses what a generated machine's lift of the payload refuses. An
+        // optional field's type is written `{optional: T}`, which `field` reads
+        // a delivered `null` against as absent.
         ExprKind::Member { object, property } if matches!(&object.kind, ExprKind::Raw(accessor) if accessor == PAYLOAD_ACCESSOR) =>
         {
-            let Some(kind) = expr.ty.declared_spelling() else {
+            let spelled = match expr.ty {
+                InferredType::Optional(elem) => elem
+                    .present()
+                    .declared_spelling()
+                    .map(|kind| format!("{{optional: '{kind}'}}")),
+                ty => ty.declared_spelling().map(|kind| format!("'{kind}'")),
+            };
+            let Some(kind) = spelled else {
                 return Err(ExprError::UnsupportedConstruct {
                     construct: format!(
                         "a read of the payload field `{property}`, of a type an ecmascript \
@@ -9602,7 +9644,7 @@ fn emit_js(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprError
                     observed: Some(format!("{PAYLOAD_ACCESSOR}.{property}")),
                 });
             };
-            format!("{RUNTIME_GLOBAL}.field({PAYLOAD_ACCESSOR}, '{property}', '{kind}')")
+            format!("{RUNTIME_GLOBAL}.field({PAYLOAD_ACCESSOR}, '{property}', {kind})")
         }
         ExprKind::Member { object, property } => format!(
             "{}.{property}",
@@ -13414,6 +13456,119 @@ mod tests {
         )
         .unwrap();
         assert_eq!(text, "SceStatic.field(_event.data, 'raw', 'bytes')");
+    }
+
+    /// An optional `int64` (docs/adr/0055), the element of `due`, `other` and
+    /// the payload's `due` below.
+    fn optional_int64() -> InferredType {
+        InferredType::Optional(crate::forge::types::OptionalElem::Number(
+            crate::forge::quantity::NumericBaseType::Int {
+                signed: true,
+                bits: 64,
+            },
+        ))
+    }
+
+    /// The context of the optional values the Interpreter's emitter is held to:
+    /// two optional `int64`s, an optional text, a plain `int64`, and the
+    /// payload's optional `due`.
+    fn js_optional_ctx() -> TypeCtx<'static> {
+        let mut ctx = js_ctx();
+        ctx.insert_var("due", optional_int64());
+        ctx.insert_var("other", optional_int64());
+        ctx.insert_var(
+            "title",
+            InferredType::Optional(crate::forge::types::OptionalElem::Str),
+        );
+        ctx.insert_var("huge", int(true, 64));
+        ctx.insert_var("_event.data.due", optional_int64());
+        ctx
+    }
+
+    /// `expr`, typed and judged by the passes every expression is
+    /// ([`resolve_names`]: a `.value` held to what a test proves), renamed, and
+    /// written by the ECMAScript emitter: what the Interpreter writes an
+    /// optional value as, apart from which targets the walk admits one on.
+    fn js_optional_emitted(expr: &str) -> (String, bool) {
+        let ctx = js_optional_ctx();
+        let renames: HashMap<&str, &str> = HashMap::from([("_event.data", "_event.data")]);
+        let mut ast = parse_to_ast(expr).unwrap_or_else(|e| panic!("{expr}: {e:?}"));
+        resolve_names(&mut ast, &ctx, expr).unwrap_or_else(|e| panic!("{expr}: {e:?}"));
+        rename_identifiers(&mut ast, &renames);
+        let wide = js_value_may_be_wide(&ast, InferredType::Unknown);
+        let text = emit_js(&ast, InferredType::Unknown).unwrap_or_else(|e| panic!("{expr}: {e:?}"));
+        (text, wide)
+    }
+
+    fn js_optional(expr: &str) -> String {
+        js_optional_emitted(expr).0
+    }
+
+    /// Absent is `null` and a present value is the value itself (docs/adr/0055),
+    /// so a test is ECMAScript's own `===` against `null`, equality between two
+    /// optional values is `===` (total: two `null`s are equal, and `null` equals
+    /// no value), and a read where a test proves the value present is the
+    /// optional value as it stands.
+    #[test]
+    fn js_writes_an_optional_value_as_null_or_its_value() {
+        assert_eq!(js_optional("due === null"), "due === null");
+        assert_eq!(js_optional("null !== due"), "null !== due");
+        assert_eq!(js_optional("due === other"), "due === other");
+        assert_eq!(
+            js_optional("due !== null ? due.value : 0"),
+            "due !== null ? due : 0"
+        );
+        assert_eq!(
+            js_optional("due !== null ? due.value + 1 : 0"),
+            "due !== null ? SceStatic.I64.add(due, 1) : 0"
+        );
+        assert_eq!(
+            js_optional("due !== null && due.value > 10"),
+            "due !== null && BigInt(due) > BigInt(10)"
+        );
+        assert_eq!(
+            js_optional("title === null || title.value === 'soon'"),
+            "title === null || title === 'soon'"
+        );
+    }
+
+    /// `x ?? d` is the library's `otherwise`, handed `d` as a function: `x` is
+    /// evaluated once and `d` only when `x` is absent, so a default that would
+    /// overflow fails only then.
+    #[test]
+    fn js_reads_an_optional_value_with_a_default_through_the_library() {
+        assert_eq!(
+            js_optional("title ?? 'none'"),
+            "SceStatic.otherwise(title, function () { return 'none'; })"
+        );
+        assert_eq!(
+            js_optional("due ?? (huge * huge)"),
+            "SceStatic.otherwise(due, function () { return SceStatic.I64.mul(huge, huge); })"
+        );
+    }
+
+    /// An optional payload field is read through the library's `field` with its
+    /// type written `{optional: T}`, which takes a delivered `null` as absent and
+    /// refuses a delivery that lacks the key; read where a test proves it
+    /// present, it is the same read.
+    #[test]
+    fn js_reads_an_optional_payload_field_through_the_library() {
+        let read = "SceStatic.field(_event.data, 'due', {optional: 'int64'})";
+        assert_eq!(js_optional("_event.data.due"), read);
+        assert_eq!(
+            js_optional("_event.data.due !== null ? _event.data.due.value : 0"),
+            format!("{read} !== null ? {read} : 0")
+        );
+    }
+
+    /// An optional 64-bit integer may be a BigInt when present, so it leaves
+    /// the expressions through `out` as a plain one does; an optional text
+    /// never is.
+    #[test]
+    fn js_hands_an_optional_64_bit_integer_to_the_machine_through_out() {
+        assert!(js_optional_emitted("_event.data.due").1);
+        assert!(js_optional_emitted("due ?? huge").1);
+        assert!(!js_optional_emitted("title").1);
     }
 
     /// The same document lowers on the six backends and on ECMAScript from one

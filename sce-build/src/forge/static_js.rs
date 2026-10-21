@@ -1544,6 +1544,10 @@ mod tests {
             "out: function",
             "extend: function",
             "candidate: function",
+            // An optional value (docs/adr/0055): `x ?? d`, and a 64-bit integer
+            // that may be absent as it crosses the wire.
+            "otherwise: function",
+            "wireInteger: function",
         ] {
             assert!(text.contains(member), "no `{member}` in the library");
         }
@@ -1553,6 +1557,13 @@ mod tests {
             let declared = format!("{method}: function");
             assert!(text.contains(&declared), "no `{declared}` in the library");
         }
+        // An optional payload field's type is written `{optional: T}`
+        // ([`crate::forge::expr`]), which `field` reads as absent for a
+        // delivered `null` and as `T` otherwise.
+        assert!(
+            text.contains("if (value === null) { return null; } type = type.optional;"),
+            "`field` reads no type written {{optional: T}}"
+        );
         // Every type a payload field is read at is one `field` knows: the
         // integer types by their range, the rest by name.
         for kind in ["float32", "float64", "bool", "string", "bytes"] {
