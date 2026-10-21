@@ -3043,17 +3043,31 @@ enum Commands {
     /// scenario, and a record per problem found. It runs nothing and says
     /// nothing about any design.
     ///
+    /// It reads the replay scenario too, the file every backend's driver
+    /// replays against a generated machine (a JSON object that names its
+    /// `machine` and lists its `steps`, and carries no `record`): each member
+    /// is held to the vocabulary every driver reads and to the rules between
+    /// them, and, with `--machine`, each event, state and variable it names is
+    /// held to the machine's document. A standard statechart a scenario names
+    /// by its library name (`sce:std/...`) is read from the library.
+    ///
     /// ⚠ The problems are FINDINGS, not refusals: the command exits 0
     /// whether or not the set has any, and the summary's `usable` says which.
-    /// A file that is not a scenario set at all is refused, as a requirement
-    /// list is.
+    /// A file that is neither a scenario set nor a replay scenario is
+    /// refused, as a requirement list is.
     Scenarios {
-        /// Scenario set file (JSON, `sce-scenario-set` v1)
+        /// Scenario set file (JSON, `sce-scenario-set` v1), or a replay
+        /// scenario (JSON, `machine` and `steps`)
         file: String,
         /// The specification the quotes are taken from, as text. With it
         /// every quote is checked word for word; without it none is.
-        #[arg(long, value_name = "PATH")]
+        #[arg(long, value_name = "PATH", conflicts_with = "machine")]
         specification: Option<String>,
+        /// The statechart a replay scenario drives. With it every event the
+        /// scenario sends the machine, and every state and variable it
+        /// expects, is held to the document.
+        #[arg(long, value_name = "PATH")]
+        machine: Option<String>,
     },
     /// Judge what an engine driver observed against what a scenario set
     /// expects.
@@ -3781,7 +3795,13 @@ fn main() {
         Commands::Scenarios {
             file,
             specification,
-        } => cmd_scenarios(&file, specification.as_deref()),
+            machine,
+        } => cmd_scenarios(
+            &file,
+            specification.as_deref(),
+            machine.as_deref(),
+            error_format,
+        ),
         Commands::JudgeScenarios { set, trace } => cmd_judge_scenarios(&set, &trace),
         Commands::TransitionTable {
             scxml,
@@ -11441,7 +11461,40 @@ fn cmd_requirements_of_design(
 /// ends the run, through the same door a requirement list uses
 /// (`cli/closure-input-unusable`), so a probe on one loader says nothing about
 /// the next.
-fn cmd_scenarios(file: &str, specification: Option<&str>) {
+fn cmd_scenarios(
+    file: &str,
+    specification: Option<&str>,
+    machine: Option<&str>,
+    error_format: ErrorFormat,
+) {
+    // A replay scenario is told from a scenario set by what it carries: a set names
+    // its `record`, and a replay scenario names its `machine` and lists its `steps`.
+    // Anything else goes on to the set's reader, which refuses it by kind.
+    if let Some(scenario) = replay_scenario(file) {
+        if specification.is_some() {
+            cli_exit(CliError::ClosureInputUnusable {
+                path: file.to_string(),
+                what: "replay scenario",
+                kind: "specification-for-a-replay",
+                detail: "--specification is the text a scenario set quotes, and this file is a \
+                         replay scenario, which quotes none: name the machine it drives with \
+                         --machine"
+                    .to_string(),
+            });
+        }
+        return cmd_replay_scenario(file, &scenario, machine, error_format);
+    }
+    if machine.is_some() {
+        cli_exit(CliError::ClosureInputUnusable {
+            path: file.to_string(),
+            what: "scenario set",
+            kind: "machine-for-a-set",
+            detail: "--machine names the statechart a replay scenario drives, and this file is \
+                     no replay scenario (one names its `machine` and lists its `steps`, and \
+                     carries no `record`)"
+                .to_string(),
+        });
+    }
     let set = sce_build::scenario_set::ScenarioSet::load(Path::new(file)).unwrap_or_else(|e| {
         cli_exit(CliError::ClosureInputUnusable {
             path: file.to_string(),
@@ -11497,6 +11550,87 @@ fn cmd_scenarios(file: &str, specification: Option<&str>) {
             "path": found.path,
             "code": found.code,
             "detail": found.detail,
+        }));
+    }
+    out_stream(|w| {
+        for line in &lines {
+            writeln!(w, "{line}")?;
+        }
+        Ok(())
+    });
+}
+
+/// The replay scenario `file` holds: a JSON object that names its `machine` or
+/// lists its `steps`, and carries no `record`. `None` for anything else, which the
+/// scenario set's reader then answers, by kind — a file that cannot be read or is
+/// not JSON included, so that one door says why such a file is unusable.
+fn replay_scenario(file: &str) -> Option<serde_json::Value> {
+    let text = fs::read_to_string(file).ok()?;
+    // A key written twice is read differently by the drivers, as it is by the
+    // set's reader, so it is no scenario either.
+    let value: serde_json::Value = sce_build::strict_json::from_str(&text).ok()?;
+    let object = value.as_object()?;
+    let replay = !object.contains_key("record")
+        && (object.contains_key("machine") || object.contains_key("steps"));
+    replay.then_some(value)
+}
+
+/// `scenarios` on a replay scenario: one summary record, then one record per
+/// problem, each with the JSON pointer it is at and its code
+/// (`sce_build::scenario_replay::PROBLEM_CODES`). The problems are findings, as a
+/// scenario set's are: the command exits 0 with them and the summary's `usable` is
+/// the answer.
+///
+/// The names the scenario uses are held to the machine it drives when that is
+/// known: the document `--machine` names, or the standard statechart the scenario
+/// names by its library name (`sce:std/...`), which is read from the library.
+fn cmd_replay_scenario(
+    file: &str,
+    scenario: &serde_json::Value,
+    machine: Option<&str>,
+    error_format: ErrorFormat,
+) {
+    use sce_build::scenario_replay::{machine_problems, problems, Dialect, MachineFacts};
+    let named = scenario.get("machine").and_then(serde_json::Value::as_str);
+    let document = machine.map(str::to_string).or_else(|| {
+        named
+            .filter(|name| sce_build::forge::stdlib::names_standard(Path::new(name)))
+            .map(|name| format!("{name}.scxml"))
+    });
+    let facts = document.as_deref().map(|document| {
+        let model = sce_build::parser::SCXMLParser::new()
+            .parse_file(document)
+            .unwrap_or_else(|e| error_format.emit_and_exit(&e, "SCXML parse error: "));
+        let stem = Path::new(document)
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .unwrap_or_default();
+        MachineFacts::of(&model, stem)
+    });
+    let mut found = problems(scenario);
+    if let Some(facts) = &facts {
+        found.extend(machine_problems(scenario, facts));
+    }
+    let steps = scenario
+        .get("steps")
+        .and_then(serde_json::Value::as_array)
+        .map_or(0, Vec::len);
+    let mut lines = vec![serde_json::json!({
+        "kind": "replay-scenario",
+        "file": file,
+        "dialect": Dialect::of(scenario).as_str(),
+        "machine": named,
+        "steps": steps,
+        "checked_against": document,
+        "problems": found.len(),
+        "usable": found.is_empty(),
+    })];
+    for problem in &found {
+        lines.push(serde_json::json!({
+            "kind": "problem",
+            "path": problem.path,
+            "code": problem.code,
+            "detail": problem.detail,
         }));
     }
     out_stream(|w| {

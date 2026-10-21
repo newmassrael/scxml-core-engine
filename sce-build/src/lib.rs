@@ -251,6 +251,10 @@ pub mod scenario_closure;
 /// What an engine driver observed running a scenario set, and the judgement
 /// of it against what the scenarios expect: pass, fail, not judged.
 pub mod scenario_judge;
+/// The engine-neutral scenario every backend's driver replays against a
+/// generated machine: the members it may carry, the rules between them, and the
+/// names it uses held to the machine's document.
+pub mod scenario_replay;
 /// Examples of what a specification says a machine does, in the owner's
 /// words: the file format, and whether a set of them is usable. The
 /// evidence column `Outcome::NeedsScenario` is waiting for.

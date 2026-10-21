@@ -10,7 +10,7 @@
   `record_take`, `record_refused` and the enum `record_refusal`, new);
   `sce-build/tests/fixtures/static_datamodel/record_list_parent.scxml` and the list's scenarios;
   the scenario member `router` and the seven drivers that read it
-  (`backends/rust/scenarios/src/vocabulary.rs` holds the vocabulary);
+  (`sce-build/src/scenario_replay.rs` holds the vocabulary);
   `backends/rust/world/tests/a_world_run_is_what_every_backend_replays.rs`;
   `sce-build/tests/fixtures/standard_saved_shapes.json`; docs/SCE_ACCEPTED_SUBSET.md §2.15
 - Related: ADR 0034 and docs/SCE_SHARED_LIST_TRUST.md (the trust layer the list is secured by),

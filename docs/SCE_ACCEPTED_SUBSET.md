@@ -5971,9 +5971,10 @@ directory. The Rust table `backends/rust/scenarios/src/machines.rs` is also buil
 for `wasm32-unknown-unknown` and run under Node and Chrome
 (`scripts/gate wasm32-scenarios`). A member a driver does not know is ignored by
 most and refused by the C one, so a misspelt key would pass where nothing reads
-it: `backends/rust/scenarios/src/vocabulary.rs` holds the members and the rules
-between them, and `every_scenario_keeps_to_the_vocabulary_every_driver_replays`
-holds every file to it. A fixture a scenario cannot judge, such as what a machine
+it: `sce-build/src/scenario_replay.rs` holds the members and the rules between
+them, `sce-codegen scenarios` checks a file against them (§2.18, "A replay
+scenario"), and `sce-build/tests/every_replay_scenario_keeps_to_its_vocabulary.rs`
+holds every committed file to them and to the machine it names. A fixture a scenario cannot judge, such as what a machine
 sent over a transport (`static_send_http`), has none and is held by tests of each
 engine. To add a scenario, write the file, add its row to the Rust table, and
 name it in each driver; a driver that does not fails the guard above.
@@ -6464,6 +6465,39 @@ judgement of what an engine observed against these expectations is §2.19. The
 sets shipped in `sce-build/tests/fixtures/scenario_sets/` (34 scenarios) are
 held to the schema, read, counted and quoted against their specifications by
 `every_set_the_product_reads_validates_against_the_wire_schema`.
+
+**A replay scenario.** The other scenario format is the one every backend's driver
+replays against a generated `sce-static` machine (§2.15, "What holds the scenarios
+to one meaning"): a JSON object that names its `machine` (a fixture's stem, or a
+standard statechart by its library name) and lists its `steps`, and carries no
+`record`. `sce-codegen scenarios <file> [--machine <document>]` reads one and
+writes a summary record (`kind: "replay-scenario"`, its `dialect`, its `machine`, its
+`steps`, the document it was `checked_against` or `null`, `problems`, `usable`) and
+a record per problem (`path`, a JSON pointer into the file; `code`, one of
+`PROBLEM_CODES` in `sce-build/src/scenario_replay.rs`; `detail`). The problems are
+findings, as a set's are, and every one is reported at once: a member no driver of
+its dialect reads (a misspelt `hostcalls`), a member of the wrong kind, a step that
+sends an event and moves time in the dialect whose drivers disagree on the order,
+an event's member on a step that sends none, a machine read after it ended, a send's
+target that is no peer, a child stated twice, a `sent` or a step's `invoke` in a
+scenario that runs its machine with no router (`"router": false`, docs/adr/0046),
+whose sends nothing records. With `--machine`, or for a standard
+statechart the scenario names by its library name, which is read from the library,
+the names are held to the document too: the machine's stem, each event the scenario
+sends the machine itself (one no event the document writes, and no transition's
+descriptor, matches is dropped by every engine, so it is refused unless the step
+says `"dropped": true`), and each state and variable it expects. A scenario of the
+standard host features (`tests/host_features/scenarios`, docs/SCE_HOST_FEATURES.md)
+is its own dialect, `host-features`: its steps give the reference host directives
+(`host`) and expect what the host was asked and holds (`host_invokes`, `host_state`),
+and they read nothing else a machine's drivers read beyond `state` and `variables`.
+`--specification` is refused for a replay scenario and `--machine` for a set
+(`cli/closure-input-unusable`). Measured 2026-10-21, before the command read one:
+`sce-codegen scenarios` refused every replay scenario as "not a scenario set", SCE's
+own fixtures included, so a project could check its scenarios only by running a
+backend's driver. `sce-build/tests/every_replay_scenario_keeps_to_its_vocabulary.rs`
+holds every committed replay scenario to its vocabulary and its machine, and the
+command to both.
 
 ### §2.19 An observation trace and its judgement — `sce-codegen judge-scenarios`
 

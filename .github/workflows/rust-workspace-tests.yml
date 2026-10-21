@@ -129,6 +129,10 @@ on:
       # The standard library: its statecharts that save are held to their
       # pinned shapes (docs/adr/0045), so an edit of one alone starts the suite.
       - 'stdlib/**'
+      # The scenarios of the standard host features, which
+      # `every_replay_scenario_keeps_to_its_vocabulary` holds to the members
+      # their drivers read: an edit of one alone starts the suite.
+      - 'tests/host_features/**'
   pull_request:
     branches: [ main ]
     paths:
@@ -204,6 +208,10 @@ on:
       # The standard library: its statecharts that save are held to their
       # pinned shapes (docs/adr/0045), so an edit of one alone starts the suite.
       - 'stdlib/**'
+      # The scenarios of the standard host features, which
+      # `every_replay_scenario_keeps_to_its_vocabulary` holds to the members
+      # their drivers read: an edit of one alone starts the suite.
+      - 'tests/host_features/**'
 
 # This lane is not superseded by the push that follows it.
 #

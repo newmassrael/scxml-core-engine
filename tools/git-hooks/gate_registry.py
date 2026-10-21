@@ -748,6 +748,11 @@ GATES: dict[str, dict] = {
             # their pinned shapes (`a_standard_statechart_that_saves_keeps_its_shape`,
             # docs/adr/0045): an edit of one alone has to start the suite.
             "stdlib/**",
+            # The scenarios of the standard host features, which
+            # `every_replay_scenario_keeps_to_its_vocabulary` holds to the
+            # members their drivers read: an edit of one alone has to start
+            # the suite.
+            "tests/host_features/**",
         ],
         # The crate whose test suite this gate runs. `include-str-coverage`
         # in the self-test reads it: every file the sources under this root

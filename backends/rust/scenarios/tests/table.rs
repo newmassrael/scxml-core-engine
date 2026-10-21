@@ -4,10 +4,14 @@
 // The table of `sce_rust_scenarios::machines` against the scenarios it is for,
 // and every scenario of it replayed on the host this runs on — the answer the
 // wasm32 build of the same table is held to.
+//
+// The members a scenario may carry, and the rules between them, are the format's
+// and not this driver's: `sce_build::scenario_replay` holds them, `sce-codegen
+// scenarios` checks a file against them, and
+// `sce-build/tests/every_replay_scenario_keeps_to_its_vocabulary.rs` holds every
+// committed scenario to them.
 
 use sce_rust_scenarios::machines::{run, scenario_text, NAMES};
-use sce_rust_scenarios::vocabulary;
-use serde_json::{json, Value};
 use std::collections::BTreeSet;
 use std::path::Path;
 
@@ -86,190 +90,6 @@ fn every_scenario_replays() {
         failed.len(),
         failed.join("\n")
     );
-}
-
-/// A member a driver does not know is ignored by most and refused by one, so a
-/// misspelt key would pass where nothing reads it. Every committed scenario is
-/// held to the vocabulary, and one failure names them all.
-#[test]
-fn every_scenario_keeps_to_the_vocabulary_every_driver_replays() {
-    let mut refused = Vec::new();
-    for name in NAMES {
-        let text = scenario_text(name).expect("the table names its own scenario");
-        let scenario: Value = serde_json::from_str(text).expect("a scenario is JSON");
-        if let Err(why) = vocabulary::check(&scenario) {
-            refused.push(format!("{name}: {why}"));
-        }
-    }
-    assert!(
-        refused.is_empty(),
-        "{} scenario(s) leave the vocabulary:\n{}",
-        refused.len(),
-        refused.join("\n")
-    );
-}
-
-/// The rules are held by what they refuse: each case is a scenario that breaks
-/// one, and a check that accepted everything would fail every one of them.
-#[test]
-fn each_rule_of_the_vocabulary_refuses_what_it_is_for() {
-    let step = |extra: Value| {
-        let mut base = json!({"expect": {"state": "idle"}});
-        base.as_object_mut()
-            .expect("an object")
-            .extend(extra.as_object().expect("an object").clone());
-        json!({"machine": "m", "steps": [base]})
-    };
-    let cases = [
-        (
-            json!({"machine": "m", "steps": [{"expect": {}}], "extra": 1}),
-            "the scenario carries `extra`",
-        ),
-        (
-            json!({"machine": "m", "steps": []}),
-            "no steps judges nothing",
-        ),
-        (
-            json!({"machine": "m", "steps": [{"expect": {"hostcalls": []}}]}),
-            "`expect` carries `hostcalls`",
-        ),
-        (step(json!({"advance": 5})), "the step carries `advance`"),
-        (
-            step(json!({"restore": false})),
-            "`restore` is `true`, or left out",
-        ),
-        (step(json!({"event": "go", "advance_ms": 5})), "not both"),
-        (
-            step(json!({"dropped": true})),
-            "`dropped` belongs to a step that sends an event",
-        ),
-        (
-            json!({"machine": "m", "steps": [{"event": "go"}]}),
-            "states what it expects",
-        ),
-        (
-            json!({"machine": "m", "steps": [{"expect": {"ended": true, "state": "s"}}]}),
-            "a machine that ended has no `state`",
-        ),
-        (
-            json!({"machine": "m", "steps": [{"expect": {"donedata": {}}}]}),
-            "`donedata` belongs to a step that expects `ended`",
-        ),
-        (
-            json!({"machine": "m", "steps": [{"expect": {"host_calls": [{"action": "a"}]}}]}),
-            "carries its `args`",
-        ),
-        (
-            json!({"machine": "m", "steps": [{"expect": {"host_calls": [{"action": "a", "args": [], "x": 1}]}}]}),
-            "a host call carries `x`",
-        ),
-        (
-            json!({"machine": "m", "steps": [{"expect": {"child_hosts": {}}}]}),
-            "`child_hosts` is an array",
-        ),
-        (
-            json!({"machine": "m", "steps": [{"expect": {"child_hosts": [{"start": 1, "host_calls": []}]}}]}),
-            "names the `invoke`",
-        ),
-        (
-            json!({"machine": "m", "steps": [{"expect": {"child_hosts": [{"invoke": "w", "host_calls": []}]}}]}),
-            "counts the `start`",
-        ),
-        (
-            json!({"machine": "m", "steps": [{"expect": {"child_hosts": [{"invoke": "w", "start": 0, "host_calls": []}]}}]}),
-            "counts the `start`",
-        ),
-        (
-            json!({"machine": "m", "steps": [{"expect": {"child_hosts": [{"invoke": "w", "start": 1}]}}]}),
-            "states the `host_calls`",
-        ),
-        (
-            json!({"machine": "m", "steps": [{"expect": {"child_hosts": [{"invoke": "w", "start": 1, "candidate": "", "host_calls": []}]}}]}),
-            "the stem of the document",
-        ),
-        (
-            json!({"machine": "m", "steps": [{"expect": {"child_hosts": [{"invoke": "w", "start": 1, "host_calls": [{"action": "a"}]}]}}]}),
-            "carries its `args`",
-        ),
-        (
-            json!({"machine": "m", "steps": [{"expect": {"child_hosts": [{"invoke": "w", "start": 1, "host_calls": [], "hosts": []}]}}]}),
-            "a child host carries `hosts`",
-        ),
-        (
-            json!({"machine": "m", "steps": [{"expect": {"child_hosts": [
-                {"invoke": "w", "start": 1, "host_calls": []},
-                {"invoke": "w", "start": 1, "host_calls": []}
-            ]}}]}),
-            "twice",
-        ),
-        (
-            json!({"machine": "m", "steps": [{"expect": {"sent": {}}}]}),
-            "`sent` is an array",
-        ),
-        (
-            json!({"machine": "m", "steps": [{"expect": {"sent": [{"event": "e"}]}}]}),
-            "a send names its `target`",
-        ),
-        (
-            json!({"machine": "m", "steps": [{"expect": {"sent": [{"target": "#peer"}]}}]}),
-            "a send names its `event`",
-        ),
-        (
-            json!({"machine": "m", "steps": [{"expect": {"sent": [{"target": "peer", "event": "e"}]}}]}),
-            "a peer as the document writes it",
-        ),
-        (
-            json!({"machine": "m", "steps": [{"expect": {"sent": [{"target": "#_internal", "event": "e"}]}}]}),
-            "a peer as the document writes it",
-        ),
-        (
-            json!({"machine": "m", "steps": [{"expect": {"sent": [{"target": "#peer", "event": "e", "delay": 5}]}}]}),
-            "a send carries `delay`",
-        ),
-        (
-            step(json!({"invoke": "list"})),
-            "`invoke` belongs to a step that sends an event",
-        ),
-        (
-            step(json!({"event": "e", "invoke": "peer//inner"})),
-            "none of them empty",
-        ),
-        (
-            step(json!({"event": "e", "invoke": "list", "dropped": true})),
-            "`dropped` belongs to an event the machine itself is sent",
-        ),
-        (
-            json!({"machine": "m", "steps": [{"expect": {"sent": [{"target": "#peer", "event": "e", "invoke": "list"}]}}]}),
-            "both its `invoke` and its `start`",
-        ),
-        (
-            json!({"machine": "m", "steps": [{"expect": {"sent": [{"target": "#peer", "event": "e", "invoke": "list", "start": 0}]}}]}),
-            "counts the starts of its invoke from 1",
-        ),
-        (
-            json!({"machine": "m", "router": "none", "steps": [{"expect": {}}]}),
-            "`router` is `true` or `false`",
-        ),
-        (
-            json!({"machine": "m", "router": false, "steps": [{"expect": {"sent": []}}]}),
-            "records no send",
-        ),
-        (
-            json!({"machine": "m", "router": false, "steps": [{"event": "e", "invoke": "list", "expect": {}}]}),
-            "gives no child one",
-        ),
-    ];
-    for (scenario, reason) in cases {
-        match vocabulary::check(&scenario) {
-            Ok(()) => {
-                panic!("accepted a scenario that should be refused for `{reason}`: {scenario}")
-            }
-            Err(why) => assert!(
-                why.contains(reason),
-                "refused for `{why}`, not for `{reason}`: {scenario}"
-            ),
-        }
-    }
 }
 
 #[test]
