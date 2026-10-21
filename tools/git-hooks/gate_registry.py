@@ -656,7 +656,7 @@ GATES: dict[str, dict] = {
         # header sets ("the WORSE of two `--measure` runs") so that the
         # ceiling holds on unlucky pushes rather than lucky ones.
         "cost_s": 9,
-        "summary": "no_std MCU build + clippy + probes",
+        "summary": "no_std MCU build + clippy + probes; std runtime without http-send",
     },
     # Mirrors doc-check.yml. The numbered table mapped this to
     # sce-rust-runtime-no-std.yml while the gate's own comment named

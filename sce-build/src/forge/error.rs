@@ -5828,16 +5828,16 @@ pub enum GenerateError {
     /// contains a §scxml-C-2 `<send>` that targets
     /// `BasicHTTPEventProcessor` (either by explicit `type=` or by
     /// `target` URL beginning with `http://` / `https://`). The
-    /// BasicHTTP processor is part of the runtime crate's `std`
-    /// profile, which its `http-send` feature asks for; the bare-metal
-    /// profile has no such processor (docs/adr/0053). Author repair is to remove the
+    /// BasicHTTP processor is the runtime crate's `http-send` feature,
+    /// which asks for its `std` profile; the bare-metal profile has no
+    /// such processor (docs/adr/0053). Author repair is to remove the
     /// HTTP send, or drop `--no-std`. `locations` is a single
     /// human-readable summary of the offending `<send>` site.
     #[error(
         "Rust no_std variant rejects HTTP send: document '{document}' uses \
          BasicHTTPEventProcessor at {locations} (SCE Protocol-Synthesis RFC §5.J.2; \
-         the BasicHTTP processor is part of sce-rust-runtime's `std` feature, which \
-         `http-send` asks for)"
+         the BasicHTTP processor is sce-rust-runtime's `http-send` feature, which \
+         asks for `std`)"
     )]
     CodegenNoStdHttpNotSupported { document: String, locations: String },
 

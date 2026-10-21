@@ -233,3 +233,42 @@ the same two builds it weighed before: `TOTAL_BYTES` with its `macrostep-diagnos
 (formerly no feature), `TOTAL_BYTES_NO_DIAGNOSTICS` with no feature (formerly
 `no_macrostep_diagnostics`). The code each build compiles did not change, so both figures are
 expected to hold; they are re-measured on the first run of the `nostd-mcu` gate.
+
+### 2. `http-send` is the HTTP processor, and a `std` build without it refuses the send
+
+`http-send` gates what it names: the `http` module (`HttpSendRequest`, `HttpSendResponse`),
+`Engine::set_http_send_callback` and the callback behind it. `default` keeps it, and it still asks
+for `std`.
+
+A `std` build without it has no BasicHTTP processor, and a BasicHTTP send there names a type the
+platform does not support. W3C SCXML 6.2 answers that case already ("If the SCXML Processor does
+not support the type that is specified, it MUST place the event error.execution on the internal
+event queue"), and the runtime already has the place it decides it,
+`helpers::send::is_supported_send_type`, which the generated `typeexpr` check calls. That function
+now counts the BasicHTTP type only with `http-send`, and every BasicHTTP route asks it:
+
+- **The generated send site.** The generator cannot see the runtime's features, so the Rust
+  template wraps the BasicHTTP arm in a run-time question to that function, asked before the
+  payload is read, as the build-time refusals are: in a build without the processor the send
+  raises one `error.execution` carrying its send id, with the words the unsupported-type arm uses,
+  posts nothing and ends its block (W3C SCXML 4.9). With the processor the arm is the one it was.
+- **`Engine::perform_http_send` and `Engine::schedule_http_send`** stay in every `std` build,
+  because a generated machine names them whatever its build's features are, so one generation
+  compiles in both builds. Without the processor they refuse the same way, and a delayed send is
+  refused when it runs rather than armed for a deadline nothing could perform. What reaches the
+  engine's refusal is a host's own call, or a delayed send a saved state carried from a build that
+  had the processor; its deadline refuses it as an unregistered host processor's is.
+
+The six library crates that ask for `std` without `http-send` no longer compile the processor;
+none of them registers a transport for it, and `sce-rust-scenarios`, which compiles the
+`static_send_http` machine, replays no scenario of it. `sce-rust-tests` names `http-send`, and
+the W3C suite manifest
+`sce-codegen generate-w3c` writes names it, so the W3C C.2 tests run as before. The text of
+`codegen/no-std-http-not-supported` now says the processor is the `http-send` feature, which asks
+for `std`; its id did not move.
+
+What holds it: `a_basic_http_send_needs_the_http_send_feature` in the runtime's tests and
+`helpers::send`'s `supported_send_types`, each with one half for each build. The default build runs
+the half with the processor; the `nostd-mcu` gate now lints and tests the runtime with
+`--no-default-features --features std`, the one build in this repository with neither
+`http-send` nor `macrostep-diagnostics`, and that run is the other half.

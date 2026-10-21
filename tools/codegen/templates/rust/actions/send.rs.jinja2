@@ -476,6 +476,13 @@
 {% endif %}
 {% endfor %}
 {% set names_no_invocation = static_target is startingwith('#_') and static_target not in ['#_parent', '#_internal'] and not static_target is startingwith('#_scxml_') and not child_ns.invoke %}
+{# The send the BasicHTTP delivery arm below posts. Whether the build has that
+   processor is the runtime's `http-send` feature (docs/adr/0053), which the
+   generator cannot see, so the refusal of a build without it is a run-time
+   question wrapped around the payload and the delivery, asked of the one
+   answer the runtime gives (`helpers::send::is_supported_send_type`) before
+   the payload is read, as the build-time refusals are. #}
+{% set basic_http_send = not action.send_type_host_served and action.send_type == 'http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor' and (action.targetexpr or (action.target and (action.target is startingwith('http://') or action.target is startingwith('https://')))) %}
 {% if action.send_type_unsupported %}
     // W3C SCXML 6.2: Unsupported send type "{{ action.send_type }}" raises error.execution
 {% if 'error.execution' in model.events %}
@@ -527,6 +534,23 @@
     break 'action_block;
 {% endif %}
 {% else %}
+{% if basic_http_send %}
+    // W3C SCXML 6.2 + C.2: the BasicHTTP processor is the runtime's `http-send`
+    // feature. A build without it does not support the type, so the send is
+    // refused as an unsupported type is: one error.execution carrying the send
+    // id, the payload never read, nothing posted, the block ended.
+    if !sce_rust_runtime::helpers::send::is_supported_send_type(sce_rust_runtime::helpers::scxml_constants::BASIC_HTTP_EVENT_PROCESSOR_TYPE) {
+        ::sce_rust_runtime::sce_log_error!("<send type='{{ action.send_type }}'>: this build has no BasicHTTP processor (sce-rust-runtime's `http-send` feature)");
+{% if 'error.execution' in model.events %}
+        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<send type='{{ action.send_type }}'> names a processor this platform does not support");
+        err_meta.metadata.send_id = send_id.clone();
+        engine.raise(err_meta);
+{% endif %}
+{% if in_block %}
+        break 'action_block;  // W3C SCXML 4.9: the error ends the block
+{% endif %}
+    } else {
+{% endif %}
 {# W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
    pair left out, and the message still goes; the error ends the block once
    it has. `_param_failed` is what the check after the dispatch reads. #}
@@ -1029,6 +1053,9 @@
 {% endif %}
 {% endif %}
     let _ = event_data;  // suppress unused warning in branches that skip dispatch
+{% if basic_http_send %}
+    } // end of the BasicHTTP processor check
+{% endif %}
 {% endif %}{# end of the build-time refusals #}
 {% if computed_target %}
     } // end of if let Some(ref _rt) = _resolved_target

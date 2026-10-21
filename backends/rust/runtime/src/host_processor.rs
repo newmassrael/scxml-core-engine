@@ -17,10 +17,10 @@
 //! would, because from the document's point of view nothing performed
 //! the act either way.
 //!
-//! Shaped after [`crate::http`], which is the same idea fixed to one
-//! type: a request struct carrying what `<send>` said, and an optional
-//! response the engine turns back into an event. The difference is the
-//! key — this one is looked up by the `type` string.
+//! Shaped after `crate::http` (the `http-send` feature), which is the same
+//! idea fixed to one type: a request struct carrying what `<send>` said, and
+//! an optional response the engine turns back into an event. The difference
+//! is the key — this one is looked up by the `type` string.
 //!
 //! Gated to `!no_std` for the reason the HTTP hook is: the registry is a
 //! heap-allocated map of boxed closures, and a `no_std` build has no

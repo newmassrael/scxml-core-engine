@@ -14034,7 +14034,7 @@ mod tests {
                     locations: "<send target=\"http://localhost\"> in state 'send_step'".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:1e0ad94889d9bb0c","code":"codegen/no-std-http-not-supported","stage":"generate","spec":"SCE Protocol-Synthesis RFC §5.J.2","message":"Rust no_std variant rejects HTTP send: document 'demo' uses BasicHTTPEventProcessor at <send target=\"http://localhost\"> in state 'send_step' (SCE Protocol-Synthesis RFC §5.J.2; the BasicHTTP processor is part of sce-rust-runtime's `std` feature, which `http-send` asks for)"}"#,
+                r#"{"v":1,"id":"fnv1a:1e0ad94889d9bb0c","code":"codegen/no-std-http-not-supported","stage":"generate","spec":"SCE Protocol-Synthesis RFC §5.J.2","message":"Rust no_std variant rejects HTTP send: document 'demo' uses BasicHTTPEventProcessor at <send target=\"http://localhost\"> in state 'send_step' (SCE Protocol-Synthesis RFC §5.J.2; the BasicHTTP processor is sce-rust-runtime's `http-send` feature, which asks for `std`)"}"#,
             ),
             // ── SCE Protocol-Synthesis RFC §synth-5-J-2 Rust no_std variant rejections
             //    (item C3). Helper runtime cfg-gate companion

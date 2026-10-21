@@ -30,9 +30,10 @@ default = ["std", "http-send", "macrostep-diagnostics"]
 
 # The application profile: the crate links `std`, holds its owned strings and
 # lists in `String` and `Vec`, and carries what needs an allocator or an
-# operating system (the script engine seam, invoke, host processors, the
-# BasicHTTP processor, saved state, the session id drawn from the system's
-# randomness). Without it the crate is `#![no_std]` with no allocator, the
+# operating system (the script engine seam, invoke, host processors, saved
+# state, the session id drawn from the system's randomness; the BasicHTTP
+# processor is `http-send` below, which asks for this). Without it the crate is
+# `#![no_std]` with no allocator, the
 # bare-metal MCU profile (SCE Protocol-Synthesis RFC §5.J.2): the same names
 # resolve to `heapless` storage of fixed capacity, and what needs `std` is
 # absent. Asking for `std` never removes a name the bare-metal profile has, so
@@ -44,10 +45,15 @@ default = ["std", "http-send", "macrostep-diagnostics"]
 # unifies features only across the packages one command builds.
 std = ["sce-portable-bytes/alloc"]
 
-# The BasicHTTP event processor (W3C SCXML C.2): `http::HttpSendRequest` and
-# `Engine::set_http_send_callback`. It lives in the `std` profile, so asking
-# for it asks for `std`; a crate that sends over HTTP names this feature rather
-# than relying on `std` carrying the processor.
+# The BasicHTTP event processor (W3C SCXML C.2): the `http` module
+# (`HttpSendRequest`, `HttpSendResponse`) and `Engine::set_http_send_callback`.
+# It needs the `std` profile, so asking for it asks for `std`. A `std` build
+# without it has no HTTP processor: `helpers::send::is_supported_send_type`
+# does not count the BasicHTTP type, and a BasicHTTP `<send>` is refused with
+# `error.execution` where any type the platform does not support is (W3C SCXML
+# 6.2), before its payload is read and with nothing posted
+# (docs/adr/0053, amendment of 2026-10-21). A crate that sends over HTTP names
+# this feature, or takes the defaults.
 http-send = ["std"]
 
 # Deterministic fake-clock scheduler for tests (swaps PullScheduler impl)

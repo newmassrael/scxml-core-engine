@@ -228,13 +228,33 @@ pub fn requires_target_attribute(send_type: &str) -> bool {
 
 /// §scxml-6.2: Check if send type is supported.
 ///
-/// Supported types: SCXML Event Processor (default), BasicHTTP Event Processor.
+/// Supported types: SCXML Event Processor (default), and the BasicHTTP Event
+/// Processor in a build that has it — the `http-send` feature (docs/adr/0053).
+/// A build without it, which every bare-metal build is, does not support the
+/// BasicHTTP type, and a send naming it is refused with `error.execution` as
+/// any type the platform does not support is. This is the one answer: the
+/// generated `typeexpr` check, the generated BasicHTTP send site and
+/// `Engine::schedule_http_send` all ask it.
 ///
 /// Ports C++ `SendHelper::isSupportedSendType`.
 pub fn is_supported_send_type(send_type: &str) -> bool {
     send_type.is_empty()
         || send_type == scxml_constants::SCXML_EVENT_PROCESSOR_TYPE
-        || send_type == scxml_constants::BASIC_HTTP_EVENT_PROCESSOR_TYPE
+        || is_basic_http_type_served(send_type)
+}
+
+/// §scxml-C-2: `send_type` is the BasicHTTP Event Processor's, and this build
+/// has that processor (the `http-send` feature).
+#[cfg(feature = "http-send")]
+fn is_basic_http_type_served(send_type: &str) -> bool {
+    send_type == scxml_constants::BASIC_HTTP_EVENT_PROCESSOR_TYPE
+}
+
+/// §scxml-C-2: this build has no BasicHTTP Event Processor (no `http-send`
+/// feature), so no type names one it serves.
+#[cfg(not(feature = "http-send"))]
+fn is_basic_http_type_served(_send_type: &str) -> bool {
+    false
 }
 
 /// §scxml-C-2: Validate BasicHTTP send parameters.
@@ -324,6 +344,38 @@ fn strip_suffix_ignore_case<'a>(text: &'a [u8], suffix: &[u8]) -> Option<&'a [u8
     text[split..]
         .eq_ignore_ascii_case(suffix)
         .then(|| &text[..split])
+}
+
+#[cfg(test)]
+mod supported_send_types {
+    use super::is_supported_send_type;
+    use crate::helpers::scxml_constants::{
+        BASIC_HTTP_EVENT_PROCESSOR_TYPE, SCXML_EVENT_PROCESSOR_TYPE,
+    };
+
+    /// The SCXML Event I/O Processor is every build's, and a send that names
+    /// no type names it.
+    #[test]
+    fn the_scxml_processor_is_supported_in_every_build() {
+        assert!(is_supported_send_type(""));
+        assert!(is_supported_send_type(SCXML_EVENT_PROCESSOR_TYPE));
+        assert!(!is_supported_send_type(
+            "http://example.invalid/#NoSuchProcessor"
+        ));
+    }
+
+    /// The BasicHTTP processor is the `http-send` feature (docs/adr/0053):
+    /// supported in a build that has it, and refused like any unsupported
+    /// type in one that does not. The default build checks the first half and
+    /// the `nostd-mcu` gate's `std`-only test run the second.
+    #[test]
+    fn the_basic_http_type_is_supported_exactly_where_the_feature_is() {
+        let build_has_the_processor = cfg!(feature = "http-send");
+        assert_eq!(
+            is_supported_send_type(BASIC_HTTP_EVENT_PROCESSOR_TYPE),
+            build_has_the_processor
+        );
+    }
 }
 
 #[cfg(all(test, feature = "std"))]

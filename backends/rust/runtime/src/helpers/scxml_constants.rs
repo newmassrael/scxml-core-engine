@@ -13,7 +13,8 @@
 pub const SCXML_EVENT_PROCESSOR_TYPE: &str = "http://www.w3.org/TR/scxml/#SCXMLEventProcessor";
 
 /// BasicHTTP Event I/O Processor (§scxml-C-2). Used for `<send type="...">`
-/// targeting an HTTP URL via `HttpSendRequest` (`!no_std`-gated `http` module).
+/// targeting an HTTP URL via `HttpSendRequest` (the `http` module, which is the
+/// `http-send` feature).
 pub const BASIC_HTTP_EVENT_PROCESSOR_TYPE: &str =
     "http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor";
 

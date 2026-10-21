@@ -20,8 +20,8 @@ mutation_oracles backends/rust/tests/tests/a_delayed_http_send_is_posted_when_du
 
 mutation_case "Rust POSTs a delayed BasicHTTP send at once" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     "        if delay.is_zero() {",
-     "        if true {")
+     "        if delay.is_zero()\n            || !crate::helpers::send::is_supported_send_type(",
+     "        if true\n            || !crate::helpers::send::is_supported_send_type(")
 PY
 
 # ── The deadline: the queued request is handed to no transport ─────

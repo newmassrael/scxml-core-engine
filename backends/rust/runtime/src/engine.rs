@@ -38,8 +38,8 @@
 //! through `EngineHost`, and owns what the appendix leaves to the interpreter:
 //! the main event loop, the queues, and where the machine is.
 //!
-//! HTTP send (§scxml-C-2, which the `http-send` feature asks for) and
-//! `<invoke>` plumbing (§scxml-6.4) belong to the `std` profile.
+//! HTTP send (§scxml-C-2) is the `http-send` feature, which asks for the
+//! `std` profile; `<invoke>` plumbing (§scxml-6.4) belongs to `std`.
 
 // SCE Protocol-Synthesis RFC §synth-5-J-2 (lines 1989-1994): `Arc`/`Mutex` back the
 // parent→child external event queue plumbing in `get_external_queue_handle`,
@@ -75,13 +75,13 @@ use crate::helpers::microstep::{
 };
 use crate::helpers::{hierarchy, state_policy_concepts as concepts};
 use crate::sched_send_id::ScheduledSendIdLike;
-// SCE Protocol-Synthesis RFC §synth-5-J-2: the HTTP module is alloc-coupled
-// (HashMap<String, Vec<String>> + reqwest) and whole-module-gated to `!no_std`
-// in `lib.rs`. The codegen-time validator rejects
-// `BasicHTTPEventProcessor` `<send>` under `--no-std` via
-// `codegen/no-std-http-not-supported`, so the engine's HTTP fields + dispatch
-// surface are unreachable from emitted no_std code.
-#[cfg(feature = "std")]
+// The HTTP module is the `http-send` feature (docs/adr/0053), which asks for
+// `std`: it is alloc-coupled (HashMap<String, Vec<String>>). The codegen-time
+// validator rejects `BasicHTTPEventProcessor` `<send>` under `--no-std` via
+// `codegen/no-std-http-not-supported`, and a `std` build without the feature
+// refuses the send where it refuses any type it does not support, so the
+// engine's HTTP callback is only ever reached with the feature on.
+#[cfg(feature = "http-send")]
 use crate::http::{HttpSendRequest, HttpSendResponse};
 use crate::policy::StatePolicy;
 #[cfg(not(feature = "std"))]
@@ -978,22 +978,12 @@ pub struct Engine<P: StatePolicy> {
     /// regression guard is `engine_is_send` in `tests/hello_world.rs`.
     #[cfg(feature = "std")]
     pub(crate) completion_callback: Option<Box<dyn FnMut() + Send>>,
-    /// §scxml-C-2: HTTP send dispatch callback.
-    ///
-    /// SCE Protocol-Synthesis RFC §synth-5-J-2: HTTP is rejected upstream under `--no-std`
-    /// via `codegen/no-std-http-not-supported`, so the callback field + setter +
-    /// dispatcher are all gated to `!no_std`. Generated no_std code never
-    /// emits a `perform_http_send` call site.
-    ///
-    /// Carries the same `+ Send` bound as `completion_callback` so the engine
-    /// stays host-movable; see that field for the rationale.
     /// §scxml-6.2.5: handlers for the Event I/O Processor types this
     /// host serves, keyed by the `type` string a `<send>` names.
     ///
-    /// Gated to `!no_std` for the reason `on_http_send` is: the registry
-    /// is a heap-allocated map of boxed closures. Codegen never emits a
-    /// host-processor dispatch under `--no-std` — a declared type is
-    /// refused at build time there.
+    /// Gated to `!no_std`: the registry is a heap-allocated map of boxed
+    /// closures. Codegen never emits a host-processor dispatch under
+    /// `--no-std` — a declared type is refused at build time there.
     #[cfg(feature = "std")]
     pub(crate) host_processors: crate::host_processor::HostProcessorRegistry,
     /// See [`Engine::refused_host_invoke_completions`].
@@ -1026,7 +1016,14 @@ pub struct Engine<P: StatePolicy> {
     /// asked when the factory is there ([`Engine::start_owed_child_mesh`]).
     #[cfg(feature = "std")]
     pub(crate) child_mesh_owed: bool,
-    #[cfg(feature = "std")]
+    /// §scxml-C-2: HTTP send dispatch callback — the BasicHTTP processor this
+    /// build has with the `http-send` feature and only with it
+    /// (docs/adr/0053). Without the feature no callback can be registered,
+    /// and a BasicHTTP send is refused (see [`Engine::perform_http_send`]).
+    ///
+    /// Carries the same `+ Send` bound as `completion_callback` so the engine
+    /// stays host-movable; see that field for the rationale.
+    #[cfg(feature = "http-send")]
     pub(crate) on_http_send:
         Option<Box<dyn FnMut(HttpSendRequest) -> Option<HttpSendResponse> + Send>>,
     /// §scxml-6.2: Delayed event scheduler.
@@ -1202,7 +1199,7 @@ impl<P: StatePolicy> Engine<P> {
             installed_mesh: None,
             #[cfg(feature = "std")]
             child_mesh_owed: false,
-            #[cfg(feature = "std")]
+            #[cfg(feature = "http-send")]
             on_http_send: None,
             scheduler: PullScheduler::new(),
             clock: SceClock::default(),
@@ -3406,10 +3403,12 @@ impl<P: StatePolicy> Engine<P> {
     /// into the external queue — enabling real HTTP round-trips against the
     /// shared W3C test server (`standalone_http_server.js`).
     ///
-    /// SCE Protocol-Synthesis RFC §synth-5-J-2: gated to `!no_std` (HTTP itself is whole-module
-    /// gated; the codegen-time validator rejects `BasicHTTPEventProcessor`
-    /// `<send>` under `--no-std` via `codegen/no-std-http-not-supported`).
-    #[cfg(feature = "std")]
+    /// Present with the `http-send` feature, which is the BasicHTTP processor
+    /// (docs/adr/0053); a build without it has no processor to hand a
+    /// transport to. The bare-metal profile never has it, and the
+    /// codegen-time validator rejects `BasicHTTPEventProcessor` `<send>` under
+    /// `--no-std` via `codegen/no-std-http-not-supported`.
+    #[cfg(feature = "http-send")]
     pub fn set_http_send_callback<F>(&mut self, callback: F)
     where
         F: FnMut(HttpSendRequest) -> Option<HttpSendResponse> + Send + 'static,
@@ -3422,10 +3421,19 @@ impl<P: StatePolicy> Engine<P> {
     /// The callback is the sole dispatch mechanism. If it returns
     /// `Some(HttpSendResponse)`, the engine injects the response event into the
     /// external queue. The engine has no knowledge of HTTP transport — callers
-    /// supply the implementation via [`set_http_send_callback`](Self::set_http_send_callback).
+    /// supply the implementation via `set_http_send_callback`.
     ///
-    /// SCE Protocol-Synthesis RFC §synth-5-J-2: gated to `!no_std` — see
-    /// [`set_http_send_callback`](Self::set_http_send_callback) for the upstream rejection rationale.
+    /// Present in every `std` build, because a generated machine names it
+    /// whatever features its build has; the processor itself is the
+    /// `http-send` feature (docs/adr/0053). Without that feature the build has
+    /// no BasicHTTP processor, and the send is refused as §scxml-6.2 refuses a
+    /// type the platform does not support: `error.execution`, carrying the
+    /// send id, goes on the internal queue when the document declares that
+    /// event, and nothing is posted. A generated send site asks
+    /// [`is_supported_send_type`](crate::helpers::send::is_supported_send_type)
+    /// first and refuses before it reads the send's payload, so what reaches
+    /// this refusal is a host's own call, or a delayed send a saved state
+    /// carried from a build that had the processor.
     #[cfg(feature = "std")]
     pub fn perform_http_send(
         &mut self,
@@ -3435,14 +3443,27 @@ impl<P: StatePolicy> Engine<P> {
         params: std::collections::HashMap<String, Vec<String>>,
         send_id: String,
     ) {
+        #[cfg(not(feature = "http-send"))]
+        {
+            let _ = (target, event_name, content, params);
+            self.refuse_unserved_http_send(&send_id);
+        }
+        #[cfg(feature = "http-send")]
+        self.post_through_http_callback(HttpSendRequest {
+            target,
+            event_name,
+            content,
+            params,
+            send_id,
+        });
+    }
+
+    /// The BasicHTTP processor: hand the request to the host's transport, and
+    /// queue the event its answer names (§scxml-C-2).
+    #[cfg(feature = "http-send")]
+    fn post_through_http_callback(&mut self, request: HttpSendRequest) {
         if let Some(cb) = self.on_http_send.as_mut() {
-            let response = cb(HttpSendRequest {
-                target,
-                event_name,
-                content,
-                params,
-                send_id,
-            });
+            let response = cb(request);
             if let Some(resp) = response {
                 let mut metadata = EventMetadata::external(SceString::new(), SceString::new());
                 metadata.data = resp.event_data;
@@ -3450,6 +3471,27 @@ impl<P: StatePolicy> Engine<P> {
                     self.external_queue.raise(meta);
                 }
             }
+        }
+    }
+
+    /// §scxml-6.2: a BasicHTTP send in a build with no BasicHTTP processor
+    /// (no `http-send` feature) names a type the platform does not support:
+    /// `error.execution` carrying the send id, with the words the generated
+    /// site uses for a type it does not support, and nothing posted. A
+    /// document that declares no `error.execution` transition resolves
+    /// nothing and nothing is raised, as at the generated site.
+    #[cfg(all(feature = "std", not(feature = "http-send")))]
+    fn refuse_unserved_http_send(&mut self, send_id: &str) {
+        let processor = crate::helpers::scxml_constants::BASIC_HTTP_EVENT_PROCESSOR_TYPE;
+        let message =
+            format!("<send type='{processor}'> names a processor this platform does not support");
+        sce_log_error!(
+            "Engine::perform_http_send: {message} (this build has no `http-send` feature)"
+        );
+        if let Some(evt) = P::get_event_from_name("error.execution") {
+            let mut err = EventWithMetadata::platform_error(evt, &message);
+            err.metadata.send_id = crate::sce_string_from_str(send_id);
+            self.raise(err);
         }
     }
 
@@ -3467,7 +3509,11 @@ impl<P: StatePolicy> Engine<P> {
     /// A non-positive delay is performed at once: `delay="0s"` is not a
     /// deferral, and the document must not need a tick to see it.
     ///
-    /// Gated to `!no_std` like [`perform_http_send`](Self::perform_http_send).
+    /// A build with no BasicHTTP processor (no `http-send` feature) refuses the
+    /// send now, as [`perform_http_send`](Self::perform_http_send) does, rather
+    /// than arm a deadline nothing could perform: §scxml-6.2 refuses the type
+    /// when the send runs, delayed or not. Present in every `std` build, like
+    /// [`perform_http_send`](Self::perform_http_send).
     #[cfg(feature = "std")]
     pub fn schedule_http_send(
         &mut self,
@@ -3478,7 +3524,11 @@ impl<P: StatePolicy> Engine<P> {
         delay: Duration,
         send_id: String,
     ) {
-        if delay.is_zero() {
+        if delay.is_zero()
+            || !crate::helpers::send::is_supported_send_type(
+                crate::helpers::scxml_constants::BASIC_HTTP_EVENT_PROCESSOR_TYPE,
+            )
+        {
             self.perform_http_send(target, event_name, content, params, send_id);
             return;
         }

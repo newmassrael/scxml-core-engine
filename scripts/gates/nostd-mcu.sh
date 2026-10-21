@@ -34,6 +34,21 @@ cargo clippy -p sce-rust-runtime --no-default-features \
     --target=thumbv7em-none-eabihf -- -D warnings \
     || sce_gate_fail "no_std runtime clippy"
 
+# The `std` profile with none of the features that add to it (docs/adr/0053):
+# no `http-send`, so no BasicHTTP processor, and no `macrostep-diagnostics`.
+# Every other build of the runtime in this repository has both, through
+# `default` or through the workspace's union, so a `cfg` that only this build
+# reads — the refusal of a BasicHTTP send, the bound without its report on a
+# host — is compiled, linted and run nowhere else. The tests that read the
+# refusal (`a_basic_http_send_needs_the_http_send_feature`,
+# `helpers::send`'s `supported_send_types`) run their other half here.
+sce_gate_step "std runtime without http-send or the macrostep report: clippy + tests"
+cargo clippy -p sce-rust-runtime --no-default-features --features std \
+    --all-targets -- -D warnings \
+    || sce_gate_fail "std runtime without http-send, clippy"
+cargo test -p sce-rust-runtime --no-default-features --features std \
+    || sce_gate_fail "std runtime without http-send, tests"
+
 # The forge runtime on a target whose atomics are loads and stores alone (ARMv6-M). The queue algorithms
 # need compare-and-swap, swap or fetch-add, which that target does not have, so a queue module that needs
 # one must be absent there and not fail inside: a consumer that builds the runtime with no default features

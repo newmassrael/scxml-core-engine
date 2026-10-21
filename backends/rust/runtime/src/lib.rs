@@ -69,7 +69,10 @@
 //! - `std` (default): the application profile. Without it the crate is
 //!   `#![no_std]` with no allocator, the bare-metal profile a crate for a
 //!   microcontroller selects with `default-features = false`.
-//! - `http-send` (default): the BasicHTTP event processor; asks for `std`.
+//! - `http-send` (default): the BasicHTTP event processor (the `http`
+//!   module, `Engine::set_http_send_callback`); asks for `std`. A `std` build
+//!   without it refuses a BasicHTTP send with `error.execution`, as it refuses
+//!   any type it does not support.
 //! - `macrostep-diagnostics` (default): the macrostep report, and the
 //!   accessors that read it (`truncated_macrosteps` and its siblings). The
 //!   bound it reports on is in every build; a bare-metal crate that reads the
@@ -416,19 +419,20 @@ pub mod helpers;
 /// §scxml-6.2.5 host-supplied Event I/O Processors — the payload types a
 /// host registers a `<send type="...">` handler for.
 ///
-/// Gated out of `no_std` builds for the reason [`http`] is: the registry
-/// is a heap-allocated map of boxed closures.
+/// Gated out of `no_std` builds: the registry is a heap-allocated map of
+/// boxed closures.
 #[cfg(feature = "std")]
 pub mod host_processor;
 /// §scxml-C-2 BasicHTTPEventProcessor send payload shapes.
 ///
-/// Part of the `std` profile, because the module body uses
-/// `std::collections::HashMap`; the bare-metal profile has no HTTP processor
-/// and `sce-codegen generate --no-std` refuses a document that sends over one.
-/// A crate that sends over HTTP asks for the `http-send` feature, which turns
-/// `std` on for the whole build rather than being refused beside a bare-metal
-/// crate (docs/adr/0053).
-#[cfg(feature = "std")]
+/// The HTTP processor is the `http-send` feature, which asks for `std` (the
+/// module body uses `std::collections::HashMap`). A build without it has no
+/// HTTP processor: `helpers::send::is_supported_send_type` does not count the
+/// BasicHTTP type, and a generated BasicHTTP `<send>` is refused as a type the
+/// platform does not support (§scxml-6.2). The bare-metal profile never has
+/// it, and `sce-codegen generate --no-std` refuses a document that sends over
+/// one (docs/adr/0053).
+#[cfg(feature = "http-send")]
 pub mod http;
 /// §scxml-6.4 invoke lifecycle helpers.
 ///
@@ -499,7 +503,7 @@ pub use host_processor::{
     HOST_INVOKE_DEADLINE_PARAM, MESH_ORIGIN_SCHEME, MESH_PROCESSOR_TYPE, MESH_RPC_INVOKE_TYPE,
     RESERVED_TYPE_PREFIX,
 };
-#[cfg(feature = "std")]
+#[cfg(feature = "http-send")]
 pub use http::{HttpSendRequest, HttpSendResponse};
 /// The [`log`] facade crate, re-exported so generated code can reach it
 /// without the consumer declaring it.
