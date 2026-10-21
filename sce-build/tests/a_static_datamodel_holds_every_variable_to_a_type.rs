@@ -6020,7 +6020,6 @@ const INTERPRETER: &str = "interpreter";
 /// machine no engine lowers that does not name every engine here.
 const NOT_YET_LOWERED: &[(&str, &str, &str)] = &[
     ("static_optional", "rust", OPTIONAL_NOT_LOWERED),
-    ("static_optional", "kotlin", OPTIONAL_NOT_LOWERED),
     ("static_optional", "c11", OPTIONAL_NOT_LOWERED),
 ];
 

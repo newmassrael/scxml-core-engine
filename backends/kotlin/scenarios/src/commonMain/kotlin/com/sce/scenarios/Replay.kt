@@ -51,6 +51,25 @@ fun parseScenario(text: String): JsonObject = Json.parseToJsonElement(text).json
 fun routed(scenario: JsonObject): Boolean = scenario["router"]?.jsonPrimitive?.booleanOrNull != false
 
 /**
+ * What a machine that has no saved state holds, as its saved state would write
+ * it, for [replay]'s `held`: its [current] leaf, its active [configuration] and
+ * its [variables], each as a scenario states it (an absent value as `null`,
+ * docs/adr/0055). A driver reads them from what the machine publishes.
+ */
+fun heldBy(
+    current: String,
+    configuration: Collection<String>,
+    variables: Map<String, JsonElement>,
+): JsonObject =
+    JsonObject(
+        mapOf(
+            "current" to JsonPrimitive(current),
+            "configuration" to JsonArray(configuration.map { JsonPrimitive(it) }),
+            "variables" to JsonObject(variables),
+        ),
+    )
+
+/**
  * Replay [scenario] against a machine driven by [send] and [tick], read back with
  * [save] after every step, and asked whether it has [ended].
  *
@@ -64,7 +83,11 @@ fun routed(scenario: JsonObject): Boolean = scenario["router"]?.jsonPrimitive?.b
  *   ended, before any event arrives. A machine with child sessions needs
  *   [SETTLE_TICKS] rounds where a plain one needs one.
  * - [save] is the machine's saved state, read after every step that does not
- *   end it. [ended] says whether it ended in a top-level `<final>`, and
+ *   end it. A machine that has no saved state (one that holds an optional value,
+ *   before docs/adr/0055 step 6) is read through [held] instead: what it holds as
+ *   its saved state writes it, `current`, `configuration` and `variables`, which
+ *   a driver builds from what the machine publishes ([heldBy]). A driver gives
+ *   one of the two. [ended] says whether it ended in a top-level `<final>`, and
  *   [donedata] is then the JSON the final's done event carries.
  * - [advance] moves the machine's manual clock on, for a step that names an
  *   `advance_ms`; a machine that runs on no manual clock gives none.
@@ -96,7 +119,7 @@ fun replay(
     scenario: JsonObject,
     send: (String, String) -> Unit,
     tick: () -> Unit,
-    save: () -> SavedState,
+    save: (() -> SavedState)? = null,
     ended: () -> Boolean,
     donedata: () -> String = { "" },
     advance: ((Long) -> Unit)? = null,
@@ -104,10 +127,25 @@ fun replay(
     childHosts: (() -> List<JsonElement>)? = null,
     sent: (() -> List<JsonElement>)? = null,
     children: ChildRouters? = null,
+    held: (() -> JsonObject)? = null,
 ) {
     val steps = scenario.getValue("steps").jsonArray
     if (steps.isEmpty()) {
         throw ScenarioMismatch(null, "", "a scenario with no steps judges nothing")
+    }
+    // What the machine holds, read one way: its saved state, or what it
+    // publishes for a machine that has none.
+    val readBack: () -> JsonObject = when {
+        save != null && held == null -> {
+            { Json.parseToJsonElement(save().toJson()).jsonObject }
+        }
+        save == null && held != null -> held
+        else -> throw ScenarioMismatch(
+            null,
+            "",
+            "a driver reads the machine back through its saved state or through what it publishes, " +
+                "and through exactly one of them",
+        )
     }
     // A scenario of a machine given no router is replayed by a driver that registered
     // none: one that records sends registered a router, and would replay another machine.
@@ -196,7 +234,7 @@ fun replay(
             }
             return@forEachIndexed
         }
-        val saved = Json.parseToJsonElement(save().toJson()).jsonObject
+        val saved = readBack()
         expect["state"]?.let { want ->
             val got = saved["current"]
             if (got != want) {
