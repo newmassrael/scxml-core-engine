@@ -8,7 +8,7 @@
    reset() restores every kept value. #}
 {% if f.holder %}
         val steps = ref["{{ f.ref_section }}"]!!.jsonObject["{{ f.name }}"]!!.jsonObject["sequence"]!!.jsonArray
-        val holder = com.sce.generated.{{ f.name }}.{{ f.holder.new }}()
+        val holder = {{ f.name | kotlin_forge_package }}.{{ f.holder.new }}()
         for (pass in 0 until 2) {
             if (pass == 1) {
                 holder.{{ f.holder.reset }}()

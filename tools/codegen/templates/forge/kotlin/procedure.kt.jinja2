@@ -19,7 +19,7 @@
 {% endfor %}
 {% endif %}
 
-package com.sce.generated.{{ package }}
+package {{ package | kotlin_forge_package }}
 {% for imp in all_imports %}
 {% if imp.include_stmt %}
 {{ imp.include_stmt }}

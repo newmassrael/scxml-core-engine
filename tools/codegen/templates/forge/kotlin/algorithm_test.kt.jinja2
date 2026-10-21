@@ -5,7 +5,7 @@
    algorithm fixture. Emitted alongside the algorithm `.kt` file
    into the same package whenever the algorithm SCXML carries at
    least one `<sce:test-vector hex value/>` row. The sidecar lives
-   in the per-fixture `com.sce.generated.<snake>` package so it
+   in the per-fixture package (`<snake> | kotlin_forge_package`) so it
    calls the algorithm function directly without an import. The
    Kotlin/JVM test runner discovers `@Test` methods on the
    generated class as long as the file lands in a `jvmTest`
@@ -17,7 +17,7 @@
 // SCE Forge: Auto-generated test-vector sidecar (RFC §synth-5-B B2)
 // Companion to {{ name_pascal }}.kt — do not edit; regenerate from the source SCXML.
 
-package com.sce.generated.{{ name }}
+package {{ name | kotlin_forge_package }}
 
 import kotlin.test.Test
 import kotlin.test.assertEquals

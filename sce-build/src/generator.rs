@@ -41,6 +41,13 @@ pub(crate) fn new_env<'a>() -> Environment<'a> {
     //    allowing optional attribute chains like `model.foo.bar` to work.
     env.set_undefined_behavior(minijinja::UndefinedBehavior::Chainable);
     register_symbol_artifact_global(&mut env);
+    // The package a Kotlin forge unit is generated into, named by the rule
+    // its importers' import lines are written by
+    // (`forge::generator::kotlin_forge_package`): a template writes
+    // `{{ snake | kotlin_forge_package }}`, never the root itself.
+    env.add_filter("kotlin_forge_package", |snake: String| {
+        crate::forge::generator::kotlin_forge_package(&snake)
+    });
     env
 }
 

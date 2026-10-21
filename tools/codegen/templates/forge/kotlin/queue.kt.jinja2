@@ -61,10 +61,10 @@
     "unused",
 )
 
-package com.sce.generated.{{ snake }}
+package {{ snake | kotlin_forge_package }}
 
 import com.sce.forge.runtime.queue.{{ runtime_type }}
-import com.sce.generated.{{ element_snake }}.{{ element_pascal }}
+import {{ element_snake | kotlin_forge_package }}.{{ element_pascal }}
 {% if segmented %}
 import com.sce.forge.runtime.queue.Progress
 import com.sce.forge.runtime.queue.SegmentAllocator

@@ -40,7 +40,7 @@
 {%- elif field.sce_type == "string" %}
             "{{ field.value }}",
 {%- elif field.enum_document is defined %}
-            com.sce.generated.{{ field.enum_document }}.{{ field.enum_document | to_pascal_case }}.{{ field.ident }},
+            {{ field.enum_document | kotlin_forge_package }}.{{ field.enum_document | to_pascal_case }}.{{ field.ident }},
 {%- else %}
             {{ field.value }},
 {%- endif %}

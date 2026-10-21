@@ -29,9 +29,9 @@
     "unused",
 )
 
-package com.sce.generated.{{ snake }}
+package {{ snake | kotlin_forge_package }}
 
-import com.sce.generated.{{ element_snake }}.{{ element_pascal }}
+import {{ element_snake | kotlin_forge_package }}.{{ element_pascal }}
 {% for statement in index_imports %}
 {{ statement }}
 {% endfor %}

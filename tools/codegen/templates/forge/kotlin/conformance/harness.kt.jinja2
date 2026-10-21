@@ -28,42 +28,42 @@ import com.sce.forge.runtime.Timer
 {% endif %}
 {% for f in fixtures %}
 {% if f.kind == "interpolation" or f.kind == "filter" or f.kind == "observer" or f.kind == "validator" or f.kind == "codec" or f.kind == "timer" or f.kind == "enum" %}
-import com.sce.generated.{{ f.name }}.{{ f.name | to_pascal_case }}
+import {{ f.name | kotlin_forge_package }}.{{ f.name | to_pascal_case }}
 {% endif %}
 {# A list of line records (docs/adr/0014) is a type of its own beside the codec. #}
 {% if f.kind == "codec" %}
 {% for field in f.fields if field.members %}
-import com.sce.generated.{{ f.name }}.{{ f.name | to_pascal_case }}{{ field.name | to_pascal_case }}Line
+import {{ f.name | kotlin_forge_package }}.{{ f.name | to_pascal_case }}{{ field.name | to_pascal_case }}Line
 {% endfor %}
 {% endif %}
 {% if f.kind == "timer" %}
-import com.sce.generated.{{ f.name }}.{{ f.name | to_pascal_case }}Handler
+import {{ f.name | kotlin_forge_package }}.{{ f.name | to_pascal_case }}Handler
 {# The period constants are file-level `const val` in the generated module,
    and the fragment compares both spellings against the oracle. #}
-import com.sce.generated.{{ f.name }}.PERIOD_MS
-import com.sce.generated.{{ f.name }}.PERIOD_US
+import {{ f.name | kotlin_forge_package }}.PERIOD_MS
+import {{ f.name | kotlin_forge_package }}.PERIOD_US
 {% endif %}
 {% if f.kind == "observer" %}
-import com.sce.generated.{{ f.name }}.ForgeDomainTag as {{ f.name | to_pascal_case }}Tag
+import {{ f.name | kotlin_forge_package }}.ForgeDomainTag as {{ f.name | to_pascal_case }}Tag
 {% endif %}
 {# An event schema's type is the PAYLOAD, not a class named for the fixture,
    so it needs its own import rather than a slot in the list above. #}
 {% if f.kind == "event-schema" %}
-import com.sce.generated.{{ f.name }}.{{ f.name | to_pascal_case }}Payload
+import {{ f.name | kotlin_forge_package }}.{{ f.name | to_pascal_case }}Payload
 {% endif %}
 {# A transform with a holder is driven through it, and its fragment names
    the holder by its qualified name — the output functions are not called. #}
 {% if f.kind == "transform" and not f.holder %}
 {% if f.output %}
-import com.sce.generated.{{ f.name }}.{{ f.output.function | to_camel_case }}
+import {{ f.name | kotlin_forge_package }}.{{ f.output.function | to_camel_case }}
 {% else %}
 {% for co in f.compound_outputs %}
-import com.sce.generated.{{ f.name }}.{{ co.function | to_camel_case }}
+import {{ f.name | kotlin_forge_package }}.{{ co.function | to_camel_case }}
 {% endfor %}
 {% endif %}
 {% endif %}
 {% if f.kind == "condition" or f.kind == "algorithm" %}
-import com.sce.generated.{{ f.name }}.{{ f.function | to_camel_case }}
+import {{ f.name | kotlin_forge_package }}.{{ f.function | to_camel_case }}
 {% endif %}
 {# Lookup kinds skip the unqualified import: two fixtures can share the
    same `<data id>` (e.g. both `lookup_alarm_code` and

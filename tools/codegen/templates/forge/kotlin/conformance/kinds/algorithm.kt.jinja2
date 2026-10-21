@@ -23,7 +23,7 @@
    the oracle writes as the name a variant declares: the value is the variant
    of that name, built the same way for an expected value and compared as the
    enum. #}
-{% macro field_value(fld, raw, fixture) %}{% if fld.enum_document is defined %}when ({{ raw }}.jsonPrimitive.content) { {% for v in fld.variants %}"{{ v.name }}" -> com.sce.generated.{{ fld.enum_document }}.{{ fld.enum_document | to_pascal_case }}.{{ v.ident }}; {% endfor %}else -> throw AssertionError("{{ fixture }}.{{ fld.name }}: no variant is declared as the name the case writes") }{% else %}{{ raw | kt_unmarshal(fld.type) }}{% endif %}{% endmacro %}
+{% macro field_value(fld, raw, fixture) %}{% if fld.enum_document is defined %}when ({{ raw }}.jsonPrimitive.content) { {% for v in fld.variants %}"{{ v.name }}" -> {{ fld.enum_document | kotlin_forge_package }}.{{ fld.enum_document | to_pascal_case }}.{{ v.ident }}; {% endfor %}else -> throw AssertionError("{{ fixture }}.{{ fld.name }}: no variant is declared as the name the case writes") }{% else %}{{ raw | kt_unmarshal(fld.type) }}{% endif %}{% endmacro %}
         val cases = ref["{{ f.ref_section }}"]!!.jsonObject["{{ f.name }}"]!!.jsonObject["cases"]!!.jsonArray
         for (case in cases) {
             val args = case.jsonObject["args"]!!.jsonArray
@@ -34,7 +34,7 @@
 {% for arg_ty in f.args %}
 {% set i = loop.index0 %}
 {% if arg_ty.record is defined %}
-            val arg{{ i }} = com.sce.generated.{{ arg_ty.record }}.{{ arg_ty.record | to_pascal_case }}Payload(
+            val arg{{ i }} = {{ arg_ty.record | kotlin_forge_package }}.{{ arg_ty.record | to_pascal_case }}Payload(
 {% for fld in arg_ty.fields %}
                 {{ fld.ident }} = {{ field_value(fld, "args[" ~ i ~ "].jsonObject[\"" ~ fld.name ~ "\"]!!", f.name) }},
 {% endfor %}
@@ -43,7 +43,7 @@
 {# A list of records is a read-only `List` of the schema's data class. #}
 {% set r = arg_ty.list_of %}
             val arg{{ i }} = args[{{ i }}].jsonArray.map { e ->
-                com.sce.generated.{{ r.record }}.{{ r.record | to_pascal_case }}Payload(
+                {{ r.record | kotlin_forge_package }}.{{ r.record | to_pascal_case }}Payload(
 {% for fld in r.fields %}
                     {{ fld.ident }} = {{ field_value(fld, "e.jsonObject[\"" ~ fld.name ~ "\"]!!", f.name) }},
 {% endfor %}

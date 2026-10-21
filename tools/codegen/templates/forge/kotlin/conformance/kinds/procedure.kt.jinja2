@@ -26,7 +26,7 @@
             }
 {% endif %}
 {% endfor %}
-            val result: com.sce.forge.runtime.procedure.ProcedureRunResult = com.sce.generated.{{ f.name }}.execute(handler{% for h in f.helpers_ordered %}, stub{{ h.name | to_pascal_case }}{% endfor %}{% for arg_ty in f.args %}, arg{{ loop.index0 }}{% endfor %})
+            val result: com.sce.forge.runtime.procedure.ProcedureRunResult = {{ f.name | kotlin_forge_package }}.execute(handler{% for h in f.helpers_ordered %}, stub{{ h.name | to_pascal_case }}{% endfor %}{% for arg_ty in f.args %}, arg{{ loop.index0 }}{% endfor %})
             assertEquals(expectedCompleted, result.completed, "{{ f.name }}.completed")
             assertEquals(expectedFinal, result.finalState, "{{ f.name }}.final_state")
             val expectedBytes: List<ByteArray> = expected["dispatched_payload_bytes"]

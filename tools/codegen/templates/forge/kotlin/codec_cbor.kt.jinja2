@@ -50,7 +50,7 @@ Cbor.writeUint(w, v.toULong())?.let { return it }
 // Runtime: {{ runtime_dep }}
 // Do not edit — regenerate from the source SCXML file.
 
-package com.sce.generated.{{ package }}
+package {{ package | kotlin_forge_package }}
 
 import com.sce.forge.runtime.Cbor
 import com.sce.forge.runtime.CodecError

@@ -9,7 +9,7 @@
 // Do not edit — regenerate from the source SCXML file.
 //
 // RFC §synth-5-A: pure synchronous function with bounded loops. Free
-// function in package `com.sce.generated.{{ package }}`, no instance
+// function in package `{{ package | kotlin_forge_package }}`, no instance
 // state. `bytes` parameters lower to `ByteArray` (RFC §synth-5-J-5 emitter
 // table). Iteration over `ByteArray` yields signed `Byte`, so the
 // foreach lowering inserts a `Byte → UByte` reinterpretation per
@@ -19,7 +19,7 @@
 @file:OptIn(kotlin.ExperimentalUnsignedTypes::class)
 {% endif %}
 
-package com.sce.generated.{{ package }}
+package {{ package | kotlin_forge_package }}
 {% if all_imports %}
 
 {% for imp in all_imports %}

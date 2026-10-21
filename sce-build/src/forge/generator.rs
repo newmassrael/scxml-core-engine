@@ -672,8 +672,11 @@ pub(crate) fn forge_import_identity(
 const KOTLIN_FORGE_PACKAGE_ROOT: &str = "com.sce.generated";
 
 /// The Kotlin package of the unit generated from the forge document whose
-/// snake-cased name is `snake` — what an importer's `import <package>.*` names.
-fn kotlin_forge_package(snake: &str) -> String {
+/// snake-cased name is `snake` — what an importer's `import <package>.*` names,
+/// what the unit's own `package` line declares, and what a Kotlin forge
+/// template writes through the `kotlin_forge_package` filter
+/// (`crate::generator::new_env`), so no template spells the root itself.
+pub(crate) fn kotlin_forge_package(snake: &str) -> String {
     format!("{KOTLIN_FORGE_PACKAGE_ROOT}.{snake}")
 }
 
@@ -7986,8 +7989,8 @@ fn resolve_variant_arm_body_type(
         // field type sidesteps the lexical-name collision without
         // having to rewrite the import statement or rename the arm.
         crate::generator::Language::Kotlin => format!(
-            "com.sce.generated.{}.{}",
-            filters::to_snake_case(imp.type_name.clone()),
+            "{}.{}",
+            kotlin_forge_package(&filters::to_snake_case(imp.type_name.clone())),
             imp.type_name
         ),
         // Go: imports are package-qualified (`<snake>.<Pascal>`).
@@ -31046,6 +31049,59 @@ fn to_rust_variant(s: &str) -> String {
 mod tests {
     use super::*;
     use crate::forge::model::{ForgeKind, SceType};
+
+    /// The package a Kotlin forge unit declares, the one its importers name
+    /// and the directory `generate --with-imports` places it in are one rule
+    /// (`kotlin_forge_package`): a forge Kotlin template reaches it through
+    /// the filter and never spells the root, which would be a second copy of
+    /// the rule free to fall behind the first.
+    #[test]
+    fn no_kotlin_forge_template_spells_the_package_root() {
+        let kotlin: Vec<&(&str, &str)> = crate::template_registry::EMBEDDED_TEMPLATES
+            .iter()
+            .filter(|(name, _)| name.starts_with("forge/kotlin/"))
+            .collect();
+        assert!(
+            kotlin.len() > 10,
+            "read too few forge Kotlin templates: {}",
+            kotlin.len()
+        );
+        let spelling: Vec<&str> = kotlin
+            .iter()
+            .filter(|(_, text)| text.contains(KOTLIN_FORGE_PACKAGE_ROOT))
+            .map(|(name, _)| *name)
+            .collect();
+        assert!(
+            spelling.is_empty(),
+            "these templates spell `{KOTLIN_FORGE_PACKAGE_ROOT}` instead of writing \
+             `{{{{ snake | kotlin_forge_package }}}}`: {spelling:?}"
+        );
+    }
+
+    #[test]
+    fn the_template_filter_names_the_package_an_import_line_names() {
+        let mut env = crate::generator::new_env();
+        env.add_template("t", "package {{ 'outer_pick' | kotlin_forge_package }}")
+            .expect("the template parses");
+        let rendered = env
+            .get_template("t")
+            .and_then(|t| t.render(minijinja::context! {}))
+            .expect("the template renders");
+        assert_eq!(
+            rendered,
+            format!("package {}", kotlin_forge_package("outer_pick"))
+        );
+        let import = forge_import_identity(
+            "OuterPick",
+            &crate::generator::Language::Kotlin,
+            false,
+            &crate::ForgeCompileOptions::default(),
+        );
+        assert_eq!(
+            import.include_stmt,
+            format!("import {}.*", kotlin_forge_package("outer_pick"))
+        );
+    }
 
     // ── EventSchema C11 payload field declaration (RFC §bytesguard-3 B4) ──
 

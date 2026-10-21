@@ -69,7 +69,7 @@ line.readParamString({{ p.max_size }}) ?: return null
 // Runtime: {{ runtime_dep }}
 // Do not edit — regenerate from the source SCXML file.
 
-package com.sce.generated.{{ package }}
+package {{ package | kotlin_forge_package }}
 
 import com.sce.forge.runtime.CodecError
 import com.sce.forge.runtime.ContentLine
