@@ -57,9 +57,11 @@ cp "$CODEGEN" "$WT/target/debug/sce-codegen"
 # intact tree rewrites nothing at all — measured, zero files — and the first
 # version of this gate reported the strongest possible verdict for the
 # weakest possible reason. Deleting first is what separates "reproduced" from
-# "left alone", and it is the only shape that catches a file the procedure
-# has stopped producing: the tree carried three `__sce_synth_invoke__`
-# documents in exactly that state.
+# "left alone": the tree carried three `__sce_synth_invoke__` documents the
+# procedure had stopped producing. The procedure now sets aside every generated
+# file of the trees it owns and removes each one no stage writes again
+# (scripts/lib/sce_generated_tree.sh), which the check after the run names; the
+# sample still reaches a tree outside that set.
 #
 # A SAMPLE rather than every generated file, because one file the procedure
 # cannot rebuild is enough to stop it: `mod.rs` is an aggregator the arms
@@ -107,6 +109,19 @@ if ! ( cd "$WT" && SCE_WORKSPACE_ROOT="$WT" \
         ./scripts/regen_all_committed_trees.sh ) >"$REGEN_LOG" 2>&1; then
     tail -40 "$REGEN_LOG" >&2
     sce_gate_fail "the regeneration procedure did not complete"
+fi
+
+# A committed generated file the procedure no longer produces: the procedure
+# removed it, so it is a tracked file the worktree lacks. Named on its own and
+# first, because comparing the files a run writes could never see it -- the
+# measured case is two `test192__sce_synth_invoke__invokedChild` files left
+# committed for days beside the `0zinvokedzuchild` ones that replaced them.
+source "$(dirname "${BASH_SOURCE[0]}")/../lib/sce_generated_tree.sh"
+mapfile -t UNPRODUCED < <(sce_generated_tree_unproduced "$WT")
+if (( ${#UNPRODUCED[@]} > 0 )); then
+    printf '\n  Committed, and no longer produced by the regeneration:\n' >&2
+    printf '    %s\n' "${UNPRODUCED[@]}" >&2
+    sce_gate_fail "${#UNPRODUCED[@]} committed generated file(s) are not produced by the regeneration procedure — commit their removal, or restore what produced them"
 fi
 
 CHANGED="$(cd "$WT" && git status --porcelain -- . | grep -v '^?? target/' || true)"
