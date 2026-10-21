@@ -922,6 +922,23 @@ object SavedValues {
     /** A list, each element written by [element]. */
     fun <T> list(value: List<T>, element: (T) -> Any?): Any = value.map(element)
 
+    /**
+     * A value that may be absent (docs/adr/0055, section 4): `null` where it is
+     * absent, and otherwise the value [present] writes, as a value of its type
+     * is written anywhere else.
+     */
+    fun <T : Any> optional(value: T?, present: (T) -> Any): Any? = value?.let(present)
+
+    /**
+     * A value that may be absent read back: absent where the saved state holds
+     * `null`, and otherwise the value [present] reads, held to its type as any
+     * value is. Only a place the machine declares optional reads through this, so
+     * a `null` saved where the machine holds a value of `T` is refused by the
+     * reader of `T`.
+     */
+    fun <T : Any> optional(value: Any?, what: String, present: (Any?, String) -> T): T? =
+        if (value == null) null else present(value, what)
+
     private fun number(value: Any?, what: String): String =
         (value as? Json.Number)?.text ?: throw StateRefusal("'$what' is not a number")
 

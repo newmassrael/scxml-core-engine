@@ -218,6 +218,18 @@ object EventPayload {
             }
             return out
         }
+
+        /**
+         * A field of `optional<T>` (docs/adr/0055, section 4): absent where the
+         * delivery carries `null`, and otherwise the value [read] takes out of the
+         * field, held to its type as any field's is. A delivery that lacks the key
+         * is refused, as for every field: a missing key says the sender's revision
+         * has no such field, and `null` is the one spelling of absence. Where a
+         * later revision added the field, [decode] with its defaults already put
+         * the default (`null` when it declares none) in the key's place.
+         */
+        fun <T : Any> optional(name: String, read: (String) -> T): T? =
+            if (raw(name) == null) null else read(name)
     }
 
     /**

@@ -323,4 +323,23 @@ class ReplayTest {
         assertFalse(holds(json("""["1"]"""), json("[1, 2]")))
         assertFalse(holds(null, JsonPrimitive(1)))
     }
+
+    /**
+     * An absent value (docs/adr/0055) is `null` in the scenario and in the saved
+     * state, and holds only a `null`: not a number, not the text `null`, and not
+     * a value the saved state does not hold at all. A record's absent field is
+     * held the same way.
+     */
+    @Test
+    fun holdsReadsAnAbsentValueAsNullAndNothingElse() {
+        assertTrue(holds(json("null"), json("null")))
+        assertFalse(holds(json("7"), json("null")))
+        assertFalse(holds(json("null"), json("7")))
+        assertFalse(holds(json("\"7\""), json("null")))
+        assertFalse(holds(json("null"), json("\"7\"")))
+        assertFalse(holds(JsonPrimitive("null"), json("null")))
+        assertFalse(holds(null, json("null")))
+        assertTrue(holds(json("""{"id": 1, "due": null}"""), json("""{"id": 1, "due": null}""")))
+        assertFalse(holds(json("""{"id": 1, "due": "12"}"""), json("""{"id": 1, "due": null}""")))
+    }
 }
