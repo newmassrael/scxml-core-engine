@@ -100,6 +100,7 @@ mutation_targets backends/go/tests/integration/static_datamodel/static_record_li
 mutation_targets backends/go/tests/integration/static_datamodel/static_record_real/static_record_real_sm.go
 mutation_targets backends/go/tests/integration/static_datamodel/static_record_real32/static_record_real32_sm.go
 mutation_targets backends/go/tests/integration/static_datamodel/static_record_string/static_record_string_sm.go
+mutation_targets backends/go/tests/integration/static_datamodel/static_schema_pending/static_schema_pending_sm.go
 mutation_targets backends/go/tests/integration/static_datamodel/static_schema_revision/static_schema_revision_sm.go
 mutation_targets backends/go/tests/integration/static_datamodel/static_send_content/static_send_content_sm.go
 mutation_targets backends/go/tests/integration/static_datamodel/static_send_delay/static_send_delay_sm.go
