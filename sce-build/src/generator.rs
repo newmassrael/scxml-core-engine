@@ -5488,6 +5488,146 @@ mod tests {
         assert_eq!(flags("if _if_cond_failed_"), 1, "{python}");
     }
 
+    /// The statements after a terminating statement in each file of a
+    /// generated C or C++ machine, with the file they stand in.
+    fn unreachable_in_files(output: &GeneratedOutput) -> Vec<(String, usize, String)> {
+        output
+            .files
+            .iter()
+            .flat_map(|(name, text)| {
+                crate::unreachable_statements::unreachable_statements(
+                    text,
+                    crate::template_lexing::Syntax::CFamily,
+                )
+                .into_iter()
+                .map(move |(line, statement)| (name.clone(), line, statement))
+            })
+            .collect()
+    }
+
+    /// The C++ list a refusal is rendered into emits nothing after its
+    /// `return`, and neither does the case or the history content that list
+    /// ends: the `break` or `return` that closed it could never run. The
+    /// `<if>` whose branches all end is the end of its block, so no check of
+    /// its failure flag follows it, and the one without `<else>` keeps its
+    /// check. What runs is unchanged — each refusal still raises and ends its
+    /// block, and an `<if>` or `<foreach>` that can be passed over still lets
+    /// the block go on.
+    #[test]
+    fn cpp_emits_nothing_after_an_element_that_always_ends_its_block() {
+        let mut model = parse(ENDED_BY_A_SEND_SCXML);
+        crate::analyzer::analyze(&mut model, "");
+        let output =
+            generate_cpp(&model, &crate::find_template_base(), "send_refusals", None).expect("cpp");
+        let cpp: String = output.files.iter().map(|(_, text)| text.as_str()).collect();
+
+        let unreachable = unreachable_in_files(&output);
+        assert!(
+            unreachable.is_empty(),
+            "statements after a terminating statement: {unreachable:?}\n{cpp}"
+        );
+        let raises = |spelled: &str| raises_of(&cpp, "engine.raise(", spelled);
+        assert_eq!(
+            raises("(Event::Never)"),
+            0,
+            "an element after a refusal\n{cpp}"
+        );
+        assert_eq!(raises("(Event::First)"), 1, "an element before one\n{cpp}");
+        assert_eq!(
+            raises("(Event::Kept)"),
+            1,
+            "after an <if> without <else>\n{cpp}"
+        );
+        assert_eq!(raises("(Event::Looped)"), 1, "after a <foreach>\n{cpp}");
+        // Thirteen refusals, each still rendered.
+        assert_eq!(
+            cpp.matches("std::string sendId = ::SCE::SendHelper::generateSendId();")
+                .count(),
+            13,
+            "each refused <send> is still written\n{cpp}"
+        );
+        assert_eq!(cpp.matches("bool condFailed = false;").count(), 2, "{cpp}");
+        assert_eq!(cpp.matches("if (condFailed) {").count(), 1, "{cpp}");
+    }
+
+    /// The C++ refusals that are not the build-time ones every backend shares:
+    /// a `#_scxml_` session a machine with no script engine cannot compare
+    /// its own id with, and a delayed send to the parent of a machine a mesh
+    /// peer invokes. Each ends its block on every path, so nothing after it
+    /// is written — not the delivery, not the check of a `<param>` that could
+    /// not be read, and not the list's next element.
+    #[test]
+    fn cpp_writes_nothing_after_a_send_no_route_reaches() {
+        let session = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       datamodel="null" name="other_session" initial="s0">
+  <state id="s0">
+    <onentry>
+      <send event="x" target="#_scxml_other"/>
+      <raise event="never"/>
+    </onentry>
+  </state>
+</scxml>"##;
+        let mut model = parse(session);
+        crate::analyzer::analyze(&mut model, "");
+        let output =
+            generate_cpp(&model, &crate::find_template_base(), "other_session", None).expect("cpp");
+        let cpp: String = output.files.iter().map(|(_, text)| text.as_str()).collect();
+        let unreachable = unreachable_in_files(&output);
+        assert!(
+            unreachable.is_empty(),
+            "statements after a terminating statement: {unreachable:?}\n{cpp}"
+        );
+        assert!(
+            cpp.contains("names a session this processor cannot reach"),
+            "the send still raises\n{cpp}"
+        );
+        assert_eq!(
+            raises_of(&cpp, "engine.raise(", "(Event::Never)"),
+            0,
+            "an element after the send\n{cpp}"
+        );
+
+        let delayed = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       datamodel="ecmascript" name="remote_child" initial="s0">
+  <state id="s0">
+    <onentry>
+      <send event="x" target="#_parent" delay="1s">
+        <param name="p" expr="1"/>
+      </send>
+      <raise event="never"/>
+    </onentry>
+  </state>
+</scxml>"##;
+        let mut model = parse(delayed);
+        crate::analyzer::analyze(&mut model, "");
+        // What a deploy that names a mesh peer invoking this machine sets.
+        model.is_remote_invoke_target = true;
+        model.needs_parent_template = false;
+        let output =
+            generate_cpp(&model, &crate::find_template_base(), "remote_child", None).expect("cpp");
+        let cpp: String = output.files.iter().map(|(_, text)| text.as_str()).collect();
+        let unreachable = unreachable_in_files(&output);
+        assert!(
+            unreachable.is_empty(),
+            "statements after a terminating statement: {unreachable:?}\n{cpp}"
+        );
+        assert!(
+            cpp.contains("with a delay has no mesh path to the parent"),
+            "the send still raises\n{cpp}"
+        );
+        assert!(
+            !cpp.contains("if (paramFailed) {"),
+            "no check follows the refusal\n{cpp}"
+        );
+        assert_eq!(
+            raises_of(&cpp, "engine.raise(", "(Event::Never)"),
+            0,
+            "an element after the send\n{cpp}"
+        );
+    }
+
     /// `docs/SCE_ACCEPTED_SUBSET.md` §2.12 is the surface a consumer reads to
     /// learn which engines honour the §6.4.1 raise, and nothing was reading
     /// it. The table shipped claiming five AOT backends refuse the document

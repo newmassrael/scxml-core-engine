@@ -485,14 +485,29 @@
 {% for block in state.on_entry_blocks %}
                     entryBlocks.push_back([{% if model.needs_nonstatic_method %}this, {% endif %}&engine]() {
                         // Onentry block {{ loop.index }}/{{ state.on_entry_blocks|length }}
+{# `block_flow` is what one list of executable content knows about its own
+   end. An element the build has already decided will raise — a `<send>`
+   whose type, target or delay is refused — ends the block with a `return`
+   that no condition guards, and sets `block_flow.ended` where it writes it.
+   Nothing after it can run (W3C SCXML 4.9: the error ends the block), so the
+   list writes none: the elements after it are not emitted. Every list an
+   action is rendered into binds its own `block_flow` — each block here, each
+   branch of an <if> (actions/if.jinja2), each <foreach> body — and an action
+   template that ends its block unconditionally sets the flag of the list it
+   was rendered into. The Go templates follow the same rule
+   (go/entry_exit_actions.go.jinja2). #}
+{% with block_flow = namespace(ended=false) %}
 {% for action in block %}
+{% if not block_flow.ended %}
 {%- if action.req or action.unresolved %}
 {{ annot.annotation_block(action, "cpp", "                        ") -}}
 {%- endif %}
                         {% set block_exit = 'return;' %}
                         {% include 'actions/' + action.type + '.jinja2' %}
 
+{% endif %}
 {% endfor %}
+{% endwith %}
                     });
 {% endfor %}
                     // W3C SCXML 3.8: Delegate to EntryExitHelper (Single Source of Truth)
@@ -512,11 +527,15 @@
                 // state's entry.
                 if (defaultEntry) {
                     [&]() {
+{% with block_flow = namespace(ended=false) %}
 {% for action in state.initial_transition_actions %}
+{% if not block_flow.ended %}
                         {% set block_exit = 'return;' %}
                         {% include 'actions/' + action.type + '.jinja2' %}
 
+{% endif %}
 {% endfor %}
+{% endwith %}
                     }();
                 }
 {% endif %}
@@ -749,12 +768,20 @@
 {% if history_info.default_actions %}
         if (history == History::{{ history_id | capitalize }}) {
             AOT_DEBUG("AOT executeHistoryDefaultContent: {{ history_id }}");
+{% with block_flow = namespace(ended=false) %}
 {% for action in history_info.default_actions %}
+{% if not block_flow.ended %}
             {% set block_exit = 'return;' %}
             {% include 'actions/' + action.type + '.jinja2' %}
 
+{% endif %}
 {% endfor %}
+{# The `return` that ends the content follows a list that did not end
+   itself; after one that did it could never run. #}
+{% if not block_flow.ended %}
             return;
+{% endif %}
+{% endwith %}
         }
 {% endif %}
 {% endfor %}
@@ -854,14 +881,18 @@
 {% for block in state.on_exit_blocks %}
                     exitBlocks.push_back([{% if model.needs_nonstatic_method %}this, {% endif %}&engine]() {
                         // Onexit block {{ loop.index }}/{{ state.on_exit_blocks|length }}
+{% with block_flow = namespace(ended=false) %}
 {% for action in block %}
+{% if not block_flow.ended %}
 {%- if action.req or action.unresolved %}
 {{ annot.annotation_block(action, "cpp", "                        ") -}}
 {%- endif %}
                         {% set block_exit = 'return;' %}
                         {% include 'actions/' + action.type + '.jinja2' %}
 
+{% endif %}
 {% endfor %}
+{% endwith %}
                     });
 {% endfor %}
                     // W3C SCXML 3.9: Delegate to EntryExitHelper (Single Source of Truth)

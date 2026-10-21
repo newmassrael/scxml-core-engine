@@ -173,7 +173,12 @@ public:
                         return;
                     }
 {% endif %}
+{# `block_flow`: an element that ends the block unconditionally sets it, and
+   nothing after that element is emitted (entry_exit_actions.jinja2) — the
+   `break` that leaves the case included. #}
+{% with block_flow = namespace(ended=false) %}
 {% for action in trans.actions %}
+{% if not block_flow.ended %}
 {%- if action.req or action.unresolved %}
 {{ annot.annotation_block(action, "cpp", "                    ") -}}
 {%- endif %}
@@ -181,9 +186,13 @@ public:
    exactly one transition's, so leaving the function ends that block. #}
 {% set block_exit = 'return;' %}
 {% include 'actions/' + action.type + '.jinja2' %}
+{% endif %}
 {% endfor %}
                 }
+{% if not block_flow.ended %}
                 break;
+{% endif %}
+{% endwith %}
 {% endif %}
 {% endfor %}
             default:

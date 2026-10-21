@@ -30,13 +30,22 @@
     reuse its parent's.
 #}
 {% set if_native_can_fail = action.native_cond_fails or (action.elseif_branches | selectattr("native_cond_fails") | list | length > 0) %}
-{
-{% if if_can_fail %}
-bool condFailed = false;
+{#
+    Each branch is a list of its own (`block_flow`, entry_exit_actions.jinja2).
+    When the <if> has an <else> and every branch ends the block
+    unconditionally, whichever branch the selection reaches ends it — a cond
+    that failed only moves the selection on — so the chain is itself the end
+    of the block: an `if`/`else` whose branches all leave, after which the
+    checks of the failure flags, and every element after the <if>, are
+    unreachable. `if_flow.ends` records it, and the chain is rendered first
+    (`if_chain`) so that the native flag, which the cond's lambda writes and
+    nothing then reads, is declared `[[maybe_unused]]`.
+#}
+{% set if_flow = namespace(ends=true) %}
+{% if not action.else_actions %}
+{% set if_flow.ends = false %}
 {% endif %}
-{% if if_native_can_fail %}
-bool ifCondFailed{{ action.if_ordinal }} = false;
-{% endif %}
+{% set if_chain %}
 {% if action.native_cond %}
 // SCE Accepted Subset 2.15: a sce-static cond, lowered to C++ at build time
 if ({{ action.native_cond }}) SCE_LIKELY {
@@ -55,36 +64,72 @@ if (this->evaluateIfCond(scriptEngine, sessionId_.value(), {{ action.cond | to_s
 // W3C SCXML 4.2: cond="{{ action.cond }}" decided at build time
 if ({{ 'true' if action.cond_constant else 'false' }}) SCE_LIKELY {
 {% endif %}
+    {% with block_flow = namespace(ended=false) %}
     {% for then_action in action.then_actions %}
+    {% if not block_flow.ended %}
     {% with action=then_action %}
     {% include 'actions/' + then_action.type + '.jinja2' %}
     {% endwith %}
+    {% endif %}
     {% endfor %}
+    {% if not block_flow.ended %}
+    {% set if_flow.ends = false %}
+    {% endif %}
+    {% endwith %}
 {% for elseif in action.elseif_branches %}
 } else if ({% if elseif.native_cond %}{{ elseif.native_cond }}{% elif elseif.is_cpp_condition %}{{ elseif.cond_cpp_transformed }}{% elif elseif.is_pure_in_predicate %}{{ elseif.cond_cpp }}{% elif model.needs_script_engine %}this->evaluateIfCond(scriptEngine, sessionId_.value(), {{ elseif.cond | to_script_source_guard }}, engine, condFailed){% else %}{{ 'true' if elseif.cond_constant else 'false' }}{% endif %}) {
+    {% with block_flow = namespace(ended=false) %}
     {% for elseif_action in elseif.actions %}
+    {% if not block_flow.ended %}
     {% with action=elseif_action %}
     {% include 'actions/' + elseif_action.type + '.jinja2' %}
     {% endwith %}
+    {% endif %}
     {% endfor %}
+    {% if not block_flow.ended %}
+    {% set if_flow.ends = false %}
+    {% endif %}
+    {% endwith %}
 {% endfor %}
 {% if action.else_actions %}
 } else {
+    {% with block_flow = namespace(ended=false) %}
     {% for else_action in action.else_actions %}
+    {% if not block_flow.ended %}
     {% with action=else_action %}
     {% include 'actions/' + else_action.type + '.jinja2' %}
     {% endwith %}
+    {% endif %}
     {% endfor %}
+    {% if not block_flow.ended %}
+    {% set if_flow.ends = false %}
+    {% endif %}
+    {% endwith %}
 {% endif %}
-}
-{% if if_can_fail and block_exit is defined and block_exit %}
+}{% endset %}
+{
+{% if if_can_fail %}
+bool condFailed = false;
+{% endif %}
+{% if if_native_can_fail %}
+{% if if_flow.ends %}
+[[maybe_unused]] bool ifCondFailed{{ action.if_ordinal }} = false;  // every branch ends the block, so no check reads it
+{% else %}
+bool ifCondFailed{{ action.if_ordinal }} = false;
+{% endif %}
+{% endif %}
+{{ if_chain }}
+{% if if_can_fail and block_exit is defined and block_exit and not if_flow.ends %}
 if (condFailed) {
     {{ block_exit }}
 }
 {% endif %}
-{% if if_native_can_fail and block_exit is defined and block_exit %}
+{% if if_native_can_fail and block_exit is defined and block_exit and not if_flow.ends %}
 if (ifCondFailed{{ action.if_ordinal }}) {
     {{ block_exit }}
 }
 {% endif %}
 }
+{% if if_flow.ends %}
+{% set block_flow.ended = true %}
+{% endif %}

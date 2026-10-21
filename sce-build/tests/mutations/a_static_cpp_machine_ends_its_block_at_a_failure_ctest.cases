@@ -40,8 +40,8 @@ PY
 
 mutation_case "a block goes on after an <if> whose cond failed" <<'PY'
 edit("tools/codegen/templates/actions/if.jinja2",
-     "{% if if_native_can_fail and block_exit is defined and block_exit %}",
-     "{% if false and block_exit is defined and block_exit %}")
+     "{% if if_native_can_fail and block_exit is defined and block_exit and not if_flow.ends %}",
+     "{% if false and block_exit is defined and block_exit and not if_flow.ends %}")
 PY
 
 # ── A guard is the lowered expression ──────────────────────────────

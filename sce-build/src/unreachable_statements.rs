@@ -119,6 +119,11 @@ fn continues_an_expression(line: &str) -> bool {
         || line.starts_with("||")
         || line.starts_with('?')
         || line.starts_with('+')
+        || line.starts_with("->")
+        || line.starts_with("<<")
+        // The `:` of a conditional expression, and not the `::` that roots a
+        // qualified name a statement starts with.
+        || (line.starts_with(':') && !line.starts_with("::"))
 }
 
 /// The reading of a brace language: see the module documentation.

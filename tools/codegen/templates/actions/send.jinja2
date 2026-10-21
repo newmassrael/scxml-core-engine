@@ -341,6 +341,9 @@ ensureSessionId();
 // evaluated, so the send ends here with the argument error, as it does on
 // every engine — and nothing after it is emitted.
 {{ send_arg_error("<send> delay is not a CSS2 time", block_end, '') }}
+{# The exit is unconditional: the action list emits nothing after this
+   element (`block_flow`, entry_exit_actions.jinja2). #}
+{% set block_flow.ended = true %}
 {% else %}
 {# ── The element's own arguments, evaluated once ── W3C SCXML 6.2: "The
    Processor MUST evaluate all arguments to <send> when the <send> element is
@@ -568,15 +571,20 @@ if (!::SCE::SendHelper::isHttpTarget(dynamicTarget)) {
 // declaration MOVES, so a runtime re-derivation would refuse a type the
 // build had already promised to dispatch.
 {{ send_arg_error("<send type='" ~ action.send_type ~ "'> names a processor this platform does not support", block_end, '') }}
+{# Each refusal arm's exit is unconditional: the action list emits nothing
+   after this element (`block_flow`, entry_exit_actions.jinja2). #}
+{% set block_flow.ended = true %}
 {% elif action.target_unsupported %}
 // W3C SCXML 6.2.4 (tests 159, 194): a target this processor cannot address —
 // `Action::target_unsupported`, decided once at build time for every backend.
 {{ send_arg_error("<send target='" ~ action.target ~ "'> is not a target this processor can address", block_end, '') }}
+{% set block_flow.ended = true %}
 {% elif is_http and not action.target and not action.targetexpr %}
 // W3C SCXML C.2 (test 577): BasicHTTP names no target to post to.
 engine.raise(typename Engine::EventWithMetadata(
     Event::Error_communication, "<send> over BasicHTTPEventProcessor has no target to post to", "", sendId));
 {{ block_end or 'return;' }}  // W3C SCXML 4.9: the error ends the block
+{% set block_flow.ended = true %}
 {% else %}
 {# ── The payload ── #}
 {{ send_event_data(action, model, block_end) }}
@@ -594,7 +602,14 @@ if (sessionId_.value_or("") != "{{ action.target | slice_from(8) | escape_cpp }}
         Event::Error_communication, "<send target='{{ action.target | escape_cpp }}'> names a session this processor cannot reach", "", sendId));
     {{ block_end or 'return;' }}
 }
+{# With no script engine there is no session id to compare, so the block
+   above ends the element on every path: nothing after it is emitted — not
+   the delivery, and not the list's next element (`block_flow`). #}
+{% if not has_script %}
+{% set block_flow.ended = true %}
 {% endif %}
+{% endif %}
+{% if not block_flow.ended %}
 {# ── The delivery ── #}
 {% if not action.targetexpr and action.target == '#_parent' %}
 {% if model.is_remote_invoke_target %}
@@ -612,6 +627,7 @@ if (sessionId_.value_or("") != "{{ action.target | slice_from(8) | escape_cpp }}
 // parent's macrostep selection). Emit error.execution so authors notice
 // rather than silently dropping the delay.
 {{ send_arg_error("<send target='#_parent'> with a delay has no mesh path to the parent", block_end, '') }}
+{% set block_flow.ended = true %}
 {% else %}
 // W3C SCXML 6.2 + SCE_MESH.md §9.6.2 wire-16: Immediate send to parent via
 // mesh transport. The adapter's `setMeshSendCallback` (ChildSessionAdapter.h)
@@ -705,6 +721,7 @@ if (!engine.getPolicy().deliverToParent(::SCE::Common::ForwardedEvent{
 engine.raise(typename Engine::EventWithMetadata(
     Event::Error_communication, "<send target='{{ action.target | escape_cpp }}'> names no invocation of this session", "", sendId));
 {{ block_end or 'return;' }}
+{% set block_flow.ended = true %}
 {% endif %}
 {% elif action.send_type_host_served %}
 {# §scxml-6.2.5: the type is served by the HOST, which declared it to this
@@ -836,7 +853,10 @@ engine.scheduleRoutedEvent({{ event_enum_cpp }}, delayMs, sendId, eventData, {{ 
 }
 {% endif %}
 {% endif %}
-{% if param_ns.can_fail and block_end %}
+{% endif %}{# end of the delivery #}
+{# A delivery arm that ended the block unconditionally (`block_flow.ended`)
+   is the last statement this element writes. #}
+{% if param_ns.can_fail and block_end and not block_flow.ended %}
 // W3C SCXML 4.9: a <param> that could not be read raised an error while this
 // element was processed, so the rest of the block does not run.
 if (paramFailed) {

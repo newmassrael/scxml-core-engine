@@ -45,11 +45,18 @@
 {% if action.native_loop_prologue %}
     {{ action.native_loop_prologue }}
 {% endif %}
+{# Each body is a list of its own (`block_flow`, entry_exit_actions.jinja2):
+   an element in it that ends the block unconditionally ends what the body
+   emits, and not the list the <foreach> is in — the loop may run no times. #}
+{% with block_flow = namespace(ended=false) %}
 {% for body_action in action.actions %}
+{% if not block_flow.ended %}
     {% with action=body_action %}
     {% include 'actions/' + body_action.type + '.jinja2' %}
     {% endwith %}
+{% endif %}
 {% endfor %}
+{% endwith %}
 }
 {% else %}
 {% set foreach_exit = block_exit if block_exit is defined and block_exit else '' %}
@@ -76,14 +83,15 @@
         {{ action.array | to_script_source_expr }}, "{{ action.item }}", "{{ action.index }}",
         [&]([[maybe_unused]] size_t i) -> bool {
             // W3C SCXML 4.6: Track overall success of all actions in this iteration
-            bool iterationSuccess = true;
-{% set has_assign = namespace(value=False) %}\
+{# The body is rendered before the lambda's first line is written
+   (`foreach_body`): when an element of it ends the iteration unconditionally
+   (`block_flow.ended`), the `return iterationSuccess` after the body could
+   never run and is not written, and `iterationSuccess` may then be read by
+   nothing. #}
+{% with block_flow = namespace(ended=false) %}
+{% set foreach_body %}
 {% for body_action in action.actions %}\
-{% if body_action.type == 'assign' %}{% set has_assign.value = True %}{% endif %}\
-{% endfor %}\
-{% if has_assign.value %}            bool success = false;  // Shared by all assign actions in this iteration
-{% endif %}\
-{% for body_action in action.actions %}\
+{% if not block_flow.ended %}
             // W3C SCXML 4.6: Execute child action {{ loop.index }}/{{ action.actions | length }}
             {% if body_action.type == 'assign' %}\
             // Assign action: no block scope, success accessible in foreach lambda
@@ -103,8 +111,24 @@
                 {% endwith %}\
             }
             {% endif %}\
+{% endif %}
 {% endfor %}\
+{% endset %}
+{% if block_flow.ended %}
+            [[maybe_unused]] bool iterationSuccess = true;
+{% else %}
+            bool iterationSuccess = true;
+{% endif %}
+{% set has_assign = namespace(value=False) %}\
+{% for body_action in action.actions %}\
+{% if body_action.type == 'assign' %}{% set has_assign.value = True %}{% endif %}\
+{% endfor %}\
+{% if has_assign.value %}            bool success = false;  // Shared by all assign actions in this iteration
+{% endif %}\
+{{ foreach_body }}{% if not block_flow.ended %}
             return iterationSuccess;  // Return true only if all actions succeeded
+{% endif %}
+{% endwith %}
         }
     );
     // W3C SCXML 4.6: only a collection this <foreach> could not walk is its own
