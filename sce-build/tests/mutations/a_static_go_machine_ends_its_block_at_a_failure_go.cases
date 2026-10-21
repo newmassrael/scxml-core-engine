@@ -129,6 +129,7 @@ mutation_targets backends/go/tests/integration/static_datamodel/record_list_pare
 mutation_targets backends/go/tests/integration/static_datamodel/static_enum_number/static_enum_number_sm.go
 mutation_targets backends/go/tests/integration/static_datamodel/static_forge_calls/static_forge_calls_sm.go
 mutation_targets backends/go/tests/integration/static_datamodel/static_state_algorithm_enum/static_state_algorithm_enum_sm.go
+mutation_targets backends/go/tests/integration/static_datamodel/static_optional/static_optional_sm.go
 mutation_regen scripts/regen_static_datamodel_go.sh
 mutation_oracles backends/go/tests/integration/static_datamodel/static_scenarios_test.go
 
