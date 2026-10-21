@@ -787,13 +787,6 @@ func (p *ADelayIsACss2TimePolicy) ExecuteEntryActions(state ADelayIsACss2TimeSta
 	engine.Raise(errEvt)
 	return  // W3C SCXML 4.9: the error ends the block
 	}
-
-	// W3C SCXML 5.3: <assign location="after" expr="after + 1">
-	if err := p.assignVariable(`after`, `_scxml_add(after, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(ADelayIsACss2TimeEventErrorExecution, "<assign> to 'after' failed"))
-		return  // W3C SCXML 4.9: the error ends the block
-	}
-
 		}()
 		// W3C SCXML 3.8 + 4.9: onentry block 1, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.

@@ -1165,13 +1165,6 @@ func (p *ASendReachesOnlyWhatItsTargetNamesPolicy) ExecuteEntryActions(state ASe
 	}
 	return  // W3C SCXML 4.9: the error ends the block
 	}
-
-	// W3C SCXML 5.3: <assign location="afterRefused" expr="1">
-	if err := p.assignVariable(`afterRefused`, `1`); err != nil {
-		engine.Raise(sce.NewPlatformError(ASendReachesOnlyWhatItsTargetNamesEventErrorExecution, "<assign> to 'afterRefused' failed"))
-		return  // W3C SCXML 4.9: the error ends the block
-	}
-
 		}()
 		// W3C SCXML 3.8 + 4.9: onentry block 1, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
@@ -1189,13 +1182,6 @@ func (p *ASendReachesOnlyWhatItsTargetNamesPolicy) ExecuteEntryActions(state ASe
 	}
 	return  // W3C SCXML 4.9: the error ends the block
 	}
-
-	// W3C SCXML 5.3: <assign location="afterNobody" expr="1">
-	if err := p.assignVariable(`afterNobody`, `1`); err != nil {
-		engine.Raise(sce.NewPlatformError(ASendReachesOnlyWhatItsTargetNamesEventErrorExecution, "<assign> to 'afterNobody' failed"))
-		return  // W3C SCXML 4.9: the error ends the block
-	}
-
 		}()
 		// W3C SCXML 3.8 + 4.9: onentry block 2, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
