@@ -559,6 +559,55 @@ pub trait StatePolicy: Sized + 'static {
     #[cfg(not(feature = "no_std"))]
     fn restart_invoke(&mut self, _invoke_id: &str, _engine: &mut Engine<Self>) {}
 
+    /// How many times each `<invoke>` that has started in this session has
+    /// started, by the id the document gives it, in document order
+    /// (docs/adr/0045): what a saved state carries so that a start after a
+    /// restore is numbered on.
+    ///
+    /// Generated only when the document has an `<invoke type="scxml">` and
+    /// saves. `std` only, as the saved state is.
+    #[cfg(not(feature = "no_std"))]
+    fn invoke_starts(&self) -> Vec<(&'static str, u64)> {
+        Vec::new()
+    }
+
+    /// Judge `child`, a running child a saved format-2 state holds, against
+    /// the document the `<invoke>` it names starts there — its shape, its
+    /// revisions, every value, its own running children — building nothing
+    /// (docs/adr/0045, section 3, step 1).
+    ///
+    /// Generated only when the document has an `<invoke type="scxml">` and
+    /// saves. The default refuses: a document with no child to resume has none.
+    #[cfg(not(feature = "no_std"))]
+    fn judge_child(
+        child: &crate::saved_state::SavedChild,
+    ) -> Result<(), crate::saved_state::StateRefusal> {
+        Err(crate::saved_state::StateRefusal::new(format!(
+            "invokes names '{}', and the document starts no child session to resume",
+            child.id
+        )))
+    }
+
+    /// Build the child `child` holds as starting it would build it — its link
+    /// to this session, the clock, its host — and restore it from its saved
+    /// session in place of initializing it (docs/adr/0045, section 3, step 3):
+    /// no `<onentry>`, no `<data>`, no argument evaluated, nothing sent.
+    ///
+    /// Generated only when the document has an `<invoke type="scxml">` and
+    /// saves. The default refuses, as [`judge_child`](Self::judge_child) does.
+    #[cfg(not(feature = "no_std"))]
+    fn resume_child(
+        &mut self,
+        child: &crate::saved_state::SavedChild,
+        _engine: &mut Engine<Self>,
+        _wall_now_ms: u64,
+    ) -> Result<(), crate::saved_state::StateRefusal> {
+        Err(crate::saved_state::StateRefusal::new(format!(
+            "invokes names '{}', and the document starts no child session to resume",
+            child.id
+        )))
+    }
+
     /// Execute `<finalize>` handlers for child events (§scxml-6.5).
     ///
     /// Generated only when `HAS_FINALIZE` is `true`. Called from the engine's

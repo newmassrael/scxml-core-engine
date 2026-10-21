@@ -106,7 +106,7 @@ fn a_restored_child_of_the_other_candidate_is_saved_again() {
     // The watcher is running, in the slot of the candidate the value named when
     // the state was entered.
     assert_eq!(
-        engine.save_at(SAVED_AT_MS).expect("saves").invokes,
+        engine.save_at(SAVED_AT_MS).expect("saves").invokes.ids(),
         ["watch"]
     );
 
@@ -117,7 +117,7 @@ fn a_restored_child_of_the_other_candidate_is_saved_again() {
     settle(&mut restored);
     assert!(working(&restored));
     assert_eq!(
-        restored.save_at(SAVED_AT_MS).expect("saves").invokes,
+        restored.save_at(SAVED_AT_MS).expect("saves").invokes.ids(),
         ["watch"]
     );
 }

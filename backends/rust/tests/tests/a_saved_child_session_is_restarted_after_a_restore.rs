@@ -71,7 +71,7 @@ fn working(engine: &Engine<StaticInvokePolicy>) -> bool {
 fn a_machine_is_saved_with_the_child_it_is_running() {
     let engine = started();
     let saved = engine.save_at(SAVED_AT_MS).expect("saves");
-    assert_eq!(saved.invokes, ["worker"]);
+    assert_eq!(saved.invokes.ids(), ["worker"]);
     // The text the Kotlin suite writes for the same machine, byte for byte.
     assert_eq!(saved.to_json(), SHARED_WORKING.trim());
 }
@@ -105,7 +105,7 @@ fn a_child_that_had_taken_an_event_is_started_over_not_resumed() {
     let mut before = started();
     send(&mut before, "a");
     let saved = before.save_at(SAVED_AT_MS).expect("saves");
-    assert_eq!(saved.invokes, ["worker"], "it was running");
+    assert_eq!(saved.invokes.ids(), ["worker"], "it was running");
 
     let mut after = restored(&saved.to_json());
     send(&mut after, "b");
@@ -131,7 +131,7 @@ fn a_child_that_has_ended_is_not_started_again() {
     assert!(working(&before));
     let saved = before.save_at(SAVED_AT_MS).expect("saves");
     assert!(
-        saved.invokes.is_empty(),
+        saved.invokes.ids().is_empty(),
         "the child ended: {:?}",
         saved.invokes
     );
@@ -154,7 +154,7 @@ fn a_machine_that_left_the_invoking_state_saves_no_invocation() {
     assert!(!working(&engine));
     let saved = engine.save_at(SAVED_AT_MS).expect("saves");
     assert!(
-        saved.invokes.is_empty(),
+        saved.invokes.ids().is_empty(),
         "cancelled with its state: {:?}",
         saved.invokes
     );

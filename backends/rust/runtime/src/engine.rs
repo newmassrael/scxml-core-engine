@@ -1394,6 +1394,25 @@ impl<P: StatePolicy> Engine<P> {
         unsafe { f(&mut *policy_ptr, self) }
     }
 
+    /// docs/adr/0045: resume each of `children`, the running children a saved
+    /// format-2 state holds, in the order given, each restored where it stood
+    /// ([`StatePolicy::resume_child`]). Nothing starts and nothing is sent; the
+    /// first refusal stops the restore, and names the child by its path.
+    #[cfg(not(feature = "no_std"))]
+    pub(crate) fn resume_children(
+        &mut self,
+        children: &[crate::saved_state::SavedChild],
+        wall_now_ms: u64,
+    ) -> Result<(), crate::saved_state::StateRefusal> {
+        self.with_policy(|policy, engine| {
+            children.iter().enumerate().try_for_each(|(i, child)| {
+                policy
+                    .resume_child(child, engine, wall_now_ms)
+                    .map_err(|refusal| refusal.within(&format!("invokes[{i}].session")))
+            })
+        })
+    }
+
     /// §scxml-6.4: start the child session of each `<invoke>` in `ids` again,
     /// in the order given — what a restore does for the invocations a saved
     /// state lists, since a child is not saved and the process that ran it is

@@ -102,6 +102,14 @@ sce-portable-bytes = { path = "../portable-bytes", default-features = false }
 # embedded-Rust pattern — used by `embassy`, `defmt`, etc.
 portable-atomic = { version = "1", default-features = false, features = ["fallback"] }
 
+# The id of a root session its host gives none for is drawn from the operating
+# system's randomness, a UUID version 4 (`helpers::session_id`; docs/adr/0045,
+# "Questions the owner answered" 2). A target with no such source (bare metal,
+# `wasm32-unknown-unknown`) draws nothing, so it does not link the crate: its
+# host gives the id.
+[target.'cfg(not(any(target_os = "none", all(target_arch = "wasm32", target_os = "unknown"))))'.dependencies]
+getrandom = "0.2"
+
 [dev-dependencies]
 # Env-based log output during tests
 env_logger = "0.11"

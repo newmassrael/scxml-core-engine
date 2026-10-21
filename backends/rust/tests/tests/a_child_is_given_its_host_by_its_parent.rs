@@ -149,7 +149,7 @@ fn a_restored_machine_starts_its_child_again_with_a_host_from_its_own_parent() {
     let mut first = started(&before);
     send(&mut first, "a");
     let saved = first.save_at(1_700_000_000_000).expect("saves");
-    assert_eq!(saved.invokes, ["worker"], "the child was running");
+    assert_eq!(saved.invokes.ids(), ["worker"], "the child was running");
 
     // A restore is another machine with another host: the child is started over,
     // and what is asked of the host is asked of that one.

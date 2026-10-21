@@ -99,6 +99,8 @@ pub mod logger;
 pub mod microstep;
 pub mod scxml_constants;
 pub mod send;
+#[cfg(not(feature = "no_std"))]
+pub mod session_id;
 pub mod state_policy_concepts;
 pub mod unique_id_generator;
 pub mod url_encoding;

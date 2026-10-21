@@ -61,8 +61,19 @@ use crate::helpers::configuration::ConfigurationRejection;
 use crate::json::{self, Value};
 use crate::{Engine, EventQueueLike, EventType, EventWithMetadata, SceClock, StatePolicy};
 
-/// The format version this runtime writes and reads.
-pub const FORMAT: u32 = 1;
+/// The format of a saved state that names each running child by its id alone
+/// (`schemas/sce-saved-state.v1.schema.json`): a restore starts each again from
+/// its beginning.
+pub const FORMAT_1: u32 = 1;
+
+/// The format of a saved state that is a tree of sessions
+/// (`schemas/sce-saved-state.v2.schema.json`; docs/adr/0045): each running child
+/// is saved inside its parent with its whole state, and a restore resumes it.
+pub const FORMAT_2: u32 = 2;
+
+/// The format version this runtime writes. It reads [`FORMAT_1`] and
+/// [`FORMAT_2`].
+pub const FORMAT: u32 = FORMAT_1;
 
 /// The stability status of the saved-state wire surface, held in lockstep
 /// with `x-sce-schema-status` in `schemas/sce-saved-state.v1.schema.json`
@@ -75,6 +86,10 @@ pub const SCHEMA_STATUS: &str = "pre-release";
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct StateRefusal(String);
 
+/// What a refusal inside a child session of a tree begins with, before the
+/// session's path ([`StateRefusal::within`]).
+const SESSION_AT: &str = "the session at ";
+
 impl StateRefusal {
     /// Refuse, saying why.
     pub fn new(reason: impl Into<String>) -> Self {
@@ -84,6 +99,18 @@ impl StateRefusal {
     /// Why.
     pub fn reason(&self) -> &str {
         &self.0
+    }
+
+    /// This refusal, of the child session at `path` of the session that reads
+    /// it (`invokes[0].session`): a tree is refused as a whole, and the reason
+    /// names the session it is about by its path from the root
+    /// (docs/adr/0045, section 2), `invokes[0].session.invokes[1].session`
+    /// for a grandchild.
+    pub fn within(self, path: &str) -> Self {
+        match self.0.strip_prefix(SESSION_AT) {
+            Some(deeper) => Self(format!("{SESSION_AT}{path}.{deeper}")),
+            None => Self(format!("{SESSION_AT}{path}: {}", self.0)),
+        }
     }
 }
 
@@ -116,12 +143,22 @@ pub struct SavedState {
     /// would be delivered: earliest first, entries due at the same moment in
     /// the order they were sent.
     pub pending: Vec<SavedSend>,
-    /// The `<invoke>`s whose child session is running (§scxml-6.4), by the id
-    /// the document gives each, in document order. A child is not saved: a
-    /// restored machine starts each of these again from its beginning, under
-    /// the same id. One whose child has ended is absent — its `done.invoke` is
-    /// in the external queue, or already taken — so it is not started twice.
-    pub invokes: Vec<String>,
+    /// The `<invoke>`s whose child session is running (§scxml-6.4), in
+    /// document order: in format 2 each with the child's whole state, which a
+    /// restore resumes; in format 1 by the id alone, which a restore starts
+    /// again from its beginning ([`SavedInvokes`]). One whose child has ended is
+    /// absent — its `done.invoke` is in the external queue, or already taken —
+    /// so it is not started twice.
+    pub invokes: SavedInvokes,
+    /// The session's own id (`_sessionid`), which events held in the tree name
+    /// sessions by and a restore binds again (docs/adr/0045). An XML Nmtoken in
+    /// format 2; empty in a format-1 state, which holds none.
+    pub session_id: String,
+    /// How many times each `<invoke>` of the document has started in this
+    /// session, by its id, for each started at least once, in document order:
+    /// a start after a restore is numbered on from it. Empty in a format-1
+    /// state, which holds none.
+    pub invoke_starts: Vec<(String, u64)>,
     /// The `<invoke>`s a declared host invoker is running (§scxml-6.4.1), by
     /// `(type, id)`. A restored machine starts each again from the request it
     /// was started with, with the deadline it had left; the host is told it is a
@@ -146,6 +183,48 @@ pub struct SavedState {
     /// is every state saved before schemas had revisions; [`upgrade`] reads a
     /// state saved at an earlier revision as the machine's own.
     pub revisions: Vec<(String, SavedRevision)>,
+}
+
+/// The running child sessions of a saved session, as the format it was written
+/// in holds them.
+#[derive(Clone, Debug, PartialEq)]
+pub enum SavedInvokes {
+    /// Format 1: the id of each `<invoke>` whose child is running. The text
+    /// holds nothing of a child, so a restore starts each again from its
+    /// beginning, under the same id: all that state promised.
+    Restarted(Vec<String>),
+    /// Format 2: each running child with its whole state, resumed by a restore
+    /// where it stood (docs/adr/0045).
+    Resumed(Vec<SavedChild>),
+}
+
+impl SavedInvokes {
+    /// The id the document gives each running `<invoke>`, in order.
+    pub fn ids(&self) -> Vec<&str> {
+        match self {
+            Self::Restarted(ids) => ids.iter().map(String::as_str).collect(),
+            Self::Resumed(children) => children.iter().map(|c| c.id.as_str()).collect(),
+        }
+    }
+}
+
+/// A running child session, saved inside the session that started it
+/// (docs/adr/0045, section 1).
+#[derive(Clone, Debug, PartialEq)]
+pub struct SavedChild {
+    /// The id the document gives the `<invoke>` that started it.
+    pub id: String,
+    /// Which start of that `<invoke>` this is in its parent, counted from 1:
+    /// the count the parent's `invoke_starts` holds for it.
+    pub start: u64,
+    /// The id the child was started under, as `_event.invokeid` and an
+    /// `idlocation` variable hold it: carried, not computed again.
+    pub invoke_id: String,
+    /// The document the child runs: the child's name for a static `<invoke>`,
+    /// the candidate's for a hybrid one.
+    pub document: String,
+    /// The child's own state, its running children included.
+    pub session: SavedState,
 }
 
 /// The revision of one record schema a state was saved at.
@@ -318,16 +397,41 @@ pub struct SavedSend {
     pub act: SavedAct,
 }
 
-/// What a waiting `<send>` does when it comes due. The three the delayed sends
-/// of a document that saves can be: its own event on this session's external
-/// queue or on its internal queue (`#_internal`), or an act a host-served
-/// processor performs (§scxml-6.2.5).
+/// What a waiting `<send>` does when it comes due: its own event on this
+/// session's external queue or on its internal queue (`#_internal`), an act a
+/// host-served processor performs (§scxml-6.2.5), or, in format 2, an event for
+/// the parent or for a running child of this session, sessions the saved tree
+/// holds (docs/adr/0045).
 ///
-/// A delayed send to a parent, a child or another session is none of them, and
-/// a document that makes one is generated without the save API (§2.15): such a
-/// send is delivered through a session this state does not carry.
+/// A delayed send to any other session is none of them, and a document that
+/// makes one is generated without the save API (§2.15): such a send is
+/// delivered through a session this state does not carry.
 #[derive(Clone, Debug, PartialEq)]
 pub enum SavedAct {
+    /// An event for the session that started this one (`#_parent`).
+    Parent {
+        /// The event's name, as the parent resolves it.
+        event: String,
+        /// `_event.data`, as the wire carries it.
+        data: String,
+        /// The `<send>`'s id, which a `<cancel>` names.
+        send_id: String,
+        /// `_event.origin`: this session's id.
+        origin: String,
+    },
+    /// An event for a running child of this session (`#_<invokeid>`).
+    Child {
+        /// The id the target names the child's `<invoke>` by.
+        invoke_id: String,
+        /// The event's name, as the child resolves it.
+        event: String,
+        /// `_event.data`, as the wire carries it.
+        data: String,
+        /// The `<send>`'s id, which a `<cancel>` names.
+        send_id: String,
+        /// `_event.origin`: this session's id.
+        origin: String,
+    },
     /// An event for this session's external queue.
     Raise {
         /// The event's name, as the document spells it.
@@ -487,6 +591,26 @@ fn read_token(written: &str, what: &str) -> Result<u64, StateRefusal> {
         })
 }
 
+/// A count of starts, as the text a format-2 saved state writes it as: a
+/// positive whole number in digits, with no leading zero, within a signed
+/// 64-bit count, as every backend reads one.
+fn read_count(written: &str, what: &str) -> Result<u64, StateRefusal> {
+    written
+        .parse::<u64>()
+        .ok()
+        .filter(|count| {
+            *count >= 1
+                && *count <= i64::MAX as u64
+                && !written.starts_with('0')
+                && written.bytes().all(|b| b.is_ascii_digit())
+        })
+        .ok_or_else(|| {
+            StateRefusal::new(format!(
+                "'{what}' ({written}) is not a count of starts, a whole number from 1"
+            ))
+        })
+}
+
 impl SavedHostInvoke {
     fn to_value(&self) -> Value {
         let text = |s: &str| Value::Text(s.to_string());
@@ -544,10 +668,36 @@ impl SavedSend {
                     SavedAct::Raise { .. } => "raise",
                     SavedAct::Internal { .. } => "internal",
                     SavedAct::Host(_) => "host",
+                    SavedAct::Parent { .. } => "parent",
+                    SavedAct::Child { .. } => "child",
                 }),
             ),
         ];
         match &self.act {
+            SavedAct::Parent {
+                event,
+                data,
+                send_id,
+                origin,
+            } => members.extend([
+                ("event".to_string(), text(event)),
+                ("data".to_string(), text(data)),
+                ("sendid".to_string(), text(send_id)),
+                ("origin".to_string(), text(origin)),
+            ]),
+            SavedAct::Child {
+                invoke_id,
+                event,
+                data,
+                send_id,
+                origin,
+            } => members.extend([
+                ("invokeid".to_string(), text(invoke_id)),
+                ("event".to_string(), text(event)),
+                ("data".to_string(), text(data)),
+                ("sendid".to_string(), text(send_id)),
+                ("origin".to_string(), text(origin)),
+            ]),
             SavedAct::Raise {
                 event,
                 data,
@@ -584,7 +734,9 @@ impl SavedSend {
         Value::Object(members)
     }
 
-    fn from_value(value: &Value, what: &str) -> Result<Self, StateRefusal> {
+    /// The waiting send `value`, of a state of `format`; `what` names it in a
+    /// refusal. A send to the parent or to a child is an act of format 2 only.
+    fn from_value(value: &Value, what: &str, format: u32) -> Result<Self, StateRefusal> {
         let text = |key: &str| match value.member(key) {
             Some(Value::Text(s)) => Ok(s.clone()),
             Some(_) => Err(StateRefusal::new(format!("'{what}.{key}' is not a text"))),
@@ -592,6 +744,19 @@ impl SavedSend {
         };
         let due = read_moment(&text("due")?, &format!("{what}.due"))?;
         let act = match text("act")?.as_str() {
+            "parent" if format == FORMAT_2 => SavedAct::Parent {
+                event: text("event")?,
+                data: text("data")?,
+                send_id: text("sendid")?,
+                origin: text("origin")?,
+            },
+            "child" if format == FORMAT_2 => SavedAct::Child {
+                invoke_id: text("invokeid")?,
+                event: text("event")?,
+                data: text("data")?,
+                send_id: text("sendid")?,
+                origin: text("origin")?,
+            },
             "raise" => SavedAct::Raise {
                 event: text("event")?,
                 data: text("data")?,
@@ -614,9 +779,16 @@ impl SavedSend {
                 data: text("data")?,
                 invoke_id: text("invokeid")?,
             }),
+            other if format == FORMAT_1 => {
+                return Err(StateRefusal::new(format!(
+                    "'{what}.act' is '{other}', which is not raise, internal or host, the acts \
+                     of format 1"
+                )))
+            }
             other => {
                 return Err(StateRefusal::new(format!(
-                    "'{what}.act' is '{other}', which is not raise, internal or host"
+                    "'{what}.act' is '{other}', which is not raise, internal, host, parent or \
+                     child"
                 )))
             }
         };
@@ -737,11 +909,49 @@ impl SavedState {
             .ok_or_else(|| StateRefusal::new(format!("the saved state has no variable '{id}'")))
     }
 
-    /// The state as `sce-saved-state` JSON.
+    /// The format this state is of: [`FORMAT_2`] for a tree of sessions,
+    /// [`FORMAT_1`] for a state that names its running children by id alone.
+    pub fn format(&self) -> u32 {
+        match self.invokes {
+            SavedInvokes::Restarted(_) => FORMAT_1,
+            SavedInvokes::Resumed(_) => FORMAT_2,
+        }
+    }
+
+    /// How many times the `<invoke>` `id` had started in this session when it
+    /// was saved: 0 for one that had not, and for every one of a format-1
+    /// state, which holds no count.
+    pub fn invoke_start(&self, id: &str) -> u64 {
+        self.invoke_starts
+            .iter()
+            .find(|(invoke, _)| invoke == id)
+            .map_or(0, |(_, count)| *count)
+    }
+
+    /// The state as `sce-saved-state` JSON, in the format it is of
+    /// ([`Self::format`]): the root of the text, with its `format`.
     pub fn to_json(&self) -> String {
-        let mut members = vec![
-            ("format".to_string(), Value::Number(FORMAT.to_string())),
-            ("shape".to_string(), Value::Text(self.shape.clone())),
+        let mut members = vec![(
+            "format".to_string(),
+            Value::Number(self.format().to_string()),
+        )];
+        members.extend(self.members());
+        json::write(&Value::Object(members))
+    }
+
+    /// The members of this session, in the order every backend writes them:
+    /// format 1's, and in format 2 `sessionid` after `shape` and `invokestarts`
+    /// after `invokes`, each running child's session written by the same rule.
+    fn members(&self) -> Vec<(String, Value)> {
+        let format2 = matches!(self.invokes, SavedInvokes::Resumed(_));
+        let mut members = vec![("shape".to_string(), Value::Text(self.shape.clone()))];
+        if format2 {
+            members.push((
+                "sessionid".to_string(),
+                Value::Text(self.session_id.clone()),
+            ));
+        }
+        members.extend([
             (
                 "configuration".to_string(),
                 Value::Array(
@@ -775,10 +985,29 @@ impl SavedState {
                 "pending".to_string(),
                 Value::Array(self.pending.iter().map(SavedSend::to_value).collect()),
             ),
-            (
+        ]);
+        match &self.invokes {
+            SavedInvokes::Restarted(ids) => members.push((
                 "invokes".to_string(),
-                Value::Array(self.invokes.iter().cloned().map(Value::Text).collect()),
-            ),
+                Value::Array(ids.iter().cloned().map(Value::Text).collect()),
+            )),
+            SavedInvokes::Resumed(children) => {
+                members.push((
+                    "invokes".to_string(),
+                    Value::Array(children.iter().map(SavedChild::to_value).collect()),
+                ));
+                members.push((
+                    "invokestarts".to_string(),
+                    Value::Object(
+                        self.invoke_starts
+                            .iter()
+                            .map(|(id, count)| (id.clone(), Value::Text(count.to_string())))
+                            .collect(),
+                    ),
+                ));
+            }
+        }
+        members.extend([
             (
                 "hostinvokes".to_string(),
                 Value::Array(
@@ -800,7 +1029,7 @@ impl SavedState {
                 "external".to_string(),
                 Value::Array(self.external.iter().map(SavedEvent::to_value).collect()),
             ),
-        ];
+        ]);
         // Absent, not empty, when no record schema is past its first revision:
         // the text of such a state is the text it was before revisions existed.
         if !self.revisions.is_empty() {
@@ -825,28 +1054,37 @@ impl SavedState {
                 ),
             ));
         }
-        json::write(&Value::Object(members))
+        members
     }
 
-    /// Read `sce-saved-state` JSON. The shape is not judged here — the
-    /// machine that restores it knows its own ([`check_shape`]).
+    /// Read `sce-saved-state` JSON, of format 1 or 2. The shape is not judged
+    /// here — the machine that restores it knows its own ([`upgrade`]).
     pub fn from_json(text: &str) -> Result<Self, StateRefusal> {
         let value =
             json::parse(text).map_err(|e| StateRefusal::new(format!("the saved state is {e}")))?;
+        let format = match value.member("format") {
+            Some(Value::Number(n)) if n == &FORMAT_1.to_string() => FORMAT_1,
+            Some(Value::Number(n)) if n == &FORMAT_2.to_string() => FORMAT_2,
+            Some(other) => {
+                return Err(StateRefusal::new(format!(
+                    "the saved state is format {}, and this runtime reads formats {FORMAT_1} \
+                     and {FORMAT_2}",
+                    json::write(other)
+                )))
+            }
+            None => return Err(StateRefusal::new("the saved state has no 'format'")),
+        };
+        Self::from_session(&value, format)
+    }
+
+    /// The session `value` of a text of `format`: the root, or a child's
+    /// `session`, which states no `format` of its own.
+    fn from_session(value: &Value, format: u32) -> Result<Self, StateRefusal> {
         let field = |name: &str| {
             value
                 .member(name)
                 .ok_or_else(|| StateRefusal::new(format!("the saved state has no '{name}'")))
         };
-        match field("format")? {
-            Value::Number(n) if n == &FORMAT.to_string() => {}
-            other => {
-                return Err(StateRefusal::new(format!(
-                    "the saved state is format {}, and this runtime reads format {FORMAT}",
-                    json::write(other)
-                )))
-            }
-        }
         let text_of = |v: &Value, what: &str| match v {
             Value::Text(s) => Ok(s.clone()),
             _ => Err(StateRefusal::new(format!("'{what}' is not a text"))),
@@ -880,16 +1118,50 @@ impl SavedState {
             Value::Array(items) => items
                 .iter()
                 .enumerate()
-                .map(|(i, v)| SavedSend::from_value(v, &format!("pending[{i}]")))
+                .map(|(i, v)| SavedSend::from_value(v, &format!("pending[{i}]"), format))
                 .collect::<Result<Vec<_>, _>>()?,
             _ => return Err(StateRefusal::new("'pending' is not an array")),
         };
-        let invokes = match field("invokes")? {
-            Value::Array(items) => items
-                .iter()
-                .map(|v| text_of(v, "invokes"))
-                .collect::<Result<Vec<_>, _>>()?,
+        let invokes = match (field("invokes")?, format) {
+            (Value::Array(items), FORMAT_1) => SavedInvokes::Restarted(
+                items
+                    .iter()
+                    .map(|v| text_of(v, "invokes"))
+                    .collect::<Result<Vec<_>, _>>()?,
+            ),
+            (Value::Array(items), _) => SavedInvokes::Resumed(
+                items
+                    .iter()
+                    .enumerate()
+                    .map(|(i, v)| SavedChild::from_value(v, i))
+                    .collect::<Result<Vec<_>, _>>()?,
+            ),
             _ => return Err(StateRefusal::new("'invokes' is not an array")),
+        };
+        // Format 2's own members: the session's id and its count of starts.
+        let (session_id, invoke_starts) = if format == FORMAT_1 {
+            (String::new(), Vec::new())
+        } else {
+            let session_id = text_of(field("sessionid")?, "sessionid")?;
+            if !crate::helpers::session_id::is_nmtoken(&session_id) {
+                return Err(StateRefusal::new(format!(
+                    "'sessionid' ({session_id}) is not an XML Nmtoken, which a session id is"
+                )));
+            }
+            let invoke_starts = match field("invokestarts")? {
+                Value::Object(members) => members
+                    .iter()
+                    .map(|(id, count)| match count {
+                        Value::Text(written) => read_count(written, &format!("invokestarts.{id}"))
+                            .map(|count| (id.clone(), count)),
+                        _ => Err(StateRefusal::new(format!(
+                            "'invokestarts.{id}' is not a text"
+                        ))),
+                    })
+                    .collect::<Result<Vec<_>, _>>()?,
+                _ => return Err(StateRefusal::new("'invokestarts' is not an object")),
+            };
+            (session_id, invoke_starts)
         };
         let host_invokes = match field("hostinvokes")? {
             Value::Array(items) => items
@@ -944,10 +1216,62 @@ impl SavedState {
             history,
             pending,
             invokes,
+            session_id,
+            invoke_starts,
             host_invokes,
             host_invoke_token,
             auto_send_seq,
             external,
+        })
+    }
+}
+
+impl SavedChild {
+    fn to_value(&self) -> Value {
+        let text = |s: &str| Value::Text(s.to_string());
+        Value::Object(vec![
+            ("id".to_string(), text(&self.id)),
+            ("start".to_string(), Value::Text(self.start.to_string())),
+            ("invokeid".to_string(), text(&self.invoke_id)),
+            ("document".to_string(), text(&self.document)),
+            ("session".to_string(), Value::Object(self.session.members())),
+        ])
+    }
+
+    /// The `index`th running child of a format-2 session. A refusal inside the
+    /// child's own session names it by its path ([`StateRefusal::within`]).
+    fn from_value(value: &Value, index: usize) -> Result<Self, StateRefusal> {
+        let what = format!("invokes[{index}]");
+        let text = |key: &str| match value.member(key) {
+            Some(Value::Text(s)) if !s.is_empty() => Ok(s.clone()),
+            Some(Value::Text(_)) => Err(StateRefusal::new(format!("'{what}.{key}' is empty"))),
+            Some(_) => Err(StateRefusal::new(format!("'{what}.{key}' is not a text"))),
+            None => Err(StateRefusal::new(format!("'{what}' has no '{key}'"))),
+        };
+        let start = read_count(&text("start")?, &format!("{what}.start"))?;
+        let session = match value.member("session") {
+            Some(session @ Value::Object(_)) => {
+                if session.member("format").is_some() {
+                    return Err(StateRefusal::new(format!(
+                        "'{what}.session' states a format, which only the root of a tree does"
+                    )));
+                }
+                SavedState::from_session(session, FORMAT_2)
+                    .map_err(|refusal| refusal.within(&format!("{what}.session")))?
+            }
+            Some(_) => {
+                return Err(StateRefusal::new(format!(
+                    "'{what}.session' is not an object"
+                )))
+            }
+            None => return Err(StateRefusal::new(format!("'{what}' has no 'session'"))),
+        };
+        Ok(Self {
+            id: text("id")?,
+            start,
+            invoke_id: text("invokeid")?,
+            document: text("document")?,
+            session,
         })
     }
 }
@@ -1319,12 +1643,16 @@ pub fn save<P: StatePolicy>(
         pending,
         // §scxml-6.4: the children that are running, which a restore starts
         // again. The policy lists them in document order.
-        invokes: engine
-            .policy()
-            .running_invokes()
-            .into_iter()
-            .map(str::to_string)
-            .collect(),
+        invokes: SavedInvokes::Restarted(
+            engine
+                .policy()
+                .running_invokes()
+                .into_iter()
+                .map(str::to_string)
+                .collect(),
+        ),
+        session_id: String::new(),
+        invoke_starts: Vec::new(),
         host_invokes: save_host_invokes(engine, wall_now_ms),
         host_invoke_token: engine.next_host_invoke_token(),
         auto_send_seq: engine.auto_send_seq(),
@@ -1640,16 +1968,24 @@ pub fn check_shape(saved: &SavedState, shape: &str) -> Result<(), StateRefusal> 
 /// The events of the external queue and of the waiting sends hold their data as
 /// the wire carried it, and the lift reads it with the defaults when each is
 /// delivered, so nothing of them is grown here.
+///
+/// A format-2 state is judged against the format-2 shapes, which name an enum
+/// by its document rather than by its alias (docs/adr/0045, section 2), and a
+/// format-1 state against the format-1 ones, exactly as before.
 pub fn upgrade(saved: &SavedState, shape: &SavedShape) -> Result<SavedState, StateRefusal> {
+    let (first, revised) = match saved.format() {
+        FORMAT_1 => (shape.first, shape.revised),
+        _ => (shape.format2_first, shape.format2_revised),
+    };
     if saved.revisions.is_empty() {
-        check_shape(saved, shape.first)?;
-    } else if saved.shape == shape.first {
+        check_shape(saved, first)?;
+    } else if saved.shape == first {
         return Err(StateRefusal::new(
             "the saved state names revisions of its record schemas and has the shape of a \
              state that names none",
         ));
     } else {
-        check_shape(saved, shape.revised)?;
+        check_shape(saved, revised)?;
     }
     for (key, named) in &saved.revisions {
         // A record schema by the event it declares, an enum by its key.
@@ -1842,12 +2178,66 @@ fn grow_record(
 /// the wall clock the saved `due`s were written against: a waiting send is
 /// armed to come due `due - wall_now_ms` after now, and one already due is
 /// armed to come due now, behind the ones due before it.
+///
+/// A format-1 state's running children are started again from their
+/// beginning, last, so what a child sends as it starts stands behind what was
+/// already waiting. A format-2 state's are judged with the rest before anything
+/// is built ([`judge`]), and resumed, each where it stood, once this session
+/// stands where it did ([`StatePolicy::resume_child`]).
 pub fn enter<P: StatePolicy>(
     policy: P,
     saved: &SavedState,
     clock: SceClock,
     wall_now_ms: u64,
 ) -> Result<Engine<P>, StateRefusal> {
+    let judged = judge_session::<P>(saved)?;
+    let mut engine = Engine::new(policy);
+    engine.set_clock(clock);
+    engine
+        .enter_at(&judged.configuration, judged.current)
+        .map_err(|rejection| StateRefusal::new(describe::<P>(&rejection)))?;
+    for queued in judged.external {
+        engine.raise_external_with_meta(queued);
+    }
+    arm_pending(&mut engine, judged.pending, wall_now_ms);
+    rearm_host_invokes(&mut engine, &saved.host_invokes, wall_now_ms);
+    engine.set_next_host_invoke_token(saved.host_invoke_token);
+    engine.set_auto_send_seq(saved.auto_send_seq);
+    match &saved.invokes {
+        // Last, so what a child sends as it starts stands behind what was
+        // already waiting: the saved machine's queue was ahead of it.
+        SavedInvokes::Restarted(_) => engine.restart_invokes(&judged.restarts),
+        SavedInvokes::Resumed(children) => engine.resume_children(children, wall_now_ms)?,
+    }
+    Ok(engine)
+}
+
+/// A saved session read against the document of `P`, before anything is built.
+struct Judged<'s, P: StatePolicy> {
+    configuration: crate::helpers::hierarchy::StateChain<P::State>,
+    current: P::State,
+    external: Vec<EventWithMetadata<P::Event, P::Payload>>,
+    pending: Vec<ReadSend<'s, P::Event>>,
+    /// The `<invoke>`s a format-1 state lists, each to be started again.
+    restarts: Vec<&'s str>,
+}
+
+/// Refuse `saved` unless it can be a state of the document of `P`, building
+/// nothing (docs/adr/0045, section 3, step 1): its configuration, its queue,
+/// its waiting sends, its running and host-run invocations, its count of
+/// starts, and each running child's session against the document that child
+/// runs ([`StatePolicy::judge_child`]), to any depth.
+///
+/// The shape, the revisions, the history and the variables are the generated
+/// machine's to judge, before this ([`upgrade`], [`restore_history`]); a
+/// generated `<Machine>Persist::judge` does both, and is what a parent's judge
+/// of a tree calls for each child it holds.
+pub fn judge<P: StatePolicy>(saved: &SavedState) -> Result<(), StateRefusal> {
+    judge_session::<P>(saved).map(|_| ())
+}
+
+/// [`judge`], keeping what it read for [`enter`] to build from.
+fn judge_session<P: StatePolicy>(saved: &SavedState) -> Result<Judged<'_, P>, StateRefusal> {
     let state = |id: &str| {
         P::get_state_from_name(id)
             .ok_or_else(|| StateRefusal::new(format!("the document has no state '{id}'")))
@@ -1858,6 +2248,8 @@ pub fn enter<P: StatePolicy>(
         .map(|id| state(id))
         .collect::<Result<crate::helpers::hierarchy::StateChain<P::State>, _>>()?;
     let current = state(&saved.current)?;
+    crate::helpers::configuration::validate::<P>(&configuration, current)
+        .map_err(|rejection| StateRefusal::new(describe::<P>(&rejection)))?;
     // Every queued event is read before anything is entered, so one this
     // document cannot name refuses the restore rather than half of the queue.
     let external = saved
@@ -1903,9 +2295,9 @@ pub fn enter<P: StatePolicy>(
         .collect::<Result<Vec<_>, StateRefusal>>()?;
     // The same for a running invocation: one the document does not have, one
     // whose state the saved configuration does not stand in, or one named
-    // twice would start a child the saved machine could not have had.
-    let mut restarts: Vec<&str> = Vec::with_capacity(saved.invokes.len());
-    for (i, id) in saved.invokes.iter().enumerate() {
+    // twice would be a child the saved machine could not have had.
+    let ids = saved.invokes.ids();
+    for (i, id) in ids.iter().enumerate() {
         let owner = P::invoke_owner(id).ok_or_else(|| {
             StateRefusal::new(format!(
                 "invokes[{i}] is '{id}', which the document does not invoke"
@@ -1916,13 +2308,29 @@ pub fn enter<P: StatePolicy>(
                 "invokes[{i}] is '{id}', whose state the saved configuration does not stand in"
             )));
         }
-        if restarts.contains(&id.as_str()) {
+        if ids[..i].contains(id) {
             return Err(StateRefusal::new(format!(
                 "invokes[{i}] is '{id}', which an earlier entry already names"
             )));
         }
-        restarts.push(id);
     }
+    // A count of starts names an `<invoke>` of the document.
+    for (id, _) in &saved.invoke_starts {
+        if P::invoke_owner(id).is_none() {
+            return Err(StateRefusal::new(format!(
+                "invokestarts counts '{id}', which the document does not invoke"
+            )));
+        }
+    }
+    let restarts: Vec<&str> = match &saved.invokes {
+        SavedInvokes::Restarted(ids) => ids.iter().map(String::as_str).collect(),
+        SavedInvokes::Resumed(children) => {
+            for (i, child) in children.iter().enumerate() {
+                judge_child_entry::<P>(saved, child, i)?;
+            }
+            Vec::new()
+        }
+    };
     // And for a host-run one, by the `(type, id)` the document declares: one it
     // does not have, one whose state the saved configuration does not stand in,
     // or one named twice is a run the saved machine could not have had.
@@ -1949,22 +2357,43 @@ pub fn enter<P: StatePolicy>(
             )));
         }
     }
-    let mut engine = Engine::new(policy);
-    engine.set_clock(clock);
-    engine
-        .enter_at(&configuration, current)
-        .map_err(|rejection| StateRefusal::new(describe::<P>(&rejection)))?;
-    for queued in external {
-        engine.raise_external_with_meta(queued);
+    Ok(Judged {
+        configuration,
+        current,
+        external,
+        pending,
+        restarts,
+    })
+}
+
+/// Refuse `child`, the `index`th running child of the format-2 session
+/// `parent`, unless it is the child that session could be running
+/// (docs/adr/0045, section 3, step 1): its start is the count the session holds
+/// for its `<invoke>`, its session id is the session's and the id it was
+/// started under, and its own session is a state of the document it names
+/// ([`StatePolicy::judge_child`]).
+fn judge_child_entry<P: StatePolicy>(
+    parent: &SavedState,
+    child: &SavedChild,
+    index: usize,
+) -> Result<(), StateRefusal> {
+    let what = format!("invokes[{index}]");
+    let count = parent.invoke_start(&child.id);
+    if child.start != count {
+        return Err(StateRefusal::new(format!(
+            "{what} is start {} of '{}', and the session counts {count} starts of it: a state \
+             re-entered cancels the earlier child before it starts the next one",
+            child.start, child.id
+        )));
     }
-    arm_pending(&mut engine, pending, wall_now_ms);
-    rearm_host_invokes(&mut engine, &saved.host_invokes, wall_now_ms);
-    engine.set_next_host_invoke_token(saved.host_invoke_token);
-    engine.set_auto_send_seq(saved.auto_send_seq);
-    // Last, so what a child sends as it starts stands behind what was already
-    // waiting: the saved machine's queue was ahead of it.
-    engine.restart_invokes(&restarts);
-    Ok(engine)
+    let derived = format!("{}.{}", parent.session_id, child.invoke_id);
+    if child.session.session_id != derived {
+        return Err(StateRefusal::new(format!(
+            "{what}.session's id is '{}', and a child of '{}' started under '{}' is '{derived}'",
+            child.session.session_id, parent.session_id, child.invoke_id
+        )));
+    }
+    P::judge_child(child).map_err(|refusal| refusal.within(&format!("{what}.session")))
 }
 
 /// Re-arm each of `host_invokes` on `engine`, in the order a saved state lists
@@ -2024,6 +2453,14 @@ enum ReadSend<'s, E> {
         due: u64,
         host: &'s SavedHostSend,
     },
+    /// An event for the parent or a child, which resolves its name itself.
+    Routed {
+        due: u64,
+        route: crate::ScheduledRoute,
+        data: &'s str,
+        send_id: &'s str,
+        origin: &'s str,
+    },
 }
 
 impl<'s, E> ReadSend<'s, E> {
@@ -2067,6 +2504,47 @@ impl<'s, E> ReadSend<'s, E> {
                 origin,
             },
             SavedAct::Host(host) => Self::Host { due, host },
+            SavedAct::Parent {
+                event,
+                data,
+                send_id,
+                origin,
+            } => Self::Routed {
+                due,
+                route: crate::ScheduledRoute::Parent {
+                    event_name: event.clone(),
+                },
+                data,
+                send_id,
+                origin,
+            },
+            // The child is named by the `<invoke>` the target names, which must
+            // be one of the document's: a send to any other is one the save
+            // would have been refused for.
+            SavedAct::Child {
+                invoke_id,
+                event,
+                data,
+                send_id,
+                origin,
+            } => {
+                if P::invoke_owner(invoke_id).is_none() {
+                    return Err(StateRefusal::new(format!(
+                        "pending[{index}] is a send to the child '{invoke_id}', which the \
+                         document does not invoke"
+                    )));
+                }
+                Self::Routed {
+                    due,
+                    route: crate::ScheduledRoute::Invocation {
+                        invoke_id: invoke_id.clone(),
+                        event_name: event.clone(),
+                    },
+                    data,
+                    send_id,
+                    origin,
+                }
+            }
         })
     }
 }
@@ -2128,6 +2606,22 @@ fn arm_pending<P: StatePolicy>(
                 engine
                     .scheduler
                     .schedule_host_send_at(request, ready_at(due), &host.send_id);
+            }
+            ReadSend::Routed {
+                due,
+                route,
+                data,
+                send_id,
+                origin,
+            } => {
+                engine.scheduler.schedule_routed_at(
+                    None,
+                    ready_at(due),
+                    send_id,
+                    data,
+                    origin,
+                    route,
+                );
             }
         }
     }
@@ -2238,7 +2732,9 @@ mod tests {
                     }),
                 },
             ],
-            invokes: vec!["worker".to_string(), "spare".to_string()],
+            invokes: SavedInvokes::Restarted(vec!["worker".to_string(), "spare".to_string()]),
+            session_id: String::new(),
+            invoke_starts: Vec::new(),
             host_invokes: vec![
                 SavedHostInvoke {
                     processor_type: "x-host".to_string(),
@@ -2301,6 +2797,183 @@ mod tests {
         assert_eq!(
             u64::from_saved(back.variable("big").unwrap(), "big"),
             Ok(u64::MAX)
+        );
+    }
+
+    // ── a tree of sessions (format 2, docs/adr/0045) ──
+
+    /// A session of shape `shape` and id `session_id` standing in `working`,
+    /// running `children`, with nothing waiting.
+    fn session(shape: char, session_id: &str, children: Vec<SavedChild>) -> SavedState {
+        SavedState {
+            shape: shape.to_string().repeat(64),
+            configuration: vec!["working".to_string()],
+            current: "working".to_string(),
+            variables: vec![("completed".to_string(), 0u32.to_saved())],
+            history: Vec::new(),
+            pending: Vec::new(),
+            invokes: SavedInvokes::Resumed(children),
+            session_id: session_id.to_string(),
+            invoke_starts: Vec::new(),
+            host_invokes: Vec::new(),
+            host_invoke_token: 0,
+            auto_send_seq: 0,
+            external: Vec::new(),
+            revisions: Vec::new(),
+        }
+    }
+
+    /// A root running a child that runs a grandchild, with a send waiting each
+    /// way across the first link.
+    fn tree() -> SavedState {
+        let grandchild = session('c', "planner-1.worker.busy.1.helper", Vec::new());
+        let mut child = session(
+            'b',
+            "planner-1.worker",
+            vec![SavedChild {
+                id: "helper".to_string(),
+                start: 1,
+                invoke_id: "busy.1.helper".to_string(),
+                document: "static_hybrid_holder".to_string(),
+                session: grandchild,
+            }],
+        );
+        child.invoke_starts = vec![("helper".to_string(), 1)];
+        child.pending = vec![SavedSend {
+            due: 1_700_000_005_000,
+            act: SavedAct::Parent {
+                event: "progress".to_string(),
+                data: "{\"n\":1}".to_string(),
+                send_id: "report".to_string(),
+                origin: "planner-1.worker".to_string(),
+            },
+        }];
+        let mut root = session(
+            'a',
+            "planner-1",
+            vec![SavedChild {
+                id: "worker".to_string(),
+                start: 2,
+                invoke_id: "worker".to_string(),
+                document: "static_invoke_child".to_string(),
+                session: child,
+            }],
+        );
+        root.invoke_starts = vec![("worker".to_string(), 2)];
+        root.pending = vec![SavedSend {
+            due: 1_700_000_006_000,
+            act: SavedAct::Child {
+                invoke_id: "worker".to_string(),
+                event: "nudge".to_string(),
+                data: String::new(),
+                send_id: "poke".to_string(),
+                origin: "planner-1".to_string(),
+            },
+        }];
+        root
+    }
+
+    #[test]
+    fn a_tree_of_sessions_is_read_back_as_it_was_written() {
+        let tree = tree();
+        assert_eq!(tree.format(), FORMAT_2);
+        let text = tree.to_json();
+        // The format is stated once, at the root, and each session's id follows
+        // its shape: the order every backend writes.
+        let prefix = format!(
+            r#"{{"format":2,"shape":"{}","sessionid":"planner-1","#,
+            "a".repeat(64)
+        );
+        assert!(text.starts_with(&prefix), "{text}");
+        assert_eq!(text.matches(r#""format""#).count(), 1, "{text}");
+        assert!(text.contains(r#""invokestarts":{"worker":"2"}"#), "{text}");
+        assert_eq!(SavedState::from_json(&text), Ok(tree.clone()));
+        assert_eq!(tree.invokes.ids(), ["worker"]);
+        assert_eq!(tree.invoke_start("worker"), 2);
+        assert_eq!(
+            tree.invoke_start("helper"),
+            0,
+            "counted in the child, not here"
+        );
+    }
+
+    #[test]
+    fn a_tree_that_is_not_one_is_refused_where_it_is_read() {
+        let text = tree().to_json();
+        for (what, from, to, wanted) in [
+            (
+                "a root with the empty id",
+                r#""sessionid":"planner-1","#,
+                r#""sessionid":"","#,
+                "'sessionid' () is not an XML Nmtoken",
+            ),
+            (
+                "a grandchild whose id holds a space",
+                r#""sessionid":"planner-1.worker.busy.1.helper""#,
+                r#""sessionid":"planner 1""#,
+                "the session at invokes[0].session.invokes[0].session: 'sessionid'",
+            ),
+            (
+                "a start counted from 0",
+                r#""start":"2""#,
+                r#""start":"0""#,
+                "'invokes[0].start' (0) is not a count of starts",
+            ),
+            (
+                "a child that names no document",
+                r#""document":"static_invoke_child""#,
+                r#""document":"""#,
+                "'invokes[0].document' is empty",
+            ),
+            (
+                "a count of starts written as a number",
+                r#""invokestarts":{"worker":"2"}"#,
+                r#""invokestarts":{"worker":2}"#,
+                "'invokestarts.worker' is not a text",
+            ),
+            (
+                "a waiting send of an act no session makes",
+                r#""act":"child""#,
+                r#""act":"sideways""#,
+                "not raise, internal, host, parent or child",
+            ),
+        ] {
+            let changed = text.replacen(from, to, 1);
+            assert_ne!(changed, text, "{what}: the change did not apply");
+            let refusal = SavedState::from_json(&changed).expect_err(what);
+            assert!(refusal.reason().contains(wanted), "{what}: {refusal}");
+        }
+        // A child's session states no format of its own.
+        let nested = text.replacen(
+            r#""session":{"shape""#,
+            r#""session":{"format":2,"shape""#,
+            1,
+        );
+        let refusal = SavedState::from_json(&nested).expect_err("a nested format");
+        assert!(refusal.reason().contains("states a format"), "{refusal}");
+    }
+
+    #[test]
+    fn a_format_1_state_holds_no_send_to_a_parent_or_a_child() {
+        let text = with_pending(
+            r#"{"due":"1","act":"parent","event":"e","data":"","sendid":"","origin":""}"#,
+        );
+        let refusal = SavedState::from_json(&text).expect_err("not a format-1 act");
+        assert!(
+            refusal.reason().contains("the acts of format 1"),
+            "{refusal}"
+        );
+    }
+
+    #[test]
+    fn a_refusal_inside_a_tree_names_the_session_by_its_path() {
+        let refusal = StateRefusal::new("the saved state has no 'pending'")
+            .within("invokes[1].session")
+            .within("invokes[0].session");
+        assert_eq!(
+            refusal.reason(),
+            "the session at invokes[0].session.invokes[1].session: the saved state has no \
+             'pending'"
         );
     }
 
@@ -2613,8 +3286,12 @@ mod tests {
 
     #[test]
     fn another_format_is_refused() {
-        let text = r#"{"format":2,"shape":"d","configuration":[],"current":"s","variables":{},"history":{},"external":[]}"#;
-        assert!(SavedState::from_json(text).is_err());
+        let text = r#"{"format":3,"shape":"d","configuration":[],"current":"s","variables":{},"history":{},"external":[]}"#;
+        let refusal = SavedState::from_json(text).expect_err("format 3");
+        assert!(
+            refusal.reason().contains("reads formats 1 and 2"),
+            "{refusal}"
+        );
     }
 
     /// Every field is always present: a state saved with no history says so
