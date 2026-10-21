@@ -5077,7 +5077,10 @@ fn ecma_precedence(op: BinOp) -> u8 {
 
 fn kotlin_precedence(op: BinOp) -> u8 {
     match op {
-        BinOp::Coalesce => COALESCE_PRECEDENCE,
+        // Kotlin's elvis, which `??` is spelled as, binds tighter than a
+        // comparison and looser than an infix function (`and`, `shl`): a
+        // comparison under it is parenthesised, and it stands bare under one.
+        BinOp::Coalesce => 6,
         BinOp::Or => 1,
         BinOp::And => 2,
         BinOp::StrictEq | BinOp::StrictNeq => 3,
@@ -6989,6 +6992,21 @@ fn kotlin_buffer_reader(elem: crate::forge::types::ListElem) -> Result<&'static 
 }
 
 fn emit_kotlin(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprError> {
+    // A value of `T` where an `optional<T>` is expected is present
+    // (docs/adr/0055): Kotlin's `T?` takes a `T` as it is, so it is spelled
+    // as the value of `T` it is, with every conversion a place of `T` makes,
+    // and an untyped integer in `T` (`7L`): `Long?` takes no `Int`, and a
+    // branch of a conditional beside `null` is typed by nothing else.
+    if let InferredType::Optional(elem) = expected {
+        if !matches!(expr.ty, InferredType::Optional(_) | InferredType::Null) {
+            let present = elem.present();
+            return Ok(kotlin_equality_operand(
+                emit_kotlin(expr, present)?,
+                expr,
+                present,
+            ));
+        }
+    }
     // Width-aware `round`/`floor`: same rule as Rust and Go — the declared
     // output type decides the integer, not a constant. See
     // `real_to_int_builtin`.
@@ -7206,13 +7224,53 @@ fn kotlin_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             };
             format!("{} + {}", operand(left, true)?, operand(right, false)?)
         }
+        // `x ?? d` (docs/adr/0055) is Kotlin's elvis, which evaluates `x` once
+        // and `d` only when `x` is absent, as ECMAScript's `??` does. `d` is
+        // spelled in the type the whole reads as (a present `T`, or `T?` where
+        // `d` may be absent too), an untyped integer in that type as an
+        // equality operand's is: `Long? ?: Int` is no `Long`.
+        ExprKind::Binary {
+            op: BinOp::Coalesce,
+            left,
+            right,
+        } => {
+            let value = emit_kotlin(left, InferredType::Unknown)?;
+            let fallback_ty = match expr.ty {
+                InferredType::Optional(elem) => elem.present(),
+                present => present,
+            };
+            let fallback =
+                kotlin_equality_operand(emit_kotlin(right, expr.ty)?, right, fallback_ty);
+            let value = if child_needs_parens(left, BinOp::Coalesce, true, kotlin_precedence) {
+                format!("({value})")
+            } else {
+                value
+            };
+            let fallback = if child_needs_parens(right, BinOp::Coalesce, false, kotlin_precedence) {
+                format!("({fallback})")
+            } else {
+                fallback
+            };
+            format!("{value} {} {fallback}", kotlin_binop(BinOp::Coalesce))
+        }
         ExprKind::Binary { op, left, right } => {
             // Bytes equality: Kotlin `==` on `ByteArray` is reference
             // equality, so content comparison must use `contentEquals`.
             // RFC §bytesguard-3 B3/B5 — only `===`/`!==` reach here for bytes.
+            // An optional byte string is compared the same way, through the
+            // standard library's `ByteArray?.contentEquals(ByteArray?)`,
+            // which is true of two absent values (docs/adr/0055); a test
+            // against `null` is no comparison of contents, and stays `==`.
+            let bytes = |ty: InferredType| {
+                matches!(
+                    ty,
+                    InferredType::Bytes | InferredType::Optional(OptionalElem::Bytes)
+                )
+            };
             if matches!(op, BinOp::StrictEq | BinOp::StrictNeq)
-                && (matches!(left.ty, InferredType::Bytes)
-                    || matches!(right.ty, InferredType::Bytes))
+                && (bytes(left.ty) || bytes(right.ty))
+                && !matches!(left.kind, ExprKind::NullLit)
+                && !matches!(right.kind, ExprKind::NullLit)
             {
                 let l = emit_kotlin(left, InferredType::Unknown)?;
                 let r = emit_kotlin(right, InferredType::Unknown)?;
@@ -7223,8 +7281,18 @@ fn kotlin_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
                     call
                 });
             }
-            let operand_ty = binary_operand_type(*op, left.ty, right.ty);
             let equality = matches!(op, BinOp::StrictEq | BinOp::StrictNeq);
+            // Equality over an optional value is total (docs/adr/0055), and
+            // Kotlin's `==` over a `T?` is: true of two absent values, false of
+            // an absent and a present one, and `T`'s own of two present ones.
+            // The other operand is spelled as a value of `T`, so a literal
+            // beside a `Long?` is a `Long` (`Long? == Int` does not compile).
+            let optional_operand = [left.ty, right.ty].into_iter().find_map(|ty| match ty {
+                InferredType::Optional(elem) if equality => Some(elem.present()),
+                _ => None,
+            });
+            let operand_ty =
+                optional_operand.unwrap_or_else(|| binary_operand_type(*op, left.ty, right.ty));
             // A shift count is an `Int` whatever is shifted: `UInt.shl`,
             // `ULong.shr` and the rest all take `bitCount: Int`, so a count
             // converted to the shifted type (`k shl 15.toULong()`) does not
@@ -7292,6 +7360,19 @@ fn kotlin_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
                 emit_kotlin(condition, InferredType::Bool)?,
                 emit_kotlin(consequent, expr.ty)?,
                 emit_kotlin(alternate, expr.ty)?,
+            )
+        }
+        // A read of an optional value the build has proven present
+        // (docs/adr/0055, section 3). It goes through the runtime's one
+        // function rather than `!!`: a test of a stable value (a field of a
+        // `<foreach>`'s item, a `val` of a data class) smart-casts it to `T`,
+        // and `!!` on a `T` is a warning the generated code is built to refuse.
+        ExprKind::Member { object, property }
+            if property == OPTIONAL_VALUE && object.ty.is_optional() =>
+        {
+            format!(
+                "{KOTLIN_PROVEN}({})",
+                emit_kotlin(object, InferredType::Unknown)?
             )
         }
         ExprKind::Member { object, property } => {
@@ -7522,6 +7603,10 @@ fn kotlin_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
 /// `Short` operand fails the same way. `Int` needs nothing, and unsigned
 /// operands already carry their constructor (`kotlin_coerce`'s
 /// `.toUInt()` arm).
+///
+/// An optional value supplies none either (docs/adr/0055): a `Long?` takes no
+/// `Int`, so the default of `x ?? d` and a present value lifted into an
+/// optional place are spelled the same way.
 fn kotlin_equality_operand(raw: String, node: &TypedExpr, operand_ty: InferredType) -> String {
     if node.ty != InferredType::UntypedInt {
         return raw;
@@ -7567,14 +7652,44 @@ fn kotlin_binop(op: BinOp) -> &'static str {
         BinOp::Shl => "shl",
         BinOp::Shr => "shr",
         BinOp::UShr => "ushr",
-        BinOp::Coalesce => unreachable!("{COALESCE_NOT_SPELLED}"),
+        BinOp::Coalesce => "?:",
     }
 }
+
+/// The runtime function a proven read of an optional value is spelled with
+/// (docs/adr/0055, section 5): the value, which the build proved present.
+const KOTLIN_PROVEN: &str = "com.sce.forge.runtime.SceOptional.proven";
 
 /// Apply language-specific coercion from a child's natural type to the
 /// expected parent type.
 fn kotlin_coerce(raw: String, from: InferredType, to: InferredType, node: &TypedExpr) -> String {
     use InferredType::*;
+    // An optional number where an optional number of another width is
+    // expected: a present value is converted as a value of `T` is, and an
+    // absent one stays absent (docs/adr/0055). Kotlin's `UInt?` takes no
+    // `UShort?`.
+    if let (Optional(have), Optional(want)) = (from, to) {
+        let ctor = match (have.present(), want.present()) {
+            (have, want) if have == want => None,
+            (Int { .. } | Float { .. }, Int { signed, bits }) => Some(if signed {
+                kotlin_signed_ctor(bits)
+            } else {
+                kotlin_unsigned_ctor(bits)
+            }),
+            (Int { .. } | Float { .. }, Float { bits: 32 }) => Some("toFloat"),
+            (Int { .. } | Float { .. }, Float { .. }) => Some("toDouble"),
+            _ => None,
+        };
+        return match ctor {
+            Some(ctor) => format!("{}?.{ctor}()", wrap_postfix(node, raw)),
+            None => raw,
+        };
+    }
+    // Any other value that may be absent converts to nothing: it is compared
+    // as it is, and read as `T` only through `??` or a proven read.
+    if matches!(from, Optional(_) | Null) {
+        return raw;
+    }
     // Kotlin has no bare literal past `Long`: the unsigned value takes the
     // `uL` suffix, and `Long`'s minimum is its named constant.
     if matches!(to.strip_quantity(), Int { .. }) {
@@ -11658,6 +11773,159 @@ mod tests {
         assert_eq!(kt("b === 3"), "b == 3.toByte()");
         assert_eq!(kt("n === 3"), "n == 3");
         assert_eq!(kt("week < 3"), "week < 3");
+    }
+
+    /// The optional values the Kotlin cases below read (docs/adr/0055): `due`
+    /// and `other` of `optional<int64>`, `count` of `optional<uint32>`, `small`
+    /// of `optional<uint16>`, `title` of `optional<string>`, `blob` and `seal`
+    /// of `optional<bytes>`, beside an `int64` `huge`; `due` and `count` are
+    /// proven present, as a `!== null` test around the read proves them.
+    fn kotlin_optional_ctx() -> TypeCtx<'static> {
+        use crate::forge::quantity::NumericBaseType;
+        let number = |signed: bool, bits: u8| {
+            InferredType::Optional(OptionalElem::Number(NumericBaseType::Int { signed, bits }))
+        };
+        let mut ctx = TypeCtx::new();
+        ctx.insert_var("due", number(true, 64));
+        ctx.insert_var("other", number(true, 64));
+        ctx.insert_var("count", number(false, 32));
+        ctx.insert_var("small", number(false, 16));
+        ctx.insert_var("title", InferredType::Optional(OptionalElem::Str));
+        ctx.insert_var("blob", InferredType::Optional(OptionalElem::Bytes));
+        ctx.insert_var("seal", InferredType::Optional(OptionalElem::Bytes));
+        ctx.insert_var("huge", int(true, 64));
+        ctx.proven =
+            crate::forge::narrowing::proves_written("due !== null && count !== null", true);
+        ctx
+    }
+
+    /// `src` judged against `ctx` and spelled by the Kotlin emitter into a place
+    /// of `expected`. The emitter is reached past `reject_unlowered_optional`,
+    /// which refuses an optional value on a target before the lowering that
+    /// declares its variables holds one.
+    fn kotlin_optional(src: &str, ctx: &TypeCtx<'_>, expected: InferredType) -> String {
+        let mut ast = parse_to_ast(src).expect("parses");
+        resolve_names(&mut ast, ctx, src).expect("judged fit");
+        emit_kotlin(&ast, expected).expect("spelled")
+    }
+
+    /// docs/adr/0055, section 5, the Kotlin row: absent is `null`, a test is
+    /// `!= null`, a proven read is the runtime's `SceOptional.proven` (never
+    /// `!!`, which a smart-cast value warns on), `??` is the elvis and `===`
+    /// is `==`.
+    #[test]
+    fn kotlin_spells_each_read_of_an_optional_value() {
+        let ctx = kotlin_optional_ctx();
+        let unknown = InferredType::Unknown;
+        assert_eq!(
+            kotlin_optional("due !== null ? due.value : 0", &ctx, int(true, 64)),
+            "if (due != null) com.sce.forge.runtime.SceOptional.proven(due) else 0"
+        );
+        assert_eq!(
+            kotlin_optional("due.value + 1", &ctx, int(true, 64)),
+            "com.sce.forge.runtime.SceOptional.proven(due) + 1"
+        );
+        assert_eq!(
+            kotlin_optional("count.value", &ctx, int(false, 32)),
+            "com.sce.forge.runtime.SceOptional.proven(count)"
+        );
+        assert_eq!(
+            kotlin_optional("due === null", &ctx, unknown),
+            "due == null"
+        );
+        assert_eq!(
+            kotlin_optional("null !== due", &ctx, unknown),
+            "null != due"
+        );
+        assert_eq!(
+            kotlin_optional("due === other", &ctx, unknown),
+            "due == other"
+        );
+    }
+
+    /// A literal beside an optional number is spelled in the number's own type
+    /// (`Long? == Int` does not compile); an optional byte string is compared by
+    /// its contents, and against `null` by `==`.
+    #[test]
+    fn kotlin_compares_an_optional_value_by_its_present_type() {
+        let ctx = kotlin_optional_ctx();
+        let unknown = InferredType::Unknown;
+        assert_eq!(kotlin_optional("due === 5", &ctx, unknown), "due == 5L");
+        assert_eq!(
+            kotlin_optional("count !== 5", &ctx, unknown),
+            "count != 5.toUInt()"
+        );
+        assert_eq!(
+            kotlin_optional("blob === seal", &ctx, unknown),
+            "blob.contentEquals(seal)"
+        );
+        assert_eq!(
+            kotlin_optional("blob !== seal", &ctx, unknown),
+            "!blob.contentEquals(seal)"
+        );
+        assert_eq!(
+            kotlin_optional("blob === null", &ctx, unknown),
+            "blob == null"
+        );
+    }
+
+    /// `x ?? d` is the elvis, `d` spelled in the type the read is of; the elvis
+    /// binds tighter than `==` and looser than `+` in Kotlin, so it is
+    /// parenthesised under the one and not under the other.
+    #[test]
+    fn kotlin_spells_a_read_with_a_default_as_the_elvis() {
+        let ctx = kotlin_optional_ctx();
+        assert_eq!(
+            kotlin_optional("due ?? 0", &ctx, int(true, 64)),
+            "due ?: 0L"
+        );
+        assert_eq!(
+            kotlin_optional("due ?? huge * huge", &ctx, int(true, 64)),
+            "due ?: huge * huge"
+        );
+        assert_eq!(
+            kotlin_optional("count ?? 0", &ctx, int(false, 32)),
+            "count ?: 0.toUInt()"
+        );
+        assert_eq!(
+            kotlin_optional("title ?? 'none'", &ctx, InferredType::Str),
+            "title ?: \"none\""
+        );
+        assert_eq!(
+            kotlin_optional("(due ?? 0) + 1", &ctx, int(true, 64)),
+            "(due ?: 0L) + 1"
+        );
+        assert_eq!(
+            kotlin_optional("(due ?? 0) === 3", &ctx, InferredType::Unknown),
+            "due ?: 0L == 3L"
+        );
+    }
+
+    /// A value of `T` where an `optional<T>` is expected is present, spelled as
+    /// the `T` it is; an optional number of another width is converted where it
+    /// is present and stays `null` where it is absent.
+    #[test]
+    fn kotlin_lifts_a_present_value_into_an_optional_place() {
+        use crate::forge::quantity::NumericBaseType;
+        let ctx = kotlin_optional_ctx();
+        let optional = |signed: bool, bits: u8| {
+            InferredType::Optional(OptionalElem::Number(NumericBaseType::Int { signed, bits }))
+        };
+        assert_eq!(kotlin_optional("7", &ctx, optional(true, 64)), "7L");
+        assert_eq!(
+            kotlin_optional("7", &ctx, optional(false, 32)),
+            "7.toUInt()"
+        );
+        assert_eq!(kotlin_optional("null", &ctx, optional(true, 64)), "null");
+        assert_eq!(kotlin_optional("other", &ctx, optional(true, 64)), "other");
+        assert_eq!(
+            kotlin_optional("small", &ctx, optional(false, 32)),
+            "small?.toUInt()"
+        );
+        assert_eq!(
+            kotlin_optional("due !== null ? 1 : null", &ctx, optional(true, 64)),
+            "if (due != null) 1L else null"
+        );
     }
 
     #[test]
