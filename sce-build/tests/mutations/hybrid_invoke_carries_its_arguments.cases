@@ -78,8 +78,8 @@ PY
 
 mutation_case "C11 seeds a candidate by the invoke's own metadata" <<'PY'
 edit("tools/codegen/templates/c/invoke_methods.jinja2",
-     """{{ invoke_seed_child(invoke_info, candidate, "sm->child_" ~ invoke_info.field_suffix ~ "_" ~ candidate.stem ~ ".L", model, csym_prefix, se) }}""",
-     """{{ invoke_seed_child(invoke_info, invoke_info, "sm->child_" ~ invoke_info.field_suffix ~ "_" ~ candidate.stem ~ ".L", model, csym_prefix, se) }}""")
+     """{{ invoke_seed_child(invoke_info, candidate, "sm->child_" ~ (invoke_info.field_suffix | candidate_identifier(candidate.stem)) ~ ".L", model, csym_prefix, se) }}""",
+     """{{ invoke_seed_child(invoke_info, invoke_info, "sm->child_" ~ (invoke_info.field_suffix | candidate_identifier(candidate.stem)) ~ ".L", model, csym_prefix, se) }}""")
 PY
 
 mutation_case "C11 starts a candidate whose namelist cannot be read" <<'PY'

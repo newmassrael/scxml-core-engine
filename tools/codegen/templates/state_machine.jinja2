@@ -681,7 +681,7 @@ struct {{ model.name }}Policy {
     // by this parent — and every lifecycle site below is already null-guarded
     // per slot, so the unchosen ones cost a null check and nothing else.
     {% for candidate in invoke_info.candidates %}
-    mutable std::shared_ptr<::SCE::Generated::{{ cpp_ns_prefix }}{{ candidate.stem }}::{{ candidate.stem }}<SelfType>> child_{{ invoke_info.field_suffix }}_{{ candidate.stem }}_;
+    mutable std::shared_ptr<::SCE::Generated::{{ cpp_ns_prefix }}{{ candidate.stem }}::{{ candidate.stem }}<SelfType>> child_{{ invoke_info.field_suffix | candidate_identifier(candidate.stem) }}_;
     {% endfor %}
     {% else %}
     mutable std::shared_ptr<::SCE::Generated::{{ cpp_ns_prefix }}{{ invoke_info.child_name }}::{{ invoke_info.child_name }}<SelfType>> child_{{ invoke_info.field_suffix }}_;

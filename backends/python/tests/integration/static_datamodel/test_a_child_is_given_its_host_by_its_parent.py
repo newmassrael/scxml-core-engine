@@ -68,10 +68,10 @@ class _ParentHost:
     def actions_for_worker(self) -> _ChildHost:
         return self._answer("worker")
 
-    def actions_for_work_static_hosted_first(self) -> _ChildHost:
+    def actions_for_work_0j_static_hosted_first(self) -> _ChildHost:
         return self._answer("first")
 
-    def actions_for_work_static_hosted_second(self) -> _ChildHost:
+    def actions_for_work_0j_static_hosted_second(self) -> _ChildHost:
         return self._answer("second")
 
 

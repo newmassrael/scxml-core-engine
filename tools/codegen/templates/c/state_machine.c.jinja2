@@ -573,7 +573,7 @@ SCE_SM_FN static SCE_C_UNUSED bool deliver_to_invocation({{ csym_prefix }}{{ mod
 {% set child_targets = invoke_info.candidates if invoke_info.candidates else [{'stem': invoke_info.child_name}] %}
     if (strcmp(invoke_id, "{{ invoke_info.invoke_id | escape_c }}") == 0) {
 {% for target in child_targets %}
-{% set slot = ('child_' ~ invoke_info.field_suffix ~ '_' ~ target.stem) if invoke_info.candidates else ('child_' ~ invoke_info.field_suffix) %}
+{% set slot = ('child_' ~ (invoke_info.field_suffix | candidate_identifier(target.stem))) if invoke_info.candidates else ('child_' ~ invoke_info.field_suffix) %}
         if (sm->{{ slot }}_active && !{{ csym_prefix }}{{ target.stem }}_is_in_final_state(&sm->{{ slot }})) {
             {{ csym_prefix }}{{ target.stem }}_raise_external_forwarded(&sm->{{ slot }}, fwd);
             return true;
@@ -594,7 +594,7 @@ SCE_SM_FN static SCE_C_UNUSED bool invocation_is_running(const {{ csym_prefix }}
 {% set child_targets = invoke_info.candidates if invoke_info.candidates else [{'stem': invoke_info.child_name}] %}
     if (strcmp(invoke_id, "{{ invoke_info.invoke_id | escape_c }}") == 0) {
 {% for target in child_targets %}
-{% set slot = ('child_' ~ invoke_info.field_suffix ~ '_' ~ target.stem) if invoke_info.candidates else ('child_' ~ invoke_info.field_suffix) %}
+{% set slot = ('child_' ~ (invoke_info.field_suffix | candidate_identifier(target.stem))) if invoke_info.candidates else ('child_' ~ invoke_info.field_suffix) %}
         if (sm->{{ slot }}_active && !{{ csym_prefix }}{{ target.stem }}_is_in_final_state(&sm->{{ slot }})) {
             return true;
         }
@@ -612,7 +612,7 @@ SCE_SM_FN static SCE_C_UNUSED const char *invocation_of_session(const {{ csym_pr
 {% for invoke_info in model.invokes | scxml_family %}
 {% set child_targets = invoke_info.candidates if invoke_info.candidates else [{'stem': invoke_info.child_name}] %}
 {% for target in child_targets %}
-{% set slot = ('child_' ~ invoke_info.field_suffix ~ '_' ~ target.stem) if invoke_info.candidates else ('child_' ~ invoke_info.field_suffix) %}
+{% set slot = ('child_' ~ (invoke_info.field_suffix | candidate_identifier(target.stem))) if invoke_info.candidates else ('child_' ~ invoke_info.field_suffix) %}
     if (sm->{{ slot }}_active && !{{ csym_prefix }}{{ target.stem }}_is_in_final_state(&sm->{{ slot }}) &&
         strcmp(sm->{{ slot }}.session_id, session_id) == 0) {
         return "{{ invoke_info.invoke_id | escape_c }}";
@@ -3162,7 +3162,7 @@ SCE_SM_FN static void execute_exit_actions({{ csym_prefix }}{{ model.name }}_t *
            is the equivalent. */
 {% set cancel_targets = invoke_info.candidates if invoke_info.candidates else [{'stem': invoke_info.child_name}] %}
 {% for target in cancel_targets %}
-{% set slot = ('child_' ~ invoke_info.field_suffix ~ '_' ~ target.stem) if invoke_info.candidates else ('child_' ~ invoke_info.field_suffix) %}
+{% set slot = ('child_' ~ (invoke_info.field_suffix | candidate_identifier(target.stem))) if invoke_info.candidates else ('child_' ~ invoke_info.field_suffix) %}
         if (sm->{{ slot }}_active) {
             {{ csym_prefix }}{{ target.stem }}_destroy(&sm->{{ slot }});
             sm->{{ slot }}_active = false;

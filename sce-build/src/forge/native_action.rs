@@ -60,15 +60,20 @@ const EVENT_DATA_PREFIX: &str = "_event.data.";
 /// performs its acts when it is built (§scxml-6.4.1), its first `<onentry>` may
 /// already perform one, so its parent obtains it each time the invocation
 /// starts: `actions_for_<invoke>` for an
-/// `<invoke type="scxml">`, and `actions_for_<invoke>_<stem>` for one candidate
-/// of a hybrid `<invoke>`, each candidate being a different document with its
-/// own acts. `field_suffix` is [`crate::model::InvokeBase::field_suffix`], the
-/// identifier-safe spelling of the invoke's id. Spelled per language by
+/// `<invoke type="scxml">`, and `actions_for_<invoke>_0j_<stem>` for one
+/// candidate of a hybrid `<invoke>`, each candidate being a different document
+/// with its own acts. `field_suffix` is
+/// [`crate::model::InvokeBase::field_suffix`], the invoke's identifier, and a
+/// candidate's is [`crate::model::invoke_candidate_identifier`], so no two
+/// operations of one interface share a name. Spelled per language by
 /// [`method_name`], as an act's name is, so one interface holds both.
 fn host_operation(field_suffix: &str, candidate_stem: Option<&str>) -> String {
     match candidate_stem {
         None => format!("actions_for_{field_suffix}"),
-        Some(stem) => format!("actions_for_{field_suffix}_{stem}"),
+        Some(stem) => format!(
+            "actions_for_{}",
+            crate::model::invoke_candidate_identifier(field_suffix, stem)
+        ),
     }
 }
 

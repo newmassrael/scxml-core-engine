@@ -209,10 +209,10 @@ pub struct MeshRpcInvokeSite {
     /// Surfaces as `_event.invokeid` / `done.invoke.<id>` /
     /// `error.invoke.<id>` on the parent engine.
     pub invoke_id: String,
-    /// Identifier-safe suffix for generated field / method names.
-    /// Equal to `invoke_id` with the W3C auto-id leading underscore
-    /// stripped, mirroring `InvokeBase::field_suffix` so codegen sites
-    /// compose `invoke_<suffix>` / `cancel_<suffix>` cleanly.
+    /// Identifier-safe suffix for generated field / method names: the
+    /// invoke's `InvokeBase::field_suffix` (`crate::model::invoke_identifier`),
+    /// copied, so codegen sites compose `invoke_<suffix>` / `cancel_<suffix>`
+    /// from the one derivation.
     pub field_suffix: String,
     /// Value of the required `<param name="_mesh_event">`. Populates
     /// the outbound envelope's `type` field per §mesh-9.5 wire mapping.

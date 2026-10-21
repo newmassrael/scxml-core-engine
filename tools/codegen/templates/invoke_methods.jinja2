@@ -603,7 +603,7 @@
                         // slot of its own and at most one is ever filled.
 {% for candidate in invoke_info.candidates %}
                         if (__sce_selected_{{ invoke_info.field_suffix }} == "{{ candidate.stem | escape_cpp }}") {
-{{ hybrid_child_start(invoke_info, candidate, cpp_ns_prefix, candidate.stem, "child_" ~ invoke_info.field_suffix ~ "_" ~ candidate.stem ~ "_", model) }}
+{{ hybrid_child_start(invoke_info, candidate, cpp_ns_prefix, candidate.stem, "child_" ~ (invoke_info.field_suffix | candidate_identifier(candidate.stem)) ~ "_", model) }}
                         }
 {% endfor %}
                         return;
@@ -909,7 +909,7 @@
         {% set child_targets = invoke_info.candidates if invoke_info.candidates else [{'stem': invoke_info.child_name}] %}
         if (invokeId == "{{ invoke_info.invoke_id }}") {
             {% for target in child_targets %}
-            {% set slot = ('child_' ~ invoke_info.field_suffix ~ '_' ~ target.stem ~ '_') if invoke_info.candidates else ('child_' ~ invoke_info.field_suffix ~ '_') %}
+            {% set slot = ('child_' ~ (invoke_info.field_suffix | candidate_identifier(target.stem)) ~ '_') if invoke_info.candidates else ('child_' ~ invoke_info.field_suffix ~ '_') %}
             if ({{ slot }} && !{{ slot }}->isInFinalState()) {
                 {{ slot }}->raiseExternal(forwarded);
                 return true;
@@ -930,7 +930,7 @@
         {% set child_targets = invoke_info.candidates if invoke_info.candidates else [{'stem': invoke_info.child_name}] %}
         if (invokeId == "{{ invoke_info.invoke_id }}") {
             {% for target in child_targets %}
-            {% set slot = ('child_' ~ invoke_info.field_suffix ~ '_' ~ target.stem ~ '_') if invoke_info.candidates else ('child_' ~ invoke_info.field_suffix ~ '_') %}
+            {% set slot = ('child_' ~ (invoke_info.field_suffix | candidate_identifier(target.stem)) ~ '_') if invoke_info.candidates else ('child_' ~ invoke_info.field_suffix ~ '_') %}
             if ({{ slot }} && !{{ slot }}->isInFinalState()) {
                 return true;
             }
@@ -967,11 +967,11 @@
         {# §scxml-6.4: one slot per declared candidate; the null guard that
            already stood here is what makes the unchosen ones free. #}
         {% for candidate in invoke_info.candidates %}
-        if (child_{{ invoke_info.field_suffix }}_{{ candidate.stem }}_) {
-            child_{{ invoke_info.field_suffix }}_{{ candidate.stem }}_->applyMeshCalls();
-            child_{{ invoke_info.field_suffix }}_{{ candidate.stem }}_->tick();
-            if (child_{{ invoke_info.field_suffix }}_{{ candidate.stem }}_->isInFinalState()) {
-                child_{{ invoke_info.field_suffix }}_{{ candidate.stem }}_->detachMesh();
+        if (child_{{ invoke_info.field_suffix | candidate_identifier(candidate.stem) }}_) {
+            child_{{ invoke_info.field_suffix | candidate_identifier(candidate.stem) }}_->applyMeshCalls();
+            child_{{ invoke_info.field_suffix | candidate_identifier(candidate.stem) }}_->tick();
+            if (child_{{ invoke_info.field_suffix | candidate_identifier(candidate.stem) }}_->isInFinalState()) {
+                child_{{ invoke_info.field_suffix | candidate_identifier(candidate.stem) }}_->detachMesh();
             }
         }
         {% endfor %}
@@ -1004,8 +1004,8 @@
         {% for invoke_info in state.invokes | hybrid %}
         {% if invoke_info.candidates %}
         {% for candidate in invoke_info.candidates %}
-        if (child_{{ invoke_info.field_suffix }}_{{ candidate.stem }}_) {
-            child_{{ invoke_info.field_suffix }}_{{ candidate.stem }}_->detachMesh();
+        if (child_{{ invoke_info.field_suffix | candidate_identifier(candidate.stem) }}_) {
+            child_{{ invoke_info.field_suffix | candidate_identifier(candidate.stem) }}_->detachMesh();
         }
         {% endfor %}
         {% else %}
@@ -1039,9 +1039,9 @@
         {% for invoke_info in state.invokes | hybrid %}
         {% if invoke_info.candidates %}
         {% for candidate in invoke_info.candidates %}
-        if (child_{{ invoke_info.field_suffix }}_{{ candidate.stem }}_ &&
-            !child_{{ invoke_info.field_suffix }}_{{ candidate.stem }}_->isInFinalState()) {
-            if (auto due = child_{{ invoke_info.field_suffix }}_{{ candidate.stem }}_->timeUntilNextScheduled();
+        if (child_{{ invoke_info.field_suffix | candidate_identifier(candidate.stem) }}_ &&
+            !child_{{ invoke_info.field_suffix | candidate_identifier(candidate.stem) }}_->isInFinalState()) {
+            if (auto due = child_{{ invoke_info.field_suffix | candidate_identifier(candidate.stem) }}_->timeUntilNextScheduled();
                 due.has_value() && (!soonest || *due < *soonest)) {
                 soonest = due;
             }

@@ -505,7 +505,7 @@
    which cancels its own children first; then the session's Mesh router is told
    it ended (SCE_MESH.md, Child Sessions in Mesh). #}
 {% for candidate in invoke_info.candidates %}
-                if let Some(mut child) = self.child_{{ invoke_info.field_suffix }}_{{ candidate.stem }}.take() {
+                if let Some(mut child) = self.child_{{ invoke_info.field_suffix | candidate_identifier(candidate.stem) }}.take() {
                     child.stop();
                     child.detach_mesh();
                 }

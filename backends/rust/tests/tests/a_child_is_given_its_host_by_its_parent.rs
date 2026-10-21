@@ -226,7 +226,7 @@ fn a_candidate_is_given_the_host_answered_for_it_and_no_other() {
     }
     assert_eq!(
         engine.policy().actions().calls(),
-        &[StaticChildHostHybridActionsCall::ActionsForWorkStaticHostedFirst]
+        &[StaticChildHostHybridActionsCall::ActionsForWork0jStaticHostedFirst]
     );
     assert_eq!(calls(&firsts, 0), ["first_ran"]);
     assert!(
@@ -240,8 +240,8 @@ fn a_candidate_is_given_the_host_answered_for_it_and_no_other() {
     assert_eq!(
         engine.policy().actions().calls(),
         &[
-            StaticChildHostHybridActionsCall::ActionsForWorkStaticHostedFirst,
-            StaticChildHostHybridActionsCall::ActionsForWorkStaticHostedSecond
+            StaticChildHostHybridActionsCall::ActionsForWork0jStaticHostedFirst,
+            StaticChildHostHybridActionsCall::ActionsForWork0jStaticHostedSecond
         ]
     );
     assert_eq!(calls(&seconds, 0), ["second_ran"]);

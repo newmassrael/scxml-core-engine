@@ -1751,11 +1751,11 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, ACandidateIsGivenTheHostAnsweredForIt
         std::deque<FirstHost> firsts;
         std::deque<SecondHost> seconds;
 
-        G::static_hosted_first::StaticHostedFirstActions &actionsForWorkStaticHostedFirst() override {
+        G::static_hosted_first::StaticHostedFirstActions &actionsForWork0jStaticHostedFirst() override {
             return firsts.emplace_back(book.open("work", "static_hosted_first"));
         }
 
-        G::static_hosted_second::StaticHostedSecondActions &actionsForWorkStaticHostedSecond() override {
+        G::static_hosted_second::StaticHostedSecondActions &actionsForWork0jStaticHostedSecond() override {
             return seconds.emplace_back(book.open("work", "static_hosted_second"));
         }
     } host;

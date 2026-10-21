@@ -2318,8 +2318,8 @@ static void child_host_start(static_child_host_t *sm) {
 static void child_host_hybrid_start(static_child_host_hybrid_t *sm) {
     static static_child_host_hybrid_actions_t parent;
     memset(&parent, 0, sizeof(parent));
-    parent.actions_for_work_static_hosted_first = child_host_for_first;
-    parent.actions_for_work_static_hosted_second = child_host_for_second;
+    parent.actions_for_work_0j_static_hosted_first = child_host_for_first;
+    parent.actions_for_work_0j_static_hosted_second = child_host_for_second;
     child_book_forget();
     if (!static_child_host_hybrid_init_with_actions(sm, &parent)) {
         (void)fprintf(stderr, "static_child_host_hybrid: FAIL - a complete table was refused\n");

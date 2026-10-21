@@ -143,12 +143,12 @@ struct HybridParentHost : Hy::StaticChildHostHybridActions {
     std::deque<FirstHost> firsts;
     std::deque<SecondHost> seconds;
 
-    G::static_hosted_first::StaticHostedFirstActions &actionsForWorkStaticHostedFirst() override {
+    G::static_hosted_first::StaticHostedFirstActions &actionsForWork0jStaticHostedFirst() override {
         asked.push_back("first");
         return firsts.emplace_back();
     }
 
-    G::static_hosted_second::StaticHostedSecondActions &actionsForWorkStaticHostedSecond() override {
+    G::static_hosted_second::StaticHostedSecondActions &actionsForWork0jStaticHostedSecond() override {
         asked.push_back("second");
         return seconds.emplace_back();
     }

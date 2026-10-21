@@ -1007,6 +1007,14 @@ pub fn register_invoke_filters(env: &mut minijinja::Environment) {
     env.add_filter("unsupported", filter_unsupported);
     env.add_filter("unsupported_refused", filter_unsupported_refused);
     env.add_filter("host_invoker", filter_host_invoker);
+    env.add_filter("candidate_identifier", filter_candidate_identifier);
+}
+
+/// `{{ invoke.field_suffix | candidate_identifier(candidate.stem) }}`: the
+/// identifier a template builds a candidate's names from — the one derivation,
+/// [`crate::model::invoke_candidate_identifier`], read where the template is.
+fn filter_candidate_identifier(invoke_suffix: String, candidate_stem: String) -> String {
+    crate::model::invoke_candidate_identifier(&invoke_suffix, &candidate_stem)
 }
 
 /// Split string on whitespace (replaces Python `.split()` method in templates).

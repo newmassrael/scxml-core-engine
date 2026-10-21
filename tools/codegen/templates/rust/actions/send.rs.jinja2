@@ -946,7 +946,7 @@
 {% if child_ns.invoke.candidates %}
 {% set child_slots = [] %}
 {% for candidate in child_ns.invoke.candidates %}
-{% set child_slots = child_slots + ['self.child_' ~ child_ns.invoke.field_suffix ~ '_' ~ candidate.stem] %}
+{% set child_slots = child_slots + ['self.child_' ~ (child_ns.invoke.field_suffix | candidate_identifier(candidate.stem))] %}
 {% endfor %}
 {% else %}
 {% set child_slots = ['self.child_' ~ child_ns.invoke.field_suffix] %}

@@ -632,7 +632,7 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 			// the construction differs per candidate.
 {% for candidate in invoke_info.candidates %}
 			if __sceSelected == "{{ candidate.stem }}" {
-{{ hybrid_child_start(invoke_info, candidate, candidate.stem, 'childEngineWrapper' ~ machine_name ~ '_' ~ (invoke_info.field_suffix | to_pascal_case) ~ (candidate.stem | to_pascal_case), model, machine_name) }}
+{{ hybrid_child_start(invoke_info, candidate, candidate.stem, 'childEngineWrapper' ~ machine_name ~ '_' ~ (invoke_info.field_suffix | candidate_identifier(candidate.stem) | to_pascal_case), model, machine_name) }}
 				continue
 			}
 {% endfor %}
@@ -899,7 +899,7 @@ func (w *childEngineWrapper{{ machine_name }}_{{ invoke_info.field_suffix | to_p
     C++ and Rust hold a concrete one and need a slot each. -#}
 {% set wrapper_targets = invoke_info.candidates if invoke_info.candidates else [{'stem': invoke_info.child_name}] %}
 {% for target in wrapper_targets %}
-{% set wrapper = 'childEngineWrapper' ~ machine_name ~ '_' ~ (invoke_info.field_suffix | to_pascal_case) ~ ((target.stem | to_pascal_case) if invoke_info.candidates else '') %}
+{% set wrapper = 'childEngineWrapper' ~ machine_name ~ '_' ~ ((invoke_info.field_suffix | candidate_identifier(target.stem)) if invoke_info.candidates else invoke_info.field_suffix) | to_pascal_case %}
 type {{ wrapper }} struct {
 	engine *sce.Engine[{{ target.stem | to_machine_name }}State, {{ target.stem | to_machine_name }}Event]
 	policy *{{ target.stem | to_machine_name }}Policy

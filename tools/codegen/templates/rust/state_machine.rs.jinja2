@@ -752,7 +752,7 @@ pub struct {{ machine_name }}Policy{{ policy_generics_decl }} {
     // W3C SCXML 6.4 + SCE_ACCEPTED_SUBSET.md §2.13: one slot per declared
     // candidate for '{{ invoke_info.invoke_id }}', at most one ever filled.
 {% for candidate in invoke_info.candidates %}
-    child_{{ invoke_info.field_suffix }}_{{ candidate.stem }}: Option<Box<sce_rust_runtime::Engine<super::{{ candidate.stem }}_sm::{{ candidate.stem | to_machine_name }}Policy{% if candidate.child_host_type %}<{{ candidate.child_host_type }}>{% endif %}>>>,
+    child_{{ invoke_info.field_suffix | candidate_identifier(candidate.stem) }}: Option<Box<sce_rust_runtime::Engine<super::{{ candidate.stem }}_sm::{{ candidate.stem | to_machine_name }}Policy{% if candidate.child_host_type %}<{{ candidate.child_host_type }}>{% endif %}>>>,
 {% endfor %}
     pending_done_invoke_{{ invoke_info.field_suffix }}: bool,
 {% else %}
@@ -904,7 +904,7 @@ impl{{ policy_generics_decl }} {{ machine_name }}Policy{{ policy_generics_use }}
 {% for invoke_info in model.invokes | hybrid %}
 {% if invoke_info.candidates %}
 {% for candidate in invoke_info.candidates %}
-            child_{{ invoke_info.field_suffix }}_{{ candidate.stem }}: None,
+            child_{{ invoke_info.field_suffix | candidate_identifier(candidate.stem) }}: None,
 {% endfor %}
             pending_done_invoke_{{ invoke_info.field_suffix }}: false,
 {% else %}
@@ -1431,7 +1431,7 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
         let mut running = Vec::new();
 {% for invoke_info in model.invokes | scxml_family %}
 {% if invoke_info.candidates %}
-        if ({% for candidate in invoke_info.candidates %}self.child_{{ invoke_info.field_suffix }}_{{ candidate.stem }}.is_some(){{ " || " if not loop.last }}{% endfor %}) && !self.pending_done_invoke_{{ invoke_info.field_suffix }} {
+        if ({% for candidate in invoke_info.candidates %}self.child_{{ invoke_info.field_suffix | candidate_identifier(candidate.stem) }}.is_some(){{ " || " if not loop.last }}{% endfor %}) && !self.pending_done_invoke_{{ invoke_info.field_suffix }} {
 {% else %}
         if self.child_{{ invoke_info.field_suffix }}.is_some() && !self.pending_done_invoke_{{ invoke_info.field_suffix }} {
 {% endif %}
@@ -1475,7 +1475,7 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
 {% set child_targets = invoke_info.candidates if invoke_info.candidates else [{'stem': none}] %}
         if invoke_id == "{{ invoke_info.invoke_id }}" {
 {% for target in child_targets %}
-{% set slot = ('self.child_' ~ invoke_info.field_suffix ~ '_' ~ target.stem) if invoke_info.candidates else ('self.child_' ~ invoke_info.field_suffix) %}
+{% set slot = ('self.child_' ~ (invoke_info.field_suffix | candidate_identifier(target.stem))) if invoke_info.candidates else ('self.child_' ~ invoke_info.field_suffix) %}
             if let Some(ref mut child) = {{ slot }} {
                 if !child.is_in_final_state() {
                     child.deliver_by_name(event_name, event_data);
@@ -1496,7 +1496,7 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
 {% set child_targets = invoke_info.candidates if invoke_info.candidates else [{'stem': none}] %}
         if invoke_id == "{{ invoke_info.invoke_id }}" {
 {% for target in child_targets %}
-{% set slot = ('self.child_' ~ invoke_info.field_suffix ~ '_' ~ target.stem) if invoke_info.candidates else ('self.child_' ~ invoke_info.field_suffix) %}
+{% set slot = ('self.child_' ~ (invoke_info.field_suffix | candidate_identifier(target.stem))) if invoke_info.candidates else ('self.child_' ~ invoke_info.field_suffix) %}
             if let Some(ref child) = {{ slot }} {
                 if !child.is_in_final_state() {
                     return true;
@@ -1597,7 +1597,7 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
 {% for invoke_info in model.invokes | scxml_family %}
 {% set child_targets = invoke_info.candidates if invoke_info.candidates else [{'stem': none}] %}
 {% for target in child_targets %}
-{% set slot = ('self.child_' ~ invoke_info.field_suffix ~ '_' ~ target.stem) if invoke_info.candidates else ('self.child_' ~ invoke_info.field_suffix) %}
+{% set slot = ('self.child_' ~ (invoke_info.field_suffix | candidate_identifier(target.stem))) if invoke_info.candidates else ('self.child_' ~ invoke_info.field_suffix) %}
         if let Some(ref mut child) = {{ slot }} {
             child.follow_clock(clock);
         }

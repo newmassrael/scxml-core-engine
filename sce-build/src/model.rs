@@ -1793,15 +1793,15 @@ pub const ESCAPED_INVOKE_IDENTIFIER_PREFIX: &str = "0z";
 ///
 /// - A generated id (`_invoke_<n>`, `id_generated`) gives `invoke_<n>`, the
 ///   spelling it always had.
-/// - A written id in lower snake case — words of lowercase ASCII letters and
-///   digits, each beginning with a letter, joined by single underscores —
-///   gives itself, so the ids documents use keep their names.
+/// - A written id in lower snake case — words of lowercase ASCII letters
+///   followed by any digits (`kid`, `inv_param`, `child2`), joined by single
+///   underscores — gives itself, so the ids documents use keep their names.
 /// - Any other written id (`_x`, `x_`, `a__b`, `invokedChild`, `a-b`, `a_0`,
-///   one that leaves ASCII) gives [`ESCAPED_INVOKE_IDENTIFIER_PREFIX`]
-///   followed by its characters: a lowercase letter but `z`, or a digit, as
-///   itself; `z` as `zz`; an uppercase letter as `zu` and the letter in lower
-///   case; any other character as `z`, its code point in lowercase
-///   hexadecimal, and `z` (`_x` gives `0zz5fzx`).
+///   `a0b`, one that leaves ASCII) gives [`ESCAPED_INVOKE_IDENTIFIER_PREFIX`]
+///   followed by its characters: a lowercase letter but `j` and `z`, or a
+///   digit, as itself; `z` as `zz`; an uppercase letter as `zu` and the letter
+///   in lower case; any other character, `j` among them, as `z`, its code
+///   point in lowercase hexadecimal, and `z` (`_x` gives `0zz5fzx`).
 ///
 /// Distinct ids give distinct identifiers, and stay distinct in every case a
 /// backend writes them in (snake, upper snake, Pascal, camel): a word of the
@@ -1811,7 +1811,9 @@ pub const ESCAPED_INVOKE_IDENTIFIER_PREFIX: &str = "0z";
 /// others does; and a generated `invoke_<n>`, whose last word is a number, is
 /// no written id of the second kind, while the one written id that would
 /// share its Pascal spelling (`invoke<n>`) is never given to a generated one
-/// (the parser numbers past it). An identifier never begins or ends with an
+/// (the parser numbers past it). No identifier, in any of those cases, holds a
+/// digit followed by `j`: that is the mark [`invoke_candidate_identifier`]
+/// joins an identifier to a candidate's with. An identifier never begins or ends with an
 /// underscore and never holds two together, so the names built from it are
 /// legal in C and C++ wherever they are, and it is always written after a
 /// fixed prefix (`child_`, `actions_for_`, `start_`, …), so it is never a
@@ -1822,10 +1824,8 @@ pub fn invoke_identifier(invoke_id: &str, id_generated: bool) -> String {
     }
     let lower_snake = !invoke_id.is_empty()
         && invoke_id.split('_').all(|word| {
-            word.starts_with(|c: char| c.is_ascii_lowercase())
-                && word
-                    .chars()
-                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
+            let digits = word.trim_start_matches(|c: char| c.is_ascii_lowercase());
+            digits.len() < word.len() && digits.chars().all(|c| c.is_ascii_digit())
         });
     if lower_snake {
         return invoke_id.to_string();
@@ -1834,7 +1834,7 @@ pub fn invoke_identifier(invoke_id: &str, id_generated: bool) -> String {
     for c in invoke_id.chars() {
         match c {
             'z' => escaped.push_str("zz"),
-            'a'..='y' | '0'..='9' => escaped.push(c),
+            'a'..='i' | 'k'..='y' | '0'..='9' => escaped.push(c),
             'A'..='Z' => {
                 escaped.push_str("zu");
                 escaped.push(c.to_ascii_lowercase());
@@ -1843,6 +1843,34 @@ pub fn invoke_identifier(invoke_id: &str, id_generated: bool) -> String {
         }
     }
     escaped
+}
+
+/// The word [`invoke_candidate_identifier`] puts between an invoke's
+/// identifier and its candidate's: a digit then `j`, which no identifier holds
+/// in any case a backend writes it in.
+pub const INVOKE_CANDIDATE_JOINT: &str = "0j";
+
+/// The identifier every name generated for one candidate of a hybrid
+/// `<invoke>` is built from — the child's field, wrapper and flags, and the
+/// host operation that answers the candidate's host (`actions_for_<this>`):
+/// the invoke's identifier (`invoke_suffix`, [`InvokeBase::field_suffix`]),
+/// [`INVOKE_CANDIDATE_JOINT`], and the identifier of the candidate's stem
+/// ([`invoke_identifier`], as a written id), joined by single underscores
+/// (`work_0j_static_hosted_first`).
+///
+/// Joined by `_` alone, an invoke `a` with a candidate `b` and an invoke
+/// `a_b` were one name. With the joint, a composite is never an invoke's
+/// identifier and two composites are one only when both parts are, in every
+/// case a backend writes it in: in snake and upper snake case the joint is
+/// the first word that is `0j`, and no identifier has such a word; in Pascal
+/// and camel case, where the underscores go, it is the first digit followed by
+/// `j`, which no identifier holds — a lower snake word ends in its digits, an
+/// escaped one writes `j` escaped, and a generated one ends in a number.
+pub fn invoke_candidate_identifier(invoke_suffix: &str, candidate_stem: &str) -> String {
+    format!(
+        "{invoke_suffix}_{INVOKE_CANDIDATE_JOINT}_{}",
+        invoke_identifier(candidate_stem, false)
+    )
 }
 
 /// Fields every invoke carries regardless of kind: the W3C identity
@@ -5703,7 +5731,7 @@ mod child_duties {
 /// backend writes one in.
 #[cfg(test)]
 mod invoke_identifiers {
-    use super::invoke_identifier;
+    use super::{invoke_candidate_identifier, invoke_identifier};
     use crate::filters;
 
     /// Ids that the trimming, the case filters or both used to make one:
@@ -5732,14 +5760,44 @@ mod invoke_identifiers {
         "z5fz",
         "\u{e9}t\u{e9}",
         "kid",
+        "a0b",
+        "job",
+        "a_b_c",
+        "a_0j_b",
     ];
 
-    fn every_identifier() -> Vec<String> {
-        WRITTEN
+    /// Invokes with a candidate each, as (id, candidate stem): `a` with `b`
+    /// beside the invoke `a_b`, and the splits a joint that was only `_` could
+    /// not tell apart.
+    const COMPOSED: &[(&str, &str)] = &[
+        ("a", "b"),
+        ("a", "b_c"),
+        ("a_b", "c"),
+        ("a0", "b"),
+        ("a", "0b"),
+        ("x", "x"),
+        ("_x", "x"),
+        ("a", "j"),
+        ("job", "a"),
+        ("a", "0j_b"),
+    ];
+
+    /// Every identifier and candidate identifier the tests ask about, each
+    /// with what it was derived from.
+    fn every_identifier() -> Vec<(String, String)> {
+        let written = WRITTEN
             .iter()
-            .map(|id| invoke_identifier(id, false))
-            .chain(["_invoke_0", "_invoke_1"].map(|id| invoke_identifier(id, true)))
-            .collect()
+            .map(|id| (format!("id `{id}`"), invoke_identifier(id, false)));
+        let generated = ["_invoke_0", "_invoke_1"]
+            .into_iter()
+            .map(|id| (format!("generated `{id}`"), invoke_identifier(id, true)));
+        let composed = COMPOSED.iter().map(|(id, stem)| {
+            (
+                format!("`{id}` with candidate `{stem}`"),
+                invoke_candidate_identifier(&invoke_identifier(id, false), stem),
+            )
+        });
+        written.chain(generated).chain(composed).collect()
     }
 
     #[test]
@@ -5749,6 +5807,11 @@ mod invoke_identifiers {
         assert_eq!(invoke_identifier("inv_param", false), "inv_param");
         assert_eq!(invoke_identifier("_x", false), "0zz5fzx");
         assert_eq!(invoke_identifier("invokedChild", false), "0zinvokedzuchild");
+        assert_eq!(invoke_identifier("child2", false), "child2");
+        assert_eq!(
+            invoke_candidate_identifier("work", "static_hosted_first"),
+            "work_0j_static_hosted_first"
+        );
     }
 
     /// A case a backend writes a name in: what it is called, and the filter
@@ -5769,19 +5832,20 @@ mod invoke_identifiers {
         name
     }
 
+    /// No two of the identifiers and candidate identifiers share a spelling in
+    /// any case a backend writes them in, behind either prefix they are written
+    /// after: a candidate's is never an invoke's, nor another candidate's.
     #[test]
     fn distinct_ids_have_distinct_identifiers_in_every_case() {
         let identifiers = every_identifier();
-        for (case, spell) in SPELLINGS {
-            let mut seen = std::collections::BTreeMap::new();
-            for (id, identifier) in WRITTEN
-                .iter()
-                .chain(&["<generated 0>", "<generated 1>"])
-                .zip(&identifiers)
-            {
-                let spelled = spell(format!("child_{identifier}"));
-                if let Some(other) = seen.insert(spelled.clone(), *id) {
-                    panic!("{case}: `{other}` and `{id}` are both spelled `{spelled}`");
+        for prefix in ["child_", "actions_for_"] {
+            for (case, spell) in SPELLINGS {
+                let mut seen = std::collections::BTreeMap::new();
+                for (source, identifier) in &identifiers {
+                    let spelled = spell(format!("{prefix}{identifier}"));
+                    if let Some(other) = seen.insert(spelled.clone(), source) {
+                        panic!("{case}: {other} and {source} are both spelled `{spelled}`");
+                    }
                 }
             }
         }
@@ -5789,7 +5853,7 @@ mod invoke_identifiers {
 
     #[test]
     fn an_identifier_is_legal_where_it_is_written() {
-        for identifier in every_identifier() {
+        for (_, identifier) in every_identifier() {
             assert!(
                 identifier
                     .chars()

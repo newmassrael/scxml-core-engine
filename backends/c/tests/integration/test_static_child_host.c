@@ -274,8 +274,8 @@ static int a_candidate_is_given_the_table_answered_for_it_and_no_other(void) {
     static hybrid_parent_host_t host;
     static static_child_host_hybrid_t sm;
     memset(&host, 0, sizeof(host));
-    host.table.actions_for_work_static_hosted_first = on_actions_for_work_first;
-    host.table.actions_for_work_static_hosted_second = on_actions_for_work_second;
+    host.table.actions_for_work_0j_static_hosted_first = on_actions_for_work_first;
+    host.table.actions_for_work_0j_static_hosted_second = on_actions_for_work_second;
     host.table.user_data = &host;
     if (!static_child_host_hybrid_init_with_actions(&sm, &host.table)) {
         (void)fprintf(stderr, "static_child_host: FAIL - a complete table was refused\n");

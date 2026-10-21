@@ -798,10 +798,10 @@ class StaticScenarioTest {
         val children = ChildHosts()
         val sm = StaticChildHostHybridStateMachine(
             RecordingStaticChildHostHybridActions(
-                actionsForWorkStaticHostedFirstSource = {
+                actionsForWork0jStaticHostedFirstSource = {
                     children.open("work", "static_hosted_first", RecordingStaticHostedFirstActions(), ::firstCalls)
                 },
-                actionsForWorkStaticHostedSecondSource = {
+                actionsForWork0jStaticHostedSecondSource = {
                     children.open("work", "static_hosted_second", RecordingStaticHostedSecondActions(), ::secondCalls)
                 },
             ),

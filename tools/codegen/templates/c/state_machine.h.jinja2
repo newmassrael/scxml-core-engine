@@ -746,8 +746,8 @@ typedef struct {{ csym_prefix }}{{ model.name }} {
        cpp backend uses — a slot each, every lifecycle site guarded by its
        own `_active` flag. */
 {% for candidate in invoke_info.candidates %}
-    {{ csym_prefix }}{{ candidate.stem }}_t child_{{ invoke_info.field_suffix }}_{{ candidate.stem }};
-    bool child_{{ invoke_info.field_suffix }}_{{ candidate.stem }}_active;
+    {{ csym_prefix }}{{ candidate.stem }}_t child_{{ invoke_info.field_suffix | candidate_identifier(candidate.stem) }};
+    bool child_{{ invoke_info.field_suffix | candidate_identifier(candidate.stem) }}_active;
 {% endfor %}
     char child_{{ invoke_info.field_suffix }}_invoke_id[SCE_MAX_ID_LEN];
 {% else %}

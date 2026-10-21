@@ -3685,13 +3685,18 @@ invoke's identifier (below). The same test file holds this.
 name, each backend's fields, wrappers and counters for it, a child's host operation
 (`actions_for_<id>`), a typed host invoke's records and methods — is built from one
 identifier derived from its id, never from the id itself (`model::invoke_identifier`).
-An id written in lower snake case (words of lowercase letters and digits, each beginning
-with a letter, joined by single underscores: `kid`, `inv_param`) is its own identifier.
+An id written in lower snake case (words of lowercase letters followed by any digits,
+joined by single underscores: `kid`, `inv_param`, `child2`) is its own identifier.
 An `<invoke>` that names no id is given `_invoke_<n>`, whose identifier is `invoke_<n>`.
-Any other id is escaped: `0z` and then its characters, a lowercase letter but `z` or a
-digit as itself, `z` as `zz`, an uppercase letter as `zu` and the letter in lower case,
-anything else as `z`, its code point in hexadecimal and `z` — so `_x` is `0zz5fzx`,
-`invokedChild` is `0zinvokedzuchild` and `a_0` is `0zaz5fz0`. Two ids of one document
+Any other id is escaped: `0z` and then its characters, a lowercase letter but `j` and `z`
+or a digit as itself, `z` as `zz`, an uppercase letter as `zu` and the letter in lower
+case, anything else (`j` among them) as `z`, its code point in hexadecimal and `z` — so
+`_x` is `0zz5fzx`, `invokedChild` is `0zinvokedzuchild` and `a_0` is `0zaz5fz0`. A
+candidate of a hybrid `<invoke>` has an identifier of its own, the invoke's, `0j` and its
+stem's, joined by underscores (`model::invoke_candidate_identifier`: `work` with the
+candidate `static_hosted_first` is `work_0j_static_hosted_first`, and its host operation
+`actions_for_work_0j_static_hosted_first`); no identifier holds a digit followed by `j`,
+so an invoke `a` with a candidate `b` and an invoke `a_b` are two names. Two ids of one document
 never share an identifier, nor a spelling of one in any case a backend writes it in, and
 an identifier is a legal part of a name in all six languages: it never begins or ends with
 an underscore nor holds two together, and is always written after a fixed prefix. The
@@ -3715,8 +3720,8 @@ child's own trait with the operation that answers a value of it, since the child
 machine is generic over its host and the parent's field names it
 `<A as ParentActions>::ActionsForWorker`), and for
 each candidate of a hybrid `<invoke>` that declares acts one of its own
-(`actionsForWorkStaticHostedFirst`), since each candidate is a document with acts of
-its own. The machine calls it each time the invocation starts — on entry of the
+(`actionsForWork0jStaticHostedFirst`, named after the candidate's identifier, above),
+since each candidate is a document with acts of its own. The machine calls it each time the invocation starts — on entry of the
 invoking state, and on a restore, which starts the child again from its beginning —
 and builds the child with what it returns, so a state invoked again is given a host of
 its own and nothing a host kept for one child is carried into the next

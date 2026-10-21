@@ -920,7 +920,7 @@ sce_copy_bounded_id(_done_evt.name, "done.invoke.{{ invoke_info.invoke_id | esca
                    answers for IT, and refused as the invoke above is when there is
                    none to give. */
                 if (!{{ csym_prefix }}{{ candidate.stem }}_invoked_begin(
-                        &sm->child_{{ invoke_info.field_suffix }}_{{ candidate.stem }},
+                        &sm->child_{{ invoke_info.field_suffix | candidate_identifier(candidate.stem) }},
                         {{ candidate.child_host_call }},
                         {% if candidate.child_declares_host_duties %}
                         sm->accept_simulated_host,
@@ -939,7 +939,7 @@ sce_copy_bounded_id(_done_evt.name, "done.invoke.{{ invoke_info.invoke_id | esca
                 }
 {% else %}
                 {{ csym_prefix }}{{ candidate.stem }}_invoked_begin(
-                    &sm->child_{{ invoke_info.field_suffix }}_{{ candidate.stem }},
+                    &sm->child_{{ invoke_info.field_suffix | candidate_identifier(candidate.stem) }},
                     {% if candidate.child_has_send_to_parent %}sm,
                     {{ csym_prefix }}{{ model.name }}_dispatch_external_by_name{% else %}NULL,
                     NULL{% endif %},
@@ -948,17 +948,17 @@ sce_copy_bounded_id(_done_evt.name, "done.invoke.{{ invoke_info.invoke_id | esca
 {% endif %}
 {% else %}
                 {{ csym_prefix }}{{ candidate.stem }}_init_with_parent(
-                    &sm->child_{{ invoke_info.field_suffix }}_{{ candidate.stem }},
+                    &sm->child_{{ invoke_info.field_suffix | candidate_identifier(candidate.stem) }},
                     sm,
                     {{ csym_prefix }}{{ model.name }}_dispatch_external_by_name,
                     p->invoke_id,
                     {{ child_clock_c }});
 {% endif %}
-                sm->child_{{ invoke_info.field_suffix }}_{{ candidate.stem }}_active = true;
+                sm->child_{{ invoke_info.field_suffix | candidate_identifier(candidate.stem) }}_active = true;
                 sce_copy_bounded_id(sm->child_{{ invoke_info.field_suffix }}_invoke_id, p->invoke_id);
-{{ invoke_seed_child(invoke_info, candidate, "sm->child_" ~ invoke_info.field_suffix ~ "_" ~ candidate.stem ~ ".L", model, csym_prefix, se) }}
+{{ invoke_seed_child(invoke_info, candidate, "sm->child_" ~ (invoke_info.field_suffix | candidate_identifier(candidate.stem)) ~ ".L", model, csym_prefix, se) }}
 {% if candidate.child_is_static %}
-{{ seed_static_child("sm->child_" ~ invoke_info.field_suffix ~ "_" ~ candidate.stem, candidate.seeds, candidate.unkept, model, csym_prefix) }}
+{{ seed_static_child("sm->child_" ~ (invoke_info.field_suffix | candidate_identifier(candidate.stem)), candidate.seeds, candidate.unkept, model, csym_prefix) }}
 {% if model.host_processor_types %}
                 {
                     /* SCE_MESH.md, Child Sessions in Mesh: the router of the
@@ -969,23 +969,23 @@ sce_copy_bounded_id(_done_evt.name, "done.invoke.{{ invoke_info.invoke_id | esca
                         &sm->host_processors.child_mesh_routers, "{{ invoke_info.invoke_id | escape_c }}",
                         "{{ candidate.stem | escape_c }}", &_mesh_router);
                     if (_mesh != NULL) {
-                        {{ csym_prefix }}{{ candidate.stem }}_install_mesh_router(&sm->child_{{ invoke_info.field_suffix }}_{{ candidate.stem }}, _mesh);
+                        {{ csym_prefix }}{{ candidate.stem }}_install_mesh_router(&sm->child_{{ invoke_info.field_suffix | candidate_identifier(candidate.stem) }}, _mesh);
                     }
                 }
 {% endif %}
-                {{ csym_prefix }}{{ candidate.stem }}_invoked_enter(&sm->child_{{ invoke_info.field_suffix }}_{{ candidate.stem }});
+                {{ csym_prefix }}{{ candidate.stem }}_invoked_enter(&sm->child_{{ invoke_info.field_suffix | candidate_identifier(candidate.stem) }});
                 /* The macrostep that follows the entry walk, now that the values
                    are in and parent routing is live: a candidate that ends on
                    what it was handed ends here. One that sends to its parent is
                    driven further, up to a safety bound of 16, as a static child
                    is; any other is driven on from `_drive_active_children`. */
-                {{ csym_prefix }}{{ candidate.stem }}_step(&sm->child_{{ invoke_info.field_suffix }}_{{ candidate.stem }});
+                {{ csym_prefix }}{{ candidate.stem }}_step(&sm->child_{{ invoke_info.field_suffix | candidate_identifier(candidate.stem) }});
 {% if candidate.child_has_send_to_parent %}
                 for (int _step_n = 1; _step_n < 16; ++_step_n) {
-                    if ({{ csym_prefix }}{{ candidate.stem }}_is_in_final_state(&sm->child_{{ invoke_info.field_suffix }}_{{ candidate.stem }})) {
+                    if ({{ csym_prefix }}{{ candidate.stem }}_is_in_final_state(&sm->child_{{ invoke_info.field_suffix | candidate_identifier(candidate.stem) }})) {
                         break;
                     }
-                    {{ csym_prefix }}{{ candidate.stem }}_step(&sm->child_{{ invoke_info.field_suffix }}_{{ candidate.stem }});
+                    {{ csym_prefix }}{{ candidate.stem }}_step(&sm->child_{{ invoke_info.field_suffix | candidate_identifier(candidate.stem) }});
                 }
 {% endif %}
 {% endif %}
@@ -994,7 +994,7 @@ sce_copy_bounded_id(_done_evt.name, "done.invoke.{{ invoke_info.invoke_id | esca
                    observes its child by what the child SENDS has no
                    done-event in its enum, and naming one asks the compiler
                    for a member the document never declared. */
-                if ({{ csym_prefix }}{{ candidate.stem }}_is_in_final_state(&sm->child_{{ invoke_info.field_suffix }}_{{ candidate.stem }})) {
+                if ({{ csym_prefix }}{{ candidate.stem }}_is_in_final_state(&sm->child_{{ invoke_info.field_suffix | candidate_identifier(candidate.stem) }})) {
                     {{ csym_prefix }}{{ model.name }}_event_with_meta_t _done_evt;
                     memset(&_done_evt, 0, sizeof(_done_evt));
                     _done_evt.event = {% if invoke_info.use_specific_event %}{{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_DONE_INVOKE_{{ invoke_info.invoke_id | to_c11_upper_ident }}{% else %}{{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_DONE_INVOKE{% endif %};
@@ -1083,7 +1083,7 @@ static void {{ csym_prefix }}{{ model.name }}_drive_active_children({{ csym_pref
        no-ops gracefully. */
 {% set tick_targets = invoke_info.candidates if invoke_info.candidates else [{'stem': invoke_info.child_name}] %}
 {% for target in tick_targets %}
-{% set slot = ('child_' ~ invoke_info.field_suffix ~ '_' ~ target.stem) if invoke_info.candidates else ('child_' ~ invoke_info.field_suffix) %}
+{% set slot = ('child_' ~ (invoke_info.field_suffix | candidate_identifier(target.stem))) if invoke_info.candidates else ('child_' ~ invoke_info.field_suffix) %}
     if (sm->{{ slot }}_active
         && !{{ csym_prefix }}{{ target.stem }}_is_in_final_state(&sm->{{ slot }})) {
 {% if target.child_is_static is defined and target.child_is_static %}
@@ -1194,7 +1194,7 @@ static void {{ csym_prefix }}{{ model.name }}_destroy_active_children({{ csym_pr
     {% for invoke_info in state.invokes | hybrid %}
 {% set destroy_targets = invoke_info.candidates if invoke_info.candidates else [{'stem': invoke_info.child_name}] %}
 {% for target in destroy_targets %}
-{% set slot = ('child_' ~ invoke_info.field_suffix ~ '_' ~ target.stem) if invoke_info.candidates else ('child_' ~ invoke_info.field_suffix) %}
+{% set slot = ('child_' ~ (invoke_info.field_suffix | candidate_identifier(target.stem))) if invoke_info.candidates else ('child_' ~ invoke_info.field_suffix) %}
     if (sm->{{ slot }}_active) {
         {{ csym_prefix }}{{ target.stem }}_destroy(&sm->{{ slot }});
         sm->{{ slot }}_active = false;

@@ -911,9 +911,9 @@
    one that started and steps over the rest — the same null guard the
    single-slot shape used. Told and dropped as a static child is above. #}
 {% for candidate in invoke_info.candidates %}
-                if (child_{{ invoke_info.field_suffix }}_{{ candidate.stem }}_) {
-                    child_{{ invoke_info.field_suffix }}_{{ candidate.stem }}_->detachMesh();
-                    child_{{ invoke_info.field_suffix }}_{{ candidate.stem }}_.reset();
+                if (child_{{ invoke_info.field_suffix | candidate_identifier(candidate.stem) }}_) {
+                    child_{{ invoke_info.field_suffix | candidate_identifier(candidate.stem) }}_->detachMesh();
+                    child_{{ invoke_info.field_suffix | candidate_identifier(candidate.stem) }}_.reset();
                 }
 {% endfor %}
 {% else %}

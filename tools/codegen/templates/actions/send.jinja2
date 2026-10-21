@@ -666,7 +666,7 @@ if (!engine.getPolicy().deliverToParent(::SCE::Common::ForwardedEvent{
 {% if child_ns.invoke.candidates %}
 {% set child_slots = [] %}
 {% for candidate in child_ns.invoke.candidates %}
-{% set child_slots = child_slots + ['child_' ~ child_ns.invoke.field_suffix ~ '_' ~ candidate.stem ~ '_'] %}
+{% set child_slots = child_slots + ['child_' ~ (child_ns.invoke.field_suffix | candidate_identifier(candidate.stem)) ~ '_'] %}
 {% endfor %}
 {% else %}
 {% set child_slots = ['child_' ~ child_ns.invoke.field_suffix ~ '_'] %}

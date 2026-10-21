@@ -610,7 +610,7 @@
                 // among the declared candidates, each with a slot of its own.
 {% for candidate in invoke_info.candidates %}
                 if __sce_selected == "{{ candidate.stem | escape_rust }}" {
-{{ hybrid_child_start(invoke_info, candidate, candidate.stem ~ "_sm", candidate.stem | to_machine_name, "child_" ~ invoke_info.field_suffix ~ "_" ~ candidate.stem, model, machine_name) }}
+{{ hybrid_child_start(invoke_info, candidate, candidate.stem ~ "_sm", candidate.stem | to_machine_name, "child_" ~ (invoke_info.field_suffix | candidate_identifier(candidate.stem)), model, machine_name) }}
                     continue;
                 }
 {% endfor %}
@@ -877,7 +877,7 @@
 {# §scxml-6.4: at most one candidate slot holds a child, so each is taken,
    ticked and put back under the same guard the single-slot shape used. #}
 {% for candidate in invoke_info.candidates %}
-{{ hybrid_child_tick(invoke_info, "child_" ~ invoke_info.field_suffix ~ "_" ~ candidate.stem) }}
+{{ hybrid_child_tick(invoke_info, "child_" ~ (invoke_info.field_suffix | candidate_identifier(candidate.stem))) }}
 {% endfor %}
 {% else %}
 {{ hybrid_child_tick(invoke_info, "child_" ~ invoke_info.field_suffix) }}
@@ -896,7 +896,7 @@
 {% for invoke_info in model.invokes | hybrid %}
 {% if invoke_info.candidates %}
 {% for candidate in invoke_info.candidates %}
-{{ child_deadline(invoke_info, "child_" ~ invoke_info.field_suffix ~ "_" ~ candidate.stem) }}
+{{ child_deadline(invoke_info, "child_" ~ (invoke_info.field_suffix | candidate_identifier(candidate.stem))) }}
 {% endfor %}
 {% else %}
 {{ child_deadline(invoke_info, "child_" ~ invoke_info.field_suffix) }}
@@ -925,7 +925,7 @@
 {% if invoke_info.candidates %}
 {# §scxml-6.4.1: forward to whichever candidate slot the value chose. #}
 {% for candidate in invoke_info.candidates %}
-                if let Some(ref mut child) = self.child_{{ invoke_info.field_suffix }}_{{ candidate.stem }} {
+                if let Some(ref mut child) = self.child_{{ invoke_info.field_suffix | candidate_identifier(candidate.stem) }} {
                     child.raise_external_by_name_with_meta(event_name, metadata);
                 }
 {% endfor %}

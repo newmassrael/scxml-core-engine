@@ -53,6 +53,6 @@ PY
 
 mutation_case "a saved state looks for the child in one candidate's slot only" <<'PY'
 edit("tools/codegen/templates/rust/state_machine.rs.jinja2",
-     "{% for candidate in invoke_info.candidates %}self.child_{{ invoke_info.field_suffix }}_{{ candidate.stem }}.is_some()",
-     "{% for candidate in invoke_info.candidates[:1] %}self.child_{{ invoke_info.field_suffix }}_{{ candidate.stem }}.is_some()")
+     "{% for candidate in invoke_info.candidates %}self.child_{{ invoke_info.field_suffix | candidate_identifier(candidate.stem) }}.is_some()",
+     "{% for candidate in invoke_info.candidates[:1] %}self.child_{{ invoke_info.field_suffix | candidate_identifier(candidate.stem) }}.is_some()")
 PY

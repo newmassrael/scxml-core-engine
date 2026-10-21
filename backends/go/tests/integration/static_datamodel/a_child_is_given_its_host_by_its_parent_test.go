@@ -141,14 +141,14 @@ type hybridParentHost struct {
 	seconds []*secondHost
 }
 
-func (h *hybridParentHost) ActionsForWorkStaticHostedFirst() static_child_host_hybrid.StaticHostedFirstActions {
+func (h *hybridParentHost) ActionsForWork0jStaticHostedFirst() static_child_host_hybrid.StaticHostedFirstActions {
 	h.asked = append(h.asked, "first")
 	host := &firstHost{}
 	h.firsts = append(h.firsts, host)
 	return host
 }
 
-func (h *hybridParentHost) ActionsForWorkStaticHostedSecond() static_child_host_hybrid.StaticHostedSecondActions {
+func (h *hybridParentHost) ActionsForWork0jStaticHostedSecond() static_child_host_hybrid.StaticHostedSecondActions {
 	h.asked = append(h.asked, "second")
 	host := &secondHost{}
 	h.seconds = append(h.seconds, host)

@@ -25,8 +25,8 @@ import kotlin.test.assertEquals
 
 class AHybridCandidateIsGivenItsHostByItsParentTest {
 
-    private val askedForFirst = RecordingStaticChildHostHybridActions.Call.ActionsForWorkStaticHostedFirst
-    private val askedForSecond = RecordingStaticChildHostHybridActions.Call.ActionsForWorkStaticHostedSecond
+    private val askedForFirst = RecordingStaticChildHostHybridActions.Call.ActionsForWork0jStaticHostedFirst
+    private val askedForSecond = RecordingStaticChildHostHybridActions.Call.ActionsForWork0jStaticHostedSecond
 
     /**
      * The hosts of one machine: the parent's, which answers a recording host
@@ -37,10 +37,10 @@ class AHybridCandidateIsGivenItsHostByItsParentTest {
         val first = mutableListOf<RecordingStaticHostedFirstActions>()
         val second = mutableListOf<RecordingStaticHostedSecondActions>()
         val parent = RecordingStaticChildHostHybridActions(
-            actionsForWorkStaticHostedFirstSource = {
+            actionsForWork0jStaticHostedFirstSource = {
                 RecordingStaticHostedFirstActions().also { first += it }
             },
-            actionsForWorkStaticHostedSecondSource = {
+            actionsForWork0jStaticHostedSecondSource = {
                 RecordingStaticHostedSecondActions().also { second += it }
             },
         )

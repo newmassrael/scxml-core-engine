@@ -1689,11 +1689,11 @@ func (h recordedSecondHost) SecondRan() { h.child.call("second_ran") }
 // under the stem of that candidate's document, and for no other.
 type recordingHybridParentHost struct{ book *childHostBook }
 
-func (h recordingHybridParentHost) ActionsForWorkStaticHostedFirst() static_child_host_hybrid.StaticHostedFirstActions {
+func (h recordingHybridParentHost) ActionsForWork0jStaticHostedFirst() static_child_host_hybrid.StaticHostedFirstActions {
 	return recordedFirstHost{h.book.open("work", "static_hosted_first")}
 }
 
-func (h recordingHybridParentHost) ActionsForWorkStaticHostedSecond() static_child_host_hybrid.StaticHostedSecondActions {
+func (h recordingHybridParentHost) ActionsForWork0jStaticHostedSecond() static_child_host_hybrid.StaticHostedSecondActions {
 	return recordedSecondHost{h.book.open("work", "static_hosted_second")}
 }
 

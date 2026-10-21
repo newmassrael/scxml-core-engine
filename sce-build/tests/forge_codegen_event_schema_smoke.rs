@@ -1344,6 +1344,136 @@ fn an_underscore_does_not_make_two_invoke_ids_one_identifier_on_any_backend() {
     }
 }
 
+/// An act the children of [`joint_document`] perform, so the parent's host
+/// interface has an operation for each of them.
+const JOINT_CHILD_STATE: &str =
+    r#"<state id="idle"><onentry><sce:action name="note" effect="notice"/></onentry></state>"#;
+
+/// `in_line_joint`, written into `dir` with the candidate document `b` beside
+/// it: a state that starts, when `hybrid`, the hybrid invoke `a` whose one
+/// candidate is `b`, and, when `in_line`, an in-line child under the id `a_b`.
+/// Both children perform an act, so each has a host operation.
+fn joint_document(dir: &Path, hybrid: bool, in_line: bool) -> PathBuf {
+    std::fs::create_dir_all(dir).expect("create document dir");
+    std::fs::write(
+        dir.join("b.scxml"),
+        format!(
+            r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="idle" datamodel="sce-static" name="b">
+  {JOINT_CHILD_STATE}
+</scxml>"#
+        ),
+    )
+    .expect("write the candidate");
+    let mut invokes = String::new();
+    if hybrid {
+        invokes.push_str(
+            r#"
+    <invoke type="scxml" id="a" srcexpr="pick" sce:candidates="b.scxml"/>"#,
+        );
+    }
+    if in_line {
+        invokes.push_str(&format!(
+            r#"
+    <invoke type="scxml" id="a_b">
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+               version="1.0" initial="idle" datamodel="sce-static">
+          {JOINT_CHILD_STATE}
+        </scxml>
+      </content>
+    </invoke>"#
+        ));
+    }
+    let document = dir.join("in_line_joint.scxml");
+    std::fs::write(
+        &document,
+        format!(
+            r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="running" datamodel="sce-static" name="in_line_joint">
+  <datamodel>
+    <data id="pick" sce:type="string" sce:capacity="48" expr="'file:b.scxml'"/>
+  </datamodel>
+  <state id="running">{invokes}
+  </state>
+</scxml>"#
+        ),
+    )
+    .expect("write in_line_joint");
+    document
+}
+
+/// The names `lang` builds for the invoke `a_b` and for the candidate `b` of
+/// the invoke `a`, as the text that spells them: the host operation each
+/// child's host is answered by, in the backend's case, and — where the
+/// backend holds a child in a field named after it — that field.
+fn joint_names(lang: &str) -> [Vec<&'static str>; 2] {
+    match lang {
+        "rust" | "c11" => [
+            vec!["actions_for_a_b", "child_a_b"],
+            vec!["actions_for_a_0j_b", "child_a_0j_b"],
+        ],
+        "cpp" => [
+            vec!["actionsForAB", "child_a_b"],
+            vec!["actionsForA0jB", "child_a_0j_b"],
+        ],
+        "python" => [vec!["actions_for_a_b"], vec!["actions_for_a_0j_b"]],
+        "go" => [vec!["ActionsForAB"], vec!["ActionsForA0jB"]],
+        _ => [vec!["actionsForAB"], vec!["actionsForA0jB"]],
+    }
+}
+
+/// An invoke `a` whose candidate is `b`, beside an invoke `a_b`, on every
+/// backend that lowers `sce-static`. The candidate's names joined the invoke's
+/// identifier to the stem with `_` alone, so the candidate's field and host
+/// operation (`actions_for_a_b`, `actionsForAB`) were the names of the invoke
+/// `a_b`'s. Joined with `0j` (`actions_for_a_0j_b`), each name the parent
+/// builds for either appears exactly as often as in a machine that has that
+/// invoke alone, and in Go the package declares every package-level name once.
+#[test]
+fn a_candidates_names_are_never_another_invokes_on_any_backend() {
+    let scratch = reset_scratch("in_line_joint");
+    let both = joint_document(&scratch.join("both"), true, true);
+    let in_line_only = joint_document(&scratch.join("in_line_only"), false, true);
+    let hybrid_only = joint_document(&scratch.join("hybrid_only"), true, false);
+    for lang in STATIC_DATAMODEL_BACKENDS {
+        let extra: &[&str] = if lang == "cpp" { &["--no-format"] } else { &[] };
+        let parent_text = |document: &Path, out: &str| {
+            let out_dir = scratch.join(out).join(lang);
+            generate_into(lang, document, &out_dir, extra);
+            (
+                read_all(&machine_files_of(&out_dir, "in_line_joint")),
+                out_dir,
+            )
+        };
+        let (both_text, both_out) = parent_text(&both, "out_both");
+        let (in_line_text, _) = parent_text(&in_line_only, "out_in_line_only");
+        let (hybrid_text, _) = parent_text(&hybrid_only, "out_hybrid_only");
+        let [invoke_names, candidate_names] = joint_names(lang);
+        for (names, alone) in [
+            (invoke_names, &in_line_text),
+            (candidate_names, &hybrid_text),
+        ] {
+            for name in names {
+                let once = alone.matches(name).count();
+                assert!(once > 0, "{lang}: the parent never writes `{name}`");
+                assert_eq!(
+                    both_text.matches(name).count(),
+                    once,
+                    "{lang}: `{name}` is written for the invoke `a_b` and for `a`'s candidate `b`"
+                );
+            }
+        }
+        if lang == "go" {
+            let twice = declared_more_than_once(&go_package_machines(&both_out));
+            assert!(
+                twice.is_empty(),
+                "names declared more than once in the package: {twice:?}"
+            );
+        }
+    }
+}
+
 /// A document whose in-line child `kid` starts an in-line `kid` of its own and,
 /// by `src`, the document [`IN_LINE_LISTING_LEAF`] beside the parent.
 const IN_LINE_LISTING: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
