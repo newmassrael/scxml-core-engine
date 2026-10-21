@@ -1,7 +1,7 @@
 # ADR 0045 — A saved state holds its running children, and a restore resumes them where they were
 
 - Status: Accepted (2026-10-20); steps 1 and 2 done (two ids of step 2 land with steps 3 to 5,
-  see its "Where it stands"), step 3 in progress
+  see its "Where it stands"), step 3 in progress (see its "Where it stands")
 - Date: 2026-10-20
 - Scope: docs/SCE_ACCEPTED_SUBSET.md §2.15 ("Saving and restoring", "Running invocations",
   "Child sessions", the scenario format); `schemas/sce-saved-state.v1.schema.json` and a new
@@ -720,6 +720,39 @@ Each step lands with a test that fails without it.
 3. **Rust.** `SavedState` as a session tree, format 2 written, formats 1 and 2 read, the restore of
    section 3, the transit check, the tree fixture, and the root's session id (drawn or given at
    creation, saved, bound again by a restore). *Exit:* the Rust tests of section 8.
+
+   *Where it stands.* Done: `SavedState` holds `sessionid`, `invokestarts` and its running
+   children as `SavedInvokes::Resumed` (format 2) or `Restarted` (format 1), and writes the
+   format it is of; the runtime reads both, and a refusal inside a child names its session's path
+   (`StateRefusal::within`). `save` writes format 2 with the format-2 shape, refuses a machine
+   with no id and a save whose children are not the ones the machine runs, and holds a delayed
+   send to the parent or a child as `parent` / `child`. A restore judges the root, then each child
+   by its own document through `<Machine>Persist::judge` (`StatePolicy::judge_child`, to any depth)
+   before anything is built, binds the saved root id, carries the counts on, and resumes each child
+   as its start builds it (`do_resume_child`, sharing `build_child_policy` and `track_child` with
+   the start) in place of initializing it; a format-1 state still starts its children again. The
+   root's id is drawn when the policy is built (`helpers::session_id`, `getrandom`) or given
+   through `with_session_id`, refused when it is not an Nmtoken. The shared texts moved to
+   `saved/format1/` and `saved/` holds the format-2 texts Rust writes, each root given
+   `fixture-root`; the loss tests are turned around (`a_saved_child_session_is_resumed_after_a_restore.rs`,
+   `a_static_hybrid_invoke_is_started_again_by_a_restore.rs`, the child's host and params tests),
+   with format 1 kept as the one case a child restarts. Open: the tree fixture
+   (`static_invoke_tree.scxml` with a grandchild, the sends and queued events both ways, a
+   candidate whose `srcexpr` changed, a start counted twice) and its byte-for-byte text, which
+   the refusal tests of a grandchild of another shape and of a child of a later schema revision
+   read; two of its items are not yet expressible, an `idlocation` on an `<invoke>` of a
+   `sce-static` document (the Rust template reaches a script engine for it) and a host-run
+   invocation in a child (the child has no host invoker of its own); the scenario step `restore`;
+   the test that the transit check is never reached, together with draining a child's `#_parent`
+   buffer after a parent delivers to it at once (`deliver_by_name` leaves the child's reply in the
+   buffer until the parent's next `tick`, so a host that calls `step` and saves meets the refusal);
+   the Mesh router of a resumed child, which a restore asks of a parent that has no factory yet;
+   the root id on a target with no source of randomness, where answer 2 has the constructor take it
+   as a required argument: on `wasm32-unknown-unknown` the Rust constructor keeps its signature and
+   draws nothing, so a host that gives no id through `with_session_id` is told at the save and not
+   when it builds the machine (a parent builds its children through the same constructor, so the
+   required form needs a constructor of its own for a child); and a `no_std` build, which holds no
+   session id today and has nothing that reads one (the footprint gate measures the change).
 4. **Kotlin.** The same over `SavedState.kt` and `StateMachineEngine`, the root's id included.
    *Exit:* Kotlin saves the tree fixture byte for byte as Rust does, Kotlin restores the text Rust
    saved, and Rust the text Kotlin saved.
