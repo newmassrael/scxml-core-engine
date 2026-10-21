@@ -62,7 +62,7 @@ impl<'a> CodecOriginLeaf<'a> {
         }
         let raw = cursor.peek_slice(_frame_len)?;
         let len = raw[0];
-        let data = &raw[1..1 + len as usize];
+        let data = raw.get(1..1 + len as usize).ok_or(CodecError::NeedMoreBytes)?;
         let value = Self {
             len,
             data,

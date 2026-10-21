@@ -64,7 +64,7 @@ impl<'a> CodecLengthRef<'a> {
         let raw = cursor.peek_slice(_frame_len)?;
         let msg_id = raw[0];
         let len = raw[1];
-        let payload = &raw[2..2 + len as usize];
+        let payload = raw.get(2..2 + len as usize).ok_or(CodecError::NeedMoreBytes)?;
         let value = Self {
             msg_id,
             len,

@@ -64,7 +64,7 @@ impl<'a> CodecTlvEntry<'a> {
         let raw = cursor.peek_slice(_frame_len)?;
         let entry_type = raw[0];
         let entry_len = raw[1];
-        let entry_body = &raw[2..2 + entry_len as usize];
+        let entry_body = raw.get(2..2 + entry_len as usize).ok_or(CodecError::NeedMoreBytes)?;
         let value = Self {
             entry_type,
             entry_len,

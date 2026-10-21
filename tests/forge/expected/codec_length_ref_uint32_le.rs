@@ -62,7 +62,7 @@ impl<'a> CodecLengthRefUint32Le<'a> {
         }
         let raw = cursor.peek_slice(_frame_len)?;
         let payload_len = raw[0] as u32 | ((raw[1] as u32) << 8) | ((raw[2] as u32) << 16) | ((raw[3] as u32) << 24);
-        let payload = &raw[4..4 + payload_len as usize];
+        let payload = raw.get(4..4 + payload_len as usize).ok_or(CodecError::NeedMoreBytes)?;
         let value = Self {
             payload_len,
             payload,

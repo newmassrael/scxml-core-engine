@@ -62,7 +62,7 @@ impl<'a> CodecExtAttachment<'a> {
         }
         let raw = cursor.peek_slice(_frame_len)?;
         let length = raw[0];
-        let body = &raw[1..1 + length as usize];
+        let body = raw.get(1..1 + length as usize).ok_or(CodecError::NeedMoreBytes)?;
         let value = Self {
             length,
             body,

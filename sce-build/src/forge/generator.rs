@@ -16916,7 +16916,7 @@ fn generate_decode_expr(
                 Language::Kotlin =>
                     format!("raw.copyOfRange({byte_off}, {byte_off} + {len_value_kotlin}{suffix_signed})"),
                 Language::Rust =>
-                    format!("&raw[{byte_off}..{byte_off} + {len_value_rust}{suffix_signed}]"),
+                    format!("raw.get({byte_off}..{byte_off} + {len_value_rust}{suffix_signed}).ok_or(CodecError::NeedMoreBytes)?"),
                 Language::Go =>
                     format!("raw[{byte_off}:{byte_off}+{len_value_go}{suffix_signed}]"),
                 Language::Python =>
@@ -17182,6 +17182,9 @@ struct ParentTagDerivation {
 
 /// RFC §synth-5-B parent-tag dispatch — emit per-language locals at the parent codec's
 /// `encode` entry that derive each carrier's dispatch bits from the active
+                // The length is the wire's, and a frame may hold fewer bytes
+                // than it says: a slice index would panic on it, where the
+                // decode refuses a short frame with `NeedMoreBytes`.
 /// embed-variant arm. Returns the empty string when the codec has no
 /// derivations; templates render the result verbatim.
 ///

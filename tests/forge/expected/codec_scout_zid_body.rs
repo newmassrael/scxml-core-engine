@@ -62,7 +62,7 @@ impl<'a> CodecScoutZidBody<'a> {
         }
         let raw = cursor.peek_slice(_frame_len)?;
         let zid_len_m1 = raw[0];
-        let zid = &raw[1..1 + zid_len_m1 as usize + 1];
+        let zid = raw.get(1..1 + zid_len_m1 as usize + 1).ok_or(CodecError::NeedMoreBytes)?;
         let value = Self {
             zid_len_m1,
             zid,

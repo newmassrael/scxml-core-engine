@@ -62,7 +62,7 @@ impl<'a> CodecLengthRefDottedBasic<'a> {
         }
         let raw = cursor.peek_slice(_frame_len)?;
         let carrier = raw[0];
-        let payload = &raw[1..1 + (((carrier >> 4) & 0xF) as usize)];
+        let payload = raw.get(1..1 + (((carrier >> 4) & 0xF) as usize)).ok_or(CodecError::NeedMoreBytes)?;
         let value = Self {
             carrier,
             payload,
