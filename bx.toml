@@ -295,25 +295,41 @@ build  = "cargo build --bin sce-codegen --features cli -p sce-build && cmake -S 
 verify = "ctest --test-dir build --output-on-failure; c=$?; node tests/w3c/standalone_http_server.js 8080 /test & srv=$!; sleep 1; cargo test --workspace --features cli --no-fail-fast; r=$?; kill $srv 2>/dev/null; exit $(( c | r ))"
 
 # Regenerating the committed generated trees writes into the tree, so `writes`
-# keeps a plain `bx -- UPDATE_GOLDEN=1 cargo test ...` on this machine.
-# Declared as an action it runs on a build machine and only the files it
-# rewrote come back (`bx --action golden`). Two steps, because both are
-# stale after the same template change: the forge goldens, then the committed
-# Rust mesh tree. Measured on a build machine: 91 s for the goldens alone,
-# 125 s for both, against 1240 s for the goldens run local under load; an edit
-# made to a generated mesh file was put back by the action.
+# keeps a plain `bx -- scripts/regen_...` on this machine. Declared as an
+# action it runs on a build machine and only the files it rewrote come back
+# (`bx --action regen`). Measured by the bx session on a build machine: the
+# whole regeneration took 341 s with nothing left to change, against 40-60 min
+# on this machine under load (RFC 0003 section 12, step 0); the forge goldens
+# alone took 91 s and goldens plus the Rust mesh tree 125 s.
 #
-# They are ONE action because two actions that both read `**` cannot be
-# declared together: bx refuses an action reading what another writes, and
-# cannot yet declare an order between them (RFC 0003 section 6). Split them
-# when it can. The cost of one action is that a run needing only the goldens
-# also regenerates the mesh tree, about half a minute.
+# It is ONE action, the whole regeneration, because two actions that both read
+# `**` cannot be declared together: bx refuses an action reading what another
+# writes, and cannot yet declare an order between them (RFC 0003 section 6).
+# The script regenerates the forge goldens and the Rust mesh tree among its
+# steps, so the action that did only those is part of this one. Split it into
+# one action per step when bx can order them, which is also what lets it run
+# the steps on several machines at once (RFC 0003 section 10).
 #
-# `inputs = ["**"]` is deliberate: the test builds the generator from the whole
-# workspace, so no narrower list is honest, and with it nothing is cached or
-# isolated, which suits a run nothing else reuses. The goldens' outputs are the
-# committed files only; `__pycache__` beside them is ignored and not listed.
-[actions.golden]
-run = 'UPDATE_GOLDEN=1 cargo test -p sce-build --test forge_conformance && backends/rust/mesh/generate.sh'
+# `inputs = ["**"]` is deliberate: the steps build the generator from the whole
+# workspace and read the templates, the standard library and every fixture, so
+# no narrower list is honest, and with it nothing is cached or isolated, which
+# suits a run nothing else reuses. The outputs are every tree a step writes; a
+# change outside them refuses the whole result.
+[actions.regen]
+run = 'cargo build --bin sce-codegen --features cli -p sce-build && scripts/regen_all_committed_trees.sh'
 inputs = ["**"]
-outputs = ["tests/forge/expected/*", "backends/rust/mesh/src/generated/*", "backends/rust/mesh/src/generated.rs"]
+outputs = [
+    "backends/rust/tests/src/**",
+    "backends/rust/tests/tests/**",
+    "backends/rust/mesh/src/generated/*",
+    "backends/rust/mesh/src/generated.rs",
+    "backends/kotlin/tests/src/**",
+    "backends/kotlin/mesh/src/commonMain/kotlin/generated/**",
+    "backends/go/tests/**",
+    "backends/go/forge-runtime/round_trip/generated/**",
+    "backends/python/tests/**",
+    "integration_resources/**",
+    "sce/src/mesh/generated/**",
+    "sce-specs/src/*/generated/**",
+    "tests/forge/expected/*",
+]
