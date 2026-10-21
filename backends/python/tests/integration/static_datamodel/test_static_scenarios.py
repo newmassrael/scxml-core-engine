@@ -1046,3 +1046,12 @@ def test_a_final_hands_its_done_event_the_value_its_content_names() -> None:
     replay("static_donedata_content_value")
     replay("static_donedata_content_text")
     replay("static_donedata_content_lost")
+
+
+# docs/adr/0055: a value that may be absent, held as `None` in a variable, a
+# record's field and a list's record, carried as JSON `null` by a payload, a
+# `<send>`'s params and a `<donedata>`, read only where a test proves it present,
+# `??` computing its default only when the value is absent, and a delivery that
+# lacks a first-revision key refused.
+def test_a_value_that_may_be_absent_is_held_tested_and_carried_as_null() -> None:
+    replay("static_optional")
