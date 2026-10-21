@@ -1251,7 +1251,7 @@ fn inherit_req(block_req: &[crate::provenance::RequirementId], block: &mut [crat
 /// §scxml-6.4.1: whether `invoke_type` names the SCXML processor — the
 /// `scxml` shorthand, the processor URI with and without its trailing slash,
 /// or no type at all.
-fn is_scxml_invoke_type(invoke_type: &str) -> bool {
+pub(crate) fn is_scxml_invoke_type(invoke_type: &str) -> bool {
     invoke_type.is_empty()
         || invoke_type == "scxml"
         || invoke_type == "http://www.w3.org/TR/scxml"

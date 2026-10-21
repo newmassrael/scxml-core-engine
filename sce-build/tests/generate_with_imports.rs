@@ -28,6 +28,8 @@
 //   - a document the run reached that its own generation refuses is refused
 //     with the same chain;
 //   - every backend that lowers `sce-static` generates the design;
+//   - a child an `<invoke src>` names by its file is generated into its
+//     parent's package, and not as a machine of its own;
 //   - `orchestrate --document` takes a standard document by its library name.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -536,6 +538,73 @@ fn every_backend_that_lowers_the_static_model_generates_the_design() {
             &format!("the {name} run over the tree it just wrote"),
         );
     }
+}
+
+/// `sce-codegen --error-format json generate <documents...> --with-imports -l
+/// <language> -o <out>`, plus `extra`.
+fn generate_documents(documents: &[PathBuf], out: &Path, language: &str, extra: &[&str]) -> Output {
+    Command::new(codegen())
+        .args(["--error-format", "json", "generate"])
+        .args(documents)
+        .args(["--with-imports", "-l", language, "--output-dir"])
+        .arg(out)
+        .args(extra)
+        .output()
+        .expect("run sce-codegen")
+}
+
+/// A statechart named `name` whose one state holds `body`.
+fn plain_statechart(name: &str, body: &str) -> String {
+    format!(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<scxml \
+         xmlns=\"http://www.w3.org/2005/07/scxml\" version=\"1.0\" initial=\"running\" \
+         name=\"{name}\">\n  <state id=\"running\">\n{body}    <transition event=\"stop\" \
+         target=\"done\"/>\n  </state>\n  <final id=\"done\"/>\n</scxml>\n"
+    )
+}
+
+#[test]
+fn a_child_an_invoke_names_by_its_file_is_generated_into_its_parents_package() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let src = tmp.path().join("src");
+    fs::create_dir_all(&src).expect("create the source directory");
+    fs::write(src.join("worker.scxml"), plain_statechart("worker", "")).expect("write");
+    let parent = src.join("parent_machine.scxml");
+    fs::write(
+        &parent,
+        plain_statechart(
+            "parent_machine",
+            "    <invoke type=\"scxml\" src=\"worker.scxml\"/>\n",
+        ),
+    )
+    .expect("write");
+    let out = tmp.path().join("out");
+
+    let run = generate_documents(
+        std::slice::from_ref(&parent),
+        &out,
+        "kotlin",
+        &["--kotlin-package-prefix", "com.acme.app"],
+    );
+    succeeded(&run, "the run over a parent and its file child");
+    let written = artifacts(&run, &out);
+    each_once(&written);
+    assert!(
+        written.contains(&"com/acme/app/parent_machine/workerSm.kt".to_string()),
+        "the child in its parent's package: {written:?}"
+    );
+    assert!(
+        !written
+            .iter()
+            .any(|path| path.starts_with("com/acme/app/worker/")),
+        "the child was also generated as a machine of its own: {written:?}"
+    );
+    let child = fs::read_to_string(out.join("com/acme/app/parent_machine/workerSm.kt"))
+        .expect("read the child");
+    assert!(
+        child.contains("package com.acme.app.parent_machine"),
+        "the child declares its parent's package"
+    );
 }
 
 #[test]

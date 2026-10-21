@@ -1886,8 +1886,9 @@ struct GenerateArgs {
     /// Generate the documents named AND every document they reach, each once,
     /// in one run: every `<sce:import>` transitively (a local `src` beside the
     /// document that imports it, an `sce:std/...` name from the standard
-    /// library built into this generator), and every document a hybrid
-    /// `<invoke>` declares in `sce:candidates`.
+    /// library built into this generator), every child an
+    /// `<invoke type="scxml" src="...">` names by its file, and every document
+    /// a hybrid `<invoke>` declares in `sce:candidates`.
     ///
     /// Each document is generated exactly as `generate` generates it alone,
     /// with the same flags, and written below `--output-dir`, which becomes the
@@ -1897,8 +1898,9 @@ struct GenerateArgs {
     /// `--kotlin-package-prefix` package; for Go each unit in a package
     /// directory of its own, imported as `<--go-module-prefix>/<snake>`; for
     /// Rust, Python, C++ and C11 every unit beside the others, as their
-    /// `super::` / `from .` / `#include` lines name them. A candidate is
-    /// generated as its statechart's child, into that statechart's package
+    /// `super::` / `from .` / `#include` lines name them. A child a statechart
+    /// starts by its file or as a candidate is generated as that statechart's
+    /// child, into its package
     /// (`--as-child --parent-stem`); in-line children are generated with their
     /// parent, as always.
     ///
@@ -5571,7 +5573,7 @@ fn cmd_generate_with_imports(args: GenerateArgs, error_format: ErrorFormat) {
         if unit.is_standard() {
             one.input_root = None;
         }
-        if let sce_build::import_closure::Role::Candidate { parent } = &unit.role {
+        if let sce_build::import_closure::Role::Child { parent } = &unit.role {
             one.as_child = true;
             one.parent_stem = Some(parent.clone());
         }
