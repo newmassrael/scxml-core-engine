@@ -2579,11 +2579,11 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, AnOptionalValueIsReadWithADefaultOnly
               std::optional<std::string>("soon"));
 
     SCE::Forge::AlgorithmFailure bound;
-    EXPECT_FALSE(SCE::Forge::Checked::bounded(bound, std::optional<std::string>(), 4u).has_value());
-    EXPECT_EQ(SCE::Forge::Checked::bounded(bound, std::optional<std::string>("soon"), 4u),
-              std::optional<std::string>("soon"));
+    const auto held = [&bound](const std::string &text) { return SCE::Forge::Checked::bounded(bound, text, 4u); };
+    EXPECT_FALSE(SCE::Forge::mapPresent(std::optional<std::string>(), held).has_value());
+    EXPECT_EQ(SCE::Forge::mapPresent(std::optional<std::string>("soon"), held), std::optional<std::string>("soon"));
     EXPECT_FALSE(bound.failed()) << "an absent text and one within the bound fit it";
-    EXPECT_FALSE(SCE::Forge::Checked::bounded(bound, std::optional<std::string>("later"), 4u).has_value());
+    SCE::Forge::mapPresent(std::optional<std::string>("later"), held);
     EXPECT_TRUE(bound.failed()) << "a present text past the bound is a capacity failure";
 
     EXPECT_EQ(G::static_block_ends::sceLogName(std::optional<std::int64_t>()), "null");

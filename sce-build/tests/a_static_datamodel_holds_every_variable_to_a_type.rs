@@ -6021,7 +6021,6 @@ const INTERPRETER: &str = "interpreter";
 const NOT_YET_LOWERED: &[(&str, &str, &str)] = &[
     ("static_optional", "rust", OPTIONAL_NOT_LOWERED),
     ("static_optional", "kotlin", OPTIONAL_NOT_LOWERED),
-    ("static_optional", "cpp", OPTIONAL_NOT_LOWERED),
     ("static_optional", "c11", OPTIONAL_NOT_LOWERED),
 ];
 

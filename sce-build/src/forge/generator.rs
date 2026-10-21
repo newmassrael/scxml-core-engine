@@ -4407,10 +4407,10 @@ fn cpp_event_enum_value(event: &str) -> String {
 /// The width comes from the field's own declared type (the out-parameter), so a
 /// field that was widened in its schema cannot keep being read at the old
 /// width — the generated call stops compiling instead.
-fn cpp_payload_reader(f: &SchemaField, target: &str) -> String {
+fn cpp_payload_reader(f: &SchemaField, into: &str) -> String {
     let id = &f.id;
-    // A schema with an optional field was refused where the machine was
-    // lowered (docs/adr/0055), so the field is read as a present value.
+    // An optional field's present value is read at its element's width, into
+    // the local the lift holds it in ([`cpp_payload_field_lift`]).
     let call = match f.sce_type.present_type() {
         // A 64-bit integer is read from the text of its digits, or from a number
         // exact in a double.
@@ -4429,23 +4429,93 @@ fn cpp_payload_reader(f: &SchemaField, target: &str) -> String {
         // since it is lifted from a name and not read at a width.
         SceType::Enum(_) => unreachable!("an enum field is lifted by `cpp_enum_lift`"),
     };
-    format!("fields.{call}(\"{id}\", {target}.{id})")
+    format!("fields.{call}(\"{id}\", {into})")
 }
 
-/// The statements that lift an enum-typed payload field into `target`: the
+/// The statements that lift the payload field `f` into `payload.<id>`: a
+/// present field read at its declared width (an enum by [`cpp_enum_lift`]), and
+/// an optional field (docs/adr/0055) left absent for `null` and otherwise read
+/// as its present value is, into a local of its element's type `present`, and
+/// held. A delivery that lacks the key of either is refused, since every field
+/// of the first revision is carried.
+fn cpp_payload_field_lift(
+    f: &SchemaField,
+    present: &str,
+    static_enums: &[crate::forge::static_lowering::StaticEnumType],
+) -> String {
+    let read = |into: &str| match f.sce_type.present_type() {
+        SceType::Enum(r) => cpp_enum_lift(
+            &f.id,
+            into,
+            static_enum_of(static_enums, &r.alias),
+            &r.alias,
+        ),
+        _ => format!(
+            "            refusal = {};\n            \
+if (!refusal.empty()) {{\n                return refusal;\n            }}\n",
+            cpp_payload_reader(f, into)
+        ),
+    };
+    match &f.sce_type {
+        FieldType::Scalar(_) => read(&format!("payload.{}", f.id)),
+        FieldType::Optional { .. } => format!(
+            "            {{\n            \
+bool absent = false;\n            \
+refusal = fields.readAbsent(\"{id}\", absent);\n            \
+if (!refusal.empty()) {{\n                return refusal;\n            }}\n            \
+if (!absent) {{\n            \
+{present} held{{}};\n{read}            \
+payload.{id} = held;\n            \
+}}\n            \
+}}\n",
+            id = f.id,
+            read = read("held")
+        ),
+    }
+}
+
+/// The JSON value the inject seam writes for the payload field `f`, whose value
+/// is named by its id: a present value at the spelling its type deserves, and an
+/// optional one (docs/adr/0055) as `null` where it is absent, the key always
+/// written.
+fn cpp_payload_data_item(f: &SchemaField) -> String {
+    let id = &f.id;
+    // An enum rides as the name its document declares for the value, which the
+    // enum's `sceLogName` answers; a 64-bit integer as the text of its digits.
+    let written = |value: &str| match f.sce_type.present_type() {
+        SceType::Enum(_) => format!("::std::string(sceLogName({value}))"),
+        SceType::Uint64 | SceType::Int64 => format!("::std::to_string({value})"),
+        _ => value.to_string(),
+    };
+    let field = |value: &str| {
+        format!(
+            "::SCE::Common::EventPayloadFields::field(\"{id}\", {})",
+            written(value)
+        )
+    };
+    match &f.sce_type {
+        FieldType::Scalar(_) => field(id),
+        FieldType::Optional { .. } => format!(
+            "({id}.has_value() ? {} : ::SCE::Common::EventPayloadFields::absent(\"{id}\"))",
+            field(&format!("*{id}"))
+        ),
+    }
+}
+
+/// The statements that lift the enum-typed payload field `id` into `into`: the
 /// variant whose declared name the wire carries, as a saved state names it. A
 /// name the enum does not declare is a payload that does not fit its schema,
 /// refused as a number out of range is.
 fn cpp_enum_lift(
     id: &str,
-    target: &str,
+    into: &str,
     e: &crate::forge::static_lowering::StaticEnumType,
     alias: &str,
 ) -> String {
     let mut arms = String::new();
     for v in &e.variants {
         arms.push_str(&format!(
-            "                if (name == \"{}\") {{\n                    {target}.{id} = {}::{};\n                }} else ",
+            "                if (name == \"{}\") {{\n                    {into} = {}::{};\n                }} else ",
             filters::escape_cpp(v.declared.clone()),
             e.ty,
             v.ident
@@ -4552,10 +4622,15 @@ pendingPayloadTag_ = {TAG}::None;\n",
         let mut field_reads = String::new();
         let mut data_items = String::new();
         for f in &schema.fields {
-            // A schema with an optional field was refused where the machine was
-            // lowered (docs/adr/0055), so each field holds a present value.
-            let present = f.sce_type.present_type();
-            let ty = l.type_name(present).into_owned();
+            // An optional field is held in the one optional type over its
+            // present value's (docs/adr/0055).
+            let present = l.type_name(f.sce_type.present_type()).into_owned();
+            let ty = match &f.sce_type {
+                FieldType::Scalar(_) => present.clone(),
+                FieldType::Optional { .. } => l
+                    .optional_of(&present)
+                    .expect("C++ spells an optional value"),
+            };
             field_lines.push_str(&format!("    {ty} {};\n", f.id));
             if !params.is_empty() {
                 params.push_str(", ");
@@ -4563,40 +4638,15 @@ pendingPayloadTag_ = {TAG}::None;\n",
             }
             params.push_str(&format!("{ty} {}", f.id));
             struct_inits.push_str(&format!(".{} = {}, ", f.id, f.id));
-            match present {
-                SceType::Enum(r) => field_reads.push_str(&cpp_enum_lift(
-                    &f.id,
-                    "payload",
-                    static_enum_of(static_enums, &r.alias),
-                    &r.alias,
-                )),
-                _ => field_reads.push_str(&format!(
-                    "            refusal = {};\n            \
-if (!refusal.empty()) {{\n                return refusal;\n            }}\n",
-                    cpp_payload_reader(f, "payload")
-                )),
-            }
+            field_reads.push_str(&cpp_payload_field_lift(f, &present, static_enums));
             // ⚠ The wire is built by the same header the lift reads it with,
             // and by nothing else: a generated C++ machine LINKS against
             // `sce/include` alone (`event_schema_bytes_guard.rs` builds one
             // that way), so a call into the runtime library here would take
             // that property away. Each field's spelling follows its declared
             // type — a `bytes` field as its byte-exact Latin-1 text, because
-            // JSON has no byte string.
-            // An enum rides as the name its document declares for the value,
-            // which the enum's `sceLogName` answers.
-            let written = if matches!(present, SceType::Enum(_)) {
-                format!("::std::string(sceLogName({}))", f.id)
-            } else if matches!(present, SceType::Uint64 | SceType::Int64) {
-                // A 64-bit integer crosses as the text of its digits.
-                format!("::std::to_string({})", f.id)
-            } else {
-                f.id.clone()
-            };
-            data_items.push_str(&format!(
-                "::SCE::Common::EventPayloadFields::field(\"{}\", {written})",
-                f.id
-            ));
+            // JSON has no byte string ([`cpp_payload_data_item`]).
+            data_items.push_str(&cpp_payload_data_item(f));
         }
         // A field a later revision of the schema added is read out of the
         // schema's defaults where the delivery lacks it

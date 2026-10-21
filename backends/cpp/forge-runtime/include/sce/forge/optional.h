@@ -10,16 +10,13 @@
 // the language says beyond those four is here, one helper each:
 //
 // - `otherwise`: `x ?? d`, which evaluates `d` only when `x` is absent;
-// - `Checked::bounded` of an optional text: a present text held to the bound
-//   its variable or field declares, an absent one left absent;
+// - `mapPresent`: what a present value becomes, an absent one staying absent,
+//   which holds a present text to the bound of the place it is written to;
 // - `presentText`: a present value as a `<log>` shows it.
 
 #pragma once
 
-#include <sce/forge/algorithm.h>
-
 #include <charconv>
-#include <cstdint>
 #include <optional>
 #include <string>
 #include <type_traits>
@@ -56,6 +53,19 @@ template <typename T, typename F> auto otherwise(const std::optional<T> &value, 
     }
 }
 
+/// What `map` makes of the value `value` holds, as an optional value: absent
+/// where `value` is absent, and `map` is not called then, so a failure it would
+/// record (a text past the bound of the place it is written to) is recorded only
+/// for a present value.
+template <typename T, typename F>
+auto mapPresent(const std::optional<T> &value, F &&map)
+    -> std::optional<std::decay_t<std::invoke_result_t<F, const T &>>> {
+    if (!value.has_value()) {
+        return std::nullopt;
+    }
+    return std::forward<F>(map)(*value);
+}
+
 /// A present value of an optional as a `<log>` shows it: a `bool` as `true` or
 /// `false`, a number as the shortest text that reads back as it, and a text,
 /// or the name an enum's `sceLogName` gives its value, as itself. An absent
@@ -72,22 +82,4 @@ template <typename V> std::string presentText(const V &value) {
     }
 }
 
-namespace Checked {
-
-/// An optional text held to `capacity` bytes, as `bounded` holds a text that is
-/// always present: an absent value is absent whatever the bound, and a present
-/// one past it is a capacity failure recorded in `f`, answered as absent, which
-/// the statement around it never uses.
-template <typename S> std::optional<S> bounded(AlgorithmFailure &f, std::optional<S> value, std::uint32_t capacity) {
-    if (!value.has_value()) {
-        return value;
-    }
-    if (value->size() > capacity) {
-        f.fail(AlgorithmError::CapacityExceeded);
-        return std::nullopt;
-    }
-    return value;
-}
-
-}  // namespace Checked
 }  // namespace SCE::Forge

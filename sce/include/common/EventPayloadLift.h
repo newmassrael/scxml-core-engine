@@ -10,6 +10,7 @@
 #include <cstdio>
 #include <limits>
 #include <string>
+#include <string_view>
 #include <type_traits>
 #include <vector>
 
@@ -110,6 +111,23 @@ public:
             return "the schema's defaults are not a JSON object, which the generator never writes";
         }
         out.defaults_ = d;
+        return {};
+    }
+
+    /**
+     * @brief Whether an optional field (docs/adr/0055) is absent
+     *
+     * `null` is the one spelling of absence on the wire, and any other value is a
+     * present one, which the reader of the field's type then reads. A delivery
+     * that lacks the key is refused: a field of the first revision is carried by
+     * every delivery, absent or not, so a missing key is no absent value.
+     */
+    std::string readAbsent(const char *name, bool &absent) const {
+        const char *p = find(name);
+        if (p == nullptr) {
+            return missing(name);
+        }
+        absent = std::string_view(p).substr(0, 4) == "null";
         return {};
     }
 
@@ -272,6 +290,14 @@ public:
         } else {
             return quote(name) + ":" + std::to_string(static_cast<unsigned long long>(value));
         }
+    }
+
+    /**
+     * @brief An optional field (docs/adr/0055) that is absent: the key is always
+     * written, and `null` is the one spelling of absence.
+     */
+    static std::string absent(const char *name) {
+        return quote(name) + ":null";
     }
 
     /** @brief The fields an inject seam was given, as the object they spell. */

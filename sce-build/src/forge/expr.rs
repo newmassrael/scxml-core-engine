@@ -135,7 +135,9 @@ impl ExprTarget {
             ExprTarget::Js => true,
             // Python: `Optional[T]`, `None` absent ([`python_optional`]).
             ExprTarget::Python => true,
-            ExprTarget::Cpp => false,
+            // C++: `std::optional<T>` and the runtime's `sce/forge/optional.h`
+            // ([`cpp_optional`]).
+            ExprTarget::Cpp => true,
             ExprTarget::Kotlin => false,
             ExprTarget::Rust => false,
             ExprTarget::C => false,
@@ -6493,101 +6495,91 @@ fn cpp_optional_type(elem: OptionalElem, present: &str) -> String {
     format!("std::optional<{held}>")
 }
 
-/// The C++ of what an optional value (docs/adr/0055) is read and compared by,
-/// or `None` for a node that is none of them:
+/// The C++ spelling of each construct of an optional value (docs/adr/0055,
+/// section 5) over `std::optional<T>` and the runtime's `sce/forge/optional.h`:
 ///
-/// - `x === null` and `x !== null` (either side): a test of `has_value()`;
-/// - `x ?? d`: the runtime's `SCE::Forge::otherwise`, handed `d` as a lambda it calls only
-///   when `x` is absent, so a failure of `d` is recorded only then;
-/// - `x.value`, read where the build has proven `x` present: `*x`, which has no
-///   failure to record;
-/// - a conditional of an optional value with a `null` branch: both branches as
-///   the `std::optional` of the present one, the one type the two share.
+/// - a test: `x.has_value()`, or its negation;
+/// - a read the build has proven present: `(*x)`, which has no failure to record;
+/// - `x ?? d`: `SCE::Forge::otherwise(x, [&] { return d; })`, which reads `x`
+///   once and calls the lambda only when `x` is absent, so a failure `d`
+///   records in the statement's `sce_failure_` is recorded only then;
+/// - `null === null`: its answer.
 ///
-/// `x === y` of two optional values, or of one and a present value, is the `==`
-/// C++ defines over `std::optional`, which the generic arm already writes.
-fn cpp_optional_node(expr: &TypedExpr) -> Result<Option<String>, ExprError> {
-    Ok(Some(match &expr.kind {
-        ExprKind::Binary {
-            op: op @ (BinOp::StrictEq | BinOp::StrictNeq),
-            left,
-            right,
-        } if matches!(left.kind, ExprKind::NullLit) || matches!(right.kind, ExprKind::NullLit) => {
-            let tested = if matches!(left.kind, ExprKind::NullLit) {
-                right
-            } else {
-                left
-            };
-            let present = *op == BinOp::StrictNeq;
-            if matches!(tested.kind, ExprKind::NullLit) {
-                // `null === null`: two absent values are equal.
-                return Ok(Some(if present { "false" } else { "true" }.to_string()));
-            }
-            if !tested.ty.is_optional() {
-                return Ok(None);
-            }
-            let has = format!(
-                "{}.has_value()",
-                wrap_postfix(tested, emit_cpp(tested, InferredType::Unknown)?)
-            );
+/// `None` for equality: `x === y` of two optional values, or of one and a value
+/// of `T`, is the `==` C++ defines over `std::optional`, which lifts the side of
+/// `T` itself, and the generic arm writes it with the operands' parentheses.
+fn cpp_optional(form: OptionalForm<'_>, whole: &TypedExpr) -> Result<Option<String>, ExprError> {
+    let receiver = |node: &TypedExpr| -> Result<String, ExprError> {
+        Ok(wrap_postfix(node, emit_cpp(node, InferredType::Unknown)?))
+    };
+    Ok(Some(match form {
+        OptionalForm::Test { subject, present } => {
+            let test = format!("{}.has_value()", receiver(subject)?);
             if present {
-                has
+                test
             } else {
-                format!("!{has}")
+                format!("!{test}")
             }
         }
-        ExprKind::Binary {
-            op: BinOp::Coalesce,
-            left,
-            right,
-        } => format!(
+        OptionalForm::Proven { subject } => format!("(*{})", receiver(subject)?),
+        OptionalForm::Otherwise { value, fallback } => format!(
             "SCE::Forge::otherwise({}, [&] {{ return {}; }})",
-            emit_cpp(left, InferredType::Unknown)?,
-            emit_cpp(right, expr.ty)?
+            emit_cpp(value, InferredType::Unknown)?,
+            emit_cpp(fallback, whole.ty)?
         ),
-        ExprKind::Member { object, property }
-            if property == OPTIONAL_VALUE && object.ty.is_optional() =>
-        {
-            format!(
-                "(*{})",
-                wrap_postfix(object, emit_cpp(object, InferredType::Unknown)?)
-            )
-        }
+        OptionalForm::Equality { .. } => return Ok(None),
+        OptionalForm::Constant(answer) => answer.to_string(),
+    }))
+}
+
+/// A conditional of an optional value one of whose branches is `null` and the
+/// other a value of `T` (docs/adr/0055, section 2), in C++: both branches as
+/// the `std::optional` of the present one ([`cpp_optional_type`]), since C++
+/// finds no type `std::nullopt` and a `T` share. `None` for any other node; a
+/// conditional of an optional value and `null`, or of an optional value and a
+/// value of `T`, has the optional value's type, which the other branch converts
+/// to as it is.
+fn cpp_optional_conditional(expr: &TypedExpr) -> Result<Option<String>, ExprError> {
+    let (
         ExprKind::Conditional {
             condition,
             consequent,
             alternate,
-        } => {
-            let InferredType::Optional(elem) = expr.ty else {
-                return Ok(None);
-            };
-            let (absent_first, present) = match (&consequent.kind, &alternate.kind) {
-                (ExprKind::NullLit, _) if !alternate.ty.is_optional() => (true, alternate),
-                (_, ExprKind::NullLit) if !consequent.ty.is_optional() => (false, consequent),
-                _ => return Ok(None),
-            };
-            let value = emit_cpp(present, elem.present())?;
-            let ty = cpp_optional_type(elem, &value);
-            let cond = emit_cpp(condition, InferredType::Bool)?;
-            let cond = if matches!(&condition.kind, ExprKind::Conditional { .. }) {
-                format!("({cond})")
-            } else {
-                cond
-            };
-            let (absent, held) = (format!("{ty}()"), format!("{ty}({value})"));
-            if absent_first {
-                format!("{cond} ? {absent} : {held}")
-            } else {
-                format!("{cond} ? {held} : {absent}")
-            }
-        }
+        },
+        InferredType::Optional(elem),
+    ) = (&expr.kind, expr.ty)
+    else {
+        return Ok(None);
+    };
+    let (absent_first, present) = match (&consequent.kind, &alternate.kind) {
+        (ExprKind::NullLit, _) if !alternate.ty.is_optional() => (true, alternate),
+        (_, ExprKind::NullLit) if !consequent.ty.is_optional() => (false, consequent),
         _ => return Ok(None),
+    };
+    let value = emit_cpp(present, elem.present())?;
+    let ty = cpp_optional_type(elem, &value);
+    let cond = emit_cpp(condition, InferredType::Bool)?;
+    let cond = if matches!(&condition.kind, ExprKind::Conditional { .. }) {
+        format!("({cond})")
+    } else {
+        cond
+    };
+    let (absent, held) = (format!("{ty}()"), format!("{ty}({value})"));
+    Ok(Some(if absent_first {
+        format!("{cond} ? {absent} : {held}")
+    } else {
+        format!("{cond} ? {held} : {absent}")
     }))
 }
 
 fn cpp_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
-    if let Some(optional) = cpp_optional_node(expr)? {
-        return Ok(optional);
+    if let Some(form) = optional_form(expr) {
+        if let Some(spelled) = cpp_optional(form, expr)? {
+            return Ok(spelled);
+        }
+    }
+    if let Some(spelled) = cpp_optional_conditional(expr)? {
+        return Ok(spelled);
     }
     Ok(match &expr.kind {
         ExprKind::NumberLit(n) => portable_number_literal(n),
@@ -6840,15 +6832,17 @@ fn c_family_float_name(expected: InferredType) -> &'static str {
 
 fn cpp_coerce(raw: String, from: InferredType, to: InferredType, node: &TypedExpr) -> String {
     use InferredType::*;
-    // A present value where an optional one is expected (docs/adr/0055) is
-    // lifted by `std::optional`'s own conversion, and spelled as the value of its
-    // element it is: a wide literal or an unsigned value meets the element's type.
-    if let Optional(elem) = to {
-        return if from.is_optional() || from == Null {
-            raw
-        } else {
-            cpp_coerce(raw, from, elem.present(), node)
-        };
+    // A value of `T` where an optional value of `T` is expected (docs/adr/0055,
+    // section 2) is lifted by `std::optional`'s own conversion, and spelled as
+    // the value of its element it is: a wide literal or an unsigned value meets
+    // the element's type. Asked before the early return below: an enum's
+    // variant is a value this layer does not type. An optional value, or `null`,
+    // where one is expected is written as it is.
+    if let Some(elem) = from.lifted_into(to) {
+        return cpp_coerce(raw, from, elem.present(), node);
+    }
+    if to.is_optional() {
+        return raw;
     }
     if let Some(spelled) = c_family_wide_literal(&raw, to, node) {
         return spelled;
@@ -11953,7 +11947,7 @@ mod tests {
     /// A machine's variables as the optional scenario declares them: `due` and
     /// `other` optional days, `title` an optional text, `status` an optional
     /// value of an enum, and the present `huge`, `count` and `flag`.
-    fn optional_ctx() -> TypeCtx<'static> {
+    fn cpp_optional_ctx() -> TypeCtx<'static> {
         let mut ctx = TypeCtx::new();
         ctx.insert_var("due", optional_int64());
         ctx.insert_var("other", optional_int64());
@@ -11967,7 +11961,7 @@ mod tests {
 
     /// Each variable renamed to the member that holds it, as the lowering of a
     /// statechart renames it.
-    fn optional_renames() -> HashMap<&'static str, &'static str> {
+    fn cpp_optional_renames() -> HashMap<&'static str, &'static str> {
         [
             ("due", "v_due"),
             ("other", "v_other"),
@@ -11981,25 +11975,45 @@ mod tests {
         .collect()
     }
 
-    /// `expr` typed against [`optional_ctx`], renamed by [`optional_renames`] and
-    /// spelled by the C++ emitter into a place of `expected`: what the emitter
-    /// writes of each construct of an optional value, apart from the judge's
-    /// passes that run before it.
-    fn cpp_optional(expr: &str, expected: InferredType) -> String {
+    /// `expr` typed against [`cpp_optional_ctx`], renamed by
+    /// [`cpp_optional_renames`] and spelled by the C++ emitter into a place of
+    /// `expected`: what the emitter writes of each construct of an optional
+    /// value, after the renames a statechart's lowering makes, which the types
+    /// survive.
+    fn cpp_spelled(expr: &str, expected: InferredType) -> String {
         let mut ast = parse_to_ast(expr).unwrap();
-        infer_types(&mut ast, &optional_ctx());
-        rename_identifiers(&mut ast, &optional_renames());
+        infer_types(&mut ast, &cpp_optional_ctx());
+        rename_identifiers(&mut ast, &cpp_optional_renames());
         emit_cpp(&ast, expected).unwrap()
+    }
+
+    /// The whole pipeline lowers an optional value for C++, the judge's passes
+    /// included: a test, a read its own conditional proves, and a read under a
+    /// test the context already holds.
+    #[test]
+    fn cpp_lowers_an_optional_value_through_the_whole_pipeline() {
+        let ctx = optional_ctx();
+        let cpp = |expr: &str, expected: InferredType| {
+            transpile_into(expr, ExprTarget::Cpp, &ctx, &empty_renames(), expected)
+                .unwrap_or_else(|e| panic!("{expr} lowers for C++: {e:?}"))
+        };
+        assert_eq!(cpp("due !== null", InferredType::Bool), "due.has_value()");
+        assert_eq!(
+            cpp("other !== null ? other.value : 0", int(true, 64)),
+            "other.has_value() ? (*other) : 0"
+        );
+        assert_eq!(cpp("due.value", int(true, 64)), "(*due)");
+        assert_eq!(cpp("null === null", InferredType::Bool), "true");
     }
 
     #[test]
     fn cpp_tests_presence_with_has_value() {
         assert_eq!(
-            cpp_optional("due === null", InferredType::Bool),
+            cpp_spelled("due === null", InferredType::Bool),
             "!v_due.has_value()"
         );
         assert_eq!(
-            cpp_optional("null !== due", InferredType::Bool),
+            cpp_spelled("null !== due", InferredType::Bool),
             "v_due.has_value()"
         );
     }
@@ -12007,7 +12021,7 @@ mod tests {
     #[test]
     fn cpp_reads_a_proven_value_through_the_optional() {
         assert_eq!(
-            cpp_optional("due !== null ? due.value : 0", int(true, 64)),
+            cpp_spelled("due !== null ? due.value : 0", int(true, 64)),
             "v_due.has_value() ? (*v_due) : 0"
         );
     }
@@ -12015,11 +12029,11 @@ mod tests {
     #[test]
     fn cpp_hands_the_default_of_a_coalesce_over_as_a_lambda() {
         assert_eq!(
-            cpp_optional("due ?? (huge * huge)", int(true, 64)),
+            cpp_spelled("due ?? (huge * huge)", int(true, 64)),
             "SCE::Forge::otherwise(v_due, [&] { return v_huge * v_huge; })"
         );
         assert_eq!(
-            cpp_optional("title ?? 'none'", InferredType::Str),
+            cpp_spelled("title ?? 'none'", InferredType::Str),
             "SCE::Forge::otherwise(v_title, [&] { return \"none\"; })"
         );
     }
@@ -12027,25 +12041,25 @@ mod tests {
     #[test]
     fn cpp_compares_optional_values_with_the_equality_of_optional() {
         assert_eq!(
-            cpp_optional("due === other", InferredType::Bool),
+            cpp_spelled("due === other", InferredType::Bool),
             "v_due == v_other"
         );
         assert_eq!(
-            cpp_optional("status !== status", InferredType::Bool),
+            cpp_spelled("status !== status", InferredType::Bool),
             "v_status != v_status"
         );
     }
 
     #[test]
     fn cpp_spells_null_in_an_optional_place_as_nullopt() {
-        assert_eq!(cpp_optional("null", optional_int64()), "std::nullopt");
+        assert_eq!(cpp_spelled("null", optional_int64()), "std::nullopt");
     }
 
     #[test]
     fn cpp_lifts_a_present_value_as_its_element() {
-        assert_eq!(cpp_optional("7", optional_int64()), "7");
+        assert_eq!(cpp_spelled("7", optional_int64()), "7");
         assert_eq!(
-            cpp_optional("count", optional_int64()),
+            cpp_spelled("count", optional_int64()),
             "static_cast<std::int64_t>(v_count)"
         );
     }
@@ -12053,11 +12067,11 @@ mod tests {
     #[test]
     fn cpp_gives_a_conditional_of_null_the_optional_of_its_value() {
         assert_eq!(
-            cpp_optional("flag ? null : 3", optional_int64()),
+            cpp_spelled("flag ? null : 3", optional_int64()),
             "v_flag ? std::optional<std::int64_t>() : std::optional<std::int64_t>(3)"
         );
         assert_eq!(
-            cpp_optional(
+            cpp_spelled(
                 "flag ? 'x' : null",
                 InferredType::Optional(OptionalElem::Str)
             ),

@@ -5477,11 +5477,19 @@ impl Rewrites<'_> {
 /// first, because a failed checked operation is a value (zero, with a flag
 /// raised) rather than a jump.
 ///
-/// Lowers scalar variables, guards, `<assign>`, `<if>`, `<log>`, `<raise>`
+/// Lowers scalar variables, an optional value of a scalar (docs/adr/0055) in
+/// `std::optional<T>`, guards, `<assign>`, `<if>`, `<log>`, `<raise>`
 /// and `In()`; every construct past those is refused by name
 /// ([`StaticTarget::unsupported`]) until its spelling is written, rather than
 /// left as an undefined name in generated code.
 pub struct CppTarget;
+
+/// The name a C++ lambda binds the present value of an optional value to
+/// ([`StaticTarget::optional_map`], [`StaticTarget::wire_optional`]): a name no
+/// document's variable or local is spelled as, since a variable is a member of
+/// the policy spelled `v_<id>` and a local keeps the author's spelling, which
+/// takes no `sce` prefix.
+const CPP_PRESENT: &str = "scePresent";
 
 impl CppTarget {
     /// The first action of `actions`, or of a block nested in one, that this
@@ -5523,6 +5531,44 @@ impl StaticTarget for CppTarget {
     }
     fn lowers_state_calls(&self) -> bool {
         true
+    }
+    // `std::optional<T>` (docs/adr/0055, section 5): the type is the default
+    // spelling ([`crate::forge::generator::optional_of`]), and each whole value
+    // names it, so a value computed into a local is of the place's own type.
+    fn optional_none(&self, present: &str) -> Option<String> {
+        Some(format!("{}()", self.optional_type(present)?))
+    }
+    fn optional_some(&self, present: &str, value: &str) -> Option<String> {
+        Some(format!("{}({value})", self.optional_type(present)?))
+    }
+    // The present value is bound by a lambda the runtime calls only where the
+    // value is present (`SCE::Forge::mapPresent`); it captures the statement's
+    // `sce_failure_`, so a failure it records is the statement's.
+    fn optional_map(
+        &self,
+        value: &str,
+        present: &str,
+        map: &dyn Fn(&str) -> String,
+    ) -> Option<String> {
+        Some(format!(
+            "SCE::Forge::mapPresent({value}, [&](const {present} &{CPP_PRESENT}) {{ return {}; }})",
+            map(CPP_PRESENT)
+        ))
+    }
+    // `ScriptNull`, which the engine's wire helpers write as JSON `null`, where
+    // the value is absent; the value is read once.
+    fn wire_optional(
+        &self,
+        value: &str,
+        _present: &str,
+        wire: &dyn Fn(&str) -> String,
+    ) -> Option<String> {
+        Some(format!(
+            "[&]() -> ScriptValue {{ const auto &sceOptional = {value}; \
+             if (!sceOptional.has_value()) {{ return ScriptValue(ScriptNull{{}}); }} \
+             const auto &{CPP_PRESENT} = *sceOptional; return {}; }}()",
+            wire(CPP_PRESENT)
+        ))
     }
     fn state_argument(&self, _machine: &str, _arg: &StateArg, held: &str) -> String {
         held.to_string()
@@ -5838,9 +5884,17 @@ impl StaticTarget for CppTarget {
             .fields
             .iter()
             .map(|field| {
-                let field_ty = match field.sce_type.present_type() {
+                let present = match field.sce_type.present_type() {
                     SceType::Enum(reference) => enum_types[&reference.alias].clone(),
                     other => crate::forge::generator::cpp_type(other).to_string(),
+                };
+                // An optional field is held in the optional type over its
+                // present value's (docs/adr/0055).
+                let field_ty = match field.sce_type {
+                    FieldType::Optional { .. } => self
+                        .optional_type(&present)
+                        .expect("C++ spells an optional value"),
+                    FieldType::Scalar(_) => present,
                 };
                 format!("    {field_ty} {};\n", self.record_field(&field.id))
             })
@@ -12426,5 +12480,92 @@ mod tests {
             otherwise.send_type_unsupported,
             "the undeclared type raises error.execution, as a written one nothing serves does"
         );
+    }
+
+    /// C++ holds an optional value in `std::optional<T>` and writes the whole
+    /// value of an optional place by the walk's one rule (docs/adr/0055): `null`
+    /// its absent value, a value of `T` lowered into `T` (a text held to its
+    /// bound) and lifted, an optional value as it is; a read under an `<if>`
+    /// whose condition proves the value present is `*x`; a record's optional
+    /// field is declared over its present value's type.
+    #[test]
+    fn cpp_writes_an_optional_place_whole_by_the_walks_one_rule() {
+        const OPTIONAL: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="s" datamodel="sce-static" name="m">
+  <datamodel>
+    <data id="due" sce:type="optional&lt;int64&gt;" expr="null"/>
+    <data id="other" sce:type="optional&lt;int64&gt;" expr="7"/>
+    <data id="title" sce:type="optional&lt;string&gt;" sce:capacity="4" expr="null"/>
+    <data id="days" sce:type="int64" expr="0"/>
+  </datamodel>
+  <state id="s">
+    <transition event="read" type="internal">
+      <if cond="due !== null">
+        <assign location="days" expr="due.value"/>
+      </if>
+    </transition>
+    <transition event="write" type="internal">
+      <assign location="due" expr="null"/>
+      <assign location="title" expr="'abc'"/>
+      <assign location="other" expr="due"/>
+    </transition>
+  </state>
+</scxml>"#;
+        let mut model = SCXMLParser::new()
+            .parse_string(OPTIONAL, "m")
+            .expect("parses");
+        crate::analyzer::analyze(&mut model, "m.scxml");
+        let lowered = lower_cpp(&mut model, "M").expect("C++ lowers an optional value");
+        let field = |id: &str| {
+            lowered
+                .fields
+                .iter()
+                .find(|f| f.id == id)
+                .unwrap_or_else(|| panic!("a field `{id}`"))
+        };
+        assert_eq!(field("due").ty, "std::optional<int64_t>");
+        assert_eq!(field("due").init, "std::optional<int64_t>()");
+        assert_eq!(field("other").init, "std::optional<int64_t>(7)");
+        assert_eq!(field("title").ty, "std::optional<std::string>");
+        assert!(
+            lowered.saved_shape.is_none(),
+            "no saved shape before step 6"
+        );
+        let state = model.states.get("s").expect("the state");
+        let read = &state.transitions[0].actions[0];
+        assert_eq!(read.native_cond, "v_due.has_value()");
+        assert_eq!(read.then_actions[0].native_code, "v_days = (*v_due);");
+        let write = &state.transitions[1].actions;
+        assert_eq!(write[0].native_code, "v_due = std::optional<int64_t>();");
+        assert!(
+            write[1].native_code.contains(
+                "auto sce_value = std::optional<std::string>(SCE::Forge::Checked::bounded(sce_failure_, "
+            ),
+            "{}",
+            write[1].native_code
+        );
+        assert_eq!(write[2].native_code, "v_other = v_due;");
+
+        // A record's optional field is held in the optional type over its
+        // present value's.
+        const SCHEMA: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="event-schema" name="schema_due" sce:event-name="due.set">
+  <datamodel>
+    <data id="id" sce:type="uint32" sce:direction="in"/>
+    <data id="due" sce:type="optional&lt;int64&gt;" sce:direction="in"/>
+  </datamodel>
+</scxml>"#;
+        let Some(crate::forge::model::ForgeDocument::EventSchema(schema)) =
+            crate::forge::parser::parse_forge(
+                SCHEMA,
+                crate::DocumentLabel::symmetric("schema_due.scxml"),
+            )
+            .expect("the schema parses")
+        else {
+            panic!("an event schema")
+        };
+        let def = CppTarget.record_def("MDueRecord", "Due", &schema, &Default::default());
+        assert!(def.contains("    uint32_t id;\n"), "{def}");
+        assert!(def.contains("    std::optional<int64_t> due;\n"), "{def}");
     }
 }
