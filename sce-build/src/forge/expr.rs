@@ -11483,11 +11483,16 @@ mod tests {
 
     /// `??` reads an optional value with a default (docs/adr/0055): the forge
     /// language parses it, and an emitter refuses it until its backend's step
-    /// lowers an optional value.
+    /// lowers an optional value. A backend that lowers one is judged by its
+    /// own spelling tests instead.
     #[test]
     fn coalescing_is_parsed_and_refused_where_no_backend_lowers_it() {
         assert!(parse_to_ast("a ?? b").is_ok());
-        for target in ExprTarget::ALL.into_iter().chain([ExprTarget::Js]) {
+        for target in ExprTarget::ALL
+            .into_iter()
+            .chain([ExprTarget::Js])
+            .filter(|target| !target.lowers_optional())
+        {
             let e = tp_err("a ?? b", target);
             assert!(
                 e.contains("an optional value has no") && e.contains("lowering yet"),
