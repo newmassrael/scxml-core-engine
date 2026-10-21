@@ -71,7 +71,16 @@ REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 # core's tests sit inside the production files they test (`mod tests`), so
 # there is no test-only file to enrol; its server side is witnessed from here
 # by the Kotlin loopback test, which dials the Rust peer.
+#
+# The child-session tests (SCE_MESH.md §21) are one file per engine, named
+# here and not by their directories: each sits among tests of the engine that
+# have nothing to do with Mesh, and a directory glob would enrol them as well.
 TEST_TREES = (
+    "backends/rust/tests/tests/a_child_session_is_given_its_mesh_router_by_its_parent.rs",
+    "backends/python/tests/integration/static_datamodel/test_a_child_session_is_given_its_mesh_router_by_its_parent.py",
+    "backends/go/tests/integration/static_datamodel/a_child_session_is_given_its_mesh_router_by_its_parent_test.go",
+    "backends/kotlin/tests/src/test/kotlin/com/sce/integration/AChildSessionIsGivenItsMeshRouterByItsParentTest.kt",
+    "backends/c/tests/integration/test_static_child_mesh.c",
     "tests/mesh/*.cpp",
     "tests/mesh/*.h",
     "sce-build/tests/mesh_*.rs",

@@ -77,7 +77,7 @@ type ChildMeshRouter interface {
 	// TakeCalls answers what arrived for the child since it was last asked,
 	// oldest first.
 	TakeCalls() []MeshCall
-	// Detach says the session ended: it reached a top-level <final>, or its
+	// Detach says the session ended (§mesh-21.5): it reached a top-level <final>, or its
 	// parent left the invoking state and cancelled it. Called once.
 	Detach()
 	// ChildRouter answers the router of a child this child starts, asked as
@@ -98,7 +98,8 @@ type meshChild interface {
 }
 
 // RegisterChildMeshRouters registers the factory of the routers of this
-// machine's children (SCE_MESH.md, Child Sessions in Mesh; docs/adr/0043).
+// machine's children (SCE_MESH.md §mesh-21.3, Child Sessions in Mesh;
+// docs/adr/0043).
 //
 // A child session started by `<invoke type="scxml">` is given none of this
 // machine's registrations: its peer sends would leave under this machine's
@@ -141,7 +142,8 @@ func (e *Engine[S, E]) installChildMeshRouter(router ChildMeshRouter) {
 }
 
 // ApplyMeshCalls applies what arrived for this machine on the router its
-// parent gave it, in the order the router released it (ApplyMeshCall). The
+// parent gave it (§mesh-21.4), in the order the router released it
+// (ApplyMeshCall). The
 // generated parent calls it each time it drives this child, before the
 // child's macrostep. Does nothing for a machine given no router.
 func (e *Engine[S, E]) ApplyMeshCalls() {

@@ -743,6 +743,26 @@
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "sendToTarget",
           "kind": "implements"
+        },
+        {
+          "file": "backends/c/runtime/include/sce/host_processor.h",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/child_mesh.go",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/ChildMeshRouter.kt",
+          "kind": "references"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/child_mesh.py",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/host_processor.rs",
+          "kind": "references"
         }
       ]
     },
@@ -815,6 +835,14 @@
         {
           "file": "backends/kotlin/mesh/src/commonMain/kotlin/com/sce/mesh/Rpc.kt",
           "kind": "implements"
+        },
+        {
+          "file": "backends/c/runtime/include/sce/host_processor.h",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/host_processor.rs",
+          "kind": "references"
         }
       ]
     },
@@ -3151,6 +3179,10 @@
         {
           "file": "sce-build/tests/mesh_rpc_backend_contract.rs",
           "kind": "verifies"
+        },
+        {
+          "file": "backends/c/runtime/include/sce/host_processor.h",
+          "kind": "references"
         }
       ]
     },
@@ -3291,7 +3323,8 @@
           "file": "sce-build/src/mesh/deploy.rs",
           "kind": "implements"
         }
-      ]
+      ],
+      "verification_expectation": "by_construction"
     },
     "mesh-21.2": {
       "title": "What the Build Refuses",
@@ -3311,7 +3344,8 @@
           "file": "sce-build/src/mesh/error.rs",
           "kind": "references"
         }
-      ]
+      ],
+      "verification_expectation": "by_construction"
     },
     "mesh-21.3": {
       "title": "The Router Factory",
@@ -3338,6 +3372,26 @@
         {
           "file": "backends/c/runtime/include/sce/host_processor.h",
           "kind": "implements"
+        },
+        {
+          "file": "backends/rust/tests/tests/a_child_session_is_given_its_mesh_router_by_its_parent.rs",
+          "kind": "verifies"
+        },
+        {
+          "file": "backends/python/tests/integration/static_datamodel/test_a_child_session_is_given_its_mesh_router_by_its_parent.py",
+          "kind": "verifies"
+        },
+        {
+          "file": "backends/go/tests/integration/static_datamodel/a_child_session_is_given_its_mesh_router_by_its_parent_test.go",
+          "kind": "verifies"
+        },
+        {
+          "file": "backends/kotlin/tests/src/test/kotlin/com/sce/integration/AChildSessionIsGivenItsMeshRouterByItsParentTest.kt",
+          "kind": "verifies"
+        },
+        {
+          "file": "backends/c/tests/integration/test_static_child_mesh.c",
+          "kind": "verifies"
         }
       ]
     },
@@ -3362,6 +3416,26 @@
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/ChildMeshRouter.kt",
           "kind": "implements"
+        },
+        {
+          "file": "backends/rust/tests/tests/a_child_session_is_given_its_mesh_router_by_its_parent.rs",
+          "kind": "verifies"
+        },
+        {
+          "file": "backends/python/tests/integration/static_datamodel/test_a_child_session_is_given_its_mesh_router_by_its_parent.py",
+          "kind": "verifies"
+        },
+        {
+          "file": "backends/go/tests/integration/static_datamodel/a_child_session_is_given_its_mesh_router_by_its_parent_test.go",
+          "kind": "verifies"
+        },
+        {
+          "file": "backends/kotlin/tests/src/test/kotlin/com/sce/integration/AChildSessionIsGivenItsMeshRouterByItsParentTest.kt",
+          "kind": "verifies"
+        },
+        {
+          "file": "backends/c/tests/integration/test_static_child_mesh.c",
+          "kind": "verifies"
         }
       ]
     },
@@ -3386,6 +3460,26 @@
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/ChildMeshRouter.kt",
           "kind": "implements"
+        },
+        {
+          "file": "backends/rust/tests/tests/a_child_session_is_given_its_mesh_router_by_its_parent.rs",
+          "kind": "verifies"
+        },
+        {
+          "file": "backends/python/tests/integration/static_datamodel/test_a_child_session_is_given_its_mesh_router_by_its_parent.py",
+          "kind": "verifies"
+        },
+        {
+          "file": "backends/go/tests/integration/static_datamodel/a_child_session_is_given_its_mesh_router_by_its_parent_test.go",
+          "kind": "verifies"
+        },
+        {
+          "file": "backends/kotlin/tests/src/test/kotlin/com/sce/integration/AChildSessionIsGivenItsMeshRouterByItsParentTest.kt",
+          "kind": "verifies"
+        },
+        {
+          "file": "backends/c/tests/integration/test_static_child_mesh.c",
+          "kind": "verifies"
         }
       ]
     },
@@ -4230,6 +4324,18 @@
           "file": "sce-build/src/mesh/topology.rs",
           "symbol": "contribute_targetexpr_partials",
           "kind": "implements"
+        },
+        {
+          "file": "backends/c/runtime/include/sce/host_processor.h",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/child_mesh.go",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/host_processor.rs",
+          "kind": "references"
         }
       ]
     },
@@ -4924,6 +5030,18 @@
       "target_kind": "section",
       "target_id": "mesh-20.3",
       "reason": "The key layout and the readiness mapping moved to inbox.rs when the client became a trait; zenoh.rs now holds only the upstream client"
+    },
+    {
+      "primitive": "set_section_verification_expectation",
+      "target_kind": "section",
+      "target_id": "mesh-21.1",
+      "reason": "Identity rules are refused by the deploy build (mesh/deploy-child-entry-shape and its siblings), so a deploy that breaks them does not build."
+    },
+    {
+      "primitive": "set_section_verification_expectation",
+      "target_kind": "section",
+      "target_id": "mesh-21.2",
+      "reason": "The section is the list of faults the deploy build refuses, each with a code of its own; the refusal is the property."
     }
   ],
   "frames": {},

@@ -89,10 +89,13 @@ class ChildMeshRouter(Protocol):
         cancelled."""
         ...
 
+    # §mesh-21.4: what arrives for the child waits in its router until the
+    # parent drives the child, which takes it here before the child's macrostep.
     def take_calls(self) -> List[MeshCall]:
         """What arrived for the child since it was last asked, oldest first."""
         ...
 
+    # §mesh-21.5: the router is told once that the session ended.
     def detach(self) -> None:
         """The session ended: it reached a top-level ``<final>``, or its parent
         left the invoking state and cancelled it. Called once."""
@@ -104,8 +107,8 @@ class ChildMeshRouter(Protocol):
         ...
 
 
-#: The factory of the routers of a machine's children, registered with
-#: ``Engine.register_child_mesh_routers``: asked, each time an invocation starts
+#: The factory of the routers of a machine's children (§mesh-21.3), registered
+#: with ``Engine.register_child_mesh_routers``: asked, each time an invocation starts
 #: a child, with the invoke's id and the stem of the child's document (empty for
 #: a child written inline). ``None`` leaves the child with no router.
 ChildMeshRouters = Callable[[str, str], Optional[ChildMeshRouter]]

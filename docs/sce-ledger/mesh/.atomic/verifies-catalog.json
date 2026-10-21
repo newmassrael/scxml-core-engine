@@ -2,6 +2,22 @@
   "format": "verifies-catalog/v1",
   "entries": [
     {
+      "file": "backends/c/tests/integration/test_static_child_mesh.c",
+      "section_ids": [
+        "mesh-21.3",
+        "mesh-21.4",
+        "mesh-21.5"
+      ]
+    },
+    {
+      "file": "backends/go/tests/integration/static_datamodel/a_child_session_is_given_its_mesh_router_by_its_parent_test.go",
+      "section_ids": [
+        "mesh-21.3",
+        "mesh-21.4",
+        "mesh-21.5"
+      ]
+    },
+    {
       "file": "backends/kotlin/mesh/src/jvmTest/kotlin/com/sce/mesh/CrossLanguageLoopbackTest.kt",
       "section_ids": [
         "mesh-18",
@@ -17,6 +33,30 @@
         "mesh-18.1",
         "mesh-18.2",
         "mesh-18.3"
+      ]
+    },
+    {
+      "file": "backends/kotlin/tests/src/test/kotlin/com/sce/integration/AChildSessionIsGivenItsMeshRouterByItsParentTest.kt",
+      "section_ids": [
+        "mesh-21.3",
+        "mesh-21.4",
+        "mesh-21.5"
+      ]
+    },
+    {
+      "file": "backends/python/tests/integration/static_datamodel/test_a_child_session_is_given_its_mesh_router_by_its_parent.py",
+      "section_ids": [
+        "mesh-21.3",
+        "mesh-21.4",
+        "mesh-21.5"
+      ]
+    },
+    {
+      "file": "backends/rust/tests/tests/a_child_session_is_given_its_mesh_router_by_its_parent.rs",
+      "section_ids": [
+        "mesh-21.3",
+        "mesh-21.4",
+        "mesh-21.5"
       ]
     },
     {

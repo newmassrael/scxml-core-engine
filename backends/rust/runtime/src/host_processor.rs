@@ -201,9 +201,9 @@ pub const MESH_ORIGIN_SCHEME: &str = "mesh://";
 /// carried.
 ///
 /// The one place it is built: a host core's endpoint builds what it hands a
-/// top-level machine with it, and what it hands a child session (SCE_MESH.md,
-/// Child Sessions in Mesh), so a child cannot tell a peer's event from the one
-/// its parent would have been given.
+/// top-level machine with it, and what it hands a child session (SCE_MESH.md
+/// §mesh-21.4, Child Sessions in Mesh), so a child cannot tell a peer's event
+/// from the one its parent would have been given.
 pub fn mesh_event_metadata(data: String, source: &str, send_id: String) -> crate::EventMetadata {
     crate::EventMetadata {
         data,
@@ -277,8 +277,8 @@ pub trait ChildMeshRouter: Send {
     /// What arrived for the child since it was last asked, oldest first.
     fn take_calls(&mut self) -> Vec<MeshCall>;
 
-    /// The session this router was attached to has ended: it reached a
-    /// top-level `<final>`, or its parent left the invoking state and
+    /// The session this router was attached to has ended (§mesh-21.5): it
+    /// reached a top-level `<final>`, or its parent left the invoking state and
     /// cancelled it. Called once, after the child has stopped, so a send the
     /// child made while it was being stopped has been handed over.
     fn detach(&mut self);
@@ -297,8 +297,8 @@ pub trait ChildMeshRouter: Send {
     }
 }
 
-/// The factory of the routers of a machine's children, registered with
-/// [`Engine::register_child_mesh_routers`]: asked, each time an invocation
+/// The factory of the routers of a machine's children (§mesh-21.3), registered
+/// with [`Engine::register_child_mesh_routers`]: asked, each time an invocation
 /// starts a child, with the invoke's id and the stem of the child's document
 /// (empty for a child written inline), as a parent's host is asked for the
 /// child's host. `None` leaves the child with no router.

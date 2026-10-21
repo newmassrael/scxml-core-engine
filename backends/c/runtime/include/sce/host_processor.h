@@ -398,8 +398,8 @@ static inline bool sce_host_registry_register_mesh_router(sce_host_processor_reg
 }
 
 /**
- * Register the factory of the routers of the machine's children (SCE_MESH.md,
- * Child Sessions in Mesh; docs/adr/0043). A child session is given none of the
+ * Register the factory of the routers of the machine's children (SCE_MESH.md
+ * §mesh-21.3, Child Sessions in Mesh; docs/adr/0043). A child session is given none of the
  * machine's registrations, since its peer sends would leave under the
  * machine's name; the generated parent asks `ask` each time an invocation
  * starts a child, and installs what it answers on the child before the child is

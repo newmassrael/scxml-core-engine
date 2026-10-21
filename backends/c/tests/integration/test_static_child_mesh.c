@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
+// SCE-VERIFIES: mesh-21.3 mesh-21.4 mesh-21.5
+//
 // SCE_MESH.md, Child Sessions in Mesh (docs/adr/0043) under generated C: a child
 // session that talks to a Mesh peer is given a router of its own by the machine
 // that starts it, asked of the factory kept in the registry the machine is started

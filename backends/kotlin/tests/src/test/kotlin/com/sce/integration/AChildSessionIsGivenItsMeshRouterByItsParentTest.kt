@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
+// SCE-VERIFIES: mesh-21.3 mesh-21.4 mesh-21.5
+//
 // SCE_MESH.md, Child Sessions in Mesh (docs/adr/0043) — Kotlin half of the Rust
 // suite's `a_child_session_is_given_its_mesh_router_by_its_parent.rs`.
 //

@@ -3694,7 +3694,7 @@ pub fn check_sender_event_coverage(
     findings
 }
 
-// ── Child sessions (SCE_MESH.md, Child Sessions in Mesh) ────────
+// ── Child sessions (SCE_MESH.md §mesh-21.2, Child Sessions in Mesh) ────────
 
 /// The `<invoke>` sites of `machine`'s document checked against the child
 /// sessions the deploy names (docs/adr/0043, section 1), and then the sites of

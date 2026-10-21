@@ -64,7 +64,7 @@ sealed class MeshCall {
  * [send] and its `<invoke type="sce:mesh-rpc">` to [invoke], as
  * [StateMachineEngine.registerMeshRouter] and
  * [StateMachineEngine.registerMeshRpcInvoker] route a machine's. What arrives for
- * the child waits here until the parent drives the child, which takes it with
+ * the child (§mesh-21.4) waits here until the parent drives the child, which takes it with
  * [takeCalls] before the child's macrostep. When the session ends the parent
  * says so with [detach], after the child has stopped.
  */
@@ -79,7 +79,7 @@ interface ChildMeshRouter {
     fun takeCalls(): List<MeshCall>
 
     /**
-     * The session this router was attached to has ended: it reached a top-level
+     * The session this router was attached to has ended (§mesh-21.5): it reached a top-level
      * `<final>`, or its parent left the invoking state and cancelled it. Called
      * once, after the child has stopped.
      */
@@ -94,8 +94,8 @@ interface ChildMeshRouter {
 }
 
 /**
- * The factory of the routers of a machine's children, registered with
- * [StateMachineEngine.registerChildMeshRouters]: asked, each time an invocation
+ * The factory of the routers of a machine's children (§mesh-21.3), registered
+ * with [StateMachineEngine.registerChildMeshRouters]: asked, each time an invocation
  * starts a child, with the invoke's id and the stem of the child's document
  * (empty for a child written inline). `null` leaves the child with no router.
  */

@@ -796,8 +796,8 @@ pub enum DeployError {
 
     /// A machine entry is neither a machine the host starts nor a child
     /// session, or is both, or a child session carries a section that
-    /// belongs to the process its parent runs in (SCE_MESH.md, "Child
-    /// Sessions in Mesh"; docs/adr/0043).
+    /// belongs to the process its parent runs in (SCE_MESH.md §mesh-21.2,
+    /// "Child Sessions in Mesh"; docs/adr/0043).
     #[error("machine '{machine}': {fault}")]
     ChildEntryShape {
         machine: String,

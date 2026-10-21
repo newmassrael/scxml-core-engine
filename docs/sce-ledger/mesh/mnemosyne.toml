@@ -175,6 +175,16 @@ paths = [
     # section was cited and nothing checked it.
     "backends/rust/mesh/Cargo.toml",
     "sce-build/src/host_processor_analyzer.rs",
+    # The five runtime files that hold a child session's router (§21.3 to
+    # §21.5): the factory, what arrives for the child and the end of the
+    # session. They sit in runtime trees that `scan_exclusions` removes, and a
+    # section cited only inside an excluded tree is swallowed by it, so each is
+    # named here, as the two files above are.
+    "backends/rust/runtime/src/host_processor.rs",
+    "backends/go/runtime/child_mesh.go",
+    "backends/python/runtime/sce_runtime/child_mesh.py",
+    "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/ChildMeshRouter.kt",
+    "backends/c/runtime/include/sce/host_processor.h",
 ]
 # Mnemosyne R783 scan coverage: every Rust source under [workspace] root must be
 # either scanned by `paths` or declared here, so a configured-but-empty scan set
@@ -261,7 +271,7 @@ section_namespace = "mesh"
 [verifies_catalog]
 path = "docs/sce-ledger/mesh/.atomic/verifies-catalog.json"
 severity = "reject"
-sha256 = "0d0e528ac80141f9f9de64ab4358415aa699185e0cb031a3adbe9f0305366ccb"
+sha256 = "195ab6abd385ddcff272a7c93bec8051d03979d35d8a7d48dbe3ec5266f3de8e"
 
 # Path B symbol-binding resolver (Mnemosyne R382). lang_for_file maps C++
 # extensions (.h/.cpp/.cc/...) to the `cpp` key; the in-process

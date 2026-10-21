@@ -6723,8 +6723,9 @@ fn validate_machine_name_uniqueness(cfg: &DeployConfig) -> Result<(), DeployErro
     Ok(())
 }
 
-/// The machine entries that are child sessions (SCE_MESH.md, "Child Sessions
-/// in Mesh"; docs/adr/0043), checked against the deploy alone: each entry is a
+/// The machine entries that are child sessions (SCE_MESH.md §mesh-21.1 and
+/// §mesh-21.2, "Child Sessions in Mesh"; docs/adr/0043), checked against the
+/// deploy alone: each entry is a
 /// machine the host starts (`source:`) or a child session (`invoked_by:`),
 /// and not both; a child declares none of its parent process's sections; its
 /// parent is a machine of its device whose chain of parents ends at a
