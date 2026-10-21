@@ -126,22 +126,25 @@ def sentence(code: str, facts: Facts, language: str = DEFAULT_LANGUAGE) -> Sente
 class Note(str):
     """A sentence a reader said of what it could not carry, that also says what it is.
 
-    It is the English sentence, as a string, so that everything that reads a note as text reads it; and it
-    keeps its code and facts, which are what an extraction stores and what another language is written from.
-    A note has no reason of its own (a reader's note is one sentence); a code that gives one is a
-    `NotCarried`.
+    It is the English sentence, as a string, so that everything that reads a note as text reads it (what it
+    says, then why, joined as one sentence); and it keeps its code and facts, which are what an extraction
+    stores and what another language is written from. It also keeps what it says and why apart, because an
+    entry shows them apart: the first is what the owner has to know, the second is what it means for the
+    document and what to do.
     """
 
     code: str
     facts: dict[str, Any]
+    headline: str
+    why: str
 
     def __new__(cls, code: str, **facts: Any) -> "Note":
         said = sentence(code, facts)
-        if said.why:
-            raise NoteError(f"the code {code!r} gives a reason, so it is a NotCarried and not a Note")
-        made = super().__new__(cls, said.what)
+        made = super().__new__(cls, f"{said.what} -- {said.why}" if said.why else said.what)
         made.code = code
         made.facts = dict(facts)
+        made.headline = said.what
+        made.why = said.why
         return made
 
 
@@ -425,48 +428,45 @@ def _(f: Facts) -> Sentence:
     if f["drawn"] and f["attributed"] < f["drawn"]:
         where += f" {f['drawn'] - f['attributed']} of {f['drawn']} sit outside the numbering and were not placed."
     return Sentence(
-        f"{f['pictures']} picture(s) were not read"
-        " -- this reader makes no model calls, so it cannot say what a picture"
-        " shows; it says where each one is." + placed + where
+        f"{f['pictures']} picture(s) were not read",
+        "this reader makes no model calls, so it cannot say what a picture"
+        " shows; it says where each one is." + placed + where,
     )
 
 
 @docx_pictures("ko")
 def _(f: Facts) -> Sentence:
-    if f["in_body"]:
-        placed = (
-            f" 그중 {f['in_body']}개는 본문에 있고, 있는 자리에 [picture: NAME]으로 이름을 붙였어요."
-            " `picture` 도구로 볼 수 있어요."
-        )
-        if f["pictures"] > f["in_body"]:
-            placed += (
-                f" {f['pictures'] - f['in_body']}개는 본문이 아니라(머리글, 바닥글)"
-                " 자리를 정하지 못했어요."
-            )
-    else:
-        placed = " 자리에 이름을 붙일 수 있는 그림이 없어요."
+    # What the owner has to decide, in the order they decide it: which clauses lean on a picture, where the
+    # pictures are marked, and what to do. Each sentence is short, because the whole is read as a list.
+    where = ""
     if not f["numbered"]:
-        where = " 번호가 붙은 조항이 없는 문서라서 그림이 어느 조항에 있는지는 답할 수 없었어요."
+        where += " 번호가 붙은 조항이 없는 문서라서, 그림이 어느 조항에 있는지는 알 수 없어요."
     else:
-        where = ""
         if f["silent"]:
             where += (
-                f" 번호가 붙은 조항 {len(f['silent'])}개는 글로는 아무것도 말하지 않고 그림만 보여요:"
-                f" {listed_ko(f['silent'])}. 그 조항은 글만 읽으면 조항을 읽은 것이 아니에요."
+                f" 번호가 붙은 조항 {len(f['silent'])}개는 글 없이 그림만 있어요({listed_ko(f['silent'])})."
+                " 글만 읽어서는 이 조항의 내용을 알 수 없어요."
             )
         if f["speaking"]:
             where += (
-                f" 번호가 붙은 조항 {f['speaking']}개는 글로도 말하고 그림도 보여요."
-                " 글이 그림에 더할 것이 없다고 정하지는 않아요. 조항이 조건은 글로 쓰고 그 조건을"
-                " 정하는 규칙은 옆의 그림(참조하는 예, 타이밍, 범위)에 맡길 수 있어요."
-                " 글만 믿기 전에 각 그림을 보세요."
+                f" 번호가 붙은 조항 {f['speaking']}개는 글과 그림이 함께 있어요."
+                " 조건을 정하는 규칙(예, 타이밍, 범위)이 그림에만 있을 수 있어요."
             )
     if f["drawn"] and f["attributed"] < f["drawn"]:
-        where += f" {f['drawn']}개 중 {f['drawn'] - f['attributed']}개는 번호 체계 밖에 있어서 자리를 정하지 못했어요."
+        where += (
+            f" {f['drawn']}개 중 {f['drawn'] - f['attributed']}개는 번호가 붙은 조항 밖에 있어서,"
+            " 어느 조항의 그림인지 알 수 없어요."
+        )
+    if f["in_body"]:
+        # A no-break space inside the mark, so a line does not end between `picture:` and its name.
+        placed = f" 본문의 {f['in_body']}개는 있는 자리에 [picture: 이름]으로 표시했어요."
+        if f["pictures"] > f["in_body"]:
+            placed += f" {f['pictures'] - f['in_body']}개는 머리글이나 바닥글에 있어서 자리를 표시하지 못했어요."
+    else:
+        placed = " 자리를 표시할 수 있는 그림이 없어요."
     return Sentence(
-        f"그림 {f['pictures']}개를 읽지 않았어요."
-        " 이 읽기 도구는 모델을 부르지 않아서 그림이 무엇을 보여 주는지는 말할 수 없고,"
-        " 각 그림이 어디에 있는지만 말해요." + placed + where
+        f"그림 {f['pictures']}개를 읽지 않았어요",
+        "그림 속 내용은 글로 옮기지 못했어요." + where + placed + " 원본에서 확인하거나 AI로 읽게 하세요.",
     )
 
 
@@ -504,8 +504,8 @@ def _(f: Facts) -> Sentence:
 def _(f: Facts) -> Sentence:
     return Sentence(
         f"{f['pages']}쪽 중 {len(f['blank'])}쪽에 글이 없어요: {paged(f['blank'])}",
-        "각 쪽은 그림이거나 비어 있어요. 픽셀을 읽는 일은 읽기 도구의 몫이고 이 추출기의 몫이 아니에요."
-        " 쪽에 있는 이미지는 그림 블록이 되고, 선과 도형으로 그린 그림은 자리를 정하지 않아요",
+        "각 쪽은 그림이거나 비어 있어요. 쪽 안의 이미지는 그림으로 표시하지만, 이미지가 무엇을 보여 주는지는"
+        " 읽지 않았어요. 선과 도형으로 그린 그림은 표시하지 않았어요",
     )
 
 
@@ -524,9 +524,9 @@ def _(f: Facts) -> Sentence:
 @pdf_unplaced("ko")
 def _(f: Facts) -> Sentence:
     return Sentence(
-        f"한 쪽에 자리를 정하는 상한 {f['limit']}개를 넘은 그림 {f['pictures']}개, 해당 쪽: {paged(f['pages'])}",
-        "그림 블록으로 자리를 정하지 않고 수만 세었어요. 이미지가 그렇게 많은 쪽은 조각으로 잘린 그림이고,"
-        " 사람이 하나씩 판단할 수 있는 그림의 수가 아니에요",
+        f"한 쪽에 {f['limit']}개까지만 표시해서 빠진 그림 {f['pictures']}개, 해당 쪽: {paged(f['pages'])}",
+        "개수만 세었어요. 이미지가 그렇게 많은 쪽은 그림 하나를 조각으로 자른 것이라서,"
+        " 사람이 하나씩 판단할 수 있는 그림이 아니에요",
     )
 
 
@@ -544,8 +544,8 @@ def _(f: Facts) -> Sentence:
 @pdf_unidentified("ko")
 def _(f: Facts) -> Sentence:
     return Sentence(
-        f"저장된 바이트를 읽지 못한 그림 {f['pictures']}개",
-        "각각은 해시로 그림을 가리키지 못하는 그림 블록이라서, 읽는 쪽이 다른 그림과 구별하지 못해요",
+        f"파일에서 데이터를 읽지 못한 그림 {f['pictures']}개",
+        "그림마다 구별할 수 있는 표지가 없어서, 읽을 때 다른 그림과 같은 그림으로 보일 수 있어요",
     )
 
 
@@ -566,8 +566,8 @@ def _(f: Facts) -> Sentence:
 def _(f: Facts) -> Sentence:
     return Sentence(
         "쪽의 배치: 표, 단, 나란히 놓인 것의 순서",
-        "줄은 문서가 가진 글의 순서대로 읽고 줄 사이 간격으로 묶어요."
-        " 표는 줄로 나오고 칸을 복원하지 않아서, 값이 그 값에 해당하는 조건과 떨어질 수 있어요",
+        "글은 문서에 저장된 순서대로 읽고 줄 간격으로 묶었어요."
+        " 표는 칸을 나누지 못하고 줄로 나와서, 값이 해당하는 조건과 떨어져 보일 수 있어요",
     )
 
 
@@ -587,8 +587,7 @@ def _(f: Facts) -> Sentence:
 def _(f: Facts) -> Sentence:
     return Sentence(
         "선과 도형으로 그린 그림: 이미지가 아닌 도표",
-        "쪽이 가진 이미지만 그림 블록이 돼요. 획으로 그린 그림은 이미지 개체가 아니라서,"
-        " 쪽에는 보여도 이 추출에는 나오지 않을 수 있어요",
+        "쪽 안의 이미지만 그림으로 표시해요. 선으로 그린 도표는 쪽에서는 보여도 여기에는 나오지 않을 수 있어요",
     )
 
 

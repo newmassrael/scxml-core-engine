@@ -318,7 +318,7 @@ def builtin() -> Registry:
                 Declaration("html", "2", (".html", ".htm")), _ingest.read_html_with_headings, line_is_block=True
             ),
             ReaderExtractor(
-                Declaration("docx", "2", (".docx",), magic=DOCX_MAGIC, magic_identifies=False),
+                Declaration("docx", "3", (".docx",), magic=DOCX_MAGIC, magic_identifies=False),
                 _ingest.read_docx_with_headings,
                 line_is_block=True,
             ),

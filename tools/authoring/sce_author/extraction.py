@@ -245,7 +245,7 @@ class NotCarried:
     def from_note(cls, note: str, blocks: tuple[str, ...] = ()) -> "NotCarried":
         """A reader's note as an entry: with its code and facts when it has them, as its sentence when not."""
         if isinstance(note, notes.Note):
-            return cls(str(note), "", None, blocks, note.code, dict(note.facts))
+            return cls(note.headline, note.why, None, blocks, note.code, dict(note.facts))
         return cls(note, blocks=blocks)
 
     def in_language(self, language: str) -> "NotCarried":

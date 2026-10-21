@@ -144,9 +144,22 @@ class ANoteIsItsEnglishSentenceThatSaysWhatItIs(unittest.TestCase):
         self.assertEqual((note.code, note.facts), ("xlsx-rich-values", {"count": 3}))
         self.assertEqual(str(note), notes.sentence("xlsx-rich-values", {"count": 3}).what)
 
-    def test_a_code_that_gives_a_reason_is_an_entry_and_not_a_note(self):
-        with self.assertRaisesRegex(NoteError, "gives a reason"):
-            Note("pdf-layout")
+    def test_a_note_that_gives_a_reason_reads_as_one_sentence_and_keeps_what_it_says_apart_from_why(self):
+        note = Note("docx-pictures-unread", pictures=1, in_body=1, numbered=False, silent=[], speaking=0, drawn=1, attributed=0)
+
+        said = notes.sentence("docx-pictures-unread", dict(note.facts))
+        self.assertEqual((note.headline, note.why), (said.what, said.why))
+        self.assertEqual(str(note), f"{said.what} -- {said.why}")
+        self.assertTrue(note.startswith("1 picture(s) were not read -- "))
+
+    def test_an_entry_made_of_a_note_that_gives_a_reason_shows_them_apart_and_a_note_without_one_shows_none(self):
+        with_reason = NotCarried.from_note(
+            Note("docx-pictures-unread", pictures=2, in_body=1, numbered=True, silent=["5.1"], speaking=0, drawn=1, attributed=1)
+        )
+        self.assertEqual("2 picture(s) were not read", with_reason.what)
+        self.assertIn("5.1", with_reason.why)
+        without = NotCarried.from_note(Note("xlsx-rich-values", count=3))
+        self.assertEqual("", without.why)
 
 
 class AnEntryKeepsItsCodeAndFactsAndIsSaidInALanguage(unittest.TestCase):
@@ -275,9 +288,9 @@ class EveryExtractorGivesACodeThisVersionKnows(unittest.TestCase):
         self.assertEqual(entry.facts["in_body"], 1)
         self.assertEqual(entry.facts["silent"], ["5.1"])
         self.assertTrue(entry.blocks, "a note about pictures the blocks mark names the blocks")
-        korean = entry.in_language("ko").what
-        self.assertIn("그림 1개를 읽지 않았어요", korean)
-        self.assertIn("5.1", korean)
+        korean = entry.in_language("ko")
+        self.assertEqual("그림 1개를 읽지 않았어요", korean.what)
+        self.assertIn("5.1", korean.why)
 
     def test_a_word_document_whose_picture_no_numbered_clause_holds(self):
         done = builtin().extract(self.docx(para("A plain sentence.") + para("", drawn("rId5")), rels(rId5="image3.png")))
@@ -285,7 +298,7 @@ class EveryExtractorGivesACodeThisVersionKnows(unittest.TestCase):
         self.entries(done)
         entry = done.not_carried[0]
         self.assertFalse(entry.facts["numbered"])
-        self.assertIn("번호가 붙은 조항이 없는 문서", entry.in_language("ko").what)
+        self.assertIn("번호가 붙은 조항이 없는 문서", entry.in_language("ko").why)
 
     def test_a_markdown_table_with_a_short_row(self):
         path = self.root / "t.md"
@@ -340,7 +353,7 @@ class TheCommandSaysAListInALanguage(unittest.TestCase):
 
         said = json.loads(out)
         self.assertEqual(code, 0)
-        self.assertEqual(said[0]["what"], "저장된 바이트를 읽지 못한 그림 2개")
+        self.assertEqual(said[0]["what"], "파일에서 데이터를 읽지 못한 그림 2개")
         self.assertEqual(said[0]["count"], 2)
         self.assertEqual(said[0]["code"], "pdf-pictures-unidentified")
         self.assertEqual(said[1:], [old, future])
