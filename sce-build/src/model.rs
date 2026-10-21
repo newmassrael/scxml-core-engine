@@ -1938,6 +1938,16 @@ pub struct InvokeSessionCommon {
     pub base: InvokeBase,
     pub child_name: String,
     pub autoforward: bool,
+    /// Codegen-internal: under `datamodel="sce-static"`, the statement that
+    /// writes the id a start of this invoke generates (`<state>.<start>.<id>`,
+    /// docs/adr/0045) to the string variable `idlocation` names, in the target
+    /// language, reading the id from the local the start site holds it in.
+    /// Empty for an invoke with no `idlocation`, and for a document under
+    /// another data model, whose script engine takes the write. Transient and
+    /// outside the AST contract, as [`Action::native_code`] is.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[cfg_attr(test, schemars(skip))]
+    pub native_idlocation: String,
     pub child_needs_script_engine: bool,
     /// §scxml-6.4: Use specific done.invoke.{id} event instead of generic done.invoke
     #[serde(default)]

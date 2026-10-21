@@ -137,6 +137,21 @@ struct ContentExpr<'a> {
 /// holds this one to.
 pub const AUTO_SEND_ID_MAX_BYTES: u32 = 31;
 
+/// Why an `idlocation` that names no string variable the document declares is
+/// refused, a `<send>`'s or an `<invoke>`'s.
+const IDLOCATION_NAMES_A_STRING_VARIABLE: &str =
+    "an idlocation names a string variable the document declares: the id is a string, and \
+     the place it is written to is one variable, not a record's field, a list's element or \
+     what a <foreach> binds";
+
+/// The most bytes of the id a start of the child session the `<invoke>`
+/// `invoke_id` of state `state` starts is started under: `<state>.<start>.<id>`
+/// (docs/adr/0045), the start a `u64` count of up to twenty digits.
+pub fn invoke_id_max_bytes(state: &str, invoke_id: &str) -> u32 {
+    let start_digits = u64::MAX.to_string().len();
+    u32::try_from(state.len() + 1 + start_digits + 1 + invoke_id.len()).unwrap_or(u32::MAX)
+}
+
 /// Judge every expression of a `sce-static` document; a document under any
 /// other data model is not this pass's to judge.
 ///
@@ -1558,7 +1573,28 @@ impl<'a> Judge<'a> {
                  `idlocation`, and never both",
             ));
         }
-        let location = action.idlocation.trim();
+        let Some(variable) = self.idlocation_variable(&action.idlocation) else {
+            return Err(refuse(IDLOCATION_NAMES_A_STRING_VARIABLE));
+        };
+        match variable.capacity {
+            Some(capacity) if capacity <= AUTO_SEND_ID_MAX_BYTES => Err(refuse(&format!(
+                "the id a machine generates is up to {AUTO_SEND_ID_MAX_BYTES} UTF-8 bytes, \
+                 and the variable it is written to declares an sce:capacity of {capacity}: \
+                 a bound the id fits, with room for a C buffer's terminator, is at least {}",
+                AUTO_SEND_ID_MAX_BYTES + 1
+            ))),
+            _ => Ok(()),
+        }
+    }
+
+    /// The variable an `idlocation` (`location`, as written) names, when it is
+    /// one the place an id is written to can be: a string variable the document
+    /// declares, and not a record's field, a list's element, or what a
+    /// `<foreach>` binds, which would be a copy no one reads. `None` otherwise,
+    /// refused with [`IDLOCATION_NAMES_A_STRING_VARIABLE`]. One answer for a
+    /// `<send>`'s and an `<invoke>`'s.
+    fn idlocation_variable(&self, location: &str) -> Option<&crate::model::Variable> {
+        let location = location.trim();
         let variable = self
             .scope
             .variables
@@ -1569,19 +1605,57 @@ impl<'a> Judge<'a> {
             .and_then(|v| v.value_type.as_ref())
             .and_then(crate::forge::model::AlgorithmValueType::scalar)
             == Some(&crate::forge::model::SceType::String);
-        let Some(variable) = variable.filter(|_| is_string) else {
-            return Err(refuse(
-                "an idlocation names a string variable the document declares: the id is a \
-                 string, and the place it is written to is one variable, not a record's \
-                 field, a list's element or what a <foreach> binds",
-            ));
+        variable.filter(|_| is_string)
+    }
+
+    /// An `<invoke>`'s `idlocation`: the string variable the machine writes the
+    /// id each start of a child session is started under to, `<state>.<start>.<id>`
+    /// (docs/adr/0045), the id the child's events carry as `_event.invokeid`
+    /// and a saved tree holds as the child's `invokeid`. Only a child session's
+    /// start generates an id; a host-run invocation and a Mesh request are
+    /// started under the one the build wrote, which `id` names.
+    ///
+    /// The variable is one the document declares, a string, and of a bound the
+    /// longest id fits: the start count is a `u64`, up to twenty digits, and a
+    /// C buffer holds a terminator beside it. The write then has nothing to
+    /// fail at, so the machine needs no error to raise for it.
+    fn invoke_idlocation(
+        &self,
+        invoke: &Invoke,
+        state: &str,
+        line: Option<u32>,
+        col: Option<u32>,
+    ) -> Result<(), Located<ForgeError>> {
+        let base = invoke.base();
+        let refuse = |rule: &str| {
+            self.rule_at(
+                format!("idlocation=\"{}\"", base.idlocation),
+                rule,
+                line,
+                col,
+                state,
+                &base.idlocation,
+            )
         };
+        if !matches!(invoke, Invoke::Scxml(_) | Invoke::Hybrid(_)) {
+            return Err(refuse(
+                "an idlocation stores the id a start of a child session generates; a \
+                 host-run invocation or a Mesh request is started under the id the build \
+                 wrote, so write `id` where the document must name it",
+            ));
+        }
+        let Some(variable) = self.idlocation_variable(&base.idlocation) else {
+            return Err(refuse(IDLOCATION_NAMES_A_STRING_VARIABLE));
+        };
+        let longest = invoke_id_max_bytes(state, &base.invoke_id);
         match variable.capacity {
-            Some(capacity) if capacity <= AUTO_SEND_ID_MAX_BYTES => Err(refuse(&format!(
-                "the id a machine generates is up to {AUTO_SEND_ID_MAX_BYTES} UTF-8 bytes, \
+            Some(capacity) if capacity <= longest => Err(refuse(&format!(
+                "the id a start of this invoke is started under is up to {longest} UTF-8 \
+                 bytes (`{state}.<start>.{}`, the start a count of up to twenty digits), \
                  and the variable it is written to declares an sce:capacity of {capacity}: \
                  a bound the id fits, with room for a C buffer's terminator, is at least {}",
-                AUTO_SEND_ID_MAX_BYTES + 1
+                base.invoke_id,
+                longest + 1
             ))),
             _ => Ok(()),
         }
@@ -2707,22 +2781,8 @@ impl<'a> Judge<'a> {
         // ([`Self::child_arguments`]), and the `namelist` and `srcexpr` of a
         // host-run invoke, and the `<param>`s and `srcexpr` of a Mesh request,
         // with the request they hand, below.
-        // An `idlocation` stores the id the build already wrote for the invoke —
-        // its `id`, or `<state>.platform_N` — and this model reads no
-        // `_event.invokeid`, only `_event.data`, so nothing could compare what it
-        // stored. A document that must name its invocation writes `id`, which
-        // `done.invoke.<id>` and `error.invoke.<id>` already match.
         if !base.idlocation.is_empty() {
-            return Err(self.rule_at(
-                format!("idlocation=\"{}\"", base.idlocation),
-                "an <invoke idlocation> stores the id the build already wrote for the \
-                 invocation, and this model reads no `_event.invokeid` to compare it with: \
-                 write `id` where the document must name its invocation",
-                line,
-                col,
-                state,
-                &base.idlocation,
-            ));
+            self.invoke_idlocation(invoke, state, line, col)?;
         }
         // A hybrid invoke names its child by an expression evaluated when it
         // starts, among the documents it declares.

@@ -9,7 +9,13 @@
    `machine_name` are parameters because a macro body does not see the render
    context. #}
 {% macro store_invoke_idlocation(invoke_info, model, machine_name) %}
-{% if invoke_info.idlocation %}
+{% if invoke_info.native_idlocation %}
+                    // docs/adr/0045: under `datamodel="sce-static"` the id is
+                    // written to the string variable `idlocation` names, whose
+                    // bound the build held to one the id fits.
+                    {{ invoke_info.native_idlocation }}
+                    let id_stored = true;
+{% elif invoke_info.idlocation %}
                     self.ensure_script_engine();
                     let id_stored = {
                         let sid = self.session_id.as_ref().unwrap().clone();
@@ -57,7 +63,7 @@ super::{{ stem }}_sm::{{ stem | to_machine_name }}Persist
    invoke's `field_suffix`. #}
 {% macro defer_scxml_invoke_fn(invoke_info, state_id, model, machine_name) %}
     // W3C SCXML 6.4: Defer the start of invoke '{{ invoke_info.invoke_id }}' of state '{{ state_id }}' to macrostep end
-    fn defer_invoke_{{ invoke_info.field_suffix }}(&mut self, {{ 'engine' if (invoke_info.idlocation and 'error.execution' in model.events) else '_engine' }}: &mut sce_rust_runtime::Engine<Self>) {
+    fn defer_invoke_{{ invoke_info.field_suffix }}(&mut self, {{ 'engine' if (invoke_info.idlocation and not invoke_info.native_idlocation and 'error.execution' in model.events) else '_engine' }}: &mut sce_rust_runtime::Engine<Self>) {
         {
             // docs/adr/0045: the id is the state's, the number of this start and
             // the `<invoke>`'s, so it comes from the tree alone and is the same

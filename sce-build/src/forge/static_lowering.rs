@@ -760,6 +760,16 @@ pub trait StaticTarget {
     fn lowers_hybrid_invoke(&self) -> bool {
         false
     }
+    /// The id a start of a child session is started under,
+    /// `<state>.<start>.<id>` (docs/adr/0045), as an owned string expression of
+    /// this target read where the start writes it to the `<invoke>`'s
+    /// `idlocation` ([`crate::model::InvokeSessionCommon::native_idlocation`]).
+    /// `None` for a target that does not lower that write yet, which is refused
+    /// where the `<invoke>` is walked, by name, rather than left to store
+    /// nothing.
+    fn generated_invoke_id(&self) -> Option<&'static str> {
+        None
+    }
     /// Whether a Mesh request, `<invoke type="sce:mesh-rpc">`, is lowered by
     /// this target itself: its `<param>`s read from the machine's fields when the
     /// invocation starts and handed to the router the backend generates for the
@@ -2355,6 +2365,12 @@ impl StaticTarget for RustTarget {
     fn lowers_hybrid_invoke(&self) -> bool {
         true
     }
+    // The start site holds the id it generates in the `String` local
+    // `generated_invoke_id` (`defer_scxml_invoke_fn`), which it goes on to
+    // start the child under, so the variable takes a copy.
+    fn generated_invoke_id(&self) -> Option<&'static str> {
+        Some("generated_invoke_id.clone()")
+    }
     // A closed set of unit variants, so `Copy` and `Eq` by the policy every
     // repr-tagged enum takes. Its saved form is written beside the machine's
     // own ([`StaticLowering::enums`]), where the saved-state runtime exists.
@@ -3154,9 +3170,11 @@ pub fn lower(
                 }
                 crate::model::Invoke::Scxml(info) => {
                     lower_child_arguments(info, &plain_ctx, &plain_renames, &rewrites)?;
+                    lower_invoke_idlocation(&mut info.common, &plain_renames, &rewrites)?;
                 }
                 crate::model::Invoke::Hybrid(info) => {
                     lower_hybrid_invoke(info, &plain_ctx, &plain_renames, &rewrites)?;
+                    lower_invoke_idlocation(&mut info.common, &plain_renames, &rewrites)?;
                 }
                 crate::model::Invoke::MeshRpc(info) => {
                     lower_mesh_request(info, &plain_ctx, &plain_renames, &rewrites)?;
@@ -9264,6 +9282,36 @@ fn lower_host_request_strings(
             lower(&info.contentexpr, "<content expr>")?;
         info.contentexpr.clear();
     }
+    Ok(())
+}
+
+/// Lower a child session's `<invoke idlocation>`, in place: the statement that
+/// writes the id each start generates to the variable the attribute names
+/// ([`crate::model::InvokeSessionCommon::native_idlocation`]; docs/adr/0045).
+/// Validation already held the variable to a string the id fits
+/// ([`crate::forge::static_datamodel`]), so the write has nothing to fail at; a
+/// target that does not lower it is refused by name.
+fn lower_invoke_idlocation(
+    common: &mut crate::model::InvokeSessionCommon,
+    renames: &HashMap<&str, &str>,
+    rewrites: &Rewrites<'_>,
+) -> Result<(), GenerateError> {
+    let location = common.base.idlocation.trim().to_string();
+    if location.is_empty() {
+        return Ok(());
+    }
+    let target = rewrites.target;
+    let Some(id) = target.generated_invoke_id() else {
+        return Err(GenerateError::unsupported(format!(
+            "an <invoke idlocation> under datamodel=\"sce-static\" has no {} lowering yet",
+            target.name()
+        )));
+    };
+    let name = renames
+        .get(location.as_str())
+        .copied()
+        .unwrap_or(location.as_str());
+    common.native_idlocation = target.assign_string(name, id);
     Ok(())
 }
 

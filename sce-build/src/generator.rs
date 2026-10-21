@@ -1670,7 +1670,63 @@ fn reject_static_datamodel_in_unsupported_lang(
     model: &SCXMLModel,
     language: Language,
 ) -> Result<(), GenerateError> {
-    reject_static_datamodel_outside(model, language, STATIC_DATAMODEL_BACKENDS)
+    reject_static_datamodel_outside(model, language, STATIC_DATAMODEL_BACKENDS)?;
+    reject_static_invoke_idlocation_outside(model, language, STATIC_INVOKE_IDLOCATION_BACKENDS)
+}
+
+/// The backends that write the id a start of a child session is started under
+/// to the `<invoke>`'s `idlocation` under `datamodel="sce-static"`
+/// (docs/adr/0045). The others refuse it by name until their format-2 step.
+const STATIC_INVOKE_IDLOCATION_BACKENDS: &[Language] = &[Language::Rust];
+
+/// Refuse a `sce-static` document, or a child written in place in it at any
+/// depth, whose child-session `<invoke>` names an `idlocation`, for a backend
+/// `lowered` does not name. Asked of the document a run is given, so that
+/// `check` refuses what `generate` refuses for a child it writes beside it,
+/// rather than a run of a regeneration failing on the child alone.
+fn reject_static_invoke_idlocation_outside(
+    model: &SCXMLModel,
+    language: Language,
+    lowered: &[Language],
+) -> Result<(), GenerateError> {
+    if model.datamodel != crate::model::Datamodel::SceStatic || lowered.contains(&language) {
+        return Ok(());
+    }
+    let children = model
+        .inline_child_invokes()
+        .into_iter()
+        .filter_map(|invoke| invoke.inline_child.as_deref());
+    for document in std::iter::once(model).chain(children) {
+        if document.datamodel != crate::model::Datamodel::SceStatic {
+            continue;
+        }
+        let mut states: Vec<_> = document.states.values().collect();
+        states.sort_by_key(|state| state.document_order);
+        for invoke in states.into_iter().flat_map(|state| state.invokes.iter()) {
+            let child_session = matches!(
+                invoke,
+                crate::model::Invoke::Scxml(_) | crate::model::Invoke::Hybrid(_)
+            );
+            if child_session && !invoke.base().idlocation.is_empty() {
+                return Err(GenerateError::unsupported_at(
+                    format!(
+                        "an <invoke idlocation> under datamodel=\"{}\" in '{}' has no {:?} \
+                         lowering yet (lowered for: {})",
+                        crate::model::Datamodel::SceStatic.as_str(),
+                        document.name,
+                        language,
+                        lowered
+                            .iter()
+                            .map(|candidate| candidate.canonical_name())
+                            .collect::<Vec<_>>()
+                            .join(", "),
+                    ),
+                    invoke.base().source_location.clone(),
+                ));
+            }
+        }
+    }
+    Ok(())
 }
 
 /// [`reject_static_datamodel_in_unsupported_lang`] against the backends `lowered`

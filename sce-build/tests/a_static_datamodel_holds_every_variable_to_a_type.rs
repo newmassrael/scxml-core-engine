@@ -3635,22 +3635,105 @@ fn a_send_idlocation_names_a_string_variable_the_id_fits() {
     }
 }
 
+/// A machine whose state `s` starts an in-line child session with no `id`,
+/// writing the id each start is started under to `idlocation`; `data` declares
+/// the machine's variables. The `<invoke>` is on line 6.
+fn invoking(data: &str, idlocation: &str) -> String {
+    format!(
+        r##"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" initial="s" datamodel="sce-static">
+  <datamodel>
+    {data}
+  </datamodel>
+  <state id="s"><invoke type="scxml" idlocation="{idlocation}"><content><scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="c" datamodel="sce-static"><final id="c"/></scxml></content></invoke></state>
+  <final id="done"/>
+</scxml>
+"##
+    )
+}
+
+/// A machine that starts the in-line child `kid`, whose own state starts a
+/// grandchild with no `id` and keeps the id it is started under in `kid`'s
+/// variable `held` (`kid_data` declares it).
+fn invoking_below(kid_data: &str) -> String {
+    format!(
+        r##"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" initial="s" datamodel="sce-static">
+  <state id="s"><invoke type="scxml" id="kid"><content><scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" initial="k" datamodel="sce-static"><datamodel>{kid_data}</datamodel><state id="k"><invoke type="scxml" idlocation="held"><content><scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="c" datamodel="sce-static"><final id="c"/></scxml></content></invoke></state></scxml></content></invoke></state>
+  <final id="done"/>
+</scxml>
+"##
+    )
+}
+
 #[test]
-fn an_invoke_idlocation_is_refused_for_want_of_a_reader_and_says_so() {
-    // The id it would store is the one the build already wrote, and a machine of
-    // this model reads no `_event.invokeid`, so nothing could compare it.
+fn an_invoke_idlocation_names_a_string_variable_the_started_id_fits() {
+    // docs/adr/0045: each start of a child session is started under
+    // `<state>.<start>.<id>`, the id its events carry and a saved tree holds, and
+    // `idlocation` keeps it in a string variable whose bound it fits. Rust writes
+    // it; a backend that does not yet is refused by name, never left to store
+    // nothing, and that for an `idlocation` in a child written in place too,
+    // which `check` asks of the document it is given: a run that generated the
+    // document and failed on its child would stop a regeneration midway.
+    let held = r#"<data id="held" sce:type="string" sce:capacity="64" expr="''"/>"#;
+    for document in [invoking(held, "held"), invoking_below(held)] {
+        let (ok, out) = run(&["check", "-l", "rust"], &document);
+        assert!(ok, "the started id has a place to go:\n{out}");
+        let (ok, out) = run(&["check", "-l", "kotlin"], &document);
+        assert!(!ok, "Kotlin does not write it yet:\n{out}");
+        assert!(
+            out.contains("generate/unsupported-feature") && out.contains("<invoke idlocation>"),
+            "the refusal names the construct:\n{out}"
+        );
+    }
+}
+
+#[test]
+fn a_host_run_invoke_idlocation_is_refused_on_its_line() {
+    // A host-run invocation is started under the id the build wrote, so there is
+    // no started id to keep: `id` names it.
+    let document = format!(
+        r##"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" initial="s" datamodel="sce-static">
+  <datamodel>
+    {held}
+  </datamodel>
+  <state id="s"><invoke type="x-job" idlocation="held"/></state>
+  <final id="done"/>
+</scxml>
+"##,
+        held = r#"<data id="held" sce:type="string" sce:capacity="64" expr="''"/>"#
+    );
     let (ok, out) = run(
-        &["check"],
-        &machine(
-            r#"<state id="s"><invoke type="scxml" idlocation="count"><content><scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="c"><final id="c"/></scxml></content></invoke></state>"#,
+        &["check", "-l", "rust", "--host-invoker", "x-job"],
+        &document,
+    );
+    assert!(!ok, "a host-run invocation has no started id:\n{out}");
+    assert_refused_at(&out, "scxml/static-datamodel-rule", 6);
+    assert!(out.contains("write `id`"), "it says what to write:\n{out}");
+}
+
+#[test]
+fn an_invoke_idlocation_that_cannot_hold_the_started_id_or_names_no_string_is_refused() {
+    for (what, data) in [
+        (
+            "a variable whose bound the id does not fit",
+            r#"<data id="held" sce:type="string" sce:capacity="16" expr="''"/>"#,
         ),
-    );
-    assert!(!ok, "an invoke's idlocation has no reader here:\n{out}");
-    assert_refused_at(&out, "scxml/static-datamodel-rule", 8);
-    assert!(
-        out.contains("_event.invokeid") && out.contains("write `id`"),
-        "it says what is missing and what to write instead:\n{out}"
-    );
+        (
+            "a variable that is no string",
+            r#"<data id="held" sce:type="uint32" expr="0"/>"#,
+        ),
+        (
+            "a variable no <data> declares",
+            r#"<data id="other" sce:type="string" sce:capacity="64" expr="''"/>"#,
+        ),
+    ] {
+        let (ok, out) = run(&["check", "-l", "rust"], &invoking(data, "held"));
+        assert!(!ok, "{what}: the started id has nowhere to go:\n{out}");
+        assert_refused_at(&out, "scxml/static-datamodel-rule", 6);
+        assert!(out.contains("idlocation"), "{what}: {out}");
+    }
 }
 
 #[test]
