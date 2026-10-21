@@ -117,20 +117,10 @@ macro_rules! replay_row {
 ///
 /// What a machine sends its Mesh peers needs no mark: the replay records it for
 /// every machine, and a scenario's `sent` is held to what was recorded.
-///
-/// A row of the `observed` group is a machine a saved state cannot hold yet (one
-/// that holds an optional value, before docs/adr/0055 step 6): it has no
-/// `Persist`, and is read back through `crate::observed::<reader>`
-/// ([`crate::replay_observed`]).
 macro_rules! scenarios {
-    (
-        $($name:literal => $module:ident::{$policy:ident, $persist:ident} $(@ $manual:ident)? $(+ $host:ident => $calls:ident)? $(~ $shost:ident => $scalls:ident)? $(& $builder:ident)?;)*
-        observed {
-            $($oname:literal => $omodule:ident::$opolicy:ident by $reader:ident;)*
-        }
-    ) => {
+    ($($name:literal => $module:ident::{$policy:ident, $persist:ident} $(@ $manual:ident)? $(+ $host:ident => $calls:ident)? $(~ $shost:ident => $scalls:ident)? $(& $builder:ident)?;)*) => {
         /// The scenarios this crate can replay, by file name.
-        pub const NAMES: &[&str] = &[$($name,)* $($oname,)*];
+        pub const NAMES: &[&str] = &[$($name),*];
 
         /// The text of the scenario `name`, from the file it is committed in.
         pub fn scenario_text(name: &str) -> Option<&'static str> {
@@ -139,12 +129,6 @@ macro_rules! scenarios {
                     env!("CARGO_MANIFEST_DIR"),
                     "/../../../sce-build/tests/fixtures/static_datamodel/scenarios/",
                     $name,
-                    ".json"
-                ))),)*
-                $($oname => Some(include_str!(concat!(
-                    env!("CARGO_MANIFEST_DIR"),
-                    "/../../../sce-build/tests/fixtures/static_datamodel/scenarios/",
-                    $oname,
                     ".json"
                 ))),)*
                 _ => None,
@@ -181,14 +165,6 @@ macro_rules! scenarios {
                         $(, calls $calls)?
                         $(, calls $scalls)?
                         $(, children book $builder)?
-                    );
-                })*
-                $($oname => {
-                    use crate::integration::static_datamodel::$omodule::$opolicy;
-                    crate::replay_observed(
-                        Engine::new(policy!($opolicy)),
-                        crate::observed::$reader,
-                        scenario_text($oname).expect("the table names its own scenario"),
                     );
                 })*
                 other => panic!("`{other}` is not a scenario of this table"),
@@ -251,6 +227,7 @@ scenarios! {
     "static_list" => static_list_sm::{StaticListPolicy, StaticListPersist};
     "static_list_assign" => static_list_assign_sm::{StaticListAssignPolicy, StaticListAssignPersist};
     "static_list_index" => static_list_index_sm::{StaticListIndexPolicy, StaticListIndexPersist};
+    "static_optional" => static_optional_sm::{StaticOptionalPolicy, StaticOptionalPersist};
     "static_overflow" => static_overflow_sm::{StaticOverflowPolicy, StaticOverflowPersist};
     "static_payload" => static_payload_sm::{StaticPayloadPolicy, StaticPayloadPersist};
     "static_payload_bytes" => static_payload_bytes_sm::{StaticPayloadBytesPolicy, StaticPayloadBytesPersist};
@@ -289,7 +266,4 @@ scenarios! {
     "todo_peer_alice" => todo_peer_sm::{TodoPeerPolicy, TodoPeerPersist};
     "todo_peer_bob" => todo_peer_sm::{TodoPeerPolicy, TodoPeerPersist};
     "todo_peer_server" => todo_peer_sm::{TodoPeerPolicy, TodoPeerPersist};
-    observed {
-        "static_optional" => static_optional_sm::StaticOptionalPolicy by static_optional;
-    }
 }

@@ -12,7 +12,6 @@ import com.sce.runtime.MeshCall
 import com.sce.runtime.SavedState
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -323,47 +322,6 @@ class ReplayTest {
         assertTrue(holds(json("""["1", "2"]"""), json("[1, 2]")))
         assertFalse(holds(json("""["1"]"""), json("[1, 2]")))
         assertFalse(holds(null, JsonPrimitive(1)))
-    }
-
-    /**
-     * A machine that has no saved state (one that holds an optional value, before
-     * docs/adr/0055 step 6) is read through what it publishes, built by [heldBy];
-     * a driver gives that or a saved state, never both and never neither. Red if
-     * the replay stops reading `held`, or reads a variable it was not given.
-     */
-    @Test
-    fun aMachineWithNoSavedStateIsReadThroughWhatItPublishes() {
-        var due: Long? = null
-        val text = """
-            {"machine": "fake", "steps": [
-              {"note": "start", "expect": {"state": "idle", "configuration": ["idle"], "variables": {"due": null}}},
-              {"note": "set", "event": "set", "expect": {"variables": {"due": 12}}}
-            ]}
-        """
-        val held = {
-            heldBy("idle", listOf("idle"), mapOf("due" to (due?.let { JsonPrimitive(it) } ?: JsonNull)))
-        }
-        replay(parseScenario(text), send = { _, _ -> due = 12L }, tick = {}, ended = { false }, held = held)
-        assertEquals(12L, due)
-        due = null
-        val stuck = assertFailsWith<ScenarioMismatch> {
-            replay(parseScenario(text), send = { _, _ -> }, tick = {}, ended = { false }, held = held)
-        }
-        assertEquals(1, stuck.step)
-        val machine = Machine()
-        assertFailsWith<ScenarioMismatch> {
-            replay(parseScenario(text), send = machine::send, tick = {}, ended = { false })
-        }
-        assertFailsWith<ScenarioMismatch> {
-            replay(
-                parseScenario(text),
-                send = machine::send,
-                tick = {},
-                save = machine::save,
-                ended = { false },
-                held = held,
-            )
-        }
     }
 
     /**

@@ -57,7 +57,6 @@ import com.sce.integration.static_invoke_string.StaticInvokeStringStateMachine
 import com.sce.integration.static_list.StaticListStateMachine
 import com.sce.integration.static_list_assign.StaticListAssignStateMachine
 import com.sce.integration.static_list_index.StaticListIndexStateMachine
-import com.sce.integration.static_optional.StaticOptionalDueRecord
 import com.sce.integration.static_optional.StaticOptionalStateMachine
 import com.sce.integration.static_overflow.StaticOverflowStateMachine
 import com.sce.integration.static_payload.StaticPayloadStateMachine
@@ -104,15 +103,12 @@ import com.sce.scenarios.ChildHosts
 import com.sce.scenarios.ChildRouters
 import com.sce.scenarios.RecordedSends
 import com.sce.scenarios.SETTLE_TICKS
-import com.sce.scenarios.heldBy
 import com.sce.scenarios.hostCall
 import com.sce.scenarios.parseScenario
 import com.sce.scenarios.replay
 import com.sce.scenarios.routed
 import java.io.File
-import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import org.junit.jupiter.api.DisplayName
@@ -559,62 +555,11 @@ class StaticScenarioTest {
         }
     }
 
-    /** An optional value as a scenario states it: `null` where it is absent (docs/adr/0055). */
-    private fun <T : Any> optionalJson(value: T?, present: (T) -> JsonElement): JsonElement =
-        value?.let(present) ?: JsonNull
-
-    /** A `record:Due` of `static_optional` as a scenario states it, field by field. */
-    private fun dueJson(record: StaticOptionalDueRecord): JsonObject =
-        JsonObject(
-            mapOf(
-                "id" to JsonPrimitive(record.id.toLong()),
-                "due" to optionalJson(record.due) { JsonPrimitive(it) },
-                "title" to optionalJson(record.title) { JsonPrimitive(it) },
-                "status" to optionalJson(record.status) { JsonPrimitive(it.declaredName) },
-            ),
-        )
-
-    /**
-     * What `static_optional` holds, as its saved state would write it. A machine
-     * that holds an optional value has no saved state before docs/adr/0055 step 6,
-     * so it is read through the variables it publishes, and its state through the
-     * engine's names for its active states.
-     */
-    private fun staticOptionalHeld(sm: StaticOptionalStateMachine): JsonObject =
-        heldBy(
-            sm.nameOfState(sm.currentState.value),
-            sm.activeConfiguration.map { sm.nameOfState(it) },
-            mapOf(
-                "due" to optionalJson(sm.due) { JsonPrimitive(it) },
-                "other" to optionalJson(sm.other) { JsonPrimitive(it) },
-                "title" to optionalJson(sm.title) { JsonPrimitive(it) },
-                "status" to optionalJson(sm.status) { JsonPrimitive(it.declaredName) },
-                "item" to dueJson(sm.item),
-                "items" to JsonArray(sm.items.map { dueJson(it) }),
-                "days" to JsonPrimitive(sm.days),
-                "following" to JsonPrimitive(sm.following),
-                "late" to JsonPrimitive(sm.late),
-                "early" to JsonPrimitive(sm.early),
-                "label" to JsonPrimitive(sm.label),
-                "plain" to JsonPrimitive(sm.plain.declaredName),
-                "kept" to JsonPrimitive(sm.kept),
-                "listed" to JsonPrimitive(sm.listed),
-                "missing" to JsonPrimitive(sm.missing.toLong()),
-                "same" to JsonPrimitive(sm.same),
-                "absent" to JsonPrimitive(sm.absent),
-                "statusDone" to JsonPrimitive(sm.statusDone),
-                "echoed" to JsonPrimitive(sm.echoed),
-                "echoTitle" to optionalJson(sm.echoTitle) { JsonPrimitive(it) },
-                "echoStatus" to optionalJson(sm.echoStatus) { JsonPrimitive(it.declaredName) },
-                "fallbacks" to JsonPrimitive(sm.fallbacks.toLong()),
-                "errors" to JsonPrimitive(sm.errors.toLong()),
-            ),
-        )
-
     // docs/adr/0055: a value that may be absent is held in a variable, a record's
     // field and a list of records, carried by a payload, a send and the done data
     // as `null` or a value, read only where a test proves it present, compared
-    // totally, and read with a default evaluated only where it is absent.
+    // totally, and read with a default evaluated only where it is absent. Read
+    // back through its saved state, which holds an absent value as `null`.
     @Test
     fun staticOptionalHoldsTestsAndReadsAValueThatMayBeAbsent() {
         val sm = StaticOptionalStateMachine()
@@ -624,9 +569,9 @@ class StaticScenarioTest {
                 scenario("static_optional"),
                 send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
                 tick = { sm.tick() },
+                save = { sm.save() },
                 ended = { sm.isInFinalState },
                 donedata = { sm.donedataAtFinal() },
-                held = { staticOptionalHeld(sm) },
             )
         } finally {
             sm.cleanup()

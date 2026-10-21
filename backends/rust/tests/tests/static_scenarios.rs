@@ -19,9 +19,7 @@
 // too; this file is what picks each machine and its scenario.
 
 use sce_rust_runtime::{Engine, SceClock};
-use sce_rust_scenarios::{
-    hosts, replay, replay_observed, replay_with_host, replay_with_hosts, Hosts,
-};
+use sce_rust_scenarios::{hosts, replay, replay_with_host, replay_with_hosts, Hosts};
 use sce_rust_tests::integration::static_datamodel::record_list_parent_sm::{
     RecordListParentPersist, RecordListParentPolicy,
 };
@@ -93,6 +91,9 @@ use sce_rust_tests::integration::static_datamodel::static_list_index_sm::{
 };
 use sce_rust_tests::integration::static_datamodel::static_list_sm::{
     StaticListPersist, StaticListPolicy,
+};
+use sce_rust_tests::integration::static_datamodel::static_optional_sm::{
+    StaticOptionalPersist, StaticOptionalPolicy,
 };
 use sce_rust_tests::integration::static_datamodel::static_overflow_sm::{
     StaticOverflowPersist, StaticOverflowPolicy,
@@ -1157,19 +1158,13 @@ fn static_payload_reads_the_fields_of_its_event() {
 
 // Values that may be absent (docs/adr/0055): set, cleared, tested, read where a
 // test proves them present, read with a default evaluated only when absent,
-// compared, and carried by a payload, a <send> and a <donedata> as `null`. A
-// machine that holds one has no saved state before step 6 of the ADR, so it is
-// read back through what its host observes of it (`sce_rust_scenarios::observed`).
-//
-// The machine is the replay crate's own copy of the committed one, not this
-// crate's: the reader is written over that copy's types, and the two are
-// different types though they are one file.
+// compared, and carried by a payload, a <send> and a <donedata> as `null`. Read
+// back through its saved state, which holds an absent value as `null`.
 #[test]
 fn static_optional_holds_tests_reads_and_carries_a_value_that_may_be_absent() {
-    use sce_rust_scenarios::integration::static_datamodel::static_optional_sm::StaticOptionalPolicy;
-    replay_observed(
+    replay(
         Engine::new(StaticOptionalPolicy::new()),
-        sce_rust_scenarios::observed::static_optional,
+        |engine| engine.save().expect("saves"),
         include_str!(
             "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_optional.json"
         ),

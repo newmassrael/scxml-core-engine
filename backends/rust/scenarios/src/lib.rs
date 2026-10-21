@@ -18,7 +18,6 @@ pub mod child_mesh;
 pub mod hosts;
 pub mod integration;
 pub mod machines;
-pub mod observed;
 #[cfg(target_arch = "wasm32")]
 pub mod wasm;
 
@@ -64,47 +63,7 @@ pub fn replay<P: StatePolicy>(
     save: impl Fn(&Engine<P>) -> SavedState,
     scenario: &str,
 ) {
-    replay_recording(engine, ReadBack::Saved(&save), Hosts::none(), scenario);
-}
-
-/// [`replay`] for a machine a saved state cannot hold yet — one that holds an
-/// optional value, before docs/adr/0055 step 6 writes `null` into a saved
-/// state — read back through `observe`, which answers what the host observes
-/// of it as the members of a saved state a step is held to: `current`,
-/// `configuration` and `variables`, each value as a saved state writes it. A
-/// step that restores the machine is refused, as it has no saved state.
-pub fn replay_observed<P: StatePolicy>(
-    engine: Engine<P>,
-    observe: impl Fn(&Engine<P>) -> Value,
-    scenario: &str,
-) {
-    replay_recording(
-        engine,
-        ReadBack::Observed(&observe),
-        Hosts::none(),
-        scenario,
-    );
-}
-
-/// How a replay reads the machine back after a step.
-enum ReadBack<'a, P: StatePolicy> {
-    /// Through its saved state, which a step that restores restores from.
-    Saved(&'a dyn Fn(&Engine<P>) -> SavedState),
-    /// Through what its host observes of it ([`replay_observed`]).
-    Observed(&'a dyn Fn(&Engine<P>) -> Value),
-}
-
-impl<P: StatePolicy> ReadBack<'_, P> {
-    /// The machine as a step is held to it: a saved state's members, or the
-    /// same members as observed.
-    fn read(&self, engine: &Engine<P>) -> Value {
-        match self {
-            Self::Saved(save) => {
-                serde_json::from_str(&save(engine).to_json()).expect("a saved state is JSON")
-            }
-            Self::Observed(observe) => observe(engine),
-        }
-    }
+    replay_recording(engine, save, Hosts::none(), scenario);
 }
 
 /// [`replay`] for a machine whose `<sce:action>`s go to a host that records them.
@@ -121,12 +80,7 @@ pub fn replay_with_host<P: StatePolicy>(
     host_calls: impl FnMut(&Engine<P>) -> Vec<Value>,
     scenario: &str,
 ) {
-    replay_recording(
-        engine,
-        ReadBack::Saved(&save),
-        Hosts::none().host_calls(host_calls),
-        scenario,
-    );
+    replay_recording(engine, save, Hosts::none().host_calls(host_calls), scenario);
 }
 
 /// [`replay`] for a machine whose host is read through [`Hosts`]: its own, its
@@ -137,7 +91,7 @@ pub fn replay_with_hosts<P: StatePolicy>(
     hosts: Hosts<'_, P>,
     scenario: &str,
 ) {
-    replay_recording(engine, ReadBack::Saved(&save), hosts, scenario);
+    replay_recording(engine, save, hosts, scenario);
 }
 
 /// What a driver offers to read of the hosts a machine acts through, and how it
@@ -244,7 +198,7 @@ fn register<P: StatePolicy>(
 
 fn replay_recording<P: StatePolicy>(
     mut engine: Engine<P>,
-    read: ReadBack<'_, P>,
+    save: impl Fn(&Engine<P>) -> SavedState,
     mut hosts: Hosts<'_, P>,
     scenario: &str,
 ) {
@@ -280,9 +234,6 @@ fn replay_recording<P: StatePolicy>(
             let restore = hosts.restore.as_mut().unwrap_or_else(|| {
                 panic!("step {n}: this driver cannot restore its machine, so it cannot replay a step that restores")
             });
-            let ReadBack::Saved(save) = &read else {
-                panic!("step {n}: this driver reads its machine with no saved state, so it cannot replay a step that restores")
-            };
             let text = save(&engine).to_json();
             let saved = SavedState::from_json(&text)
                 .unwrap_or_else(|refusal| panic!("step {n}: the saved text reads back: {refusal}"));
@@ -390,7 +341,8 @@ fn replay_recording<P: StatePolicy>(
             }
             continue;
         }
-        let saved = read.read(&engine);
+        let saved: Value =
+            serde_json::from_str(&save(&engine).to_json()).expect("a saved state is JSON");
         if let Some(state) = expect.get("state") {
             assert_eq!(
                 &saved["current"], state,
