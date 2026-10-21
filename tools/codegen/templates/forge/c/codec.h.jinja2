@@ -299,7 +299,9 @@ static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *c
      * length-ref entry codecs now decode-iterably from a shared
      * cursor without each entry eating the next entry's bytes. */
     size_t _frame_len = sce_forge_cursor_remaining(cursor);
+{% if min_bytes > 0 %}
     if (_frame_len < {{ c_min_bytes_macro }}) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
+{% endif %}
     const uint8_t *raw = sce_forge_cursor_peek(cursor, _frame_len);
     if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
 {% if has_tail_fields %}

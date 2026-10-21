@@ -231,8 +231,10 @@ class {{ struct_name }}:
 {% elif has_variable_fields %}
         try:
             _frame_len = cursor.remaining()
+{% if min_bytes > 0 %}
             if _frame_len < {{ min_bytes }}:
                 return None
+{% endif %}
             raw = cursor.peek_slice(_frame_len)
         except NeedMoreBytes:
             return None

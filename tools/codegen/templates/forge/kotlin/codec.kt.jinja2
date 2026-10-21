@@ -378,7 +378,9 @@ data class {{ struct_name }}(
             )
 {% elif has_variable_fields %}
             val frameLen = cursor.remaining()
+{% if min_bytes > 0 %}
             if (frameLen < {{ min_bytes }}) return null
+{% endif %}
             val raw = cursor.peekSlice(frameLen) ?: return null
 {% for field in fields %}
 {{ decode_field(field) }}

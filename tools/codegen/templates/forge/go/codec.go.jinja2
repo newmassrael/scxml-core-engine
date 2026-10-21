@@ -218,9 +218,11 @@ func Decode{{ struct_name }}(cursor *codec.SceCursor{{ params_after_first_arg }}
 	}, nil
 {% elif has_variable_fields %}
 	frameLen := cursor.Remaining()
+{% if min_bytes > 0 %}
 	if frameLen < {{ min_bytes }} {
 		return nil, codec.ErrNeedMoreBytes
 	}
+{% endif %}
 	raw, err := cursor.PeekSlice(frameLen)
 	if err != nil {
 		return nil, err

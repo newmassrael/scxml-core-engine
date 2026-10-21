@@ -346,9 +346,11 @@ impl{{ struct_lifetime }} {{ struct_name }}{{ struct_lifetime }} {
         // shared cursor without each entry eating the next entry's
         // bytes.
         let _frame_len = cursor.remaining();
+{% if min_bytes > 0 %}
         if _frame_len < {{ min_bytes }} {
             return Err(CodecError::NeedMoreBytes);
         }
+{% endif %}
         let raw = cursor.peek_slice(_frame_len)?;
 {% for field in fields %}
 {{ decode_field(field) }}

@@ -220,7 +220,9 @@ struct {{ struct_name }} {
         };
 {% elif has_variable_fields %}
         std::size_t _frame_len = cursor.remaining();
+{% if min_bytes > 0 %}
         if (_frame_len < {{ min_bytes }}) return std::nullopt;
+{% endif %}
         const std::uint8_t* raw = cursor.peek_slice(_frame_len);
         if (raw == nullptr) return std::nullopt;
 {% for field in fields %}

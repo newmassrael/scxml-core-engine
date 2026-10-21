@@ -12187,6 +12187,66 @@ mod tests {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// A codec of one tail field has a minimum length of zero bytes, and a
+/// minimum-length guard over zero guards nothing: `length < 0` is always false
+/// for an unsigned length, which `rustc` (`unused_comparisons`) and `gcc` /
+/// `g++` (`-Wtype-limits`) refuse under the warnings-as-errors the generated
+/// code is built with. The guard is emitted only when there is a minimum to
+/// guard, in every backend, so the three that refuse it compile and the three
+/// that tolerate it do not carry a check that cannot fire.
+#[test]
+fn forge_a_codec_of_one_tail_field_has_no_vacuous_length_guard() {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let dir =
+        std::env::temp_dir().join(format!("sce_tail_only_fixture_{}_{id}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("mkdir fixture");
+    let source = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big">
+  <datamodel>
+    <sce:field id="payload" sce:type="bytes" sce:byte="0" sce:bit-size="tail"/>
+  </datamodel>
+</scxml>"#;
+    std::fs::write(dir.join("codec_tail_only.scxml"), source).expect("write fixture");
+    let set = ["codec_tail_only.scxml"];
+
+    rustc_compile_codec_set(&dir, &set, "tail_only_rust")
+        .expect("a one-tail-field codec must compile under rustc -D warnings");
+    compile_codec_set_cpp(&dir, &set, "tail_only_cpp")
+        .expect("a one-tail-field codec must compile under g++ -Werror");
+    compile_codec_set_c11(&dir, &set, "tail_only_c11")
+        .expect("a one-tail-field codec must compile under gcc -Werror");
+
+    // The backends that tolerate the comparison must not carry it either.
+    for lang in [
+        sce_build::generator::Language::Go,
+        sce_build::generator::Language::Kotlin,
+        sce_build::generator::Language::Python,
+    ] {
+        let output = sce_build::compile_forge_with_imports(
+            source,
+            sce_build::DocumentLabel::symmetric("codec_tail_only"),
+            lang,
+            &dir,
+            &sce_build::ForgeCompileOptions::default(),
+        )
+        .expect("codegen of a one-tail-field codec");
+        for (name, body) in &output.files {
+            for line in body.lines() {
+                let squeezed: String = line.split_whitespace().collect();
+                assert!(
+                    !(squeezed.contains("rameLen<0") || squeezed.contains("rame_len<0")),
+                    "{lang:?} {name}: a length compared with a zero minimum: {line}"
+                );
+            }
+        }
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// Dispatch-inversion β (caller-tag) shape — fixture writer with
 /// parent-side `<sce:variant-dispatch flag="header.M"/>` declared on
 /// the import and a β-shape leaf (no `tag=` attribute, no RPF). Mirrors the
