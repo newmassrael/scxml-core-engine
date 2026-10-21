@@ -21,6 +21,9 @@
 // backend's toolchain; local dev machines without one toolchain
 // should not be blocked.
 
+use sce_build::forge::codegen_matrix::emitting;
+use sce_build::forge::model::ForgeKind;
+use sce_build::generator::Language;
 use sce_build::toolchain;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -713,8 +716,14 @@ fn a_go_package_declares_each_name_once_where_an_in_line_child_holds_the_same_st
     assert_each_machine_holds_the_shared_state_once(&machines);
 }
 
-/// The backends that lower `datamodel="sce-static"`, by the name `-l` takes.
-const STATIC_DATAMODEL_BACKENDS: [&str; 6] = ["rust", "cpp", "c11", "go", "kotlin", "python"];
+/// The backends that lower `datamodel="sce-static"`, by the name `-l` takes:
+/// every backend that emits a machine. One that emits nothing yet is refused
+/// instead (`a_backend_with_no_emitter_is_refused`).
+fn static_datamodel_backends() -> Vec<&'static str> {
+    emitting(ForgeKind::Statechart)
+        .map(Language::canonical_name)
+        .collect()
+}
 
 /// A parent whose in-line child imports an enum of the standard library by its
 /// library name and an algorithm beside the parent by a relative `src`, and
@@ -759,7 +768,7 @@ const IN_LINE_IMPORTS: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" 
 fn an_in_line_childs_imports_resolve_as_its_parents_do_on_every_backend() {
     let scratch = reset_scratch("in_line_imports");
     let parent = in_line_imports_document(&scratch);
-    for lang in STATIC_DATAMODEL_BACKENDS {
+    for lang in static_datamodel_backends() {
         let out_dir = scratch.join("out").join(lang);
         let extra: &[&str] = if lang == "cpp" { &["--no-format"] } else { &[] };
         generate_into(lang, &parent, &out_dir, extra);
@@ -999,7 +1008,7 @@ fn in_line_chain_document(dir: &Path) -> PathBuf {
 fn every_machine_of_an_in_line_chain_is_generated_on_every_backend() {
     let scratch = reset_scratch("in_line_chain");
     let document = in_line_chain_document(&scratch);
-    for lang in STATIC_DATAMODEL_BACKENDS {
+    for lang in static_datamodel_backends() {
         let out_dir = scratch.join("out").join(lang);
         let extra: &[&str] = if lang == "cpp" { &["--no-format"] } else { &[] };
         generate_into(lang, &document, &out_dir, extra);
