@@ -173,6 +173,9 @@ use sce_rust_tests::integration::static_datamodel::static_send_type_sm::{
 use sce_rust_tests::integration::static_datamodel::static_state_algorithm_enum_sm::{
     StaticStateAlgorithmEnumPersist, StaticStateAlgorithmEnumPolicy,
 };
+use sce_rust_tests::integration::static_datamodel::static_state_algorithm_optional_sm::{
+    StaticStateAlgorithmOptionalPersist, StaticStateAlgorithmOptionalPolicy,
+};
 use sce_rust_tests::integration::static_datamodel::static_state_algorithm_sm::{
     StaticStateAlgorithmPersist, StaticStateAlgorithmPolicy,
 };
@@ -1177,7 +1180,6 @@ fn static_optional_holds_tests_reads_and_carries_a_value_that_may_be_absent() {
 // them. Read back through its saved state, as static_optional is.
 #[test]
 fn static_state_algorithm_optional_hands_an_algorithm_a_value_that_may_be_absent() {
-    use sce_rust_scenarios::integration::static_datamodel::static_state_algorithm_optional_sm::StaticStateAlgorithmOptionalPolicy;
     replay(
         Engine::new(StaticStateAlgorithmOptionalPolicy::new()),
         |engine| engine.save().expect("saves"),
