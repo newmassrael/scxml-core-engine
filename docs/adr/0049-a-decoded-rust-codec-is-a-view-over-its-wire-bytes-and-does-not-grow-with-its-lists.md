@@ -102,8 +102,9 @@ at each call site and not once for the program: a path that reads most of what i
 a path is on.
 
 The option makes the cost of agreeing to this draft one the owner can bound: it commits no consumer to the API and no
-build to the size. Whether unused view code is dropped when the image is linked is expected, not measured; step 0
-measures it on a final image, with the option on and the views used and not used.
+build to the size. That unused view code is dropped when the image is linked was measured on the step 0 prototype (see
+"Step 0 result", the image table), with and without link-time optimisation; the option still has to be measured again
+on the generated views and on a consumer's own build configuration.
 
 ## Order of work
 
@@ -145,8 +146,21 @@ take" is the whole question: if a consumer reads most of what it decodes and its
 mitigation is the better design. The prototype used small entries (the default arms); entries with a heavier body
 would move the walk rows, and the generator work should not start on these numbers alone.
 
-Not measured by step 0, and needed before the generator work: the size of a linked image with the option of decision 6
-on, with the views used and with them unused. The prototype measured the types and the copies, not the image.
+The image was measured as well: a freestanding Cortex-M7 binary (`thumbv7em-none-eabihf`, `opt-level = "s"`, linked
+with the section garbage collection of the target) that decodes one request and counts what its two extension lists
+hold, three ways, with the codec crate and the prototype views linked in all three.
+
+| Image | Result |
+|---|---|
+| The codecs and views linked in, none called | 52 bytes of `.text`, with link-time optimisation and without it: both the eager decode and the views are dropped when nothing calls them |
+| The job through `decode_into` | 5,940 bytes of `.text`; the `work` function's stack frame 1,948 bytes |
+| The same job through the views | 5,628 bytes of `.text`; the `work` function's stack frame 212 bytes |
+
+So the cost decision 6 relies on is borne only by a build that uses the views, and for the measured job the views cost
+no more code than the eager path (312 bytes fewer, about 5 %) and about 1.7 KB less stack, which is the footprint
+the draft is about. What this does not show: the generated views (the prototype was written by hand and covers four
+codecs), a consumer's own compiler flags, and a job that walks a list more than once, which costs time (see above) and
+not size.
 
 ## What this does not do
 
@@ -163,8 +177,9 @@ on, with the views used and with them unused. The prototype measured the types a
 
 - **Generated code grows, for a consumer that asks.** Two types per codec, a list view and an iterator per list, only
   under the option of decision 6. For a build that does not pass it nothing changes. For one that does, the sources
-  grow and a byte-exact `.text` gate moves only by the view code that is linked, which is not known: step 0 measures
-  it on a final image before the generator work.
+  grow and a byte-exact `.text` gate moves only by the view code that is linked: the hand prototype added none when
+  unused, and its used path was smaller than the eager one; the generated views are measured the same way before the
+  generator work is called done.
 - **The other five backends keep their own list forms.** Byte parity is untouched, because the wire rules do not move;
   the Rust API grows a form the others do not have when the option is on, which is a difference between backends
   that SCE_FORGE.md has to say.
