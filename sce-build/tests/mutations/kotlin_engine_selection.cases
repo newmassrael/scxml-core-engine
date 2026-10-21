@@ -412,10 +412,13 @@ PY
 # behavioural test can see it, because today the catch-all and the enumeration
 # return the same values for the same backends. The witness has to read the
 # source, which is why `the_two_armed_policy_names_every_backend` exists at all.
+#
+# Re-aimed 2026-10-22: the roster's one-armed arm also names `Language::Swift`
+# and wraps its `unreachable!` in a block; the catch-all replaces the same arm.
 mutation_case "the two-armed roster grows a catch-all arm" <<'PY'
 edit("sce-build/src/generator.rs",
-     "Language::Rust | Language::Go | Language::Python | Language::C11 => unreachable!(",
-     "_ => unreachable!(")
+     "Language::Rust | Language::Go | Language::Python | Language::C11 | Language::Swift => {",
+     "_ => {")
 PY
 
 # The escape hatch out of the case above, and out of every assertion about the
@@ -428,10 +431,15 @@ PY
 # moved back, and `every_backends_default_is_the_one_its_arms_allow` says the
 # two-armed population went to zero. A gate whose population can empty is a
 # gate that cannot be wrong.
+#
+# Re-aimed 2026-10-22: the predicate first asks whether the backend owns a
+# template at all (a backend that renders nothing cannot be asked for Lua);
+# the mutant still forces the whole answer false.
 mutation_case "no backend is classified as carrying two arms" <<'PY'
 edit("sce-build/src/generator.rs",
      """    pub fn can_lower_expressions_on_request(self) -> bool {
-        self.unmigrated_expression_sites().is_empty()
+        self.owns_a_template()
+            && self.unmigrated_expression_sites().is_empty()
             && self.unclassified_expression_sites().is_empty()
     }""",
      """    pub fn can_lower_expressions_on_request(self) -> bool {

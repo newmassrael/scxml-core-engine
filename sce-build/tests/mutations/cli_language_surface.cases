@@ -38,16 +38,22 @@ edit("sce-build/src/cli_language.rs",
      "")
 PY
 
+# Re-aimed 2026-10-22: the routes that write files now serve the backends that
+# emit something (`EMITTING`) rather than `Language::ALL`, since Swift emits
+# nothing yet. The mutant still pulls `generate-conformance` out of the shared
+# arm and hands it a written list that drops C11, a backend it serves.
 mutation_case "a route hides a backend it serves" <<'PY'
 edit("sce-build/src/cli_language.rs",
-     "            | LanguageRoute::GenerateConformance\n            | LanguageRoute::ListFixtures => Language::ALL,",
-     "            | LanguageRoute::ListFixtures => Language::ALL,\n            LanguageRoute::GenerateConformance => &[\n                Language::Rust,\n                Language::Cpp,\n                Language::Kotlin,\n                Language::Go,\n                Language::Python,\n            ],")
+     "            LanguageRoute::Generate\n            | LanguageRoute::Orchestrate\n            | LanguageRoute::GenerateConformance => EMITTING.as_slice(),",
+     "            LanguageRoute::Generate | LanguageRoute::Orchestrate => EMITTING.as_slice(),\n            LanguageRoute::GenerateConformance => &[\n                Language::Rust,\n                Language::Cpp,\n                Language::Kotlin,\n                Language::Go,\n                Language::Python,\n            ],")
 PY
 
+# Re-aimed 2026-10-22: the refusing arm also names `Language::Swift`, which
+# no route that writes files serves; Python still moves into it.
 mutation_case "the dispatcher stops serving a backend its help still names" <<'PY'
 edit("sce-build/src/bin/sce_codegen.rs",
-     '        Language::Python => "_python",\n        Language::Cpp | Language::C11 => error_format.emit_and_exit(',
-     '        Language::Cpp | Language::C11 | Language::Python => error_format.emit_and_exit(')
+     '        Language::Python => "_python",\n        Language::Cpp | Language::C11 | Language::Swift => error_format.emit_and_exit(',
+     '        Language::Cpp | Language::C11 | Language::Swift | Language::Python => error_format.emit_and_exit(')
 PY
 
 mutation_case "the refusal offers every backend instead of the route's own" <<'PY'
@@ -62,9 +68,11 @@ edit("sce-build/src/cli_language.rs",
      '        format!("{lead}.")')
 PY
 
+# Re-aimed 2026-10-22: the reason is now formatted, so it can also name the
+# backends that emit nothing yet; the mutant still drops the whole reason.
 mutation_case "a restricted route stops saying why it is restricted" <<'PY'
 edit("sce-build/src/cli_language.rs",
-     '            LanguageRoute::GenerateIntegration => Some(\n                "cpp and c11 are absent because their integration fixtures emit at CMake build \\\n                 time through `sce_generate_static_integration_test`, leaving no committed tree \\\n                 for this subcommand to regenerate",\n            ),',
+     '            LanguageRoute::GenerateIntegration => Some(format!(\n                "cpp and c11 are absent because their integration fixtures emit at CMake build \\\n                 time through `sce_generate_static_integration_test`, leaving no committed tree \\\n                 for this subcommand to regenerate. A backend that emits nothing yet \\\n                 ({emitless}) is absent too",\n            )),',
      '            LanguageRoute::GenerateIntegration => None,')
 PY
 

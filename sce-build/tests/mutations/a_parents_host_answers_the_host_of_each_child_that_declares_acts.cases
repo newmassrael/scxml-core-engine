@@ -64,8 +64,11 @@ edit("sce-build/src/forge/native_action.rs",
      "            if let Some((name, at)) = acts.get(&spelled).filter(|_| false) {")
 PY
 
+# Re-aimed 2026-10-22: the spellings are walked over the backends that emit a
+# statechart (`emitting`), which yields each language by value, so the closure
+# no longer destructures a reference; the mapped pair is unchanged.
 mutation_case "the comparison ignores another language's spelling" <<'PY'
 edit("sce-build/src/forge/native_action.rs",
-     "        .map(move |&lang| (lang.canonical_name(), method_name(lang, name)))",
-     "        .map(move |&lang| (lang.canonical_name(), name.to_string()))")
+     "        .map(move |lang| (lang.canonical_name(), method_name(lang, name)))",
+     "        .map(move |lang| (lang.canonical_name(), name.to_string()))")
 PY

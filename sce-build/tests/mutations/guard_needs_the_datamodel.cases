@@ -82,12 +82,17 @@ PY
 # to lose coverage is to filter it — which the sweep below still cannot
 # see either, and which is why `every_backend_the_tool_serves_is_probed`
 # asserts the derivation against the same source.
+#
+# Re-aimed 2026-10-22: `c3e20769e7` derived the list from the backends that
+# emit a statechart (`emitting`) rather than from `Language::ALL`; the probe
+# test now counts against that same derivation, so the filter moved with it.
 mutation_case "the cross-backend probe checks one backend" <<'PY'
 edit("sce-build/tests/cli_guard_emission.rs",
-     "    Language::ALL.iter().map(|l| l.canonical_name()).collect()",
-     """    Language::ALL
-        .iter()
-        .filter(|l| **l == Language::Python)
+     """    emitting(ForgeKind::Statechart)
+        .map(|l| l.canonical_name())
+        .collect()""",
+     """    emitting(ForgeKind::Statechart)
+        .filter(|l| *l == Language::Python)
         .map(|l| l.canonical_name())
         .collect()""")
 PY
