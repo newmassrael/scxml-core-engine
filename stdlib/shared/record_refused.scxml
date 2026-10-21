@@ -12,8 +12,11 @@
   Nothing of a refused change is taken in, stamped or sent, so a parent that told its
   user the change was made tells them it was not.
 
-  A statechart that reads the payload or keeps a record of it imports both enums under
-  the aliases this schema writes, `Command` and `Refusal` (docs/adr/0052).
+  `Command` and `Refusal` are this schema's names for the two enum documents
+  (docs/adr/0052). A statechart that reads the payload holds each field in its type for
+  the document, imported or not, and imports an enum, under any alias, only to name it
+  (a variant, a variable of it): a record variable of this schema names a variant of
+  each when it starts, so it imports both (docs/adr/0054).
 
   A list a host started has no parent and tells no one, as it tells no register.
 -->
