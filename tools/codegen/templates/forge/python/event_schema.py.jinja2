@@ -10,9 +10,15 @@
 # Do not edit — regenerate from the source SCXML file.
 
 from dataclasses import dataclass
+from typing import Final
 {% for imp in python_enum_imports %}
 {{ imp }}
 {% endfor %}
+
+# The event this schema types (`sce:event-name`), as a host names it.
+EVENT_NAME: Final[str] = {{ event_name_literal }}
+# The revision of the schema (`sce:revision`, 1 when the document declares none).
+REVISION: Final[int] = {{ schema_revision }}
 
 
 {% if fields %}

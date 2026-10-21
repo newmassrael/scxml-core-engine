@@ -14,6 +14,12 @@ package {{ package | kotlin_forge_package }}
 {{ imp }}
 {% endfor %}
 
+/** The event this schema types (`sce:event-name`), as a host names it. */
+const val EVENT_NAME: String = {{ event_name_literal }}
+
+/** The revision of the schema (`sce:revision`, 1 when the document declares none). */
+const val REVISION: UInt = {{ schema_revision }}u
+
 {% if fields %}
 data class {{ payload_struct_name }}(
 {%- for f in fields %}

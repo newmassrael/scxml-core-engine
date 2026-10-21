@@ -2708,6 +2708,23 @@ fn render_event_schema(
     let mut ctx = l.base_context(&m.name);
     ctx.insert("payload_struct_name".into(), payload_struct_name.into());
     ctx.insert("event_name".into(), m.event_name.clone().into());
+    // The event name and the revision as typed constants of the unit, which a host
+    // that stamps what it sends (a command log, a wire record) names instead of
+    // copying the two from the document. A JSON string is a string literal of every
+    // backend; Kotlin reads `$` in one as a template, which an event name cannot
+    // hold, but is escaped there all the same.
+    let quoted = serde_json::to_string(&m.event_name).expect("a string serialises");
+    let event_name_literal = match l.lang {
+        crate::generator::Language::Kotlin => quoted.replace('$', "\\$"),
+        _ => quoted,
+    };
+    ctx.insert("event_name_literal".into(), event_name_literal.into());
+    ctx.insert("schema_revision".into(), m.revision().into());
+    // C has no namespace: the unit's constants carry the schema's name.
+    ctx.insert(
+        "c_const_prefix".into(),
+        to_upper_snake(&filters::to_snake_case(m.name.clone())).into(),
+    );
     ctx.insert("fields".into(), serde_json::json!(fields));
     // The declaration of each bounded buffer the C11 struct holds a text in,
     // once per bound, under the guard every header that declares it shares.

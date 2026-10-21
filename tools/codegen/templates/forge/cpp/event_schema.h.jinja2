@@ -22,6 +22,11 @@
 
 namespace SCE::Generated::{{ namespace }} {
 
+/// The event this schema types (`sce:event-name`), as a host names it.
+inline constexpr const char *EVENT_NAME = {{ event_name_literal }};
+/// The revision of the schema (`sce:revision`, 1 when the document declares none).
+inline constexpr std::uint32_t REVISION = {{ schema_revision }};
+
 {% if fields %}
 struct {{ payload_struct_name }} {
 {% for f in fields %}

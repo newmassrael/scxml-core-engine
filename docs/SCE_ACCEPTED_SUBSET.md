@@ -7433,6 +7433,19 @@ may be any of the primitive `SceType` values (`uint8` / `uint16`
 the payload is the receiver's read-only view. `out` / `internal`
 directions raise `validation/invalid-attribute` at parse time.
 
+**The unit names its event and its revision.** The unit a schema generates
+declares the event it types and the revision it is (`sce:revision`, 1 when the
+document declares none) as typed constants, so a host that stamps what it sends
+reads them rather than copying them from the document: Rust `EVENT_NAME: &str`
+and `REVISION: u32` in the schema's module, Kotlin `const val EVENT_NAME: String`
+and `REVISION: UInt` in its package, C++ `inline constexpr const char *EVENT_NAME`
+and `std::uint32_t REVISION` in its namespace, Go `EventName string` and
+`Revision uint32` in its package, Python `EVENT_NAME: Final[str]` and
+`REVISION: Final[int]` in its module, and C `<SCHEMA>_EVENT_NAME` and
+`<SCHEMA>_REVISION` (`UINT32_C`), named by the schema since C has no namespace.
+`sce-build/tests/a_schema_unit_names_its_event_revision_and_bounds.rs` holds each
+spelling.
+
 **Fieldless schema.** An event the specification says carries no data, or
 does not say, is declared as one rather than left out: a closed interface
 (§2.16) admits only events an imported schema declares. A schema may have no

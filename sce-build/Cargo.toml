@@ -933,6 +933,11 @@ path = "tests/every_replay_scenario_keeps_to_its_vocabulary.rs"
 required-features = ["cli"]
 
 [[test]]
+name = "a_schema_unit_names_its_event_revision_and_bounds"
+path = "tests/a_schema_unit_names_its_event_revision_and_bounds.rs"
+required-features = ["cli"]
+
+[[test]]
 name = "a_payload_holds_an_enum_field"
 path = "tests/a_payload_holds_an_enum_field.rs"
 required-features = ["cli"]

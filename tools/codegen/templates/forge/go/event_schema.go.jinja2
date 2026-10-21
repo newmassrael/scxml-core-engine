@@ -18,6 +18,12 @@ import (
 )
 {% endif %}
 
+// EventName is the event this schema types (`sce:event-name`), as a host names it.
+const EventName string = {{ event_name_literal }}
+
+// Revision is the revision of the schema (`sce:revision`, 1 when the document declares none).
+const Revision uint32 = {{ schema_revision }}
+
 {% if fields %}
 type {{ payload_struct_name }} struct {
 {% for f in fields %}

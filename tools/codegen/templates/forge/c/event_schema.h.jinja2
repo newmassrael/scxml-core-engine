@@ -29,6 +29,11 @@
 {% endfor %}
 {% endif %}
 
+/* The event this schema types (`sce:event-name`), as a host names it. */
+#define {{ c_const_prefix }}_EVENT_NAME {{ event_name_literal }}
+/* The revision of the schema (`sce:revision`, 1 when the document declares none). */
+#define {{ c_const_prefix }}_REVISION UINT32_C({{ schema_revision }})
+
 {% if fields %}
 typedef struct {
 {% for f in fields %}
