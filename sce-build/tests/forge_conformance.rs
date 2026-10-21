@@ -13472,21 +13472,24 @@ fn rustc_run_generated_set(
 
     // Generated codec modules carry `#[cfg(feature = "alloc")]` guards around
     // `VecSink` / `encode_to_vec` so MCU / no_std consumers see only the
-    // sink-based primary. The alloc profile opts the entire crate in so the
-    // heap facade is exercised in the rustc-check + sidecar round-trip tests;
-    // the no-alloc profile leaves every feature off, which is what makes a
-    // reachable `alloc` symbol a hard error rather than a silent dependency.
+    // sink-based primary, and a generated bounded collection keys its slot
+    // storage on the crate's own `std` (a heap `Vec` with it, a `heapless`
+    // one without; docs/adr/0053). The alloc profile opts the entire crate in
+    // so the heap facade is exercised in the rustc-check + sidecar round-trip
+    // tests; the no-alloc profile leaves every feature off, which is what
+    // makes a reachable `alloc` symbol a hard error rather than a silent
+    // dependency.
     let (feature_block, dep_features) = match profile {
         RustcProfile::Alloc => (
-            "default = [\"alloc\"]\nalloc = []\nno_std = []",
+            "default = [\"alloc\", \"std\"]\nalloc = []\nstd = []",
             r#", features = ["alloc"]"#,
         ),
-        // The `alloc` feature stays *declared* so the generated
-        // `#[cfg(feature = "alloc")]` guards remain a known cfg (an
-        // undeclared one is `unexpected_cfgs`, i.e. a warning-as-error that
-        // would mask the allocator question). It is simply never enabled,
-        // here or on the runtime crates.
-        RustcProfile::NoAlloc => ("default = []\nalloc = []\nno_std = []", ""),
+        // The `alloc` and `std` features stay *declared* so the generated
+        // `#[cfg(feature = ...)]` guards remain known cfgs (an undeclared one
+        // is `unexpected_cfgs`, i.e. a warning-as-error that would mask the
+        // allocator question). They are simply never enabled, here or on the
+        // runtime crates.
+        RustcProfile::NoAlloc => ("default = []\nalloc = []\nstd = []", ""),
     };
     let cargo_toml = format!(
         r#"[package]

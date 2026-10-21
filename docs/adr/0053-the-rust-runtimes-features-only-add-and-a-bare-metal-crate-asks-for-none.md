@@ -272,3 +272,36 @@ What holds it: `a_basic_http_send_needs_the_http_send_feature` in the runtime's 
 the half with the processor; the `nostd-mcu` gate now lints and tests the runtime with
 `--no-default-features --features std`, the one build in this repository with neither
 `http-send` nor `macrostep-diagnostics`, and that run is the other half.
+
+### 3. A generated bounded collection reads its crate's `std`, which adds
+
+The forge `bounded_collection` template keys its slot storage on the consuming crate's own `std`
+feature: `cfg(feature = "std")` is the heap `Vec<Option<T>>`, and `cfg(not(feature = "std"))` is
+the `heapless::Vec<Option<T>, CAPACITY>` reached through `sce_forge_runtime::heapless`. A
+consuming crate declares
+
+```toml
+[features]
+default = ["std"]
+std = []
+```
+
+and a bare-metal crate depends on it with `default-features = false`, the shape of the runtime's
+own features. The feature is the consumer's, so the generator cannot rename it in the consumer's
+manifest. What a crate that declared `no_std = []` meets:
+
+- its microcontroller build, which set `no_std`, gets the bounded storage as before, since it has
+  no `std` feature to turn on;
+- its application build, which left `no_std` off, gets the bounded storage too where it had the
+  heap one, and the compiler warns that `feature = "std"` is not a feature of the crate
+  (`unexpected_cfgs`), which a crate that denies warnings sees as an error;
+- the repair is the manifest above, and `no_std` can be deleted, since the generated code no
+  longer reads it.
+
+A crate that declared neither feature compiled the heap storage before and compiles the bounded
+one now; both compile against `sce-forge-runtime`, which re-exports `heapless` in every build, and
+the slot count is `CAPACITY` either way.
+
+The template's tests read the new spelling, and the compile probe of a composite element declares
+`std = []` and leaves it off, the build a bare-metal crate gets. No committed generated tree holds
+a bounded collection, so nothing is regenerated for this.

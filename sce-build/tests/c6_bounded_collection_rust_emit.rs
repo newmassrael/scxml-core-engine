@@ -175,9 +175,21 @@ fn happy_compile_const_no_index_by() {
         "no <sce:index-by> means no `pub fn find_by_index` method emit"
     );
 
-    // cfg-conditional backing storage (spec line 2571).
-    assert!(code.contains("#[cfg(not(feature = \"no_std\"))]"));
-    assert!(code.contains("#[cfg(feature = \"no_std\")]"));
+    // cfg-conditional backing storage (spec line 2571), keyed on the
+    // consuming crate's ADDITIVE `std` feature (docs/adr/0053): the heap
+    // backing is what `std` adds, and the heapless one is its absence. A
+    // `no_std` feature that removed the heap is the shape a unified Cargo
+    // build cannot hold, so its spelling must not come back.
+    assert!(code.contains(
+        "#[cfg(feature = \"std\")]\ntype LocalSubTableBacking = ::std::vec::Vec<Option<SubscriptionEntry>>;"
+    ));
+    assert!(code.contains(
+        "#[cfg(not(feature = \"std\"))]\ntype LocalSubTableBacking = ::sce_forge_runtime::heapless::Vec"
+    ));
+    assert!(
+        !code.contains("feature = \"no_std\""),
+        "the emitted collection must not read a subtracting `no_std` feature"
+    );
     assert!(code.contains("::std::vec::Vec<Option<SubscriptionEntry>>"));
     // Reached through the runtime's re-export, not as `::heapless`. This
     // alias is private and no public signature exposes a heapless type, so
@@ -772,9 +784,11 @@ fn composite_element_bounded_collection_builds_without_an_allocator() {
              [lib]\n\
              path = \"src/lib.rs\"\n\
              \n\
+             # The emitted collection's storage feature, declared and left\n\
+             # off: it only adds the heap, and a bare-metal crate asks for\n\
+             # none (docs/adr/0053), which is the build this probe is.\n\
              [features]\n\
-             default = [\"no_std\"]\n\
-             no_std = []\n\
+             std = []\n\
              \n\
              # One entry, deliberately. The emitted collection stores its\n\
              # slots in a heapless vector, and this crate declaring heapless\n\

@@ -9,9 +9,13 @@
 // Do not edit — regenerate from the source SCXML file.
 //
 // SCE Protocol-Synthesis RFC §synth-5-L bounded-collection — typed fixed-capacity
-// container whose occupancy varies at runtime. Backing storage:
-//   - std:    `Vec<Option<T>>` capped at CAPACITY (spec line 2571).
-//   - no_std: `heapless::Vec<Option<T>, CAPACITY>` (spec line 2571).
+// container whose occupancy varies at runtime. Backing storage, chosen by the
+// consuming crate's own `std` feature (spec line 2571):
+//   - with `std`:    `Vec<Option<T>>` capped at CAPACITY.
+//   - without `std`: `heapless::Vec<Option<T>, CAPACITY>`.
+// The feature only adds, as `sce-rust-runtime`'s does (docs/adr/0053): the
+// consuming crate declares `std = []` and lists it in `default`, and a
+// bare-metal crate depends on it with `default-features = false`.
 // A parallel `[u32; CAPACITY]` generation counter and a
 // `[u32; (CAPACITY + 31)/32]` occupancy bitmap turn the linear backing
 // into a slot-table with use-after-remove detection.
@@ -95,7 +99,13 @@ pub struct {{ pascal }}OverflowError;
    feature configurations so generated test code doesn't need
    feature-aware imports.
 
-   The no_std arm reaches heapless through the runtime's re-export
+   The feature read is the consuming crate's `std`, and it adds: its
+   absence is the bare-metal storage. It was a `no_std` feature that took
+   the heap away, which a Cargo build that unified a bare-metal crate with
+   an application crate turned on for both (docs/adr/0053, amendment of
+   2026-10-21).
+
+   The heapless arm reaches heapless through the runtime's re-export
    (`sce_forge_runtime::heapless`, the form the sibling codec template
    already uses) rather than naming `::heapless` directly. This alias is
    private and the crate exposes no heapless type in any public
@@ -103,9 +113,9 @@ pub struct {{ pascal }}OverflowError;
    have made heapless a dependency their manifest must declare to
    compile code they never wrote. Consumers keep a single dependency
    edge, on one pinned heapless version. #}
-#[cfg(not(feature = "no_std"))]
+#[cfg(feature = "std")]
 type {{ pascal }}Backing = ::std::vec::Vec<Option<{{ element_stored }}>>;
-#[cfg(feature = "no_std")]
+#[cfg(not(feature = "std"))]
 type {{ pascal }}Backing = ::sce_forge_runtime::heapless::Vec<Option<{{ element_stored }}>, CAPACITY>;
 
 /// `{{ pascal }}` — RFC §synth-5-L bounded-collection over element type
@@ -130,12 +140,12 @@ impl {{ pascal }} {
     /// Construct an empty `{{ pascal }}` with all slots free.
     pub fn new() -> Self {
         let mut slots = {{ pascal }}Backing::new();
-        #[cfg(not(feature = "no_std"))]
+        #[cfg(feature = "std")]
         slots.reserve_exact(CAPACITY);
         for _ in 0..CAPACITY {
-            #[cfg(not(feature = "no_std"))]
+            #[cfg(feature = "std")]
             slots.push(None);
-            #[cfg(feature = "no_std")]
+            #[cfg(not(feature = "std"))]
             let _ = slots.push(None);
         }
         Self {
