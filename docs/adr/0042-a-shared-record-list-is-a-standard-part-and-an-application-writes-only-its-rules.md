@@ -8,6 +8,9 @@
   where a child session meets a Mesh peer
 - Related: ADR 0034 (a shared list is held by its members and the hub only relays),
   docs/SCE_SHARED_LIST_TRUST.md, ADR 0005 (bounding and declaring)
+- Amended by: ADR 0046 (a change is one unit, a register can be emptied and a row retired, a
+  refusal is told to the parent; the protocol moves on in this part while `todo_peer` stays at
+  revision 1, which replaces the rule of section 4 that both copies change at once)
 
 ## Context
 
