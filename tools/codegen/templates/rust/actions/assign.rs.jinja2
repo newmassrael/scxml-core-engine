@@ -34,6 +34,9 @@ self.{{ action.location | to_snake_case }} = {{ action.content | to_rust_string_
 {% if in_action_block is defined and in_action_block %}
     // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
     break 'action_block;
+{# The `break` is unconditional: the action list emits nothing after it
+   (`block_flow`, rust/entry_exit_actions.rs.jinja2). #}
+{% set block_flow.ended = true %}
 {% endif %}
 {% else %}
 {% if action.content %}

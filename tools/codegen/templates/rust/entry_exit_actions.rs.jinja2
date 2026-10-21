@@ -64,13 +64,29 @@
                 // W3C SCXML 3.8: onentry block {{ loop.index }}/{{ state.on_entry_blocks | length }}
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
+{# `block_flow` is what one list of executable content knows about its own
+   end. An element the build has already decided will raise — a `<send>`
+   whose type, target or delay is refused, an `<assign>` to a read-only
+   location — ends the block with a `break 'action_block` that no condition
+   guards, and sets `block_flow.ended` where it writes it. Nothing after it
+   can run (W3C SCXML 4.9: the error ends the block), and rustc reports a
+   statement after it as unreachable code, so the list writes none: the
+   elements after it are not emitted. Every list an action is rendered into
+   binds its own `block_flow` — each block here, each branch of an <if>
+   (actions/if.rs.jinja2), each <foreach> body — and an action template that
+   ends its block unconditionally sets the flag of the list it was rendered
+   into. The Go templates follow the same rule (go/entry_exit_actions.go.jinja2). #}
+{% with block_flow = namespace(ended=false) %}
 {% for action in block %}
+{% if not block_flow.ended %}
 {%- if action.req or action.unresolved %}
 {{ annot.annotation_block(action, "rust", "                ") -}}
 {%- endif %}
                 {% with in_action_block=true %}{% include 'actions/' ~ action.type ~ '.rs.jinja2' %}{% endwith %}
 
+{% endif %}
 {% endfor %}
+{% endwith %}
                 }
 {% endfor %}
 {% if state.initial_transition_actions %}
@@ -81,10 +97,14 @@
                 // deeper target, nor when a <history> restores its children.
                 if is_default_entry {
                     'action_block: {
+{% with block_flow = namespace(ended=false) %}
 {% for action in state.initial_transition_actions %}
+{% if not block_flow.ended %}
                     {% with in_action_block=true %}{% include 'actions/' ~ action.type ~ '.rs.jinja2' %}{% endwith %}
 
+{% endif %}
 {% endfor %}
+{% endwith %}
                     }
                 }
 {% endif %}
@@ -372,10 +392,14 @@
             {{ machine_name }}History::{{ history_id | to_state_variant }} => {
                 // W3C SCXML 4.9: the default content is one block; an error ends it.
                 'action_block: {
+{% with block_flow = namespace(ended=false) %}
 {% for action in history_info.default_actions %}
+{% if not block_flow.ended %}
                 {% with in_action_block=true %}{% include 'actions/' ~ action.type ~ '.rs.jinja2' %}{% endwith %}
 
+{% endif %}
 {% endfor %}
+{% endwith %}
                 }
             }
 {% endif %}
@@ -434,13 +458,17 @@
                 // W3C SCXML 3.9: onexit block {{ loop.index }}/{{ state.on_exit_blocks | length }}
                 // Labeled block allows actions to break out on error (W3C 3.9: error stops block)
                 'action_block: {
+{% with block_flow = namespace(ended=false) %}
 {% for action in block %}
+{% if not block_flow.ended %}
 {%- if action.req or action.unresolved %}
 {{ annot.annotation_block(action, "rust", "                ") -}}
 {%- endif %}
                 {% with in_action_block=true %}{% include 'actions/' ~ action.type ~ '.rs.jinja2' %}{% endwith %}
 
+{% endif %}
 {% endfor %}
+{% endwith %}
                 }
 {% endfor %}
             }

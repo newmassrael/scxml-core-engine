@@ -5128,6 +5128,126 @@ mod tests {
         assert_eq!(go.matches("if ifCondFailed {").count(), 1, "{go}");
     }
 
+    /// How many raises of one event a generated machine writes: the lines
+    /// that hold both the raising `call` and the event as `spelled` there.
+    fn raises_of(source: &str, call: &str, spelled: &str) -> usize {
+        source
+            .lines()
+            .filter(|line| line.contains(call) && line.contains(spelled))
+            .count()
+    }
+
+    /// The Rust list a refusal is rendered into emits nothing after its
+    /// `break 'action_block`, which rustc reports as unreachable code, and
+    /// neither does the refusing element itself: the read of `send_id` that
+    /// followed the `break` moves before it. The Rust templates refuse a
+    /// read-only `<assign>` at build time too, so the Go fixture holds every
+    /// arm. What runs is unchanged — each refusal still raises and ends its
+    /// block, and an `<if>` or `<foreach>` that can be passed over still lets
+    /// the block go on.
+    #[test]
+    fn rust_emits_nothing_after_an_element_that_always_ends_its_block() {
+        let mut model = parse(ENDED_BLOCKS_SCXML);
+        crate::analyzer::analyze(&mut model, "");
+        let rust =
+            generate(&model, &crate::find_template_base().join("rust"), false).expect("rust");
+
+        let unreachable = crate::unreachable_statements::unreachable_statements(
+            &rust,
+            crate::template_lexing::Syntax::Rust,
+        );
+        assert!(
+            unreachable.is_empty(),
+            "statements after a terminating statement: {unreachable:?}\n{rust}"
+        );
+
+        let raises = |spelled: &str| raises_of(&rust, "EventWithMetadata::new(", spelled);
+        assert_eq!(
+            raises("Event::Never)"),
+            0,
+            "an element after a refusal\n{rust}"
+        );
+        assert_eq!(raises("Event::First)"), 1, "an element before one\n{rust}");
+        assert_eq!(
+            raises("Event::Kept)"),
+            1,
+            "after an <if> without <else>\n{rust}"
+        );
+        assert_eq!(raises("Event::Looped)"), 1, "after a <foreach>\n{rust}");
+
+        // Each refusal is still rendered: the eight `<send>`s each read their
+        // id before the `break`, and the six `<assign>`s to a read-only
+        // location each say so.
+        assert_eq!(
+            rust.matches("let _ = send_id;  // the refusal may carry no error event to name it")
+                .count(),
+            8,
+            "each refused <send> still ends its block\n{rust}"
+        );
+        assert_eq!(
+            rust.matches("Invalid or read-only location").count(),
+            6,
+            "each refused <assign> still ends its block\n{rust}"
+        );
+
+        // The <if> whose branches all end is the end of its block, so no check
+        // of a failed cond follows it; the one without <else> keeps its check.
+        assert_eq!(
+            rust.matches("let mut if_cond_failed = false;").count(),
+            2,
+            "{rust}"
+        );
+        assert_eq!(rust.matches("if if_cond_failed {").count(), 1, "{rust}");
+    }
+
+    /// A machine whose entry sends to its parent, with elements before and
+    /// after the `<send>`.
+    const SEND_TO_PARENT_SCXML: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       name="orphan" initial="s0">
+  <state id="s0">
+    <onentry>
+      <raise event="first"/>
+      <send event="x" target="#_parent"/>
+      <raise event="never"/>
+    </onentry>
+    <transition event="x" target="done"/>
+  </state>
+  <final id="done"/>
+</scxml>"##;
+
+    /// Under `no_std` a machine is never invoked, so a `<send target="#_parent">`
+    /// reaches nobody: it raises error.communication and ends its block with
+    /// a `break` no condition guards. Nothing after it is written — not the
+    /// next element, and not the element's own reads of `event_data` and
+    /// `send_id`, which move before the `break`.
+    #[test]
+    fn a_no_std_rust_send_to_the_parent_is_the_last_statement_of_its_block() {
+        let mut model = parse(SEND_TO_PARENT_SCXML);
+        crate::analyzer::analyze(&mut model, "");
+        let rust = generate(&model, &crate::find_template_base().join("rust"), true).expect("rust");
+
+        let unreachable = crate::unreachable_statements::unreachable_statements(
+            &rust,
+            crate::template_lexing::Syntax::Rust,
+        );
+        assert!(
+            unreachable.is_empty(),
+            "statements after a terminating statement: {unreachable:?}\n{rust}"
+        );
+        assert!(
+            rust.contains("has no parent session to reach"),
+            "the send still raises\n{rust}"
+        );
+        let raises = |spelled: &str| raises_of(&rust, "EventWithMetadata::new(", spelled);
+        assert_eq!(
+            raises("Event::Never)"),
+            0,
+            "an element after the send\n{rust}"
+        );
+        assert_eq!(raises("Event::First)"), 1, "an element before it\n{rust}");
+    }
+
     /// `docs/SCE_ACCEPTED_SUBSET.md` §2.12 is the surface a consumer reads to
     /// learn which engines honour the §6.4.1 raise, and nothing was reading
     /// it. The table shipped claiming five AOT backends refuse the document

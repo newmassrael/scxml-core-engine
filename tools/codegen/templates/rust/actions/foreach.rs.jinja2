@@ -23,11 +23,18 @@
 {% if action.native_loop_prologue %}
     {{ action.native_loop_prologue }}
 {% endif %}
+{# The body is a list of its own (`block_flow`, rust/entry_exit_actions.rs.jinja2):
+   an element in it that ends the block unconditionally ends what the body
+   emits, and not the list the <foreach> is in — the loop may run no times. #}
+{% with block_flow = namespace(ended=false) %}
 {% for body_action in action.actions %}
+{% if not block_flow.ended %}
     {% with action=body_action %}
     {% include 'actions/' ~ body_action.type ~ '.rs.jinja2' %}
     {% endwith %}
+{% endif %}
 {% endfor %}
+{% endwith %}
 }
 {% else %}
 {
@@ -89,11 +96,15 @@
 {% if action.actions and action.actions | length > 0 %}
                     // W3C SCXML 4.6: Execute body actions. A failing one raises its
                     // own error and leaves the enclosing block from here.
+{% with block_flow = namespace(ended=false) %}
 {% for body_action in action.actions %}
+{% if not block_flow.ended %}
                     {% with action=body_action %}
                     {% include 'actions/' ~ body_action.type ~ '.rs.jinja2' %}
                     {% endwith %}
+{% endif %}
 {% endfor %}
+{% endwith %}
 {% endif %}
                 }
                 if !foreach_success {

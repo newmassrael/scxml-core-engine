@@ -14,6 +14,21 @@
 {% set if_script_can_fail = model.needs_script_engine and in_action_block is defined and in_action_block and ((not action.native_cond and not action.is_pure_in_predicate) or (action.elseif_branches | rejectattr("native_cond") | rejectattr("is_pure_in_predicate") | list | length > 0)) %}
 {% set if_native_can_fail = action.native_cond_fails or (action.elseif_branches | selectattr("native_cond_fails") | list | length > 0) %}
 {% set if_can_fail = if_script_can_fail or if_native_can_fail %}
+{# Each branch is a list of its own (`block_flow`, rust/entry_exit_actions.rs.jinja2).
+   When the <if> has an <else> and every branch ends the block unconditionally,
+   whichever branch the selection reaches ends it — a cond that failed only
+   moves the selection on — so the chain is itself the end of the block:
+   rustc reads an `if`/`else` whose branches all `break` as diverging, and the
+   flag check that would follow it, and every element after the <if>, is
+   unreachable. `if_flow.ends` records it. A native cond that can fail writes
+   the flag, and Rust reports a write nobody reads, so with no check after
+   the chain the <else> reads it first: every cond the selection passed
+   reaches the <else>. The <else> is rendered before its head is written so
+   that the head knows. #}
+{% set if_flow = namespace(ends=true) %}
+{% if not action.else_actions %}
+{% set if_flow.ends = false %}
+{% endif %}
 {% if if_can_fail %}
 {
 let mut if_cond_failed = false;
@@ -31,30 +46,58 @@ if {% if if_script_can_fail %}self.evaluate_if_cond("{{ action.cond | to_lua_gua
 // W3C SCXML 4.3: cond="{{ action.cond }}" decided at build time
 if {{ 'true' if action.cond_constant else 'false' }} {
 {% endif %}
+{% with block_flow = namespace(ended=false) %}
 {% for then_action in action.then_actions %}
+{% if not block_flow.ended %}
     {% with action=then_action %}
     {% include 'actions/' ~ then_action.type ~ '.rs.jinja2' %}
     {% endwith %}
+{% endif %}
 {% endfor %}
+{% if not block_flow.ended %}
+{% set if_flow.ends = false %}
+{% endif %}
+{% endwith %}
 {% for elseif in action.elseif_branches %}
 } else if {% if elseif.native_cond %}{{ elseif.native_cond }}{% elif elseif.is_pure_in_predicate %}{{ elseif.cond_cpp | replace('this->', '') | replace('isStateActive', 'self.is_state_active') }}{% elif model.needs_script_engine %}{% if if_script_can_fail %}self.evaluate_if_cond("{{ elseif.cond | to_lua_guard | escape_rust }}", engine, &mut if_cond_failed){% else %}self.safe_evaluate_guard("{{ elseif.cond | to_lua_guard | escape_rust }}", engine){% endif %}{% else %}{{ 'true' if elseif.cond_constant else 'false' }}{% endif %} {
+{% with block_flow = namespace(ended=false) %}
 {% for elseif_action in elseif.actions %}
+{% if not block_flow.ended %}
     {% with action=elseif_action %}
     {% include 'actions/' ~ elseif_action.type ~ '.rs.jinja2' %}
     {% endwith %}
+{% endif %}
 {% endfor %}
+{% if not block_flow.ended %}
+{% set if_flow.ends = false %}
+{% endif %}
+{% endwith %}
 {% endfor %}
 {% if action.else_actions %}
-} else {
+{% with block_flow = namespace(ended=false) %}
+{% set else_body %}
 {% for else_action in action.else_actions %}
+{% if not block_flow.ended %}
     {% with action=else_action %}
     {% include 'actions/' ~ else_action.type ~ '.rs.jinja2' %}
     {% endwith %}
+{% endif %}
 {% endfor %}
+{% endset %}
+{% if not block_flow.ended %}
+{% set if_flow.ends = false %}
+{% endif %}
+} else {
+{% if if_flow.ends and if_native_can_fail %}
+let _ = if_cond_failed;  // every branch ends the block, so no check follows the chain
+{% endif %}
+{{ else_body }}{% endwith %}
 {% endif %}
 }
 {% if if_can_fail %}
-{% if in_action_block is defined and in_action_block %}
+{% if if_flow.ends %}
+{# The chain is the end of the block: nothing follows it. #}
+{% elif in_action_block is defined and in_action_block %}
 if if_cond_failed {
     break 'action_block;
 }
@@ -62,4 +105,7 @@ if if_cond_failed {
 let _ = if_cond_failed;
 {% endif %}
 }
+{% endif %}
+{% if if_flow.ends %}
+{% set block_flow.ended = true %}
 {% endif %}

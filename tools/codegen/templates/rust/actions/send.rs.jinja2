@@ -161,6 +161,9 @@
     let _ = send_id;  // the refusal may carry no error event to name it
 {% if in_block %}
     break 'action_block;  // W3C SCXML 4.9: the error ends the block
+{# The `break` is unconditional: the action list emits nothing after it
+   (`block_flow`, rust/entry_exit_actions.rs.jinja2). #}
+{% set block_flow.ended = true %}
 {% endif %}
 {% else %}
 
@@ -493,7 +496,12 @@
     }
 {% endif %}
 {% if in_block %}
+    let _ = send_id;  // the refusal may carry no error event to name it
     break 'action_block;
+{# Each refusal arm's `break` is unconditional: the action list emits nothing
+   after it, and neither does this element (`block_flow`,
+   rust/entry_exit_actions.rs.jinja2). #}
+{% set block_flow.ended = true %}
 {% endif %}
 {% elif action.target_unsupported %}
     // W3C SCXML 6.2.4: "{{ action.target }}" is not a target this processor can
@@ -507,7 +515,9 @@
     }
 {% endif %}
 {% if in_block %}
+    let _ = send_id;  // the refusal may carry no error event to name it
     break 'action_block;
+{% set block_flow.ended = true %}
 {% endif %}
 {% elif not action.send_type_host_served and action.send_type == 'http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor' and not action.target and not action.targetexpr %}
     // W3C SCXML C.2: BasicHTTP without target raises error.communication
@@ -519,7 +529,9 @@
     }
 {% endif %}
 {% if in_block %}
+    let _ = send_id;  // the refusal may carry no error event to name it
     break 'action_block;
+{% set block_flow.ended = true %}
 {% endif %}
 {% elif not action.send_type_host_served and names_no_invocation %}
     // W3C SCXML C.1 + 6.4: no invocation of this document is called
@@ -531,7 +543,9 @@
         engine.raise(err_meta);
     }
 {% if in_block %}
+    let _ = send_id;  // the refusal may carry no error event to name it
     break 'action_block;
+{% set block_flow.ended = true %}
 {% endif %}
 {% else %}
 {% if basic_http_send %}
@@ -937,7 +951,12 @@
         {{ machine_name }}Event::{{ 'error.communication' | to_event_variant }},
         "<send target='#_parent'> has no parent session to reach"));
 {% if in_block %}
+    let _ = event_data;
+    let _ = send_id;
     break 'action_block;
+{# Unconditional, as the build-time refusals above are: neither the list nor
+   this element emits anything after it (`block_flow`). #}
+{% set block_flow.ended = true %}
 {% endif %}
 {% elif delay_rs %}
     // W3C SCXML 6.2 + 6.4: delayed to the parent. It waits in this child's own
@@ -1040,6 +1059,11 @@
 {% endif %}
 
 
+{# A delivery arm that ended the block unconditionally (`block_flow.ended`)
+   is the last statement this element writes: the check and the reads below
+   would follow its `break`, and it has read what they read itself. #}
+{% set send_ended = in_block and block_flow.ended %}
+{% if not send_ended %}
 {% if payload_can_fail %}
 {% if in_block %}
     // W3C SCXML 4.9: a <param> that could not be read raised an error while
@@ -1053,6 +1077,9 @@
 {% endif %}
 {% endif %}
     let _ = event_data;  // suppress unused warning in branches that skip dispatch
+{% endif %}
+{# Written whether or not a delivery arm ended the block: it closes the
+   `else {` the BasicHTTP processor check opened before the delivery. #}
 {% if basic_http_send %}
     } // end of the BasicHTTP processor check
 {% endif %}
@@ -1063,6 +1090,8 @@
 {% if send_prologue %}
     } // end of the prologue's discard (W3C SCXML 6.2: an argument error sends nothing)
 {% endif %}
+{% if not (in_block and block_flow.ended) %}
     let _ = send_id;  // suppress unused warning when no send operation
+{% endif %}
 {% endif %}{# end of the static-delay refusal #}
 }
