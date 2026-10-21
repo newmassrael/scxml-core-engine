@@ -61,7 +61,7 @@ MACHINE_SYMBOLS='sce_nostd_build_probe::'
 # differently moves these bytes with no change of ours. The gate prints this
 # beside `rustc --version` when it fails, so a red that is only the toolchain
 # says so, and a re-pin names the toolchain it was taken on.
-MEASURED_WITH='rustc 1.98.1 (48a229cea 2026-09-01)'
+MEASURED_WITH='rustc 1.99.1 (58cf8f9c3 2026-10-13)'
 
 # Sum of every machine symbol in the staticlib, as the engine ships.
 #
@@ -72,13 +72,24 @@ MEASURED_WITH='rustc 1.98.1 (48a229cea 2026-09-01)'
 # inline in `Engine` at 5182, over the band; moved into `helpers::microstep`
 # beside exitStates, sharing that procedure's exitOrder sort instead of
 # carrying a second copy, it costs these 94.
-TOTAL_BYTES=5070
+#
+# 5070 -> 5236 (2026-10-21), on rustc 1.99.1: what the bytes bought is a
+# session id a no_std machine is built under (docs/adr/0045, the owner's
+# answer on the root session id). With no source of randomness the host gives
+# the id at construction, `new_with_session_id`, which holds it to the NMTOKEN
+# rule and refuses an empty or malformed one there rather than at a save: one
+# more machine symbol, 88 bytes. The rest is not this change: the tree just
+# before it measured 5148 (38 symbols) on the same toolchain, inside the band
+# of the old pin.
+TOTAL_BYTES=5236
 
 # The same sum with `no_macrostep_diagnostics`, which compiles the macrostep
 # REPORT out and leaves the bound in place.
 #
-# The difference — 28 bytes per machine (24 before the exitInterpreter re-pin
-# moved inlining around it) — is the number that feature is worth,
+# The difference — 52 bytes per machine at the 2026-10-21 re-pin on rustc
+# 1.99.1, the same before and after the session id; 28 at the exitInterpreter
+# re-pin on rustc 1.98.1, and 24 before that moved inlining around it — is the
+# number that feature is worth,
 # and it is here rather than in a commit message because it is the answer to a
 # question a consumer asked: whether gating the diagnostics would recover what
 # two commits cost their image. Measuring both ways is also what keeps the
@@ -112,7 +123,10 @@ TOTAL_BYTES=5070
 # elsewhere. A downstream consumer reached the same conclusion from the other
 # end — with `lto = true` and no logger installed, their image had already
 # discarded every `log::` call before we asked them to try.
-TOTAL_BYTES_NO_DIAGNOSTICS=5042
+#
+# 5042 -> 5184 (2026-10-21), on rustc 1.99.1: the same 88-byte constructor as
+# TOTAL_BYTES above; the tree just before it measured 5096 (38 symbols).
+TOTAL_BYTES_NO_DIAGNOSTICS=5184
 
 # Drift allowed either way before the gate speaks, in BYTES. Wide enough that
 # an unrelated inlining decision does not cry wolf, tight enough that one more
