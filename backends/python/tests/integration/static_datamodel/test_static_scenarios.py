@@ -1063,3 +1063,12 @@ def test_a_value_that_may_be_absent_is_held_tested_and_carried_as_null() -> None
 # them.
 def test_a_statechart_hands_an_algorithm_a_value_that_may_be_absent() -> None:
     replay("static_state_algorithm_optional")
+
+
+# docs/adr/0055, section 6: a log replayed through a revision that widened a
+# field. An entry written when the day was an int64 reads it present, one written
+# after carries `null` for an absent day, a reminder the later revision added with
+# no default reads absent where an entry lacks it, and an entry that lacks the day,
+# a field of the first revision, is refused.
+def test_an_older_entry_reads_a_widened_field_present_and_a_newer_null_absent() -> None:
+    replay("static_optional_widened")

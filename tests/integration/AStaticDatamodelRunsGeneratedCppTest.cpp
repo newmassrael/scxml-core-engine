@@ -65,6 +65,7 @@
 #include "static_list_index_sm.h"
 #include "static_list_sm.h"
 #include "static_optional_sm.h"
+#include "static_optional_widened_sm.h"
 #include "static_overflow_sm.h"
 #include "static_payload_bytes_sm.h"
 #include "static_payload_enum_sm.h"
@@ -2667,6 +2668,25 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, AStatechartHandsAnAlgorithmAValueThat
         {"errors", [](const Machine &m) { return json(m.errors()); }},
     });
     replay("static_state_algorithm_optional", driver);
+}
+
+// docs/adr/0055, section 6: a log replayed through a revision that widened a
+// field. An entry written when the day was an int64 reads it present, one written
+// after carries `null` for an absent day, a reminder the later revision added with
+// no default reads absent where an entry lacks it, and an entry that lacks the day,
+// a field of the first revision, is refused.
+TEST(AStaticDatamodelRunsGeneratedCppTest, AnOlderEntryReadsAWidenedFieldPresentAndANewerNullAbsent) {
+    namespace E = G::static_optional_widened;
+    using Machine = E::static_optional_widened;
+    const auto day = [](const auto &value) { return optionalJson(value, [](std::int64_t d) { return json(d); }); };
+    Driver<Machine> driver({
+        {"entry", [](const Machine &m) { return json(m.entry()); }},
+        {"due", [=](const Machine &m) { return day(m.due()); }},
+        {"remind", [=](const Machine &m) { return day(m.remind()); }},
+        {"taken", [](const Machine &m) { return json(m.taken()); }},
+        {"refusals", [](const Machine &m) { return json(m.refusals()); }},
+    });
+    replay("static_optional_widened", driver);
 }
 
 namespace {

@@ -67,6 +67,7 @@ import (
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_list_assign"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_list_index"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_optional"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_optional_widened"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_overflow"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_payload"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_payload_bytes"
@@ -1564,6 +1565,23 @@ func TestAStatechartHandsAnAlgorithmAValueThatMayBeAbsent(t *testing.T) {
 		"undated": func() any { return policy.Undated() },
 		"total":   func() any { return policy.Total() },
 		"errors":  func() any { return policy.Errors() },
+	}))
+}
+
+// A log replayed through a revision that widened a field (docs/adr/0055,
+// section 6): an entry written when the day was an int64 reads it present, one
+// written after carries `null` for an absent day, a reminder the later revision
+// added with no default reads absent where an entry lacks it, and an entry that
+// lacks the day, a field of the first revision, is refused.
+func TestAnOlderEntryReadsAWidenedFieldPresentAndANewerNullAbsent(t *testing.T) {
+	policy := static_optional_widened.NewStaticOptionalWidenedPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	replay(t, "static_optional_widened", drive[static_optional_widened.StaticOptionalWidenedState, static_optional_widened.StaticOptionalWidenedEvent](&policy, map[string]func() any{
+		"entry":    func() any { return policy.Entry() },
+		"due":      func() any { return optionalJSON(policy.Due()) },
+		"remind":   func() any { return optionalJSON(policy.Remind()) },
+		"taken":    func() any { return policy.Taken() },
+		"refusals": func() any { return policy.Refusals() },
 	}))
 }
 

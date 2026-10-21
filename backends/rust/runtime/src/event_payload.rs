@@ -467,6 +467,19 @@ mod tests {
     }
 
     #[test]
+    fn a_field_of_t_refuses_null_as_an_older_receiver_of_a_widened_field_does() {
+        // A receiver built before a revision widened `due` to `optional<int64>`
+        // reads it as `int64`, and a newer sender's `null` is no value of it: the
+        // delivery is refused (docs/adr/0055, section 6), which is why the
+        // receivers of a widened field are upgraded before its senders.
+        let fields = PayloadFields::decode(r#"{"id": 1, "due": null}"#).expect("the object reads");
+        let refusal = fields.signed64("due").expect_err("null is no int64");
+        assert!(refusal.reason().contains("'due'"), "{refusal}");
+        // The widened receiver reads the same delivery, the day absent.
+        assert_eq!(fields.optional("due", |f| f.signed64("due")), Ok(None));
+    }
+
+    #[test]
     fn an_absent_value_is_written_as_null_and_a_present_one_as_its_writer_spells_it() {
         let digits = |v: i64| format!("\"{v}\"");
         assert_eq!(optional_json(None, digits), "null");

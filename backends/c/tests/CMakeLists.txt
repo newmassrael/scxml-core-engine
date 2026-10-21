@@ -2781,6 +2781,14 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
                    algorithm_goal_earliest.scxml algorithm_goal_until.scxml
                    algorithm_goal_undated.scxml algorithm_goal_day_sum.scxml
     )
+    # A log replayed through a revision that widened a field (docs/adr/0055,
+    # section 6): the machine reads its payload through the second revision of the
+    # schema, staged beside it.
+    sce_generate_static_integration_c_test(static_optional_widened
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_optional_widened.scxml"
+        STAGE_ALSO schema_due_widened.scxml
+    )
     # A delivery of an earlier revision of a schema that grew takes the defaults of
     # the fields added since; the schema imports the enum its added field holds.
     sce_generate_static_integration_c_test(static_schema_revision
@@ -3145,6 +3153,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         ${INTEGRATION_C_TEST_static_whole_payload_SOURCES}
         ${INTEGRATION_C_TEST_static_optional_SOURCES}
         ${INTEGRATION_C_TEST_static_state_algorithm_optional_SOURCES}
+        ${INTEGRATION_C_TEST_static_optional_widened_SOURCES}
         ${INTEGRATION_C_TEST_static_schema_revision_SOURCES}
         ${INTEGRATION_C_TEST_static_wire_wide_SOURCES}
         ${INTEGRATION_C_TEST_static_wire_enum_SOURCES}

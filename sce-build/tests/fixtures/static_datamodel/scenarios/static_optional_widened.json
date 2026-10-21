@@ -1,0 +1,28 @@
+{
+  "machine": "static_optional_widened",
+  "about": "A log of entries replayed through the second revision of a schema that widened a field (docs/adr/0055, section 6): the first revision carried the day `due` as an int64, and the second widened it to `optional<int64>` (`sce:optional-since=\"2\"`) and added the reminder `remind`, an optional int64 with no default. An entry written at the first revision carries the day as a value and is read present, and lacks the reminder, which reads absent. An entry written at the second carries `null` for a value that is absent. An entry that lacks the day, a field of the first revision, is refused as any payload that does not fit its schema is: nothing is written and error.execution says so, counted by `refusals`. Each entry's id is written to `entry` and each one taken counted by `taken`. Expected values are derived from the documents, not observed from a backend.",
+  "steps": [
+    { "note": "every variable starts at the value its expr names: no entry taken, the day and the reminder absent",
+      "expect": { "state": "reading", "variables": { "entry": 0, "due": null, "remind": null, "taken": 0, "refusals": 0 } } },
+
+    { "note": "an entry of the first revision carries the day as a value, read present; it lacks the reminder the second revision added with no default, which reads absent",
+      "event": "due.widened", "data": { "id": 1, "due": "5" },
+      "expect": { "variables": { "entry": 1, "due": 5, "remind": null, "taken": 1, "refusals": 0 } } },
+
+    { "note": "an entry of the second revision carries `null` for the day, which is absent, and a reminder, which is present",
+      "event": "due.widened", "data": { "id": 2, "due": null, "remind": "3" },
+      "expect": { "variables": { "entry": 2, "due": null, "remind": 3, "taken": 2, "refusals": 0 } } },
+
+    { "note": "another entry of the first revision: its day is present again, and the reminder it lacks is absent again, not kept from the entry before",
+      "event": "due.widened", "data": { "id": 3, "due": "9" },
+      "expect": { "variables": { "entry": 3, "due": 9, "remind": null, "taken": 3, "refusals": 0 } } },
+
+    { "note": "an entry of the second revision with a day and `null` for the reminder",
+      "event": "due.widened", "data": { "id": 4, "due": "11", "remind": null },
+      "expect": { "variables": { "entry": 4, "due": 11, "remind": null, "taken": 4, "refusals": 0 } } },
+
+    { "note": "an entry that lacks the day, a field of the first revision, is refused: a missing key is no absent value, nothing is written and error.execution says so",
+      "event": "due.widened", "data": { "id": 5, "remind": "1" },
+      "expect": { "variables": { "entry": 4, "due": 11, "remind": null, "taken": 4, "refusals": 1 } } }
+  ]
+}

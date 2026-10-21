@@ -95,6 +95,9 @@ use sce_rust_tests::integration::static_datamodel::static_list_sm::{
 use sce_rust_tests::integration::static_datamodel::static_optional_sm::{
     StaticOptionalPersist, StaticOptionalPolicy,
 };
+use sce_rust_tests::integration::static_datamodel::static_optional_widened_sm::{
+    StaticOptionalWidenedPersist, StaticOptionalWidenedPolicy,
+};
 use sce_rust_tests::integration::static_datamodel::static_overflow_sm::{
     StaticOverflowPersist, StaticOverflowPolicy,
 };
@@ -1185,6 +1188,22 @@ fn static_state_algorithm_optional_hands_an_algorithm_a_value_that_may_be_absent
         |engine| engine.save().expect("saves"),
         include_str!(
             "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_state_algorithm_optional.json"
+        ),
+    );
+}
+
+// A log replayed through a revision that widened a field (docs/adr/0055,
+// section 6): an entry written when the day was an int64 reads it present, one
+// written after carries `null` for an absent day, a reminder the later revision
+// added with no default reads absent where an entry lacks it, and an entry that
+// lacks the day, a field of the first revision, is refused.
+#[test]
+fn static_optional_widened_reads_an_older_entry_present_and_a_newer_null_absent() {
+    replay(
+        Engine::new(StaticOptionalWidenedPolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_optional_widened.json"
         ),
     );
 }

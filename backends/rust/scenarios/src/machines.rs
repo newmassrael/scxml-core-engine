@@ -228,6 +228,7 @@ scenarios! {
     "static_list_assign" => static_list_assign_sm::{StaticListAssignPolicy, StaticListAssignPersist};
     "static_list_index" => static_list_index_sm::{StaticListIndexPolicy, StaticListIndexPersist};
     "static_optional" => static_optional_sm::{StaticOptionalPolicy, StaticOptionalPersist};
+    "static_optional_widened" => static_optional_widened_sm::{StaticOptionalWidenedPolicy, StaticOptionalWidenedPersist};
     "static_overflow" => static_overflow_sm::{StaticOverflowPolicy, StaticOverflowPersist};
     "static_payload" => static_payload_sm::{StaticPayloadPolicy, StaticPayloadPersist};
     "static_payload_bytes" => static_payload_bytes_sm::{StaticPayloadBytesPolicy, StaticPayloadBytesPersist};

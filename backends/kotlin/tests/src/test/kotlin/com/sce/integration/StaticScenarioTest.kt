@@ -58,6 +58,7 @@ import com.sce.integration.static_list.StaticListStateMachine
 import com.sce.integration.static_list_assign.StaticListAssignStateMachine
 import com.sce.integration.static_list_index.StaticListIndexStateMachine
 import com.sce.integration.static_optional.StaticOptionalStateMachine
+import com.sce.integration.static_optional_widened.StaticOptionalWidenedStateMachine
 import com.sce.integration.static_overflow.StaticOverflowStateMachine
 import com.sce.integration.static_payload.StaticPayloadStateMachine
 import com.sce.integration.static_payload_bytes.StaticPayloadBytesStateMachine
@@ -573,6 +574,28 @@ class StaticScenarioTest {
                 save = { sm.save() },
                 ended = { sm.isInFinalState },
                 donedata = { sm.donedataAtFinal() },
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    // docs/adr/0055, section 6: a log replayed through a revision that widened a
+    // field. An entry written when the day was an int64 reads it present, one
+    // written after carries `null` for an absent day, a reminder the later
+    // revision added with no default reads absent where an entry lacks it, and an
+    // entry that lacks the day, a field of the first revision, is refused.
+    @Test
+    fun staticOptionalWidenedReadsAnOlderEntryPresentAndANewerNullAbsent() {
+        val sm = StaticOptionalWidenedStateMachine()
+        sm.initialize()
+        try {
+            replay(
+                scenario("static_optional_widened"),
+                send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
+                tick = { sm.tick() },
+                save = { sm.save() },
+                ended = { sm.isInFinalState },
             )
         } finally {
             sm.cleanup()
