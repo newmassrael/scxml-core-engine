@@ -1,26 +1,29 @@
 # ADR 0055 — A value that may be absent is of an optional type, and absent is no value of any other
 
-- Status: Proposed (2026-10-21), under the owner's standing rule: the most long-term correct way,
-  cost ignored; never a sentinel number and never a companion flag that admits impossible states
+- Status: Accepted (2026-10-21). The owner decided every question the proposal left open ("The
+  owner's answers", below), under the standing rule: the most long-term correct structure, cost
+  ignored; never a sentinel number and never a companion flag that admits impossible states. Step 1
+  is implemented; the others follow in the order section 9 gives.
 - Date: 2026-10-21
-- Amends: ADR 0044 decisions 1 and 3 (a revision may widen a field from `T` to `optional<T>`, and a
-  revision's digest names each field's type at that revision); docs/SCE_ACCEPTED_SUBSET.md "What a
-  revision does not make safe"
-- Revisits: ADR 0052, "An optional reason" (see "What changed since ADR 0052" below)
+- Amends: ADR 0044 decisions 1 and 3 (a revision may widen a field from `T` to `optional<T>`);
+  ADR 0045 section 2 (a saved shape spells an optional value by the type its present value is, so
+  a widening keeps the shape); docs/SCE_ACCEPTED_SUBSET.md "What a revision does not make safe"
+- Supersedes: ADR 0052 decision 2 ("no refusal" is the variant `none`); see section 7
 - Scope: the value-type grammar (`forge::model::AlgorithmValueType`, `read_algorithm_value_type`,
-  `read_type_attr`, the `dataValueType` of `schemas/sce-forge-ext.xsd`), an event schema's fields;
-  the expression layer (`forge::types::InferredType`, `forge::expr`'s lexer, typer, `slot_admits`
-  and the six emitters), the enum judge (`forge::static_enum`), the statechart's scope
-  (`forge::type_ctx::StaticScope`); `forge::schema_revision`; `forge::static_lowering` and its
-  saved shape; the payload lift and wire writer of every generated backend and of the
-  Interpreter's library (`forge/static_js/sce_static.js`); the forge runtimes' `found`; the saved
-  state of the Rust and Kotlin backends and `schemas/sce-saved-state.v{1,2}.schema.json`; the replay
-  scenario vocabulary (`sce_build::scenario_replay`) and its seven drivers
+  `read_type_attr`, the `dataValueType` of `schemas/sce-forge-ext.xsd`), an event schema's fields,
+  the CBOR and content-line codecs' entries; the expression layer (`forge::types::InferredType`,
+  `forge::expr`'s lexer, typer, `slot_admits` and the six emitters), the enum judge
+  (`forge::static_enum`), the statechart's scope and its judge (`forge::type_ctx::StaticScope`,
+  `forge::static_datamodel`); `forge::schema_revision`; `forge::static_lowering` and its saved
+  shape; the payload lift and wire writer of every generated backend and of the Interpreter's
+  library (`forge/static_js/sce_static.js`); a new optional type in the Go and C11 forge runtimes;
+  the saved state of the Rust and Kotlin backends and `schemas/sce-saved-state.v{1,2}.schema.json`;
+  the replay scenario vocabulary (`sce_build::scenario_replay`) and its seven drivers;
+  `stdlib/shared/record_refusal.scxml` and the parents of the shared list
 - Related: ADR 0005 (`sce-static` closes its gaps by bounding and declaring), ADR 0044 (revisions),
   ADR 0045 (saved shapes), ADR 0047 ("a reading that answers none would need a type"), ADR 0048 and
-  ADR 0051 (calls of other kinds), ADR 0050 (bounds), ADR 0053 (the bare-metal Rust profile);
-  SCE_FORGE.md §4.6.1 and the content-line codec (whose optional entries already have a host type
-  on every backend)
+  ADR 0051 (calls of other kinds), ADR 0050 (bounds), ADR 0052 (a refused command is named by an
+  enum), ADR 0053 (the bare-metal Rust profile); SCE_FORGE.md §4.6.1 and the content-line codec
 
 ## Context
 
@@ -47,11 +50,11 @@ What the language offers today, read in the code and the documents on 2026-10-21
   in the saved state, to say what one variant says". ADR 0048 turns a lookup's miss into a failure
   through `found`; a statechart had no type to hold the miss in.
 - **The expression layer already parses `null` and types it nowhere.** `null` lexes to
-  `ExprKind::NullLit`, typed `InferredType::Null`, and `slot_admits` admits `Null` in every slot as
-  it admits `Unknown` (`forge/expr.rs`). The lexer refuses `??` and `?.` by name ("nullish
-  coalescing", "optional chaining").
-- **The codecs already have absence, with one host type per backend.** A CBOR or content-line
-  entry that is not `sce:required` is optional, generated as `Option<T>` (Rust), `T?` (Kotlin),
+  `ExprKind::NullLit`, typed `InferredType::Null`, and `slot_admits` admitted `Null` in every slot
+  as it admits `Unknown` (`forge/expr.rs`), so `<data sce:type="int64" expr="null"/>` was judged
+  fit. The lexer refuses `??` and `?.` by name ("nullish coalescing", "optional chaining").
+- **The codecs already have absence, spelled the other way round.** A CBOR or content-line entry
+  that is not `sce:required="true"` is optional, generated as `Option<T>` (Rust), `T?` (Kotlin),
   `std::optional<T>` (C++), a pointer (Go), `Optional[T]` (Python) and a `<name>_present` member
   beside the value (C11); the conformance oracle spells an absent entry as JSON `null`. A positional
   field gated by `sce:present-if` is wrapped the same way, the wrap written out four times in
@@ -59,12 +62,13 @@ What the language offers today, read in the code and the documents on 2026-10-21
 - **A missing key already has a meaning on the event wire.** ADR 0044's lift reads a field a
   delivery lacks as an older sender's delivery: the field's `sce:default` when a later revision
   added it, and a refusal when the first revision declares it.
-- **A changed type is not a revision** (ADR 0044 decision 1(a); docs/SCE_ACCEPTED_SUBSET.md "What a
-  revision does not make safe"): a field re-typed between two revisions is refused on the network
-  and in a saved state.
+- **A changed type is not a revision** (ADR 0044 decision 1(a)), and a re-typed variable or field
+  moves the saved shape (ADR 0045), so a restore of a state saved before it is refused.
 
 What is to be decided: the type, its expressions, its wire, its lowering on the six generated
-backends and the Interpreter, and how a schema whose field becomes optional evolves.
+backends and the Interpreter, how a schema and a saved state whose value becomes optional evolve,
+and what becomes of the two places that spell absence another way (the codecs' `sce:required`,
+ADR 0052's `none`).
 
 ## Decision
 
@@ -72,6 +76,7 @@ backends and the Interpreter, and how a schema whose field becomes optional evol
 
 `sce:type="optional<T>"` (in XML `optional&lt;T&gt;`, as `list&lt;T&gt;` is written) is a value
 that is either absent or a value of `T`. Absent is a value of `optional<T>` and of no other type.
+A bare `T` is always present, wherever a type is written.
 
 **What `T` may be.**
 
@@ -79,102 +84,89 @@ that is either absent or a value of `T`. Absent is a value of `optional<T>` and 
 |---|---|---|
 | a fixed-width number (`int8` … `uint64`, `float32`, `float64`), `bool` | everywhere the type is admitted | the case that has no spare value to give up |
 | `string`, `bytes` | everywhere, with the bound `T` declares (`sce:capacity` on a variable, `sce:max-size` on a field) | an empty text is a text; absence is not an empty text |
-| `enum:<alias>` of a closed enum | everywhere | a variant is a value; absence is not a variant (see "What changed since ADR 0052") |
+| `enum:<alias>` of a closed enum | everywhere | a variant is a value; absence is not a variant (section 7) |
 | `record:<alias>` | a statechart variable and an algorithm's parameter, return and local; not a field of an event schema | a schema has no record fields; a variable that holds "no record yet" is the case ADR 0052 met |
 
-**Nesting.** Refused, each where the `sce:type` is written (`validation/invalid-attribute`, naming
-what may stand inside):
+**Nesting.** Refused where the `sce:type` is written:
 
-- `optional<optional<T>>`: Kotlin's `T??`, Python's `None`, ECMAScript's `null` and JSON's `null`
-  collapse the two absences into one, so four of the carriers cannot hold it, and nothing asks
-  for it.
-- `optional<list<T>>`: a list is a variable and never a value (§2.15, "List variables"), and its
-  resting state, empty, is its own.
-- `list<optional<T>>`: a list holds fixed-width numbers, `bool`s or records, so that a bound in
-  elements is a bound in bytes; a list of values that may be absent is a list of records with an
-  optional field.
-- `optional<T>` for an open enum: refused as the open enum itself is in a statechart.
+- `optional<optional<T>>` (`validation/invalid-attribute`, naming what may stand inside): Kotlin's
+  `T??`, Python's `None`, ECMAScript's `null` and JSON's `null` collapse the two absences into
+  one, so four of the carriers cannot hold it, and nothing asks for it.
+- `optional<list<T>>` (the same): a list is a variable and never a value (§2.15, "List
+  variables"), and its resting state, empty, is its own.
+- `list<optional<T>>` (`validation/attribute-rule-violated`): a list holds fixed-width numbers,
+  `bool`s or records, so that a bound in elements is a bound in bytes; a list of values that may be
+  absent is a list of records with an optional field.
+- `optional<T>` of an open enum: refused as the open enum itself is in a statechart.
 
 **Where it is admitted.** A `sce-static` statechart's variable, a field of an event schema (and so
-a record's field and a payload's field), an algorithm's parameter, return and local. Every other
-`sce:type` position — a codec entry, a transform's, lookup's, interpolation's, condition's or
-validator's slot, a field that declares `sce:quantity` — refuses it by name (`validation/invalid-attribute`, "an optional
-value is a type of an event schema, a statechart and an algorithm"), because those positions are
-scalar by contract (the reason `AlgorithmValueType` exists apart from `SceType`). A codec keeps its
-own spelling of absence, `sce:required` (decision 7).
+a record's field and a payload's field), an algorithm's parameter, return and local, and a CBOR or
+content-line codec's entry (section 8). A positional codec's field, a transform's, lookup's,
+interpolation's, condition's or validator's slot and a field that declares `sce:quantity` refuse
+it (`validation/attribute-rule-violated`), because those positions are scalar by contract (the
+reason `AlgorithmValueType` exists apart from `SceType`); a positional layout says by what a field
+is left out (`sce:present-if`). A position whose step has not landed refuses it by the same code,
+saying it does not hold one yet.
 
-**In the model.** `optional` is a constructor of the value type, as `list` is: `AlgorithmValueType`
-gains `Optional { elem }` over an element type of its own (a scalar `SceType` or a record alias),
-serialised untagged as `{"optional": "int64"}` so that the forge-AST of every document that holds
-no optional value is byte-identical. An event schema's field, typed today by a bare `SceType` it
-shares with every kind's `ForgeField`, is typed by the value type restricted to a scalar or an
-optional scalar. The presence is never a boolean beside the scalar: every site that reads a field's
-or a variable's type matches the constructor, so the compiler names each site that has not said
-what it does with an optional value, as `ListElemType` keeps a record element from being skipped.
-`InferredType` gains `Optional(OptionalElem)`, an element kept `Copy` as `ListElem` is.
-
-**No new diagnostic code.** Every refusal below reuses a code that already says the same thing in
-a neighbouring place; none needs an appendix entry in docs/SCE_ACCEPTED_SUBSET.md.
+**In the model.** `optional` is a constructor of the value type, as `list` is:
+`AlgorithmValueType` gains `Optional { elem }` over an element type of its own,
+`OptionalElemType` (a scalar `SceType` or a record alias), serialised untagged as
+`{"optional": "int64"}` and `{"optional": {"record": "Item"}}`, so the forge-AST of every
+document that holds no optional value is byte-identical. An event schema's field, typed today by a
+bare `SceType` it shares with every kind's `ForgeField`, is typed by the value type restricted to a
+scalar or an optional scalar. The presence is never a boolean beside the scalar: every site that
+reads a field's or a variable's type matches the constructor, so the compiler names each site that
+has not said what it does with an optional value, as `ListElemType` keeps a record element from
+being skipped. `InferredType` gains `Optional(OptionalElem)`, an element kept `Copy` as `ListElem`
+is.
 
 ### 2. The expression surface
 
 The forge expression language is a typed subset of ECMAScript, and it already spells absence the
-way ECMAScript and JSON do. So:
+way ECMAScript and JSON do. There is no read that can fail: a value is read out of an optional only
+where the build has proven it present.
 
-| What | Written | Type | Can it fail? |
-|---|---|---|---|
-| absent | `null` | the `optional<T>` of the place it lands in | no |
-| a present value | any value of `T` where an `optional<T>` is expected | `optional<T>` | no |
-| is it present | `x !== null`, `x === null` | `bool` | no |
-| the value, or a fallback | `x ?? d` (`d` of `T`, or of `optional<T>`) | `T` (or `optional<T>`) | only if `d` can |
-| the value | `x.value` | `T` | yes, when `x` is absent |
-| equality | `x === y`, `x !== y` | `bool` | no |
+| What | Written | Type |
+|---|---|---|
+| absent | `null` | the `optional<T>` of the place it lands in |
+| a present value | any value of `T` where an `optional<T>` is expected | `optional<T>` |
+| is it present | `x !== null`, `x === null` | `bool` |
+| the value, or a default | `x ?? d` (`d` of `T`, or of `optional<T>`) | `T` (or `optional<T>`) |
+| the value, where the build has proven `x` present (section 3) | `x.value` | `T` |
+| equality | `x === y`, `x !== y` | `bool` |
 
 **`null` is typed by its place, and only an optional place takes it.** It stands where an
 `optional<T>` is expected: an `<assign>` to, or `<data expr>` of, an optional variable, a
 `<sce:set>` of an optional field, an argument of an optional parameter, an algorithm's optional
 return, a branch of a conditional whose other branch is of `optional<T>` or of `T`, and an operand
-of `===` / `!==` beside an optional value. Anywhere else it is `expression/type-mismatch` ("`null`
-stands only where an optional value is expected"), and `slot_admits` stops admitting `Null` in
-every slot. Every variable still declares its initial value: an optional one starts at `null` or at
-a value, written in `expr` (or in its record's `<sce:set>`), and nothing stands in.
+of `===` / `!==` beside an optional value. Anywhere else it is `expression/type-mismatch`, naming
+`null` as what stands only where an optional value is declared; `slot_admits` no longer admits
+`Null` in a slot that declares a type (step 1). Every variable still declares its initial value:
+an optional one starts at `null` or at a value, written in `expr` (or in its record's
+`<sce:set>`), and nothing stands in.
 
 **A value of `T` is a value of `optional<T>`.** Where an optional is expected, a value of `T` is
 admitted by the rule that admits it where `T` is (an integer of any width checked into the width,
 a text held to the bound), and is present. The other direction is never implicit: an optional
-value where a `T` is expected is `expression/type-mismatch`, naming `.value` and `??`. ADR 0047
+value where a `T` is expected is `expression/type-mismatch`, naming `??` and a test. ADR 0047
 refused an implicit conversion of an enum to its number because "it would make `n = status` mean
 the number in one place and a refusal in another"; an implicit read of an optional would make
 `due + 1` succeed in one run and fail in another with nothing written that says it might.
 
-**Reading the value is a read that may find nothing.** `x.value` is the value of a present `x`. Of
-an absent `x` it is the failure every reading that finds nothing already is: `out-of-range`, as an
-index outside a list is and as `fromNumber` of a number no variant declares is (ADR 0047), since an
-optional is a collection of at most one value. So in a statechart the statement fails — nothing is
-written, `error.execution` is raised, the block ends (§scxml-4.9) — and a guard it stands in is
-false; in a `<data expr>` it is refused at build time, as any initial value that can fail is; in an
-algorithm only a body that declares `may-fail` may read it. It is lowered through the one helper
-each runtime already has for this reading, `found` (decision 4), so no new failure channel exists.
-`.value` on a record holds the read: `item.due.value`, `pick.value.title` for an
-`optional<record:Item>`; a record field named `value` is still that field, since a member is
-judged by the type of what it is read from.
+**`x.value` is admitted only where `x` is proven present** (section 3); everywhere else it is
+refused when the document is checked and generated, by a code of its own,
+`expression/optional-read-unproven`, placed at the read, naming the optional and the two repairs:
+a test that proves it (`x !== null`) around the read, or `x ?? d`. The record carries no `fix`,
+since the repair is the author's choice between the two (SCE_ERROR_CONTRACT.md §3). So no
+backend has a run-time path for reading an absent value: there is no failure to raise, no
+`out-of-range` for an optional, and `found` is not involved. `.value` on a record holds the read:
+`item.due.value`, `pick.value.title` for an `optional<record:Item>`; a record field named `value`
+is still that field, since a member is judged by the type of what it is read from.
 
-**A read the same expression has already tested cannot fail.** Within one expression, `x !==
-null && x.value < today`, `x === null || x.value < today` and `x !== null ? x.value : today` read
-`x.value` only where the test has found `x` present, and an expression writes nothing in between
-(no expression assigns; a call hands a copy and nothing reaches the machine's state). So a `.value`
-on the guarded side of `&&`, `||` or `?:`, whose test is `x !== null` / `x === null` of the same
-name — a variable, a parameter, a local, a field of a record variable, of a loop's record item or
-of the payload, not a call — is typed as a read that cannot fail: it adds no `may-fail` to an
-algorithm, it is admitted in a `<data expr>`, and it is lowered without the failure plumbing. The
-test is read from the expression's tree, not from the statements around it; a test in an `<if>`
-does not reach the `<assign>` inside it (an `<assign>` before the read could change the variable),
-and narrowing across statements is not decided here.
-
-**`??` is the total read.** `x ?? d` is the value of a present `x` and `d` of an absent one; `d` is
-evaluated only when `x` is absent (ECMAScript's rule), so a failure of `d` is a failure only then.
-`x` is evaluated once. The lexer stops refusing `??`; `?.` stays refused: for an optional record,
-`x !== null ? x.value.f : d` says what `x?.f ?? d` would.
+**`??` is the read with a default.** `x ?? d` is the value of a present `x` and `d` of an absent
+one; `d` is evaluated only when `x` is absent (ECMAScript's rule), so a failure of `d` is a
+failure only then. `x` is evaluated once. The lexer stops refusing `??`; `?.` stays refused: for
+an optional record, `x !== null ? x.value.f : d` says what `x?.f ?? d` would.
 
 **Equality is total.** `x === y` of two values of `optional<T>` (or one of `T`) is true when both
 are absent or both are present and their values are equal by `T`'s `===`; `null === null` is true
@@ -191,35 +183,98 @@ answer the language would not have to invent. A test of a flag that may be absen
   refuses it as it refuses any value of no type).
 - *`<foreach>`.* A list holds no optional element; a record item's optional field is read as any
   optional value (`v.due !== null`), and is not written, as nothing a loop binds is.
-- *`_event.data`.* A payload's optional field is read as an optional value
-  (`_event.data.due`), and `<assign location="shown" expr="_event.data"/>` takes a payload whose
-  fields are those of the record, each of the same type: an optional field of the record takes
-  the payload's optional field, and is not filled from a field of `T` (the schemas are one
-  document, as §2.15 already requires for a record).
+- *`_event.data`.* A payload's optional field is read as an optional value (`_event.data.due`).
+  `<assign location="shown" expr="_event.data"/>` takes a payload whose fields are those of the
+  record, each of the same type: an optional field of the record takes the payload's optional
+  field, and is not filled from a field of `T` (the schemas are one document, as §2.15 already
+  requires for a record).
 - *Algorithms (`<sce:signature>`).* A parameter, a return and a local may be of `optional<T>`; an
   argument of `T` is lifted, `null` is admitted, and an algorithm that answers "none" says so in
-  its return type (`<sce:return type="optional&lt;int64&gt;"/>`). A record whose schema has an
-  optional field crosses an algorithm's call field by field as every record does (the adapters of
-  "State an algorithm takes and gives back"), an optional enum field crossing by its variant's
+  its return type (`<sce:return type="optional&lt;int64&gt;"/>`). A `.value` in a body is held to
+  section 3 as in a statechart, so it never makes an algorithm `may-fail`. A record whose schema has
+  an optional field crosses an algorithm's call field by field as every record does (the adapters
+  of "State an algorithm takes and gives back"), an optional enum field crossing by its variant's
   name when present.
 - *Calls of other kinds (ADR 0048, ADR 0051).* A transform, condition, lookup, interpolation or
   validator takes and answers values, never an optional: a slot of `optional<T>` is refused where
-  the callee is imported, and an argument that is optional is `expression/type-mismatch`, naming
-  `.value` and `??`. A lookup whose miss answers `optional<T>` (the reading ADR 0048 turns into a
+  the callee is imported, and an argument that is optional is `expression/type-mismatch`, naming a
+  test and `??`. A lookup whose miss answers `optional<T>` (the reading ADR 0048 turns into a
   failure) is not decided here; this type is what it would answer.
-- *`<param>`, `<donedata>`, a typed request.* An optional value is carried as decision 3 writes it.
+- *`<param>`, `<donedata>`, a typed request.* An optional value is carried as section 4 writes it.
   A carrier that is text and not JSON — a BasicHTTP form, the `params` of a host-run `<invoke>`
   with no `sce:request` — has no spelling for absence, so an optional value there is refused at
-  the `<param>` (`scxml/static-datamodel-rule`, naming `??`). A `<send>` to a field of `T` of an
-  optional value is refused by the rule that holds a send to the field that reads it (§2.15); a
-  value of `T` to a field of `optional<T>` is admitted.
-- *A child session's `<param>`.* A child's variable of `optional<T>` is not handed a value yet:
-  the generated `InvokeParams` already spell "not handed" as `None` / `null` /
-  `std::optional`, and an optional variable would need a second absence inside the first. Refused
-  by name at the `<param>` until a step decides the shape (decision 8, step 9).
+  the `<param>` (`scxml/static-datamodel-rule`, naming `??`). A `<send>` of an optional value to a
+  field of `T` is refused by the rule that holds a send to the field that reads it (§2.15); a value
+  of `T` to a field of `optional<T>` is admitted.
+- *A child session's `<param>`.* A child's variable of `optional<T>` is not handed a value until a
+  step decides the shape of `InvokeParams` (which already spells "not handed" as `None` / `null` /
+  `std::optional`, so an optional variable needs a second absence inside the first): refused by
+  name at the `<param>` until then.
 - *`<log>`.* An absent value is logged as `null`, on every engine.
 
-### 3. The wire
+### 3. Where a value is proven present: narrowing
+
+A **subject** is a path the build can follow: a variable; a field of a record variable; a field of
+the payload (`_event.data.f`); a field of a `<foreach>`'s record item; an algorithm's parameter or
+local, or a field of one that is a record; and any of those followed by `.value.f` through an
+optional record already proven present. An element read by its index (`xs[i].f`) and the value of
+a call are not subjects: a call answers anew each time, and an index is a value that may change
+between the test and the read. A subject is proven present by a **test** on it, `s !== null` or
+`null !== s` (proving it where the test is true) and `s === null` or `null === s` (where it is
+false), and by nothing else.
+
+**Which constructs narrow.**
+
+- *Within one expression.* The right operand of `a && b` is read where `a` is true, the right
+  operand of `a || b` where `a` is false, and the branches of `c ? t : e` where `c` is true and
+  false; `!c` exchanges the two, and parentheses change nothing. What `a && b` proves where it is
+  true is what either side proves; what `a || b` proves where it is false is what either side
+  proves false. An expression writes nothing, so nothing inside one invalidates a fact.
+- *`<if>`, `<elseif>`, `<else>` in a statechart's executable content.* The block of an `<if>` is
+  read where its `cond` is true. Each `<elseif>`'s `cond` is read where every earlier `cond` of the
+  chain is false, and its block where those are false and its own is true. The `<else>` block is
+  read where every `cond` of the chain is false. Nothing a chain proves reaches past its `</if>`.
+- *An algorithm's `<sce:if>` and `<sce:else>`*, by the same rule, and `<sce:while>`, whose `cond`
+  proves its facts at the start of its body (re-tested on every turn).
+- *A guard or an early return in an algorithm.* After `<sce:require cond="…"/>`, the statements
+  that follow it in the same block are read where its `cond` is true (the algorithm has failed
+  otherwise). After an `<sce:if>` with no `<sce:else>` whose block ends in `<sce:return>` on every
+  path, the statements that follow it in the same block are read where its `cond` is false. The
+  statechart's executable content has no return and no guard, so nothing else narrows there.
+- *A transition's `cond`*, for the subjects of the payload only: a test of `_event.data.f` in the
+  `cond` proves it in that transition's executable content, because the event's data is the same
+  value from the `cond` to the end of the transition. A test of a variable in the `cond` proves
+  nothing in the content: between the two the microstep runs the exit actions of the states it
+  leaves and the content of every other transition it takes in document order, and any of those
+  may write the variable. A test in a state's `<onentry>` or `<onexit>` proves nothing in another
+  block.
+
+**What invalidates a fact.** A fact about a subject ends at the first statement after it, on the
+path from the test to the read, that may write the subject or anything that holds it:
+
+- an `<assign>` (or `<sce:assign>`) whose location is the subject, a path below it, or a path
+  above it (`r` for `r.f`, `r.value` for `r.value.f`), whatever value it writes;
+- an assignment of a call's result to the variable that holds it (a record or a list an algorithm
+  hands back whole);
+- a native `<script>` block, which may write anything, and ends every fact;
+- a `<send idlocation>` or an `<invoke idlocation>` naming the variable.
+
+An append to or a clear of the list a loop's item is drawn from does not end a fact about the
+item, which is a copy taken when the turn began. Re-assigning a present value does not re-establish
+a fact: only a test proves presence.
+
+**Loops.** A fact proven before a `<foreach>` (or an `<sce:while>`, or an algorithm's
+`<sce:foreach>`) holds inside its body only if nothing in the body invalidates it, since the second
+turn of the body follows the end of the first. A test inside the body proves its facts for the rest
+of that turn, by the rules above. A `<foreach>`'s item and index are new on every turn and are
+written by nothing in the body, so a fact about the item's field holds to the end of the turn.
+
+**Where it is implemented.** One pass over the judged tree (`forge::static_datamodel` for a
+statechart, the algorithm judge for a body) carries the set of proven subjects into each
+expression it judges, and the expression typer reads `.value` as proven or refuses it. The same
+set reaches the lowering, which writes a proven read without any failure plumbing (section 5).
+
+### 4. The wire
 
 **On the event wire (`_event.data`), an absent value is JSON `null` and a present one is the
 JSON `T` already writes** (a 64-bit integer as the text of its digits, an enum as its variant's
@@ -261,76 +316,72 @@ envelope carries `_event.data` as JSON with no schema identity (ADR 0044 decisio
 **The replay scenario vocabulary** writes absence as `null` in `data` and in an expected
 `variables` value (a variable, or a record's field); `sce_build::scenario_replay` admits `null`
 only where the machine's variable or field is optional, and every driver reads `null` against the
-host type of decision 4.
+host type of section 5.
 
-**The forge codecs.** A CBOR or content-line codec keeps `sce:required` (decision 7), whose
-generated host type is already the optional of decision 4 on five backends; its oracle already
-writes an absent entry as `null`. A positional codec's field has no absence of its own: a layout
-that may leave a field out says by what (`sce:present-if` over a flag or a chain), and a value of
-`optional<T>` is refused there. An event schema's own unit (the payload type a host builds) holds
-an optional field in the host type of decision 4, and the typed host API (`raise<Event>`) takes it
-as that type.
+**The codecs.** A CBOR codec writes an absent entry as a key left out of its map and a
+content-line codec as a property left out of its component: in an encoding that has no revisions,
+a missing key has no other meaning to keep, and both oracles already spell it so. Their host type
+is section 5's. A positional codec has no absence of its own (section 1).
 
-### 4. Each backend's lowering
+### 5. Each backend's lowering
 
-One host type per backend, the one its codecs' optional entries already use where they agree, and
-one helper for each concern:
+One host type per backend, the one every SCE surface of that backend spells an optional value
+with — the statechart, the algorithm, the schema unit, the typed host API and the codecs — and one
+helper for each concern:
 
-| | The type | Absent | Present | Is present | `x.value` | `x ?? d` | `===` |
+| | The type | Absent | Present | Is present | proven `x.value` | `x ?? d` | `===` |
 |---|---|---|---|---|---|---|---|
-| Rust | `Option<T>` | `None` | `Some(v)` | `is_some()` | `found(x)?` (a borrow or clone for a text) | `match x { Some(v) => v, None => d }` | `==` |
-| Kotlin | `T?` | `null` | `v` | `!= null` | `SceChecked.found(x)` taken | `x ?: d` | `==` |
-| C++ | `std::optional<T>` | `std::nullopt` | `v` | `has_value()` | `Checked::found(x)` taken | a runtime helper handed `d` as a lambda | `==` (C++17 defines it over `optional`) |
-| Go | `*T` | `nil` | a pointer to a fresh copy | `!= nil` | `scealgorithm.Found(…)` over the pointer | a runtime helper handed `d` as a function literal | one runtime helper, by value |
-| Python | `Optional[T]` | `None` | `v` | `is not None` | `found(x)` | a runtime helper handed `d` as a `lambda` | `==` |
-| C11 | `sce_optional_<elem>_t`, `{ bool present; T value; }` | `SCE_OPTIONAL_NONE` | `SCE_OPTIONAL_SOME(v)` | `.present` | `<elem>_optional_take(&sce_failure_, x)` | decided in its step, under the rule below | `<elem>_optional_eq` |
-| Interpreter | the JSON value or `null` | `null` | `v` | `!== null` | `SceStatic.found(x)`, which throws | `SceStatic.otherwise(x, function () { return d; })` | `===` |
+| Rust | `Option<T>` | `None` | `Some(v)` | `is_some()` | `sce_forge_runtime::optional::proven(x)` | `match x { Some(v) => v, None => d }` | `==` |
+| Kotlin | `T?` | `null` | `v` | `!= null` | `x!!` | `x ?: d` | `==` |
+| C++ | `std::optional<T>` | `std::nullopt` | `v` | `has_value()` | `*x` | a runtime helper handed `d` as a lambda | `==` (C++17 defines it over `optional`) |
+| Go | `optional.Of[T]` | `optional.None[T]()` | `optional.Some(v)` | `x.IsPresent()` | `x.Proven()` | a runtime helper handed `d` as a function literal | `x.Equal(y)` |
+| Python | `Optional[T]` | `None` | `v` | `is not None` | `x` | a runtime helper handed `d` as a `lambda` | `==` |
+| C11 | `sce_optional_<elem>_t`, `{ bool present; T value; }` | `SCE_OPTIONAL_NONE` | `SCE_OPTIONAL_SOME(v)` | `.present` | `.value` | decided in its step, under the rule below | `<elem>_optional_eq` |
+| Interpreter | the JSON value or `null` | `null` | `v` | `!== null` | `x` | `SceStatic.otherwise(x, function () { return d; })` | `===` |
 
 Whatever the spelling, `x ?? d` evaluates `x` once and `d` only when `x` is absent, and a failure
-of `d` is the statement's failure as any failure inside an expression is; the scenario of step 3
+of `d` is the statement's failure as any failure inside an expression is; the scenario of step 4
 holds every backend to both (a `d` that would overflow, read beside a present `x`).
+
+**A proven read has no failure path.** The build proved the value present, so each backend reads
+it directly. Rust reads it through one runtime function, `proven`, whose absent arm is
+`unreachable!`: an arm the build has proven no run reaches, written in one place so that no
+backend's lint reads the test and the read as a pattern to rewrite. Kotlin's `!!`, C++'s `*`, Go's
+`Proven()` and C11's `.value` are the same direct reads. The narrowing rules of section 3 are what
+make this sound, and the tests of step 3 hold each of them, an invalidating statement for each.
 
 **What is shared.**
 
-- *The read* is the runtime helper ADR 0047 named `found` "for what it reads, a value that may not
-  have been found" — `sce_forge_runtime::algorithm::found`, `SceChecked.found`,
-  `SCE::Forge::Checked::found`, `scealgorithm.Found`, `sce_algorithm.found` — so the failing read
-  of an optional, of an enum's number and of a lookup's key is one function per runtime, with one
-  failure (`out-of-range`). The Interpreter's library gains `SceStatic.found`, thrown as
-  `SceStatic.variant` throws. A guarded read (decision 2) is the same expression without the
-  helper.
 - *The type's spelling* is one function of the generator per backend (`LangCtx::optional_of`),
   which the statechart, the algorithm, the schema unit and the codecs' optional and gated wraps
   all call. The four copies of the wrap in `forge/generator.rs` (a gated field, a gated repeat, a
   gated chain, a gated embed) and the spellings of the CBOR and content-line generators are folded
-  into it where they agree, so an optional is spelled one way per backend.
+  into it, so an optional is spelled one way per backend.
 - *The wire* is one reader and one writer of `null` per runtime, in the module that already reads
   and writes a delivered value, called by every lift, the saved state and the typed host API.
+- *The Go type* is `Of[T]` of a new package of the Go forge runtime,
+  `github.com/newmassrael/sce-forge-runtime/optional`, beside `algorithm` and `codec`: a struct of
+  two unexported members, built only by `Some` and `None`, read by `Get() (T, bool)`,
+  `IsPresent()` and `Proven()`, compared by `Equal` (by value, and through the element's own
+  equality for a byte string). It copies by value, never allocates and never aliases, and its zero
+  value is absent. The owner chose it over a pointer (answer 2), and the Go codecs move to it
+  (step 13), so Go has one optional representation.
 - *The C11 type* is declared by one macro of a new runtime header (`sce/forge/optional.h`) per
-  element type — the struct, its two constructors, its `_take` and its `_eq` — beside the type it
-  wraps: in the runtime for the scalars, beside `sce_static_string_<N>_t` for a text of bound `N`,
-  under the enum document's guard for an enum (as `c11_enum_declaration` is), and beside the
-  machine's record type for a record, so a program that includes a machine and an algorithm holding
-  the same type declares it once.
+  element type — the struct, its two constructors and its `_eq` — beside the type it wraps: in the
+  runtime for the scalars, beside `sce_static_string_<N>_t` for a text of bound `N`, under the enum
+  document's guard for an enum (as `c11_enum_declaration` is), and beside the machine's record type
+  for a record, so a program that includes a machine and an algorithm holding the same type
+  declares it once.
 
-**Go: a pointer, weighed against a struct with a presence member.** A generic `Optional[T]` struct
-of two unexported members would copy by value, compare with `==`, never allocate and never alias.
-A pointer is what Go's own encoders and the SCE codecs already spell an optional value with
-(`nil` the one absence, no member that can disagree with another), and is what a Go host already
-reads from every SCE codec. The pointer is chosen, and what the struct would have given is held by
-rule: the machine never writes through a pointer it holds (it replaces it, as it replaces a slice),
-a host is handed a copy, and equality is the runtime's helper over the values, never `==` over the
-addresses.
-
-**C11: the one representation that is a flag and a value.** C has no optional type, and a pointer
-needs storage outside the value that a C machine without an allocator does not have. A tagged union
-is the same two parts. So C11 holds `{ bool present; T value; }`, as C++'s `std::optional` does
-under its interface, and closes what a flag beside a value would let through: the struct is one
-value (an assignment, a parameter, a return carry both parts together), it is built only by the
-two constructors (absent zeroes `value`, so two absent values are the same bytes), and generated
-code reads `value` only through `_take`, `_eq` and the guarded read. The document, the wire and
-the saved state never see the flag. The codecs' `<name>_present` members are left as they are: a
-codec's struct is its own API, and a value of a codec's entry never flows as one value.
+**C11: the one representation that is a flag and a value** (accepted by the owner, answer 1). C has
+no optional type, and a pointer needs storage outside the value that a C machine without an
+allocator does not have; a tagged union is the same two parts. So C11 holds
+`{ bool present; T value; }`, as C++'s `std::optional` does under its interface, and closes what a
+flag beside a value would let through: the struct is one value (an assignment, a parameter, a
+return carry both parts together), it is built only by the two constructors (absent zeroes
+`value`, so two absent values are the same bytes), and generated code reads `value` only through
+`_eq` and a proven read. The document, the wire and the saved state never see the flag. The codecs'
+`<name>_present` members become this type with the codec migration (step 14).
 
 **The Interpreter** holds absence as `null` — what ECMAScript, the lowered document and JSON all
 mean by it — and its library reads and writes it. `??` is lowered to a library call rather than left
@@ -340,12 +391,41 @@ to the engine, so the lowered document does not depend on which ECMAScript editi
 `Option<heapless::String<N>>` is a bounded text, and the lift that reads a payload into a buffer of
 its bound reads `null` where it reads a value.
 
-### 5. Evolution
+### 6. Evolution
 
-**A revision may widen a field from `T` to `optional<T>`, and that is the only change of type a
-revision may make.** Every value of `T` is a value of `optional<T>` and is written the same on the
-wire and in a saved state, so everything written before the widening reads after it. The field
-declares the revision that widened it:
+**A widening from `T` to `optional<T>` is the one change of type that keeps what was written
+readable.** Every value of `T` is a value of `optional<T>` and is written the same on the wire and in
+a saved state, so everything written before the widening reads after it, as present.
+
+**In a saved state, a widening keeps the shape** (the owner's answer 6; amends ADR 0045 section 2).
+The shape names each value by its **shape type**, the type a present value of it is read as: the
+shape type of `optional<T>` is the shape type of `T`, and of every other type the type itself. So a
+statechart variable widened from `int64` to `optional<int64>` keeps its line, `variable due int64
+-`, a record's field widened the same way keeps `field item.due int64`, an `optional<enum:A>`
+spells its variants as `enum:A` does, and the shape (format 1 and format 2 alike) is the digest it
+was. Every other change of type still moves the shape and refuses the restore, as before.
+
+What the shape no longer says, the restore asks of each value, by the restoring build's own types:
+
+- A `null` is read only where the restoring build's type is optional. A statechart variable or a
+  record's field of `T` that holds `null` is refused, naming the variable or the field, and the
+  restore builds nothing (ADR 0045's rule that a refusal anywhere leaves everything as it was).
+- A state saved before a widening restores into the widened build, each value present.
+- A state saved after a widening restores into a build from before it when every value it holds
+  is present, since each is then a value of `T`, and is refused at the first `null`. Nothing a
+  state holds is dropped either way, which is what the shape exists to guarantee; a state that
+  could not be read whole is refused.
+- A record's field of a schema that grew is read by the type the field has at the revision the
+  state names for the schema (ADR 0044 `revisions`): a `null` saved at a revision before the field
+  was widened (`sce:optional-since`, below) is refused, as a field a revision does not declare is.
+
+The digest of a revision in `revisions` names each field by its shape type too, so a revision that
+only widens a field writes the digest the revision before it wrote, and the two builds agree on a
+state saved at either; what a revision widened is the restoring build's schema to say, and it says
+it with `sce:optional-since`.
+
+**On the network, a widening is a revision.** Two machines that exchange an event read one
+another's deliveries as they come, so the schema says which revision widened a field:
 
 ```xml
 <data id="due" sce:type="optional&lt;int64&gt;" sce:direction="in" sce:optional-since="2"/>
@@ -357,51 +437,32 @@ declares the revision that widened it:
   `validation/sce-attribute-unread`). Out of range, it is `validation/attribute-rule-violated`. A
   field that was optional from the revision that added it declares none.
 - At a revision before `sce:optional-since` the field is of `T`; from it on, of `optional<T>`.
-- Narrowing (`optional<T>` to `T`) and every other change of type remain refused: a delivery or a
-  saved state of absence would have nothing to be read as.
-
-**The rule of ADR 0044 decision 1, amended.** Two schemas of one event are revisions of one schema
-when (a) every field both declare is declared alike — the same type, bound, quantity, `since`,
-default and `optional-since` — or differs only in that one declares `T` and the other
-`optional<T>` with an `optional-since` past the first's `sce:revision`; and (b) is unchanged. The
-rule stays symmetric. `forge::schema_revision::divergence` answers a widening the other side's
-revision cannot hold, or two builds that disagree about which revision widened a field, as a
-`Redeclared` field, with the two types and revisions in the reason of `mesh/event-schema-mismatch`.
-
-**On the network.** A delivery from an older sender carries `T` and is read as present. A newer
-sender's `null` reaching a receiver built before the widening is refused there, as a value its
-field cannot hold (`error.execution`): the receiver's type has no member for it, as an older
-receiver has none for a variant added after it (ADR 0044 decision 6). A deployment that widens a
-field therefore upgrades the machines that receive it before the ones that send absence, and the
-build names the machines that exchange the event.
+- ADR 0044 decision 1, amended: two schemas of one event are revisions of one schema when (a) every
+  field both declare is declared alike — the same type, bound, quantity, `since`, default and
+  `optional-since` — or differs only in that one declares `T` and the other `optional<T>` with an
+  `optional-since` past the first's `sce:revision`; and (b) is unchanged. The rule stays symmetric.
+  `forge::schema_revision::divergence` answers a widening the other side's revision cannot hold, or
+  two builds that disagree about which revision widened a field, as a `Redeclared` field, with the
+  two types and revisions in the reason of `mesh/event-schema-mismatch`.
+- A delivery from an older sender carries `T` and is read as present. A newer sender's `null`
+  reaching a receiver built before the widening is refused there, as a value its field cannot hold
+  (`error.execution`), as an older receiver refuses a variant added after it (ADR 0044 decision
+  6). A deployment that widens a field upgrades the machines that receive it before the ones that
+  send absence, and the build names the machines that exchange the event.
+- Narrowing (`optional<T>` to `T`) and every other change of type remain refused on the network.
 
 **A log written at an older revision** is a sequence of deliveries, and is replayed through the
-lift above: an entry written before the widening carries the field's value and reads present, an
-entry written before the field existed reads its `sce:default` (absent when it declares none). The
-language does not reinterpret what an entry holds: a number an application once wrote to mean
-"none" is replayed as the day it is, and turning it into absence is the application's own
+lift of section 4: an entry written before the widening carries the field's value and reads
+present, an entry written before the field existed reads its `sce:default` (absent when it declares
+none). The language does not reinterpret what an entry holds: a number an application once wrote
+to mean "none" is replayed as the day it is, and turning it into absence is the application's own
 migration of its log.
 
-**A saved state (ADR 0044 decision 3, ADR 0045), amended.** The shape names a record schema's
-first-revision fields with their type at revision 1, so a schema that widened a first-revision
-field keeps the shape it had, and a state saved before the widening restores. The digest of each
-revision names each field with its type at that revision. A state saved at a revision before the
-widening restores into the widened build with each record's value of the field present; one that
-holds `null` in such a field is refused, since its revision does not admit absence (as a record
-holding a field its revision does not declare is refused). The upgrade is in the one function each
-runtime judges a saved state in (`saved_state::upgrade`, `SavedState.upgrade`). A shape line spells
-an optional variable `variable due optional<int64> -`, and an optional field `field item.due
-optional<int64>`, in both formats.
-
-**A statechart variable is not a schema.** A variable re-typed from `T` to `optional<T>` is a
-change of the statechart, which has no revisions, and its shape moves as it does for any re-typed
-variable (ADR 0045: the restore is refused and the host keeps the text). A value that must survive
-an upgrade of its type is kept in a record of a schema, which the rule above carries.
-
-### 6. What changed since ADR 0052
+### 7. "No refusal" is an absent record, and `none` is retired (supersedes ADR 0052 decision 2)
 
 ADR 0052 rejected "an optional reason" because a per-field `sce:optional` "would be a new type
-carried on six backends and in the saved state, to say what one variant says". Three things changed:
+carried on six backends and in the saved state, to say what one variant says". Three things
+changed:
 
 - **A case a variant cannot serve.** `none` worked because an enum's variants are the author's to
   add. A day, a count, an amount have no value to spare: every `int64` is a day, so the only
@@ -409,104 +470,177 @@ carried on six backends and in the saved state, to say what one variant says". T
   the owner's rule refuses.
 - **It is a type, not a per-field attribute.** What ADR 0052 rejected was absence on a field. What
   is decided here is a type a variable, a field, a parameter, a return, a payload and a saved state
-  all hold, so a value that may be absent flows from the wire to a variable to an algorithm without
-  a second spelling at each step.
+  all hold.
 - **The cost ADR 0052 named is accepted** under the owner's rule.
 
-By the rule this ADR applies, `record_refusal.none` is now a variant that stands for no refusal
-rather than a refusal: the list never sends it, and a parent's variable starts at it because it had
-no other start. A parent can now hold its last refusal in a variable of
-`optional<record:Refused>`, starting at `null`. Whether `none` is retired while the list is a
-pre-release part (ADR 0052 decision 3's condition still holds) is a question for the owner
-(below).
+By the same rule, `record_refusal.none` is a variant that stands for no refusal rather than for a
+refusal — the list never sends it — and it is retired while the shared list is a pre-release part
+(the owner's answer 4; ADR 0052 decision 3's condition still holds: no saved state of the list or a
+refusal exists outside this repository's tests). A parent keeps its last refusal in a variable of
+**`optional<record:Refused>`**, starting at `null`, and not in a record whose `reason` is
+`optional<enum:Refusal>`:
 
-### 7. The codecs keep `sce:required`, for now
+- A refusal is the whole record — the row, the field, the command and the reason — and the record is
+  what is absent before the first one. An optional reason inside a present record would leave the
+  record's `id`, `field` and `kind` holding a row, a field and a command of a refusal that never
+  happened, the impossible state ADR 0052 already named for `kind` ("the command beside `none` is
+  the variable's starting value, `edit`, with no meaning").
+- The schema `record_refused` stays a record of four present fields: every refusal the list sends
+  has all four, so no field of it is optional.
+
+`record_refusal` loses `none` and starts at `notWriter` = 1, its numbers unchanged; the change is
+to the enum's first revision (removing a variant is not a revision, ADR 0044), which moves the saved
+shape of every machine that holds the enum, the list's own among them, and its pin in
+`sce-build/tests/fixtures/standard_saved_shapes.json` moves with it. The step lands after
+`optional<record:X>` is lowered on every backend (step 11).
+
+### 8. The codecs say optional the way everything else does
 
 A CBOR or content-line entry is optional unless it is `sce:required="true"`: the reverse of the
-rule decided here, where a bare `T` is always present. Its host type is already this ADR's
-(decision 4 folds the spellings into one function), so a value read from a codec and held by a
-statechart has one type on each backend. Making codec entries say `optional<T>` and a bare `T`
-required would flip the meaning of every codec entry written without `sce:required`, the standard
-Mesh envelope among them; it is a decision of its own, asked of the owner below, and not taken
-here. Until it is, `optional<…>` on a codec entry is refused naming `sce:required`.
+rule decided here, where a bare `T` is always present. The codecs move to this rule (the owner's
+answer 5): a bare `T` entry is required, an `optional<T>` entry is optional, and `sce:required` is
+no longer part of the grammar, so the language has one way to say a value may be absent. For a
+content-line parameter of a repeated property, `optional<T>` is optional of each line that exists,
+as a parameter that is not `sce:required` is today.
 
-### 8. How it lands
+**The migration.** One step moves every codec document of the repository (the standard Mesh
+envelope among them), the grammar, the generators and the conformance cases together: an entry
+written without `sce:required` becomes `optional<T>`, and `sce:required="true"` is removed.
+
+**The transition refusals, a migration aid and not part of the final structure.** A document
+written in the earlier spelling, outside this repository, would otherwise change meaning in
+silence: each of its entries without `sce:required` would become required. So, from the migration
+step until the step that ends the transition, a codec is refused, each by
+`validation/attribute-rule-violated` with the new spelling as its repair:
+
+- an entry that writes `sce:required`, in any form, with its rewrite (`="true"` removed; `="false"`
+  as `optional<T>`). A document that writes `sce:required` anywhere is written in the earlier
+  spelling throughout, so the refusal names the rewrite of each of its entries: every entry without
+  the attribute becomes `optional<T>`;
+- a codec none of whose entries writes `sce:required` or `optional<…>`. In the earlier spelling it
+  is a codec of optional entries only, in the new one a codec of required entries only, and nothing
+  in it says which was meant; the refusal names both readings and the edit for the first. A codec
+  whose every entry is required is written in the new spelling once the transition ends.
+
+The step that ends the transition removes both refusals; `sce:required` is then an attribute
+nothing reads, refused as `validation/sce-attribute-unread` like any other. What the aid cannot
+reach after that is a document never built during the transition, and the release note of the
+migration step names it.
+
+**One representation.** The Go codecs' pointer fields and the C11 codecs' `<name>_present` members
+become section 5's types, Go's in its own step (13), C11's with the migration (14), so a value read
+from a codec and held by a statechart has one type on each backend.
+
+### 9. How it lands
 
 Each step lands alone, refuses by name what it does not yet lower (`generate/unsupported-feature`,
 "an optional value has no <language> lowering yet", the pattern every model feature has landed
 by), and carries the tests that hold it. Expected values in every scenario are derived from the
 documents, not observed from a backend.
 
-1. **The type in the model and the grammar.** `AlgorithmValueType::Optional`; a schema field typed
-   by the value type; `read_algorithm_value_type` / `read_type_attr`; the `dataValueType` of
-   `schemas/sce-forge-ext.xsd`; the element and nesting rules and the positions that refuse it;
-   the forge-AST shape (`apis/forge-ast.v1.schema.json`, additive); every backend and the
-   Interpreter's lowering refusing a document that holds one. `null` refused in every slot that is
-   not optional, and `slot_admits` no longer admitting `Null`. Tests: a new
-   `sce-build/tests/an_optional_value_is_declared_by_its_type.rs` — each admitted element on each
-   position, each nesting refused, each other kind refused, the serialised shape, the per-backend
-   refusal; and `null` assigned to an `int64` variable refused (a test that turns red if
-   `slot_admits` admits `Null` again). Docs: §2.15 "Optional variables", the EventSchema kind.
-2. **The expression surface.** `InferredType::Optional`; the lift of `T`; `=== null`; `.value`
-   typed as a read through `found` (`CallReading::Found`); `??` (the lexer's refusal removed);
-   conditionals; the guarded read; the refusals of ordering, arithmetic, `len`, text joins, truth
-   tests, other kinds' slots, text carriers and child params; the enum judge holding an
-   `optional<enum>`. Tests: `sce-build/tests/an_optional_value_is_tested_read_and_compared.rs`, one
-   case per row of decision 2's table and per refusal, and the guarded read admitted in a
-   `<data expr>` where the unguarded one is refused. No backend lowers yet.
-3. **The shared scenario and the drivers' vocabulary.** `scenarios/static_optional.json` (a variable,
+1. **The type in the model and the grammar** (implemented with this ADR). `AlgorithmValueType::
+   Optional` over `OptionalElemType`; the statechart variable's reader (`read_optional_value_type`)
+   with the element and nesting rules; every other position refusing `optional<…>` by name
+   (`read_type_attr`), a list of optional elements refused in `read_algorithm_value_type`; an
+   optional `string` or `bytes` variable bounded by `sce:capacity`; the `optionalValueType` of
+   `schemas/sce-forge-ext.xsd`; the forge-AST shape (`apis/forge-ast.v1.schema.json`); every
+   backend and the Interpreter refusing a document that holds one
+   (`StaticTarget::lowers_optional`, false on every target); and `null` refused in a slot that
+   declares a type. Test: `sce-build/tests/an_optional_value_is_declared_by_its_type.rs`.
+   Meanwhile the statechart's judge types an optional variable as a value it does not yet know
+   (`InferredType::Unknown`), as it types a variable with no type: nothing about one is judged
+   until step 3, and no backend generates one.
+2. **An event schema's field typed by the value type.** The schema field's type moves from `SceType`
+   to the value type (a scalar or an optional scalar) at every reader, which the compiler
+   enumerates; `optional<T>` is read on a schema field and refused by name at generation; the lift
+   still refuses such a schema on every backend. Test: the schema-field cases added to the step-1
+   test file, and the forge-AST of a schema with an optional field.
+3. **The expression surface and narrowing.** `InferredType::Optional`; the lift of `T`; `=== null`;
+   `??` (the lexer's refusal removed); conditionals; section 3's narrowing over expressions,
+   `<if>` chains, transitions and algorithm bodies, and its invalidation; `.value` proven or refused
+   with `expression/optional-read-unproven` (in the appendix of docs/SCE_ACCEPTED_SUBSET.md and
+   SCE_ERROR_CONTRACT.md); the refusals of ordering, arithmetic, `len`, text joins, truth tests,
+   other kinds' slots, text carriers and child params; `null` beside a non-optional operand of
+   `===`; the enum judge holding an `optional<enum>`. Tests:
+   `sce-build/tests/an_optional_value_is_tested_read_and_compared.rs`, one case per row of section
+   2's table and per refusal, and `sce-build/tests/a_value_is_proven_present_only_where_tested.rs`,
+   one case per narrowing construct and one per invalidating statement (each read refused after
+   it), a transition whose `cond` tests a payload field (proven) and a variable (not), and a loop
+   whose body assigns the subject.
+4. **The shared scenario and the drivers' vocabulary.** `scenarios/static_optional.json` (a variable,
    a record's field, a payload's field and a list of records holding an optional `int64`, an
-   `optional<string>` and an `optional<enum:…>`: set, cleared, tested, read, read absent with
-   `error.execution` counted, `??`, equality, a delivery with a value, with `null`, without the key);
-   `scenario_replay` admitting `null` where the machine holds an optional; each scanning driver
-   listing the scenario as not yet lowered, with the reason, until its backend's step. Tests:
-   `every_replay_scenario_keeps_to_the_vocabulary_its_drivers_replay` reading `null` in the new
-   scenario and refusing it in a scenario whose variable is not optional.
-4. **One backend at a time, in any order (seven steps, each its own branch):** Rust, Kotlin, Go,
-   Python, C++, C11, the Interpreter. Each adds its runtime's `null` reader and writer and lift
-   case, its spelling in `LangCtx::optional_of`, the lowering of every row of decision 2, the typed
-   host API's optional arguments and readers, lifts its refusal, takes itself off the scenario's
-   list, and replays `static_optional.json` (Rust `static_scenarios`, Kotlin `StaticScenarioTest`,
-   Go `static_scenarios_test.go`, Python `test_static_scenarios.py`, C++
+   `optional<string>` and an `optional<enum:…>`: set, cleared, tested, read where proven, `??` with
+   a `d` that would fail only when evaluated, equality, a delivery with a value, with `null`, and
+   without the key); `scenario_replay` admitting `null` where the machine holds an optional; each
+   scanning driver listing the scenario as not yet lowered, with the reason, until its backend's
+   step. Tests: `every_replay_scenario_keeps_to_the_vocabulary_its_drivers_replay` reading `null` in
+   the new scenario and refusing it in a scenario whose variable is not optional.
+5. **One backend at a time, in any order (seven steps, each its own branch):** Rust (with
+   `sce_forge_runtime::optional::proven`), Kotlin, Go (with the `optional` package and `Of[T]`),
+   Python, C++, C11 (with `sce/forge/optional.h`), the Interpreter (with `SceStatic.otherwise`).
+   Each adds its runtime's `null` reader and writer and lift case, its spelling in
+   `LangCtx::optional_of`, the lowering of every row of section 2, the typed host API's optional
+   arguments and readers, sets `lowers_optional`, takes itself off the scenario's list, and replays
+   `static_optional.json` (Rust `static_scenarios`, Kotlin `StaticScenarioTest`, Go
+   `static_scenarios_test.go`, Python `test_static_scenarios.py`, C++
    `AStaticDatamodelRunsGeneratedCppTest`, the Interpreter
    `AStaticDatamodelRunsLoweredUnderTheInterpreterTest`, and for C11 a hand-written
-   `backends/c/tests/integration/test_static_optional.c`, as the other C scenarios are). C11 adds
-   `sce/forge/optional.h`, and the Go step the runtime's equality and copy helpers. The committed
-   trees of its backend that its template change reaches are regenerated with it.
-5. **The saved state (Rust, Kotlin).** `null` in the two saved-state schemas; the shape's spelling;
-   the readers and writers; `saved/static_optional.json` and `saved/format1/static_optional.json`
-   (one absent and one present value of each element), validated by
-   `sce-build/tests/saved_state_schema.rs` and restored by each backend's saved-state tests.
-6. **Widening across revisions.** `sce:optional-since` in the grammar, the forge roster of known
+   `backends/c/tests/integration/test_static_optional.c`, as the other C scenarios are). The
+   committed trees of its backend that its template change reaches are regenerated with it.
+6. **The saved state (Rust, Kotlin).** `null` in the two saved-state schemas; the shape type;
+   the per-value check of a `null`; `saved/static_optional.json` and
+   `saved/format1/static_optional.json` (one absent and one present value of each element),
+   validated by `sce-build/tests/saved_state_schema.rs` and restored by each backend's saved-state
+   tests; a state of a machine whose variable is `int64` restored into the machine widened to
+   `optional<int64>` (restores, present), and a state holding `null` restored into the machine of
+   `int64` (refused, naming the variable); a test that the shape of a widened machine is the shape
+   of the unwidened one, and that `int64` to `int32` still moves it.
+7. **Widening across revisions.** `sce:optional-since` in the grammar, the forge roster of known
    names, the reader and the rendering; the amended `divergence` and its `Redeclared` reason; the
-   per-revision type in the shape and the digests; the upgrade refusing `null` saved at an earlier
-   revision; the absent default. Tests: `forge::schema_revision`'s unit tests (widened alike, widened
-   at two revisions, narrowed, widened past the other's revision); a new
+   shape type in the per-revision digests; the restore refusing `null` saved at a revision before
+   the widening; the absent default. Tests: `forge::schema_revision`'s unit tests (widened alike,
+   widened at two revisions, narrowed, widened past the other's revision); a new
    `scenarios/static_optional_widened.json` on the seven engines (an entry of revision 1 read
    present, one of revision 2 read absent, one lacking a first-revision field refused, an added
    optional field with no default read absent); a revision-1 saved instance restored into the
-   revision-2 build and one holding `null` refused; the Mesh check over two machines built from the
-   two revisions. Docs: ADR 0044's amendments in docs/SCE_ACCEPTED_SUBSET.md "An event schema that
-   grows" and "What a revision does not make safe".
-7. **Algorithms.** Optional parameters, returns and locals; the adapters' copy of an optional field
-   and of an optional enum crossing by name; `.value` in a body making it `may-fail` unless
-   guarded. Tests: `scenarios/static_state_algorithm_optional.json` (an algorithm that answers the
-   earliest due day of a list of records, absent for an empty list or one with none due) on every
-   engine; the refusal of an unguarded `.value` in a body that does not declare `may-fail`.
-8. **`optional<record:X>`.** A variable and an algorithm slot of an optional record: started at
-   `null`, taken whole from a record, a payload, a list's element; `r.value.f`; a field write to an
-   absent record failing as a read does. Tests: `scenarios/static_optional_record.json` on every
-   engine, and its saved instance.
-9. **The edges left refused by name**: a child session's optional variable as a `<param>` (with
-   the shape of `InvokeParams` it needs), a host action's optional argument, a host-run `<invoke>`'s
-   typed request and result with optional fields. Each with the scenario or test of its edge.
-10. **The owner's answers**, each its own step: retiring `record_refusal.none` (ADR 0052) and
-    moving `record_list_parent`, its scenario and its saved shape pin
-    (`sce-build/tests/fixtures/standard_saved_shapes.json`); codec entries spelled by `optional<T>`.
+   revision-2 build and one holding `null` at revision 1 refused; the Mesh check over two machines
+   built from the two revisions. Docs: ADR 0044's amendments in docs/SCE_ACCEPTED_SUBSET.md "An event
+   schema that grows" and "What a revision does not make safe".
+8. **Algorithms.** Optional parameters, returns and locals (the algorithm reader stops refusing
+   them); the adapters' copy of an optional field and of an optional enum crossing by name; section
+   3 in a body. Tests: `scenarios/static_state_algorithm_optional.json` (an algorithm that answers
+   the earliest due day of a list of records, absent for an empty list or one with none due, using
+   a guard and an early return) on every engine.
+9. **`optional<record:X>`.** A variable and an algorithm slot of an optional record: started at
+   `null`, taken whole from a record, a payload, a list's element; `r.value.f` where proven; a field
+   write to `r.value.f` where proven, and refused elsewhere. Tests:
+   `scenarios/static_optional_record.json` on every engine, and its saved instance.
+10. **The edges left refused by name**: a child session's optional variable as a `<param>` (with
+    the shape of `InvokeParams` it needs), a host action's optional argument, a host-run
+    `<invoke>`'s typed request and result with optional fields. Each with the scenario or test of
+    its edge.
+11. **`record_refusal.none` retired** (section 7): the enum, `record_list.scxml`,
+    `record_list_parent.scxml` holding `optional<record:Refused>`, `scenarios/record_list_parent.json`
+    and the Go, C and C++ drivers that read the refusal by hand, the pin in
+    `standard_saved_shapes.json`, docs/SCE_ACCEPTED_SUBSET.md "The standard shared record list".
+    Test: the scenario's first step expecting `refused` to be `null`.
+12. **Codec entries typed by `optional<T>`** (section 8): the grammar, `CborEntry` and the
+    content-line entry typed by the value type, every repository codec document and conformance case
+    migrated, and the two transition refusals. Tests: the codec conformance oracle unchanged in its
+    bytes; a codec with `sce:required="true"`, one with `="false"` and one of bare entries only,
+    each refused with its rewrite.
+13. **Go codecs on `optional.Of[T]`**: the CBOR and content-line codecs' pointer fields, and the
+    gated positional fields, move to the Go optional type, through `LangCtx::optional_of`. Tests:
+    the Go conformance cases, regenerated, unchanged in their bytes.
+14. **C11 codecs on `sce_optional_<elem>_t`**: the same for C11's `<name>_present` members. Tests:
+    the C11 conformance cases, unchanged in their bytes.
+15. **The end of the codec transition**: the two refusals of section 8 removed, `sce:required`
+    dropped from the roster of known names.
 
-Steps 1 and 2 come first and in that order; 3 after 2; the seven of step 4 after 3 and
-independently of one another; 5 after the Rust and Kotlin steps of 4; 6 after 5; 7, 8 and 9 after
-the backends they lower on.
+Steps 1, 2 and 3 come first and in that order; 4 after 3; the seven of step 5 after 4 and
+independently of one another; 6 after the Rust and Kotlin steps of 5; 7 after 6; 8, 9 and 10 after
+the backends they lower on; 11 after 9; 12 after every step of 5; 13 after 12 and the Go step; 14
+after 12 and the C11 step; 15 last.
 
 ## Alternatives considered
 
@@ -515,7 +649,7 @@ the backends they lower on.
   to test it first. The owner's rule refuses it.
 - **A companion `bool`** (`hasDue` beside `due`). Two fields that must agree, a `due` that holds a
   day while `hasDue` is false, and a wire, a saved state and a scenario that can carry the
-  disagreement. The owner's rule refuses it. (The C11 representation is not this: decision 4.)
+  disagreement. The owner's rule refuses it. (The C11 representation is not this: section 5.)
 - **A sum type, an enum whose variants carry values.** It would express this and more, and it has
   no native carrier on Go, Python or C, where it would be a hand-built tagged structure, and none
   on the wire. Every backend and the wire have a native "absent or a value"; the general feature
@@ -525,54 +659,75 @@ the backends they lower on.
 - **A per-field `sce:optional="true"`** (ADR 0052's framing). Absence on a field only: a variable
   that copies the field, a parameter it is handed to, a return that answers it would each need the
   attribute again, which is a type spelled as an attribute in every place.
-- **Absence as a missing key on the wire.** A missing key already means "the sender's revision
-  does not have this field" (ADR 0044); a field added later with a present default would then read
-  two meanings from one delivery.
+- **Absence as a missing key on the event wire.** A missing key already means "the sender's
+  revision does not have this field" (ADR 0044); a field added later with a present default would
+  then read two meanings from one delivery. (A codec has no revisions, so a missing key is free to
+  mean absent there.)
 - **Every type admitting `null`.** A value that may be absent everywhere is a test owed
   everywhere; a bare `T` stays present.
 - **An implicit read** (`due + 1` failing when `due` is absent). ADR 0047's reason against an
   implicit conversion holds: one expression would mean a value in one run and a failure in
   another with nothing written that says so.
+- **A read that fails at run time** (`x.value` raising `error.execution` through `found` when `x`
+  is absent), which the proposal decided. The owner refused it (answer 7): it leaves a run-time
+  path the build could have closed, and a statement that may fail where the author could have been
+  told when the document was built. A read is admitted where the build has proven presence, and
+  `??` is the read for every other place.
 - **A read spelled as a builtin** (`value(x)`, `present(x)`). `value` is a name documents already
   give their variables and fields (the shared list's `record_value` among them); a presence
   builtin would be a second spelling of `x !== null`.
-- **Narrowing across statements** (`<if cond="due !== null">` making `due.value` total inside).
-  Sound only when nothing in between writes the variable, which an `<assign>` before the read can;
-  the analysis is a feature of its own, and a statechart receives the failure of an unguarded
-  read as `error.execution`. Left for a later decision.
-- **A struct for Go, `Optional[T]`.** Weighed in decision 4: value semantics, at the cost of a
-  second Go spelling of optional beside every codec's pointer.
+- **A transition's `cond` narrowing a variable in its content.** The microstep runs exit actions
+  and other transitions' content between the two, any of which may write it; only the payload is
+  the same value throughout.
+- **A pointer for Go**, which the proposal chose because the Go codecs already use one. The owner
+  chose the value struct (answer 2): a pointer aliases, compares by address, allocates, and has a
+  zero value only by convention; the codecs move to the struct instead.
 - **A pointer for C11.** It needs storage elsewhere, which a C machine without an allocator does
   not have for a value it holds.
-- **Admitting `optional<T>` in a codec entry beside `sce:required`.** Two spellings of one thing in
-  one document kind; decision 7.
+- **A widening that moves the saved shape** (the proposal, for a statechart variable). The owner
+  refused it (answer 6): every value written before a widening reads after it, so refusing the
+  restore would lose a user's state over a change that loses nothing. The shape type keeps the
+  shape, and the per-value check refuses exactly the states that cannot be read whole.
+- **`optional<enum:Refusal>` for "no refusal"** (section 7). A present record around an absent
+  reason holds a row, a field and a command of a refusal that never happened.
+- **Keeping `sce:required` beside `optional<T>`.** Two spellings of one thing, with opposite
+  defaults in two kinds of document; section 8.
 
 ## Consequences
 
-- A value that may be absent is declared as such, read only where the document says what absence
-  means, and carried on the wire, in a saved state and in a scenario as `null`.
-- An application widens a field of a released schema from `T` to `optional<T>` in a new revision
-  and keeps its logs and its users' saved states; it upgrades the machines that receive the event
+- A value that may be absent is declared as such, read only where the build has proven it present
+  or with a default, and carried on the wire, in a saved state and in a scenario as `null`.
+- An application widens a variable, a record's field or a schema field from `T` to `optional<T>` and
+  keeps its logs and its users' saved states; it upgrades the machines that receive the event
   before the ones that send absence.
-- `null` is no longer admitted in a slot that is not optional, which a document that relied on it
+- `null` is no longer admitted in a slot that declares a type, which a document that relied on it
   (if any does) finds out at build time.
 - Every committed tree of a machine that holds an optional value is new; the trees of the codecs
-  whose optional wrap is folded into `LangCtx::optional_of` must regenerate unchanged, which is
-  what that step's regeneration shows.
+  whose optional wrap is folded into `LangCtx::optional_of` regenerate unchanged on Rust, Kotlin,
+  C++ and Python, and change on Go and C11 with steps 13 and 14.
+- Every codec document of the repository is rewritten once, and an author outside it is told how
+  to rewrite theirs.
+- ADR 0052 decision 2 is superseded; its parents hold `optional<record:Refused>`.
 
-## Questions for the owner
+## The owner's answers (2026-10-21)
 
-1. **C11's representation** (decision 4): a struct of a flag and a value, built and read only by
-   the shared constructors and readers, is the one form without an allocator. Accepted?
-2. **Go's representation** (decision 4): a pointer, as every Go codec already spells an optional
-   entry, or a generic value struct, which would then be adopted by the codecs too?
-3. **A first-revision optional field whose key a delivery lacks** (decision 3) is refused, so that
-   a sender that forgot the field is told apart from one that wrote absence. Or should a missing key
-   read absent for an optional field?
-4. **`record_refusal.none`** (decision 6): retire it while the shared list is pre-release, so a
-   parent holds `optional<record:Refused>` starting at `null`?
-5. **Codec entries** (decision 7): move CBOR and content-line codecs to `optional<T>`, with a bare
-   type required, through a release in which an entry that says neither is refused?
-6. **A statechart variable widened from `T` to `optional<T>`** (decision 5) moves the shape and is
-   refused on restore, as any re-typed variable is. Is that the rule, or should a statechart
-   declare revisions of its own variables (a decision of its own)?
+1. **C11's representation**: accepted as proposed — a struct of a flag and a value, through the
+   macros of `sce/forge/optional.h` (section 5).
+2. **Go's representation**: a generic value struct in the Go forge runtime, not a pointer; the Go
+   codecs adopt it, so Go has one optional representation, and the migration of their pointer
+   fields is a step of its own (sections 5 and 8, step 13).
+3. **A first-revision optional field whose key a delivery lacks**: refused, as proposed; absence is
+   an explicit `null` (section 4).
+4. **`record_refusal.none`**: retired now, while the shared list is pre-release; "no refusal" is an
+   absent optional. The shape is `optional<record:Refused>`, for the reason section 7 gives; the
+   list's saved-shape pin moves with it, in its own step after the backends lower optional values
+   (step 11). ADR 0052 records that this supersedes its decision 2.
+5. **Codecs**: moved from `sce:required` to `optional<T>`, with every repository codec migrated in
+   one step and the two transition refusals as a migration aid that a later step removes
+   (section 8).
+6. **A widening keeps a saved state restorable**: a statechart variable, or a record field it
+   holds, widened from `T` to `optional<T>` keeps the saved shape, and only other changes of type
+   move it (section 6). This changed the proposal.
+7. **No failing read**: `x.value` only where narrowing proves presence, refused when the document
+   is built everywhere else, with `??` as the read with a default and no run-time path for an
+   absent read (sections 2 and 3). This changed the proposal.

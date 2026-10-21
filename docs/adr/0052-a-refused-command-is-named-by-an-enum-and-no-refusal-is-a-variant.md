@@ -1,7 +1,9 @@
 # ADR 0052 — A refused command is named by an enum, and no refusal is a variant
 
 - Status: Accepted (2026-10-21), under the owner's standing rule: the most long-term correct way,
-  cost ignored
+  cost ignored. Decision 2 is superseded by ADR 0055 (2026-10-21): "no refusal" is an absent
+  optional value, a parent's `optional<record:Refused>` that starts at `null`, and the variant
+  `none` is retired in that ADR's step 11. Decisions 1 and 3 stand.
 - Date: 2026-10-21
 - Amends: ADR 0046 (section 5, what a refusal tells its parent)
 - Scope: `stdlib/shared/record_refused.scxml`, `stdlib/shared/record_refusal.scxml`, a new
