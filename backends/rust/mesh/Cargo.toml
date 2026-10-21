@@ -67,8 +67,9 @@ sce-portable-bytes = { path = "../portable-bytes", default-features = false }
 # The engine's host-processor surface: a `<send target="#peer">` reaches the
 # router as the runtime's `HostSendRequest`, so the router reads the one
 # shape every generated send site fills rather than a second copy of it.
-# Without `http-send`, which is the runtime's own transport and not Mesh's.
-sce-rust-runtime = { path = "../runtime", default-features = false }
+# `std`, where that surface lives, and without `http-send`, which is the
+# runtime's own transport and not Mesh's.
+sce-rust-runtime = { path = "../runtime", default-features = false, features = ["std"] }
 # The `wss` feature's socket plumbing (SCE_MESH.md §mesh-18.4): the client
 # and server the owner chose for this binding on 2026-09-25. rustls with
 # webpki roots, so a `wss://` client needs no system TLS library.

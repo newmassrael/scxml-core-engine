@@ -152,7 +152,7 @@ pub fn is_mesh_target(target: &str) -> bool {
 /// a `target` written in the document and a `targetexpr` evaluated at run
 /// time are the same value and go to the same place, sent at once or after a
 /// delay.
-#[cfg(not(feature = "no_std"))]
+#[cfg(feature = "std")]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SendTarget {
     /// The sending session's own external queue.
@@ -181,7 +181,7 @@ pub enum SendTarget {
 /// Ports C++ `SendHelper::classifyTarget`; a URI of another scheme — C++'s
 /// `Uri` and `Http`, which its Interpreter's target factory may serve — is
 /// [`SendTarget::Unsupported`] here, as it is for every generated machine.
-#[cfg(not(feature = "no_std"))]
+#[cfg(feature = "std")]
 pub fn classify_target(target: &str, own_session_id: &str) -> SendTarget {
     if is_unreachable_target(target) {
         return SendTarget::Unreachable;
@@ -326,7 +326,7 @@ fn strip_suffix_ignore_case<'a>(text: &'a [u8], suffix: &[u8]) -> Option<&'a [u8
         .then(|| &text[..split])
 }
 
-#[cfg(all(test, not(feature = "no_std")))]
+#[cfg(all(test, feature = "std"))]
 mod mesh_target_table {
     use super::{is_mesh_target, mesh_peer};
     use crate::json::{parse, Value};
@@ -366,7 +366,7 @@ mod mesh_target_table {
     }
 }
 
-#[cfg(all(test, not(feature = "no_std")))]
+#[cfg(all(test, feature = "std"))]
 mod duration_table {
     use super::parse_delay_to_ms;
     use crate::json::{parse, Value};

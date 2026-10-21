@@ -59,39 +59,44 @@
 //! engine.initialize();
 //! // ...process events via engine.process_event(...) / engine.tick() ...
 //! ```
+//!
+//! ## Features
+//!
+//! Every feature adds to the crate except `no_macrostep_diagnostics`, so a
+//! build that holds a bare-metal crate and an application crate compiles
+//! (docs/adr/0053).
+//!
+//! - `std` (default): the application profile. Without it the crate is
+//!   `#![no_std]` with no allocator, the bare-metal profile a crate for a
+//!   microcontroller selects with `default-features = false`.
+//! - `http-send` (default): the BasicHTTP event processor; asks for `std`.
+//! - `no_macrostep_diagnostics`: compiles the macrostep report out, and with it
+//!   the accessors that read it.
 
-#![cfg_attr(feature = "no_std", no_std)]
+#![cfg_attr(not(feature = "std"), no_std)]
 #![deny(clippy::undocumented_unsafe_blocks)]
 #![warn(missing_docs)]
 #![warn(clippy::all)]
 
-// SCE Protocol-Synthesis RFC §synth-5-J-2 (C3 Atomic B-β): cfg-assert the
-// incompatible feature combinations at compile time. The `no_std`
-// feature is mutually exclusive with `http-send` (tokio/reqwest are
-// std-coupled) and with both script-engine features (Lua and QuickJS
-// require `alloc`, which `no_std` forbids per spec line 1989 zero-
-// alloc mandate). `compile_error!` fires a clear, actionable message
-// before the build reaches its first std-coupled symbol — without
-// this guard a misconfigured Cargo profile would otherwise surface as
-// "cannot find type `Vec` in module `core`" deep in the std-coupled
-// modules, which is the textbook silent-broken-hook anti-pattern.
-#[cfg(all(feature = "no_std", feature = "http-send"))]
-compile_error!(
-    "`no_std` and `http-send` are mutually exclusive: tokio/reqwest are std-coupled. \
-     Either drop `http-send` (and any `<send type=\"BasicHTTPEventProcessor\">` from \
-     your SCXML), or drop `no_std`. SCE Protocol-Synthesis RFC §5.J.2 line 1983."
-);
+// The two profiles (docs/adr/0053). With the `std` feature the crate links
+// `std`; without it the crate is `#![no_std]` with no allocator, the
+// bare-metal MCU profile. `std` only adds: every name the bare-metal profile
+// declares is declared by the `std` profile too, under the same path, so a
+// crate written against the bare-metal profile still compiles when another
+// crate of the same build turns `std` on. Nothing here refuses a combination
+// of features, because Cargo hands this crate the union of what every
+// package of one build asks for, and a refusal would fail the whole build.
 
 // ── Bounded-collection type aliases (SCE Protocol-Synthesis RFC §synth-5-J-2) ──────
 //
-// Under `--features=no_std` the runtime crate is `#![no_std]` with **no
+// Under `--no-default-features` the runtime crate is `#![no_std]` with **no
 // `alloc` dependency** per spec line 1989-1994 ("zero `alloc`
 // dependency"). String-typed event payload fields (`_event.data`,
 // `_event.sendid`, `_event.origin`, `_event.origintype`,
 // `_event.invokeid`) bound their capacity at `MAX_EVENT_STRING_LEN`
 // bytes. `SceString` is `std::string::String` under the default std
 // build (unchanged API) and `heapless::String<MAX_EVENT_STRING_LEN>`
-// under `--features=no_std` (stack-allocated, `Result`-returning
+// under `--no-default-features` (stack-allocated, `Result`-returning
 // `push_str`). 256 is the v1 cap, sized to fit RFC §synth-5-D telemetry-event
 // payloads + an origin URI without truncation; per-document tunable via
 // `<scxml sce:event-string-capacity="N">` is deferred until a consumer
@@ -134,7 +139,7 @@ compile_error!(
 /// `<sce:capacity>`.)
 ///
 /// The std build's [`EventQueueManager`] keeps `std::collections::VecDeque<T>`
-/// (unbounded, the spec's `Queue`) so this constant only affects the `--features=no_std` variant.
+/// (unbounded, the spec's `Queue`) so this constant only affects the `--no-default-features` variant.
 pub const MAX_EVENT_QUEUE_DEPTH: usize = 64;
 
 /// Maximum number of simultaneously-pending delayed events in the no_std
@@ -178,11 +183,11 @@ pub const MAX_EVENT_QUEUE_DEPTH: usize = 64;
 /// no_std, but at hundreds of bytes rather than kilobytes.
 ///
 /// The std build's `PullScheduler` keeps `Vec<ScheduledEntry<E>>` (unbounded)
-/// so this constant only affects the `--features=no_std` variant.
+/// so this constant only affects the `--no-default-features` variant.
 pub const MAX_SCHEDULED_EVENTS: usize = 32;
 
 /// Maximum number of simultaneously-enabled transitions selected in a single
-/// microstep under `--features=no_std`.
+/// microstep under `--no-default-features`.
 ///
 /// The no_std bound baked into the [`SceTransitionBuf`] alias
 /// (`heapless::Vec<_, MAX_ENABLED_TRANSITIONS>`), which Appendix D's selection
@@ -193,11 +198,11 @@ pub const MAX_SCHEDULED_EVENTS: usize = 32;
 /// cannot exceed that. v1 value 32 gives a 2× margin.
 ///
 /// The std build keeps unbounded `Vec` so this constant only affects the
-/// `--features=no_std` variant. Per-document tunable deferred until an MCU
+/// `--no-default-features` variant. Per-document tunable deferred until an MCU
 /// consumer surfaces a concrete over/under-fit signal (`feedback_planned_not_yagni`).
 pub const MAX_ENABLED_TRANSITIONS: usize = 32;
 
-/// Maximum byte length of an event metadata string under `--features=no_std`.
+/// Maximum byte length of an event metadata string under `--no-default-features`.
 ///
 /// Bounds the capacity of [`SceString`] for `EventMetadata.data`,
 /// `EventMetadata.send_id`, `EventMetadata.origin`, `EventMetadata.origin_type`,
@@ -220,12 +225,12 @@ pub const MAX_EVENT_STRING_LEN: usize = 256;
 ///
 /// Construction sites that need to convert from `&str` to `SceString` should
 /// use [`sce_string_from_str`] which abstracts the API divergence.
-#[cfg(not(feature = "no_std"))]
+#[cfg(feature = "std")]
 pub type SceString = ::std::string::String;
 /// no_std variant of [`SceString`]: stack-allocated `heapless::String` capped
 /// at [`MAX_EVENT_STRING_LEN`]. See the std-variant doc-comment above for the
 /// full contract.
-#[cfg(feature = "no_std")]
+#[cfg(not(feature = "std"))]
 pub type SceString = ::heapless::String<MAX_EVENT_STRING_LEN>;
 
 /// Owned byte-sequence type for typed `_event.data` payload fields whose
@@ -246,8 +251,8 @@ pub type SceString = ::heapless::String<MAX_EVENT_STRING_LEN>;
 /// hardcoding it.
 ///
 /// - std / `alloc`: wraps `Vec<u8>` (unbounded, `N` advisory).
-/// - `no_std` build (`--no-default-features --features=no_std`, which drops
-///   the `backends/rust/portable-bytes/alloc` default): wraps `heapless::Vec<u8, N>`,
+/// - `no_std` build (`--no-default-features`, whose missing `std` feature
+///   leaves `sce-portable-bytes/alloc` off): wraps `heapless::Vec<u8, N>`,
 ///   capacity exactly the author's bound; `from_slice` is fallible past `N`.
 ///
 /// Derefs to `[u8]`, so `&payload.<field>` coerces to the `&[u8]` a generated
@@ -261,14 +266,14 @@ pub use sce_portable_bytes::SceBytes;
 /// [`MAX_EVENT_STRING_LEN`] truncate to empty rather than panic, matching the
 /// behavior `unwrap_or_default` provides on the std side for malformed inputs.
 /// Callers that need to detect the truncation should use heapless's `try_from`
-/// directly under `cfg(feature = "no_std")`.
+/// directly under `cfg(not(feature = "std"))`.
 #[inline]
 pub fn sce_string_from_str(s: &str) -> SceString {
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     {
         s.to_string()
     }
-    #[cfg(feature = "no_std")]
+    #[cfg(not(feature = "std"))]
     {
         SceString::try_from(s).unwrap_or_default()
     }
@@ -285,11 +290,11 @@ pub fn sce_string_from_str(s: &str) -> SceString {
 /// linked.
 #[inline]
 pub fn payload_wire(args: ::core::fmt::Arguments<'_>) -> SceString {
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     {
         sce_string_from_str(&::std::fmt::format(args))
     }
-    #[cfg(feature = "no_std")]
+    #[cfg(not(feature = "std"))]
     {
         let _ = args;
         SceString::default()
@@ -307,17 +312,19 @@ pub fn payload_wire(args: ::core::fmt::Arguments<'_>) -> SceString {
 /// — mirroring [`StateChain`](crate::helpers::hierarchy::StateChain), which
 /// bakes [`crate::helpers::hierarchy::MAX_HIERARCHY_DEPTH`]. Push through
 /// [`BoundedPush::push_bounded`].
-#[cfg(not(feature = "no_std"))]
+#[cfg(feature = "std")]
 pub type SceTransitionBuf<T> = ::std::vec::Vec<T>;
 /// no_std variant of [`SceTransitionBuf`]. See the std-variant doc-comment.
-#[cfg(feature = "no_std")]
+#[cfg(not(feature = "std"))]
 pub type SceTransitionBuf<T> = ::heapless::Vec<T, MAX_ENABLED_TRANSITIONS>;
 
 /// Push into a microstep buffer uniformly under std and no_std.
 ///
-/// Implemented for both the std `Vec<T>` and the no_std `heapless::Vec<T, N>`,
-/// so it covers the transition-count-bounded buffers of
-/// [`helpers::microstep`]. Under no_std the push fails loud on overflow — the
+/// Implemented for `heapless::Vec<T, N>` in both profiles and for the std
+/// `Vec<T>` where there is one, so it covers the transition-count-bounded
+/// buffers of [`helpers::microstep`], and a bare-metal crate's own push still
+/// resolves when another crate of its build turns `std` on (docs/adr/0053).
+/// A `heapless::Vec` push fails loud on overflow — the
 /// capacity ([`MAX_ENABLED_TRANSITIONS`]) is sized to the W3C Appendix D
 /// enabled-set bound, so overflow indicates a capacity to raise, not a
 /// recoverable condition. Mirrors the depth-bounded
@@ -327,7 +334,7 @@ pub trait BoundedPush<T> {
     fn push_bounded(&mut self, item: T);
 }
 
-#[cfg(not(feature = "no_std"))]
+#[cfg(feature = "std")]
 impl<T> BoundedPush<T> for ::std::vec::Vec<T> {
     #[inline]
     fn push_bounded(&mut self, item: T) {
@@ -335,7 +342,6 @@ impl<T> BoundedPush<T> for ::std::vec::Vec<T> {
     }
 }
 
-#[cfg(feature = "no_std")]
 impl<T, const N: usize> BoundedPush<T> for ::heapless::Vec<T, N> {
     #[inline]
     fn push_bounded(&mut self, item: T) {
@@ -358,14 +364,14 @@ impl<T, const N: usize> BoundedPush<T> for ::heapless::Vec<T, N> {
 /// variants are stable, so generated machines sort identically under std and
 /// no_std (preserving W3C document-order tie-breaking among same-source
 /// transitions).
-#[cfg(not(feature = "no_std"))]
+#[cfg(feature = "std")]
 #[inline]
 pub fn stable_sort_by<T, F: FnMut(&T, &T) -> ::core::cmp::Ordering>(buf: &mut [T], compare: F) {
     buf.sort_by(compare);
 }
 
 /// no_std variant of [`stable_sort_by`]. See the std-variant doc-comment.
-#[cfg(feature = "no_std")]
+#[cfg(not(feature = "std"))]
 pub fn stable_sort_by<T, F: FnMut(&T, &T) -> ::core::cmp::Ordering>(buf: &mut [T], mut compare: F) {
     for i in 1..buf.len() {
         let mut j = i;
@@ -380,14 +386,14 @@ pub fn stable_sort_by<T, F: FnMut(&T, &T) -> ::core::cmp::Ordering>(buf: &mut [T
 ///
 /// Under std this is `[T]::sort_by_key`; under no_std it delegates to the
 /// insertion-sort [`stable_sort_by`]. See that function's doc-comment.
-#[cfg(not(feature = "no_std"))]
+#[cfg(feature = "std")]
 #[inline]
 pub fn stable_sort_by_key<T, K: Ord, F: FnMut(&T) -> K>(buf: &mut [T], f: F) {
     buf.sort_by_key(f);
 }
 
 /// no_std variant of [`stable_sort_by_key`]. See the std-variant doc-comment.
-#[cfg(feature = "no_std")]
+#[cfg(not(feature = "std"))]
 #[inline]
 pub fn stable_sort_by_key<T, K: Ord, F: FnMut(&T) -> K>(buf: &mut [T], mut f: F) {
     stable_sort_by(buf, |a, b| f(a).cmp(&f(b)));
@@ -401,7 +407,7 @@ pub mod event;
 /// that every producer but the generated inject seam fills. `std` only —
 /// `EventMetadata::data` is, and a `no_std` build has no script engine whose
 /// answer this one has to match.
-#[cfg(not(feature = "no_std"))]
+#[cfg(feature = "std")]
 pub mod event_payload;
 pub mod hal;
 pub mod helpers;
@@ -410,16 +416,17 @@ pub mod helpers;
 ///
 /// Gated out of `no_std` builds for the reason [`http`] is: the registry
 /// is a heap-allocated map of boxed closures.
-#[cfg(not(feature = "no_std"))]
+#[cfg(feature = "std")]
 pub mod host_processor;
 /// §scxml-C-2 BasicHTTPEventProcessor send payload shapes.
 ///
-/// Gated out of `no_std` builds because the module body uses
-/// `std::collections::HashMap`. B-γ swaps in a `heapless::FnvIndexMap`
-/// equivalent for the no_std variant; until then the no_std build
-/// excludes the module entirely and the cfg-assert above rejects
-/// any consumer that enables `http-send` together with `no_std`.
-#[cfg(not(feature = "no_std"))]
+/// Part of the `std` profile, because the module body uses
+/// `std::collections::HashMap`; the bare-metal profile has no HTTP processor
+/// and `sce-codegen generate --no-std` refuses a document that sends over one.
+/// A crate that sends over HTTP asks for the `http-send` feature, which turns
+/// `std` on for the whole build rather than being refused beside a bare-metal
+/// crate (docs/adr/0053).
+#[cfg(feature = "std")]
 pub mod http;
 /// §scxml-6.4 invoke lifecycle helpers.
 ///
@@ -429,11 +436,11 @@ pub mod http;
 /// / defer_invoke / cancel_invokes_for_state / execute_pending_invokes /
 /// create_done_invoke_event_name) are unreachable from emitted no_std code.
 /// Mirrors `helpers::invoke_processing` whole-module gate (same atomic).
-#[cfg(not(feature = "no_std"))]
+#[cfg(feature = "std")]
 pub mod invoke;
 /// The runtime's one JSON reader and writer, shared by the typed payload lift
 /// and a machine's saved state. `std` only, like both of them.
-#[cfg(not(feature = "no_std"))]
+#[cfg(feature = "std")]
 pub mod json;
 // The module's own `//!` documents it. A `///` here would be joined to that text and
 // resolved from the crate root, where `Engine` already resolves, so the explicit
@@ -442,7 +449,7 @@ pub mod payload_reading;
 pub mod policy;
 /// A `datamodel="sce-static"` machine's whole state, saved and restored as
 /// one JSON document (SCE Accepted Subset §2.15). `std` only.
-#[cfg(not(feature = "no_std"))]
+#[cfg(feature = "std")]
 pub mod saved_state;
 // Documented by the module's own `//!`; see `payload_reading` above for why no `///` here.
 pub mod sched_send_id;
@@ -450,11 +457,12 @@ pub mod sched_send_id;
 ///
 /// Gated out of `no_std` builds because the trait impls land in
 /// `sce-rust-lua` / future `sce-rust-quickjs`, both of which require
-/// `alloc` (the cfg-assert above rejects the combination at
-/// compile time). The trait surface itself is `core::`-portable;
+/// `alloc`; those crates ask for this crate's `std` feature, and
+/// `sce-codegen generate --no-std` refuses a document with a `<script>`.
+/// The trait surface itself is `core::`-portable;
 /// re-introducing it under no_std is B-γ's call when consumer demand
 /// materialises.
-#[cfg(not(feature = "no_std"))]
+#[cfg(feature = "std")]
 pub mod scripting;
 
 // Public re-exports — the primary API surface
@@ -467,10 +475,10 @@ pub use engine::Engine;
 /// §scxml-6.2.4: why [`Engine::initialize_as_root`] refused a start.
 pub use engine::RootStartRefusal;
 /// §scxml-6.2: the target a generated send site names for a delayed send.
-#[cfg(not(feature = "no_std"))]
+#[cfg(feature = "std")]
 pub use engine::ScheduledRoute;
 /// §scxml-6.2.4: what became of a send handed to [`Engine::send_to_target`].
-#[cfg(not(feature = "no_std"))]
+#[cfg(feature = "std")]
 pub use engine::TargetSendOutcome;
 pub use event::{EventMetadata, EventType, EventWithMetadata};
 pub use hal::{Hal, NoOpHal, StdHal};
@@ -480,7 +488,7 @@ pub use helpers::event_queue::{EventQueueLike, EventQueueManager};
 /// types Appendix D's procedures read, named at the crate root because every
 /// generated machine spells them.
 pub use helpers::microstep::{EnabledTransition, EntryTarget, NoHistory};
-#[cfg(not(feature = "no_std"))]
+#[cfg(feature = "std")]
 pub use host_processor::{
     is_reserved_type, mesh_event_metadata, parse_host_invoke_deadline_ms, request_bytes_field,
     request_field, request_field_wire, ChildMeshRouter, ChildMeshRouters, HostInvokeCancel,
@@ -489,7 +497,7 @@ pub use host_processor::{
     HOST_INVOKE_DEADLINE_PARAM, MESH_ORIGIN_SCHEME, MESH_PROCESSOR_TYPE, MESH_RPC_INVOKE_TYPE,
     RESERVED_TYPE_PREFIX,
 };
-#[cfg(not(feature = "no_std"))]
+#[cfg(feature = "std")]
 pub use http::{HttpSendRequest, HttpSendResponse};
 /// The [`log`] facade crate, re-exported so generated code can reach it
 /// without the consumer declaring it.
@@ -509,5 +517,5 @@ pub use log;
 pub use payload_reading::PayloadReading;
 pub use policy::{PolicyDocument, StatePolicy};
 pub use sched_send_id::{ElidedSendId, ScheduledSendIdLike};
-#[cfg(not(feature = "no_std"))]
+#[cfg(feature = "std")]
 pub use scripting::{IScriptEngine, ScriptError, ScriptResult, ScriptValue, SetCurrentEventArgs};

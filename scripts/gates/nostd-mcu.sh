@@ -7,7 +7,8 @@
 # no_std MCU-target mirror (sce-rust-runtime-no-std.yml).
 #
 # `clippy` only lints the host target with default features, so it never
-# sees the `heapless`-sized types the `no_std` cfg selects — a regression
+# sees the `heapless`-sized types the runtime selects without its `std`
+# feature — a regression
 # that compiles on host but breaks the bare-metal build (a reintroduced
 # `std::*` import, an alloc-coupled emission, or a no_std-only clippy lint
 # like result_large_err) slips every host-target gate and surfaces only on
@@ -23,11 +24,13 @@ CODEGEN="$(sce_gate_codegen)"
 
 rustup target add thumbv7em-none-eabihf >/dev/null 2>&1 || true
 
+# The bare-metal profile is the runtime without its `std` feature
+# (docs/adr/0053): no features at all.
 sce_gate_step "no_std runtime build + clippy"
-cargo build -p sce-rust-runtime --no-default-features --features=no_std \
+cargo build -p sce-rust-runtime --no-default-features \
     --target=thumbv7em-none-eabihf \
     || sce_gate_fail "no_std runtime build"
-cargo clippy -p sce-rust-runtime --no-default-features --features=no_std \
+cargo clippy -p sce-rust-runtime --no-default-features \
     --target=thumbv7em-none-eabihf -- -D warnings \
     || sce_gate_fail "no_std runtime clippy"
 
@@ -52,10 +55,6 @@ cargo build --manifest-path backends/rust/probes/nostd-build/Cargo.toml \
     --target=thumbv7em-none-eabihf \
     || sce_gate_fail "no_std probe compile"
 
-# Single-emit portability: ONE --no-std emission compiles against BOTH the
-# std runtime (host, AP profile) and the no_std runtime (thumb, MCU
-# profile). Regression gate for the bytes-field `E0433: cannot find
-# heapless in sce_rust_runtime` against the std runtime.
 # The native-action probe: a machine whose `<sce:action>` lowers to a
 # host call has to compile under no_std on the MCU target too. CI ran
 # this and the gate did not, so the push-time check was the weaker of
@@ -77,16 +76,26 @@ cargo build --manifest-path backends/rust/probes/nostd-build/Cargo.toml \
     --target=thumbv7em-none-eabihf \
     || sce_gate_fail "native-action probe compile"
 
-sce_gate_step "single-emit portability probe (std host + no_std thumb)"
+# One workspace holding a bare-metal crate and an application crate, as a
+# downstream workspace does (docs/adr/0053). Cargo builds one runtime for both
+# with the union of their features; when `no_std` refused `http-send`, this
+# host check stopped at the runtime although each crate built alone. The
+# bare-metal crate holds the `--no-std` emission generated here (the
+# portable-emit machine), so the host check is also the single-emit
+# portability gate on the std side (the bytes-field `E0433: cannot find
+# heapless in sce_rust_runtime` regression), and the thumb build of that crate
+# alone is the same gate on the bare-metal side and proves no feature of the
+# application crate leaks into it.
+sce_gate_step "one workspace, an MCU crate and an AP crate (std host + MCU thumb)"
 "$CODEGEN" --workspace-root "$SCE_REPO_ROOT" generate \
     -l rust --no-std --output-dir backends/rust/probes/portable-emit/src \
     sce-build/tests/fixtures/no_std/portable_probe.scxml >/dev/null 2>&1 \
     || sce_gate_fail "portability probe generation"
-cargo build --manifest-path backends/rust/probes/portable-emit/Cargo.toml \
-    || sce_gate_fail "portability probe — std runtime, host"
-cargo build --manifest-path backends/rust/probes/portable-emit/Cargo.toml \
-    --target=thumbv7em-none-eabihf --features mcu \
-    || sce_gate_fail "portability probe — no_std runtime, thumb"
+cargo check --manifest-path backends/rust/probes/feature-unification/Cargo.toml --workspace \
+    || sce_gate_fail "MCU and AP crates in one host build"
+cargo build --manifest-path backends/rust/probes/feature-unification/Cargo.toml \
+    -p sce-feature-unification-mcu --target=thumbv7em-none-eabihf \
+    || sce_gate_fail "MCU crate alone, bare-metal runtime, thumb"
 
 # Per-machine event-queue sizing: a `<scxml sce:capacity="2">` machine must
 # size its no_std queues to depth 2, not the crate-global depth-64 default.

@@ -16,7 +16,7 @@
 //! `alloc` and are gated to `!no_std`. The pure-closure variants
 //! ([`execute_entry_closures`] / [`execute_exit_closures`]) take
 //! `&mut [&mut dyn FnMut()]` slices (no allocation) and stay available under
-//! `--features=no_std`. The generated AOT code under no_std prefers the
+//! `--no-default-features`. The generated AOT code under no_std prefers the
 //! closure form per the same lock-in.
 
 use crate::sce_log_debug;
@@ -32,7 +32,7 @@ use crate::sce_log_debug;
 /// SCE Protocol-Synthesis RFC §synth-5-J-2: gated to `!no_std` because `Box<dyn FnMut()>`
 /// requires `alloc`. The closure-slice variant
 /// [`execute_entry_closures`] is the no_std-compatible alternative.
-#[cfg(not(feature = "no_std"))]
+#[cfg(feature = "std")]
 pub fn execute_entry_blocks(blocks: &mut [Box<dyn FnMut()>], state_id: &str) {
     let count = blocks.len();
 
@@ -70,7 +70,7 @@ pub fn execute_entry_blocks(blocks: &mut [Box<dyn FnMut()>], state_id: &str) {
 /// SCE Protocol-Synthesis RFC §synth-5-J-2: gated to `!no_std` because `Box<dyn FnMut()>`
 /// requires `alloc`. The closure-slice variant
 /// [`execute_exit_closures`] is the no_std-compatible alternative.
-#[cfg(not(feature = "no_std"))]
+#[cfg(feature = "std")]
 pub fn execute_exit_blocks(blocks: &mut [Box<dyn FnMut()>], state_id: &str) {
     let count = blocks.len();
 

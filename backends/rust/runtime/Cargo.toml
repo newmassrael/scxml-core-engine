@@ -18,32 +18,40 @@ description = "SCXML Core Engine — Rust runtime (policy trait, Engine<P>, help
 # engine injection that mechanism is gone — consumers pick an engine
 # crate (`sce-rust-lua`, future `sce-rust-quickjs`) by depending on it
 # and constructing an instance.
-default = ["http-send", "sce-portable-bytes/alloc"]
+#
+# A feature here ADDS (docs/adr/0053). Cargo builds one copy of this crate for
+# every package of one build that depends on it, with the union of the
+# features they ask for, so a feature that took something away, or refused
+# another one, broke the build of a workspace that holds a bare-metal crate
+# beside an application crate: each built alone, and `cargo check --workspace`
+# stopped at this crate. The one exception left is `no_macrostep_diagnostics`
+# below, and its comment says why it stays.
+default = ["std", "http-send"]
 
-# HTTP send callback wiring (W3C SCXML C.2 BasicHTTPEventProcessor)
-http-send = []
+# The application profile: the crate links `std`, holds its owned strings and
+# lists in `String` and `Vec`, and carries what needs an allocator or an
+# operating system (the script engine seam, invoke, host processors, the
+# BasicHTTP processor, saved state, the session id drawn from the system's
+# randomness). Without it the crate is `#![no_std]` with no allocator, the
+# bare-metal MCU profile (SCE Protocol-Synthesis RFC §5.J.2): the same names
+# resolve to `heapless` storage of fixed capacity, and what needs `std` is
+# absent. Asking for `std` never removes a name the bare-metal profile has, so
+# code written against that profile compiles in a build where another crate
+# turned `std` on (`backends/rust/probes/feature-unification` holds both).
+#
+# A bare-metal crate asks for nothing: `default-features = false`. Its image is
+# built for its own target by a command that selects it alone, and Cargo
+# unifies features only across the packages one command builds.
+std = ["sce-portable-bytes/alloc"]
+
+# The BasicHTTP event processor (W3C SCXML C.2): `http::HttpSendRequest` and
+# `Engine::set_http_send_callback`. It lives in the `std` profile, so asking
+# for it asks for `std`; a crate that sends over HTTP names this feature rather
+# than relying on `std` carrying the processor.
+http-send = ["std"]
 
 # Deterministic fake-clock scheduler for tests (swaps PullScheduler impl)
 test-clock = []
-
-# SCE Protocol-Synthesis RFC §5.J.2: bare-metal MCU profile of the runtime.
-# Selecting `no_std` declares `#![no_std]` at the crate root and
-# pulls in `heapless` for fixed-capacity collections (§5.J.2 line
-# 1989: zero `alloc` dependency). Mutually exclusive with
-# `script-engine-lua`, `script-engine-quickjs`, and `http-send` —
-# Lua/QuickJS and tokio/reqwest are all std-coupled, so the
-# combinations would never link. The exclusivity is enforced at
-# compile time via `compile_error!` in `lib.rs` so a misconfigured
-# Cargo.toml fails loudly before consumers debug linker output.
-#
-# C3 Atomic B-β lands the feature flag, cfg-gates http/scripting,
-# and the codegen-side rejection diagnostics. Atomic B-γ ports
-# `engine.rs` and `helpers/` to `core::` + `heapless`; until B-γ
-# lands `cargo build --no-default-features --features=no_std` is
-# expected to fail with std-import errors in those modules. The
-# Cargo feature ladder is in place so downstream consumers can pin
-# the wire shape today and migrate incrementally.
-no_std = ["dep:heapless"]
 
 # §scxml-3.13: the macrostep ceiling REPORTS itself, and this turns the report
 # off — never the ceiling.
@@ -64,6 +72,12 @@ no_std = ["dep:heapless"]
 # report exists to prevent. Naming `no_macrostep_diagnostics` is a consumer
 # stating that nothing in their image reads those counters.
 #
+# The price of opt-out is the unification `std` no longer has: in one build
+# that holds a crate naming this feature and another that reads the counters,
+# the reader stops compiling, because the accessors are gone. That failure is
+# loud, never a silent loss of the report, and docs/adr/0053 leaves the choice
+# between the two conventions with the owner of the 2026-08-21 decision.
+#
 # Measured on `thumbv7em-none-eabihf` before it was offered — see
 # `backends/rust/probes/nostd-footprint`, whose budget file carries both
 # figures. A downstream bare-metal consumer asked for this after proving the
@@ -75,8 +89,8 @@ no_macrostep_diagnostics = []
 [dependencies]
 log = { workspace = true }
 # `thiserror` is consumed only inside `pub mod scripting` (gated to
-# `cfg(not(feature = "no_std"))`). `default-features = false` drops the
-# crate's `std` feature so a `--features=no_std --target=thumbv7em-none-eabihf`
+# `cfg(feature = "std")`). `default-features = false` drops the
+# crate's `std` feature so a `--no-default-features --target=thumbv7em-none-eabihf`
 # build does not pull `thiserror`'s `extern crate std` into the dependency
 # tree — bare-metal MCU targets have no `std` to resolve. Declared directly
 # (not via `workspace.dependencies`) because the workspace dep declares
@@ -85,14 +99,17 @@ log = { workspace = true }
 # ignored by Cargo (`workspace = true` requires the workspace declaration
 # to opt out of defaults). The version string mirrors workspace policy.
 thiserror = { version = "2.0", default-features = false }
-# Fixed-capacity collections for the `no_std` feature variant.
-# Optional + gated by `no_std` so std builds never link it.
-heapless = { workspace = true, optional = true }
+# Fixed-capacity collections for the profile without `std`. Not optional:
+# Cargo can turn a dependency on with a feature but not with the absence of
+# one, and the bare-metal profile is that absence. `sce-portable-bytes` below
+# depends on it unconditionally, so every build already compiles it; a `std`
+# build names none of its items.
+heapless = { workspace = true }
 # Single definition of the portable owned `bytes` storage (`SceBytes<N>`),
 # shared with the codec runtime so the construction logic never drifts.
 # Re-exported as `sce_rust_runtime::SceBytes`. The `alloc` form (unbounded
-# `Vec<u8>`) is selected through this crate's `default` features; the
-# `--no-default-features --features=no_std` MCU build drops it, leaving the
+# `Vec<u8>`) is selected through this crate's `std` feature; the
+# `--no-default-features` MCU build leaves it off, which leaves the
 # heap-free `heapless::Vec<u8, N>` form.
 sce-portable-bytes = { path = "../portable-bytes", default-features = false }
 # Portable 64-bit atomics for MCU targets without native u64 atomic

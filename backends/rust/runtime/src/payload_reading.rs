@@ -5,7 +5,7 @@
 //!
 //! ⚠ A module of its own rather than a member of `crate::scripting`, and the
 //! reason is a compile error rather than taste: that module is
-//! `#[cfg(not(feature = "no_std"))]`, because the script-engine impls need
+//! `#[cfg(feature = "std")]`, because the script-engine impls need
 //! `alloc`. [`Engine`](crate::Engine) counts these readings and is exactly the
 //! surface a `no_std` MCU consumer builds, so a type it names cannot live
 //! behind that gate. Measured 2026-08-22 — `rustdoc-links` refused the

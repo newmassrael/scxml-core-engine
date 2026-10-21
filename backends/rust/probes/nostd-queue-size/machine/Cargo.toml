@@ -11,8 +11,8 @@
 # the templates) rather than a hand-maintained policy.
 #
 # The generated `src/*_sm.rs` is git-ignored and produced fresh by the gate step.
-# Detached from the parent workspace so cargo feature unification cannot turn on
-# `sce-rust-runtime/no_std` for an unrelated std build in the same invocation.
+# Detached from the parent workspace with its parent probe, for the reasons that
+# crate's manifest gives.
 
 [package]
 name = "sce-nostd-queue-size-machine"
@@ -27,4 +27,4 @@ name = "sce_nostd_queue_size_machine"
 path = "src/event_queue_capacity_probe_sm.rs"
 
 [dependencies]
-sce-rust-runtime = { path = "../../../runtime", default-features = false, features = ["no_std"] }
+sce-rust-runtime = { path = "../../../runtime", default-features = false }

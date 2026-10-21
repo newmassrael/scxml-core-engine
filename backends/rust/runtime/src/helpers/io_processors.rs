@@ -13,7 +13,7 @@
 //! validator rejects the datamodel that would need one before any no_std
 //! machine could reach this.
 
-#![cfg(not(feature = "no_std"))]
+#![cfg(feature = "std")]
 
 use super::scxml_constants::{BASIC_HTTP_EVENT_PROCESSOR_TYPE, SCXML_EVENT_PROCESSOR_TYPE};
 use super::url_encoding::{url_decode, url_encode};

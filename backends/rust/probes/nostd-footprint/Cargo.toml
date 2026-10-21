@@ -40,7 +40,7 @@ path = "src/lib.rs"
 crate-type = ["staticlib"]
 
 [dependencies]
-sce-rust-runtime = { path = "../../runtime", default-features = false, features = ["no_std"] }
+sce-rust-runtime = { path = "../../runtime", default-features = false }
 sce-nostd-build-probe = { path = "../nostd-build" }
 
 [features]
@@ -58,7 +58,8 @@ lto = true
 codegen-units = 1
 panic = "abort"
 
-# Detached from the parent workspace for the reason `nostd-build` is: cargo's
-# feature unification would otherwise turn on `sce-rust-runtime/no_std` for the
-# std builds in the same invocation.
+# Detached from the parent workspace for the reason `nostd-build` is, and one
+# of its own: a staticlib that defines a `#[panic_handler]` cannot be built on
+# a host whose `std` already defines one, which a workspace-wide host build
+# would ask of it.
 [workspace]

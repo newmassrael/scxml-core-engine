@@ -48,7 +48,7 @@ impl fmt::Display for SessionIdRefusal {
     }
 }
 
-#[cfg(not(feature = "no_std"))]
+#[cfg(feature = "std")]
 impl std::error::Error for SessionIdRefusal {}
 
 /// Whether `id` is an XML 1.0 Nmtoken: one name character or more
@@ -103,7 +103,7 @@ pub fn checked(id: &str) -> Result<&str, SessionIdRefusal> {
 }
 
 /// [`checked`], owned: the id a machine with an allocator holds.
-#[cfg(not(feature = "no_std"))]
+#[cfg(feature = "std")]
 pub fn given(id: &str) -> Result<String, SessionIdRefusal> {
     checked(id).map(str::to_string)
 }
@@ -119,7 +119,7 @@ pub fn given(id: &str) -> Result<String, SessionIdRefusal> {
 /// has a source does not do: an id made up in its place could be one another
 /// session already holds.
 #[cfg(all(
-    not(feature = "no_std"),
+    feature = "std",
     not(any(target_os = "none", all(target_arch = "wasm32", target_os = "unknown")))
 ))]
 pub fn drawn() -> String {
@@ -132,7 +132,7 @@ pub fn drawn() -> String {
 /// `bytes` as a UUID version 4 (RFC 9562, section 5.4): the version in the
 /// high half of the seventh byte, the variant in the top two bits of the
 /// ninth, written in lowercase hexadecimal in groups of 8, 4, 4, 4 and 12.
-#[cfg(not(feature = "no_std"))]
+#[cfg(feature = "std")]
 #[cfg_attr(
     any(target_os = "none", all(target_arch = "wasm32", target_os = "unknown")),
     allow(dead_code)
@@ -151,7 +151,7 @@ fn uuid_v4(mut bytes: [u8; 16]) -> String {
     text
 }
 
-#[cfg(all(test, not(feature = "no_std")))]
+#[cfg(all(test, feature = "std"))]
 mod tests {
     use super::*;
 

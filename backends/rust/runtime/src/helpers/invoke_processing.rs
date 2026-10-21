@@ -11,12 +11,12 @@
 //! - [`raise_done_invoke`]: generate done.invoke.{id} event when child completes
 //!
 //! SCE Protocol-Synthesis RFC §synth-5-J-2 (lines 1989-1994): the entire module is gated to
-//! `cfg(not(feature = "no_std"))` because `Arc`/`Mutex`/`Vec`/`HashMap` are
+//! `cfg(feature = "std")` because `Arc`/`Mutex`/`Vec`/`HashMap` are
 //! `alloc`-coupled. Author-side `<invoke>` is rejected up-front by
 //! `validate_no_std_compatibility` (diagnostic `codegen/no-std-invoke-not-supported`),
 //! so under `--no-std` no generated code reaches this module.
 
-#![cfg(not(feature = "no_std"))]
+#![cfg(feature = "std")]
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};

@@ -28,7 +28,8 @@ publish = false
 # host core leaves open for exactly this.
 
 [dependencies]
-sce-rust-runtime = { path = "../runtime", default-features = false }
+# `std`, where `HostSendRequest` lives; no `http-send`.
+sce-rust-runtime = { path = "../runtime", default-features = false, features = ["std"] }
 # The WebSocket binding is what `todo_peer_wss`, one copy of the to-do list as a process of
 # its own on real sockets, is served by; the simulated world does not use it.
 sce-rust-mesh = { path = "../mesh", features = ["wss"] }

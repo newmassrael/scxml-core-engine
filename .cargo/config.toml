@@ -12,17 +12,14 @@
 # `thumbv7em-none-eabihf` is the canonical Cortex-M4F target SCE
 # emits Rust code for under `--no-std`. The target is registered
 # here so consumers can drive `cargo build --target=thumbv7em-none-
-# eabihf -p sce-rust-runtime --no-default-features --features=no_std`
-# from any workspace directory without supplying linker hints.
+# eabihf -p sce-rust-runtime --no-default-features` (the runtime
+# without its `std` feature, docs/adr/0053) from any workspace
+# directory without supplying linker hints.
 #
 # `linker` and `rustflags` are set per the Cortex-M4F convention
-# (rust-lld + Tier-2-default rustflags). The actual runtime port
-# (engine.rs + helpers/* from std to core::* + heapless) lands in
-# Atomic B-γ2; until then `cargo build --target=thumbv7em-none-
-# eabihf --features=no_std` is expected to fail with std-import
-# errors in the runtime crate's not-yet-ported modules. The target
-# registration alone does not invoke a build — CI gating with an
-# expect-pass invocation co-lands with B-γ2.
+# (rust-lld + Tier-2-default rustflags). The target registration
+# alone does not invoke a build; `scripts/gates/nostd-mcu.sh` and
+# its workflow build the runtime and the probes for this target.
 [target.thumbv7em-none-eabihf]
 linker = "rust-lld"
 rustflags = [

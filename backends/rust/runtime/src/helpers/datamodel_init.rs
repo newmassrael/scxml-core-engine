@@ -13,15 +13,15 @@
 //! SCE Protocol-Synthesis RFC §synth-5-J-2 (lines 1989-1994): the no_std statechart variant
 //! has zero `alloc` dependency. Filesystem-coupled helpers (`Path`/`PathBuf`
 //! types, `std::env::current_exe`, `std::fs::read_to_string`) are gated to
-//! `cfg(not(feature = "no_std"))`. Author-side `<data src="...">` is rejected
+//! `cfg(feature = "std")`. Author-side `<data src="...">` is rejected
 //! up-front by `validate_no_std_compatibility` (diagnostic
 //! `codegen/no-std-fs-load-not-supported`), so under `--no-std` the
 //! initialize-from-src path is unreachable.
 
-#[cfg(not(feature = "no_std"))]
+#[cfg(feature = "std")]
 use std::path::{Path, PathBuf};
 
-#[cfg(not(feature = "no_std"))]
+#[cfg(feature = "std")]
 use crate::scripting::{IScriptEngine, ScriptValue};
 
 /// §scxml-5.3.1: Check if expression is a JavaScript function literal.
@@ -44,7 +44,7 @@ pub fn is_function_expression(expr: &str) -> bool {
 ///
 /// SCE Protocol-Synthesis RFC §synth-5-J-2: gated to `!no_std` because `PathBuf` and
 /// `std::env::current_exe` are alloc-coupled.
-#[cfg(not(feature = "no_std"))]
+#[cfg(feature = "std")]
 pub fn resolve_executable_base_path(relative_path: &str) -> PathBuf {
     match std::env::current_exe() {
         Ok(exe_path) => {
@@ -74,7 +74,7 @@ pub fn is_xml_content(content: &str) -> bool {
 /// SCE Protocol-Synthesis RFC §synth-5-J-2: gated to `!no_std` because `Path`/`PathBuf` are
 /// alloc-coupled. Under `--no-std` the codegen-time validator rejects
 /// `<data src="...">` so this helper is never emitted into generated code.
-#[cfg(not(feature = "no_std"))]
+#[cfg(feature = "std")]
 pub fn resolve_src_path(src: &str, base_path: &str) -> PathBuf {
     let file_path = src.strip_prefix("file:").unwrap_or(src);
 
@@ -103,7 +103,7 @@ pub fn resolve_src_path(src: &str, base_path: &str) -> PathBuf {
 /// part of `crate::scripting`, which is whole-module gated under `--no-std`
 /// (the `codegen/no-std-script-not-supported` validator rejects `<script>`
 /// up-front so this helper is unreachable from generated no_std code).
-#[cfg(not(feature = "no_std"))]
+#[cfg(feature = "std")]
 pub fn eval_or_set_string(
     se: &dyn IScriptEngine,
     sid: &str,
@@ -141,7 +141,7 @@ pub fn eval_or_set_string(
 ///
 /// SCE Protocol-Synthesis RFC §synth-5-J-2: gated to `!no_std` for the same reason as
 /// [`eval_or_set_string`] — the [`IScriptEngine`] dependency.
-#[cfg(not(feature = "no_std"))]
+#[cfg(feature = "std")]
 pub fn initialize_variable(
     se: &dyn IScriptEngine,
     sid: &str,
@@ -176,7 +176,7 @@ pub fn initialize_variable(
 /// is OS-coupled and `PathBuf` is alloc-coupled. Under `--no-std` the codegen-time
 /// validator rejects `<data src="...">` so this helper is never emitted into
 /// generated code.
-#[cfg(not(feature = "no_std"))]
+#[cfg(feature = "std")]
 pub fn initialize_variable_from_src(
     se: &dyn IScriptEngine,
     sid: &str,
@@ -200,7 +200,7 @@ pub fn initialize_variable_from_src(
 ///
 /// SCE Protocol-Synthesis RFC §synth-5-J-2: gated to `!no_std` for the same reason as
 /// [`eval_or_set_string`] — the [`IScriptEngine`] dependency.
-#[cfg(not(feature = "no_std"))]
+#[cfg(feature = "std")]
 pub fn initialize_variable_from_expr(
     se: &dyn IScriptEngine,
     sid: &str,

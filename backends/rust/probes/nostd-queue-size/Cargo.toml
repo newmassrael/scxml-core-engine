@@ -12,8 +12,10 @@
 #
 # `src/lib.rs` const-asserts `size_of::<Engine<P>>()` for the generated
 # capacity=2 machine in the sibling `machine` crate. The assertion is evaluated
-# at compile time, so building this crate IS the gate. Detached workspace so
-# feature unification cannot leak `no_std` into an unrelated std build.
+# at compile time, so building this crate IS the gate. Detached workspace: it is
+# built for the MCU target by itself, its sizes are the bare-metal profile's
+# (the runtime asked for no features, docs/adr/0053), and its machine's `src`
+# exists only after the gate's generation step.
 
 [package]
 name = "sce-nostd-queue-size-probe"
@@ -28,6 +30,6 @@ path = "src/lib.rs"
 
 [dependencies]
 sce-nostd-queue-size-machine = { path = "machine" }
-sce-rust-runtime = { path = "../../runtime", default-features = false, features = ["no_std"] }
+sce-rust-runtime = { path = "../../runtime", default-features = false }
 
 [workspace]

@@ -1,0 +1,27 @@
+# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+#
+# The bare-metal crate of the feature-unification probe: a generated
+# `--no-std` machine and hand-written code beside it, with the manifest a
+# downstream bare-metal crate writes. See ../Cargo.toml.
+
+[package]
+name = "sce-feature-unification-mcu"
+version = "0.0.0"
+edition = "2021"
+publish = false
+description = "Bare-metal half of the feature-unification probe: a --no-std machine in a workspace beside an application crate"
+license = "AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+# What a bare-metal crate asks of the runtime: nothing. Its profile is the
+# absence of `std`.
+sce-rust-runtime = { path = "../../../runtime", default-features = false }
+# The generated `--no-std` machine (sce-build/tests/fixtures/no_std/portable_probe.scxml,
+# generated into that crate by the gate).
+sce-portable-emit-probe = { path = "../../portable-emit" }
+# The crate's own fixed-capacity list, the one version the runtime links.
+heapless = "0.8"

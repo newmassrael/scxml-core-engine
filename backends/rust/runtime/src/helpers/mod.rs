@@ -42,14 +42,14 @@
 //! - [`unique_id_generator`]: Session/send/invoke/event ID generation
 //! - `url_encoding` (std-only): RFC 3986 URL encoding/decoding
 //!
-//! Modules marked "std-only" are unavailable under `--features no_std` (see
+//! Modules marked "std-only" are unavailable under `--no-default-features` (see
 //! the `#[cfg]` rationale on each `pub mod` below).
 
 // Index discipline: std-only entries above are plain code spans, not
 // intra-doc links — a cfg-gated target cannot resolve in the no_std docs
 // profile (both profiles are doc-gated). rustdoc therefore can never catch
 // a stale "(std-only)" marker; tests/helpers_index_drift.rs keeps the
-// marker set in lockstep with the actual `cfg(not(feature = "no_std"))`
+// marker set in lockstep with the actual `cfg(feature = "std")`
 // gating instead.
 
 // §scxml-3.3 / §scxml-3.4: whether a chain a host hands back is a configuration
@@ -62,7 +62,7 @@ pub mod datamodel_init;
 // `io_processors` is — a typed accessor is emitted only for a `<data>` that
 // carries an initializer, and such a document needs a script engine, which no
 // no_std machine has.
-#[cfg(not(feature = "no_std"))]
+#[cfg(feature = "std")]
 pub mod datamodel_read;
 pub mod done_data;
 pub mod entry_exit;
@@ -71,7 +71,7 @@ pub mod entry_exit;
 // calls into this helper today, so the no_std codegen has no consumer — the
 // no_std variant lands with a heapless::String<N> output + &[(&str, &str)]
 // input under a future atomic when consumer demand surfaces.
-#[cfg(not(feature = "no_std"))]
+#[cfg(feature = "std")]
 pub mod event_data;
 pub mod event_matching;
 pub mod event_queue;
@@ -80,17 +80,17 @@ pub mod hierarchy;
 // §scxml-6.2.4 / §scxml-6.4.1: the write of a generated id to an
 // `idlocation`. Gated because it assigns through a script engine, which no
 // no_std machine has.
-#[cfg(not(feature = "no_std"))]
+#[cfg(feature = "std")]
 pub mod idlocation;
 // SCE Protocol-Synthesis RFC §synth-5-J-2: invoke processing is alloc-coupled (Arc/Mutex/Vec/
 // HashMap) and never reached under `--no-std` since the codegen-time validator
 // rejects `<invoke>` via `codegen/no-std-invoke-not-supported`.
-#[cfg(not(feature = "no_std"))]
+#[cfg(feature = "std")]
 pub mod invoke_processing;
 // §scxml-C-1-1 / §scxml-C-2-3: the `_ioprocessors` entry set. Gated for the
 // same reason `url_encoding` is — the entries exist to be published into a
 // script engine, which no no_std machine has.
-#[cfg(not(feature = "no_std"))]
+#[cfg(feature = "std")]
 pub mod io_processors;
 pub mod logger;
 // §scxml-D-microstepProcedure: the appendix's procedures over a document and a

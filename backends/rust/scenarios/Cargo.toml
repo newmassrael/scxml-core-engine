@@ -22,7 +22,8 @@ description = "Replays the engine-neutral scenarios of a datamodel=\"sce-static\
 # wasm32-unknown-unknown build has neither the C toolchain nor the sockets for.
 
 [dependencies]
-sce-rust-runtime = { path = "../runtime", default-features = false }
+# `std` without `http-send`: wasm32-unknown-unknown has `std` but no sockets.
+sce-rust-runtime = { path = "../runtime", default-features = false, features = ["std"] }
 # A `datamodel="sce-static"` machine checks its integer operations with the forge
 # runtime's helpers (SCE_FORGE.md §3.4.1); the crate is `#![no_std]`, so it needs
 # nothing of the operating system.

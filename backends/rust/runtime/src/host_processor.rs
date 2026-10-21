@@ -26,7 +26,7 @@
 //! heap-allocated map of boxed closures, and a `no_std` build has no
 //! allocator to hold it.
 
-#![cfg(not(feature = "no_std"))]
+#![cfg(feature = "std")]
 
 use std::collections::HashMap;
 

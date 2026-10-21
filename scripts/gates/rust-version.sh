@@ -22,9 +22,10 @@
 # itself refuses a dependency that declares a newer Rust, and rustc refuses the
 # package's own use of a newer API. What is built is what a dependent gets by
 # default: the library and binaries with default features, against the
-# committed lockfile, for the runner's target. Not every feature at once:
-# `sce-rust-runtime`'s `no_std` and `http-send` refuse each other, so that build
-# fails on every toolchain. A dependency only another target compiles is not
+# committed lockfile, for the runner's target. Not every feature at once: what
+# a declared number promises a dependent is the build it gets by default, and
+# an opt-out such as `sce-rust-runtime`'s `no_macrostep_diagnostics` describes
+# a build no dependent gets unasked. A dependency only another target compiles is not
 # checked here; reading the lockfile instead would have to evaluate every
 # target's `cfg` and each package's own features, and the first attempt at it
 # (2026-10-20) charged `sce-forge-runtime` for `loom`, which only its

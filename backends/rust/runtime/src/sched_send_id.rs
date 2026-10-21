@@ -15,7 +15,7 @@
 //!
 //! For such a cancel-free machine the per-entry `heapless::String<256>`
 //! (~264 B × [`MAX_SCHEDULED_EVENTS`](crate::MAX_SCHEDULED_EVENTS)) is pure dead
-//! weight under `--features=no_std` — after the delayed-send `event_data`
+//! weight under `--no-default-features` — after the delayed-send `event_data`
 //! elision it is the single largest resident in the no_std `Engine`. This trait
 //! lets the generated [`StatePolicy::ScheduledSendId`](crate::StatePolicy::ScheduledSendId)
 //! associated type pick the storage per machine: [`SceString`] when the document

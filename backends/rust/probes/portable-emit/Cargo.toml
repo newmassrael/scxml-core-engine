@@ -1,11 +1,18 @@
 # SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 #
-# SCE Protocol-Synthesis RFC §5.J.2: single-emit portability gate. Proves that ONE
-# `--no-std` generated machine compiles against BOTH runtime profiles:
+# SCE Protocol-Synthesis RFC §5.J.2: single-emit portability. ONE `--no-std`
+# generated machine that must compile against BOTH runtime profiles:
 #
-#   - the std runtime (the AP profile — `cargo build`, host target), and
-#   - the no_std runtime (the MCU profile — `--features mcu`, thumb target).
+#   - the std runtime (the AP profile, host target), and
+#   - the bare-metal runtime, without its `std` feature (the MCU profile,
+#     thumb target).
+#
+# Both builds are made through `../feature-unification`, whose bare-metal crate
+# depends on this one: its host `cargo check --workspace` compiles this machine
+# inside the `std` profile the application crate beside it turns on, and its
+# thumb build compiles it alone (docs/adr/0053). This crate asks the runtime
+# for no features, as a bare-metal crate does.
 #
 # The runtime owns the std-vs-heapless collection choice through profile-
 # resolving aliases (`SceBytes` / `SceString` / `StateChain`), so the emission
@@ -13,8 +20,8 @@
 # layer existed, a `--no-std` emit's `bytes` field / transition buffers / dedup
 # set referenced `sce_rust_runtime::heapless::*` (a no_std-only re-export) and
 # failed `E0433: cannot find heapless in sce_rust_runtime` against the std
-# runtime. This crate's default (std-runtime) build is the regression gate for
-# that bug; the `mcu` build proves the same emission stays allocator-free.
+# runtime. The host build is the regression gate for that bug; the thumb build
+# proves the same emission stays allocator-free.
 #
 # The `[lib] path` points at a generated `--no-std` machine combining a typed
 # bytes/string payload (SceBytes / SceString) with nested parallel regions
@@ -23,9 +30,9 @@
 # git-ignored and produced fresh by the gate (CI + local — see README.md), so
 # it can never drift stale against the templates.
 #
-# Detached from the parent workspace (own empty `[workspace]` table) so cargo's
-# feature unification cannot turn on `sce-rust-runtime/no_std` for the std
-# `sce-rust-tests` build in the same invocation.
+# Detached from the parent workspace (own empty `[workspace]` table): its `src`
+# exists only after the gate's generation step, so as a member it would fail
+# every workspace build.
 
 [package]
 name = "sce-portable-emit-probe"
@@ -40,14 +47,8 @@ name = "sce_portable_emit_probe"
 path = "src/portable_probe_sm.rs"
 
 [dependencies]
-# Default build: std runtime profile (no_std OFF). `default-features = false`
-# also drops `http-send` — the emission never uses BasicHTTP, and the AP gate
-# only needs the runtime in std mode.
+# No features: the bare-metal profile. Which profile a build compiles is decided
+# by the build that holds this crate, as it is for a downstream bare-metal crate.
 sce-rust-runtime = { path = "../../runtime", default-features = false }
-
-[features]
-# Build the SAME emission against the no_std runtime (MCU profile). Used by the
-# thumbv7em-none-eabihf gate; absent for the host/std gate.
-mcu = ["sce-rust-runtime/no_std"]
 
 [workspace]

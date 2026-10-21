@@ -9,8 +9,9 @@
 # sce-rust-runtime opts into the workspace `[lints]`
 # broken-intra-doc-links=deny policy, but that policy only bites when
 # something runs `cargo doc`. Both feature profiles are gated: a doc link
-# that crosses a `#[cfg]` boundary (e.g. into a `!no_std`-gated module)
-# resolves in the default-features docs yet breaks in the no_std docs, so
+# that crosses a `#[cfg]` boundary (e.g. into a module only the `std`
+# feature compiles) resolves in the default-features docs yet breaks in the
+# no_std docs (no features at all, docs/adr/0053), so
 # the std-only run cannot see that breakage class. All runtime doc links are
 # kept profile-stable (cfg-gated targets are plain code spans).
 #
@@ -25,5 +26,5 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 RUSTDOCFLAGS="-D warnings" cargo doc -p sce-rust-runtime --no-deps \
     || sce_gate_fail "broken intra-doc links (std profile)"
 RUSTDOCFLAGS="-D warnings" cargo doc -p sce-rust-runtime --no-deps \
-    --no-default-features --features no_std \
+    --no-default-features \
     || sce_gate_fail "broken intra-doc links (no_std profile)"

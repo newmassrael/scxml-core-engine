@@ -27,7 +27,7 @@
 //! Cross-language siblings: `sce_runtime.event_payload` (Python),
 //! `sce.LiftPayload` (Go), `SCE::Common::EventPayloadFields` (C++).
 
-#![cfg(not(feature = "no_std"))]
+#![cfg(feature = "std")]
 
 use core::fmt;
 

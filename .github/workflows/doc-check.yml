@@ -10,8 +10,8 @@ name: Rust doc check
 #
 # Scope: sce-rust-runtime only — the crate whose docs were repaired. Both
 # feature profiles are validated: DEFAULT features (the docs.rs / superset
-# config that includes every `!no_std` module + http-send + invoke + scripting)
-# AND the no_std subset (--no-default-features --features no_std). A doc link
+# config that includes every `std`-only module + http-send + invoke + scripting)
+# AND the no_std subset (--no-default-features, the runtime with no features). A doc link
 # that crosses a `#[cfg]` boundary resolves in the superset docs yet breaks in
 # the subset docs, so a default-only run cannot see that breakage class; all
 # runtime doc links are kept profile-stable (cfg-gated targets are plain code

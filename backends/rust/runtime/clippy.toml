@@ -12,8 +12,9 @@
 #
 # This is the only crate of the web-facing three that needs the list: `forge-runtime`
 # and `portable-bytes` are unconditionally `#![no_std]`, so neither can name
-# `std::time` or `std::thread` at all. This crate is `std` unless its `no_std`
-# feature is on, which is why the ban is here.
+# `std::time` or `std::thread` at all. This crate links `std` whenever its `std`
+# feature is on (the default, and so every browser build), which is why the ban
+# is here.
 disallowed-methods = [
     { path = "std::time::Instant::now", reason = "no clock on wasm32-unknown-unknown: it compiles and traps. Use the engine's SceClock, or cfg the function away on that target." },
     { path = "std::time::Instant::elapsed", reason = "reads the OS clock like Instant::now" },

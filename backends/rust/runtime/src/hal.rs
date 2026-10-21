@@ -136,7 +136,7 @@ pub struct StdHal {
 /// (typically through embassy / cortex-m's critical-section + tick crates)
 /// per the contract on the [`Hal`] trait above; [`NoOpHal`] is the
 /// loud-panicking fallback when no real HAL is wired.
-#[cfg(not(feature = "no_std"))]
+#[cfg(feature = "std")]
 impl Hal for StdHal {
     // The HAL is the door to the OS clock; this arm exists only where there is one
     // (clippy.toml bans the call everywhere else in the crate).

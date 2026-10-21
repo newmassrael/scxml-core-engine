@@ -15,13 +15,13 @@
 //! SCE Protocol-Synthesis RFC §synth-5-J-2 (lines 1989-1994): string-typed fields are
 //! backed by [`crate::SceString`], which is `std::string::String` under the
 //! default std build and `heapless::String<MAX_EVENT_STRING_LEN>` under
-//! `--features=no_std`. The cap and motivation are documented at
+//! `--no-default-features`. The cap and motivation are documented at
 //! [`crate::MAX_EVENT_STRING_LEN`].
 
 use crate::SceString;
 // Only the std arm of `EventMetadata::external` stores string metadata; under
 // no_std the `_event.*` strings are elided, so the converter is std-only.
-#[cfg(not(feature = "no_std"))]
+#[cfg(feature = "std")]
 use crate::sce_string_from_str;
 
 /// Event type classification (§scxml-5.10.1).
@@ -99,7 +99,7 @@ impl EventType {
 /// access that forces `NEEDS_SCRIPT_ENGINE` (rejected under no_std via
 /// `codegen/no-std-script-not-supported`), and `<invoke>` / HTTP send (the
 /// producers of `invoke_id` / `origin*` / the HTTP `target`) are no_std-rejected
-/// too. So they are `#[cfg(not(feature = "no_std"))]`, dropping ~1.3 KiB of dead
+/// too. So they are `#[cfg(feature = "std")]`, dropping ~1.3 KiB of dead
 /// inline `heapless::String<256>` per queued event on MCU targets. (Typed event
 /// data rides the `Payload` channel — `_event.data.<field>` reads the payload
 /// sum, never this JSON `data` string.)
@@ -114,45 +114,45 @@ pub struct EventMetadata {
     /// empty means the member's own name IS the name, which is every event the
     /// document itself raises or sends. No `_event.name` reader exists under
     /// no_std (reading it is an ECMAScript access), so the field is elided there.
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     pub name: SceString,
     /// `_event.data` — event payload as a JSON string (empty when no payload).
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     pub data: SceString,
     /// `_event.type` — classification (internal / external / platform).
     pub event_type: EventType,
     /// `_event.sendid` — send ID from originating `<send>` (empty if none).
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     pub send_id: SceString,
     /// `_event.origin` — origin URI (empty if no origin).
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     pub origin: SceString,
     /// `_event.origintype` — type of origin (e.g., SCXML Event I/O Processor URI).
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     pub origin_type: SceString,
     /// `_event.invokeid` — invoke ID if event came from a child invoke (W3C 6.4.1).
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     pub invoke_id: SceString,
     /// The token of the host-run invocation this event completes, set only by
     /// `Engine::complete_host_invoke` after it confirmed the invocation was
     /// still running. A host invoke's `done.invoke.<id>` that arrives without
     /// one did not come through that check, so the engine refuses it
     /// (§scxml-6.4). Not script-visible: `_event` has no field for it.
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     pub host_invoke_token: Option<u64>,
 }
 
 impl EventMetadata {
     /// Construct platform metadata (e.g., for `error.execution`, `done.state.*`).
     pub fn platform() -> Self {
-        #[cfg(not(feature = "no_std"))]
+        #[cfg(feature = "std")]
         {
             Self {
                 event_type: EventType::Platform,
                 ..Default::default()
             }
         }
-        #[cfg(feature = "no_std")]
+        #[cfg(not(feature = "std"))]
         {
             Self {
                 event_type: EventType::Platform,
@@ -162,14 +162,14 @@ impl EventMetadata {
 
     /// Construct internal metadata (e.g., for `<raise>`).
     pub fn internal() -> Self {
-        #[cfg(not(feature = "no_std"))]
+        #[cfg(feature = "std")]
         {
             Self {
                 event_type: EventType::Internal,
                 ..Default::default()
             }
         }
-        #[cfg(feature = "no_std")]
+        #[cfg(not(feature = "std"))]
         {
             Self {
                 event_type: EventType::Internal,
@@ -179,12 +179,12 @@ impl EventMetadata {
 
     /// Construct external metadata with a send ID and origin (e.g., for `<send>`).
     ///
-    /// Under `--features=no_std` the `_event.sendid` / `_event.origin` string
+    /// Under `--no-default-features` the `_event.sendid` / `_event.origin` string
     /// metadata is elided (no script-engine reader exists), so the `send_id` /
     /// `origin` arguments are accepted for a uniform call shape across profiles
     /// but not stored.
     pub fn external(send_id: SceString, origin: SceString) -> Self {
-        #[cfg(not(feature = "no_std"))]
+        #[cfg(feature = "std")]
         {
             Self {
                 event_type: EventType::External,
@@ -196,7 +196,7 @@ impl EventMetadata {
                 ..Default::default()
             }
         }
-        #[cfg(feature = "no_std")]
+        #[cfg(not(feature = "std"))]
         {
             let _ = (send_id, origin);
             Self {
@@ -228,12 +228,12 @@ pub struct EventWithMetadata<E, P = ()> {
     pub metadata: EventMetadata,
     /// §scxml-C-2: HTTP POST target URL (empty if not an HTTP send).
     ///
-    /// `#[cfg(not(feature = "no_std"))]`: HTTP send is no_std-rejected
+    /// `#[cfg(feature = "std")]`: HTTP send is no_std-rejected
     /// (`codegen/no-std-http-not-supported`), so this field has no producer or
     /// reader on MCU targets — elided to drop its inline `heapless::String<256>`
     /// from every queued event (mirrors the `!no_std`-gated `on_http_send` field
     /// on [`Engine`](crate::Engine)).
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     pub target: SceString,
 }
 
@@ -245,7 +245,7 @@ impl<E, P: Default> EventWithMetadata<E, P> {
             event,
             payload: P::default(),
             metadata: EventMetadata::default(),
-            #[cfg(not(feature = "no_std"))]
+            #[cfg(feature = "std")]
             target: SceString::new(),
         }
     }
@@ -266,7 +266,7 @@ impl<E, P: Default> EventWithMetadata<E, P> {
     ///
     /// `message` describes the failing construct and is a literal formed at
     /// generation time, not the underlying engine's error text: it must survive
-    /// `--features=no_std`, where there is no allocator to build one and
+    /// `--no-default-features`, where there is no allocator to build one and
     /// [`set_event_data`](Self::set_event_data) stores nothing anyway. The
     /// dynamic detail stays on the log line beside the call.
     pub fn platform_error(event: E, message: &str) -> Self {
@@ -283,18 +283,18 @@ impl<E, P: Default> EventWithMetadata<E, P> {
 
     /// Set `_event.data` (the JSON-string baseline) from a borrowed string.
     ///
-    /// No-op under `--features=no_std`: typed event data rides the `Payload`
+    /// No-op under `--no-default-features`: typed event data rides the `Payload`
     /// channel there (`_event.data.<field>` reads the payload sum), and the
     /// schemaless `_event.data` baseline this string carries has no no_std
     /// reader (dynamic `_event.data` needs the rejected script engine). Routing
     /// the generated send sites through this method keeps their call shape
     /// uniform across both profiles while the no_std build stores nothing.
     pub fn set_event_data(&mut self, data: &str) {
-        #[cfg(not(feature = "no_std"))]
+        #[cfg(feature = "std")]
         {
             self.metadata.data = crate::sce_string_from_str(data);
         }
-        #[cfg(feature = "no_std")]
+        #[cfg(not(feature = "std"))]
         {
             let _ = data;
         }
@@ -302,7 +302,7 @@ impl<E, P: Default> EventWithMetadata<E, P> {
 }
 
 #[cfg(test)]
-#[cfg(not(feature = "no_std"))]
+#[cfg(feature = "std")]
 mod tests {
     use super::*;
 

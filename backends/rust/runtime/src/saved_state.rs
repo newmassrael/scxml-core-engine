@@ -53,7 +53,7 @@
 //!
 //! ⚠ `std` only: a `no_std` machine has no JSON and nothing to save it to.
 
-#![cfg(not(feature = "no_std"))]
+#![cfg(feature = "std")]
 
 use core::fmt;
 

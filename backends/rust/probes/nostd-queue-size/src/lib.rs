@@ -78,7 +78,7 @@ const META_SIZE_BOUND: usize = 64;
 const _: () = assert!(
     core::mem::size_of::<EventMetadata>() <= META_SIZE_BOUND,
     "no_std EventMetadata exceeds its size bound: a `_event.*` string field that should be \
-     #[cfg(not(feature = \"no_std\"))] (data / sendid / origin / origintype / invokeid) was \
+     #[cfg(feature = \"std\")] (data / sendid / origin / origintype / invokeid) was \
      reintroduced into the queued metadata. See the EventMetadata doc-comment in \
      backends/rust/runtime/src/event.rs.",
 );
@@ -100,7 +100,7 @@ const _: () = assert!(
     core::mem::size_of::<PullScheduler<ProbeEvent, ProbeSendId>>() <= SCHEDULER_TYPE_BOUND,
     "PullScheduler<E, S> exceeds its bound: a per-entry delayed-send string was likely \
      reintroduced into ScheduledEntry under no_std — either the `event_data` payload (it must \
-     be #[cfg(not(feature = \"no_std\"))]) or the `send_id` cancel key (the cancel-free machine's \
+     be #[cfg(feature = \"std\")]) or the `send_id` cancel key (the cancel-free machine's \
      `type ScheduledSendId` must be `ElidedSendId`, not `SceString`). See the ScheduledEntry \
      doc-comment and the ScheduledSendId associated type in backends/rust/runtime/src/engine.rs.",
 );

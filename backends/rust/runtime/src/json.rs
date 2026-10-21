@@ -16,7 +16,7 @@
 //! ⚠ `std` only, like both of its readers: a `no_std` build has neither an
 //! event data wire nor a saved state.
 
-#![cfg(not(feature = "no_std"))]
+#![cfg(feature = "std")]
 
 use core::fmt;
 

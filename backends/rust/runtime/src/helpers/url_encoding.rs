@@ -15,7 +15,7 @@
 //! Mirrors the `event_data.rs` precedent (B-γ2d-1) for HTTP-coupled helpers
 //! with no no_std consumer.
 
-#![cfg(not(feature = "no_std"))]
+#![cfg(feature = "std")]
 
 /// §scxml-C-2: Percent-encode a string for URL transmission.
 ///

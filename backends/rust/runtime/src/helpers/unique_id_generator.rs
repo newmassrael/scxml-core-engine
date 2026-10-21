@@ -13,7 +13,7 @@
 //! Unix-epoch timestamp source (`SystemTime::now().duration_since(UNIX_EPOCH)`)
 //! is unavailable. Send/invoke/event IDs only need uniqueness within a single
 //! statechart instance (§scxml-5.10.1) — the `AtomicU64` counter alone
-//! satisfies that contract, so under `--features=no_std` the timestamp branch
+//! satisfies that contract, so under `--no-default-features` the timestamp branch
 //! returns zero and uniqueness rides entirely on the global counter. ID
 //! strings are returned as [`SceString`] (= `String` under std, capped
 //! `heapless::String<MAX_EVENT_STRING_LEN>` under no_std).
@@ -33,7 +33,7 @@ use crate::SceString;
 use core::sync::atomic::Ordering;
 use portable_atomic::AtomicU64;
 #[cfg(all(
-    not(feature = "no_std"),
+    feature = "std",
     not(all(target_arch = "wasm32", target_os = "unknown"))
 ))]
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -52,11 +52,11 @@ static GLOBAL_COUNTER: AtomicU64 = AtomicU64::new(0);
 /// no_std truncates per heapless semantics (the 256-byte cap is far above
 /// any realistic prefix + u64 + u64).
 fn format_unique_id(prefix: &str, timestamp: u64, counter: u64) -> SceString {
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     {
         format!("{}_{}{}", prefix, timestamp, counter)
     }
-    #[cfg(feature = "no_std")]
+    #[cfg(not(feature = "std"))]
     {
         use core::fmt::Write;
         let mut s = SceString::new();
@@ -69,11 +69,11 @@ fn format_unique_id(prefix: &str, timestamp: u64, counter: u64) -> SceString {
 ///
 /// §scxml-6.4 (test 224) invoke ID layout when a state_id is supplied.
 fn format_invoke_id(state_id: &str, counter: u64) -> SceString {
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     {
         format!("{}.platform_{}", state_id, counter)
     }
-    #[cfg(feature = "no_std")]
+    #[cfg(not(feature = "std"))]
     {
         use core::fmt::Write;
         let mut s = SceString::new();
@@ -90,11 +90,11 @@ fn format_invoke_id(state_id: &str, counter: u64) -> SceString {
 /// wherever it runs and a saved state carries on from the number alone. At most
 /// 31 bytes: [`AUTO_SEND_ID_MAX_LEN`].
 pub fn format_auto_send_id(number: u64) -> SceString {
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     {
         format!("_auto_send_{}", number)
     }
-    #[cfg(feature = "no_std")]
+    #[cfg(not(feature = "std"))]
     {
         use core::fmt::Write;
         let mut s = SceString::new();
@@ -189,7 +189,7 @@ pub fn reset_for_testing() {
 
 /// Get current timestamp in milliseconds since Unix epoch.
 ///
-/// SCE Protocol-Synthesis RFC §synth-5-J-2: under `--features=no_std` the Unix-epoch source is
+/// SCE Protocol-Synthesis RFC §synth-5-J-2: under `--no-default-features` the Unix-epoch source is
 /// unavailable; the timestamp segment is reduced to zero and per-instance
 /// uniqueness is provided by `GLOBAL_COUNTER`. The same holds on
 /// `wasm32-unknown-unknown`, which provides no wall clock either: an id's
@@ -198,7 +198,7 @@ pub fn reset_for_testing() {
 // Reads the OS wall clock, and is absent where there is none (clippy.toml).
 #[allow(clippy::disallowed_methods)]
 #[cfg(all(
-    not(feature = "no_std"),
+    feature = "std",
     not(all(target_arch = "wasm32", target_os = "unknown"))
 ))]
 fn current_timestamp_millis() -> u64 {
@@ -208,7 +208,10 @@ fn current_timestamp_millis() -> u64 {
         .as_millis() as u64
 }
 
-#[cfg(any(feature = "no_std", all(target_arch = "wasm32", target_os = "unknown")))]
+#[cfg(any(
+    not(feature = "std"),
+    all(target_arch = "wasm32", target_os = "unknown")
+))]
 fn current_timestamp_millis() -> u64 {
     0
 }

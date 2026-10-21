@@ -116,7 +116,7 @@ pub trait StatePolicy: Sized + 'static {
     /// `internalQueue` / `externalQueue` (the [`Engine`] holds
     /// one of each).
     ///
-    /// Carries the machine's FIFO **depth** under `--features=no_std`: generated
+    /// Carries the machine's FIFO **depth** under `--no-default-features`: generated
     /// code emits `EventQueueManager<EventWithMetadata<Self::Event,
     /// Self::Payload>, N>` where `N` is the per-document capacity resolved from
     /// `<scxml sce:capacity="N">` / deploy `default_event_queue_capacity`
@@ -520,7 +520,7 @@ pub trait StatePolicy: Sized + 'static {
     ///
     /// Generated only when `HAS_INVOKE_SUPPORT` is `true` and the document
     /// saves. `std` only, as the saved state is.
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     fn invoke_owner(_invoke_id: &str) -> Option<Self::State> {
         None
     }
@@ -531,7 +531,7 @@ pub trait StatePolicy: Sized + 'static {
     ///
     /// Generated only when the document has an `<invoke>` a declared host
     /// invoker serves and saves. `std` only, as the saved state is.
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     fn host_invoke_owner(_processor_type: &str, _invoke_id: &str) -> Option<Self::State> {
         None
     }
@@ -543,7 +543,7 @@ pub trait StatePolicy: Sized + 'static {
     ///
     /// Generated only when `HAS_INVOKE_SUPPORT` is `true` and the document
     /// saves. `std` only, as the saved state is.
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     fn running_invokes(&self) -> Vec<&'static str> {
         Vec::new()
     }
@@ -556,7 +556,7 @@ pub trait StatePolicy: Sized + 'static {
     ///
     /// Generated only when `HAS_INVOKE_SUPPORT` is `true` and the document
     /// saves. `std` only, as the saved state is.
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     fn restart_invoke(&mut self, _invoke_id: &str, _engine: &mut Engine<Self>) {}
 
     /// How many times each `<invoke>` that has started in this session has
@@ -566,7 +566,7 @@ pub trait StatePolicy: Sized + 'static {
     ///
     /// Generated only when the document has an `<invoke type="scxml">` and
     /// saves. `std` only, as the saved state is.
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     fn invoke_starts(&self) -> Vec<(&'static str, u64)> {
         Vec::new()
     }
@@ -578,7 +578,7 @@ pub trait StatePolicy: Sized + 'static {
     ///
     /// Generated only when the document has an `<invoke type="scxml">` and
     /// saves. The default refuses: a document with no child to resume has none.
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     fn judge_child(
         child: &crate::saved_state::SavedChild,
     ) -> Result<(), crate::saved_state::StateRefusal> {
@@ -595,7 +595,7 @@ pub trait StatePolicy: Sized + 'static {
     ///
     /// Generated only when the document has an `<invoke type="scxml">` and
     /// saves. The default refuses, as [`judge_child`](Self::judge_child) does.
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     fn resume_child(
         &mut self,
         child: &crate::saved_state::SavedChild,
@@ -616,7 +616,7 @@ pub trait StatePolicy: Sized + 'static {
     /// Generated only when the document has an `<invoke type="scxml">` and
     /// saves. A policy with no children to resume has none to ask for, which
     /// is what the default says.
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     fn start_owed_child_meshes(&mut self, _engine: &mut Engine<Self>) {}
 
     /// Hand `invokers`, the tree's host invokers, to every child this session
@@ -625,7 +625,7 @@ pub trait StatePolicy: Sized + 'static {
     /// Generated when the document has an `<invoke type="scxml">`. A policy
     /// with no children has none to hand them to, which is what the default
     /// says.
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     fn adopt_host_invokers_in_children(&mut self, _invokers: &crate::host_processor::TreeInvokers) {
     }
 
@@ -637,7 +637,7 @@ pub trait StatePolicy: Sized + 'static {
     /// Generated when the document has an `<invoke type="scxml">`. A policy
     /// with no children holds no other session, which is what the default
     /// says.
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     fn route_host_invoke_end_to_child(
         &mut self,
         _session_id: &str,
@@ -690,7 +690,7 @@ pub trait StatePolicy: Sized + 'static {
     /// ⚠ `std` only, because [`EventMetadata::data`](crate::EventMetadata) is:
     /// a `no_std` build has no wire to lift from and no script engine to
     /// disagree with, so there the typed carrier is the whole channel.
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     fn lift_event_payload(
         &mut self,
         _event: Self::Event,
@@ -844,7 +844,7 @@ pub trait StatePolicy: Sized + 'static {
     /// carries on, so every child's id and a peer's `#_scxml_<id>` address
     /// still name it (docs/adr/0045). A policy that holds no id has none to
     /// bind, which is what the default says.
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     fn bind_session_id(&mut self, _session_id: &str) {}
 
     /// §scxml-C-1: deliver a send addressed to one of this machine's children

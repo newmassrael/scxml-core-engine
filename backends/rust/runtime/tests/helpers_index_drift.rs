@@ -17,8 +17,8 @@ use std::fs;
 use std::path::Path;
 
 const MOD_RS: &str = include_str!("../src/helpers/mod.rs");
-const NOT_NO_STD_OUTER: &str = "#[cfg(not(feature = \"no_std\"))]";
-const NOT_NO_STD_INNER: &str = "#![cfg(not(feature = \"no_std\"))]";
+const STD_ONLY_OUTER: &str = "#[cfg(feature = \"std\")]";
+const STD_ONLY_INNER: &str = "#![cfg(feature = \"std\")]";
 
 /// Parse the module index bullets: `//! - [`name`]: ...` (linked = present
 /// in both profiles) vs `//! - `name` (std-only): ...` (plain span =
@@ -61,7 +61,7 @@ fn parse_index() -> (BTreeSet<String>, BTreeSet<String>) {
 }
 
 /// Collect `pub mod name;` declarations and whether an outer
-/// `#[cfg(not(feature = "no_std"))]` guards each one. Comment and blank
+/// `#[cfg(feature = "std")]` guards each one. Comment and blank
 /// lines may sit between the attribute and the declaration; any other
 /// intervening item resets the pending attribute.
 fn parse_decls() -> Vec<(String, bool)> {
@@ -69,7 +69,7 @@ fn parse_decls() -> Vec<(String, bool)> {
     let mut pending_gate = false;
     for line in MOD_RS.lines() {
         let t = line.trim();
-        if t == NOT_NO_STD_OUTER {
+        if t == STD_ONLY_OUTER {
             pending_gate = true;
         } else if let Some(rest) = t.strip_prefix("pub mod ") {
             let name = rest.trim_end_matches(';');
@@ -94,7 +94,7 @@ fn module_inner_gated(name: &str) -> bool {
             path.display()
         )
     });
-    source.lines().any(|l| l.trim() == NOT_NO_STD_INNER)
+    source.lines().any(|l| l.trim() == STD_ONLY_INNER)
 }
 
 #[test]
@@ -122,6 +122,6 @@ fn helpers_index_matches_no_std_gating() {
         .collect();
     assert_eq!(
         std_only, gated,
-        "(std-only) markers out of sync with cfg(not(feature = \"no_std\")) gating"
+        "(std-only) markers out of sync with cfg(feature = \"std\") gating"
     );
 }

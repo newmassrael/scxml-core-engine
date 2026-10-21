@@ -13,7 +13,7 @@
 //! any external event. The engine's macrostep loop drains the internal queue
 //! first, then processes one external event, then re-drains the internal queue.
 //!
-//! SCE Protocol-Synthesis RFC §synth-5-J-2 (lines 1989-1994): under `--features=no_std` the
+//! SCE Protocol-Synthesis RFC §synth-5-J-2 (lines 1989-1994): under `--no-default-features` the
 //! backing store is a stack-allocated `heapless::Deque<T, N>`. The depth `N`
 //! is per-machine — the const generic parameter carries the
 //! `<scxml sce:capacity="N">` / deploy `default_event_queue_capacity` value
@@ -25,7 +25,7 @@
 //! `mainEventLoop` processes every queued event, so the no_std backing fails
 //! loud rather than drop.
 
-#[cfg(not(feature = "no_std"))]
+#[cfg(feature = "std")]
 use std::collections::VecDeque;
 
 /// FIFO queue for SCXML events with metadata.
@@ -36,7 +36,7 @@ use std::collections::VecDeque;
 ///
 /// Implementation: under std, a thin wrapper around `VecDeque<T>`
 /// (unbounded) — `N` is inert (the std build keeps the spec's unbounded
-/// `Queue`). Under `--features=no_std`, a wrapper around
+/// `Queue`). Under `--no-default-features`, a wrapper around
 /// `heapless::Deque<T, N>` (stack-allocated, sized exactly to the machine's
 /// resolved event-queue capacity). `N` defaults to
 /// [`crate::MAX_EVENT_QUEUE_DEPTH`] so a bare `EventQueueManager<T>` keeps the
@@ -44,9 +44,9 @@ use std::collections::VecDeque;
 /// generated code reads naturally when cross-referenced with C++ source.
 #[derive(Debug)]
 pub struct EventQueueManager<T, const N: usize = { crate::MAX_EVENT_QUEUE_DEPTH }> {
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     queue: VecDeque<T>,
-    #[cfg(feature = "no_std")]
+    #[cfg(not(feature = "std"))]
     queue: ::heapless::Deque<T, N>,
 }
 
@@ -54,25 +54,25 @@ impl<T, const N: usize> EventQueueManager<T, N> {
     /// Construct an empty queue.
     pub fn new() -> Self {
         Self {
-            #[cfg(not(feature = "no_std"))]
+            #[cfg(feature = "std")]
             queue: VecDeque::new(),
-            #[cfg(feature = "no_std")]
+            #[cfg(not(feature = "std"))]
             queue: ::heapless::Deque::new(),
         }
     }
 
     /// §scxml-3.12.1: Enqueue an event at the back of the FIFO queue.
     ///
-    /// Matches C++ `raise(T&&)`. Under `--features=no_std` an attempted push
+    /// Matches C++ `raise(T&&)`. Under `--no-default-features` an attempted push
     /// past the machine's resolved depth `N` panics rather than silently
     /// dropping the event — W3C SCXML Appendix D processes every queued event,
     /// so the bounded backing fails loud rather than drop.
     pub fn raise(&mut self, event: T) {
-        #[cfg(not(feature = "no_std"))]
+        #[cfg(feature = "std")]
         {
             self.queue.push_back(event);
         }
-        #[cfg(feature = "no_std")]
+        #[cfg(not(feature = "std"))]
         {
             self.queue.push_back(event).map_err(|_| ()).expect(
                 "EventQueueManager: heapless capacity exhausted (peak chained <raise> exceeded this machine's resolved EVENT_QUEUE_CAPACITY / MAX_EVENT_QUEUE_DEPTH; raise <scxml sce:capacity>; W3C Appendix D processes every enqueued event, so SCE fails loud rather than drop)",

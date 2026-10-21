@@ -9,7 +9,7 @@
 //! field, as a whole number past its width does not. `static_record_real32`
 //! holds the generated machine to the same numbers; the cases here pin the
 //! reader itself.
-#![cfg(not(feature = "no_std"))]
+#![cfg(feature = "std")]
 
 use sce_rust_runtime::event_payload::PayloadFields;
 

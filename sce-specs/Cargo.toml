@@ -58,10 +58,9 @@ sha2 = { workspace = true }
 sce-revision = { path = "../sce-revision" }
 # The rules of a generation request are one document (`machines/request_life`), generated into
 # `src/request_life/generated`. The machine that comes out runs on this engine and calls these
-# helpers for its integer arithmetic. `default-features = false` leaves out the engine's own HTTP
-# transport and the allocation-free targets' machinery: nothing here sends over the first or is
-# built for the second.
-sce-rust-runtime = { path = "../backends/rust/runtime", default-features = false }
+# helpers for its integer arithmetic. `std` without the default `http-send` leaves out the
+# engine's own HTTP transport: nothing here sends over it.
+sce-rust-runtime = { path = "../backends/rust/runtime", default-features = false, features = ["std"] }
 sce-forge-runtime = { path = "../backends/rust/forge-runtime", default-features = false }
 clap = { version = "4", features = ["derive"], optional = true }
 # Reads a document an AI wrote, to refuse one that names a file (`src/document_files.rs`). The

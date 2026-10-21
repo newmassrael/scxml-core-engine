@@ -9,7 +9,7 @@
 //! only what the emitted code calls.
 //!
 //! SCE Protocol-Synthesis RFC §synth-5-J-2 (lines 1989-1994): under
-//! `--features=no_std`, [`emit_content_literal`] stays available — the Rust AOT
+//! `--no-default-features`, [`emit_content_literal`] stays available — the Rust AOT
 //! template `entry_exit_actions.rs.jinja2` emits a call to it unconditionally
 //! for `<content>literal</content>` donedata — and returns [`crate::SceString`]
 //! so it composes with the capped `EventMetadata.data` field.

@@ -235,7 +235,7 @@ fn check_child_arity<P: StatePolicy>(
 /// one. A value read back from a saved state is held to that, so the restored
 /// machine can only be taken, through the history, to a configuration its
 /// document could have been in.
-#[cfg(not(feature = "no_std"))]
+#[cfg(feature = "std")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HistoryRejection<S> {
     /// The value holds no state. A history records at least one.
@@ -278,7 +278,7 @@ pub enum HistoryRejection<S> {
 /// and every ancestor between them and `parent` must satisfy the same child
 /// arity a whole configuration does ([`validate`]). A shallow history records
 /// only the children, so the arity is judged on `parent` alone.
-#[cfg(not(feature = "no_std"))]
+#[cfg(feature = "std")]
 pub fn validate_history<P: StatePolicy>(
     parent: P::State,
     deep: bool,

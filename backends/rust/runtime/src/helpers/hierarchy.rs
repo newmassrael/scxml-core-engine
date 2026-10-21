@@ -19,7 +19,7 @@
 //!
 //! ## no_std variant (SCE Protocol-Synthesis RFC §synth-5-J-2)
 //!
-//! Under `--features=no_std`, [`StateChain`] is a stack-allocated `heapless::Vec`
+//! Under `--no-default-features`, [`StateChain`] is a stack-allocated `heapless::Vec`
 //! capped at [`MAX_HIERARCHY_DEPTH`] (= 16), so the no_std push paths are
 //! infallible for any configuration the document can hold — they `.expect()`
 //! only as a generator-bug tripwire. No new capacity constant is introduced;
@@ -46,12 +46,12 @@ pub const MAX_HIERARCHY_DEPTH: usize = 16;
 /// SCE Protocol-Synthesis RFC §synth-5-J-2 (lines 1989-1994): reuses [`MAX_HIERARCHY_DEPTH`] rather
 /// than introducing a new capacity constant — the same depth invariant bounds both
 /// the iteration count and the heapless allocation.
-#[cfg(not(feature = "no_std"))]
+#[cfg(feature = "std")]
 pub type StateChain<S> = ::std::vec::Vec<S>;
 /// no_std variant of [`StateChain`]: stack-allocated `heapless::Vec` capped
 /// at [`MAX_HIERARCHY_DEPTH`]. See the std-variant doc-comment above for the
 /// full contract.
-#[cfg(feature = "no_std")]
+#[cfg(not(feature = "std"))]
 pub type StateChain<S> = ::heapless::Vec<S, MAX_HIERARCHY_DEPTH>;
 
 /// Push into a [`StateChain`] uniformly under std and no_std.
@@ -67,11 +67,11 @@ pub type StateChain<S> = ::heapless::Vec<S, MAX_HIERARCHY_DEPTH>;
 /// `helpers::microstep`) and the template-emitted active-set writer.
 #[inline]
 pub fn push_chain<S: core::fmt::Debug>(chain: &mut StateChain<S>, item: S) {
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     {
         chain.push(item);
     }
-    #[cfg(feature = "no_std")]
+    #[cfg(not(feature = "std"))]
     {
         chain.push(item).expect(
             "hierarchy: chain capacity exhausted — depth check at MAX_HIERARCHY_DEPTH should have fired first (generator bug or corrupted hierarchy)",
@@ -90,11 +90,11 @@ pub fn push_chain<S: core::fmt::Debug>(chain: &mut StateChain<S>, item: S) {
 /// no_std builds.
 #[inline]
 pub fn new_chain<S>() -> StateChain<S> {
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     {
         ::std::vec::Vec::with_capacity(8)
     }
-    #[cfg(feature = "no_std")]
+    #[cfg(not(feature = "std"))]
     {
         ::heapless::Vec::new()
     }

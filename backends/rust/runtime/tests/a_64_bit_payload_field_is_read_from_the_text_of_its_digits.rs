@@ -8,7 +8,7 @@
 //! crosses as text; a number past 2^53 - 1 is refused here as it is on every engine,
 //! so one payload gives one field wherever it is read. `static_wire_wide` holds the
 //! generated machines to the same values; the cases here pin the reader itself.
-#![cfg(not(feature = "no_std"))]
+#![cfg(feature = "std")]
 
 use sce_rust_runtime::event_payload::PayloadFields;
 

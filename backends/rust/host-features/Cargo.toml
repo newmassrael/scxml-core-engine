@@ -16,7 +16,9 @@ publish = false
 path = "src/lib.rs"
 
 [dependencies]
-sce-rust-runtime = { path = "../runtime", default-features = false }
+# `std`: the host-processor types this host answers are part of the runtime's
+# `std` profile; the BasicHTTP processor (`http-send`) is not wanted.
+sce-rust-runtime = { path = "../runtime", default-features = false, features = ["std"] }
 serde_json = { version = "1", features = ["float_roundtrip"] }
 
 [target.'cfg(unix)'.dependencies]

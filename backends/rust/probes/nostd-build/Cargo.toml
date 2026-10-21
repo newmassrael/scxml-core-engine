@@ -15,9 +15,11 @@
 # The generated `src/*_sm.rs` is git-ignored and produced fresh by the CI step
 # (and reproducible locally — see README.md), so it can never drift stale.
 #
-# Detached from the parent workspace (own empty `[workspace]` table) so cargo's
-# feature unification cannot turn on `sce-rust-runtime/no_std` for the std
-# `sce-rust-tests` build in the same invocation.
+# Detached from the parent workspace (own empty `[workspace]` table): it is
+# built for the MCU target by itself, and its `src` exists only after the
+# gate's generation step, so as a member it would fail every workspace build.
+# The runtime is asked for no features: its bare-metal profile is the absence
+# of `std` (docs/adr/0053).
 
 [package]
 name = "sce-nostd-build-probe"
@@ -32,6 +34,6 @@ name = "sce_nostd_build_probe"
 path = "src/parallel_history_probe_sm.rs"
 
 [dependencies]
-sce-rust-runtime = { path = "../../runtime", default-features = false, features = ["no_std"] }
+sce-rust-runtime = { path = "../../runtime", default-features = false }
 
 [workspace]

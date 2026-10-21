@@ -38,15 +38,15 @@
 //! through `EngineHost`, and owns what the appendix leaves to the interpreter:
 //! the main event loop, the queues, and where the machine is.
 //!
-//! HTTP send (§scxml-C-2, `http-send` feature) and `<invoke>` plumbing
-//! (§scxml-6.4) are `!no_std`-gated.
+//! HTTP send (§scxml-C-2, which the `http-send` feature asks for) and
+//! `<invoke>` plumbing (§scxml-6.4) belong to the `std` profile.
 
 // SCE Protocol-Synthesis RFC §synth-5-J-2 (lines 1989-1994): `Arc`/`Mutex` back the
 // parent→child external event queue plumbing in `get_external_queue_handle`,
 // which is invoke-coupled. The codegen-time validator rejects `<invoke>` under
 // `--no-std` via `codegen/no-std-invoke-not-supported`, so the handle is never
 // reachable from emitted code; gate the import + method to `!no_std`.
-#[cfg(not(feature = "no_std"))]
+#[cfg(feature = "std")]
 use std::sync::{Arc, Mutex};
 // `Duration` is re-exported by `std::time` from `core::time` and is therefore
 // available under both build profiles. The scheduler does not read `Instant`
@@ -60,7 +60,7 @@ use std::sync::{Arc, Mutex};
 // stay on the real host clock so a Hal-mock cannot suppress test timeouts.
 use core::time::Duration;
 #[cfg(all(
-    not(feature = "no_std"),
+    feature = "std",
     not(all(target_arch = "wasm32", target_os = "unknown"))
 ))]
 use std::time::Instant;
@@ -81,17 +81,17 @@ use crate::sched_send_id::ScheduledSendIdLike;
 // `BasicHTTPEventProcessor` `<send>` under `--no-std` via
 // `codegen/no-std-http-not-supported`, so the engine's HTTP fields + dispatch
 // surface are unreachable from emitted no_std code.
-#[cfg(not(feature = "no_std"))]
+#[cfg(feature = "std")]
 use crate::http::{HttpSendRequest, HttpSendResponse};
 use crate::policy::StatePolicy;
-#[cfg(feature = "no_std")]
+#[cfg(not(feature = "std"))]
 use crate::MAX_SCHEDULED_EVENTS;
 use crate::{sce_log_debug, sce_log_error, SceString};
 
 /// Why a child's Mesh router lock is never poisoned: nothing a router does
 /// while the engine holds it panics, and a router that did would have left
 /// the session's state half-written, which no later call can repair.
-#[cfg(not(feature = "no_std"))]
+#[cfg(feature = "std")]
 const CHILD_MESH_ROUTER_HELD: &str =
     "a child's Mesh router is never left mid-call: nothing in it panics while locked";
 
@@ -202,7 +202,7 @@ pub type SchedTimePoint = u64;
 /// keeps the scheduler clock-source-agnostic and makes it unit-testable with
 /// synthetic clocks.
 ///
-/// SCE Protocol-Synthesis RFC §synth-5-J-2 (lines 1989-1994): under `--features=no_std`
+/// SCE Protocol-Synthesis RFC §synth-5-J-2 (lines 1989-1994): under `--no-default-features`
 /// the backing store is a stack-allocated `heapless::Vec` capped at
 /// [`crate::MAX_SCHEDULED_EVENTS`] (= 32 in v1; see the `lib.rs` doc-comment for the
 /// reasoning and the deferred per-document tunable). Capacity overflow under
@@ -221,9 +221,9 @@ pub type SchedTimePoint = u64;
 pub struct PullScheduler<E, S = SceString> {
     /// Pending entries: `(event, [event_data_json], send_id, ready_at)`.
     /// The `event_data_json` field is elided under no_std (see [`ScheduledEntry`]).
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     entries: Vec<ScheduledEntry<E, S>>,
-    #[cfg(feature = "no_std")]
+    #[cfg(not(feature = "std"))]
     entries: ::heapless::Vec<ScheduledEntry<E, S>, MAX_SCHEDULED_EVENTS>,
     next_auto_send_id: u64,
 }
@@ -244,7 +244,7 @@ pub struct PullScheduler<E, S = SceString> {
 /// the private `ScheduledEntry` holds one directly. Named without a link
 /// because that type is `pub(crate)`, and an intra-doc link from public
 /// documentation to a private item is what `rustdoc-links` refuses.
-#[cfg(not(feature = "no_std"))]
+#[cfg(feature = "std")]
 #[derive(Debug)]
 pub enum ScheduledAct<E> {
     /// Raise `event` on the external queue, carrying `event_data` as
@@ -315,7 +315,7 @@ pub enum ScheduledAct<E> {
 /// end of the delay reaches it. `event_name` is the event as the receiving
 /// machine resolves it: a child or a parent is another machine with its own
 /// events, so the name is what crosses, as it does on an immediate send.
-#[cfg(not(feature = "no_std"))]
+#[cfg(feature = "std")]
 #[derive(Debug, Clone)]
 pub enum ScheduledRoute {
     /// `#_internal`: this session's internal queue.
@@ -362,7 +362,7 @@ impl RootStartRefusal {
 }
 
 /// What became of a `<send>` handed to [`Engine::send_to_target`].
-#[cfg(not(feature = "no_std"))]
+#[cfg(feature = "std")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TargetSendOutcome {
     /// Delivered, or scheduled to be when its delay elapses.
@@ -377,7 +377,7 @@ pub enum TargetSendOutcome {
 struct ScheduledEntry<E, S> {
     /// What to do when this entry comes due.
     ///
-    /// SCE Protocol-Synthesis RFC §synth-5-J-2: under `--features=no_std` there
+    /// SCE Protocol-Synthesis RFC §synth-5-J-2: under `--no-default-features` there
     /// is only one thing it can be, and the `_event.data` string it would carry
     /// is elided too — the no_std build has no script engine, and the scheduler
     /// drain ([`Engine::tick`] → [`Engine::raise_external`]) discards the data
@@ -385,9 +385,9 @@ struct ScheduledEntry<E, S> {
     /// entry is pure dead weight (~264 B `heapless::String<256>` ×
     /// `MAX_SCHEDULED_EVENTS`). Mirrors the `EventMetadata.data` profile-level
     /// elision (B-γ2d-1).
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     act: ScheduledAct<E>,
-    #[cfg(feature = "no_std")]
+    #[cfg(not(feature = "std"))]
     event: E,
     /// Cancel key for §scxml-6.3 `<cancel sendid>`. Read only by
     /// [`PullScheduler::cancel_event`]; the storage type `S` is
@@ -400,14 +400,14 @@ struct ScheduledEntry<E, S> {
 impl<E, S> ScheduledEntry<E, S> {
     /// Whether this entry is a host-run invocation's deadline — the engine's,
     /// which no `<cancel>` may reach.
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     fn is_host_invoke_deadline(&self) -> bool {
         matches!(self.act, ScheduledAct::HostInvokeDeadline { .. })
     }
 
-    /// Never, under `--features=no_std`: that profile has no host-run
+    /// Never, under `--no-default-features`: that profile has no host-run
     /// `<invoke>`, so nothing arms a deadline.
-    #[cfg(feature = "no_std")]
+    #[cfg(not(feature = "std"))]
     fn is_host_invoke_deadline(&self) -> bool {
         false
     }
@@ -416,7 +416,7 @@ impl<E, S> ScheduledEntry<E, S> {
     /// one — what a host is told a cut left waiting. A delayed send routed to a
     /// child or a parent, a host-served send and a host invocation's deadline
     /// carry no event of this machine's, and answer `None`.
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     fn own_event(&self) -> Option<&E> {
         match &self.act {
             ScheduledAct::Raise { event, .. } => Some(event),
@@ -425,9 +425,9 @@ impl<E, S> ScheduledEntry<E, S> {
         }
     }
 
-    /// The event this entry delivers; under `--features=no_std` every entry is
+    /// The event this entry delivers; under `--no-default-features` every entry is
     /// one.
-    #[cfg(feature = "no_std")]
+    #[cfg(not(feature = "std"))]
     fn own_event(&self) -> Option<&E> {
         Some(&self.event)
     }
@@ -437,9 +437,9 @@ impl<E: Clone, S: ScheduledSendIdLike> PullScheduler<E, S> {
     /// Construct an empty scheduler.
     pub fn new() -> Self {
         Self {
-            #[cfg(not(feature = "no_std"))]
+            #[cfg(feature = "std")]
             entries: Vec::new(),
-            #[cfg(feature = "no_std")]
+            #[cfg(not(feature = "std"))]
             entries: ::heapless::Vec::new(),
             next_auto_send_id: 0,
         }
@@ -453,7 +453,7 @@ impl<E: Clone, S: ScheduledSendIdLike> PullScheduler<E, S> {
     /// computing `ready_at` from the current clock + delay — `Engine<P>`'s
     /// `schedule_event` wrapper does this via `sched_now_plus(delay)`.
     ///
-    /// SCE Protocol-Synthesis RFC §synth-5-J-2: under `--features=no_std` an attempted
+    /// SCE Protocol-Synthesis RFC §synth-5-J-2: under `--no-default-features` an attempted
     /// push past [`crate::MAX_SCHEDULED_EVENTS`] panics rather than silently dropping
     /// the event (W3C SCXML no-silent-drop discipline).
     pub fn schedule_event_at(
@@ -487,10 +487,10 @@ impl<E: Clone, S: ScheduledSendIdLike> PullScheduler<E, S> {
         };
         // no_std elides the per-entry strings (see `ScheduledEntry`); the
         // parameters are then unused (mirrors `raise_external`'s `let _ = ...`).
-        #[cfg(feature = "no_std")]
+        #[cfg(not(feature = "std"))]
         let _ = (event_data, origin, name);
         let entry = ScheduledEntry {
-            #[cfg(not(feature = "no_std"))]
+            #[cfg(feature = "std")]
             act: ScheduledAct::Raise {
                 event,
                 event_data: crate::sce_string_from_str(event_data),
@@ -498,7 +498,7 @@ impl<E: Clone, S: ScheduledSendIdLike> PullScheduler<E, S> {
                 origin: crate::sce_string_from_str(origin),
                 name: crate::sce_string_from_str(name),
             },
-            #[cfg(feature = "no_std")]
+            #[cfg(not(feature = "std"))]
             event,
             // `S::store` borrows the id; the load-bearing `SceString` impl
             // clones it, the zero-size `ElidedSendId` impl drops it. The id is
@@ -517,7 +517,7 @@ impl<E: Clone, S: ScheduledSendIdLike> PullScheduler<E, S> {
     /// The same queue as [`schedule_event_at`](Self::schedule_event_at), so one
     /// deadline order, one `<cancel sendid>` path (§scxml-6.3) and one
     /// next-due answer cover it.
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     pub fn schedule_routed_at(
         &mut self,
         event: Option<E>,
@@ -533,7 +533,7 @@ impl<E: Clone, S: ScheduledSendIdLike> PullScheduler<E, S> {
     /// [`schedule_routed_at`](Self::schedule_routed_at) for an event sent under
     /// `name` when that is not the member's own (§scxml-5.10), which the internal
     /// queue's delivery reads as `_event.name`.
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     #[allow(clippy::too_many_arguments)]
     pub fn schedule_routed_named_at(
         &mut self,
@@ -581,7 +581,7 @@ impl<E: Clone, S: ScheduledSendIdLike> PullScheduler<E, S> {
     ///
     /// Returns the id used, generated when `send_id` is empty, exactly as the
     /// event form does.
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     pub fn schedule_host_send_at(
         &mut self,
         request: crate::host_processor::HostSendRequest,
@@ -611,11 +611,11 @@ impl<E: Clone, S: ScheduledSendIdLike> PullScheduler<E, S> {
     /// as a fatal configuration error rather than swallowed.
     #[inline]
     fn push_scheduled(&mut self, entry: ScheduledEntry<E, S>) {
-        #[cfg(not(feature = "no_std"))]
+        #[cfg(feature = "std")]
         {
             self.entries.push(entry);
         }
-        #[cfg(feature = "no_std")]
+        #[cfg(not(feature = "std"))]
         {
             self.entries.push(entry).map_err(|_| ()).expect(
                 "PullScheduler: heapless capacity exhausted (MAX_SCHEDULED_EVENTS=32 — author has more in-flight <send delay> than scheduler can hold; tune capacity or reduce concurrency)",
@@ -628,7 +628,7 @@ impl<E: Clone, S: ScheduledSendIdLike> PullScheduler<E, S> {
     /// With no send id: a deadline is the engine's, not the document's, so no
     /// `<cancel sendid>` the author writes can name it. It leaves the queue
     /// when it fires or through [`Self::drop_host_invoke_deadline`].
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     pub fn schedule_host_invoke_deadline_at(
         &mut self,
         processor_type: &str,
@@ -651,7 +651,7 @@ impl<E: Clone, S: ScheduledSendIdLike> PullScheduler<E, S> {
     /// Drop the pending deadline of start `token`, whose invocation ended
     /// another way — completed or cancelled. Leaving it would keep a host
     /// ticking toward a deadline that can no longer do anything.
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     pub fn drop_host_invoke_deadline(&mut self, token: u64) {
         self.entries.retain(
             |e| !matches!(e.act, ScheduledAct::HostInvokeDeadline { token: t, .. } if t == token),
@@ -717,7 +717,7 @@ impl<E: Clone, S: ScheduledSendIdLike> PullScheduler<E, S> {
     /// A saved state reads this, and writing it in pop order is what lets a
     /// restore arm the entries in the order it was given and get the order the
     /// saved machine would have delivered them in (§scxml-6.2).
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     pub fn pending(&self) -> Vec<(SchedTimePoint, &ScheduledAct<E>)> {
         let mut pending: Vec<_> = self.entries.iter().map(|e| (e.ready_at, &e.act)).collect();
         pending.sort_by_key(|(ready_at, _)| *ready_at);
@@ -757,24 +757,22 @@ impl<E: Clone, S: ScheduledSendIdLike> PullScheduler<E, S> {
     ///
     /// Caller supplies the current time. Named for the act rather than for the
     /// event because a std entry may be either (see [`ScheduledAct`]); the
-    /// no_std profile has only events and keeps `pop_ready_event_at` with the
-    /// narrower return type. Two names rather than one signature that changes
-    /// with a feature flag: a caller compiled for the wrong profile then fails
-    /// to resolve a name instead of silently getting a different shape.
-    ///
-    /// The sibling is named without a link, and cannot be linked: it does not
-    /// exist in this profile, so a link to it is unresolved exactly where the
-    /// documentation is built.
+    /// no_std profile has only events, and the engine's drain there pops with
+    /// the crate-private `pop_ready_event_at` and its narrower return type.
+    /// That one is not public: a public name the bare-metal profile had and
+    /// `std` lacked would stop resolving for a bare-metal crate whose build
+    /// another crate turns `std` on in (docs/adr/0053).
     ///
     /// Matches C++ `PullScheduler::popReadyAct(...) -> bool` (but returns an
     /// `Option` instead of bool+out-params, which is the idiomatic Rust shape).
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     pub fn pop_ready_act_at(&mut self, now: SchedTimePoint) -> Option<ScheduledAct<E>> {
         self.pop_ready_entry(now).map(|entry| entry.act)
     }
 
-    /// no_std counterpart of `pop_ready_act_at`, named without a link for the
-    /// reason its own doc gives: the sibling does not exist in this profile.
+    /// no_std counterpart of `pop_ready_act_at` (named without a link: the
+    /// sibling does not exist in this profile), private to the crate for the
+    /// reason that method's doc gives.
     ///
     /// There is only one act a no_std entry can be — `crate::host_processor` is
     /// `!no_std`, so nothing can defer a host send here — and the delayed-send
@@ -784,8 +782,8 @@ impl<E: Clone, S: ScheduledSendIdLike> PullScheduler<E, S> {
     /// [`raise_external`](Engine::raise_external), which discards it anyway —
     /// returning `Option<E>` avoids both the act discriminant and moving a
     /// 264 B empty `heapless::String` out on every timer fire.
-    #[cfg(feature = "no_std")]
-    pub fn pop_ready_event_at(&mut self, now: SchedTimePoint) -> Option<E> {
+    #[cfg(not(feature = "std"))]
+    pub(crate) fn pop_ready_event_at(&mut self, now: SchedTimePoint) -> Option<E> {
         self.pop_ready_entry(now).map(|entry| entry.event)
     }
 }
@@ -799,11 +797,11 @@ impl<E: Clone, S: ScheduledSendIdLike> PullScheduler<E, S> {
 /// (`auto_send_18446744073709551615` is 32 bytes).
 #[inline]
 fn format_auto_send_id(counter: u64) -> SceString {
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     {
         format!("auto_send_{}", counter)
     }
-    #[cfg(feature = "no_std")]
+    #[cfg(not(feature = "std"))]
     {
         use core::fmt::Write;
         let mut s = SceString::new();
@@ -818,7 +816,7 @@ fn format_auto_send_id(counter: u64) -> SceString {
 /// [`parse_host_invoke_deadline_ms`](crate::host_processor::parse_host_invoke_deadline_ms)
 /// reads. Anything else, including the name given twice, is `Err` with what
 /// was written, for the caller to report.
-#[cfg(not(feature = "no_std"))]
+#[cfg(feature = "std")]
 fn take_host_invoke_deadline(
     request: &mut crate::host_processor::HostInvokeRequest,
 ) -> Result<Option<u64>, String> {
@@ -862,7 +860,7 @@ pub(crate) enum EventOutcome {
 
 /// How a host-run invocation ended, when the host reports it (§scxml-6.4):
 /// which of `done.invoke` and `error.invoke` the document receives.
-#[cfg(not(feature = "no_std"))]
+#[cfg(feature = "std")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum HostInvokeEnd {
     Done,
@@ -871,7 +869,7 @@ enum HostInvokeEnd {
 
 /// What a restored host-run invocation has left of its deadline
 /// (SCE Accepted Subset §2.15).
-#[cfg(not(feature = "no_std"))]
+#[cfg(feature = "std")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RestoredDeadline {
     /// The invocation had none.
@@ -885,7 +883,7 @@ pub(crate) enum RestoredDeadline {
 
 /// A host-run invocation a saved state listed, waiting for the first macrostep
 /// the host drives to start it again ([`Engine::restored_host_invokes`]).
-#[cfg(not(feature = "no_std"))]
+#[cfg(feature = "std")]
 #[derive(Debug, Clone)]
 pub(crate) struct RestoredHostInvoke {
     /// The request the saved machine started it with, marked
@@ -897,7 +895,7 @@ pub(crate) struct RestoredHostInvoke {
 
 /// A host-run invocation as a save sees it: the request it was started with and
 /// the moment of the engine's clock its deadline comes due, if it has one.
-#[cfg(not(feature = "no_std"))]
+#[cfg(feature = "std")]
 #[derive(Debug, Clone)]
 pub(crate) struct RunningHostInvoke {
     /// The request the host was handed.
@@ -958,7 +956,7 @@ pub struct Engine<P: StatePolicy> {
     /// ([`claim_late_binding_first_entry`](Self::claim_late_binding_first_entry)).
     /// `!no_std` like the script engine it serves: without one there is no
     /// `<data>` to bind late.
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     pub(crate) late_bound_states: std::collections::HashSet<P::State>,
     /// §scxml-5.10.1: whether the event being processed was taken off the
     /// external queue. Set where it is dequeued — the one moment the queue is
@@ -977,7 +975,7 @@ pub struct Engine<P: StatePolicy> {
     /// may move an engine onto a worker thread (a boxed closure with no
     /// auto-trait bound would otherwise make the whole struct `!Send`). The
     /// regression guard is `engine_is_send` in `tests/hello_world.rs`.
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     pub(crate) completion_callback: Option<Box<dyn FnMut() + Send>>,
     /// §scxml-C-2: HTTP send dispatch callback.
     ///
@@ -995,10 +993,10 @@ pub struct Engine<P: StatePolicy> {
     /// is a heap-allocated map of boxed closures. Codegen never emits a
     /// host-processor dispatch under `--no-std` — a declared type is
     /// refused at build time there.
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     pub(crate) host_processors: crate::host_processor::HostProcessorRegistry,
     /// See [`Engine::refused_host_invoke_completions`].
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     pub(crate) refused_host_invoke_completions: u64,
     /// Host-run invocations a restore re-armed and the engine has not yet
     /// started again, in the order a saved state listed them.
@@ -1008,26 +1006,26 @@ pub struct Engine<P: StatePolicy> {
     /// They start where an invocation the document entered would, at the top of
     /// the first macrostep the host drives (SCE Accepted Subset §2.15), ahead of
     /// the events the saved machine had queued.
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     pub(crate) restored_host_invokes: Vec<RestoredHostInvoke>,
     /// The factory of the routers of this machine's children (SCE_MESH.md,
     /// Child Sessions in Mesh): registered by the host on a machine it starts
     /// ([`Engine::register_child_mesh_routers`]), and on a child by the
     /// router its parent gave it, which answers for the child's children.
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     pub(crate) child_mesh_routers: Option<crate::host_processor::ChildMeshRouters>,
     /// The router this machine was given as a child session, shared with the
     /// send and request handlers it serves; `None` for a machine its host
     /// started, and for a child given none.
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     pub(crate) installed_mesh: Option<crate::host_processor::SharedChildMeshRouter>,
     /// This machine is a child a restore resumed, and its parent's factory has
     /// not been asked for its router yet (docs/adr/0045; docs/adr/0043): the
     /// restore built it before the host could register that factory, so it is
     /// asked when the factory is there ([`Engine::start_owed_child_mesh`]).
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     pub(crate) child_mesh_owed: bool,
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     pub(crate) on_http_send:
         Option<Box<dyn FnMut(HttpSendRequest) -> Option<HttpSendResponse> + Send>>,
     /// §scxml-6.2: Delayed event scheduler.
@@ -1187,23 +1185,23 @@ impl<P: StatePolicy> Engine<P> {
             terminal_state: None,
             interpreter_exited: false,
             current_event_from_external_queue: false,
-            #[cfg(not(feature = "no_std"))]
+            #[cfg(feature = "std")]
             late_bound_states: std::collections::HashSet::new(),
-            #[cfg(not(feature = "no_std"))]
+            #[cfg(feature = "std")]
             completion_callback: None,
-            #[cfg(not(feature = "no_std"))]
+            #[cfg(feature = "std")]
             host_processors: Default::default(),
-            #[cfg(not(feature = "no_std"))]
+            #[cfg(feature = "std")]
             refused_host_invoke_completions: 0,
-            #[cfg(not(feature = "no_std"))]
+            #[cfg(feature = "std")]
             restored_host_invokes: Vec::new(),
-            #[cfg(not(feature = "no_std"))]
+            #[cfg(feature = "std")]
             child_mesh_routers: None,
-            #[cfg(not(feature = "no_std"))]
+            #[cfg(feature = "std")]
             installed_mesh: None,
-            #[cfg(not(feature = "no_std"))]
+            #[cfg(feature = "std")]
             child_mesh_owed: false,
-            #[cfg(not(feature = "no_std"))]
+            #[cfg(feature = "std")]
             on_http_send: None,
             scheduler: PullScheduler::new(),
             clock: SceClock::default(),
@@ -1406,7 +1404,7 @@ impl<P: StatePolicy> Engine<P> {
     /// format-2 state holds, in the order given, each restored where it stood
     /// ([`StatePolicy::resume_child`]). Nothing starts and nothing is sent; the
     /// first refusal stops the restore, and names the child by its path.
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     pub(crate) fn resume_children(
         &mut self,
         children: &[crate::saved_state::SavedChild],
@@ -1430,7 +1428,7 @@ impl<P: StatePolicy> Engine<P> {
     /// then [`execute_pending_invokes`](StatePolicy::execute_pending_invokes)
     /// runs them together, so a child that ends as it starts raises
     /// `done.invoke` the way it would have. `std` only, as the saved state is.
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     pub(crate) fn restart_invokes(&mut self, ids: &[&str]) {
         if ids.is_empty() {
             return;
@@ -1527,7 +1525,7 @@ impl<P: StatePolicy> Engine<P> {
         self.is_running = true;
         self.terminal_state = None;
         self.interpreter_exited = false;
-        #[cfg(not(feature = "no_std"))]
+        #[cfg(feature = "std")]
         self.late_bound_states.clear();
 
         // §scxml-5.3: Initialize datamodel before any state entry
@@ -1561,7 +1559,7 @@ impl<P: StatePolicy> Engine<P> {
         // `<onexit>` sends are queued ahead of the done.invoke this raises.
         // SCE Protocol-Synthesis RFC §synth-5-J-2: Box<dyn FnMut> callback is alloc-coupled and gated
         // to `!no_std` (see field declaration above).
-        #[cfg(not(feature = "no_std"))]
+        #[cfg(feature = "std")]
         if self.is_in_final_state() {
             if let Some(cb) = self.completion_callback.as_mut() {
                 sce_log_debug!(
@@ -1645,7 +1643,7 @@ impl<P: StatePolicy> Engine<P> {
         // The restored states were entered by the run being resumed, so their
         // late-bound `<data>` is that run's — the host restores it, and a later
         // re-entry must not bind it again (§scxml-D-enterStates isFirstEntry).
-        #[cfg(not(feature = "no_std"))]
+        #[cfg(feature = "std")]
         {
             self.late_bound_states = configuration.iter().copied().collect();
         }
@@ -1723,7 +1721,7 @@ impl<P: StatePolicy> Engine<P> {
 
         self.run_main_event_loop();
 
-        #[cfg(not(feature = "no_std"))]
+        #[cfg(feature = "std")]
         if self.is_in_final_state() && self.completion_callback.is_some() {
             sce_log_debug!("Engine::step: invoking completion callback");
             if let Some(cb) = self.completion_callback.as_mut() {
@@ -1764,7 +1762,7 @@ impl<P: StatePolicy> Engine<P> {
             return;
         }
         if self.is_in_final_state() {
-            #[cfg(not(feature = "no_std"))]
+            #[cfg(feature = "std")]
             if let Some(cb) = self.completion_callback.as_mut() {
                 sce_log_debug!(
                     "Engine::tick: final state already reached, invoking completion callback"
@@ -1827,7 +1825,7 @@ impl<P: StatePolicy> Engine<P> {
                     popped_due_at_reading += 1;
                 }
             }
-            #[cfg(not(feature = "no_std"))]
+            #[cfg(feature = "std")]
             {
                 let Some(act) = self.scheduler.pop_ready_act_at(now) else {
                     break;
@@ -1879,7 +1877,7 @@ impl<P: StatePolicy> Engine<P> {
             }
             // no_std: the data string is elided in the scheduler, and
             // `raise_external` discards it under no_std anyway.
-            #[cfg(feature = "no_std")]
+            #[cfg(not(feature = "std"))]
             {
                 let Some(popped) = self.scheduler.pop_ready_event_at(now) else {
                     break;
@@ -2397,7 +2395,7 @@ impl<P: StatePolicy> Engine<P> {
     /// late-binding document binds that state's `<data>` — and false on every
     /// entry after it. The generated entry code asks this rather than keeping
     /// its own flag, so the rule is written once for every machine.
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     pub fn claim_late_binding_first_entry(&mut self, state: P::State) -> bool {
         self.late_bound_states.insert(state)
     }
@@ -2445,7 +2443,7 @@ impl<P: StatePolicy> Engine<P> {
     /// SCE Protocol-Synthesis RFC §synth-5-J-2: gated to `!no_std` because `Arc`/`Mutex`/`Vec` are
     /// alloc-coupled and the `<invoke>` author surface that wires this handle into
     /// generated code is rejected at codegen time under `--no-std`.
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     pub fn get_external_queue_handle(&self) -> Arc<Mutex<Vec<(String, String)>>> {
         // Each call creates a new shared queue; the generated policy stores it.
         Arc::new(Mutex::new(Vec::new()))
@@ -2518,7 +2516,7 @@ impl<P: StatePolicy> Engine<P> {
     /// them resolves a name its own way. `None` when no transition the document
     /// has could match the name: it is dropped. `metadata` is what the caller
     /// knows (`data`, `origin`, `invoke_id`); the arrival name is added to it.
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     pub(crate) fn arriving_event(
         name: &str,
         mut metadata: EventMetadata,
@@ -2545,7 +2543,7 @@ impl<P: StatePolicy> Engine<P> {
             // no_std elides the `_event.origin` / `origintype` string metadata
             // (no script reader); the `origin` argument has no MCU consumer.
             metadata: {
-                #[cfg(not(feature = "no_std"))]
+                #[cfg(feature = "std")]
                 {
                     EventMetadata {
                         name: crate::sce_string_from_str(arrival_name),
@@ -2558,7 +2556,7 @@ impl<P: StatePolicy> Engine<P> {
                         ..Default::default()
                     }
                 }
-                #[cfg(feature = "no_std")]
+                #[cfg(not(feature = "std"))]
                 {
                     let _ = (event_data, origin, arrival_name);
                     EventMetadata {
@@ -2566,7 +2564,7 @@ impl<P: StatePolicy> Engine<P> {
                     }
                 }
             },
-            #[cfg(not(feature = "no_std"))]
+            #[cfg(feature = "std")]
             target: SceString::new(),
         };
         self.external_queue.raise(meta);
@@ -2590,7 +2588,7 @@ impl<P: StatePolicy> Engine<P> {
             event,
             payload,
             metadata: {
-                #[cfg(not(feature = "no_std"))]
+                #[cfg(feature = "std")]
                 {
                     EventMetadata {
                         event_type: EventType::External,
@@ -2600,14 +2598,14 @@ impl<P: StatePolicy> Engine<P> {
                         ..Default::default()
                     }
                 }
-                #[cfg(feature = "no_std")]
+                #[cfg(not(feature = "std"))]
                 {
                     EventMetadata {
                         event_type: EventType::External,
                     }
                 }
             },
-            #[cfg(not(feature = "no_std"))]
+            #[cfg(feature = "std")]
             target: SceString::new(),
         };
         self.external_queue.raise(meta);
@@ -2630,13 +2628,13 @@ impl<P: StatePolicy> Engine<P> {
         payload: P::Payload,
         data: &str,
     ) {
-        #[cfg(feature = "no_std")]
+        #[cfg(not(feature = "std"))]
         let _ = data;
         let meta = EventWithMetadata {
             event,
             payload,
             metadata: {
-                #[cfg(not(feature = "no_std"))]
+                #[cfg(feature = "std")]
                 {
                     EventMetadata {
                         event_type: EventType::External,
@@ -2647,14 +2645,14 @@ impl<P: StatePolicy> Engine<P> {
                         ..Default::default()
                     }
                 }
-                #[cfg(feature = "no_std")]
+                #[cfg(not(feature = "std"))]
                 {
                     EventMetadata {
                         event_type: EventType::External,
                     }
                 }
             },
-            #[cfg(not(feature = "no_std"))]
+            #[cfg(feature = "std")]
             target: SceString::new(),
         };
         self.external_queue.raise(meta);
@@ -2728,12 +2726,12 @@ impl<P: StatePolicy> Engine<P> {
         // §scxml-5.10: the copy is exact, but what this machine is told the event
         // is called is a fact about THIS machine's names — the source's arrival
         // name was matched against the source's, and says nothing here.
-        #[cfg(not(feature = "no_std"))]
+        #[cfg(feature = "std")]
         let metadata = EventMetadata {
             name: crate::sce_string_from_str(Self::arrival_name_of(event, event_name)),
             ..metadata.clone()
         };
-        #[cfg(feature = "no_std")]
+        #[cfg(not(feature = "std"))]
         let metadata = metadata.clone();
         // `target` stays default: the copy is delivered to this machine, never
         // re-routed to the original event's target.
@@ -2741,7 +2739,7 @@ impl<P: StatePolicy> Engine<P> {
             event,
             payload: P::Payload::default(),
             metadata,
-            #[cfg(not(feature = "no_std"))]
+            #[cfg(feature = "std")]
             target: SceString::new(),
         });
     }
@@ -2785,7 +2783,7 @@ impl<P: StatePolicy> Engine<P> {
             event,
             payload: P::Payload::default(),
             metadata,
-            #[cfg(not(feature = "no_std"))]
+            #[cfg(feature = "std")]
             target: SceString::new(),
         };
         self.external_queue.raise(meta);
@@ -2825,7 +2823,7 @@ impl<P: StatePolicy> Engine<P> {
     /// `<cancel sendid>` (§scxml-6.3) reach it. `event` is this machine's own
     /// spelling, needed for the internal queue and None otherwise; a child or a
     /// parent resolves the route's event name.
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     pub fn schedule_routed_event(
         &mut self,
         event: Option<P::Event>,
@@ -2850,7 +2848,7 @@ impl<P: StatePolicy> Engine<P> {
     /// document could match is dropped, as one that arrives from outside is.
     /// `_event.name` is the whole name whenever the member is not called that, a
     /// delayed send's included.
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     pub fn send_named_external(
         &mut self,
         name: &str,
@@ -2882,7 +2880,7 @@ impl<P: StatePolicy> Engine<P> {
     /// The internal-queue twin of [`send_named_external`](Self::send_named_external):
     /// a `<send target="#_internal" eventexpr>`, now or after `delay`. A delay
     /// postpones it and does not change the queue (§scxml-6.2).
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     pub fn send_named_internal(
         &mut self,
         name: &str,
@@ -2932,7 +2930,7 @@ impl<P: StatePolicy> Engine<P> {
     /// holding the policy while the engine lends itself out, so the two are
     /// handed over apart. `event` is this machine's spelling of the event, for
     /// its own queues; a child or a parent resolves `event_name`.
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     #[allow(clippy::too_many_arguments)]
     pub fn send_to_target(
         policy: &mut P,
@@ -3053,7 +3051,7 @@ impl<P: StatePolicy> Engine<P> {
     /// event queue of the session that attempted to send the event." For a
     /// delayed send the dispatch is this delivery, so an invocation that has
     /// ended in the meantime is reported here, not when the send was made.
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     fn deliver_routed(
         &mut self,
         event: Option<P::Event>,
@@ -3121,7 +3119,7 @@ impl<P: StatePolicy> Engine<P> {
     /// so [`cancel_event`](Self::cancel_event) drops it (§scxml-6.3) and
     /// [`time_until_next_scheduled_ms`](Self::time_until_next_scheduled_ms)
     /// counts it. Returns the id used, generated when `send_id` is empty.
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     pub fn schedule_host_send(
         &mut self,
         request: crate::host_processor::HostSendRequest,
@@ -3149,7 +3147,7 @@ impl<P: StatePolicy> Engine<P> {
     /// Without this, a wiring mistake on a delayed send is perfect silence: the
     /// act never happens, nothing says so, and the document waits for a reply
     /// that has nobody left to come from.
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     fn perform_deferred_host_send(&mut self, request: crate::host_processor::HostSendRequest) {
         // §scxml-C-2 + §scxml-6.2.4: a delayed BasicHTTP send waits in this
         // queue as a host-served one does, and its deadline performs the POST
@@ -3203,7 +3201,7 @@ impl<P: StatePolicy> Engine<P> {
     /// it cannot read the same way, and the answer is the script engine's:
     /// §scxml-3.13 gives `error.execution` for a guard that cannot be evaluated
     /// and treats it as false, which is what an unbound payload already does.
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     fn bind_lifted_payload(&mut self, event: P::Event, data: &str) {
         let Err(refusal) = self.policy.lift_event_payload(event, data) else {
             return;
@@ -3260,7 +3258,7 @@ impl<P: StatePolicy> Engine<P> {
     /// the scheduler holds nothing to wait for and a host asleep on the answer
     /// would never drive the machine at all. That is "now", `Some(0)`.
     pub fn time_until_next_scheduled_ms(&self) -> Option<u64> {
-        #[cfg(not(feature = "no_std"))]
+        #[cfg(feature = "std")]
         if !self.restored_host_invokes.is_empty() {
             return Some(0);
         }
@@ -3393,7 +3391,7 @@ impl<P: StatePolicy> Engine<P> {
     /// alloc-coupled (mirrors `helpers::entry_exit::execute_*_blocks` gate from
     /// B-γ2d-2). Embedded consumers poll [`is_in_final_state`](Self::is_in_final_state)
     /// instead.
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     pub fn set_completion_callback<F: FnMut() + Send + 'static>(&mut self, callback: F) {
         self.completion_callback = Some(Box::new(callback));
     }
@@ -3408,7 +3406,7 @@ impl<P: StatePolicy> Engine<P> {
     /// SCE Protocol-Synthesis RFC §synth-5-J-2: gated to `!no_std` (HTTP itself is whole-module
     /// gated; the codegen-time validator rejects `BasicHTTPEventProcessor`
     /// `<send>` under `--no-std` via `codegen/no-std-http-not-supported`).
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     pub fn set_http_send_callback<F>(&mut self, callback: F)
     where
         F: FnMut(HttpSendRequest) -> Option<HttpSendResponse> + Send + 'static,
@@ -3425,7 +3423,7 @@ impl<P: StatePolicy> Engine<P> {
     ///
     /// SCE Protocol-Synthesis RFC §synth-5-J-2: gated to `!no_std` — see
     /// [`set_http_send_callback`](Self::set_http_send_callback) for the upstream rejection rationale.
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     pub fn perform_http_send(
         &mut self,
         target: String,
@@ -3467,7 +3465,7 @@ impl<P: StatePolicy> Engine<P> {
     /// deferral, and the document must not need a tick to see it.
     ///
     /// Gated to `!no_std` like [`perform_http_send`](Self::perform_http_send).
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     pub fn schedule_http_send(
         &mut self,
         target: String,
@@ -3521,7 +3519,7 @@ impl<P: StatePolicy> Engine<P> {
     /// because this is wiring the host writes once, like a route table, and a
     /// refusal a caller could ignore would bring back the silent replacement
     /// it exists to prevent.
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     pub fn register_event_processor<F>(&mut self, processor_type: &str, handler: F)
     where
         F: FnMut(
@@ -3546,7 +3544,7 @@ impl<P: StatePolicy> Engine<P> {
     /// Unregistered, a Mesh send raises `error.execution` as any host
     /// processor without a handler does; a registered router that cannot
     /// reach the peer raises `error.communication` itself.
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     pub fn register_mesh_router<F>(&mut self, router: F)
     where
         F: FnMut(
@@ -3572,7 +3570,7 @@ impl<P: StatePolicy> Engine<P> {
     /// `error.execution` as any host-run invoke without an invoker does; the
     /// router answers with [`Engine::complete_host_invoke_from`] or
     /// [`Engine::fail_host_invoke`], naming the peer that answered.
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     pub fn register_mesh_rpc_invoker<F>(&mut self, router: F)
     where
         F: FnMut(
@@ -3609,7 +3607,7 @@ impl<P: StatePolicy> Engine<P> {
     /// drives it, which is what "before the child initializes" asks of a
     /// start. Each of the child's own resumed children is asked of the router
     /// the child is given, in turn.
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     pub fn register_child_mesh_routers<F>(&mut self, factory: F)
     where
         F: FnMut(&str, &str) -> Option<Box<dyn crate::host_processor::ChildMeshRouter>>
@@ -3624,7 +3622,7 @@ impl<P: StatePolicy> Engine<P> {
     /// parent's factory has not been asked for yet (docs/adr/0045). Called by
     /// the generated parent as it resumes the child, in place of
     /// [`Engine::start_child_mesh`].
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     pub fn owe_child_mesh(&mut self) {
         self.child_mesh_owed = true;
     }
@@ -3635,7 +3633,7 @@ impl<P: StatePolicy> Engine<P> {
     /// a child that starts; leave it as it is otherwise. With no factory
     /// registered the child stays owed, so the factory registered later is
     /// asked for it.
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     pub fn start_owed_child_mesh<Q: StatePolicy>(
         &mut self,
         child: &mut Engine<Q>,
@@ -3651,7 +3649,7 @@ impl<P: StatePolicy> Engine<P> {
 
     /// Ask for the router of each resumed child this machine holds that is
     /// owed one, now that a factory of them is there.
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     fn start_owed_child_meshes(&mut self) {
         self.with_policy(|policy, engine| policy.start_owed_child_meshes(engine));
     }
@@ -3665,7 +3663,7 @@ impl<P: StatePolicy> Engine<P> {
     /// Called by the generated parent before `child` initializes, since an
     /// `<onentry>` of its initial state may already send. Leaves `child` as it
     /// is when no factory is registered or the factory answers `None`.
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     pub fn start_child_mesh<Q: StatePolicy>(
         &mut self,
         child: &mut Engine<Q>,
@@ -3684,7 +3682,7 @@ impl<P: StatePolicy> Engine<P> {
     /// and the factory of its children's routers — the three a host installs
     /// on a machine it starts, served here by the one router the parent was
     /// given for this session.
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     fn install_child_mesh_router(
         &mut self,
         router: Box<dyn crate::host_processor::ChildMeshRouter>,
@@ -3718,7 +3716,7 @@ impl<P: StatePolicy> Engine<P> {
     /// The generated parent calls it each time it drives this child, before
     /// the child's macrostep, where it already drains the child's events to
     /// itself. Does nothing for a machine given no router.
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     pub fn apply_mesh_calls(&mut self) {
         let calls = match &self.installed_mesh {
             Some(router) => router.lock().expect(CHILD_MESH_ROUTER_HELD).take_calls(),
@@ -3739,7 +3737,7 @@ impl<P: StatePolicy> Engine<P> {
     /// `sce:mesh-rpc` (SCE_MESH.md §mesh-9.5); a deadline the requester
     /// reached itself has no peer to name, and carries neither. The one body
     /// a host core's top-level machine and a child session are told through.
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     pub fn apply_mesh_call(&mut self, call: crate::host_processor::MeshCall) {
         use crate::host_processor::{MeshCall, MESH_ORIGIN_SCHEME, MESH_RPC_INVOKE_TYPE};
         match call {
@@ -3783,7 +3781,7 @@ impl<P: StatePolicy> Engine<P> {
     /// `<final>`, or after it stopped the child because the invoking state
     /// exited, so a send the child made while stopping was handed over
     /// first. Does nothing for a machine given no router, or detached already.
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     pub fn detach_mesh(&mut self) {
         if let Some(router) = self.installed_mesh.take() {
             router.lock().expect(CHILD_MESH_ROUTER_HELD).detach();
@@ -3819,7 +3817,7 @@ impl<P: StatePolicy> Engine<P> {
     /// When `processor_type` is under
     /// [`crate::host_processor::RESERVED_TYPE_PREFIX`], for the reason
     /// [`Engine::register_event_processor`] gives.
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     pub fn register_invoker<F>(&mut self, processor_type: &str, handler: F)
     where
         F: FnMut(
@@ -3834,7 +3832,7 @@ impl<P: StatePolicy> Engine<P> {
     }
 
     /// Whether an invoker is registered for `processor_type`.
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     pub fn has_invoker(&self, processor_type: &str) -> bool {
         self.host_processors.invoker_is_registered(processor_type)
     }
@@ -3848,7 +3846,7 @@ impl<P: StatePolicy> Engine<P> {
     /// registered afterwards serves the child too. The Mesh request invoker
     /// is not handed on: a child's is the router its parent's factory gave it
     /// (docs/adr/0043).
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     pub fn share_host_invokers_with<Q: StatePolicy>(&self, child: &mut Engine<Q>) {
         child.adopt_host_invokers(self.host_processors.tree_invokers());
     }
@@ -3856,7 +3854,7 @@ impl<P: StatePolicy> Engine<P> {
     /// Be served by `invokers`, the tree's, and hand them on to every child
     /// this machine holds now: a child a restore resumed holds children of its
     /// own, resumed with it before its parent could hand it anything.
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     pub fn adopt_host_invokers(&mut self, invokers: &crate::host_processor::TreeInvokers) {
         self.host_processors.adopt_tree_invokers(invokers);
         self.policy.adopt_host_invokers_in_children(invokers);
@@ -3880,7 +3878,7 @@ impl<P: StatePolicy> Engine<P> {
     /// been made; `false` is kept for "no invoker ran it", which is asked
     /// first because it is the prior fact: with nobody to run the invocation,
     /// what its deadline says is moot.
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     pub fn perform_host_invoke(
         &mut self,
         mut request: crate::host_processor::HostInvokeRequest,
@@ -3915,7 +3913,7 @@ impl<P: StatePolicy> Engine<P> {
     /// and take a completion the host reported at once.
     ///
     /// `false` when no invoker is registered.
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     fn start_host_invoke(
         &mut self,
         mut request: crate::host_processor::HostInvokeRequest,
@@ -3962,7 +3960,7 @@ impl<P: StatePolicy> Engine<P> {
     /// §2.15): it starts again, from `request`, at the top of the first
     /// macrostep the host drives. A restore calls this once per invocation, in
     /// the order the state lists them.
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     pub(crate) fn rearm_host_invoke(
         &mut self,
         mut request: crate::host_processor::HostInvokeRequest,
@@ -3981,7 +3979,7 @@ impl<P: StatePolicy> Engine<P> {
     /// stop at once, and the document receives the `error.invoke` the deadline
     /// raises. An invoker that is not registered by now is the same error a
     /// document's own start gets.
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     pub(crate) fn start_restored_host_invokes(&mut self) {
         if self.restored_host_invokes.is_empty() {
             return;
@@ -4020,7 +4018,7 @@ impl<P: StatePolicy> Engine<P> {
     /// start, for a save: each with the request it was started with and the
     /// moment of the engine's clock its deadline comes due. Ordered by
     /// `(type, id)`, so every backend writes them in the same order.
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     pub(crate) fn running_host_invokes(&self) -> Vec<RunningHostInvoke> {
         let pending = self.scheduler.pending();
         let now = self.now_ms();
@@ -4058,7 +4056,7 @@ impl<P: StatePolicy> Engine<P> {
 
     /// Whether the start `token` of the host-run invocation `(type, id)` is
     /// running: what decides whether a deadline on the scheduler belongs to one.
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     pub(crate) fn host_invoke_is_running(
         &self,
         processor_type: &str,
@@ -4074,13 +4072,13 @@ impl<P: StatePolicy> Engine<P> {
 
     /// The token the next host-run start receives, which a save writes so that
     /// a restore carries on from it.
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     pub(crate) fn next_host_invoke_token(&self) -> u64 {
         self.host_processors.next_token()
     }
 
     /// Hand host-run starts tokens from `next` on.
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     pub(crate) fn set_next_host_invoke_token(&mut self, next: u64) {
         self.host_processors.set_next_token(next);
     }
@@ -4097,13 +4095,13 @@ impl<P: StatePolicy> Engine<P> {
 
     /// The number the last id from [`next_auto_send_id`](Self::next_auto_send_id)
     /// carried, which a save writes so that a restore carries on from it.
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     pub(crate) fn auto_send_seq(&self) -> u64 {
         self.auto_send_seq
     }
 
     /// Hand `<send idlocation>` ids numbers after `seq` from here on.
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     pub(crate) fn set_auto_send_seq(&mut self, seq: u64) {
         self.auto_send_seq = seq;
     }
@@ -4125,7 +4123,7 @@ impl<P: StatePolicy> Engine<P> {
     /// This is the only way a host-run invocation's `done.invoke` reaches the
     /// document. One raised through the ordinary external-event API skips the
     /// check above, so the engine refuses it when it is dequeued.
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     pub fn complete_host_invoke(
         &mut self,
         processor_type: &str,
@@ -4141,7 +4139,7 @@ impl<P: StatePolicy> Engine<P> {
     /// (§scxml-5.10.1) — for a host whose invocation stands for another
     /// party it can name, as a Mesh router's `sce:mesh-rpc` stands for the
     /// peer that answered (`mesh://<peer>`, SCE_MESH.md §mesh-9.5).
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     pub fn complete_host_invoke_from(
         &mut self,
         processor_type: &str,
@@ -4171,7 +4169,7 @@ impl<P: StatePolicy> Engine<P> {
     /// ends once, by success, failure or deadline, whichever comes first.
     /// Returns `false` — raising nothing — for an invocation that was
     /// cancelled, already ended, or restarted since.
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     pub fn fail_host_invoke(
         &mut self,
         processor_type: &str,
@@ -4206,7 +4204,7 @@ impl<P: StatePolicy> Engine<P> {
     /// No session of that id runs in the tree, or that session is not running
     /// that start of the invocation (cancelled, ended, or started again since).
     /// Nothing is raised, and the refusal says which.
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     pub fn end_host_invoke_in(
         &mut self,
         session_id: &str,
@@ -4226,7 +4224,7 @@ impl<P: StatePolicy> Engine<P> {
     /// # Errors
     ///
     /// As [`end_host_invoke_in`](Self::end_host_invoke_in).
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     pub fn complete_host_invoke_in(
         &mut self,
         session_id: &str,
@@ -4253,7 +4251,7 @@ impl<P: StatePolicy> Engine<P> {
     /// # Errors
     ///
     /// As [`end_host_invoke_in`](Self::end_host_invoke_in).
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     pub fn fail_host_invoke_in(
         &mut self,
         session_id: &str,
@@ -4278,7 +4276,7 @@ impl<P: StatePolicy> Engine<P> {
     /// machine or one in the tree below it: `None` when it is neither, so the
     /// generated parent that asked can try another child. Public because a
     /// generated parent calls it on its children.
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     pub fn route_host_invoke_end(
         &mut self,
         session_id: &str,
@@ -4313,7 +4311,7 @@ impl<P: StatePolicy> Engine<P> {
 
     /// The one body behind a host-run invocation's completion and failure:
     /// the token check, the deadline drop, and the event.
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     #[allow(clippy::too_many_arguments)]
     fn end_host_invoke(
         &mut self,
@@ -4370,7 +4368,7 @@ impl<P: StatePolicy> Engine<P> {
     /// reply — and saying it happened is not optional: a host that raised its
     /// completion the old way and saw the document never move would
     /// otherwise have nothing to find.
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     pub fn refused_host_invoke_completions(&self) -> u64 {
         self.refused_host_invoke_completions
     }
@@ -4381,7 +4379,7 @@ impl<P: StatePolicy> Engine<P> {
     /// whether the invocation is still running and stays silent when it
     /// never started or already completed. Returns whether a cancel was
     /// delivered.
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     pub fn cancel_host_invoke(&mut self, processor_type: &str, invoke_id: &str) -> bool {
         // One a restore re-armed and has not started again was never started
         // by this engine, so there is nothing to tell the host to stop.
@@ -4404,7 +4402,7 @@ impl<P: StatePolicy> Engine<P> {
     /// specific one — with `_event.invokeid` set and `_event.data` the string
     /// `"deadline"`. A start that already completed or was cancelled finds
     /// nothing, so the deadline does nothing.
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     fn expire_host_invoke(&mut self, processor_type: &str, invoke_id: &str, token: u64) {
         if !self
             .host_processors
@@ -4419,7 +4417,7 @@ impl<P: StatePolicy> Engine<P> {
     /// generic `error.invoke` when it names no specific one, with `_event.invokeid`
     /// set and `_event.data` the string `reason` — `"deadline"` when its deadline
     /// passed, `"interrupted"` when a restore found a call it must not send again.
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     fn raise_host_invoke_failure(&mut self, invoke_id: &str, reason: &str) {
         let event_name = format!("{}{invoke_id}", crate::invoke::ERROR_INVOKE_PREFIX);
         let mut metadata = EventMetadata::external(SceString::new(), SceString::new());
@@ -4437,7 +4435,7 @@ impl<P: StatePolicy> Engine<P> {
     /// Both return `None` from
     /// [`perform_host_send`](Self::perform_host_send), and only the
     /// second is an error.
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     pub fn has_event_processor(&self, processor_type: &str) -> bool {
         self.host_processors.is_registered(processor_type)
     }
@@ -4469,7 +4467,7 @@ impl<P: StatePolicy> Engine<P> {
     /// needing the engine.
     ///
     /// Called from the generated send site, which is why it is public.
-    #[cfg(not(feature = "no_std"))]
+    #[cfg(feature = "std")]
     pub fn perform_host_send(
         &mut self,
         request: crate::host_processor::HostSendRequest,
@@ -4525,7 +4523,7 @@ impl<P: StatePolicy> Engine<P> {
     // it is absent from a build for a target that has neither (clippy.toml).
     #[allow(clippy::disallowed_methods)]
     #[cfg(all(
-        not(feature = "no_std"),
+        feature = "std",
         not(all(target_arch = "wasm32", target_os = "unknown"))
     ))]
     pub fn run_until_completion(&mut self, timeout: Duration, poll_interval: Duration) -> bool {
@@ -4625,7 +4623,7 @@ impl<P: StatePolicy> Engine<P> {
             // The host-run invocations a restore re-armed start here too: where
             // an invocation the document entered would have started, before the
             // external queue is touched (SCE Accepted Subset §2.15).
-            #[cfg(not(feature = "no_std"))]
+            #[cfg(feature = "std")]
             self.start_restored_host_invokes();
 
             // §scxml-D-mainEventLoop: invoking may have raised internal error
@@ -4782,7 +4780,7 @@ impl<P: StatePolicy> Engine<P> {
         self.policy.populate_event_payload(&event_with_meta.payload);
         // …and when no typed payload rode with it, read that view out of
         // the `data` every other producer fills.
-        #[cfg(not(feature = "no_std"))]
+        #[cfg(feature = "std")]
         self.bind_lifted_payload(event_with_meta.event, &event_with_meta.metadata.data);
         // §scxml-3.12.2: the processor raises `error.*` into this queue and
         // the clause says they "are ignored if no transition is found that
@@ -4852,7 +4850,7 @@ impl<P: StatePolicy> Engine<P> {
         // run's late reply, which the processor ignores — so it is refused
         // here, counted, and never reaches transition selection. Returns
         // `true` because an event was taken; the loop goes on to the next.
-        #[cfg(not(feature = "no_std"))]
+        #[cfg(feature = "std")]
         if event_with_meta.metadata.host_invoke_token.is_none()
             && crate::host_processor::is_host_invoke_completion(
                 P::get_event_name(event_with_meta.event),
@@ -4914,13 +4912,13 @@ impl<P: StatePolicy> Engine<P> {
             if concepts::has_autoforward::<P>() {
                 // §scxml-5.10: under the name the event arrived under, which is
                 // the member's own unless a door cut a longer one back to it.
-                #[cfg(not(feature = "no_std"))]
+                #[cfg(feature = "std")]
                 let name = if event_with_meta.metadata.name.is_empty() {
                     P::get_event_name(event_with_meta.event)
                 } else {
                     event_with_meta.metadata.name.as_str()
                 };
-                #[cfg(feature = "no_std")]
+                #[cfg(not(feature = "std"))]
                 let name = P::get_event_name(event_with_meta.event);
                 let metadata = event_with_meta.metadata.clone();
                 self.with_policy(|policy, engine| {
@@ -4936,7 +4934,7 @@ impl<P: StatePolicy> Engine<P> {
             self.policy.populate_event_payload(&event_with_meta.payload);
             // …and when no typed payload rode with it, read that view out of
             // the `data` every other producer fills.
-            #[cfg(not(feature = "no_std"))]
+            #[cfg(feature = "std")]
             self.bind_lifted_payload(event_with_meta.event, &event_with_meta.metadata.data);
             // §scxml-3.1.2: "If no transition matches in any state, the event
             // is discarded." Discarding it is the rule; being unable to say so

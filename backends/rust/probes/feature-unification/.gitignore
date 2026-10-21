@@ -1,0 +1,5 @@
+# Build artifacts for the detached probe workspace (compiled fresh by the gate).
+# Same reasoning as the sibling probes: this workspace is outside the parent
+# one, so its lock and target directory are its own.
+/target
+Cargo.lock

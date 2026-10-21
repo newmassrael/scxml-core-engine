@@ -28,6 +28,7 @@ on:
       - 'tools/codegen/templates/rust/**'
       - 'backends/rust/probes/nostd-build/**'
       - 'backends/rust/probes/portable-emit/**'
+      - 'backends/rust/probes/feature-unification/**'
       - 'backends/rust/probes/nostd-queue-size/**'
       - 'backends/rust/probes/nostd-footprint/**'
       - 'sce-build/tests/fixtures/no_std/**'
@@ -45,6 +46,7 @@ on:
       - 'tools/codegen/templates/rust/**'
       - 'backends/rust/probes/nostd-build/**'
       - 'backends/rust/probes/portable-emit/**'
+      - 'backends/rust/probes/feature-unification/**'
       - 'backends/rust/probes/nostd-queue-size/**'
       - 'backends/rust/probes/nostd-footprint/**'
       - 'sce-build/tests/fixtures/no_std/**'
@@ -62,7 +64,7 @@ concurrency:
 
 jobs:
   no-std-thumbv7em:
-    name: Build sce-rust-runtime --features=no_std --target=thumbv7em-none-eabihf
+    name: Build sce-rust-runtime --no-default-features --target=thumbv7em-none-eabihf
     runs-on: ubuntu-latest
     timeout-minutes: 10
 

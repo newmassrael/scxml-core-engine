@@ -12,7 +12,9 @@ authors.workspace = true
 description = "SCE Lua 5.4 script engine (mlua-based IScriptEngine impl)"
 
 [dependencies]
-sce-rust-runtime = { path = "../runtime", default-features = false }
+# `std`: the script engine seam (`scripting::IScriptEngine`) this crate
+# implements is part of the runtime's `std` profile.
+sce-rust-runtime = { path = "../runtime", default-features = false, features = ["std"] }
 mlua = { workspace = true }
 log = { workspace = true }
 thiserror = { workspace = true }
