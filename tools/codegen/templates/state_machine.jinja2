@@ -65,6 +65,9 @@
 {# SCE Accepted Subset §2.15: a `sce-static` document's integer operations are
    the checked ones every forge algorithm is held to (SCE_FORGE.md §3.4.1). #}
 #include <sce/forge/algorithm.h>
+{# docs/adr/0055: a value that may be absent is a `std::optional`, read with a
+   default and logged through the helpers of this header. #}
+#include <sce/forge/optional.h>
 #include <utility>
 #include <vector>
 {% if (static_fields | selectattr('saved_type', 'equalto', 'bytes') | list) or (static_fields | selectattr('holds_bytes') | list) %}
@@ -340,6 +343,14 @@ enum class History : uint8_t {
    value as the enum document does, and every other value passes through. #}
 template <typename T> const T &sceLogName(const T &value) {
     return value;
+}
+
+{# docs/adr/0055: an optional value is shown as `null` when it is absent, and
+   as its present value's own `sceLogName` shows it otherwise, which for an
+   enum is the overload declared beside its type, found where the value's type
+   is declared. #}
+template <typename T> ::std::string sceLogName(const ::std::optional<T> &value) {
+    return value.has_value() ? ::SCE::Forge::presentText(sceLogName(*value)) : ::std::string("null");
 }
 
 {# A `<foreach>` walks the list as it was when the loop began (W3C SCXML 4.6: a

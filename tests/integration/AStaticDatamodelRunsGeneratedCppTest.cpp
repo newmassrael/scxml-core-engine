@@ -110,6 +110,8 @@
 #include <map>
 #include <memory>
 #include <nlohmann/json.hpp>
+#include <optional>
+#include <sce/forge/optional.h>
 #include <set>
 #include <sstream>
 #include <stdexcept>
@@ -2544,6 +2546,50 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, AnErrorEndsTheBlockItStandsIn) {
         {"errors", [](const Machine &m) { return json(m.errors()); }},
     });
     replay("static_block_ends", driver);
+}
+
+// docs/adr/0055: `x ?? d` evaluates `d` only when `x` is absent, so a default that
+// would overflow records the failure only then, and a default that may be absent
+// keeps the value optional; an optional text is held to its bound only when it is
+// present; and a `<log>` shows an absent value as `null` and a present one as the
+// other engines show it.
+TEST(AStaticDatamodelRunsGeneratedCppTest, AnOptionalValueIsReadWithADefaultOnlyWhenAbsent) {
+    int asked = 0;
+    const auto five = [&asked] {
+        ++asked;
+        return std::int64_t{5};
+    };
+    EXPECT_EQ(SCE::Forge::otherwise(std::optional<std::int64_t>(12), five), 12);
+    EXPECT_EQ(asked, 0) << "a present value does not evaluate its default";
+    EXPECT_EQ(SCE::Forge::otherwise(std::optional<std::int64_t>(), five), 5);
+    EXPECT_EQ(asked, 1);
+
+    SCE::Forge::AlgorithmFailure failure;
+    const std::int64_t wide = 4294967296;
+    const auto overflowing = [&] { return SCE::Forge::Checked::mul<std::int64_t>(failure, wide, wide); };
+    EXPECT_EQ(SCE::Forge::otherwise(std::optional<std::int64_t>(7), overflowing), 7);
+    EXPECT_FALSE(failure.failed()) << "the default that overflows is not evaluated beside a present value";
+    SCE::Forge::otherwise(std::optional<std::int64_t>(), overflowing);
+    EXPECT_TRUE(failure.failed()) << "the default is evaluated for an absent value, and its overflow recorded";
+
+    EXPECT_EQ(SCE::Forge::otherwise(std::optional<std::string>(), [] { return "none"; }), "none");
+    EXPECT_FALSE(SCE::Forge::otherwise(std::optional<std::string>(), [] { return std::nullopt; }).has_value());
+    EXPECT_EQ(SCE::Forge::otherwise(std::optional<std::string>("soon"), [] { return std::optional<std::string>(); }),
+              std::optional<std::string>("soon"));
+
+    SCE::Forge::AlgorithmFailure bound;
+    EXPECT_FALSE(SCE::Forge::Checked::bounded(bound, std::optional<std::string>(), 4u).has_value());
+    EXPECT_EQ(SCE::Forge::Checked::bounded(bound, std::optional<std::string>("soon"), 4u),
+              std::optional<std::string>("soon"));
+    EXPECT_FALSE(bound.failed()) << "an absent text and one within the bound fit it";
+    EXPECT_FALSE(SCE::Forge::Checked::bounded(bound, std::optional<std::string>("later"), 4u).has_value());
+    EXPECT_TRUE(bound.failed()) << "a present text past the bound is a capacity failure";
+
+    EXPECT_EQ(G::static_block_ends::sceLogName(std::optional<std::int64_t>()), "null");
+    EXPECT_EQ(G::static_block_ends::sceLogName(std::optional<std::int64_t>(-12)), "-12");
+    EXPECT_EQ(G::static_block_ends::sceLogName(std::optional<bool>(true)), "true");
+    EXPECT_EQ(G::static_block_ends::sceLogName(std::optional<double>(1.5)), "1.5");
+    EXPECT_EQ(G::static_block_ends::sceLogName(std::optional<std::string>("soon")), "soon");
 }
 
 namespace {
