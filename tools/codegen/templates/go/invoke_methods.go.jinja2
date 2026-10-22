@@ -219,6 +219,9 @@
 			// because the host advances the engine it holds, not the ones that
 			// engine invoked.
 			childEngine.SetClock(engine.Clock())
+			// docs/adr/0045: the tree's host invokers serve the child, whose host-run
+			// invocations name it by its session id.
+			engine.ShareHostInvokersWith(childEngine)
 			childEngine.SetCompletionCallback(func() {})
 			// Child sessions in Mesh (SCE_MESH.md): the router of the candidate
 			// this start chose, asked of this machine's factory and installed
@@ -335,6 +338,9 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 			// because the host advances the engine it holds, not the ones that
 			// engine invoked.
 			childEngine.SetClock(engine.Clock())
+			// docs/adr/0045: the tree's host invokers serve the child, whose host-run
+			// invocations name it by its session id.
+			engine.ShareHostInvokersWith(childEngine)
 			childEngine.SetCompletionCallback(func() {})
 			// Child sessions in Mesh (SCE_MESH.md): the child's router, asked of
 			// this machine's factory with the invoke's id and the stem of the
@@ -691,6 +697,53 @@ func (p *{{ machine_name }}Policy) TickChildren(engine *sce.Engine[{{ machine_na
 {% endfor %}
 }
 
+// SettleChildren settles what every running child sent this machine while it was
+// driven by a delivery (sce.ChildSettler; docs/adr/0045): the events it sent
+// `#_parent` are raised here, and a child that reached its final state raises
+// `done.invoke` once. One body for every drive of a child, so a save at any
+// boundary of this session finds the child's buffer empty.
+func (p *{{ machine_name }}Policy) SettleChildren(engine *sce.Engine[{{ machine_name }}State, {{ machine_name }}Event]) {
+{% for invoke_info in model.invokes | scxml_family %}
+	if child := p.child{{ invoke_info.field_suffix | to_pascal_case }}; child != nil && !p.pendingDoneInvoke{{ invoke_info.field_suffix | to_pascal_case }} {
+		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "{{ invoke_info.invoke_id }}", engine)
+		if child.IsInFinalState() {
+			p.pendingDoneInvoke{{ invoke_info.field_suffix | to_pascal_case }} = true
+			// The session ended: its Mesh router is told so.
+			child.DetachMesh()
+			// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
+			// done.invoke.<id>._event.data.
+			sce.RaiseDoneInvoke("{{ invoke_info.invoke_id }}", child.DonedataAtFinal(), engine)
+		}
+	}
+{% endfor %}
+}
+
+// AdoptHostInvokersInChildren hands the tree's host invokers on to every child
+// this machine holds now (sce.HostInvokeChildren; docs/adr/0045): a child a
+// restore resumed holds children of its own, resumed with it before its parent
+// could hand it anything.
+func (p *{{ machine_name }}Policy) AdoptHostInvokersInChildren(invokers *sce.TreeInvokers) {
+{% for invoke_info in model.invokes | scxml_family %}
+	if tree, ok := p.child{{ invoke_info.field_suffix | to_pascal_case }}.(sce.HostInvokeTree); ok {
+		tree.AdoptHostInvokers(invokers)
+	}
+{% endfor %}
+}
+
+// RouteHostInvokeEndToChild delivers the ending of a host-run invocation to the
+// child at or below which the session sessionID is (sce.HostInvokeChildren), and
+// answers false when no running child holds it.
+func (p *{{ machine_name }}Policy) RouteHostInvokeEndToChild(sessionID string, ending sce.HostInvokeEnding) (bool, error) {
+{% for invoke_info in model.invokes | scxml_family %}
+	if tree, ok := p.child{{ invoke_info.field_suffix | to_pascal_case }}.(sce.HostInvokeTree); ok {
+		if routed, err := tree.RouteHostInvokeEnd(sessionID, ending); routed {
+			return true, err
+		}
+	}
+{% endfor %}
+	return false, nil
+}
+
 // NextChildDeadline reports the nearest deadline among the running children
 // (W3C SCXML 6.4), so a host that walks time by TimeUntilNextScheduled does not
 // step over a timer a child armed. The ticking above is what makes it this
@@ -890,6 +943,8 @@ func (w *childEngineWrapper{{ machine_name }}_{{ invoke_info.field_suffix | to_p
 func (w *childEngineWrapper{{ machine_name }}_{{ invoke_info.field_suffix | to_pascal_case }}) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
 func (w *childEngineWrapper{{ machine_name }}_{{ invoke_info.field_suffix | to_pascal_case }}) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
 func (w *childEngineWrapper{{ machine_name }}_{{ invoke_info.field_suffix | to_pascal_case }}) DetachMesh() { w.engine.DetachMesh() }
+func (w *childEngineWrapper{{ machine_name }}_{{ invoke_info.field_suffix | to_pascal_case }}) AdoptHostInvokers(invokers *sce.TreeInvokers) { w.engine.AdoptHostInvokers(invokers) }
+func (w *childEngineWrapper{{ machine_name }}_{{ invoke_info.field_suffix | to_pascal_case }}) RouteHostInvokeEnd(sessionID string, ending sce.HostInvokeEnding) (bool, error) { return w.engine.RouteHostInvokeEnd(sessionID, ending) }
 {% if static_saved_shape %}
 func (w *childEngineWrapper{{ machine_name }}_{{ invoke_info.field_suffix | to_pascal_case }}) SaveAsSession(wallNowMs int64) (*sce.SavedState, error) { return {{ invoke_info.child_name | to_machine_name }}SaveAt(w.engine, wallNowMs) }
 func (w *childEngineWrapper{{ machine_name }}_{{ invoke_info.field_suffix | to_pascal_case }}) SavedDocument() string { return "{{ invoke_info.child_name | escape_go }}" }
@@ -921,6 +976,8 @@ func (w *{{ wrapper }}) DonedataAtFinal() string { return w.engine.DonedataAtFin
 func (w *{{ wrapper }}) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
 func (w *{{ wrapper }}) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
 func (w *{{ wrapper }}) DetachMesh() { w.engine.DetachMesh() }
+func (w *{{ wrapper }}) AdoptHostInvokers(invokers *sce.TreeInvokers) { w.engine.AdoptHostInvokers(invokers) }
+func (w *{{ wrapper }}) RouteHostInvokeEnd(sessionID string, ending sce.HostInvokeEnding) (bool, error) { return w.engine.RouteHostInvokeEnd(sessionID, ending) }
 {% if static_saved_shape %}
 func (w *{{ wrapper }}) SaveAsSession(wallNowMs int64) (*sce.SavedState, error) { return {{ target.stem | to_machine_name }}SaveAt(w.engine, wallNowMs) }
 func (w *{{ wrapper }}) SavedDocument() string { return "{{ target.stem | escape_go }}" }

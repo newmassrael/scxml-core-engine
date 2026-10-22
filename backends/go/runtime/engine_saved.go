@@ -153,7 +153,7 @@ func (e *Engine[S, E]) startRestoredHostInvokes() {
 		case IsReservedType(host.request.ProcessorType):
 			e.raiseHostInvokeFailure(invokeID, "interrupted")
 		default:
-			handler, registered := e.hostInvokers[host.request.ProcessorType]
+			handler, registered := e.invokerFor(host.request.ProcessorType)
 			if !registered {
 				if evt, known := e.policy.GetEventFromName("error.execution"); known {
 					e.Raise(NewPlatformError(evt, "<invoke> names an invoker the host declared but never registered"))

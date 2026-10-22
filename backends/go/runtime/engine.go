@@ -94,6 +94,12 @@ type Engine[S comparable, E comparable] struct {
 	// process with a lifecycle — see host_processor.go's invoker half.
 	hostInvokers map[string]HostInvokeHandler
 
+	// treeInvokers is what runs the host's own `<invoke type>`s for this session,
+	// and for every other session of the tree it is the root of: the one registry
+	// a parent hands each child it starts or resumes (docs/adr/0045). Nil until
+	// first used. See tree.
+	treeInvokers *TreeInvokers
+
 	// childMeshRouters is the factory of the routers of this machine's
 	// children (SCE_MESH.md, Child Sessions in Mesh): registered by the host
 	// on a machine it starts, and on a child by the router its parent gave it.
@@ -1092,6 +1098,24 @@ func (e *Engine[S, E]) SendNamedInternal(name string, delay time.Duration, sendI
 	e.Raise(meta)
 }
 
+// ChildSettler is implemented by a generated policy that invokes: it settles
+// what its children sent it while one was driven, so that nothing is between the
+// two sessions when the drive returns (§scxml-6.4; docs/adr/0045): the events a
+// child sent `#_parent` are raised on this session, and a child that reached its
+// final state raises `done.invoke` once. A save at any boundary of the session then
+// finds every child's buffer empty.
+type ChildSettler[S comparable, E comparable] interface {
+	SettleChildren(engine *Engine[S, E])
+}
+
+// settleChildren settles the children of the policy after a delivery made to one
+// of them, which the child took at once and may have answered.
+func (e *Engine[S, E]) settleChildren() {
+	if settler, ok := any(e.policy).(ChildSettler[S, E]); ok {
+		settler.SettleChildren(e)
+	}
+}
+
 // InvocationDelivery is implemented by a generated policy that invokes, so it
 // can hand a delayed send's event to one of its invocations (§scxml-6.2 +
 // §scxml-6.4). It answers whether that invocation was there to take it.
@@ -1248,11 +1272,15 @@ func (e *Engine[S, E]) deliverRoutedNow(event E, route ScheduledRoute, eventData
 		return true
 	case RouteInvocation:
 		if invocations, ok := any(e.policy).(InvocationDelivery); ok {
-			return invocations.DeliverToInvocation(route.InvokeID, route.EventName, eventData, sendID)
+			delivered := invocations.DeliverToInvocation(route.InvokeID, route.EventName, eventData, sendID)
+			e.settleChildren()
+			return delivered
 		}
 	case RouteSession:
 		if sessions, ok := any(e.policy).(ChildSessionDelivery); ok {
-			return sessions.DeliverToChildSession(route.SessionID, route.EventName, eventData)
+			delivered := sessions.DeliverToChildSession(route.SessionID, route.EventName, eventData)
+			e.settleChildren()
+			return delivered
 		}
 	case RouteParent:
 		if parent, ok := any(e.policy).(ParentDelivery); ok {

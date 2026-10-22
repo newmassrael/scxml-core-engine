@@ -513,6 +513,9 @@ func (p *DonedataLocalInvokePolicy) ExecutePendingInvokes(engine *sce.Engine[Don
 			// because the host advances the engine it holds, not the ones that
 			// engine invoked.
 			childEngine.SetClock(engine.Clock())
+			// docs/adr/0045: the tree's host invokers serve the child, whose host-run
+			// invocations name it by its session id.
+			engine.ShareHostInvokersWith(childEngine)
 			childEngine.SetCompletionCallback(func() {})
 			// Child sessions in Mesh (SCE_MESH.md): the child's router, asked of
 			// this machine's factory with the invoke's id and the stem of the
@@ -583,6 +586,9 @@ func (p *DonedataLocalInvokePolicy) ExecutePendingInvokes(engine *sce.Engine[Don
 			// because the host advances the engine it holds, not the ones that
 			// engine invoked.
 			childEngine.SetClock(engine.Clock())
+			// docs/adr/0045: the tree's host invokers serve the child, whose host-run
+			// invocations name it by its session id.
+			engine.ShareHostInvokersWith(childEngine)
 			childEngine.SetCompletionCallback(func() {})
 			// Child sessions in Mesh (SCE_MESH.md): the child's router, asked of
 			// this machine's factory with the invoke's id and the stem of the
@@ -651,6 +657,66 @@ func (p *DonedataLocalInvokePolicy) TickChildren(engine *sce.Engine[DonedataLoca
 			sce.RaiseDoneInvoke("inv_content", child.DonedataAtFinal(), engine)
 		}
 	}
+}
+
+// SettleChildren settles what every running child sent this machine while it was
+// driven by a delivery (sce.ChildSettler; docs/adr/0045): the events it sent
+// `#_parent` are raised here, and a child that reached its final state raises
+// `done.invoke` once. One body for every drive of a child, so a save at any
+// boundary of this session finds the child's buffer empty.
+func (p *DonedataLocalInvokePolicy) SettleChildren(engine *sce.Engine[DonedataLocalInvokeState, DonedataLocalInvokeEvent]) {
+	if child := p.childInvParam; child != nil && !p.pendingDoneInvokeInvParam {
+		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "inv_param", engine)
+		if child.IsInFinalState() {
+			p.pendingDoneInvokeInvParam = true
+			// The session ended: its Mesh router is told so.
+			child.DetachMesh()
+			// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
+			// done.invoke.<id>._event.data.
+			sce.RaiseDoneInvoke("inv_param", child.DonedataAtFinal(), engine)
+		}
+	}
+	if child := p.childInvContent; child != nil && !p.pendingDoneInvokeInvContent {
+		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "inv_content", engine)
+		if child.IsInFinalState() {
+			p.pendingDoneInvokeInvContent = true
+			// The session ended: its Mesh router is told so.
+			child.DetachMesh()
+			// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
+			// done.invoke.<id>._event.data.
+			sce.RaiseDoneInvoke("inv_content", child.DonedataAtFinal(), engine)
+		}
+	}
+}
+
+// AdoptHostInvokersInChildren hands the tree's host invokers on to every child
+// this machine holds now (sce.HostInvokeChildren; docs/adr/0045): a child a
+// restore resumed holds children of its own, resumed with it before its parent
+// could hand it anything.
+func (p *DonedataLocalInvokePolicy) AdoptHostInvokersInChildren(invokers *sce.TreeInvokers) {
+	if tree, ok := p.childInvParam.(sce.HostInvokeTree); ok {
+		tree.AdoptHostInvokers(invokers)
+	}
+	if tree, ok := p.childInvContent.(sce.HostInvokeTree); ok {
+		tree.AdoptHostInvokers(invokers)
+	}
+}
+
+// RouteHostInvokeEndToChild delivers the ending of a host-run invocation to the
+// child at or below which the session sessionID is (sce.HostInvokeChildren), and
+// answers false when no running child holds it.
+func (p *DonedataLocalInvokePolicy) RouteHostInvokeEndToChild(sessionID string, ending sce.HostInvokeEnding) (bool, error) {
+	if tree, ok := p.childInvParam.(sce.HostInvokeTree); ok {
+		if routed, err := tree.RouteHostInvokeEnd(sessionID, ending); routed {
+			return true, err
+		}
+	}
+	if tree, ok := p.childInvContent.(sce.HostInvokeTree); ok {
+		if routed, err := tree.RouteHostInvokeEnd(sessionID, ending); routed {
+			return true, err
+		}
+	}
+	return false, nil
 }
 
 // NextChildDeadline reports the nearest deadline among the running children
@@ -775,6 +841,8 @@ func (w *childEngineWrapperDonedataLocalInvoke_InvParam) DonedataAtFinal() strin
 func (w *childEngineWrapperDonedataLocalInvoke_InvParam) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
 func (w *childEngineWrapperDonedataLocalInvoke_InvParam) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
 func (w *childEngineWrapperDonedataLocalInvoke_InvParam) DetachMesh() { w.engine.DetachMesh() }
+func (w *childEngineWrapperDonedataLocalInvoke_InvParam) AdoptHostInvokers(invokers *sce.TreeInvokers) { w.engine.AdoptHostInvokers(invokers) }
+func (w *childEngineWrapperDonedataLocalInvoke_InvParam) RouteHostInvokeEnd(sessionID string, ending sce.HostInvokeEnding) (bool, error) { return w.engine.RouteHostInvokeEnd(sessionID, ending) }
 type childEngineWrapperDonedataLocalInvoke_InvContent struct {
 	engine *sce.Engine[DonedataLocalInvokeSceSynthInvokeInvContentState, DonedataLocalInvokeSceSynthInvokeInvContentEvent]
 	policy *DonedataLocalInvokeSceSynthInvokeInvContentPolicy
@@ -792,6 +860,8 @@ func (w *childEngineWrapperDonedataLocalInvoke_InvContent) DonedataAtFinal() str
 func (w *childEngineWrapperDonedataLocalInvoke_InvContent) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
 func (w *childEngineWrapperDonedataLocalInvoke_InvContent) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
 func (w *childEngineWrapperDonedataLocalInvoke_InvContent) DetachMesh() { w.engine.DetachMesh() }
+func (w *childEngineWrapperDonedataLocalInvoke_InvContent) AdoptHostInvokers(invokers *sce.TreeInvokers) { w.engine.AdoptHostInvokers(invokers) }
+func (w *childEngineWrapperDonedataLocalInvoke_InvContent) RouteHostInvokeEnd(sessionID string, ending sce.HostInvokeEnding) (bool, error) { return w.engine.RouteHostInvokeEnd(sessionID, ending) }
 
 
 // DeliverToParent delivers a delayed `<send target="#_parent">` whose wait is

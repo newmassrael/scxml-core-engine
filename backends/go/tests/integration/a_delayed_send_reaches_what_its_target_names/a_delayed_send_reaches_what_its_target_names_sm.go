@@ -697,6 +697,9 @@ func (p *ADelayedSendReachesWhatItsTargetNamesPolicy) ExecutePendingInvokes(engi
 			// because the host advances the engine it holds, not the ones that
 			// engine invoked.
 			childEngine.SetClock(engine.Clock())
+			// docs/adr/0045: the tree's host invokers serve the child, whose host-run
+			// invocations name it by its session id.
+			engine.ShareHostInvokersWith(childEngine)
 			childEngine.SetCompletionCallback(func() {})
 			// Child sessions in Mesh (SCE_MESH.md): the child's router, asked of
 			// this machine's factory with the invoke's id and the stem of the
@@ -766,6 +769,9 @@ func (p *ADelayedSendReachesWhatItsTargetNamesPolicy) ExecutePendingInvokes(engi
 			// because the host advances the engine it holds, not the ones that
 			// engine invoked.
 			childEngine.SetClock(engine.Clock())
+			// docs/adr/0045: the tree's host invokers serve the child, whose host-run
+			// invocations name it by its session id.
+			engine.ShareHostInvokersWith(childEngine)
 			childEngine.SetCompletionCallback(func() {})
 			// Child sessions in Mesh (SCE_MESH.md): the child's router, asked of
 			// this machine's factory with the invoke's id and the stem of the
@@ -834,6 +840,66 @@ func (p *ADelayedSendReachesWhatItsTargetNamesPolicy) TickChildren(engine *sce.E
 			sce.RaiseDoneInvoke("gone", child.DonedataAtFinal(), engine)
 		}
 	}
+}
+
+// SettleChildren settles what every running child sent this machine while it was
+// driven by a delivery (sce.ChildSettler; docs/adr/0045): the events it sent
+// `#_parent` are raised here, and a child that reached its final state raises
+// `done.invoke` once. One body for every drive of a child, so a save at any
+// boundary of this session finds the child's buffer empty.
+func (p *ADelayedSendReachesWhatItsTargetNamesPolicy) SettleChildren(engine *sce.Engine[ADelayedSendReachesWhatItsTargetNamesState, ADelayedSendReachesWhatItsTargetNamesEvent]) {
+	if child := p.childKid; child != nil && !p.pendingDoneInvokeKid {
+		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "kid", engine)
+		if child.IsInFinalState() {
+			p.pendingDoneInvokeKid = true
+			// The session ended: its Mesh router is told so.
+			child.DetachMesh()
+			// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
+			// done.invoke.<id>._event.data.
+			sce.RaiseDoneInvoke("kid", child.DonedataAtFinal(), engine)
+		}
+	}
+	if child := p.childGone; child != nil && !p.pendingDoneInvokeGone {
+		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "gone", engine)
+		if child.IsInFinalState() {
+			p.pendingDoneInvokeGone = true
+			// The session ended: its Mesh router is told so.
+			child.DetachMesh()
+			// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
+			// done.invoke.<id>._event.data.
+			sce.RaiseDoneInvoke("gone", child.DonedataAtFinal(), engine)
+		}
+	}
+}
+
+// AdoptHostInvokersInChildren hands the tree's host invokers on to every child
+// this machine holds now (sce.HostInvokeChildren; docs/adr/0045): a child a
+// restore resumed holds children of its own, resumed with it before its parent
+// could hand it anything.
+func (p *ADelayedSendReachesWhatItsTargetNamesPolicy) AdoptHostInvokersInChildren(invokers *sce.TreeInvokers) {
+	if tree, ok := p.childKid.(sce.HostInvokeTree); ok {
+		tree.AdoptHostInvokers(invokers)
+	}
+	if tree, ok := p.childGone.(sce.HostInvokeTree); ok {
+		tree.AdoptHostInvokers(invokers)
+	}
+}
+
+// RouteHostInvokeEndToChild delivers the ending of a host-run invocation to the
+// child at or below which the session sessionID is (sce.HostInvokeChildren), and
+// answers false when no running child holds it.
+func (p *ADelayedSendReachesWhatItsTargetNamesPolicy) RouteHostInvokeEndToChild(sessionID string, ending sce.HostInvokeEnding) (bool, error) {
+	if tree, ok := p.childKid.(sce.HostInvokeTree); ok {
+		if routed, err := tree.RouteHostInvokeEnd(sessionID, ending); routed {
+			return true, err
+		}
+	}
+	if tree, ok := p.childGone.(sce.HostInvokeTree); ok {
+		if routed, err := tree.RouteHostInvokeEnd(sessionID, ending); routed {
+			return true, err
+		}
+	}
+	return false, nil
 }
 
 // NextChildDeadline reports the nearest deadline among the running children
@@ -958,6 +1024,8 @@ func (w *childEngineWrapperADelayedSendReachesWhatItsTargetNames_Kid) DonedataAt
 func (w *childEngineWrapperADelayedSendReachesWhatItsTargetNames_Kid) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
 func (w *childEngineWrapperADelayedSendReachesWhatItsTargetNames_Kid) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
 func (w *childEngineWrapperADelayedSendReachesWhatItsTargetNames_Kid) DetachMesh() { w.engine.DetachMesh() }
+func (w *childEngineWrapperADelayedSendReachesWhatItsTargetNames_Kid) AdoptHostInvokers(invokers *sce.TreeInvokers) { w.engine.AdoptHostInvokers(invokers) }
+func (w *childEngineWrapperADelayedSendReachesWhatItsTargetNames_Kid) RouteHostInvokeEnd(sessionID string, ending sce.HostInvokeEnding) (bool, error) { return w.engine.RouteHostInvokeEnd(sessionID, ending) }
 type childEngineWrapperADelayedSendReachesWhatItsTargetNames_Gone struct {
 	engine *sce.Engine[ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneState, ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneEvent]
 	policy *ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGonePolicy
@@ -975,6 +1043,8 @@ func (w *childEngineWrapperADelayedSendReachesWhatItsTargetNames_Gone) DonedataA
 func (w *childEngineWrapperADelayedSendReachesWhatItsTargetNames_Gone) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
 func (w *childEngineWrapperADelayedSendReachesWhatItsTargetNames_Gone) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
 func (w *childEngineWrapperADelayedSendReachesWhatItsTargetNames_Gone) DetachMesh() { w.engine.DetachMesh() }
+func (w *childEngineWrapperADelayedSendReachesWhatItsTargetNames_Gone) AdoptHostInvokers(invokers *sce.TreeInvokers) { w.engine.AdoptHostInvokers(invokers) }
+func (w *childEngineWrapperADelayedSendReachesWhatItsTargetNames_Gone) RouteHostInvokeEnd(sessionID string, ending sce.HostInvokeEnding) (bool, error) { return w.engine.RouteHostInvokeEnd(sessionID, ending) }
 
 
 // DeliverToParent delivers a delayed `<send target="#_parent">` whose wait is
@@ -1689,6 +1759,9 @@ func (p *ADelayedSendReachesWhatItsTargetNamesPolicy) ExecuteTransitionContent(s
 	// there to address.
 	if child := p.childGone; child != nil && !child.IsInFinalState() {
 		sce.DeliverToChild(child, "stop", eventDataStr)
+		// docs/adr/0045: what the child sent in answer reaches this session within
+		// the delivery, so nothing is between the two when it returns.
+		p.SettleChildren(engine)
 	} else {
 		// W3C SCXML C.1: the invocation is not running, so the session the
 		// target names is not there to reach.

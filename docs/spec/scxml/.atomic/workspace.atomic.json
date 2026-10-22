@@ -6180,6 +6180,10 @@
         {
           "file": "backends/go/runtime/saved_state.go",
           "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/invoke.go",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -11760,6 +11764,11 @@
         {
           "file": "backends/go/runtime/engine_saved.go",
           "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "ChildSettler",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -12286,6 +12295,10 @@
         },
         {
           "file": "backends/go/runtime/engine_saved.go",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/host_invoke_tree.go",
           "kind": "references"
         }
       ],

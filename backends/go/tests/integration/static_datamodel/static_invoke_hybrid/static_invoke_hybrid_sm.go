@@ -527,6 +527,9 @@ func (p *StaticInvokeHybridPolicy) resumeChildFirstRun0jStaticHybridFirst(engine
 		return err
 	}
 	childEngine.SetCompletionCallback(func() {})
+	// docs/adr/0045: the tree's host invokers, handed on before the child's
+	// re-armed invocations start at its first drive.
+	engine.ShareHostInvokersWith(childEngine)
 	// Child sessions in Mesh (SCE_MESH.md; docs/adr/0043): the router of the
 	// resumed child is owed, not asked here. This machine is being restored, and
 	// its host registers the factory of its children's routers only once the
@@ -562,6 +565,9 @@ func (p *StaticInvokeHybridPolicy) resumeChildFirstRun0jStaticHybridSecond(engin
 		return err
 	}
 	childEngine.SetCompletionCallback(func() {})
+	// docs/adr/0045: the tree's host invokers, handed on before the child's
+	// re-armed invocations start at its first drive.
+	engine.ShareHostInvokersWith(childEngine)
 	// Child sessions in Mesh (SCE_MESH.md; docs/adr/0043): the router of the
 	// resumed child is owed, not asked here. This machine is being restored, and
 	// its host registers the factory of its children's routers only once the
@@ -597,6 +603,9 @@ func (p *StaticInvokeHybridPolicy) resumeChildSecondRun0jStaticHybridFirst(engin
 		return err
 	}
 	childEngine.SetCompletionCallback(func() {})
+	// docs/adr/0045: the tree's host invokers, handed on before the child's
+	// re-armed invocations start at its first drive.
+	engine.ShareHostInvokersWith(childEngine)
 	// Child sessions in Mesh (SCE_MESH.md; docs/adr/0043): the router of the
 	// resumed child is owed, not asked here. This machine is being restored, and
 	// its host registers the factory of its children's routers only once the
@@ -632,6 +641,9 @@ func (p *StaticInvokeHybridPolicy) resumeChildSecondRun0jStaticHybridSecond(engi
 		return err
 	}
 	childEngine.SetCompletionCallback(func() {})
+	// docs/adr/0045: the tree's host invokers, handed on before the child's
+	// re-armed invocations start at its first drive.
+	engine.ShareHostInvokersWith(childEngine)
 	// Child sessions in Mesh (SCE_MESH.md; docs/adr/0043): the router of the
 	// resumed child is owed, not asked here. This machine is being restored, and
 	// its host registers the factory of its children's routers only once the
@@ -667,6 +679,9 @@ func (p *StaticInvokeHybridPolicy) resumeChildLossyRun0jStaticHybridFirst(engine
 		return err
 	}
 	childEngine.SetCompletionCallback(func() {})
+	// docs/adr/0045: the tree's host invokers, handed on before the child's
+	// re-armed invocations start at its first drive.
+	engine.ShareHostInvokersWith(childEngine)
 	// Child sessions in Mesh (SCE_MESH.md; docs/adr/0043): the router of the
 	// resumed child is owed, not asked here. This machine is being restored, and
 	// its host registers the factory of its children's routers only once the
@@ -702,6 +717,9 @@ func (p *StaticInvokeHybridPolicy) resumeChildLossyRun0jStaticHybridSecond(engin
 		return err
 	}
 	childEngine.SetCompletionCallback(func() {})
+	// docs/adr/0045: the tree's host invokers, handed on before the child's
+	// re-armed invocations start at its first drive.
+	engine.ShareHostInvokersWith(childEngine)
 	// Child sessions in Mesh (SCE_MESH.md; docs/adr/0043): the router of the
 	// resumed child is owed, not asked here. This machine is being restored, and
 	// its host registers the factory of its children's routers only once the
@@ -737,6 +755,9 @@ func (p *StaticInvokeHybridPolicy) resumeChildMissingRun0jStaticHybridFirst(engi
 		return err
 	}
 	childEngine.SetCompletionCallback(func() {})
+	// docs/adr/0045: the tree's host invokers, handed on before the child's
+	// re-armed invocations start at its first drive.
+	engine.ShareHostInvokersWith(childEngine)
 	// Child sessions in Mesh (SCE_MESH.md; docs/adr/0043): the router of the
 	// resumed child is owed, not asked here. This machine is being restored, and
 	// its host registers the factory of its children's routers only once the
@@ -772,6 +793,9 @@ func (p *StaticInvokeHybridPolicy) resumeChildMissingRun0jStaticHybridSecond(eng
 		return err
 	}
 	childEngine.SetCompletionCallback(func() {})
+	// docs/adr/0045: the tree's host invokers, handed on before the child's
+	// re-armed invocations start at its first drive.
+	engine.ShareHostInvokersWith(childEngine)
 	// Child sessions in Mesh (SCE_MESH.md; docs/adr/0043): the router of the
 	// resumed child is owed, not asked here. This machine is being restored, and
 	// its host registers the factory of its children's routers only once the
@@ -1152,6 +1176,9 @@ func (p *StaticInvokeHybridPolicy) ExecutePendingInvokes(engine *sce.Engine[Stat
 			// because the host advances the engine it holds, not the ones that
 			// engine invoked.
 			childEngine.SetClock(engine.Clock())
+			// docs/adr/0045: the tree's host invokers serve the child, whose host-run
+			// invocations name it by its session id.
+			engine.ShareHostInvokersWith(childEngine)
 			childEngine.SetCompletionCallback(func() {})
 			// Child sessions in Mesh (SCE_MESH.md): the router of the candidate
 			// this start chose, asked of this machine's factory and installed
@@ -1234,6 +1261,9 @@ func (p *StaticInvokeHybridPolicy) ExecutePendingInvokes(engine *sce.Engine[Stat
 			// because the host advances the engine it holds, not the ones that
 			// engine invoked.
 			childEngine.SetClock(engine.Clock())
+			// docs/adr/0045: the tree's host invokers serve the child, whose host-run
+			// invocations name it by its session id.
+			engine.ShareHostInvokersWith(childEngine)
 			childEngine.SetCompletionCallback(func() {})
 			// Child sessions in Mesh (SCE_MESH.md): the router of the candidate
 			// this start chose, asked of this machine's factory and installed
@@ -1342,6 +1372,9 @@ func (p *StaticInvokeHybridPolicy) ExecutePendingInvokes(engine *sce.Engine[Stat
 			// because the host advances the engine it holds, not the ones that
 			// engine invoked.
 			childEngine.SetClock(engine.Clock())
+			// docs/adr/0045: the tree's host invokers serve the child, whose host-run
+			// invocations name it by its session id.
+			engine.ShareHostInvokersWith(childEngine)
 			childEngine.SetCompletionCallback(func() {})
 			// Child sessions in Mesh (SCE_MESH.md): the router of the candidate
 			// this start chose, asked of this machine's factory and installed
@@ -1424,6 +1457,9 @@ func (p *StaticInvokeHybridPolicy) ExecutePendingInvokes(engine *sce.Engine[Stat
 			// because the host advances the engine it holds, not the ones that
 			// engine invoked.
 			childEngine.SetClock(engine.Clock())
+			// docs/adr/0045: the tree's host invokers serve the child, whose host-run
+			// invocations name it by its session id.
+			engine.ShareHostInvokersWith(childEngine)
 			childEngine.SetCompletionCallback(func() {})
 			// Child sessions in Mesh (SCE_MESH.md): the router of the candidate
 			// this start chose, asked of this machine's factory and installed
@@ -1522,6 +1558,9 @@ func (p *StaticInvokeHybridPolicy) ExecutePendingInvokes(engine *sce.Engine[Stat
 			// because the host advances the engine it holds, not the ones that
 			// engine invoked.
 			childEngine.SetClock(engine.Clock())
+			// docs/adr/0045: the tree's host invokers serve the child, whose host-run
+			// invocations name it by its session id.
+			engine.ShareHostInvokersWith(childEngine)
 			childEngine.SetCompletionCallback(func() {})
 			// Child sessions in Mesh (SCE_MESH.md): the router of the candidate
 			// this start chose, asked of this machine's factory and installed
@@ -1593,6 +1632,9 @@ func (p *StaticInvokeHybridPolicy) ExecutePendingInvokes(engine *sce.Engine[Stat
 			// because the host advances the engine it holds, not the ones that
 			// engine invoked.
 			childEngine.SetClock(engine.Clock())
+			// docs/adr/0045: the tree's host invokers serve the child, whose host-run
+			// invocations name it by its session id.
+			engine.ShareHostInvokersWith(childEngine)
 			childEngine.SetCompletionCallback(func() {})
 			// Child sessions in Mesh (SCE_MESH.md): the router of the candidate
 			// this start chose, asked of this machine's factory and installed
@@ -1701,6 +1743,9 @@ func (p *StaticInvokeHybridPolicy) ExecutePendingInvokes(engine *sce.Engine[Stat
 			// because the host advances the engine it holds, not the ones that
 			// engine invoked.
 			childEngine.SetClock(engine.Clock())
+			// docs/adr/0045: the tree's host invokers serve the child, whose host-run
+			// invocations name it by its session id.
+			engine.ShareHostInvokersWith(childEngine)
 			childEngine.SetCompletionCallback(func() {})
 			// Child sessions in Mesh (SCE_MESH.md): the router of the candidate
 			// this start chose, asked of this machine's factory and installed
@@ -1783,6 +1828,9 @@ func (p *StaticInvokeHybridPolicy) ExecutePendingInvokes(engine *sce.Engine[Stat
 			// because the host advances the engine it holds, not the ones that
 			// engine invoked.
 			childEngine.SetClock(engine.Clock())
+			// docs/adr/0045: the tree's host invokers serve the child, whose host-run
+			// invocations name it by its session id.
+			engine.ShareHostInvokersWith(childEngine)
 			childEngine.SetCompletionCallback(func() {})
 			// Child sessions in Mesh (SCE_MESH.md): the router of the candidate
 			// this start chose, asked of this machine's factory and installed
@@ -1883,6 +1931,104 @@ func (p *StaticInvokeHybridPolicy) TickChildren(engine *sce.Engine[StaticInvokeH
 			sce.RaiseDoneInvoke("missing_run", child.DonedataAtFinal(), engine)
 		}
 	}
+}
+
+// SettleChildren settles what every running child sent this machine while it was
+// driven by a delivery (sce.ChildSettler; docs/adr/0045): the events it sent
+// `#_parent` are raised here, and a child that reached its final state raises
+// `done.invoke` once. One body for every drive of a child, so a save at any
+// boundary of this session finds the child's buffer empty.
+func (p *StaticInvokeHybridPolicy) SettleChildren(engine *sce.Engine[StaticInvokeHybridState, StaticInvokeHybridEvent]) {
+	if child := p.childFirstRun; child != nil && !p.pendingDoneInvokeFirstRun {
+		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "first_run", engine)
+		if child.IsInFinalState() {
+			p.pendingDoneInvokeFirstRun = true
+			// The session ended: its Mesh router is told so.
+			child.DetachMesh()
+			// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
+			// done.invoke.<id>._event.data.
+			sce.RaiseDoneInvoke("first_run", child.DonedataAtFinal(), engine)
+		}
+	}
+	if child := p.childSecondRun; child != nil && !p.pendingDoneInvokeSecondRun {
+		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "second_run", engine)
+		if child.IsInFinalState() {
+			p.pendingDoneInvokeSecondRun = true
+			// The session ended: its Mesh router is told so.
+			child.DetachMesh()
+			// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
+			// done.invoke.<id>._event.data.
+			sce.RaiseDoneInvoke("second_run", child.DonedataAtFinal(), engine)
+		}
+	}
+	if child := p.childLossyRun; child != nil && !p.pendingDoneInvokeLossyRun {
+		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "lossy_run", engine)
+		if child.IsInFinalState() {
+			p.pendingDoneInvokeLossyRun = true
+			// The session ended: its Mesh router is told so.
+			child.DetachMesh()
+			// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
+			// done.invoke.<id>._event.data.
+			sce.RaiseDoneInvoke("lossy_run", child.DonedataAtFinal(), engine)
+		}
+	}
+	if child := p.childMissingRun; child != nil && !p.pendingDoneInvokeMissingRun {
+		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "missing_run", engine)
+		if child.IsInFinalState() {
+			p.pendingDoneInvokeMissingRun = true
+			// The session ended: its Mesh router is told so.
+			child.DetachMesh()
+			// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
+			// done.invoke.<id>._event.data.
+			sce.RaiseDoneInvoke("missing_run", child.DonedataAtFinal(), engine)
+		}
+	}
+}
+
+// AdoptHostInvokersInChildren hands the tree's host invokers on to every child
+// this machine holds now (sce.HostInvokeChildren; docs/adr/0045): a child a
+// restore resumed holds children of its own, resumed with it before its parent
+// could hand it anything.
+func (p *StaticInvokeHybridPolicy) AdoptHostInvokersInChildren(invokers *sce.TreeInvokers) {
+	if tree, ok := p.childFirstRun.(sce.HostInvokeTree); ok {
+		tree.AdoptHostInvokers(invokers)
+	}
+	if tree, ok := p.childSecondRun.(sce.HostInvokeTree); ok {
+		tree.AdoptHostInvokers(invokers)
+	}
+	if tree, ok := p.childLossyRun.(sce.HostInvokeTree); ok {
+		tree.AdoptHostInvokers(invokers)
+	}
+	if tree, ok := p.childMissingRun.(sce.HostInvokeTree); ok {
+		tree.AdoptHostInvokers(invokers)
+	}
+}
+
+// RouteHostInvokeEndToChild delivers the ending of a host-run invocation to the
+// child at or below which the session sessionID is (sce.HostInvokeChildren), and
+// answers false when no running child holds it.
+func (p *StaticInvokeHybridPolicy) RouteHostInvokeEndToChild(sessionID string, ending sce.HostInvokeEnding) (bool, error) {
+	if tree, ok := p.childFirstRun.(sce.HostInvokeTree); ok {
+		if routed, err := tree.RouteHostInvokeEnd(sessionID, ending); routed {
+			return true, err
+		}
+	}
+	if tree, ok := p.childSecondRun.(sce.HostInvokeTree); ok {
+		if routed, err := tree.RouteHostInvokeEnd(sessionID, ending); routed {
+			return true, err
+		}
+	}
+	if tree, ok := p.childLossyRun.(sce.HostInvokeTree); ok {
+		if routed, err := tree.RouteHostInvokeEnd(sessionID, ending); routed {
+			return true, err
+		}
+	}
+	if tree, ok := p.childMissingRun.(sce.HostInvokeTree); ok {
+		if routed, err := tree.RouteHostInvokeEnd(sessionID, ending); routed {
+			return true, err
+		}
+	}
+	return false, nil
 }
 
 // NextChildDeadline reports the nearest deadline among the running children
@@ -1998,6 +2144,8 @@ func (w *childEngineWrapperStaticInvokeHybrid_FirstRun0jStaticHybridFirst) Doned
 func (w *childEngineWrapperStaticInvokeHybrid_FirstRun0jStaticHybridFirst) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
 func (w *childEngineWrapperStaticInvokeHybrid_FirstRun0jStaticHybridFirst) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
 func (w *childEngineWrapperStaticInvokeHybrid_FirstRun0jStaticHybridFirst) DetachMesh() { w.engine.DetachMesh() }
+func (w *childEngineWrapperStaticInvokeHybrid_FirstRun0jStaticHybridFirst) AdoptHostInvokers(invokers *sce.TreeInvokers) { w.engine.AdoptHostInvokers(invokers) }
+func (w *childEngineWrapperStaticInvokeHybrid_FirstRun0jStaticHybridFirst) RouteHostInvokeEnd(sessionID string, ending sce.HostInvokeEnding) (bool, error) { return w.engine.RouteHostInvokeEnd(sessionID, ending) }
 func (w *childEngineWrapperStaticInvokeHybrid_FirstRun0jStaticHybridFirst) SaveAsSession(wallNowMs int64) (*sce.SavedState, error) { return StaticHybridFirstSaveAt(w.engine, wallNowMs) }
 func (w *childEngineWrapperStaticInvokeHybrid_FirstRun0jStaticHybridFirst) SavedDocument() string { return "static_hybrid_first" }
 type childEngineWrapperStaticInvokeHybrid_FirstRun0jStaticHybridSecond struct {
@@ -2017,6 +2165,8 @@ func (w *childEngineWrapperStaticInvokeHybrid_FirstRun0jStaticHybridSecond) Done
 func (w *childEngineWrapperStaticInvokeHybrid_FirstRun0jStaticHybridSecond) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
 func (w *childEngineWrapperStaticInvokeHybrid_FirstRun0jStaticHybridSecond) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
 func (w *childEngineWrapperStaticInvokeHybrid_FirstRun0jStaticHybridSecond) DetachMesh() { w.engine.DetachMesh() }
+func (w *childEngineWrapperStaticInvokeHybrid_FirstRun0jStaticHybridSecond) AdoptHostInvokers(invokers *sce.TreeInvokers) { w.engine.AdoptHostInvokers(invokers) }
+func (w *childEngineWrapperStaticInvokeHybrid_FirstRun0jStaticHybridSecond) RouteHostInvokeEnd(sessionID string, ending sce.HostInvokeEnding) (bool, error) { return w.engine.RouteHostInvokeEnd(sessionID, ending) }
 func (w *childEngineWrapperStaticInvokeHybrid_FirstRun0jStaticHybridSecond) SaveAsSession(wallNowMs int64) (*sce.SavedState, error) { return StaticHybridSecondSaveAt(w.engine, wallNowMs) }
 func (w *childEngineWrapperStaticInvokeHybrid_FirstRun0jStaticHybridSecond) SavedDocument() string { return "static_hybrid_second" }
 type childEngineWrapperStaticInvokeHybrid_SecondRun0jStaticHybridFirst struct {
@@ -2036,6 +2186,8 @@ func (w *childEngineWrapperStaticInvokeHybrid_SecondRun0jStaticHybridFirst) Done
 func (w *childEngineWrapperStaticInvokeHybrid_SecondRun0jStaticHybridFirst) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
 func (w *childEngineWrapperStaticInvokeHybrid_SecondRun0jStaticHybridFirst) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
 func (w *childEngineWrapperStaticInvokeHybrid_SecondRun0jStaticHybridFirst) DetachMesh() { w.engine.DetachMesh() }
+func (w *childEngineWrapperStaticInvokeHybrid_SecondRun0jStaticHybridFirst) AdoptHostInvokers(invokers *sce.TreeInvokers) { w.engine.AdoptHostInvokers(invokers) }
+func (w *childEngineWrapperStaticInvokeHybrid_SecondRun0jStaticHybridFirst) RouteHostInvokeEnd(sessionID string, ending sce.HostInvokeEnding) (bool, error) { return w.engine.RouteHostInvokeEnd(sessionID, ending) }
 func (w *childEngineWrapperStaticInvokeHybrid_SecondRun0jStaticHybridFirst) SaveAsSession(wallNowMs int64) (*sce.SavedState, error) { return StaticHybridFirstSaveAt(w.engine, wallNowMs) }
 func (w *childEngineWrapperStaticInvokeHybrid_SecondRun0jStaticHybridFirst) SavedDocument() string { return "static_hybrid_first" }
 type childEngineWrapperStaticInvokeHybrid_SecondRun0jStaticHybridSecond struct {
@@ -2055,6 +2207,8 @@ func (w *childEngineWrapperStaticInvokeHybrid_SecondRun0jStaticHybridSecond) Don
 func (w *childEngineWrapperStaticInvokeHybrid_SecondRun0jStaticHybridSecond) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
 func (w *childEngineWrapperStaticInvokeHybrid_SecondRun0jStaticHybridSecond) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
 func (w *childEngineWrapperStaticInvokeHybrid_SecondRun0jStaticHybridSecond) DetachMesh() { w.engine.DetachMesh() }
+func (w *childEngineWrapperStaticInvokeHybrid_SecondRun0jStaticHybridSecond) AdoptHostInvokers(invokers *sce.TreeInvokers) { w.engine.AdoptHostInvokers(invokers) }
+func (w *childEngineWrapperStaticInvokeHybrid_SecondRun0jStaticHybridSecond) RouteHostInvokeEnd(sessionID string, ending sce.HostInvokeEnding) (bool, error) { return w.engine.RouteHostInvokeEnd(sessionID, ending) }
 func (w *childEngineWrapperStaticInvokeHybrid_SecondRun0jStaticHybridSecond) SaveAsSession(wallNowMs int64) (*sce.SavedState, error) { return StaticHybridSecondSaveAt(w.engine, wallNowMs) }
 func (w *childEngineWrapperStaticInvokeHybrid_SecondRun0jStaticHybridSecond) SavedDocument() string { return "static_hybrid_second" }
 type childEngineWrapperStaticInvokeHybrid_LossyRun0jStaticHybridFirst struct {
@@ -2074,6 +2228,8 @@ func (w *childEngineWrapperStaticInvokeHybrid_LossyRun0jStaticHybridFirst) Doned
 func (w *childEngineWrapperStaticInvokeHybrid_LossyRun0jStaticHybridFirst) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
 func (w *childEngineWrapperStaticInvokeHybrid_LossyRun0jStaticHybridFirst) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
 func (w *childEngineWrapperStaticInvokeHybrid_LossyRun0jStaticHybridFirst) DetachMesh() { w.engine.DetachMesh() }
+func (w *childEngineWrapperStaticInvokeHybrid_LossyRun0jStaticHybridFirst) AdoptHostInvokers(invokers *sce.TreeInvokers) { w.engine.AdoptHostInvokers(invokers) }
+func (w *childEngineWrapperStaticInvokeHybrid_LossyRun0jStaticHybridFirst) RouteHostInvokeEnd(sessionID string, ending sce.HostInvokeEnding) (bool, error) { return w.engine.RouteHostInvokeEnd(sessionID, ending) }
 func (w *childEngineWrapperStaticInvokeHybrid_LossyRun0jStaticHybridFirst) SaveAsSession(wallNowMs int64) (*sce.SavedState, error) { return StaticHybridFirstSaveAt(w.engine, wallNowMs) }
 func (w *childEngineWrapperStaticInvokeHybrid_LossyRun0jStaticHybridFirst) SavedDocument() string { return "static_hybrid_first" }
 type childEngineWrapperStaticInvokeHybrid_LossyRun0jStaticHybridSecond struct {
@@ -2093,6 +2249,8 @@ func (w *childEngineWrapperStaticInvokeHybrid_LossyRun0jStaticHybridSecond) Done
 func (w *childEngineWrapperStaticInvokeHybrid_LossyRun0jStaticHybridSecond) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
 func (w *childEngineWrapperStaticInvokeHybrid_LossyRun0jStaticHybridSecond) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
 func (w *childEngineWrapperStaticInvokeHybrid_LossyRun0jStaticHybridSecond) DetachMesh() { w.engine.DetachMesh() }
+func (w *childEngineWrapperStaticInvokeHybrid_LossyRun0jStaticHybridSecond) AdoptHostInvokers(invokers *sce.TreeInvokers) { w.engine.AdoptHostInvokers(invokers) }
+func (w *childEngineWrapperStaticInvokeHybrid_LossyRun0jStaticHybridSecond) RouteHostInvokeEnd(sessionID string, ending sce.HostInvokeEnding) (bool, error) { return w.engine.RouteHostInvokeEnd(sessionID, ending) }
 func (w *childEngineWrapperStaticInvokeHybrid_LossyRun0jStaticHybridSecond) SaveAsSession(wallNowMs int64) (*sce.SavedState, error) { return StaticHybridSecondSaveAt(w.engine, wallNowMs) }
 func (w *childEngineWrapperStaticInvokeHybrid_LossyRun0jStaticHybridSecond) SavedDocument() string { return "static_hybrid_second" }
 type childEngineWrapperStaticInvokeHybrid_MissingRun0jStaticHybridFirst struct {
@@ -2112,6 +2270,8 @@ func (w *childEngineWrapperStaticInvokeHybrid_MissingRun0jStaticHybridFirst) Don
 func (w *childEngineWrapperStaticInvokeHybrid_MissingRun0jStaticHybridFirst) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
 func (w *childEngineWrapperStaticInvokeHybrid_MissingRun0jStaticHybridFirst) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
 func (w *childEngineWrapperStaticInvokeHybrid_MissingRun0jStaticHybridFirst) DetachMesh() { w.engine.DetachMesh() }
+func (w *childEngineWrapperStaticInvokeHybrid_MissingRun0jStaticHybridFirst) AdoptHostInvokers(invokers *sce.TreeInvokers) { w.engine.AdoptHostInvokers(invokers) }
+func (w *childEngineWrapperStaticInvokeHybrid_MissingRun0jStaticHybridFirst) RouteHostInvokeEnd(sessionID string, ending sce.HostInvokeEnding) (bool, error) { return w.engine.RouteHostInvokeEnd(sessionID, ending) }
 func (w *childEngineWrapperStaticInvokeHybrid_MissingRun0jStaticHybridFirst) SaveAsSession(wallNowMs int64) (*sce.SavedState, error) { return StaticHybridFirstSaveAt(w.engine, wallNowMs) }
 func (w *childEngineWrapperStaticInvokeHybrid_MissingRun0jStaticHybridFirst) SavedDocument() string { return "static_hybrid_first" }
 type childEngineWrapperStaticInvokeHybrid_MissingRun0jStaticHybridSecond struct {
@@ -2131,6 +2291,8 @@ func (w *childEngineWrapperStaticInvokeHybrid_MissingRun0jStaticHybridSecond) Do
 func (w *childEngineWrapperStaticInvokeHybrid_MissingRun0jStaticHybridSecond) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
 func (w *childEngineWrapperStaticInvokeHybrid_MissingRun0jStaticHybridSecond) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
 func (w *childEngineWrapperStaticInvokeHybrid_MissingRun0jStaticHybridSecond) DetachMesh() { w.engine.DetachMesh() }
+func (w *childEngineWrapperStaticInvokeHybrid_MissingRun0jStaticHybridSecond) AdoptHostInvokers(invokers *sce.TreeInvokers) { w.engine.AdoptHostInvokers(invokers) }
+func (w *childEngineWrapperStaticInvokeHybrid_MissingRun0jStaticHybridSecond) RouteHostInvokeEnd(sessionID string, ending sce.HostInvokeEnding) (bool, error) { return w.engine.RouteHostInvokeEnd(sessionID, ending) }
 func (w *childEngineWrapperStaticInvokeHybrid_MissingRun0jStaticHybridSecond) SaveAsSession(wallNowMs int64) (*sce.SavedState, error) { return StaticHybridSecondSaveAt(w.engine, wallNowMs) }
 func (w *childEngineWrapperStaticInvokeHybrid_MissingRun0jStaticHybridSecond) SavedDocument() string { return "static_hybrid_second" }
 

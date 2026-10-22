@@ -848,6 +848,28 @@ func (p *StaticHostClockPolicy) ExecutePendingInvokes(engine *sce.Engine[StaticH
 func (p *StaticHostClockPolicy) TickChildren(engine *sce.Engine[StaticHostClockState, StaticHostClockEvent]) {
 }
 
+// SettleChildren settles what every running child sent this machine while it was
+// driven by a delivery (sce.ChildSettler; docs/adr/0045): the events it sent
+// `#_parent` are raised here, and a child that reached its final state raises
+// `done.invoke` once. One body for every drive of a child, so a save at any
+// boundary of this session finds the child's buffer empty.
+func (p *StaticHostClockPolicy) SettleChildren(engine *sce.Engine[StaticHostClockState, StaticHostClockEvent]) {
+}
+
+// AdoptHostInvokersInChildren hands the tree's host invokers on to every child
+// this machine holds now (sce.HostInvokeChildren; docs/adr/0045): a child a
+// restore resumed holds children of its own, resumed with it before its parent
+// could hand it anything.
+func (p *StaticHostClockPolicy) AdoptHostInvokersInChildren(invokers *sce.TreeInvokers) {
+}
+
+// RouteHostInvokeEndToChild delivers the ending of a host-run invocation to the
+// child at or below which the session sessionID is (sce.HostInvokeChildren), and
+// answers false when no running child holds it.
+func (p *StaticHostClockPolicy) RouteHostInvokeEndToChild(sessionID string, ending sce.HostInvokeEnding) (bool, error) {
+	return false, nil
+}
+
 // NextChildDeadline reports the nearest deadline among the running children
 // (W3C SCXML 6.4), so a host that walks time by TimeUntilNextScheduled does not
 // step over a timer a child armed. The ticking above is what makes it this

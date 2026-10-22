@@ -798,6 +798,9 @@
 			sce.ScheduledRoute{Kind: sce.RouteInvocation, EventName: {{ event_name_go }}, InvokeID: "{{ invoke_info.invoke_id | escape_go }}"})
 {% else %}
 		sce.DeliverToChild(child, {{ event_name_go }}, eventDataStr)
+		// docs/adr/0045: what the child sent in answer reaches this session within
+		// the delivery, so nothing is between the two when it returns.
+		p.SettleChildren(engine)
 {% endif %}
 {% else %}
 		_ = child

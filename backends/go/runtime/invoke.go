@@ -241,7 +241,10 @@ func DrainAndRaiseChildEvents[S comparable, E comparable](
 		// §scxml-3.12.1 + §scxml-5.10: the child names the event, and its names are
 		// not the parent's, so one the parent does not write reaches it as the event
 		// of the longest prefix it does, under the name the child sent.
-		metadata := EventMetadata{Data: ev.Data}
+		// §scxml-5.10.1: what a child sends its parent arrives from another session,
+		// so it is an external event. The zero value of EventType is the internal
+		// one, which a metadata built here would otherwise carry.
+		metadata := EventMetadata{Data: ev.Data, EventType: EventTypeExternal}
 		if cs, found := activeInvokes[invokeKey]; found {
 			metadata.InvokeID = cs.InvokeID
 			metadata.Origin = cs.SessionID

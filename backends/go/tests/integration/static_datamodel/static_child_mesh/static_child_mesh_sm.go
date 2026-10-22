@@ -450,6 +450,9 @@ func (p *StaticChildMeshPolicy) resumeChildList(engine *sce.Engine[StaticChildMe
 		return err
 	}
 	childEngine.SetCompletionCallback(func() {})
+	// docs/adr/0045: the tree's host invokers, handed on before the child's
+	// re-armed invocations start at its first drive.
+	engine.ShareHostInvokersWith(childEngine)
 	// Child sessions in Mesh (SCE_MESH.md; docs/adr/0043): the router of the
 	// resumed child is owed, not asked here. This machine is being restored, and
 	// its host registers the factory of its children's routers only once the
@@ -485,6 +488,9 @@ func (p *StaticChildMeshPolicy) resumeChildPeer0jStaticMeshRelay(engine *sce.Eng
 		return err
 	}
 	childEngine.SetCompletionCallback(func() {})
+	// docs/adr/0045: the tree's host invokers, handed on before the child's
+	// re-armed invocations start at its first drive.
+	engine.ShareHostInvokersWith(childEngine)
 	// Child sessions in Mesh (SCE_MESH.md; docs/adr/0043): the router of the
 	// resumed child is owed, not asked here. This machine is being restored, and
 	// its host registers the factory of its children's routers only once the
@@ -719,6 +725,9 @@ func (p *StaticChildMeshPolicy) ExecutePendingInvokes(engine *sce.Engine[StaticC
 			// because the host advances the engine it holds, not the ones that
 			// engine invoked.
 			childEngine.SetClock(engine.Clock())
+			// docs/adr/0045: the tree's host invokers serve the child, whose host-run
+			// invocations name it by its session id.
+			engine.ShareHostInvokersWith(childEngine)
 			childEngine.SetCompletionCallback(func() {})
 			// Child sessions in Mesh (SCE_MESH.md): the child's router, asked of
 			// this machine's factory with the invoke's id and the stem of the
@@ -805,6 +814,9 @@ func (p *StaticChildMeshPolicy) ExecutePendingInvokes(engine *sce.Engine[StaticC
 			// because the host advances the engine it holds, not the ones that
 			// engine invoked.
 			childEngine.SetClock(engine.Clock())
+			// docs/adr/0045: the tree's host invokers serve the child, whose host-run
+			// invocations name it by its session id.
+			engine.ShareHostInvokersWith(childEngine)
 			childEngine.SetCompletionCallback(func() {})
 			// Child sessions in Mesh (SCE_MESH.md): the router of the candidate
 			// this start chose, asked of this machine's factory and installed
@@ -871,6 +883,66 @@ func (p *StaticChildMeshPolicy) TickChildren(engine *sce.Engine[StaticChildMeshS
 			sce.RaiseDoneInvoke("peer", child.DonedataAtFinal(), engine)
 		}
 	}
+}
+
+// SettleChildren settles what every running child sent this machine while it was
+// driven by a delivery (sce.ChildSettler; docs/adr/0045): the events it sent
+// `#_parent` are raised here, and a child that reached its final state raises
+// `done.invoke` once. One body for every drive of a child, so a save at any
+// boundary of this session finds the child's buffer empty.
+func (p *StaticChildMeshPolicy) SettleChildren(engine *sce.Engine[StaticChildMeshState, StaticChildMeshEvent]) {
+	if child := p.childList; child != nil && !p.pendingDoneInvokeList {
+		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "list", engine)
+		if child.IsInFinalState() {
+			p.pendingDoneInvokeList = true
+			// The session ended: its Mesh router is told so.
+			child.DetachMesh()
+			// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
+			// done.invoke.<id>._event.data.
+			sce.RaiseDoneInvoke("list", child.DonedataAtFinal(), engine)
+		}
+	}
+	if child := p.childPeer; child != nil && !p.pendingDoneInvokePeer {
+		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "peer", engine)
+		if child.IsInFinalState() {
+			p.pendingDoneInvokePeer = true
+			// The session ended: its Mesh router is told so.
+			child.DetachMesh()
+			// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
+			// done.invoke.<id>._event.data.
+			sce.RaiseDoneInvoke("peer", child.DonedataAtFinal(), engine)
+		}
+	}
+}
+
+// AdoptHostInvokersInChildren hands the tree's host invokers on to every child
+// this machine holds now (sce.HostInvokeChildren; docs/adr/0045): a child a
+// restore resumed holds children of its own, resumed with it before its parent
+// could hand it anything.
+func (p *StaticChildMeshPolicy) AdoptHostInvokersInChildren(invokers *sce.TreeInvokers) {
+	if tree, ok := p.childList.(sce.HostInvokeTree); ok {
+		tree.AdoptHostInvokers(invokers)
+	}
+	if tree, ok := p.childPeer.(sce.HostInvokeTree); ok {
+		tree.AdoptHostInvokers(invokers)
+	}
+}
+
+// RouteHostInvokeEndToChild delivers the ending of a host-run invocation to the
+// child at or below which the session sessionID is (sce.HostInvokeChildren), and
+// answers false when no running child holds it.
+func (p *StaticChildMeshPolicy) RouteHostInvokeEndToChild(sessionID string, ending sce.HostInvokeEnding) (bool, error) {
+	if tree, ok := p.childList.(sce.HostInvokeTree); ok {
+		if routed, err := tree.RouteHostInvokeEnd(sessionID, ending); routed {
+			return true, err
+		}
+	}
+	if tree, ok := p.childPeer.(sce.HostInvokeTree); ok {
+		if routed, err := tree.RouteHostInvokeEnd(sessionID, ending); routed {
+			return true, err
+		}
+	}
+	return false, nil
 }
 
 // NextChildDeadline reports the nearest deadline among the running children
@@ -987,6 +1059,8 @@ func (w *childEngineWrapperStaticChildMesh_List) DonedataAtFinal() string { retu
 func (w *childEngineWrapperStaticChildMesh_List) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
 func (w *childEngineWrapperStaticChildMesh_List) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
 func (w *childEngineWrapperStaticChildMesh_List) DetachMesh() { w.engine.DetachMesh() }
+func (w *childEngineWrapperStaticChildMesh_List) AdoptHostInvokers(invokers *sce.TreeInvokers) { w.engine.AdoptHostInvokers(invokers) }
+func (w *childEngineWrapperStaticChildMesh_List) RouteHostInvokeEnd(sessionID string, ending sce.HostInvokeEnding) (bool, error) { return w.engine.RouteHostInvokeEnd(sessionID, ending) }
 func (w *childEngineWrapperStaticChildMesh_List) SaveAsSession(wallNowMs int64) (*sce.SavedState, error) { return StaticChildMeshSceSynthInvokeListSaveAt(w.engine, wallNowMs) }
 func (w *childEngineWrapperStaticChildMesh_List) SavedDocument() string { return "static_child_mesh__sce_synth_invoke__list" }
 type childEngineWrapperStaticChildMesh_Peer0jStaticMeshRelay struct {
@@ -1006,6 +1080,8 @@ func (w *childEngineWrapperStaticChildMesh_Peer0jStaticMeshRelay) DonedataAtFina
 func (w *childEngineWrapperStaticChildMesh_Peer0jStaticMeshRelay) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
 func (w *childEngineWrapperStaticChildMesh_Peer0jStaticMeshRelay) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
 func (w *childEngineWrapperStaticChildMesh_Peer0jStaticMeshRelay) DetachMesh() { w.engine.DetachMesh() }
+func (w *childEngineWrapperStaticChildMesh_Peer0jStaticMeshRelay) AdoptHostInvokers(invokers *sce.TreeInvokers) { w.engine.AdoptHostInvokers(invokers) }
+func (w *childEngineWrapperStaticChildMesh_Peer0jStaticMeshRelay) RouteHostInvokeEnd(sessionID string, ending sce.HostInvokeEnding) (bool, error) { return w.engine.RouteHostInvokeEnd(sessionID, ending) }
 func (w *childEngineWrapperStaticChildMesh_Peer0jStaticMeshRelay) SaveAsSession(wallNowMs int64) (*sce.SavedState, error) { return StaticMeshRelaySaveAt(w.engine, wallNowMs) }
 func (w *childEngineWrapperStaticChildMesh_Peer0jStaticMeshRelay) SavedDocument() string { return "static_mesh_relay" }
 

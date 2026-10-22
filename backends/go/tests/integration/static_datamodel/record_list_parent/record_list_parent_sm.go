@@ -1441,6 +1441,9 @@ func (p *RecordListParentPolicy) resumeChildList(engine *sce.Engine[RecordListPa
 		return err
 	}
 	childEngine.SetCompletionCallback(func() {})
+	// docs/adr/0045: the tree's host invokers, handed on before the child's
+	// re-armed invocations start at its first drive.
+	engine.ShareHostInvokersWith(childEngine)
 	// Child sessions in Mesh (SCE_MESH.md; docs/adr/0043): the router of the
 	// resumed child is owed, not asked here. This machine is being restored, and
 	// its host registers the factory of its children's routers only once the
@@ -1708,6 +1711,9 @@ func (p *RecordListParentPolicy) ExecutePendingInvokes(engine *sce.Engine[Record
 			// because the host advances the engine it holds, not the ones that
 			// engine invoked.
 			childEngine.SetClock(engine.Clock())
+			// docs/adr/0045: the tree's host invokers serve the child, whose host-run
+			// invocations name it by its session id.
+			engine.ShareHostInvokersWith(childEngine)
 			childEngine.SetCompletionCallback(func() {})
 			// Child sessions in Mesh (SCE_MESH.md): the child's router, asked of
 			// this machine's factory with the invoke's id and the stem of the
@@ -1759,6 +1765,47 @@ func (p *RecordListParentPolicy) TickChildren(engine *sce.Engine[RecordListParen
 			sce.RaiseDoneInvoke("list", child.DonedataAtFinal(), engine)
 		}
 	}
+}
+
+// SettleChildren settles what every running child sent this machine while it was
+// driven by a delivery (sce.ChildSettler; docs/adr/0045): the events it sent
+// `#_parent` are raised here, and a child that reached its final state raises
+// `done.invoke` once. One body for every drive of a child, so a save at any
+// boundary of this session finds the child's buffer empty.
+func (p *RecordListParentPolicy) SettleChildren(engine *sce.Engine[RecordListParentState, RecordListParentEvent]) {
+	if child := p.childList; child != nil && !p.pendingDoneInvokeList {
+		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "list", engine)
+		if child.IsInFinalState() {
+			p.pendingDoneInvokeList = true
+			// The session ended: its Mesh router is told so.
+			child.DetachMesh()
+			// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
+			// done.invoke.<id>._event.data.
+			sce.RaiseDoneInvoke("list", child.DonedataAtFinal(), engine)
+		}
+	}
+}
+
+// AdoptHostInvokersInChildren hands the tree's host invokers on to every child
+// this machine holds now (sce.HostInvokeChildren; docs/adr/0045): a child a
+// restore resumed holds children of its own, resumed with it before its parent
+// could hand it anything.
+func (p *RecordListParentPolicy) AdoptHostInvokersInChildren(invokers *sce.TreeInvokers) {
+	if tree, ok := p.childList.(sce.HostInvokeTree); ok {
+		tree.AdoptHostInvokers(invokers)
+	}
+}
+
+// RouteHostInvokeEndToChild delivers the ending of a host-run invocation to the
+// child at or below which the session sessionID is (sce.HostInvokeChildren), and
+// answers false when no running child holds it.
+func (p *RecordListParentPolicy) RouteHostInvokeEndToChild(sessionID string, ending sce.HostInvokeEnding) (bool, error) {
+	if tree, ok := p.childList.(sce.HostInvokeTree); ok {
+		if routed, err := tree.RouteHostInvokeEnd(sessionID, ending); routed {
+			return true, err
+		}
+	}
+	return false, nil
 }
 
 // NextChildDeadline reports the nearest deadline among the running children
@@ -1859,6 +1906,8 @@ func (w *childEngineWrapperRecordListParent_List) DonedataAtFinal() string { ret
 func (w *childEngineWrapperRecordListParent_List) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
 func (w *childEngineWrapperRecordListParent_List) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
 func (w *childEngineWrapperRecordListParent_List) DetachMesh() { w.engine.DetachMesh() }
+func (w *childEngineWrapperRecordListParent_List) AdoptHostInvokers(invokers *sce.TreeInvokers) { w.engine.AdoptHostInvokers(invokers) }
+func (w *childEngineWrapperRecordListParent_List) RouteHostInvokeEnd(sessionID string, ending sce.HostInvokeEnding) (bool, error) { return w.engine.RouteHostInvokeEnd(sessionID, ending) }
 func (w *childEngineWrapperRecordListParent_List) SaveAsSession(wallNowMs int64) (*sce.SavedState, error) { return RecordListParentSceSynthInvokeListSaveAt(w.engine, wallNowMs) }
 func (w *childEngineWrapperRecordListParent_List) SavedDocument() string { return "record_list_parent__sce_synth_invoke__list" }
 
@@ -2667,6 +2716,9 @@ func (p *RecordListParentPolicy) ExecuteTransitionContent(source RecordListParen
 	// there to address.
 	if child := p.childList; child != nil && !child.IsInFinalState() {
 		sce.DeliverToChild(child, "record_list.join", eventDataStr)
+		// docs/adr/0045: what the child sent in answer reaches this session within
+		// the delivery, so nothing is between the two when it returns.
+		p.SettleChildren(engine)
 	} else {
 		// W3C SCXML C.1: the invocation is not running, so the session the
 		// target names is not there to reach.
@@ -2736,6 +2788,9 @@ func (p *RecordListParentPolicy) ExecuteTransitionContent(source RecordListParen
 	// there to address.
 	if child := p.childList; child != nil && !child.IsInFinalState() {
 		sce.DeliverToChild(child, "record_list.edit", eventDataStr)
+		// docs/adr/0045: what the child sent in answer reaches this session within
+		// the delivery, so nothing is between the two when it returns.
+		p.SettleChildren(engine)
 	} else {
 		// W3C SCXML C.1: the invocation is not running, so the session the
 		// target names is not there to reach.
@@ -2797,6 +2852,9 @@ func (p *RecordListParentPolicy) ExecuteTransitionContent(source RecordListParen
 	// there to address.
 	if child := p.childList; child != nil && !child.IsInFinalState() {
 		sce.DeliverToChild(child, "record_list.clear", eventDataStr)
+		// docs/adr/0045: what the child sent in answer reaches this session within
+		// the delivery, so nothing is between the two when it returns.
+		p.SettleChildren(engine)
 	} else {
 		// W3C SCXML C.1: the invocation is not running, so the session the
 		// target names is not there to reach.
@@ -2854,6 +2912,9 @@ func (p *RecordListParentPolicy) ExecuteTransitionContent(source RecordListParen
 	// there to address.
 	if child := p.childList; child != nil && !child.IsInFinalState() {
 		sce.DeliverToChild(child, "record_list.retire", eventDataStr)
+		// docs/adr/0045: what the child sent in answer reaches this session within
+		// the delivery, so nothing is between the two when it returns.
+		p.SettleChildren(engine)
 	} else {
 		// W3C SCXML C.1: the invocation is not running, so the session the
 		// target names is not there to reach.
@@ -2907,6 +2968,9 @@ func (p *RecordListParentPolicy) ExecuteTransitionContent(source RecordListParen
 	// there to address.
 	if child := p.childList; child != nil && !child.IsInFinalState() {
 		sce.DeliverToChild(child, "record_list.role", eventDataStr)
+		// docs/adr/0045: what the child sent in answer reaches this session within
+		// the delivery, so nothing is between the two when it returns.
+		p.SettleChildren(engine)
 	} else {
 		// W3C SCXML C.1: the invocation is not running, so the session the
 		// target names is not there to reach.
@@ -2964,6 +3028,9 @@ func (p *RecordListParentPolicy) ExecuteTransitionContent(source RecordListParen
 	// there to address.
 	if child := p.childList; child != nil && !child.IsInFinalState() {
 		sce.DeliverToChild(child, "record_list.room", eventDataStr)
+		// docs/adr/0045: what the child sent in answer reaches this session within
+		// the delivery, so nothing is between the two when it returns.
+		p.SettleChildren(engine)
 	} else {
 		// W3C SCXML C.1: the invocation is not running, so the session the
 		// target names is not there to reach.
@@ -3037,6 +3104,9 @@ func (p *RecordListParentPolicy) ExecuteTransitionContent(source RecordListParen
 	// there to address.
 	if child := p.childList; child != nil && !child.IsInFinalState() {
 		sce.DeliverToChild(child, "record_list.write", eventDataStr)
+		// docs/adr/0045: what the child sent in answer reaches this session within
+		// the delivery, so nothing is between the two when it returns.
+		p.SettleChildren(engine)
 	} else {
 		// W3C SCXML C.1: the invocation is not running, so the session the
 		// target names is not there to reach.
@@ -3106,6 +3176,9 @@ func (p *RecordListParentPolicy) ExecuteTransitionContent(source RecordListParen
 	// there to address.
 	if child := p.childList; child != nil && !child.IsInFinalState() {
 		sce.DeliverToChild(child, "record_list.supersede", eventDataStr)
+		// docs/adr/0045: what the child sent in answer reaches this session within
+		// the delivery, so nothing is between the two when it returns.
+		p.SettleChildren(engine)
 	} else {
 		// W3C SCXML C.1: the invocation is not running, so the session the
 		// target names is not there to reach.

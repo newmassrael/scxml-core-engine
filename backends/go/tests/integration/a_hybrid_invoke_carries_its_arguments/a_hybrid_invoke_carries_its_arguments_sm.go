@@ -718,6 +718,9 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) ExecutePendingInvokes(engine *s
 			// because the host advances the engine it holds, not the ones that
 			// engine invoked.
 			childEngine.SetClock(engine.Clock())
+			// docs/adr/0045: the tree's host invokers serve the child, whose host-run
+			// invocations name it by its session id.
+			engine.ShareHostInvokersWith(childEngine)
 			childEngine.SetCompletionCallback(func() {})
 			// Child sessions in Mesh (SCE_MESH.md): the router of the candidate
 			// this start chose, asked of this machine's factory and installed
@@ -789,6 +792,9 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) ExecutePendingInvokes(engine *s
 			// because the host advances the engine it holds, not the ones that
 			// engine invoked.
 			childEngine.SetClock(engine.Clock())
+			// docs/adr/0045: the tree's host invokers serve the child, whose host-run
+			// invocations name it by its session id.
+			engine.ShareHostInvokersWith(childEngine)
 			childEngine.SetCompletionCallback(func() {})
 			// Child sessions in Mesh (SCE_MESH.md): the router of the candidate
 			// this start chose, asked of this machine's factory and installed
@@ -931,6 +937,9 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) ExecutePendingInvokes(engine *s
 			// because the host advances the engine it holds, not the ones that
 			// engine invoked.
 			childEngine.SetClock(engine.Clock())
+			// docs/adr/0045: the tree's host invokers serve the child, whose host-run
+			// invocations name it by its session id.
+			engine.ShareHostInvokersWith(childEngine)
 			childEngine.SetCompletionCallback(func() {})
 			// Child sessions in Mesh (SCE_MESH.md): the router of the candidate
 			// this start chose, asked of this machine's factory and installed
@@ -1041,6 +1050,9 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) ExecutePendingInvokes(engine *s
 			// because the host advances the engine it holds, not the ones that
 			// engine invoked.
 			childEngine.SetClock(engine.Clock())
+			// docs/adr/0045: the tree's host invokers serve the child, whose host-run
+			// invocations name it by its session id.
+			engine.ShareHostInvokersWith(childEngine)
 			childEngine.SetCompletionCallback(func() {})
 			// Child sessions in Mesh (SCE_MESH.md): the router of the candidate
 			// this start chose, asked of this machine's factory and installed
@@ -1175,6 +1187,9 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) ExecutePendingInvokes(engine *s
 			// because the host advances the engine it holds, not the ones that
 			// engine invoked.
 			childEngine.SetClock(engine.Clock())
+			// docs/adr/0045: the tree's host invokers serve the child, whose host-run
+			// invocations name it by its session id.
+			engine.ShareHostInvokersWith(childEngine)
 			childEngine.SetCompletionCallback(func() {})
 			// Child sessions in Mesh (SCE_MESH.md): the router of the candidate
 			// this start chose, asked of this machine's factory and installed
@@ -1265,6 +1280,9 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) ExecutePendingInvokes(engine *s
 			// because the host advances the engine it holds, not the ones that
 			// engine invoked.
 			childEngine.SetClock(engine.Clock())
+			// docs/adr/0045: the tree's host invokers serve the child, whose host-run
+			// invocations name it by its session id.
+			engine.ShareHostInvokersWith(childEngine)
 			childEngine.SetCompletionCallback(func() {})
 			// Child sessions in Mesh (SCE_MESH.md): the router of the candidate
 			// this start chose, asked of this machine's factory and installed
@@ -1348,6 +1366,85 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) TickChildren(engine *sce.Engine
 			sce.RaiseDoneInvoke("_invoke_2", child.DonedataAtFinal(), engine)
 		}
 	}
+}
+
+// SettleChildren settles what every running child sent this machine while it was
+// driven by a delivery (sce.ChildSettler; docs/adr/0045): the events it sent
+// `#_parent` are raised here, and a child that reached its final state raises
+// `done.invoke` once. One body for every drive of a child, so a save at any
+// boundary of this session finds the child's buffer empty.
+func (p *AHybridInvokeCarriesItsArgumentsPolicy) SettleChildren(engine *sce.Engine[AHybridInvokeCarriesItsArgumentsState, AHybridInvokeCarriesItsArgumentsEvent]) {
+	if child := p.childInvoke0; child != nil && !p.pendingDoneInvokeInvoke0 {
+		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "_invoke_0", engine)
+		if child.IsInFinalState() {
+			p.pendingDoneInvokeInvoke0 = true
+			// The session ended: its Mesh router is told so.
+			child.DetachMesh()
+			// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
+			// done.invoke.<id>._event.data.
+			sce.RaiseDoneInvoke("_invoke_0", child.DonedataAtFinal(), engine)
+		}
+	}
+	if child := p.childInvoke1; child != nil && !p.pendingDoneInvokeInvoke1 {
+		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "_invoke_1", engine)
+		if child.IsInFinalState() {
+			p.pendingDoneInvokeInvoke1 = true
+			// The session ended: its Mesh router is told so.
+			child.DetachMesh()
+			// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
+			// done.invoke.<id>._event.data.
+			sce.RaiseDoneInvoke("_invoke_1", child.DonedataAtFinal(), engine)
+		}
+	}
+	if child := p.childInvoke2; child != nil && !p.pendingDoneInvokeInvoke2 {
+		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "_invoke_2", engine)
+		if child.IsInFinalState() {
+			p.pendingDoneInvokeInvoke2 = true
+			// The session ended: its Mesh router is told so.
+			child.DetachMesh()
+			// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
+			// done.invoke.<id>._event.data.
+			sce.RaiseDoneInvoke("_invoke_2", child.DonedataAtFinal(), engine)
+		}
+	}
+}
+
+// AdoptHostInvokersInChildren hands the tree's host invokers on to every child
+// this machine holds now (sce.HostInvokeChildren; docs/adr/0045): a child a
+// restore resumed holds children of its own, resumed with it before its parent
+// could hand it anything.
+func (p *AHybridInvokeCarriesItsArgumentsPolicy) AdoptHostInvokersInChildren(invokers *sce.TreeInvokers) {
+	if tree, ok := p.childInvoke0.(sce.HostInvokeTree); ok {
+		tree.AdoptHostInvokers(invokers)
+	}
+	if tree, ok := p.childInvoke1.(sce.HostInvokeTree); ok {
+		tree.AdoptHostInvokers(invokers)
+	}
+	if tree, ok := p.childInvoke2.(sce.HostInvokeTree); ok {
+		tree.AdoptHostInvokers(invokers)
+	}
+}
+
+// RouteHostInvokeEndToChild delivers the ending of a host-run invocation to the
+// child at or below which the session sessionID is (sce.HostInvokeChildren), and
+// answers false when no running child holds it.
+func (p *AHybridInvokeCarriesItsArgumentsPolicy) RouteHostInvokeEndToChild(sessionID string, ending sce.HostInvokeEnding) (bool, error) {
+	if tree, ok := p.childInvoke0.(sce.HostInvokeTree); ok {
+		if routed, err := tree.RouteHostInvokeEnd(sessionID, ending); routed {
+			return true, err
+		}
+	}
+	if tree, ok := p.childInvoke1.(sce.HostInvokeTree); ok {
+		if routed, err := tree.RouteHostInvokeEnd(sessionID, ending); routed {
+			return true, err
+		}
+	}
+	if tree, ok := p.childInvoke2.(sce.HostInvokeTree); ok {
+		if routed, err := tree.RouteHostInvokeEnd(sessionID, ending); routed {
+			return true, err
+		}
+	}
+	return false, nil
 }
 
 // NextChildDeadline reports the nearest deadline among the running children
@@ -1447,6 +1544,8 @@ func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke00jKeeper) Don
 func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke00jKeeper) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
 func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke00jKeeper) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
 func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke00jKeeper) DetachMesh() { w.engine.DetachMesh() }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke00jKeeper) AdoptHostInvokers(invokers *sce.TreeInvokers) { w.engine.AdoptHostInvokers(invokers) }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke00jKeeper) RouteHostInvokeEnd(sessionID string, ending sce.HostInvokeEnding) (bool, error) { return w.engine.RouteHostInvokeEnd(sessionID, ending) }
 type childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke00jBare struct {
 	engine *sce.Engine[BareState, BareEvent]
 	policy *BarePolicy
@@ -1464,6 +1563,8 @@ func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke00jBare) Doned
 func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke00jBare) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
 func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke00jBare) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
 func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke00jBare) DetachMesh() { w.engine.DetachMesh() }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke00jBare) AdoptHostInvokers(invokers *sce.TreeInvokers) { w.engine.AdoptHostInvokers(invokers) }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke00jBare) RouteHostInvokeEnd(sessionID string, ending sce.HostInvokeEnding) (bool, error) { return w.engine.RouteHostInvokeEnd(sessionID, ending) }
 type childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke10jKeeper struct {
 	engine *sce.Engine[KeeperState, KeeperEvent]
 	policy *KeeperPolicy
@@ -1481,6 +1582,8 @@ func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke10jKeeper) Don
 func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke10jKeeper) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
 func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke10jKeeper) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
 func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke10jKeeper) DetachMesh() { w.engine.DetachMesh() }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke10jKeeper) AdoptHostInvokers(invokers *sce.TreeInvokers) { w.engine.AdoptHostInvokers(invokers) }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke10jKeeper) RouteHostInvokeEnd(sessionID string, ending sce.HostInvokeEnding) (bool, error) { return w.engine.RouteHostInvokeEnd(sessionID, ending) }
 type childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke10jBare struct {
 	engine *sce.Engine[BareState, BareEvent]
 	policy *BarePolicy
@@ -1498,6 +1601,8 @@ func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke10jBare) Doned
 func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke10jBare) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
 func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke10jBare) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
 func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke10jBare) DetachMesh() { w.engine.DetachMesh() }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke10jBare) AdoptHostInvokers(invokers *sce.TreeInvokers) { w.engine.AdoptHostInvokers(invokers) }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke10jBare) RouteHostInvokeEnd(sessionID string, ending sce.HostInvokeEnding) (bool, error) { return w.engine.RouteHostInvokeEnd(sessionID, ending) }
 type childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke20jKeeper struct {
 	engine *sce.Engine[KeeperState, KeeperEvent]
 	policy *KeeperPolicy
@@ -1515,6 +1620,8 @@ func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke20jKeeper) Don
 func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke20jKeeper) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
 func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke20jKeeper) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
 func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke20jKeeper) DetachMesh() { w.engine.DetachMesh() }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke20jKeeper) AdoptHostInvokers(invokers *sce.TreeInvokers) { w.engine.AdoptHostInvokers(invokers) }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke20jKeeper) RouteHostInvokeEnd(sessionID string, ending sce.HostInvokeEnding) (bool, error) { return w.engine.RouteHostInvokeEnd(sessionID, ending) }
 type childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke20jBare struct {
 	engine *sce.Engine[BareState, BareEvent]
 	policy *BarePolicy
@@ -1532,6 +1639,8 @@ func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke20jBare) Doned
 func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke20jBare) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
 func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke20jBare) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
 func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke20jBare) DetachMesh() { w.engine.DetachMesh() }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke20jBare) AdoptHostInvokers(invokers *sce.TreeInvokers) { w.engine.AdoptHostInvokers(invokers) }
+func (w *childEngineWrapperAHybridInvokeCarriesItsArguments_Invoke20jBare) RouteHostInvokeEnd(sessionID string, ending sce.HostInvokeEnding) (bool, error) { return w.engine.RouteHostInvokeEnd(sessionID, ending) }
 
 
 // DeliverToParent delivers a delayed `<send target="#_parent">` whose wait is

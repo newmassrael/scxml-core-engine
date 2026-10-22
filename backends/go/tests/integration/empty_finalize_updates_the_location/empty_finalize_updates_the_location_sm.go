@@ -637,6 +637,9 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecutePendingInvokes(engine *sc
 			// because the host advances the engine it holds, not the ones that
 			// engine invoked.
 			childEngine.SetClock(engine.Clock())
+			// docs/adr/0045: the tree's host invokers serve the child, whose host-run
+			// invocations name it by its session id.
+			engine.ShareHostInvokersWith(childEngine)
 			childEngine.SetCompletionCallback(func() {})
 			// Child sessions in Mesh (SCE_MESH.md): the child's router, asked of
 			// this machine's factory with the invoke's id and the stem of the
@@ -728,6 +731,9 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecutePendingInvokes(engine *sc
 			// because the host advances the engine it holds, not the ones that
 			// engine invoked.
 			childEngine.SetClock(engine.Clock())
+			// docs/adr/0045: the tree's host invokers serve the child, whose host-run
+			// invocations name it by its session id.
+			engine.ShareHostInvokersWith(childEngine)
 			childEngine.SetCompletionCallback(func() {})
 			// Child sessions in Mesh (SCE_MESH.md): the child's router, asked of
 			// this machine's factory with the invoke's id and the stem of the
@@ -819,6 +825,9 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecutePendingInvokes(engine *sc
 			// because the host advances the engine it holds, not the ones that
 			// engine invoked.
 			childEngine.SetClock(engine.Clock())
+			// docs/adr/0045: the tree's host invokers serve the child, whose host-run
+			// invocations name it by its session id.
+			engine.ShareHostInvokersWith(childEngine)
 			childEngine.SetCompletionCallback(func() {})
 			// Child sessions in Mesh (SCE_MESH.md): the child's router, asked of
 			// this machine's factory with the invoke's id and the stem of the
@@ -904,6 +913,85 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) TickChildren(engine *sce.Engine[
 			sce.RaiseDoneInvoke("inv_unmatched", child.DonedataAtFinal(), engine)
 		}
 	}
+}
+
+// SettleChildren settles what every running child sent this machine while it was
+// driven by a delivery (sce.ChildSettler; docs/adr/0045): the events it sent
+// `#_parent` are raised here, and a child that reached its final state raises
+// `done.invoke` once. One body for every drive of a child, so a save at any
+// boundary of this session finds the child's buffer empty.
+func (p *EmptyFinalizeUpdatesTheLocationPolicy) SettleChildren(engine *sce.Engine[EmptyFinalizeUpdatesTheLocationState, EmptyFinalizeUpdatesTheLocationEvent]) {
+	if child := p.childInvEmpty; child != nil && !p.pendingDoneInvokeInvEmpty {
+		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "inv_empty", engine)
+		if child.IsInFinalState() {
+			p.pendingDoneInvokeInvEmpty = true
+			// The session ended: its Mesh router is told so.
+			child.DetachMesh()
+			// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
+			// done.invoke.<id>._event.data.
+			sce.RaiseDoneInvoke("inv_empty", child.DonedataAtFinal(), engine)
+		}
+	}
+	if child := p.childInvAbsent; child != nil && !p.pendingDoneInvokeInvAbsent {
+		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "inv_absent", engine)
+		if child.IsInFinalState() {
+			p.pendingDoneInvokeInvAbsent = true
+			// The session ended: its Mesh router is told so.
+			child.DetachMesh()
+			// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
+			// done.invoke.<id>._event.data.
+			sce.RaiseDoneInvoke("inv_absent", child.DonedataAtFinal(), engine)
+		}
+	}
+	if child := p.childInvUnmatched; child != nil && !p.pendingDoneInvokeInvUnmatched {
+		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "inv_unmatched", engine)
+		if child.IsInFinalState() {
+			p.pendingDoneInvokeInvUnmatched = true
+			// The session ended: its Mesh router is told so.
+			child.DetachMesh()
+			// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
+			// done.invoke.<id>._event.data.
+			sce.RaiseDoneInvoke("inv_unmatched", child.DonedataAtFinal(), engine)
+		}
+	}
+}
+
+// AdoptHostInvokersInChildren hands the tree's host invokers on to every child
+// this machine holds now (sce.HostInvokeChildren; docs/adr/0045): a child a
+// restore resumed holds children of its own, resumed with it before its parent
+// could hand it anything.
+func (p *EmptyFinalizeUpdatesTheLocationPolicy) AdoptHostInvokersInChildren(invokers *sce.TreeInvokers) {
+	if tree, ok := p.childInvEmpty.(sce.HostInvokeTree); ok {
+		tree.AdoptHostInvokers(invokers)
+	}
+	if tree, ok := p.childInvAbsent.(sce.HostInvokeTree); ok {
+		tree.AdoptHostInvokers(invokers)
+	}
+	if tree, ok := p.childInvUnmatched.(sce.HostInvokeTree); ok {
+		tree.AdoptHostInvokers(invokers)
+	}
+}
+
+// RouteHostInvokeEndToChild delivers the ending of a host-run invocation to the
+// child at or below which the session sessionID is (sce.HostInvokeChildren), and
+// answers false when no running child holds it.
+func (p *EmptyFinalizeUpdatesTheLocationPolicy) RouteHostInvokeEndToChild(sessionID string, ending sce.HostInvokeEnding) (bool, error) {
+	if tree, ok := p.childInvEmpty.(sce.HostInvokeTree); ok {
+		if routed, err := tree.RouteHostInvokeEnd(sessionID, ending); routed {
+			return true, err
+		}
+	}
+	if tree, ok := p.childInvAbsent.(sce.HostInvokeTree); ok {
+		if routed, err := tree.RouteHostInvokeEnd(sessionID, ending); routed {
+			return true, err
+		}
+	}
+	if tree, ok := p.childInvUnmatched.(sce.HostInvokeTree); ok {
+		if routed, err := tree.RouteHostInvokeEnd(sessionID, ending); routed {
+			return true, err
+		}
+	}
+	return false, nil
 }
 
 // NextChildDeadline reports the nearest deadline among the running children
@@ -1100,6 +1188,8 @@ func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvEmpty) DonedataAtF
 func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvEmpty) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
 func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvEmpty) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
 func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvEmpty) DetachMesh() { w.engine.DetachMesh() }
+func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvEmpty) AdoptHostInvokers(invokers *sce.TreeInvokers) { w.engine.AdoptHostInvokers(invokers) }
+func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvEmpty) RouteHostInvokeEnd(sessionID string, ending sce.HostInvokeEnding) (bool, error) { return w.engine.RouteHostInvokeEnd(sessionID, ending) }
 type childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvAbsent struct {
 	engine *sce.Engine[EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentState, EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentEvent]
 	policy *EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentPolicy
@@ -1117,6 +1207,8 @@ func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvAbsent) DonedataAt
 func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvAbsent) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
 func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvAbsent) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
 func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvAbsent) DetachMesh() { w.engine.DetachMesh() }
+func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvAbsent) AdoptHostInvokers(invokers *sce.TreeInvokers) { w.engine.AdoptHostInvokers(invokers) }
+func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvAbsent) RouteHostInvokeEnd(sessionID string, ending sce.HostInvokeEnding) (bool, error) { return w.engine.RouteHostInvokeEnd(sessionID, ending) }
 type childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvUnmatched struct {
 	engine *sce.Engine[EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedState, EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedEvent]
 	policy *EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedPolicy
@@ -1134,6 +1226,8 @@ func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvUnmatched) Donedat
 func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvUnmatched) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
 func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvUnmatched) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
 func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvUnmatched) DetachMesh() { w.engine.DetachMesh() }
+func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvUnmatched) AdoptHostInvokers(invokers *sce.TreeInvokers) { w.engine.AdoptHostInvokers(invokers) }
+func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvUnmatched) RouteHostInvokeEnd(sessionID string, ending sce.HostInvokeEnding) (bool, error) { return w.engine.RouteHostInvokeEnd(sessionID, ending) }
 
 
 // DeliverToParent delivers a delayed `<send target="#_parent">` whose wait is

@@ -284,6 +284,9 @@ func (p *AutoforwardDequeuePointPolicy) ExecutePendingInvokes(engine *sce.Engine
 			// because the host advances the engine it holds, not the ones that
 			// engine invoked.
 			childEngine.SetClock(engine.Clock())
+			// docs/adr/0045: the tree's host invokers serve the child, whose host-run
+			// invocations name it by its session id.
+			engine.ShareHostInvokersWith(childEngine)
 			childEngine.SetCompletionCallback(func() {})
 			// Child sessions in Mesh (SCE_MESH.md): the child's router, asked of
 			// this machine's factory with the invoke's id and the stem of the
@@ -335,6 +338,47 @@ func (p *AutoforwardDequeuePointPolicy) TickChildren(engine *sce.Engine[Autoforw
 			sce.RaiseDoneInvoke("inv_probe", child.DonedataAtFinal(), engine)
 		}
 	}
+}
+
+// SettleChildren settles what every running child sent this machine while it was
+// driven by a delivery (sce.ChildSettler; docs/adr/0045): the events it sent
+// `#_parent` are raised here, and a child that reached its final state raises
+// `done.invoke` once. One body for every drive of a child, so a save at any
+// boundary of this session finds the child's buffer empty.
+func (p *AutoforwardDequeuePointPolicy) SettleChildren(engine *sce.Engine[AutoforwardDequeuePointState, AutoforwardDequeuePointEvent]) {
+	if child := p.childInvProbe; child != nil && !p.pendingDoneInvokeInvProbe {
+		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "inv_probe", engine)
+		if child.IsInFinalState() {
+			p.pendingDoneInvokeInvProbe = true
+			// The session ended: its Mesh router is told so.
+			child.DetachMesh()
+			// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
+			// done.invoke.<id>._event.data.
+			sce.RaiseDoneInvoke("inv_probe", child.DonedataAtFinal(), engine)
+		}
+	}
+}
+
+// AdoptHostInvokersInChildren hands the tree's host invokers on to every child
+// this machine holds now (sce.HostInvokeChildren; docs/adr/0045): a child a
+// restore resumed holds children of its own, resumed with it before its parent
+// could hand it anything.
+func (p *AutoforwardDequeuePointPolicy) AdoptHostInvokersInChildren(invokers *sce.TreeInvokers) {
+	if tree, ok := p.childInvProbe.(sce.HostInvokeTree); ok {
+		tree.AdoptHostInvokers(invokers)
+	}
+}
+
+// RouteHostInvokeEndToChild delivers the ending of a host-run invocation to the
+// child at or below which the session sessionID is (sce.HostInvokeChildren), and
+// answers false when no running child holds it.
+func (p *AutoforwardDequeuePointPolicy) RouteHostInvokeEndToChild(sessionID string, ending sce.HostInvokeEnding) (bool, error) {
+	if tree, ok := p.childInvProbe.(sce.HostInvokeTree); ok {
+		if routed, err := tree.RouteHostInvokeEnd(sessionID, ending); routed {
+			return true, err
+		}
+	}
+	return false, nil
 }
 
 // NextChildDeadline reports the nearest deadline among the running children
@@ -455,6 +499,8 @@ func (w *childEngineWrapperAutoforwardDequeuePoint_InvProbe) DonedataAtFinal() s
 func (w *childEngineWrapperAutoforwardDequeuePoint_InvProbe) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
 func (w *childEngineWrapperAutoforwardDequeuePoint_InvProbe) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
 func (w *childEngineWrapperAutoforwardDequeuePoint_InvProbe) DetachMesh() { w.engine.DetachMesh() }
+func (w *childEngineWrapperAutoforwardDequeuePoint_InvProbe) AdoptHostInvokers(invokers *sce.TreeInvokers) { w.engine.AdoptHostInvokers(invokers) }
+func (w *childEngineWrapperAutoforwardDequeuePoint_InvProbe) RouteHostInvokeEnd(sessionID string, ending sce.HostInvokeEnding) (bool, error) { return w.engine.RouteHostInvokeEnd(sessionID, ending) }
 
 
 // DeliverToParent delivers a delayed `<send target="#_parent">` whose wait is
@@ -871,6 +917,9 @@ func (p *AutoforwardDequeuePointPolicy) ExecuteTransitionContent(source Autoforw
 	// there to address.
 	if child := p.childInvProbe; child != nil && !child.IsInFinalState() {
 		sce.DeliverToChild(child, "mark", eventDataStr)
+		// docs/adr/0045: what the child sent in answer reaches this session within
+		// the delivery, so nothing is between the two when it returns.
+		p.SettleChildren(engine)
 	} else {
 		// W3C SCXML C.1: the invocation is not running, so the session the
 		// target names is not there to reach.

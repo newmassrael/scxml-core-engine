@@ -347,6 +347,17 @@ type HostInvokeRequest struct {
 	EventData string
 	// Content is inline `<content>`, empty when the document carried none.
 	Content string
+	// SessionID is the session that started the invocation (`_sessionid`;
+	// docs/adr/0045): the root the host built, or a child session of it,
+	// `<parent>.<invokeid>`. The engine fills it as it starts the invocation.
+	//
+	// The invokers a host registers serve the whole tree of sessions, so a host
+	// that means to serve a type for part of it only refuses the others by this id
+	// (HostInvokeResponse.Refusal); there is no second registration. It is also
+	// the id a host hands back with the token to end the invocation
+	// (Engine.CompleteHostInvokeIn), which reaches the session that started it
+	// wherever it stands in the tree.
+	SessionID string
 	// Restarted says this start is a restore starting the invocation again: the
 	// machine saved while it ran, and the process the host began for it did not
 	// outlive the one that saved. What the host does with that is its business; a
@@ -432,17 +443,21 @@ type HostInvokeHandler func(HostInvokeEvent) *HostInvokeResponse
 // Registering twice for one type replaces the handler, for the reason the send
 // half does. Panics when processorType is under ReservedTypePrefix, for the
 // reason RegisterEventProcessor does.
+//
+// What is registered serves every session of the tree this machine is the root
+// of, as the set of invocable types is the processor's and not one session's
+// (docs/adr/0045): a child session's `<invoke>` of the type is run by the same
+// handler, and each request names the session that made it
+// (HostInvokeRequest.SessionID). One registered after a child started serves the
+// child too.
 func (e *Engine[S, E]) RegisterInvoker(processorType string, handler HostInvokeHandler) {
 	refuseReservedType("RegisterInvoker", processorType)
-	if e.hostInvokers == nil {
-		e.hostInvokers = make(map[string]HostInvokeHandler)
-	}
-	e.hostInvokers[processorType] = handler
+	e.tree().handlers[processorType] = handler
 }
 
 // HasInvoker reports whether an invoker is registered for processorType.
 func (e *Engine[S, E]) HasInvoker(processorType string) bool {
-	_, ok := e.hostInvokers[processorType]
+	_, ok := e.invokerFor(processorType)
 	return ok
 }
 
@@ -467,7 +482,7 @@ func (e *Engine[S, E]) HasInvoker(processorType string) bool {
 // true because the report has been made; false is kept for "no invoker ran
 // it".
 func (e *Engine[S, E]) PerformHostInvoke(request HostInvokeRequest) bool {
-	handler, ok := e.hostInvokers[request.ProcessorType]
+	handler, ok := e.invokerFor(request.ProcessorType)
 	if !ok {
 		return false
 	}
@@ -498,6 +513,9 @@ func (e *Engine[S, E]) startHostInvoke(handler HostInvokeHandler, request HostIn
 	token := e.nextHostInvokeToken
 	e.nextHostInvokeToken++
 	request.Token = token
+	// docs/adr/0045: the session that starts it, which the host may serve or
+	// refuse it by, and names again to end it.
+	request.SessionID = e.sessionID()
 	if e.startedHostInvokes == nil {
 		e.startedHostInvokes = make(map[hostInvokeKey]startedHostInvoke)
 	}
@@ -653,7 +671,7 @@ func (e *Engine[S, E]) CancelHostInvoke(processorType, invokeID string) bool {
 }
 
 func (e *Engine[S, E]) deliverHostInvokeCancel(processorType, invokeID string, token uint64) bool {
-	handler, ok := e.hostInvokers[processorType]
+	handler, ok := e.invokerFor(processorType)
 	if !ok {
 		return false
 	}
