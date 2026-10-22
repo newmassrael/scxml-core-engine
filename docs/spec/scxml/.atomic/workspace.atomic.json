@@ -491,6 +491,10 @@
           "file": "backends/rust/runtime/src/helpers/microstep.rs",
           "symbol": "walk_entry",
           "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/saved_state.go",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -6146,6 +6150,10 @@
           "file": "backends/python/runtime/sce_runtime/invoke.py",
           "symbol": "origin",
           "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/saved_state.go",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -9976,6 +9984,10 @@
         {
           "file": "sce-build/src/forge/static_lowering.rs",
           "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/saved_state.go",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -11709,6 +11721,10 @@
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "wireChild",
           "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/saved_state.go",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -12223,6 +12239,10 @@
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "sharedHostInvokers",
           "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/saved_state.go",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
