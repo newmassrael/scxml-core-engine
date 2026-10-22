@@ -503,6 +503,10 @@
         {
           "file": "backends/go/runtime/engine_saved.go",
           "kind": "references"
+        },
+        {
+          "file": "sce/include/core/ConfigurationHelper.h",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -5785,6 +5789,11 @@
         {
           "file": "backends/python/runtime/sce_runtime/engine.py",
           "symbol": "_raise_host_invoke_failure",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "raiseHostInvokeFailure",
           "kind": "references"
         }
       ],
@@ -11782,6 +11791,16 @@
           "file": "backends/go/runtime/engine.go",
           "symbol": "ChildSettler",
           "kind": "references"
+        },
+        {
+          "file": "sce/include/core/HostProcessor.h",
+          "symbol": "HostInvokeEndOutcome",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "startRestoredHostInvokes",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -12317,6 +12336,21 @@
         {
           "file": "backends/python/runtime/sce_runtime/engine.py",
           "symbol": "_start_host_invoke",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/core/HostProcessor.h",
+          "symbol": "TreeInvokers",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "invokers_",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "startHostInvoke",
           "kind": "references"
         }
       ],
@@ -14303,6 +14337,11 @@
         {
           "file": "backends/go/runtime/helpers.go",
           "symbol": "PayloadReading",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "raiseHostInvokeFailure",
           "kind": "references"
         }
       ],

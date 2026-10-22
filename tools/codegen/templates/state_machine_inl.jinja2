@@ -163,9 +163,16 @@ public:
     {# still needs `ensureSessionId()` so `sessionId_.has_value()` calls in    #}
     {# the remote-invoke onentry block compile. Mirrors the paired field      #}
     {# declaration in `state_machine.jinja2` (`or model.invokes | scxml_remote`). #}
-    {% if model.needs_script_engine or model.invokes | scxml or model.invokes | hybrid or model.invokes | scxml_remote %}
+    {# docs/adr/0045: also a machine that holds a session id for a request to a host invoker
+       or a saved state to name its session by; the condition `holds_session_id` is in
+       `state_machine.jinja2`. #}
+    {% if model.needs_script_engine or model.invokes | scxml or model.invokes | hybrid or model.invokes | scxml_remote or static_saved_shape or model.host_invoker_types %}
     {% include 'scriptengine_helpers.jinja2' %}
     {% endif %}
+{% if static_saved_shape %}
+
+{% include 'saved_policy.jinja2' %}
+{% endif %}
 
     {% include 'utility_methods.jinja2' %}
 

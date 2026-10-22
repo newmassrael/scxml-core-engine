@@ -331,9 +331,15 @@ public:
                          std::shared_ptr<const HostSendRequest> hostSend = nullptr, std::string origin = {},
                          std::shared_ptr<const ScheduledRoute> route = nullptr) {
         std::string actualSendId = sendId.empty() ? generateUniqueSendId() : sendId;
+        // An id the parser numbered (`__send_<n>`, docs/adr/0045) names an element, not a
+        // send, so no author can `<cancel>` it and two waiting sends of one element share
+        // it: neither replaces the other nor is found by it.
+        const bool addressable = !isElementId(actualSendId);
 
         // §scxml-6.3: Cancel existing event with same sendId (ACTUAL removal)
-        cancel(actualSendId);
+        if (addressable) {
+            cancel(actualSendId);
+        }
 
         // Create and insert new entry
         uint64_t seqNum = sequenceCounter_++;
@@ -344,9 +350,18 @@ public:
 
         OrderKey key{fireTime, seqNum};
         auto it = queue_.emplace(key, entry);
-        sendIdIndex_[actualSendId] = it.first;
+        if (addressable) {
+            sendIdIndex_[actualSendId] = it.first;
+        }
 
         return actualSendId;
+    }
+
+    /// Whether `sendId` is one the parser numbered for a `<send>` that names none
+    /// (`__send_<n>`): the id of the element, the same text on every backend, which a saved
+    /// state writes for a waiting send.
+    static bool isElementId(const std::string &sendId) {
+        return sendId.rfind("__send_", 0) == 0;
     }
 
     /**
@@ -541,6 +556,22 @@ public:
 
     size_t size() const {
         return queue_.size();
+    }
+
+    /**
+     * @brief Every entry still queued, in the order the queue would deliver them
+     *
+     * By fire time, and by the order they were scheduled in among those due at the
+     * same moment: what a save writes (docs/adr/0045). Copies, so the queue is
+     * left as it is.
+     */
+    std::vector<ScheduledEntry> pending() const {
+        std::vector<ScheduledEntry> entries;
+        entries.reserve(queue_.size());
+        for (const auto &[key, entry] : queue_) {
+            entries.push_back(*entry);
+        }
+        return entries;
     }
 
     void clear() {
@@ -756,6 +787,16 @@ public:
 
     bool cancelEvent(const std::string &sendId) {
         return core_.cancel(sendId);
+    }
+
+    /**
+     * @brief Every entry still queued, in the order the queue would deliver them
+     *        — see `SchedulerQueueCore::pending`
+     */
+    using PendingEntry = typename SchedulerQueueCore<EventType, std::string>::ScheduledEntry;
+
+    std::vector<PendingEntry> pending() const {
+        return core_.pending();
     }
 
     bool isCancelled(const std::string &sendId) const {

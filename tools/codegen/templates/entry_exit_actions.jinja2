@@ -51,24 +51,10 @@
 #}
 {%- import '_macros/sce_map_marker.jinja2' as sce_map %}
 {%- import '_macros/sce_annotation_marker.jinja2' as annot %}
-{#- W3C SCXML 6.4.1: an invoke's generated id goes to `idlocation` when the
-    element is evaluated, as an assignment to a location expression — the one
-    `<assign>` makes, so a member path lands. A location that cannot take it
-    raises error.execution and the invocation is not started (W3C SCXML
-    5.9.2); `flag` names the bool the caller guards the start with. #}
-{%- macro store_invoke_idlocation(invoke_info, id_expr, flag, indent) %}
-{{ indent }}bool {{ flag }} = true;
-{%- if invoke_info.idlocation %}
-{{ indent }}{
-{{ indent }}    ensureScriptEngine();
-{{ indent }}    {{ flag }} = ::SCE::AssignmentExecutionHelper::storeIdInLocation(
-{{ indent }}        getScriptEngine(), sessionId_.value(), {{ invoke_info.idlocation | to_script_source_location }}, {{ id_expr }},
-{{ indent }}        [&engine](const std::string &error) {
-{{ indent }}            engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, error));
-{{ indent }}        });
-{{ indent }}}
-{%- endif %}
-{%- endmacro %}
+{#- W3C SCXML 6.4.1: an invoke's generated id goes to `idlocation` when the element is
+    evaluated; the start of a child session, which a restore of a format-1 saved state
+    shares, is `invoke_start.defer_scxml_invoke`. #}
+{%- import '_macros/cpp_invoke_start.jinja2' as invoke_start %}
 
 {# SCE Protocol-Synthesis RFC §synth-5-O — function-scope SCE-MAP marker
    above `executeEntryActions`. `#line N "file"` inside a function
@@ -167,18 +153,10 @@
                 // Defer invoke execution until macrostep end (ARCHITECTURE.md Zero Duplication)
                 // ============================================================
 {% for invoke_info in state.invokes | scxml %}
-                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format.
-                // docs/adr/0045: the platform part is the number of this start, so the id
+                // Defer invoke: {{ invoke_info.invoke_id }} ({{ invoke_info.src }}). docs/adr/0045:
+                // the id it is started under comes from the number of this start, so it
                 // comes from the tree alone and is the same text on every backend.
-                std::string generatedInvokeId_{{ invoke_info.invoke_id }} = "{{ state_id }}." + std::to_string(++invokeStarts_{{ invoke_info.field_suffix }}_) + ".{{ invoke_info.invoke_id }}";
-{{ store_invoke_idlocation(invoke_info, "generatedInvokeId_" ~ invoke_info.invoke_id, "scxmlIdStored_" ~ loop.index0, "                ") }}
-
-                // Defer invoke: {{ invoke_info.invoke_id }} ({{ invoke_info.src }})
-                if (scxmlIdStored_{{ loop.index0 }}) {
-                    ::SCE::Core::InvokeHelper::deferInvoke(pendingInvokes_,
-                        PendingInvoke{generatedInvokeId_{{ invoke_info.invoke_id }}, State::{{ state_id | capitalize }}, "{{ invoke_info.invoke_id }}"});
-                    AOT_DEBUG("Deferred invoke: {} in state {{ state_id }}", generatedInvokeId_{{ invoke_info.invoke_id }});
-                }
+{{ invoke_start.defer_scxml_invoke(invoke_info, state_id, "                ", "child") }}
 {% endfor %}
 {% endif %}
 {% if state.invokes | scxml_remote %}
@@ -201,7 +179,7 @@
                 {
                     // W3C SCXML 6.4.1: idlocation — expose the static invoke
                     // id to the parent datamodel so transitions can match on it.
-{{ store_invoke_idlocation(invoke_info, '"' ~ invoke_info.invoke_id ~ '"', "remoteIdStored_" ~ loop.index0, "                    ") }}
+{{ invoke_start.store_invoke_idlocation(invoke_info, '"' ~ invoke_info.invoke_id ~ '"', "remoteIdStored_" ~ loop.index0, "                    ") }}
                     // SCE_MESH.md §9.6.2 inner payload. Currently empty —
                     // `<param>` / `<content>` / `<namelist>` serialization
                     // into a CBOR map is a parallel landing shared with the
@@ -260,7 +238,7 @@
 
                     // W3C SCXML 6.4.1: idlocation — store generated invoke id
                     // into the parent datamodel so transitions can match on it.
-{{ store_invoke_idlocation(invoke_info, "_mesh_invoke_id_" ~ invoke_info.invoke_id, "meshIdStored_" ~ loop.index0, "                    ") }}
+{{ invoke_start.store_invoke_idlocation(invoke_info, "_mesh_invoke_id_" ~ invoke_info.invoke_id, "meshIdStored_" ~ loop.index0, "                    ") }}
                     // A location that could not take the id has raised
                     // error.execution, and the request is not sent.
                     if (meshIdStored_{{ loop.index0 }}) {
@@ -460,19 +438,9 @@
                 // Defer invoke execution until macrostep end (ARCHITECTURE.md Zero Duplication)
                 // ============================================================
                 {% for invoke_info in state.invokes | hybrid %}
-                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format.
-                // docs/adr/0045: the platform part is the number of this start, so the id
-                // comes from the tree alone and is the same text on every backend.
-                std::string generatedInvokeId_{{ invoke_info.invoke_id }} = "{{ state_id }}." + std::to_string(++invokeStarts_{{ invoke_info.field_suffix }}_) + ".{{ invoke_info.invoke_id }}";
-{{ store_invoke_idlocation(invoke_info, "generatedInvokeId_" ~ invoke_info.invoke_id, "hybridIdStored_" ~ loop.index0, "                ") }}
-
                 // Defer hybrid invoke: {{ invoke_info.invoke_id }} {% if invoke_info.srcexpr %}(srcexpr: {{ invoke_info.srcexpr }}){% elif invoke_info.contentexpr %}(contentexpr: {{ invoke_info.contentexpr }}){% endif %}
 
-                if (hybridIdStored_{{ loop.index0 }}) {
-                    ::SCE::Core::InvokeHelper::deferInvoke(pendingInvokes_,
-                        PendingInvoke{generatedInvokeId_{{ invoke_info.invoke_id }}, State::{{ state_id | capitalize }}, "{{ invoke_info.invoke_id }}"});
-                    AOT_DEBUG("Deferred hybrid invoke: {} in state {{ state_id }}", generatedInvokeId_{{ invoke_info.invoke_id }});
-                }
+{{ invoke_start.defer_scxml_invoke(invoke_info, state_id, "                ", "hybrid") }}
 {% endfor %}
 {% endif %}
 {% if state.on_entry_blocks %}

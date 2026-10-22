@@ -10,16 +10,36 @@
     // its own script session, the location it publishes in `_ioprocessors`
     // and the origin the parent sees would be two names for one session that
     // can never be compared — which is exactly what C.1 requires of them.
+    //
+    // docs/adr/0045: a session a host starts and gives no id draws one, a UUID version 4
+    // in the one spelling every backend draws, since `_sessionid` is an XML Nmtoken that
+    // another session addresses it by and a saved state names it by.
     void ensureSessionId() const {
         if (!sessionId_.has_value()) {
 {% if model.needs_parent_template %}
-            sessionId_ = childSessionId_.empty()
-                             ? "session_" + std::to_string(reinterpret_cast<uintptr_t>(this))
-                             : childSessionId_;
+            sessionId_ = childSessionId_.empty() ? ::SCE::Saved::SessionId::draw() : childSessionId_;
 {% else %}
-            sessionId_ = "session_" + std::to_string(reinterpret_cast<uintptr_t>(this));
+            sessionId_ = ::SCE::Saved::SessionId::draw();
 {% endif %}
         }
+    }
+
+    // docs/adr/0045: this session's id, as text: the one a request to a host invoker
+    // names the session that made it by, and a saved state names the session it holds by.
+    std::string sessionIdText() const {
+        ensureSessionId();
+        return sessionId_.value();
+    }
+
+    // docs/adr/0045: the id this session carries on under: a restore binds the id a
+    // format-2 saved state names, since every child's id and a peer's address name it,
+    // and a host may give the id of the root it starts. A session id is an XML Nmtoken,
+    // so one that is not is refused rather than replaced.
+    void bindSessionId(std::string id) const {
+        if (const auto refusal = ::SCE::Saved::SessionId::refusalOf(id)) {
+            throw std::invalid_argument(*refusal);
+        }
+        sessionId_ = std::move(id);
     }
 
 {% if model.needs_script_engine %}

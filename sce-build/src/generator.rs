@@ -1688,6 +1688,7 @@ const STATIC_INVOKE_IDLOCATION_BACKENDS: &[Language] = &[
     Language::Kotlin,
     Language::Go,
     Language::Python,
+    Language::Cpp,
 ];
 
 /// Refuse a `sce-static` document, or a child written in place in it at any
@@ -3347,6 +3348,7 @@ fn render_cpp(
         static_adapter_defs => static_lowering.adapter_defs.join("\n\n"),
         static_imports => &static_lowering.imports,
         static_format2_shape => format2_keys(&static_lowering),
+        static_saved_shape => &static_lowering.saved_shape,
     };
     let inl_ctx = minijinja::context! {
         model => &model_val,
@@ -3357,6 +3359,7 @@ fn render_cpp(
         has_native_duties => native.has_duty,
         native_actions_interface => &native.interface_name,
         static_fields => minijinja::Value::from_serialize(&static_lowering.fields),
+        static_saved_shape => &static_lowering.saved_shape,
         // The enum naming which event's typed payload the channel holds
         // (`build_cpp_event_payload`), for content that reads one.
         cpp_payload_tag => format!("{native_machine_name}PayloadTag"),

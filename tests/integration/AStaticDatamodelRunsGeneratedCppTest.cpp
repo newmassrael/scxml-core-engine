@@ -61,6 +61,7 @@
 #include "static_invoke_params_sm.h"
 #include "static_invoke_sm.h"
 #include "static_invoke_string_sm.h"
+#include "static_invoke_tree_sm.h"
 #include "static_list_assign_sm.h"
 #include "static_list_index_sm.h"
 #include "static_list_sm.h"
@@ -369,28 +370,36 @@ public:
     /// writes it.
     using ChildHosts = std::function<json()>;
 
-    explicit Driver(std::map<std::string, Reader> variables) : variables_(std::move(variables)) {}
+    /// The machine is built through `make`, so that a step that restores it builds a
+    /// fresh one the same way.
+    using Make = std::function<std::unique_ptr<Machine>()>;
+
+    explicit Driver(std::map<std::string, Reader> variables)
+        : make_([] { return std::make_unique<Machine>(); }), machine_(make_()), variables_(std::move(variables)) {}
 
     /// A machine with `<sce:action>`s takes the host that performs them as it is
     /// built, because its first entry can already call it; `hostCalls` reads what
     /// that host recorded.
     template <typename Host>
     Driver(std::map<std::string, Reader> variables, Host &host, HostCalls hostCalls)
-        : machine_(host), variables_(std::move(variables)), hostCalls_(std::move(hostCalls)) {}
+        : make_([&host] { return std::make_unique<Machine>(host); }), machine_(make_()),
+          variables_(std::move(variables)), hostCalls_(std::move(hostCalls)) {}
 
     /// A machine that states a duty, driven by a host that only records
     /// (docs/adr/0038): it is built through the opt-in a simulated host needs,
     /// named at the call, and `hostCalls` reads what the host recorded.
     template <typename Host>
     Driver(std::map<std::string, Reader> variables, Host &host, HostCalls hostCalls, ::SCE::SimulatedHost simulated)
-        : machine_(host, simulated), variables_(std::move(variables)), hostCalls_(std::move(hostCalls)) {}
+        : make_([&host, simulated] { return std::make_unique<Machine>(host, simulated); }), machine_(make_()),
+          variables_(std::move(variables)), hostCalls_(std::move(hostCalls)) {}
 
     /// A machine that declares no act of its own and whose children are given
     /// hosts: `host` answers each child's, and writes it into `children`, which is
     /// what the scenario's `child_hosts` are read from.
     template <typename Host>
     Driver(std::map<std::string, Reader> variables, Host &host, ChildHostBook &children)
-        : machine_(host), variables_(std::move(variables)), childHosts_([&children] { return children.take(); }) {}
+        : make_([&host] { return std::make_unique<Machine>(host); }), machine_(make_()),
+          variables_(std::move(variables)), childHosts_([&children] { return children.take(); }) {}
 
     /// The machine runs on a manual clock, so a delayed send waits exactly the
     /// time a step names (`advance`) and not the time the test happened to take.
@@ -408,26 +417,15 @@ public:
     /// callback and no factory for its children, and every send to a peer is
     /// refused where it is made.
     void start(bool routed = true) {
-        machine_.setClock(std::make_shared<SCE::ManualClock>(0));
-        if (routed) {
-            machine_.setMeshSendCallback([sent = sent_](const std::string &target, const std::string &event,
-                                                        const std::string &data, const std::string &,
-                                                        const std::string &) {
-                json send = {{"target", target}, {"event", event}};
-                if (!data.empty()) {
-                    send["data"] = json::parse(data);
-                }
-                sent->push_back(std::move(send));
-                return true;
-            });
-            // A child session the machine starts is given a router of its own by
-            // the factory its host registers (SCE_MESH.md, Child Sessions in Mesh),
-            // never the machine's: what a child sends is written into the same list,
-            // told by the invoke that started it and the start, and a step's
-            // `invoke` hands its event to the child through it.
-            machine_.registerChildMeshRouters(children_.factory());
+        routed_ = routed;
+        machine_->setClock(std::make_shared<SCE::ManualClock>(0));
+        // The shared fixtures give the root's id explicitly, so a saved text of one is
+        // the text on every backend (docs/adr/0045, "Questions the owner answered" 2).
+        if constexpr (HasSavedState<Machine>::value) {
+            machine_->bindSessionId(kRootSessionId);
         }
-        machine_.initialize();
+        attachHost();
+        machine_->initialize();
         // A machine that starts a child session in its first state has that child
         // running, and maybe ended, before any event arrives; it is read as the
         // events leave it, after the rounds that take.
@@ -436,16 +434,34 @@ public:
         }
     }
 
+    /// Save the machine, discard it and restore it from the text, as a state that crossed
+    /// a process boundary would be: the restored machine carries on where the saved one
+    /// stood (docs/adr/0045, section 8). It is given what the host gave the first, its
+    /// router and the factory of its children's routers, and the children it resumed are
+    /// asked for theirs when the factory arrives.
+    void restore() {
+        if constexpr (HasSavedState<Machine>::value) {
+            const ::SCE::Saved::SavedState saved =
+                ::SCE::Saved::SavedState::fromJson(machine_->saveAt(kSavedAtMs).toJson());
+            machine_ = make_();
+            machine_->setClock(std::make_shared<SCE::ManualClock>(0));
+            machine_->restoreAt(saved, kSavedAtMs);
+            attachHost();
+        } else {
+            FAIL() << "this machine has no saved state to restore";
+        }
+    }
+
     /// The machine's time moves on by `ms`, and what that made due runs.
     void advance(uint64_t ms) {
-        machine_.advanceTimeMs(ms);
+        machine_->advanceTimeMs(ms);
     }
 
     /// An event goes in, and the macrostep it starts runs to the end. `data` is
     /// the event's payload as JSON text, from which the machine lifts the typed
     /// fields its schema names.
     void send(const std::string &name, const std::string &data = "") {
-        machine_.raiseExternal(name, data);
+        machine_->raiseExternal(name, data);
         settle();
     }
 
@@ -464,37 +480,37 @@ public:
     /// Whether an event arriving under `name` reaches the machine at all, as the
     /// engine decides it (§scxml-3.12.1): false is a name it drops.
     bool resolves(const std::string &name) const {
-        return machine_.resolveEventByName(name).has_value();
+        return machine_->resolveEventByName(name).has_value();
     }
 
     std::string state() const {
-        return Machine::PolicyType::getStateName(machine_.getCurrentState());
+        return Machine::PolicyType::getStateName(machine_->getCurrentState());
     }
 
     /// Every active state, a compound or a parallel one with the atomic ones below
     /// it, by the id the document gives it.
     std::set<std::string> configuration() const {
         std::set<std::string> ids;
-        for (const auto &active : machine_.getActiveStates()) {
+        for (const auto &active : machine_->getActiveStates()) {
             ids.insert(Machine::PolicyType::getStateName(active));
         }
         return ids;
     }
 
     bool ended() const {
-        return machine_.isInFinalState();
+        return machine_->isInFinalState();
     }
 
     /// The data the top-level final's `<donedata>` left for the invoking parent,
     /// as the JSON text the done event carries.
     std::string donedata() const {
-        return machine_.donedataAtFinal();
+        return machine_->donedataAtFinal();
     }
 
     json variable(const std::string &name) const {
         const auto found = variables_.find(name);
         EXPECT_NE(found, variables_.end()) << "the driver publishes no variable '" << name << "'";
-        return found == variables_.end() ? json() : found->second(machine_);
+        return found == variables_.end() ? json() : found->second(*machine_);
     }
 
     /// Whether the machine's host is one that records what it is asked.
@@ -538,10 +554,47 @@ private:
     /// host runs rounds: a child takes an event the parent forwarded in one round
     /// and its end reaches the parent in the next.
     void settle() {
-        settleRounds(machine_);
+        settleRounds(*machine_);
     }
 
-    Machine machine_;
+    /// What the machine's host registers on it, before it starts and after it is restored:
+    /// the callback its sends to a Mesh peer are handed to and the factory of its
+    /// children's routers (a scenario that says `"router": false` gives it neither).
+    void attachHost() {
+        if (!routed_) {
+            return;
+        }
+        machine_->setMeshSendCallback([sent = sent_](const std::string &target, const std::string &event,
+                                                     const std::string &data, const std::string &,
+                                                     const std::string &) {
+            json send = {{"target", target}, {"event", event}};
+            if (!data.empty()) {
+                send["data"] = json::parse(data);
+            }
+            sent->push_back(std::move(send));
+            return true;
+        });
+        // A child session the machine starts is given a router of its own by the factory
+        // its host registers (SCE_MESH.md, Child Sessions in Mesh), never the machine's:
+        // what a child sends is written into the same list, told by the invoke that
+        // started it and the start, and a step's `invoke` hands its event to the child
+        // through it.
+        machine_->registerChildMeshRouters(children_.factory());
+    }
+
+    template <typename M, typename = void> struct HasSavedState : std::false_type {};
+
+    template <typename M>
+    struct HasSavedState<M, std::void_t<decltype(std::declval<M &>().saveAt(std::int64_t{0}))>> : std::true_type {};
+
+    /// The id a shared fixture's root session is given, and the moment on the wall clock
+    /// a scenario's `restore` step saves it at (docs/adr/0045, section 8).
+    static constexpr const char *kRootSessionId = "fixture-root";
+    static constexpr std::int64_t kSavedAtMs = 1'700'000'000'000;
+
+    Make make_;
+    std::unique_ptr<Machine> machine_;
+    bool routed_ = true;
     std::map<std::string, Reader> variables_;
     HostCalls hostCalls_;
     ChildHosts childHosts_;
@@ -563,6 +616,11 @@ template <typename Machine> void replay(const std::string &machine, Driver<Machi
     int index = 0;
     for (const auto &step : scenario["steps"]) {
         SCOPED_TRACE(machine + " step " + std::to_string(index++) + ": " + step.value("note", std::string{}));
+        // The machine is saved and restored before the step's event or time, so what the
+        // step then expects is what the restored one does.
+        if (step.value("restore", false)) {
+            driver.restore();
+        }
         if (step.contains("advance_ms")) {
             driver.advance(step["advance_ms"].get<uint64_t>());
         }
@@ -2150,6 +2208,20 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, AHybridInvokeOfADocumentWithNoErrorEv
     }
     EXPECT_EQ(machine.completed(), 0u);
     EXPECT_FALSE(machine.isInFinalState());
+}
+
+// A tree of sessions is saved whole and resumed where each session stood
+// (docs/adr/0045, section 8): a step marked `restore` saves the machine, discards it and
+// restores it from the text, and every expected value is the one a run without the
+// restores holds.
+TEST(AStaticDatamodelRunsGeneratedCppTest, AnInvokeTreeRestoresBetweenItsSteps) {
+    using Machine = G::static_invoke_tree::static_invoke_tree;
+    Driver<Machine> driver({
+        {"answers", [](const Machine &m) { return json(m.answers()); }},
+        {"reports", [](const Machine &m) { return json(m.reports()); }},
+        {"stamps", [](const Machine &m) { return json(m.stamps()); }},
+    });
+    replay("static_invoke_tree", driver);
 }
 
 // A guard calls an imported algorithm with the record's own fields, and the

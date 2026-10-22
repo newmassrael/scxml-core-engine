@@ -165,6 +165,29 @@ struct HasParentDeliveryTrait<
     P, std::void_t<decltype(std::declval<P &>().deliverToParent(std::declval<const SCE::Common::ForwardedEvent &>()))>>
     : std::true_type {};
 
+/// The id of the session this policy is, as text (`_sessionid`; docs/adr/0045): a
+/// request to a host invoker names the session that made it, and a saved state names
+/// the session it holds. Emitted on a policy that holds a session id; a machine with
+/// neither a script engine, an `<invoke>` nor a saved state has none to give, and its
+/// requests carry an empty one.
+template <typename P, typename = void> struct HasSessionIdTextTrait : std::false_type {};
+
+template <typename P>
+struct HasSessionIdTextTrait<P, std::void_t<decltype(std::declval<const P &>().sessionIdText())>> : std::true_type {};
+
+/// The policy runs child sessions that a host's invokers serve (docs/adr/0045): it
+/// hands the tree's registry to each, and finds the session a host-run invocation's
+/// ending is for among them. `Ending` is `HostInvokeEnding`, a parameter so this header
+/// need not include the one that declares it. Emitted beside `tickChildren`, so a policy
+/// that ticks children answers it too, and asked only through this trait.
+template <typename P, typename Ending, typename = void> struct HasHostInvokerChildrenTrait : std::false_type {};
+
+template <typename P, typename Ending>
+struct HasHostInvokerChildrenTrait<P, Ending,
+                                   std::void_t<decltype(std::declval<P &>().routeHostInvokeEnd(
+                                       std::declval<const std::string &>(), std::declval<const Ending &>()))>>
+    : std::true_type {};
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // C++20 concepts + C++17 constexpr bool aliases
 //
@@ -351,6 +374,14 @@ concept NeedsParent = NeedsParentTrait<P>::value;
 template <typename P>
 concept HasHostInvokeIds = HasHostInvokeIdsTrait<P>::value;
 
+/// Policy gives the text of its session id
+template <typename P>
+concept HasSessionIdText = HasSessionIdTextTrait<P>::value;
+
+/// Policy runs child sessions a host's invokers serve
+template <typename P, typename Ending>
+concept HasHostInvokerChildren = HasHostInvokerChildrenTrait<P, Ending>::value;
+
 #else  // C++17 fallback
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -386,6 +417,11 @@ template <typename P> inline constexpr bool NeedsEventScheduler = NeedsEventSche
 template <typename P> inline constexpr bool NeedsParent = NeedsParentTrait<P>::value;
 
 template <typename P> inline constexpr bool HasHostInvokeIds = HasHostInvokeIdsTrait<P>::value;
+
+template <typename P> inline constexpr bool HasSessionIdText = HasSessionIdTextTrait<P>::value;
+
+template <typename P, typename Ending>
+inline constexpr bool HasHostInvokerChildren = HasHostInvokerChildrenTrait<P, Ending>::value;
 
 #endif  // __cpp_concepts >= 202002L
 

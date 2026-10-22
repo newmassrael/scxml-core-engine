@@ -330,17 +330,17 @@ invokers modelled on ADR 0043's child routers:
   and raises nothing. The child takes the event when its parent next drives it.
 - **The build declares the types once for the tree.** A child written in place is generated with its
   parent's `--host-invoker` declaration, and with the standard types it names.
-- **Backends.** Rust implements it with step 3 and Kotlin with step 4, Go and Python with their
-  step 5. C++ and C11 keep raising `error.execution` for a child's host-run invocation, as for one
-  no invoker serves, until each one's format-2 step implements this contract.
+- **Backends.** Rust implements it with step 3 and Kotlin with step 4, Go, Python and C++ with their
+  step 5. C11 keeps raising `error.execution` for a child's host-run invocation, as for one
+  no invoker serves, until its format-2 step implements this contract.
 
 **An `<invoke idlocation>` of a child session is written under `sce-static`.** Each start is started
 under `<state>.<start>.<id>` (step 2), which the child's events carry as `_event.invokeid` and a saved
 tree holds as the child's `invokeid`, so a stored id now has readers: the document, and the restore,
 which keeps the variable as saved and writes nothing. The variable is a declared string whose bound
 exceeds the longest such id (twenty digits of start count); a host-run invocation or a Mesh request,
-started under the id the build wrote, still refuses it. Rust, Kotlin, Go and Python write it; the
-other two backends refuse it by name (`generate/unsupported-feature`) until their format-2 step.
+started under the id the build wrote, still refuses it. Rust, Kotlin, Go, Python and C++ write it; C11
+refuses it by name (`generate/unsupported-feature`) until its format-2 step.
 
 **A state written in format 1 is still read.** It holds no child's state, and the build that wrote
 it promised to start each listed child from its beginning; the restoring build does exactly that for
@@ -915,6 +915,36 @@ Each step lands with a test that fails without it.
    stated, so for a `<parallel>` the text differs from one Rust writes in that member
    alone. Open: the mutation round over the new machines, and a send to a session by its
    id.
+
+   *Where it stands: C++.* Done: the header-only runtime holds the format (`saved/SavedState.h`,
+   over the ordered JSON reader and writer of `saved/SavedJson.h`, the per-type value readers
+   and writers of `saved/SavedValues.h` and the session id of `saved/SessionId.h`) and reads and
+   writes both formats. `SCE::Saved::EngineAccess` (`saved/SavedEngine.h`), a friend of
+   `StaticExecutionEngine`, does what Go's `SaveSession`, `JudgeSession` and `EnterSession` do
+   over the hooks a generated policy adds (`runningInvokes`, `invokeStarts`, `invokeOwner`,
+   `hostInvokeOwner`, `judgeChild`, `resumeChildren`, `restartInvokes`, and the tables of the
+   document's histories); a generated machine's `saveAt`, `judge` and `restoreAt` read and write
+   the variables, the histories and each running child, and a record or an enum writes its own
+   saved form (`<Type>ToSaved`, `<Type>FromSaved`, beside the type, so a record stays plain
+   data). A session draws its id as the other backends do, `bindSessionId` gives it, and a
+   restore binds the saved one. The tree's host invokers are one registry its sessions share
+   (`TreeInvokers`), a request names its session (`HostInvokeRequest::sessionId`) and an ending
+   is routed by it (`completeHostInvokeIn`, `failHostInvokeIn`, answering `Delivered`,
+   `NoSuchSession` or `NotRunning`); a restored host-run invocation starts again in the first
+   macrostep the host drives, with the deadline it had left, and one cancelled before that is
+   never started. A child is resumed in place of started, its router owed to the factory until
+   the host registers it (`oweChildMesh`), and a format-1 child is started again at the next
+   drive. An `<invoke idlocation>` of a child session is written. A document that saves names a
+   `<send>` that names no id by the id the parser numbered (`__send_<n>`), so the id a waiting
+   send is saved under is the text every backend writes; the scheduler neither replaces nor
+   indexes such an id, which no author can name, so two waiting sends of one element both wait.
+   A document with a Mesh request has no saved state in C++: the request goes out by the router
+   the build generates, which is not a host-run invocation a saved state could hold, so a
+   restore could not tell the document it was interrupted. Held by
+   `AStateAnotherBackendSavedIsRestoredTest`, `ASavedTreeHoldsEverySessionWhereItStoodTest`,
+   `ASavedHostInvocationIsStartedAgainAfterARestoreTest`, and the scenario `restore` step of
+   `static_invoke_tree`. Open: the child resume, hybrid restart, send id and delayed host send
+   tests as ports of Rust's, and the mutation round over the new machines.
 6. **The host cores** (after ADR 0043 steps 3 and 5): the checkpoint document, its schema and its
    row in SCE_WIRE_CONTRACTS.md with a producer status constant in `sce-rust-mesh` and
    `sce-kotlin-mesh`; holding envelopes back; the endpoint section saved and restored; the

@@ -180,6 +180,22 @@ struct HostInvokeRequest {
     /// cancelled process sends is ignored). Distinct for every start of every
     /// invocation within one engine.
     uint64_t token = 0;
+    /// The session that started the invocation (`_sessionid`; docs/adr/0045): the
+    /// root the host built, or a child session of it, `<parent>.<invokeid>`. The
+    /// engine fills it as it starts the invocation.
+    ///
+    /// The invokers a host registers serve the whole tree of sessions, so a host
+    /// that means to serve a type for part of it only refuses the others by this
+    /// id (`HostInvokeResponse::refusal`); there is no second registration. It is
+    /// also the id a host hands back with the token to end the invocation
+    /// (`completeHostInvokeIn`), which reaches the session that started it
+    /// wherever it stands in the tree.
+    std::string sessionId;
+    /// Whether this start is a restore starting the invocation again: the machine
+    /// saved while it ran, and the process the host began for it did not outlive
+    /// the one that saved. What the host does with that is its business; a host
+    /// that cannot tell a second start from a first does not see it.
+    bool restarted = false;
 };
 
 /**
@@ -313,6 +329,66 @@ struct HostInvokeDeadline {
     /// The start this deadline belongs to; a restart under the same id has its
     /// own.
     uint64_t token = 0;
+};
+
+/**
+ * @brief The invokers a host registered for the types it serves, shared by every
+ *        session of one tree (docs/adr/0045)
+ *
+ * The engine the host built makes it, and a parent hands its own to each child it
+ * starts or resumes. Opaque: a host registers through `registerInvoker`, and the
+ * generated parent only passes it on. The set of invocable types is the
+ * processor's, not a session's (§scxml-6.4.1).
+ */
+struct TreeInvokers {
+    std::map<std::string, HostInvokeHandler> handlers;
+};
+
+/**
+ * @brief How a host ends a host-run invocation of some session of a tree: the
+ *        start it ends, and whether it completed (`done.invoke`) or failed
+ *        (`error.invoke`), with `data` as the event's `_event.data`
+ */
+struct HostInvokeEnding {
+    /// The `type` the request named.
+    std::string processorType;
+    /// The invocation's id, as the request named it.
+    std::string invokeId;
+    /// The token the request carried.
+    uint64_t token = 0;
+    /// True for a completion and false for a failure.
+    bool done = true;
+    /// `_event.data` of the event the ending raises.
+    std::string data;
+};
+
+/**
+ * @brief Where an ending of a host-run invocation went, while it is looked for among
+ *        the sessions of a tree
+ *
+ * Asked of each session a parent holds in turn, so the parent can tell a session that
+ * is not one of its own (try the next) from one that is and refused the ending.
+ */
+struct HostInvokeRoute {
+    /// A session of the id the ending names runs here, or below here at any depth.
+    bool reached = false;
+    /// That session was running the start the ending names, and took the ending.
+    bool delivered = false;
+};
+
+/**
+ * @brief What became of an ending a host handed to the tree (`completeHostInvokeIn`,
+ *        `failHostInvokeIn`)
+ */
+enum class HostInvokeEndOutcome {
+    /// The session took the ending: its queue holds the `done.invoke` or `error.invoke`.
+    Delivered,
+    /// No session of that id runs in this tree: it was never started, or it has ended.
+    NoSuchSession,
+    /// The session runs, and is not running that start of the invocation: it was
+    /// cancelled, has ended, or was started again since (§scxml-6.4: what a cancelled
+    /// process sends is ignored). Nothing was raised.
+    NotRunning,
 };
 
 /**

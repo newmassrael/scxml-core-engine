@@ -3,6 +3,8 @@
 
 {% include 'license_header.jinja2' %}
 {%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{# docs/adr/0045: a variable's saved form, in the machine's `saveAt` and `restoreAt`. #}
+{%- import '_macros/cpp_saved_value.jinja2' as saved_value %}
 {# SCE Protocol-Synthesis RFC §synth-5-O: per-backend SCE-MAP marker
    anchoring the generated header to the `<scxml>` root element's
    post-preprocessor source position. Module-level form is a comment
@@ -26,6 +28,11 @@
 {% endfor %}
 {% endfor %}
 {% set takes_simulated_host = has_native_duties or host_duty_children.any %}
+{# docs/adr/0045: whether this machine holds the id of its session (`_sessionid`): the
+   script engine, a child session, a request to a host invoker and a saved state each name
+   the session by it. Spelled again where the session's helpers are included
+   (`state_machine_inl.jinja2`). #}
+{% set holds_session_id = model.needs_script_engine or model.invokes | scxml or model.invokes | hybrid or model.invokes | scxml_remote or static_saved_shape or model.host_invoker_types %}
 #pragma once
 #include <cstdint>
 #include <string>
@@ -57,11 +64,23 @@
 {% endif %}
 {% endfor %}
 #include "static/StaticExecutionEngine.h"
+{% if holds_session_id %}
+// docs/adr/0045: the id a session draws when its host gives none, and what an id may be.
+#include "saved/SessionId.h"
+{% endif %}
+{% if static_saved_shape %}
+// docs/adr/0045: saving this machine and restoring it.
+#include "saved/SavedEngine.h"
+{% endif %}
 {% if takes_simulated_host %}
 // docs/adr/0038: `SimulatedHost` and the refusal of a host that only simulates.
 #include "runtime/SimulatedHost.h"
 {% endif %}
 {% if static_fields %}
+{# SCE Accepted Subset §2.15, docs/adr/0045: a record's and an enum's saved form is two
+   functions beside the type (`static_type_defs`), which write and read a value as the
+   one JSON value model every backend's saved state is made of. #}
+#include "saved/SavedValues.h"
 {# SCE Accepted Subset §2.15: a `sce-static` document's integer operations are
    the checked ones every forge algorithm is held to (SCE_FORGE.md §3.4.1). #}
 #include <sce/forge/algorithm.h>
@@ -393,6 +412,59 @@ inline constexpr std::array<std::string_view, {{ static_format2_shape.enum_keys 
 };
 
 {% endif %}
+{% if static_saved_shape %}
+/// What a saved state of this document is bound to: a state saved from a document that
+/// renamed, re-typed or moved a state or a variable is refused, one saved before a guard or
+/// an action changed is not, and one saved at an earlier revision of a record schema is
+/// read with each field a later revision added at its default (SCE Accepted Subset §2.15,
+/// docs/adr/0044).
+inline const ::SCE::Saved::SavedShape &savedShape() {
+    static const ::SCE::Saved::SavedShape shape = [] {
+        ::SCE::Saved::SavedShape built;
+        built.first = "{{ static_saved_shape.first | escape_cpp }}";
+        built.revised = "{{ static_saved_shape.revised | escape_cpp }}";
+        built.format2First = "{{ static_saved_shape.format2_first | escape_cpp }}";
+        built.format2Revised = "{{ static_saved_shape.format2_revised | escape_cpp }}";
+{% for record in static_saved_shape.records %}
+        {
+            ::SCE::Saved::RecordLineage record;
+            record.event = "{{ record.event | escape_cpp }}";
+            record.revision = {{ record.revision }};
+            record.revisions = { {% for fields in record.revisions %}"{{ fields | escape_cpp }}"{{ ", " if not loop.last }}{% endfor %} };
+{% for field in record.added %}
+            record.added.push_back(::SCE::Saved::AddedField{"{{ field.id | escape_cpp }}", {{ field.since }}, "{{ field.default | escape_cpp }}"});
+{% endfor %}
+{% for holder in record.holders %}
+            record.holders.push_back(::SCE::Saved::RecordHolder{"{{ holder.variable | escape_cpp }}", {{ "true" if holder.list else "false" }}});
+{% endfor %}
+            built.records.push_back(std::move(record));
+        }
+{% endfor %}
+{% for lineage in static_saved_shape.enums %}
+        {
+            ::SCE::Saved::EnumLineage lineage;
+            lineage.key = "{{ lineage.key | escape_cpp }}";
+            lineage.revision = {{ lineage.revision }};
+            lineage.revisions = { {% for fields in lineage.revisions %}"{{ fields | escape_cpp }}"{{ ", " if not loop.last }}{% endfor %} };
+{% for variant in lineage.added %}
+            lineage.added.push_back(::SCE::Saved::AddedVariant{"{{ variant.name | escape_cpp }}", {{ variant.since }}});
+{% endfor %}
+{% for holder in lineage.holders %}
+{% if holder.field is not none %}
+            lineage.holders.push_back(::SCE::Saved::EnumHolder{"{{ holder.variable | escape_cpp }}", std::optional<std::string>("{{ holder.field | escape_cpp }}"), {{ "true" if holder.list else "false" }}});
+{% else %}
+            lineage.holders.push_back(::SCE::Saved::EnumHolder{"{{ holder.variable | escape_cpp }}", std::nullopt, {{ "true" if holder.list else "false" }}});
+{% endif %}
+{% endfor %}
+            built.enums.push_back(std::move(lineage));
+        }
+{% endfor %}
+        return built;
+    }();
+    return shape;
+}
+
+{% endif %}
 {% if event_payload_active %}
 // ── NL→IR Item C1 Path A: typed `_event.data` payload channel ─────────
 {{ event_payload_defs }}
@@ -606,7 +678,7 @@ struct {{ model.name }}Policy {
     {# `(model.invokes | scxml) or (model.invokes | scxml_remote)` idiom      #}
     {# used across invoke_methods.jinja2. Same rationale below on             #}
     {# executeExitActions static/non-static selection.                       #}
-    {% if model.needs_script_engine or model.invokes | scxml or model.invokes | hybrid or model.invokes | scxml_remote %}
+    {% if holds_session_id %}
     // Session ID for JSEngine/Invoke (lazy-initialized)
     mutable ::std::optional<::std::string> sessionId_;
     {% endif %}
@@ -1327,6 +1399,103 @@ private:
     std::function<bool(const ::SCE::Mesh::MeshEnvelope&)>
         parallel_region_done_callback_;
 public:
+{% endif %}
+{% if static_saved_shape %}
+
+    // ── SCE Accepted Subset §2.15: saving this machine, restoring it (docs/adr/0045) ──
+
+    /// The id of this session (`_sessionid`), which a saved state names it by and every child
+    /// session's id and a peer's address are made from.
+    std::string sessionId() const {
+        return this->policy_.sessionIdText();
+    }
+
+    /// Give the root session the id it runs under, before it starts or is restored: an XML
+    /// Nmtoken, and `std::invalid_argument` otherwise, rather than an id replaced by another.
+    /// A session a host does not give one draws a UUID version 4 (docs/adr/0045).
+    void bindSessionId(std::string id) {
+        this->policy_.bindSessionId(std::move(id));
+    }
+
+    /// This machine's whole state at the macrostep boundary it stands at: every variable, the
+    /// machine's own included, and where it stands, as the `sce-saved-state` document every
+    /// backend reads (`SavedState::toJson`). Each delayed `<send>` still waiting is written as
+    /// the moment it comes due on the wall clock whose reading now is `wallNowMs`, in
+    /// milliseconds since the Unix epoch, and each running child session with its whole state.
+    ///
+    /// Throws `::SCE::Saved::StateRefusal` for a machine that is not running, one that has
+    /// ended, and one whose last macrostep stopped at the microstep ceiling.
+    ::SCE::Saved::SavedState saveAt(std::int64_t wallNowMs) {
+        ::SCE::Saved::JsonObject variables;
+{% for field in static_fields %}
+        variables.set("{{ field.id | escape_cpp }}", {{ saved_value.write(field, 'this->policy_') }});
+{% endfor %}
+        // docs/adr/0045: each running child, with its whole state.
+        auto children = this->policy_.savedChildren(wallNowMs);
+        return ::SCE::Saved::EngineAccess::saveSession<::SCE::Static::StaticExecutionEngine<PolicyType>>(
+            *this, savedShape(), std::move(variables), ::SCE::Saved::saveHistory(this->policy_), std::move(children),
+            wallNowMs);
+    }
+
+    /// `saveAt` at the host's wall clock now.
+    ::SCE::Saved::SavedState save() {
+        return saveAt(::SCE::Saved::savedWallClockMs());
+    }
+
+    /// Refuse `saved` unless a machine of this document could restore it, building nothing:
+    /// what a parent's restore asks of each child it holds (docs/adr/0045, section 3, step 1).
+    static void judge(const ::SCE::Saved::SavedState& saved) {
+        // Judging asks the document's own tables and nothing a session holds.
+        const ::SCE::Saved::SavedState grown = ::SCE::Saved::upgradeSavedState(saved, savedShape());
+        static_cast<void>(::SCE::Saved::restoreHistory<PolicyType>(grown));
+{% for field in static_fields %}
+        static_cast<void>({{ saved_value.read(field, 'grown.variable("' ~ (field.id | escape_cpp) ~ '")') }});
+{% endfor %}
+        ::SCE::Saved::EngineAccess::judgeSession<::SCE::Static::StaticExecutionEngine<PolicyType>>(grown);
+    }
+
+    /// Stand this machine, a fresh one of this document, where `saved` left one, in place of
+    /// `initialize()`: no `<onentry>` runs and no `<data>` is evaluated, since the saved run
+    /// already did both. Every value is read and the state judged before any is written, so a
+    /// refused restore leaves the machine as it was, and throws `::SCE::Saved::StateRefusal`.
+    ///
+    /// Each delayed `<send>` saved is armed against the engine's clock; `wallNowMs` is what
+    /// time it is on the wall clock the saved `due`s were written against. A send comes due
+    /// when its saved moment does, and one already due comes due now.
+    ///
+    /// A format-2 state carries on under the id it was saved with, which every child's id and
+    /// a peer's address name (docs/adr/0045); a format-1 state holds none, so the machine keeps
+    /// the id it has. The host registers its invokers and its processors on the machine, and
+    /// drives it as it would one it had initialized.
+    void restoreAt(const ::SCE::Saved::SavedState& saved, std::int64_t wallNowMs) {
+        // The state as one of this machine: each record saved at an earlier revision of its
+        // schema holds the defaults of the fields added since.
+        const ::SCE::Saved::SavedState grown = ::SCE::Saved::upgradeSavedState(saved, savedShape());
+        auto history = ::SCE::Saved::restoreHistory<PolicyType>(grown);
+{% for field in static_fields %}
+        auto read{{ loop.index0 }} = {{ saved_value.read(field, 'grown.variable("' ~ (field.id | escape_cpp) ~ '")') }};
+{% endfor %}
+        ::SCE::Saved::EngineAccess::judgeSession<::SCE::Static::StaticExecutionEngine<PolicyType>>(grown);
+        if (const auto bound = grown.boundSessionId()) {
+            this->policy_.bindSessionId(*bound);
+        }
+{% for field in static_fields %}
+        this->policy_.{{ field.name }} = std::move(read{{ loop.index0 }});
+{% endfor %}
+        for (auto& [recorded, states] : history) {
+            this->policy_.setHistoryValue(recorded, std::move(states));
+        }
+{% for invoke_info in model.invokes | scxml_family %}
+        // A start after the restore is numbered on from the saved count.
+        this->policy_.invokeStarts_{{ invoke_info.field_suffix }}_ = static_cast<std::uint64_t>(grown.invokeStart("{{ invoke_info.invoke_id }}"));
+{% endfor %}
+        ::SCE::Saved::EngineAccess::enterSession<::SCE::Static::StaticExecutionEngine<PolicyType>>(*this, grown, wallNowMs);
+    }
+
+    /// `restoreAt` at the host's wall clock now.
+    void restore(const ::SCE::Saved::SavedState& saved) {
+        restoreAt(saved, ::SCE::Saved::savedWallClockMs());
+    }
 {% endif %}
 };
 

@@ -324,6 +324,10 @@ engine.raiseExternal({{ event_cpp }}, eventData, "", {{ target_cpp }});
 std::string sendId = {{ action.native_sendid }};
 {% elif action.id %}
 std::string sendId = "{{ action.id }}";
+{% elif action.auto_send_id and static_saved_shape %}
+// docs/adr/0045: a document that saves names the send the parser numbered, so the id a
+// waiting send is saved under is the text every backend writes.
+std::string sendId = "{{ action.auto_send_id }}";
 {% else %}
 std::string sendId = ::SCE::SendHelper::generateSendId();
 {% endif %}

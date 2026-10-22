@@ -102,6 +102,61 @@ enum class ConfigurationRejection {
     return "unknown";
 }
 
+namespace detail {
+
+/// Whether `state`, in the set `among`, holds the number of children a configuration
+/// gives it: one for a compound state, every region and nothing else for a
+/// `<parallel>`, none for an atomic one (`validateConfiguration` states the rule). What both a whole configuration and
+/// the subtree a `<history>` recorded (`validateHistory`) are held to.
+template <typename Policy>
+[[nodiscard]] ConfigurationRejection childArity(const std::vector<typename Policy::State> &among,
+                                                typename Policy::State state) {
+    using State = typename Policy::State;
+
+    const auto holds = [&among](State s) {
+        for (const State &member : among) {
+            if (member == s) {
+                return true;
+            }
+        }
+        return false;
+    };
+
+    std::size_t children = 0;
+    for (const State &candidate : among) {
+        const std::optional<State> parent = Policy::getParent(candidate);
+        if (parent.has_value() && *parent == state) {
+            ++children;
+        }
+    }
+
+    if constexpr (Policy::HAS_PARALLEL_STATES) {
+        if (Policy::isParallelState(state)) {
+            const std::vector<State> regions = Policy::getParallelRegions(state);
+            for (const State &region : regions) {
+                if (!holds(region)) {
+                    return ConfigurationRejection::ParallelRegionMissing;
+                }
+            }
+            if (children != regions.size()) {
+                return ConfigurationRejection::ParallelChildCount;
+            }
+            return ConfigurationRejection::None;
+        }
+    }
+
+    if (Policy::isCompoundState(state)) {
+        if (children != 1) {
+            return ConfigurationRejection::CompoundChildCount;
+        }
+    } else if (children != 0) {
+        return ConfigurationRejection::AtomicHasChildren;
+    }
+    return ConfigurationRejection::None;
+}
+
+}  // namespace detail
+
 /// Whether `configuration` is a configuration of `Policy`'s document, with
 /// `current` as its current state.
 ///
@@ -149,35 +204,9 @@ template <typename Policy>
     }
 
     for (const State &state : configuration) {
-        std::size_t children = 0;
-        for (const State &candidate : configuration) {
-            const std::optional<State> parent = Policy::getParent(candidate);
-            if (parent.has_value() && *parent == state) {
-                ++children;
-            }
-        }
-
-        if constexpr (Policy::HAS_PARALLEL_STATES) {
-            if (Policy::isParallelState(state)) {
-                const std::vector<State> regions = Policy::getParallelRegions(state);
-                for (const State &region : regions) {
-                    if (!holds(region)) {
-                        return ConfigurationRejection::ParallelRegionMissing;
-                    }
-                }
-                if (children != regions.size()) {
-                    return ConfigurationRejection::ParallelChildCount;
-                }
-                continue;
-            }
-        }
-
-        if (Policy::isCompoundState(state)) {
-            if (children != 1) {
-                return ConfigurationRejection::CompoundChildCount;
-            }
-        } else if (children != 0) {
-            return ConfigurationRejection::AtomicHasChildren;
+        const ConfigurationRejection verdict = detail::childArity<Policy>(configuration, state);
+        if (verdict != ConfigurationRejection::None) {
+            return verdict;
         }
     }
 
@@ -194,6 +223,120 @@ template <typename Policy>
     }
 
     return ConfigurationRejection::None;
+}
+
+/// Why a recorded `<history>` value was refused (§scxml-3.10).
+enum class HistoryRejectionKind {
+    Accepted,
+    /// The value holds no state. A history records at least one.
+    Empty,
+    /// A state appears more than once.
+    Duplicate,
+    /// A state is not below the history's parent.
+    NotBelow,
+    /// A shallow history records the children of its parent, and a state is deeper.
+    NotAChild,
+    /// A deep history records atomic states, and one has children.
+    NotAtomic,
+    /// What the value holds is part of no configuration of the document: a compound
+    /// state with two active children, a region missing.
+    Arity,
+};
+
+/// The verdict on a recorded `<history>` value: its kind, the state it is about and the
+/// history's parent where the kind names them, and the configuration rule broken for
+/// `Arity`.
+template <typename State> struct HistoryRejection {
+    HistoryRejectionKind kind = HistoryRejectionKind::Accepted;
+    std::optional<State> state;
+    std::optional<State> parent;
+    ConfigurationRejection arity = ConfigurationRejection::None;
+};
+
+/// Whether `recorded` is a value the `<history>` of `parent` could have recorded: its
+/// active children for a shallow one, the active atomic states below it for a deep one
+/// (`deep`) (§scxml-3.10).
+///
+/// What a history recorded is part of a configuration, so a value read back from a saved
+/// state is held to that, and the restored machine can only be taken through the history
+/// to a configuration its document could have been in. It is read as a configuration of
+/// the subtree under `parent`: the recorded states and every state between each of them
+/// and `parent` satisfy the child arity a whole configuration does. A shallow history
+/// records only the children, so the arity is judged on `parent` alone.
+///
+/// The C++ twin of `sce.ValidateHistory` (Go) and `validate_history` (Python).
+template <typename Policy>
+[[nodiscard]] HistoryRejection<typename Policy::State>
+validateHistory(typename Policy::State parent, bool deep, const std::vector<typename Policy::State> &recorded) {
+    using State = typename Policy::State;
+    using Verdict = HistoryRejection<State>;
+
+    const auto holds = [](const std::vector<State> &among, State s) {
+        for (const State &member : among) {
+            if (member == s) {
+                return true;
+            }
+        }
+        return false;
+    };
+
+    if (recorded.empty()) {
+        return Verdict{HistoryRejectionKind::Empty, std::nullopt, std::nullopt, ConfigurationRejection::None};
+    }
+    for (std::size_t at = 0; at < recorded.size(); ++at) {
+        for (std::size_t earlier = 0; earlier < at; ++earlier) {
+            if (recorded[earlier] == recorded[at]) {
+                return Verdict{HistoryRejectionKind::Duplicate, recorded[at], std::nullopt,
+                               ConfigurationRejection::None};
+            }
+        }
+    }
+
+    // The recorded states, and every state between each of them and parent.
+    std::vector<State> subtree{parent};
+    for (const State &state : recorded) {
+        std::vector<State> chain;
+        std::optional<State> atState = state;
+        while (atState.has_value() && *atState != parent) {
+            chain.push_back(*atState);
+            atState = Policy::getParent(*atState);
+        }
+        // A state equal to parent is below nothing, and a chain that ran out of ancestors
+        // never met it.
+        if (!atState.has_value() || chain.empty()) {
+            return Verdict{HistoryRejectionKind::NotBelow, state, parent, ConfigurationRejection::None};
+        }
+        for (const State &between : chain) {
+            if (!holds(subtree, between)) {
+                subtree.push_back(between);
+            }
+        }
+    }
+
+    if (deep) {
+        for (const State &state : recorded) {
+            if (!Policy::getChildStates(state).empty()) {
+                return Verdict{HistoryRejectionKind::NotAtomic, state, std::nullopt, ConfigurationRejection::None};
+            }
+        }
+        for (const State &state : subtree) {
+            const ConfigurationRejection verdict = detail::childArity<Policy>(subtree, state);
+            if (verdict != ConfigurationRejection::None) {
+                return Verdict{HistoryRejectionKind::Arity, std::nullopt, std::nullopt, verdict};
+            }
+        }
+        return Verdict{};
+    }
+    for (const State &state : recorded) {
+        if (Policy::getParent(state) != std::optional<State>(parent)) {
+            return Verdict{HistoryRejectionKind::NotAChild, state, parent, ConfigurationRejection::None};
+        }
+    }
+    const ConfigurationRejection verdict = detail::childArity<Policy>(subtree, parent);
+    if (verdict != ConfigurationRejection::None) {
+        return Verdict{HistoryRejectionKind::Arity, std::nullopt, std::nullopt, verdict};
+    }
+    return Verdict{};
 }
 
 /// §scxml-3.11: which rule a state SPECIFICATION breaks. A specification is

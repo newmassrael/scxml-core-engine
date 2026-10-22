@@ -1,0 +1,55 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{#
+    A variable's saved form (SCE Accepted Subset §2.15, docs/adr/0045), as the generated
+    `saveAt`, `judge` and `restoreAt` of a machine spell it: a record's or an enum's own
+    (`<Type>ToSaved` / `<Type>FromSaved`, emitted with the type by the static lowering), and
+    every other type's by the runtime's `SCE::Saved` functions
+    (`sce/include/saved/SavedValues.h`), named for the `sce:type`. The C++ twin of the
+    `saved_write` and `saved_read` macros of `python/saved_functions.py.jinja2`.
+#}
+
+{#- The variable `field`, held by the policy `source`, as the JSON value a saved state holds. -#}
+{% macro write(field, source) -%}
+{%- if field.saved_kind == "optional" and field.saved_elem == "enum" -%}
+::SCE::Saved::savedWriteOptional({{ source }}.{{ field.name }}, {{ field.saved_type }}ToSaved)
+{%- elif field.saved_kind == "optional" -%}
+::SCE::Saved::savedWriteOptional({{ source }}.{{ field.name }}, ::SCE::Saved::savedWrite{{ field.saved_type | capitalize }})
+{%- elif field.saved_kind == "record" or field.saved_kind == "enum" -%}
+{{ field.saved_type }}ToSaved({{ source }}.{{ field.name }})
+{%- elif field.saved_kind == "list" -%}
+::SCE::Saved::savedWriteList({{ source }}.{{ field.name }}, ::SCE::Saved::savedWrite{{ field.saved_type | capitalize }})
+{%- elif field.saved_kind == "record_list" -%}
+::SCE::Saved::savedWriteList({{ source }}.{{ field.name }}, {{ field.saved_type }}ToSaved)
+{%- else -%}
+::SCE::Saved::savedWrite{{ field.saved_type | capitalize }}({{ source }}.{{ field.name }})
+{%- endif -%}
+{%- endmacro %}
+
+{#- The value of the variable `field` read back from `raw`, the JSON value a saved state holds
+    it as, or the refusal naming it: held to the bound the machine keeps, which a restored
+    value must not be the first to exceed. -#}
+{% macro read(field, raw) -%}
+{%- if field.saved_kind == "optional" and field.saved_elem == "enum" -%}
+::SCE::Saved::savedReadOptional({{ raw }}, "{{ field.id | escape_cpp }}", {{ field.saved_type }}FromSaved)
+{%- elif field.saved_kind == "optional" and field.saved_type == "bytes" -%}
+::SCE::Saved::savedReadOptional({{ raw }}, "{{ field.id | escape_cpp }}", ::SCE::Saved::savedBoundedBytes({{ field.bound if field.bound is not none else 2147483647 }}u))
+{%- elif field.saved_kind == "optional" and field.saved_type == "string" and field.bound is not none -%}
+::SCE::Saved::savedReadOptional({{ raw }}, "{{ field.id | escape_cpp }}", ::SCE::Saved::savedBoundedString({{ field.bound }}u))
+{%- elif field.saved_kind == "optional" -%}
+::SCE::Saved::savedReadOptional({{ raw }}, "{{ field.id | escape_cpp }}", ::SCE::Saved::savedRead{{ field.saved_type | capitalize }})
+{%- elif field.saved_kind == "record" or field.saved_kind == "enum" -%}
+{{ field.saved_type }}FromSaved({{ raw }}, "{{ field.id | escape_cpp }}")
+{%- elif field.saved_kind == "list" -%}
+::SCE::Saved::savedReadList({{ raw }}, "{{ field.id | escape_cpp }}", {{ field.bound }}u, ::SCE::Saved::savedRead{{ field.saved_type | capitalize }})
+{%- elif field.saved_kind == "record_list" -%}
+::SCE::Saved::savedReadList({{ raw }}, "{{ field.id | escape_cpp }}", {{ field.bound }}u, {{ field.saved_type }}FromSaved)
+{%- elif field.saved_type == "bytes" -%}
+::SCE::Saved::savedReadBytes({{ raw }}, "{{ field.id | escape_cpp }}", {{ field.bound if field.bound is not none else 2147483647 }}u)
+{%- elif field.saved_type == "string" and field.bound is not none -%}
+::SCE::Saved::savedReadBoundedString({{ raw }}, "{{ field.id | escape_cpp }}", {{ field.bound }}u)
+{%- else -%}
+::SCE::Saved::savedRead{{ field.saved_type | capitalize }}({{ raw }}, "{{ field.id | escape_cpp }}")
+{%- endif -%}
+{%- endmacro %}

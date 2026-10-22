@@ -5723,7 +5723,24 @@ impl CppTarget {
     }
 }
 
+/// `attr`, a `sce:type` spelling (`uint8`, `float64`, `bytes`), as the suffix of the
+/// runtime function that writes or reads a value of it into a saved state
+/// (`savedWriteUint8`, `savedReadFloat64`: `sce/include/saved/SavedValues.h`).
+fn cpp_saved_name(attr: &str) -> String {
+    let mut chars = attr.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().chain(chars).collect(),
+        None => String::new(),
+    }
+}
+
 impl StaticTarget for CppTarget {
+    // The start site holds the id it generates in the `std::string` local
+    // `generatedInvokeId` (`defer_scxml_invoke`), which it goes on to start the
+    // child under, so the variable takes it as it stands.
+    fn generated_invoke_id(&self) -> Option<&'static str> {
+        Some("generatedInvokeId")
+    }
     fn name(&self) -> &'static str {
         "C++"
     }
@@ -6108,7 +6125,86 @@ impl StaticTarget for CppTarget {
                 format!("    {field_ty} {};\n", self.record_field(&field.id))
             })
             .collect();
-        format!("/// SCE Accepted Subset §2.15: a `record:{alias}` datamodel value.\nstruct {ty} {{\n{fields}}};")
+        // Its saved form (`SCE::Saved`) is two functions beside the type, so the record
+        // stays the plain data a value is built from by designated initializers: an
+        // object of the schema's fields keyed by their ids, written by `{ty}ToSaved` and
+        // read by `{ty}FromSaved`, the names the enum's own saved form has
+        // ([`Self::enum_def`]). An optional field is written as null or as its present
+        // value, and read back absent from null and otherwise as its present value is
+        // (docs/adr/0055, section 4).
+        let writes: String = schema
+            .fields
+            .iter()
+            .map(|field| {
+                let member = format!("value.{}", self.record_field(&field.id));
+                let writer = match field.sce_type.present_type() {
+                    SceType::Enum(reference) => format!("{}ToSaved", enum_types[&reference.alias]),
+                    other => format!(
+                        "::SCE::Saved::savedWrite{}",
+                        cpp_saved_name(&other.as_attr())
+                    ),
+                };
+                let saved = match field.sce_type {
+                    FieldType::Optional { .. } => {
+                        format!("::SCE::Saved::savedWriteOptional({member}, {writer})")
+                    }
+                    FieldType::Scalar(_) => format!("{writer}({member})"),
+                };
+                format!(
+                    "    members.set(\"{}\", {saved});\n",
+                    filters::escape_cpp(field.id.clone())
+                )
+            })
+            .collect();
+        let reads: String = schema
+            .fields
+            .iter()
+            .map(|field| {
+                let id = filters::escape_cpp(field.id.clone());
+                let reader = match (field.sce_type.present_type(), field.max_size) {
+                    (SceType::Enum(reference), _) => {
+                        format!("{}FromSaved", enum_types[&reference.alias])
+                    }
+                    // A string is read back only if it fits the bound the schema
+                    // declares, as a string variable's is, and so is a byte string, in
+                    // bytes.
+                    (SceType::String, Some(bound)) => {
+                        format!("::SCE::Saved::savedBoundedString({bound}u)")
+                    }
+                    (SceType::Bytes, Some(bound)) => {
+                        format!("::SCE::Saved::savedBoundedBytes({bound}u)")
+                    }
+                    (SceType::Bytes, None) => {
+                        format!("::SCE::Saved::savedBoundedBytes({}u)", i32::MAX)
+                    }
+                    (other, _) => {
+                        format!(
+                            "::SCE::Saved::savedRead{}",
+                            cpp_saved_name(&other.as_attr())
+                        )
+                    }
+                };
+                let what = format!("what + \".{id}\"");
+                let held = format!("::SCE::Saved::savedField(value, what, \"{id}\")");
+                let read = match &field.sce_type {
+                    FieldType::Optional { .. } => {
+                        format!("::SCE::Saved::savedReadOptional({held}, {what}, {reader})")
+                    }
+                    FieldType::Scalar(_) => format!("({reader})({held}, {what})"),
+                };
+                format!("        .{} = {read},\n", self.record_field(&field.id))
+            })
+            .collect();
+        format!(
+            "/// SCE Accepted Subset §2.15: a `record:{alias}` datamodel value.\nstruct {ty} {{\n{fields}}};\n\n\
+             /// `value` as a saved state writes it.\n\
+             inline ::SCE::Saved::JsonValue {ty}ToSaved(const {ty} &value) {{\n    \
+             ::SCE::Saved::JsonObject members;\n{writes}    \
+             return ::SCE::Saved::JsonValue(std::move(members));\n}}\n\n\
+             /// The value a saved state holds, refused unless it is one.\n\
+             inline {ty} {ty}FromSaved(const ::SCE::Saved::JsonValue &value, const std::string &what) {{\n    \
+             return {ty}{{\n{reads}    }};\n}}"
+        )
     }
     // The schema's id spelled as this file's payload structs spell their
     // fields: one file, one spelling of a schema field.
@@ -6171,6 +6267,20 @@ impl StaticTarget for CppTarget {
                 )
             })
             .collect();
+        // Its saved form is the declared name the enum document gives the variant,
+        // written by `{ty}ToSaved` and read by `{ty}FromSaved`, beside the type as a
+        // record's own are ([`Self::record_def`]).
+        let saved_variants: String = model
+            .variants
+            .iter()
+            .map(|v| {
+                format!(
+                    "        {{\"{}\", {ty}::{}}},\n",
+                    filters::escape_cpp(v.name.clone()),
+                    self.enum_variant(ty, &model.name, &v.name)
+                )
+            })
+            .collect();
         format!(
             "/// SCE Accepted Subset §2.15: an `enum:{alias}` datamodel value.\n\
              enum class {ty} : {carrier} {{\n{variants}}};\n\n\
@@ -6179,7 +6289,13 @@ impl StaticTarget for CppTarget {
              /// The number the enum document declares for `value`.\n\
              inline {carrier} {ty}ToUnderlying({ty} value) {{\n    return static_cast<{carrier}>(value);\n}}\n\n\
              /// The variant that declares `raw`, or `std::nullopt` for a number no variant declares.\n\
-             inline std::optional<{ty}> {ty}FromUnderlying({carrier} raw) {{\n    switch (raw) {{\n{variants_of}    default:\n        return std::nullopt;\n    }}\n}}"
+             inline std::optional<{ty}> {ty}FromUnderlying({carrier} raw) {{\n    switch (raw) {{\n{variants_of}    default:\n        return std::nullopt;\n    }}\n}}\n\n\
+             /// `value` as a saved state writes it.\n\
+             inline ::SCE::Saved::JsonValue {ty}ToSaved({ty} value) {{\n    return ::SCE::Saved::JsonValue(std::string(sceLogName(value)));\n}}\n\n\
+             /// The value a saved state holds, refused unless it is a variant.\n\
+             inline {ty} {ty}FromSaved(const ::SCE::Saved::JsonValue &value, const std::string &what) {{\n    \
+             static const std::map<std::string, {ty}> variants = {{\n{saved_variants}    }};\n    \
+             return ::SCE::Saved::savedReadVariant(value, what, \"{alias}\", variants);\n}}"
         )
     }
     fn enum_number_symbols(&self, ty: &str, _model: &EnumModel) -> (String, String) {

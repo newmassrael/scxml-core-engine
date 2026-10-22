@@ -7,6 +7,7 @@
 #include <functional>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 #ifdef SCE_THREAD_SAFE
 #include <mutex>
@@ -125,6 +126,20 @@ public:
             throw std::runtime_error("EventQueueManager: Cannot read the front of an empty queue");
         }
         return queue_.front();
+    }
+
+    /**
+     * @brief Every queued event, oldest first, left where it is
+     *
+     * What a save writes (docs/adr/0045). Copies, so no reference outlives the lock.
+     *
+     * Thread-safe when SCE_THREAD_SAFE is enabled.
+     */
+    std::vector<EventType> snapshot() const {
+#ifdef SCE_THREAD_SAFE
+        std::lock_guard<std::mutex> lock(mutex_);
+#endif
+        return std::vector<EventType>(queue_.begin(), queue_.end());
     }
 
     /**
