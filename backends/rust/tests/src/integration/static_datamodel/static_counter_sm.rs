@@ -109,6 +109,19 @@ pub enum StaticCounterEvent {
 }
 
 // ======================================================================
+// What this document's state tree bounds (W3C SCXML 3.4)
+// ======================================================================
+
+/// A set of this machine's states that are, or are about to be, in one
+/// configuration: the configuration a host observes, and what the runtime's
+/// microstep builds from it (an exit set, an entry set, a history's record).
+/// Its capacity, 1, is the most states one configuration of this document holds,
+/// read from its state tree; the runtime names no size of its own. A `Vec` under
+/// std, where the capacity is not read.
+pub type StaticCounterConfiguration =
+    ::sce_rust_runtime::helpers::hierarchy::BoundedVec<StaticCounterState, 1>;
+
+// ======================================================================
 // Externally-drivable event surface (W3C SCXML 3.12 / 5.10)
 // ======================================================================
 
@@ -147,7 +160,7 @@ pub struct StaticCounterData {
 /// host holding one keeps what it saw whatever the machine does next.
 #[derive(Debug, Clone, PartialEq)]
 pub struct StaticCounterSnapshot {
-    pub configuration: ::sce_rust_runtime::helpers::hierarchy::StateChain<StaticCounterState>,
+    pub configuration: StaticCounterConfiguration,
     pub data: StaticCounterData,
     pub truncated: bool,
 }
@@ -397,11 +410,11 @@ pub struct StaticCounterInvokeParams {
 pub struct StaticCounterPolicy {
     // W3C SCXML 3.4: Active state configuration for parallel states / In() predicate
     //
-    // SCE Protocol-Synthesis RFC §synth-5-J-2: type is the runtime crate's
-    // [`StateChain`] alias — `Vec<S>` under std, `heapless::Vec<S, MAX_HIERARCHY_DEPTH>`
-    // under no_std. The std alias preserves the existing ABI; the no_std alias keeps
-    // the generated code allocator-free.
-    active_states: ::sce_rust_runtime::helpers::hierarchy::StateChain<StaticCounterState>,
+    // SCE Protocol-Synthesis RFC §synth-5-J-2: this document's own
+    // `StaticCounterConfiguration` — `Vec<S>` under std, a `heapless::Vec` of exactly
+    // the most states one configuration holds under no_std. The std alias preserves
+    // the existing ABI; the no_std alias keeps the generated code allocator-free.
+    active_states: StaticCounterConfiguration,
     /// W3C SCXML 5.2: the `count` datamodel variable, published (`sce:direction="out"`).
     count: u32,
     /// W3C SCXML 5.2: the `ready` datamodel variable, published (`sce:direction="out"`).
@@ -433,7 +446,7 @@ impl StaticCounterPolicy {
         let ready: bool = false;
         let step: u32 = 1;
         Self {
-            active_states: ::sce_rust_runtime::helpers::hierarchy::new_chain(),
+            active_states: Default::default(),
             count,
             ready,
             step,
@@ -521,7 +534,7 @@ impl StaticCounterPolicy {
         if self.active_states.contains(&state) {
             return false;
         }
-        ::sce_rust_runtime::helpers::hierarchy::push_chain(&mut self.active_states, state);
+        ::sce_rust_runtime::BoundedPush::push_bounded(&mut self.active_states, state);
         true
     }
 
@@ -576,6 +589,23 @@ impl StatePolicy for StaticCounterPolicy {
     // this one emission compiles on both runtime profiles. Mirrors the
     // EventQueue per-machine sizing lever above.
     type ScheduledSendId = sce_rust_runtime::ElidedSendId;
+
+    // W3C SCXML 3.4: what this document's state tree bounds, read by the
+    // generator and written here so every buffer of the runtime's microstep is
+    // this document's size and no larger. A configuration holds 1 state(s) at
+    // most; a selection enables 1 transition(s) at most, one from each atomic state
+    // of one; the deepest state sits 1 level(s) down. Under std the buffers
+    // are `Vec`s and the capacities are not read.
+    type Configuration = StaticCounterConfiguration;
+    type EnabledSet = ::sce_rust_runtime::helpers::hierarchy::BoundedVec<
+        ::sce_rust_runtime::EnabledTransition<Self::State, Self::History>,
+        1,
+    >;
+    type HistoryDefaults =
+        ::sce_rust_runtime::helpers::hierarchy::BoundedVec<(Self::State, Self::History), 0>;
+    const MAX_CONFIGURATION: usize = 1;
+    const MAX_ENABLED: usize = 1;
+    const MAX_DEPTH: usize = 1;
 
     // W3C SCXML feature flags
     const HAS_PARALLEL_STATES: bool = false;
@@ -693,7 +723,7 @@ impl StatePolicy for StaticCounterPolicy {
 
     // The inverse of the table above, emitted from the same loop over the
     // document's states so the two age together. It is what lets a host turn a
-    // recorded configuration back into the `StateChain` `enter_at` takes.
+    // recorded configuration back into the slice `enter_at` takes.
     fn get_state_from_name(name: &str) -> Option<Self::State> {
         match name {
             "counting" => Some(StaticCounterState::Counting),
@@ -717,10 +747,10 @@ impl StatePolicy for StaticCounterPolicy {
     }
 
     // SCE Protocol-Synthesis RFC §synth-5-J-2: trait default in `sce-rust-runtime::policy`
-    // returns `StateChain<Self::State>`; this override matches that signature
+    // returns `Self::Configuration`; this override matches that signature
     // so the std alias-to-`Vec<S>` and no_std alias-to-`heapless::Vec<S, …>`
     // both resolve correctly.
-    fn get_active_states(&self) -> ::sce_rust_runtime::helpers::hierarchy::StateChain<Self::State> {
+    fn get_active_states(&self) -> Self::Configuration {
         self.active_states.clone()
     }
 
@@ -729,11 +759,11 @@ impl StatePolicy for StaticCounterPolicy {
     // decides both — this machine keeps its own active set, so this machine is
     // the one that can be handed one back. The trait default is a tripwire, so
     // emitting the reader without this one would turn a restore into a panic.
-    fn set_active_states(
-        &mut self,
-        states: ::sce_rust_runtime::helpers::hierarchy::StateChain<Self::State>,
-    ) {
-        self.active_states = states;
+    fn set_active_states(&mut self, states: &[Self::State]) {
+        self.active_states.clear();
+        for &state in states {
+            ::sce_rust_runtime::BoundedPush::push_bounded(&mut self.active_states, state);
+        }
     }
 
     // ======================================================================

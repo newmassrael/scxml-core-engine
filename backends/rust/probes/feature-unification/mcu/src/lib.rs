@@ -13,7 +13,8 @@
 #![no_std]
 #![deny(warnings)]
 
-use sce_rust_runtime::{sce_string_from_str, BoundedPush, SceString, SceTransitionBuf};
+use sce_rust_runtime::helpers::hierarchy::BoundedVec;
+use sce_rust_runtime::{sce_string_from_str, BoundedPush, SceString};
 
 /// The generated `--no-std` machine, so both builds compile it.
 pub use sce_portable_emit_probe as machine;
@@ -25,9 +26,10 @@ pub fn event_text(text: &str) -> SceString {
 }
 
 /// The runtime's microstep buffer, filled through the push both profiles
-/// implement.
-pub fn first_two(items: &[u8]) -> SceTransitionBuf<u8> {
-    let mut buffer: SceTransitionBuf<u8> = SceTransitionBuf::new();
+/// implement: a `Vec` in the unified host build, a `heapless::Vec` of this
+/// capacity on the MCU target.
+pub fn first_two(items: &[u8]) -> BoundedVec<u8, 2> {
+    let mut buffer: BoundedVec<u8, 2> = BoundedVec::new();
     for item in items.iter().take(2) {
         buffer.push_bounded(*item);
     }

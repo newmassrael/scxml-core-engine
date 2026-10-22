@@ -1,17 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// Integration tests for the hierarchy helpers: the bounded `StateChain` every
-// configuration is held in, and the three constructors the public surface
-// offers for it.
+// Integration tests for the hierarchy helpers: the bounded buffers every
+// configuration, and every set of states a microstep builds, is held in.
 //
 // The walks over the hierarchy — descendancy, domains, exit and entry sets —
 // are `helpers::microstep`'s, and are held to Appendix D in
 // `tests/microstep_algorithms.rs`.
 
-use sce_rust_runtime::helpers::hierarchy::{
-    new_chain, push_chain, state_chain_from_slice, StateChain,
-};
+use sce_rust_runtime::helpers::hierarchy::{Bounded, BoundedVec};
+use sce_rust_runtime::BoundedPush;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum FakeState {
@@ -23,47 +21,83 @@ enum FakeState {
 }
 
 // ──────────────────────────────────────────────
-// new_chain / push_chain / state_chain_from_slice (C3 follow-up #1)
-// Public so a host can build the `StateChain` `Engine::enter_at` takes on
-// either runtime profile — these tests pin that surface.
+// `Bounded` over the buffer a generated policy spells with `BoundedVec`, and
+// over the `heapless::Vec` that is it without `std` — on both, whatever the
+// profile this test is built in, since the trait is implemented for both.
 // ──────────────────────────────────────────────
 
-#[test]
-fn new_chain_starts_empty() {
-    let chain: StateChain<FakeState> = new_chain();
+/// Everything a microstep does to a buffer, written once over the trait.
+fn builds_in_order<B: Bounded<FakeState>>() {
+    let mut chain = B::default();
+    assert!(chain.is_empty());
+    chain.push_bounded(FakeState::A);
+    chain.push_bounded(FakeState::A1);
+    chain.push_bounded(FakeState::A2);
+    assert_eq!(chain.len(), 3);
+    assert_eq!(&chain[..], [FakeState::A, FakeState::A1, FakeState::A2]);
+}
+
+fn drops_what_it_is_told_to<B: Bounded<FakeState>>() {
+    let mut chain = B::default();
+    for state in [
+        FakeState::Root,
+        FakeState::A,
+        FakeState::A1,
+        FakeState::A2,
+        FakeState::B1,
+    ] {
+        chain.push_bounded(state);
+    }
+
+    chain.retain(|&s| s != FakeState::A);
+    assert_eq!(
+        &chain[..],
+        [FakeState::Root, FakeState::A1, FakeState::A2, FakeState::B1]
+    );
+
+    chain.truncate(2);
+    assert_eq!(&chain[..], [FakeState::Root, FakeState::A1]);
+    // Keeping more than there is does nothing.
+    chain.truncate(10);
+    assert_eq!(chain.len(), 2);
+
+    chain.clear();
     assert!(chain.is_empty());
 }
 
 #[test]
-fn push_chain_appends_in_order() {
-    let mut chain: StateChain<FakeState> = new_chain();
-    push_chain(&mut chain, FakeState::A);
-    push_chain(&mut chain, FakeState::A1);
-    push_chain(&mut chain, FakeState::A2);
-    assert_eq!(chain.len(), 3);
-    assert_eq!(chain[0], FakeState::A);
-    assert_eq!(chain[1], FakeState::A1);
-    assert_eq!(chain[2], FakeState::A2);
+fn a_bounded_vec_builds_in_order() {
+    builds_in_order::<BoundedVec<FakeState, 3>>();
 }
 
 #[test]
-fn state_chain_from_slice_preserves_order() {
-    let chain = state_chain_from_slice([FakeState::A1, FakeState::A2, FakeState::B1]);
-    assert_eq!(chain.len(), 3);
-    assert_eq!(chain[0], FakeState::A1);
-    assert_eq!(chain[1], FakeState::A2);
-    assert_eq!(chain[2], FakeState::B1);
+fn a_heapless_vec_builds_in_order() {
+    builds_in_order::<heapless::Vec<FakeState, 3>>();
 }
 
 #[test]
-fn state_chain_from_slice_empty_array() {
-    let chain: StateChain<FakeState> = state_chain_from_slice([]);
+fn a_bounded_vec_drops_what_it_is_told_to() {
+    drops_what_it_is_told_to::<BoundedVec<FakeState, 5>>();
+}
+
+#[test]
+fn a_heapless_vec_drops_what_it_is_told_to() {
+    drops_what_it_is_told_to::<heapless::Vec<FakeState, 5>>();
+}
+
+#[test]
+fn a_buffer_of_no_slots_is_empty_and_holds_nothing() {
+    // A document with no `<history>` spells its history defaults with
+    // capacity 0, and nothing is ever pushed.
+    let chain = heapless::Vec::<(FakeState, FakeState), 0>::default();
     assert!(chain.is_empty());
 }
 
 #[test]
-fn state_chain_from_slice_single_item() {
-    let chain = state_chain_from_slice([FakeState::Root]);
-    assert_eq!(chain.len(), 1);
-    assert_eq!(chain[0], FakeState::Root);
+#[should_panic(expected = "microstep buffer overflow (capacity 2)")]
+fn a_heapless_vec_past_its_capacity_is_a_generator_bug_and_says_so() {
+    let mut chain = heapless::Vec::<FakeState, 2>::default();
+    chain.push_bounded(FakeState::A);
+    chain.push_bounded(FakeState::A1);
+    chain.push_bounded(FakeState::A2);
 }

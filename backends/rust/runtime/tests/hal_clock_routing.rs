@@ -21,6 +21,7 @@ use core::time::Duration;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
+use sce_rust_runtime::helpers::hierarchy::BoundedVec;
 use sce_rust_runtime::{EnabledTransition, Engine, EntryTarget, Hal, NoHistory, StatePolicy};
 
 // ─────────────────────────────────────────────────────────────
@@ -101,6 +102,12 @@ impl StatePolicy for MockPolicy {
         sce_rust_runtime::EventWithMetadata<Self::Event, Self::Payload>,
     >;
     type ScheduledSendId = sce_rust_runtime::SceString;
+    type Configuration = BoundedVec<St, 1>;
+    type EnabledSet = BoundedVec<EnabledTransition<Self::State, Self::History>, 1>;
+    type HistoryDefaults = BoundedVec<(Self::State, Self::History), 0>;
+    const MAX_CONFIGURATION: usize = 1;
+    const MAX_ENABLED: usize = 1;
+    const MAX_DEPTH: usize = 1;
 
     fn initial_state() -> Self::State {
         St::S0

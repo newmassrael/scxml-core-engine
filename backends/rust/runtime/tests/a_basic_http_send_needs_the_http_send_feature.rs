@@ -17,6 +17,7 @@
 use std::collections::HashMap;
 use std::time::Duration;
 
+use sce_rust_runtime::helpers::hierarchy::BoundedVec;
 use sce_rust_runtime::{EnabledTransition, Engine, EntryTarget, NoHistory, StatePolicy};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -48,6 +49,12 @@ impl StatePolicy for HttpPolicy {
         sce_rust_runtime::EventWithMetadata<Self::Event, Self::Payload>,
     >;
     type ScheduledSendId = sce_rust_runtime::SceString;
+    type Configuration = BoundedVec<HttpState, 1>;
+    type EnabledSet = BoundedVec<EnabledTransition<Self::State, Self::History>, 1>;
+    type HistoryDefaults = BoundedVec<(Self::State, Self::History), 0>;
+    const MAX_CONFIGURATION: usize = 1;
+    const MAX_ENABLED: usize = 1;
+    const MAX_DEPTH: usize = 1;
 
     fn initial_state() -> Self::State {
         HttpState::Idle

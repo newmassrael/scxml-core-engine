@@ -761,6 +761,10 @@
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/Configuration.kt",
           "symbol": "HistoryRejection",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/microstep_bounds.rs",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -2917,6 +2921,20 @@
         },
         {
           "file": "sce-build/src/scxml_semantic.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/policy.rs",
+          "symbol": "Configuration",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/policy.rs",
+          "symbol": "MAX_CONFIGURATION",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/microstep_bounds.rs",
           "kind": "references"
         }
       ],
@@ -17758,6 +17776,20 @@
         {
           "file": "backends/python/runtime/sce_runtime/policy.py",
           "symbol": "first_enabled_transition",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/policy.rs",
+          "symbol": "EnabledSet",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/policy.rs",
+          "symbol": "MAX_ENABLED",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/microstep_bounds.rs",
           "kind": "references"
         }
       ],

@@ -36,7 +36,6 @@
 
 use sce_nostd_queue_size_machine::EventQueueCapacityProbePolicy;
 use sce_rust_runtime::engine::PullScheduler;
-use sce_rust_runtime::helpers::microstep::TransitionSet;
 use sce_rust_runtime::{Engine, EventMetadata, StatePolicy};
 
 /// The probe machine's event enum — the `E` in `PullScheduler<E, S>` /
@@ -106,26 +105,34 @@ const _: () = assert!(
      doc-comment and the ScheduledSendId associated type in backends/rust/runtime/src/engine.rs.",
 );
 
-/// Enabled-set lever. Appendix D's loop holds one `TransitionSet` in each of the
-/// frames from the main event loop to the microstep, so every slot of its
-/// capacity is paid on the stack several times over at the deepest point of a
-/// call. It is sized to the bound the configuration already imposes
-/// (`MAX_ENABLED_TRANSITIONS` = `MAX_HIERARCHY_DEPTH` = 16), which measures
-/// **260 B** for this machine; the earlier margin of 32 measured 516 B. The bound
-/// sits between the two so the margin cannot silently come back.
-const ENABLED_SET_BOUND: usize = 384;
+/// Document-bound lever. Appendix D's loop holds an enabled set, a configuration
+/// and the sets built from it in the frames from the main event loop to the
+/// microstep, so every slot of their capacities is paid on the stack several
+/// times over at the deepest point of a call. The generator sizes them to what
+/// this document's state tree bounds, and this machine is three flat states, so
+/// one is active at a time and one transition enabled: capacity 1 each, where a
+/// bound written for every document was 16 and then 32 (516 B an enabled set).
+/// The numbers are asserted exactly, since a number that is merely small enough
+/// would let the generator drift back toward a constant without a word.
+const _: () = assert!(
+    <EventQueueCapacityProbePolicy as StatePolicy>::MAX_CONFIGURATION == 1
+        && <EventQueueCapacityProbePolicy as StatePolicy>::MAX_ENABLED == 1
+        && <EventQueueCapacityProbePolicy as StatePolicy>::MAX_DEPTH == 1,
+    "the flat probe machine's microstep bounds are not 1: the generator stopped reading the \
+     document's state tree (sce-build/src/microstep_bounds.rs) and wrote a constant, or the \
+     fixture gained a state",
+);
+
+/// The buffers are spelled to those capacities, not only the constants beside
+/// them: an enabled set of one transition is the transition and its length.
+const ENABLED_SET_BOUND: usize = 32;
 
 const _: () = assert!(
-    core::mem::size_of::<
-        TransitionSet<
-            <EventQueueCapacityProbePolicy as StatePolicy>::State,
-            <EventQueueCapacityProbePolicy as StatePolicy>::History,
-        >,
-    >() <= ENABLED_SET_BOUND,
-    "the enabled transition set exceeds its bound: MAX_ENABLED_TRANSITIONS was raised past \
-     MAX_HIERARCHY_DEPTH, which the configuration cannot exceed, and the engine's deepest \
-     call chain pays for every extra slot several times over. See MAX_ENABLED_TRANSITIONS \
-     in backends/rust/runtime/src/lib.rs.",
+    core::mem::size_of::<<EventQueueCapacityProbePolicy as StatePolicy>::EnabledSet>()
+        <= ENABLED_SET_BOUND,
+    "the enabled transition set is larger than one transition and its length: its type was \
+     spelled with a capacity other than the document's MAX_ENABLED. See the Rust template's \
+     `type EnabledSet` (tools/codegen/templates/rust/state_machine.rs.jinja2).",
 );
 
 /// Loose whole-`Engine` sanity bound (measured ~832 B after the scheduler

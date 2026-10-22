@@ -12,6 +12,7 @@
 // trivial SM and drive transitions correctly, the trait shape is viable for
 // template-driven generation. Pins that baseline.
 
+use sce_rust_runtime::helpers::hierarchy::BoundedVec;
 use sce_rust_runtime::{EnabledTransition, Engine, EntryTarget, NoHistory, StatePolicy};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -61,6 +62,13 @@ impl StatePolicy for HwPolicy {
         sce_rust_runtime::EventWithMetadata<Self::Event, Self::Payload>,
     >;
     type ScheduledSendId = sce_rust_runtime::SceString;
+    // A flat document: one state is active at a time.
+    type Configuration = BoundedVec<HwState, 1>;
+    type EnabledSet = BoundedVec<EnabledTransition<Self::State, Self::History>, 1>;
+    type HistoryDefaults = BoundedVec<(Self::State, Self::History), 0>;
+    const MAX_CONFIGURATION: usize = 1;
+    const MAX_ENABLED: usize = 1;
+    const MAX_DEPTH: usize = 1;
 
     fn initial_state() -> Self::State {
         HwState::Stopped

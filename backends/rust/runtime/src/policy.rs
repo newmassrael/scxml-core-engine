@@ -49,7 +49,7 @@ use core::hash::Hash;
 use crate::event::{EventMetadata, EventWithMetadata};
 use crate::hal::Hal;
 use crate::helpers::event_queue::EventQueueLike;
-use crate::helpers::hierarchy::{self, StateChain};
+use crate::helpers::hierarchy::Bounded;
 use crate::helpers::microstep::{Document, EnabledTransition, EntryTarget};
 use crate::Engine;
 
@@ -153,6 +153,53 @@ pub trait StatePolicy: Sized + 'static {
     /// it has no default — stable Rust forbids default associated types, so
     /// every generated policy emits it.
     type ScheduledSendId: crate::ScheduledSendIdLike;
+
+    // ──────────────────────────────────────────────
+    // What the document's state tree bounds
+    //
+    // The generator reads the tree and writes all six, so every buffer of the
+    // microstep is the size this document needs and no larger. Like the
+    // associated types above they have no default: a default could only be the
+    // guess the generator exists to replace.
+    // ──────────────────────────────────────────────
+
+    /// A set of states that are, or are about to be, in one configuration (§scxml-3.4):
+    /// the configuration the engine publishes, and the exit set, entry set, list of
+    /// effective targets and history record Appendix D's procedures build from it.
+    ///
+    /// Spelled `BoundedVec<State, N>` with `N` = [`MAX_CONFIGURATION`](StatePolicy::MAX_CONFIGURATION),
+    /// which is a `Vec` under std (so the same emission compiles on both runtime
+    /// profiles) and a `heapless::Vec` of exactly that capacity without it.
+    type Configuration: Bounded<Self::State>;
+
+    /// The transitions one selection enables (§scxml-D-selectTransitions): at most
+    /// one from each atomic state of a configuration.
+    ///
+    /// Spelled `BoundedVec<EnabledTransition<State, History>, N>` with `N` =
+    /// [`MAX_ENABLED`](StatePolicy::MAX_ENABLED).
+    type EnabledSet: Bounded<EnabledTransition<Self::State, Self::History>>;
+
+    /// What a microstep owes the default transition of each `<history>` it took
+    /// with nothing recorded, one pair for each parent that has a `<history>`.
+    ///
+    /// Spelled `BoundedVec<(State, History), N>`, `N` the number of such parents;
+    /// empty — capacity 0 — for a document with no `<history>`.
+    type HistoryDefaults: Bounded<(Self::State, Self::History)>;
+
+    /// The most states one configuration of this document holds (§scxml-3.4): the
+    /// states on one root-to-leaf path with, for each `<parallel>` on it, every
+    /// region's own largest.
+    const MAX_CONFIGURATION: usize;
+
+    /// The most transitions one selection can enable: one for each atomic state of
+    /// the largest configuration (§scxml-D-selectTransitions).
+    const MAX_ENABLED: usize;
+
+    /// How many levels the deepest state, or `<history>` (which sits one below its
+    /// parent), is at, the `<scxml>` element's child being at 1. Every walk up the
+    /// hierarchy reaches the `<scxml>` element in at most that many steps, so one
+    /// that has not is walking a cycle.
+    const MAX_DEPTH: usize;
 
     // ──────────────────────────────────────────────
     // Feature flags (C++ `static constexpr bool HAS_...`)
@@ -368,10 +415,8 @@ pub trait StatePolicy: Sized + 'static {
     ///
     /// This is what lets a configuration cross a process. A host can only
     /// record state *names* — a journal, a wire, a file — while
-    /// [`Engine::enter_at`](crate::Engine::enter_at) takes a
-    /// [`StateChain`] of `Self::State`. (Bare label: `StateChain` is imported
-    /// above, so an explicit target is redundant and `rustdoc-links` rejects
-    /// it.)
+    /// [`Engine::enter_at`](crate::Engine::enter_at) takes a slice of
+    /// `Self::State`.
     /// Without the reverse, a recorded configuration cannot be turned back into
     /// the argument that door asks for and resuming degrades to replaying from
     /// the initial state. A consumer-side table would age silently the moment
@@ -703,12 +748,13 @@ pub trait StatePolicy: Sized + 'static {
     ///
     /// Generated only when `HAS_ACTIVE_STATES` is `true`.
     ///
-    /// SCE Protocol-Synthesis RFC §synth-5-J-2: returns the cfg-conditional
-    /// [`StateChain`] alias — `Vec` under std, a `heapless::Vec` bounded by
-    /// [`MAX_HIERARCHY_DEPTH`](crate::helpers::hierarchy::MAX_HIERARCHY_DEPTH)
-    /// under no_std. The default no-op returns an empty chain.
-    fn get_active_states(&self) -> StateChain<Self::State> {
-        hierarchy::new_chain()
+    /// SCE Protocol-Synthesis RFC §synth-5-J-2: returns the document's own
+    /// [`Configuration`](StatePolicy::Configuration) — a `Vec` under std, a
+    /// `heapless::Vec` of exactly
+    /// [`MAX_CONFIGURATION`](StatePolicy::MAX_CONFIGURATION) under no_std. The
+    /// default no-op returns an empty one.
+    fn get_active_states(&self) -> Self::Configuration {
+        Default::default()
     }
 
     /// Put the active state set back (§scxml-3.4), for
@@ -729,9 +775,9 @@ pub trait StatePolicy: Sized + 'static {
     /// outcome `enter_at` exists to refuse. Reaching it means the policy
     /// declares `HAS_ACTIVE_STATES` without generating this override, so it is a
     /// generator defect and says so — the same discipline as
-    /// [`push_chain`](crate::helpers::hierarchy::push_chain)'s capacity
+    /// [`BoundedPush::push_bounded`](crate::BoundedPush::push_bounded)'s capacity
     /// tripwire.
-    fn set_active_states(&mut self, _states: StateChain<Self::State>) {
+    fn set_active_states(&mut self, _states: &[Self::State]) {
         panic!(
             "policy declares HAS_ACTIVE_STATES but did not generate set_active_states \
              (generator bug): Engine::enter_at cannot restore this machine's active set"
@@ -910,6 +956,10 @@ pub struct PolicyDocument<'p, P: StatePolicy>(pub &'p P);
 impl<P: StatePolicy> Document for PolicyDocument<'_, P> {
     type State = P::State;
     type History = P::History;
+    type Configuration = P::Configuration;
+    type EnabledSet = P::EnabledSet;
+    type HistoryDefaults = P::HistoryDefaults;
+    const MAX_DEPTH: usize = P::MAX_DEPTH;
 
     fn parent_of(&self, state: P::State) -> Option<P::State> {
         P::get_parent(state)

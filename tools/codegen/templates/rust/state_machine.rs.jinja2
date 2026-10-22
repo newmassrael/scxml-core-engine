@@ -11,7 +11,8 @@
 // emitter. It compiles against `sce-rust-runtime` with or without that
 // crate's `std` feature, and the generated crate omits `std::*` paths — Duration comes from
 // `core::time`, the configuration and history records are the runtime's
-// capacity-bounded `StateChain`, and the parent-event queue field is elided
+// capacity-bounded `BoundedVec`, sized to this document's state tree, and the
+// parent-event queue field is elided
 // (SCXML `<invoke>` is rejected at codegen time under `--no-std` per the
 // `codegen/no-std-invoke-not-supported` diagnostic).
 #![no_std]
@@ -151,6 +152,18 @@ pub enum {{ machine_name }}Event {
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
     Null,
 }
+
+// ======================================================================
+// What this document's state tree bounds (W3C SCXML 3.4)
+// ======================================================================
+
+/// A set of this machine's states that are, or are about to be, in one
+/// configuration: the configuration a host observes, and what the runtime's
+/// microstep builds from it (an exit set, an entry set, a history's record).
+/// Its capacity, {{ max_configuration }}, is the most states one configuration of this document holds,
+/// read from its state tree; the runtime names no size of its own. A `Vec` under
+/// std, where the capacity is not read.
+pub type {{ machine_name }}Configuration = ::sce_rust_runtime::helpers::hierarchy::BoundedVec<{{ machine_name }}State, {{ max_configuration }}>;
 {% if model.emitted_transition_table %}
 {# emitted-transition-table:begin #}
 {% set _table = model.emitted_transition_table %}
@@ -261,7 +274,7 @@ pub struct {{ machine_name }}Data {
 /// host holding one keeps what it saw whatever the machine does next.
 #[derive(Debug, Clone, PartialEq)]
 pub struct {{ machine_name }}Snapshot {
-    pub configuration: ::sce_rust_runtime::helpers::hierarchy::StateChain<{{ machine_name }}State>,
+    pub configuration: {{ machine_name }}Configuration,
 {% if static_published %}
     pub data: {{ machine_name }}Data,
 {% endif %}
@@ -695,11 +708,11 @@ pub struct {{ machine_name }}Policy{{ policy_generics_decl }} {
 {% if model.has_parallel_states or model.uses_in_predicate %}
     // W3C SCXML 3.4: Active state configuration for parallel states / In() predicate
     //
-    // SCE Protocol-Synthesis RFC §synth-5-J-2: type is the runtime crate's
-    // [`StateChain`] alias — `Vec<S>` under std, `heapless::Vec<S, MAX_HIERARCHY_DEPTH>`
-    // under no_std. The std alias preserves the existing ABI; the no_std alias keeps
-    // the generated code allocator-free.
-    active_states: ::sce_rust_runtime::helpers::hierarchy::StateChain<{{ machine_name }}State>,
+    // SCE Protocol-Synthesis RFC §synth-5-J-2: this document's own
+    // `{{ machine_name }}Configuration` — `Vec<S>` under std, a `heapless::Vec` of exactly
+    // the most states one configuration holds under no_std. The std alias preserves
+    // the existing ABI; the no_std alias keeps the generated code allocator-free.
+    active_states: {{ machine_name }}Configuration,
 {% endif %}
 {% if model.needs_event_name %}
     // W3C SCXML 5.10: Event name for _event.name binding
@@ -751,10 +764,9 @@ pub struct {{ machine_name }}Policy{{ policy_generics_decl }} {
     // W3C SCXML 3.11: History state {{ history_id }} ({{ history_info.type }})
     //
     // SCE Protocol-Synthesis RFC §synth-5-J-2: the recorded configuration is a
-    // [`StateChain`] alias (`Vec<S>` under std, `heapless::Vec<S, MAX_HIERARCHY_DEPTH>`
-    // under no_std), mirroring `active_states`. Recorded history is always a
-    // subset of the active configuration, so it cannot exceed the depth bound.
-    history_{{ history_id }}: Option<::sce_rust_runtime::helpers::hierarchy::StateChain<{{ machine_name }}State>>,
+    // `{{ machine_name }}Configuration`, as `active_states` is. Recorded history is always
+    // a subset of a configuration, so it cannot exceed the configuration's bound.
+    history_{{ history_id }}: Option<{{ machine_name }}Configuration>,
 {% endfor %}
 {# W3C SCXML 5.3: the datamodel has ONE home, and it is not this struct.
 
@@ -934,7 +946,7 @@ impl{{ policy_generics_decl }} {{ machine_name }}Policy{{ policy_generics_use }}
 {% endif %}
 {% endif %}
 {% if model.has_parallel_states or model.uses_in_predicate %}
-            active_states: ::sce_rust_runtime::helpers::hierarchy::new_chain(),
+            active_states: Default::default(),
 {% endif %}
 {% if model.needs_event_name %}
             pending_event_name: ::sce_rust_runtime::SceString::new(),
@@ -1224,6 +1236,19 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
     type ScheduledSendId = sce_rust_runtime::ElidedSendId;
 {% endif %}
 
+    // W3C SCXML 3.4: what this document's state tree bounds, read by the
+    // generator and written here so every buffer of the runtime's microstep is
+    // this document's size and no larger. A configuration holds {{ max_configuration }} state(s) at
+    // most; a selection enables {{ max_enabled }} transition(s) at most, one from each atomic state
+    // of one; the deepest state sits {{ max_depth }} level(s) down. Under std the buffers
+    // are `Vec`s and the capacities are not read.
+    type Configuration = {{ machine_name }}Configuration;
+    type EnabledSet = ::sce_rust_runtime::helpers::hierarchy::BoundedVec<::sce_rust_runtime::EnabledTransition<Self::State, Self::History>, {{ max_enabled }}>;
+    type HistoryDefaults = ::sce_rust_runtime::helpers::hierarchy::BoundedVec<(Self::State, Self::History), {{ max_history_defaults }}>;
+    const MAX_CONFIGURATION: usize = {{ max_configuration }};
+    const MAX_ENABLED: usize = {{ max_enabled }};
+    const MAX_DEPTH: usize = {{ max_depth }};
+
     // W3C SCXML feature flags
     const HAS_PARALLEL_STATES: bool = {{ 'true' if model.has_parallel_states else 'false' }};
     const NEEDS_SCRIPT_ENGINE: bool = {{ 'true' if model.needs_script_engine else 'false' }};
@@ -1410,7 +1435,7 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
 
     // The inverse of the table above, emitted from the same loop over the
     // document's states so the two age together. It is what lets a host turn a
-    // recorded configuration back into the `StateChain` `enter_at` takes.
+    // recorded configuration back into the slice `enter_at` takes.
     fn get_state_from_name(name: &str) -> Option<Self::State> {
         match name {
 {% for state_id in model.states | sort %}
@@ -1440,10 +1465,10 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
 
 {% if model.has_parallel_states or model.uses_in_predicate %}
     // SCE Protocol-Synthesis RFC §synth-5-J-2: trait default in `sce-rust-runtime::policy`
-    // returns `StateChain<Self::State>`; this override matches that signature
+    // returns `Self::Configuration`; this override matches that signature
     // so the std alias-to-`Vec<S>` and no_std alias-to-`heapless::Vec<S, …>`
     // both resolve correctly.
-    fn get_active_states(&self) -> ::sce_rust_runtime::helpers::hierarchy::StateChain<Self::State> {
+    fn get_active_states(&self) -> Self::Configuration {
         self.active_states.clone()
     }
 
@@ -1452,11 +1477,11 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
     // decides both — this machine keeps its own active set, so this machine is
     // the one that can be handed one back. The trait default is a tripwire, so
     // emitting the reader without this one would turn a restore into a panic.
-    fn set_active_states(
-        &mut self,
-        states: ::sce_rust_runtime::helpers::hierarchy::StateChain<Self::State>,
-    ) {
-        self.active_states = states;
+    fn set_active_states(&mut self, states: &[Self::State]) {
+        self.active_states.clear();
+        for &state in states {
+            ::sce_rust_runtime::BoundedPush::push_bounded(&mut self.active_states, state);
+        }
 {% if model.needs_script_engine %}
         self.publish_in_predicate_states();
 {% endif %}

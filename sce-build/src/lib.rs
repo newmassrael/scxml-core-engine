@@ -182,6 +182,11 @@ pub mod manifest;
 /// of them would become the same member.
 pub mod member_names;
 pub mod mesh;
+/// What a document's state tree bounds in the Rust runtime's microstep: the
+/// most states a configuration holds, the most transitions a selection enables,
+/// the depth of the hierarchy. The generator writes them on the policy it emits,
+/// so the runtime's buffers are the document's size and not a constant's.
+pub mod microstep_bounds;
 pub mod model;
 /// How far a misspelling is from what the author meant — the one edit
 /// distance every "did you mean" in this crate is measured with.

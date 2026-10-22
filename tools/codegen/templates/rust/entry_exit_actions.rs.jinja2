@@ -428,8 +428,9 @@
 {% for history_id, history_info in model.history_states | dictsort %}
         if state == {{ machine_name }}State::{{ history_info.parent | to_state_variant }} {
             // W3C SCXML 3.11: {{ history_info.type }} history — SCE Protocol-Synthesis
-            // RFC §synth-5-J-2: the record is a [`StateChain`] (heapless under
-            // no_std), and a subset of the configuration, so it fits the depth bound.
+            // RFC §synth-5-J-2: the record is this machine's `Configuration`
+            // (heapless under no_std), and a subset of a configuration, so it
+            // fits the configuration's bound.
             self.history_{{ history_id }} = Some(::sce_rust_runtime::helpers::microstep::recorded_history(
                 &::sce_rust_runtime::PolicyDocument(&*self),
                 {{ machine_name }}State::{{ history_info.parent | to_state_variant }},

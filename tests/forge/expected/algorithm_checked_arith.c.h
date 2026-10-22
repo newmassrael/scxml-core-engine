@@ -24,7 +24,7 @@ typedef struct {
 static inline int32_t algorithm_checked_arith_take(sce_forge_algorithm_failure_t *failure, algorithm_checked_arith_result_t result) {
     if (!result.ok) {
         sce_forge_algorithm_fail(failure, result.why);
-        return (int32_t){0};
+        return (int32_t)0;
     }
     return result.value;
 }

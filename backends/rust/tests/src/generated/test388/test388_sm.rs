@@ -137,6 +137,18 @@ pub enum Test388Event {
 }
 
 // ======================================================================
+// What this document's state tree bounds (W3C SCXML 3.4)
+// ======================================================================
+
+/// A set of this machine's states that are, or are about to be, in one
+/// configuration: the configuration a host observes, and what the runtime's
+/// microstep builds from it (an exit set, an entry set, a history's record).
+/// Its capacity, 3, is the most states one configuration of this document holds,
+/// read from its state tree; the runtime names no size of its own. A `Vec` under
+/// std, where the capacity is not read.
+pub type Test388Configuration = ::sce_rust_runtime::helpers::hierarchy::BoundedVec<Test388State, 3>;
+
+// ======================================================================
 // Externally-drivable event surface (W3C SCXML 3.12 / 5.10)
 // ======================================================================
 
@@ -188,17 +200,15 @@ pub struct Test388Policy {
     // W3C SCXML 3.11: History state s0HistDeep (deep)
     //
     // SCE Protocol-Synthesis RFC §synth-5-J-2: the recorded configuration is a
-    // [`StateChain`] alias (`Vec<S>` under std, `heapless::Vec<S, MAX_HIERARCHY_DEPTH>`
-    // under no_std), mirroring `active_states`. Recorded history is always a
-    // subset of the active configuration, so it cannot exceed the depth bound.
-    history_s0HistDeep: Option<::sce_rust_runtime::helpers::hierarchy::StateChain<Test388State>>,
+    // `Test388Configuration`, as `active_states` is. Recorded history is always
+    // a subset of a configuration, so it cannot exceed the configuration's bound.
+    history_s0HistDeep: Option<Test388Configuration>,
     // W3C SCXML 3.11: History state s0HistShallow (shallow)
     //
     // SCE Protocol-Synthesis RFC §synth-5-J-2: the recorded configuration is a
-    // [`StateChain`] alias (`Vec<S>` under std, `heapless::Vec<S, MAX_HIERARCHY_DEPTH>`
-    // under no_std), mirroring `active_states`. Recorded history is always a
-    // subset of the active configuration, so it cannot exceed the depth bound.
-    history_s0HistShallow: Option<::sce_rust_runtime::helpers::hierarchy::StateChain<Test388State>>,
+    // `Test388Configuration`, as `active_states` is. Recorded history is always
+    // a subset of a configuration, so it cannot exceed the configuration's bound.
+    history_s0HistShallow: Option<Test388Configuration>,
     // W3C SCXML 5.10: the session's id (script engine, invoke tracking, the
     // saved state), bound when the machine is built and never empty
     // (docs/adr/0045): drawn, given by the host, or given by the parent.
@@ -553,6 +563,23 @@ impl StatePolicy for Test388Policy {
     // EventQueue per-machine sizing lever above.
     type ScheduledSendId = sce_rust_runtime::ElidedSendId;
 
+    // W3C SCXML 3.4: what this document's state tree bounds, read by the
+    // generator and written here so every buffer of the runtime's microstep is
+    // this document's size and no larger. A configuration holds 3 state(s) at
+    // most; a selection enables 1 transition(s) at most, one from each atomic state
+    // of one; the deepest state sits 3 level(s) down. Under std the buffers
+    // are `Vec`s and the capacities are not read.
+    type Configuration = Test388Configuration;
+    type EnabledSet = ::sce_rust_runtime::helpers::hierarchy::BoundedVec<
+        ::sce_rust_runtime::EnabledTransition<Self::State, Self::History>,
+        1,
+    >;
+    type HistoryDefaults =
+        ::sce_rust_runtime::helpers::hierarchy::BoundedVec<(Self::State, Self::History), 1>;
+    const MAX_CONFIGURATION: usize = 3;
+    const MAX_ENABLED: usize = 1;
+    const MAX_DEPTH: usize = 3;
+
     // W3C SCXML feature flags
     const HAS_PARALLEL_STATES: bool = false;
     const NEEDS_SCRIPT_ENGINE: bool = true;
@@ -720,7 +747,7 @@ impl StatePolicy for Test388Policy {
 
     // The inverse of the table above, emitted from the same loop over the
     // document's states so the two age together. It is what lets a host turn a
-    // recorded configuration back into the `StateChain` `enter_at` takes.
+    // recorded configuration back into the slice `enter_at` takes.
     fn get_state_from_name(name: &str) -> Option<Self::State> {
         match name {
             "fail" => Some(Test388State::Fail),
@@ -896,8 +923,9 @@ impl StatePolicy for Test388Policy {
         // history in one microstep reads the same configuration.
         if state == Test388State::S0 {
             // W3C SCXML 3.11: deep history — SCE Protocol-Synthesis
-            // RFC §synth-5-J-2: the record is a [`StateChain`] (heapless under
-            // no_std), and a subset of the configuration, so it fits the depth bound.
+            // RFC §synth-5-J-2: the record is this machine's `Configuration`
+            // (heapless under no_std), and a subset of a configuration, so it
+            // fits the configuration's bound.
             self.history_s0HistDeep =
                 Some(::sce_rust_runtime::helpers::microstep::recorded_history(
                     &::sce_rust_runtime::PolicyDocument(&*self),
@@ -908,8 +936,9 @@ impl StatePolicy for Test388Policy {
         }
         if state == Test388State::S0 {
             // W3C SCXML 3.11: shallow history — SCE Protocol-Synthesis
-            // RFC §synth-5-J-2: the record is a [`StateChain`] (heapless under
-            // no_std), and a subset of the configuration, so it fits the depth bound.
+            // RFC §synth-5-J-2: the record is this machine's `Configuration`
+            // (heapless under no_std), and a subset of a configuration, so it
+            // fits the configuration's bound.
             self.history_s0HistShallow =
                 Some(::sce_rust_runtime::helpers::microstep::recorded_history(
                     &::sce_rust_runtime::PolicyDocument(&*self),

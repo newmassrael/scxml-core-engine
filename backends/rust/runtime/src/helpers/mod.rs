@@ -29,7 +29,7 @@
 //! - [`event_matching`]: W3C 5.9.3 event descriptor matching
 //! - [`event_queue`]: FIFO internal/external queues (`EventQueueManager`)
 //! - [`foreach`]: Foreach iteration (static variant)
-//! - [`hierarchy`]: the bounded state chain configurations are held in (`StateChain`)
+//! - [`hierarchy`]: the bounded buffers configurations are held in (`Bounded`, `BoundedVec`)
 //! - `idlocation` (std-only): §scxml-6.2.4 / §scxml-6.4.1 an `idlocation` written as a location
 //! - `invoke_processing` (std-only): §scxml-6.4 invoke processing algorithms
 //! - `io_processors` (std-only): §scxml-C-1-1 `_ioprocessors` descriptors
@@ -96,7 +96,8 @@ pub mod io_processors;
 pub mod logger;
 // §scxml-D-microstepProcedure: the appendix's procedures over a document and a
 // running machine the caller supplies. Ungated — every collection it builds is
-// a `StateChain` or a `SceTransitionBuf`, which the no_std profile bounds.
+// one of the document's `Bounded` associated types, which the no_std profile
+// sizes to the document.
 pub mod microstep;
 pub mod scxml_constants;
 pub mod send;

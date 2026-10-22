@@ -27,7 +27,6 @@
 // Regeneration (after example or template edit):
 //   scripts/regen_ai_loop.sh
 
-use sce_rust_runtime::helpers::hierarchy::{new_chain, push_chain, StateChain};
 use sce_rust_runtime::{Engine, StatePolicy};
 use sce_rust_tests::integration::ai_loop::{AiLoopEvent, AiLoopPolicy, AiLoopState};
 
@@ -985,7 +984,7 @@ fn a_failure_ends_the_whole_run() {
 // ══════════════════════════════════════════════════════════════════
 // A run that outlived its process
 //
-// `Engine::enter_at` takes a `StateChain<AiLoopState>`, and nothing that
+// `Engine::enter_at` takes a slice of `AiLoopState`, and nothing that
 // crosses a process boundary can carry one: a journal, a wire and a file all
 // carry STRINGS. `get_state_name` writes that record and `get_state_from_name`
 // reads it back, and until the second existed the door could be called and its
@@ -1033,7 +1032,7 @@ fn a_run_journalled_as_names_resumes_where_it_stopped() {
     turn(&mut ran);
     turn(&mut ran);
 
-    // Everything a host can persist. Not a `StateChain`, not an enum: text.
+    // Everything a host can persist. Not a slice of states, not an enum: text.
     let journal: Vec<String> = ran
         .get_active_states()
         .iter()
@@ -1047,17 +1046,14 @@ fn a_run_journalled_as_names_resumes_where_it_stopped() {
     drop(ran);
 
     // A new process, holding nothing but those strings.
-    let mut configuration: StateChain<AiLoopState> = new_chain();
+    let mut configuration: Vec<AiLoopState> = Vec::new();
     for name in &journal {
-        push_chain(
-            &mut configuration,
-            AiLoopPolicy::get_state_from_name(name).unwrap_or_else(|| {
-                panic!(
-                    "`{name}` is a name this policy published through `get_state_name` and it \
+        configuration.push(AiLoopPolicy::get_state_from_name(name).unwrap_or_else(|| {
+            panic!(
+                "`{name}` is a name this policy published through `get_state_name` and it \
                      did not read back, so a configuration cannot survive its own record"
-                )
-            }),
-        );
+            )
+        }));
     }
     let current = AiLoopPolicy::get_state_from_name(&journalled_current).unwrap_or_else(|| {
         panic!("the current state's own name `{journalled_current}` did not read back")

@@ -42,7 +42,6 @@
 //! published, and refuse every chain that would leave the engine in a
 //! configuration it could not have reached on its own.
 
-use super::hierarchy::StateChain;
 use crate::policy::StatePolicy;
 
 /// Why a chain was refused as a configuration of this document.
@@ -128,13 +127,13 @@ pub enum ConfigurationRejection<S> {
 /// Pure: reads the policy's static hierarchy and nothing else, allocates
 /// nothing, and is therefore the same function under std and `no_std`.
 ///
-/// Cost is quadratic in the chain length, which is bounded by
-/// [`MAX_HIERARCHY_DEPTH`](super::hierarchy::MAX_HIERARCHY_DEPTH) under `no_std`
-/// and by the document's depth under std. A configuration is a handful of states
+/// Cost is quadratic in the chain length, which is bounded by the document's
+/// [`MAX_CONFIGURATION`](StatePolicy::MAX_CONFIGURATION) for any configuration
+/// of it. A configuration is a handful of states
 /// and this runs once per restore, so the shape is chosen for being obviously
 /// right rather than for being fast.
 pub fn validate<P: StatePolicy>(
-    configuration: &StateChain<P::State>,
+    configuration: &[P::State],
     current: P::State,
 ) -> Result<(), ConfigurationRejection<P::State>> {
     if configuration.is_empty() {

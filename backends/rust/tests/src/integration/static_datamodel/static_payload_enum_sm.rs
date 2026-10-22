@@ -107,6 +107,19 @@ pub enum StaticPayloadEnumEvent {
 }
 
 // ======================================================================
+// What this document's state tree bounds (W3C SCXML 3.4)
+// ======================================================================
+
+/// A set of this machine's states that are, or are about to be, in one
+/// configuration: the configuration a host observes, and what the runtime's
+/// microstep builds from it (an exit set, an entry set, a history's record).
+/// Its capacity, 1, is the most states one configuration of this document holds,
+/// read from its state tree; the runtime names no size of its own. A `Vec` under
+/// std, where the capacity is not read.
+pub type StaticPayloadEnumConfiguration =
+    ::sce_rust_runtime::helpers::hierarchy::BoundedVec<StaticPayloadEnumState, 1>;
+
+// ======================================================================
 // Externally-drivable event surface (W3C SCXML 3.12 / 5.10)
 // ======================================================================
 
@@ -239,7 +252,7 @@ pub struct StaticPayloadEnumData {
 /// host holding one keeps what it saw whatever the machine does next.
 #[derive(Debug, Clone, PartialEq)]
 pub struct StaticPayloadEnumSnapshot {
-    pub configuration: ::sce_rust_runtime::helpers::hierarchy::StateChain<StaticPayloadEnumState>,
+    pub configuration: StaticPayloadEnumConfiguration,
     pub data: StaticPayloadEnumData,
     pub truncated: bool,
 }
@@ -719,6 +732,23 @@ impl StatePolicy for StaticPayloadEnumPolicy {
     // EventQueue per-machine sizing lever above.
     type ScheduledSendId = sce_rust_runtime::ElidedSendId;
 
+    // W3C SCXML 3.4: what this document's state tree bounds, read by the
+    // generator and written here so every buffer of the runtime's microstep is
+    // this document's size and no larger. A configuration holds 1 state(s) at
+    // most; a selection enables 1 transition(s) at most, one from each atomic state
+    // of one; the deepest state sits 1 level(s) down. Under std the buffers
+    // are `Vec`s and the capacities are not read.
+    type Configuration = StaticPayloadEnumConfiguration;
+    type EnabledSet = ::sce_rust_runtime::helpers::hierarchy::BoundedVec<
+        ::sce_rust_runtime::EnabledTransition<Self::State, Self::History>,
+        1,
+    >;
+    type HistoryDefaults =
+        ::sce_rust_runtime::helpers::hierarchy::BoundedVec<(Self::State, Self::History), 0>;
+    const MAX_CONFIGURATION: usize = 1;
+    const MAX_ENABLED: usize = 1;
+    const MAX_DEPTH: usize = 1;
+
     // W3C SCXML feature flags
     const HAS_PARALLEL_STATES: bool = false;
     const NEEDS_SCRIPT_ENGINE: bool = false;
@@ -829,7 +859,7 @@ impl StatePolicy for StaticPayloadEnumPolicy {
 
     // The inverse of the table above, emitted from the same loop over the
     // document's states so the two age together. It is what lets a host turn a
-    // recorded configuration back into the `StateChain` `enter_at` takes.
+    // recorded configuration back into the slice `enter_at` takes.
     fn get_state_from_name(name: &str) -> Option<Self::State> {
         match name {
             "browsing" => Some(StaticPayloadEnumState::Browsing),

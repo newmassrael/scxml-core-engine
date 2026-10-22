@@ -22,10 +22,10 @@
 // `enter_at` + `step()` is the observable form of "entry actions did not run";
 // the `entries` counter is the same claim read from the inside.
 
-use sce_rust_runtime::helpers::hierarchy::{push_chain, state_chain_from_slice, StateChain};
+use sce_rust_runtime::helpers::hierarchy::BoundedVec;
 use sce_rust_runtime::{
-    ConfigurationRejection, EnabledTransition, Engine, EntryTarget, EventWithMetadata, NoHistory,
-    StatePolicy,
+    BoundedPush, ConfigurationRejection, EnabledTransition, Engine, EntryTarget, EventWithMetadata,
+    NoHistory, StatePolicy,
 };
 
 /// One targeted transition of `source`, as a policy reports it.
@@ -69,7 +69,7 @@ enum PEvent {
 }
 
 struct ParallelPolicy {
-    active_states: StateChain<PState>,
+    active_states: <ParallelPolicy as StatePolicy>::Configuration,
     /// How many states this policy has run entry actions for. The inside view
     /// of the onentry contract.
     entries: u32,
@@ -78,7 +78,7 @@ struct ParallelPolicy {
 impl ParallelPolicy {
     fn new() -> Self {
         Self {
-            active_states: sce_rust_runtime::helpers::hierarchy::new_chain(),
+            active_states: Default::default(),
             entries: 0,
         }
     }
@@ -94,6 +94,13 @@ impl StatePolicy for ParallelPolicy {
         sce_rust_runtime::EventWithMetadata<Self::Event, Self::Payload>,
     >;
     type ScheduledSendId = sce_rust_runtime::SceString;
+    // P, RA, one of A1/A2, RB, B1: five states at most, two of them atomic.
+    type Configuration = BoundedVec<PState, 5>;
+    type EnabledSet = BoundedVec<EnabledTransition<Self::State, Self::History>, 2>;
+    type HistoryDefaults = BoundedVec<(Self::State, Self::History), 0>;
+    const MAX_CONFIGURATION: usize = 5;
+    const MAX_ENABLED: usize = 2;
+    const MAX_DEPTH: usize = 3;
 
     const HAS_PARALLEL_STATES: bool = true;
     const HAS_ACTIVE_STATES: bool = true;
@@ -225,7 +232,7 @@ impl StatePolicy for ParallelPolicy {
     ) {
         self.entries += 1;
         if !self.active_states.contains(&state) {
-            push_chain(&mut self.active_states, state);
+            self.active_states.push_bounded(state);
         }
         // The onentry that separates a resume from a replay.
         if state == PState::A1 {
@@ -262,12 +269,15 @@ impl StatePolicy for ParallelPolicy {
     ) {
     }
 
-    fn get_active_states(&self) -> StateChain<Self::State> {
+    fn get_active_states(&self) -> Self::Configuration {
         self.active_states.clone()
     }
 
-    fn set_active_states(&mut self, states: StateChain<Self::State>) {
-        self.active_states = states;
+    fn set_active_states(&mut self, states: &[Self::State]) {
+        self.active_states.clear();
+        for &state in states {
+            self.active_states.push_bounded(state);
+        }
     }
 }
 
@@ -311,6 +321,13 @@ impl StatePolicy for LinearPolicy {
         sce_rust_runtime::EventWithMetadata<Self::Event, Self::Payload>,
     >;
     type ScheduledSendId = sce_rust_runtime::SceString;
+    // Root with one of X1/X2 below it.
+    type Configuration = BoundedVec<LState, 2>;
+    type EnabledSet = BoundedVec<EnabledTransition<Self::State, Self::History>, 1>;
+    type HistoryDefaults = BoundedVec<(Self::State, Self::History), 0>;
+    const MAX_CONFIGURATION: usize = 2;
+    const MAX_ENABLED: usize = 1;
+    const MAX_DEPTH: usize = 2;
 
     const HAS_PARALLEL_STATES: bool = false;
     const NEEDS_SCRIPT_ENGINE: bool = false;
@@ -490,10 +507,7 @@ fn linear_configuration_round_trips_without_a_policy_active_set() {
     let saved_current = ran.get_current_state();
     assert_eq!(saved_current, LState::X2);
     // No parallel regions: the chain is the parent walk, leaf first.
-    assert_eq!(
-        saved_configuration,
-        state_chain_from_slice([LState::X2, LState::Root])
-    );
+    assert_eq!(saved_configuration, [LState::X2, LState::Root]);
 
     let mut restored = Engine::<LinearPolicy>::new(LinearPolicy::new());
     restored
@@ -512,8 +526,7 @@ fn linear_configuration_round_trips_without_a_policy_active_set() {
 fn entering_a_configuration_runs_no_entry_actions() {
     // The configuration this document is in right after entry, before the
     // `<onentry>`-raised event has been taken: A1 and B1 active.
-    let configuration =
-        state_chain_from_slice([PState::P, PState::Ra, PState::A1, PState::Rb, PState::B1]);
+    let configuration = [PState::P, PState::Ra, PState::A1, PState::Rb, PState::B1];
 
     let mut engine = Engine::<ParallelPolicy>::new(ParallelPolicy::new());
     engine
@@ -558,7 +571,7 @@ fn initialize_by_contrast_does_run_them() {
 #[test]
 fn an_empty_chain_is_refused() {
     let mut engine = Engine::<ParallelPolicy>::new(ParallelPolicy::new());
-    let empty: StateChain<PState> = sce_rust_runtime::helpers::hierarchy::new_chain();
+    let empty: [PState; 0] = [];
     assert_eq!(
         engine.enter_at(&empty, PState::A1),
         Err(ConfigurationRejection::Empty)
@@ -569,14 +582,14 @@ fn an_empty_chain_is_refused() {
 fn two_siblings_of_one_region_are_refused() {
     // §scxml-3.3: RA is compound, so exactly one of A1/A2 can be active.
     let mut engine = Engine::<ParallelPolicy>::new(ParallelPolicy::new());
-    let chain = state_chain_from_slice([
+    let chain = [
         PState::P,
         PState::Ra,
         PState::A1,
         PState::A2,
         PState::Rb,
         PState::B1,
-    ]);
+    ];
     assert_eq!(
         engine.enter_at(&chain, PState::A1),
         Err(ConfigurationRejection::CompoundChildCount {
@@ -590,7 +603,7 @@ fn two_siblings_of_one_region_are_refused() {
 fn a_parallel_with_a_region_missing_is_refused() {
     // §scxml-3.4: RB is a region of P, so a configuration holding P holds it.
     let mut engine = Engine::<ParallelPolicy>::new(ParallelPolicy::new());
-    let chain = state_chain_from_slice([PState::P, PState::Ra, PState::A1]);
+    let chain = [PState::P, PState::Ra, PState::A1];
     assert_eq!(
         engine.enter_at(&chain, PState::A1),
         Err(ConfigurationRejection::ParallelRegionMissing {
@@ -603,7 +616,7 @@ fn a_parallel_with_a_region_missing_is_refused() {
 #[test]
 fn a_chain_that_skips_an_ancestor_is_refused() {
     let mut engine = Engine::<ParallelPolicy>::new(ParallelPolicy::new());
-    let chain = state_chain_from_slice([PState::A1]);
+    let chain = [PState::A1];
     assert_eq!(
         engine.enter_at(&chain, PState::A1),
         Err(ConfigurationRejection::AncestorMissing {
@@ -616,14 +629,14 @@ fn a_chain_that_skips_an_ancestor_is_refused() {
 #[test]
 fn a_repeated_state_is_refused() {
     let mut engine = Engine::<ParallelPolicy>::new(ParallelPolicy::new());
-    let chain = state_chain_from_slice([
+    let chain = [
         PState::P,
         PState::Ra,
         PState::A1,
         PState::A1,
         PState::Rb,
         PState::B1,
-    ]);
+    ];
     assert_eq!(
         engine.enter_at(&chain, PState::A1),
         Err(ConfigurationRejection::Duplicate { state: PState::A1 })
@@ -633,7 +646,7 @@ fn a_repeated_state_is_refused() {
 #[test]
 fn a_current_state_outside_the_configuration_is_refused() {
     let mut engine = Engine::<ParallelPolicy>::new(ParallelPolicy::new());
-    let chain = state_chain_from_slice([PState::P, PState::Ra, PState::A1, PState::Rb, PState::B1]);
+    let chain = [PState::P, PState::Ra, PState::A1, PState::Rb, PState::B1];
     assert_eq!(
         engine.enter_at(&chain, PState::A2),
         Err(ConfigurationRejection::CurrentNotActive {
@@ -645,7 +658,7 @@ fn a_current_state_outside_the_configuration_is_refused() {
 #[test]
 fn a_non_atomic_current_state_is_refused() {
     let mut engine = Engine::<ParallelPolicy>::new(ParallelPolicy::new());
-    let chain = state_chain_from_slice([PState::P, PState::Ra, PState::A1, PState::Rb, PState::B1]);
+    let chain = [PState::P, PState::Ra, PState::A1, PState::Rb, PState::B1];
     assert_eq!(
         engine.enter_at(&chain, PState::Ra),
         Err(ConfigurationRejection::CurrentNotAtomic {
@@ -660,7 +673,7 @@ fn a_refused_entry_leaves_the_engine_untouched() {
     // stale record, be told no, and still hold an engine it can initialize.
     let mut engine = Engine::<ParallelPolicy>::new(ParallelPolicy::new());
     let before = engine.get_current_state();
-    let chain = state_chain_from_slice([PState::A1]);
+    let chain = [PState::A1];
     assert!(engine.enter_at(&chain, PState::A1).is_err());
     assert_eq!(engine.get_current_state(), before);
     assert!(!engine.is_running());

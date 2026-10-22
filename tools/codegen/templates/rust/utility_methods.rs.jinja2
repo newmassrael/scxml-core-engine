@@ -23,7 +23,7 @@
         if self.active_states.contains(&state) {
             return false;
         }
-        ::sce_rust_runtime::helpers::hierarchy::push_chain(&mut self.active_states, state);
+        ::sce_rust_runtime::BoundedPush::push_bounded(&mut self.active_states, state);
 {% if model.needs_script_engine %}
         self.publish_in_predicate_states();
 {% endif %}

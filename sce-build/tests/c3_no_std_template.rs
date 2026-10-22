@@ -294,7 +294,7 @@ topology:
 // "no path from generated no_std code into alloc::*"). Owned
 // collection TYPES, however, are profile-neutral: both modes name the
 // runtime's profile-resolving aliases (SceBytes / SceString /
-// StateChain), and the runtime's own cfg selects std vs heapless. One
+// BoundedVec), and the runtime's own cfg selects std vs heapless. One
 // emission therefore compiles against both runtime profiles
 // (sce-portable-emit-probe gates this); these tests pin the emission side.
 
@@ -356,7 +356,7 @@ fn rust_template_leaves_the_microstep_to_the_runtime() {
 #[test]
 fn rust_template_emits_profile_neutral_collection_aliases() {
     // Core of the single-emit portability contract: a parallel chart's active
-    // set names the profile-resolving `StateChain` alias identically under both
+    // set names the profile-resolving `BoundedVec` alias identically under both
     // codegen modes, and NEITHER emit names a std or heapless collection
     // directly — the no_std-only `sce_rust_runtime::heapless` re-export's
     // presence in a no_std emit was the `E0433: cannot find heapless in
@@ -366,8 +366,13 @@ fn rust_template_emits_profile_neutral_collection_aliases() {
     for no_std in [false, true] {
         let code = generate(&model, &template_dir(), no_std).expect("render");
         assert!(
-            code.contains("::sce_rust_runtime::helpers::hierarchy::StateChain<"),
-            "emit (no_std={no_std}) must name StateChain for the active set"
+            code.contains("::sce_rust_runtime::helpers::hierarchy::BoundedVec<"),
+            "emit (no_std={no_std}) must name BoundedVec for the active set"
+        );
+        assert!(
+            code.contains("active_states: ParallelNeutralConfiguration,"),
+            "emit (no_std={no_std}) must hold the active set in the machine's own \
+             Configuration, sized to its tree"
         );
         assert!(
             !code.contains("sce_rust_runtime::heapless"),
@@ -376,6 +381,60 @@ fn rust_template_emits_profile_neutral_collection_aliases() {
         assert!(
             !code.contains("std::collections::HashSet"),
             "emit (no_std={no_std}) must not name std::collections::HashSet directly"
+        );
+    }
+}
+
+#[test]
+fn rust_template_sizes_the_microstep_to_the_documents_state_tree() {
+    // The runtime names no capacity of its own for the buffers of Appendix D's
+    // microstep: the generator reads the document's tree and writes each one on
+    // the policy (`sce_build::microstep_bounds`). The MCU probe machine is a
+    // `<parallel>` of three regions, one of them holding a second `<parallel>`:
+    //
+    //   top (parallel)
+    //     ra > a1 a2 a3         + deep history
+    //     rb > b1 b2            + shallow history
+    //     rc > pc (parallel) > c1 c2
+    //
+    // so the largest configuration is top, ra and a state of it, rb and a state
+    // of it, rc, pc, c1 and c2 (9), a selection takes one transition from each
+    // of the four atomic states a configuration holds, the deepest state (c1) is
+    // at level 4, and two parents have a history.
+    let model = parse(
+        include_str!("fixtures/no_std/parallel_history_probe.scxml"),
+        "parallel_history_probe",
+    );
+    for no_std in [false, true] {
+        let code = generate(&model, &template_dir(), no_std).expect("render");
+        for expected in [
+            "const MAX_CONFIGURATION: usize = 9;",
+            "const MAX_ENABLED: usize = 4;",
+            "const MAX_DEPTH: usize = 4;",
+            "BoundedVec<(Self::State, Self::History), 2>;",
+            "pub type ParallelHistoryProbeConfiguration = \
+             ::sce_rust_runtime::helpers::hierarchy::BoundedVec<ParallelHistoryProbeState, 9>;",
+        ] {
+            assert!(
+                code.contains(expected),
+                "emit (no_std={no_std}) must carry `{expected}`"
+            );
+        }
+    }
+
+    // A flat machine holds one state and enables one transition, whatever the
+    // size of a constant the runtime might once have chosen.
+    let flat = generate(&parse(PLAIN_FSM, "plain_bounds"), &template_dir(), true)
+        .expect("template render must succeed");
+    for expected in [
+        "const MAX_CONFIGURATION: usize = 1;",
+        "const MAX_ENABLED: usize = 1;",
+        "const MAX_DEPTH: usize = 1;",
+        "BoundedVec<(Self::State, Self::History), 0>;",
+    ] {
+        assert!(
+            flat.contains(expected),
+            "a flat machine must carry `{expected}`"
         );
     }
 }

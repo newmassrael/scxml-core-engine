@@ -27,6 +27,7 @@
 //   3. and then Bar → microstep S1→Pass
 //   4. Pass is a top-level final state → is_in_final_state() == true
 
+use sce_rust_runtime::helpers::hierarchy::BoundedVec;
 use sce_rust_runtime::{
     EnabledTransition, Engine, EntryTarget, EventWithMetadata, NoHistory, StatePolicy,
 };
@@ -70,6 +71,13 @@ impl StatePolicy for Test144Policy {
         sce_rust_runtime::EventWithMetadata<Self::Event, Self::Payload>,
     >;
     type ScheduledSendId = sce_rust_runtime::SceString;
+    // Four flat states: one is active at a time.
+    type Configuration = BoundedVec<Test144State, 1>;
+    type EnabledSet = BoundedVec<EnabledTransition<Self::State, Self::History>, 1>;
+    type HistoryDefaults = BoundedVec<(Self::State, Self::History), 0>;
+    const MAX_CONFIGURATION: usize = 1;
+    const MAX_ENABLED: usize = 1;
+    const MAX_DEPTH: usize = 1;
 
     // C++ `static constexpr bool HAS_PARALLEL_STATES = false;`
     const HAS_PARALLEL_STATES: bool = false;

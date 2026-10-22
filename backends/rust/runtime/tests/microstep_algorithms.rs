@@ -38,7 +38,7 @@
 //   <state id="t"/>
 // </scxml>
 
-use sce_rust_runtime::helpers::hierarchy::StateChain;
+use sce_rust_runtime::helpers::hierarchy::BoundedVec;
 use sce_rust_runtime::helpers::microstep::{
     compute_entry_set, compute_exit_set, compute_states_to_exit, effective_target_states,
     is_descendant, is_in_final_state, microstep, select_transitions, transition_domain, Document,
@@ -168,6 +168,14 @@ impl Chart {
 impl Document for Chart {
     type State = St;
     type History = H;
+    // What the tree above bounds: the largest configuration is `s` with `p` and
+    // its three regions (8 states); a selection takes one transition from each
+    // atomic state of one (3, under `p`); the deepest state, `m1a`, is at level
+    // 5; two parents have a `<history>`.
+    type Configuration = BoundedVec<St, 8>;
+    type EnabledSet = BoundedVec<EnabledTransition<St, H>, 3>;
+    type HistoryDefaults = BoundedVec<(St, H), 2>;
+    const MAX_DEPTH: usize = 5;
 
     fn parent_of(&self, state: St) -> Option<St> {
         match state {
@@ -259,7 +267,7 @@ impl Document for Chart {
 impl Run for Chart {
     type Event = Ev;
 
-    fn configuration(&self) -> StateChain<St> {
+    fn configuration(&self) -> BoundedVec<St, 8> {
         self.configuration.clone()
     }
 
@@ -322,7 +330,7 @@ fn sorted(mut states: Vec<St>) -> Vec<St> {
     states
 }
 
-fn chain(states: &StateChain<St>) -> Vec<St> {
+fn chain(states: &[St]) -> Vec<St> {
     states.to_vec()
 }
 
@@ -897,6 +905,12 @@ struct Completion;
 impl Document for Completion {
     type State = C;
     type History = sce_rust_runtime::helpers::microstep::NoHistory;
+    // `run` with `form` and a state of it, and `checks` with both its regions
+    // and a state of each: 8 states, 3 of them atomic, 4 levels down.
+    type Configuration = BoundedVec<C, 8>;
+    type EnabledSet = BoundedVec<EnabledTransition<C, Self::History>, 3>;
+    type HistoryDefaults = BoundedVec<(C, Self::History), 0>;
+    const MAX_DEPTH: usize = 4;
 
     fn parent_of(&self, state: C) -> Option<C> {
         match state {

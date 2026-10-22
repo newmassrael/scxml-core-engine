@@ -70,10 +70,8 @@ use crate::event::{EventMetadata, EventType, EventWithMetadata};
 use crate::hal::Hal;
 use crate::helpers::configuration::ConfigurationRejection;
 use crate::helpers::event_queue::EventQueueLike;
-use crate::helpers::microstep::{
-    self, EnabledTransition, EntryTarget, EntryTransition, TransitionSet,
-};
-use crate::helpers::{hierarchy, state_policy_concepts as concepts};
+use crate::helpers::microstep::{self, EnabledTransition, EntryTarget, EntryTransition};
+use crate::helpers::state_policy_concepts as concepts;
 use crate::sched_send_id::ScheduledSendIdLike;
 // The HTTP module is the `http-send` feature (docs/adr/0053), which asks for
 // `std`: it is alloc-coupled (HashMap<String, Vec<String>>). The codegen-time
@@ -86,7 +84,7 @@ use crate::http::{HttpSendRequest, HttpSendResponse};
 use crate::policy::StatePolicy;
 #[cfg(not(feature = "std"))]
 use crate::MAX_SCHEDULED_EVENTS;
-use crate::{sce_log_debug, sce_log_error, SceString};
+use crate::{sce_log_debug, sce_log_error, BoundedPush, SceString};
 
 /// Why a child's Mesh router lock is never poisoned: nothing a router does
 /// while the engine holds it panics, and a router that did would have left
@@ -1667,7 +1665,7 @@ impl<P: StatePolicy> Engine<P> {
     ///   where a link to it cannot resolve.)
     pub fn enter_at(
         &mut self,
-        configuration: &hierarchy::StateChain<P::State>,
+        configuration: &[P::State],
         current: P::State,
     ) -> Result<(), ConfigurationRejection<P::State>> {
         // Before anything is touched: a rejection must not half-enter.
@@ -1703,7 +1701,7 @@ impl<P: StatePolicy> Engine<P> {
         // The condition is the one the generator emits `set_active_states`
         // under, so a policy reached here has the override.
         if concepts::has_active_states::<P>() {
-            self.policy.set_active_states(configuration.clone());
+            self.policy.set_active_states(configuration);
         }
 
         self.is_running = true;
@@ -2374,17 +2372,18 @@ impl<P: StatePolicy> Engine<P> {
     /// Parallel machines: returns the union of all active regions via
     /// [`StatePolicy::get_active_states`].
     ///
-    /// SCE Protocol-Synthesis RFC §synth-5-J-2: returns the bounded
-    /// [`StateChain`](crate::helpers::hierarchy::StateChain) which
-    /// aliases `Vec<P::State>` under std (ABI-preserving) and
-    /// `heapless::Vec<P::State, MAX_HIERARCHY_DEPTH>` under no_std, on BOTH
-    /// branches: the policy's own set is a `StateChain` too. The policy branch
+    /// SCE Protocol-Synthesis RFC §synth-5-J-2: returns the document's own
+    /// [`Configuration`](StatePolicy::Configuration), which is a `Vec<P::State>`
+    /// under std (ABI-preserving) and a `heapless::Vec<P::State, N>` under no_std
+    /// with `N` the most states one configuration of the document holds
+    /// ([`MAX_CONFIGURATION`](StatePolicy::MAX_CONFIGURATION)), on BOTH
+    /// branches: the policy's own set is a `Configuration` too. The policy branch
     /// used to be gated to `!no_std`, from when the policy's set was a heap
     /// `Vec`. That was harmless while a `<parallel>` machine's microstep read
     /// the policy's set directly; now that the selection reads THIS, the gate
     /// would hand an MCU build the ancestor chain of one region, and the other
     /// regions would never be offered an event.
-    pub fn get_active_states(&self) -> hierarchy::StateChain<P::State> {
+    pub fn get_active_states(&self) -> P::Configuration {
         if concepts::has_active_states::<P>() {
             return self.policy.get_active_states();
         }
@@ -2393,16 +2392,15 @@ impl<P: StatePolicy> Engine<P> {
         // above; this one derives the set from `current_state`, which still
         // names the final, so the answer has to be given here.)
         if self.interpreter_exited {
-            return hierarchy::new_chain();
+            return P::Configuration::default();
         }
-        // Walk from current state up to root via the cfg-branched chain helper.
-        // Bounded by MAX_HIERARCHY_DEPTH=16 under no_std (panics on overflow per
-        // W3C SCXML no-silent-drop discipline — a hierarchy walk exceeding depth
-        // 16 indicates a generator bug or cyclic parent relationship).
-        let mut active: hierarchy::StateChain<P::State> = hierarchy::new_chain();
+        // Walk from the current state up to the root. The chain is at most the
+        // document's depth, which its configuration bound covers: a state's
+        // ancestors are in every configuration it is in.
+        let mut active = P::Configuration::default();
         let mut current = Some(self.current_state);
         while let Some(state) = current {
-            hierarchy::push_chain(&mut active, state);
+            active.push_bounded(state);
             current = P::get_parent(state);
         }
         active
@@ -5109,16 +5107,25 @@ impl<P: StatePolicy> Engine<P> {
 
     /// Appendix D's selectTransitions, or its selectEventlessTransitions for
     /// the null event: the optimal enabled transition set, in selection order.
-    fn select_transitions(&mut self, event: P::Event) -> TransitionSet<P::State, P::History> {
+    fn select_transitions(&mut self, event: P::Event) -> P::EnabledSet {
         // §scxml-5.10: the event whose transitions are about to be selected is
         // the `_event` their guards read — bound before the first guard runs.
         self.with_policy(|policy, engine| policy.bind_current_event(event, engine));
-        microstep::select_transitions(&mut EngineHost { engine: self }, event)
+        let enabled = microstep::select_transitions(&mut EngineHost { engine: self }, event);
+        debug_assert!(
+            enabled.len() <= P::MAX_ENABLED,
+            "a selection enabled {} transitions, past the {} the document's tree allows: \
+             the generator bounded it too small",
+            enabled.len(),
+            P::MAX_ENABLED
+        );
+        enabled
     }
 
     /// Appendix D's microstep: exit, run the transitions' content, enter.
     fn microstep(&mut self, transitions: &[EnabledTransition<P::State, P::History>]) {
         let entry = microstep::microstep(&mut EngineHost { engine: self }, transitions);
+        self.witness_configuration_bound(entry.states_to_enter.len());
         let targets = transitions.iter().map(|t| t.targets);
         self.settle_current_state(targets, &entry.states_to_enter);
     }
@@ -5127,8 +5134,33 @@ impl<P: StatePolicy> Engine<P> {
     /// whole of §scxml-D-interpret's entry into the initial configuration.
     fn enter_states(&mut self, transitions: &[EntryTransition<P::State, P::History>]) {
         let entry = microstep::enter_states(&mut EngineHost { engine: self }, transitions);
+        self.witness_configuration_bound(entry.states_to_enter.len());
         let targets = transitions.iter().map(|t| t.targets);
         self.settle_current_state(targets, &entry.states_to_enter);
+    }
+
+    /// In a debug build, hold the configuration and the set of states a microstep
+    /// entered to the bound the generator read from the document's tree.
+    ///
+    /// The bound sizes every buffer of the microstep on a bare-metal build, where
+    /// a push past it panics; a `std` build grows its buffers and would never say
+    /// the bound was wrong. This is what says so, on every microstep of every
+    /// machine a debug build runs, so the conformance corpus is the evidence that
+    /// the bound is an upper bound and not an estimate.
+    fn witness_configuration_bound(&self, entered: usize) {
+        debug_assert!(
+            entered <= P::MAX_CONFIGURATION,
+            "a microstep entered {entered} states, past the {} the document's tree allows \
+             in one configuration: the generator bounded it too small",
+            P::MAX_CONFIGURATION
+        );
+        debug_assert!(
+            self.get_active_states().len() <= P::MAX_CONFIGURATION,
+            "the configuration holds {} states, past the {} the document's tree allows: \
+             the generator bounded it too small",
+            self.get_active_states().len(),
+            P::MAX_CONFIGURATION
+        );
     }
 
     /// Offer one event to the configuration and take the microstep it
@@ -5190,9 +5222,9 @@ impl<P: StatePolicy> Engine<P> {
     fn resolve_current_state_to_leaf(&mut self) {
         let active = self.get_active_states();
         // A region holds one atomic state, so this descends once per level; the
-        // bound is the configuration's own, so a parent chain that loops is
+        // bound is the document's own depth, so a parent chain that loops is
         // reported rather than walked forever.
-        for _ in 0..hierarchy::MAX_HIERARCHY_DEPTH {
+        for _ in 0..P::MAX_DEPTH {
             if !P::is_compound_state(self.current_state)
                 && !P::is_parallel_state(self.current_state)
             {
@@ -5211,7 +5243,7 @@ impl<P: StatePolicy> Engine<P> {
         sce_log_error!(
             "Engine::resolve_current_state_to_leaf: exceeded {} descents from a compound state — \
              the parent chain does not terminate",
-            hierarchy::MAX_HIERARCHY_DEPTH
+            P::MAX_DEPTH
         );
     }
 }
@@ -5229,6 +5261,10 @@ struct EngineHost<'e, P: StatePolicy> {
 impl<P: StatePolicy> microstep::Document for EngineHost<'_, P> {
     type State = P::State;
     type History = P::History;
+    type Configuration = P::Configuration;
+    type EnabledSet = P::EnabledSet;
+    type HistoryDefaults = P::HistoryDefaults;
+    const MAX_DEPTH: usize = P::MAX_DEPTH;
 
     fn parent_of(&self, state: P::State) -> Option<P::State> {
         P::get_parent(state)
@@ -5277,7 +5313,7 @@ impl<P: StatePolicy> microstep::Document for EngineHost<'_, P> {
 impl<P: StatePolicy> microstep::Run for EngineHost<'_, P> {
     type Event = P::Event;
 
-    fn configuration(&self) -> hierarchy::StateChain<P::State> {
+    fn configuration(&self) -> P::Configuration {
         self.engine.get_active_states()
     }
 

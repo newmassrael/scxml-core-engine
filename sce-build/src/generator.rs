@@ -3105,12 +3105,20 @@ fn render_rust(
     let externally_drivable_events: Vec<&String> =
         model.externally_drivable_events.iter().collect();
 
+    // What the state tree bounds: the sizes of the buffers the runtime's
+    // microstep holds, written on the policy so each is this document's own.
+    let microstep_bounds = crate::microstep_bounds::MicrostepBounds::of(model);
+
     model_lowered.into_artifact_coordinates();
     let ctx = minijinja::context! {
         model => minijinja::Value::from_serialize(&model_lowered),
         machine_name => machine_name,
         license_config => minijinja::Value::from_serialize(license_config()),
         no_std => options.no_std,
+        max_configuration => microstep_bounds.configuration,
+        max_enabled => microstep_bounds.enabled,
+        max_history_defaults => microstep_bounds.history_defaults,
+        max_depth => microstep_bounds.depth,
         state_derives_attr => &state_derives_attr,
         event_derives_attr => &event_derives_attr,
         default_state_id => &default_state_id,

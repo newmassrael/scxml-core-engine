@@ -2339,7 +2339,7 @@ pub fn enter<P: StatePolicy>(
 
 /// A saved session read against the document of `P`, before anything is built.
 struct Judged<'s, P: StatePolicy> {
-    configuration: crate::helpers::hierarchy::StateChain<P::State>,
+    configuration: Vec<P::State>,
     current: P::State,
     external: Vec<EventWithMetadata<P::Event, P::Payload>>,
     pending: Vec<ReadSend<'s, P::Event>>,
@@ -2371,7 +2371,7 @@ fn judge_session<P: StatePolicy>(saved: &SavedState) -> Result<Judged<'_, P>, St
         .configuration
         .iter()
         .map(|id| state(id))
-        .collect::<Result<crate::helpers::hierarchy::StateChain<P::State>, _>>()?;
+        .collect::<Result<Vec<P::State>, _>>()?;
     let current = state(&saved.current)?;
     crate::helpers::configuration::validate::<P>(&configuration, current)
         .map_err(|rejection| StateRefusal::new(describe::<P>(&rejection)))?;

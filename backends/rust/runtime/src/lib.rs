@@ -191,30 +191,6 @@ pub const MAX_EVENT_QUEUE_DEPTH: usize = 64;
 /// so this constant only affects the `--no-default-features` variant.
 pub const MAX_SCHEDULED_EVENTS: usize = 32;
 
-/// Maximum number of simultaneously-enabled transitions selected in a single
-/// microstep under `--no-default-features`.
-///
-/// The no_std bound baked into the [`SceTransitionBuf`] alias
-/// (`heapless::Vec<_, MAX_ENABLED_TRANSITIONS>`), which Appendix D's selection
-/// in [`helpers::microstep`] collects the enabled set in.
-/// §scxml-D-selectTransitions selects at most one enabled transition per active
-/// atomic state, and the active configuration is itself bounded by
-/// [`crate::helpers::hierarchy::MAX_HIERARCHY_DEPTH`] (16), so the enabled set
-/// cannot exceed that: the bound is that value, not a margin over it.
-///
-/// A margin is what a stack pays for. Appendix D's loop holds one enabled set
-/// in each of the frames from the main event loop down to the microstep, and
-/// each element is 16 bytes, so every slot of the bound is paid several times
-/// over on the deepest call chain of a no_std machine (a consumer measured
-/// three frames of about 520 bytes each at the former value of 32).
-///
-/// The std build keeps unbounded `Vec` so this constant only affects the
-/// `--no-default-features` variant. A machine without a `<parallel>` never has
-/// more than one enabled transition; sizing the set per document would take
-/// an associated type on every generated policy, as `EventQueue` is, and is
-/// not built.
-pub const MAX_ENABLED_TRANSITIONS: usize = helpers::hierarchy::MAX_HIERARCHY_DEPTH;
-
 /// Maximum byte length of an event metadata string under `--no-default-features`.
 ///
 /// Bounds the capacity of [`SceString`] for `EventMetadata.data`,
@@ -314,34 +290,16 @@ pub fn payload_wire(args: ::core::fmt::Arguments<'_>) -> SceString {
     }
 }
 
-/// The enabled-transition buffer of the W3C Appendix D microstep, resolving to
-/// the natural collection of each runtime profile.
-///
-/// - std build: [`std::vec::Vec<T>`] (unbounded, heap-allocated).
-/// - no_std build: `heapless::Vec<T, MAX_ENABLED_TRANSITIONS>` (stack-allocated).
-///
-/// The capacity is global (every microstep is bounded by the same enabled-set
-/// limit), so it is baked into the alias rather than carried as a generic const
-/// — mirroring [`StateChain`](crate::helpers::hierarchy::StateChain), which
-/// bakes [`crate::helpers::hierarchy::MAX_HIERARCHY_DEPTH`]. Push through
-/// [`BoundedPush::push_bounded`].
-#[cfg(feature = "std")]
-pub type SceTransitionBuf<T> = ::std::vec::Vec<T>;
-/// no_std variant of [`SceTransitionBuf`]. See the std-variant doc-comment.
-#[cfg(not(feature = "std"))]
-pub type SceTransitionBuf<T> = ::heapless::Vec<T, MAX_ENABLED_TRANSITIONS>;
-
 /// Push into a microstep buffer uniformly under std and no_std.
 ///
 /// Implemented for `heapless::Vec<T, N>` in both profiles and for the std
-/// `Vec<T>` where there is one, so it covers the transition-count-bounded
-/// buffers of [`helpers::microstep`], and a bare-metal crate's own push still
-/// resolves when another crate of its build turns `std` on (docs/adr/0053).
-/// A `heapless::Vec` push fails loud on overflow — the
-/// capacity ([`MAX_ENABLED_TRANSITIONS`]) is sized to the W3C Appendix D
-/// enabled-set bound, so overflow indicates a capacity to raise, not a
-/// recoverable condition. Mirrors the depth-bounded
-/// [`crate::helpers::hierarchy::push_chain`] for `StateChain`.
+/// `Vec<T>` where there is one, so it covers every buffer of
+/// [`helpers::microstep`] ([`helpers::hierarchy::Bounded`] is built on it), and
+/// a bare-metal crate's own push still resolves when another crate of its build
+/// turns `std` on (docs/adr/0053). A `heapless::Vec` push fails loud on
+/// overflow — each buffer's capacity is the document's own bound
+/// ([`helpers::hierarchy`]), so an overflow is a bound the generator computed
+/// wrong, not a recoverable condition.
 pub trait BoundedPush<T> {
     /// Append `item`, panicking on a no_std capacity overflow (see trait docs).
     fn push_bounded(&mut self, item: T);
@@ -360,8 +318,8 @@ impl<T, const N: usize> BoundedPush<T> for ::heapless::Vec<T, N> {
     fn push_bounded(&mut self, item: T) {
         if self.push(item).is_err() {
             panic!(
-                "SCE no_std microstep buffer overflow (capacity {N}); raise the \
-                 relevant capacity constant (MAX_ENABLED_TRANSITIONS)"
+                "SCE no_std microstep buffer overflow (capacity {N}): the document's bound \
+                 for this buffer was computed too small (generator bug)"
             );
         }
     }
@@ -372,8 +330,8 @@ impl<T, const N: usize> BoundedPush<T> for ::heapless::Vec<T, N> {
 /// Under std this is `[T]::sort_by`. Under no_std it is a stable in-place
 /// insertion sort — `[T]::sort_by` requires `alloc` for its merge buffer, which
 /// a no-allocator no_std build cannot provide. The W3C Appendix D.2 microstep
-/// sorts states/transitions whose count is bounded by `MAX_HIERARCHY_DEPTH` /
-/// [`MAX_ENABLED_TRANSITIONS`], so the O(n²) insertion sort is negligible. Both
+/// sorts states/transitions whose count is bounded by the document's
+/// configuration, so the O(n²) insertion sort is negligible. Both
 /// variants are stable, so generated machines sort identically under std and
 /// no_std (preserving W3C document-order tie-breaking among same-source
 /// transitions).

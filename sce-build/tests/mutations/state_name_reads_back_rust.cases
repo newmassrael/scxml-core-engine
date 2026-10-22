@@ -6,7 +6,7 @@
 # `StatePolicy::get_state_name` has published a state's id since the trait
 # existed; `get_state_from_name` is the inverse, and it is what lets a
 # configuration cross a process. A host records NAMES — a journal, a wire, a
-# file — while `Engine::enter_at` takes a `StateChain<Self::State>`. Measured
+# file — while `Engine::enter_at` takes a slice of `Self::State`. Measured
 # 2026-08-24 on `baee920f0b`: the reverse did not exist, so the door could be
 # called and its argument could not be built, and a supervisor coming back had
 # to `initialize()` instead — which re-runs `<onentry>` and re-sends the prompt

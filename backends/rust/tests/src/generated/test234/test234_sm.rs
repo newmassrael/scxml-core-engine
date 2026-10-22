@@ -115,6 +115,18 @@ pub enum Test234Event {
 }
 
 // ======================================================================
+// What this document's state tree bounds (W3C SCXML 3.4)
+// ======================================================================
+
+/// A set of this machine's states that are, or are about to be, in one
+/// configuration: the configuration a host observes, and what the runtime's
+/// microstep builds from it (an exit set, an entry set, a history's record).
+/// Its capacity, 3, is the most states one configuration of this document holds,
+/// read from its state tree; the runtime names no size of its own. A `Vec` under
+/// std, where the capacity is not read.
+pub type Test234Configuration = ::sce_rust_runtime::helpers::hierarchy::BoundedVec<Test234State, 3>;
+
+// ======================================================================
 // Externally-drivable event surface (W3C SCXML 3.12 / 5.10)
 // ======================================================================
 
@@ -141,11 +153,11 @@ impl Test234Event {
 pub struct Test234Policy {
     // W3C SCXML 3.4: Active state configuration for parallel states / In() predicate
     //
-    // SCE Protocol-Synthesis RFC §synth-5-J-2: type is the runtime crate's
-    // [`StateChain`] alias — `Vec<S>` under std, `heapless::Vec<S, MAX_HIERARCHY_DEPTH>`
-    // under no_std. The std alias preserves the existing ABI; the no_std alias keeps
-    // the generated code allocator-free.
-    active_states: ::sce_rust_runtime::helpers::hierarchy::StateChain<Test234State>,
+    // SCE Protocol-Synthesis RFC §synth-5-J-2: this document's own
+    // `Test234Configuration` — `Vec<S>` under std, a `heapless::Vec` of exactly
+    // the most states one configuration holds under no_std. The std alias preserves
+    // the existing ABI; the no_std alias keeps the generated code allocator-free.
+    active_states: Test234Configuration,
     // W3C SCXML 5.10: Event name for _event.name binding
     //
     // SCE Protocol-Synthesis RFC §synth-5-J-2: typed as the runtime crate's [`SceString`]
@@ -278,7 +290,7 @@ impl Test234Policy {
     ) -> Self {
         Self {
             script_engine,
-            active_states: ::sce_rust_runtime::helpers::hierarchy::new_chain(),
+            active_states: Default::default(),
             pending_event_name: ::sce_rust_runtime::SceString::new(),
             pending_event_arrival_name: ::sce_rust_runtime::SceString::new(),
             pending_event_data: ::sce_rust_runtime::SceString::new(),
@@ -364,7 +376,7 @@ impl Test234Policy {
         if self.active_states.contains(&state) {
             return false;
         }
-        ::sce_rust_runtime::helpers::hierarchy::push_chain(&mut self.active_states, state);
+        ::sce_rust_runtime::BoundedPush::push_bounded(&mut self.active_states, state);
         self.publish_in_predicate_states();
         true
     }
@@ -1050,6 +1062,23 @@ impl StatePolicy for Test234Policy {
     // EventQueue per-machine sizing lever above.
     type ScheduledSendId = sce_rust_runtime::ElidedSendId;
 
+    // W3C SCXML 3.4: what this document's state tree bounds, read by the
+    // generator and written here so every buffer of the runtime's microstep is
+    // this document's size and no larger. A configuration holds 3 state(s) at
+    // most; a selection enables 2 transition(s) at most, one from each atomic state
+    // of one; the deepest state sits 2 level(s) down. Under std the buffers
+    // are `Vec`s and the capacities are not read.
+    type Configuration = Test234Configuration;
+    type EnabledSet = ::sce_rust_runtime::helpers::hierarchy::BoundedVec<
+        ::sce_rust_runtime::EnabledTransition<Self::State, Self::History>,
+        2,
+    >;
+    type HistoryDefaults =
+        ::sce_rust_runtime::helpers::hierarchy::BoundedVec<(Self::State, Self::History), 0>;
+    const MAX_CONFIGURATION: usize = 3;
+    const MAX_ENABLED: usize = 2;
+    const MAX_DEPTH: usize = 2;
+
     // W3C SCXML feature flags
     const HAS_PARALLEL_STATES: bool = true;
     const NEEDS_SCRIPT_ENGINE: bool = true;
@@ -1194,7 +1223,7 @@ impl StatePolicy for Test234Policy {
 
     // The inverse of the table above, emitted from the same loop over the
     // document's states so the two age together. It is what lets a host turn a
-    // recorded configuration back into the `StateChain` `enter_at` takes.
+    // recorded configuration back into the slice `enter_at` takes.
     fn get_state_from_name(name: &str) -> Option<Self::State> {
         match name {
             "fail" => Some(Test234State::Fail),
@@ -1222,10 +1251,10 @@ impl StatePolicy for Test234Policy {
     }
 
     // SCE Protocol-Synthesis RFC §synth-5-J-2: trait default in `sce-rust-runtime::policy`
-    // returns `StateChain<Self::State>`; this override matches that signature
+    // returns `Self::Configuration`; this override matches that signature
     // so the std alias-to-`Vec<S>` and no_std alias-to-`heapless::Vec<S, …>`
     // both resolve correctly.
-    fn get_active_states(&self) -> ::sce_rust_runtime::helpers::hierarchy::StateChain<Self::State> {
+    fn get_active_states(&self) -> Self::Configuration {
         self.active_states.clone()
     }
 
@@ -1234,11 +1263,11 @@ impl StatePolicy for Test234Policy {
     // decides both — this machine keeps its own active set, so this machine is
     // the one that can be handed one back. The trait default is a tripwire, so
     // emitting the reader without this one would turn a restore into a panic.
-    fn set_active_states(
-        &mut self,
-        states: ::sce_rust_runtime::helpers::hierarchy::StateChain<Self::State>,
-    ) {
-        self.active_states = states;
+    fn set_active_states(&mut self, states: &[Self::State]) {
+        self.active_states.clear();
+        for &state in states {
+            ::sce_rust_runtime::BoundedPush::push_bounded(&mut self.active_states, state);
+        }
         self.publish_in_predicate_states();
     }
 
