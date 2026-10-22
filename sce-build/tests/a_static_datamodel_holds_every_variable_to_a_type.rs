@@ -837,7 +837,12 @@ fn a_payload_enum_field_the_document_does_not_import_is_held_by_its_document_in_
         // every other backend's the machine's, named from the document.
         let held = match language {
             Language::C11 => "view_mode_enum_t",
-            _ => "ViewModeEnum",
+            Language::Rust
+            | Language::Cpp
+            | Language::Kotlin
+            | Language::Go
+            | Language::Python
+            | Language::Swift => "ViewModeEnum",
         };
         let mut generated = String::new();
         for entry in std::fs::read_dir(out_dir.path()).expect("the output directory") {

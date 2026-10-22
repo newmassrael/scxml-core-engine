@@ -488,9 +488,19 @@ fn every_committed_ecmascript_expression_compiles() {
     // ECMA-262 12.7.2 makes `return` a reserved word, so refusing it is the
     // correct verdict — and the seam turns the refusal into the runtime
     // error the tests are looking for.
+    //
+    // The three in `static_optional.scxml` are `??` on a value that may be
+    // absent (docs/adr/0055): the frontend has no nullish coalescing, and a
+    // `sce-static` machine's own lowering reads the operator, so no
+    // expression of a machine that runs through the Lua path holds one. A
+    // document that did would raise at evaluation, which is why the list
+    // names the file and not the operator.
     let expected: Vec<&str> = vec![
         "resources/309/test309.scxml: cond=\"return\"",
         "resources/344/test344.scxml: cond=\"return\"",
+        "sce-build/tests/fixtures/static_datamodel/static_optional.scxml: expr=\"title ?? 'none'\"",
+        "sce-build/tests/fixtures/static_datamodel/static_optional.scxml: expr=\"due ?? (huge * huge)\"",
+        "sce-build/tests/fixtures/static_datamodel/static_optional.scxml: expr=\"due ?? 0\"",
     ];
     let unexpected: Vec<&String> = failures
         .iter()

@@ -18,8 +18,8 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use sce_build::forge::codegen_matrix::language_wire_name;
-use sce_build::generator::Language;
+use sce_build::forge::codegen_matrix::{emitting, language_wire_name};
+use sce_build::forge::model::ForgeKind;
 
 fn codegen_bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_sce-codegen"))
@@ -104,7 +104,7 @@ fn write(dir: &Path, name: &str, text: &str) {
 /// `expression/unsupported-construct`, naming `reason`.
 fn refused_everywhere(beside: &[Probe], probe: &Probe, reason: &str) {
     let mut wrong = Vec::new();
-    for &lang in Language::ALL {
+    for lang in emitting(ForgeKind::Algorithm) {
         let wire = language_wire_name(lang);
         let (ok, out) = check(beside, probe, wire);
         if ok {
@@ -121,7 +121,7 @@ fn refused_everywhere(beside: &[Probe], probe: &Probe, reason: &str) {
 /// `probe`, with `beside` written next to it, is accepted on every backend.
 fn accepted_everywhere(beside: &[Probe], probe: &Probe) {
     let mut refused = Vec::new();
-    for &lang in Language::ALL {
+    for lang in emitting(ForgeKind::Algorithm) {
         let wire = language_wire_name(lang);
         let (ok, out) = check(beside, probe, wire);
         if !ok {

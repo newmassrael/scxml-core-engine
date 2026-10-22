@@ -2849,7 +2849,12 @@ fn render_event_schema(
     let quoted = serde_json::to_string(&m.event_name).expect("a string serialises");
     let event_name_literal = match l.lang {
         crate::generator::Language::Kotlin => quoted.replace('$', "\\$"),
-        _ => quoted,
+        crate::generator::Language::Rust
+        | crate::generator::Language::Cpp
+        | crate::generator::Language::Go
+        | crate::generator::Language::Python
+        | crate::generator::Language::C11
+        | crate::generator::Language::Swift => quoted,
     };
     ctx.insert("event_name_literal".into(), event_name_literal.into());
     ctx.insert("schema_revision".into(), m.revision().into());
@@ -27330,7 +27335,13 @@ fn algorithm_optional_type(l: &LangCtx, elem: &OptionalElemType) -> Result<Strin
             crate::generator::Language::C11 => {
                 crate::forge::static_lowering::c11_optional_type(&present)
             }
-            _ => None,
+            // The other backends spell it through `optional_of`, above.
+            crate::generator::Language::Rust
+            | crate::generator::Language::Cpp
+            | crate::generator::Language::Kotlin
+            | crate::generator::Language::Go
+            | crate::generator::Language::Python
+            | crate::generator::Language::Swift => None,
         })
         .ok_or_else(refused)
 }
@@ -33557,8 +33568,13 @@ mod tests {
     #[test]
     fn the_template_filter_names_the_package_an_import_line_names() {
         let mut env = crate::generator::new_env();
-        env.add_template("t", "package {{ 'outer_pick' | kotlin_forge_package }}")
-            .expect("the template parses");
+        crate::generator::register_template(
+            &mut env,
+            "t".to_string(),
+            "package {{ 'outer_pick' | kotlin_forge_package }}",
+            crate::generator::Language::Kotlin,
+        )
+        .expect("the template parses");
         let rendered = env
             .get_template("t")
             .and_then(|t| t.render(minijinja::context! {}))

@@ -123,12 +123,22 @@ fn depfile_writer_holds_no_hand_kept_language_list() {
     )
     .expect("sce_codegen.rs is readable");
 
-    let start = src
-        .find("fn write_depfile(")
-        .expect("write_depfile still exists — if it was renamed, retarget this gate");
-    let body = &src[start..];
-    let end = body.find("\nfn ").unwrap_or(body.len());
-    let body = &body[..end];
+    // The writer hands what one generation contributes to `depfile_entry`, which
+    // is where the exclusion is computed, so both functions are read.
+    let function = |name: &str| {
+        let start = src.find(&format!("fn {name}(")).unwrap_or_else(|| {
+            panic!("{name} still exists — if it was renamed, retarget this gate")
+        });
+        let body = &src[start..];
+        let end = body.find("\nfn ").unwrap_or(body.len());
+        body[..end].to_string()
+    };
+    let body = format!(
+        "{}\n{}",
+        function("write_depfile"),
+        function("depfile_entry")
+    );
+    let body = body.as_str();
 
     assert!(
         body.contains("foreign_template_prefixes"),

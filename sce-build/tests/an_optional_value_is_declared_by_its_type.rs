@@ -106,38 +106,38 @@ fn check_refuses(text: &str, code: &str, needle: &str) {
     assert!(out.contains(needle), "expected `{needle}` in:\n{out}");
 }
 
-/// The `generate` arguments of each of the six generated backends.
+/// The `generate` arguments of each backend that emits a machine. A backend that
+/// emits nothing yet is refused at the entry point instead
+/// (`a_backend_with_no_emitter_is_refused`), and one that joins is included here
+/// until someone excludes it.
 fn every_backend() -> Vec<Vec<&'static str>> {
-    vec![
-        vec!["generate", "-l", "rust"],
-        vec!["generate", "-l", "kotlin"],
-        vec!["generate", "-l", "python"],
-        vec!["generate", "-l", "c11"],
-        vec!["generate", "-l", "cpp"],
-        vec![
-            "generate",
-            "-l",
-            "go",
-            "--go-module-prefix",
-            "example.test/generated",
-        ],
-    ]
+    sce_build::forge::codegen_matrix::emitting(sce_build::forge::model::ForgeKind::Statechart)
+        .map(|language| {
+            let mut args = vec!["generate", "-l", language.canonical_name()];
+            if language == sce_build::generator::Language::Go {
+                args.extend(["--go-module-prefix", "example.test/generated"]);
+            }
+            args
+        })
+        .collect()
 }
 
 /// The refusal a backend gives a document that holds an optional value, before
 /// the step that lowers one there (`StaticTarget::lowers_optional`).
 const NOT_LOWERED: &str = "an optional value has no";
 
-/// The backends whose step of docs/adr/0055 lowers a statechart's optional value,
-/// by the language `generate -l` names: each generates what the others refuse.
-/// A backend joins in the step that lowers the type on it.
-const LOWERS_OPTIONAL: &[&str] = &["go", "python", "cpp", "kotlin", "rust", "c11"];
+/// The emitting backends whose step of docs/adr/0055 has not yet lowered a
+/// statechart's optional value, by the language `generate -l` names: each refuses
+/// what the others generate. A backend that joins without the step is written
+/// here, with the reason beside it, and leaves in the step that lowers the type on
+/// it. Every backend lowers it now, so nothing is listed.
+const NOT_LOWERING_OPTIONAL: &[&str] = &[];
 
 /// Whether the backend `args` (one of [`every_backend`]) lowers a statechart's
 /// optional value.
 fn lowers_optional(args: &[&str]) -> bool {
     args.get(2)
-        .is_some_and(|lang| LOWERS_OPTIONAL.contains(lang))
+        .is_some_and(|lang| !NOT_LOWERING_OPTIONAL.contains(lang))
 }
 
 // ── The type in the model ────────────────────────────────────────────────

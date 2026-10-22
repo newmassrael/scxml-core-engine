@@ -194,6 +194,11 @@ const NOT_A_DOCUMENTS: &[(&str, Why, Functions)] = &[
             // command line (`check-queue-history`): records of a run and not
             // documents a document names.
             ("cmd_check_queue_history", 1),
+            // The document a command is named, read before its pipeline is given
+            // it, and the replay scenario a command is named: the operator's own
+            // arguments, as `cmd_check` and `cmd_scenarios` read theirs.
+            ("read_named_document", 1),
+            ("replay_scenario", 1),
         ],
     ),
     (
@@ -214,7 +219,9 @@ const NOT_A_DOCUMENTS: &[(&str, Why, Functions)] = &[
     (
         "src/bin/sce_codegen.rs",
         Why::Installation,
-        &[("write_depfile", 1)],
+        // `depfile_entry` asks whether the running program is still on disk, to
+        // name it as a prerequisite of what it wrote.
+        &[("write_depfile", 1), ("depfile_entry", 1)],
     ),
     (
         "src/bin/sce_codegen.rs",

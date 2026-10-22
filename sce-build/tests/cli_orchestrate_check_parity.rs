@@ -184,13 +184,18 @@ fn orchestrate_carries_every_flag_check_takes_on_the_document_set_route() {
     // otherwise. The candidates below are tried until one is neither
     // missing nor ill-typed; a flag no candidate satisfies fails the
     // test rather than being guessed at.
-    const VALUES: [&str; 3] = ["1", "rust", "human"];
+    //
+    // The lexicon names are read from the registry the flag is validated
+    // against, so a lexicon added to it is a candidate without anyone
+    // listing it here.
+    let mut values: Vec<&str> = vec!["1", "rust", "human"];
+    values.extend(sce_build::forge::page::lexicon_names());
     let mut document_set: Vec<String> = Vec::new();
     let mut single_document_only: Vec<String> = Vec::new();
     let mut unclassified: Vec<String> = Vec::new();
     for flag in &check_flags {
         let mut verdict = None;
-        for extra in std::iter::once(None).chain(VALUES.iter().map(Some)) {
+        for extra in std::iter::once(None).chain(values.iter().map(Some)) {
             let mut args = vec!["check", "--forge", FOLD_DOC, "--language", "rust", flag];
             if let Some(v) = extra {
                 args.push(v);
@@ -211,7 +216,7 @@ fn orchestrate_carries_every_flag_check_takes_on_the_document_set_route() {
     assert!(
         unclassified.is_empty(),
         "no candidate value satisfied {unclassified:?}, so the probe never \
-         reached clap's conflict check for them — extend VALUES rather than \
+         reached clap's conflict check for them — extend `values` rather than \
          letting them fall to either side",
     );
 
