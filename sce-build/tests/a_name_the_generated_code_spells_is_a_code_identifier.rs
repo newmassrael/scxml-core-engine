@@ -305,8 +305,10 @@ fn a_variant_is_asked_in_the_spelling_a_variant_gets() {
 
 /// The other direction, which folding every name to snake_case got wrong: a
 /// variant `match` reaches Rust as `Match` and Kotlin as `MATCH`, neither a
-/// keyword, so it is accepted — and so is a const `DEFAULT`, which every
-/// backend spells `DEFAULT` while C++ reserves only `default`.
+/// keyword, so it is accepted — and so is a const `explicit`, which every
+/// backend but Swift spells `EXPLICIT` (Swift writes a constant in lowerCamelCase
+/// and does not reserve the word) while C++ reserves only `explicit`. A const
+/// `default` is not the case: Swift spells it `default` and reserves it.
 #[test]
 fn a_name_a_backend_folds_away_from_its_keyword_is_accepted() {
     let label = sce_build::DocumentLabel {
@@ -315,6 +317,26 @@ fn a_name_a_backend_folds_away_from_its_keyword_is_accepted() {
     };
     sce_build::forge::parser::parse_forge_with_imports(&enum_with_variant("match"), label)
         .expect("a variant `match` is spelled `Match` / `MATCH`, which nothing reserves");
+    let constant = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" version="1.0" name="named_input">
+  <sce:const name="explicit" type="uint8" init="0"/>
+  <sce:signature>
+    <sce:param name="x" type="uint8"/>
+    <sce:return type="uint8"/>
+  </sce:signature>
+  <sce:body>
+    <sce:return expr="x"/>
+  </sce:body>
+</scxml>"#;
+    sce_build::forge::parser::parse_forge_with_imports(constant, label)
+        .expect("a const `explicit` is spelled `EXPLICIT` or `explicit`, which nothing reserves");
+}
+
+/// The word the test above leaves out: Swift writes a constant in lowerCamelCase,
+/// so a const `default` is `default` there, which Swift reserves, and the
+/// document is refused for every backend naming that spelling.
+#[test]
+fn a_const_swift_spells_as_one_of_its_keywords_is_refused() {
     let constant = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        sce:kind="algorithm" version="1.0" name="named_input">
   <sce:const name="default" type="uint8" init="0"/>
@@ -326,8 +348,16 @@ fn a_name_a_backend_folds_away_from_its_keyword_is_accepted() {
     <sce:return expr="x"/>
   </sce:body>
 </scxml>"#;
-    sce_build::forge::parser::parse_forge_with_imports(constant, label)
-        .expect("a const `default` is spelled `DEFAULT` everywhere, which nothing reserves");
+    let refusal = forge_refusal(constant);
+    assert_eq!(code_of(&refusal), "\"validation/reserved-code-identifier\"");
+    assert!(
+        refusal
+            .error
+            .to_string()
+            .contains("'default' is a reserved word in swift"),
+        "{}",
+        refusal.error
+    );
 }
 
 /// The discriminator: the same document with a name no language reserves

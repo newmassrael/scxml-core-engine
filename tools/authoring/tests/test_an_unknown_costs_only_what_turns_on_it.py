@@ -33,9 +33,12 @@ HEADER = """<?xml version="1.0" encoding="UTF-8"?>
        version="1.0" sce:kind="transform" name="guarded">
   <datamodel>
     <data id="mode" sce:type="bool" sce:direction="in"/>
-    <data id="guard" sce:type="bool" sce:direction="in"/>
+    <data id="interlock" sce:type="bool" sce:direction="in"/>
 """
 
+# The guard is the datum `interlock`: `guard` is a word Swift reserves, so a
+# document that declares it is refused for every backend.
+#
 # The guard is declared and never read: nothing can turn on it.
 IGNORES = HEADER + """    <data id="lamp" sce:type="string" sce:direction="out" expr="mode ? 'on' : 'off'"/>
   </datamodel>
@@ -45,7 +48,7 @@ IGNORES = HEADER + """    <data id="lamp" sce:type="string" sce:direction="out" 
 # The guard matters only while the supply is HIGH. At LOW the lamp is off
 # whatever it is -- which is what lets one case be judged and not the other.
 DEPENDS = HEADER + """    <data id="lamp" sce:type="string" sce:direction="out"
-          expr="(mode &amp;&amp; guard) ? 'on' : 'off'"/>
+          expr="(mode &amp;&amp; interlock) ? 'on' : 'off'"/>
   </datamodel>
 </scxml>
 """
@@ -57,7 +60,7 @@ BINDING = {
     "document": "guarded.scxml",
     "inputs": {
         "mode": {"address": "Plant.Input.SupplyMode", "equals": "HIGH"},
-        "guard": {"unresolved": UNKNOWN},
+        "interlock": {"unresolved": UNKNOWN},
     },
     "outputs": {
         "lamp": {
@@ -105,7 +108,7 @@ class AnUnknownCostsOnlyWhatTurnsOnIt(Fixture):
                          (result.passed, result.failed, result.unjudged),
                          [(c.name, c.refusal) for c in result.results])
         self.assertEqual(0, result.undetermined)
-        self.assertEqual({"guard": UNKNOWN}, result.unresolved,
+        self.assertEqual({"interlock": UNKNOWN}, result.unresolved,
                          "declared even when it cost nothing -- the reason is "
                          "still a question somebody owes an answer to")
 
@@ -168,7 +171,7 @@ class AnUnknownCostsOnlyWhatTurnsOnIt(Fixture):
         # exits green. Without it, a command that always exited 1 passes above.
         resolved = {**BINDING, "inputs": {
             **BINDING["inputs"],
-            "guard": {"address": "Plant.Input.SupplyMode", "equals": "LOW"}}}
+            "interlock": {"address": "Plant.Input.SupplyMode", "equals": "LOW"}}}
         self.run_with(IGNORES, HIGH, LOW, binding=resolved)
         code, said, _ = run(argv)
         self.assertEqual(0, code, said)
@@ -182,9 +185,9 @@ class AnUnknownCostsOnlyWhatTurnsOnIt(Fixture):
         declaring the guard `int32` ran it as False and then True -- two values
         the document says it can never receive.
         """
-        counted = DEPENDS.replace('id="guard" sce:type="bool"',
-                                  'id="guard" sce:type="int32"').replace(
-            "(mode &amp;&amp; guard)", "(mode &amp;&amp; guard &gt; 0)")
+        counted = DEPENDS.replace('id="interlock" sce:type="bool"',
+                                  'id="interlock" sce:type="int32"').replace(
+            "(mode &amp;&amp; interlock)", "(mode &amp;&amp; interlock &gt; 0)")
         self.assertNotEqual(counted, DEPENDS, "the premise: the guard is a number")
         result = self.run_with(counted, HIGH)
         self.assertFalse(result.ran)
