@@ -4541,6 +4541,23 @@ set_target_properties(sce_c_json_text_unit_test PROPERTIES
     C_EXTENSIONS OFF
 )
 add_test(NAME c11_unit_json_text COMMAND sce_c_json_text_unit_test)
+# The writer and the reader a saved state's text goes through (docs/adr/0045, section 7),
+# held to the same cases as the C++ unit suite and to every shared saved text. Header-only
+# and allocation-free, so the test needs nothing a configuration can leave out.
+add_executable(sce_c_saved_json_unit_test unit/saved_json_test.c)
+target_link_libraries(sce_c_saved_json_unit_test PRIVATE sce_c_runtime m)
+target_compile_definitions(sce_c_saved_json_unit_test PRIVATE
+    SCE_SAVED_FIXTURES_DIR="${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/saved")
+set_target_properties(sce_c_saved_json_unit_test PROPERTIES
+    C_STANDARD 11
+    C_STANDARD_REQUIRED ON
+    C_EXTENSIONS OFF
+)
+add_test(NAME c11_unit_saved_json COMMAND sce_c_saved_json_unit_test)
+set_tests_properties(c11_unit_saved_json PROPERTIES
+    TIMEOUT 10
+    LABELS "unit;c11"
+)
 set_tests_properties(c11_unit_json_text PROPERTIES
     TIMEOUT 10
     LABELS "unit;c11"
