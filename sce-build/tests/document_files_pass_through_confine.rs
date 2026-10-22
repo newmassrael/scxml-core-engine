@@ -172,16 +172,12 @@ const NOT_A_DOCUMENTS: &[(&str, Why, Functions)] = &[
         "src/bin/sce_codegen.rs",
         Why::Operator,
         &[
-            ("emit_orchestrate_asts", 1),
             ("load_deploy_config", 1),
-            ("forge_document_positions", 1),
             ("cmd_check", 1),
-            ("cmd_generate", 1),
             ("cmd_fix_scxml_name", 1),
             ("cmd_read_metadata", 1),
             ("cmd_manifest", 1),
             ("read_review_input", 1),
-            ("file_documents", 1),
             ("cmd_acceptance_check", 1),
             ("cmd_acceptance_impact", 1),
             ("cmd_acceptance_delta", 1),
@@ -195,7 +191,8 @@ const NOT_A_DOCUMENTS: &[(&str, Why, Functions)] = &[
             // documents a document names.
             ("cmd_check_queue_history", 1),
             // The document a command is named, read before its pipeline is given
-            // it, and the replay scenario a command is named: the operator's own
+            // it (`generate`, the AST emit and the position finder all read it
+            // here), and the replay scenario a command is named: the operator's own
             // arguments, as `cmd_check` and `cmd_scenarios` read theirs.
             ("read_named_document", 1),
             ("replay_scenario", 1),
@@ -221,7 +218,7 @@ const NOT_A_DOCUMENTS: &[(&str, Why, Functions)] = &[
         Why::Installation,
         // `depfile_entry` asks whether the running program is still on disk, to
         // name it as a prerequisite of what it wrote.
-        &[("write_depfile", 1), ("depfile_entry", 1)],
+        &[("depfile_entry", 1)],
     ),
     (
         "src/bin/sce_codegen.rs",
