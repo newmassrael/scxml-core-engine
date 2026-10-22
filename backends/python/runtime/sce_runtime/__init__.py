@@ -53,6 +53,21 @@ from .invoke import (
 from .microstep import EnabledTransition, EntryTarget, HistoryTarget, StateTarget
 from .root_start import RootStartRefusal
 from .policy import StatePolicy
+from . import saved_values, session_id
+from .saved_json import JsonError, JsonNumber, parse_json, write_json
+from .saved_state import (
+    SAVED_FORMAT,
+    SAVED_FORMAT_1,
+    SAVED_FORMAT_2,
+    SAVED_SCHEMA_STATUS,
+    SavedState,
+    StateRefusal,
+    check_saved_shape,
+    refusal_within,
+    saved_state_from_json,
+    saved_wall_clock_ms,
+    upgrade_saved_state,
+)
 from .scheduler import ScheduledEvent, Scheduler
 from .send import (
     is_invalid_target,
@@ -96,6 +111,8 @@ __all__ = [
     "HttpSendResponse",
     "IScriptEngine",
     "Invoke",
+    "JsonError",
+    "JsonNumber",
     "LuaScriptEngine",
     "MESH_ORIGIN_SCHEME",
     "MESH_PROCESSOR_TYPE",
@@ -107,6 +124,11 @@ __all__ = [
     "RESERVED_TYPE_PREFIX",
     "RequestFieldType",
     "RootStartRefusal",
+    "SAVED_FORMAT",
+    "SAVED_FORMAT_1",
+    "SAVED_FORMAT_2",
+    "SAVED_SCHEMA_STATUS",
+    "SavedState",
     "ScheduledEvent",
     "Scheduler",
     "ScriptError",
@@ -114,7 +136,9 @@ __all__ = [
     "ScriptValueKind",
     "ScxmlInvoke",
     "StatePolicy",
+    "StateRefusal",
     "StateTarget",
+    "check_saved_shape",
     "create_done_invoke_event_name",
     "document_stem",
     "is_invalid_target",
@@ -126,12 +150,20 @@ __all__ = [
     "mesh_event_metadata",
     "mesh_peer",
     "parse_host_invoke_deadline_ms",
+    "parse_json",
     "published_origin",
+    "refusal_within",
     "request_field",
     "request_field_wire",
+    "saved_state_from_json",
+    "saved_values",
+    "saved_wall_clock_ms",
+    "session_id",
     "session_id_from_scxml_location",
     "scripting",
+    "upgrade_saved_state",
     "validate_configuration",
+    "write_json",
 ]
 
 __version__ = "0.1.0"
