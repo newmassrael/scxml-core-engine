@@ -18,9 +18,10 @@
 //! weight under `--no-default-features` — after the delayed-send `event_data`
 //! elision it is the single largest resident in the no_std `Engine`. This trait
 //! lets the generated [`StatePolicy::ScheduledSendId`](crate::StatePolicy::ScheduledSendId)
-//! associated type pick the storage per machine: [`SceString`] when the document
-//! uses `<cancel>` (load-bearing on both profiles), [`ElidedSendId`] (zero-size)
-//! when it does not. Mirrors the per-machine
+//! associated type pick the storage per machine: a
+//! [`SendIdString`](crate::SendIdString) of the document's own size when the
+//! document uses `<cancel>` (load-bearing on both profiles), [`ElidedSendId`]
+//! (zero-size) when it does not. Mirrors the per-machine
 //! [`StatePolicy::EventQueue`](crate::StatePolicy::EventQueue) sizing lever.
 
 #[cfg(feature = "std")]
@@ -29,16 +30,17 @@ use core::fmt::Debug;
 
 /// Storage abstraction for a scheduled entry's cancel key (the `send_id`).
 ///
-/// Two impls ship: [`SceString`] (stores the id, matches by string equality —
-/// load-bearing for `<cancel>`) and [`ElidedSendId`] (stores nothing, never
+/// Two impls ship: the id's string, [`SendIdString`](crate::SendIdString) (stores
+/// the id, matches by string equality — load-bearing for `<cancel>`), and
+/// [`ElidedSendId`] (stores nothing, never
 /// matches — selected by codegen for cancel-free documents). `Debug` is a
 /// supertrait because the scheduler types derive `Debug`.
 pub trait ScheduledSendIdLike: Debug {
     /// Capture the resolved send id into the stored representation.
     ///
     /// Takes the id as text so the [`ElidedSendId`] impl can drop it without
-    /// anything having been built for it, and the [`SceString`] impl builds the
-    /// one string it stores.
+    /// anything having been built for it, and the string impl builds the one
+    /// string it stores.
     fn store(send_id: &str) -> Self;
 
     /// Whether this stored id equals `send_id` (the `<cancel sendid>` key).
@@ -92,7 +94,7 @@ impl<const N: usize> ScheduledSendIdLike for ::heapless::String<N> {
 /// sound no-op rather than `unreachable!()` means a stray direct call (e.g. a
 /// runtime unit test) degrades to "found nothing" instead of panicking.
 ///
-/// Selecting this over [`SceString`] removes the per-entry string from
+/// Selecting this over the id's string removes the per-entry string from
 /// `ScheduledEntry`, shrinking the no_std scheduler ring by
 /// ~264 B × [`MAX_SCHEDULED_EVENTS`](crate::MAX_SCHEDULED_EVENTS). Under std the
 /// scheduler is heap-backed and the id is likewise never read for a cancel-free
