@@ -57,14 +57,14 @@ PY
 
 mutation_case "an immediate external send does not carry the name it was sent under" <<'PY'
 edit("backends/kotlin/tests/src/main/kotlin/com/sce/integration/a_computed_event_name_is_matched_like_any_other/a_computed_event_name_is_matched_like_any_otherSm.kt",
-     "if (sendEvent != null) send(sendEvent, EventMetadata.external(sendId = \"__send_0\", origin = scriptSessionId ?: \"\", data = sendData).copy(name = arrivalNameOf(sendEvent, sendEventName)))",
-     "if (sendEvent != null) send(sendEvent, EventMetadata.external(sendId = \"__send_0\", origin = scriptSessionId ?: \"\", data = sendData))")
+     "if (sendEvent != null) send(sendEvent, EventMetadata.external(sendId = \"__send_0\", origin = sessionId, data = sendData).copy(name = arrivalNameOf(sendEvent, sendEventName)))",
+     "if (sendEvent != null) send(sendEvent, EventMetadata.external(sendId = \"__send_0\", origin = sessionId, data = sendData))")
 PY
 
 mutation_case "a delayed external send waits without the name it was sent under" <<'PY'
 edit("backends/kotlin/tests/src/main/kotlin/com/sce/integration/a_computed_event_name_is_matched_like_any_other/a_computed_event_name_is_matched_like_any_otherSm.kt",
-     "if (sendEvent != null) scheduleSend(\"__send_1\", 20L, sendEvent, EventMetadata.external(sendId = \"__send_1\", origin = scriptSessionId ?: \"\", data = sendData).copy(name = arrivalNameOf(sendEvent, sendEventName)))",
-     "if (sendEvent != null) scheduleSend(\"__send_1\", 20L, sendEvent, EventMetadata.external(sendId = \"__send_1\", origin = scriptSessionId ?: \"\", data = sendData))")
+     "if (sendEvent != null) scheduleSend(\"__send_1\", 20L, sendEvent, EventMetadata.external(sendId = \"__send_1\", origin = sessionId, data = sendData).copy(name = arrivalNameOf(sendEvent, sendEventName)))",
+     "if (sendEvent != null) scheduleSend(\"__send_1\", 20L, sendEvent, EventMetadata.external(sendId = \"__send_1\", origin = sessionId, data = sendData))")
 PY
 
 mutation_case "an immediate internal send does not carry the name it was sent under" <<'PY'

@@ -6457,7 +6457,10 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_apply_mesh_calls({{ csym_prefix
             (void)snprintf(_origin, sizeof(_origin), "%s%s", SCE_MESH_ORIGIN_SCHEME, _call.source);
         }
         if (_call.kind == SCE_MESH_CALL_RAISE) {
-            {{ csym_prefix }}{{ model.name }}_event_t _event;
+            /* Zeroed: the resolver writes it only for a name it knows, and the compiler
+               cannot see that a `true` answer is the only way past the `continue`
+               below, which an optimising build with -Werror reports. */
+            {{ csym_prefix }}{{ model.name }}_event_t _event = 0;
             if (!{{ csym_prefix }}{{ model.name }}_resolve_event_by_name(_call.name, &_event)) {
                 continue;
             }
