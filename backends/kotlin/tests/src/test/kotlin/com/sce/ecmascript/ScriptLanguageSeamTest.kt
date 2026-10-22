@@ -596,16 +596,28 @@ class ScriptLanguageSeamTest {
      * Shared by the two source-reading cases so the population they judge
      * cannot become two different answers to "which engines does this backend
      * ship" — the same reason the seam has one branch and not two.
+     *
+     * A generated machine is not an engine: it takes one as a constructor
+     * parameter, which [IMPLEMENTS_ENGINE] reads as the supertype list, and a
+     * machine of a few hundred kilobytes costs that pattern seconds each. The
+     * generated tree is most of what lies under `backends/kotlin`, so it is left
+     * unread, by the header every generated file carries.
      */
     private fun engineSources(): List<Pair<File, String>> =
         File("backends/kotlin").walkTopDown()
             .filter { it.isFile && it.extension == "kt" }
             .filterNot { "/build/" in it.path }
+            .filterNot { file ->
+                file.useLines { lines -> lines.firstOrNull()?.startsWith(GENERATED_HEADER) == true }
+            }
             .map { it to it.readText() }
             .filter { (_, body) -> IMPLEMENTS_ENGINE.containsMatchIn(body) }
             .toList()
 
     private companion object {
+        /** The first line of every file the Kotlin generator writes. */
+        const val GENERATED_HEADER = "// SCE-GENERATED"
+
         /** A class that declares itself an engine, however it spells the supertype list. */
         val IMPLEMENTS_ENGINE = Regex("""class\s+\w+[^{]*:\s*[^{]*\bScxmlScriptEngine\b""")
 
