@@ -101,6 +101,15 @@ the stack, not the RAM, to be the limit, with the frames of this decision as the
   `Vec<State>` as before. Under `no_std` it returns the document's `Configuration`; `Engine::enter_at` and
   `StatePolicy::set_active_states` take a slice; a hand-written policy states the six items above. A consumer's
   hand-written `StatePolicy` is the one thing that fails to compile, once, with the missing items named.
+- **The frames are held, not only measured.** `scripts/gates/nostd-mcu.sh` now computes the worst-case stack from the
+  footprint probe's disassembly (`tools/mcu_stack/worst_case_stack.py`: each function's frame from its prologue,
+  and the largest sum along the calls of the object) and holds it to `STACK_BYTES` in `footprint.budget`, in both
+  directions, in both configurations. It is static and says so: a host callback is taken to need a stated number of
+  bytes, the formatting machinery a stated number, a recursion ends only at a bound the budget states (the document's
+  depth), and an indirect call or a cycle the budget does not account for fails the run. The probe's profile
+  (`opt-level = "z"`, fat LTO) inlines the policy's entry actions into the entry procedure, so its 1776 bytes include
+  an 872-byte frame that is the generated policy's, not the runtime's; a mutation that widens the enabled set from
+  4 to 40 slots moves it to 2928 and trips the band. GNU's and LLVM's disassemblers give the same figure.
 - **A document that is not legal** (a machine whose `initial` names two top-level states, which §scxml-3.11 forbids
   and the semantic check refuses) can hold more than its tree bounds; the check is the guard, and a bare-metal push
   past a bound names the generator.

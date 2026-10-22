@@ -176,3 +176,41 @@ TOLERANCE_BYTES=133
 # The floor sits between, with room for a refactor to move the count by a
 # dozen.
 MIN_SYMBOLS=24
+
+# ── The worst-case stack ────────────────────────────────────────────────────
+#
+# WHY A STACK BUDGET. `.text` is what an image costs; the stack of the deepest call chain is what
+# a machine is built under on a bare-metal target, and a change can make a frame larger and
+# leave `.text` where it was: the engine's three buffer-holding frames of 520-550 bytes each
+# (2026-10-22) moved no figure above. `tools/mcu_stack/worst_case_stack.py` reads the probe's
+# disassembly: each function's frame (what its prologue takes, the return address among it) and
+# the largest sum along the calls of the object, from the roots below.
+#
+# WHAT IT IS NOT. Static, and the probe's own profile (`opt-level = "z"`, fat LTO): inlining
+# moves a frame from one function to its caller, so the number is a property of this build and
+# a consumer's own profile will differ; what it holds is that the engine's chain does not grow
+# unseen. The 872 bytes of `enter_entry_set` in it are the generated policy's entry actions,
+# inlined into the entry procedure by LTO; they are the policy's, not the runtime's.
+#
+# WHAT IS NOT STATIC IS STATED HERE, AND PRINTED BY THE GATE. A function reached through a
+# pointer the host gave the engine (its clock reading, which an inlining may have put in any
+# function) is taken to need STACK_INDIRECT_BYTES; the formatting machinery calls whatever
+# `Display` it is handed, so `core::fmt::write` is taken to need STACK_ASSUME below its own
+# frame; a recursion ends only at a bound this file states: Appendix D's walks go one level of
+# the document's hierarchy at a time (`add_descendant_states_to_enter`: the document's four
+# levels and the two `<history>` defaults it can chain through), and a history's default
+# targets chain through the document's two histories (`add_effective_target_states`). An
+# indirect call or a cycle this file does not account for fails the run, so none is
+# assumed away.
+#
+# 1776 (2026-10-22), on rustc 1.99.1, both configurations: `initialize` through the main loop,
+# `complete_macrostep`, `take_event`, `microstep` and `enter_entry_set` to a `Vec<u8, 256>`
+# clone and `memcpy`. The tolerance is the footprint's, in kind: wide enough for an inlining
+# decision, narrow enough that one more buffer in a frame of that chain trips it.
+STACK_ROOTS='Engine<sce_nostd_build_probe::ParallelHistoryProbePolicy>>::step Engine<sce_nostd_build_probe::ParallelHistoryProbePolicy>>::initialize Engine<sce_nostd_build_probe::ParallelHistoryProbePolicy>>::process_event'
+STACK_RECURSION='add_descendant_states_to_enter=6 add_effective_target_states=3 is_in_final_state=4'
+STACK_ASSUME='core::fmt::write=256'
+STACK_INDIRECT_BYTES=64
+STACK_MIN_FUNCTIONS=200
+STACK_BYTES=1776
+STACK_TOLERANCE_BYTES=256

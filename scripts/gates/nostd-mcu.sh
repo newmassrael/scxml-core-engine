@@ -226,6 +226,73 @@ sce_footprint_weigh() {
         printf '  [nostd-mcu] in the commit message what the bytes bought.\n' >&2
         sce_gate_fail "MCU footprint outside its budget ($label)"
     fi
+
+    sce_footprint_stack "$label"
+}
+
+# A disassembler for ARM Thumb: binutils for ARM when the machine has it, else LLVM's, which is
+# a rustup component (installed here the way the target is, and a no-op when present).
+sce_stack_objdump() {
+    if command -v arm-none-eabi-objdump >/dev/null 2>&1; then
+        command -v arm-none-eabi-objdump
+        return
+    fi
+    rustup component add llvm-tools >/dev/null 2>&1 || true
+    local sysroot host candidate
+    sysroot="$(rustc --print sysroot)"
+    host="$(rustc -vV | sed -n 's/^host: //p')"
+    candidate="$sysroot/lib/rustlib/$host/bin/llvm-objdump"
+    [[ -x "$candidate" ]] && printf '%s\n' "$candidate"
+}
+
+# The stack of the deepest call chain the engine drives, which `.text` cannot say: a change can
+# make a frame larger and leave the code where it was. The number is static (tools/mcu_stack):
+# each function's frame from its prologue, and the largest sum along the calls of the object.
+# What is not static is stated in the budget and printed, not assumed silently. Held in BOTH
+# directions, for the reason the footprint is: a number that falls without a reason means the
+# instrument stopped seeing.
+sce_footprint_stack() {
+    local label="$1"
+    local objdump disassembly lo hi bytes report
+    objdump="$(sce_stack_objdump)"
+    [[ -n "$objdump" ]] \
+        || sce_gate_fail "no ARM disassembler: arm-none-eabi-objdump, or the rustup component llvm-tools"
+    disassembly="$(mktemp)"
+    sce_gate_on_exit "rm -f '$disassembly'"
+    "$objdump" -d -r -C --no-show-raw-insn "$FOOTPRINT_LIB" >"$disassembly" 2>/dev/null \
+        || sce_gate_fail "stack disassembly ($label)"
+
+    local roots=() recursion=() assume=()
+    local item
+    for item in $STACK_ROOTS; do roots+=(--root "$item"); done
+    for item in $STACK_RECURSION; do recursion+=(--recursion "$item"); done
+    for item in $STACK_ASSUME; do assume+=(--assume "$item"); done
+
+    report="$(python3 tools/mcu_stack/worst_case_stack.py "$disassembly" \
+        "${roots[@]}" "${recursion[@]}" "${assume[@]}" --indirect "$STACK_INDIRECT_BYTES" \
+        --min-functions "$STACK_MIN_FUNCTIONS" --report)" \
+        || sce_gate_fail "worst-case stack could not be computed ($label)"
+    # The last line is the worst root's number; the lines above it are each root's chain.
+    bytes="$(printf '%s\n' "$report" | awk '/^worst-case-stack / { print $2 }')"
+    [[ "$bytes" =~ ^[0-9]+$ ]] \
+        || sce_gate_fail "worst-case stack gave no number ($label)"
+
+    lo=$(( STACK_BYTES - STACK_TOLERANCE_BYTES ))
+    hi=$(( STACK_BYTES + STACK_TOLERANCE_BYTES ))
+    printf '  [nostd-mcu] %-16s worst-case stack %5d byte(s) (budget %d, band %d..%d; static, %s assumed)\n' \
+        "$label:" "$bytes" "$STACK_BYTES" "$lo" "$hi" \
+        "fmt $STACK_ASSUME, host callbacks $STACK_INDIRECT_BYTES B"
+
+    if (( bytes > hi || bytes < lo )); then
+        printf '  [nostd-mcu] each root and the chain that sets it (frame bytes in brackets):\n' >&2
+        printf '%s\n' "$report" >&2
+        printf '  [nostd-mcu] running %s; the budget was measured with %s\n' \
+            "$(rustc --version)" "$MEASURED_WITH" >&2
+        printf '  [nostd-mcu] re-pin STACK_BYTES in %s if the change is meant, and say in the\n' \
+            "$FOOTPRINT_BUDGET" >&2
+        printf '  [nostd-mcu] commit message what the stack bought.\n' >&2
+        sce_gate_fail "MCU worst-case stack outside its budget ($label)"
+    fi
 }
 
 # With the macrostep report, which a bare-metal crate asks for by naming the
