@@ -88,7 +88,19 @@ MEASURED_WITH='rustc 1.99.1 (58cf8f9c3 2026-10-13)'
 # more machine symbol, 88 bytes. The rest is not this change: the tree just
 # before it measured 5148 (38 symbols) on the same toolchain, inside the band
 # of the old pin.
-TOTAL_BYTES=5236
+#
+# 5236 -> 5334 (2026-10-22), on rustc 1.99.1: what the bytes bought is main
+# stack. A consumer's bare-metal client measured three `Engine<P>` frames of
+# about 520-550 bytes each on its deepest call chain, and they were three copies
+# of a buffer sized for 32 enabled transitions. The enabled set is now sized to
+# the bound the configuration imposes (16), `removeConflictingTransitions`
+# filters it in place, the microstep enters from the enabled transitions with no
+# buffer of their entry view, and `complete_macrostep` has a frame of its own.
+# On this machine the static frames from `step` down to `enter_entry_set` went
+# from 1932 to 668 bytes (disassembly, thumbv7em, opt-level s). The code that
+# pays for it is the in-place filter, the separate call, and one more machine
+# symbol (40, was 39).
+TOTAL_BYTES=5334
 
 # The same sum without the macrostep REPORT, the bound left in place: the probe
 # built with no feature, so the runtime has none either. That is the build a
@@ -138,7 +150,10 @@ TOTAL_BYTES=5236
 #
 # 5042 -> 5184 (2026-10-21), on rustc 1.99.1: the same 88-byte constructor as
 # TOTAL_BYTES above; the tree just before it measured 5096 (38 symbols).
-TOTAL_BYTES_NO_DIAGNOSTICS=5184
+#
+# 5184 -> 5288 (2026-10-22), on rustc 1.99.1: the stack change of TOTAL_BYTES
+# above; the figure with the report moved by 98 and this one by 104.
+TOTAL_BYTES_NO_DIAGNOSTICS=5288
 
 # Drift allowed either way before the gate speaks, in BYTES. Wide enough that
 # an unrelated inlining decision does not cry wolf, tight enough that one more

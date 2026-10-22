@@ -16141,6 +16141,11 @@
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/Microstep.kt",
           "symbol": "computeEntrySet",
           "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/microstep.rs",
+          "symbol": "add_transition_to_entry_set",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -16506,6 +16511,16 @@
         {
           "file": "sce/src/runtime/DataModelInitializer.cpp",
           "symbol": "DataModelInitializer::initializeAllDataItems",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/microstep.rs",
+          "symbol": "enter_entry_set",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/microstep.rs",
+          "symbol": "sort_in_entry_order",
           "kind": "references"
         }
       ],

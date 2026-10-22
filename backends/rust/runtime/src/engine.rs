@@ -1174,9 +1174,52 @@ impl<P: StatePolicy> Engine<P> {
     /// running — call [`initialize`](Self::initialize) to enter the initial
     /// configuration and begin processing events.
     pub fn new(policy: P) -> Self {
-        Self {
+        let mut slot = core::mem::MaybeUninit::<Self>::uninit();
+        Self::new_in_place(&mut slot, policy);
+        // SAFETY: `new_in_place` wrote every field of the engine (its field list
+        // is checked against the struct at compile time) before it returned.
+        unsafe { slot.assume_init() }
+    }
+
+    /// Construct a new engine with the given policy instance, inside `slot`.
+    ///
+    /// The same engine [`new`](Self::new) returns, built where it is going to
+    /// live. `new` hands the engine back by value, so a caller that keeps it in
+    /// a `static` or in a pool slot first holds all of it on its own stack, which
+    /// is the stack a bare-metal program has least of: the engine is as large as
+    /// its policy's queues and scheduler, and for a machine that carries
+    /// delayed sends that is kilobytes. This writes each field to the slot and
+    /// keeps no copy of the engine, in a debug build as in an optimized one.
+    ///
+    /// Returns the engine, now initialised, for the caller to use through the
+    /// reference. The slot may be uninitialised, and anything it held is
+    /// overwritten without being dropped.
+    pub fn new_in_place(slot: &mut core::mem::MaybeUninit<Self>, policy: P) -> &mut Self {
+        let engine = slot.as_mut_ptr();
+        // One list is both the writes and the compile-time check that no field
+        // is missing: the closure destructures the engine naming every field
+        // once, so a field added to the struct and not listed below is a
+        // compile error and not a slot left uninitialised.
+        macro_rules! write_fields {
+            ($($(#[$attr:meta])* $field:ident : $value:expr,)*) => {
+                // SAFETY: `engine` is the slot's address, which is valid for
+                // writes of an `Engine<P>` and aligned for it; each field is
+                // written exactly once, through its own address, so no
+                // reference to uninitialised memory is formed.
+                unsafe {
+                    $(
+                        $(#[$attr])*
+                        core::ptr::addr_of_mut!((*engine).$field).write($value);
+                    )*
+                }
+                let _every_field_is_listed = |engine: &Self| {
+                    let Self { $($(#[$attr])* $field: _,)* } = engine;
+                };
+            };
+        }
+        write_fields! {
             current_state: P::initial_state(),
-            policy,
+            policy: policy,
             internal_queue: P::EventQueue::default(),
             external_queue: P::EventQueue::default(),
             is_running: false,
@@ -1232,6 +1275,9 @@ impl<P: StatePolicy> Engine<P> {
             donedata_at_final: SceString::new(),
             auto_send_seq: 0,
         }
+        // SAFETY: the list above wrote every field, and the check beside it makes
+        // that a property of the source.
+        unsafe { slot.assume_init_mut() }
     }
 
     // ════════════════════════════════════════
@@ -4762,6 +4808,12 @@ impl<P: StatePolicy> Engine<P> {
     /// never ends, exactly as a cyclic eventless transition is; until
     /// 2026-08-20 the internal branch had no ceiling in any of the seven
     /// engines here, so that document did not return at all.
+    // Its own frame, not the main loop's: it holds the enabled set, and inlined
+    // that buffer sits in the loop's frame for the whole of the loop, under the
+    // external-event path (`take_event`, which holds one of its own) as well as
+    // here. Two sets on the deepest call chain of a no_std machine, where one
+    // is ever live.
+    #[inline(never)]
     fn complete_macrostep(&mut self) {
         // §scxml-D-enterStates sets `running = false` on entering a top-level
         // `<final>`; this engine keeps `is_running` for the host's `stop()` and

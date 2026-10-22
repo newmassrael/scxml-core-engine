@@ -36,6 +36,7 @@
 
 use sce_nostd_queue_size_machine::EventQueueCapacityProbePolicy;
 use sce_rust_runtime::engine::PullScheduler;
+use sce_rust_runtime::helpers::microstep::TransitionSet;
 use sce_rust_runtime::{Engine, EventMetadata, StatePolicy};
 
 /// The probe machine's event enum — the `E` in `PullScheduler<E, S>` /
@@ -103,6 +104,28 @@ const _: () = assert!(
      be #[cfg(feature = \"std\")]) or the `send_id` cancel key (the cancel-free machine's \
      `type ScheduledSendId` must be `ElidedSendId`, not `SceString`). See the ScheduledEntry \
      doc-comment and the ScheduledSendId associated type in backends/rust/runtime/src/engine.rs.",
+);
+
+/// Enabled-set lever. Appendix D's loop holds one `TransitionSet` in each of the
+/// frames from the main event loop to the microstep, so every slot of its
+/// capacity is paid on the stack several times over at the deepest point of a
+/// call. It is sized to the bound the configuration already imposes
+/// (`MAX_ENABLED_TRANSITIONS` = `MAX_HIERARCHY_DEPTH` = 16), which measures
+/// **260 B** for this machine; the earlier margin of 32 measured 516 B. The bound
+/// sits between the two so the margin cannot silently come back.
+const ENABLED_SET_BOUND: usize = 384;
+
+const _: () = assert!(
+    core::mem::size_of::<
+        TransitionSet<
+            <EventQueueCapacityProbePolicy as StatePolicy>::State,
+            <EventQueueCapacityProbePolicy as StatePolicy>::History,
+        >,
+    >() <= ENABLED_SET_BOUND,
+    "the enabled transition set exceeds its bound: MAX_ENABLED_TRANSITIONS was raised past \
+     MAX_HIERARCHY_DEPTH, which the configuration cannot exceed, and the engine's deepest \
+     call chain pays for every extra slot several times over. See MAX_ENABLED_TRANSITIONS \
+     in backends/rust/runtime/src/lib.rs.",
 );
 
 /// Loose whole-`Engine` sanity bound (measured ~832 B after the scheduler

@@ -200,12 +200,20 @@ pub const MAX_SCHEDULED_EVENTS: usize = 32;
 /// §scxml-D-selectTransitions selects at most one enabled transition per active
 /// atomic state, and the active configuration is itself bounded by
 /// [`crate::helpers::hierarchy::MAX_HIERARCHY_DEPTH`] (16), so the enabled set
-/// cannot exceed that. v1 value 32 gives a 2× margin.
+/// cannot exceed that: the bound is that value, not a margin over it.
+///
+/// A margin is what a stack pays for. Appendix D's loop holds one enabled set
+/// in each of the frames from the main event loop down to the microstep, and
+/// each element is 16 bytes, so every slot of the bound is paid several times
+/// over on the deepest call chain of a no_std machine (a consumer measured
+/// three frames of about 520 bytes each at the former value of 32).
 ///
 /// The std build keeps unbounded `Vec` so this constant only affects the
-/// `--no-default-features` variant. Per-document tunable deferred until an MCU
-/// consumer surfaces a concrete over/under-fit signal (`feedback_planned_not_yagni`).
-pub const MAX_ENABLED_TRANSITIONS: usize = 32;
+/// `--no-default-features` variant. A machine without a `<parallel>` never has
+/// more than one enabled transition; sizing the set per document would take
+/// an associated type on every generated policy, as `EventQueue` is, and is
+/// not built.
+pub const MAX_ENABLED_TRANSITIONS: usize = helpers::hierarchy::MAX_HIERARCHY_DEPTH;
 
 /// Maximum byte length of an event metadata string under `--no-default-features`.
 ///

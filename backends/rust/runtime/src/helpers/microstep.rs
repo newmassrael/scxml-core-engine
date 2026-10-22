@@ -306,27 +306,35 @@ pub fn select_transitions<R: Run>(
             current = run.parent_of(state);
         }
     }
-    remove_conflicting_transitions(run, &enabled, &configuration)
+    remove_conflicting_transitions(run, &mut enabled, &configuration);
+    enabled
 }
 
-/// Appendix D's removeConflictingTransitions.
+/// Appendix D's removeConflictingTransitions, over `enabled` itself: what
+/// remains in it is the filtered set, in selection order.
 ///
 /// Two transitions conflict when their exit sets intersect, and the one whose
 /// source is a descendant of the other's wins; otherwise the one selected
 /// first does.
+///
+/// The kept transitions are the front of the buffer the candidates are read
+/// from, so the filtered set is never a second buffer beside the first. A
+/// candidate is read before the slot a kept one is written to, which is never
+/// past it.
 pub fn remove_conflicting_transitions<D: Document>(
     doc: &D,
-    enabled: &[EnabledTransition<D::State, D::History>],
+    enabled: &mut TransitionSet<D::State, D::History>,
     configuration: &[D::State],
-) -> TransitionSet<D::State, D::History> {
-    let mut filtered: TransitionSet<D::State, D::History> = SceTransitionBuf::new();
-    for t1 in enabled {
+) {
+    let mut kept = 0;
+    for candidate in 0..enabled.len() {
+        let t1 = enabled[candidate];
         // A kept transition's exit set is computed again for each later one
         // held against it rather than stored beside it: on an MCU the stack a
         // stored set per transition costs is scarcer than the cycles, and the
         // sets are read off the one configuration the selection saw, so the
         // answer is the same either way.
-        let t1_exit = compute_exit_set(doc, t1, configuration);
+        let t1_exit = compute_exit_set(doc, &t1, configuration);
         let conflicts = |t2: &EnabledTransition<D::State, D::History>| {
             intersects(&t1_exit, &compute_exit_set(doc, t2, configuration))
         };
@@ -334,17 +342,26 @@ pub fn remove_conflicting_transitions<D: Document>(
         // transition it conflicts with whose source it does not descend from.
         // A transition that exits nothing — a targetless one — conflicts with
         // nothing and can never be preempted.
-        let preempted = filtered
+        let preempted = enabled[..kept]
             .iter()
             .any(|t2| conflicts(t2) && !is_descendant(doc, t1.source, t2.source));
-        if !preempted {
-            // Not preempted means every kept transition t1 conflicts with has
-            // a source t1 descends from: the appendix removes exactly those.
-            filtered.retain(|t2| !conflicts(t2));
-            filtered.push_bounded(*t1);
+        if preempted {
+            continue;
         }
+        // Not preempted means every kept transition t1 conflicts with has a
+        // source t1 descends from: the appendix removes exactly those.
+        let mut surviving = 0;
+        for index in 0..kept {
+            let t2 = enabled[index];
+            if !conflicts(&t2) {
+                enabled[surviving] = t2;
+                surviving += 1;
+            }
+        }
+        enabled[surviving] = t1;
+        kept = surviving + 1;
     }
-    filtered
+    enabled.truncate(kept);
 }
 
 // ════════════════════════════════════════════════════════════════════════
@@ -540,12 +557,17 @@ pub fn microstep<R: Run>(
     // the regions of a `<parallel>` each take their own transition in one step.
     exit_states(run, transitions);
     execute_transition_content(run, transitions);
-    let mut entering: SceTransitionBuf<EntryTransition<R::State, R::History>> =
-        SceTransitionBuf::new();
+    // Each transition is read as the entry procedures read it, one at a time as
+    // it is reached, and never gathered into a list of those: that list was a
+    // buffer of the enabled bound on the stack of the deepest call chain, the
+    // stack the entered states' own `<onentry>` code then ran on top of.
+    let mut entry = EntrySet::new();
     for transition in transitions {
-        entering.push_bounded(transition.entry_transition());
+        add_transition_to_entry_set(run, &transition.entry_transition(), &mut entry);
     }
-    enter_states(run, &entering)
+    sort_in_entry_order(run, &mut entry);
+    enter_entry_set(run, &entry);
+    entry
 }
 
 /// Appendix D's exitStates.
@@ -606,6 +628,14 @@ pub fn enter_states<R: Run>(
     transitions: &[EntryTransition<R::State, R::History>],
 ) -> EntrySet<R::State, R::History> {
     let entry = compute_entry_set(run, transitions);
+    enter_entry_set(run, &entry);
+    entry
+}
+
+/// The second half of Appendix D's enterStates: every state of an entry set
+/// entered, in entry order. The set is lent, not passed on, so a caller that
+/// hands it back holds one copy of it and not two.
+fn enter_entry_set<R: Run>(run: &mut R, entry: &EntrySet<R::State, R::History>) {
     for &state in entry.states_to_enter.iter() {
         // §scxml-D-enterStates: onentry, then the initial transition's content
         // if and only if this state's initial state is being entered by
@@ -615,7 +645,6 @@ pub fn enter_states<R: Run>(
             run.execute_history_default_content(history);
         }
     }
-    entry
 }
 
 // ════════════════════════════════════════════════════════════════════════
@@ -633,32 +662,45 @@ pub fn compute_entry_set<D: Document>(
 ) -> EntrySet<D::State, D::History> {
     let mut entry = EntrySet::new();
     for transition in transitions {
-        // §scxml-D-computeEntrySet: first every target with its default
-        // descendants, then the ancestors that are entered inside the domain —
-        // ancestors outside it were never exited. The order matters for a
-        // target SET: the regions of a `<parallel>` that another target already
-        // descends into must be seen as taken before the ancestor walk fills
-        // the rest with defaults.
-        for &target in transition.targets {
-            add_descendant_states_to_enter(doc, target, &mut entry);
-        }
-        let effective = effective_target_states(doc, transition.targets);
-        if effective.is_empty() {
-            continue;
-        }
-        let domain = transition_domain(doc, transition.source, &effective, transition.is_internal);
-        for &state in effective.iter() {
-            add_ancestor_states_to_enter(doc, EntryTarget::State(state), domain, &mut entry);
-        }
+        add_transition_to_entry_set(doc, transition, &mut entry);
     }
+    sort_in_entry_order(doc, &mut entry);
+    entry
+}
 
-    // §scxml-D-enterStates: states are entered in entryOrder — ancestors
-    // before descendants, document order between the rest, which is exactly
-    // document order, because that is a pre-order walk.
+/// One transition's part of Appendix D's computeEntrySet: what it adds to the
+/// entry set, before the set is put into entry order.
+fn add_transition_to_entry_set<D: Document>(
+    doc: &D,
+    transition: &EntryTransition<D::State, D::History>,
+    entry: &mut EntrySet<D::State, D::History>,
+) {
+    // §scxml-D-computeEntrySet: first every target with its default
+    // descendants, then the ancestors that are entered inside the domain —
+    // ancestors outside it were never exited. The order matters for a
+    // target SET: the regions of a `<parallel>` that another target already
+    // descends into must be seen as taken before the ancestor walk fills
+    // the rest with defaults.
+    for &target in transition.targets {
+        add_descendant_states_to_enter(doc, target, entry);
+    }
+    let effective = effective_target_states(doc, transition.targets);
+    if effective.is_empty() {
+        return;
+    }
+    let domain = transition_domain(doc, transition.source, &effective, transition.is_internal);
+    for &state in effective.iter() {
+        add_ancestor_states_to_enter(doc, EntryTarget::State(state), domain, entry);
+    }
+}
+
+/// §scxml-D-enterStates: states are entered in entryOrder — ancestors before
+/// descendants, document order between the rest, which is exactly document
+/// order, because that is a pre-order walk.
+fn sort_in_entry_order<D: Document>(doc: &D, entry: &mut EntrySet<D::State, D::History>) {
     stable_sort_by_key(&mut entry.states_to_enter, |&state| {
         doc.document_order(state)
     });
-    entry
 }
 
 /// Appendix D's addDescendantStatesToEnter.

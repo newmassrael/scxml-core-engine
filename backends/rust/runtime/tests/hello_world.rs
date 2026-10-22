@@ -229,6 +229,31 @@ fn initial_state_is_stopped() {
 }
 
 #[test]
+fn an_engine_built_in_its_slot_runs_as_one_built_by_value() {
+    let mut slot = std::mem::MaybeUninit::<Engine<HwPolicy>>::uninit();
+    // A slot that holds something else comes out the same: every field is
+    // written and none is read, so what was there is not an input.
+    // SAFETY: the slot is writable storage for one engine, and this writes bytes
+    // into it and reads nothing.
+    unsafe { slot.as_mut_ptr().write_bytes(0xA5, 1) };
+
+    let engine = Engine::new_in_place(&mut slot, HwPolicy::new());
+    assert_eq!(engine.get_current_state(), HwState::Stopped);
+    assert!(!engine.is_running());
+    assert!(!engine.has_ready_events());
+
+    engine.initialize();
+    engine.process_event(HwEvent::Play);
+    engine.process_event(HwEvent::End);
+    assert_eq!(engine.terminal_state(), Some(HwState::Done));
+    assert!(engine.is_in_final_state());
+
+    // SAFETY: `new_in_place` initialised the slot, and the engine in it is not
+    // used again.
+    unsafe { slot.assume_init_drop() };
+}
+
+#[test]
 fn initialize_enters_initial_state() {
     let mut engine = Engine::<HwPolicy>::new(HwPolicy::new());
     engine.initialize();
