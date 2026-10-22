@@ -615,11 +615,22 @@ class StaticDatamodelTest {
     /**
      * The saved state the shared fixture holds — the text every backend must
      * save after the same run and must restore from, which is what makes a
-     * state saved by one backend a state another can read. Format 1, which
-     * this backend writes until its step of docs/adr/0045 moves it to format 2.
+     * state saved by one backend a state another can read. Format 2, a tree of
+     * sessions, whose root is the machine the test gives [ROOT] as its id
+     * (docs/adr/0045): the text one backend saves is every backend's.
      */
     private fun sharedFixture(machine: String): String =
+        File(repoRoot(), "sce-build/tests/fixtures/static_datamodel/saved/$machine.json").readText().trim()
+
+    /**
+     * The instance of [machine] as format 1 wrote it, which every backend still
+     * restores: it holds no session id, and a child it lists is started again.
+     */
+    private fun format1Fixture(machine: String): String =
         File(repoRoot(), "sce-build/tests/fixtures/static_datamodel/saved/format1/$machine.json").readText().trim()
+
+    /** The id the shared format-2 fixtures give their root. */
+    private val ROOT = "fixture-root"
 
     // Found by walking up rather than by a fixed depth, because Gradle's
     // working directory is the project's and that is a build detail.
@@ -738,9 +749,9 @@ class StaticDatamodelTest {
         // The same runs the Rust suite makes, saving the shared fixture's text
         // byte for byte: keys are the document's ids, a record is an object of
         // its schema's fields, a list an array.
-        val record = StaticRecordStateMachine()
+        val record = StaticRecordStateMachine(sessionId = ROOT)
         record.initialize()
-        val list = StaticListStateMachine()
+        val list = StaticListStateMachine(sessionId = ROOT)
         list.initialize()
         try {
             record.raiseDayPicked(2027.toUShort(), 2.toUByte(), 27.toUByte())
@@ -783,8 +794,12 @@ class StaticDatamodelTest {
     // added since at its default (docs/adr/0044). The Rust suite holds the same
     // fixtures.
 
+    /**
+     * [text] restored into a machine given the root's id, so a format-1 text, which
+     * holds no id, saves again as the shared format-2 text does.
+     */
     private fun <T> withRevised(text: String, body: (StaticSchemaRevisionStateMachine) -> T): T {
-        val sm = StaticSchemaRevisionStateMachine()
+        val sm = StaticSchemaRevisionStateMachine(sessionId = ROOT)
         try {
             sm.restore(SavedState.fromJson(text))
             return body(sm)
@@ -800,7 +815,7 @@ class StaticDatamodelTest {
     fun aRecordOfASchemaThatGrewSavesTheTextEveryBackendSaves() {
         // A delivery of the first revision, as the scenario's first step: the
         // machine is at the third, so it names that revision and the revised shape.
-        val sm = StaticSchemaRevisionStateMachine()
+        val sm = StaticSchemaRevisionStateMachine(sessionId = ROOT)
         sm.initialize()
         try {
             sm.sendEventByName("reading.revised", EventMetadata(data = """{"level":4}"""))
@@ -815,7 +830,7 @@ class StaticDatamodelTest {
     fun aStateSavedAtTheFirstRevisionRestoresWithEveryLaterDefault() {
         // The same moment saved by a build whose schema had the level alone: it
         // restores, and the machine is the one the later build would have saved.
-        withRevised(sharedFixture("static_schema_revision_first")) { sm ->
+        withRevised(format1Fixture("static_schema_revision_first")) { sm ->
             assertEquals(sharedFixture("static_schema_revision"), sm.save().toJson())
             assertEquals(1u, sm.taken)
         }
@@ -823,7 +838,7 @@ class StaticDatamodelTest {
 
     @Test
     fun aStateSavedAtTheSecondRevisionKeepsItsLayoutAndTakesTheUrgency() {
-        withRevised(sharedFixture("static_schema_revision_second")) { sm ->
+        withRevised(format1Fixture("static_schema_revision_second")) { sm ->
             assertEquals("""{"level":5,"layout":"day","urgent":true}""", lastOf(sm))
             assertEquals(2u, sm.taken)
         }
@@ -833,7 +848,7 @@ class StaticDatamodelTest {
     fun aQueuedDeliveryOfTheFirstRevisionTakesTheDefaultsWhenItIsDelivered() {
         // The external queue holds the data as the wire carried it; the lift reads
         // it with the defaults when the event is dequeued.
-        withRevised(sharedFixture("static_schema_revision_first_queued")) { sm ->
+        withRevised(format1Fixture("static_schema_revision_first_queued")) { sm ->
             assertEquals("""{"level":4,"layout":"week","urgent":true}""", lastOf(sm))
             sm.tick()
             assertEquals("""{"level":5,"layout":"week","urgent":true}""", lastOf(sm))
@@ -856,13 +871,13 @@ class StaticDatamodelTest {
         val later = sharedFixture("static_schema_revision").replace("\"revision\":3", "\"revision\":4")
         assertTrue(refusalOf(later).contains("later than"))
         // A second revision that declared other fields than this build's second.
-        val other = sharedFixture("static_schema_revision_second").replace(
+        val other = format1Fixture("static_schema_revision_second").replace(
             "d9ba6a71207a3f219929c8fda298d7a35c76cb7950cc287ae2fa8a8b8ff45ad7",
             "e511eddacf1d4e220c85f78c95988fe26a2a1319cf119cb085f1a84f4f197f8d",
         )
         assertTrue(refusalOf(other).contains("declared other members"))
         // A record saved at the first revision that holds a field the second added.
-        val early = sharedFixture("static_schema_revision_first")
+        val early = format1Fixture("static_schema_revision_first")
             .replace("""{"level":4}""", """{"level":4,"layout":"day"}""")
         val refusal = refusalOf(early)
         assertTrue(refusal.contains("'last' holds 'layout'"), refusal)
@@ -895,7 +910,7 @@ class StaticDatamodelTest {
         val sm = StaticSchemaPendingStateMachine()
         try {
             sm.clock = ManualClock(0)
-            sm.restore(SavedState.fromJson(sharedFixture("static_schema_pending_first")), pendingSavedAtMs)
+            sm.restore(SavedState.fromJson(format1Fixture("static_schema_pending_first")), pendingSavedAtMs)
             // The record saved without the urgency takes its default.
             assertEquals("""{"level":"low","count":0,"urgent":true}""", pendingLast(sm))
             assertEquals(0u, sm.taken)
@@ -915,7 +930,10 @@ class StaticDatamodelTest {
                 listOf("signal.raised" to 2, "enum:enum_signal_level.scxml" to 2),
                 saved.revisions.map { (key, revision) -> key to revision.revision },
             )
-            assertEquals("2619b075d4aa2597ecf884cba0f3b6d95715e5dbdca9bb22dc2d20be2f4dead2", saved.shape)
+            // The revised shape of format 2, which names the enum by its document, as
+            // the Rust suite holds it; the format-1 text this restored from named it
+            // by its alias, under another shape.
+            assertEquals("3fbeae2b4200145eef7af1a2e393f315a5466a7f5ff65b7bcabbb7ed2e75c9fa", saved.shape)
         } finally {
             sm.cleanup()
         }
@@ -925,7 +943,7 @@ class StaticDatamodelTest {
     fun aValueOfAVariantItsSavedRevisionLacksIsRefused() {
         // `critical` came with the enum's second revision, so a state saved at the
         // first cannot hold it.
-        val text = sharedFixture("static_schema_pending_first")
+        val text = format1Fixture("static_schema_pending_first")
             .replace("\"level\":\"low\"", "\"level\":\"critical\"")
         val sm = StaticSchemaPendingStateMachine()
         try {
@@ -942,7 +960,7 @@ class StaticDatamodelTest {
     // ── static_enum: a variable that holds a variant of an imported enum ──
 
     private fun layouts(): StaticEnumStateMachine {
-        val sm = StaticEnumStateMachine()
+        val sm = StaticEnumStateMachine(sessionId = ROOT)
         sm.initialize()
         return sm
     }
@@ -1322,7 +1340,7 @@ class StaticDatamodelTest {
 
     @Test
     fun aHistoryIsSavedWithTheMachineAsTheTextEveryBackendSaves() {
-        val sm = StaticHistoryStateMachine()
+        val sm = StaticHistoryStateMachine(sessionId = ROOT)
         sm.initialize()
         try {
             historyDrive(sm, historyRun)
@@ -1507,7 +1525,7 @@ class StaticDatamodelTest {
     private val savedAtMs = 1_700_000_000_000L
 
     private fun timers(): StaticTimersStateMachine {
-        val sm = StaticTimersStateMachine()
+        val sm = StaticTimersStateMachine(sessionId = ROOT)
         sm.clock = ManualClock(0)
         sm.initialize()
         return sm
@@ -1656,7 +1674,7 @@ class StaticDatamodelTest {
      * and in its list of records.
      */
     private fun optionalRun(): StaticOptionalStateMachine {
-        val sm = StaticOptionalStateMachine()
+        val sm = StaticOptionalStateMachine(sessionId = ROOT)
         sm.initialize()
         for (data in listOf(
             """{"id":1,"due":"12","title":null,"status":null}""",

@@ -25,6 +25,7 @@ import com.sce.runtime.SavedState
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotSame
+import kotlin.test.assertTrue
 
 class AChildIsGivenItsHostByItsParentTest {
 
@@ -123,7 +124,7 @@ class AChildIsGivenItsHostByItsParentTest {
     }
 
     @Test
-    fun aRestoredMachineStartsItsChildAgainWithAHostFromItsOwnParent() {
+    fun aRestoredMachineResumesItsChildWithAHostFromItsOwnParent() {
         val before = Hosts()
         val first = started(before)
         val saved = try {
@@ -132,22 +133,25 @@ class AChildIsGivenItsHostByItsParentTest {
         } finally {
             first.cleanup()
         }
-        assertEquals(listOf("worker"), saved.invokes, "the child was running")
+        assertEquals(listOf("worker"), saved.invokeIds, "the child was running")
 
-        // A restore is another machine with another host: the child is started
-        // over, and what is asked of the host is asked of that one.
+        // A restore is another machine with another host: the host the child had is
+        // gone with the process, so the new parent's host is asked for one, and the
+        // child is resumed where it stood (docs/adr/0045). Nothing it did at its
+        // start is done again: its `<onentry>` act is not performed a second time.
         val after = Hosts()
         val sm = machine(after)
         try {
             sm.restore(SavedState.fromJson(saved.toJson()), savedAtMs)
             repeat(3) { sm.tick() }
             assertEquals(listOf(asked), after.parent.calls)
-            assertEquals(listOf(started), after.children.single().calls)
+            assertTrue(after.children.single().calls.isEmpty(), "a resumed child runs no <onentry>")
 
-            send(sm, StaticChildHostEvent.A)
+            // It had taken `a`, so `b` ends it, and the steps it counted before the
+            // save are counted on.
             send(sm, StaticChildHostEvent.B)
             assertEquals(1u, sm.completed)
-            assertEquals(listOf(started, finished(2u)), after.children.single().calls)
+            assertEquals(listOf(finished(2u)), after.children.single().calls)
             // The machine that was saved is not asked for anything more.
             assertEquals(listOf(started), before.children.single().calls)
             assertEquals(listOf(asked), before.parent.calls)

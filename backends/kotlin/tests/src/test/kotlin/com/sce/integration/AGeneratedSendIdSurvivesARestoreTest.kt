@@ -36,7 +36,7 @@ class AGeneratedSendIdSurvivesARestoreTest {
 
     private val shared: String = File(
         repoRoot(),
-        "sce-build/tests/fixtures/static_datamodel/saved/format1/static_send_idlocation_armed.json",
+        "sce-build/tests/fixtures/static_datamodel/saved/static_send_idlocation_armed.json",
     ).readText().trim()
 
     private fun repoRoot(): File =
@@ -45,7 +45,8 @@ class AGeneratedSendIdSurvivesARestoreTest {
             ?: error("no repository root above ${System.getProperty("user.dir")}")
 
     private fun machine(): StaticSendIdlocationStateMachine {
-        val sm = StaticSendIdlocationStateMachine()
+        // The id the shared format-2 fixtures give their root.
+        val sm = StaticSendIdlocationStateMachine(sessionId = "fixture-root")
         sm.clock = ManualClock(0)
         return sm
     }

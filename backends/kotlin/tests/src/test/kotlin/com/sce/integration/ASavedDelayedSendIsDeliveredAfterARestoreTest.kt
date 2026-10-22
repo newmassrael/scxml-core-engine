@@ -19,10 +19,8 @@
 // Driven entirely on ManualClock: nothing here sleeps, and nothing can be
 // decided by how loaded the build machine is.
 //
-// Also here, because a generated machine cannot reach it: a delayed send the
-// saved state cannot carry — one routed to a parent — REFUSES the save instead
-// of being left out. A document that makes one is generated without the save
-// API, so the refusal is for a machine built by hand.
+// Also here: a delayed send to the parent is an act of a format-2 saved state,
+// the parent being a session the tree holds (docs/adr/0045).
 
 package com.sce.integration
 
@@ -54,6 +52,12 @@ private sealed interface WaitEvent : Event {
 /** The smallest machine whose delayed sends can be saved and restored. */
 private class WaitingMachine : StateMachineEngine<WaitingState, WaitEvent>() {
     override val initialState: WaitingState = WaitingState
+
+    // A saved state names its session (docs/adr/0045): a machine built by hand is
+    // given its id as a generated `sce-static` machine is, drawn.
+    init {
+        bindRootSessionId(null)
+    }
 
     /** The events the machine took, in order: what a delivery is observed by. */
     val taken = mutableListOf<WaitEvent>()
@@ -190,7 +194,8 @@ class ASavedDelayedSendIsDeliveredAfterARestoreTest {
             assertEquals(
                 listOf(
                     SavedSend(savedAtMs + 100, SavedAct.Raise("probe", "d", "p", "o")),
-                    SavedSend(savedAtMs + 150, SavedAct.Internal("beat", "x", "i", "")),
+                    // An event a `sce-static` session sends itself names that session.
+                    SavedSend(savedAtMs + 150, SavedAct.Internal("beat", "x", "i", sm.sessionId)),
                     SavedSend(
                         savedAtMs + 250,
                         SavedAct.Host(
@@ -284,17 +289,19 @@ class ASavedDelayedSendIsDeliveredAfterARestoreTest {
      * the save is refused and says which send.
      */
     @Test
-    fun aDelayedSendToTheParentRefusesTheSave() {
+    fun aDelayedSendToTheParentIsSavedAsAnActForIt() {
         val sm = WaitingMachine()
         try {
             sm.clock = ManualClock(0)
             sm.initialize()
             // A session its host started has no parent, but whether there is one
-            // is judged when the entry comes due: the send is waiting.
+            // is judged when the entry comes due: the send is waiting. The parent
+            // is a session the tree holds, so the save carries it (docs/adr/0045).
             sm.armParent("to_parent", 300)
-            val refusal = assertThrows(StateRefusal::class.java) { sm.saveAt(savedAtMs) }
-            assertTrue(refusal.message!!.contains("to_parent"), refusal.message)
-            assertTrue(refusal.message!!.contains("does not carry"), refusal.message)
+            assertEquals(
+                listOf(SavedSend(savedAtMs + 300, SavedAct.Parent("report", "", "to_parent", sm.sessionId))),
+                sm.saveAt(savedAtMs).pending,
+            )
         } finally {
             sm.cleanup()
         }

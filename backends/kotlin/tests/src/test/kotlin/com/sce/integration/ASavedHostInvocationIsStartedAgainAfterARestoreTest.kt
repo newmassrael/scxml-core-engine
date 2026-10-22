@@ -45,7 +45,7 @@ class ASavedHostInvocationIsStartedAgainAfterARestoreTest {
 
     private val shared: String = File(
         repoRoot(),
-        "sce-build/tests/fixtures/host_processor/saved/format1/statechart_static_host_invoke_running.json",
+        "sce-build/tests/fixtures/host_processor/saved/statechart_static_host_invoke_running.json",
     ).readText().trim()
 
     private fun repoRoot(): File =
@@ -78,7 +78,8 @@ class ASavedHostInvocationIsStartedAgainAfterARestoreTest {
             a.params == b.params && a.eventData == b.eventData && a.content == b.content
 
     private fun machine(): StatechartStaticHostInvokeStateMachine {
-        val sm = StatechartStaticHostInvokeStateMachine()
+        // The id the shared format-2 fixtures give their root.
+        val sm = StatechartStaticHostInvokeStateMachine(sessionId = "fixture-root")
         sm.clock = ManualClock(0)
         return sm
     }

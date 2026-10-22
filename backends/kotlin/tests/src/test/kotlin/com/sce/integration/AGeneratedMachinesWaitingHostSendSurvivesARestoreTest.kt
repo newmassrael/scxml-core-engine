@@ -49,7 +49,7 @@ class AGeneratedMachinesWaitingHostSendSurvivesARestoreTest {
 
     private val shared: String = File(
         repoRoot(),
-        "sce-build/tests/fixtures/host_processor/saved/format1/statechart_static_delayed_host_send_waiting.json",
+        "sce-build/tests/fixtures/host_processor/saved/statechart_static_delayed_host_send_waiting.json",
     ).readText().trim()
 
     private fun repoRoot(): File =
@@ -70,7 +70,8 @@ class AGeneratedMachinesWaitingHostSendSurvivesARestoreTest {
     }
 
     private fun machine(): StatechartStaticDelayedHostSendStateMachine {
-        val sm = StatechartStaticDelayedHostSendStateMachine()
+        // The id the shared format-2 fixtures give their root.
+        val sm = StatechartStaticDelayedHostSendStateMachine(sessionId = "fixture-root")
         sm.clock = ManualClock(0)
         return sm
     }

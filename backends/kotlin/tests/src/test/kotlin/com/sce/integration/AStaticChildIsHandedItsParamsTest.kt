@@ -65,7 +65,7 @@ class AStaticChildIsHandedItsParamsTest {
     }
 
     @Test
-    fun aRestoredChildIsHandedTheValuesTheRestoredMachineHolds() {
+    fun aRestoredChildKeepsTheValuesItWasHanded() {
         val sm = started()
         try {
             settle(sm)
@@ -75,15 +75,19 @@ class AStaticChildIsHandedItsParamsTest {
             settle(sm)
             assertEquals(1u, sm.completed)
 
-            // A restored child is started again from its beginning, and a start
-            // evaluates its arguments: the new `watcher` is handed 8, and ends.
+            // docs/adr/0045: a restored child is resumed where it stood, not
+            // started again, so no argument is evaluated: `watcher` holds the 7 it
+            // was handed, not the 8 `base` holds now, and still does not end.
             val saved = SavedState.fromJson(sm.save(savedAtMs).toJson())
             val restored = StaticInvokeParamsStateMachine()
             try {
                 restored.clock = ManualClock(0)
                 restored.restore(saved, savedAtMs)
                 settle(restored)
-                assertEquals(11u, restored.completed)
+                assertEquals(1u, restored.completed)
+                val again = restored.save(savedAtMs)
+                assertEquals(saved.invokeIds, again.invokeIds, "the same children run")
+                assertEquals(saved.invokeStarts, again.invokeStarts, "none started again")
             } finally {
                 restored.cleanup()
             }

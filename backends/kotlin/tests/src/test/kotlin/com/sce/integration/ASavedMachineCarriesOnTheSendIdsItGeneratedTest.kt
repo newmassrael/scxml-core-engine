@@ -35,7 +35,7 @@ class ASavedMachineCarriesOnTheSendIdsItGeneratedTest {
 
     private val shared: String = File(
         repoRoot(),
-        "sce-build/tests/fixtures/host_processor/saved/format1/statechart_static_host_invoke_running.json",
+        "sce-build/tests/fixtures/host_processor/saved/statechart_static_host_invoke_running.json",
     ).readText().trim()
 
     private fun repoRoot(): File =

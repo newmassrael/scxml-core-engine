@@ -53,6 +53,7 @@ import com.sce.integration.static_host_duty.RecordingStaticHostDutyActions
 import com.sce.integration.static_host_duty.StaticHostDutyStateMachine
 import com.sce.integration.static_invoke.StaticInvokeStateMachine
 import com.sce.integration.static_invoke_params.StaticInvokeParamsStateMachine
+import com.sce.integration.static_invoke_tree.StaticInvokeTreeStateMachine
 import com.sce.integration.static_invoke_string.StaticInvokeStringStateMachine
 import com.sce.integration.static_list.StaticListStateMachine
 import com.sce.integration.static_list_assign.StaticListAssignStateMachine
@@ -888,6 +889,35 @@ class StaticScenarioTest {
                 tick = { repeat(SETTLE_TICKS) { sm.tick() } },
                 save = { sm.save() },
                 ended = { sm.isInFinalState },
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    // docs/adr/0045, section 8: a step that `restore`s saves the machine, discards
+    // it and restores it from the text before the step's event, so the scenario
+    // states what the restored tree does next. The machine the driver holds is the
+    // one the closures name, so a restore puts the new one in its place.
+    @Test
+    fun staticInvokeTreeRestoresBetweenItsSteps() {
+        var sm = StaticInvokeTreeStateMachine(sessionId = "fixture-root")
+        sm.clock = ManualClock(0)
+        sm.initialize()
+        try {
+            replay(
+                scenario("static_invoke_tree"),
+                send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
+                tick = { repeat(SETTLE_TICKS) { sm.tick() } },
+                save = { sm.save() },
+                ended = { sm.isInFinalState },
+                restore = { saved ->
+                    val next = StaticInvokeTreeStateMachine()
+                    next.clock = ManualClock(0)
+                    next.restore(com.sce.runtime.SavedState.fromJson(saved.toJson()))
+                    sm.cleanup()
+                    sm = next
+                },
             )
         } finally {
             sm.cleanup()

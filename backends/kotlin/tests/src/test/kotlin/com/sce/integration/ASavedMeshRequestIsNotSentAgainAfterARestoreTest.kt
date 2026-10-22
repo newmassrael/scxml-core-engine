@@ -40,7 +40,7 @@ class ASavedMeshRequestIsNotSentAgainAfterARestoreTest {
 
     private val shared: String = File(
         repoRoot(),
-        "sce-build/tests/fixtures/host_processor/saved/format1/statechart_static_mesh_request_asking.json",
+        "sce-build/tests/fixtures/host_processor/saved/statechart_static_mesh_request_asking.json",
     ).readText().trim()
 
     private fun repoRoot(): File =
@@ -61,7 +61,8 @@ class ASavedMeshRequestIsNotSentAgainAfterARestoreTest {
     }
 
     private fun machine(): StatechartStaticMeshRequestStateMachine {
-        val sm = StatechartStaticMeshRequestStateMachine()
+        // The id the shared format-2 fixtures give their root.
+        val sm = StatechartStaticMeshRequestStateMachine(sessionId = "fixture-root")
         sm.clock = ManualClock(0)
         return sm
     }
