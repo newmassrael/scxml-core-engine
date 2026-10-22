@@ -1882,6 +1882,22 @@ static const record_variable_t whole_payload_records[] = {
 STATIC_SCENARIO(static_whole_payload, whole_payload_states, whole_payload_variables, NULL, no_lists,
                 whole_payload_records)
 
+// A 64-bit integer as a scenario states it, the text of its digits: a JSON number
+// past 2^53 is not the integer it spells in every reader, so a variable or a
+// record's field of that width is stated, and answered, as a string. The text is
+// compared before the next is asked for.
+static const char *wide_digits(uint64_t value) {
+    static char text[24];
+    (void)snprintf(text, sizeof(text), "%llu", (unsigned long long)value);
+    return text;
+}
+
+static const char *wide_signed_digits(int64_t value) {
+    static char text[24];
+    (void)snprintf(text, sizeof(text), "%lld", (long long)value);
+    return text;
+}
+
 // static_optional: values that may be absent (docs/adr/0055), each the struct of a
 // flag and a value `sce/forge/optional.h` declares for its element, held in
 // variables, in a record and in a list of records, and carried by a payload, a send
@@ -1993,6 +2009,9 @@ static const char *static_optional_text_record_item(const void *sm, size_t index
     static_optional_record_due_t rec;
     if (!optional_record((const static_optional_t *)sm, index == SCE_SCENARIO_WHOLE ? "item" : "items", index, &rec)) {
         return NULL;
+    }
+    if (strcmp(field, "due") == 0 && rec.due.present) {
+        return wide_signed_digits(rec.due.value);
     }
     if (strcmp(field, "title") == 0) {
         return optional_text(rec.title, held, sizeof(held));
@@ -2126,12 +2145,15 @@ static bool static_state_algorithm_optional_read_goal(const void *sm, size_t ind
     return false;
 }
 
-// A goal holds no text and no value of an enum.
+// A goal holds no text and no value of an enum; its day is a 64-bit integer, stated
+// as its digits.
 static const char *static_state_algorithm_optional_text_goal(const void *sm, size_t index, const char *field) {
-    (void)sm;
-    (void)index;
-    (void)field;
-    return NULL;
+    static_state_algorithm_optional_record_goal_t goal;
+    if (strcmp(field, "day") != 0 ||
+        !optional_goal((const static_state_algorithm_optional_t *)sm, "goals", index, &goal) || !goal.day.present) {
+        return NULL;
+    }
+    return wide_signed_digits(goal.day.value);
 }
 
 static size_t static_state_algorithm_optional_count_goals(const void *sm) {
@@ -2921,22 +2943,6 @@ static const record_variable_t donedata_record_records[] = {RECORD_ROW(static_do
                                                             {NULL, NULL, NULL, NULL}};
 STATIC_SCENARIO_DONE(static_donedata_record, donedata_record_states, donedata_record_variables, NULL, no_lists,
                      donedata_record_records, static_donedata_record_done)
-
-// A 64-bit integer as a scenario states it, the text of its digits: a JSON number
-// past 2^53 is not the integer it spells in every reader, so a variable or a
-// record's field of that width is stated, and answered, as a string. The text is
-// compared before the next is asked for.
-static const char *wide_digits(uint64_t value) {
-    static char text[24];
-    (void)snprintf(text, sizeof(text), "%llu", (unsigned long long)value);
-    return text;
-}
-
-static const char *wide_signed_digits(int64_t value) {
-    static char text[24];
-    (void)snprintf(text, sizeof(text), "%lld", (long long)value);
-    return text;
-}
 
 // The records of the standard merge rules (sce:std/merge), as the two machines
 // below hold them: a hybrid logical clock's stamp, a last-writer-wins cell, an
