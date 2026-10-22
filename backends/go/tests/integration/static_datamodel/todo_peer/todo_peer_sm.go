@@ -782,6 +782,47 @@ func (r TodoPeerHlcRecord) NodeId() uint64 {
 	return r.nodeId
 }
 
+// ToSaved is this value as a saved state writes it.
+func (r TodoPeerHlcRecord) ToSaved() any {
+	saved := sce.NewJSONObject()
+	saved.Set("wallTime", (sce.SavedWriteInt64)(r.wallTime))
+	saved.Set("counter", (sce.SavedWriteUint32)(r.counter))
+	saved.Set("nodeId", (sce.SavedWriteUint64)(r.nodeId))
+	return saved
+}
+
+// TodoPeerHlcRecordFromSaved is the value a saved state holds, refused unless it is one.
+func TodoPeerHlcRecordFromSaved(value any, what string) (TodoPeerHlcRecord, error) {
+	var record TodoPeerHlcRecord
+	{
+		saved, err := sce.SavedField(value, what, "wallTime")
+		if err != nil {
+			return record, err
+		}
+		if record.wallTime, err = (sce.SavedReadInt64)(saved, what + ".wallTime"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "counter")
+		if err != nil {
+			return record, err
+		}
+		if record.counter, err = (sce.SavedReadUint32)(saved, what + ".counter"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "nodeId")
+		if err != nil {
+			return record, err
+		}
+		if record.nodeId, err = (sce.SavedReadUint64)(saved, what + ".nodeId"); err != nil {
+			return record, err
+		}
+	}
+	return record, nil
+}
 
 // SCE Accepted Subset §2.15: a `record:Entry` datamodel value.
 type TodoPeerEntryRecord struct {
@@ -811,6 +852,57 @@ func (r TodoPeerEntryRecord) NodeId() uint64 {
 	return r.nodeId
 }
 
+// ToSaved is this value as a saved state writes it.
+func (r TodoPeerEntryRecord) ToSaved() any {
+	saved := sce.NewJSONObject()
+	saved.Set("element", (sce.SavedWriteUint64)(r.element))
+	saved.Set("wallTime", (sce.SavedWriteInt64)(r.wallTime))
+	saved.Set("counter", (sce.SavedWriteUint32)(r.counter))
+	saved.Set("nodeId", (sce.SavedWriteUint64)(r.nodeId))
+	return saved
+}
+
+// TodoPeerEntryRecordFromSaved is the value a saved state holds, refused unless it is one.
+func TodoPeerEntryRecordFromSaved(value any, what string) (TodoPeerEntryRecord, error) {
+	var record TodoPeerEntryRecord
+	{
+		saved, err := sce.SavedField(value, what, "element")
+		if err != nil {
+			return record, err
+		}
+		if record.element, err = (sce.SavedReadUint64)(saved, what + ".element"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "wallTime")
+		if err != nil {
+			return record, err
+		}
+		if record.wallTime, err = (sce.SavedReadInt64)(saved, what + ".wallTime"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "counter")
+		if err != nil {
+			return record, err
+		}
+		if record.counter, err = (sce.SavedReadUint32)(saved, what + ".counter"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "nodeId")
+		if err != nil {
+			return record, err
+		}
+		if record.nodeId, err = (sce.SavedReadUint64)(saved, what + ".nodeId"); err != nil {
+			return record, err
+		}
+	}
+	return record, nil
+}
 
 // SCE Accepted Subset §2.15: a `record:Value` datamodel value.
 type TodoPeerValueRecord struct {
@@ -858,6 +950,87 @@ func (r TodoPeerValueRecord) NodeId() uint64 {
 	return r.nodeId
 }
 
+// ToSaved is this value as a saved state writes it.
+func (r TodoPeerValueRecord) ToSaved() any {
+	saved := sce.NewJSONObject()
+	saved.Set("id", (sce.SavedWriteUint64)(r.id))
+	saved.Set("field", (sce.SavedWriteUint64)(r.field))
+	saved.Set("value", (sce.SavedWriteInt64)(r.value))
+	saved.Set("text", (sce.SavedWriteString)(r.text))
+	saved.Set("wallTime", (sce.SavedWriteInt64)(r.wallTime))
+	saved.Set("counter", (sce.SavedWriteUint32)(r.counter))
+	saved.Set("nodeId", (sce.SavedWriteUint64)(r.nodeId))
+	return saved
+}
+
+// TodoPeerValueRecordFromSaved is the value a saved state holds, refused unless it is one.
+func TodoPeerValueRecordFromSaved(value any, what string) (TodoPeerValueRecord, error) {
+	var record TodoPeerValueRecord
+	{
+		saved, err := sce.SavedField(value, what, "id")
+		if err != nil {
+			return record, err
+		}
+		if record.id, err = (sce.SavedReadUint64)(saved, what + ".id"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "field")
+		if err != nil {
+			return record, err
+		}
+		if record.field, err = (sce.SavedReadUint64)(saved, what + ".field"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "value")
+		if err != nil {
+			return record, err
+		}
+		if record.value, err = (sce.SavedReadInt64)(saved, what + ".value"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "text")
+		if err != nil {
+			return record, err
+		}
+		if record.text, err = (sce.SavedBoundedString(96))(saved, what + ".text"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "wallTime")
+		if err != nil {
+			return record, err
+		}
+		if record.wallTime, err = (sce.SavedReadInt64)(saved, what + ".wallTime"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "counter")
+		if err != nil {
+			return record, err
+		}
+		if record.counter, err = (sce.SavedReadUint32)(saved, what + ".counter"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "nodeId")
+		if err != nil {
+			return record, err
+		}
+		if record.nodeId, err = (sce.SavedReadUint64)(saved, what + ".nodeId"); err != nil {
+			return record, err
+		}
+	}
+	return record, nil
+}
 
 // SCE Accepted Subset §2.15: a `record:Node` datamodel value.
 type TodoPeerNodeRecord struct {
@@ -881,6 +1054,47 @@ func (r TodoPeerNodeRecord) Hash() uint32 {
 	return r.hash
 }
 
+// ToSaved is this value as a saved state writes it.
+func (r TodoPeerNodeRecord) ToSaved() any {
+	saved := sce.NewJSONObject()
+	saved.Set("depth", (sce.SavedWriteUint8)(r.depth))
+	saved.Set("prefix", (sce.SavedWriteUint64)(r.prefix))
+	saved.Set("hash", (sce.SavedWriteUint32)(r.hash))
+	return saved
+}
+
+// TodoPeerNodeRecordFromSaved is the value a saved state holds, refused unless it is one.
+func TodoPeerNodeRecordFromSaved(value any, what string) (TodoPeerNodeRecord, error) {
+	var record TodoPeerNodeRecord
+	{
+		saved, err := sce.SavedField(value, what, "depth")
+		if err != nil {
+			return record, err
+		}
+		if record.depth, err = (sce.SavedReadUint8)(saved, what + ".depth"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "prefix")
+		if err != nil {
+			return record, err
+		}
+		if record.prefix, err = (sce.SavedReadUint64)(saved, what + ".prefix"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "hash")
+		if err != nil {
+			return record, err
+		}
+		if record.hash, err = (sce.SavedReadUint32)(saved, what + ".hash"); err != nil {
+			return record, err
+		}
+	}
+	return record, nil
+}
 
 // SCE Accepted Subset §2.15: a `record:Occurrence` datamodel value.
 type TodoPeerOccurrenceRecord struct {
@@ -916,6 +1130,67 @@ func (r TodoPeerOccurrenceRecord) Conflict() uint8 {
 	return r.conflict
 }
 
+// ToSaved is this value as a saved state writes it.
+func (r TodoPeerOccurrenceRecord) ToSaved() any {
+	saved := sce.NewJSONObject()
+	saved.Set("id", (sce.SavedWriteUint64)(r.id))
+	saved.Set("start", (sce.SavedWriteInt64)(r.start))
+	saved.Set("end", (sce.SavedWriteInt64)(r.end))
+	saved.Set("nth", (sce.SavedWriteUint32)(r.nth))
+	saved.Set("conflict", (sce.SavedWriteUint8)(r.conflict))
+	return saved
+}
+
+// TodoPeerOccurrenceRecordFromSaved is the value a saved state holds, refused unless it is one.
+func TodoPeerOccurrenceRecordFromSaved(value any, what string) (TodoPeerOccurrenceRecord, error) {
+	var record TodoPeerOccurrenceRecord
+	{
+		saved, err := sce.SavedField(value, what, "id")
+		if err != nil {
+			return record, err
+		}
+		if record.id, err = (sce.SavedReadUint64)(saved, what + ".id"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "start")
+		if err != nil {
+			return record, err
+		}
+		if record.start, err = (sce.SavedReadInt64)(saved, what + ".start"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "end")
+		if err != nil {
+			return record, err
+		}
+		if record.end, err = (sce.SavedReadInt64)(saved, what + ".end"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "nth")
+		if err != nil {
+			return record, err
+		}
+		if record.nth, err = (sce.SavedReadUint32)(saved, what + ".nth"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "conflict")
+		if err != nil {
+			return record, err
+		}
+		if record.conflict, err = (sce.SavedReadUint8)(saved, what + ".conflict"); err != nil {
+			return record, err
+		}
+	}
+	return record, nil
+}
 
 // SCE Accepted Subset §2.15: a `record:Schedule` datamodel value.
 type TodoPeerScheduleRecord struct {
@@ -1191,6 +1466,467 @@ func (r TodoPeerScheduleRecord) Flag() int64 {
 	return r.flag
 }
 
+// ToSaved is this value as a saved state writes it.
+func (r TodoPeerScheduleRecord) ToSaved() any {
+	saved := sce.NewJSONObject()
+	saved.Set("zone", (sce.SavedWriteInt64)(r.zone))
+	saved.Set("start", (sce.SavedWriteInt64)(r.start))
+	saved.Set("length", (sce.SavedWriteInt64)(r.length))
+	saved.Set("freq", (sce.SavedWriteInt64)(r.freq))
+	saved.Set("interval", (sce.SavedWriteInt64)(r.interval))
+	saved.Set("days", (sce.SavedWriteInt64)(r.days))
+	saved.Set("count", (sce.SavedWriteInt64)(r.count))
+	saved.Set("until", (sce.SavedWriteInt64)(r.until))
+	saved.Set("bymonth", (sce.SavedWriteInt64)(r.bymonth))
+	saved.Set("mdPos", (sce.SavedWriteInt64)(r.mdPos))
+	saved.Set("mdNeg", (sce.SavedWriteInt64)(r.mdNeg))
+	saved.Set("invalid", (sce.SavedWriteInt64)(r.invalid))
+	saved.Set("op0", (sce.SavedWriteInt64)(r.op0))
+	saved.Set("op1", (sce.SavedWriteInt64)(r.op1))
+	saved.Set("op2", (sce.SavedWriteInt64)(r.op2))
+	saved.Set("op3", (sce.SavedWriteInt64)(r.op3))
+	saved.Set("op4", (sce.SavedWriteInt64)(r.op4))
+	saved.Set("op5", (sce.SavedWriteInt64)(r.op5))
+	saved.Set("op6", (sce.SavedWriteInt64)(r.op6))
+	saved.Set("on0", (sce.SavedWriteInt64)(r.on0))
+	saved.Set("on1", (sce.SavedWriteInt64)(r.on1))
+	saved.Set("on2", (sce.SavedWriteInt64)(r.on2))
+	saved.Set("on3", (sce.SavedWriteInt64)(r.on3))
+	saved.Set("on4", (sce.SavedWriteInt64)(r.on4))
+	saved.Set("on5", (sce.SavedWriteInt64)(r.on5))
+	saved.Set("on6", (sce.SavedWriteInt64)(r.on6))
+	saved.Set("spPos", (sce.SavedWriteInt64)(r.spPos))
+	saved.Set("spNeg", (sce.SavedWriteInt64)(r.spNeg))
+	saved.Set("wkst", (sce.SavedWriteInt64)(r.wkst))
+	saved.Set("wnPos", (sce.SavedWriteInt64)(r.wnPos))
+	saved.Set("wnNeg", (sce.SavedWriteInt64)(r.wnNeg))
+	saved.Set("yd0", (sce.SavedWriteInt64)(r.yd0))
+	saved.Set("yd1", (sce.SavedWriteInt64)(r.yd1))
+	saved.Set("yd2", (sce.SavedWriteInt64)(r.yd2))
+	saved.Set("yd3", (sce.SavedWriteInt64)(r.yd3))
+	saved.Set("yd4", (sce.SavedWriteInt64)(r.yd4))
+	saved.Set("yd5", (sce.SavedWriteInt64)(r.yd5))
+	saved.Set("ydn0", (sce.SavedWriteInt64)(r.ydn0))
+	saved.Set("ydn1", (sce.SavedWriteInt64)(r.ydn1))
+	saved.Set("ydn2", (sce.SavedWriteInt64)(r.ydn2))
+	saved.Set("ydn3", (sce.SavedWriteInt64)(r.ydn3))
+	saved.Set("ydn4", (sce.SavedWriteInt64)(r.ydn4))
+	saved.Set("ydn5", (sce.SavedWriteInt64)(r.ydn5))
+	saved.Set("gone", (sce.SavedWriteInt64)(r.gone))
+	saved.Set("flag", (sce.SavedWriteInt64)(r.flag))
+	return saved
+}
+
+// TodoPeerScheduleRecordFromSaved is the value a saved state holds, refused unless it is one.
+func TodoPeerScheduleRecordFromSaved(value any, what string) (TodoPeerScheduleRecord, error) {
+	var record TodoPeerScheduleRecord
+	{
+		saved, err := sce.SavedField(value, what, "zone")
+		if err != nil {
+			return record, err
+		}
+		if record.zone, err = (sce.SavedReadInt64)(saved, what + ".zone"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "start")
+		if err != nil {
+			return record, err
+		}
+		if record.start, err = (sce.SavedReadInt64)(saved, what + ".start"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "length")
+		if err != nil {
+			return record, err
+		}
+		if record.length, err = (sce.SavedReadInt64)(saved, what + ".length"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "freq")
+		if err != nil {
+			return record, err
+		}
+		if record.freq, err = (sce.SavedReadInt64)(saved, what + ".freq"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "interval")
+		if err != nil {
+			return record, err
+		}
+		if record.interval, err = (sce.SavedReadInt64)(saved, what + ".interval"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "days")
+		if err != nil {
+			return record, err
+		}
+		if record.days, err = (sce.SavedReadInt64)(saved, what + ".days"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "count")
+		if err != nil {
+			return record, err
+		}
+		if record.count, err = (sce.SavedReadInt64)(saved, what + ".count"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "until")
+		if err != nil {
+			return record, err
+		}
+		if record.until, err = (sce.SavedReadInt64)(saved, what + ".until"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "bymonth")
+		if err != nil {
+			return record, err
+		}
+		if record.bymonth, err = (sce.SavedReadInt64)(saved, what + ".bymonth"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "mdPos")
+		if err != nil {
+			return record, err
+		}
+		if record.mdPos, err = (sce.SavedReadInt64)(saved, what + ".mdPos"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "mdNeg")
+		if err != nil {
+			return record, err
+		}
+		if record.mdNeg, err = (sce.SavedReadInt64)(saved, what + ".mdNeg"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "invalid")
+		if err != nil {
+			return record, err
+		}
+		if record.invalid, err = (sce.SavedReadInt64)(saved, what + ".invalid"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "op0")
+		if err != nil {
+			return record, err
+		}
+		if record.op0, err = (sce.SavedReadInt64)(saved, what + ".op0"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "op1")
+		if err != nil {
+			return record, err
+		}
+		if record.op1, err = (sce.SavedReadInt64)(saved, what + ".op1"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "op2")
+		if err != nil {
+			return record, err
+		}
+		if record.op2, err = (sce.SavedReadInt64)(saved, what + ".op2"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "op3")
+		if err != nil {
+			return record, err
+		}
+		if record.op3, err = (sce.SavedReadInt64)(saved, what + ".op3"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "op4")
+		if err != nil {
+			return record, err
+		}
+		if record.op4, err = (sce.SavedReadInt64)(saved, what + ".op4"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "op5")
+		if err != nil {
+			return record, err
+		}
+		if record.op5, err = (sce.SavedReadInt64)(saved, what + ".op5"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "op6")
+		if err != nil {
+			return record, err
+		}
+		if record.op6, err = (sce.SavedReadInt64)(saved, what + ".op6"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "on0")
+		if err != nil {
+			return record, err
+		}
+		if record.on0, err = (sce.SavedReadInt64)(saved, what + ".on0"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "on1")
+		if err != nil {
+			return record, err
+		}
+		if record.on1, err = (sce.SavedReadInt64)(saved, what + ".on1"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "on2")
+		if err != nil {
+			return record, err
+		}
+		if record.on2, err = (sce.SavedReadInt64)(saved, what + ".on2"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "on3")
+		if err != nil {
+			return record, err
+		}
+		if record.on3, err = (sce.SavedReadInt64)(saved, what + ".on3"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "on4")
+		if err != nil {
+			return record, err
+		}
+		if record.on4, err = (sce.SavedReadInt64)(saved, what + ".on4"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "on5")
+		if err != nil {
+			return record, err
+		}
+		if record.on5, err = (sce.SavedReadInt64)(saved, what + ".on5"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "on6")
+		if err != nil {
+			return record, err
+		}
+		if record.on6, err = (sce.SavedReadInt64)(saved, what + ".on6"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "spPos")
+		if err != nil {
+			return record, err
+		}
+		if record.spPos, err = (sce.SavedReadInt64)(saved, what + ".spPos"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "spNeg")
+		if err != nil {
+			return record, err
+		}
+		if record.spNeg, err = (sce.SavedReadInt64)(saved, what + ".spNeg"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "wkst")
+		if err != nil {
+			return record, err
+		}
+		if record.wkst, err = (sce.SavedReadInt64)(saved, what + ".wkst"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "wnPos")
+		if err != nil {
+			return record, err
+		}
+		if record.wnPos, err = (sce.SavedReadInt64)(saved, what + ".wnPos"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "wnNeg")
+		if err != nil {
+			return record, err
+		}
+		if record.wnNeg, err = (sce.SavedReadInt64)(saved, what + ".wnNeg"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "yd0")
+		if err != nil {
+			return record, err
+		}
+		if record.yd0, err = (sce.SavedReadInt64)(saved, what + ".yd0"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "yd1")
+		if err != nil {
+			return record, err
+		}
+		if record.yd1, err = (sce.SavedReadInt64)(saved, what + ".yd1"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "yd2")
+		if err != nil {
+			return record, err
+		}
+		if record.yd2, err = (sce.SavedReadInt64)(saved, what + ".yd2"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "yd3")
+		if err != nil {
+			return record, err
+		}
+		if record.yd3, err = (sce.SavedReadInt64)(saved, what + ".yd3"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "yd4")
+		if err != nil {
+			return record, err
+		}
+		if record.yd4, err = (sce.SavedReadInt64)(saved, what + ".yd4"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "yd5")
+		if err != nil {
+			return record, err
+		}
+		if record.yd5, err = (sce.SavedReadInt64)(saved, what + ".yd5"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "ydn0")
+		if err != nil {
+			return record, err
+		}
+		if record.ydn0, err = (sce.SavedReadInt64)(saved, what + ".ydn0"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "ydn1")
+		if err != nil {
+			return record, err
+		}
+		if record.ydn1, err = (sce.SavedReadInt64)(saved, what + ".ydn1"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "ydn2")
+		if err != nil {
+			return record, err
+		}
+		if record.ydn2, err = (sce.SavedReadInt64)(saved, what + ".ydn2"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "ydn3")
+		if err != nil {
+			return record, err
+		}
+		if record.ydn3, err = (sce.SavedReadInt64)(saved, what + ".ydn3"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "ydn4")
+		if err != nil {
+			return record, err
+		}
+		if record.ydn4, err = (sce.SavedReadInt64)(saved, what + ".ydn4"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "ydn5")
+		if err != nil {
+			return record, err
+		}
+		if record.ydn5, err = (sce.SavedReadInt64)(saved, what + ".ydn5"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "gone")
+		if err != nil {
+			return record, err
+		}
+		if record.gone, err = (sce.SavedReadInt64)(saved, what + ".gone"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "flag")
+		if err != nil {
+			return record, err
+		}
+		if record.flag, err = (sce.SavedReadInt64)(saved, what + ".flag"); err != nil {
+			return record, err
+		}
+	}
+	return record, nil
+}
 
 // SCE Accepted Subset §2.15: a `record:Answer` datamodel value.
 type TodoPeerAnswerRecord struct {
@@ -1208,6 +1944,37 @@ func (r TodoPeerAnswerRecord) Hash() uint32 {
 	return r.hash
 }
 
+// ToSaved is this value as a saved state writes it.
+func (r TodoPeerAnswerRecord) ToSaved() any {
+	saved := sce.NewJSONObject()
+	saved.Set("sender", (sce.SavedWriteUint64)(r.sender))
+	saved.Set("hash", (sce.SavedWriteUint32)(r.hash))
+	return saved
+}
+
+// TodoPeerAnswerRecordFromSaved is the value a saved state holds, refused unless it is one.
+func TodoPeerAnswerRecordFromSaved(value any, what string) (TodoPeerAnswerRecord, error) {
+	var record TodoPeerAnswerRecord
+	{
+		saved, err := sce.SavedField(value, what, "sender")
+		if err != nil {
+			return record, err
+		}
+		if record.sender, err = (sce.SavedReadUint64)(saved, what + ".sender"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "hash")
+		if err != nil {
+			return record, err
+		}
+		if record.hash, err = (sce.SavedReadUint32)(saved, what + ".hash"); err != nil {
+			return record, err
+		}
+	}
+	return record, nil
+}
 
 // SCE Accepted Subset §2.15: a `record:Member` datamodel value.
 type TodoPeerMemberRecord struct {
@@ -1225,6 +1992,37 @@ func (r TodoPeerMemberRecord) Role() uint8 {
 	return r.role
 }
 
+// ToSaved is this value as a saved state writes it.
+func (r TodoPeerMemberRecord) ToSaved() any {
+	saved := sce.NewJSONObject()
+	saved.Set("node", (sce.SavedWriteUint64)(r.node))
+	saved.Set("role", (sce.SavedWriteUint8)(r.role))
+	return saved
+}
+
+// TodoPeerMemberRecordFromSaved is the value a saved state holds, refused unless it is one.
+func TodoPeerMemberRecordFromSaved(value any, what string) (TodoPeerMemberRecord, error) {
+	var record TodoPeerMemberRecord
+	{
+		saved, err := sce.SavedField(value, what, "node")
+		if err != nil {
+			return record, err
+		}
+		if record.node, err = (sce.SavedReadUint64)(saved, what + ".node"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "role")
+		if err != nil {
+			return record, err
+		}
+		if record.role, err = (sce.SavedReadUint8)(saved, what + ".role"); err != nil {
+			return record, err
+		}
+	}
+	return record, nil
+}
 
 // The bounds this machine is built with, each by the name `sce:limit` gives it (docs/adr/0050).
 
@@ -1260,6 +2058,1196 @@ const TodoPeerSavedShapeFormat2Revised = "201e7b9ae688a375fef8d36ed817d1d4c784e2
 // this machine is of, by its document (docs/adr/0044): the key `revisions`
 // names it by, and the format-2 shape spells it by.
 var TodoPeerSavedEnumKeys = [...]string{}
+
+// ── SCE Accepted Subset §2.15: saving this machine, restoring it ──────────
+
+// TodoPeerSavedShape is what a saved state of this document is bound
+// to: a state saved from a document that renamed, re-typed or moved a state or a
+// variable is refused, one saved before a guard or an action changed is not, and
+// one saved at an earlier revision of a record schema is read with each field a
+// later revision added at its default.
+var TodoPeerSavedShape = sce.SavedShape{
+	First:          "84564493f4d6537649fd21f55b4a724e9dc0e6a879081544fc16a50dfa5dc34d",
+	Revised:        "201e7b9ae688a375fef8d36ed817d1d4c784e2b564cb3a27ebff38daa6392f17",
+	Format2First:   "84564493f4d6537649fd21f55b4a724e9dc0e6a879081544fc16a50dfa5dc34d",
+	Format2Revised: "201e7b9ae688a375fef8d36ed817d1d4c784e2b564cb3a27ebff38daa6392f17",
+	Records: []sce.RecordLineage{
+		{
+			Event:     "calendar.answer",
+			Revision:  1,
+			Revisions: []string{},
+			Added: []sce.AddedField{
+			},
+			Holders: []sce.RecordHolder{
+				{Variable: "answers", List: true},
+				{Variable: "answer", List: false},
+			},
+		},
+		{
+			Event:     "calendar.member",
+			Revision:  1,
+			Revisions: []string{},
+			Added: []sce.AddedField{
+			},
+			Holders: []sce.RecordHolder{
+				{Variable: "roster", List: true},
+			},
+		},
+		{
+			Event:     "calendar.occurrence",
+			Revision:  1,
+			Revisions: []string{},
+			Added: []sce.AddedField{
+			},
+			Holders: []sce.RecordHolder{
+				{Variable: "agenda", List: true},
+				{Variable: "local", List: true},
+				{Variable: "occ", List: false},
+			},
+		},
+		{
+			Event:     "calendar.schedule",
+			Revision:  1,
+			Revisions: []string{},
+			Added: []sce.AddedField{
+			},
+			Holders: []sce.RecordHolder{
+				{Variable: "sched", List: false},
+			},
+		},
+		{
+			Event:     "merge.hlc_timestamp",
+			Revision:  1,
+			Revisions: []string{},
+			Added: []sce.AddedField{
+			},
+			Holders: []sce.RecordHolder{
+				{Variable: "clock", List: false},
+				{Variable: "stamp", List: false},
+			},
+		},
+		{
+			Event:     "merge.merkle_node",
+			Revision:  1,
+			Revisions: []string{},
+			Added: []sce.AddedField{
+			},
+			Holders: []sce.RecordHolder{
+				{Variable: "digest", List: true},
+			},
+		},
+		{
+			Event:     "merge.mv_value",
+			Revision:  1,
+			Revisions: []string{},
+			Added: []sce.AddedField{
+			},
+			Holders: []sce.RecordHolder{
+				{Variable: "values", List: true},
+				{Variable: "held", List: false},
+			},
+		},
+		{
+			Event:     "merge.orset_entry",
+			Revision:  1,
+			Revisions: []string{},
+			Added: []sce.AddedField{
+			},
+			Holders: []sce.RecordHolder{
+				{Variable: "adds", List: true},
+				{Variable: "tombstones", List: true},
+				{Variable: "one", List: true},
+				{Variable: "stable", List: true},
+				{Variable: "entry", List: false},
+			},
+		},
+	},
+	Enums: []sce.EnumLineage{
+	},
+}
+
+// TodoPeerHistories is the document's `<history>` pseudo-states, by
+// the id a saved state keys them by: what a saved state records of each, and
+// what a restore reads.
+var TodoPeerHistories = []sce.HistoryDecl{
+}
+
+// TodoPeerSaveAt is engine's whole state at the macrostep boundary it
+// stands at: every variable, the machine's own included, and where it stands, as
+// the `sce-saved-state` document every backend reads (sce.SavedState.ToJSON).
+// Each delayed `<send>` still waiting is written as the moment it comes due on
+// the wall clock whose reading now is wallNowMs, in milliseconds since the Unix
+// epoch.
+//
+// Refused for a machine that is not running, one that has ended, one whose last
+// macrostep stopped at the microstep ceiling, and one built around another
+// document's policy.
+func TodoPeerSaveAt(engine *sce.Engine[TodoPeerState, TodoPeerEvent], wallNowMs int64) (*sce.SavedState, error) {
+	p, ok := engine.Policy().(*TodoPeerPolicy)
+	if !ok {
+		return nil, sce.Refuse("the engine is not one of TodoPeer")
+	}
+	variables := sce.NewJSONObject()
+	variables.Set("node", sce.SavedWriteUint64(p.vNode))
+	variables.Set("hub", sce.SavedWriteBool(p.vHub))
+	variables.Set("clock", p.vClock.ToSaved())
+	variables.Set("stamp", p.vStamp.ToSaved())
+	variables.Set("adds", sce.SavedWriteList(p.vAdds, func(r TodoPeerEntryRecord) any { return r.ToSaved() }))
+	variables.Set("tombstones", sce.SavedWriteList(p.vTombstones, func(r TodoPeerEntryRecord) any { return r.ToSaved() }))
+	variables.Set("one", sce.SavedWriteList(p.vOne, func(r TodoPeerEntryRecord) any { return r.ToSaved() }))
+	variables.Set("stable", sce.SavedWriteList(p.vStable, func(r TodoPeerEntryRecord) any { return r.ToSaved() }))
+	variables.Set("entry", p.vEntry.ToSaved())
+	variables.Set("values", sce.SavedWriteList(p.vValues, func(r TodoPeerValueRecord) any { return r.ToSaved() }))
+	variables.Set("typed", sce.SavedWriteString(p.vTyped))
+	variables.Set("held", p.vHeld.ToSaved())
+	variables.Set("digest", sce.SavedWriteList(p.vDigest, func(r TodoPeerNodeRecord) any { return r.ToSaved() }))
+	variables.Set("mine", sce.SavedWriteUint32(p.vMine))
+	variables.Set("shareId", sce.SavedWriteUint32(p.vShareId))
+	variables.Set("shareField", sce.SavedWriteUint16(p.vShareField))
+	variables.Set("known", sce.SavedWriteBool(p.vKnown))
+	variables.Set("wasLive", sce.SavedWriteBool(p.vWasLive))
+	variables.Set("isLive", sce.SavedWriteBool(p.vIsLive))
+	variables.Set("present", sce.SavedWriteBool(p.vPresent))
+	variables.Set("refusals", sce.SavedWriteUint32(p.vRefusals))
+	variables.Set("agenda", sce.SavedWriteList(p.vAgenda, func(r TodoPeerOccurrenceRecord) any { return r.ToSaved() }))
+	variables.Set("local", sce.SavedWriteList(p.vLocal, func(r TodoPeerOccurrenceRecord) any { return r.ToSaved() }))
+	variables.Set("occ", p.vOcc.ToSaved())
+	variables.Set("agendaNext", sce.SavedWriteUint32(p.vAgendaNext))
+	variables.Set("zoneStarts1", sce.SavedWriteList(p.vZoneStarts1, sce.SavedWriteInt64))
+	variables.Set("zoneOffsets1", sce.SavedWriteList(p.vZoneOffsets1, sce.SavedWriteInt32))
+	variables.Set("zoneStarts2", sce.SavedWriteList(p.vZoneStarts2, sce.SavedWriteInt64))
+	variables.Set("zoneOffsets2", sce.SavedWriteList(p.vZoneOffsets2, sce.SavedWriteInt32))
+	variables.Set("zoneStarts3", sce.SavedWriteList(p.vZoneStarts3, sce.SavedWriteInt64))
+	variables.Set("zoneOffsets3", sce.SavedWriteList(p.vZoneOffsets3, sce.SavedWriteInt32))
+	variables.Set("zoneStarts4", sce.SavedWriteList(p.vZoneStarts4, sce.SavedWriteInt64))
+	variables.Set("zoneOffsets4", sce.SavedWriteList(p.vZoneOffsets4, sce.SavedWriteInt32))
+	variables.Set("zoneStarts", sce.SavedWriteList(p.vZoneStarts, sce.SavedWriteInt64))
+	variables.Set("zoneOffsets", sce.SavedWriteList(p.vZoneOffsets, sce.SavedWriteInt32))
+	variables.Set("zoneRows", sce.SavedWriteUint32(p.vZoneRows))
+	variables.Set("split", sce.SavedWriteBool(p.vSplit))
+	variables.Set("sched", p.vSched.ToSaved())
+	variables.Set("rawCount", sce.SavedWriteUint32(p.vRawCount))
+	variables.Set("rawLast", sce.SavedWriteUint32(p.vRawLast))
+	variables.Set("utcSec", sce.SavedWriteInt64(p.vUtcSec))
+	variables.Set("floor", sce.SavedWriteInt64(p.vFloor))
+	variables.Set("stale", sce.SavedWriteBool(p.vStale))
+	variables.Set("late", sce.SavedWriteUint32(p.vLate))
+	variables.Set("frozenFor", sce.SavedWriteInt64(p.vFrozenFor))
+	variables.Set("frozenHash", sce.SavedWriteUint32(p.vFrozenHash))
+	variables.Set("pending", sce.SavedWriteInt64(p.vPending))
+	variables.Set("members", sce.SavedWriteUint32(p.vMembers))
+	variables.Set("agreeing", sce.SavedWriteUint32(p.vAgreeing))
+	variables.Set("answers", sce.SavedWriteList(p.vAnswers, func(r TodoPeerAnswerRecord) any { return r.ToSaved() }))
+	variables.Set("answer", p.vAnswer.ToSaved())
+	variables.Set("agreed", sce.SavedWriteUint32(p.vAgreed))
+	variables.Set("roomValues", sce.SavedWriteUint32(p.vRoomValues))
+	variables.Set("roomHistory", sce.SavedWriteUint32(p.vRoomHistory))
+	variables.Set("roomDigest", sce.SavedWriteUint32(p.vRoomDigest))
+	variables.Set("full", sce.SavedWriteUint32(p.vFull))
+	variables.Set("fresh", sce.SavedWriteBool(p.vFresh))
+	variables.Set("blocked", sce.SavedWriteBool(p.vBlocked))
+	variables.Set("roster", sce.SavedWriteList(p.vRoster, func(r TodoPeerMemberRecord) any { return r.ToSaved() }))
+	variables.Set("denied", sce.SavedWriteUint32(p.vDenied))
+	variables.Set("forbidden", sce.SavedWriteBool(p.vForbidden))
+	variables.Set("authorized", sce.SavedWriteBool(p.vAuthorized))
+	return sce.SaveSession(engine, &TodoPeerSavedShape, variables,
+		sce.SaveHistory[TodoPeerState, TodoPeerEvent](p, TodoPeerHistories),
+		nil, wallNowMs)
+}
+
+// TodoPeerSave is TodoPeerSaveAt at the host's wall clock now.
+func TodoPeerSave(engine *sce.Engine[TodoPeerState, TodoPeerEvent]) (*sce.SavedState, error) {
+	return TodoPeerSaveAt(engine, sce.SavedWallClockMs())
+}
+
+// TodoPeerJudge refuses saved unless a machine of this document could
+// restore it, building nothing: what a parent's restore asks of each child it
+// holds (docs/adr/0045, section 3, step 1).
+func TodoPeerJudge(saved *sce.SavedState) error {
+	p := &TodoPeerPolicy{}
+	grown, err := sce.UpgradeSavedState(saved, &TodoPeerSavedShape)
+	if err != nil {
+		return err
+	}
+	if _, err := sce.RestoreHistory[TodoPeerState, TodoPeerEvent](p, grown, TodoPeerHistories); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("node"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint64(raw, "node"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("hub"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadBool(raw, "hub"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("clock"); err != nil {
+		return err
+	} else if _, err := TodoPeerHlcRecordFromSaved(raw, "clock"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("stamp"); err != nil {
+		return err
+	} else if _, err := TodoPeerHlcRecordFromSaved(raw, "stamp"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("adds"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadList(raw, "adds", 1024, TodoPeerEntryRecordFromSaved); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("tombstones"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadList(raw, "tombstones", 1024, TodoPeerEntryRecordFromSaved); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("one"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadList(raw, "one", 1024, TodoPeerEntryRecordFromSaved); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("stable"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadList(raw, "stable", 1024, TodoPeerEntryRecordFromSaved); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("entry"); err != nil {
+		return err
+	} else if _, err := TodoPeerEntryRecordFromSaved(raw, "entry"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("values"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadList(raw, "values", 512, TodoPeerValueRecordFromSaved); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("typed"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadBoundedString(raw, "typed", 32); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("held"); err != nil {
+		return err
+	} else if _, err := TodoPeerValueRecordFromSaved(raw, "held"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("digest"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadList(raw, "digest", 2048, TodoPeerNodeRecordFromSaved); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("mine"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "mine"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("shareId"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "shareId"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("shareField"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint16(raw, "shareField"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("known"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadBool(raw, "known"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("wasLive"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadBool(raw, "wasLive"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("isLive"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadBool(raw, "isLive"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("present"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadBool(raw, "present"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("refusals"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "refusals"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("agenda"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadList(raw, "agenda", 64, TodoPeerOccurrenceRecordFromSaved); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("local"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadList(raw, "local", 64, TodoPeerOccurrenceRecordFromSaved); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("occ"); err != nil {
+		return err
+	} else if _, err := TodoPeerOccurrenceRecordFromSaved(raw, "occ"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("agendaNext"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "agendaNext"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("zoneStarts1"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadList(raw, "zoneStarts1", 64, sce.SavedReadInt64); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("zoneOffsets1"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadList(raw, "zoneOffsets1", 64, sce.SavedReadInt32); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("zoneStarts2"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadList(raw, "zoneStarts2", 64, sce.SavedReadInt64); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("zoneOffsets2"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadList(raw, "zoneOffsets2", 64, sce.SavedReadInt32); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("zoneStarts3"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadList(raw, "zoneStarts3", 64, sce.SavedReadInt64); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("zoneOffsets3"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadList(raw, "zoneOffsets3", 64, sce.SavedReadInt32); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("zoneStarts4"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadList(raw, "zoneStarts4", 64, sce.SavedReadInt64); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("zoneOffsets4"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadList(raw, "zoneOffsets4", 64, sce.SavedReadInt32); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("zoneStarts"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadList(raw, "zoneStarts", 64, sce.SavedReadInt64); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("zoneOffsets"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadList(raw, "zoneOffsets", 64, sce.SavedReadInt32); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("zoneRows"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "zoneRows"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("split"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadBool(raw, "split"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("sched"); err != nil {
+		return err
+	} else if _, err := TodoPeerScheduleRecordFromSaved(raw, "sched"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("rawCount"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "rawCount"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("rawLast"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "rawLast"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("utcSec"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadInt64(raw, "utcSec"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("floor"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadInt64(raw, "floor"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("stale"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadBool(raw, "stale"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("late"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "late"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("frozenFor"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadInt64(raw, "frozenFor"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("frozenHash"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "frozenHash"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("pending"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadInt64(raw, "pending"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("members"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "members"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("agreeing"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "agreeing"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("answers"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadList(raw, "answers", 512, TodoPeerAnswerRecordFromSaved); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("answer"); err != nil {
+		return err
+	} else if _, err := TodoPeerAnswerRecordFromSaved(raw, "answer"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("agreed"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "agreed"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("roomValues"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "roomValues"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("roomHistory"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "roomHistory"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("roomDigest"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "roomDigest"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("full"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "full"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("fresh"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadBool(raw, "fresh"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("blocked"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadBool(raw, "blocked"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("roster"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadList(raw, "roster", 64, TodoPeerMemberRecordFromSaved); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("denied"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "denied"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("forbidden"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadBool(raw, "forbidden"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("authorized"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadBool(raw, "authorized"); err != nil {
+		return err
+	}
+	return sce.JudgeSession[TodoPeerState, TodoPeerEvent](p, grown)
+}
+
+// TodoPeerRestoreAt is a machine of policy standing where saved left
+// one, measuring time by clock: in place of `Initialize`, so no `<onentry>` runs
+// and no `<data>` is evaluated, since the saved run already did both. Every value
+// is read and the state judged before any is written, so a refused restore leaves
+// policy as it was.
+//
+// Each delayed `<send>` saved is armed against clock, which is the one the
+// machine measures time by; wallNowMs is what time it is on the wall clock the
+// saved `due`s were written against. A send comes due when its saved moment does,
+// and one already due comes due now.
+//
+// The host registers its invokers and its processors on the machine this
+// returns, and drives it as it would one it had initialized.
+func TodoPeerRestoreAt(policy *TodoPeerPolicy, saved *sce.SavedState, clock sce.SceClock, wallNowMs int64) (*sce.Engine[TodoPeerState, TodoPeerEvent], error) {
+	// The state as one of this machine: each record saved at an earlier revision
+	// of its schema holds the defaults of the fields added since.
+	grown, err := sce.UpgradeSavedState(saved, &TodoPeerSavedShape)
+	if err != nil {
+		return nil, err
+	}
+	history, err := sce.RestoreHistory[TodoPeerState, TodoPeerEvent](policy, grown, TodoPeerHistories)
+	if err != nil {
+		return nil, err
+	}
+	raw1, err := grown.Variable("node")
+	if err != nil {
+		return nil, err
+	}
+	read1, err := sce.SavedReadUint64(raw1, "node")
+	if err != nil {
+		return nil, err
+	}
+	raw2, err := grown.Variable("hub")
+	if err != nil {
+		return nil, err
+	}
+	read2, err := sce.SavedReadBool(raw2, "hub")
+	if err != nil {
+		return nil, err
+	}
+	raw3, err := grown.Variable("clock")
+	if err != nil {
+		return nil, err
+	}
+	read3, err := TodoPeerHlcRecordFromSaved(raw3, "clock")
+	if err != nil {
+		return nil, err
+	}
+	raw4, err := grown.Variable("stamp")
+	if err != nil {
+		return nil, err
+	}
+	read4, err := TodoPeerHlcRecordFromSaved(raw4, "stamp")
+	if err != nil {
+		return nil, err
+	}
+	raw5, err := grown.Variable("adds")
+	if err != nil {
+		return nil, err
+	}
+	read5, err := sce.SavedReadList(raw5, "adds", 1024, TodoPeerEntryRecordFromSaved)
+	if err != nil {
+		return nil, err
+	}
+	raw6, err := grown.Variable("tombstones")
+	if err != nil {
+		return nil, err
+	}
+	read6, err := sce.SavedReadList(raw6, "tombstones", 1024, TodoPeerEntryRecordFromSaved)
+	if err != nil {
+		return nil, err
+	}
+	raw7, err := grown.Variable("one")
+	if err != nil {
+		return nil, err
+	}
+	read7, err := sce.SavedReadList(raw7, "one", 1024, TodoPeerEntryRecordFromSaved)
+	if err != nil {
+		return nil, err
+	}
+	raw8, err := grown.Variable("stable")
+	if err != nil {
+		return nil, err
+	}
+	read8, err := sce.SavedReadList(raw8, "stable", 1024, TodoPeerEntryRecordFromSaved)
+	if err != nil {
+		return nil, err
+	}
+	raw9, err := grown.Variable("entry")
+	if err != nil {
+		return nil, err
+	}
+	read9, err := TodoPeerEntryRecordFromSaved(raw9, "entry")
+	if err != nil {
+		return nil, err
+	}
+	raw10, err := grown.Variable("values")
+	if err != nil {
+		return nil, err
+	}
+	read10, err := sce.SavedReadList(raw10, "values", 512, TodoPeerValueRecordFromSaved)
+	if err != nil {
+		return nil, err
+	}
+	raw11, err := grown.Variable("typed")
+	if err != nil {
+		return nil, err
+	}
+	read11, err := sce.SavedReadBoundedString(raw11, "typed", 32)
+	if err != nil {
+		return nil, err
+	}
+	raw12, err := grown.Variable("held")
+	if err != nil {
+		return nil, err
+	}
+	read12, err := TodoPeerValueRecordFromSaved(raw12, "held")
+	if err != nil {
+		return nil, err
+	}
+	raw13, err := grown.Variable("digest")
+	if err != nil {
+		return nil, err
+	}
+	read13, err := sce.SavedReadList(raw13, "digest", 2048, TodoPeerNodeRecordFromSaved)
+	if err != nil {
+		return nil, err
+	}
+	raw14, err := grown.Variable("mine")
+	if err != nil {
+		return nil, err
+	}
+	read14, err := sce.SavedReadUint32(raw14, "mine")
+	if err != nil {
+		return nil, err
+	}
+	raw15, err := grown.Variable("shareId")
+	if err != nil {
+		return nil, err
+	}
+	read15, err := sce.SavedReadUint32(raw15, "shareId")
+	if err != nil {
+		return nil, err
+	}
+	raw16, err := grown.Variable("shareField")
+	if err != nil {
+		return nil, err
+	}
+	read16, err := sce.SavedReadUint16(raw16, "shareField")
+	if err != nil {
+		return nil, err
+	}
+	raw17, err := grown.Variable("known")
+	if err != nil {
+		return nil, err
+	}
+	read17, err := sce.SavedReadBool(raw17, "known")
+	if err != nil {
+		return nil, err
+	}
+	raw18, err := grown.Variable("wasLive")
+	if err != nil {
+		return nil, err
+	}
+	read18, err := sce.SavedReadBool(raw18, "wasLive")
+	if err != nil {
+		return nil, err
+	}
+	raw19, err := grown.Variable("isLive")
+	if err != nil {
+		return nil, err
+	}
+	read19, err := sce.SavedReadBool(raw19, "isLive")
+	if err != nil {
+		return nil, err
+	}
+	raw20, err := grown.Variable("present")
+	if err != nil {
+		return nil, err
+	}
+	read20, err := sce.SavedReadBool(raw20, "present")
+	if err != nil {
+		return nil, err
+	}
+	raw21, err := grown.Variable("refusals")
+	if err != nil {
+		return nil, err
+	}
+	read21, err := sce.SavedReadUint32(raw21, "refusals")
+	if err != nil {
+		return nil, err
+	}
+	raw22, err := grown.Variable("agenda")
+	if err != nil {
+		return nil, err
+	}
+	read22, err := sce.SavedReadList(raw22, "agenda", 64, TodoPeerOccurrenceRecordFromSaved)
+	if err != nil {
+		return nil, err
+	}
+	raw23, err := grown.Variable("local")
+	if err != nil {
+		return nil, err
+	}
+	read23, err := sce.SavedReadList(raw23, "local", 64, TodoPeerOccurrenceRecordFromSaved)
+	if err != nil {
+		return nil, err
+	}
+	raw24, err := grown.Variable("occ")
+	if err != nil {
+		return nil, err
+	}
+	read24, err := TodoPeerOccurrenceRecordFromSaved(raw24, "occ")
+	if err != nil {
+		return nil, err
+	}
+	raw25, err := grown.Variable("agendaNext")
+	if err != nil {
+		return nil, err
+	}
+	read25, err := sce.SavedReadUint32(raw25, "agendaNext")
+	if err != nil {
+		return nil, err
+	}
+	raw26, err := grown.Variable("zoneStarts1")
+	if err != nil {
+		return nil, err
+	}
+	read26, err := sce.SavedReadList(raw26, "zoneStarts1", 64, sce.SavedReadInt64)
+	if err != nil {
+		return nil, err
+	}
+	raw27, err := grown.Variable("zoneOffsets1")
+	if err != nil {
+		return nil, err
+	}
+	read27, err := sce.SavedReadList(raw27, "zoneOffsets1", 64, sce.SavedReadInt32)
+	if err != nil {
+		return nil, err
+	}
+	raw28, err := grown.Variable("zoneStarts2")
+	if err != nil {
+		return nil, err
+	}
+	read28, err := sce.SavedReadList(raw28, "zoneStarts2", 64, sce.SavedReadInt64)
+	if err != nil {
+		return nil, err
+	}
+	raw29, err := grown.Variable("zoneOffsets2")
+	if err != nil {
+		return nil, err
+	}
+	read29, err := sce.SavedReadList(raw29, "zoneOffsets2", 64, sce.SavedReadInt32)
+	if err != nil {
+		return nil, err
+	}
+	raw30, err := grown.Variable("zoneStarts3")
+	if err != nil {
+		return nil, err
+	}
+	read30, err := sce.SavedReadList(raw30, "zoneStarts3", 64, sce.SavedReadInt64)
+	if err != nil {
+		return nil, err
+	}
+	raw31, err := grown.Variable("zoneOffsets3")
+	if err != nil {
+		return nil, err
+	}
+	read31, err := sce.SavedReadList(raw31, "zoneOffsets3", 64, sce.SavedReadInt32)
+	if err != nil {
+		return nil, err
+	}
+	raw32, err := grown.Variable("zoneStarts4")
+	if err != nil {
+		return nil, err
+	}
+	read32, err := sce.SavedReadList(raw32, "zoneStarts4", 64, sce.SavedReadInt64)
+	if err != nil {
+		return nil, err
+	}
+	raw33, err := grown.Variable("zoneOffsets4")
+	if err != nil {
+		return nil, err
+	}
+	read33, err := sce.SavedReadList(raw33, "zoneOffsets4", 64, sce.SavedReadInt32)
+	if err != nil {
+		return nil, err
+	}
+	raw34, err := grown.Variable("zoneStarts")
+	if err != nil {
+		return nil, err
+	}
+	read34, err := sce.SavedReadList(raw34, "zoneStarts", 64, sce.SavedReadInt64)
+	if err != nil {
+		return nil, err
+	}
+	raw35, err := grown.Variable("zoneOffsets")
+	if err != nil {
+		return nil, err
+	}
+	read35, err := sce.SavedReadList(raw35, "zoneOffsets", 64, sce.SavedReadInt32)
+	if err != nil {
+		return nil, err
+	}
+	raw36, err := grown.Variable("zoneRows")
+	if err != nil {
+		return nil, err
+	}
+	read36, err := sce.SavedReadUint32(raw36, "zoneRows")
+	if err != nil {
+		return nil, err
+	}
+	raw37, err := grown.Variable("split")
+	if err != nil {
+		return nil, err
+	}
+	read37, err := sce.SavedReadBool(raw37, "split")
+	if err != nil {
+		return nil, err
+	}
+	raw38, err := grown.Variable("sched")
+	if err != nil {
+		return nil, err
+	}
+	read38, err := TodoPeerScheduleRecordFromSaved(raw38, "sched")
+	if err != nil {
+		return nil, err
+	}
+	raw39, err := grown.Variable("rawCount")
+	if err != nil {
+		return nil, err
+	}
+	read39, err := sce.SavedReadUint32(raw39, "rawCount")
+	if err != nil {
+		return nil, err
+	}
+	raw40, err := grown.Variable("rawLast")
+	if err != nil {
+		return nil, err
+	}
+	read40, err := sce.SavedReadUint32(raw40, "rawLast")
+	if err != nil {
+		return nil, err
+	}
+	raw41, err := grown.Variable("utcSec")
+	if err != nil {
+		return nil, err
+	}
+	read41, err := sce.SavedReadInt64(raw41, "utcSec")
+	if err != nil {
+		return nil, err
+	}
+	raw42, err := grown.Variable("floor")
+	if err != nil {
+		return nil, err
+	}
+	read42, err := sce.SavedReadInt64(raw42, "floor")
+	if err != nil {
+		return nil, err
+	}
+	raw43, err := grown.Variable("stale")
+	if err != nil {
+		return nil, err
+	}
+	read43, err := sce.SavedReadBool(raw43, "stale")
+	if err != nil {
+		return nil, err
+	}
+	raw44, err := grown.Variable("late")
+	if err != nil {
+		return nil, err
+	}
+	read44, err := sce.SavedReadUint32(raw44, "late")
+	if err != nil {
+		return nil, err
+	}
+	raw45, err := grown.Variable("frozenFor")
+	if err != nil {
+		return nil, err
+	}
+	read45, err := sce.SavedReadInt64(raw45, "frozenFor")
+	if err != nil {
+		return nil, err
+	}
+	raw46, err := grown.Variable("frozenHash")
+	if err != nil {
+		return nil, err
+	}
+	read46, err := sce.SavedReadUint32(raw46, "frozenHash")
+	if err != nil {
+		return nil, err
+	}
+	raw47, err := grown.Variable("pending")
+	if err != nil {
+		return nil, err
+	}
+	read47, err := sce.SavedReadInt64(raw47, "pending")
+	if err != nil {
+		return nil, err
+	}
+	raw48, err := grown.Variable("members")
+	if err != nil {
+		return nil, err
+	}
+	read48, err := sce.SavedReadUint32(raw48, "members")
+	if err != nil {
+		return nil, err
+	}
+	raw49, err := grown.Variable("agreeing")
+	if err != nil {
+		return nil, err
+	}
+	read49, err := sce.SavedReadUint32(raw49, "agreeing")
+	if err != nil {
+		return nil, err
+	}
+	raw50, err := grown.Variable("answers")
+	if err != nil {
+		return nil, err
+	}
+	read50, err := sce.SavedReadList(raw50, "answers", 512, TodoPeerAnswerRecordFromSaved)
+	if err != nil {
+		return nil, err
+	}
+	raw51, err := grown.Variable("answer")
+	if err != nil {
+		return nil, err
+	}
+	read51, err := TodoPeerAnswerRecordFromSaved(raw51, "answer")
+	if err != nil {
+		return nil, err
+	}
+	raw52, err := grown.Variable("agreed")
+	if err != nil {
+		return nil, err
+	}
+	read52, err := sce.SavedReadUint32(raw52, "agreed")
+	if err != nil {
+		return nil, err
+	}
+	raw53, err := grown.Variable("roomValues")
+	if err != nil {
+		return nil, err
+	}
+	read53, err := sce.SavedReadUint32(raw53, "roomValues")
+	if err != nil {
+		return nil, err
+	}
+	raw54, err := grown.Variable("roomHistory")
+	if err != nil {
+		return nil, err
+	}
+	read54, err := sce.SavedReadUint32(raw54, "roomHistory")
+	if err != nil {
+		return nil, err
+	}
+	raw55, err := grown.Variable("roomDigest")
+	if err != nil {
+		return nil, err
+	}
+	read55, err := sce.SavedReadUint32(raw55, "roomDigest")
+	if err != nil {
+		return nil, err
+	}
+	raw56, err := grown.Variable("full")
+	if err != nil {
+		return nil, err
+	}
+	read56, err := sce.SavedReadUint32(raw56, "full")
+	if err != nil {
+		return nil, err
+	}
+	raw57, err := grown.Variable("fresh")
+	if err != nil {
+		return nil, err
+	}
+	read57, err := sce.SavedReadBool(raw57, "fresh")
+	if err != nil {
+		return nil, err
+	}
+	raw58, err := grown.Variable("blocked")
+	if err != nil {
+		return nil, err
+	}
+	read58, err := sce.SavedReadBool(raw58, "blocked")
+	if err != nil {
+		return nil, err
+	}
+	raw59, err := grown.Variable("roster")
+	if err != nil {
+		return nil, err
+	}
+	read59, err := sce.SavedReadList(raw59, "roster", 64, TodoPeerMemberRecordFromSaved)
+	if err != nil {
+		return nil, err
+	}
+	raw60, err := grown.Variable("denied")
+	if err != nil {
+		return nil, err
+	}
+	read60, err := sce.SavedReadUint32(raw60, "denied")
+	if err != nil {
+		return nil, err
+	}
+	raw61, err := grown.Variable("forbidden")
+	if err != nil {
+		return nil, err
+	}
+	read61, err := sce.SavedReadBool(raw61, "forbidden")
+	if err != nil {
+		return nil, err
+	}
+	raw62, err := grown.Variable("authorized")
+	if err != nil {
+		return nil, err
+	}
+	read62, err := sce.SavedReadBool(raw62, "authorized")
+	if err != nil {
+		return nil, err
+	}
+	if err := sce.JudgeSession[TodoPeerState, TodoPeerEvent](policy, grown); err != nil {
+		return nil, err
+	}
+	policy.vNode = read1
+	policy.vHub = read2
+	policy.vClock = read3
+	policy.vStamp = read4
+	policy.vAdds = read5
+	policy.vTombstones = read6
+	policy.vOne = read7
+	policy.vStable = read8
+	policy.vEntry = read9
+	policy.vValues = read10
+	policy.vTyped = read11
+	policy.vHeld = read12
+	policy.vDigest = read13
+	policy.vMine = read14
+	policy.vShareId = read15
+	policy.vShareField = read16
+	policy.vKnown = read17
+	policy.vWasLive = read18
+	policy.vIsLive = read19
+	policy.vPresent = read20
+	policy.vRefusals = read21
+	policy.vAgenda = read22
+	policy.vLocal = read23
+	policy.vOcc = read24
+	policy.vAgendaNext = read25
+	policy.vZoneStarts1 = read26
+	policy.vZoneOffsets1 = read27
+	policy.vZoneStarts2 = read28
+	policy.vZoneOffsets2 = read29
+	policy.vZoneStarts3 = read30
+	policy.vZoneOffsets3 = read31
+	policy.vZoneStarts4 = read32
+	policy.vZoneOffsets4 = read33
+	policy.vZoneStarts = read34
+	policy.vZoneOffsets = read35
+	policy.vZoneRows = read36
+	policy.vSplit = read37
+	policy.vSched = read38
+	policy.vRawCount = read39
+	policy.vRawLast = read40
+	policy.vUtcSec = read41
+	policy.vFloor = read42
+	policy.vStale = read43
+	policy.vLate = read44
+	policy.vFrozenFor = read45
+	policy.vFrozenHash = read46
+	policy.vPending = read47
+	policy.vMembers = read48
+	policy.vAgreeing = read49
+	policy.vAnswers = read50
+	policy.vAnswer = read51
+	policy.vAgreed = read52
+	policy.vRoomValues = read53
+	policy.vRoomHistory = read54
+	policy.vRoomDigest = read55
+	policy.vFull = read56
+	policy.vFresh = read57
+	policy.vBlocked = read58
+	policy.vRoster = read59
+	policy.vDenied = read60
+	policy.vForbidden = read61
+	policy.vAuthorized = read62
+	for _, recorded := range history {
+		policy.SetHistoryValue(recorded.History, recorded.States)
+	}
+	return sce.EnterSession[TodoPeerState, TodoPeerEvent](policy, grown, clock, wallNowMs)
+}
+
+// TodoPeerRestore is TodoPeerRestoreAt at the host's wall
+// clock now.
+func TodoPeerRestore(policy *TodoPeerPolicy, saved *sce.SavedState, clock sce.SceClock) (*sce.Engine[TodoPeerState, TodoPeerEvent], error) {
+	return TodoPeerRestoreAt(policy, saved, clock, sce.SavedWallClockMs())
+}
+
+// SetSessionID gives this session the id its host has for it, in place of the
+// one it drew: an XML Nmtoken, since another session addresses this one as
+// `#_scxml_<id>` and every child's id is this one's and the id the child was
+// started under (docs/adr/0045). Refused for anything else. Called before the
+// machine starts, since what it sends names it by the id it began with.
+func (p *TodoPeerPolicy) SetSessionID(id string) error {
+	if reason := sce.SessionIDRefusalOf(id); reason != "" {
+		return sce.Refuse(reason)
+	}
+	p.SessionID = id
+	return nil
+}
+
+// OwnSessionID is this session's id, `_sessionid`, which a saved state names it
+// by (sce.SavedPolicy).
+func (p *TodoPeerPolicy) OwnSessionID() string { return p.SessionID }
+
+// BindSessionID makes id this session's own: a restore of a format-2 state
+// carries on under the id it was saved with (sce.SavedPolicy).
+func (p *TodoPeerPolicy) BindSessionID(id string) { p.SessionID = id }
+
+// RunningInvokes is the id of each `<invoke>` whose child session is running,
+// in document order (sce.SavedPolicy). This document starts no child session.
+func (p *TodoPeerPolicy) RunningInvokes() []string { return nil }
+
+// InvokeStarts is how many times each `<invoke>` has started in this session
+// (sce.SavedPolicy). This document starts no child session.
+func (p *TodoPeerPolicy) InvokeStarts() []sce.SavedInvokeStart { return nil }
+
+// InvokeOwner is the state that holds the `<invoke>` id, and false for an id the
+// document does not invoke (sce.SavedPolicy). This document starts no child
+// session.
+func (p *TodoPeerPolicy) InvokeOwner(id string) (TodoPeerState, bool) {
+	return 0, false
+}
+
+// HostInvokeOwner is the state that holds the host-run `<invoke>` of this type
+// and id, and false for one the document does not have a host invoker run
+// (sce.SavedPolicy).
+func (p *TodoPeerPolicy) HostInvokeOwner(processorType, id string) (TodoPeerState, bool) {
+	return 0, false
+}
+
+// JudgeChild refuses a running child, which this document does not start
+// (sce.SavedPolicy).
+func (p *TodoPeerPolicy) JudgeChild(child sce.SavedChild) error {
+	return sce.Refuse(fmt.Sprintf("the document starts no child session, so '%s' cannot be one it was running", child.ID))
+}
+
+// ResumeChildren resumes no child, which this document does not start
+// (sce.SavedPolicy).
+func (p *TodoPeerPolicy) ResumeChildren(engine *sce.Engine[TodoPeerState, TodoPeerEvent], children []sce.SavedChild, wallNowMs int64) error {
+	if len(children) > 0 {
+		return p.JudgeChild(children[0])
+	}
+	return nil
+}
+
+// RestartInvokes starts no invocation again, which this document does not start
+// (sce.SavedPolicy).
+func (p *TodoPeerPolicy) RestartInvokes(engine *sce.Engine[TodoPeerState, TodoPeerEvent], ids []string) {}
+
+// SetHistoryValue gives history the states a saved state recorded for it
+// (sce.SavedPolicy).
+func (p *TodoPeerPolicy) SetHistoryValue(history sce.HistoryID, states []TodoPeerState) {
+}
 
 // ── SCE Accepted Subset §2.15: calls of an algorithm that takes or returns state ──
 func sceAdapt_TodoPeer_EventAgenda__vv(p0 TodoPeerScheduleRecord, p1 []TodoPeerValueRecord, p2 uint64, p3 int64, p4 int64, p5 uint32) scealgorithm.Outcome[[]TodoPeerOccurrenceRecord] {
@@ -1621,6 +3609,10 @@ type TodoPeerPolicy struct {
 // NewTodoPeerPolicy creates a new policy with default values.
 func NewTodoPeerPolicy() TodoPeerPolicy {
 	return TodoPeerPolicy{
+		// docs/adr/0045: a session has an id, which a saved state names it by. A
+		// host that has one for it gives it with SetSessionID before it starts the
+		// machine; a child's is its parent's and the id it was started under.
+		SessionID: sce.DrawSessionID(),
 		vNode: 0,
 		vHub: false,
 		vClock: TodoPeerHlcRecord{wallTime: 0, counter: 0, nodeId: 0},

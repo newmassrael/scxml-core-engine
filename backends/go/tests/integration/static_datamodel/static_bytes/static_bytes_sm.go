@@ -190,6 +190,267 @@ const StaticBytesSavedShapeFormat2Revised = "ee9457b9f547d6f6e940839a148d86a62fc
 // names it by, and the format-2 shape spells it by.
 var StaticBytesSavedEnumKeys = [...]string{}
 
+// ── SCE Accepted Subset §2.15: saving this machine, restoring it ──────────
+
+// StaticBytesSavedShape is what a saved state of this document is bound
+// to: a state saved from a document that renamed, re-typed or moved a state or a
+// variable is refused, one saved before a guard or an action changed is not, and
+// one saved at an earlier revision of a record schema is read with each field a
+// later revision added at its default.
+var StaticBytesSavedShape = sce.SavedShape{
+	First:          "fcf32d76d2b60386c38cfd8fd7745bc78c43607cdef76f053c793de0e1e93351",
+	Revised:        "ee9457b9f547d6f6e940839a148d86a62fc21b6f656ea74ab5d368c162cf3487",
+	Format2First:   "fcf32d76d2b60386c38cfd8fd7745bc78c43607cdef76f053c793de0e1e93351",
+	Format2Revised: "ee9457b9f547d6f6e940839a148d86a62fc21b6f656ea74ab5d368c162cf3487",
+	Records: []sce.RecordLineage{
+	},
+	Enums: []sce.EnumLineage{
+	},
+}
+
+// StaticBytesHistories is the document's `<history>` pseudo-states, by
+// the id a saved state keys them by: what a saved state records of each, and
+// what a restore reads.
+var StaticBytesHistories = []sce.HistoryDecl{
+}
+
+// StaticBytesSaveAt is engine's whole state at the macrostep boundary it
+// stands at: every variable, the machine's own included, and where it stands, as
+// the `sce-saved-state` document every backend reads (sce.SavedState.ToJSON).
+// Each delayed `<send>` still waiting is written as the moment it comes due on
+// the wall clock whose reading now is wallNowMs, in milliseconds since the Unix
+// epoch.
+//
+// Refused for a machine that is not running, one that has ended, one whose last
+// macrostep stopped at the microstep ceiling, and one built around another
+// document's policy.
+func StaticBytesSaveAt(engine *sce.Engine[StaticBytesState, StaticBytesEvent], wallNowMs int64) (*sce.SavedState, error) {
+	p, ok := engine.Policy().(*StaticBytesPolicy)
+	if !ok {
+		return nil, sce.Refuse("the engine is not one of StaticBytes")
+	}
+	variables := sce.NewJSONObject()
+	variables.Set("frame", sce.SavedWriteBytes(p.vFrame))
+	variables.Set("tail", sce.SavedWriteBytes(p.vTail))
+	variables.Set("size", sce.SavedWriteUint32(p.vSize))
+	variables.Set("matches", sce.SavedWriteUint32(p.vMatches))
+	variables.Set("misses", sce.SavedWriteUint32(p.vMisses))
+	variables.Set("errors", sce.SavedWriteUint32(p.vErrors))
+	return sce.SaveSession(engine, &StaticBytesSavedShape, variables,
+		sce.SaveHistory[StaticBytesState, StaticBytesEvent](p, StaticBytesHistories),
+		nil, wallNowMs)
+}
+
+// StaticBytesSave is StaticBytesSaveAt at the host's wall clock now.
+func StaticBytesSave(engine *sce.Engine[StaticBytesState, StaticBytesEvent]) (*sce.SavedState, error) {
+	return StaticBytesSaveAt(engine, sce.SavedWallClockMs())
+}
+
+// StaticBytesJudge refuses saved unless a machine of this document could
+// restore it, building nothing: what a parent's restore asks of each child it
+// holds (docs/adr/0045, section 3, step 1).
+func StaticBytesJudge(saved *sce.SavedState) error {
+	p := &StaticBytesPolicy{}
+	grown, err := sce.UpgradeSavedState(saved, &StaticBytesSavedShape)
+	if err != nil {
+		return err
+	}
+	if _, err := sce.RestoreHistory[StaticBytesState, StaticBytesEvent](p, grown, StaticBytesHistories); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("frame"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadBytes(raw, "frame", 8); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("tail"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadBytes(raw, "tail", 4); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("size"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "size"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("matches"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "matches"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("misses"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "misses"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("errors"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "errors"); err != nil {
+		return err
+	}
+	return sce.JudgeSession[StaticBytesState, StaticBytesEvent](p, grown)
+}
+
+// StaticBytesRestoreAt is a machine of policy standing where saved left
+// one, measuring time by clock: in place of `Initialize`, so no `<onentry>` runs
+// and no `<data>` is evaluated, since the saved run already did both. Every value
+// is read and the state judged before any is written, so a refused restore leaves
+// policy as it was.
+//
+// Each delayed `<send>` saved is armed against clock, which is the one the
+// machine measures time by; wallNowMs is what time it is on the wall clock the
+// saved `due`s were written against. A send comes due when its saved moment does,
+// and one already due comes due now.
+//
+// The host registers its invokers and its processors on the machine this
+// returns, and drives it as it would one it had initialized.
+func StaticBytesRestoreAt(policy *StaticBytesPolicy, saved *sce.SavedState, clock sce.SceClock, wallNowMs int64) (*sce.Engine[StaticBytesState, StaticBytesEvent], error) {
+	// The state as one of this machine: each record saved at an earlier revision
+	// of its schema holds the defaults of the fields added since.
+	grown, err := sce.UpgradeSavedState(saved, &StaticBytesSavedShape)
+	if err != nil {
+		return nil, err
+	}
+	history, err := sce.RestoreHistory[StaticBytesState, StaticBytesEvent](policy, grown, StaticBytesHistories)
+	if err != nil {
+		return nil, err
+	}
+	raw1, err := grown.Variable("frame")
+	if err != nil {
+		return nil, err
+	}
+	read1, err := sce.SavedReadBytes(raw1, "frame", 8)
+	if err != nil {
+		return nil, err
+	}
+	raw2, err := grown.Variable("tail")
+	if err != nil {
+		return nil, err
+	}
+	read2, err := sce.SavedReadBytes(raw2, "tail", 4)
+	if err != nil {
+		return nil, err
+	}
+	raw3, err := grown.Variable("size")
+	if err != nil {
+		return nil, err
+	}
+	read3, err := sce.SavedReadUint32(raw3, "size")
+	if err != nil {
+		return nil, err
+	}
+	raw4, err := grown.Variable("matches")
+	if err != nil {
+		return nil, err
+	}
+	read4, err := sce.SavedReadUint32(raw4, "matches")
+	if err != nil {
+		return nil, err
+	}
+	raw5, err := grown.Variable("misses")
+	if err != nil {
+		return nil, err
+	}
+	read5, err := sce.SavedReadUint32(raw5, "misses")
+	if err != nil {
+		return nil, err
+	}
+	raw6, err := grown.Variable("errors")
+	if err != nil {
+		return nil, err
+	}
+	read6, err := sce.SavedReadUint32(raw6, "errors")
+	if err != nil {
+		return nil, err
+	}
+	if err := sce.JudgeSession[StaticBytesState, StaticBytesEvent](policy, grown); err != nil {
+		return nil, err
+	}
+	policy.vFrame = read1
+	policy.vTail = read2
+	policy.vSize = read3
+	policy.vMatches = read4
+	policy.vMisses = read5
+	policy.vErrors = read6
+	for _, recorded := range history {
+		policy.SetHistoryValue(recorded.History, recorded.States)
+	}
+	return sce.EnterSession[StaticBytesState, StaticBytesEvent](policy, grown, clock, wallNowMs)
+}
+
+// StaticBytesRestore is StaticBytesRestoreAt at the host's wall
+// clock now.
+func StaticBytesRestore(policy *StaticBytesPolicy, saved *sce.SavedState, clock sce.SceClock) (*sce.Engine[StaticBytesState, StaticBytesEvent], error) {
+	return StaticBytesRestoreAt(policy, saved, clock, sce.SavedWallClockMs())
+}
+
+// SetSessionID gives this session the id its host has for it, in place of the
+// one it drew: an XML Nmtoken, since another session addresses this one as
+// `#_scxml_<id>` and every child's id is this one's and the id the child was
+// started under (docs/adr/0045). Refused for anything else. Called before the
+// machine starts, since what it sends names it by the id it began with.
+func (p *StaticBytesPolicy) SetSessionID(id string) error {
+	if reason := sce.SessionIDRefusalOf(id); reason != "" {
+		return sce.Refuse(reason)
+	}
+	p.SessionID = id
+	return nil
+}
+
+// OwnSessionID is this session's id, `_sessionid`, which a saved state names it
+// by (sce.SavedPolicy).
+func (p *StaticBytesPolicy) OwnSessionID() string { return p.SessionID }
+
+// BindSessionID makes id this session's own: a restore of a format-2 state
+// carries on under the id it was saved with (sce.SavedPolicy).
+func (p *StaticBytesPolicy) BindSessionID(id string) { p.SessionID = id }
+
+// RunningInvokes is the id of each `<invoke>` whose child session is running,
+// in document order (sce.SavedPolicy). This document starts no child session.
+func (p *StaticBytesPolicy) RunningInvokes() []string { return nil }
+
+// InvokeStarts is how many times each `<invoke>` has started in this session
+// (sce.SavedPolicy). This document starts no child session.
+func (p *StaticBytesPolicy) InvokeStarts() []sce.SavedInvokeStart { return nil }
+
+// InvokeOwner is the state that holds the `<invoke>` id, and false for an id the
+// document does not invoke (sce.SavedPolicy). This document starts no child
+// session.
+func (p *StaticBytesPolicy) InvokeOwner(id string) (StaticBytesState, bool) {
+	return 0, false
+}
+
+// HostInvokeOwner is the state that holds the host-run `<invoke>` of this type
+// and id, and false for one the document does not have a host invoker run
+// (sce.SavedPolicy).
+func (p *StaticBytesPolicy) HostInvokeOwner(processorType, id string) (StaticBytesState, bool) {
+	return 0, false
+}
+
+// JudgeChild refuses a running child, which this document does not start
+// (sce.SavedPolicy).
+func (p *StaticBytesPolicy) JudgeChild(child sce.SavedChild) error {
+	return sce.Refuse(fmt.Sprintf("the document starts no child session, so '%s' cannot be one it was running", child.ID))
+}
+
+// ResumeChildren resumes no child, which this document does not start
+// (sce.SavedPolicy).
+func (p *StaticBytesPolicy) ResumeChildren(engine *sce.Engine[StaticBytesState, StaticBytesEvent], children []sce.SavedChild, wallNowMs int64) error {
+	if len(children) > 0 {
+		return p.JudgeChild(children[0])
+	}
+	return nil
+}
+
+// RestartInvokes starts no invocation again, which this document does not start
+// (sce.SavedPolicy).
+func (p *StaticBytesPolicy) RestartInvokes(engine *sce.Engine[StaticBytesState, StaticBytesEvent], ids []string) {}
+
+// SetHistoryValue gives history the states a saved state recorded for it
+// (sce.SavedPolicy).
+func (p *StaticBytesPolicy) SetHistoryValue(history sce.HistoryID, states []StaticBytesState) {
+}
+
 // ======================================================================
 // Policy struct
 // ======================================================================
@@ -222,6 +483,10 @@ type StaticBytesPolicy struct {
 // NewStaticBytesPolicy creates a new policy with default values.
 func NewStaticBytesPolicy() StaticBytesPolicy {
 	return StaticBytesPolicy{
+		// docs/adr/0045: a session has an id, which a saved state names it by. A
+		// host that has one for it gives it with SetSessionID before it starts the
+		// machine; a child's is its parent's and the id it was started under.
+		SessionID: sce.DrawSessionID(),
 		vFrame: []byte{0x61, 0x62},
 		vTail: []byte{0x78, 0x79},
 		vSize: 0,

@@ -234,6 +234,10 @@ type StaticInvokeEntryPolicy struct {
 // NewStaticInvokeEntryPolicy creates a new policy with default values.
 func NewStaticInvokeEntryPolicy() StaticInvokeEntryPolicy {
 	return StaticInvokeEntryPolicy{
+		// docs/adr/0045: a session has an id, which a saved state names it by. A
+		// host that has one for it gives it with SetSessionID before it starts the
+		// machine; a child's is its parent's and the id it was started under.
+		SessionID: sce.DrawSessionID(),
 		vBase: 7,
 		vBig: 4294967295,
 		vCompleted: 0,

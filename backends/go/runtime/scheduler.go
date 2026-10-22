@@ -3,7 +3,10 @@
 
 package sce
 
-import "fmt"
+import (
+	"fmt"
+	"sort"
+)
 
 // PullScheduler manages delayed event scheduling (§scxml-6.2).
 //
@@ -366,4 +369,38 @@ func (s *PullScheduler[E]) NextReadyAtMs() (int64, bool) {
 		}
 	}
 	return next, true
+}
+
+// PendingAct is an entry still waiting in the scheduler, with the moment of the
+// engine's clock it comes due: what a save reads (SCE Accepted Subset §2.15).
+type PendingAct[E any] struct {
+	// ReadyAtMs is when it comes due, in milliseconds on the engine's clock.
+	ReadyAtMs int64
+	// Act is what it does when it comes due.
+	Act ReadyAct[E]
+}
+
+// Pending is every entry still waiting, in the order the queue would deliver them
+// when each had come due: by the moment it comes due, and entries due at the same
+// moment in the order they were armed (PopReadyActAt takes the first of them).
+// A copy, so a caller cannot change the queue through it.
+func (s *PullScheduler[E]) Pending() []PendingAct[E] {
+	pending := make([]PendingAct[E], len(s.entries))
+	for at, entry := range s.entries {
+		pending[at] = PendingAct[E]{
+			ReadyAtMs: entry.readyAtMs,
+			Act: ReadyAct[E]{
+				Event:    entry.event,
+				Data:     entry.eventData,
+				SendID:   entry.sendID,
+				Origin:   entry.origin,
+				Name:     entry.name,
+				HostSend: entry.hostSend,
+				Deadline: entry.deadline,
+				Route:    entry.route,
+			},
+		}
+	}
+	sort.SliceStable(pending, func(i, j int) bool { return pending[i].ReadyAtMs < pending[j].ReadyAtMs })
+	return pending
 }

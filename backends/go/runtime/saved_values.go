@@ -278,6 +278,46 @@ func SavedReadList[T any](
 	return read, nil
 }
 
+// SavedReadOptional is a value that may be absent read back (docs/adr/0055,
+// section 4): absent, as none makes it, where the saved state holds null, and
+// otherwise the value present reads, held to its type as any value is, and
+// wrapped by some. Only a place the machine declares optional reads through
+// this, so a null saved where the machine holds a value of T is refused by the
+// reader of T, naming what holds it.
+func SavedReadOptional[T any, O any](
+	value any,
+	what string,
+	present func(any, string) (T, error),
+	none func() O,
+	some func(T) O,
+) (O, error) {
+	if value == nil {
+		return none(), nil
+	}
+	read, err := present(value, what)
+	if err != nil {
+		var zero O
+		return zero, err
+	}
+	return some(read), nil
+}
+
+// SavedBoundedString is the reader of a text held to capacity UTF-8 bytes, for a
+// place that reads through a function value ([SavedReadOptional]).
+func SavedBoundedString(capacity int) func(any, string) (string, error) {
+	return func(value any, what string) (string, error) {
+		return SavedReadBoundedString(value, what, capacity)
+	}
+}
+
+// SavedBoundedBytes is the reader of a byte string held to capacity bytes, for a
+// place that reads through a function value ([SavedReadOptional]).
+func SavedBoundedBytes(capacity int) func(any, string) ([]byte, error) {
+	return func(value any, what string) ([]byte, error) {
+		return SavedReadBytes(value, what, capacity)
+	}
+}
+
 // SavedField is the field name of a saved record value: what a generated record
 // reads each field with.
 func SavedField(value any, record, name string) (any, error) {

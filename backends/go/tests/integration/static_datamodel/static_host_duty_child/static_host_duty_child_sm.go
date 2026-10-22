@@ -246,6 +246,10 @@ func newStaticHostDutyChildPolicy(actions StaticHostDutyChildActions, acceptSimu
 	return StaticHostDutyChildPolicy{
 		actions: actions,
 		acceptSimulatedHost: acceptSimulatedHost,
+		// docs/adr/0045: a session has an id, which a saved state names it by. A
+		// host that has one for it gives it with SetSessionID before it starts the
+		// machine; a child's is its parent's and the id it was started under.
+		SessionID: sce.DrawSessionID(),
 		vCompleted: 0,
 		pendingInvokes: make([]sce.PendingInvoke[StaticHostDutyChildState], 0),
 		activeInvokes:  make(map[string]*sce.ChildSession),

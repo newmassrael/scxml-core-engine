@@ -235,6 +235,47 @@ func (r StaticStateAlgorithmOptionalGoalRecord) Weight() int32 {
 	return r.weight
 }
 
+// ToSaved is this value as a saved state writes it.
+func (r StaticStateAlgorithmOptionalGoalRecord) ToSaved() any {
+	saved := sce.NewJSONObject()
+	saved.Set("id", (sce.SavedWriteUint32)(r.id))
+	saved.Set("day", optional.Wire(r.day, sce.SavedWriteInt64))
+	saved.Set("weight", (sce.SavedWriteInt32)(r.weight))
+	return saved
+}
+
+// StaticStateAlgorithmOptionalGoalRecordFromSaved is the value a saved state holds, refused unless it is one.
+func StaticStateAlgorithmOptionalGoalRecordFromSaved(value any, what string) (StaticStateAlgorithmOptionalGoalRecord, error) {
+	var record StaticStateAlgorithmOptionalGoalRecord
+	{
+		saved, err := sce.SavedField(value, what, "id")
+		if err != nil {
+			return record, err
+		}
+		if record.id, err = (sce.SavedReadUint32)(saved, what + ".id"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "day")
+		if err != nil {
+			return record, err
+		}
+		if record.day, err = sce.SavedReadOptional(saved, what + ".day", sce.SavedReadInt64, optional.None[int64], optional.Some[int64]); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "weight")
+		if err != nil {
+			return record, err
+		}
+		if record.weight, err = (sce.SavedReadInt32)(saved, what + ".weight"); err != nil {
+			return record, err
+		}
+	}
+	return record, nil
+}
 
 // ── SCE Accepted Subset §2.15: what a format-2 saved state of it is bound to ──
 
@@ -253,6 +294,308 @@ const StaticStateAlgorithmOptionalSavedShapeFormat2Revised = "2ac037b6dacd401bd6
 // this machine is of, by its document (docs/adr/0044): the key `revisions`
 // names it by, and the format-2 shape spells it by.
 var StaticStateAlgorithmOptionalSavedEnumKeys = [...]string{}
+
+// ── SCE Accepted Subset §2.15: saving this machine, restoring it ──────────
+
+// StaticStateAlgorithmOptionalSavedShape is what a saved state of this document is bound
+// to: a state saved from a document that renamed, re-typed or moved a state or a
+// variable is refused, one saved before a guard or an action changed is not, and
+// one saved at an earlier revision of a record schema is read with each field a
+// later revision added at its default.
+var StaticStateAlgorithmOptionalSavedShape = sce.SavedShape{
+	First:          "7307b7bfcadb8bdd01e279cefed31fec3445cce0265d74b56d005a0220d09ef9",
+	Revised:        "2ac037b6dacd401bd691f3d511299403df4ebfeae17964fb4fc8733f14099c4c",
+	Format2First:   "7307b7bfcadb8bdd01e279cefed31fec3445cce0265d74b56d005a0220d09ef9",
+	Format2Revised: "2ac037b6dacd401bd691f3d511299403df4ebfeae17964fb4fc8733f14099c4c",
+	Records: []sce.RecordLineage{
+		{
+			Event:     "goal.added",
+			Revision:  1,
+			Revisions: []string{},
+			Added: []sce.AddedField{
+			},
+			Holders: []sce.RecordHolder{
+				{Variable: "goals", List: true},
+				{Variable: "draft", List: false},
+			},
+		},
+	},
+	Enums: []sce.EnumLineage{
+	},
+}
+
+// StaticStateAlgorithmOptionalHistories is the document's `<history>` pseudo-states, by
+// the id a saved state keys them by: what a saved state records of each, and
+// what a restore reads.
+var StaticStateAlgorithmOptionalHistories = []sce.HistoryDecl{
+}
+
+// StaticStateAlgorithmOptionalSaveAt is engine's whole state at the macrostep boundary it
+// stands at: every variable, the machine's own included, and where it stands, as
+// the `sce-saved-state` document every backend reads (sce.SavedState.ToJSON).
+// Each delayed `<send>` still waiting is written as the moment it comes due on
+// the wall clock whose reading now is wallNowMs, in milliseconds since the Unix
+// epoch.
+//
+// Refused for a machine that is not running, one that has ended, one whose last
+// macrostep stopped at the microstep ceiling, and one built around another
+// document's policy.
+func StaticStateAlgorithmOptionalSaveAt(engine *sce.Engine[StaticStateAlgorithmOptionalState, StaticStateAlgorithmOptionalEvent], wallNowMs int64) (*sce.SavedState, error) {
+	p, ok := engine.Policy().(*StaticStateAlgorithmOptionalPolicy)
+	if !ok {
+		return nil, sce.Refuse("the engine is not one of StaticStateAlgorithmOptional")
+	}
+	variables := sce.NewJSONObject()
+	variables.Set("goals", sce.SavedWriteList(p.vGoals, func(r StaticStateAlgorithmOptionalGoalRecord) any { return r.ToSaved() }))
+	variables.Set("draft", p.vDraft.ToSaved())
+	variables.Set("today", sce.SavedWriteInt64(p.vToday))
+	variables.Set("first", optional.Wire(p.vFirst, sce.SavedWriteInt64))
+	variables.Set("left", optional.Wire(p.vLeft, sce.SavedWriteInt64))
+	variables.Set("undated", sce.SavedWriteUint32(p.vUndated))
+	variables.Set("total", sce.SavedWriteInt64(p.vTotal))
+	variables.Set("errors", sce.SavedWriteUint32(p.vErrors))
+	return sce.SaveSession(engine, &StaticStateAlgorithmOptionalSavedShape, variables,
+		sce.SaveHistory[StaticStateAlgorithmOptionalState, StaticStateAlgorithmOptionalEvent](p, StaticStateAlgorithmOptionalHistories),
+		nil, wallNowMs)
+}
+
+// StaticStateAlgorithmOptionalSave is StaticStateAlgorithmOptionalSaveAt at the host's wall clock now.
+func StaticStateAlgorithmOptionalSave(engine *sce.Engine[StaticStateAlgorithmOptionalState, StaticStateAlgorithmOptionalEvent]) (*sce.SavedState, error) {
+	return StaticStateAlgorithmOptionalSaveAt(engine, sce.SavedWallClockMs())
+}
+
+// StaticStateAlgorithmOptionalJudge refuses saved unless a machine of this document could
+// restore it, building nothing: what a parent's restore asks of each child it
+// holds (docs/adr/0045, section 3, step 1).
+func StaticStateAlgorithmOptionalJudge(saved *sce.SavedState) error {
+	p := &StaticStateAlgorithmOptionalPolicy{}
+	grown, err := sce.UpgradeSavedState(saved, &StaticStateAlgorithmOptionalSavedShape)
+	if err != nil {
+		return err
+	}
+	if _, err := sce.RestoreHistory[StaticStateAlgorithmOptionalState, StaticStateAlgorithmOptionalEvent](p, grown, StaticStateAlgorithmOptionalHistories); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("goals"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadList(raw, "goals", 4, StaticStateAlgorithmOptionalGoalRecordFromSaved); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("draft"); err != nil {
+		return err
+	} else if _, err := StaticStateAlgorithmOptionalGoalRecordFromSaved(raw, "draft"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("today"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadInt64(raw, "today"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("first"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadOptional(raw, "first", sce.SavedReadInt64, optional.None[int64], optional.Some[int64]); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("left"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadOptional(raw, "left", sce.SavedReadInt64, optional.None[int64], optional.Some[int64]); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("undated"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "undated"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("total"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadInt64(raw, "total"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("errors"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "errors"); err != nil {
+		return err
+	}
+	return sce.JudgeSession[StaticStateAlgorithmOptionalState, StaticStateAlgorithmOptionalEvent](p, grown)
+}
+
+// StaticStateAlgorithmOptionalRestoreAt is a machine of policy standing where saved left
+// one, measuring time by clock: in place of `Initialize`, so no `<onentry>` runs
+// and no `<data>` is evaluated, since the saved run already did both. Every value
+// is read and the state judged before any is written, so a refused restore leaves
+// policy as it was.
+//
+// Each delayed `<send>` saved is armed against clock, which is the one the
+// machine measures time by; wallNowMs is what time it is on the wall clock the
+// saved `due`s were written against. A send comes due when its saved moment does,
+// and one already due comes due now.
+//
+// The host registers its invokers and its processors on the machine this
+// returns, and drives it as it would one it had initialized.
+func StaticStateAlgorithmOptionalRestoreAt(policy *StaticStateAlgorithmOptionalPolicy, saved *sce.SavedState, clock sce.SceClock, wallNowMs int64) (*sce.Engine[StaticStateAlgorithmOptionalState, StaticStateAlgorithmOptionalEvent], error) {
+	// The state as one of this machine: each record saved at an earlier revision
+	// of its schema holds the defaults of the fields added since.
+	grown, err := sce.UpgradeSavedState(saved, &StaticStateAlgorithmOptionalSavedShape)
+	if err != nil {
+		return nil, err
+	}
+	history, err := sce.RestoreHistory[StaticStateAlgorithmOptionalState, StaticStateAlgorithmOptionalEvent](policy, grown, StaticStateAlgorithmOptionalHistories)
+	if err != nil {
+		return nil, err
+	}
+	raw1, err := grown.Variable("goals")
+	if err != nil {
+		return nil, err
+	}
+	read1, err := sce.SavedReadList(raw1, "goals", 4, StaticStateAlgorithmOptionalGoalRecordFromSaved)
+	if err != nil {
+		return nil, err
+	}
+	raw2, err := grown.Variable("draft")
+	if err != nil {
+		return nil, err
+	}
+	read2, err := StaticStateAlgorithmOptionalGoalRecordFromSaved(raw2, "draft")
+	if err != nil {
+		return nil, err
+	}
+	raw3, err := grown.Variable("today")
+	if err != nil {
+		return nil, err
+	}
+	read3, err := sce.SavedReadInt64(raw3, "today")
+	if err != nil {
+		return nil, err
+	}
+	raw4, err := grown.Variable("first")
+	if err != nil {
+		return nil, err
+	}
+	read4, err := sce.SavedReadOptional(raw4, "first", sce.SavedReadInt64, optional.None[int64], optional.Some[int64])
+	if err != nil {
+		return nil, err
+	}
+	raw5, err := grown.Variable("left")
+	if err != nil {
+		return nil, err
+	}
+	read5, err := sce.SavedReadOptional(raw5, "left", sce.SavedReadInt64, optional.None[int64], optional.Some[int64])
+	if err != nil {
+		return nil, err
+	}
+	raw6, err := grown.Variable("undated")
+	if err != nil {
+		return nil, err
+	}
+	read6, err := sce.SavedReadUint32(raw6, "undated")
+	if err != nil {
+		return nil, err
+	}
+	raw7, err := grown.Variable("total")
+	if err != nil {
+		return nil, err
+	}
+	read7, err := sce.SavedReadInt64(raw7, "total")
+	if err != nil {
+		return nil, err
+	}
+	raw8, err := grown.Variable("errors")
+	if err != nil {
+		return nil, err
+	}
+	read8, err := sce.SavedReadUint32(raw8, "errors")
+	if err != nil {
+		return nil, err
+	}
+	if err := sce.JudgeSession[StaticStateAlgorithmOptionalState, StaticStateAlgorithmOptionalEvent](policy, grown); err != nil {
+		return nil, err
+	}
+	policy.vGoals = read1
+	policy.vDraft = read2
+	policy.vToday = read3
+	policy.vFirst = read4
+	policy.vLeft = read5
+	policy.vUndated = read6
+	policy.vTotal = read7
+	policy.vErrors = read8
+	for _, recorded := range history {
+		policy.SetHistoryValue(recorded.History, recorded.States)
+	}
+	return sce.EnterSession[StaticStateAlgorithmOptionalState, StaticStateAlgorithmOptionalEvent](policy, grown, clock, wallNowMs)
+}
+
+// StaticStateAlgorithmOptionalRestore is StaticStateAlgorithmOptionalRestoreAt at the host's wall
+// clock now.
+func StaticStateAlgorithmOptionalRestore(policy *StaticStateAlgorithmOptionalPolicy, saved *sce.SavedState, clock sce.SceClock) (*sce.Engine[StaticStateAlgorithmOptionalState, StaticStateAlgorithmOptionalEvent], error) {
+	return StaticStateAlgorithmOptionalRestoreAt(policy, saved, clock, sce.SavedWallClockMs())
+}
+
+// SetSessionID gives this session the id its host has for it, in place of the
+// one it drew: an XML Nmtoken, since another session addresses this one as
+// `#_scxml_<id>` and every child's id is this one's and the id the child was
+// started under (docs/adr/0045). Refused for anything else. Called before the
+// machine starts, since what it sends names it by the id it began with.
+func (p *StaticStateAlgorithmOptionalPolicy) SetSessionID(id string) error {
+	if reason := sce.SessionIDRefusalOf(id); reason != "" {
+		return sce.Refuse(reason)
+	}
+	p.SessionID = id
+	return nil
+}
+
+// OwnSessionID is this session's id, `_sessionid`, which a saved state names it
+// by (sce.SavedPolicy).
+func (p *StaticStateAlgorithmOptionalPolicy) OwnSessionID() string { return p.SessionID }
+
+// BindSessionID makes id this session's own: a restore of a format-2 state
+// carries on under the id it was saved with (sce.SavedPolicy).
+func (p *StaticStateAlgorithmOptionalPolicy) BindSessionID(id string) { p.SessionID = id }
+
+// RunningInvokes is the id of each `<invoke>` whose child session is running,
+// in document order (sce.SavedPolicy). This document starts no child session.
+func (p *StaticStateAlgorithmOptionalPolicy) RunningInvokes() []string { return nil }
+
+// InvokeStarts is how many times each `<invoke>` has started in this session
+// (sce.SavedPolicy). This document starts no child session.
+func (p *StaticStateAlgorithmOptionalPolicy) InvokeStarts() []sce.SavedInvokeStart { return nil }
+
+// InvokeOwner is the state that holds the `<invoke>` id, and false for an id the
+// document does not invoke (sce.SavedPolicy). This document starts no child
+// session.
+func (p *StaticStateAlgorithmOptionalPolicy) InvokeOwner(id string) (StaticStateAlgorithmOptionalState, bool) {
+	return 0, false
+}
+
+// HostInvokeOwner is the state that holds the host-run `<invoke>` of this type
+// and id, and false for one the document does not have a host invoker run
+// (sce.SavedPolicy).
+func (p *StaticStateAlgorithmOptionalPolicy) HostInvokeOwner(processorType, id string) (StaticStateAlgorithmOptionalState, bool) {
+	return 0, false
+}
+
+// JudgeChild refuses a running child, which this document does not start
+// (sce.SavedPolicy).
+func (p *StaticStateAlgorithmOptionalPolicy) JudgeChild(child sce.SavedChild) error {
+	return sce.Refuse(fmt.Sprintf("the document starts no child session, so '%s' cannot be one it was running", child.ID))
+}
+
+// ResumeChildren resumes no child, which this document does not start
+// (sce.SavedPolicy).
+func (p *StaticStateAlgorithmOptionalPolicy) ResumeChildren(engine *sce.Engine[StaticStateAlgorithmOptionalState, StaticStateAlgorithmOptionalEvent], children []sce.SavedChild, wallNowMs int64) error {
+	if len(children) > 0 {
+		return p.JudgeChild(children[0])
+	}
+	return nil
+}
+
+// RestartInvokes starts no invocation again, which this document does not start
+// (sce.SavedPolicy).
+func (p *StaticStateAlgorithmOptionalPolicy) RestartInvokes(engine *sce.Engine[StaticStateAlgorithmOptionalState, StaticStateAlgorithmOptionalEvent], ids []string) {}
+
+// SetHistoryValue gives history the states a saved state recorded for it
+// (sce.SavedPolicy).
+func (p *StaticStateAlgorithmOptionalPolicy) SetHistoryValue(history sce.HistoryID, states []StaticStateAlgorithmOptionalState) {
+}
 
 // ── SCE Accepted Subset §2.15: calls of an algorithm that takes or returns state ──
 func sceAdapt_StaticStateAlgorithmOptional_DaySum__v(p0 []StaticStateAlgorithmOptionalGoalRecord, p1 int64) scealgorithm.Outcome[int64] {
@@ -325,6 +668,10 @@ type StaticStateAlgorithmOptionalPolicy struct {
 // NewStaticStateAlgorithmOptionalPolicy creates a new policy with default values.
 func NewStaticStateAlgorithmOptionalPolicy() StaticStateAlgorithmOptionalPolicy {
 	return StaticStateAlgorithmOptionalPolicy{
+		// docs/adr/0045: a session has an id, which a saved state names it by. A
+		// host that has one for it gives it with SetSessionID before it starts the
+		// machine; a child's is its parent's and the id it was started under.
+		SessionID: sce.DrawSessionID(),
 		vGoals: nil,
 		vDraft: StaticStateAlgorithmOptionalGoalRecord{id: 0, day: optional.None[int64](), weight: 0},
 		vToday: 100,

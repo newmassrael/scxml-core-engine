@@ -240,6 +240,10 @@ type StaticChildHostHybridPolicy struct {
 func NewStaticChildHostHybridPolicy(actions StaticChildHostHybridActions) StaticChildHostHybridPolicy {
 	return StaticChildHostHybridPolicy{
 		actions: actions,
+		// docs/adr/0045: a session has an id, which a saved state names it by. A
+		// host that has one for it gives it with SetSessionID before it starts the
+		// machine; a child's is its parent's and the id it was started under.
+		SessionID: sce.DrawSessionID(),
 		vPick: "static_hosted_first.scxml",
 		vCompleted: 0,
 		pendingInvokes: make([]sce.PendingInvoke[StaticChildHostHybridState], 0),

@@ -277,6 +277,28 @@ func StaticStateAlgorithmEnumStatusEnumFromUnderlying(raw uint8) (StaticStateAlg
 	return 0, false
 }
 
+// ToSaved is this value as a saved state writes it.
+func (v StaticStateAlgorithmEnumStatusEnum) ToSaved() any {
+	return v.String()
+}
+
+// StaticStateAlgorithmEnumStatusEnumFromSaved is the value a saved state holds, refused unless it is a variant.
+func StaticStateAlgorithmEnumStatusEnumFromSaved(value any, what string) (StaticStateAlgorithmEnumStatusEnum, error) {
+	declared, err := sce.SavedReadString(value, what)
+	if err != nil {
+		return 0, err
+	}
+	switch declared {
+	case "open":
+		return StaticStateAlgorithmEnumStatusEnumOpen, nil
+	case "in_progress":
+		return StaticStateAlgorithmEnumStatusEnumInProgress, nil
+	case "done":
+		return StaticStateAlgorithmEnumStatusEnumDone, nil
+	}
+	return 0, sce.Refuse(fmt.Sprintf("'%s' (%s) is not a variant of Status", what, declared))
+}
+
 // SCE Accepted Subset §2.15: a `record:Item` datamodel value.
 type StaticStateAlgorithmEnumItemRecord struct {
 	id uint32
@@ -293,6 +315,37 @@ func (r StaticStateAlgorithmEnumItemRecord) Status() StaticStateAlgorithmEnumSta
 	return r.status
 }
 
+// ToSaved is this value as a saved state writes it.
+func (r StaticStateAlgorithmEnumItemRecord) ToSaved() any {
+	saved := sce.NewJSONObject()
+	saved.Set("id", (sce.SavedWriteUint32)(r.id))
+	saved.Set("status", (func(v StaticStateAlgorithmEnumStatusEnum) any { return v.ToSaved() })(r.status))
+	return saved
+}
+
+// StaticStateAlgorithmEnumItemRecordFromSaved is the value a saved state holds, refused unless it is one.
+func StaticStateAlgorithmEnumItemRecordFromSaved(value any, what string) (StaticStateAlgorithmEnumItemRecord, error) {
+	var record StaticStateAlgorithmEnumItemRecord
+	{
+		saved, err := sce.SavedField(value, what, "id")
+		if err != nil {
+			return record, err
+		}
+		if record.id, err = (sce.SavedReadUint32)(saved, what + ".id"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "status")
+		if err != nil {
+			return record, err
+		}
+		if record.status, err = (StaticStateAlgorithmEnumStatusEnumFromSaved)(saved, what + ".status"); err != nil {
+			return record, err
+		}
+	}
+	return record, nil
+}
 
 // ── SCE Accepted Subset §2.15: what a format-2 saved state of it is bound to ──
 
@@ -312,6 +365,320 @@ const StaticStateAlgorithmEnumSavedShapeFormat2Revised = "5aa2ed9946edb35a3b75bb
 // names it by, and the format-2 shape spells it by.
 var StaticStateAlgorithmEnumSavedEnumKeys = [...]string{
 	"enum:enum_item_status.scxml",
+}
+
+// ── SCE Accepted Subset §2.15: saving this machine, restoring it ──────────
+
+// StaticStateAlgorithmEnumSavedShape is what a saved state of this document is bound
+// to: a state saved from a document that renamed, re-typed or moved a state or a
+// variable is refused, one saved before a guard or an action changed is not, and
+// one saved at an earlier revision of a record schema is read with each field a
+// later revision added at its default.
+var StaticStateAlgorithmEnumSavedShape = sce.SavedShape{
+	First:          "1281fa7afe0032f4ca9df6e2eab14d8e902566321a56264f5a071aa354e7b0a0",
+	Revised:        "bd414277a1759a184a40341a429d5f4c069357ddf31a20ac51ba23bfbeca2bd3",
+	Format2First:   "5addb038b50a9b6dd7ccc1d18de4809fbaed360a881124cf17816629947adb50",
+	Format2Revised: "5aa2ed9946edb35a3b75bb5bd278885e9d4926e0c2409ccf94c0221fbf435c3c",
+	Records: []sce.RecordLineage{
+		{
+			Event:     "item.added",
+			Revision:  1,
+			Revisions: []string{},
+			Added: []sce.AddedField{
+			},
+			Holders: []sce.RecordHolder{
+				{Variable: "items", List: true},
+				{Variable: "draft", List: false},
+			},
+		},
+	},
+	Enums: []sce.EnumLineage{
+		{
+			Key:       "enum:enum_item_status.scxml",
+			Revision:  1,
+			Revisions: []string{},
+			Added: []sce.AddedVariant{
+			},
+			Holders: []sce.EnumHolder{
+				{Variable: "items", Field: sce.FieldNamed("status"), List: true},
+				{Variable: "draft", Field: sce.FieldNamed("status"), List: false},
+				{Variable: "last", List: false},
+			},
+		},
+	},
+}
+
+// StaticStateAlgorithmEnumHistories is the document's `<history>` pseudo-states, by
+// the id a saved state keys them by: what a saved state records of each, and
+// what a restore reads.
+var StaticStateAlgorithmEnumHistories = []sce.HistoryDecl{
+}
+
+// StaticStateAlgorithmEnumSaveAt is engine's whole state at the macrostep boundary it
+// stands at: every variable, the machine's own included, and where it stands, as
+// the `sce-saved-state` document every backend reads (sce.SavedState.ToJSON).
+// Each delayed `<send>` still waiting is written as the moment it comes due on
+// the wall clock whose reading now is wallNowMs, in milliseconds since the Unix
+// epoch.
+//
+// Refused for a machine that is not running, one that has ended, one whose last
+// macrostep stopped at the microstep ceiling, and one built around another
+// document's policy.
+func StaticStateAlgorithmEnumSaveAt(engine *sce.Engine[StaticStateAlgorithmEnumState, StaticStateAlgorithmEnumEvent], wallNowMs int64) (*sce.SavedState, error) {
+	p, ok := engine.Policy().(*StaticStateAlgorithmEnumPolicy)
+	if !ok {
+		return nil, sce.Refuse("the engine is not one of StaticStateAlgorithmEnum")
+	}
+	variables := sce.NewJSONObject()
+	variables.Set("items", sce.SavedWriteList(p.vItems, func(r StaticStateAlgorithmEnumItemRecord) any { return r.ToSaved() }))
+	variables.Set("draft", p.vDraft.ToSaved())
+	variables.Set("last", p.vLast.ToSaved())
+	variables.Set("openCount", sce.SavedWriteUint32(p.vOpenCount))
+	variables.Set("startedCount", sce.SavedWriteUint32(p.vStartedCount))
+	variables.Set("doneCount", sce.SavedWriteUint32(p.vDoneCount))
+	variables.Set("checks", sce.SavedWriteUint32(p.vChecks))
+	variables.Set("refusals", sce.SavedWriteUint32(p.vRefusals))
+	return sce.SaveSession(engine, &StaticStateAlgorithmEnumSavedShape, variables,
+		sce.SaveHistory[StaticStateAlgorithmEnumState, StaticStateAlgorithmEnumEvent](p, StaticStateAlgorithmEnumHistories),
+		nil, wallNowMs)
+}
+
+// StaticStateAlgorithmEnumSave is StaticStateAlgorithmEnumSaveAt at the host's wall clock now.
+func StaticStateAlgorithmEnumSave(engine *sce.Engine[StaticStateAlgorithmEnumState, StaticStateAlgorithmEnumEvent]) (*sce.SavedState, error) {
+	return StaticStateAlgorithmEnumSaveAt(engine, sce.SavedWallClockMs())
+}
+
+// StaticStateAlgorithmEnumJudge refuses saved unless a machine of this document could
+// restore it, building nothing: what a parent's restore asks of each child it
+// holds (docs/adr/0045, section 3, step 1).
+func StaticStateAlgorithmEnumJudge(saved *sce.SavedState) error {
+	p := &StaticStateAlgorithmEnumPolicy{}
+	grown, err := sce.UpgradeSavedState(saved, &StaticStateAlgorithmEnumSavedShape)
+	if err != nil {
+		return err
+	}
+	if _, err := sce.RestoreHistory[StaticStateAlgorithmEnumState, StaticStateAlgorithmEnumEvent](p, grown, StaticStateAlgorithmEnumHistories); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("items"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadList(raw, "items", 4, StaticStateAlgorithmEnumItemRecordFromSaved); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("draft"); err != nil {
+		return err
+	} else if _, err := StaticStateAlgorithmEnumItemRecordFromSaved(raw, "draft"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("last"); err != nil {
+		return err
+	} else if _, err := StaticStateAlgorithmEnumStatusEnumFromSaved(raw, "last"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("openCount"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "openCount"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("startedCount"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "startedCount"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("doneCount"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "doneCount"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("checks"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "checks"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("refusals"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "refusals"); err != nil {
+		return err
+	}
+	return sce.JudgeSession[StaticStateAlgorithmEnumState, StaticStateAlgorithmEnumEvent](p, grown)
+}
+
+// StaticStateAlgorithmEnumRestoreAt is a machine of policy standing where saved left
+// one, measuring time by clock: in place of `Initialize`, so no `<onentry>` runs
+// and no `<data>` is evaluated, since the saved run already did both. Every value
+// is read and the state judged before any is written, so a refused restore leaves
+// policy as it was.
+//
+// Each delayed `<send>` saved is armed against clock, which is the one the
+// machine measures time by; wallNowMs is what time it is on the wall clock the
+// saved `due`s were written against. A send comes due when its saved moment does,
+// and one already due comes due now.
+//
+// The host registers its invokers and its processors on the machine this
+// returns, and drives it as it would one it had initialized.
+func StaticStateAlgorithmEnumRestoreAt(policy *StaticStateAlgorithmEnumPolicy, saved *sce.SavedState, clock sce.SceClock, wallNowMs int64) (*sce.Engine[StaticStateAlgorithmEnumState, StaticStateAlgorithmEnumEvent], error) {
+	// The state as one of this machine: each record saved at an earlier revision
+	// of its schema holds the defaults of the fields added since.
+	grown, err := sce.UpgradeSavedState(saved, &StaticStateAlgorithmEnumSavedShape)
+	if err != nil {
+		return nil, err
+	}
+	history, err := sce.RestoreHistory[StaticStateAlgorithmEnumState, StaticStateAlgorithmEnumEvent](policy, grown, StaticStateAlgorithmEnumHistories)
+	if err != nil {
+		return nil, err
+	}
+	raw1, err := grown.Variable("items")
+	if err != nil {
+		return nil, err
+	}
+	read1, err := sce.SavedReadList(raw1, "items", 4, StaticStateAlgorithmEnumItemRecordFromSaved)
+	if err != nil {
+		return nil, err
+	}
+	raw2, err := grown.Variable("draft")
+	if err != nil {
+		return nil, err
+	}
+	read2, err := StaticStateAlgorithmEnumItemRecordFromSaved(raw2, "draft")
+	if err != nil {
+		return nil, err
+	}
+	raw3, err := grown.Variable("last")
+	if err != nil {
+		return nil, err
+	}
+	read3, err := StaticStateAlgorithmEnumStatusEnumFromSaved(raw3, "last")
+	if err != nil {
+		return nil, err
+	}
+	raw4, err := grown.Variable("openCount")
+	if err != nil {
+		return nil, err
+	}
+	read4, err := sce.SavedReadUint32(raw4, "openCount")
+	if err != nil {
+		return nil, err
+	}
+	raw5, err := grown.Variable("startedCount")
+	if err != nil {
+		return nil, err
+	}
+	read5, err := sce.SavedReadUint32(raw5, "startedCount")
+	if err != nil {
+		return nil, err
+	}
+	raw6, err := grown.Variable("doneCount")
+	if err != nil {
+		return nil, err
+	}
+	read6, err := sce.SavedReadUint32(raw6, "doneCount")
+	if err != nil {
+		return nil, err
+	}
+	raw7, err := grown.Variable("checks")
+	if err != nil {
+		return nil, err
+	}
+	read7, err := sce.SavedReadUint32(raw7, "checks")
+	if err != nil {
+		return nil, err
+	}
+	raw8, err := grown.Variable("refusals")
+	if err != nil {
+		return nil, err
+	}
+	read8, err := sce.SavedReadUint32(raw8, "refusals")
+	if err != nil {
+		return nil, err
+	}
+	if err := sce.JudgeSession[StaticStateAlgorithmEnumState, StaticStateAlgorithmEnumEvent](policy, grown); err != nil {
+		return nil, err
+	}
+	policy.vItems = read1
+	policy.vDraft = read2
+	policy.vLast = read3
+	policy.vOpenCount = read4
+	policy.vStartedCount = read5
+	policy.vDoneCount = read6
+	policy.vChecks = read7
+	policy.vRefusals = read8
+	for _, recorded := range history {
+		policy.SetHistoryValue(recorded.History, recorded.States)
+	}
+	return sce.EnterSession[StaticStateAlgorithmEnumState, StaticStateAlgorithmEnumEvent](policy, grown, clock, wallNowMs)
+}
+
+// StaticStateAlgorithmEnumRestore is StaticStateAlgorithmEnumRestoreAt at the host's wall
+// clock now.
+func StaticStateAlgorithmEnumRestore(policy *StaticStateAlgorithmEnumPolicy, saved *sce.SavedState, clock sce.SceClock) (*sce.Engine[StaticStateAlgorithmEnumState, StaticStateAlgorithmEnumEvent], error) {
+	return StaticStateAlgorithmEnumRestoreAt(policy, saved, clock, sce.SavedWallClockMs())
+}
+
+// SetSessionID gives this session the id its host has for it, in place of the
+// one it drew: an XML Nmtoken, since another session addresses this one as
+// `#_scxml_<id>` and every child's id is this one's and the id the child was
+// started under (docs/adr/0045). Refused for anything else. Called before the
+// machine starts, since what it sends names it by the id it began with.
+func (p *StaticStateAlgorithmEnumPolicy) SetSessionID(id string) error {
+	if reason := sce.SessionIDRefusalOf(id); reason != "" {
+		return sce.Refuse(reason)
+	}
+	p.SessionID = id
+	return nil
+}
+
+// OwnSessionID is this session's id, `_sessionid`, which a saved state names it
+// by (sce.SavedPolicy).
+func (p *StaticStateAlgorithmEnumPolicy) OwnSessionID() string { return p.SessionID }
+
+// BindSessionID makes id this session's own: a restore of a format-2 state
+// carries on under the id it was saved with (sce.SavedPolicy).
+func (p *StaticStateAlgorithmEnumPolicy) BindSessionID(id string) { p.SessionID = id }
+
+// RunningInvokes is the id of each `<invoke>` whose child session is running,
+// in document order (sce.SavedPolicy). This document starts no child session.
+func (p *StaticStateAlgorithmEnumPolicy) RunningInvokes() []string { return nil }
+
+// InvokeStarts is how many times each `<invoke>` has started in this session
+// (sce.SavedPolicy). This document starts no child session.
+func (p *StaticStateAlgorithmEnumPolicy) InvokeStarts() []sce.SavedInvokeStart { return nil }
+
+// InvokeOwner is the state that holds the `<invoke>` id, and false for an id the
+// document does not invoke (sce.SavedPolicy). This document starts no child
+// session.
+func (p *StaticStateAlgorithmEnumPolicy) InvokeOwner(id string) (StaticStateAlgorithmEnumState, bool) {
+	return 0, false
+}
+
+// HostInvokeOwner is the state that holds the host-run `<invoke>` of this type
+// and id, and false for one the document does not have a host invoker run
+// (sce.SavedPolicy).
+func (p *StaticStateAlgorithmEnumPolicy) HostInvokeOwner(processorType, id string) (StaticStateAlgorithmEnumState, bool) {
+	return 0, false
+}
+
+// JudgeChild refuses a running child, which this document does not start
+// (sce.SavedPolicy).
+func (p *StaticStateAlgorithmEnumPolicy) JudgeChild(child sce.SavedChild) error {
+	return sce.Refuse(fmt.Sprintf("the document starts no child session, so '%s' cannot be one it was running", child.ID))
+}
+
+// ResumeChildren resumes no child, which this document does not start
+// (sce.SavedPolicy).
+func (p *StaticStateAlgorithmEnumPolicy) ResumeChildren(engine *sce.Engine[StaticStateAlgorithmEnumState, StaticStateAlgorithmEnumEvent], children []sce.SavedChild, wallNowMs int64) error {
+	if len(children) > 0 {
+		return p.JudgeChild(children[0])
+	}
+	return nil
+}
+
+// RestartInvokes starts no invocation again, which this document does not start
+// (sce.SavedPolicy).
+func (p *StaticStateAlgorithmEnumPolicy) RestartInvokes(engine *sce.Engine[StaticStateAlgorithmEnumState, StaticStateAlgorithmEnumEvent], ids []string) {}
+
+// SetHistoryValue gives history the states a saved state recorded for it
+// (sce.SavedPolicy).
+func (p *StaticStateAlgorithmEnumPolicy) SetHistoryValue(history sce.HistoryID, states []StaticStateAlgorithmEnumState) {
 }
 
 // ── SCE Accepted Subset §2.15: calls of an algorithm that takes or returns state ──
@@ -395,6 +762,10 @@ type StaticStateAlgorithmEnumPolicy struct {
 // NewStaticStateAlgorithmEnumPolicy creates a new policy with default values.
 func NewStaticStateAlgorithmEnumPolicy() StaticStateAlgorithmEnumPolicy {
 	return StaticStateAlgorithmEnumPolicy{
+		// docs/adr/0045: a session has an id, which a saved state names it by. A
+		// host that has one for it gives it with SetSessionID before it starts the
+		// machine; a child's is its parent's and the id it was started under.
+		SessionID: sce.DrawSessionID(),
 		vItems: nil,
 		vDraft: StaticStateAlgorithmEnumItemRecord{id: 0, status: StaticStateAlgorithmEnumStatusEnumOpen},
 		vLast: StaticStateAlgorithmEnumStatusEnumOpen,

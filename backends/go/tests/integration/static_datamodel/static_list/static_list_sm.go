@@ -230,6 +230,222 @@ const StaticListSavedShapeFormat2Revised = "8aa0f9aed42bda64f1637b1852cbd2b0e264
 // names it by, and the format-2 shape spells it by.
 var StaticListSavedEnumKeys = [...]string{}
 
+// ── SCE Accepted Subset §2.15: saving this machine, restoring it ──────────
+
+// StaticListSavedShape is what a saved state of this document is bound
+// to: a state saved from a document that renamed, re-typed or moved a state or a
+// variable is refused, one saved before a guard or an action changed is not, and
+// one saved at an earlier revision of a record schema is read with each field a
+// later revision added at its default.
+var StaticListSavedShape = sce.SavedShape{
+	First:          "ae704abc4c29a63e76bfe2707c4d0e0ce4717e731dba9b74c000c278e6cca9c2",
+	Revised:        "8aa0f9aed42bda64f1637b1852cbd2b0e2641bc6998c82f0b07ad4b7bad23b6b",
+	Format2First:   "ae704abc4c29a63e76bfe2707c4d0e0ce4717e731dba9b74c000c278e6cca9c2",
+	Format2Revised: "8aa0f9aed42bda64f1637b1852cbd2b0e2641bc6998c82f0b07ad4b7bad23b6b",
+	Records: []sce.RecordLineage{
+	},
+	Enums: []sce.EnumLineage{
+	},
+}
+
+// StaticListHistories is the document's `<history>` pseudo-states, by
+// the id a saved state keys them by: what a saved state records of each, and
+// what a restore reads.
+var StaticListHistories = []sce.HistoryDecl{
+}
+
+// StaticListSaveAt is engine's whole state at the macrostep boundary it
+// stands at: every variable, the machine's own included, and where it stands, as
+// the `sce-saved-state` document every backend reads (sce.SavedState.ToJSON).
+// Each delayed `<send>` still waiting is written as the moment it comes due on
+// the wall clock whose reading now is wallNowMs, in milliseconds since the Unix
+// epoch.
+//
+// Refused for a machine that is not running, one that has ended, one whose last
+// macrostep stopped at the microstep ceiling, and one built around another
+// document's policy.
+func StaticListSaveAt(engine *sce.Engine[StaticListState, StaticListEvent], wallNowMs int64) (*sce.SavedState, error) {
+	p, ok := engine.Policy().(*StaticListPolicy)
+	if !ok {
+		return nil, sce.Refuse("the engine is not one of StaticList")
+	}
+	variables := sce.NewJSONObject()
+	variables.Set("picked", sce.SavedWriteList(p.vPicked, sce.SavedWriteUint8))
+	variables.Set("refusals", sce.SavedWriteUint32(p.vRefusals))
+	variables.Set("count", sce.SavedWriteUint32(p.vCount))
+	return sce.SaveSession(engine, &StaticListSavedShape, variables,
+		sce.SaveHistory[StaticListState, StaticListEvent](p, StaticListHistories),
+		nil, wallNowMs)
+}
+
+// StaticListSave is StaticListSaveAt at the host's wall clock now.
+func StaticListSave(engine *sce.Engine[StaticListState, StaticListEvent]) (*sce.SavedState, error) {
+	return StaticListSaveAt(engine, sce.SavedWallClockMs())
+}
+
+// StaticListJudge refuses saved unless a machine of this document could
+// restore it, building nothing: what a parent's restore asks of each child it
+// holds (docs/adr/0045, section 3, step 1).
+func StaticListJudge(saved *sce.SavedState) error {
+	p := &StaticListPolicy{}
+	grown, err := sce.UpgradeSavedState(saved, &StaticListSavedShape)
+	if err != nil {
+		return err
+	}
+	if _, err := sce.RestoreHistory[StaticListState, StaticListEvent](p, grown, StaticListHistories); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("picked"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadList(raw, "picked", 3, sce.SavedReadUint8); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("refusals"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "refusals"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("count"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "count"); err != nil {
+		return err
+	}
+	return sce.JudgeSession[StaticListState, StaticListEvent](p, grown)
+}
+
+// StaticListRestoreAt is a machine of policy standing where saved left
+// one, measuring time by clock: in place of `Initialize`, so no `<onentry>` runs
+// and no `<data>` is evaluated, since the saved run already did both. Every value
+// is read and the state judged before any is written, so a refused restore leaves
+// policy as it was.
+//
+// Each delayed `<send>` saved is armed against clock, which is the one the
+// machine measures time by; wallNowMs is what time it is on the wall clock the
+// saved `due`s were written against. A send comes due when its saved moment does,
+// and one already due comes due now.
+//
+// The host registers its invokers and its processors on the machine this
+// returns, and drives it as it would one it had initialized.
+func StaticListRestoreAt(policy *StaticListPolicy, saved *sce.SavedState, clock sce.SceClock, wallNowMs int64) (*sce.Engine[StaticListState, StaticListEvent], error) {
+	// The state as one of this machine: each record saved at an earlier revision
+	// of its schema holds the defaults of the fields added since.
+	grown, err := sce.UpgradeSavedState(saved, &StaticListSavedShape)
+	if err != nil {
+		return nil, err
+	}
+	history, err := sce.RestoreHistory[StaticListState, StaticListEvent](policy, grown, StaticListHistories)
+	if err != nil {
+		return nil, err
+	}
+	raw1, err := grown.Variable("picked")
+	if err != nil {
+		return nil, err
+	}
+	read1, err := sce.SavedReadList(raw1, "picked", 3, sce.SavedReadUint8)
+	if err != nil {
+		return nil, err
+	}
+	raw2, err := grown.Variable("refusals")
+	if err != nil {
+		return nil, err
+	}
+	read2, err := sce.SavedReadUint32(raw2, "refusals")
+	if err != nil {
+		return nil, err
+	}
+	raw3, err := grown.Variable("count")
+	if err != nil {
+		return nil, err
+	}
+	read3, err := sce.SavedReadUint32(raw3, "count")
+	if err != nil {
+		return nil, err
+	}
+	if err := sce.JudgeSession[StaticListState, StaticListEvent](policy, grown); err != nil {
+		return nil, err
+	}
+	policy.vPicked = read1
+	policy.vRefusals = read2
+	policy.vCount = read3
+	for _, recorded := range history {
+		policy.SetHistoryValue(recorded.History, recorded.States)
+	}
+	return sce.EnterSession[StaticListState, StaticListEvent](policy, grown, clock, wallNowMs)
+}
+
+// StaticListRestore is StaticListRestoreAt at the host's wall
+// clock now.
+func StaticListRestore(policy *StaticListPolicy, saved *sce.SavedState, clock sce.SceClock) (*sce.Engine[StaticListState, StaticListEvent], error) {
+	return StaticListRestoreAt(policy, saved, clock, sce.SavedWallClockMs())
+}
+
+// SetSessionID gives this session the id its host has for it, in place of the
+// one it drew: an XML Nmtoken, since another session addresses this one as
+// `#_scxml_<id>` and every child's id is this one's and the id the child was
+// started under (docs/adr/0045). Refused for anything else. Called before the
+// machine starts, since what it sends names it by the id it began with.
+func (p *StaticListPolicy) SetSessionID(id string) error {
+	if reason := sce.SessionIDRefusalOf(id); reason != "" {
+		return sce.Refuse(reason)
+	}
+	p.SessionID = id
+	return nil
+}
+
+// OwnSessionID is this session's id, `_sessionid`, which a saved state names it
+// by (sce.SavedPolicy).
+func (p *StaticListPolicy) OwnSessionID() string { return p.SessionID }
+
+// BindSessionID makes id this session's own: a restore of a format-2 state
+// carries on under the id it was saved with (sce.SavedPolicy).
+func (p *StaticListPolicy) BindSessionID(id string) { p.SessionID = id }
+
+// RunningInvokes is the id of each `<invoke>` whose child session is running,
+// in document order (sce.SavedPolicy). This document starts no child session.
+func (p *StaticListPolicy) RunningInvokes() []string { return nil }
+
+// InvokeStarts is how many times each `<invoke>` has started in this session
+// (sce.SavedPolicy). This document starts no child session.
+func (p *StaticListPolicy) InvokeStarts() []sce.SavedInvokeStart { return nil }
+
+// InvokeOwner is the state that holds the `<invoke>` id, and false for an id the
+// document does not invoke (sce.SavedPolicy). This document starts no child
+// session.
+func (p *StaticListPolicy) InvokeOwner(id string) (StaticListState, bool) {
+	return 0, false
+}
+
+// HostInvokeOwner is the state that holds the host-run `<invoke>` of this type
+// and id, and false for one the document does not have a host invoker run
+// (sce.SavedPolicy).
+func (p *StaticListPolicy) HostInvokeOwner(processorType, id string) (StaticListState, bool) {
+	return 0, false
+}
+
+// JudgeChild refuses a running child, which this document does not start
+// (sce.SavedPolicy).
+func (p *StaticListPolicy) JudgeChild(child sce.SavedChild) error {
+	return sce.Refuse(fmt.Sprintf("the document starts no child session, so '%s' cannot be one it was running", child.ID))
+}
+
+// ResumeChildren resumes no child, which this document does not start
+// (sce.SavedPolicy).
+func (p *StaticListPolicy) ResumeChildren(engine *sce.Engine[StaticListState, StaticListEvent], children []sce.SavedChild, wallNowMs int64) error {
+	if len(children) > 0 {
+		return p.JudgeChild(children[0])
+	}
+	return nil
+}
+
+// RestartInvokes starts no invocation again, which this document does not start
+// (sce.SavedPolicy).
+func (p *StaticListPolicy) RestartInvokes(engine *sce.Engine[StaticListState, StaticListEvent], ids []string) {}
+
+// SetHistoryValue gives history the states a saved state recorded for it
+// (sce.SavedPolicy).
+func (p *StaticListPolicy) SetHistoryValue(history sce.HistoryID, states []StaticListState) {
+}
+
 // ======================================================================
 // Policy struct
 // ======================================================================
@@ -263,6 +479,10 @@ type StaticListPolicy struct {
 // NewStaticListPolicy creates a new policy with default values.
 func NewStaticListPolicy() StaticListPolicy {
 	return StaticListPolicy{
+		// docs/adr/0045: a session has an id, which a saved state names it by. A
+		// host that has one for it gives it with SetSessionID before it starts the
+		// machine; a child's is its parent's and the id it was started under.
+		SessionID: sce.DrawSessionID(),
 		vPicked: nil,
 		vRefusals: 0,
 		vCount: 0,

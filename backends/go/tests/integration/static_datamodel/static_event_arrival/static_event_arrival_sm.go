@@ -172,6 +172,207 @@ const StaticEventArrivalSavedShapeFormat2Revised = "b2b27da7c053410d9d935db94a76
 // names it by, and the format-2 shape spells it by.
 var StaticEventArrivalSavedEnumKeys = [...]string{}
 
+// ── SCE Accepted Subset §2.15: saving this machine, restoring it ──────────
+
+// StaticEventArrivalSavedShape is what a saved state of this document is bound
+// to: a state saved from a document that renamed, re-typed or moved a state or a
+// variable is refused, one saved before a guard or an action changed is not, and
+// one saved at an earlier revision of a record schema is read with each field a
+// later revision added at its default.
+var StaticEventArrivalSavedShape = sce.SavedShape{
+	First:          "992cff77681778bf2a87af21f6ccd7e484e625e43a95c41373c35b22f2f582e1",
+	Revised:        "b2b27da7c053410d9d935db94a7672a9167844a5d8c0ac1ead305a6df3156464",
+	Format2First:   "992cff77681778bf2a87af21f6ccd7e484e625e43a95c41373c35b22f2f582e1",
+	Format2Revised: "b2b27da7c053410d9d935db94a7672a9167844a5d8c0ac1ead305a6df3156464",
+	Records: []sce.RecordLineage{
+	},
+	Enums: []sce.EnumLineage{
+	},
+}
+
+// StaticEventArrivalHistories is the document's `<history>` pseudo-states, by
+// the id a saved state keys them by: what a saved state records of each, and
+// what a restore reads.
+var StaticEventArrivalHistories = []sce.HistoryDecl{
+}
+
+// StaticEventArrivalSaveAt is engine's whole state at the macrostep boundary it
+// stands at: every variable, the machine's own included, and where it stands, as
+// the `sce-saved-state` document every backend reads (sce.SavedState.ToJSON).
+// Each delayed `<send>` still waiting is written as the moment it comes due on
+// the wall clock whose reading now is wallNowMs, in milliseconds since the Unix
+// epoch.
+//
+// Refused for a machine that is not running, one that has ended, one whose last
+// macrostep stopped at the microstep ceiling, and one built around another
+// document's policy.
+func StaticEventArrivalSaveAt(engine *sce.Engine[StaticEventArrivalState, StaticEventArrivalEvent], wallNowMs int64) (*sce.SavedState, error) {
+	p, ok := engine.Policy().(*StaticEventArrivalPolicy)
+	if !ok {
+		return nil, sce.Refuse("the engine is not one of StaticEventArrival")
+	}
+	variables := sce.NewJSONObject()
+	variables.Set("requests", sce.SavedWriteUint32(p.vRequests))
+	variables.Set("specials", sce.SavedWriteUint32(p.vSpecials))
+	return sce.SaveSession(engine, &StaticEventArrivalSavedShape, variables,
+		sce.SaveHistory[StaticEventArrivalState, StaticEventArrivalEvent](p, StaticEventArrivalHistories),
+		nil, wallNowMs)
+}
+
+// StaticEventArrivalSave is StaticEventArrivalSaveAt at the host's wall clock now.
+func StaticEventArrivalSave(engine *sce.Engine[StaticEventArrivalState, StaticEventArrivalEvent]) (*sce.SavedState, error) {
+	return StaticEventArrivalSaveAt(engine, sce.SavedWallClockMs())
+}
+
+// StaticEventArrivalJudge refuses saved unless a machine of this document could
+// restore it, building nothing: what a parent's restore asks of each child it
+// holds (docs/adr/0045, section 3, step 1).
+func StaticEventArrivalJudge(saved *sce.SavedState) error {
+	p := &StaticEventArrivalPolicy{}
+	grown, err := sce.UpgradeSavedState(saved, &StaticEventArrivalSavedShape)
+	if err != nil {
+		return err
+	}
+	if _, err := sce.RestoreHistory[StaticEventArrivalState, StaticEventArrivalEvent](p, grown, StaticEventArrivalHistories); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("requests"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "requests"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("specials"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "specials"); err != nil {
+		return err
+	}
+	return sce.JudgeSession[StaticEventArrivalState, StaticEventArrivalEvent](p, grown)
+}
+
+// StaticEventArrivalRestoreAt is a machine of policy standing where saved left
+// one, measuring time by clock: in place of `Initialize`, so no `<onentry>` runs
+// and no `<data>` is evaluated, since the saved run already did both. Every value
+// is read and the state judged before any is written, so a refused restore leaves
+// policy as it was.
+//
+// Each delayed `<send>` saved is armed against clock, which is the one the
+// machine measures time by; wallNowMs is what time it is on the wall clock the
+// saved `due`s were written against. A send comes due when its saved moment does,
+// and one already due comes due now.
+//
+// The host registers its invokers and its processors on the machine this
+// returns, and drives it as it would one it had initialized.
+func StaticEventArrivalRestoreAt(policy *StaticEventArrivalPolicy, saved *sce.SavedState, clock sce.SceClock, wallNowMs int64) (*sce.Engine[StaticEventArrivalState, StaticEventArrivalEvent], error) {
+	// The state as one of this machine: each record saved at an earlier revision
+	// of its schema holds the defaults of the fields added since.
+	grown, err := sce.UpgradeSavedState(saved, &StaticEventArrivalSavedShape)
+	if err != nil {
+		return nil, err
+	}
+	history, err := sce.RestoreHistory[StaticEventArrivalState, StaticEventArrivalEvent](policy, grown, StaticEventArrivalHistories)
+	if err != nil {
+		return nil, err
+	}
+	raw1, err := grown.Variable("requests")
+	if err != nil {
+		return nil, err
+	}
+	read1, err := sce.SavedReadUint32(raw1, "requests")
+	if err != nil {
+		return nil, err
+	}
+	raw2, err := grown.Variable("specials")
+	if err != nil {
+		return nil, err
+	}
+	read2, err := sce.SavedReadUint32(raw2, "specials")
+	if err != nil {
+		return nil, err
+	}
+	if err := sce.JudgeSession[StaticEventArrivalState, StaticEventArrivalEvent](policy, grown); err != nil {
+		return nil, err
+	}
+	policy.vRequests = read1
+	policy.vSpecials = read2
+	for _, recorded := range history {
+		policy.SetHistoryValue(recorded.History, recorded.States)
+	}
+	return sce.EnterSession[StaticEventArrivalState, StaticEventArrivalEvent](policy, grown, clock, wallNowMs)
+}
+
+// StaticEventArrivalRestore is StaticEventArrivalRestoreAt at the host's wall
+// clock now.
+func StaticEventArrivalRestore(policy *StaticEventArrivalPolicy, saved *sce.SavedState, clock sce.SceClock) (*sce.Engine[StaticEventArrivalState, StaticEventArrivalEvent], error) {
+	return StaticEventArrivalRestoreAt(policy, saved, clock, sce.SavedWallClockMs())
+}
+
+// SetSessionID gives this session the id its host has for it, in place of the
+// one it drew: an XML Nmtoken, since another session addresses this one as
+// `#_scxml_<id>` and every child's id is this one's and the id the child was
+// started under (docs/adr/0045). Refused for anything else. Called before the
+// machine starts, since what it sends names it by the id it began with.
+func (p *StaticEventArrivalPolicy) SetSessionID(id string) error {
+	if reason := sce.SessionIDRefusalOf(id); reason != "" {
+		return sce.Refuse(reason)
+	}
+	p.SessionID = id
+	return nil
+}
+
+// OwnSessionID is this session's id, `_sessionid`, which a saved state names it
+// by (sce.SavedPolicy).
+func (p *StaticEventArrivalPolicy) OwnSessionID() string { return p.SessionID }
+
+// BindSessionID makes id this session's own: a restore of a format-2 state
+// carries on under the id it was saved with (sce.SavedPolicy).
+func (p *StaticEventArrivalPolicy) BindSessionID(id string) { p.SessionID = id }
+
+// RunningInvokes is the id of each `<invoke>` whose child session is running,
+// in document order (sce.SavedPolicy). This document starts no child session.
+func (p *StaticEventArrivalPolicy) RunningInvokes() []string { return nil }
+
+// InvokeStarts is how many times each `<invoke>` has started in this session
+// (sce.SavedPolicy). This document starts no child session.
+func (p *StaticEventArrivalPolicy) InvokeStarts() []sce.SavedInvokeStart { return nil }
+
+// InvokeOwner is the state that holds the `<invoke>` id, and false for an id the
+// document does not invoke (sce.SavedPolicy). This document starts no child
+// session.
+func (p *StaticEventArrivalPolicy) InvokeOwner(id string) (StaticEventArrivalState, bool) {
+	return 0, false
+}
+
+// HostInvokeOwner is the state that holds the host-run `<invoke>` of this type
+// and id, and false for one the document does not have a host invoker run
+// (sce.SavedPolicy).
+func (p *StaticEventArrivalPolicy) HostInvokeOwner(processorType, id string) (StaticEventArrivalState, bool) {
+	return 0, false
+}
+
+// JudgeChild refuses a running child, which this document does not start
+// (sce.SavedPolicy).
+func (p *StaticEventArrivalPolicy) JudgeChild(child sce.SavedChild) error {
+	return sce.Refuse(fmt.Sprintf("the document starts no child session, so '%s' cannot be one it was running", child.ID))
+}
+
+// ResumeChildren resumes no child, which this document does not start
+// (sce.SavedPolicy).
+func (p *StaticEventArrivalPolicy) ResumeChildren(engine *sce.Engine[StaticEventArrivalState, StaticEventArrivalEvent], children []sce.SavedChild, wallNowMs int64) error {
+	if len(children) > 0 {
+		return p.JudgeChild(children[0])
+	}
+	return nil
+}
+
+// RestartInvokes starts no invocation again, which this document does not start
+// (sce.SavedPolicy).
+func (p *StaticEventArrivalPolicy) RestartInvokes(engine *sce.Engine[StaticEventArrivalState, StaticEventArrivalEvent], ids []string) {}
+
+// SetHistoryValue gives history the states a saved state recorded for it
+// (sce.SavedPolicy).
+func (p *StaticEventArrivalPolicy) SetHistoryValue(history sce.HistoryID, states []StaticEventArrivalState) {
+}
+
 // ======================================================================
 // Policy struct
 // ======================================================================
@@ -196,6 +397,10 @@ type StaticEventArrivalPolicy struct {
 // NewStaticEventArrivalPolicy creates a new policy with default values.
 func NewStaticEventArrivalPolicy() StaticEventArrivalPolicy {
 	return StaticEventArrivalPolicy{
+		// docs/adr/0045: a session has an id, which a saved state names it by. A
+		// host that has one for it gives it with SetSessionID before it starts the
+		// machine; a child's is its parent's and the id it was started under.
+		SessionID: sce.DrawSessionID(),
 		vRequests: 0,
 		vSpecials: 0,
 	}

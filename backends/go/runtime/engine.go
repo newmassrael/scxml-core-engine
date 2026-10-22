@@ -107,7 +107,13 @@ type Engine[S comparable, E comparable] struct {
 	// completed nor cancelled to its start's token, so the exit chain can be an
 	// unconditional call and a completion can be judged against the run it
 	// names (§scxml-6.4).
-	startedHostInvokes map[hostInvokeKey]uint64
+	startedHostInvokes map[hostInvokeKey]startedHostInvoke
+
+	// restoredHostInvokes are the host-run invocations a restore re-armed, which
+	// start at the top of the first macrostep the host drives: the host registers
+	// its invokers on the engine a restore returns, so none can start before.
+	// See startRestoredHostInvokes.
+	restoredHostInvokes []restoredHostInvoke
 
 	// nextHostInvokeToken is the token the next host-run start receives.
 	nextHostInvokeToken uint64
@@ -1343,6 +1349,14 @@ func (e *Engine[S, E]) HasReadyEvents() bool {
 // a timer its child had armed — or, for a parent that arms nothing itself, be
 // told there was nothing to wait for at all.
 func (e *Engine[S, E]) TimeUntilNextScheduled() (time.Duration, bool) {
+	// A restore that re-armed a host-run invocation owes the machine a tick
+	// before any clock does: the invocation starts at the top of the first
+	// macrostep and the deadline it keeps is armed there, so until that tick the
+	// scheduler holds nothing to wait for and a host asleep on this answer would
+	// never drive the machine at all. That is now.
+	if len(e.restoredHostInvokes) > 0 {
+		return 0, true
+	}
 	var soonest time.Duration
 	found := false
 	if nextMs, ok := e.scheduler.NextReadyAtMs(); ok {
@@ -1982,6 +1996,10 @@ func (e *Engine[S, E]) runMainEventLoop() {
 		if e.policy.HasInvokeSupport() {
 			e.policy.ExecutePendingInvokes(e)
 		}
+		// The host-run invocations a restore re-armed start as the ones the
+		// document just entered do (SCE Accepted Subset §2.15), before the
+		// external queue is touched.
+		e.startRestoredHostInvokes()
 
 		// W3C SCXML Appendix D: invoking may have raised internal error events
 		// (and a child that completed synchronously may already have raised

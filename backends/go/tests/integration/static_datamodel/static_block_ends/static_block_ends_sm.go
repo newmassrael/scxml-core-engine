@@ -181,6 +181,327 @@ const StaticBlockEndsSavedShapeFormat2Revised = "49722041863d35d2b2ef736d0a7663d
 // names it by, and the format-2 shape spells it by.
 var StaticBlockEndsSavedEnumKeys = [...]string{}
 
+// ── SCE Accepted Subset §2.15: saving this machine, restoring it ──────────
+
+// StaticBlockEndsSavedShape is what a saved state of this document is bound
+// to: a state saved from a document that renamed, re-typed or moved a state or a
+// variable is refused, one saved before a guard or an action changed is not, and
+// one saved at an earlier revision of a record schema is read with each field a
+// later revision added at its default.
+var StaticBlockEndsSavedShape = sce.SavedShape{
+	First:          "3392e4c39beb56ba9cc0d257d4b7e2fe3e78865fd9251747ebba45ab05882c51",
+	Revised:        "49722041863d35d2b2ef736d0a7663d2462f845efe740a017d404a4897ec0292",
+	Format2First:   "3392e4c39beb56ba9cc0d257d4b7e2fe3e78865fd9251747ebba45ab05882c51",
+	Format2Revised: "49722041863d35d2b2ef736d0a7663d2462f845efe740a017d404a4897ec0292",
+	Records: []sce.RecordLineage{
+	},
+	Enums: []sce.EnumLineage{
+	},
+}
+
+// StaticBlockEndsHistories is the document's `<history>` pseudo-states, by
+// the id a saved state keys them by: what a saved state records of each, and
+// what a restore reads.
+var StaticBlockEndsHistories = []sce.HistoryDecl{
+}
+
+// StaticBlockEndsSaveAt is engine's whole state at the macrostep boundary it
+// stands at: every variable, the machine's own included, and where it stands, as
+// the `sce-saved-state` document every backend reads (sce.SavedState.ToJSON).
+// Each delayed `<send>` still waiting is written as the moment it comes due on
+// the wall clock whose reading now is wallNowMs, in milliseconds since the Unix
+// epoch.
+//
+// Refused for a machine that is not running, one that has ended, one whose last
+// macrostep stopped at the microstep ceiling, and one built around another
+// document's policy.
+func StaticBlockEndsSaveAt(engine *sce.Engine[StaticBlockEndsState, StaticBlockEndsEvent], wallNowMs int64) (*sce.SavedState, error) {
+	p, ok := engine.Policy().(*StaticBlockEndsPolicy)
+	if !ok {
+		return nil, sce.Refuse("the engine is not one of StaticBlockEnds")
+	}
+	variables := sce.NewJSONObject()
+	variables.Set("a", sce.SavedWriteUint8(p.vA))
+	variables.Set("b", sce.SavedWriteUint8(p.vB))
+	variables.Set("afterAssign", sce.SavedWriteUint8(p.vAfterAssign))
+	variables.Set("thenRan", sce.SavedWriteUint8(p.vThenRan))
+	variables.Set("elseRan", sce.SavedWriteUint8(p.vElseRan))
+	variables.Set("afterIf", sce.SavedWriteUint8(p.vAfterIf))
+	variables.Set("inBranch", sce.SavedWriteUint8(p.vInBranch))
+	variables.Set("afterBranch", sce.SavedWriteUint8(p.vAfterBranch))
+	variables.Set("afterOk", sce.SavedWriteUint8(p.vAfterOk))
+	variables.Set("errors", sce.SavedWriteUint8(p.vErrors))
+	return sce.SaveSession(engine, &StaticBlockEndsSavedShape, variables,
+		sce.SaveHistory[StaticBlockEndsState, StaticBlockEndsEvent](p, StaticBlockEndsHistories),
+		nil, wallNowMs)
+}
+
+// StaticBlockEndsSave is StaticBlockEndsSaveAt at the host's wall clock now.
+func StaticBlockEndsSave(engine *sce.Engine[StaticBlockEndsState, StaticBlockEndsEvent]) (*sce.SavedState, error) {
+	return StaticBlockEndsSaveAt(engine, sce.SavedWallClockMs())
+}
+
+// StaticBlockEndsJudge refuses saved unless a machine of this document could
+// restore it, building nothing: what a parent's restore asks of each child it
+// holds (docs/adr/0045, section 3, step 1).
+func StaticBlockEndsJudge(saved *sce.SavedState) error {
+	p := &StaticBlockEndsPolicy{}
+	grown, err := sce.UpgradeSavedState(saved, &StaticBlockEndsSavedShape)
+	if err != nil {
+		return err
+	}
+	if _, err := sce.RestoreHistory[StaticBlockEndsState, StaticBlockEndsEvent](p, grown, StaticBlockEndsHistories); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("a"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint8(raw, "a"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("b"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint8(raw, "b"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("afterAssign"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint8(raw, "afterAssign"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("thenRan"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint8(raw, "thenRan"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("elseRan"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint8(raw, "elseRan"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("afterIf"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint8(raw, "afterIf"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("inBranch"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint8(raw, "inBranch"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("afterBranch"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint8(raw, "afterBranch"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("afterOk"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint8(raw, "afterOk"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("errors"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint8(raw, "errors"); err != nil {
+		return err
+	}
+	return sce.JudgeSession[StaticBlockEndsState, StaticBlockEndsEvent](p, grown)
+}
+
+// StaticBlockEndsRestoreAt is a machine of policy standing where saved left
+// one, measuring time by clock: in place of `Initialize`, so no `<onentry>` runs
+// and no `<data>` is evaluated, since the saved run already did both. Every value
+// is read and the state judged before any is written, so a refused restore leaves
+// policy as it was.
+//
+// Each delayed `<send>` saved is armed against clock, which is the one the
+// machine measures time by; wallNowMs is what time it is on the wall clock the
+// saved `due`s were written against. A send comes due when its saved moment does,
+// and one already due comes due now.
+//
+// The host registers its invokers and its processors on the machine this
+// returns, and drives it as it would one it had initialized.
+func StaticBlockEndsRestoreAt(policy *StaticBlockEndsPolicy, saved *sce.SavedState, clock sce.SceClock, wallNowMs int64) (*sce.Engine[StaticBlockEndsState, StaticBlockEndsEvent], error) {
+	// The state as one of this machine: each record saved at an earlier revision
+	// of its schema holds the defaults of the fields added since.
+	grown, err := sce.UpgradeSavedState(saved, &StaticBlockEndsSavedShape)
+	if err != nil {
+		return nil, err
+	}
+	history, err := sce.RestoreHistory[StaticBlockEndsState, StaticBlockEndsEvent](policy, grown, StaticBlockEndsHistories)
+	if err != nil {
+		return nil, err
+	}
+	raw1, err := grown.Variable("a")
+	if err != nil {
+		return nil, err
+	}
+	read1, err := sce.SavedReadUint8(raw1, "a")
+	if err != nil {
+		return nil, err
+	}
+	raw2, err := grown.Variable("b")
+	if err != nil {
+		return nil, err
+	}
+	read2, err := sce.SavedReadUint8(raw2, "b")
+	if err != nil {
+		return nil, err
+	}
+	raw3, err := grown.Variable("afterAssign")
+	if err != nil {
+		return nil, err
+	}
+	read3, err := sce.SavedReadUint8(raw3, "afterAssign")
+	if err != nil {
+		return nil, err
+	}
+	raw4, err := grown.Variable("thenRan")
+	if err != nil {
+		return nil, err
+	}
+	read4, err := sce.SavedReadUint8(raw4, "thenRan")
+	if err != nil {
+		return nil, err
+	}
+	raw5, err := grown.Variable("elseRan")
+	if err != nil {
+		return nil, err
+	}
+	read5, err := sce.SavedReadUint8(raw5, "elseRan")
+	if err != nil {
+		return nil, err
+	}
+	raw6, err := grown.Variable("afterIf")
+	if err != nil {
+		return nil, err
+	}
+	read6, err := sce.SavedReadUint8(raw6, "afterIf")
+	if err != nil {
+		return nil, err
+	}
+	raw7, err := grown.Variable("inBranch")
+	if err != nil {
+		return nil, err
+	}
+	read7, err := sce.SavedReadUint8(raw7, "inBranch")
+	if err != nil {
+		return nil, err
+	}
+	raw8, err := grown.Variable("afterBranch")
+	if err != nil {
+		return nil, err
+	}
+	read8, err := sce.SavedReadUint8(raw8, "afterBranch")
+	if err != nil {
+		return nil, err
+	}
+	raw9, err := grown.Variable("afterOk")
+	if err != nil {
+		return nil, err
+	}
+	read9, err := sce.SavedReadUint8(raw9, "afterOk")
+	if err != nil {
+		return nil, err
+	}
+	raw10, err := grown.Variable("errors")
+	if err != nil {
+		return nil, err
+	}
+	read10, err := sce.SavedReadUint8(raw10, "errors")
+	if err != nil {
+		return nil, err
+	}
+	if err := sce.JudgeSession[StaticBlockEndsState, StaticBlockEndsEvent](policy, grown); err != nil {
+		return nil, err
+	}
+	policy.vA = read1
+	policy.vB = read2
+	policy.vAfterAssign = read3
+	policy.vThenRan = read4
+	policy.vElseRan = read5
+	policy.vAfterIf = read6
+	policy.vInBranch = read7
+	policy.vAfterBranch = read8
+	policy.vAfterOk = read9
+	policy.vErrors = read10
+	for _, recorded := range history {
+		policy.SetHistoryValue(recorded.History, recorded.States)
+	}
+	return sce.EnterSession[StaticBlockEndsState, StaticBlockEndsEvent](policy, grown, clock, wallNowMs)
+}
+
+// StaticBlockEndsRestore is StaticBlockEndsRestoreAt at the host's wall
+// clock now.
+func StaticBlockEndsRestore(policy *StaticBlockEndsPolicy, saved *sce.SavedState, clock sce.SceClock) (*sce.Engine[StaticBlockEndsState, StaticBlockEndsEvent], error) {
+	return StaticBlockEndsRestoreAt(policy, saved, clock, sce.SavedWallClockMs())
+}
+
+// SetSessionID gives this session the id its host has for it, in place of the
+// one it drew: an XML Nmtoken, since another session addresses this one as
+// `#_scxml_<id>` and every child's id is this one's and the id the child was
+// started under (docs/adr/0045). Refused for anything else. Called before the
+// machine starts, since what it sends names it by the id it began with.
+func (p *StaticBlockEndsPolicy) SetSessionID(id string) error {
+	if reason := sce.SessionIDRefusalOf(id); reason != "" {
+		return sce.Refuse(reason)
+	}
+	p.SessionID = id
+	return nil
+}
+
+// OwnSessionID is this session's id, `_sessionid`, which a saved state names it
+// by (sce.SavedPolicy).
+func (p *StaticBlockEndsPolicy) OwnSessionID() string { return p.SessionID }
+
+// BindSessionID makes id this session's own: a restore of a format-2 state
+// carries on under the id it was saved with (sce.SavedPolicy).
+func (p *StaticBlockEndsPolicy) BindSessionID(id string) { p.SessionID = id }
+
+// RunningInvokes is the id of each `<invoke>` whose child session is running,
+// in document order (sce.SavedPolicy). This document starts no child session.
+func (p *StaticBlockEndsPolicy) RunningInvokes() []string { return nil }
+
+// InvokeStarts is how many times each `<invoke>` has started in this session
+// (sce.SavedPolicy). This document starts no child session.
+func (p *StaticBlockEndsPolicy) InvokeStarts() []sce.SavedInvokeStart { return nil }
+
+// InvokeOwner is the state that holds the `<invoke>` id, and false for an id the
+// document does not invoke (sce.SavedPolicy). This document starts no child
+// session.
+func (p *StaticBlockEndsPolicy) InvokeOwner(id string) (StaticBlockEndsState, bool) {
+	return 0, false
+}
+
+// HostInvokeOwner is the state that holds the host-run `<invoke>` of this type
+// and id, and false for one the document does not have a host invoker run
+// (sce.SavedPolicy).
+func (p *StaticBlockEndsPolicy) HostInvokeOwner(processorType, id string) (StaticBlockEndsState, bool) {
+	return 0, false
+}
+
+// JudgeChild refuses a running child, which this document does not start
+// (sce.SavedPolicy).
+func (p *StaticBlockEndsPolicy) JudgeChild(child sce.SavedChild) error {
+	return sce.Refuse(fmt.Sprintf("the document starts no child session, so '%s' cannot be one it was running", child.ID))
+}
+
+// ResumeChildren resumes no child, which this document does not start
+// (sce.SavedPolicy).
+func (p *StaticBlockEndsPolicy) ResumeChildren(engine *sce.Engine[StaticBlockEndsState, StaticBlockEndsEvent], children []sce.SavedChild, wallNowMs int64) error {
+	if len(children) > 0 {
+		return p.JudgeChild(children[0])
+	}
+	return nil
+}
+
+// RestartInvokes starts no invocation again, which this document does not start
+// (sce.SavedPolicy).
+func (p *StaticBlockEndsPolicy) RestartInvokes(engine *sce.Engine[StaticBlockEndsState, StaticBlockEndsEvent], ids []string) {}
+
+// SetHistoryValue gives history the states a saved state recorded for it
+// (sce.SavedPolicy).
+func (p *StaticBlockEndsPolicy) SetHistoryValue(history sce.HistoryID, states []StaticBlockEndsState) {
+}
+
 // ======================================================================
 // Policy struct
 // ======================================================================
@@ -221,6 +542,10 @@ type StaticBlockEndsPolicy struct {
 // NewStaticBlockEndsPolicy creates a new policy with default values.
 func NewStaticBlockEndsPolicy() StaticBlockEndsPolicy {
 	return StaticBlockEndsPolicy{
+		// docs/adr/0045: a session has an id, which a saved state names it by. A
+		// host that has one for it gives it with SetSessionID before it starts the
+		// machine; a child's is its parent's and the id it was started under.
+		SessionID: sce.DrawSessionID(),
 		vA: 250,
 		vB: 0,
 		vAfterAssign: 0,

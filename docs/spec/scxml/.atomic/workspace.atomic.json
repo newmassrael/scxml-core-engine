@@ -495,6 +495,14 @@
         {
           "file": "backends/go/runtime/saved_state.go",
           "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/configuration.go",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/engine_saved.go",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -768,6 +776,11 @@
         },
         {
           "file": "sce-build/src/microstep_bounds.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/configuration.go",
+          "symbol": "childArity",
           "kind": "references"
         }
       ],
@@ -1188,6 +1201,10 @@
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "wireChild",
           "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/engine_saved.go",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -2940,6 +2957,11 @@
           "file": "backends/rust/runtime/src/helpers/microstep.rs",
           "symbol": "walk_entry",
           "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/configuration.go",
+          "symbol": "childArity",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -5747,6 +5769,10 @@
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "completionCallback",
           "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/engine_saved.go",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -11725,6 +11751,15 @@
         {
           "file": "backends/go/runtime/saved_state.go",
           "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/host_processor.go",
+          "symbol": "startHostInvoke",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/engine_saved.go",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -12242,6 +12277,15 @@
         },
         {
           "file": "backends/go/runtime/saved_state.go",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/host_processor.go",
+          "symbol": "startHostInvoke",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/engine_saved.go",
           "kind": "references"
         }
       ],

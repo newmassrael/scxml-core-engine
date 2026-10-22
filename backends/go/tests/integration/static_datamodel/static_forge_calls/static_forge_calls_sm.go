@@ -221,6 +221,28 @@ func StaticForgeCallsStatusEnumFromUnderlying(raw uint8) (StaticForgeCallsStatus
 	return 0, false
 }
 
+// ToSaved is this value as a saved state writes it.
+func (v StaticForgeCallsStatusEnum) ToSaved() any {
+	return v.String()
+}
+
+// StaticForgeCallsStatusEnumFromSaved is the value a saved state holds, refused unless it is a variant.
+func StaticForgeCallsStatusEnumFromSaved(value any, what string) (StaticForgeCallsStatusEnum, error) {
+	declared, err := sce.SavedReadString(value, what)
+	if err != nil {
+		return 0, err
+	}
+	switch declared {
+	case "open":
+		return StaticForgeCallsStatusEnumOpen, nil
+	case "held":
+		return StaticForgeCallsStatusEnumHeld, nil
+	case "done":
+		return StaticForgeCallsStatusEnumDone, nil
+	}
+	return 0, sce.Refuse(fmt.Sprintf("'%s' (%s) is not a variant of Status", what, declared))
+}
+
 // SCE Accepted Subset §2.15: an `enum:Level` datamodel value.
 type StaticForgeCallsLevelEnum uint8
 
@@ -255,6 +277,26 @@ func StaticForgeCallsLevelEnumFromUnderlying(raw uint8) (StaticForgeCallsLevelEn
 	return 0, false
 }
 
+// ToSaved is this value as a saved state writes it.
+func (v StaticForgeCallsLevelEnum) ToSaved() any {
+	return v.String()
+}
+
+// StaticForgeCallsLevelEnumFromSaved is the value a saved state holds, refused unless it is a variant.
+func StaticForgeCallsLevelEnumFromSaved(value any, what string) (StaticForgeCallsLevelEnum, error) {
+	declared, err := sce.SavedReadString(value, what)
+	if err != nil {
+		return 0, err
+	}
+	switch declared {
+	case "light":
+		return StaticForgeCallsLevelEnumLight, nil
+	case "heavy":
+		return StaticForgeCallsLevelEnumHeavy, nil
+	}
+	return 0, sce.Refuse(fmt.Sprintf("'%s' (%s) is not a variant of Level", what, declared))
+}
+
 // ── SCE Accepted Subset §2.15: what a format-2 saved state of it is bound to ──
 
 // StaticForgeCallsSavedShapeFormat2 is the shape a format-2 saved state of
@@ -274,6 +316,407 @@ const StaticForgeCallsSavedShapeFormat2Revised = "47d468eaf1347e8d4209e924eca025
 var StaticForgeCallsSavedEnumKeys = [...]string{
 	"enum:forge_call_level.scxml",
 	"enum:forge_call_status.scxml",
+}
+
+// ── SCE Accepted Subset §2.15: saving this machine, restoring it ──────────
+
+// StaticForgeCallsSavedShape is what a saved state of this document is bound
+// to: a state saved from a document that renamed, re-typed or moved a state or a
+// variable is refused, one saved before a guard or an action changed is not, and
+// one saved at an earlier revision of a record schema is read with each field a
+// later revision added at its default.
+var StaticForgeCallsSavedShape = sce.SavedShape{
+	First:          "f8c208dcc14ca056d0b9299f9ccd618ec2750f05632205a4c651d46096c9344a",
+	Revised:        "25698583336d197df47e95c878010ab439aed9ae9aaf753df2da2a80ee38651f",
+	Format2First:   "e1ceb88b42e3ad186cb83379ddd3fac6c041b4cd242dee005c43a6acf78cbcba",
+	Format2Revised: "47d468eaf1347e8d4209e924eca025b0aee6cf836f6689fc2013b701e7531b53",
+	Records: []sce.RecordLineage{
+	},
+	Enums: []sce.EnumLineage{
+		{
+			Key:       "enum:forge_call_level.scxml",
+			Revision:  1,
+			Revisions: []string{},
+			Added: []sce.AddedVariant{
+			},
+			Holders: []sce.EnumHolder{
+				{Variable: "weight", List: false},
+			},
+		},
+		{
+			Key:       "enum:forge_call_status.scxml",
+			Revision:  1,
+			Revisions: []string{},
+			Added: []sce.AddedVariant{
+			},
+			Holders: []sce.EnumHolder{
+				{Variable: "phase", List: false},
+			},
+		},
+	},
+}
+
+// StaticForgeCallsHistories is the document's `<history>` pseudo-states, by
+// the id a saved state keys them by: what a saved state records of each, and
+// what a restore reads.
+var StaticForgeCallsHistories = []sce.HistoryDecl{
+}
+
+// StaticForgeCallsSaveAt is engine's whole state at the macrostep boundary it
+// stands at: every variable, the machine's own included, and where it stands, as
+// the `sce-saved-state` document every backend reads (sce.SavedState.ToJSON).
+// Each delayed `<send>` still waiting is written as the moment it comes due on
+// the wall clock whose reading now is wallNowMs, in milliseconds since the Unix
+// epoch.
+//
+// Refused for a machine that is not running, one that has ended, one whose last
+// macrostep stopped at the microstep ceiling, and one built around another
+// document's policy.
+func StaticForgeCallsSaveAt(engine *sce.Engine[StaticForgeCallsState, StaticForgeCallsEvent], wallNowMs int64) (*sce.SavedState, error) {
+	p, ok := engine.Policy().(*StaticForgeCallsPolicy)
+	if !ok {
+		return nil, sce.Refuse("the engine is not one of StaticForgeCalls")
+	}
+	variables := sce.NewJSONObject()
+	variables.Set("gear", sce.SavedWriteUint8(p.vGear))
+	variables.Set("ratio", sce.SavedWriteInt32(p.vRatio))
+	variables.Set("code", sce.SavedWriteInt32(p.vCode))
+	variables.Set("misses", sce.SavedWriteUint32(p.vMisses))
+	variables.Set("level", sce.SavedWriteInt32(p.vLevel))
+	variables.Set("offset", sce.SavedWriteInt32(p.vOffset))
+	variables.Set("accepted", sce.SavedWriteBool(p.vAccepted))
+	variables.Set("rpm", sce.SavedWriteUint16(p.vRpm))
+	variables.Set("limit", sce.SavedWriteFloat64(p.vLimit))
+	variables.Set("highs", sce.SavedWriteUint32(p.vHighs))
+	variables.Set("phase", p.vPhase.ToSaved())
+	variables.Set("weight", p.vWeight.ToSaved())
+	variables.Set("customer", sce.SavedWriteString(p.vCustomer))
+	variables.Set("known", sce.SavedWriteBool(p.vKnown))
+	return sce.SaveSession(engine, &StaticForgeCallsSavedShape, variables,
+		sce.SaveHistory[StaticForgeCallsState, StaticForgeCallsEvent](p, StaticForgeCallsHistories),
+		nil, wallNowMs)
+}
+
+// StaticForgeCallsSave is StaticForgeCallsSaveAt at the host's wall clock now.
+func StaticForgeCallsSave(engine *sce.Engine[StaticForgeCallsState, StaticForgeCallsEvent]) (*sce.SavedState, error) {
+	return StaticForgeCallsSaveAt(engine, sce.SavedWallClockMs())
+}
+
+// StaticForgeCallsJudge refuses saved unless a machine of this document could
+// restore it, building nothing: what a parent's restore asks of each child it
+// holds (docs/adr/0045, section 3, step 1).
+func StaticForgeCallsJudge(saved *sce.SavedState) error {
+	p := &StaticForgeCallsPolicy{}
+	grown, err := sce.UpgradeSavedState(saved, &StaticForgeCallsSavedShape)
+	if err != nil {
+		return err
+	}
+	if _, err := sce.RestoreHistory[StaticForgeCallsState, StaticForgeCallsEvent](p, grown, StaticForgeCallsHistories); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("gear"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint8(raw, "gear"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("ratio"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadInt32(raw, "ratio"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("code"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadInt32(raw, "code"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("misses"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "misses"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("level"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadInt32(raw, "level"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("offset"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadInt32(raw, "offset"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("accepted"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadBool(raw, "accepted"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("rpm"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint16(raw, "rpm"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("limit"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadFloat64(raw, "limit"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("highs"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "highs"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("phase"); err != nil {
+		return err
+	} else if _, err := StaticForgeCallsStatusEnumFromSaved(raw, "phase"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("weight"); err != nil {
+		return err
+	} else if _, err := StaticForgeCallsLevelEnumFromSaved(raw, "weight"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("customer"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadBoundedString(raw, "customer", 16); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("known"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadBool(raw, "known"); err != nil {
+		return err
+	}
+	return sce.JudgeSession[StaticForgeCallsState, StaticForgeCallsEvent](p, grown)
+}
+
+// StaticForgeCallsRestoreAt is a machine of policy standing where saved left
+// one, measuring time by clock: in place of `Initialize`, so no `<onentry>` runs
+// and no `<data>` is evaluated, since the saved run already did both. Every value
+// is read and the state judged before any is written, so a refused restore leaves
+// policy as it was.
+//
+// Each delayed `<send>` saved is armed against clock, which is the one the
+// machine measures time by; wallNowMs is what time it is on the wall clock the
+// saved `due`s were written against. A send comes due when its saved moment does,
+// and one already due comes due now.
+//
+// The host registers its invokers and its processors on the machine this
+// returns, and drives it as it would one it had initialized.
+func StaticForgeCallsRestoreAt(policy *StaticForgeCallsPolicy, saved *sce.SavedState, clock sce.SceClock, wallNowMs int64) (*sce.Engine[StaticForgeCallsState, StaticForgeCallsEvent], error) {
+	// The state as one of this machine: each record saved at an earlier revision
+	// of its schema holds the defaults of the fields added since.
+	grown, err := sce.UpgradeSavedState(saved, &StaticForgeCallsSavedShape)
+	if err != nil {
+		return nil, err
+	}
+	history, err := sce.RestoreHistory[StaticForgeCallsState, StaticForgeCallsEvent](policy, grown, StaticForgeCallsHistories)
+	if err != nil {
+		return nil, err
+	}
+	raw1, err := grown.Variable("gear")
+	if err != nil {
+		return nil, err
+	}
+	read1, err := sce.SavedReadUint8(raw1, "gear")
+	if err != nil {
+		return nil, err
+	}
+	raw2, err := grown.Variable("ratio")
+	if err != nil {
+		return nil, err
+	}
+	read2, err := sce.SavedReadInt32(raw2, "ratio")
+	if err != nil {
+		return nil, err
+	}
+	raw3, err := grown.Variable("code")
+	if err != nil {
+		return nil, err
+	}
+	read3, err := sce.SavedReadInt32(raw3, "code")
+	if err != nil {
+		return nil, err
+	}
+	raw4, err := grown.Variable("misses")
+	if err != nil {
+		return nil, err
+	}
+	read4, err := sce.SavedReadUint32(raw4, "misses")
+	if err != nil {
+		return nil, err
+	}
+	raw5, err := grown.Variable("level")
+	if err != nil {
+		return nil, err
+	}
+	read5, err := sce.SavedReadInt32(raw5, "level")
+	if err != nil {
+		return nil, err
+	}
+	raw6, err := grown.Variable("offset")
+	if err != nil {
+		return nil, err
+	}
+	read6, err := sce.SavedReadInt32(raw6, "offset")
+	if err != nil {
+		return nil, err
+	}
+	raw7, err := grown.Variable("accepted")
+	if err != nil {
+		return nil, err
+	}
+	read7, err := sce.SavedReadBool(raw7, "accepted")
+	if err != nil {
+		return nil, err
+	}
+	raw8, err := grown.Variable("rpm")
+	if err != nil {
+		return nil, err
+	}
+	read8, err := sce.SavedReadUint16(raw8, "rpm")
+	if err != nil {
+		return nil, err
+	}
+	raw9, err := grown.Variable("limit")
+	if err != nil {
+		return nil, err
+	}
+	read9, err := sce.SavedReadFloat64(raw9, "limit")
+	if err != nil {
+		return nil, err
+	}
+	raw10, err := grown.Variable("highs")
+	if err != nil {
+		return nil, err
+	}
+	read10, err := sce.SavedReadUint32(raw10, "highs")
+	if err != nil {
+		return nil, err
+	}
+	raw11, err := grown.Variable("phase")
+	if err != nil {
+		return nil, err
+	}
+	read11, err := StaticForgeCallsStatusEnumFromSaved(raw11, "phase")
+	if err != nil {
+		return nil, err
+	}
+	raw12, err := grown.Variable("weight")
+	if err != nil {
+		return nil, err
+	}
+	read12, err := StaticForgeCallsLevelEnumFromSaved(raw12, "weight")
+	if err != nil {
+		return nil, err
+	}
+	raw13, err := grown.Variable("customer")
+	if err != nil {
+		return nil, err
+	}
+	read13, err := sce.SavedReadBoundedString(raw13, "customer", 16)
+	if err != nil {
+		return nil, err
+	}
+	raw14, err := grown.Variable("known")
+	if err != nil {
+		return nil, err
+	}
+	read14, err := sce.SavedReadBool(raw14, "known")
+	if err != nil {
+		return nil, err
+	}
+	if err := sce.JudgeSession[StaticForgeCallsState, StaticForgeCallsEvent](policy, grown); err != nil {
+		return nil, err
+	}
+	policy.vGear = read1
+	policy.vRatio = read2
+	policy.vCode = read3
+	policy.vMisses = read4
+	policy.vLevel = read5
+	policy.vOffset = read6
+	policy.vAccepted = read7
+	policy.vRpm = read8
+	policy.vLimit = read9
+	policy.vHighs = read10
+	policy.vPhase = read11
+	policy.vWeight = read12
+	policy.vCustomer = read13
+	policy.vKnown = read14
+	for _, recorded := range history {
+		policy.SetHistoryValue(recorded.History, recorded.States)
+	}
+	return sce.EnterSession[StaticForgeCallsState, StaticForgeCallsEvent](policy, grown, clock, wallNowMs)
+}
+
+// StaticForgeCallsRestore is StaticForgeCallsRestoreAt at the host's wall
+// clock now.
+func StaticForgeCallsRestore(policy *StaticForgeCallsPolicy, saved *sce.SavedState, clock sce.SceClock) (*sce.Engine[StaticForgeCallsState, StaticForgeCallsEvent], error) {
+	return StaticForgeCallsRestoreAt(policy, saved, clock, sce.SavedWallClockMs())
+}
+
+// SetSessionID gives this session the id its host has for it, in place of the
+// one it drew: an XML Nmtoken, since another session addresses this one as
+// `#_scxml_<id>` and every child's id is this one's and the id the child was
+// started under (docs/adr/0045). Refused for anything else. Called before the
+// machine starts, since what it sends names it by the id it began with.
+func (p *StaticForgeCallsPolicy) SetSessionID(id string) error {
+	if reason := sce.SessionIDRefusalOf(id); reason != "" {
+		return sce.Refuse(reason)
+	}
+	p.SessionID = id
+	return nil
+}
+
+// OwnSessionID is this session's id, `_sessionid`, which a saved state names it
+// by (sce.SavedPolicy).
+func (p *StaticForgeCallsPolicy) OwnSessionID() string { return p.SessionID }
+
+// BindSessionID makes id this session's own: a restore of a format-2 state
+// carries on under the id it was saved with (sce.SavedPolicy).
+func (p *StaticForgeCallsPolicy) BindSessionID(id string) { p.SessionID = id }
+
+// RunningInvokes is the id of each `<invoke>` whose child session is running,
+// in document order (sce.SavedPolicy). This document starts no child session.
+func (p *StaticForgeCallsPolicy) RunningInvokes() []string { return nil }
+
+// InvokeStarts is how many times each `<invoke>` has started in this session
+// (sce.SavedPolicy). This document starts no child session.
+func (p *StaticForgeCallsPolicy) InvokeStarts() []sce.SavedInvokeStart { return nil }
+
+// InvokeOwner is the state that holds the `<invoke>` id, and false for an id the
+// document does not invoke (sce.SavedPolicy). This document starts no child
+// session.
+func (p *StaticForgeCallsPolicy) InvokeOwner(id string) (StaticForgeCallsState, bool) {
+	return 0, false
+}
+
+// HostInvokeOwner is the state that holds the host-run `<invoke>` of this type
+// and id, and false for one the document does not have a host invoker run
+// (sce.SavedPolicy).
+func (p *StaticForgeCallsPolicy) HostInvokeOwner(processorType, id string) (StaticForgeCallsState, bool) {
+	return 0, false
+}
+
+// JudgeChild refuses a running child, which this document does not start
+// (sce.SavedPolicy).
+func (p *StaticForgeCallsPolicy) JudgeChild(child sce.SavedChild) error {
+	return sce.Refuse(fmt.Sprintf("the document starts no child session, so '%s' cannot be one it was running", child.ID))
+}
+
+// ResumeChildren resumes no child, which this document does not start
+// (sce.SavedPolicy).
+func (p *StaticForgeCallsPolicy) ResumeChildren(engine *sce.Engine[StaticForgeCallsState, StaticForgeCallsEvent], children []sce.SavedChild, wallNowMs int64) error {
+	if len(children) > 0 {
+		return p.JudgeChild(children[0])
+	}
+	return nil
+}
+
+// RestartInvokes starts no invocation again, which this document does not start
+// (sce.SavedPolicy).
+func (p *StaticForgeCallsPolicy) RestartInvokes(engine *sce.Engine[StaticForgeCallsState, StaticForgeCallsEvent], ids []string) {}
+
+// SetHistoryValue gives history the states a saved state recorded for it
+// (sce.SavedPolicy).
+func (p *StaticForgeCallsPolicy) SetHistoryValue(history sce.HistoryID, states []StaticForgeCallsState) {
 }
 
 // ── SCE Accepted Subset §2.15: calls of an algorithm that takes or returns state ──
@@ -345,6 +788,10 @@ type StaticForgeCallsPolicy struct {
 // NewStaticForgeCallsPolicy creates a new policy with default values.
 func NewStaticForgeCallsPolicy() StaticForgeCallsPolicy {
 	return StaticForgeCallsPolicy{
+		// docs/adr/0045: a session has an id, which a saved state names it by. A
+		// host that has one for it gives it with SetSessionID before it starts the
+		// machine; a child's is its parent's and the id it was started under.
+		SessionID: sce.DrawSessionID(),
 		vGear: 0,
 		vRatio: 0,
 		vCode: 0,

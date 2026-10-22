@@ -427,6 +427,354 @@ const StaticHostKvSavedShapeFormat2Revised = "c60ffa2d12ab7efa1e75901224798d2ee7
 // names it by, and the format-2 shape spells it by.
 var StaticHostKvSavedEnumKeys = [...]string{}
 
+// ── SCE Accepted Subset §2.15: saving this machine, restoring it ──────────
+
+// StaticHostKvSavedShape is what a saved state of this document is bound
+// to: a state saved from a document that renamed, re-typed or moved a state or a
+// variable is refused, one saved before a guard or an action changed is not, and
+// one saved at an earlier revision of a record schema is read with each field a
+// later revision added at its default.
+var StaticHostKvSavedShape = sce.SavedShape{
+	First:          "e559d3befc5e45e1282094d521bf840ef102b9aac72ec8ceabae510e75799631",
+	Revised:        "c60ffa2d12ab7efa1e75901224798d2ee7ca6959393d9395cb652f94b16cd632",
+	Format2First:   "e559d3befc5e45e1282094d521bf840ef102b9aac72ec8ceabae510e75799631",
+	Format2Revised: "c60ffa2d12ab7efa1e75901224798d2ee7ca6959393d9395cb652f94b16cd632",
+	Records: []sce.RecordLineage{
+	},
+	Enums: []sce.EnumLineage{
+	},
+}
+
+// StaticHostKvHistories is the document's `<history>` pseudo-states, by
+// the id a saved state keys them by: what a saved state records of each, and
+// what a restore reads.
+var StaticHostKvHistories = []sce.HistoryDecl{
+}
+
+// StaticHostKvSaveAt is engine's whole state at the macrostep boundary it
+// stands at: every variable, the machine's own included, and where it stands, as
+// the `sce-saved-state` document every backend reads (sce.SavedState.ToJSON).
+// Each delayed `<send>` still waiting is written as the moment it comes due on
+// the wall clock whose reading now is wallNowMs, in milliseconds since the Unix
+// epoch.
+//
+// Refused for a machine that is not running, one that has ended, one whose last
+// macrostep stopped at the microstep ceiling, and one built around another
+// document's policy.
+func StaticHostKvSaveAt(engine *sce.Engine[StaticHostKvState, StaticHostKvEvent], wallNowMs int64) (*sce.SavedState, error) {
+	p, ok := engine.Policy().(*StaticHostKvPolicy)
+	if !ok {
+		return nil, sce.Refuse("the engine is not one of StaticHostKv")
+	}
+	variables := sce.NewJSONObject()
+	variables.Set("key", sce.SavedWriteString(p.vKey))
+	variables.Set("value", sce.SavedWriteString(p.vValue))
+	variables.Set("after", sce.SavedWriteString(p.vAfter))
+	variables.Set("prefix", sce.SavedWriteString(p.vPrefix))
+	variables.Set("outcome", sce.SavedWriteString(p.vOutcome))
+	variables.Set("found", sce.SavedWriteBool(p.vFound))
+	variables.Set("got", sce.SavedWriteString(p.vGot))
+	variables.Set("replaced", sce.SavedWriteBool(p.vReplaced))
+	variables.Set("existed", sce.SavedWriteBool(p.vExisted))
+	variables.Set("next_found", sce.SavedWriteBool(p.vNextFound))
+	variables.Set("next", sce.SavedWriteString(p.vNext))
+	return sce.SaveSession(engine, &StaticHostKvSavedShape, variables,
+		sce.SaveHistory[StaticHostKvState, StaticHostKvEvent](p, StaticHostKvHistories),
+		nil, wallNowMs)
+}
+
+// StaticHostKvSave is StaticHostKvSaveAt at the host's wall clock now.
+func StaticHostKvSave(engine *sce.Engine[StaticHostKvState, StaticHostKvEvent]) (*sce.SavedState, error) {
+	return StaticHostKvSaveAt(engine, sce.SavedWallClockMs())
+}
+
+// StaticHostKvJudge refuses saved unless a machine of this document could
+// restore it, building nothing: what a parent's restore asks of each child it
+// holds (docs/adr/0045, section 3, step 1).
+func StaticHostKvJudge(saved *sce.SavedState) error {
+	p := &StaticHostKvPolicy{}
+	grown, err := sce.UpgradeSavedState(saved, &StaticHostKvSavedShape)
+	if err != nil {
+		return err
+	}
+	if _, err := sce.RestoreHistory[StaticHostKvState, StaticHostKvEvent](p, grown, StaticHostKvHistories); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("key"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadBoundedString(raw, "key", 256); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("value"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadBoundedString(raw, "value", 4096); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("after"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadBoundedString(raw, "after", 256); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("prefix"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadBoundedString(raw, "prefix", 256); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("outcome"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadBoundedString(raw, "outcome", 24); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("found"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadBool(raw, "found"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("got"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadBoundedString(raw, "got", 4096); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("replaced"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadBool(raw, "replaced"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("existed"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadBool(raw, "existed"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("next_found"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadBool(raw, "next_found"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("next"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadBoundedString(raw, "next", 256); err != nil {
+		return err
+	}
+	return sce.JudgeSession[StaticHostKvState, StaticHostKvEvent](p, grown)
+}
+
+// StaticHostKvRestoreAt is a machine of policy standing where saved left
+// one, measuring time by clock: in place of `Initialize`, so no `<onentry>` runs
+// and no `<data>` is evaluated, since the saved run already did both. Every value
+// is read and the state judged before any is written, so a refused restore leaves
+// policy as it was.
+//
+// Each delayed `<send>` saved is armed against clock, which is the one the
+// machine measures time by; wallNowMs is what time it is on the wall clock the
+// saved `due`s were written against. A send comes due when its saved moment does,
+// and one already due comes due now.
+//
+// The host registers its invokers and its processors on the machine this
+// returns, and drives it as it would one it had initialized.
+func StaticHostKvRestoreAt(policy *StaticHostKvPolicy, saved *sce.SavedState, clock sce.SceClock, wallNowMs int64) (*sce.Engine[StaticHostKvState, StaticHostKvEvent], error) {
+	// The state as one of this machine: each record saved at an earlier revision
+	// of its schema holds the defaults of the fields added since.
+	grown, err := sce.UpgradeSavedState(saved, &StaticHostKvSavedShape)
+	if err != nil {
+		return nil, err
+	}
+	history, err := sce.RestoreHistory[StaticHostKvState, StaticHostKvEvent](policy, grown, StaticHostKvHistories)
+	if err != nil {
+		return nil, err
+	}
+	raw1, err := grown.Variable("key")
+	if err != nil {
+		return nil, err
+	}
+	read1, err := sce.SavedReadBoundedString(raw1, "key", 256)
+	if err != nil {
+		return nil, err
+	}
+	raw2, err := grown.Variable("value")
+	if err != nil {
+		return nil, err
+	}
+	read2, err := sce.SavedReadBoundedString(raw2, "value", 4096)
+	if err != nil {
+		return nil, err
+	}
+	raw3, err := grown.Variable("after")
+	if err != nil {
+		return nil, err
+	}
+	read3, err := sce.SavedReadBoundedString(raw3, "after", 256)
+	if err != nil {
+		return nil, err
+	}
+	raw4, err := grown.Variable("prefix")
+	if err != nil {
+		return nil, err
+	}
+	read4, err := sce.SavedReadBoundedString(raw4, "prefix", 256)
+	if err != nil {
+		return nil, err
+	}
+	raw5, err := grown.Variable("outcome")
+	if err != nil {
+		return nil, err
+	}
+	read5, err := sce.SavedReadBoundedString(raw5, "outcome", 24)
+	if err != nil {
+		return nil, err
+	}
+	raw6, err := grown.Variable("found")
+	if err != nil {
+		return nil, err
+	}
+	read6, err := sce.SavedReadBool(raw6, "found")
+	if err != nil {
+		return nil, err
+	}
+	raw7, err := grown.Variable("got")
+	if err != nil {
+		return nil, err
+	}
+	read7, err := sce.SavedReadBoundedString(raw7, "got", 4096)
+	if err != nil {
+		return nil, err
+	}
+	raw8, err := grown.Variable("replaced")
+	if err != nil {
+		return nil, err
+	}
+	read8, err := sce.SavedReadBool(raw8, "replaced")
+	if err != nil {
+		return nil, err
+	}
+	raw9, err := grown.Variable("existed")
+	if err != nil {
+		return nil, err
+	}
+	read9, err := sce.SavedReadBool(raw9, "existed")
+	if err != nil {
+		return nil, err
+	}
+	raw10, err := grown.Variable("next_found")
+	if err != nil {
+		return nil, err
+	}
+	read10, err := sce.SavedReadBool(raw10, "next_found")
+	if err != nil {
+		return nil, err
+	}
+	raw11, err := grown.Variable("next")
+	if err != nil {
+		return nil, err
+	}
+	read11, err := sce.SavedReadBoundedString(raw11, "next", 256)
+	if err != nil {
+		return nil, err
+	}
+	if err := sce.JudgeSession[StaticHostKvState, StaticHostKvEvent](policy, grown); err != nil {
+		return nil, err
+	}
+	policy.vKey = read1
+	policy.vValue = read2
+	policy.vAfter = read3
+	policy.vPrefix = read4
+	policy.vOutcome = read5
+	policy.vFound = read6
+	policy.vGot = read7
+	policy.vReplaced = read8
+	policy.vExisted = read9
+	policy.vNextFound = read10
+	policy.vNext = read11
+	for _, recorded := range history {
+		policy.SetHistoryValue(recorded.History, recorded.States)
+	}
+	return sce.EnterSession[StaticHostKvState, StaticHostKvEvent](policy, grown, clock, wallNowMs)
+}
+
+// StaticHostKvRestore is StaticHostKvRestoreAt at the host's wall
+// clock now.
+func StaticHostKvRestore(policy *StaticHostKvPolicy, saved *sce.SavedState, clock sce.SceClock) (*sce.Engine[StaticHostKvState, StaticHostKvEvent], error) {
+	return StaticHostKvRestoreAt(policy, saved, clock, sce.SavedWallClockMs())
+}
+
+// SetSessionID gives this session the id its host has for it, in place of the
+// one it drew: an XML Nmtoken, since another session addresses this one as
+// `#_scxml_<id>` and every child's id is this one's and the id the child was
+// started under (docs/adr/0045). Refused for anything else. Called before the
+// machine starts, since what it sends names it by the id it began with.
+func (p *StaticHostKvPolicy) SetSessionID(id string) error {
+	if reason := sce.SessionIDRefusalOf(id); reason != "" {
+		return sce.Refuse(reason)
+	}
+	p.SessionID = id
+	return nil
+}
+
+// OwnSessionID is this session's id, `_sessionid`, which a saved state names it
+// by (sce.SavedPolicy).
+func (p *StaticHostKvPolicy) OwnSessionID() string { return p.SessionID }
+
+// BindSessionID makes id this session's own: a restore of a format-2 state
+// carries on under the id it was saved with (sce.SavedPolicy).
+func (p *StaticHostKvPolicy) BindSessionID(id string) { p.SessionID = id }
+
+// RunningInvokes is the id of each `<invoke>` whose child session is running,
+// in document order (sce.SavedPolicy). This document starts no child session.
+func (p *StaticHostKvPolicy) RunningInvokes() []string { return nil }
+
+// InvokeStarts is how many times each `<invoke>` has started in this session
+// (sce.SavedPolicy). This document starts no child session.
+func (p *StaticHostKvPolicy) InvokeStarts() []sce.SavedInvokeStart { return nil }
+
+// InvokeOwner is the state that holds the `<invoke>` id, and false for an id the
+// document does not invoke (sce.SavedPolicy). This document starts no child
+// session.
+func (p *StaticHostKvPolicy) InvokeOwner(id string) (StaticHostKvState, bool) {
+	return 0, false
+}
+
+// HostInvokeOwner is the state that holds the host-run `<invoke>` of this type
+// and id, and false for one the document does not have a host invoker run
+// (sce.SavedPolicy).
+func (p *StaticHostKvPolicy) HostInvokeOwner(processorType, id string) (StaticHostKvState, bool) {
+	if processorType == "sce-host-kv-get" && id == "get" {
+		return StaticHostKvStateGetting, true
+	}
+	if processorType == "sce-host-kv-put" && id == "put" {
+		return StaticHostKvStatePutting, true
+	}
+	if processorType == "sce-host-kv-delete" && id == "del" {
+		return StaticHostKvStateDeleting, true
+	}
+	if processorType == "sce-host-kv-next-key" && id == "walk" {
+		return StaticHostKvStateWalking, true
+	}
+	return 0, false
+}
+
+// JudgeChild refuses a running child, which this document does not start
+// (sce.SavedPolicy).
+func (p *StaticHostKvPolicy) JudgeChild(child sce.SavedChild) error {
+	return sce.Refuse(fmt.Sprintf("the document starts no child session, so '%s' cannot be one it was running", child.ID))
+}
+
+// ResumeChildren resumes no child, which this document does not start
+// (sce.SavedPolicy).
+func (p *StaticHostKvPolicy) ResumeChildren(engine *sce.Engine[StaticHostKvState, StaticHostKvEvent], children []sce.SavedChild, wallNowMs int64) error {
+	if len(children) > 0 {
+		return p.JudgeChild(children[0])
+	}
+	return nil
+}
+
+// RestartInvokes starts no invocation again, which this document does not start
+// (sce.SavedPolicy).
+func (p *StaticHostKvPolicy) RestartInvokes(engine *sce.Engine[StaticHostKvState, StaticHostKvEvent], ids []string) {}
+
+// SetHistoryValue gives history the states a saved state recorded for it
+// (sce.SavedPolicy).
+func (p *StaticHostKvPolicy) SetHistoryValue(history sce.HistoryID, states []StaticHostKvState) {
+}
+
 // ── SCE Accepted Subset 2.12: typed host-run invoke interface ──────────
 // StaticHostKvGetRequest is `sce:request`: the record the host is asked to start `<invoke id="get">`
 // with (SCE Accepted Subset §2.12).
@@ -760,6 +1108,10 @@ type StaticHostKvPolicy struct {
 // NewStaticHostKvPolicy creates a new policy with default values.
 func NewStaticHostKvPolicy() StaticHostKvPolicy {
 	return StaticHostKvPolicy{
+		// docs/adr/0045: a session has an id, which a saved state names it by. A
+		// host that has one for it gives it with SetSessionID before it starts the
+		// machine; a child's is its parent's and the id it was started under.
+		SessionID: sce.DrawSessionID(),
 		vKey: "",
 		vValue: "",
 		vAfter: "",

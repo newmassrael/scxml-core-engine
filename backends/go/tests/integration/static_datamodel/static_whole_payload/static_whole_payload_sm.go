@@ -237,6 +237,30 @@ func StaticWholePayloadViewModeEnumFromUnderlying(raw uint8) (StaticWholePayload
 	return 0, false
 }
 
+// ToSaved is this value as a saved state writes it.
+func (v StaticWholePayloadViewModeEnum) ToSaved() any {
+	return v.String()
+}
+
+// StaticWholePayloadViewModeEnumFromSaved is the value a saved state holds, refused unless it is a variant.
+func StaticWholePayloadViewModeEnumFromSaved(value any, what string) (StaticWholePayloadViewModeEnum, error) {
+	declared, err := sce.SavedReadString(value, what)
+	if err != nil {
+		return 0, err
+	}
+	switch declared {
+	case "month":
+		return StaticWholePayloadViewModeEnumMonth, nil
+	case "week":
+		return StaticWholePayloadViewModeEnumWeek, nil
+	case "day":
+		return StaticWholePayloadViewModeEnumDay, nil
+	case "agenda_list":
+		return StaticWholePayloadViewModeEnumAgendaList, nil
+	}
+	return 0, sce.Refuse(fmt.Sprintf("'%s' (%s) is not a variant of ViewMode", what, declared))
+}
+
 // SCE Accepted Subset §2.15: a `record:View` datamodel value.
 type StaticWholePayloadViewRecord struct {
 	layout StaticWholePayloadViewModeEnum
@@ -253,6 +277,37 @@ func (r StaticWholePayloadViewRecord) Zoom() uint8 {
 	return r.zoom
 }
 
+// ToSaved is this value as a saved state writes it.
+func (r StaticWholePayloadViewRecord) ToSaved() any {
+	saved := sce.NewJSONObject()
+	saved.Set("layout", (func(v StaticWholePayloadViewModeEnum) any { return v.ToSaved() })(r.layout))
+	saved.Set("zoom", (sce.SavedWriteUint8)(r.zoom))
+	return saved
+}
+
+// StaticWholePayloadViewRecordFromSaved is the value a saved state holds, refused unless it is one.
+func StaticWholePayloadViewRecordFromSaved(value any, what string) (StaticWholePayloadViewRecord, error) {
+	var record StaticWholePayloadViewRecord
+	{
+		saved, err := sce.SavedField(value, what, "layout")
+		if err != nil {
+			return record, err
+		}
+		if record.layout, err = (StaticWholePayloadViewModeEnumFromSaved)(saved, what + ".layout"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "zoom")
+		if err != nil {
+			return record, err
+		}
+		if record.zoom, err = (sce.SavedReadUint8)(saved, what + ".zoom"); err != nil {
+			return record, err
+		}
+	}
+	return record, nil
+}
 
 // ── SCE Accepted Subset §2.15: what a format-2 saved state of it is bound to ──
 
@@ -272,6 +327,274 @@ const StaticWholePayloadSavedShapeFormat2Revised = "46e2a51975b77a21618ab3fbbddc
 // names it by, and the format-2 shape spells it by.
 var StaticWholePayloadSavedEnumKeys = [...]string{
 	"enum:enum_view_mode.scxml",
+}
+
+// ── SCE Accepted Subset §2.15: saving this machine, restoring it ──────────
+
+// StaticWholePayloadSavedShape is what a saved state of this document is bound
+// to: a state saved from a document that renamed, re-typed or moved a state or a
+// variable is refused, one saved before a guard or an action changed is not, and
+// one saved at an earlier revision of a record schema is read with each field a
+// later revision added at its default.
+var StaticWholePayloadSavedShape = sce.SavedShape{
+	First:          "b012d52eed2aa7c4c21026e8b9a1e1e55411a4dccd8a7ff7e6a30934ff248236",
+	Revised:        "4ff99c413cce990942da692970977ab9e43384c109f943d60a83941cddf3d590",
+	Format2First:   "630f70df52332fd1d901f9e652918616f8b5296268086f555c35dc7c21951176",
+	Format2Revised: "46e2a51975b77a21618ab3fbbddc6bd11c97ec93b0cbe15c7894469c4f57f604",
+	Records: []sce.RecordLineage{
+		{
+			Event:     "view.shown",
+			Revision:  1,
+			Revisions: []string{},
+			Added: []sce.AddedField{
+			},
+			Holders: []sce.RecordHolder{
+				{Variable: "shown", List: false},
+				{Variable: "seen", List: true},
+			},
+		},
+	},
+	Enums: []sce.EnumLineage{
+		{
+			Key:       "enum:enum_view_mode.scxml",
+			Revision:  1,
+			Revisions: []string{},
+			Added: []sce.AddedVariant{
+			},
+			Holders: []sce.EnumHolder{
+				{Variable: "shown", Field: sce.FieldNamed("layout"), List: false},
+				{Variable: "seen", Field: sce.FieldNamed("layout"), List: true},
+			},
+		},
+	},
+}
+
+// StaticWholePayloadHistories is the document's `<history>` pseudo-states, by
+// the id a saved state keys them by: what a saved state records of each, and
+// what a restore reads.
+var StaticWholePayloadHistories = []sce.HistoryDecl{
+}
+
+// StaticWholePayloadSaveAt is engine's whole state at the macrostep boundary it
+// stands at: every variable, the machine's own included, and where it stands, as
+// the `sce-saved-state` document every backend reads (sce.SavedState.ToJSON).
+// Each delayed `<send>` still waiting is written as the moment it comes due on
+// the wall clock whose reading now is wallNowMs, in milliseconds since the Unix
+// epoch.
+//
+// Refused for a machine that is not running, one that has ended, one whose last
+// macrostep stopped at the microstep ceiling, and one built around another
+// document's policy.
+func StaticWholePayloadSaveAt(engine *sce.Engine[StaticWholePayloadState, StaticWholePayloadEvent], wallNowMs int64) (*sce.SavedState, error) {
+	p, ok := engine.Policy().(*StaticWholePayloadPolicy)
+	if !ok {
+		return nil, sce.Refuse("the engine is not one of StaticWholePayload")
+	}
+	variables := sce.NewJSONObject()
+	variables.Set("shown", p.vShown.ToSaved())
+	variables.Set("seen", sce.SavedWriteList(p.vSeen, func(r StaticWholePayloadViewRecord) any { return r.ToSaved() }))
+	variables.Set("updates", sce.SavedWriteUint32(p.vUpdates))
+	variables.Set("agendas", sce.SavedWriteUint32(p.vAgendas))
+	variables.Set("others", sce.SavedWriteUint32(p.vOthers))
+	return sce.SaveSession(engine, &StaticWholePayloadSavedShape, variables,
+		sce.SaveHistory[StaticWholePayloadState, StaticWholePayloadEvent](p, StaticWholePayloadHistories),
+		nil, wallNowMs)
+}
+
+// StaticWholePayloadSave is StaticWholePayloadSaveAt at the host's wall clock now.
+func StaticWholePayloadSave(engine *sce.Engine[StaticWholePayloadState, StaticWholePayloadEvent]) (*sce.SavedState, error) {
+	return StaticWholePayloadSaveAt(engine, sce.SavedWallClockMs())
+}
+
+// StaticWholePayloadJudge refuses saved unless a machine of this document could
+// restore it, building nothing: what a parent's restore asks of each child it
+// holds (docs/adr/0045, section 3, step 1).
+func StaticWholePayloadJudge(saved *sce.SavedState) error {
+	p := &StaticWholePayloadPolicy{}
+	grown, err := sce.UpgradeSavedState(saved, &StaticWholePayloadSavedShape)
+	if err != nil {
+		return err
+	}
+	if _, err := sce.RestoreHistory[StaticWholePayloadState, StaticWholePayloadEvent](p, grown, StaticWholePayloadHistories); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("shown"); err != nil {
+		return err
+	} else if _, err := StaticWholePayloadViewRecordFromSaved(raw, "shown"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("seen"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadList(raw, "seen", 4, StaticWholePayloadViewRecordFromSaved); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("updates"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "updates"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("agendas"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "agendas"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("others"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "others"); err != nil {
+		return err
+	}
+	return sce.JudgeSession[StaticWholePayloadState, StaticWholePayloadEvent](p, grown)
+}
+
+// StaticWholePayloadRestoreAt is a machine of policy standing where saved left
+// one, measuring time by clock: in place of `Initialize`, so no `<onentry>` runs
+// and no `<data>` is evaluated, since the saved run already did both. Every value
+// is read and the state judged before any is written, so a refused restore leaves
+// policy as it was.
+//
+// Each delayed `<send>` saved is armed against clock, which is the one the
+// machine measures time by; wallNowMs is what time it is on the wall clock the
+// saved `due`s were written against. A send comes due when its saved moment does,
+// and one already due comes due now.
+//
+// The host registers its invokers and its processors on the machine this
+// returns, and drives it as it would one it had initialized.
+func StaticWholePayloadRestoreAt(policy *StaticWholePayloadPolicy, saved *sce.SavedState, clock sce.SceClock, wallNowMs int64) (*sce.Engine[StaticWholePayloadState, StaticWholePayloadEvent], error) {
+	// The state as one of this machine: each record saved at an earlier revision
+	// of its schema holds the defaults of the fields added since.
+	grown, err := sce.UpgradeSavedState(saved, &StaticWholePayloadSavedShape)
+	if err != nil {
+		return nil, err
+	}
+	history, err := sce.RestoreHistory[StaticWholePayloadState, StaticWholePayloadEvent](policy, grown, StaticWholePayloadHistories)
+	if err != nil {
+		return nil, err
+	}
+	raw1, err := grown.Variable("shown")
+	if err != nil {
+		return nil, err
+	}
+	read1, err := StaticWholePayloadViewRecordFromSaved(raw1, "shown")
+	if err != nil {
+		return nil, err
+	}
+	raw2, err := grown.Variable("seen")
+	if err != nil {
+		return nil, err
+	}
+	read2, err := sce.SavedReadList(raw2, "seen", 4, StaticWholePayloadViewRecordFromSaved)
+	if err != nil {
+		return nil, err
+	}
+	raw3, err := grown.Variable("updates")
+	if err != nil {
+		return nil, err
+	}
+	read3, err := sce.SavedReadUint32(raw3, "updates")
+	if err != nil {
+		return nil, err
+	}
+	raw4, err := grown.Variable("agendas")
+	if err != nil {
+		return nil, err
+	}
+	read4, err := sce.SavedReadUint32(raw4, "agendas")
+	if err != nil {
+		return nil, err
+	}
+	raw5, err := grown.Variable("others")
+	if err != nil {
+		return nil, err
+	}
+	read5, err := sce.SavedReadUint32(raw5, "others")
+	if err != nil {
+		return nil, err
+	}
+	if err := sce.JudgeSession[StaticWholePayloadState, StaticWholePayloadEvent](policy, grown); err != nil {
+		return nil, err
+	}
+	policy.vShown = read1
+	policy.vSeen = read2
+	policy.vUpdates = read3
+	policy.vAgendas = read4
+	policy.vOthers = read5
+	for _, recorded := range history {
+		policy.SetHistoryValue(recorded.History, recorded.States)
+	}
+	return sce.EnterSession[StaticWholePayloadState, StaticWholePayloadEvent](policy, grown, clock, wallNowMs)
+}
+
+// StaticWholePayloadRestore is StaticWholePayloadRestoreAt at the host's wall
+// clock now.
+func StaticWholePayloadRestore(policy *StaticWholePayloadPolicy, saved *sce.SavedState, clock sce.SceClock) (*sce.Engine[StaticWholePayloadState, StaticWholePayloadEvent], error) {
+	return StaticWholePayloadRestoreAt(policy, saved, clock, sce.SavedWallClockMs())
+}
+
+// SetSessionID gives this session the id its host has for it, in place of the
+// one it drew: an XML Nmtoken, since another session addresses this one as
+// `#_scxml_<id>` and every child's id is this one's and the id the child was
+// started under (docs/adr/0045). Refused for anything else. Called before the
+// machine starts, since what it sends names it by the id it began with.
+func (p *StaticWholePayloadPolicy) SetSessionID(id string) error {
+	if reason := sce.SessionIDRefusalOf(id); reason != "" {
+		return sce.Refuse(reason)
+	}
+	p.SessionID = id
+	return nil
+}
+
+// OwnSessionID is this session's id, `_sessionid`, which a saved state names it
+// by (sce.SavedPolicy).
+func (p *StaticWholePayloadPolicy) OwnSessionID() string { return p.SessionID }
+
+// BindSessionID makes id this session's own: a restore of a format-2 state
+// carries on under the id it was saved with (sce.SavedPolicy).
+func (p *StaticWholePayloadPolicy) BindSessionID(id string) { p.SessionID = id }
+
+// RunningInvokes is the id of each `<invoke>` whose child session is running,
+// in document order (sce.SavedPolicy). This document starts no child session.
+func (p *StaticWholePayloadPolicy) RunningInvokes() []string { return nil }
+
+// InvokeStarts is how many times each `<invoke>` has started in this session
+// (sce.SavedPolicy). This document starts no child session.
+func (p *StaticWholePayloadPolicy) InvokeStarts() []sce.SavedInvokeStart { return nil }
+
+// InvokeOwner is the state that holds the `<invoke>` id, and false for an id the
+// document does not invoke (sce.SavedPolicy). This document starts no child
+// session.
+func (p *StaticWholePayloadPolicy) InvokeOwner(id string) (StaticWholePayloadState, bool) {
+	return 0, false
+}
+
+// HostInvokeOwner is the state that holds the host-run `<invoke>` of this type
+// and id, and false for one the document does not have a host invoker run
+// (sce.SavedPolicy).
+func (p *StaticWholePayloadPolicy) HostInvokeOwner(processorType, id string) (StaticWholePayloadState, bool) {
+	return 0, false
+}
+
+// JudgeChild refuses a running child, which this document does not start
+// (sce.SavedPolicy).
+func (p *StaticWholePayloadPolicy) JudgeChild(child sce.SavedChild) error {
+	return sce.Refuse(fmt.Sprintf("the document starts no child session, so '%s' cannot be one it was running", child.ID))
+}
+
+// ResumeChildren resumes no child, which this document does not start
+// (sce.SavedPolicy).
+func (p *StaticWholePayloadPolicy) ResumeChildren(engine *sce.Engine[StaticWholePayloadState, StaticWholePayloadEvent], children []sce.SavedChild, wallNowMs int64) error {
+	if len(children) > 0 {
+		return p.JudgeChild(children[0])
+	}
+	return nil
+}
+
+// RestartInvokes starts no invocation again, which this document does not start
+// (sce.SavedPolicy).
+func (p *StaticWholePayloadPolicy) RestartInvokes(engine *sce.Engine[StaticWholePayloadState, StaticWholePayloadEvent], ids []string) {}
+
+// SetHistoryValue gives history the states a saved state recorded for it
+// (sce.SavedPolicy).
+func (p *StaticWholePayloadPolicy) SetHistoryValue(history sce.HistoryID, states []StaticWholePayloadState) {
 }
 
 // ======================================================================
@@ -312,6 +635,10 @@ type StaticWholePayloadPolicy struct {
 // NewStaticWholePayloadPolicy creates a new policy with default values.
 func NewStaticWholePayloadPolicy() StaticWholePayloadPolicy {
 	return StaticWholePayloadPolicy{
+		// docs/adr/0045: a session has an id, which a saved state names it by. A
+		// host that has one for it gives it with SetSessionID before it starts the
+		// machine; a child's is its parent's and the id it was started under.
+		SessionID: sce.DrawSessionID(),
 		vShown: StaticWholePayloadViewRecord{layout: StaticWholePayloadViewModeEnumMonth, zoom: 1},
 		vSeen: nil,
 		vUpdates: 0,

@@ -347,6 +347,11 @@ type HostInvokeRequest struct {
 	EventData string
 	// Content is inline `<content>`, empty when the document carried none.
 	Content string
+	// Restarted says this start is a restore starting the invocation again: the
+	// machine saved while it ran, and the process the host began for it did not
+	// outlive the one that saved. What the host does with that is its business; a
+	// host that cannot tell a second start from a first does not see it.
+	Restarted bool
 	// Token says which start of this invoke this is. The engine assigns it,
 	// and a host that finishes later hands it back to CompleteHostInvoke.
 	//
@@ -474,19 +479,42 @@ func (e *Engine[S, E]) PerformHostInvoke(request HostInvokeRequest) bool {
 		}
 		return true
 	}
+	var deadlineAt *int64
+	if hasDeadline {
+		at := saturatingAddMs(e.schedNowMs(), deadlineMs)
+		deadlineAt = &at
+	}
+	e.startHostInvoke(handler, request, deadlineAt)
+	return true
+}
+
+// startHostInvoke is the start itself, once the invoker is known and the
+// deadline, if there is one, is the moment of the engine's clock it comes due:
+// the token is assigned and the run recorded before the handler is asked, so a
+// handler that completes at once completes a run the engine already knows. A
+// restore starts an invocation again through here, with the deadline it had
+// left (SCE Accepted Subset §2.15).
+func (e *Engine[S, E]) startHostInvoke(handler HostInvokeHandler, request HostInvokeRequest, deadlineAt *int64) {
 	token := e.nextHostInvokeToken
 	e.nextHostInvokeToken++
 	request.Token = token
 	if e.startedHostInvokes == nil {
-		e.startedHostInvokes = make(map[hostInvokeKey]uint64)
+		e.startedHostInvokes = make(map[hostInvokeKey]startedHostInvoke)
 	}
-	e.startedHostInvokes[hostInvokeKey{request.ProcessorType, request.InvokeID}] = token
-	if hasDeadline {
+	// What a save writes is the request as the host was handed it, so the run
+	// keeps its own copy of the parameters the host may go on to change.
+	kept := request
+	kept.Params = cloneParams(request.Params)
+	e.startedHostInvokes[hostInvokeKey{request.ProcessorType, request.InvokeID}] = startedHostInvoke{
+		token:   token,
+		request: kept,
+	}
+	if deadlineAt != nil {
 		e.scheduler.ScheduleHostInvokeDeadlineAt(HostInvokeDeadline{
 			ProcessorType: request.ProcessorType,
 			InvokeID:      request.InvokeID,
 			Token:         token,
-		}, saturatingAddMs(e.schedNowMs(), deadlineMs))
+		}, *deadlineAt)
 	}
 	response := handler(HostInvokeEvent{Start: &request})
 	if response != nil && response.Refusal != nil {
@@ -498,7 +526,7 @@ func (e *Engine[S, E]) PerformHostInvoke(request HostInvokeRequest) bool {
 		if evt, known := e.policy.GetEventFromName("error.execution"); known {
 			e.Raise(NewPlatformError(evt, *response.Refusal))
 		}
-		return true
+		return
 	}
 	if response != nil && response.DoneData != nil {
 		// §scxml-6.4: a completion the host reported NOW takes the same door as
@@ -507,7 +535,16 @@ func (e *Engine[S, E]) PerformHostInvoke(request HostInvokeRequest) bool {
 		// did not report.
 		e.CompleteHostInvoke(request.ProcessorType, request.InvokeID, token, *response.DoneData)
 	}
-	return true
+}
+
+// cloneParams is params with its own slices, so a copy is not changed by what
+// the original goes on to be given.
+func cloneParams(params map[string][]string) map[string][]string {
+	cloned := make(map[string][]string, len(params))
+	for name, values := range params {
+		cloned[name] = append([]string(nil), values...)
+	}
+	return cloned
 }
 
 // CompleteHostInvoke reports that a host-run invocation finished, raising its
@@ -555,7 +592,7 @@ func (e *Engine[S, E]) FailHostInvoke(processorType, invokeID string, token uint
 // failure: the token check, the deadline drop, and the event.
 func (e *Engine[S, E]) endHostInvoke(processorType, invokeID string, token uint64, failed bool, data, origin, originType string) bool {
 	key := hostInvokeKey{processorType, invokeID}
-	if running, ok := e.startedHostInvokes[key]; !ok || running != token {
+	if running, ok := e.startedHostInvokes[key]; !ok || running.token != token {
 		return false
 	}
 	delete(e.startedHostInvokes, key)
@@ -606,13 +643,13 @@ func (e *Engine[S, E]) RefusedHostInvokeCompletions() uint64 {
 // emitted exit chain does not need its own bookkeeping.
 func (e *Engine[S, E]) CancelHostInvoke(processorType, invokeID string) bool {
 	key := hostInvokeKey{processorType, invokeID}
-	token, running := e.startedHostInvokes[key]
+	started, running := e.startedHostInvokes[key]
 	if !running {
 		return false
 	}
 	delete(e.startedHostInvokes, key)
-	e.scheduler.DropHostInvokeDeadline(token)
-	return e.deliverHostInvokeCancel(processorType, invokeID, token)
+	e.scheduler.DropHostInvokeDeadline(started.token)
+	return e.deliverHostInvokeCancel(processorType, invokeID, started.token)
 }
 
 func (e *Engine[S, E]) deliverHostInvokeCancel(processorType, invokeID string, token uint64) bool {
@@ -635,7 +672,7 @@ func (e *Engine[S, E]) deliverHostInvokeCancel(processorType, invokeID string, t
 // same door a completion takes, so exactly one of the two happens.
 func (e *Engine[S, E]) expireHostInvoke(deadline HostInvokeDeadline) {
 	key := hostInvokeKey{deadline.ProcessorType, deadline.InvokeID}
-	if running, ok := e.startedHostInvokes[key]; !ok || running != deadline.Token {
+	if running, ok := e.startedHostInvokes[key]; !ok || running.token != deadline.Token {
 		return
 	}
 	delete(e.startedHostInvokes, key)

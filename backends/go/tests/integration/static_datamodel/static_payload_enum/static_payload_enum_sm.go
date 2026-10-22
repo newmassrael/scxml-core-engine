@@ -234,6 +234,30 @@ func StaticPayloadEnumViewModeEnumFromUnderlying(raw uint8) (StaticPayloadEnumVi
 	return 0, false
 }
 
+// ToSaved is this value as a saved state writes it.
+func (v StaticPayloadEnumViewModeEnum) ToSaved() any {
+	return v.String()
+}
+
+// StaticPayloadEnumViewModeEnumFromSaved is the value a saved state holds, refused unless it is a variant.
+func StaticPayloadEnumViewModeEnumFromSaved(value any, what string) (StaticPayloadEnumViewModeEnum, error) {
+	declared, err := sce.SavedReadString(value, what)
+	if err != nil {
+		return 0, err
+	}
+	switch declared {
+	case "month":
+		return StaticPayloadEnumViewModeEnumMonth, nil
+	case "week":
+		return StaticPayloadEnumViewModeEnumWeek, nil
+	case "day":
+		return StaticPayloadEnumViewModeEnumDay, nil
+	case "agenda_list":
+		return StaticPayloadEnumViewModeEnumAgendaList, nil
+	}
+	return 0, sce.Refuse(fmt.Sprintf("'%s' (%s) is not a variant of ViewMode", what, declared))
+}
+
 // ── SCE Accepted Subset §2.15: what a format-2 saved state of it is bound to ──
 
 // StaticPayloadEnumSavedShapeFormat2 is the shape a format-2 saved state of
@@ -252,6 +276,247 @@ const StaticPayloadEnumSavedShapeFormat2Revised = "5bdea80956eb1aecd3e03d1b9d61a
 // names it by, and the format-2 shape spells it by.
 var StaticPayloadEnumSavedEnumKeys = [...]string{
 	"enum:enum_view_mode.scxml",
+}
+
+// ── SCE Accepted Subset §2.15: saving this machine, restoring it ──────────
+
+// StaticPayloadEnumSavedShape is what a saved state of this document is bound
+// to: a state saved from a document that renamed, re-typed or moved a state or a
+// variable is refused, one saved before a guard or an action changed is not, and
+// one saved at an earlier revision of a record schema is read with each field a
+// later revision added at its default.
+var StaticPayloadEnumSavedShape = sce.SavedShape{
+	First:          "1b285f0009995c3b4881af97d94c25e4e3673020ba3c53351fd4a413ae0ac64f",
+	Revised:        "31e2fa158b14337ea1e405a1b1f9ced4a60c1c4fd4ea0410219e80e6a74b592b",
+	Format2First:   "aae91d478539bd99337e05e9f505a402677de9616f66ecd9e05ef34b97826db5",
+	Format2Revised: "5bdea80956eb1aecd3e03d1b9d61af320561a0a4e2288b05c8cd5ce910877677",
+	Records: []sce.RecordLineage{
+	},
+	Enums: []sce.EnumLineage{
+		{
+			Key:       "enum:enum_view_mode.scxml",
+			Revision:  1,
+			Revisions: []string{},
+			Added: []sce.AddedVariant{
+			},
+			Holders: []sce.EnumHolder{
+				{Variable: "layout", List: false},
+			},
+		},
+	},
+}
+
+// StaticPayloadEnumHistories is the document's `<history>` pseudo-states, by
+// the id a saved state keys them by: what a saved state records of each, and
+// what a restore reads.
+var StaticPayloadEnumHistories = []sce.HistoryDecl{
+}
+
+// StaticPayloadEnumSaveAt is engine's whole state at the macrostep boundary it
+// stands at: every variable, the machine's own included, and where it stands, as
+// the `sce-saved-state` document every backend reads (sce.SavedState.ToJSON).
+// Each delayed `<send>` still waiting is written as the moment it comes due on
+// the wall clock whose reading now is wallNowMs, in milliseconds since the Unix
+// epoch.
+//
+// Refused for a machine that is not running, one that has ended, one whose last
+// macrostep stopped at the microstep ceiling, and one built around another
+// document's policy.
+func StaticPayloadEnumSaveAt(engine *sce.Engine[StaticPayloadEnumState, StaticPayloadEnumEvent], wallNowMs int64) (*sce.SavedState, error) {
+	p, ok := engine.Policy().(*StaticPayloadEnumPolicy)
+	if !ok {
+		return nil, sce.Refuse("the engine is not one of StaticPayloadEnum")
+	}
+	variables := sce.NewJSONObject()
+	variables.Set("layout", p.vLayout.ToSaved())
+	variables.Set("zoom", sce.SavedWriteUint8(p.vZoom))
+	variables.Set("agenda", sce.SavedWriteBool(p.vAgenda))
+	variables.Set("shown", sce.SavedWriteUint32(p.vShown))
+	return sce.SaveSession(engine, &StaticPayloadEnumSavedShape, variables,
+		sce.SaveHistory[StaticPayloadEnumState, StaticPayloadEnumEvent](p, StaticPayloadEnumHistories),
+		nil, wallNowMs)
+}
+
+// StaticPayloadEnumSave is StaticPayloadEnumSaveAt at the host's wall clock now.
+func StaticPayloadEnumSave(engine *sce.Engine[StaticPayloadEnumState, StaticPayloadEnumEvent]) (*sce.SavedState, error) {
+	return StaticPayloadEnumSaveAt(engine, sce.SavedWallClockMs())
+}
+
+// StaticPayloadEnumJudge refuses saved unless a machine of this document could
+// restore it, building nothing: what a parent's restore asks of each child it
+// holds (docs/adr/0045, section 3, step 1).
+func StaticPayloadEnumJudge(saved *sce.SavedState) error {
+	p := &StaticPayloadEnumPolicy{}
+	grown, err := sce.UpgradeSavedState(saved, &StaticPayloadEnumSavedShape)
+	if err != nil {
+		return err
+	}
+	if _, err := sce.RestoreHistory[StaticPayloadEnumState, StaticPayloadEnumEvent](p, grown, StaticPayloadEnumHistories); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("layout"); err != nil {
+		return err
+	} else if _, err := StaticPayloadEnumViewModeEnumFromSaved(raw, "layout"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("zoom"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint8(raw, "zoom"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("agenda"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadBool(raw, "agenda"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("shown"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "shown"); err != nil {
+		return err
+	}
+	return sce.JudgeSession[StaticPayloadEnumState, StaticPayloadEnumEvent](p, grown)
+}
+
+// StaticPayloadEnumRestoreAt is a machine of policy standing where saved left
+// one, measuring time by clock: in place of `Initialize`, so no `<onentry>` runs
+// and no `<data>` is evaluated, since the saved run already did both. Every value
+// is read and the state judged before any is written, so a refused restore leaves
+// policy as it was.
+//
+// Each delayed `<send>` saved is armed against clock, which is the one the
+// machine measures time by; wallNowMs is what time it is on the wall clock the
+// saved `due`s were written against. A send comes due when its saved moment does,
+// and one already due comes due now.
+//
+// The host registers its invokers and its processors on the machine this
+// returns, and drives it as it would one it had initialized.
+func StaticPayloadEnumRestoreAt(policy *StaticPayloadEnumPolicy, saved *sce.SavedState, clock sce.SceClock, wallNowMs int64) (*sce.Engine[StaticPayloadEnumState, StaticPayloadEnumEvent], error) {
+	// The state as one of this machine: each record saved at an earlier revision
+	// of its schema holds the defaults of the fields added since.
+	grown, err := sce.UpgradeSavedState(saved, &StaticPayloadEnumSavedShape)
+	if err != nil {
+		return nil, err
+	}
+	history, err := sce.RestoreHistory[StaticPayloadEnumState, StaticPayloadEnumEvent](policy, grown, StaticPayloadEnumHistories)
+	if err != nil {
+		return nil, err
+	}
+	raw1, err := grown.Variable("layout")
+	if err != nil {
+		return nil, err
+	}
+	read1, err := StaticPayloadEnumViewModeEnumFromSaved(raw1, "layout")
+	if err != nil {
+		return nil, err
+	}
+	raw2, err := grown.Variable("zoom")
+	if err != nil {
+		return nil, err
+	}
+	read2, err := sce.SavedReadUint8(raw2, "zoom")
+	if err != nil {
+		return nil, err
+	}
+	raw3, err := grown.Variable("agenda")
+	if err != nil {
+		return nil, err
+	}
+	read3, err := sce.SavedReadBool(raw3, "agenda")
+	if err != nil {
+		return nil, err
+	}
+	raw4, err := grown.Variable("shown")
+	if err != nil {
+		return nil, err
+	}
+	read4, err := sce.SavedReadUint32(raw4, "shown")
+	if err != nil {
+		return nil, err
+	}
+	if err := sce.JudgeSession[StaticPayloadEnumState, StaticPayloadEnumEvent](policy, grown); err != nil {
+		return nil, err
+	}
+	policy.vLayout = read1
+	policy.vZoom = read2
+	policy.vAgenda = read3
+	policy.vShown = read4
+	for _, recorded := range history {
+		policy.SetHistoryValue(recorded.History, recorded.States)
+	}
+	return sce.EnterSession[StaticPayloadEnumState, StaticPayloadEnumEvent](policy, grown, clock, wallNowMs)
+}
+
+// StaticPayloadEnumRestore is StaticPayloadEnumRestoreAt at the host's wall
+// clock now.
+func StaticPayloadEnumRestore(policy *StaticPayloadEnumPolicy, saved *sce.SavedState, clock sce.SceClock) (*sce.Engine[StaticPayloadEnumState, StaticPayloadEnumEvent], error) {
+	return StaticPayloadEnumRestoreAt(policy, saved, clock, sce.SavedWallClockMs())
+}
+
+// SetSessionID gives this session the id its host has for it, in place of the
+// one it drew: an XML Nmtoken, since another session addresses this one as
+// `#_scxml_<id>` and every child's id is this one's and the id the child was
+// started under (docs/adr/0045). Refused for anything else. Called before the
+// machine starts, since what it sends names it by the id it began with.
+func (p *StaticPayloadEnumPolicy) SetSessionID(id string) error {
+	if reason := sce.SessionIDRefusalOf(id); reason != "" {
+		return sce.Refuse(reason)
+	}
+	p.SessionID = id
+	return nil
+}
+
+// OwnSessionID is this session's id, `_sessionid`, which a saved state names it
+// by (sce.SavedPolicy).
+func (p *StaticPayloadEnumPolicy) OwnSessionID() string { return p.SessionID }
+
+// BindSessionID makes id this session's own: a restore of a format-2 state
+// carries on under the id it was saved with (sce.SavedPolicy).
+func (p *StaticPayloadEnumPolicy) BindSessionID(id string) { p.SessionID = id }
+
+// RunningInvokes is the id of each `<invoke>` whose child session is running,
+// in document order (sce.SavedPolicy). This document starts no child session.
+func (p *StaticPayloadEnumPolicy) RunningInvokes() []string { return nil }
+
+// InvokeStarts is how many times each `<invoke>` has started in this session
+// (sce.SavedPolicy). This document starts no child session.
+func (p *StaticPayloadEnumPolicy) InvokeStarts() []sce.SavedInvokeStart { return nil }
+
+// InvokeOwner is the state that holds the `<invoke>` id, and false for an id the
+// document does not invoke (sce.SavedPolicy). This document starts no child
+// session.
+func (p *StaticPayloadEnumPolicy) InvokeOwner(id string) (StaticPayloadEnumState, bool) {
+	return 0, false
+}
+
+// HostInvokeOwner is the state that holds the host-run `<invoke>` of this type
+// and id, and false for one the document does not have a host invoker run
+// (sce.SavedPolicy).
+func (p *StaticPayloadEnumPolicy) HostInvokeOwner(processorType, id string) (StaticPayloadEnumState, bool) {
+	return 0, false
+}
+
+// JudgeChild refuses a running child, which this document does not start
+// (sce.SavedPolicy).
+func (p *StaticPayloadEnumPolicy) JudgeChild(child sce.SavedChild) error {
+	return sce.Refuse(fmt.Sprintf("the document starts no child session, so '%s' cannot be one it was running", child.ID))
+}
+
+// ResumeChildren resumes no child, which this document does not start
+// (sce.SavedPolicy).
+func (p *StaticPayloadEnumPolicy) ResumeChildren(engine *sce.Engine[StaticPayloadEnumState, StaticPayloadEnumEvent], children []sce.SavedChild, wallNowMs int64) error {
+	if len(children) > 0 {
+		return p.JudgeChild(children[0])
+	}
+	return nil
+}
+
+// RestartInvokes starts no invocation again, which this document does not start
+// (sce.SavedPolicy).
+func (p *StaticPayloadEnumPolicy) RestartInvokes(engine *sce.Engine[StaticPayloadEnumState, StaticPayloadEnumEvent], ids []string) {}
+
+// SetHistoryValue gives history the states a saved state recorded for it
+// (sce.SavedPolicy).
+func (p *StaticPayloadEnumPolicy) SetHistoryValue(history sce.HistoryID, states []StaticPayloadEnumState) {
 }
 
 // ======================================================================
@@ -290,6 +555,10 @@ type StaticPayloadEnumPolicy struct {
 // NewStaticPayloadEnumPolicy creates a new policy with default values.
 func NewStaticPayloadEnumPolicy() StaticPayloadEnumPolicy {
 	return StaticPayloadEnumPolicy{
+		// docs/adr/0045: a session has an id, which a saved state names it by. A
+		// host that has one for it gives it with SetSessionID before it starts the
+		// machine; a child's is its parent's and the id it was started under.
+		SessionID: sce.DrawSessionID(),
 		vLayout: StaticPayloadEnumViewModeEnumMonth,
 		vZoom: 0,
 		vAgenda: false,

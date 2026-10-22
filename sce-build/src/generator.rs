@@ -4289,6 +4289,7 @@ fn render_go(
         static_adapter_defs => static_lowering.adapter_defs.join("\n\n"),
             static_imports => static_imports,
             static_format2_shape => format2_keys(&static_lowering),
+            static_saved_shape => &static_lowering.saved_shape,
         };
         tmpl.render(ctx).map_err(render_error)
     };

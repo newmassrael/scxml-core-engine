@@ -238,6 +238,28 @@ func StaticSchemaPendingSignalLevelEnumFromUnderlying(raw uint8) (StaticSchemaPe
 	return 0, false
 }
 
+// ToSaved is this value as a saved state writes it.
+func (v StaticSchemaPendingSignalLevelEnum) ToSaved() any {
+	return v.String()
+}
+
+// StaticSchemaPendingSignalLevelEnumFromSaved is the value a saved state holds, refused unless it is a variant.
+func StaticSchemaPendingSignalLevelEnumFromSaved(value any, what string) (StaticSchemaPendingSignalLevelEnum, error) {
+	declared, err := sce.SavedReadString(value, what)
+	if err != nil {
+		return 0, err
+	}
+	switch declared {
+	case "low":
+		return StaticSchemaPendingSignalLevelEnumLow, nil
+	case "high":
+		return StaticSchemaPendingSignalLevelEnumHigh, nil
+	case "critical":
+		return StaticSchemaPendingSignalLevelEnumCritical, nil
+	}
+	return 0, sce.Refuse(fmt.Sprintf("'%s' (%s) is not a variant of SignalLevel", what, declared))
+}
+
 // SCE Accepted Subset §2.15: a `record:Signal` datamodel value.
 type StaticSchemaPendingSignalRecord struct {
 	level StaticSchemaPendingSignalLevelEnum
@@ -260,6 +282,47 @@ func (r StaticSchemaPendingSignalRecord) Urgent() bool {
 	return r.urgent
 }
 
+// ToSaved is this value as a saved state writes it.
+func (r StaticSchemaPendingSignalRecord) ToSaved() any {
+	saved := sce.NewJSONObject()
+	saved.Set("level", (func(v StaticSchemaPendingSignalLevelEnum) any { return v.ToSaved() })(r.level))
+	saved.Set("count", (sce.SavedWriteUint16)(r.count))
+	saved.Set("urgent", (sce.SavedWriteBool)(r.urgent))
+	return saved
+}
+
+// StaticSchemaPendingSignalRecordFromSaved is the value a saved state holds, refused unless it is one.
+func StaticSchemaPendingSignalRecordFromSaved(value any, what string) (StaticSchemaPendingSignalRecord, error) {
+	var record StaticSchemaPendingSignalRecord
+	{
+		saved, err := sce.SavedField(value, what, "level")
+		if err != nil {
+			return record, err
+		}
+		if record.level, err = (StaticSchemaPendingSignalLevelEnumFromSaved)(saved, what + ".level"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "count")
+		if err != nil {
+			return record, err
+		}
+		if record.count, err = (sce.SavedReadUint16)(saved, what + ".count"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "urgent")
+		if err != nil {
+			return record, err
+		}
+		if record.urgent, err = (sce.SavedReadBool)(saved, what + ".urgent"); err != nil {
+			return record, err
+		}
+	}
+	return record, nil
+}
 
 // ── SCE Accepted Subset §2.15: what a format-2 saved state of it is bound to ──
 
@@ -279,6 +342,244 @@ const StaticSchemaPendingSavedShapeFormat2Revised = "3fbeae2b4200145eef7af1a2e39
 // names it by, and the format-2 shape spells it by.
 var StaticSchemaPendingSavedEnumKeys = [...]string{
 	"enum:enum_signal_level.scxml",
+}
+
+// ── SCE Accepted Subset §2.15: saving this machine, restoring it ──────────
+
+// StaticSchemaPendingSavedShape is what a saved state of this document is bound
+// to: a state saved from a document that renamed, re-typed or moved a state or a
+// variable is refused, one saved before a guard or an action changed is not, and
+// one saved at an earlier revision of a record schema is read with each field a
+// later revision added at its default.
+var StaticSchemaPendingSavedShape = sce.SavedShape{
+	First:          "f7e359f42783c9931d2c1dbf44f80fee16a403f0e56b70bbc26ff6874c901834",
+	Revised:        "2619b075d4aa2597ecf884cba0f3b6d95715e5dbdca9bb22dc2d20be2f4dead2",
+	Format2First:   "c0a487fdd7e3380c9c4044d0fa1211b81a23cbe90c581ff9490a619a0447a749",
+	Format2Revised: "3fbeae2b4200145eef7af1a2e393f315a5466a7f5ff65b7bcabbb7ed2e75c9fa",
+	Records: []sce.RecordLineage{
+		{
+			Event:     "signal.raised",
+			Revision:  2,
+			Revisions: []string{"2b64de54f91bff7c63333f77d7362c701e702ab2379252eaf60d39931148ad66"},
+			Added: []sce.AddedField{
+				{ID: "urgent", Since: 2, Default: "true"},
+			},
+			Holders: []sce.RecordHolder{
+				{Variable: "last", List: false},
+			},
+		},
+	},
+	Enums: []sce.EnumLineage{
+		{
+			Key:       "enum:enum_signal_level.scxml",
+			Revision:  2,
+			Revisions: []string{"48003474fab3bfc2bc59b262dfe3b3f85acd0f80271e6f72432dd8bf1319603c"},
+			Added: []sce.AddedVariant{
+				{Name: "critical", Since: 2},
+			},
+			Holders: []sce.EnumHolder{
+				{Variable: "last", Field: sce.FieldNamed("level"), List: false},
+			},
+		},
+	},
+}
+
+// StaticSchemaPendingHistories is the document's `<history>` pseudo-states, by
+// the id a saved state keys them by: what a saved state records of each, and
+// what a restore reads.
+var StaticSchemaPendingHistories = []sce.HistoryDecl{
+}
+
+// StaticSchemaPendingSaveAt is engine's whole state at the macrostep boundary it
+// stands at: every variable, the machine's own included, and where it stands, as
+// the `sce-saved-state` document every backend reads (sce.SavedState.ToJSON).
+// Each delayed `<send>` still waiting is written as the moment it comes due on
+// the wall clock whose reading now is wallNowMs, in milliseconds since the Unix
+// epoch.
+//
+// Refused for a machine that is not running, one that has ended, one whose last
+// macrostep stopped at the microstep ceiling, and one built around another
+// document's policy.
+func StaticSchemaPendingSaveAt(engine *sce.Engine[StaticSchemaPendingState, StaticSchemaPendingEvent], wallNowMs int64) (*sce.SavedState, error) {
+	p, ok := engine.Policy().(*StaticSchemaPendingPolicy)
+	if !ok {
+		return nil, sce.Refuse("the engine is not one of StaticSchemaPending")
+	}
+	variables := sce.NewJSONObject()
+	variables.Set("last", p.vLast.ToSaved())
+	variables.Set("taken", sce.SavedWriteUint32(p.vTaken))
+	variables.Set("refusals", sce.SavedWriteUint32(p.vRefusals))
+	return sce.SaveSession(engine, &StaticSchemaPendingSavedShape, variables,
+		sce.SaveHistory[StaticSchemaPendingState, StaticSchemaPendingEvent](p, StaticSchemaPendingHistories),
+		nil, wallNowMs)
+}
+
+// StaticSchemaPendingSave is StaticSchemaPendingSaveAt at the host's wall clock now.
+func StaticSchemaPendingSave(engine *sce.Engine[StaticSchemaPendingState, StaticSchemaPendingEvent]) (*sce.SavedState, error) {
+	return StaticSchemaPendingSaveAt(engine, sce.SavedWallClockMs())
+}
+
+// StaticSchemaPendingJudge refuses saved unless a machine of this document could
+// restore it, building nothing: what a parent's restore asks of each child it
+// holds (docs/adr/0045, section 3, step 1).
+func StaticSchemaPendingJudge(saved *sce.SavedState) error {
+	p := &StaticSchemaPendingPolicy{}
+	grown, err := sce.UpgradeSavedState(saved, &StaticSchemaPendingSavedShape)
+	if err != nil {
+		return err
+	}
+	if _, err := sce.RestoreHistory[StaticSchemaPendingState, StaticSchemaPendingEvent](p, grown, StaticSchemaPendingHistories); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("last"); err != nil {
+		return err
+	} else if _, err := StaticSchemaPendingSignalRecordFromSaved(raw, "last"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("taken"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "taken"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("refusals"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "refusals"); err != nil {
+		return err
+	}
+	return sce.JudgeSession[StaticSchemaPendingState, StaticSchemaPendingEvent](p, grown)
+}
+
+// StaticSchemaPendingRestoreAt is a machine of policy standing where saved left
+// one, measuring time by clock: in place of `Initialize`, so no `<onentry>` runs
+// and no `<data>` is evaluated, since the saved run already did both. Every value
+// is read and the state judged before any is written, so a refused restore leaves
+// policy as it was.
+//
+// Each delayed `<send>` saved is armed against clock, which is the one the
+// machine measures time by; wallNowMs is what time it is on the wall clock the
+// saved `due`s were written against. A send comes due when its saved moment does,
+// and one already due comes due now.
+//
+// The host registers its invokers and its processors on the machine this
+// returns, and drives it as it would one it had initialized.
+func StaticSchemaPendingRestoreAt(policy *StaticSchemaPendingPolicy, saved *sce.SavedState, clock sce.SceClock, wallNowMs int64) (*sce.Engine[StaticSchemaPendingState, StaticSchemaPendingEvent], error) {
+	// The state as one of this machine: each record saved at an earlier revision
+	// of its schema holds the defaults of the fields added since.
+	grown, err := sce.UpgradeSavedState(saved, &StaticSchemaPendingSavedShape)
+	if err != nil {
+		return nil, err
+	}
+	history, err := sce.RestoreHistory[StaticSchemaPendingState, StaticSchemaPendingEvent](policy, grown, StaticSchemaPendingHistories)
+	if err != nil {
+		return nil, err
+	}
+	raw1, err := grown.Variable("last")
+	if err != nil {
+		return nil, err
+	}
+	read1, err := StaticSchemaPendingSignalRecordFromSaved(raw1, "last")
+	if err != nil {
+		return nil, err
+	}
+	raw2, err := grown.Variable("taken")
+	if err != nil {
+		return nil, err
+	}
+	read2, err := sce.SavedReadUint32(raw2, "taken")
+	if err != nil {
+		return nil, err
+	}
+	raw3, err := grown.Variable("refusals")
+	if err != nil {
+		return nil, err
+	}
+	read3, err := sce.SavedReadUint32(raw3, "refusals")
+	if err != nil {
+		return nil, err
+	}
+	if err := sce.JudgeSession[StaticSchemaPendingState, StaticSchemaPendingEvent](policy, grown); err != nil {
+		return nil, err
+	}
+	policy.vLast = read1
+	policy.vTaken = read2
+	policy.vRefusals = read3
+	for _, recorded := range history {
+		policy.SetHistoryValue(recorded.History, recorded.States)
+	}
+	return sce.EnterSession[StaticSchemaPendingState, StaticSchemaPendingEvent](policy, grown, clock, wallNowMs)
+}
+
+// StaticSchemaPendingRestore is StaticSchemaPendingRestoreAt at the host's wall
+// clock now.
+func StaticSchemaPendingRestore(policy *StaticSchemaPendingPolicy, saved *sce.SavedState, clock sce.SceClock) (*sce.Engine[StaticSchemaPendingState, StaticSchemaPendingEvent], error) {
+	return StaticSchemaPendingRestoreAt(policy, saved, clock, sce.SavedWallClockMs())
+}
+
+// SetSessionID gives this session the id its host has for it, in place of the
+// one it drew: an XML Nmtoken, since another session addresses this one as
+// `#_scxml_<id>` and every child's id is this one's and the id the child was
+// started under (docs/adr/0045). Refused for anything else. Called before the
+// machine starts, since what it sends names it by the id it began with.
+func (p *StaticSchemaPendingPolicy) SetSessionID(id string) error {
+	if reason := sce.SessionIDRefusalOf(id); reason != "" {
+		return sce.Refuse(reason)
+	}
+	p.SessionID = id
+	return nil
+}
+
+// OwnSessionID is this session's id, `_sessionid`, which a saved state names it
+// by (sce.SavedPolicy).
+func (p *StaticSchemaPendingPolicy) OwnSessionID() string { return p.SessionID }
+
+// BindSessionID makes id this session's own: a restore of a format-2 state
+// carries on under the id it was saved with (sce.SavedPolicy).
+func (p *StaticSchemaPendingPolicy) BindSessionID(id string) { p.SessionID = id }
+
+// RunningInvokes is the id of each `<invoke>` whose child session is running,
+// in document order (sce.SavedPolicy). This document starts no child session.
+func (p *StaticSchemaPendingPolicy) RunningInvokes() []string { return nil }
+
+// InvokeStarts is how many times each `<invoke>` has started in this session
+// (sce.SavedPolicy). This document starts no child session.
+func (p *StaticSchemaPendingPolicy) InvokeStarts() []sce.SavedInvokeStart { return nil }
+
+// InvokeOwner is the state that holds the `<invoke>` id, and false for an id the
+// document does not invoke (sce.SavedPolicy). This document starts no child
+// session.
+func (p *StaticSchemaPendingPolicy) InvokeOwner(id string) (StaticSchemaPendingState, bool) {
+	return 0, false
+}
+
+// HostInvokeOwner is the state that holds the host-run `<invoke>` of this type
+// and id, and false for one the document does not have a host invoker run
+// (sce.SavedPolicy).
+func (p *StaticSchemaPendingPolicy) HostInvokeOwner(processorType, id string) (StaticSchemaPendingState, bool) {
+	return 0, false
+}
+
+// JudgeChild refuses a running child, which this document does not start
+// (sce.SavedPolicy).
+func (p *StaticSchemaPendingPolicy) JudgeChild(child sce.SavedChild) error {
+	return sce.Refuse(fmt.Sprintf("the document starts no child session, so '%s' cannot be one it was running", child.ID))
+}
+
+// ResumeChildren resumes no child, which this document does not start
+// (sce.SavedPolicy).
+func (p *StaticSchemaPendingPolicy) ResumeChildren(engine *sce.Engine[StaticSchemaPendingState, StaticSchemaPendingEvent], children []sce.SavedChild, wallNowMs int64) error {
+	if len(children) > 0 {
+		return p.JudgeChild(children[0])
+	}
+	return nil
+}
+
+// RestartInvokes starts no invocation again, which this document does not start
+// (sce.SavedPolicy).
+func (p *StaticSchemaPendingPolicy) RestartInvokes(engine *sce.Engine[StaticSchemaPendingState, StaticSchemaPendingEvent], ids []string) {}
+
+// SetHistoryValue gives history the states a saved state recorded for it
+// (sce.SavedPolicy).
+func (p *StaticSchemaPendingPolicy) SetHistoryValue(history sce.HistoryID, states []StaticSchemaPendingState) {
 }
 
 // ======================================================================
@@ -315,6 +616,10 @@ type StaticSchemaPendingPolicy struct {
 // NewStaticSchemaPendingPolicy creates a new policy with default values.
 func NewStaticSchemaPendingPolicy() StaticSchemaPendingPolicy {
 	return StaticSchemaPendingPolicy{
+		// docs/adr/0045: a session has an id, which a saved state names it by. A
+		// host that has one for it gives it with SetSessionID before it starts the
+		// machine; a child's is its parent's and the id it was started under.
+		SessionID: sce.DrawSessionID(),
 		vLast: StaticSchemaPendingSignalRecord{level: StaticSchemaPendingSignalLevelEnumLow, count: 0, urgent: false},
 		vTaken: 0,
 		vRefusals: 0,

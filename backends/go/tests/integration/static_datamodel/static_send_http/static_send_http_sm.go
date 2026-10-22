@@ -181,6 +181,267 @@ const StaticSendHttpSavedShapeFormat2Revised = "d427bc0c830426e6e58b59700bf6df2e
 // names it by, and the format-2 shape spells it by.
 var StaticSendHttpSavedEnumKeys = [...]string{}
 
+// ── SCE Accepted Subset §2.15: saving this machine, restoring it ──────────
+
+// StaticSendHttpSavedShape is what a saved state of this document is bound
+// to: a state saved from a document that renamed, re-typed or moved a state or a
+// variable is refused, one saved before a guard or an action changed is not, and
+// one saved at an earlier revision of a record schema is read with each field a
+// later revision added at its default.
+var StaticSendHttpSavedShape = sce.SavedShape{
+	First:          "00fa415a572dac70afc92855a696126c6cba10c087c24cf7bb2a7d49fa3af55e",
+	Revised:        "d427bc0c830426e6e58b59700bf6df2e93a80bd1c187d436535a9a141233963f",
+	Format2First:   "00fa415a572dac70afc92855a696126c6cba10c087c24cf7bb2a7d49fa3af55e",
+	Format2Revised: "d427bc0c830426e6e58b59700bf6df2e93a80bd1c187d436535a9a141233963f",
+	Records: []sce.RecordLineage{
+	},
+	Enums: []sce.EnumLineage{
+	},
+}
+
+// StaticSendHttpHistories is the document's `<history>` pseudo-states, by
+// the id a saved state keys them by: what a saved state records of each, and
+// what a restore reads.
+var StaticSendHttpHistories = []sce.HistoryDecl{
+}
+
+// StaticSendHttpSaveAt is engine's whole state at the macrostep boundary it
+// stands at: every variable, the machine's own included, and where it stands, as
+// the `sce-saved-state` document every backend reads (sce.SavedState.ToJSON).
+// Each delayed `<send>` still waiting is written as the moment it comes due on
+// the wall clock whose reading now is wallNowMs, in milliseconds since the Unix
+// epoch.
+//
+// Refused for a machine that is not running, one that has ended, one whose last
+// macrostep stopped at the microstep ceiling, and one built around another
+// document's policy.
+func StaticSendHttpSaveAt(engine *sce.Engine[StaticSendHttpState, StaticSendHttpEvent], wallNowMs int64) (*sce.SavedState, error) {
+	p, ok := engine.Policy().(*StaticSendHttpPolicy)
+	if !ok {
+		return nil, sce.Refuse("the engine is not one of StaticSendHttp")
+	}
+	variables := sce.NewJSONObject()
+	variables.Set("count", sce.SavedWriteUint32(p.vCount))
+	variables.Set("ready", sce.SavedWriteBool(p.vReady))
+	variables.Set("label", sce.SavedWriteString(p.vLabel))
+	variables.Set("delta", sce.SavedWriteInt16(p.vDelta))
+	variables.Set("ratio", sce.SavedWriteFloat64(p.vRatio))
+	variables.Set("errors", sce.SavedWriteUint32(p.vErrors))
+	return sce.SaveSession(engine, &StaticSendHttpSavedShape, variables,
+		sce.SaveHistory[StaticSendHttpState, StaticSendHttpEvent](p, StaticSendHttpHistories),
+		nil, wallNowMs)
+}
+
+// StaticSendHttpSave is StaticSendHttpSaveAt at the host's wall clock now.
+func StaticSendHttpSave(engine *sce.Engine[StaticSendHttpState, StaticSendHttpEvent]) (*sce.SavedState, error) {
+	return StaticSendHttpSaveAt(engine, sce.SavedWallClockMs())
+}
+
+// StaticSendHttpJudge refuses saved unless a machine of this document could
+// restore it, building nothing: what a parent's restore asks of each child it
+// holds (docs/adr/0045, section 3, step 1).
+func StaticSendHttpJudge(saved *sce.SavedState) error {
+	p := &StaticSendHttpPolicy{}
+	grown, err := sce.UpgradeSavedState(saved, &StaticSendHttpSavedShape)
+	if err != nil {
+		return err
+	}
+	if _, err := sce.RestoreHistory[StaticSendHttpState, StaticSendHttpEvent](p, grown, StaticSendHttpHistories); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("count"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "count"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("ready"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadBool(raw, "ready"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("label"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadBoundedString(raw, "label", 16); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("delta"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadInt16(raw, "delta"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("ratio"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadFloat64(raw, "ratio"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("errors"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "errors"); err != nil {
+		return err
+	}
+	return sce.JudgeSession[StaticSendHttpState, StaticSendHttpEvent](p, grown)
+}
+
+// StaticSendHttpRestoreAt is a machine of policy standing where saved left
+// one, measuring time by clock: in place of `Initialize`, so no `<onentry>` runs
+// and no `<data>` is evaluated, since the saved run already did both. Every value
+// is read and the state judged before any is written, so a refused restore leaves
+// policy as it was.
+//
+// Each delayed `<send>` saved is armed against clock, which is the one the
+// machine measures time by; wallNowMs is what time it is on the wall clock the
+// saved `due`s were written against. A send comes due when its saved moment does,
+// and one already due comes due now.
+//
+// The host registers its invokers and its processors on the machine this
+// returns, and drives it as it would one it had initialized.
+func StaticSendHttpRestoreAt(policy *StaticSendHttpPolicy, saved *sce.SavedState, clock sce.SceClock, wallNowMs int64) (*sce.Engine[StaticSendHttpState, StaticSendHttpEvent], error) {
+	// The state as one of this machine: each record saved at an earlier revision
+	// of its schema holds the defaults of the fields added since.
+	grown, err := sce.UpgradeSavedState(saved, &StaticSendHttpSavedShape)
+	if err != nil {
+		return nil, err
+	}
+	history, err := sce.RestoreHistory[StaticSendHttpState, StaticSendHttpEvent](policy, grown, StaticSendHttpHistories)
+	if err != nil {
+		return nil, err
+	}
+	raw1, err := grown.Variable("count")
+	if err != nil {
+		return nil, err
+	}
+	read1, err := sce.SavedReadUint32(raw1, "count")
+	if err != nil {
+		return nil, err
+	}
+	raw2, err := grown.Variable("ready")
+	if err != nil {
+		return nil, err
+	}
+	read2, err := sce.SavedReadBool(raw2, "ready")
+	if err != nil {
+		return nil, err
+	}
+	raw3, err := grown.Variable("label")
+	if err != nil {
+		return nil, err
+	}
+	read3, err := sce.SavedReadBoundedString(raw3, "label", 16)
+	if err != nil {
+		return nil, err
+	}
+	raw4, err := grown.Variable("delta")
+	if err != nil {
+		return nil, err
+	}
+	read4, err := sce.SavedReadInt16(raw4, "delta")
+	if err != nil {
+		return nil, err
+	}
+	raw5, err := grown.Variable("ratio")
+	if err != nil {
+		return nil, err
+	}
+	read5, err := sce.SavedReadFloat64(raw5, "ratio")
+	if err != nil {
+		return nil, err
+	}
+	raw6, err := grown.Variable("errors")
+	if err != nil {
+		return nil, err
+	}
+	read6, err := sce.SavedReadUint32(raw6, "errors")
+	if err != nil {
+		return nil, err
+	}
+	if err := sce.JudgeSession[StaticSendHttpState, StaticSendHttpEvent](policy, grown); err != nil {
+		return nil, err
+	}
+	policy.vCount = read1
+	policy.vReady = read2
+	policy.vLabel = read3
+	policy.vDelta = read4
+	policy.vRatio = read5
+	policy.vErrors = read6
+	for _, recorded := range history {
+		policy.SetHistoryValue(recorded.History, recorded.States)
+	}
+	return sce.EnterSession[StaticSendHttpState, StaticSendHttpEvent](policy, grown, clock, wallNowMs)
+}
+
+// StaticSendHttpRestore is StaticSendHttpRestoreAt at the host's wall
+// clock now.
+func StaticSendHttpRestore(policy *StaticSendHttpPolicy, saved *sce.SavedState, clock sce.SceClock) (*sce.Engine[StaticSendHttpState, StaticSendHttpEvent], error) {
+	return StaticSendHttpRestoreAt(policy, saved, clock, sce.SavedWallClockMs())
+}
+
+// SetSessionID gives this session the id its host has for it, in place of the
+// one it drew: an XML Nmtoken, since another session addresses this one as
+// `#_scxml_<id>` and every child's id is this one's and the id the child was
+// started under (docs/adr/0045). Refused for anything else. Called before the
+// machine starts, since what it sends names it by the id it began with.
+func (p *StaticSendHttpPolicy) SetSessionID(id string) error {
+	if reason := sce.SessionIDRefusalOf(id); reason != "" {
+		return sce.Refuse(reason)
+	}
+	p.SessionID = id
+	return nil
+}
+
+// OwnSessionID is this session's id, `_sessionid`, which a saved state names it
+// by (sce.SavedPolicy).
+func (p *StaticSendHttpPolicy) OwnSessionID() string { return p.SessionID }
+
+// BindSessionID makes id this session's own: a restore of a format-2 state
+// carries on under the id it was saved with (sce.SavedPolicy).
+func (p *StaticSendHttpPolicy) BindSessionID(id string) { p.SessionID = id }
+
+// RunningInvokes is the id of each `<invoke>` whose child session is running,
+// in document order (sce.SavedPolicy). This document starts no child session.
+func (p *StaticSendHttpPolicy) RunningInvokes() []string { return nil }
+
+// InvokeStarts is how many times each `<invoke>` has started in this session
+// (sce.SavedPolicy). This document starts no child session.
+func (p *StaticSendHttpPolicy) InvokeStarts() []sce.SavedInvokeStart { return nil }
+
+// InvokeOwner is the state that holds the `<invoke>` id, and false for an id the
+// document does not invoke (sce.SavedPolicy). This document starts no child
+// session.
+func (p *StaticSendHttpPolicy) InvokeOwner(id string) (StaticSendHttpState, bool) {
+	return 0, false
+}
+
+// HostInvokeOwner is the state that holds the host-run `<invoke>` of this type
+// and id, and false for one the document does not have a host invoker run
+// (sce.SavedPolicy).
+func (p *StaticSendHttpPolicy) HostInvokeOwner(processorType, id string) (StaticSendHttpState, bool) {
+	return 0, false
+}
+
+// JudgeChild refuses a running child, which this document does not start
+// (sce.SavedPolicy).
+func (p *StaticSendHttpPolicy) JudgeChild(child sce.SavedChild) error {
+	return sce.Refuse(fmt.Sprintf("the document starts no child session, so '%s' cannot be one it was running", child.ID))
+}
+
+// ResumeChildren resumes no child, which this document does not start
+// (sce.SavedPolicy).
+func (p *StaticSendHttpPolicy) ResumeChildren(engine *sce.Engine[StaticSendHttpState, StaticSendHttpEvent], children []sce.SavedChild, wallNowMs int64) error {
+	if len(children) > 0 {
+		return p.JudgeChild(children[0])
+	}
+	return nil
+}
+
+// RestartInvokes starts no invocation again, which this document does not start
+// (sce.SavedPolicy).
+func (p *StaticSendHttpPolicy) RestartInvokes(engine *sce.Engine[StaticSendHttpState, StaticSendHttpEvent], ids []string) {}
+
+// SetHistoryValue gives history the states a saved state recorded for it
+// (sce.SavedPolicy).
+func (p *StaticSendHttpPolicy) SetHistoryValue(history sce.HistoryID, states []StaticSendHttpState) {
+}
+
 // ======================================================================
 // Policy struct
 // ======================================================================
@@ -213,6 +474,10 @@ type StaticSendHttpPolicy struct {
 // NewStaticSendHttpPolicy creates a new policy with default values.
 func NewStaticSendHttpPolicy() StaticSendHttpPolicy {
 	return StaticSendHttpPolicy{
+		// docs/adr/0045: a session has an id, which a saved state names it by. A
+		// host that has one for it gives it with SetSessionID before it starts the
+		// machine; a child's is its parent's and the id it was started under.
+		SessionID: sce.DrawSessionID(),
 		vCount: 3,
 		vReady: false,
 		vLabel: "idle",

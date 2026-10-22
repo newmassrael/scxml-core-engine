@@ -251,6 +251,258 @@ const StaticHostClockSavedShapeFormat2Revised = "9e2c0126d926e2df92012105a0f1d3d
 // names it by, and the format-2 shape spells it by.
 var StaticHostClockSavedEnumKeys = [...]string{}
 
+// ── SCE Accepted Subset §2.15: saving this machine, restoring it ──────────
+
+// StaticHostClockSavedShape is what a saved state of this document is bound
+// to: a state saved from a document that renamed, re-typed or moved a state or a
+// variable is refused, one saved before a guard or an action changed is not, and
+// one saved at an earlier revision of a record schema is read with each field a
+// later revision added at its default.
+var StaticHostClockSavedShape = sce.SavedShape{
+	First:          "141dd63c49b9a5468a2b25316c88f8e51335fc52b99a414f3690a97bddae4723",
+	Revised:        "9e2c0126d926e2df92012105a0f1d3d2582fa4ceb0b69a155973d005b28fb879",
+	Format2First:   "141dd63c49b9a5468a2b25316c88f8e51335fc52b99a414f3690a97bddae4723",
+	Format2Revised: "9e2c0126d926e2df92012105a0f1d3d2582fa4ceb0b69a155973d005b28fb879",
+	Records: []sce.RecordLineage{
+	},
+	Enums: []sce.EnumLineage{
+	},
+}
+
+// StaticHostClockHistories is the document's `<history>` pseudo-states, by
+// the id a saved state keys them by: what a saved state records of each, and
+// what a restore reads.
+var StaticHostClockHistories = []sce.HistoryDecl{
+}
+
+// StaticHostClockSaveAt is engine's whole state at the macrostep boundary it
+// stands at: every variable, the machine's own included, and where it stands, as
+// the `sce-saved-state` document every backend reads (sce.SavedState.ToJSON).
+// Each delayed `<send>` still waiting is written as the moment it comes due on
+// the wall clock whose reading now is wallNowMs, in milliseconds since the Unix
+// epoch.
+//
+// Refused for a machine that is not running, one that has ended, one whose last
+// macrostep stopped at the microstep ceiling, and one built around another
+// document's policy.
+func StaticHostClockSaveAt(engine *sce.Engine[StaticHostClockState, StaticHostClockEvent], wallNowMs int64) (*sce.SavedState, error) {
+	p, ok := engine.Policy().(*StaticHostClockPolicy)
+	if !ok {
+		return nil, sce.Refuse("the engine is not one of StaticHostClock")
+	}
+	variables := sce.NewJSONObject()
+	variables.Set("outcome", sce.SavedWriteString(p.vOutcome))
+	variables.Set("utc_ms", sce.SavedWriteInt64(p.vUtcMs))
+	variables.Set("monotonic_ms", sce.SavedWriteInt64(p.vMonotonicMs))
+	variables.Set("zone_id", sce.SavedWriteString(p.vZoneId))
+	variables.Set("utc_offset_s", sce.SavedWriteInt32(p.vUtcOffsetS))
+	return sce.SaveSession(engine, &StaticHostClockSavedShape, variables,
+		sce.SaveHistory[StaticHostClockState, StaticHostClockEvent](p, StaticHostClockHistories),
+		nil, wallNowMs)
+}
+
+// StaticHostClockSave is StaticHostClockSaveAt at the host's wall clock now.
+func StaticHostClockSave(engine *sce.Engine[StaticHostClockState, StaticHostClockEvent]) (*sce.SavedState, error) {
+	return StaticHostClockSaveAt(engine, sce.SavedWallClockMs())
+}
+
+// StaticHostClockJudge refuses saved unless a machine of this document could
+// restore it, building nothing: what a parent's restore asks of each child it
+// holds (docs/adr/0045, section 3, step 1).
+func StaticHostClockJudge(saved *sce.SavedState) error {
+	p := &StaticHostClockPolicy{}
+	grown, err := sce.UpgradeSavedState(saved, &StaticHostClockSavedShape)
+	if err != nil {
+		return err
+	}
+	if _, err := sce.RestoreHistory[StaticHostClockState, StaticHostClockEvent](p, grown, StaticHostClockHistories); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("outcome"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadBoundedString(raw, "outcome", 24); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("utc_ms"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadInt64(raw, "utc_ms"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("monotonic_ms"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadInt64(raw, "monotonic_ms"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("zone_id"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadBoundedString(raw, "zone_id", 64); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("utc_offset_s"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadInt32(raw, "utc_offset_s"); err != nil {
+		return err
+	}
+	return sce.JudgeSession[StaticHostClockState, StaticHostClockEvent](p, grown)
+}
+
+// StaticHostClockRestoreAt is a machine of policy standing where saved left
+// one, measuring time by clock: in place of `Initialize`, so no `<onentry>` runs
+// and no `<data>` is evaluated, since the saved run already did both. Every value
+// is read and the state judged before any is written, so a refused restore leaves
+// policy as it was.
+//
+// Each delayed `<send>` saved is armed against clock, which is the one the
+// machine measures time by; wallNowMs is what time it is on the wall clock the
+// saved `due`s were written against. A send comes due when its saved moment does,
+// and one already due comes due now.
+//
+// The host registers its invokers and its processors on the machine this
+// returns, and drives it as it would one it had initialized.
+func StaticHostClockRestoreAt(policy *StaticHostClockPolicy, saved *sce.SavedState, clock sce.SceClock, wallNowMs int64) (*sce.Engine[StaticHostClockState, StaticHostClockEvent], error) {
+	// The state as one of this machine: each record saved at an earlier revision
+	// of its schema holds the defaults of the fields added since.
+	grown, err := sce.UpgradeSavedState(saved, &StaticHostClockSavedShape)
+	if err != nil {
+		return nil, err
+	}
+	history, err := sce.RestoreHistory[StaticHostClockState, StaticHostClockEvent](policy, grown, StaticHostClockHistories)
+	if err != nil {
+		return nil, err
+	}
+	raw1, err := grown.Variable("outcome")
+	if err != nil {
+		return nil, err
+	}
+	read1, err := sce.SavedReadBoundedString(raw1, "outcome", 24)
+	if err != nil {
+		return nil, err
+	}
+	raw2, err := grown.Variable("utc_ms")
+	if err != nil {
+		return nil, err
+	}
+	read2, err := sce.SavedReadInt64(raw2, "utc_ms")
+	if err != nil {
+		return nil, err
+	}
+	raw3, err := grown.Variable("monotonic_ms")
+	if err != nil {
+		return nil, err
+	}
+	read3, err := sce.SavedReadInt64(raw3, "monotonic_ms")
+	if err != nil {
+		return nil, err
+	}
+	raw4, err := grown.Variable("zone_id")
+	if err != nil {
+		return nil, err
+	}
+	read4, err := sce.SavedReadBoundedString(raw4, "zone_id", 64)
+	if err != nil {
+		return nil, err
+	}
+	raw5, err := grown.Variable("utc_offset_s")
+	if err != nil {
+		return nil, err
+	}
+	read5, err := sce.SavedReadInt32(raw5, "utc_offset_s")
+	if err != nil {
+		return nil, err
+	}
+	if err := sce.JudgeSession[StaticHostClockState, StaticHostClockEvent](policy, grown); err != nil {
+		return nil, err
+	}
+	policy.vOutcome = read1
+	policy.vUtcMs = read2
+	policy.vMonotonicMs = read3
+	policy.vZoneId = read4
+	policy.vUtcOffsetS = read5
+	for _, recorded := range history {
+		policy.SetHistoryValue(recorded.History, recorded.States)
+	}
+	return sce.EnterSession[StaticHostClockState, StaticHostClockEvent](policy, grown, clock, wallNowMs)
+}
+
+// StaticHostClockRestore is StaticHostClockRestoreAt at the host's wall
+// clock now.
+func StaticHostClockRestore(policy *StaticHostClockPolicy, saved *sce.SavedState, clock sce.SceClock) (*sce.Engine[StaticHostClockState, StaticHostClockEvent], error) {
+	return StaticHostClockRestoreAt(policy, saved, clock, sce.SavedWallClockMs())
+}
+
+// SetSessionID gives this session the id its host has for it, in place of the
+// one it drew: an XML Nmtoken, since another session addresses this one as
+// `#_scxml_<id>` and every child's id is this one's and the id the child was
+// started under (docs/adr/0045). Refused for anything else. Called before the
+// machine starts, since what it sends names it by the id it began with.
+func (p *StaticHostClockPolicy) SetSessionID(id string) error {
+	if reason := sce.SessionIDRefusalOf(id); reason != "" {
+		return sce.Refuse(reason)
+	}
+	p.SessionID = id
+	return nil
+}
+
+// OwnSessionID is this session's id, `_sessionid`, which a saved state names it
+// by (sce.SavedPolicy).
+func (p *StaticHostClockPolicy) OwnSessionID() string { return p.SessionID }
+
+// BindSessionID makes id this session's own: a restore of a format-2 state
+// carries on under the id it was saved with (sce.SavedPolicy).
+func (p *StaticHostClockPolicy) BindSessionID(id string) { p.SessionID = id }
+
+// RunningInvokes is the id of each `<invoke>` whose child session is running,
+// in document order (sce.SavedPolicy). This document starts no child session.
+func (p *StaticHostClockPolicy) RunningInvokes() []string { return nil }
+
+// InvokeStarts is how many times each `<invoke>` has started in this session
+// (sce.SavedPolicy). This document starts no child session.
+func (p *StaticHostClockPolicy) InvokeStarts() []sce.SavedInvokeStart { return nil }
+
+// InvokeOwner is the state that holds the `<invoke>` id, and false for an id the
+// document does not invoke (sce.SavedPolicy). This document starts no child
+// session.
+func (p *StaticHostClockPolicy) InvokeOwner(id string) (StaticHostClockState, bool) {
+	return 0, false
+}
+
+// HostInvokeOwner is the state that holds the host-run `<invoke>` of this type
+// and id, and false for one the document does not have a host invoker run
+// (sce.SavedPolicy).
+func (p *StaticHostClockPolicy) HostInvokeOwner(processorType, id string) (StaticHostClockState, bool) {
+	if processorType == "sce-host-clock-now" && id == "now" {
+		return StaticHostClockStateReading, true
+	}
+	if processorType == "sce-host-clock-zone" && id == "zone" {
+		return StaticHostClockStateLocating, true
+	}
+	return 0, false
+}
+
+// JudgeChild refuses a running child, which this document does not start
+// (sce.SavedPolicy).
+func (p *StaticHostClockPolicy) JudgeChild(child sce.SavedChild) error {
+	return sce.Refuse(fmt.Sprintf("the document starts no child session, so '%s' cannot be one it was running", child.ID))
+}
+
+// ResumeChildren resumes no child, which this document does not start
+// (sce.SavedPolicy).
+func (p *StaticHostClockPolicy) ResumeChildren(engine *sce.Engine[StaticHostClockState, StaticHostClockEvent], children []sce.SavedChild, wallNowMs int64) error {
+	if len(children) > 0 {
+		return p.JudgeChild(children[0])
+	}
+	return nil
+}
+
+// RestartInvokes starts no invocation again, which this document does not start
+// (sce.SavedPolicy).
+func (p *StaticHostClockPolicy) RestartInvokes(engine *sce.Engine[StaticHostClockState, StaticHostClockEvent], ids []string) {}
+
+// SetHistoryValue gives history the states a saved state recorded for it
+// (sce.SavedPolicy).
+func (p *StaticHostClockPolicy) SetHistoryValue(history sce.HistoryID, states []StaticHostClockState) {
+}
+
 // ── SCE Accepted Subset 2.12: typed host-run invoke interface ──────────
 // StaticHostClockNowResult is `sce:result`: the record the host completes `<invoke id="now">`
 // with (SCE Accepted Subset §2.12).
@@ -416,6 +668,10 @@ type StaticHostClockPolicy struct {
 // NewStaticHostClockPolicy creates a new policy with default values.
 func NewStaticHostClockPolicy() StaticHostClockPolicy {
 	return StaticHostClockPolicy{
+		// docs/adr/0045: a session has an id, which a saved state names it by. A
+		// host that has one for it gives it with SetSessionID before it starts the
+		// machine; a child's is its parent's and the id it was started under.
+		SessionID: sce.DrawSessionID(),
 		vOutcome: "",
 		vUtcMs: 0,
 		vMonotonicMs: 0,

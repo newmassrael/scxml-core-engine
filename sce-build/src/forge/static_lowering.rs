@@ -6955,6 +6955,21 @@ impl StaticTarget for GoTarget<'_> {
                 field.id
             ));
         }
+        // The reader a field gets is its id in Pascal case, and the method a
+        // record writes its saved form with is `ToSaved`: one field cannot have
+        // both.
+        if let Some((alias, field)) = model.imported_records.iter().find_map(|(alias, schema)| {
+            schema
+                .fields
+                .iter()
+                .find(|f| filters::to_pascal_case(f.id.clone()) == "ToSaved")
+                .map(|f| (alias, f))
+        }) {
+            return Some(format!(
+                "record:{alias} with the field `{}`, whose reader is the name Go writes the saved form of a record with",
+                field.id
+            ));
+        }
         for state in model.states.values() {
             let blocks = state
                 .on_entry_blocks
@@ -7025,13 +7040,15 @@ impl StaticTarget for GoTarget<'_> {
         schema: &EventSchemaModel,
         enum_types: &std::collections::BTreeMap<String, String>,
     ) -> String {
-        // An optional field is held in the optional type over its present
-        // value's (docs/adr/0055).
-        let go_field_type = |field: &crate::forge::model::SchemaField| {
-            let present = match field.sce_type.present_type() {
+        let go_present =
+            |field: &crate::forge::model::SchemaField| match field.sce_type.present_type() {
                 SceType::Enum(reference) => enum_types[&reference.alias].clone(),
                 other => crate::forge::generator::go_type(other).to_string(),
             };
+        // An optional field is held in the optional type over its present
+        // value's (docs/adr/0055).
+        let go_field_type = |field: &crate::forge::model::SchemaField| {
+            let present = go_present(field);
             match field.sce_type {
                 FieldType::Optional { .. } => self
                     .optional_type(&present)
@@ -7081,9 +7098,76 @@ impl StaticTarget for GoTarget<'_> {
                 )
             })
             .collect();
+        // Its saved form (`sce.SavedState`) lives on the type: an object of the
+        // schema's fields keyed by their ids, written by `ToSaved` and read by
+        // `{ty}FromSaved`, the names the enum's own saved form has
+        // ([`Self::enum_def`]). An optional field is written as null or as its
+        // present value, and read back absent from null and otherwise as its
+        // present value is (docs/adr/0055, section 4).
+        let saved_name =
+            |sce_type: &SceType| filters::to_pascal_case(sce_type.as_attr().to_string());
+        let writes: String = schema
+            .fields
+            .iter()
+            .map(|field| {
+                let writer = match field.sce_type.present_type() {
+                    SceType::Enum(reference) => format!(
+                        "func(v {}) any {{ return v.ToSaved() }}",
+                        enum_types[&reference.alias]
+                    ),
+                    other => format!("sce.SavedWrite{}", saved_name(other)),
+                };
+                let member = self.record_field(&field.id);
+                let saved = match &field.sce_type {
+                    FieldType::Optional { .. } => format!("optional.Wire(r.{member}, {writer})"),
+                    FieldType::Scalar(_) => format!("({writer})(r.{member})"),
+                };
+                format!(
+                    "\tsaved.Set(\"{}\", {saved})\n",
+                    filters::escape_go(field.id.clone())
+                )
+            })
+            .collect();
+        let reads: String = schema
+            .fields
+            .iter()
+            .map(|field| {
+                let id = filters::escape_go(field.id.clone());
+                let reader = match (field.sce_type.present_type(), field.max_size) {
+                    (SceType::Enum(reference), _) => {
+                        format!("{}FromSaved", enum_types[&reference.alias])
+                    }
+                    // A string is read back only if it fits the bound the schema
+                    // declares, as a string variable's is, and so is a byte
+                    // string, in bytes.
+                    (SceType::String, Some(bound)) => format!("sce.SavedBoundedString({bound})"),
+                    (SceType::Bytes, Some(bound)) => format!("sce.SavedBoundedBytes({bound})"),
+                    (SceType::Bytes, None) => format!("sce.SavedBoundedBytes({})", i32::MAX),
+                    (other, _) => format!("sce.SavedRead{}", saved_name(other)),
+                };
+                let what = format!("what + \".{id}\"");
+                let read = match &field.sce_type {
+                    FieldType::Optional { .. } => {
+                        let present = go_present(field);
+                        format!(
+                            "sce.SavedReadOptional(saved, {what}, {reader}, optional.None[{present}], optional.Some[{present}])"
+                        )
+                    }
+                    FieldType::Scalar(_) => format!("({reader})(saved, {what})"),
+                };
+                format!(
+                    "\t{{\n\t\tsaved, err := sce.SavedField(value, what, \"{id}\")\n\t\tif err != nil {{\n\t\t\treturn record, err\n\t\t}}\n\t\tif record.{member}, err = {read}; err != nil {{\n\t\t\treturn record, err\n\t\t}}\n\t}}\n",
+                    member = self.record_field(&field.id),
+                )
+            })
+            .collect();
         format!(
             "// SCE Accepted Subset §2.15: a `record:{alias}` datamodel value.\n\
-             type {ty} struct {{\n{fields}}}\n{readers}"
+             type {ty} struct {{\n{fields}}}\n{readers}\n\
+             // ToSaved is this value as a saved state writes it.\n\
+             func (r {ty}) ToSaved() any {{\n\tsaved := sce.NewJSONObject()\n{writes}\treturn saved\n}}\n\n\
+             // {ty}FromSaved is the value a saved state holds, refused unless it is one.\n\
+             func {ty}FromSaved(value any, what string) ({ty}, error) {{\n\tvar record {ty}\n{reads}\treturn record, nil\n}}"
         )
     }
     // The author's spelling, which is what an expression's member access writes
@@ -7142,6 +7226,19 @@ impl StaticTarget for GoTarget<'_> {
         // `<alias>.fromNumber` are lowered to ([`StaticTarget::enum_number_symbols`]).
         let carrier = crate::forge::generator::go_type(&model.underlying_type);
         let declared: Vec<String> = model.variants.iter().map(|v| v.value.to_string()).collect();
+        // Its saved form lives on the type, as a record's does: the declared name
+        // the enum document gives the variant.
+        let saved_variants: String = model
+            .variants
+            .iter()
+            .map(|v| {
+                format!(
+                    "\tcase \"{}\":\n\t\treturn {}, nil\n",
+                    filters::escape_go(v.name.clone()),
+                    self.enum_variant(ty, &model.name, &v.name)
+                )
+            })
+            .collect();
         format!(
             "// SCE Accepted Subset §2.15: an `enum:{alias}` datamodel value.\n\
              type {ty} {carrier}\n\n\
@@ -7152,7 +7249,11 @@ impl StaticTarget for GoTarget<'_> {
              func (v {ty}) ToUnderlying() {carrier} {{\n\treturn {carrier}(v)\n}}\n\n\
              // {ty}FromUnderlying returns the variant that declares raw, and false for a\n\
              // number no variant declares.\n\
-             func {ty}FromUnderlying(raw {carrier}) ({ty}, bool) {{\n\tswitch raw {{\n\tcase {}:\n\t\treturn {ty}(raw), true\n\t}}\n\treturn 0, false\n}}",
+             func {ty}FromUnderlying(raw {carrier}) ({ty}, bool) {{\n\tswitch raw {{\n\tcase {}:\n\t\treturn {ty}(raw), true\n\t}}\n\treturn 0, false\n}}\n\n\
+             // ToSaved is this value as a saved state writes it.\n\
+             func (v {ty}) ToSaved() any {{\n\treturn v.String()\n}}\n\n\
+             // {ty}FromSaved is the value a saved state holds, refused unless it is a variant.\n\
+             func {ty}FromSaved(value any, what string) ({ty}, error) {{\n\tdeclared, err := sce.SavedReadString(value, what)\n\tif err != nil {{\n\t\treturn 0, err\n\t}}\n\tswitch declared {{\n{saved_variants}\t}}\n\treturn 0, sce.Refuse(fmt.Sprintf(\"'%s' (%s) is not a variant of {alias}\", what, declared))\n}}",
             declared.join(", ")
         )
     }

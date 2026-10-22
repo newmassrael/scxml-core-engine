@@ -190,6 +190,252 @@ const StaticStringCapacitySavedShapeFormat2Revised = "06ea3b52e7f0c03f52dff18117
 // names it by, and the format-2 shape spells it by.
 var StaticStringCapacitySavedEnumKeys = [...]string{}
 
+// ── SCE Accepted Subset §2.15: saving this machine, restoring it ──────────
+
+// StaticStringCapacitySavedShape is what a saved state of this document is bound
+// to: a state saved from a document that renamed, re-typed or moved a state or a
+// variable is refused, one saved before a guard or an action changed is not, and
+// one saved at an earlier revision of a record schema is read with each field a
+// later revision added at its default.
+var StaticStringCapacitySavedShape = sce.SavedShape{
+	First:          "bf28eb6941359e6d96db8e70149c9d5f5993007a44f59f0fece396194843e797",
+	Revised:        "06ea3b52e7f0c03f52dff181172d4a8fcf030087bbb6fab407c92563f04554a2",
+	Format2First:   "bf28eb6941359e6d96db8e70149c9d5f5993007a44f59f0fece396194843e797",
+	Format2Revised: "06ea3b52e7f0c03f52dff181172d4a8fcf030087bbb6fab407c92563f04554a2",
+	Records: []sce.RecordLineage{
+	},
+	Enums: []sce.EnumLineage{
+	},
+}
+
+// StaticStringCapacityHistories is the document's `<history>` pseudo-states, by
+// the id a saved state keys them by: what a saved state records of each, and
+// what a restore reads.
+var StaticStringCapacityHistories = []sce.HistoryDecl{
+}
+
+// StaticStringCapacitySaveAt is engine's whole state at the macrostep boundary it
+// stands at: every variable, the machine's own included, and where it stands, as
+// the `sce-saved-state` document every backend reads (sce.SavedState.ToJSON).
+// Each delayed `<send>` still waiting is written as the moment it comes due on
+// the wall clock whose reading now is wallNowMs, in milliseconds since the Unix
+// epoch.
+//
+// Refused for a machine that is not running, one that has ended, one whose last
+// macrostep stopped at the microstep ceiling, and one built around another
+// document's policy.
+func StaticStringCapacitySaveAt(engine *sce.Engine[StaticStringCapacityState, StaticStringCapacityEvent], wallNowMs int64) (*sce.SavedState, error) {
+	p, ok := engine.Policy().(*StaticStringCapacityPolicy)
+	if !ok {
+		return nil, sce.Refuse("the engine is not one of StaticStringCapacity")
+	}
+	variables := sce.NewJSONObject()
+	variables.Set("title", sce.SavedWriteString(p.vTitle))
+	variables.Set("body", sce.SavedWriteString(p.vBody))
+	variables.Set("copied", sce.SavedWriteUint32(p.vCopied))
+	variables.Set("measured", sce.SavedWriteUint32(p.vMeasured))
+	variables.Set("refusals", sce.SavedWriteUint32(p.vRefusals))
+	return sce.SaveSession(engine, &StaticStringCapacitySavedShape, variables,
+		sce.SaveHistory[StaticStringCapacityState, StaticStringCapacityEvent](p, StaticStringCapacityHistories),
+		nil, wallNowMs)
+}
+
+// StaticStringCapacitySave is StaticStringCapacitySaveAt at the host's wall clock now.
+func StaticStringCapacitySave(engine *sce.Engine[StaticStringCapacityState, StaticStringCapacityEvent]) (*sce.SavedState, error) {
+	return StaticStringCapacitySaveAt(engine, sce.SavedWallClockMs())
+}
+
+// StaticStringCapacityJudge refuses saved unless a machine of this document could
+// restore it, building nothing: what a parent's restore asks of each child it
+// holds (docs/adr/0045, section 3, step 1).
+func StaticStringCapacityJudge(saved *sce.SavedState) error {
+	p := &StaticStringCapacityPolicy{}
+	grown, err := sce.UpgradeSavedState(saved, &StaticStringCapacitySavedShape)
+	if err != nil {
+		return err
+	}
+	if _, err := sce.RestoreHistory[StaticStringCapacityState, StaticStringCapacityEvent](p, grown, StaticStringCapacityHistories); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("title"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadBoundedString(raw, "title", 4); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("body"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadBoundedString(raw, "body", 16); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("copied"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "copied"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("measured"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "measured"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("refusals"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "refusals"); err != nil {
+		return err
+	}
+	return sce.JudgeSession[StaticStringCapacityState, StaticStringCapacityEvent](p, grown)
+}
+
+// StaticStringCapacityRestoreAt is a machine of policy standing where saved left
+// one, measuring time by clock: in place of `Initialize`, so no `<onentry>` runs
+// and no `<data>` is evaluated, since the saved run already did both. Every value
+// is read and the state judged before any is written, so a refused restore leaves
+// policy as it was.
+//
+// Each delayed `<send>` saved is armed against clock, which is the one the
+// machine measures time by; wallNowMs is what time it is on the wall clock the
+// saved `due`s were written against. A send comes due when its saved moment does,
+// and one already due comes due now.
+//
+// The host registers its invokers and its processors on the machine this
+// returns, and drives it as it would one it had initialized.
+func StaticStringCapacityRestoreAt(policy *StaticStringCapacityPolicy, saved *sce.SavedState, clock sce.SceClock, wallNowMs int64) (*sce.Engine[StaticStringCapacityState, StaticStringCapacityEvent], error) {
+	// The state as one of this machine: each record saved at an earlier revision
+	// of its schema holds the defaults of the fields added since.
+	grown, err := sce.UpgradeSavedState(saved, &StaticStringCapacitySavedShape)
+	if err != nil {
+		return nil, err
+	}
+	history, err := sce.RestoreHistory[StaticStringCapacityState, StaticStringCapacityEvent](policy, grown, StaticStringCapacityHistories)
+	if err != nil {
+		return nil, err
+	}
+	raw1, err := grown.Variable("title")
+	if err != nil {
+		return nil, err
+	}
+	read1, err := sce.SavedReadBoundedString(raw1, "title", 4)
+	if err != nil {
+		return nil, err
+	}
+	raw2, err := grown.Variable("body")
+	if err != nil {
+		return nil, err
+	}
+	read2, err := sce.SavedReadBoundedString(raw2, "body", 16)
+	if err != nil {
+		return nil, err
+	}
+	raw3, err := grown.Variable("copied")
+	if err != nil {
+		return nil, err
+	}
+	read3, err := sce.SavedReadUint32(raw3, "copied")
+	if err != nil {
+		return nil, err
+	}
+	raw4, err := grown.Variable("measured")
+	if err != nil {
+		return nil, err
+	}
+	read4, err := sce.SavedReadUint32(raw4, "measured")
+	if err != nil {
+		return nil, err
+	}
+	raw5, err := grown.Variable("refusals")
+	if err != nil {
+		return nil, err
+	}
+	read5, err := sce.SavedReadUint32(raw5, "refusals")
+	if err != nil {
+		return nil, err
+	}
+	if err := sce.JudgeSession[StaticStringCapacityState, StaticStringCapacityEvent](policy, grown); err != nil {
+		return nil, err
+	}
+	policy.vTitle = read1
+	policy.vBody = read2
+	policy.vCopied = read3
+	policy.vMeasured = read4
+	policy.vRefusals = read5
+	for _, recorded := range history {
+		policy.SetHistoryValue(recorded.History, recorded.States)
+	}
+	return sce.EnterSession[StaticStringCapacityState, StaticStringCapacityEvent](policy, grown, clock, wallNowMs)
+}
+
+// StaticStringCapacityRestore is StaticStringCapacityRestoreAt at the host's wall
+// clock now.
+func StaticStringCapacityRestore(policy *StaticStringCapacityPolicy, saved *sce.SavedState, clock sce.SceClock) (*sce.Engine[StaticStringCapacityState, StaticStringCapacityEvent], error) {
+	return StaticStringCapacityRestoreAt(policy, saved, clock, sce.SavedWallClockMs())
+}
+
+// SetSessionID gives this session the id its host has for it, in place of the
+// one it drew: an XML Nmtoken, since another session addresses this one as
+// `#_scxml_<id>` and every child's id is this one's and the id the child was
+// started under (docs/adr/0045). Refused for anything else. Called before the
+// machine starts, since what it sends names it by the id it began with.
+func (p *StaticStringCapacityPolicy) SetSessionID(id string) error {
+	if reason := sce.SessionIDRefusalOf(id); reason != "" {
+		return sce.Refuse(reason)
+	}
+	p.SessionID = id
+	return nil
+}
+
+// OwnSessionID is this session's id, `_sessionid`, which a saved state names it
+// by (sce.SavedPolicy).
+func (p *StaticStringCapacityPolicy) OwnSessionID() string { return p.SessionID }
+
+// BindSessionID makes id this session's own: a restore of a format-2 state
+// carries on under the id it was saved with (sce.SavedPolicy).
+func (p *StaticStringCapacityPolicy) BindSessionID(id string) { p.SessionID = id }
+
+// RunningInvokes is the id of each `<invoke>` whose child session is running,
+// in document order (sce.SavedPolicy). This document starts no child session.
+func (p *StaticStringCapacityPolicy) RunningInvokes() []string { return nil }
+
+// InvokeStarts is how many times each `<invoke>` has started in this session
+// (sce.SavedPolicy). This document starts no child session.
+func (p *StaticStringCapacityPolicy) InvokeStarts() []sce.SavedInvokeStart { return nil }
+
+// InvokeOwner is the state that holds the `<invoke>` id, and false for an id the
+// document does not invoke (sce.SavedPolicy). This document starts no child
+// session.
+func (p *StaticStringCapacityPolicy) InvokeOwner(id string) (StaticStringCapacityState, bool) {
+	return 0, false
+}
+
+// HostInvokeOwner is the state that holds the host-run `<invoke>` of this type
+// and id, and false for one the document does not have a host invoker run
+// (sce.SavedPolicy).
+func (p *StaticStringCapacityPolicy) HostInvokeOwner(processorType, id string) (StaticStringCapacityState, bool) {
+	return 0, false
+}
+
+// JudgeChild refuses a running child, which this document does not start
+// (sce.SavedPolicy).
+func (p *StaticStringCapacityPolicy) JudgeChild(child sce.SavedChild) error {
+	return sce.Refuse(fmt.Sprintf("the document starts no child session, so '%s' cannot be one it was running", child.ID))
+}
+
+// ResumeChildren resumes no child, which this document does not start
+// (sce.SavedPolicy).
+func (p *StaticStringCapacityPolicy) ResumeChildren(engine *sce.Engine[StaticStringCapacityState, StaticStringCapacityEvent], children []sce.SavedChild, wallNowMs int64) error {
+	if len(children) > 0 {
+		return p.JudgeChild(children[0])
+	}
+	return nil
+}
+
+// RestartInvokes starts no invocation again, which this document does not start
+// (sce.SavedPolicy).
+func (p *StaticStringCapacityPolicy) RestartInvokes(engine *sce.Engine[StaticStringCapacityState, StaticStringCapacityEvent], ids []string) {}
+
+// SetHistoryValue gives history the states a saved state recorded for it
+// (sce.SavedPolicy).
+func (p *StaticStringCapacityPolicy) SetHistoryValue(history sce.HistoryID, states []StaticStringCapacityState) {
+}
+
 // ======================================================================
 // Policy struct
 // ======================================================================
@@ -220,6 +466,10 @@ type StaticStringCapacityPolicy struct {
 // NewStaticStringCapacityPolicy creates a new policy with default values.
 func NewStaticStringCapacityPolicy() StaticStringCapacityPolicy {
 	return StaticStringCapacityPolicy{
+		// docs/adr/0045: a session has an id, which a saved state names it by. A
+		// host that has one for it gives it with SetSessionID before it starts the
+		// machine; a child's is its parent's and the id it was started under.
+		SessionID: sce.DrawSessionID(),
 		vTitle: "ab",
 		vBody: "hello",
 		vCopied: 0,

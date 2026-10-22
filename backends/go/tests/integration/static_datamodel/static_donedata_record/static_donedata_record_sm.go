@@ -207,6 +207,30 @@ func StaticDonedataRecordViewModeEnumFromUnderlying(raw uint8) (StaticDonedataRe
 	return 0, false
 }
 
+// ToSaved is this value as a saved state writes it.
+func (v StaticDonedataRecordViewModeEnum) ToSaved() any {
+	return v.String()
+}
+
+// StaticDonedataRecordViewModeEnumFromSaved is the value a saved state holds, refused unless it is a variant.
+func StaticDonedataRecordViewModeEnumFromSaved(value any, what string) (StaticDonedataRecordViewModeEnum, error) {
+	declared, err := sce.SavedReadString(value, what)
+	if err != nil {
+		return 0, err
+	}
+	switch declared {
+	case "month":
+		return StaticDonedataRecordViewModeEnumMonth, nil
+	case "week":
+		return StaticDonedataRecordViewModeEnumWeek, nil
+	case "day":
+		return StaticDonedataRecordViewModeEnumDay, nil
+	case "agenda_list":
+		return StaticDonedataRecordViewModeEnumAgendaList, nil
+	}
+	return 0, sce.Refuse(fmt.Sprintf("'%s' (%s) is not a variant of ViewMode", what, declared))
+}
+
 // SCE Accepted Subset §2.15: a `record:View` datamodel value.
 type StaticDonedataRecordViewRecord struct {
 	layout StaticDonedataRecordViewModeEnum
@@ -223,6 +247,37 @@ func (r StaticDonedataRecordViewRecord) Zoom() uint8 {
 	return r.zoom
 }
 
+// ToSaved is this value as a saved state writes it.
+func (r StaticDonedataRecordViewRecord) ToSaved() any {
+	saved := sce.NewJSONObject()
+	saved.Set("layout", (func(v StaticDonedataRecordViewModeEnum) any { return v.ToSaved() })(r.layout))
+	saved.Set("zoom", (sce.SavedWriteUint8)(r.zoom))
+	return saved
+}
+
+// StaticDonedataRecordViewRecordFromSaved is the value a saved state holds, refused unless it is one.
+func StaticDonedataRecordViewRecordFromSaved(value any, what string) (StaticDonedataRecordViewRecord, error) {
+	var record StaticDonedataRecordViewRecord
+	{
+		saved, err := sce.SavedField(value, what, "layout")
+		if err != nil {
+			return record, err
+		}
+		if record.layout, err = (StaticDonedataRecordViewModeEnumFromSaved)(saved, what + ".layout"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "zoom")
+		if err != nil {
+			return record, err
+		}
+		if record.zoom, err = (sce.SavedReadUint8)(saved, what + ".zoom"); err != nil {
+			return record, err
+		}
+	}
+	return record, nil
+}
 
 // ── SCE Accepted Subset §2.15: what a format-2 saved state of it is bound to ──
 
@@ -242,6 +297,212 @@ const StaticDonedataRecordSavedShapeFormat2Revised = "1e9cc61e79646577eca59b39e3
 // names it by, and the format-2 shape spells it by.
 var StaticDonedataRecordSavedEnumKeys = [...]string{
 	"enum:enum_view_mode.scxml",
+}
+
+// ── SCE Accepted Subset §2.15: saving this machine, restoring it ──────────
+
+// StaticDonedataRecordSavedShape is what a saved state of this document is bound
+// to: a state saved from a document that renamed, re-typed or moved a state or a
+// variable is refused, one saved before a guard or an action changed is not, and
+// one saved at an earlier revision of a record schema is read with each field a
+// later revision added at its default.
+var StaticDonedataRecordSavedShape = sce.SavedShape{
+	First:          "fd144745a4a7d0c2313c4f28ec7184ffb7a698b5ed3361febe933a4c30ecea2b",
+	Revised:        "ebd993c1f24e924115faaa5e255372a3b115e2f411bf7ecb2a7916d2d3f9d9d6",
+	Format2First:   "d970d9ee33befac8cf9cc4a9714612ec08f38f4a62dfb180819023d45115ddd8",
+	Format2Revised: "1e9cc61e79646577eca59b39e3156b57111c0d74f7e15e1b9a14d676d63dcf21",
+	Records: []sce.RecordLineage{
+		{
+			Event:     "view.shown",
+			Revision:  1,
+			Revisions: []string{},
+			Added: []sce.AddedField{
+			},
+			Holders: []sce.RecordHolder{
+				{Variable: "shown", List: false},
+			},
+		},
+	},
+	Enums: []sce.EnumLineage{
+		{
+			Key:       "enum:enum_view_mode.scxml",
+			Revision:  1,
+			Revisions: []string{},
+			Added: []sce.AddedVariant{
+			},
+			Holders: []sce.EnumHolder{
+				{Variable: "shown", Field: sce.FieldNamed("layout"), List: false},
+			},
+		},
+	},
+}
+
+// StaticDonedataRecordHistories is the document's `<history>` pseudo-states, by
+// the id a saved state keys them by: what a saved state records of each, and
+// what a restore reads.
+var StaticDonedataRecordHistories = []sce.HistoryDecl{
+}
+
+// StaticDonedataRecordSaveAt is engine's whole state at the macrostep boundary it
+// stands at: every variable, the machine's own included, and where it stands, as
+// the `sce-saved-state` document every backend reads (sce.SavedState.ToJSON).
+// Each delayed `<send>` still waiting is written as the moment it comes due on
+// the wall clock whose reading now is wallNowMs, in milliseconds since the Unix
+// epoch.
+//
+// Refused for a machine that is not running, one that has ended, one whose last
+// macrostep stopped at the microstep ceiling, and one built around another
+// document's policy.
+func StaticDonedataRecordSaveAt(engine *sce.Engine[StaticDonedataRecordState, StaticDonedataRecordEvent], wallNowMs int64) (*sce.SavedState, error) {
+	p, ok := engine.Policy().(*StaticDonedataRecordPolicy)
+	if !ok {
+		return nil, sce.Refuse("the engine is not one of StaticDonedataRecord")
+	}
+	variables := sce.NewJSONObject()
+	variables.Set("shown", p.vShown.ToSaved())
+	return sce.SaveSession(engine, &StaticDonedataRecordSavedShape, variables,
+		sce.SaveHistory[StaticDonedataRecordState, StaticDonedataRecordEvent](p, StaticDonedataRecordHistories),
+		nil, wallNowMs)
+}
+
+// StaticDonedataRecordSave is StaticDonedataRecordSaveAt at the host's wall clock now.
+func StaticDonedataRecordSave(engine *sce.Engine[StaticDonedataRecordState, StaticDonedataRecordEvent]) (*sce.SavedState, error) {
+	return StaticDonedataRecordSaveAt(engine, sce.SavedWallClockMs())
+}
+
+// StaticDonedataRecordJudge refuses saved unless a machine of this document could
+// restore it, building nothing: what a parent's restore asks of each child it
+// holds (docs/adr/0045, section 3, step 1).
+func StaticDonedataRecordJudge(saved *sce.SavedState) error {
+	p := &StaticDonedataRecordPolicy{}
+	grown, err := sce.UpgradeSavedState(saved, &StaticDonedataRecordSavedShape)
+	if err != nil {
+		return err
+	}
+	if _, err := sce.RestoreHistory[StaticDonedataRecordState, StaticDonedataRecordEvent](p, grown, StaticDonedataRecordHistories); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("shown"); err != nil {
+		return err
+	} else if _, err := StaticDonedataRecordViewRecordFromSaved(raw, "shown"); err != nil {
+		return err
+	}
+	return sce.JudgeSession[StaticDonedataRecordState, StaticDonedataRecordEvent](p, grown)
+}
+
+// StaticDonedataRecordRestoreAt is a machine of policy standing where saved left
+// one, measuring time by clock: in place of `Initialize`, so no `<onentry>` runs
+// and no `<data>` is evaluated, since the saved run already did both. Every value
+// is read and the state judged before any is written, so a refused restore leaves
+// policy as it was.
+//
+// Each delayed `<send>` saved is armed against clock, which is the one the
+// machine measures time by; wallNowMs is what time it is on the wall clock the
+// saved `due`s were written against. A send comes due when its saved moment does,
+// and one already due comes due now.
+//
+// The host registers its invokers and its processors on the machine this
+// returns, and drives it as it would one it had initialized.
+func StaticDonedataRecordRestoreAt(policy *StaticDonedataRecordPolicy, saved *sce.SavedState, clock sce.SceClock, wallNowMs int64) (*sce.Engine[StaticDonedataRecordState, StaticDonedataRecordEvent], error) {
+	// The state as one of this machine: each record saved at an earlier revision
+	// of its schema holds the defaults of the fields added since.
+	grown, err := sce.UpgradeSavedState(saved, &StaticDonedataRecordSavedShape)
+	if err != nil {
+		return nil, err
+	}
+	history, err := sce.RestoreHistory[StaticDonedataRecordState, StaticDonedataRecordEvent](policy, grown, StaticDonedataRecordHistories)
+	if err != nil {
+		return nil, err
+	}
+	raw1, err := grown.Variable("shown")
+	if err != nil {
+		return nil, err
+	}
+	read1, err := StaticDonedataRecordViewRecordFromSaved(raw1, "shown")
+	if err != nil {
+		return nil, err
+	}
+	if err := sce.JudgeSession[StaticDonedataRecordState, StaticDonedataRecordEvent](policy, grown); err != nil {
+		return nil, err
+	}
+	policy.vShown = read1
+	for _, recorded := range history {
+		policy.SetHistoryValue(recorded.History, recorded.States)
+	}
+	return sce.EnterSession[StaticDonedataRecordState, StaticDonedataRecordEvent](policy, grown, clock, wallNowMs)
+}
+
+// StaticDonedataRecordRestore is StaticDonedataRecordRestoreAt at the host's wall
+// clock now.
+func StaticDonedataRecordRestore(policy *StaticDonedataRecordPolicy, saved *sce.SavedState, clock sce.SceClock) (*sce.Engine[StaticDonedataRecordState, StaticDonedataRecordEvent], error) {
+	return StaticDonedataRecordRestoreAt(policy, saved, clock, sce.SavedWallClockMs())
+}
+
+// SetSessionID gives this session the id its host has for it, in place of the
+// one it drew: an XML Nmtoken, since another session addresses this one as
+// `#_scxml_<id>` and every child's id is this one's and the id the child was
+// started under (docs/adr/0045). Refused for anything else. Called before the
+// machine starts, since what it sends names it by the id it began with.
+func (p *StaticDonedataRecordPolicy) SetSessionID(id string) error {
+	if reason := sce.SessionIDRefusalOf(id); reason != "" {
+		return sce.Refuse(reason)
+	}
+	p.SessionID = id
+	return nil
+}
+
+// OwnSessionID is this session's id, `_sessionid`, which a saved state names it
+// by (sce.SavedPolicy).
+func (p *StaticDonedataRecordPolicy) OwnSessionID() string { return p.SessionID }
+
+// BindSessionID makes id this session's own: a restore of a format-2 state
+// carries on under the id it was saved with (sce.SavedPolicy).
+func (p *StaticDonedataRecordPolicy) BindSessionID(id string) { p.SessionID = id }
+
+// RunningInvokes is the id of each `<invoke>` whose child session is running,
+// in document order (sce.SavedPolicy). This document starts no child session.
+func (p *StaticDonedataRecordPolicy) RunningInvokes() []string { return nil }
+
+// InvokeStarts is how many times each `<invoke>` has started in this session
+// (sce.SavedPolicy). This document starts no child session.
+func (p *StaticDonedataRecordPolicy) InvokeStarts() []sce.SavedInvokeStart { return nil }
+
+// InvokeOwner is the state that holds the `<invoke>` id, and false for an id the
+// document does not invoke (sce.SavedPolicy). This document starts no child
+// session.
+func (p *StaticDonedataRecordPolicy) InvokeOwner(id string) (StaticDonedataRecordState, bool) {
+	return 0, false
+}
+
+// HostInvokeOwner is the state that holds the host-run `<invoke>` of this type
+// and id, and false for one the document does not have a host invoker run
+// (sce.SavedPolicy).
+func (p *StaticDonedataRecordPolicy) HostInvokeOwner(processorType, id string) (StaticDonedataRecordState, bool) {
+	return 0, false
+}
+
+// JudgeChild refuses a running child, which this document does not start
+// (sce.SavedPolicy).
+func (p *StaticDonedataRecordPolicy) JudgeChild(child sce.SavedChild) error {
+	return sce.Refuse(fmt.Sprintf("the document starts no child session, so '%s' cannot be one it was running", child.ID))
+}
+
+// ResumeChildren resumes no child, which this document does not start
+// (sce.SavedPolicy).
+func (p *StaticDonedataRecordPolicy) ResumeChildren(engine *sce.Engine[StaticDonedataRecordState, StaticDonedataRecordEvent], children []sce.SavedChild, wallNowMs int64) error {
+	if len(children) > 0 {
+		return p.JudgeChild(children[0])
+	}
+	return nil
+}
+
+// RestartInvokes starts no invocation again, which this document does not start
+// (sce.SavedPolicy).
+func (p *StaticDonedataRecordPolicy) RestartInvokes(engine *sce.Engine[StaticDonedataRecordState, StaticDonedataRecordEvent], ids []string) {}
+
+// SetHistoryValue gives history the states a saved state recorded for it
+// (sce.SavedPolicy).
+func (p *StaticDonedataRecordPolicy) SetHistoryValue(history sce.HistoryID, states []StaticDonedataRecordState) {
 }
 
 // ======================================================================
@@ -266,6 +527,10 @@ type StaticDonedataRecordPolicy struct {
 // NewStaticDonedataRecordPolicy creates a new policy with default values.
 func NewStaticDonedataRecordPolicy() StaticDonedataRecordPolicy {
 	return StaticDonedataRecordPolicy{
+		// docs/adr/0045: a session has an id, which a saved state names it by. A
+		// host that has one for it gives it with SetSessionID before it starts the
+		// machine; a child's is its parent's and the id it was started under.
+		SessionID: sce.DrawSessionID(),
 		vShown: StaticDonedataRecordViewRecord{layout: StaticDonedataRecordViewModeEnumDay, zoom: 2},
 	}
 }

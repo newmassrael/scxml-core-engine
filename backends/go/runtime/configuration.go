@@ -3,6 +3,8 @@
 
 package sce
 
+import "slices"
+
 // Is a set of states a CONFIGURATION of the document, and is `current` its
 // current state? The clauses that decide are cited on ValidateConfiguration,
 // which is where they are answered.
@@ -151,35 +153,8 @@ func ValidateConfiguration[S comparable, E comparable](
 	}
 
 	for _, state := range configuration {
-		children := 0
-		for _, candidate := range configuration {
-			parent, hasParent := policy.GetParent(candidate)
-			if hasParent && parent == state {
-				children++
-			}
-		}
-
-		if policy.HasParallelStates() && policy.IsParallelState(state) {
-			regions := policy.GetChildStates(state)
-			// §scxml-3.4: every region, simultaneously.
-			for _, region := range regions {
-				if !holds(region) {
-					return ConfigurationParallelRegionMissing
-				}
-			}
-			if children != len(regions) {
-				return ConfigurationParallelChildCount
-			}
-			continue
-		}
-
-		// §scxml-3.11: exactly one.
-		if policy.IsCompoundState(state) {
-			if children != 1 {
-				return ConfigurationCompoundChildCount
-			}
-		} else if children != 0 {
-			return ConfigurationAtomicHasChildren
+		if verdict := childArity(policy, configuration, state); verdict != ConfigurationAccepted {
+			return verdict
 		}
 	}
 
@@ -194,4 +169,154 @@ func ValidateConfiguration[S comparable, E comparable](
 	}
 
 	return ConfigurationAccepted
+}
+
+// childArity is whether state, in the set among, holds the number of children a
+// configuration gives it: one for a compound state (§scxml-3.11), every region
+// and nothing else for a <parallel> (§scxml-3.4), none for an atomic one.
+func childArity[S comparable, E comparable](
+	policy StatePolicy[S, E],
+	among []S,
+	state S,
+) ConfigurationRejection {
+	children := 0
+	for _, candidate := range among {
+		parent, hasParent := policy.GetParent(candidate)
+		if hasParent && parent == state {
+			children++
+		}
+	}
+
+	if policy.HasParallelStates() && policy.IsParallelState(state) {
+		regions := policy.GetChildStates(state)
+		// §scxml-3.4: every region, simultaneously.
+		for _, region := range regions {
+			if !slices.Contains(among, region) {
+				return ConfigurationParallelRegionMissing
+			}
+		}
+		if children != len(regions) {
+			return ConfigurationParallelChildCount
+		}
+		return ConfigurationAccepted
+	}
+
+	// §scxml-3.11: exactly one.
+	if policy.IsCompoundState(state) {
+		if children != 1 {
+			return ConfigurationCompoundChildCount
+		}
+	} else if children != 0 {
+		return ConfigurationAtomicHasChildren
+	}
+	return ConfigurationAccepted
+}
+
+// HistoryRejectionKind is why a recorded <history> value was refused
+// (§scxml-3.10).
+type HistoryRejectionKind int
+
+const (
+	// HistoryAccepted means the value is one the <history> could have recorded.
+	HistoryAccepted HistoryRejectionKind = iota
+	// HistoryEmpty means the value holds no state. A history records at least
+	// one.
+	HistoryEmpty
+	// HistoryDuplicate means a state appears more than once.
+	HistoryDuplicate
+	// HistoryNotBelow means a state is not below the history's parent.
+	HistoryNotBelow
+	// HistoryNotAChild means a shallow history records the children of its parent,
+	// and a state is deeper.
+	HistoryNotAChild
+	// HistoryNotAtomic means a deep history records atomic states, and one has
+	// children.
+	HistoryNotAtomic
+	// HistoryArity means what the value holds is not part of any configuration
+	// of the document: a compound state with two active children, a region
+	// missing.
+	HistoryArity
+)
+
+// HistoryRejection is the verdict on a recorded <history> value: its kind, the
+// state it is about and the history's parent where the kind names them, and the
+// configuration rule broken for HistoryArity.
+type HistoryRejection[S comparable] struct {
+	Kind   HistoryRejectionKind
+	State  S
+	Parent S
+	Arity  ConfigurationRejection
+}
+
+// ValidateHistory reports whether recorded is a value the <history> of parent
+// could have recorded: its active children for a shallow one, the active atomic
+// states below it for a deep one (deep) (§scxml-3.10).
+//
+// What a history recorded is part of a configuration, so a value read back from a
+// saved state is held to that, and the restored machine can only be taken
+// through the history to a configuration its document could have been in. It is
+// read as a configuration of the subtree under parent: the recorded states and
+// every state between each of them and parent satisfy the child arity a whole
+// configuration does. A shallow history records only the children, so the arity
+// is judged on parent alone.
+func ValidateHistory[S comparable, E comparable](
+	policy StatePolicy[S, E],
+	parent S,
+	deep bool,
+	recorded []S,
+) HistoryRejection[S] {
+	if len(recorded) == 0 {
+		return HistoryRejection[S]{Kind: HistoryEmpty}
+	}
+	for at, state := range recorded {
+		if slices.Contains(recorded[:at], state) {
+			return HistoryRejection[S]{Kind: HistoryDuplicate, State: state}
+		}
+	}
+
+	// The recorded states, and every state between each of them and parent.
+	subtree := []S{parent}
+	for _, state := range recorded {
+		var chain []S
+		for at := state; at != parent; {
+			chain = append(chain, at)
+			above, hasParent := policy.GetParent(at)
+			if !hasParent {
+				return HistoryRejection[S]{Kind: HistoryNotBelow, State: state, Parent: parent}
+			}
+			at = above
+		}
+		// A state equal to parent is below nothing.
+		if len(chain) == 0 {
+			return HistoryRejection[S]{Kind: HistoryNotBelow, State: state, Parent: parent}
+		}
+		for _, between := range chain {
+			if !slices.Contains(subtree, between) {
+				subtree = append(subtree, between)
+			}
+		}
+	}
+
+	if deep {
+		for _, state := range recorded {
+			if len(policy.GetChildStates(state)) != 0 {
+				return HistoryRejection[S]{Kind: HistoryNotAtomic, State: state}
+			}
+		}
+		for _, state := range subtree {
+			if verdict := childArity(policy, subtree, state); verdict != ConfigurationAccepted {
+				return HistoryRejection[S]{Kind: HistoryArity, Arity: verdict}
+			}
+		}
+		return HistoryRejection[S]{}
+	}
+	for _, state := range recorded {
+		if above, hasParent := policy.GetParent(state); !hasParent || above != parent {
+			return HistoryRejection[S]{Kind: HistoryNotAChild, State: state, Parent: parent}
+		}
+	}
+	if verdict := childArity(policy, subtree, parent); verdict != ConfigurationAccepted {
+		return HistoryRejection[S]{Kind: HistoryArity, Arity: verdict}
+	}
+	return HistoryRejection[S]{}
 }

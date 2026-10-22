@@ -839,6 +839,47 @@ func (r RecordListHlcRecord) NodeId() uint64 {
 	return r.nodeId
 }
 
+// ToSaved is this value as a saved state writes it.
+func (r RecordListHlcRecord) ToSaved() any {
+	saved := sce.NewJSONObject()
+	saved.Set("wallTime", (sce.SavedWriteInt64)(r.wallTime))
+	saved.Set("counter", (sce.SavedWriteUint32)(r.counter))
+	saved.Set("nodeId", (sce.SavedWriteUint64)(r.nodeId))
+	return saved
+}
+
+// RecordListHlcRecordFromSaved is the value a saved state holds, refused unless it is one.
+func RecordListHlcRecordFromSaved(value any, what string) (RecordListHlcRecord, error) {
+	var record RecordListHlcRecord
+	{
+		saved, err := sce.SavedField(value, what, "wallTime")
+		if err != nil {
+			return record, err
+		}
+		if record.wallTime, err = (sce.SavedReadInt64)(saved, what + ".wallTime"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "counter")
+		if err != nil {
+			return record, err
+		}
+		if record.counter, err = (sce.SavedReadUint32)(saved, what + ".counter"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "nodeId")
+		if err != nil {
+			return record, err
+		}
+		if record.nodeId, err = (sce.SavedReadUint64)(saved, what + ".nodeId"); err != nil {
+			return record, err
+		}
+	}
+	return record, nil
+}
 
 // SCE Accepted Subset §2.15: a `record:Entry` datamodel value.
 type RecordListEntryRecord struct {
@@ -868,6 +909,57 @@ func (r RecordListEntryRecord) NodeId() uint64 {
 	return r.nodeId
 }
 
+// ToSaved is this value as a saved state writes it.
+func (r RecordListEntryRecord) ToSaved() any {
+	saved := sce.NewJSONObject()
+	saved.Set("element", (sce.SavedWriteUint64)(r.element))
+	saved.Set("wallTime", (sce.SavedWriteInt64)(r.wallTime))
+	saved.Set("counter", (sce.SavedWriteUint32)(r.counter))
+	saved.Set("nodeId", (sce.SavedWriteUint64)(r.nodeId))
+	return saved
+}
+
+// RecordListEntryRecordFromSaved is the value a saved state holds, refused unless it is one.
+func RecordListEntryRecordFromSaved(value any, what string) (RecordListEntryRecord, error) {
+	var record RecordListEntryRecord
+	{
+		saved, err := sce.SavedField(value, what, "element")
+		if err != nil {
+			return record, err
+		}
+		if record.element, err = (sce.SavedReadUint64)(saved, what + ".element"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "wallTime")
+		if err != nil {
+			return record, err
+		}
+		if record.wallTime, err = (sce.SavedReadInt64)(saved, what + ".wallTime"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "counter")
+		if err != nil {
+			return record, err
+		}
+		if record.counter, err = (sce.SavedReadUint32)(saved, what + ".counter"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "nodeId")
+		if err != nil {
+			return record, err
+		}
+		if record.nodeId, err = (sce.SavedReadUint64)(saved, what + ".nodeId"); err != nil {
+			return record, err
+		}
+	}
+	return record, nil
+}
 
 // SCE Accepted Subset §2.15: a `record:Value` datamodel value.
 type RecordListValueRecord struct {
@@ -915,6 +1007,87 @@ func (r RecordListValueRecord) NodeId() uint64 {
 	return r.nodeId
 }
 
+// ToSaved is this value as a saved state writes it.
+func (r RecordListValueRecord) ToSaved() any {
+	saved := sce.NewJSONObject()
+	saved.Set("id", (sce.SavedWriteUint64)(r.id))
+	saved.Set("field", (sce.SavedWriteUint64)(r.field))
+	saved.Set("value", (sce.SavedWriteInt64)(r.value))
+	saved.Set("text", (sce.SavedWriteString)(r.text))
+	saved.Set("wallTime", (sce.SavedWriteInt64)(r.wallTime))
+	saved.Set("counter", (sce.SavedWriteUint32)(r.counter))
+	saved.Set("nodeId", (sce.SavedWriteUint64)(r.nodeId))
+	return saved
+}
+
+// RecordListValueRecordFromSaved is the value a saved state holds, refused unless it is one.
+func RecordListValueRecordFromSaved(value any, what string) (RecordListValueRecord, error) {
+	var record RecordListValueRecord
+	{
+		saved, err := sce.SavedField(value, what, "id")
+		if err != nil {
+			return record, err
+		}
+		if record.id, err = (sce.SavedReadUint64)(saved, what + ".id"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "field")
+		if err != nil {
+			return record, err
+		}
+		if record.field, err = (sce.SavedReadUint64)(saved, what + ".field"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "value")
+		if err != nil {
+			return record, err
+		}
+		if record.value, err = (sce.SavedReadInt64)(saved, what + ".value"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "text")
+		if err != nil {
+			return record, err
+		}
+		if record.text, err = (sce.SavedBoundedString(96))(saved, what + ".text"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "wallTime")
+		if err != nil {
+			return record, err
+		}
+		if record.wallTime, err = (sce.SavedReadInt64)(saved, what + ".wallTime"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "counter")
+		if err != nil {
+			return record, err
+		}
+		if record.counter, err = (sce.SavedReadUint32)(saved, what + ".counter"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "nodeId")
+		if err != nil {
+			return record, err
+		}
+		if record.nodeId, err = (sce.SavedReadUint64)(saved, what + ".nodeId"); err != nil {
+			return record, err
+		}
+	}
+	return record, nil
+}
 
 // SCE Accepted Subset §2.15: a `record:Node` datamodel value.
 type RecordListNodeRecord struct {
@@ -938,6 +1111,47 @@ func (r RecordListNodeRecord) Hash() uint32 {
 	return r.hash
 }
 
+// ToSaved is this value as a saved state writes it.
+func (r RecordListNodeRecord) ToSaved() any {
+	saved := sce.NewJSONObject()
+	saved.Set("depth", (sce.SavedWriteUint8)(r.depth))
+	saved.Set("prefix", (sce.SavedWriteUint64)(r.prefix))
+	saved.Set("hash", (sce.SavedWriteUint32)(r.hash))
+	return saved
+}
+
+// RecordListNodeRecordFromSaved is the value a saved state holds, refused unless it is one.
+func RecordListNodeRecordFromSaved(value any, what string) (RecordListNodeRecord, error) {
+	var record RecordListNodeRecord
+	{
+		saved, err := sce.SavedField(value, what, "depth")
+		if err != nil {
+			return record, err
+		}
+		if record.depth, err = (sce.SavedReadUint8)(saved, what + ".depth"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "prefix")
+		if err != nil {
+			return record, err
+		}
+		if record.prefix, err = (sce.SavedReadUint64)(saved, what + ".prefix"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "hash")
+		if err != nil {
+			return record, err
+		}
+		if record.hash, err = (sce.SavedReadUint32)(saved, what + ".hash"); err != nil {
+			return record, err
+		}
+	}
+	return record, nil
+}
 
 // SCE Accepted Subset §2.15: a `record:Answer` datamodel value.
 type RecordListAnswerRecord struct {
@@ -955,6 +1169,37 @@ func (r RecordListAnswerRecord) Hash() uint32 {
 	return r.hash
 }
 
+// ToSaved is this value as a saved state writes it.
+func (r RecordListAnswerRecord) ToSaved() any {
+	saved := sce.NewJSONObject()
+	saved.Set("sender", (sce.SavedWriteUint64)(r.sender))
+	saved.Set("hash", (sce.SavedWriteUint32)(r.hash))
+	return saved
+}
+
+// RecordListAnswerRecordFromSaved is the value a saved state holds, refused unless it is one.
+func RecordListAnswerRecordFromSaved(value any, what string) (RecordListAnswerRecord, error) {
+	var record RecordListAnswerRecord
+	{
+		saved, err := sce.SavedField(value, what, "sender")
+		if err != nil {
+			return record, err
+		}
+		if record.sender, err = (sce.SavedReadUint64)(saved, what + ".sender"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "hash")
+		if err != nil {
+			return record, err
+		}
+		if record.hash, err = (sce.SavedReadUint32)(saved, what + ".hash"); err != nil {
+			return record, err
+		}
+	}
+	return record, nil
+}
 
 // SCE Accepted Subset §2.15: a `record:Member` datamodel value.
 type RecordListMemberRecord struct {
@@ -972,6 +1217,37 @@ func (r RecordListMemberRecord) Role() uint8 {
 	return r.role
 }
 
+// ToSaved is this value as a saved state writes it.
+func (r RecordListMemberRecord) ToSaved() any {
+	saved := sce.NewJSONObject()
+	saved.Set("node", (sce.SavedWriteUint64)(r.node))
+	saved.Set("role", (sce.SavedWriteUint8)(r.role))
+	return saved
+}
+
+// RecordListMemberRecordFromSaved is the value a saved state holds, refused unless it is one.
+func RecordListMemberRecordFromSaved(value any, what string) (RecordListMemberRecord, error) {
+	var record RecordListMemberRecord
+	{
+		saved, err := sce.SavedField(value, what, "node")
+		if err != nil {
+			return record, err
+		}
+		if record.node, err = (sce.SavedReadUint64)(saved, what + ".node"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "role")
+		if err != nil {
+			return record, err
+		}
+		if record.role, err = (sce.SavedReadUint8)(saved, what + ".role"); err != nil {
+			return record, err
+		}
+	}
+	return record, nil
+}
 
 // SCE Accepted Subset §2.15: a `record:Part` datamodel value.
 type RecordListPartRecord struct {
@@ -1049,6 +1325,137 @@ func (r RecordListPartRecord) Parts() uint32 {
 	return r.parts
 }
 
+// ToSaved is this value as a saved state writes it.
+func (r RecordListPartRecord) ToSaved() any {
+	saved := sce.NewJSONObject()
+	saved.Set("kind", (sce.SavedWriteUint8)(r.kind))
+	saved.Set("id", (sce.SavedWriteUint32)(r.id))
+	saved.Set("field", (sce.SavedWriteUint16)(r.field))
+	saved.Set("value", (sce.SavedWriteInt64)(r.value))
+	saved.Set("text", (sce.SavedWriteString)(r.text))
+	saved.Set("wallTime", (sce.SavedWriteInt64)(r.wallTime))
+	saved.Set("counter", (sce.SavedWriteUint32)(r.counter))
+	saved.Set("nodeId", (sce.SavedWriteUint64)(r.nodeId))
+	saved.Set("by", (sce.SavedWriteUint64)(r.by))
+	saved.Set("atWallTime", (sce.SavedWriteInt64)(r.atWallTime))
+	saved.Set("atCounter", (sce.SavedWriteUint32)(r.atCounter))
+	saved.Set("parts", (sce.SavedWriteUint32)(r.parts))
+	return saved
+}
+
+// RecordListPartRecordFromSaved is the value a saved state holds, refused unless it is one.
+func RecordListPartRecordFromSaved(value any, what string) (RecordListPartRecord, error) {
+	var record RecordListPartRecord
+	{
+		saved, err := sce.SavedField(value, what, "kind")
+		if err != nil {
+			return record, err
+		}
+		if record.kind, err = (sce.SavedReadUint8)(saved, what + ".kind"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "id")
+		if err != nil {
+			return record, err
+		}
+		if record.id, err = (sce.SavedReadUint32)(saved, what + ".id"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "field")
+		if err != nil {
+			return record, err
+		}
+		if record.field, err = (sce.SavedReadUint16)(saved, what + ".field"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "value")
+		if err != nil {
+			return record, err
+		}
+		if record.value, err = (sce.SavedReadInt64)(saved, what + ".value"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "text")
+		if err != nil {
+			return record, err
+		}
+		if record.text, err = (sce.SavedBoundedString(96))(saved, what + ".text"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "wallTime")
+		if err != nil {
+			return record, err
+		}
+		if record.wallTime, err = (sce.SavedReadInt64)(saved, what + ".wallTime"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "counter")
+		if err != nil {
+			return record, err
+		}
+		if record.counter, err = (sce.SavedReadUint32)(saved, what + ".counter"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "nodeId")
+		if err != nil {
+			return record, err
+		}
+		if record.nodeId, err = (sce.SavedReadUint64)(saved, what + ".nodeId"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "by")
+		if err != nil {
+			return record, err
+		}
+		if record.by, err = (sce.SavedReadUint64)(saved, what + ".by"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "atWallTime")
+		if err != nil {
+			return record, err
+		}
+		if record.atWallTime, err = (sce.SavedReadInt64)(saved, what + ".atWallTime"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "atCounter")
+		if err != nil {
+			return record, err
+		}
+		if record.atCounter, err = (sce.SavedReadUint32)(saved, what + ".atCounter"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "parts")
+		if err != nil {
+			return record, err
+		}
+		if record.parts, err = (sce.SavedReadUint32)(saved, what + ".parts"); err != nil {
+			return record, err
+		}
+	}
+	return record, nil
+}
 
 // SCE Accepted Subset §2.15: an `enum:Refusal` datamodel value.
 type RecordListRefusalEnum uint8
@@ -1105,6 +1512,40 @@ func RecordListRefusalEnumFromUnderlying(raw uint8) (RecordListRefusalEnum, bool
 	return 0, false
 }
 
+// ToSaved is this value as a saved state writes it.
+func (v RecordListRefusalEnum) ToSaved() any {
+	return v.String()
+}
+
+// RecordListRefusalEnumFromSaved is the value a saved state holds, refused unless it is a variant.
+func RecordListRefusalEnumFromSaved(value any, what string) (RecordListRefusalEnum, error) {
+	declared, err := sce.SavedReadString(value, what)
+	if err != nil {
+		return 0, err
+	}
+	switch declared {
+	case "none":
+		return RecordListRefusalEnumNone, nil
+	case "notWriter":
+		return RecordListRefusalEnumNotWriter, nil
+	case "noRoomForValue":
+		return RecordListRefusalEnumNoRoomForValue, nil
+	case "noRoomForHistory":
+		return RecordListRefusalEnumNoRoomForHistory, nil
+	case "noRoomForDigest":
+		return RecordListRefusalEnumNoRoomForDigest, nil
+	case "textTooLong":
+		return RecordListRefusalEnumTextTooLong, nil
+	case "changeTooLarge":
+		return RecordListRefusalEnumChangeTooLarge, nil
+	case "registerNamedTwice":
+		return RecordListRefusalEnumRegisterNamedTwice, nil
+	case "clockExhausted":
+		return RecordListRefusalEnumClockExhausted, nil
+	}
+	return 0, sce.Refuse(fmt.Sprintf("'%s' (%s) is not a variant of Refusal", what, declared))
+}
+
 // SCE Accepted Subset §2.15: an `enum:Command` datamodel value.
 type RecordListCommandEnum uint8
 
@@ -1140,6 +1581,28 @@ func RecordListCommandEnumFromUnderlying(raw uint8) (RecordListCommandEnum, bool
 		return RecordListCommandEnum(raw), true
 	}
 	return 0, false
+}
+
+// ToSaved is this value as a saved state writes it.
+func (v RecordListCommandEnum) ToSaved() any {
+	return v.String()
+}
+
+// RecordListCommandEnumFromSaved is the value a saved state holds, refused unless it is a variant.
+func RecordListCommandEnumFromSaved(value any, what string) (RecordListCommandEnum, error) {
+	declared, err := sce.SavedReadString(value, what)
+	if err != nil {
+		return 0, err
+	}
+	switch declared {
+	case "edit":
+		return RecordListCommandEnumEdit, nil
+	case "clear":
+		return RecordListCommandEnumClear, nil
+	case "retire":
+		return RecordListCommandEnumRetire, nil
+	}
+	return 0, sce.Refuse(fmt.Sprintf("'%s' (%s) is not a variant of Command", what, declared))
 }
 
 // The bounds this machine is built with, each by the name `sce:limit` gives it (docs/adr/0050).
@@ -1193,6 +1656,1333 @@ const RecordListSavedShapeFormat2Revised = "3ab46f231c112905dd81548ea9ffa1858522
 var RecordListSavedEnumKeys = [...]string{
 	"enum:sce:std/shared/record_command.scxml",
 	"enum:sce:std/shared/record_refusal.scxml",
+}
+
+// ── SCE Accepted Subset §2.15: saving this machine, restoring it ──────────
+
+// RecordListSavedShape is what a saved state of this document is bound
+// to: a state saved from a document that renamed, re-typed or moved a state or a
+// variable is refused, one saved before a guard or an action changed is not, and
+// one saved at an earlier revision of a record schema is read with each field a
+// later revision added at its default.
+var RecordListSavedShape = sce.SavedShape{
+	First:          "340859b0a721fd543a2cd19a56c731fc7deccc79c4a0e1238a11b13b109af194",
+	Revised:        "c9dd599d8c983201c9142c8b856ba4bd71dac00d28a5903fbfc6af1649dcee5d",
+	Format2First:   "5cc454c365171a28f062aae53cb34fa6b9bd33e46775c22fa8b23dd6b87d271a",
+	Format2Revised: "3ab46f231c112905dd81548ea9ffa1858522c5b71c84747d9223883798a347b4",
+	Records: []sce.RecordLineage{
+		{
+			Event:     "merge.hlc_timestamp",
+			Revision:  1,
+			Revisions: []string{},
+			Added: []sce.AddedField{
+			},
+			Holders: []sce.RecordHolder{
+				{Variable: "clock", List: false},
+				{Variable: "stamp", List: false},
+			},
+		},
+		{
+			Event:     "merge.merkle_node",
+			Revision:  1,
+			Revisions: []string{},
+			Added: []sce.AddedField{
+			},
+			Holders: []sce.RecordHolder{
+				{Variable: "digest", List: true},
+			},
+		},
+		{
+			Event:     "merge.mv_value",
+			Revision:  1,
+			Revisions: []string{},
+			Added: []sce.AddedField{
+			},
+			Holders: []sce.RecordHolder{
+				{Variable: "values", List: true},
+				{Variable: "held", List: false},
+				{Variable: "live", List: true},
+				{Variable: "empty", List: false},
+			},
+		},
+		{
+			Event:     "merge.orset_entry",
+			Revision:  1,
+			Revisions: []string{},
+			Added: []sce.AddedField{
+			},
+			Holders: []sce.RecordHolder{
+				{Variable: "adds", List: true},
+				{Variable: "tombstones", List: true},
+				{Variable: "one", List: true},
+				{Variable: "stable", List: true},
+				{Variable: "entry", List: false},
+			},
+		},
+		{
+			Event:     "record_list.answer",
+			Revision:  1,
+			Revisions: []string{},
+			Added: []sce.AddedField{
+			},
+			Holders: []sce.RecordHolder{
+				{Variable: "answers", List: true},
+				{Variable: "answer", List: false},
+			},
+		},
+		{
+			Event:     "record_list.member",
+			Revision:  1,
+			Revisions: []string{},
+			Added: []sce.AddedField{
+			},
+			Holders: []sce.RecordHolder{
+				{Variable: "roster", List: true},
+			},
+		},
+		{
+			Event:     "record_list.part",
+			Revision:  1,
+			Revisions: []string{},
+			Added: []sce.AddedField{
+			},
+			Holders: []sce.RecordHolder{
+				{Variable: "staged", List: true},
+				{Variable: "taking", List: true},
+				{Variable: "passing", List: true},
+				{Variable: "waiting", List: true},
+				{Variable: "kept", List: true},
+				{Variable: "part", List: false},
+				{Variable: "op", List: false},
+			},
+		},
+	},
+	Enums: []sce.EnumLineage{
+		{
+			Key:       "enum:sce:std/shared/record_command.scxml",
+			Revision:  1,
+			Revisions: []string{},
+			Added: []sce.AddedVariant{
+			},
+			Holders: []sce.EnumHolder{
+				{Variable: "namedKind", List: false},
+			},
+		},
+		{
+			Key:       "enum:sce:std/shared/record_refusal.scxml",
+			Revision:  1,
+			Revisions: []string{},
+			Added: []sce.AddedVariant{
+			},
+			Holders: []sce.EnumHolder{
+				{Variable: "probe", List: false},
+				{Variable: "spoiledFor", List: false},
+			},
+		},
+	},
+}
+
+// RecordListHistories is the document's `<history>` pseudo-states, by
+// the id a saved state keys them by: what a saved state records of each, and
+// what a restore reads.
+var RecordListHistories = []sce.HistoryDecl{
+}
+
+// RecordListSaveAt is engine's whole state at the macrostep boundary it
+// stands at: every variable, the machine's own included, and where it stands, as
+// the `sce-saved-state` document every backend reads (sce.SavedState.ToJSON).
+// Each delayed `<send>` still waiting is written as the moment it comes due on
+// the wall clock whose reading now is wallNowMs, in milliseconds since the Unix
+// epoch.
+//
+// Refused for a machine that is not running, one that has ended, one whose last
+// macrostep stopped at the microstep ceiling, and one built around another
+// document's policy.
+func RecordListSaveAt(engine *sce.Engine[RecordListState, RecordListEvent], wallNowMs int64) (*sce.SavedState, error) {
+	p, ok := engine.Policy().(*RecordListPolicy)
+	if !ok {
+		return nil, sce.Refuse("the engine is not one of RecordList")
+	}
+	variables := sce.NewJSONObject()
+	variables.Set("node", sce.SavedWriteUint64(p.vNode))
+	variables.Set("hub", sce.SavedWriteBool(p.vHub))
+	variables.Set("clock", p.vClock.ToSaved())
+	variables.Set("stamp", p.vStamp.ToSaved())
+	variables.Set("adds", sce.SavedWriteList(p.vAdds, func(r RecordListEntryRecord) any { return r.ToSaved() }))
+	variables.Set("tombstones", sce.SavedWriteList(p.vTombstones, func(r RecordListEntryRecord) any { return r.ToSaved() }))
+	variables.Set("one", sce.SavedWriteList(p.vOne, func(r RecordListEntryRecord) any { return r.ToSaved() }))
+	variables.Set("stable", sce.SavedWriteList(p.vStable, func(r RecordListEntryRecord) any { return r.ToSaved() }))
+	variables.Set("entry", p.vEntry.ToSaved())
+	variables.Set("values", sce.SavedWriteList(p.vValues, func(r RecordListValueRecord) any { return r.ToSaved() }))
+	variables.Set("typed", sce.SavedWriteString(p.vTyped))
+	variables.Set("held", p.vHeld.ToSaved())
+	variables.Set("digest", sce.SavedWriteList(p.vDigest, func(r RecordListNodeRecord) any { return r.ToSaved() }))
+	variables.Set("mine", sce.SavedWriteUint32(p.vMine))
+	variables.Set("shareId", sce.SavedWriteUint32(p.vShareId))
+	variables.Set("shareField", sce.SavedWriteUint16(p.vShareField))
+	variables.Set("known", sce.SavedWriteBool(p.vKnown))
+	variables.Set("wasLive", sce.SavedWriteBool(p.vWasLive))
+	variables.Set("isLive", sce.SavedWriteBool(p.vIsLive))
+	variables.Set("present", sce.SavedWriteBool(p.vPresent))
+	variables.Set("refusals", sce.SavedWriteUint32(p.vRefusals))
+	variables.Set("floor", sce.SavedWriteInt64(p.vFloor))
+	variables.Set("stale", sce.SavedWriteBool(p.vStale))
+	variables.Set("late", sce.SavedWriteUint32(p.vLate))
+	variables.Set("frozenFor", sce.SavedWriteInt64(p.vFrozenFor))
+	variables.Set("frozenHash", sce.SavedWriteUint32(p.vFrozenHash))
+	variables.Set("pending", sce.SavedWriteInt64(p.vPending))
+	variables.Set("members", sce.SavedWriteUint32(p.vMembers))
+	variables.Set("agreeing", sce.SavedWriteUint32(p.vAgreeing))
+	variables.Set("answers", sce.SavedWriteList(p.vAnswers, func(r RecordListAnswerRecord) any { return r.ToSaved() }))
+	variables.Set("answer", p.vAnswer.ToSaved())
+	variables.Set("agreed", sce.SavedWriteUint32(p.vAgreed))
+	variables.Set("roomValues", sce.SavedWriteUint32(p.vRoomValues))
+	variables.Set("roomHistory", sce.SavedWriteUint32(p.vRoomHistory))
+	variables.Set("roomDigest", sce.SavedWriteUint32(p.vRoomDigest))
+	variables.Set("full", sce.SavedWriteUint32(p.vFull))
+	variables.Set("roster", sce.SavedWriteList(p.vRoster, func(r RecordListMemberRecord) any { return r.ToSaved() }))
+	variables.Set("denied", sce.SavedWriteUint32(p.vDenied))
+	variables.Set("forbidden", sce.SavedWriteBool(p.vForbidden))
+	variables.Set("authorized", sce.SavedWriteBool(p.vAuthorized))
+	variables.Set("announce", sce.SavedWriteBool(p.vAnnounce))
+	variables.Set("announced", sce.SavedWriteUint32(p.vAnnounced))
+	variables.Set("moved", sce.SavedWriteList(p.vMoved, sce.SavedWriteUint64))
+	variables.Set("listed", sce.SavedWriteBool(p.vListed))
+	variables.Set("live", sce.SavedWriteList(p.vLive, func(r RecordListValueRecord) any { return r.ToSaved() }))
+	variables.Set("ordinal", sce.SavedWriteUint32(p.vOrdinal))
+	variables.Set("empty", p.vEmpty.ToSaved())
+	variables.Set("staged", sce.SavedWriteList(p.vStaged, func(r RecordListPartRecord) any { return r.ToSaved() }))
+	variables.Set("holding", sce.SavedWriteBool(p.vHolding))
+	variables.Set("closingNow", sce.SavedWriteInt64(p.vClosingNow))
+	variables.Set("spoiled", sce.SavedWriteBool(p.vSpoiled))
+	variables.Set("probing", sce.SavedWriteBool(p.vProbing))
+	variables.Set("gone", sce.SavedWriteUint32(p.vGone))
+	variables.Set("writes", sce.SavedWriteUint32(p.vWrites))
+	variables.Set("covered", sce.SavedWriteBool(p.vCovered))
+	variables.Set("probe", p.vProbe.ToSaved())
+	variables.Set("spoiledFor", p.vSpoiledFor.ToSaved())
+	variables.Set("namedId", sce.SavedWriteUint32(p.vNamedId))
+	variables.Set("namedField", sce.SavedWriteUint16(p.vNamedField))
+	variables.Set("namedKind", p.vNamedKind.ToSaved())
+	variables.Set("taking", sce.SavedWriteList(p.vTaking, func(r RecordListPartRecord) any { return r.ToSaved() }))
+	variables.Set("took", sce.SavedWriteUint32(p.vTook))
+	variables.Set("passing", sce.SavedWriteList(p.vPassing, func(r RecordListPartRecord) any { return r.ToSaved() }))
+	variables.Set("passed", sce.SavedWriteUint32(p.vPassed))
+	variables.Set("waiting", sce.SavedWriteList(p.vWaiting, func(r RecordListPartRecord) any { return r.ToSaved() }))
+	variables.Set("kept", sce.SavedWriteList(p.vKept, func(r RecordListPartRecord) any { return r.ToSaved() }))
+	variables.Set("part", p.vPart.ToSaved())
+	variables.Set("op", p.vOp.ToSaved())
+	variables.Set("already", sce.SavedWriteBool(p.vAlready))
+	variables.Set("count", sce.SavedWriteUint32(p.vCount))
+	return sce.SaveSession(engine, &RecordListSavedShape, variables,
+		sce.SaveHistory[RecordListState, RecordListEvent](p, RecordListHistories),
+		nil, wallNowMs)
+}
+
+// RecordListSave is RecordListSaveAt at the host's wall clock now.
+func RecordListSave(engine *sce.Engine[RecordListState, RecordListEvent]) (*sce.SavedState, error) {
+	return RecordListSaveAt(engine, sce.SavedWallClockMs())
+}
+
+// RecordListJudge refuses saved unless a machine of this document could
+// restore it, building nothing: what a parent's restore asks of each child it
+// holds (docs/adr/0045, section 3, step 1).
+func RecordListJudge(saved *sce.SavedState) error {
+	p := &RecordListPolicy{}
+	grown, err := sce.UpgradeSavedState(saved, &RecordListSavedShape)
+	if err != nil {
+		return err
+	}
+	if _, err := sce.RestoreHistory[RecordListState, RecordListEvent](p, grown, RecordListHistories); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("node"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint64(raw, "node"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("hub"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadBool(raw, "hub"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("clock"); err != nil {
+		return err
+	} else if _, err := RecordListHlcRecordFromSaved(raw, "clock"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("stamp"); err != nil {
+		return err
+	} else if _, err := RecordListHlcRecordFromSaved(raw, "stamp"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("adds"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadList(raw, "adds", 1024, RecordListEntryRecordFromSaved); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("tombstones"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadList(raw, "tombstones", 1024, RecordListEntryRecordFromSaved); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("one"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadList(raw, "one", 1024, RecordListEntryRecordFromSaved); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("stable"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadList(raw, "stable", 1024, RecordListEntryRecordFromSaved); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("entry"); err != nil {
+		return err
+	} else if _, err := RecordListEntryRecordFromSaved(raw, "entry"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("values"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadList(raw, "values", 512, RecordListValueRecordFromSaved); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("typed"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadBoundedString(raw, "typed", 32); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("held"); err != nil {
+		return err
+	} else if _, err := RecordListValueRecordFromSaved(raw, "held"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("digest"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadList(raw, "digest", 2048, RecordListNodeRecordFromSaved); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("mine"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "mine"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("shareId"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "shareId"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("shareField"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint16(raw, "shareField"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("known"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadBool(raw, "known"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("wasLive"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadBool(raw, "wasLive"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("isLive"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadBool(raw, "isLive"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("present"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadBool(raw, "present"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("refusals"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "refusals"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("floor"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadInt64(raw, "floor"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("stale"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadBool(raw, "stale"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("late"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "late"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("frozenFor"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadInt64(raw, "frozenFor"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("frozenHash"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "frozenHash"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("pending"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadInt64(raw, "pending"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("members"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "members"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("agreeing"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "agreeing"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("answers"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadList(raw, "answers", 512, RecordListAnswerRecordFromSaved); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("answer"); err != nil {
+		return err
+	} else if _, err := RecordListAnswerRecordFromSaved(raw, "answer"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("agreed"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "agreed"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("roomValues"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "roomValues"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("roomHistory"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "roomHistory"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("roomDigest"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "roomDigest"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("full"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "full"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("roster"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadList(raw, "roster", 64, RecordListMemberRecordFromSaved); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("denied"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "denied"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("forbidden"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadBool(raw, "forbidden"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("authorized"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadBool(raw, "authorized"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("announce"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadBool(raw, "announce"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("announced"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "announced"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("moved"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadList(raw, "moved", 64, sce.SavedReadUint64); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("listed"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadBool(raw, "listed"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("live"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadList(raw, "live", 512, RecordListValueRecordFromSaved); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("ordinal"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "ordinal"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("empty"); err != nil {
+		return err
+	} else if _, err := RecordListValueRecordFromSaved(raw, "empty"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("staged"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadList(raw, "staged", 32, RecordListPartRecordFromSaved); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("holding"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadBool(raw, "holding"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("closingNow"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadInt64(raw, "closingNow"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("spoiled"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadBool(raw, "spoiled"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("probing"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadBool(raw, "probing"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("gone"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "gone"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("writes"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "writes"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("covered"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadBool(raw, "covered"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("probe"); err != nil {
+		return err
+	} else if _, err := RecordListRefusalEnumFromSaved(raw, "probe"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("spoiledFor"); err != nil {
+		return err
+	} else if _, err := RecordListRefusalEnumFromSaved(raw, "spoiledFor"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("namedId"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "namedId"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("namedField"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint16(raw, "namedField"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("namedKind"); err != nil {
+		return err
+	} else if _, err := RecordListCommandEnumFromSaved(raw, "namedKind"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("taking"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadList(raw, "taking", 64, RecordListPartRecordFromSaved); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("took"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "took"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("passing"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadList(raw, "passing", 64, RecordListPartRecordFromSaved); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("passed"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "passed"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("waiting"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadList(raw, "waiting", 64, RecordListPartRecordFromSaved); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("kept"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadList(raw, "kept", 64, RecordListPartRecordFromSaved); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("part"); err != nil {
+		return err
+	} else if _, err := RecordListPartRecordFromSaved(raw, "part"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("op"); err != nil {
+		return err
+	} else if _, err := RecordListPartRecordFromSaved(raw, "op"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("already"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadBool(raw, "already"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("count"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "count"); err != nil {
+		return err
+	}
+	return sce.JudgeSession[RecordListState, RecordListEvent](p, grown)
+}
+
+// RecordListRestoreAt is a machine of policy standing where saved left
+// one, measuring time by clock: in place of `Initialize`, so no `<onentry>` runs
+// and no `<data>` is evaluated, since the saved run already did both. Every value
+// is read and the state judged before any is written, so a refused restore leaves
+// policy as it was.
+//
+// Each delayed `<send>` saved is armed against clock, which is the one the
+// machine measures time by; wallNowMs is what time it is on the wall clock the
+// saved `due`s were written against. A send comes due when its saved moment does,
+// and one already due comes due now.
+//
+// The host registers its invokers and its processors on the machine this
+// returns, and drives it as it would one it had initialized.
+func RecordListRestoreAt(policy *RecordListPolicy, saved *sce.SavedState, clock sce.SceClock, wallNowMs int64) (*sce.Engine[RecordListState, RecordListEvent], error) {
+	// The state as one of this machine: each record saved at an earlier revision
+	// of its schema holds the defaults of the fields added since.
+	grown, err := sce.UpgradeSavedState(saved, &RecordListSavedShape)
+	if err != nil {
+		return nil, err
+	}
+	history, err := sce.RestoreHistory[RecordListState, RecordListEvent](policy, grown, RecordListHistories)
+	if err != nil {
+		return nil, err
+	}
+	raw1, err := grown.Variable("node")
+	if err != nil {
+		return nil, err
+	}
+	read1, err := sce.SavedReadUint64(raw1, "node")
+	if err != nil {
+		return nil, err
+	}
+	raw2, err := grown.Variable("hub")
+	if err != nil {
+		return nil, err
+	}
+	read2, err := sce.SavedReadBool(raw2, "hub")
+	if err != nil {
+		return nil, err
+	}
+	raw3, err := grown.Variable("clock")
+	if err != nil {
+		return nil, err
+	}
+	read3, err := RecordListHlcRecordFromSaved(raw3, "clock")
+	if err != nil {
+		return nil, err
+	}
+	raw4, err := grown.Variable("stamp")
+	if err != nil {
+		return nil, err
+	}
+	read4, err := RecordListHlcRecordFromSaved(raw4, "stamp")
+	if err != nil {
+		return nil, err
+	}
+	raw5, err := grown.Variable("adds")
+	if err != nil {
+		return nil, err
+	}
+	read5, err := sce.SavedReadList(raw5, "adds", 1024, RecordListEntryRecordFromSaved)
+	if err != nil {
+		return nil, err
+	}
+	raw6, err := grown.Variable("tombstones")
+	if err != nil {
+		return nil, err
+	}
+	read6, err := sce.SavedReadList(raw6, "tombstones", 1024, RecordListEntryRecordFromSaved)
+	if err != nil {
+		return nil, err
+	}
+	raw7, err := grown.Variable("one")
+	if err != nil {
+		return nil, err
+	}
+	read7, err := sce.SavedReadList(raw7, "one", 1024, RecordListEntryRecordFromSaved)
+	if err != nil {
+		return nil, err
+	}
+	raw8, err := grown.Variable("stable")
+	if err != nil {
+		return nil, err
+	}
+	read8, err := sce.SavedReadList(raw8, "stable", 1024, RecordListEntryRecordFromSaved)
+	if err != nil {
+		return nil, err
+	}
+	raw9, err := grown.Variable("entry")
+	if err != nil {
+		return nil, err
+	}
+	read9, err := RecordListEntryRecordFromSaved(raw9, "entry")
+	if err != nil {
+		return nil, err
+	}
+	raw10, err := grown.Variable("values")
+	if err != nil {
+		return nil, err
+	}
+	read10, err := sce.SavedReadList(raw10, "values", 512, RecordListValueRecordFromSaved)
+	if err != nil {
+		return nil, err
+	}
+	raw11, err := grown.Variable("typed")
+	if err != nil {
+		return nil, err
+	}
+	read11, err := sce.SavedReadBoundedString(raw11, "typed", 32)
+	if err != nil {
+		return nil, err
+	}
+	raw12, err := grown.Variable("held")
+	if err != nil {
+		return nil, err
+	}
+	read12, err := RecordListValueRecordFromSaved(raw12, "held")
+	if err != nil {
+		return nil, err
+	}
+	raw13, err := grown.Variable("digest")
+	if err != nil {
+		return nil, err
+	}
+	read13, err := sce.SavedReadList(raw13, "digest", 2048, RecordListNodeRecordFromSaved)
+	if err != nil {
+		return nil, err
+	}
+	raw14, err := grown.Variable("mine")
+	if err != nil {
+		return nil, err
+	}
+	read14, err := sce.SavedReadUint32(raw14, "mine")
+	if err != nil {
+		return nil, err
+	}
+	raw15, err := grown.Variable("shareId")
+	if err != nil {
+		return nil, err
+	}
+	read15, err := sce.SavedReadUint32(raw15, "shareId")
+	if err != nil {
+		return nil, err
+	}
+	raw16, err := grown.Variable("shareField")
+	if err != nil {
+		return nil, err
+	}
+	read16, err := sce.SavedReadUint16(raw16, "shareField")
+	if err != nil {
+		return nil, err
+	}
+	raw17, err := grown.Variable("known")
+	if err != nil {
+		return nil, err
+	}
+	read17, err := sce.SavedReadBool(raw17, "known")
+	if err != nil {
+		return nil, err
+	}
+	raw18, err := grown.Variable("wasLive")
+	if err != nil {
+		return nil, err
+	}
+	read18, err := sce.SavedReadBool(raw18, "wasLive")
+	if err != nil {
+		return nil, err
+	}
+	raw19, err := grown.Variable("isLive")
+	if err != nil {
+		return nil, err
+	}
+	read19, err := sce.SavedReadBool(raw19, "isLive")
+	if err != nil {
+		return nil, err
+	}
+	raw20, err := grown.Variable("present")
+	if err != nil {
+		return nil, err
+	}
+	read20, err := sce.SavedReadBool(raw20, "present")
+	if err != nil {
+		return nil, err
+	}
+	raw21, err := grown.Variable("refusals")
+	if err != nil {
+		return nil, err
+	}
+	read21, err := sce.SavedReadUint32(raw21, "refusals")
+	if err != nil {
+		return nil, err
+	}
+	raw22, err := grown.Variable("floor")
+	if err != nil {
+		return nil, err
+	}
+	read22, err := sce.SavedReadInt64(raw22, "floor")
+	if err != nil {
+		return nil, err
+	}
+	raw23, err := grown.Variable("stale")
+	if err != nil {
+		return nil, err
+	}
+	read23, err := sce.SavedReadBool(raw23, "stale")
+	if err != nil {
+		return nil, err
+	}
+	raw24, err := grown.Variable("late")
+	if err != nil {
+		return nil, err
+	}
+	read24, err := sce.SavedReadUint32(raw24, "late")
+	if err != nil {
+		return nil, err
+	}
+	raw25, err := grown.Variable("frozenFor")
+	if err != nil {
+		return nil, err
+	}
+	read25, err := sce.SavedReadInt64(raw25, "frozenFor")
+	if err != nil {
+		return nil, err
+	}
+	raw26, err := grown.Variable("frozenHash")
+	if err != nil {
+		return nil, err
+	}
+	read26, err := sce.SavedReadUint32(raw26, "frozenHash")
+	if err != nil {
+		return nil, err
+	}
+	raw27, err := grown.Variable("pending")
+	if err != nil {
+		return nil, err
+	}
+	read27, err := sce.SavedReadInt64(raw27, "pending")
+	if err != nil {
+		return nil, err
+	}
+	raw28, err := grown.Variable("members")
+	if err != nil {
+		return nil, err
+	}
+	read28, err := sce.SavedReadUint32(raw28, "members")
+	if err != nil {
+		return nil, err
+	}
+	raw29, err := grown.Variable("agreeing")
+	if err != nil {
+		return nil, err
+	}
+	read29, err := sce.SavedReadUint32(raw29, "agreeing")
+	if err != nil {
+		return nil, err
+	}
+	raw30, err := grown.Variable("answers")
+	if err != nil {
+		return nil, err
+	}
+	read30, err := sce.SavedReadList(raw30, "answers", 512, RecordListAnswerRecordFromSaved)
+	if err != nil {
+		return nil, err
+	}
+	raw31, err := grown.Variable("answer")
+	if err != nil {
+		return nil, err
+	}
+	read31, err := RecordListAnswerRecordFromSaved(raw31, "answer")
+	if err != nil {
+		return nil, err
+	}
+	raw32, err := grown.Variable("agreed")
+	if err != nil {
+		return nil, err
+	}
+	read32, err := sce.SavedReadUint32(raw32, "agreed")
+	if err != nil {
+		return nil, err
+	}
+	raw33, err := grown.Variable("roomValues")
+	if err != nil {
+		return nil, err
+	}
+	read33, err := sce.SavedReadUint32(raw33, "roomValues")
+	if err != nil {
+		return nil, err
+	}
+	raw34, err := grown.Variable("roomHistory")
+	if err != nil {
+		return nil, err
+	}
+	read34, err := sce.SavedReadUint32(raw34, "roomHistory")
+	if err != nil {
+		return nil, err
+	}
+	raw35, err := grown.Variable("roomDigest")
+	if err != nil {
+		return nil, err
+	}
+	read35, err := sce.SavedReadUint32(raw35, "roomDigest")
+	if err != nil {
+		return nil, err
+	}
+	raw36, err := grown.Variable("full")
+	if err != nil {
+		return nil, err
+	}
+	read36, err := sce.SavedReadUint32(raw36, "full")
+	if err != nil {
+		return nil, err
+	}
+	raw37, err := grown.Variable("roster")
+	if err != nil {
+		return nil, err
+	}
+	read37, err := sce.SavedReadList(raw37, "roster", 64, RecordListMemberRecordFromSaved)
+	if err != nil {
+		return nil, err
+	}
+	raw38, err := grown.Variable("denied")
+	if err != nil {
+		return nil, err
+	}
+	read38, err := sce.SavedReadUint32(raw38, "denied")
+	if err != nil {
+		return nil, err
+	}
+	raw39, err := grown.Variable("forbidden")
+	if err != nil {
+		return nil, err
+	}
+	read39, err := sce.SavedReadBool(raw39, "forbidden")
+	if err != nil {
+		return nil, err
+	}
+	raw40, err := grown.Variable("authorized")
+	if err != nil {
+		return nil, err
+	}
+	read40, err := sce.SavedReadBool(raw40, "authorized")
+	if err != nil {
+		return nil, err
+	}
+	raw41, err := grown.Variable("announce")
+	if err != nil {
+		return nil, err
+	}
+	read41, err := sce.SavedReadBool(raw41, "announce")
+	if err != nil {
+		return nil, err
+	}
+	raw42, err := grown.Variable("announced")
+	if err != nil {
+		return nil, err
+	}
+	read42, err := sce.SavedReadUint32(raw42, "announced")
+	if err != nil {
+		return nil, err
+	}
+	raw43, err := grown.Variable("moved")
+	if err != nil {
+		return nil, err
+	}
+	read43, err := sce.SavedReadList(raw43, "moved", 64, sce.SavedReadUint64)
+	if err != nil {
+		return nil, err
+	}
+	raw44, err := grown.Variable("listed")
+	if err != nil {
+		return nil, err
+	}
+	read44, err := sce.SavedReadBool(raw44, "listed")
+	if err != nil {
+		return nil, err
+	}
+	raw45, err := grown.Variable("live")
+	if err != nil {
+		return nil, err
+	}
+	read45, err := sce.SavedReadList(raw45, "live", 512, RecordListValueRecordFromSaved)
+	if err != nil {
+		return nil, err
+	}
+	raw46, err := grown.Variable("ordinal")
+	if err != nil {
+		return nil, err
+	}
+	read46, err := sce.SavedReadUint32(raw46, "ordinal")
+	if err != nil {
+		return nil, err
+	}
+	raw47, err := grown.Variable("empty")
+	if err != nil {
+		return nil, err
+	}
+	read47, err := RecordListValueRecordFromSaved(raw47, "empty")
+	if err != nil {
+		return nil, err
+	}
+	raw48, err := grown.Variable("staged")
+	if err != nil {
+		return nil, err
+	}
+	read48, err := sce.SavedReadList(raw48, "staged", 32, RecordListPartRecordFromSaved)
+	if err != nil {
+		return nil, err
+	}
+	raw49, err := grown.Variable("holding")
+	if err != nil {
+		return nil, err
+	}
+	read49, err := sce.SavedReadBool(raw49, "holding")
+	if err != nil {
+		return nil, err
+	}
+	raw50, err := grown.Variable("closingNow")
+	if err != nil {
+		return nil, err
+	}
+	read50, err := sce.SavedReadInt64(raw50, "closingNow")
+	if err != nil {
+		return nil, err
+	}
+	raw51, err := grown.Variable("spoiled")
+	if err != nil {
+		return nil, err
+	}
+	read51, err := sce.SavedReadBool(raw51, "spoiled")
+	if err != nil {
+		return nil, err
+	}
+	raw52, err := grown.Variable("probing")
+	if err != nil {
+		return nil, err
+	}
+	read52, err := sce.SavedReadBool(raw52, "probing")
+	if err != nil {
+		return nil, err
+	}
+	raw53, err := grown.Variable("gone")
+	if err != nil {
+		return nil, err
+	}
+	read53, err := sce.SavedReadUint32(raw53, "gone")
+	if err != nil {
+		return nil, err
+	}
+	raw54, err := grown.Variable("writes")
+	if err != nil {
+		return nil, err
+	}
+	read54, err := sce.SavedReadUint32(raw54, "writes")
+	if err != nil {
+		return nil, err
+	}
+	raw55, err := grown.Variable("covered")
+	if err != nil {
+		return nil, err
+	}
+	read55, err := sce.SavedReadBool(raw55, "covered")
+	if err != nil {
+		return nil, err
+	}
+	raw56, err := grown.Variable("probe")
+	if err != nil {
+		return nil, err
+	}
+	read56, err := RecordListRefusalEnumFromSaved(raw56, "probe")
+	if err != nil {
+		return nil, err
+	}
+	raw57, err := grown.Variable("spoiledFor")
+	if err != nil {
+		return nil, err
+	}
+	read57, err := RecordListRefusalEnumFromSaved(raw57, "spoiledFor")
+	if err != nil {
+		return nil, err
+	}
+	raw58, err := grown.Variable("namedId")
+	if err != nil {
+		return nil, err
+	}
+	read58, err := sce.SavedReadUint32(raw58, "namedId")
+	if err != nil {
+		return nil, err
+	}
+	raw59, err := grown.Variable("namedField")
+	if err != nil {
+		return nil, err
+	}
+	read59, err := sce.SavedReadUint16(raw59, "namedField")
+	if err != nil {
+		return nil, err
+	}
+	raw60, err := grown.Variable("namedKind")
+	if err != nil {
+		return nil, err
+	}
+	read60, err := RecordListCommandEnumFromSaved(raw60, "namedKind")
+	if err != nil {
+		return nil, err
+	}
+	raw61, err := grown.Variable("taking")
+	if err != nil {
+		return nil, err
+	}
+	read61, err := sce.SavedReadList(raw61, "taking", 64, RecordListPartRecordFromSaved)
+	if err != nil {
+		return nil, err
+	}
+	raw62, err := grown.Variable("took")
+	if err != nil {
+		return nil, err
+	}
+	read62, err := sce.SavedReadUint32(raw62, "took")
+	if err != nil {
+		return nil, err
+	}
+	raw63, err := grown.Variable("passing")
+	if err != nil {
+		return nil, err
+	}
+	read63, err := sce.SavedReadList(raw63, "passing", 64, RecordListPartRecordFromSaved)
+	if err != nil {
+		return nil, err
+	}
+	raw64, err := grown.Variable("passed")
+	if err != nil {
+		return nil, err
+	}
+	read64, err := sce.SavedReadUint32(raw64, "passed")
+	if err != nil {
+		return nil, err
+	}
+	raw65, err := grown.Variable("waiting")
+	if err != nil {
+		return nil, err
+	}
+	read65, err := sce.SavedReadList(raw65, "waiting", 64, RecordListPartRecordFromSaved)
+	if err != nil {
+		return nil, err
+	}
+	raw66, err := grown.Variable("kept")
+	if err != nil {
+		return nil, err
+	}
+	read66, err := sce.SavedReadList(raw66, "kept", 64, RecordListPartRecordFromSaved)
+	if err != nil {
+		return nil, err
+	}
+	raw67, err := grown.Variable("part")
+	if err != nil {
+		return nil, err
+	}
+	read67, err := RecordListPartRecordFromSaved(raw67, "part")
+	if err != nil {
+		return nil, err
+	}
+	raw68, err := grown.Variable("op")
+	if err != nil {
+		return nil, err
+	}
+	read68, err := RecordListPartRecordFromSaved(raw68, "op")
+	if err != nil {
+		return nil, err
+	}
+	raw69, err := grown.Variable("already")
+	if err != nil {
+		return nil, err
+	}
+	read69, err := sce.SavedReadBool(raw69, "already")
+	if err != nil {
+		return nil, err
+	}
+	raw70, err := grown.Variable("count")
+	if err != nil {
+		return nil, err
+	}
+	read70, err := sce.SavedReadUint32(raw70, "count")
+	if err != nil {
+		return nil, err
+	}
+	if err := sce.JudgeSession[RecordListState, RecordListEvent](policy, grown); err != nil {
+		return nil, err
+	}
+	policy.vNode = read1
+	policy.vHub = read2
+	policy.vClock = read3
+	policy.vStamp = read4
+	policy.vAdds = read5
+	policy.vTombstones = read6
+	policy.vOne = read7
+	policy.vStable = read8
+	policy.vEntry = read9
+	policy.vValues = read10
+	policy.vTyped = read11
+	policy.vHeld = read12
+	policy.vDigest = read13
+	policy.vMine = read14
+	policy.vShareId = read15
+	policy.vShareField = read16
+	policy.vKnown = read17
+	policy.vWasLive = read18
+	policy.vIsLive = read19
+	policy.vPresent = read20
+	policy.vRefusals = read21
+	policy.vFloor = read22
+	policy.vStale = read23
+	policy.vLate = read24
+	policy.vFrozenFor = read25
+	policy.vFrozenHash = read26
+	policy.vPending = read27
+	policy.vMembers = read28
+	policy.vAgreeing = read29
+	policy.vAnswers = read30
+	policy.vAnswer = read31
+	policy.vAgreed = read32
+	policy.vRoomValues = read33
+	policy.vRoomHistory = read34
+	policy.vRoomDigest = read35
+	policy.vFull = read36
+	policy.vRoster = read37
+	policy.vDenied = read38
+	policy.vForbidden = read39
+	policy.vAuthorized = read40
+	policy.vAnnounce = read41
+	policy.vAnnounced = read42
+	policy.vMoved = read43
+	policy.vListed = read44
+	policy.vLive = read45
+	policy.vOrdinal = read46
+	policy.vEmpty = read47
+	policy.vStaged = read48
+	policy.vHolding = read49
+	policy.vClosingNow = read50
+	policy.vSpoiled = read51
+	policy.vProbing = read52
+	policy.vGone = read53
+	policy.vWrites = read54
+	policy.vCovered = read55
+	policy.vProbe = read56
+	policy.vSpoiledFor = read57
+	policy.vNamedId = read58
+	policy.vNamedField = read59
+	policy.vNamedKind = read60
+	policy.vTaking = read61
+	policy.vTook = read62
+	policy.vPassing = read63
+	policy.vPassed = read64
+	policy.vWaiting = read65
+	policy.vKept = read66
+	policy.vPart = read67
+	policy.vOp = read68
+	policy.vAlready = read69
+	policy.vCount = read70
+	for _, recorded := range history {
+		policy.SetHistoryValue(recorded.History, recorded.States)
+	}
+	return sce.EnterSession[RecordListState, RecordListEvent](policy, grown, clock, wallNowMs)
+}
+
+// RecordListRestore is RecordListRestoreAt at the host's wall
+// clock now.
+func RecordListRestore(policy *RecordListPolicy, saved *sce.SavedState, clock sce.SceClock) (*sce.Engine[RecordListState, RecordListEvent], error) {
+	return RecordListRestoreAt(policy, saved, clock, sce.SavedWallClockMs())
+}
+
+// SetSessionID gives this session the id its host has for it, in place of the
+// one it drew: an XML Nmtoken, since another session addresses this one as
+// `#_scxml_<id>` and every child's id is this one's and the id the child was
+// started under (docs/adr/0045). Refused for anything else. Called before the
+// machine starts, since what it sends names it by the id it began with.
+func (p *RecordListPolicy) SetSessionID(id string) error {
+	if reason := sce.SessionIDRefusalOf(id); reason != "" {
+		return sce.Refuse(reason)
+	}
+	p.SessionID = id
+	return nil
+}
+
+// OwnSessionID is this session's id, `_sessionid`, which a saved state names it
+// by (sce.SavedPolicy).
+func (p *RecordListPolicy) OwnSessionID() string { return p.SessionID }
+
+// BindSessionID makes id this session's own: a restore of a format-2 state
+// carries on under the id it was saved with (sce.SavedPolicy).
+func (p *RecordListPolicy) BindSessionID(id string) { p.SessionID = id }
+
+// RunningInvokes is the id of each `<invoke>` whose child session is running,
+// in document order (sce.SavedPolicy). This document starts no child session.
+func (p *RecordListPolicy) RunningInvokes() []string { return nil }
+
+// InvokeStarts is how many times each `<invoke>` has started in this session
+// (sce.SavedPolicy). This document starts no child session.
+func (p *RecordListPolicy) InvokeStarts() []sce.SavedInvokeStart { return nil }
+
+// InvokeOwner is the state that holds the `<invoke>` id, and false for an id the
+// document does not invoke (sce.SavedPolicy). This document starts no child
+// session.
+func (p *RecordListPolicy) InvokeOwner(id string) (RecordListState, bool) {
+	return 0, false
+}
+
+// HostInvokeOwner is the state that holds the host-run `<invoke>` of this type
+// and id, and false for one the document does not have a host invoker run
+// (sce.SavedPolicy).
+func (p *RecordListPolicy) HostInvokeOwner(processorType, id string) (RecordListState, bool) {
+	return 0, false
+}
+
+// JudgeChild refuses a running child, which this document does not start
+// (sce.SavedPolicy).
+func (p *RecordListPolicy) JudgeChild(child sce.SavedChild) error {
+	return sce.Refuse(fmt.Sprintf("the document starts no child session, so '%s' cannot be one it was running", child.ID))
+}
+
+// ResumeChildren resumes no child, which this document does not start
+// (sce.SavedPolicy).
+func (p *RecordListPolicy) ResumeChildren(engine *sce.Engine[RecordListState, RecordListEvent], children []sce.SavedChild, wallNowMs int64) error {
+	if len(children) > 0 {
+		return p.JudgeChild(children[0])
+	}
+	return nil
+}
+
+// RestartInvokes starts no invocation again, which this document does not start
+// (sce.SavedPolicy).
+func (p *RecordListPolicy) RestartInvokes(engine *sce.Engine[RecordListState, RecordListEvent], ids []string) {}
+
+// SetHistoryValue gives history the states a saved state recorded for it
+// (sce.SavedPolicy).
+func (p *RecordListPolicy) SetHistoryValue(history sce.HistoryID, states []RecordListState) {
 }
 
 // ── SCE Accepted Subset §2.15: calls of an algorithm that takes or returns state ──
@@ -1551,6 +3341,10 @@ type RecordListPolicy struct {
 // NewRecordListPolicy creates a new policy with default values.
 func NewRecordListPolicy() RecordListPolicy {
 	return RecordListPolicy{
+		// docs/adr/0045: a session has an id, which a saved state names it by. A
+		// host that has one for it gives it with SetSessionID before it starts the
+		// machine; a child's is its parent's and the id it was started under.
+		SessionID: sce.DrawSessionID(),
 		vNode: 0,
 		vHub: false,
 		vClock: RecordListHlcRecord{wallTime: 0, counter: 0, nodeId: 0},

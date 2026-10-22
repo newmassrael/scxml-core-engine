@@ -227,6 +227,47 @@ func (r StaticTextRecordSlotRecord) Text() string {
 	return r.text
 }
 
+// ToSaved is this value as a saved state writes it.
+func (r StaticTextRecordSlotRecord) ToSaved() any {
+	saved := sce.NewJSONObject()
+	saved.Set("slot", (sce.SavedWriteUint32)(r.slot))
+	saved.Set("version", (sce.SavedWriteInt64)(r.version))
+	saved.Set("text", (sce.SavedWriteString)(r.text))
+	return saved
+}
+
+// StaticTextRecordSlotRecordFromSaved is the value a saved state holds, refused unless it is one.
+func StaticTextRecordSlotRecordFromSaved(value any, what string) (StaticTextRecordSlotRecord, error) {
+	var record StaticTextRecordSlotRecord
+	{
+		saved, err := sce.SavedField(value, what, "slot")
+		if err != nil {
+			return record, err
+		}
+		if record.slot, err = (sce.SavedReadUint32)(saved, what + ".slot"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "version")
+		if err != nil {
+			return record, err
+		}
+		if record.version, err = (sce.SavedReadInt64)(saved, what + ".version"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "text")
+		if err != nil {
+			return record, err
+		}
+		if record.text, err = (sce.SavedBoundedString(32))(saved, what + ".text"); err != nil {
+			return record, err
+		}
+	}
+	return record, nil
+}
 
 // ── SCE Accepted Subset §2.15: what a format-2 saved state of it is bound to ──
 
@@ -245,6 +286,264 @@ const StaticTextRecordSavedShapeFormat2Revised = "2cde5acaac7e84bf9fcd80e0d7634f
 // this machine is of, by its document (docs/adr/0044): the key `revisions`
 // names it by, and the format-2 shape spells it by.
 var StaticTextRecordSavedEnumKeys = [...]string{}
+
+// ── SCE Accepted Subset §2.15: saving this machine, restoring it ──────────
+
+// StaticTextRecordSavedShape is what a saved state of this document is bound
+// to: a state saved from a document that renamed, re-typed or moved a state or a
+// variable is refused, one saved before a guard or an action changed is not, and
+// one saved at an earlier revision of a record schema is read with each field a
+// later revision added at its default.
+var StaticTextRecordSavedShape = sce.SavedShape{
+	First:          "58fff1e777041e7697c25e2df69b4fe0c77d445be391d30ae03c3f285ae9076d",
+	Revised:        "2cde5acaac7e84bf9fcd80e0d7634ff9754198115b76527014df8fd4758406bf",
+	Format2First:   "58fff1e777041e7697c25e2df69b4fe0c77d445be391d30ae03c3f285ae9076d",
+	Format2Revised: "2cde5acaac7e84bf9fcd80e0d7634ff9754198115b76527014df8fd4758406bf",
+	Records: []sce.RecordLineage{
+		{
+			Event:     "text.slot",
+			Revision:  1,
+			Revisions: []string{},
+			Added: []sce.AddedField{
+			},
+			Holders: []sce.RecordHolder{
+				{Variable: "slots", List: true},
+				{Variable: "held", List: false},
+				{Variable: "incoming", List: false},
+			},
+		},
+	},
+	Enums: []sce.EnumLineage{
+	},
+}
+
+// StaticTextRecordHistories is the document's `<history>` pseudo-states, by
+// the id a saved state keys them by: what a saved state records of each, and
+// what a restore reads.
+var StaticTextRecordHistories = []sce.HistoryDecl{
+}
+
+// StaticTextRecordSaveAt is engine's whole state at the macrostep boundary it
+// stands at: every variable, the machine's own included, and where it stands, as
+// the `sce-saved-state` document every backend reads (sce.SavedState.ToJSON).
+// Each delayed `<send>` still waiting is written as the moment it comes due on
+// the wall clock whose reading now is wallNowMs, in milliseconds since the Unix
+// epoch.
+//
+// Refused for a machine that is not running, one that has ended, one whose last
+// macrostep stopped at the microstep ceiling, and one built around another
+// document's policy.
+func StaticTextRecordSaveAt(engine *sce.Engine[StaticTextRecordState, StaticTextRecordEvent], wallNowMs int64) (*sce.SavedState, error) {
+	p, ok := engine.Policy().(*StaticTextRecordPolicy)
+	if !ok {
+		return nil, sce.Refuse("the engine is not one of StaticTextRecord")
+	}
+	variables := sce.NewJSONObject()
+	variables.Set("slots", sce.SavedWriteList(p.vSlots, func(r StaticTextRecordSlotRecord) any { return r.ToSaved() }))
+	variables.Set("held", p.vHeld.ToSaved())
+	variables.Set("incoming", p.vIncoming.ToSaved())
+	variables.Set("known", sce.SavedWriteUint32(p.vKnown))
+	variables.Set("refusals", sce.SavedWriteUint32(p.vRefusals))
+	return sce.SaveSession(engine, &StaticTextRecordSavedShape, variables,
+		sce.SaveHistory[StaticTextRecordState, StaticTextRecordEvent](p, StaticTextRecordHistories),
+		nil, wallNowMs)
+}
+
+// StaticTextRecordSave is StaticTextRecordSaveAt at the host's wall clock now.
+func StaticTextRecordSave(engine *sce.Engine[StaticTextRecordState, StaticTextRecordEvent]) (*sce.SavedState, error) {
+	return StaticTextRecordSaveAt(engine, sce.SavedWallClockMs())
+}
+
+// StaticTextRecordJudge refuses saved unless a machine of this document could
+// restore it, building nothing: what a parent's restore asks of each child it
+// holds (docs/adr/0045, section 3, step 1).
+func StaticTextRecordJudge(saved *sce.SavedState) error {
+	p := &StaticTextRecordPolicy{}
+	grown, err := sce.UpgradeSavedState(saved, &StaticTextRecordSavedShape)
+	if err != nil {
+		return err
+	}
+	if _, err := sce.RestoreHistory[StaticTextRecordState, StaticTextRecordEvent](p, grown, StaticTextRecordHistories); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("slots"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadList(raw, "slots", 16, StaticTextRecordSlotRecordFromSaved); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("held"); err != nil {
+		return err
+	} else if _, err := StaticTextRecordSlotRecordFromSaved(raw, "held"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("incoming"); err != nil {
+		return err
+	} else if _, err := StaticTextRecordSlotRecordFromSaved(raw, "incoming"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("known"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "known"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("refusals"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "refusals"); err != nil {
+		return err
+	}
+	return sce.JudgeSession[StaticTextRecordState, StaticTextRecordEvent](p, grown)
+}
+
+// StaticTextRecordRestoreAt is a machine of policy standing where saved left
+// one, measuring time by clock: in place of `Initialize`, so no `<onentry>` runs
+// and no `<data>` is evaluated, since the saved run already did both. Every value
+// is read and the state judged before any is written, so a refused restore leaves
+// policy as it was.
+//
+// Each delayed `<send>` saved is armed against clock, which is the one the
+// machine measures time by; wallNowMs is what time it is on the wall clock the
+// saved `due`s were written against. A send comes due when its saved moment does,
+// and one already due comes due now.
+//
+// The host registers its invokers and its processors on the machine this
+// returns, and drives it as it would one it had initialized.
+func StaticTextRecordRestoreAt(policy *StaticTextRecordPolicy, saved *sce.SavedState, clock sce.SceClock, wallNowMs int64) (*sce.Engine[StaticTextRecordState, StaticTextRecordEvent], error) {
+	// The state as one of this machine: each record saved at an earlier revision
+	// of its schema holds the defaults of the fields added since.
+	grown, err := sce.UpgradeSavedState(saved, &StaticTextRecordSavedShape)
+	if err != nil {
+		return nil, err
+	}
+	history, err := sce.RestoreHistory[StaticTextRecordState, StaticTextRecordEvent](policy, grown, StaticTextRecordHistories)
+	if err != nil {
+		return nil, err
+	}
+	raw1, err := grown.Variable("slots")
+	if err != nil {
+		return nil, err
+	}
+	read1, err := sce.SavedReadList(raw1, "slots", 16, StaticTextRecordSlotRecordFromSaved)
+	if err != nil {
+		return nil, err
+	}
+	raw2, err := grown.Variable("held")
+	if err != nil {
+		return nil, err
+	}
+	read2, err := StaticTextRecordSlotRecordFromSaved(raw2, "held")
+	if err != nil {
+		return nil, err
+	}
+	raw3, err := grown.Variable("incoming")
+	if err != nil {
+		return nil, err
+	}
+	read3, err := StaticTextRecordSlotRecordFromSaved(raw3, "incoming")
+	if err != nil {
+		return nil, err
+	}
+	raw4, err := grown.Variable("known")
+	if err != nil {
+		return nil, err
+	}
+	read4, err := sce.SavedReadUint32(raw4, "known")
+	if err != nil {
+		return nil, err
+	}
+	raw5, err := grown.Variable("refusals")
+	if err != nil {
+		return nil, err
+	}
+	read5, err := sce.SavedReadUint32(raw5, "refusals")
+	if err != nil {
+		return nil, err
+	}
+	if err := sce.JudgeSession[StaticTextRecordState, StaticTextRecordEvent](policy, grown); err != nil {
+		return nil, err
+	}
+	policy.vSlots = read1
+	policy.vHeld = read2
+	policy.vIncoming = read3
+	policy.vKnown = read4
+	policy.vRefusals = read5
+	for _, recorded := range history {
+		policy.SetHistoryValue(recorded.History, recorded.States)
+	}
+	return sce.EnterSession[StaticTextRecordState, StaticTextRecordEvent](policy, grown, clock, wallNowMs)
+}
+
+// StaticTextRecordRestore is StaticTextRecordRestoreAt at the host's wall
+// clock now.
+func StaticTextRecordRestore(policy *StaticTextRecordPolicy, saved *sce.SavedState, clock sce.SceClock) (*sce.Engine[StaticTextRecordState, StaticTextRecordEvent], error) {
+	return StaticTextRecordRestoreAt(policy, saved, clock, sce.SavedWallClockMs())
+}
+
+// SetSessionID gives this session the id its host has for it, in place of the
+// one it drew: an XML Nmtoken, since another session addresses this one as
+// `#_scxml_<id>` and every child's id is this one's and the id the child was
+// started under (docs/adr/0045). Refused for anything else. Called before the
+// machine starts, since what it sends names it by the id it began with.
+func (p *StaticTextRecordPolicy) SetSessionID(id string) error {
+	if reason := sce.SessionIDRefusalOf(id); reason != "" {
+		return sce.Refuse(reason)
+	}
+	p.SessionID = id
+	return nil
+}
+
+// OwnSessionID is this session's id, `_sessionid`, which a saved state names it
+// by (sce.SavedPolicy).
+func (p *StaticTextRecordPolicy) OwnSessionID() string { return p.SessionID }
+
+// BindSessionID makes id this session's own: a restore of a format-2 state
+// carries on under the id it was saved with (sce.SavedPolicy).
+func (p *StaticTextRecordPolicy) BindSessionID(id string) { p.SessionID = id }
+
+// RunningInvokes is the id of each `<invoke>` whose child session is running,
+// in document order (sce.SavedPolicy). This document starts no child session.
+func (p *StaticTextRecordPolicy) RunningInvokes() []string { return nil }
+
+// InvokeStarts is how many times each `<invoke>` has started in this session
+// (sce.SavedPolicy). This document starts no child session.
+func (p *StaticTextRecordPolicy) InvokeStarts() []sce.SavedInvokeStart { return nil }
+
+// InvokeOwner is the state that holds the `<invoke>` id, and false for an id the
+// document does not invoke (sce.SavedPolicy). This document starts no child
+// session.
+func (p *StaticTextRecordPolicy) InvokeOwner(id string) (StaticTextRecordState, bool) {
+	return 0, false
+}
+
+// HostInvokeOwner is the state that holds the host-run `<invoke>` of this type
+// and id, and false for one the document does not have a host invoker run
+// (sce.SavedPolicy).
+func (p *StaticTextRecordPolicy) HostInvokeOwner(processorType, id string) (StaticTextRecordState, bool) {
+	return 0, false
+}
+
+// JudgeChild refuses a running child, which this document does not start
+// (sce.SavedPolicy).
+func (p *StaticTextRecordPolicy) JudgeChild(child sce.SavedChild) error {
+	return sce.Refuse(fmt.Sprintf("the document starts no child session, so '%s' cannot be one it was running", child.ID))
+}
+
+// ResumeChildren resumes no child, which this document does not start
+// (sce.SavedPolicy).
+func (p *StaticTextRecordPolicy) ResumeChildren(engine *sce.Engine[StaticTextRecordState, StaticTextRecordEvent], children []sce.SavedChild, wallNowMs int64) error {
+	if len(children) > 0 {
+		return p.JudgeChild(children[0])
+	}
+	return nil
+}
+
+// RestartInvokes starts no invocation again, which this document does not start
+// (sce.SavedPolicy).
+func (p *StaticTextRecordPolicy) RestartInvokes(engine *sce.Engine[StaticTextRecordState, StaticTextRecordEvent], ids []string) {}
+
+// SetHistoryValue gives history the states a saved state recorded for it
+// (sce.SavedPolicy).
+func (p *StaticTextRecordPolicy) SetHistoryValue(history sce.HistoryID, states []StaticTextRecordState) {
+}
 
 // ── SCE Accepted Subset §2.15: calls of an algorithm that takes or returns state ──
 func sceAdapt_StaticTextRecord_Holds__vv(p0 []StaticTextRecordSlotRecord, p1 StaticTextRecordSlotRecord) bool {
@@ -315,6 +614,10 @@ type StaticTextRecordPolicy struct {
 // NewStaticTextRecordPolicy creates a new policy with default values.
 func NewStaticTextRecordPolicy() StaticTextRecordPolicy {
 	return StaticTextRecordPolicy{
+		// docs/adr/0045: a session has an id, which a saved state names it by. A
+		// host that has one for it gives it with SetSessionID before it starts the
+		// machine; a child's is its parent's and the id it was started under.
+		SessionID: sce.DrawSessionID(),
 		vSlots: nil,
 		vHeld: StaticTextRecordSlotRecord{slot: 1, version: 0, text: "start"},
 		vIncoming: StaticTextRecordSlotRecord{slot: 1, version: 0, text: ""},

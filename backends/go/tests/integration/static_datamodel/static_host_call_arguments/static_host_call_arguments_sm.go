@@ -175,6 +175,207 @@ const StaticHostCallArgumentsSavedShapeFormat2Revised = "1ff739666bbb0e49544b4a2
 // names it by, and the format-2 shape spells it by.
 var StaticHostCallArgumentsSavedEnumKeys = [...]string{}
 
+// ── SCE Accepted Subset §2.15: saving this machine, restoring it ──────────
+
+// StaticHostCallArgumentsSavedShape is what a saved state of this document is bound
+// to: a state saved from a document that renamed, re-typed or moved a state or a
+// variable is refused, one saved before a guard or an action changed is not, and
+// one saved at an earlier revision of a record schema is read with each field a
+// later revision added at its default.
+var StaticHostCallArgumentsSavedShape = sce.SavedShape{
+	First:          "1d66bba63035b1b4ec33d7d46b2b57bd67d01fc8da43f277cbba640a8108595f",
+	Revised:        "1ff739666bbb0e49544b4a2d34d41f72695a0db1df86a3763cd391262556113d",
+	Format2First:   "1d66bba63035b1b4ec33d7d46b2b57bd67d01fc8da43f277cbba640a8108595f",
+	Format2Revised: "1ff739666bbb0e49544b4a2d34d41f72695a0db1df86a3763cd391262556113d",
+	Records: []sce.RecordLineage{
+	},
+	Enums: []sce.EnumLineage{
+	},
+}
+
+// StaticHostCallArgumentsHistories is the document's `<history>` pseudo-states, by
+// the id a saved state keys them by: what a saved state records of each, and
+// what a restore reads.
+var StaticHostCallArgumentsHistories = []sce.HistoryDecl{
+}
+
+// StaticHostCallArgumentsSaveAt is engine's whole state at the macrostep boundary it
+// stands at: every variable, the machine's own included, and where it stands, as
+// the `sce-saved-state` document every backend reads (sce.SavedState.ToJSON).
+// Each delayed `<send>` still waiting is written as the moment it comes due on
+// the wall clock whose reading now is wallNowMs, in milliseconds since the Unix
+// epoch.
+//
+// Refused for a machine that is not running, one that has ended, one whose last
+// macrostep stopped at the microstep ceiling, and one built around another
+// document's policy.
+func StaticHostCallArgumentsSaveAt(engine *sce.Engine[StaticHostCallArgumentsState, StaticHostCallArgumentsEvent], wallNowMs int64) (*sce.SavedState, error) {
+	p, ok := engine.Policy().(*StaticHostCallArgumentsPolicy)
+	if !ok {
+		return nil, sce.Refuse("the engine is not one of StaticHostCallArguments")
+	}
+	variables := sce.NewJSONObject()
+	variables.Set("level", sce.SavedWriteUint8(p.vLevel))
+	variables.Set("errors", sce.SavedWriteUint8(p.vErrors))
+	return sce.SaveSession(engine, &StaticHostCallArgumentsSavedShape, variables,
+		sce.SaveHistory[StaticHostCallArgumentsState, StaticHostCallArgumentsEvent](p, StaticHostCallArgumentsHistories),
+		nil, wallNowMs)
+}
+
+// StaticHostCallArgumentsSave is StaticHostCallArgumentsSaveAt at the host's wall clock now.
+func StaticHostCallArgumentsSave(engine *sce.Engine[StaticHostCallArgumentsState, StaticHostCallArgumentsEvent]) (*sce.SavedState, error) {
+	return StaticHostCallArgumentsSaveAt(engine, sce.SavedWallClockMs())
+}
+
+// StaticHostCallArgumentsJudge refuses saved unless a machine of this document could
+// restore it, building nothing: what a parent's restore asks of each child it
+// holds (docs/adr/0045, section 3, step 1).
+func StaticHostCallArgumentsJudge(saved *sce.SavedState) error {
+	p := &StaticHostCallArgumentsPolicy{}
+	grown, err := sce.UpgradeSavedState(saved, &StaticHostCallArgumentsSavedShape)
+	if err != nil {
+		return err
+	}
+	if _, err := sce.RestoreHistory[StaticHostCallArgumentsState, StaticHostCallArgumentsEvent](p, grown, StaticHostCallArgumentsHistories); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("level"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint8(raw, "level"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("errors"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint8(raw, "errors"); err != nil {
+		return err
+	}
+	return sce.JudgeSession[StaticHostCallArgumentsState, StaticHostCallArgumentsEvent](p, grown)
+}
+
+// StaticHostCallArgumentsRestoreAt is a machine of policy standing where saved left
+// one, measuring time by clock: in place of `Initialize`, so no `<onentry>` runs
+// and no `<data>` is evaluated, since the saved run already did both. Every value
+// is read and the state judged before any is written, so a refused restore leaves
+// policy as it was.
+//
+// Each delayed `<send>` saved is armed against clock, which is the one the
+// machine measures time by; wallNowMs is what time it is on the wall clock the
+// saved `due`s were written against. A send comes due when its saved moment does,
+// and one already due comes due now.
+//
+// The host registers its invokers and its processors on the machine this
+// returns, and drives it as it would one it had initialized.
+func StaticHostCallArgumentsRestoreAt(policy *StaticHostCallArgumentsPolicy, saved *sce.SavedState, clock sce.SceClock, wallNowMs int64) (*sce.Engine[StaticHostCallArgumentsState, StaticHostCallArgumentsEvent], error) {
+	// The state as one of this machine: each record saved at an earlier revision
+	// of its schema holds the defaults of the fields added since.
+	grown, err := sce.UpgradeSavedState(saved, &StaticHostCallArgumentsSavedShape)
+	if err != nil {
+		return nil, err
+	}
+	history, err := sce.RestoreHistory[StaticHostCallArgumentsState, StaticHostCallArgumentsEvent](policy, grown, StaticHostCallArgumentsHistories)
+	if err != nil {
+		return nil, err
+	}
+	raw1, err := grown.Variable("level")
+	if err != nil {
+		return nil, err
+	}
+	read1, err := sce.SavedReadUint8(raw1, "level")
+	if err != nil {
+		return nil, err
+	}
+	raw2, err := grown.Variable("errors")
+	if err != nil {
+		return nil, err
+	}
+	read2, err := sce.SavedReadUint8(raw2, "errors")
+	if err != nil {
+		return nil, err
+	}
+	if err := sce.JudgeSession[StaticHostCallArgumentsState, StaticHostCallArgumentsEvent](policy, grown); err != nil {
+		return nil, err
+	}
+	policy.vLevel = read1
+	policy.vErrors = read2
+	for _, recorded := range history {
+		policy.SetHistoryValue(recorded.History, recorded.States)
+	}
+	return sce.EnterSession[StaticHostCallArgumentsState, StaticHostCallArgumentsEvent](policy, grown, clock, wallNowMs)
+}
+
+// StaticHostCallArgumentsRestore is StaticHostCallArgumentsRestoreAt at the host's wall
+// clock now.
+func StaticHostCallArgumentsRestore(policy *StaticHostCallArgumentsPolicy, saved *sce.SavedState, clock sce.SceClock) (*sce.Engine[StaticHostCallArgumentsState, StaticHostCallArgumentsEvent], error) {
+	return StaticHostCallArgumentsRestoreAt(policy, saved, clock, sce.SavedWallClockMs())
+}
+
+// SetSessionID gives this session the id its host has for it, in place of the
+// one it drew: an XML Nmtoken, since another session addresses this one as
+// `#_scxml_<id>` and every child's id is this one's and the id the child was
+// started under (docs/adr/0045). Refused for anything else. Called before the
+// machine starts, since what it sends names it by the id it began with.
+func (p *StaticHostCallArgumentsPolicy) SetSessionID(id string) error {
+	if reason := sce.SessionIDRefusalOf(id); reason != "" {
+		return sce.Refuse(reason)
+	}
+	p.SessionID = id
+	return nil
+}
+
+// OwnSessionID is this session's id, `_sessionid`, which a saved state names it
+// by (sce.SavedPolicy).
+func (p *StaticHostCallArgumentsPolicy) OwnSessionID() string { return p.SessionID }
+
+// BindSessionID makes id this session's own: a restore of a format-2 state
+// carries on under the id it was saved with (sce.SavedPolicy).
+func (p *StaticHostCallArgumentsPolicy) BindSessionID(id string) { p.SessionID = id }
+
+// RunningInvokes is the id of each `<invoke>` whose child session is running,
+// in document order (sce.SavedPolicy). This document starts no child session.
+func (p *StaticHostCallArgumentsPolicy) RunningInvokes() []string { return nil }
+
+// InvokeStarts is how many times each `<invoke>` has started in this session
+// (sce.SavedPolicy). This document starts no child session.
+func (p *StaticHostCallArgumentsPolicy) InvokeStarts() []sce.SavedInvokeStart { return nil }
+
+// InvokeOwner is the state that holds the `<invoke>` id, and false for an id the
+// document does not invoke (sce.SavedPolicy). This document starts no child
+// session.
+func (p *StaticHostCallArgumentsPolicy) InvokeOwner(id string) (StaticHostCallArgumentsState, bool) {
+	return 0, false
+}
+
+// HostInvokeOwner is the state that holds the host-run `<invoke>` of this type
+// and id, and false for one the document does not have a host invoker run
+// (sce.SavedPolicy).
+func (p *StaticHostCallArgumentsPolicy) HostInvokeOwner(processorType, id string) (StaticHostCallArgumentsState, bool) {
+	return 0, false
+}
+
+// JudgeChild refuses a running child, which this document does not start
+// (sce.SavedPolicy).
+func (p *StaticHostCallArgumentsPolicy) JudgeChild(child sce.SavedChild) error {
+	return sce.Refuse(fmt.Sprintf("the document starts no child session, so '%s' cannot be one it was running", child.ID))
+}
+
+// ResumeChildren resumes no child, which this document does not start
+// (sce.SavedPolicy).
+func (p *StaticHostCallArgumentsPolicy) ResumeChildren(engine *sce.Engine[StaticHostCallArgumentsState, StaticHostCallArgumentsEvent], children []sce.SavedChild, wallNowMs int64) error {
+	if len(children) > 0 {
+		return p.JudgeChild(children[0])
+	}
+	return nil
+}
+
+// RestartInvokes starts no invocation again, which this document does not start
+// (sce.SavedPolicy).
+func (p *StaticHostCallArgumentsPolicy) RestartInvokes(engine *sce.Engine[StaticHostCallArgumentsState, StaticHostCallArgumentsEvent], ids []string) {}
+
+// SetHistoryValue gives history the states a saved state recorded for it
+// (sce.SavedPolicy).
+func (p *StaticHostCallArgumentsPolicy) SetHistoryValue(history sce.HistoryID, states []StaticHostCallArgumentsState) {
+}
+
 // ── W3C SCXML G.7: `<sce:action>` host dispatch ───────────────────────
 // W3C SCXML G.7: host operations dispatched by `<sce:action>`.
 // The host supplies the side effects while the statechart keeps each
@@ -219,6 +420,10 @@ type StaticHostCallArgumentsPolicy struct {
 func NewStaticHostCallArgumentsPolicy(actions StaticHostCallArgumentsActions) StaticHostCallArgumentsPolicy {
 	return StaticHostCallArgumentsPolicy{
 		actions: actions,
+		// docs/adr/0045: a session has an id, which a saved state names it by. A
+		// host that has one for it gives it with SetSessionID before it starts the
+		// machine; a child's is its parent's and the id it was started under.
+		SessionID: sce.DrawSessionID(),
 		vLevel: 250,
 		vErrors: 0,
 	}

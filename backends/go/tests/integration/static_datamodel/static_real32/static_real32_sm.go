@@ -190,6 +190,267 @@ const StaticReal32SavedShapeFormat2Revised = "cba9826497a91c7df2559717d11ea335b8
 // names it by, and the format-2 shape spells it by.
 var StaticReal32SavedEnumKeys = [...]string{}
 
+// ── SCE Accepted Subset §2.15: saving this machine, restoring it ──────────
+
+// StaticReal32SavedShape is what a saved state of this document is bound
+// to: a state saved from a document that renamed, re-typed or moved a state or a
+// variable is refused, one saved before a guard or an action changed is not, and
+// one saved at an earlier revision of a record schema is read with each field a
+// later revision added at its default.
+var StaticReal32SavedShape = sce.SavedShape{
+	First:          "ce103af598245407b75ff596e5414dcff4a8677f8043802c3fdd2595e81c93cf",
+	Revised:        "cba9826497a91c7df2559717d11ea335b8e1d44cd76259253a3e438ad2467068",
+	Format2First:   "ce103af598245407b75ff596e5414dcff4a8677f8043802c3fdd2595e81c93cf",
+	Format2Revised: "cba9826497a91c7df2559717d11ea335b8e1d44cd76259253a3e438ad2467068",
+	Records: []sce.RecordLineage{
+	},
+	Enums: []sce.EnumLineage{
+	},
+}
+
+// StaticReal32Histories is the document's `<history>` pseudo-states, by
+// the id a saved state keys them by: what a saved state records of each, and
+// what a restore reads.
+var StaticReal32Histories = []sce.HistoryDecl{
+}
+
+// StaticReal32SaveAt is engine's whole state at the macrostep boundary it
+// stands at: every variable, the machine's own included, and where it stands, as
+// the `sce-saved-state` document every backend reads (sce.SavedState.ToJSON).
+// Each delayed `<send>` still waiting is written as the moment it comes due on
+// the wall clock whose reading now is wallNowMs, in milliseconds since the Unix
+// epoch.
+//
+// Refused for a machine that is not running, one that has ended, one whose last
+// macrostep stopped at the microstep ceiling, and one built around another
+// document's policy.
+func StaticReal32SaveAt(engine *sce.Engine[StaticReal32State, StaticReal32Event], wallNowMs int64) (*sce.SavedState, error) {
+	p, ok := engine.Policy().(*StaticReal32Policy)
+	if !ok {
+		return nil, sce.Refuse("the engine is not one of StaticReal32")
+	}
+	variables := sce.NewJSONObject()
+	variables.Set("level", sce.SavedWriteFloat32(p.vLevel))
+	variables.Set("tenth", sce.SavedWriteFloat32(p.vTenth))
+	variables.Set("drift", sce.SavedWriteFloat32(p.vDrift))
+	variables.Set("wide", sce.SavedWriteFloat64(p.vWide))
+	variables.Set("samples", sce.SavedWriteList(p.vSamples, sce.SavedWriteFloat32))
+	variables.Set("total", sce.SavedWriteFloat32(p.vTotal))
+	return sce.SaveSession(engine, &StaticReal32SavedShape, variables,
+		sce.SaveHistory[StaticReal32State, StaticReal32Event](p, StaticReal32Histories),
+		nil, wallNowMs)
+}
+
+// StaticReal32Save is StaticReal32SaveAt at the host's wall clock now.
+func StaticReal32Save(engine *sce.Engine[StaticReal32State, StaticReal32Event]) (*sce.SavedState, error) {
+	return StaticReal32SaveAt(engine, sce.SavedWallClockMs())
+}
+
+// StaticReal32Judge refuses saved unless a machine of this document could
+// restore it, building nothing: what a parent's restore asks of each child it
+// holds (docs/adr/0045, section 3, step 1).
+func StaticReal32Judge(saved *sce.SavedState) error {
+	p := &StaticReal32Policy{}
+	grown, err := sce.UpgradeSavedState(saved, &StaticReal32SavedShape)
+	if err != nil {
+		return err
+	}
+	if _, err := sce.RestoreHistory[StaticReal32State, StaticReal32Event](p, grown, StaticReal32Histories); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("level"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadFloat32(raw, "level"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("tenth"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadFloat32(raw, "tenth"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("drift"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadFloat32(raw, "drift"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("wide"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadFloat64(raw, "wide"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("samples"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadList(raw, "samples", 3, sce.SavedReadFloat32); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("total"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadFloat32(raw, "total"); err != nil {
+		return err
+	}
+	return sce.JudgeSession[StaticReal32State, StaticReal32Event](p, grown)
+}
+
+// StaticReal32RestoreAt is a machine of policy standing where saved left
+// one, measuring time by clock: in place of `Initialize`, so no `<onentry>` runs
+// and no `<data>` is evaluated, since the saved run already did both. Every value
+// is read and the state judged before any is written, so a refused restore leaves
+// policy as it was.
+//
+// Each delayed `<send>` saved is armed against clock, which is the one the
+// machine measures time by; wallNowMs is what time it is on the wall clock the
+// saved `due`s were written against. A send comes due when its saved moment does,
+// and one already due comes due now.
+//
+// The host registers its invokers and its processors on the machine this
+// returns, and drives it as it would one it had initialized.
+func StaticReal32RestoreAt(policy *StaticReal32Policy, saved *sce.SavedState, clock sce.SceClock, wallNowMs int64) (*sce.Engine[StaticReal32State, StaticReal32Event], error) {
+	// The state as one of this machine: each record saved at an earlier revision
+	// of its schema holds the defaults of the fields added since.
+	grown, err := sce.UpgradeSavedState(saved, &StaticReal32SavedShape)
+	if err != nil {
+		return nil, err
+	}
+	history, err := sce.RestoreHistory[StaticReal32State, StaticReal32Event](policy, grown, StaticReal32Histories)
+	if err != nil {
+		return nil, err
+	}
+	raw1, err := grown.Variable("level")
+	if err != nil {
+		return nil, err
+	}
+	read1, err := sce.SavedReadFloat32(raw1, "level")
+	if err != nil {
+		return nil, err
+	}
+	raw2, err := grown.Variable("tenth")
+	if err != nil {
+		return nil, err
+	}
+	read2, err := sce.SavedReadFloat32(raw2, "tenth")
+	if err != nil {
+		return nil, err
+	}
+	raw3, err := grown.Variable("drift")
+	if err != nil {
+		return nil, err
+	}
+	read3, err := sce.SavedReadFloat32(raw3, "drift")
+	if err != nil {
+		return nil, err
+	}
+	raw4, err := grown.Variable("wide")
+	if err != nil {
+		return nil, err
+	}
+	read4, err := sce.SavedReadFloat64(raw4, "wide")
+	if err != nil {
+		return nil, err
+	}
+	raw5, err := grown.Variable("samples")
+	if err != nil {
+		return nil, err
+	}
+	read5, err := sce.SavedReadList(raw5, "samples", 3, sce.SavedReadFloat32)
+	if err != nil {
+		return nil, err
+	}
+	raw6, err := grown.Variable("total")
+	if err != nil {
+		return nil, err
+	}
+	read6, err := sce.SavedReadFloat32(raw6, "total")
+	if err != nil {
+		return nil, err
+	}
+	if err := sce.JudgeSession[StaticReal32State, StaticReal32Event](policy, grown); err != nil {
+		return nil, err
+	}
+	policy.vLevel = read1
+	policy.vTenth = read2
+	policy.vDrift = read3
+	policy.vWide = read4
+	policy.vSamples = read5
+	policy.vTotal = read6
+	for _, recorded := range history {
+		policy.SetHistoryValue(recorded.History, recorded.States)
+	}
+	return sce.EnterSession[StaticReal32State, StaticReal32Event](policy, grown, clock, wallNowMs)
+}
+
+// StaticReal32Restore is StaticReal32RestoreAt at the host's wall
+// clock now.
+func StaticReal32Restore(policy *StaticReal32Policy, saved *sce.SavedState, clock sce.SceClock) (*sce.Engine[StaticReal32State, StaticReal32Event], error) {
+	return StaticReal32RestoreAt(policy, saved, clock, sce.SavedWallClockMs())
+}
+
+// SetSessionID gives this session the id its host has for it, in place of the
+// one it drew: an XML Nmtoken, since another session addresses this one as
+// `#_scxml_<id>` and every child's id is this one's and the id the child was
+// started under (docs/adr/0045). Refused for anything else. Called before the
+// machine starts, since what it sends names it by the id it began with.
+func (p *StaticReal32Policy) SetSessionID(id string) error {
+	if reason := sce.SessionIDRefusalOf(id); reason != "" {
+		return sce.Refuse(reason)
+	}
+	p.SessionID = id
+	return nil
+}
+
+// OwnSessionID is this session's id, `_sessionid`, which a saved state names it
+// by (sce.SavedPolicy).
+func (p *StaticReal32Policy) OwnSessionID() string { return p.SessionID }
+
+// BindSessionID makes id this session's own: a restore of a format-2 state
+// carries on under the id it was saved with (sce.SavedPolicy).
+func (p *StaticReal32Policy) BindSessionID(id string) { p.SessionID = id }
+
+// RunningInvokes is the id of each `<invoke>` whose child session is running,
+// in document order (sce.SavedPolicy). This document starts no child session.
+func (p *StaticReal32Policy) RunningInvokes() []string { return nil }
+
+// InvokeStarts is how many times each `<invoke>` has started in this session
+// (sce.SavedPolicy). This document starts no child session.
+func (p *StaticReal32Policy) InvokeStarts() []sce.SavedInvokeStart { return nil }
+
+// InvokeOwner is the state that holds the `<invoke>` id, and false for an id the
+// document does not invoke (sce.SavedPolicy). This document starts no child
+// session.
+func (p *StaticReal32Policy) InvokeOwner(id string) (StaticReal32State, bool) {
+	return 0, false
+}
+
+// HostInvokeOwner is the state that holds the host-run `<invoke>` of this type
+// and id, and false for one the document does not have a host invoker run
+// (sce.SavedPolicy).
+func (p *StaticReal32Policy) HostInvokeOwner(processorType, id string) (StaticReal32State, bool) {
+	return 0, false
+}
+
+// JudgeChild refuses a running child, which this document does not start
+// (sce.SavedPolicy).
+func (p *StaticReal32Policy) JudgeChild(child sce.SavedChild) error {
+	return sce.Refuse(fmt.Sprintf("the document starts no child session, so '%s' cannot be one it was running", child.ID))
+}
+
+// ResumeChildren resumes no child, which this document does not start
+// (sce.SavedPolicy).
+func (p *StaticReal32Policy) ResumeChildren(engine *sce.Engine[StaticReal32State, StaticReal32Event], children []sce.SavedChild, wallNowMs int64) error {
+	if len(children) > 0 {
+		return p.JudgeChild(children[0])
+	}
+	return nil
+}
+
+// RestartInvokes starts no invocation again, which this document does not start
+// (sce.SavedPolicy).
+func (p *StaticReal32Policy) RestartInvokes(engine *sce.Engine[StaticReal32State, StaticReal32Event], ids []string) {}
+
+// SetHistoryValue gives history the states a saved state recorded for it
+// (sce.SavedPolicy).
+func (p *StaticReal32Policy) SetHistoryValue(history sce.HistoryID, states []StaticReal32State) {
+}
+
 // ======================================================================
 // Policy struct
 // ======================================================================
@@ -222,6 +483,10 @@ type StaticReal32Policy struct {
 // NewStaticReal32Policy creates a new policy with default values.
 func NewStaticReal32Policy() StaticReal32Policy {
 	return StaticReal32Policy{
+		// docs/adr/0045: a session has an id, which a saved state names it by. A
+		// host that has one for it gives it with SetSessionID before it starts the
+		// machine; a child's is its parent's and the id it was started under.
+		SessionID: sce.DrawSessionID(),
 		vLevel: 16777216.0,
 		vTenth: 0.1,
 		vDrift: 0.0,

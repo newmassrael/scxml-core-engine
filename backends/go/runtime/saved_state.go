@@ -1200,6 +1200,10 @@ type EnumHolder struct {
 	List bool
 }
 
+// FieldNamed is name as the optional field an EnumHolder names, for a holder of
+// an enum held in a record.
+func FieldNamed(name string) *string { return &name }
+
 // RecordLineage is a record schema a machine's variables are of, as a saved
 // state names it.
 type RecordLineage struct {

@@ -57,6 +57,12 @@ func (q *EventQueueManager[T]) Front() (T, bool) {
 	return q.queue[0], true
 }
 
+// Snapshot is every queued event, front first, in a slice of its own: what a
+// save reads, and what no caller can change the queue through.
+func (q *EventQueueManager[T]) Snapshot() []T {
+	return append([]T(nil), q.queue...)
+}
+
 // HasEvents returns whether the queue contains any events.
 //
 // Matches Rust has_events(&self) -> bool.

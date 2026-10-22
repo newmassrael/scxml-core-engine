@@ -190,6 +190,222 @@ const StaticSendTargetSavedShapeFormat2Revised = "60bbf82df8219cee9dfc10640d609b
 // names it by, and the format-2 shape spells it by.
 var StaticSendTargetSavedEnumKeys = [...]string{}
 
+// ── SCE Accepted Subset §2.15: saving this machine, restoring it ──────────
+
+// StaticSendTargetSavedShape is what a saved state of this document is bound
+// to: a state saved from a document that renamed, re-typed or moved a state or a
+// variable is refused, one saved before a guard or an action changed is not, and
+// one saved at an earlier revision of a record schema is read with each field a
+// later revision added at its default.
+var StaticSendTargetSavedShape = sce.SavedShape{
+	First:          "bc863388d4492ecbc92204f377e9e4bb03c09312cb692c262c1b41146eab182d",
+	Revised:        "60bbf82df8219cee9dfc10640d609b39d8f38d3101bb4758e6d5e5665cb9236e",
+	Format2First:   "bc863388d4492ecbc92204f377e9e4bb03c09312cb692c262c1b41146eab182d",
+	Format2Revised: "60bbf82df8219cee9dfc10640d609b39d8f38d3101bb4758e6d5e5665cb9236e",
+	Records: []sce.RecordLineage{
+	},
+	Enums: []sce.EnumLineage{
+	},
+}
+
+// StaticSendTargetHistories is the document's `<history>` pseudo-states, by
+// the id a saved state keys them by: what a saved state records of each, and
+// what a restore reads.
+var StaticSendTargetHistories = []sce.HistoryDecl{
+}
+
+// StaticSendTargetSaveAt is engine's whole state at the macrostep boundary it
+// stands at: every variable, the machine's own included, and where it stands, as
+// the `sce-saved-state` document every backend reads (sce.SavedState.ToJSON).
+// Each delayed `<send>` still waiting is written as the moment it comes due on
+// the wall clock whose reading now is wallNowMs, in milliseconds since the Unix
+// epoch.
+//
+// Refused for a machine that is not running, one that has ended, one whose last
+// macrostep stopped at the microstep ceiling, and one built around another
+// document's policy.
+func StaticSendTargetSaveAt(engine *sce.Engine[StaticSendTargetState, StaticSendTargetEvent], wallNowMs int64) (*sce.SavedState, error) {
+	p, ok := engine.Policy().(*StaticSendTargetPolicy)
+	if !ok {
+		return nil, sce.Refuse("the engine is not one of StaticSendTarget")
+	}
+	variables := sce.NewJSONObject()
+	variables.Set("route", sce.SavedWriteString(p.vRoute))
+	variables.Set("landed", sce.SavedWriteUint32(p.vLanded))
+	variables.Set("refused", sce.SavedWriteUint32(p.vRefused))
+	return sce.SaveSession(engine, &StaticSendTargetSavedShape, variables,
+		sce.SaveHistory[StaticSendTargetState, StaticSendTargetEvent](p, StaticSendTargetHistories),
+		nil, wallNowMs)
+}
+
+// StaticSendTargetSave is StaticSendTargetSaveAt at the host's wall clock now.
+func StaticSendTargetSave(engine *sce.Engine[StaticSendTargetState, StaticSendTargetEvent]) (*sce.SavedState, error) {
+	return StaticSendTargetSaveAt(engine, sce.SavedWallClockMs())
+}
+
+// StaticSendTargetJudge refuses saved unless a machine of this document could
+// restore it, building nothing: what a parent's restore asks of each child it
+// holds (docs/adr/0045, section 3, step 1).
+func StaticSendTargetJudge(saved *sce.SavedState) error {
+	p := &StaticSendTargetPolicy{}
+	grown, err := sce.UpgradeSavedState(saved, &StaticSendTargetSavedShape)
+	if err != nil {
+		return err
+	}
+	if _, err := sce.RestoreHistory[StaticSendTargetState, StaticSendTargetEvent](p, grown, StaticSendTargetHistories); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("route"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadBoundedString(raw, "route", 24); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("landed"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "landed"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("refused"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "refused"); err != nil {
+		return err
+	}
+	return sce.JudgeSession[StaticSendTargetState, StaticSendTargetEvent](p, grown)
+}
+
+// StaticSendTargetRestoreAt is a machine of policy standing where saved left
+// one, measuring time by clock: in place of `Initialize`, so no `<onentry>` runs
+// and no `<data>` is evaluated, since the saved run already did both. Every value
+// is read and the state judged before any is written, so a refused restore leaves
+// policy as it was.
+//
+// Each delayed `<send>` saved is armed against clock, which is the one the
+// machine measures time by; wallNowMs is what time it is on the wall clock the
+// saved `due`s were written against. A send comes due when its saved moment does,
+// and one already due comes due now.
+//
+// The host registers its invokers and its processors on the machine this
+// returns, and drives it as it would one it had initialized.
+func StaticSendTargetRestoreAt(policy *StaticSendTargetPolicy, saved *sce.SavedState, clock sce.SceClock, wallNowMs int64) (*sce.Engine[StaticSendTargetState, StaticSendTargetEvent], error) {
+	// The state as one of this machine: each record saved at an earlier revision
+	// of its schema holds the defaults of the fields added since.
+	grown, err := sce.UpgradeSavedState(saved, &StaticSendTargetSavedShape)
+	if err != nil {
+		return nil, err
+	}
+	history, err := sce.RestoreHistory[StaticSendTargetState, StaticSendTargetEvent](policy, grown, StaticSendTargetHistories)
+	if err != nil {
+		return nil, err
+	}
+	raw1, err := grown.Variable("route")
+	if err != nil {
+		return nil, err
+	}
+	read1, err := sce.SavedReadBoundedString(raw1, "route", 24)
+	if err != nil {
+		return nil, err
+	}
+	raw2, err := grown.Variable("landed")
+	if err != nil {
+		return nil, err
+	}
+	read2, err := sce.SavedReadUint32(raw2, "landed")
+	if err != nil {
+		return nil, err
+	}
+	raw3, err := grown.Variable("refused")
+	if err != nil {
+		return nil, err
+	}
+	read3, err := sce.SavedReadUint32(raw3, "refused")
+	if err != nil {
+		return nil, err
+	}
+	if err := sce.JudgeSession[StaticSendTargetState, StaticSendTargetEvent](policy, grown); err != nil {
+		return nil, err
+	}
+	policy.vRoute = read1
+	policy.vLanded = read2
+	policy.vRefused = read3
+	for _, recorded := range history {
+		policy.SetHistoryValue(recorded.History, recorded.States)
+	}
+	return sce.EnterSession[StaticSendTargetState, StaticSendTargetEvent](policy, grown, clock, wallNowMs)
+}
+
+// StaticSendTargetRestore is StaticSendTargetRestoreAt at the host's wall
+// clock now.
+func StaticSendTargetRestore(policy *StaticSendTargetPolicy, saved *sce.SavedState, clock sce.SceClock) (*sce.Engine[StaticSendTargetState, StaticSendTargetEvent], error) {
+	return StaticSendTargetRestoreAt(policy, saved, clock, sce.SavedWallClockMs())
+}
+
+// SetSessionID gives this session the id its host has for it, in place of the
+// one it drew: an XML Nmtoken, since another session addresses this one as
+// `#_scxml_<id>` and every child's id is this one's and the id the child was
+// started under (docs/adr/0045). Refused for anything else. Called before the
+// machine starts, since what it sends names it by the id it began with.
+func (p *StaticSendTargetPolicy) SetSessionID(id string) error {
+	if reason := sce.SessionIDRefusalOf(id); reason != "" {
+		return sce.Refuse(reason)
+	}
+	p.SessionID = id
+	return nil
+}
+
+// OwnSessionID is this session's id, `_sessionid`, which a saved state names it
+// by (sce.SavedPolicy).
+func (p *StaticSendTargetPolicy) OwnSessionID() string { return p.SessionID }
+
+// BindSessionID makes id this session's own: a restore of a format-2 state
+// carries on under the id it was saved with (sce.SavedPolicy).
+func (p *StaticSendTargetPolicy) BindSessionID(id string) { p.SessionID = id }
+
+// RunningInvokes is the id of each `<invoke>` whose child session is running,
+// in document order (sce.SavedPolicy). This document starts no child session.
+func (p *StaticSendTargetPolicy) RunningInvokes() []string { return nil }
+
+// InvokeStarts is how many times each `<invoke>` has started in this session
+// (sce.SavedPolicy). This document starts no child session.
+func (p *StaticSendTargetPolicy) InvokeStarts() []sce.SavedInvokeStart { return nil }
+
+// InvokeOwner is the state that holds the `<invoke>` id, and false for an id the
+// document does not invoke (sce.SavedPolicy). This document starts no child
+// session.
+func (p *StaticSendTargetPolicy) InvokeOwner(id string) (StaticSendTargetState, bool) {
+	return 0, false
+}
+
+// HostInvokeOwner is the state that holds the host-run `<invoke>` of this type
+// and id, and false for one the document does not have a host invoker run
+// (sce.SavedPolicy).
+func (p *StaticSendTargetPolicy) HostInvokeOwner(processorType, id string) (StaticSendTargetState, bool) {
+	return 0, false
+}
+
+// JudgeChild refuses a running child, which this document does not start
+// (sce.SavedPolicy).
+func (p *StaticSendTargetPolicy) JudgeChild(child sce.SavedChild) error {
+	return sce.Refuse(fmt.Sprintf("the document starts no child session, so '%s' cannot be one it was running", child.ID))
+}
+
+// ResumeChildren resumes no child, which this document does not start
+// (sce.SavedPolicy).
+func (p *StaticSendTargetPolicy) ResumeChildren(engine *sce.Engine[StaticSendTargetState, StaticSendTargetEvent], children []sce.SavedChild, wallNowMs int64) error {
+	if len(children) > 0 {
+		return p.JudgeChild(children[0])
+	}
+	return nil
+}
+
+// RestartInvokes starts no invocation again, which this document does not start
+// (sce.SavedPolicy).
+func (p *StaticSendTargetPolicy) RestartInvokes(engine *sce.Engine[StaticSendTargetState, StaticSendTargetEvent], ids []string) {}
+
+// SetHistoryValue gives history the states a saved state recorded for it
+// (sce.SavedPolicy).
+func (p *StaticSendTargetPolicy) SetHistoryValue(history sce.HistoryID, states []StaticSendTargetState) {
+}
+
 // ======================================================================
 // Policy struct
 // ======================================================================
@@ -217,6 +433,10 @@ type StaticSendTargetPolicy struct {
 // NewStaticSendTargetPolicy creates a new policy with default values.
 func NewStaticSendTargetPolicy() StaticSendTargetPolicy {
 	return StaticSendTargetPolicy{
+		// docs/adr/0045: a session has an id, which a saved state names it by. A
+		// host that has one for it gives it with SetSessionID before it starts the
+		// machine; a child's is its parent's and the id it was started under.
+		SessionID: sce.DrawSessionID(),
 		vRoute: "#_internal",
 		vLanded: 0,
 		vRefused: 0,

@@ -294,6 +294,28 @@ func StaticOptionalStatusEnumFromUnderlying(raw uint8) (StaticOptionalStatusEnum
 	return 0, false
 }
 
+// ToSaved is this value as a saved state writes it.
+func (v StaticOptionalStatusEnum) ToSaved() any {
+	return v.String()
+}
+
+// StaticOptionalStatusEnumFromSaved is the value a saved state holds, refused unless it is a variant.
+func StaticOptionalStatusEnumFromSaved(value any, what string) (StaticOptionalStatusEnum, error) {
+	declared, err := sce.SavedReadString(value, what)
+	if err != nil {
+		return 0, err
+	}
+	switch declared {
+	case "open":
+		return StaticOptionalStatusEnumOpen, nil
+	case "in_progress":
+		return StaticOptionalStatusEnumInProgress, nil
+	case "done":
+		return StaticOptionalStatusEnumDone, nil
+	}
+	return 0, sce.Refuse(fmt.Sprintf("'%s' (%s) is not a variant of Status", what, declared))
+}
+
 // SCE Accepted Subset §2.15: a `record:Due` datamodel value.
 type StaticOptionalDueRecord struct {
 	id uint32
@@ -322,6 +344,57 @@ func (r StaticOptionalDueRecord) Status() optional.Of[StaticOptionalStatusEnum] 
 	return r.status
 }
 
+// ToSaved is this value as a saved state writes it.
+func (r StaticOptionalDueRecord) ToSaved() any {
+	saved := sce.NewJSONObject()
+	saved.Set("id", (sce.SavedWriteUint32)(r.id))
+	saved.Set("due", optional.Wire(r.due, sce.SavedWriteInt64))
+	saved.Set("title", optional.Wire(r.title, sce.SavedWriteString))
+	saved.Set("status", optional.Wire(r.status, func(v StaticOptionalStatusEnum) any { return v.ToSaved() }))
+	return saved
+}
+
+// StaticOptionalDueRecordFromSaved is the value a saved state holds, refused unless it is one.
+func StaticOptionalDueRecordFromSaved(value any, what string) (StaticOptionalDueRecord, error) {
+	var record StaticOptionalDueRecord
+	{
+		saved, err := sce.SavedField(value, what, "id")
+		if err != nil {
+			return record, err
+		}
+		if record.id, err = (sce.SavedReadUint32)(saved, what + ".id"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "due")
+		if err != nil {
+			return record, err
+		}
+		if record.due, err = sce.SavedReadOptional(saved, what + ".due", sce.SavedReadInt64, optional.None[int64], optional.Some[int64]); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "title")
+		if err != nil {
+			return record, err
+		}
+		if record.title, err = sce.SavedReadOptional(saved, what + ".title", sce.SavedBoundedString(16), optional.None[string], optional.Some[string]); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "status")
+		if err != nil {
+			return record, err
+		}
+		if record.status, err = sce.SavedReadOptional(saved, what + ".status", StaticOptionalStatusEnumFromSaved, optional.None[StaticOptionalStatusEnum], optional.Some[StaticOptionalStatusEnum]); err != nil {
+			return record, err
+		}
+	}
+	return record, nil
+}
 
 // ── SCE Accepted Subset §2.15: what a format-2 saved state of it is bound to ──
 
@@ -341,6 +414,562 @@ const StaticOptionalSavedShapeFormat2Revised = "51b560ebab5c70ad2a607bce4b26e572
 // names it by, and the format-2 shape spells it by.
 var StaticOptionalSavedEnumKeys = [...]string{
 	"enum:enum_item_status.scxml",
+}
+
+// ── SCE Accepted Subset §2.15: saving this machine, restoring it ──────────
+
+// StaticOptionalSavedShape is what a saved state of this document is bound
+// to: a state saved from a document that renamed, re-typed or moved a state or a
+// variable is refused, one saved before a guard or an action changed is not, and
+// one saved at an earlier revision of a record schema is read with each field a
+// later revision added at its default.
+var StaticOptionalSavedShape = sce.SavedShape{
+	First:          "107ff83fbd2c38a87a0f71adfa81fcc3c27bf980240687ee0f9999ecfbc460e2",
+	Revised:        "446e9f68a2de213abce540de0df591de51badabf09d45a8b571910ae823c15fc",
+	Format2First:   "97c67c3845141fbd65d751eef23b71ca25329452523e524d81ed9621ca5b8d74",
+	Format2Revised: "51b560ebab5c70ad2a607bce4b26e572a1110fc5f8cd00d8a79692205886638b",
+	Records: []sce.RecordLineage{
+		{
+			Event:     "due.set",
+			Revision:  1,
+			Revisions: []string{},
+			Added: []sce.AddedField{
+			},
+			Holders: []sce.RecordHolder{
+				{Variable: "item", List: false},
+				{Variable: "items", List: true},
+			},
+		},
+	},
+	Enums: []sce.EnumLineage{
+		{
+			Key:       "enum:enum_item_status.scxml",
+			Revision:  1,
+			Revisions: []string{},
+			Added: []sce.AddedVariant{
+			},
+			Holders: []sce.EnumHolder{
+				{Variable: "status", List: false},
+				{Variable: "item", Field: sce.FieldNamed("status"), List: false},
+				{Variable: "items", Field: sce.FieldNamed("status"), List: true},
+				{Variable: "plain", List: false},
+				{Variable: "echoStatus", List: false},
+			},
+		},
+	},
+}
+
+// StaticOptionalHistories is the document's `<history>` pseudo-states, by
+// the id a saved state keys them by: what a saved state records of each, and
+// what a restore reads.
+var StaticOptionalHistories = []sce.HistoryDecl{
+}
+
+// StaticOptionalSaveAt is engine's whole state at the macrostep boundary it
+// stands at: every variable, the machine's own included, and where it stands, as
+// the `sce-saved-state` document every backend reads (sce.SavedState.ToJSON).
+// Each delayed `<send>` still waiting is written as the moment it comes due on
+// the wall clock whose reading now is wallNowMs, in milliseconds since the Unix
+// epoch.
+//
+// Refused for a machine that is not running, one that has ended, one whose last
+// macrostep stopped at the microstep ceiling, and one built around another
+// document's policy.
+func StaticOptionalSaveAt(engine *sce.Engine[StaticOptionalState, StaticOptionalEvent], wallNowMs int64) (*sce.SavedState, error) {
+	p, ok := engine.Policy().(*StaticOptionalPolicy)
+	if !ok {
+		return nil, sce.Refuse("the engine is not one of StaticOptional")
+	}
+	variables := sce.NewJSONObject()
+	variables.Set("due", optional.Wire(p.vDue, sce.SavedWriteInt64))
+	variables.Set("other", optional.Wire(p.vOther, sce.SavedWriteInt64))
+	variables.Set("title", optional.Wire(p.vTitle, sce.SavedWriteString))
+	variables.Set("status", optional.Wire(p.vStatus, func(v StaticOptionalStatusEnum) any { return v.ToSaved() }))
+	variables.Set("item", p.vItem.ToSaved())
+	variables.Set("items", sce.SavedWriteList(p.vItems, func(r StaticOptionalDueRecord) any { return r.ToSaved() }))
+	variables.Set("days", sce.SavedWriteInt64(p.vDays))
+	variables.Set("following", sce.SavedWriteInt64(p.vFollowing))
+	variables.Set("late", sce.SavedWriteBool(p.vLate))
+	variables.Set("early", sce.SavedWriteBool(p.vEarly))
+	variables.Set("label", sce.SavedWriteString(p.vLabel))
+	variables.Set("plain", p.vPlain.ToSaved())
+	variables.Set("kept", sce.SavedWriteInt64(p.vKept))
+	variables.Set("listed", sce.SavedWriteInt64(p.vListed))
+	variables.Set("missing", sce.SavedWriteUint32(p.vMissing))
+	variables.Set("same", sce.SavedWriteBool(p.vSame))
+	variables.Set("absent", sce.SavedWriteBool(p.vAbsent))
+	variables.Set("statusDone", sce.SavedWriteBool(p.vStatusDone))
+	variables.Set("echoed", sce.SavedWriteInt64(p.vEchoed))
+	variables.Set("echoTitle", optional.Wire(p.vEchoTitle, sce.SavedWriteString))
+	variables.Set("echoStatus", optional.Wire(p.vEchoStatus, func(v StaticOptionalStatusEnum) any { return v.ToSaved() }))
+	variables.Set("fallbacks", sce.SavedWriteUint32(p.vFallbacks))
+	variables.Set("errors", sce.SavedWriteUint32(p.vErrors))
+	variables.Set("huge", sce.SavedWriteInt64(p.vHuge))
+	return sce.SaveSession(engine, &StaticOptionalSavedShape, variables,
+		sce.SaveHistory[StaticOptionalState, StaticOptionalEvent](p, StaticOptionalHistories),
+		nil, wallNowMs)
+}
+
+// StaticOptionalSave is StaticOptionalSaveAt at the host's wall clock now.
+func StaticOptionalSave(engine *sce.Engine[StaticOptionalState, StaticOptionalEvent]) (*sce.SavedState, error) {
+	return StaticOptionalSaveAt(engine, sce.SavedWallClockMs())
+}
+
+// StaticOptionalJudge refuses saved unless a machine of this document could
+// restore it, building nothing: what a parent's restore asks of each child it
+// holds (docs/adr/0045, section 3, step 1).
+func StaticOptionalJudge(saved *sce.SavedState) error {
+	p := &StaticOptionalPolicy{}
+	grown, err := sce.UpgradeSavedState(saved, &StaticOptionalSavedShape)
+	if err != nil {
+		return err
+	}
+	if _, err := sce.RestoreHistory[StaticOptionalState, StaticOptionalEvent](p, grown, StaticOptionalHistories); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("due"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadOptional(raw, "due", sce.SavedReadInt64, optional.None[int64], optional.Some[int64]); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("other"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadOptional(raw, "other", sce.SavedReadInt64, optional.None[int64], optional.Some[int64]); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("title"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadOptional(raw, "title", sce.SavedBoundedString(16), optional.None[string], optional.Some[string]); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("status"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadOptional(raw, "status", StaticOptionalStatusEnumFromSaved, optional.None[StaticOptionalStatusEnum], optional.Some[StaticOptionalStatusEnum]); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("item"); err != nil {
+		return err
+	} else if _, err := StaticOptionalDueRecordFromSaved(raw, "item"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("items"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadList(raw, "items", 3, StaticOptionalDueRecordFromSaved); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("days"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadInt64(raw, "days"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("following"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadInt64(raw, "following"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("late"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadBool(raw, "late"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("early"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadBool(raw, "early"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("label"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadBoundedString(raw, "label", 16); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("plain"); err != nil {
+		return err
+	} else if _, err := StaticOptionalStatusEnumFromSaved(raw, "plain"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("kept"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadInt64(raw, "kept"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("listed"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadInt64(raw, "listed"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("missing"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "missing"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("same"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadBool(raw, "same"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("absent"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadBool(raw, "absent"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("statusDone"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadBool(raw, "statusDone"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("echoed"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadInt64(raw, "echoed"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("echoTitle"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadOptional(raw, "echoTitle", sce.SavedBoundedString(16), optional.None[string], optional.Some[string]); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("echoStatus"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadOptional(raw, "echoStatus", StaticOptionalStatusEnumFromSaved, optional.None[StaticOptionalStatusEnum], optional.Some[StaticOptionalStatusEnum]); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("fallbacks"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "fallbacks"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("errors"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "errors"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("huge"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadInt64(raw, "huge"); err != nil {
+		return err
+	}
+	return sce.JudgeSession[StaticOptionalState, StaticOptionalEvent](p, grown)
+}
+
+// StaticOptionalRestoreAt is a machine of policy standing where saved left
+// one, measuring time by clock: in place of `Initialize`, so no `<onentry>` runs
+// and no `<data>` is evaluated, since the saved run already did both. Every value
+// is read and the state judged before any is written, so a refused restore leaves
+// policy as it was.
+//
+// Each delayed `<send>` saved is armed against clock, which is the one the
+// machine measures time by; wallNowMs is what time it is on the wall clock the
+// saved `due`s were written against. A send comes due when its saved moment does,
+// and one already due comes due now.
+//
+// The host registers its invokers and its processors on the machine this
+// returns, and drives it as it would one it had initialized.
+func StaticOptionalRestoreAt(policy *StaticOptionalPolicy, saved *sce.SavedState, clock sce.SceClock, wallNowMs int64) (*sce.Engine[StaticOptionalState, StaticOptionalEvent], error) {
+	// The state as one of this machine: each record saved at an earlier revision
+	// of its schema holds the defaults of the fields added since.
+	grown, err := sce.UpgradeSavedState(saved, &StaticOptionalSavedShape)
+	if err != nil {
+		return nil, err
+	}
+	history, err := sce.RestoreHistory[StaticOptionalState, StaticOptionalEvent](policy, grown, StaticOptionalHistories)
+	if err != nil {
+		return nil, err
+	}
+	raw1, err := grown.Variable("due")
+	if err != nil {
+		return nil, err
+	}
+	read1, err := sce.SavedReadOptional(raw1, "due", sce.SavedReadInt64, optional.None[int64], optional.Some[int64])
+	if err != nil {
+		return nil, err
+	}
+	raw2, err := grown.Variable("other")
+	if err != nil {
+		return nil, err
+	}
+	read2, err := sce.SavedReadOptional(raw2, "other", sce.SavedReadInt64, optional.None[int64], optional.Some[int64])
+	if err != nil {
+		return nil, err
+	}
+	raw3, err := grown.Variable("title")
+	if err != nil {
+		return nil, err
+	}
+	read3, err := sce.SavedReadOptional(raw3, "title", sce.SavedBoundedString(16), optional.None[string], optional.Some[string])
+	if err != nil {
+		return nil, err
+	}
+	raw4, err := grown.Variable("status")
+	if err != nil {
+		return nil, err
+	}
+	read4, err := sce.SavedReadOptional(raw4, "status", StaticOptionalStatusEnumFromSaved, optional.None[StaticOptionalStatusEnum], optional.Some[StaticOptionalStatusEnum])
+	if err != nil {
+		return nil, err
+	}
+	raw5, err := grown.Variable("item")
+	if err != nil {
+		return nil, err
+	}
+	read5, err := StaticOptionalDueRecordFromSaved(raw5, "item")
+	if err != nil {
+		return nil, err
+	}
+	raw6, err := grown.Variable("items")
+	if err != nil {
+		return nil, err
+	}
+	read6, err := sce.SavedReadList(raw6, "items", 3, StaticOptionalDueRecordFromSaved)
+	if err != nil {
+		return nil, err
+	}
+	raw7, err := grown.Variable("days")
+	if err != nil {
+		return nil, err
+	}
+	read7, err := sce.SavedReadInt64(raw7, "days")
+	if err != nil {
+		return nil, err
+	}
+	raw8, err := grown.Variable("following")
+	if err != nil {
+		return nil, err
+	}
+	read8, err := sce.SavedReadInt64(raw8, "following")
+	if err != nil {
+		return nil, err
+	}
+	raw9, err := grown.Variable("late")
+	if err != nil {
+		return nil, err
+	}
+	read9, err := sce.SavedReadBool(raw9, "late")
+	if err != nil {
+		return nil, err
+	}
+	raw10, err := grown.Variable("early")
+	if err != nil {
+		return nil, err
+	}
+	read10, err := sce.SavedReadBool(raw10, "early")
+	if err != nil {
+		return nil, err
+	}
+	raw11, err := grown.Variable("label")
+	if err != nil {
+		return nil, err
+	}
+	read11, err := sce.SavedReadBoundedString(raw11, "label", 16)
+	if err != nil {
+		return nil, err
+	}
+	raw12, err := grown.Variable("plain")
+	if err != nil {
+		return nil, err
+	}
+	read12, err := StaticOptionalStatusEnumFromSaved(raw12, "plain")
+	if err != nil {
+		return nil, err
+	}
+	raw13, err := grown.Variable("kept")
+	if err != nil {
+		return nil, err
+	}
+	read13, err := sce.SavedReadInt64(raw13, "kept")
+	if err != nil {
+		return nil, err
+	}
+	raw14, err := grown.Variable("listed")
+	if err != nil {
+		return nil, err
+	}
+	read14, err := sce.SavedReadInt64(raw14, "listed")
+	if err != nil {
+		return nil, err
+	}
+	raw15, err := grown.Variable("missing")
+	if err != nil {
+		return nil, err
+	}
+	read15, err := sce.SavedReadUint32(raw15, "missing")
+	if err != nil {
+		return nil, err
+	}
+	raw16, err := grown.Variable("same")
+	if err != nil {
+		return nil, err
+	}
+	read16, err := sce.SavedReadBool(raw16, "same")
+	if err != nil {
+		return nil, err
+	}
+	raw17, err := grown.Variable("absent")
+	if err != nil {
+		return nil, err
+	}
+	read17, err := sce.SavedReadBool(raw17, "absent")
+	if err != nil {
+		return nil, err
+	}
+	raw18, err := grown.Variable("statusDone")
+	if err != nil {
+		return nil, err
+	}
+	read18, err := sce.SavedReadBool(raw18, "statusDone")
+	if err != nil {
+		return nil, err
+	}
+	raw19, err := grown.Variable("echoed")
+	if err != nil {
+		return nil, err
+	}
+	read19, err := sce.SavedReadInt64(raw19, "echoed")
+	if err != nil {
+		return nil, err
+	}
+	raw20, err := grown.Variable("echoTitle")
+	if err != nil {
+		return nil, err
+	}
+	read20, err := sce.SavedReadOptional(raw20, "echoTitle", sce.SavedBoundedString(16), optional.None[string], optional.Some[string])
+	if err != nil {
+		return nil, err
+	}
+	raw21, err := grown.Variable("echoStatus")
+	if err != nil {
+		return nil, err
+	}
+	read21, err := sce.SavedReadOptional(raw21, "echoStatus", StaticOptionalStatusEnumFromSaved, optional.None[StaticOptionalStatusEnum], optional.Some[StaticOptionalStatusEnum])
+	if err != nil {
+		return nil, err
+	}
+	raw22, err := grown.Variable("fallbacks")
+	if err != nil {
+		return nil, err
+	}
+	read22, err := sce.SavedReadUint32(raw22, "fallbacks")
+	if err != nil {
+		return nil, err
+	}
+	raw23, err := grown.Variable("errors")
+	if err != nil {
+		return nil, err
+	}
+	read23, err := sce.SavedReadUint32(raw23, "errors")
+	if err != nil {
+		return nil, err
+	}
+	raw24, err := grown.Variable("huge")
+	if err != nil {
+		return nil, err
+	}
+	read24, err := sce.SavedReadInt64(raw24, "huge")
+	if err != nil {
+		return nil, err
+	}
+	if err := sce.JudgeSession[StaticOptionalState, StaticOptionalEvent](policy, grown); err != nil {
+		return nil, err
+	}
+	policy.vDue = read1
+	policy.vOther = read2
+	policy.vTitle = read3
+	policy.vStatus = read4
+	policy.vItem = read5
+	policy.vItems = read6
+	policy.vDays = read7
+	policy.vFollowing = read8
+	policy.vLate = read9
+	policy.vEarly = read10
+	policy.vLabel = read11
+	policy.vPlain = read12
+	policy.vKept = read13
+	policy.vListed = read14
+	policy.vMissing = read15
+	policy.vSame = read16
+	policy.vAbsent = read17
+	policy.vStatusDone = read18
+	policy.vEchoed = read19
+	policy.vEchoTitle = read20
+	policy.vEchoStatus = read21
+	policy.vFallbacks = read22
+	policy.vErrors = read23
+	policy.vHuge = read24
+	for _, recorded := range history {
+		policy.SetHistoryValue(recorded.History, recorded.States)
+	}
+	return sce.EnterSession[StaticOptionalState, StaticOptionalEvent](policy, grown, clock, wallNowMs)
+}
+
+// StaticOptionalRestore is StaticOptionalRestoreAt at the host's wall
+// clock now.
+func StaticOptionalRestore(policy *StaticOptionalPolicy, saved *sce.SavedState, clock sce.SceClock) (*sce.Engine[StaticOptionalState, StaticOptionalEvent], error) {
+	return StaticOptionalRestoreAt(policy, saved, clock, sce.SavedWallClockMs())
+}
+
+// SetSessionID gives this session the id its host has for it, in place of the
+// one it drew: an XML Nmtoken, since another session addresses this one as
+// `#_scxml_<id>` and every child's id is this one's and the id the child was
+// started under (docs/adr/0045). Refused for anything else. Called before the
+// machine starts, since what it sends names it by the id it began with.
+func (p *StaticOptionalPolicy) SetSessionID(id string) error {
+	if reason := sce.SessionIDRefusalOf(id); reason != "" {
+		return sce.Refuse(reason)
+	}
+	p.SessionID = id
+	return nil
+}
+
+// OwnSessionID is this session's id, `_sessionid`, which a saved state names it
+// by (sce.SavedPolicy).
+func (p *StaticOptionalPolicy) OwnSessionID() string { return p.SessionID }
+
+// BindSessionID makes id this session's own: a restore of a format-2 state
+// carries on under the id it was saved with (sce.SavedPolicy).
+func (p *StaticOptionalPolicy) BindSessionID(id string) { p.SessionID = id }
+
+// RunningInvokes is the id of each `<invoke>` whose child session is running,
+// in document order (sce.SavedPolicy). This document starts no child session.
+func (p *StaticOptionalPolicy) RunningInvokes() []string { return nil }
+
+// InvokeStarts is how many times each `<invoke>` has started in this session
+// (sce.SavedPolicy). This document starts no child session.
+func (p *StaticOptionalPolicy) InvokeStarts() []sce.SavedInvokeStart { return nil }
+
+// InvokeOwner is the state that holds the `<invoke>` id, and false for an id the
+// document does not invoke (sce.SavedPolicy). This document starts no child
+// session.
+func (p *StaticOptionalPolicy) InvokeOwner(id string) (StaticOptionalState, bool) {
+	return 0, false
+}
+
+// HostInvokeOwner is the state that holds the host-run `<invoke>` of this type
+// and id, and false for one the document does not have a host invoker run
+// (sce.SavedPolicy).
+func (p *StaticOptionalPolicy) HostInvokeOwner(processorType, id string) (StaticOptionalState, bool) {
+	return 0, false
+}
+
+// JudgeChild refuses a running child, which this document does not start
+// (sce.SavedPolicy).
+func (p *StaticOptionalPolicy) JudgeChild(child sce.SavedChild) error {
+	return sce.Refuse(fmt.Sprintf("the document starts no child session, so '%s' cannot be one it was running", child.ID))
+}
+
+// ResumeChildren resumes no child, which this document does not start
+// (sce.SavedPolicy).
+func (p *StaticOptionalPolicy) ResumeChildren(engine *sce.Engine[StaticOptionalState, StaticOptionalEvent], children []sce.SavedChild, wallNowMs int64) error {
+	if len(children) > 0 {
+		return p.JudgeChild(children[0])
+	}
+	return nil
+}
+
+// RestartInvokes starts no invocation again, which this document does not start
+// (sce.SavedPolicy).
+func (p *StaticOptionalPolicy) RestartInvokes(engine *sce.Engine[StaticOptionalState, StaticOptionalEvent], ids []string) {}
+
+// SetHistoryValue gives history the states a saved state recorded for it
+// (sce.SavedPolicy).
+func (p *StaticOptionalPolicy) SetHistoryValue(history sce.HistoryID, states []StaticOptionalState) {
 }
 
 // ======================================================================
@@ -420,6 +1049,10 @@ type StaticOptionalPolicy struct {
 // NewStaticOptionalPolicy creates a new policy with default values.
 func NewStaticOptionalPolicy() StaticOptionalPolicy {
 	return StaticOptionalPolicy{
+		// docs/adr/0045: a session has an id, which a saved state names it by. A
+		// host that has one for it gives it with SetSessionID before it starts the
+		// machine; a child's is its parent's and the id it was started under.
+		SessionID: sce.DrawSessionID(),
 		vDue: optional.None[int64](),
 		vOther: optional.Some[int64](7),
 		vTitle: optional.None[string](),

@@ -175,6 +175,192 @@ const StaticHybridHolderSavedShapeFormat2Revised = "96e854dbf8707bf513784c0788fb
 // names it by, and the format-2 shape spells it by.
 var StaticHybridHolderSavedEnumKeys = [...]string{}
 
+// ── SCE Accepted Subset §2.15: saving this machine, restoring it ──────────
+
+// StaticHybridHolderSavedShape is what a saved state of this document is bound
+// to: a state saved from a document that renamed, re-typed or moved a state or a
+// variable is refused, one saved before a guard or an action changed is not, and
+// one saved at an earlier revision of a record schema is read with each field a
+// later revision added at its default.
+var StaticHybridHolderSavedShape = sce.SavedShape{
+	First:          "a85ea43d8de628b004074e59c0ca90c198a4f7736073bd953750bca35c174c7a",
+	Revised:        "96e854dbf8707bf513784c0788fbf785e2280fa487963cf50fd8ff090a58912c",
+	Format2First:   "a85ea43d8de628b004074e59c0ca90c198a4f7736073bd953750bca35c174c7a",
+	Format2Revised: "96e854dbf8707bf513784c0788fbf785e2280fa487963cf50fd8ff090a58912c",
+	Records: []sce.RecordLineage{
+	},
+	Enums: []sce.EnumLineage{
+	},
+}
+
+// StaticHybridHolderHistories is the document's `<history>` pseudo-states, by
+// the id a saved state keys them by: what a saved state records of each, and
+// what a restore reads.
+var StaticHybridHolderHistories = []sce.HistoryDecl{
+}
+
+// StaticHybridHolderSaveAt is engine's whole state at the macrostep boundary it
+// stands at: every variable, the machine's own included, and where it stands, as
+// the `sce-saved-state` document every backend reads (sce.SavedState.ToJSON).
+// Each delayed `<send>` still waiting is written as the moment it comes due on
+// the wall clock whose reading now is wallNowMs, in milliseconds since the Unix
+// epoch.
+//
+// Refused for a machine that is not running, one that has ended, one whose last
+// macrostep stopped at the microstep ceiling, and one built around another
+// document's policy.
+func StaticHybridHolderSaveAt(engine *sce.Engine[StaticHybridHolderState, StaticHybridHolderEvent], wallNowMs int64) (*sce.SavedState, error) {
+	p, ok := engine.Policy().(*StaticHybridHolderPolicy)
+	if !ok {
+		return nil, sce.Refuse("the engine is not one of StaticHybridHolder")
+	}
+	variables := sce.NewJSONObject()
+	variables.Set("start", sce.SavedWriteUint32(p.vStart))
+	return sce.SaveSession(engine, &StaticHybridHolderSavedShape, variables,
+		sce.SaveHistory[StaticHybridHolderState, StaticHybridHolderEvent](p, StaticHybridHolderHistories),
+		nil, wallNowMs)
+}
+
+// StaticHybridHolderSave is StaticHybridHolderSaveAt at the host's wall clock now.
+func StaticHybridHolderSave(engine *sce.Engine[StaticHybridHolderState, StaticHybridHolderEvent]) (*sce.SavedState, error) {
+	return StaticHybridHolderSaveAt(engine, sce.SavedWallClockMs())
+}
+
+// StaticHybridHolderJudge refuses saved unless a machine of this document could
+// restore it, building nothing: what a parent's restore asks of each child it
+// holds (docs/adr/0045, section 3, step 1).
+func StaticHybridHolderJudge(saved *sce.SavedState) error {
+	p := &StaticHybridHolderPolicy{}
+	grown, err := sce.UpgradeSavedState(saved, &StaticHybridHolderSavedShape)
+	if err != nil {
+		return err
+	}
+	if _, err := sce.RestoreHistory[StaticHybridHolderState, StaticHybridHolderEvent](p, grown, StaticHybridHolderHistories); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("start"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "start"); err != nil {
+		return err
+	}
+	return sce.JudgeSession[StaticHybridHolderState, StaticHybridHolderEvent](p, grown)
+}
+
+// StaticHybridHolderRestoreAt is a machine of policy standing where saved left
+// one, measuring time by clock: in place of `Initialize`, so no `<onentry>` runs
+// and no `<data>` is evaluated, since the saved run already did both. Every value
+// is read and the state judged before any is written, so a refused restore leaves
+// policy as it was.
+//
+// Each delayed `<send>` saved is armed against clock, which is the one the
+// machine measures time by; wallNowMs is what time it is on the wall clock the
+// saved `due`s were written against. A send comes due when its saved moment does,
+// and one already due comes due now.
+//
+// The host registers its invokers and its processors on the machine this
+// returns, and drives it as it would one it had initialized.
+func StaticHybridHolderRestoreAt(policy *StaticHybridHolderPolicy, saved *sce.SavedState, clock sce.SceClock, wallNowMs int64) (*sce.Engine[StaticHybridHolderState, StaticHybridHolderEvent], error) {
+	// The state as one of this machine: each record saved at an earlier revision
+	// of its schema holds the defaults of the fields added since.
+	grown, err := sce.UpgradeSavedState(saved, &StaticHybridHolderSavedShape)
+	if err != nil {
+		return nil, err
+	}
+	history, err := sce.RestoreHistory[StaticHybridHolderState, StaticHybridHolderEvent](policy, grown, StaticHybridHolderHistories)
+	if err != nil {
+		return nil, err
+	}
+	raw1, err := grown.Variable("start")
+	if err != nil {
+		return nil, err
+	}
+	read1, err := sce.SavedReadUint32(raw1, "start")
+	if err != nil {
+		return nil, err
+	}
+	if err := sce.JudgeSession[StaticHybridHolderState, StaticHybridHolderEvent](policy, grown); err != nil {
+		return nil, err
+	}
+	policy.vStart = read1
+	for _, recorded := range history {
+		policy.SetHistoryValue(recorded.History, recorded.States)
+	}
+	return sce.EnterSession[StaticHybridHolderState, StaticHybridHolderEvent](policy, grown, clock, wallNowMs)
+}
+
+// StaticHybridHolderRestore is StaticHybridHolderRestoreAt at the host's wall
+// clock now.
+func StaticHybridHolderRestore(policy *StaticHybridHolderPolicy, saved *sce.SavedState, clock sce.SceClock) (*sce.Engine[StaticHybridHolderState, StaticHybridHolderEvent], error) {
+	return StaticHybridHolderRestoreAt(policy, saved, clock, sce.SavedWallClockMs())
+}
+
+// SetSessionID gives this session the id its host has for it, in place of the
+// one it drew: an XML Nmtoken, since another session addresses this one as
+// `#_scxml_<id>` and every child's id is this one's and the id the child was
+// started under (docs/adr/0045). Refused for anything else. Called before the
+// machine starts, since what it sends names it by the id it began with.
+func (p *StaticHybridHolderPolicy) SetSessionID(id string) error {
+	if reason := sce.SessionIDRefusalOf(id); reason != "" {
+		return sce.Refuse(reason)
+	}
+	p.SessionID = id
+	return nil
+}
+
+// OwnSessionID is this session's id, `_sessionid`, which a saved state names it
+// by (sce.SavedPolicy).
+func (p *StaticHybridHolderPolicy) OwnSessionID() string { return p.SessionID }
+
+// BindSessionID makes id this session's own: a restore of a format-2 state
+// carries on under the id it was saved with (sce.SavedPolicy).
+func (p *StaticHybridHolderPolicy) BindSessionID(id string) { p.SessionID = id }
+
+// RunningInvokes is the id of each `<invoke>` whose child session is running,
+// in document order (sce.SavedPolicy). This document starts no child session.
+func (p *StaticHybridHolderPolicy) RunningInvokes() []string { return nil }
+
+// InvokeStarts is how many times each `<invoke>` has started in this session
+// (sce.SavedPolicy). This document starts no child session.
+func (p *StaticHybridHolderPolicy) InvokeStarts() []sce.SavedInvokeStart { return nil }
+
+// InvokeOwner is the state that holds the `<invoke>` id, and false for an id the
+// document does not invoke (sce.SavedPolicy). This document starts no child
+// session.
+func (p *StaticHybridHolderPolicy) InvokeOwner(id string) (StaticHybridHolderState, bool) {
+	return 0, false
+}
+
+// HostInvokeOwner is the state that holds the host-run `<invoke>` of this type
+// and id, and false for one the document does not have a host invoker run
+// (sce.SavedPolicy).
+func (p *StaticHybridHolderPolicy) HostInvokeOwner(processorType, id string) (StaticHybridHolderState, bool) {
+	return 0, false
+}
+
+// JudgeChild refuses a running child, which this document does not start
+// (sce.SavedPolicy).
+func (p *StaticHybridHolderPolicy) JudgeChild(child sce.SavedChild) error {
+	return sce.Refuse(fmt.Sprintf("the document starts no child session, so '%s' cannot be one it was running", child.ID))
+}
+
+// ResumeChildren resumes no child, which this document does not start
+// (sce.SavedPolicy).
+func (p *StaticHybridHolderPolicy) ResumeChildren(engine *sce.Engine[StaticHybridHolderState, StaticHybridHolderEvent], children []sce.SavedChild, wallNowMs int64) error {
+	if len(children) > 0 {
+		return p.JudgeChild(children[0])
+	}
+	return nil
+}
+
+// RestartInvokes starts no invocation again, which this document does not start
+// (sce.SavedPolicy).
+func (p *StaticHybridHolderPolicy) RestartInvokes(engine *sce.Engine[StaticHybridHolderState, StaticHybridHolderEvent], ids []string) {}
+
+// SetHistoryValue gives history the states a saved state recorded for it
+// (sce.SavedPolicy).
+func (p *StaticHybridHolderPolicy) SetHistoryValue(history sce.HistoryID, states []StaticHybridHolderState) {
+}
+
 // ======================================================================
 // Policy struct
 // ======================================================================
@@ -197,6 +383,10 @@ type StaticHybridHolderPolicy struct {
 // NewStaticHybridHolderPolicy creates a new policy with default values.
 func NewStaticHybridHolderPolicy() StaticHybridHolderPolicy {
 	return StaticHybridHolderPolicy{
+		// docs/adr/0045: a session has an id, which a saved state names it by. A
+		// host that has one for it gives it with SetSessionID before it starts the
+		// machine; a child's is its parent's and the id it was started under.
+		SessionID: sce.DrawSessionID(),
 		vStart: 0,
 	}
 }

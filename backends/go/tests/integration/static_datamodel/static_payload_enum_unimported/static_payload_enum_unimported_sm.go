@@ -251,6 +251,40 @@ func StaticPayloadEnumUnimportedWhyEnumFromUnderlying(raw uint8) (StaticPayloadE
 	return 0, false
 }
 
+// ToSaved is this value as a saved state writes it.
+func (v StaticPayloadEnumUnimportedWhyEnum) ToSaved() any {
+	return v.String()
+}
+
+// StaticPayloadEnumUnimportedWhyEnumFromSaved is the value a saved state holds, refused unless it is a variant.
+func StaticPayloadEnumUnimportedWhyEnumFromSaved(value any, what string) (StaticPayloadEnumUnimportedWhyEnum, error) {
+	declared, err := sce.SavedReadString(value, what)
+	if err != nil {
+		return 0, err
+	}
+	switch declared {
+	case "none":
+		return StaticPayloadEnumUnimportedWhyEnumNone, nil
+	case "notWriter":
+		return StaticPayloadEnumUnimportedWhyEnumNotWriter, nil
+	case "noRoomForValue":
+		return StaticPayloadEnumUnimportedWhyEnumNoRoomForValue, nil
+	case "noRoomForHistory":
+		return StaticPayloadEnumUnimportedWhyEnumNoRoomForHistory, nil
+	case "noRoomForDigest":
+		return StaticPayloadEnumUnimportedWhyEnumNoRoomForDigest, nil
+	case "textTooLong":
+		return StaticPayloadEnumUnimportedWhyEnumTextTooLong, nil
+	case "changeTooLarge":
+		return StaticPayloadEnumUnimportedWhyEnumChangeTooLarge, nil
+	case "registerNamedTwice":
+		return StaticPayloadEnumUnimportedWhyEnumRegisterNamedTwice, nil
+	case "clockExhausted":
+		return StaticPayloadEnumUnimportedWhyEnumClockExhausted, nil
+	}
+	return 0, sce.Refuse(fmt.Sprintf("'%s' (%s) is not a variant of Why", what, declared))
+}
+
 // SCE Accepted Subset §2.15: an `enum:record_command` datamodel value.
 type StaticPayloadEnumUnimportedRecordCommandEnum uint8
 
@@ -288,6 +322,28 @@ func StaticPayloadEnumUnimportedRecordCommandEnumFromUnderlying(raw uint8) (Stat
 	return 0, false
 }
 
+// ToSaved is this value as a saved state writes it.
+func (v StaticPayloadEnumUnimportedRecordCommandEnum) ToSaved() any {
+	return v.String()
+}
+
+// StaticPayloadEnumUnimportedRecordCommandEnumFromSaved is the value a saved state holds, refused unless it is a variant.
+func StaticPayloadEnumUnimportedRecordCommandEnumFromSaved(value any, what string) (StaticPayloadEnumUnimportedRecordCommandEnum, error) {
+	declared, err := sce.SavedReadString(value, what)
+	if err != nil {
+		return 0, err
+	}
+	switch declared {
+	case "edit":
+		return StaticPayloadEnumUnimportedRecordCommandEnumEdit, nil
+	case "clear":
+		return StaticPayloadEnumUnimportedRecordCommandEnumClear, nil
+	case "retire":
+		return StaticPayloadEnumUnimportedRecordCommandEnumRetire, nil
+	}
+	return 0, sce.Refuse(fmt.Sprintf("'%s' (%s) is not a variant of record_command", what, declared))
+}
+
 // SCE Accepted Subset §2.15: a `record:Refused` datamodel value.
 type StaticPayloadEnumUnimportedRefusedRecord struct {
 	id uint32
@@ -316,6 +372,57 @@ func (r StaticPayloadEnumUnimportedRefusedRecord) Reason() StaticPayloadEnumUnim
 	return r.reason
 }
 
+// ToSaved is this value as a saved state writes it.
+func (r StaticPayloadEnumUnimportedRefusedRecord) ToSaved() any {
+	saved := sce.NewJSONObject()
+	saved.Set("id", (sce.SavedWriteUint32)(r.id))
+	saved.Set("field", (sce.SavedWriteUint16)(r.field))
+	saved.Set("kind", (func(v StaticPayloadEnumUnimportedRecordCommandEnum) any { return v.ToSaved() })(r.kind))
+	saved.Set("reason", (func(v StaticPayloadEnumUnimportedWhyEnum) any { return v.ToSaved() })(r.reason))
+	return saved
+}
+
+// StaticPayloadEnumUnimportedRefusedRecordFromSaved is the value a saved state holds, refused unless it is one.
+func StaticPayloadEnumUnimportedRefusedRecordFromSaved(value any, what string) (StaticPayloadEnumUnimportedRefusedRecord, error) {
+	var record StaticPayloadEnumUnimportedRefusedRecord
+	{
+		saved, err := sce.SavedField(value, what, "id")
+		if err != nil {
+			return record, err
+		}
+		if record.id, err = (sce.SavedReadUint32)(saved, what + ".id"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "field")
+		if err != nil {
+			return record, err
+		}
+		if record.field, err = (sce.SavedReadUint16)(saved, what + ".field"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "kind")
+		if err != nil {
+			return record, err
+		}
+		if record.kind, err = (StaticPayloadEnumUnimportedRecordCommandEnumFromSaved)(saved, what + ".kind"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "reason")
+		if err != nil {
+			return record, err
+		}
+		if record.reason, err = (StaticPayloadEnumUnimportedWhyEnumFromSaved)(saved, what + ".reason"); err != nil {
+			return record, err
+		}
+	}
+	return record, nil
+}
 
 // ── SCE Accepted Subset §2.15: what a format-2 saved state of it is bound to ──
 
@@ -336,6 +443,268 @@ const StaticPayloadEnumUnimportedSavedShapeFormat2Revised = "54654acbc9d1b0f1171
 var StaticPayloadEnumUnimportedSavedEnumKeys = [...]string{
 	"enum:sce:std/shared/record_command.scxml",
 	"enum:sce:std/shared/record_refusal.scxml",
+}
+
+// ── SCE Accepted Subset §2.15: saving this machine, restoring it ──────────
+
+// StaticPayloadEnumUnimportedSavedShape is what a saved state of this document is bound
+// to: a state saved from a document that renamed, re-typed or moved a state or a
+// variable is refused, one saved before a guard or an action changed is not, and
+// one saved at an earlier revision of a record schema is read with each field a
+// later revision added at its default.
+var StaticPayloadEnumUnimportedSavedShape = sce.SavedShape{
+	First:          "b438ab24fdbeaa8a6e5b4374868634cd1f5563b57bdda5aa1ab05ac6aa345cb4",
+	Revised:        "49947d270ab07ed43e599cbb214b814e9848b17e4a4db30d99f64b907fb7c69d",
+	Format2First:   "d405568787fe6df52784dfd89231491aa1d68562f4788d2515c076e8d9bac5d0",
+	Format2Revised: "54654acbc9d1b0f11710436fbb18e8367f3a511e51dc474789a41fe83a68fa95",
+	Records: []sce.RecordLineage{
+		{
+			Event:     "record_list.refused",
+			Revision:  1,
+			Revisions: []string{},
+			Added: []sce.AddedField{
+			},
+			Holders: []sce.RecordHolder{
+				{Variable: "kept", List: true},
+			},
+		},
+	},
+	Enums: []sce.EnumLineage{
+		{
+			Key:       "enum:sce:std/shared/record_command.scxml",
+			Revision:  1,
+			Revisions: []string{},
+			Added: []sce.AddedVariant{
+			},
+			Holders: []sce.EnumHolder{
+				{Variable: "kept", Field: sce.FieldNamed("kind"), List: true},
+			},
+		},
+		{
+			Key:       "enum:sce:std/shared/record_refusal.scxml",
+			Revision:  1,
+			Revisions: []string{},
+			Added: []sce.AddedVariant{
+			},
+			Holders: []sce.EnumHolder{
+				{Variable: "last", List: false},
+				{Variable: "kept", Field: sce.FieldNamed("reason"), List: true},
+			},
+		},
+	},
+}
+
+// StaticPayloadEnumUnimportedHistories is the document's `<history>` pseudo-states, by
+// the id a saved state keys them by: what a saved state records of each, and
+// what a restore reads.
+var StaticPayloadEnumUnimportedHistories = []sce.HistoryDecl{
+}
+
+// StaticPayloadEnumUnimportedSaveAt is engine's whole state at the macrostep boundary it
+// stands at: every variable, the machine's own included, and where it stands, as
+// the `sce-saved-state` document every backend reads (sce.SavedState.ToJSON).
+// Each delayed `<send>` still waiting is written as the moment it comes due on
+// the wall clock whose reading now is wallNowMs, in milliseconds since the Unix
+// epoch.
+//
+// Refused for a machine that is not running, one that has ended, one whose last
+// macrostep stopped at the microstep ceiling, and one built around another
+// document's policy.
+func StaticPayloadEnumUnimportedSaveAt(engine *sce.Engine[StaticPayloadEnumUnimportedState, StaticPayloadEnumUnimportedEvent], wallNowMs int64) (*sce.SavedState, error) {
+	p, ok := engine.Policy().(*StaticPayloadEnumUnimportedPolicy)
+	if !ok {
+		return nil, sce.Refuse("the engine is not one of StaticPayloadEnumUnimported")
+	}
+	variables := sce.NewJSONObject()
+	variables.Set("last", p.vLast.ToSaved())
+	variables.Set("kept", sce.SavedWriteList(p.vKept, func(r StaticPayloadEnumUnimportedRefusedRecord) any { return r.ToSaved() }))
+	variables.Set("row", sce.SavedWriteUint32(p.vRow))
+	variables.Set("refusals", sce.SavedWriteUint32(p.vRefusals))
+	return sce.SaveSession(engine, &StaticPayloadEnumUnimportedSavedShape, variables,
+		sce.SaveHistory[StaticPayloadEnumUnimportedState, StaticPayloadEnumUnimportedEvent](p, StaticPayloadEnumUnimportedHistories),
+		nil, wallNowMs)
+}
+
+// StaticPayloadEnumUnimportedSave is StaticPayloadEnumUnimportedSaveAt at the host's wall clock now.
+func StaticPayloadEnumUnimportedSave(engine *sce.Engine[StaticPayloadEnumUnimportedState, StaticPayloadEnumUnimportedEvent]) (*sce.SavedState, error) {
+	return StaticPayloadEnumUnimportedSaveAt(engine, sce.SavedWallClockMs())
+}
+
+// StaticPayloadEnumUnimportedJudge refuses saved unless a machine of this document could
+// restore it, building nothing: what a parent's restore asks of each child it
+// holds (docs/adr/0045, section 3, step 1).
+func StaticPayloadEnumUnimportedJudge(saved *sce.SavedState) error {
+	p := &StaticPayloadEnumUnimportedPolicy{}
+	grown, err := sce.UpgradeSavedState(saved, &StaticPayloadEnumUnimportedSavedShape)
+	if err != nil {
+		return err
+	}
+	if _, err := sce.RestoreHistory[StaticPayloadEnumUnimportedState, StaticPayloadEnumUnimportedEvent](p, grown, StaticPayloadEnumUnimportedHistories); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("last"); err != nil {
+		return err
+	} else if _, err := StaticPayloadEnumUnimportedWhyEnumFromSaved(raw, "last"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("kept"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadList(raw, "kept", 2, StaticPayloadEnumUnimportedRefusedRecordFromSaved); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("row"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "row"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("refusals"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "refusals"); err != nil {
+		return err
+	}
+	return sce.JudgeSession[StaticPayloadEnumUnimportedState, StaticPayloadEnumUnimportedEvent](p, grown)
+}
+
+// StaticPayloadEnumUnimportedRestoreAt is a machine of policy standing where saved left
+// one, measuring time by clock: in place of `Initialize`, so no `<onentry>` runs
+// and no `<data>` is evaluated, since the saved run already did both. Every value
+// is read and the state judged before any is written, so a refused restore leaves
+// policy as it was.
+//
+// Each delayed `<send>` saved is armed against clock, which is the one the
+// machine measures time by; wallNowMs is what time it is on the wall clock the
+// saved `due`s were written against. A send comes due when its saved moment does,
+// and one already due comes due now.
+//
+// The host registers its invokers and its processors on the machine this
+// returns, and drives it as it would one it had initialized.
+func StaticPayloadEnumUnimportedRestoreAt(policy *StaticPayloadEnumUnimportedPolicy, saved *sce.SavedState, clock sce.SceClock, wallNowMs int64) (*sce.Engine[StaticPayloadEnumUnimportedState, StaticPayloadEnumUnimportedEvent], error) {
+	// The state as one of this machine: each record saved at an earlier revision
+	// of its schema holds the defaults of the fields added since.
+	grown, err := sce.UpgradeSavedState(saved, &StaticPayloadEnumUnimportedSavedShape)
+	if err != nil {
+		return nil, err
+	}
+	history, err := sce.RestoreHistory[StaticPayloadEnumUnimportedState, StaticPayloadEnumUnimportedEvent](policy, grown, StaticPayloadEnumUnimportedHistories)
+	if err != nil {
+		return nil, err
+	}
+	raw1, err := grown.Variable("last")
+	if err != nil {
+		return nil, err
+	}
+	read1, err := StaticPayloadEnumUnimportedWhyEnumFromSaved(raw1, "last")
+	if err != nil {
+		return nil, err
+	}
+	raw2, err := grown.Variable("kept")
+	if err != nil {
+		return nil, err
+	}
+	read2, err := sce.SavedReadList(raw2, "kept", 2, StaticPayloadEnumUnimportedRefusedRecordFromSaved)
+	if err != nil {
+		return nil, err
+	}
+	raw3, err := grown.Variable("row")
+	if err != nil {
+		return nil, err
+	}
+	read3, err := sce.SavedReadUint32(raw3, "row")
+	if err != nil {
+		return nil, err
+	}
+	raw4, err := grown.Variable("refusals")
+	if err != nil {
+		return nil, err
+	}
+	read4, err := sce.SavedReadUint32(raw4, "refusals")
+	if err != nil {
+		return nil, err
+	}
+	if err := sce.JudgeSession[StaticPayloadEnumUnimportedState, StaticPayloadEnumUnimportedEvent](policy, grown); err != nil {
+		return nil, err
+	}
+	policy.vLast = read1
+	policy.vKept = read2
+	policy.vRow = read3
+	policy.vRefusals = read4
+	for _, recorded := range history {
+		policy.SetHistoryValue(recorded.History, recorded.States)
+	}
+	return sce.EnterSession[StaticPayloadEnumUnimportedState, StaticPayloadEnumUnimportedEvent](policy, grown, clock, wallNowMs)
+}
+
+// StaticPayloadEnumUnimportedRestore is StaticPayloadEnumUnimportedRestoreAt at the host's wall
+// clock now.
+func StaticPayloadEnumUnimportedRestore(policy *StaticPayloadEnumUnimportedPolicy, saved *sce.SavedState, clock sce.SceClock) (*sce.Engine[StaticPayloadEnumUnimportedState, StaticPayloadEnumUnimportedEvent], error) {
+	return StaticPayloadEnumUnimportedRestoreAt(policy, saved, clock, sce.SavedWallClockMs())
+}
+
+// SetSessionID gives this session the id its host has for it, in place of the
+// one it drew: an XML Nmtoken, since another session addresses this one as
+// `#_scxml_<id>` and every child's id is this one's and the id the child was
+// started under (docs/adr/0045). Refused for anything else. Called before the
+// machine starts, since what it sends names it by the id it began with.
+func (p *StaticPayloadEnumUnimportedPolicy) SetSessionID(id string) error {
+	if reason := sce.SessionIDRefusalOf(id); reason != "" {
+		return sce.Refuse(reason)
+	}
+	p.SessionID = id
+	return nil
+}
+
+// OwnSessionID is this session's id, `_sessionid`, which a saved state names it
+// by (sce.SavedPolicy).
+func (p *StaticPayloadEnumUnimportedPolicy) OwnSessionID() string { return p.SessionID }
+
+// BindSessionID makes id this session's own: a restore of a format-2 state
+// carries on under the id it was saved with (sce.SavedPolicy).
+func (p *StaticPayloadEnumUnimportedPolicy) BindSessionID(id string) { p.SessionID = id }
+
+// RunningInvokes is the id of each `<invoke>` whose child session is running,
+// in document order (sce.SavedPolicy). This document starts no child session.
+func (p *StaticPayloadEnumUnimportedPolicy) RunningInvokes() []string { return nil }
+
+// InvokeStarts is how many times each `<invoke>` has started in this session
+// (sce.SavedPolicy). This document starts no child session.
+func (p *StaticPayloadEnumUnimportedPolicy) InvokeStarts() []sce.SavedInvokeStart { return nil }
+
+// InvokeOwner is the state that holds the `<invoke>` id, and false for an id the
+// document does not invoke (sce.SavedPolicy). This document starts no child
+// session.
+func (p *StaticPayloadEnumUnimportedPolicy) InvokeOwner(id string) (StaticPayloadEnumUnimportedState, bool) {
+	return 0, false
+}
+
+// HostInvokeOwner is the state that holds the host-run `<invoke>` of this type
+// and id, and false for one the document does not have a host invoker run
+// (sce.SavedPolicy).
+func (p *StaticPayloadEnumUnimportedPolicy) HostInvokeOwner(processorType, id string) (StaticPayloadEnumUnimportedState, bool) {
+	return 0, false
+}
+
+// JudgeChild refuses a running child, which this document does not start
+// (sce.SavedPolicy).
+func (p *StaticPayloadEnumUnimportedPolicy) JudgeChild(child sce.SavedChild) error {
+	return sce.Refuse(fmt.Sprintf("the document starts no child session, so '%s' cannot be one it was running", child.ID))
+}
+
+// ResumeChildren resumes no child, which this document does not start
+// (sce.SavedPolicy).
+func (p *StaticPayloadEnumUnimportedPolicy) ResumeChildren(engine *sce.Engine[StaticPayloadEnumUnimportedState, StaticPayloadEnumUnimportedEvent], children []sce.SavedChild, wallNowMs int64) error {
+	if len(children) > 0 {
+		return p.JudgeChild(children[0])
+	}
+	return nil
+}
+
+// RestartInvokes starts no invocation again, which this document does not start
+// (sce.SavedPolicy).
+func (p *StaticPayloadEnumUnimportedPolicy) RestartInvokes(engine *sce.Engine[StaticPayloadEnumUnimportedState, StaticPayloadEnumUnimportedEvent], ids []string) {}
+
+// SetHistoryValue gives history the states a saved state recorded for it
+// (sce.SavedPolicy).
+func (p *StaticPayloadEnumUnimportedPolicy) SetHistoryValue(history sce.HistoryID, states []StaticPayloadEnumUnimportedState) {
 }
 
 // ======================================================================
@@ -374,6 +743,10 @@ type StaticPayloadEnumUnimportedPolicy struct {
 // NewStaticPayloadEnumUnimportedPolicy creates a new policy with default values.
 func NewStaticPayloadEnumUnimportedPolicy() StaticPayloadEnumUnimportedPolicy {
 	return StaticPayloadEnumUnimportedPolicy{
+		// docs/adr/0045: a session has an id, which a saved state names it by. A
+		// host that has one for it gives it with SetSessionID before it starts the
+		// machine; a child's is its parent's and the id it was started under.
+		SessionID: sce.DrawSessionID(),
 		vLast: StaticPayloadEnumUnimportedWhyEnumNone,
 		vKept: nil,
 		vRow: 0,

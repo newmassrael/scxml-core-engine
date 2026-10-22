@@ -275,6 +275,30 @@ func StaticSendContentViewModeEnumFromUnderlying(raw uint8) (StaticSendContentVi
 	return 0, false
 }
 
+// ToSaved is this value as a saved state writes it.
+func (v StaticSendContentViewModeEnum) ToSaved() any {
+	return v.String()
+}
+
+// StaticSendContentViewModeEnumFromSaved is the value a saved state holds, refused unless it is a variant.
+func StaticSendContentViewModeEnumFromSaved(value any, what string) (StaticSendContentViewModeEnum, error) {
+	declared, err := sce.SavedReadString(value, what)
+	if err != nil {
+		return 0, err
+	}
+	switch declared {
+	case "month":
+		return StaticSendContentViewModeEnumMonth, nil
+	case "week":
+		return StaticSendContentViewModeEnumWeek, nil
+	case "day":
+		return StaticSendContentViewModeEnumDay, nil
+	case "agenda_list":
+		return StaticSendContentViewModeEnumAgendaList, nil
+	}
+	return 0, sce.Refuse(fmt.Sprintf("'%s' (%s) is not a variant of ViewMode", what, declared))
+}
+
 // SCE Accepted Subset §2.15: a `record:View` datamodel value.
 type StaticSendContentViewRecord struct {
 	layout StaticSendContentViewModeEnum
@@ -291,6 +315,37 @@ func (r StaticSendContentViewRecord) Zoom() uint8 {
 	return r.zoom
 }
 
+// ToSaved is this value as a saved state writes it.
+func (r StaticSendContentViewRecord) ToSaved() any {
+	saved := sce.NewJSONObject()
+	saved.Set("layout", (func(v StaticSendContentViewModeEnum) any { return v.ToSaved() })(r.layout))
+	saved.Set("zoom", (sce.SavedWriteUint8)(r.zoom))
+	return saved
+}
+
+// StaticSendContentViewRecordFromSaved is the value a saved state holds, refused unless it is one.
+func StaticSendContentViewRecordFromSaved(value any, what string) (StaticSendContentViewRecord, error) {
+	var record StaticSendContentViewRecord
+	{
+		saved, err := sce.SavedField(value, what, "layout")
+		if err != nil {
+			return record, err
+		}
+		if record.layout, err = (StaticSendContentViewModeEnumFromSaved)(saved, what + ".layout"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "zoom")
+		if err != nil {
+			return record, err
+		}
+		if record.zoom, err = (sce.SavedReadUint8)(saved, what + ".zoom"); err != nil {
+			return record, err
+		}
+	}
+	return record, nil
+}
 
 // ── SCE Accepted Subset §2.15: what a format-2 saved state of it is bound to ──
 
@@ -310,6 +365,258 @@ const StaticSendContentSavedShapeFormat2Revised = "fa1c69819a3e2f8e92cb2938fa14c
 // names it by, and the format-2 shape spells it by.
 var StaticSendContentSavedEnumKeys = [...]string{
 	"enum:enum_view_mode.scxml",
+}
+
+// ── SCE Accepted Subset §2.15: saving this machine, restoring it ──────────
+
+// StaticSendContentSavedShape is what a saved state of this document is bound
+// to: a state saved from a document that renamed, re-typed or moved a state or a
+// variable is refused, one saved before a guard or an action changed is not, and
+// one saved at an earlier revision of a record schema is read with each field a
+// later revision added at its default.
+var StaticSendContentSavedShape = sce.SavedShape{
+	First:          "6f33e5b00a3a440af82bab37051ecfb5a5a93fab315376e997123933d7aa034e",
+	Revised:        "cde129524ee5f351001fc3bfe85e45638f9602adfb1eafc0335c4aeb2f6ec51b",
+	Format2First:   "4bf189c4ee8d5e8b3e8fedae3e4a2c1e29e96ae199286f52d04877741cd5c027",
+	Format2Revised: "fa1c69819a3e2f8e92cb2938fa14c111813365c6eea453a634f658cdb689cc01",
+	Records: []sce.RecordLineage{
+		{
+			Event:     "view.shown",
+			Revision:  1,
+			Revisions: []string{},
+			Added: []sce.AddedField{
+			},
+			Holders: []sce.RecordHolder{
+				{Variable: "shown", List: false},
+			},
+		},
+	},
+	Enums: []sce.EnumLineage{
+		{
+			Key:       "enum:enum_view_mode.scxml",
+			Revision:  1,
+			Revisions: []string{},
+			Added: []sce.AddedVariant{
+			},
+			Holders: []sce.EnumHolder{
+				{Variable: "shown", Field: sce.FieldNamed("layout"), List: false},
+				{Variable: "received", List: false},
+			},
+		},
+	},
+}
+
+// StaticSendContentHistories is the document's `<history>` pseudo-states, by
+// the id a saved state keys them by: what a saved state records of each, and
+// what a restore reads.
+var StaticSendContentHistories = []sce.HistoryDecl{
+}
+
+// StaticSendContentSaveAt is engine's whole state at the macrostep boundary it
+// stands at: every variable, the machine's own included, and where it stands, as
+// the `sce-saved-state` document every backend reads (sce.SavedState.ToJSON).
+// Each delayed `<send>` still waiting is written as the moment it comes due on
+// the wall clock whose reading now is wallNowMs, in milliseconds since the Unix
+// epoch.
+//
+// Refused for a machine that is not running, one that has ended, one whose last
+// macrostep stopped at the microstep ceiling, and one built around another
+// document's policy.
+func StaticSendContentSaveAt(engine *sce.Engine[StaticSendContentState, StaticSendContentEvent], wallNowMs int64) (*sce.SavedState, error) {
+	p, ok := engine.Policy().(*StaticSendContentPolicy)
+	if !ok {
+		return nil, sce.Refuse("the engine is not one of StaticSendContent")
+	}
+	variables := sce.NewJSONObject()
+	variables.Set("shown", p.vShown.ToSaved())
+	variables.Set("received", p.vReceived.ToSaved())
+	variables.Set("level", sce.SavedWriteUint8(p.vLevel))
+	variables.Set("relays", sce.SavedWriteUint32(p.vRelays))
+	return sce.SaveSession(engine, &StaticSendContentSavedShape, variables,
+		sce.SaveHistory[StaticSendContentState, StaticSendContentEvent](p, StaticSendContentHistories),
+		nil, wallNowMs)
+}
+
+// StaticSendContentSave is StaticSendContentSaveAt at the host's wall clock now.
+func StaticSendContentSave(engine *sce.Engine[StaticSendContentState, StaticSendContentEvent]) (*sce.SavedState, error) {
+	return StaticSendContentSaveAt(engine, sce.SavedWallClockMs())
+}
+
+// StaticSendContentJudge refuses saved unless a machine of this document could
+// restore it, building nothing: what a parent's restore asks of each child it
+// holds (docs/adr/0045, section 3, step 1).
+func StaticSendContentJudge(saved *sce.SavedState) error {
+	p := &StaticSendContentPolicy{}
+	grown, err := sce.UpgradeSavedState(saved, &StaticSendContentSavedShape)
+	if err != nil {
+		return err
+	}
+	if _, err := sce.RestoreHistory[StaticSendContentState, StaticSendContentEvent](p, grown, StaticSendContentHistories); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("shown"); err != nil {
+		return err
+	} else if _, err := StaticSendContentViewRecordFromSaved(raw, "shown"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("received"); err != nil {
+		return err
+	} else if _, err := StaticSendContentViewModeEnumFromSaved(raw, "received"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("level"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint8(raw, "level"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("relays"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "relays"); err != nil {
+		return err
+	}
+	return sce.JudgeSession[StaticSendContentState, StaticSendContentEvent](p, grown)
+}
+
+// StaticSendContentRestoreAt is a machine of policy standing where saved left
+// one, measuring time by clock: in place of `Initialize`, so no `<onentry>` runs
+// and no `<data>` is evaluated, since the saved run already did both. Every value
+// is read and the state judged before any is written, so a refused restore leaves
+// policy as it was.
+//
+// Each delayed `<send>` saved is armed against clock, which is the one the
+// machine measures time by; wallNowMs is what time it is on the wall clock the
+// saved `due`s were written against. A send comes due when its saved moment does,
+// and one already due comes due now.
+//
+// The host registers its invokers and its processors on the machine this
+// returns, and drives it as it would one it had initialized.
+func StaticSendContentRestoreAt(policy *StaticSendContentPolicy, saved *sce.SavedState, clock sce.SceClock, wallNowMs int64) (*sce.Engine[StaticSendContentState, StaticSendContentEvent], error) {
+	// The state as one of this machine: each record saved at an earlier revision
+	// of its schema holds the defaults of the fields added since.
+	grown, err := sce.UpgradeSavedState(saved, &StaticSendContentSavedShape)
+	if err != nil {
+		return nil, err
+	}
+	history, err := sce.RestoreHistory[StaticSendContentState, StaticSendContentEvent](policy, grown, StaticSendContentHistories)
+	if err != nil {
+		return nil, err
+	}
+	raw1, err := grown.Variable("shown")
+	if err != nil {
+		return nil, err
+	}
+	read1, err := StaticSendContentViewRecordFromSaved(raw1, "shown")
+	if err != nil {
+		return nil, err
+	}
+	raw2, err := grown.Variable("received")
+	if err != nil {
+		return nil, err
+	}
+	read2, err := StaticSendContentViewModeEnumFromSaved(raw2, "received")
+	if err != nil {
+		return nil, err
+	}
+	raw3, err := grown.Variable("level")
+	if err != nil {
+		return nil, err
+	}
+	read3, err := sce.SavedReadUint8(raw3, "level")
+	if err != nil {
+		return nil, err
+	}
+	raw4, err := grown.Variable("relays")
+	if err != nil {
+		return nil, err
+	}
+	read4, err := sce.SavedReadUint32(raw4, "relays")
+	if err != nil {
+		return nil, err
+	}
+	if err := sce.JudgeSession[StaticSendContentState, StaticSendContentEvent](policy, grown); err != nil {
+		return nil, err
+	}
+	policy.vShown = read1
+	policy.vReceived = read2
+	policy.vLevel = read3
+	policy.vRelays = read4
+	for _, recorded := range history {
+		policy.SetHistoryValue(recorded.History, recorded.States)
+	}
+	return sce.EnterSession[StaticSendContentState, StaticSendContentEvent](policy, grown, clock, wallNowMs)
+}
+
+// StaticSendContentRestore is StaticSendContentRestoreAt at the host's wall
+// clock now.
+func StaticSendContentRestore(policy *StaticSendContentPolicy, saved *sce.SavedState, clock sce.SceClock) (*sce.Engine[StaticSendContentState, StaticSendContentEvent], error) {
+	return StaticSendContentRestoreAt(policy, saved, clock, sce.SavedWallClockMs())
+}
+
+// SetSessionID gives this session the id its host has for it, in place of the
+// one it drew: an XML Nmtoken, since another session addresses this one as
+// `#_scxml_<id>` and every child's id is this one's and the id the child was
+// started under (docs/adr/0045). Refused for anything else. Called before the
+// machine starts, since what it sends names it by the id it began with.
+func (p *StaticSendContentPolicy) SetSessionID(id string) error {
+	if reason := sce.SessionIDRefusalOf(id); reason != "" {
+		return sce.Refuse(reason)
+	}
+	p.SessionID = id
+	return nil
+}
+
+// OwnSessionID is this session's id, `_sessionid`, which a saved state names it
+// by (sce.SavedPolicy).
+func (p *StaticSendContentPolicy) OwnSessionID() string { return p.SessionID }
+
+// BindSessionID makes id this session's own: a restore of a format-2 state
+// carries on under the id it was saved with (sce.SavedPolicy).
+func (p *StaticSendContentPolicy) BindSessionID(id string) { p.SessionID = id }
+
+// RunningInvokes is the id of each `<invoke>` whose child session is running,
+// in document order (sce.SavedPolicy). This document starts no child session.
+func (p *StaticSendContentPolicy) RunningInvokes() []string { return nil }
+
+// InvokeStarts is how many times each `<invoke>` has started in this session
+// (sce.SavedPolicy). This document starts no child session.
+func (p *StaticSendContentPolicy) InvokeStarts() []sce.SavedInvokeStart { return nil }
+
+// InvokeOwner is the state that holds the `<invoke>` id, and false for an id the
+// document does not invoke (sce.SavedPolicy). This document starts no child
+// session.
+func (p *StaticSendContentPolicy) InvokeOwner(id string) (StaticSendContentState, bool) {
+	return 0, false
+}
+
+// HostInvokeOwner is the state that holds the host-run `<invoke>` of this type
+// and id, and false for one the document does not have a host invoker run
+// (sce.SavedPolicy).
+func (p *StaticSendContentPolicy) HostInvokeOwner(processorType, id string) (StaticSendContentState, bool) {
+	return 0, false
+}
+
+// JudgeChild refuses a running child, which this document does not start
+// (sce.SavedPolicy).
+func (p *StaticSendContentPolicy) JudgeChild(child sce.SavedChild) error {
+	return sce.Refuse(fmt.Sprintf("the document starts no child session, so '%s' cannot be one it was running", child.ID))
+}
+
+// ResumeChildren resumes no child, which this document does not start
+// (sce.SavedPolicy).
+func (p *StaticSendContentPolicy) ResumeChildren(engine *sce.Engine[StaticSendContentState, StaticSendContentEvent], children []sce.SavedChild, wallNowMs int64) error {
+	if len(children) > 0 {
+		return p.JudgeChild(children[0])
+	}
+	return nil
+}
+
+// RestartInvokes starts no invocation again, which this document does not start
+// (sce.SavedPolicy).
+func (p *StaticSendContentPolicy) RestartInvokes(engine *sce.Engine[StaticSendContentState, StaticSendContentEvent], ids []string) {}
+
+// SetHistoryValue gives history the states a saved state recorded for it
+// (sce.SavedPolicy).
+func (p *StaticSendContentPolicy) SetHistoryValue(history sce.HistoryID, states []StaticSendContentState) {
 }
 
 // ======================================================================
@@ -349,6 +656,10 @@ type StaticSendContentPolicy struct {
 // NewStaticSendContentPolicy creates a new policy with default values.
 func NewStaticSendContentPolicy() StaticSendContentPolicy {
 	return StaticSendContentPolicy{
+		// docs/adr/0045: a session has an id, which a saved state names it by. A
+		// host that has one for it gives it with SetSessionID before it starts the
+		// machine; a child's is its parent's and the id it was started under.
+		SessionID: sce.DrawSessionID(),
 		vShown: StaticSendContentViewRecord{layout: StaticSendContentViewModeEnumDay, zoom: 2},
 		vReceived: StaticSendContentViewModeEnumMonth,
 		vLevel: 0,

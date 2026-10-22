@@ -607,6 +607,47 @@ func (r SheetPeerHlcRecord) NodeId() uint64 {
 	return r.nodeId
 }
 
+// ToSaved is this value as a saved state writes it.
+func (r SheetPeerHlcRecord) ToSaved() any {
+	saved := sce.NewJSONObject()
+	saved.Set("wallTime", (sce.SavedWriteInt64)(r.wallTime))
+	saved.Set("counter", (sce.SavedWriteUint32)(r.counter))
+	saved.Set("nodeId", (sce.SavedWriteUint64)(r.nodeId))
+	return saved
+}
+
+// SheetPeerHlcRecordFromSaved is the value a saved state holds, refused unless it is one.
+func SheetPeerHlcRecordFromSaved(value any, what string) (SheetPeerHlcRecord, error) {
+	var record SheetPeerHlcRecord
+	{
+		saved, err := sce.SavedField(value, what, "wallTime")
+		if err != nil {
+			return record, err
+		}
+		if record.wallTime, err = (sce.SavedReadInt64)(saved, what + ".wallTime"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "counter")
+		if err != nil {
+			return record, err
+		}
+		if record.counter, err = (sce.SavedReadUint32)(saved, what + ".counter"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "nodeId")
+		if err != nil {
+			return record, err
+		}
+		if record.nodeId, err = (sce.SavedReadUint64)(saved, what + ".nodeId"); err != nil {
+			return record, err
+		}
+	}
+	return record, nil
+}
 
 // SCE Accepted Subset §2.15: a `record:LwwCell` datamodel value.
 type SheetPeerLwwCellRecord struct {
@@ -702,6 +743,167 @@ func (r SheetPeerLwwCellRecord) BVal() int64 {
 	return r.bVal
 }
 
+// ToSaved is this value as a saved state writes it.
+func (r SheetPeerLwwCellRecord) ToSaved() any {
+	saved := sce.NewJSONObject()
+	saved.Set("row", (sce.SavedWriteUint64)(r.row))
+	saved.Set("col", (sce.SavedWriteUint64)(r.col))
+	saved.Set("value", (sce.SavedWriteInt64)(r.value))
+	saved.Set("wallTime", (sce.SavedWriteInt64)(r.wallTime))
+	saved.Set("counter", (sce.SavedWriteUint32)(r.counter))
+	saved.Set("nodeId", (sce.SavedWriteUint64)(r.nodeId))
+	saved.Set("op", (sce.SavedWriteUint8)(r.op))
+	saved.Set("aRef", (sce.SavedWriteBool)(r.aRef))
+	saved.Set("aRow", (sce.SavedWriteUint64)(r.aRow))
+	saved.Set("aCol", (sce.SavedWriteUint64)(r.aCol))
+	saved.Set("aVal", (sce.SavedWriteInt64)(r.aVal))
+	saved.Set("bRef", (sce.SavedWriteBool)(r.bRef))
+	saved.Set("bRow", (sce.SavedWriteUint64)(r.bRow))
+	saved.Set("bCol", (sce.SavedWriteUint64)(r.bCol))
+	saved.Set("bVal", (sce.SavedWriteInt64)(r.bVal))
+	return saved
+}
+
+// SheetPeerLwwCellRecordFromSaved is the value a saved state holds, refused unless it is one.
+func SheetPeerLwwCellRecordFromSaved(value any, what string) (SheetPeerLwwCellRecord, error) {
+	var record SheetPeerLwwCellRecord
+	{
+		saved, err := sce.SavedField(value, what, "row")
+		if err != nil {
+			return record, err
+		}
+		if record.row, err = (sce.SavedReadUint64)(saved, what + ".row"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "col")
+		if err != nil {
+			return record, err
+		}
+		if record.col, err = (sce.SavedReadUint64)(saved, what + ".col"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "value")
+		if err != nil {
+			return record, err
+		}
+		if record.value, err = (sce.SavedReadInt64)(saved, what + ".value"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "wallTime")
+		if err != nil {
+			return record, err
+		}
+		if record.wallTime, err = (sce.SavedReadInt64)(saved, what + ".wallTime"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "counter")
+		if err != nil {
+			return record, err
+		}
+		if record.counter, err = (sce.SavedReadUint32)(saved, what + ".counter"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "nodeId")
+		if err != nil {
+			return record, err
+		}
+		if record.nodeId, err = (sce.SavedReadUint64)(saved, what + ".nodeId"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "op")
+		if err != nil {
+			return record, err
+		}
+		if record.op, err = (sce.SavedReadUint8)(saved, what + ".op"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "aRef")
+		if err != nil {
+			return record, err
+		}
+		if record.aRef, err = (sce.SavedReadBool)(saved, what + ".aRef"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "aRow")
+		if err != nil {
+			return record, err
+		}
+		if record.aRow, err = (sce.SavedReadUint64)(saved, what + ".aRow"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "aCol")
+		if err != nil {
+			return record, err
+		}
+		if record.aCol, err = (sce.SavedReadUint64)(saved, what + ".aCol"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "aVal")
+		if err != nil {
+			return record, err
+		}
+		if record.aVal, err = (sce.SavedReadInt64)(saved, what + ".aVal"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "bRef")
+		if err != nil {
+			return record, err
+		}
+		if record.bRef, err = (sce.SavedReadBool)(saved, what + ".bRef"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "bRow")
+		if err != nil {
+			return record, err
+		}
+		if record.bRow, err = (sce.SavedReadUint64)(saved, what + ".bRow"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "bCol")
+		if err != nil {
+			return record, err
+		}
+		if record.bCol, err = (sce.SavedReadUint64)(saved, what + ".bCol"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "bVal")
+		if err != nil {
+			return record, err
+		}
+		if record.bVal, err = (sce.SavedReadInt64)(saved, what + ".bVal"); err != nil {
+			return record, err
+		}
+	}
+	return record, nil
+}
 
 // SCE Accepted Subset §2.15: a `record:RgaNode` datamodel value.
 type SheetPeerRgaNodeRecord struct {
@@ -719,6 +921,37 @@ func (r SheetPeerRgaNodeRecord) After() uint64 {
 	return r.after
 }
 
+// ToSaved is this value as a saved state writes it.
+func (r SheetPeerRgaNodeRecord) ToSaved() any {
+	saved := sce.NewJSONObject()
+	saved.Set("key", (sce.SavedWriteUint64)(r.key))
+	saved.Set("after", (sce.SavedWriteUint64)(r.after))
+	return saved
+}
+
+// SheetPeerRgaNodeRecordFromSaved is the value a saved state holds, refused unless it is one.
+func SheetPeerRgaNodeRecordFromSaved(value any, what string) (SheetPeerRgaNodeRecord, error) {
+	var record SheetPeerRgaNodeRecord
+	{
+		saved, err := sce.SavedField(value, what, "key")
+		if err != nil {
+			return record, err
+		}
+		if record.key, err = (sce.SavedReadUint64)(saved, what + ".key"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "after")
+		if err != nil {
+			return record, err
+		}
+		if record.after, err = (sce.SavedReadUint64)(saved, what + ".after"); err != nil {
+			return record, err
+		}
+	}
+	return record, nil
+}
 
 // SCE Accepted Subset §2.15: a `record:RgaGone` datamodel value.
 type SheetPeerRgaGoneRecord struct {
@@ -736,6 +969,37 @@ func (r SheetPeerRgaGoneRecord) By() uint64 {
 	return r.by
 }
 
+// ToSaved is this value as a saved state writes it.
+func (r SheetPeerRgaGoneRecord) ToSaved() any {
+	saved := sce.NewJSONObject()
+	saved.Set("key", (sce.SavedWriteUint64)(r.key))
+	saved.Set("by", (sce.SavedWriteUint64)(r.by))
+	return saved
+}
+
+// SheetPeerRgaGoneRecordFromSaved is the value a saved state holds, refused unless it is one.
+func SheetPeerRgaGoneRecordFromSaved(value any, what string) (SheetPeerRgaGoneRecord, error) {
+	var record SheetPeerRgaGoneRecord
+	{
+		saved, err := sce.SavedField(value, what, "key")
+		if err != nil {
+			return record, err
+		}
+		if record.key, err = (sce.SavedReadUint64)(saved, what + ".key"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "by")
+		if err != nil {
+			return record, err
+		}
+		if record.by, err = (sce.SavedReadUint64)(saved, what + ".by"); err != nil {
+			return record, err
+		}
+	}
+	return record, nil
+}
 
 // SCE Accepted Subset §2.15: a `record:Shown` datamodel value.
 type SheetPeerShownRecord struct {
@@ -765,6 +1029,57 @@ func (r SheetPeerShownRecord) Fault() uint8 {
 	return r.fault
 }
 
+// ToSaved is this value as a saved state writes it.
+func (r SheetPeerShownRecord) ToSaved() any {
+	saved := sce.NewJSONObject()
+	saved.Set("row", (sce.SavedWriteUint64)(r.row))
+	saved.Set("col", (sce.SavedWriteUint64)(r.col))
+	saved.Set("value", (sce.SavedWriteInt64)(r.value))
+	saved.Set("fault", (sce.SavedWriteUint8)(r.fault))
+	return saved
+}
+
+// SheetPeerShownRecordFromSaved is the value a saved state holds, refused unless it is one.
+func SheetPeerShownRecordFromSaved(value any, what string) (SheetPeerShownRecord, error) {
+	var record SheetPeerShownRecord
+	{
+		saved, err := sce.SavedField(value, what, "row")
+		if err != nil {
+			return record, err
+		}
+		if record.row, err = (sce.SavedReadUint64)(saved, what + ".row"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "col")
+		if err != nil {
+			return record, err
+		}
+		if record.col, err = (sce.SavedReadUint64)(saved, what + ".col"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "value")
+		if err != nil {
+			return record, err
+		}
+		if record.value, err = (sce.SavedReadInt64)(saved, what + ".value"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "fault")
+		if err != nil {
+			return record, err
+		}
+		if record.fault, err = (sce.SavedReadUint8)(saved, what + ".fault"); err != nil {
+			return record, err
+		}
+	}
+	return record, nil
+}
 
 // ── SCE Accepted Subset §2.15: what a format-2 saved state of it is bound to ──
 
@@ -783,6 +1098,533 @@ const SheetPeerSavedShapeFormat2Revised = "39d5b3f2c18c95ec3df531f209693d1fb8866
 // this machine is of, by its document (docs/adr/0044): the key `revisions`
 // names it by, and the format-2 shape spells it by.
 var SheetPeerSavedEnumKeys = [...]string{}
+
+// ── SCE Accepted Subset §2.15: saving this machine, restoring it ──────────
+
+// SheetPeerSavedShape is what a saved state of this document is bound
+// to: a state saved from a document that renamed, re-typed or moved a state or a
+// variable is refused, one saved before a guard or an action changed is not, and
+// one saved at an earlier revision of a record schema is read with each field a
+// later revision added at its default.
+var SheetPeerSavedShape = sce.SavedShape{
+	First:          "1ac6b3f2603c6108cd17580f835aab53156fb15bf1be7c02a34b837cfb45cf6f",
+	Revised:        "39d5b3f2c18c95ec3df531f209693d1fb88669a01f6dae41d6c56ccffbef3d08",
+	Format2First:   "1ac6b3f2603c6108cd17580f835aab53156fb15bf1be7c02a34b837cfb45cf6f",
+	Format2Revised: "39d5b3f2c18c95ec3df531f209693d1fb88669a01f6dae41d6c56ccffbef3d08",
+	Records: []sce.RecordLineage{
+		{
+			Event:     "merge.hlc_timestamp",
+			Revision:  1,
+			Revisions: []string{},
+			Added: []sce.AddedField{
+			},
+			Holders: []sce.RecordHolder{
+				{Variable: "clock", List: false},
+				{Variable: "stamp", List: false},
+			},
+		},
+		{
+			Event:     "merge.lww_cell",
+			Revision:  1,
+			Revisions: []string{},
+			Added: []sce.AddedField{
+			},
+			Holders: []sce.RecordHolder{
+				{Variable: "cells", List: true},
+				{Variable: "write", List: false},
+			},
+		},
+		{
+			Event:     "merge.rga_gone",
+			Revision:  1,
+			Revisions: []string{},
+			Added: []sce.AddedField{
+			},
+			Holders: []sce.RecordHolder{
+				{Variable: "gone", List: true},
+				{Variable: "goneCols", List: true},
+				{Variable: "removal", List: false},
+			},
+		},
+		{
+			Event:     "merge.rga_node",
+			Revision:  1,
+			Revisions: []string{},
+			Added: []sce.AddedField{
+			},
+			Holders: []sce.RecordHolder{
+				{Variable: "rows", List: true},
+				{Variable: "cols", List: true},
+				{Variable: "placed", List: false},
+			},
+		},
+		{
+			Event:     "merge.sheet_shown",
+			Revision:  1,
+			Revisions: []string{},
+			Added: []sce.AddedField{
+			},
+			Holders: []sce.RecordHolder{
+				{Variable: "shown", List: true},
+			},
+		},
+	},
+	Enums: []sce.EnumLineage{
+	},
+}
+
+// SheetPeerHistories is the document's `<history>` pseudo-states, by
+// the id a saved state keys them by: what a saved state records of each, and
+// what a restore reads.
+var SheetPeerHistories = []sce.HistoryDecl{
+}
+
+// SheetPeerSaveAt is engine's whole state at the macrostep boundary it
+// stands at: every variable, the machine's own included, and where it stands, as
+// the `sce-saved-state` document every backend reads (sce.SavedState.ToJSON).
+// Each delayed `<send>` still waiting is written as the moment it comes due on
+// the wall clock whose reading now is wallNowMs, in milliseconds since the Unix
+// epoch.
+//
+// Refused for a machine that is not running, one that has ended, one whose last
+// macrostep stopped at the microstep ceiling, and one built around another
+// document's policy.
+func SheetPeerSaveAt(engine *sce.Engine[SheetPeerState, SheetPeerEvent], wallNowMs int64) (*sce.SavedState, error) {
+	p, ok := engine.Policy().(*SheetPeerPolicy)
+	if !ok {
+		return nil, sce.Refuse("the engine is not one of SheetPeer")
+	}
+	variables := sce.NewJSONObject()
+	variables.Set("node", sce.SavedWriteUint64(p.vNode))
+	variables.Set("hub", sce.SavedWriteBool(p.vHub))
+	variables.Set("clock", p.vClock.ToSaved())
+	variables.Set("stamp", p.vStamp.ToSaved())
+	variables.Set("cells", sce.SavedWriteList(p.vCells, func(r SheetPeerLwwCellRecord) any { return r.ToSaved() }))
+	variables.Set("rows", sce.SavedWriteList(p.vRows, func(r SheetPeerRgaNodeRecord) any { return r.ToSaved() }))
+	variables.Set("gone", sce.SavedWriteList(p.vGone, func(r SheetPeerRgaGoneRecord) any { return r.ToSaved() }))
+	variables.Set("cols", sce.SavedWriteList(p.vCols, func(r SheetPeerRgaNodeRecord) any { return r.ToSaved() }))
+	variables.Set("goneCols", sce.SavedWriteList(p.vGoneCols, func(r SheetPeerRgaGoneRecord) any { return r.ToSaved() }))
+	variables.Set("trail", sce.SavedWriteList(p.vTrail, sce.SavedWriteInt64))
+	variables.Set("shown", sce.SavedWriteList(p.vShown, func(r SheetPeerShownRecord) any { return r.ToSaved() }))
+	variables.Set("write", p.vWrite.ToSaved())
+	variables.Set("placed", p.vPlaced.ToSaved())
+	variables.Set("removal", p.vRemoval.ToSaved())
+	variables.Set("lamport", sce.SavedWriteUint64(p.vLamport))
+	variables.Set("newKey", sce.SavedWriteUint64(p.vNewKey))
+	variables.Set("noKey", sce.SavedWriteUint64(p.vNoKey))
+	variables.Set("noNumber", sce.SavedWriteInt64(p.vNoNumber))
+	variables.Set("orphans", sce.SavedWriteUint32(p.vOrphans))
+	variables.Set("refusals", sce.SavedWriteUint32(p.vRefusals))
+	return sce.SaveSession(engine, &SheetPeerSavedShape, variables,
+		sce.SaveHistory[SheetPeerState, SheetPeerEvent](p, SheetPeerHistories),
+		nil, wallNowMs)
+}
+
+// SheetPeerSave is SheetPeerSaveAt at the host's wall clock now.
+func SheetPeerSave(engine *sce.Engine[SheetPeerState, SheetPeerEvent]) (*sce.SavedState, error) {
+	return SheetPeerSaveAt(engine, sce.SavedWallClockMs())
+}
+
+// SheetPeerJudge refuses saved unless a machine of this document could
+// restore it, building nothing: what a parent's restore asks of each child it
+// holds (docs/adr/0045, section 3, step 1).
+func SheetPeerJudge(saved *sce.SavedState) error {
+	p := &SheetPeerPolicy{}
+	grown, err := sce.UpgradeSavedState(saved, &SheetPeerSavedShape)
+	if err != nil {
+		return err
+	}
+	if _, err := sce.RestoreHistory[SheetPeerState, SheetPeerEvent](p, grown, SheetPeerHistories); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("node"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint64(raw, "node"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("hub"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadBool(raw, "hub"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("clock"); err != nil {
+		return err
+	} else if _, err := SheetPeerHlcRecordFromSaved(raw, "clock"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("stamp"); err != nil {
+		return err
+	} else if _, err := SheetPeerHlcRecordFromSaved(raw, "stamp"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("cells"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadList(raw, "cells", 256, SheetPeerLwwCellRecordFromSaved); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("rows"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadList(raw, "rows", 256, SheetPeerRgaNodeRecordFromSaved); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("gone"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadList(raw, "gone", 256, SheetPeerRgaGoneRecordFromSaved); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("cols"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadList(raw, "cols", 256, SheetPeerRgaNodeRecordFromSaved); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("goneCols"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadList(raw, "goneCols", 256, SheetPeerRgaGoneRecordFromSaved); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("trail"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadList(raw, "trail", 768, sce.SavedReadInt64); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("shown"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadList(raw, "shown", 256, SheetPeerShownRecordFromSaved); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("write"); err != nil {
+		return err
+	} else if _, err := SheetPeerLwwCellRecordFromSaved(raw, "write"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("placed"); err != nil {
+		return err
+	} else if _, err := SheetPeerRgaNodeRecordFromSaved(raw, "placed"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("removal"); err != nil {
+		return err
+	} else if _, err := SheetPeerRgaGoneRecordFromSaved(raw, "removal"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("lamport"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint64(raw, "lamport"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("newKey"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint64(raw, "newKey"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("noKey"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint64(raw, "noKey"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("noNumber"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadInt64(raw, "noNumber"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("orphans"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "orphans"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("refusals"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "refusals"); err != nil {
+		return err
+	}
+	return sce.JudgeSession[SheetPeerState, SheetPeerEvent](p, grown)
+}
+
+// SheetPeerRestoreAt is a machine of policy standing where saved left
+// one, measuring time by clock: in place of `Initialize`, so no `<onentry>` runs
+// and no `<data>` is evaluated, since the saved run already did both. Every value
+// is read and the state judged before any is written, so a refused restore leaves
+// policy as it was.
+//
+// Each delayed `<send>` saved is armed against clock, which is the one the
+// machine measures time by; wallNowMs is what time it is on the wall clock the
+// saved `due`s were written against. A send comes due when its saved moment does,
+// and one already due comes due now.
+//
+// The host registers its invokers and its processors on the machine this
+// returns, and drives it as it would one it had initialized.
+func SheetPeerRestoreAt(policy *SheetPeerPolicy, saved *sce.SavedState, clock sce.SceClock, wallNowMs int64) (*sce.Engine[SheetPeerState, SheetPeerEvent], error) {
+	// The state as one of this machine: each record saved at an earlier revision
+	// of its schema holds the defaults of the fields added since.
+	grown, err := sce.UpgradeSavedState(saved, &SheetPeerSavedShape)
+	if err != nil {
+		return nil, err
+	}
+	history, err := sce.RestoreHistory[SheetPeerState, SheetPeerEvent](policy, grown, SheetPeerHistories)
+	if err != nil {
+		return nil, err
+	}
+	raw1, err := grown.Variable("node")
+	if err != nil {
+		return nil, err
+	}
+	read1, err := sce.SavedReadUint64(raw1, "node")
+	if err != nil {
+		return nil, err
+	}
+	raw2, err := grown.Variable("hub")
+	if err != nil {
+		return nil, err
+	}
+	read2, err := sce.SavedReadBool(raw2, "hub")
+	if err != nil {
+		return nil, err
+	}
+	raw3, err := grown.Variable("clock")
+	if err != nil {
+		return nil, err
+	}
+	read3, err := SheetPeerHlcRecordFromSaved(raw3, "clock")
+	if err != nil {
+		return nil, err
+	}
+	raw4, err := grown.Variable("stamp")
+	if err != nil {
+		return nil, err
+	}
+	read4, err := SheetPeerHlcRecordFromSaved(raw4, "stamp")
+	if err != nil {
+		return nil, err
+	}
+	raw5, err := grown.Variable("cells")
+	if err != nil {
+		return nil, err
+	}
+	read5, err := sce.SavedReadList(raw5, "cells", 256, SheetPeerLwwCellRecordFromSaved)
+	if err != nil {
+		return nil, err
+	}
+	raw6, err := grown.Variable("rows")
+	if err != nil {
+		return nil, err
+	}
+	read6, err := sce.SavedReadList(raw6, "rows", 256, SheetPeerRgaNodeRecordFromSaved)
+	if err != nil {
+		return nil, err
+	}
+	raw7, err := grown.Variable("gone")
+	if err != nil {
+		return nil, err
+	}
+	read7, err := sce.SavedReadList(raw7, "gone", 256, SheetPeerRgaGoneRecordFromSaved)
+	if err != nil {
+		return nil, err
+	}
+	raw8, err := grown.Variable("cols")
+	if err != nil {
+		return nil, err
+	}
+	read8, err := sce.SavedReadList(raw8, "cols", 256, SheetPeerRgaNodeRecordFromSaved)
+	if err != nil {
+		return nil, err
+	}
+	raw9, err := grown.Variable("goneCols")
+	if err != nil {
+		return nil, err
+	}
+	read9, err := sce.SavedReadList(raw9, "goneCols", 256, SheetPeerRgaGoneRecordFromSaved)
+	if err != nil {
+		return nil, err
+	}
+	raw10, err := grown.Variable("trail")
+	if err != nil {
+		return nil, err
+	}
+	read10, err := sce.SavedReadList(raw10, "trail", 768, sce.SavedReadInt64)
+	if err != nil {
+		return nil, err
+	}
+	raw11, err := grown.Variable("shown")
+	if err != nil {
+		return nil, err
+	}
+	read11, err := sce.SavedReadList(raw11, "shown", 256, SheetPeerShownRecordFromSaved)
+	if err != nil {
+		return nil, err
+	}
+	raw12, err := grown.Variable("write")
+	if err != nil {
+		return nil, err
+	}
+	read12, err := SheetPeerLwwCellRecordFromSaved(raw12, "write")
+	if err != nil {
+		return nil, err
+	}
+	raw13, err := grown.Variable("placed")
+	if err != nil {
+		return nil, err
+	}
+	read13, err := SheetPeerRgaNodeRecordFromSaved(raw13, "placed")
+	if err != nil {
+		return nil, err
+	}
+	raw14, err := grown.Variable("removal")
+	if err != nil {
+		return nil, err
+	}
+	read14, err := SheetPeerRgaGoneRecordFromSaved(raw14, "removal")
+	if err != nil {
+		return nil, err
+	}
+	raw15, err := grown.Variable("lamport")
+	if err != nil {
+		return nil, err
+	}
+	read15, err := sce.SavedReadUint64(raw15, "lamport")
+	if err != nil {
+		return nil, err
+	}
+	raw16, err := grown.Variable("newKey")
+	if err != nil {
+		return nil, err
+	}
+	read16, err := sce.SavedReadUint64(raw16, "newKey")
+	if err != nil {
+		return nil, err
+	}
+	raw17, err := grown.Variable("noKey")
+	if err != nil {
+		return nil, err
+	}
+	read17, err := sce.SavedReadUint64(raw17, "noKey")
+	if err != nil {
+		return nil, err
+	}
+	raw18, err := grown.Variable("noNumber")
+	if err != nil {
+		return nil, err
+	}
+	read18, err := sce.SavedReadInt64(raw18, "noNumber")
+	if err != nil {
+		return nil, err
+	}
+	raw19, err := grown.Variable("orphans")
+	if err != nil {
+		return nil, err
+	}
+	read19, err := sce.SavedReadUint32(raw19, "orphans")
+	if err != nil {
+		return nil, err
+	}
+	raw20, err := grown.Variable("refusals")
+	if err != nil {
+		return nil, err
+	}
+	read20, err := sce.SavedReadUint32(raw20, "refusals")
+	if err != nil {
+		return nil, err
+	}
+	if err := sce.JudgeSession[SheetPeerState, SheetPeerEvent](policy, grown); err != nil {
+		return nil, err
+	}
+	policy.vNode = read1
+	policy.vHub = read2
+	policy.vClock = read3
+	policy.vStamp = read4
+	policy.vCells = read5
+	policy.vRows = read6
+	policy.vGone = read7
+	policy.vCols = read8
+	policy.vGoneCols = read9
+	policy.vTrail = read10
+	policy.vShown = read11
+	policy.vWrite = read12
+	policy.vPlaced = read13
+	policy.vRemoval = read14
+	policy.vLamport = read15
+	policy.vNewKey = read16
+	policy.vNoKey = read17
+	policy.vNoNumber = read18
+	policy.vOrphans = read19
+	policy.vRefusals = read20
+	for _, recorded := range history {
+		policy.SetHistoryValue(recorded.History, recorded.States)
+	}
+	return sce.EnterSession[SheetPeerState, SheetPeerEvent](policy, grown, clock, wallNowMs)
+}
+
+// SheetPeerRestore is SheetPeerRestoreAt at the host's wall
+// clock now.
+func SheetPeerRestore(policy *SheetPeerPolicy, saved *sce.SavedState, clock sce.SceClock) (*sce.Engine[SheetPeerState, SheetPeerEvent], error) {
+	return SheetPeerRestoreAt(policy, saved, clock, sce.SavedWallClockMs())
+}
+
+// SetSessionID gives this session the id its host has for it, in place of the
+// one it drew: an XML Nmtoken, since another session addresses this one as
+// `#_scxml_<id>` and every child's id is this one's and the id the child was
+// started under (docs/adr/0045). Refused for anything else. Called before the
+// machine starts, since what it sends names it by the id it began with.
+func (p *SheetPeerPolicy) SetSessionID(id string) error {
+	if reason := sce.SessionIDRefusalOf(id); reason != "" {
+		return sce.Refuse(reason)
+	}
+	p.SessionID = id
+	return nil
+}
+
+// OwnSessionID is this session's id, `_sessionid`, which a saved state names it
+// by (sce.SavedPolicy).
+func (p *SheetPeerPolicy) OwnSessionID() string { return p.SessionID }
+
+// BindSessionID makes id this session's own: a restore of a format-2 state
+// carries on under the id it was saved with (sce.SavedPolicy).
+func (p *SheetPeerPolicy) BindSessionID(id string) { p.SessionID = id }
+
+// RunningInvokes is the id of each `<invoke>` whose child session is running,
+// in document order (sce.SavedPolicy). This document starts no child session.
+func (p *SheetPeerPolicy) RunningInvokes() []string { return nil }
+
+// InvokeStarts is how many times each `<invoke>` has started in this session
+// (sce.SavedPolicy). This document starts no child session.
+func (p *SheetPeerPolicy) InvokeStarts() []sce.SavedInvokeStart { return nil }
+
+// InvokeOwner is the state that holds the `<invoke>` id, and false for an id the
+// document does not invoke (sce.SavedPolicy). This document starts no child
+// session.
+func (p *SheetPeerPolicy) InvokeOwner(id string) (SheetPeerState, bool) {
+	return 0, false
+}
+
+// HostInvokeOwner is the state that holds the host-run `<invoke>` of this type
+// and id, and false for one the document does not have a host invoker run
+// (sce.SavedPolicy).
+func (p *SheetPeerPolicy) HostInvokeOwner(processorType, id string) (SheetPeerState, bool) {
+	return 0, false
+}
+
+// JudgeChild refuses a running child, which this document does not start
+// (sce.SavedPolicy).
+func (p *SheetPeerPolicy) JudgeChild(child sce.SavedChild) error {
+	return sce.Refuse(fmt.Sprintf("the document starts no child session, so '%s' cannot be one it was running", child.ID))
+}
+
+// ResumeChildren resumes no child, which this document does not start
+// (sce.SavedPolicy).
+func (p *SheetPeerPolicy) ResumeChildren(engine *sce.Engine[SheetPeerState, SheetPeerEvent], children []sce.SavedChild, wallNowMs int64) error {
+	if len(children) > 0 {
+		return p.JudgeChild(children[0])
+	}
+	return nil
+}
+
+// RestartInvokes starts no invocation again, which this document does not start
+// (sce.SavedPolicy).
+func (p *SheetPeerPolicy) RestartInvokes(engine *sce.Engine[SheetPeerState, SheetPeerEvent], ids []string) {}
+
+// SetHistoryValue gives history the states a saved state recorded for it
+// (sce.SavedPolicy).
+func (p *SheetPeerPolicy) SetHistoryValue(history sce.HistoryID, states []SheetPeerState) {
+}
 
 // ── SCE Accepted Subset §2.15: calls of an algorithm that takes or returns state ──
 func sceAdapt_SheetPeer_HlcReceive__vv(p0 SheetPeerHlcRecord, p1 SheetPeerHlcRecord, p2 int64, p3 uint64) scealgorithm.Outcome[SheetPeerHlcRecord] {
@@ -984,6 +1826,10 @@ type SheetPeerPolicy struct {
 // NewSheetPeerPolicy creates a new policy with default values.
 func NewSheetPeerPolicy() SheetPeerPolicy {
 	return SheetPeerPolicy{
+		// docs/adr/0045: a session has an id, which a saved state names it by. A
+		// host that has one for it gives it with SetSessionID before it starts the
+		// machine; a child's is its parent's and the id it was started under.
+		SessionID: sce.DrawSessionID(),
 		vNode: 0,
 		vHub: false,
 		vClock: SheetPeerHlcRecord{wallTime: 0, counter: 0, nodeId: 0},

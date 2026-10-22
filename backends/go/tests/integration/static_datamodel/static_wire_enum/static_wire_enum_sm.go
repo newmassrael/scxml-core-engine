@@ -249,6 +249,30 @@ func StaticWireEnumViewModeEnumFromUnderlying(raw uint8) (StaticWireEnumViewMode
 	return 0, false
 }
 
+// ToSaved is this value as a saved state writes it.
+func (v StaticWireEnumViewModeEnum) ToSaved() any {
+	return v.String()
+}
+
+// StaticWireEnumViewModeEnumFromSaved is the value a saved state holds, refused unless it is a variant.
+func StaticWireEnumViewModeEnumFromSaved(value any, what string) (StaticWireEnumViewModeEnum, error) {
+	declared, err := sce.SavedReadString(value, what)
+	if err != nil {
+		return 0, err
+	}
+	switch declared {
+	case "month":
+		return StaticWireEnumViewModeEnumMonth, nil
+	case "week":
+		return StaticWireEnumViewModeEnumWeek, nil
+	case "day":
+		return StaticWireEnumViewModeEnumDay, nil
+	case "agenda_list":
+		return StaticWireEnumViewModeEnumAgendaList, nil
+	}
+	return 0, sce.Refuse(fmt.Sprintf("'%s' (%s) is not a variant of ViewMode", what, declared))
+}
+
 // SCE Accepted Subset §2.15: a `record:View` datamodel value.
 type StaticWireEnumViewRecord struct {
 	layout StaticWireEnumViewModeEnum
@@ -265,6 +289,37 @@ func (r StaticWireEnumViewRecord) Zoom() uint8 {
 	return r.zoom
 }
 
+// ToSaved is this value as a saved state writes it.
+func (r StaticWireEnumViewRecord) ToSaved() any {
+	saved := sce.NewJSONObject()
+	saved.Set("layout", (func(v StaticWireEnumViewModeEnum) any { return v.ToSaved() })(r.layout))
+	saved.Set("zoom", (sce.SavedWriteUint8)(r.zoom))
+	return saved
+}
+
+// StaticWireEnumViewRecordFromSaved is the value a saved state holds, refused unless it is one.
+func StaticWireEnumViewRecordFromSaved(value any, what string) (StaticWireEnumViewRecord, error) {
+	var record StaticWireEnumViewRecord
+	{
+		saved, err := sce.SavedField(value, what, "layout")
+		if err != nil {
+			return record, err
+		}
+		if record.layout, err = (StaticWireEnumViewModeEnumFromSaved)(saved, what + ".layout"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "zoom")
+		if err != nil {
+			return record, err
+		}
+		if record.zoom, err = (sce.SavedReadUint8)(saved, what + ".zoom"); err != nil {
+			return record, err
+		}
+	}
+	return record, nil
+}
 
 // ── SCE Accepted Subset §2.15: what a format-2 saved state of it is bound to ──
 
@@ -284,6 +339,259 @@ const StaticWireEnumSavedShapeFormat2Revised = "c9033f9dff50f0277e04dd2a71973d9a
 // names it by, and the format-2 shape spells it by.
 var StaticWireEnumSavedEnumKeys = [...]string{
 	"enum:enum_view_mode.scxml",
+}
+
+// ── SCE Accepted Subset §2.15: saving this machine, restoring it ──────────
+
+// StaticWireEnumSavedShape is what a saved state of this document is bound
+// to: a state saved from a document that renamed, re-typed or moved a state or a
+// variable is refused, one saved before a guard or an action changed is not, and
+// one saved at an earlier revision of a record schema is read with each field a
+// later revision added at its default.
+var StaticWireEnumSavedShape = sce.SavedShape{
+	First:          "c9a87f3c40076e0e661152c1c51fc9f5bab2cc48d50cc9aedc07d730e887d3ce",
+	Revised:        "fbe8dae8a62e3cd95f9b387047b050003b24228f9d4ae84bbfe22bda18c1fd98",
+	Format2First:   "78445a09acf694cb490c6eb144464277b5f79d54bbbc3a183fdc310a75e79492",
+	Format2Revised: "c9033f9dff50f0277e04dd2a71973d9afcbd7eb9c46e79fb71d0febfc4029379",
+	Records: []sce.RecordLineage{
+		{
+			Event:     "view.shown",
+			Revision:  1,
+			Revisions: []string{},
+			Added: []sce.AddedField{
+			},
+			Holders: []sce.RecordHolder{
+				{Variable: "shown", List: false},
+			},
+		},
+	},
+	Enums: []sce.EnumLineage{
+		{
+			Key:       "enum:enum_view_mode.scxml",
+			Revision:  1,
+			Revisions: []string{},
+			Added: []sce.AddedVariant{
+			},
+			Holders: []sce.EnumHolder{
+				{Variable: "layout", List: false},
+				{Variable: "shown", Field: sce.FieldNamed("layout"), List: false},
+				{Variable: "received", List: false},
+			},
+		},
+	},
+}
+
+// StaticWireEnumHistories is the document's `<history>` pseudo-states, by
+// the id a saved state keys them by: what a saved state records of each, and
+// what a restore reads.
+var StaticWireEnumHistories = []sce.HistoryDecl{
+}
+
+// StaticWireEnumSaveAt is engine's whole state at the macrostep boundary it
+// stands at: every variable, the machine's own included, and where it stands, as
+// the `sce-saved-state` document every backend reads (sce.SavedState.ToJSON).
+// Each delayed `<send>` still waiting is written as the moment it comes due on
+// the wall clock whose reading now is wallNowMs, in milliseconds since the Unix
+// epoch.
+//
+// Refused for a machine that is not running, one that has ended, one whose last
+// macrostep stopped at the microstep ceiling, and one built around another
+// document's policy.
+func StaticWireEnumSaveAt(engine *sce.Engine[StaticWireEnumState, StaticWireEnumEvent], wallNowMs int64) (*sce.SavedState, error) {
+	p, ok := engine.Policy().(*StaticWireEnumPolicy)
+	if !ok {
+		return nil, sce.Refuse("the engine is not one of StaticWireEnum")
+	}
+	variables := sce.NewJSONObject()
+	variables.Set("layout", p.vLayout.ToSaved())
+	variables.Set("shown", p.vShown.ToSaved())
+	variables.Set("received", p.vReceived.ToSaved())
+	variables.Set("deliveries", sce.SavedWriteUint32(p.vDeliveries))
+	return sce.SaveSession(engine, &StaticWireEnumSavedShape, variables,
+		sce.SaveHistory[StaticWireEnumState, StaticWireEnumEvent](p, StaticWireEnumHistories),
+		nil, wallNowMs)
+}
+
+// StaticWireEnumSave is StaticWireEnumSaveAt at the host's wall clock now.
+func StaticWireEnumSave(engine *sce.Engine[StaticWireEnumState, StaticWireEnumEvent]) (*sce.SavedState, error) {
+	return StaticWireEnumSaveAt(engine, sce.SavedWallClockMs())
+}
+
+// StaticWireEnumJudge refuses saved unless a machine of this document could
+// restore it, building nothing: what a parent's restore asks of each child it
+// holds (docs/adr/0045, section 3, step 1).
+func StaticWireEnumJudge(saved *sce.SavedState) error {
+	p := &StaticWireEnumPolicy{}
+	grown, err := sce.UpgradeSavedState(saved, &StaticWireEnumSavedShape)
+	if err != nil {
+		return err
+	}
+	if _, err := sce.RestoreHistory[StaticWireEnumState, StaticWireEnumEvent](p, grown, StaticWireEnumHistories); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("layout"); err != nil {
+		return err
+	} else if _, err := StaticWireEnumViewModeEnumFromSaved(raw, "layout"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("shown"); err != nil {
+		return err
+	} else if _, err := StaticWireEnumViewRecordFromSaved(raw, "shown"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("received"); err != nil {
+		return err
+	} else if _, err := StaticWireEnumViewModeEnumFromSaved(raw, "received"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("deliveries"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "deliveries"); err != nil {
+		return err
+	}
+	return sce.JudgeSession[StaticWireEnumState, StaticWireEnumEvent](p, grown)
+}
+
+// StaticWireEnumRestoreAt is a machine of policy standing where saved left
+// one, measuring time by clock: in place of `Initialize`, so no `<onentry>` runs
+// and no `<data>` is evaluated, since the saved run already did both. Every value
+// is read and the state judged before any is written, so a refused restore leaves
+// policy as it was.
+//
+// Each delayed `<send>` saved is armed against clock, which is the one the
+// machine measures time by; wallNowMs is what time it is on the wall clock the
+// saved `due`s were written against. A send comes due when its saved moment does,
+// and one already due comes due now.
+//
+// The host registers its invokers and its processors on the machine this
+// returns, and drives it as it would one it had initialized.
+func StaticWireEnumRestoreAt(policy *StaticWireEnumPolicy, saved *sce.SavedState, clock sce.SceClock, wallNowMs int64) (*sce.Engine[StaticWireEnumState, StaticWireEnumEvent], error) {
+	// The state as one of this machine: each record saved at an earlier revision
+	// of its schema holds the defaults of the fields added since.
+	grown, err := sce.UpgradeSavedState(saved, &StaticWireEnumSavedShape)
+	if err != nil {
+		return nil, err
+	}
+	history, err := sce.RestoreHistory[StaticWireEnumState, StaticWireEnumEvent](policy, grown, StaticWireEnumHistories)
+	if err != nil {
+		return nil, err
+	}
+	raw1, err := grown.Variable("layout")
+	if err != nil {
+		return nil, err
+	}
+	read1, err := StaticWireEnumViewModeEnumFromSaved(raw1, "layout")
+	if err != nil {
+		return nil, err
+	}
+	raw2, err := grown.Variable("shown")
+	if err != nil {
+		return nil, err
+	}
+	read2, err := StaticWireEnumViewRecordFromSaved(raw2, "shown")
+	if err != nil {
+		return nil, err
+	}
+	raw3, err := grown.Variable("received")
+	if err != nil {
+		return nil, err
+	}
+	read3, err := StaticWireEnumViewModeEnumFromSaved(raw3, "received")
+	if err != nil {
+		return nil, err
+	}
+	raw4, err := grown.Variable("deliveries")
+	if err != nil {
+		return nil, err
+	}
+	read4, err := sce.SavedReadUint32(raw4, "deliveries")
+	if err != nil {
+		return nil, err
+	}
+	if err := sce.JudgeSession[StaticWireEnumState, StaticWireEnumEvent](policy, grown); err != nil {
+		return nil, err
+	}
+	policy.vLayout = read1
+	policy.vShown = read2
+	policy.vReceived = read3
+	policy.vDeliveries = read4
+	for _, recorded := range history {
+		policy.SetHistoryValue(recorded.History, recorded.States)
+	}
+	return sce.EnterSession[StaticWireEnumState, StaticWireEnumEvent](policy, grown, clock, wallNowMs)
+}
+
+// StaticWireEnumRestore is StaticWireEnumRestoreAt at the host's wall
+// clock now.
+func StaticWireEnumRestore(policy *StaticWireEnumPolicy, saved *sce.SavedState, clock sce.SceClock) (*sce.Engine[StaticWireEnumState, StaticWireEnumEvent], error) {
+	return StaticWireEnumRestoreAt(policy, saved, clock, sce.SavedWallClockMs())
+}
+
+// SetSessionID gives this session the id its host has for it, in place of the
+// one it drew: an XML Nmtoken, since another session addresses this one as
+// `#_scxml_<id>` and every child's id is this one's and the id the child was
+// started under (docs/adr/0045). Refused for anything else. Called before the
+// machine starts, since what it sends names it by the id it began with.
+func (p *StaticWireEnumPolicy) SetSessionID(id string) error {
+	if reason := sce.SessionIDRefusalOf(id); reason != "" {
+		return sce.Refuse(reason)
+	}
+	p.SessionID = id
+	return nil
+}
+
+// OwnSessionID is this session's id, `_sessionid`, which a saved state names it
+// by (sce.SavedPolicy).
+func (p *StaticWireEnumPolicy) OwnSessionID() string { return p.SessionID }
+
+// BindSessionID makes id this session's own: a restore of a format-2 state
+// carries on under the id it was saved with (sce.SavedPolicy).
+func (p *StaticWireEnumPolicy) BindSessionID(id string) { p.SessionID = id }
+
+// RunningInvokes is the id of each `<invoke>` whose child session is running,
+// in document order (sce.SavedPolicy). This document starts no child session.
+func (p *StaticWireEnumPolicy) RunningInvokes() []string { return nil }
+
+// InvokeStarts is how many times each `<invoke>` has started in this session
+// (sce.SavedPolicy). This document starts no child session.
+func (p *StaticWireEnumPolicy) InvokeStarts() []sce.SavedInvokeStart { return nil }
+
+// InvokeOwner is the state that holds the `<invoke>` id, and false for an id the
+// document does not invoke (sce.SavedPolicy). This document starts no child
+// session.
+func (p *StaticWireEnumPolicy) InvokeOwner(id string) (StaticWireEnumState, bool) {
+	return 0, false
+}
+
+// HostInvokeOwner is the state that holds the host-run `<invoke>` of this type
+// and id, and false for one the document does not have a host invoker run
+// (sce.SavedPolicy).
+func (p *StaticWireEnumPolicy) HostInvokeOwner(processorType, id string) (StaticWireEnumState, bool) {
+	return 0, false
+}
+
+// JudgeChild refuses a running child, which this document does not start
+// (sce.SavedPolicy).
+func (p *StaticWireEnumPolicy) JudgeChild(child sce.SavedChild) error {
+	return sce.Refuse(fmt.Sprintf("the document starts no child session, so '%s' cannot be one it was running", child.ID))
+}
+
+// ResumeChildren resumes no child, which this document does not start
+// (sce.SavedPolicy).
+func (p *StaticWireEnumPolicy) ResumeChildren(engine *sce.Engine[StaticWireEnumState, StaticWireEnumEvent], children []sce.SavedChild, wallNowMs int64) error {
+	if len(children) > 0 {
+		return p.JudgeChild(children[0])
+	}
+	return nil
+}
+
+// RestartInvokes starts no invocation again, which this document does not start
+// (sce.SavedPolicy).
+func (p *StaticWireEnumPolicy) RestartInvokes(engine *sce.Engine[StaticWireEnumState, StaticWireEnumEvent], ids []string) {}
+
+// SetHistoryValue gives history the states a saved state recorded for it
+// (sce.SavedPolicy).
+func (p *StaticWireEnumPolicy) SetHistoryValue(history sce.HistoryID, states []StaticWireEnumState) {
 }
 
 // ======================================================================
@@ -322,6 +630,10 @@ type StaticWireEnumPolicy struct {
 // NewStaticWireEnumPolicy creates a new policy with default values.
 func NewStaticWireEnumPolicy() StaticWireEnumPolicy {
 	return StaticWireEnumPolicy{
+		// docs/adr/0045: a session has an id, which a saved state names it by. A
+		// host that has one for it gives it with SetSessionID before it starts the
+		// machine; a child's is its parent's and the id it was started under.
+		SessionID: sce.DrawSessionID(),
 		vLayout: StaticWireEnumViewModeEnumWeek,
 		vShown: StaticWireEnumViewRecord{layout: StaticWireEnumViewModeEnumDay, zoom: 2},
 		vReceived: StaticWireEnumViewModeEnumMonth,

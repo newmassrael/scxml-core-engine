@@ -397,6 +397,312 @@ const StaticHostNotifySavedShapeFormat2Revised = "f69e00d7b93736246a373797c7ed9f
 // names it by, and the format-2 shape spells it by.
 var StaticHostNotifySavedEnumKeys = [...]string{}
 
+// ── SCE Accepted Subset §2.15: saving this machine, restoring it ──────────
+
+// StaticHostNotifySavedShape is what a saved state of this document is bound
+// to: a state saved from a document that renamed, re-typed or moved a state or a
+// variable is refused, one saved before a guard or an action changed is not, and
+// one saved at an earlier revision of a record schema is read with each field a
+// later revision added at its default.
+var StaticHostNotifySavedShape = sce.SavedShape{
+	First:          "aacb68b4caadf48158b4802424684c04db0f2ce532b000706210688c7dbdc377",
+	Revised:        "f69e00d7b93736246a373797c7ed9feb7becad59326b3a6f673ffa13fd0c1c0c",
+	Format2First:   "aacb68b4caadf48158b4802424684c04db0f2ce532b000706210688c7dbdc377",
+	Format2Revised: "f69e00d7b93736246a373797c7ed9feb7becad59326b3a6f673ffa13fd0c1c0c",
+	Records: []sce.RecordLineage{
+	},
+	Enums: []sce.EnumLineage{
+	},
+}
+
+// StaticHostNotifyHistories is the document's `<history>` pseudo-states, by
+// the id a saved state keys them by: what a saved state records of each, and
+// what a restore reads.
+var StaticHostNotifyHistories = []sce.HistoryDecl{
+}
+
+// StaticHostNotifySaveAt is engine's whole state at the macrostep boundary it
+// stands at: every variable, the machine's own included, and where it stands, as
+// the `sce-saved-state` document every backend reads (sce.SavedState.ToJSON).
+// Each delayed `<send>` still waiting is written as the moment it comes due on
+// the wall clock whose reading now is wallNowMs, in milliseconds since the Unix
+// epoch.
+//
+// Refused for a machine that is not running, one that has ended, one whose last
+// macrostep stopped at the microstep ceiling, and one built around another
+// document's policy.
+func StaticHostNotifySaveAt(engine *sce.Engine[StaticHostNotifyState, StaticHostNotifyEvent], wallNowMs int64) (*sce.SavedState, error) {
+	p, ok := engine.Policy().(*StaticHostNotifyPolicy)
+	if !ok {
+		return nil, sce.Refuse("the engine is not one of StaticHostNotify")
+	}
+	variables := sce.NewJSONObject()
+	variables.Set("id", sce.SavedWriteString(p.vId))
+	variables.Set("title", sce.SavedWriteString(p.vTitle))
+	variables.Set("body", sce.SavedWriteString(p.vBody))
+	variables.Set("at_ms", sce.SavedWriteInt64(p.vAtMs))
+	variables.Set("outcome", sce.SavedWriteString(p.vOutcome))
+	variables.Set("permission", sce.SavedWriteString(p.vPermission))
+	variables.Set("status", sce.SavedWriteString(p.vStatus))
+	variables.Set("existed", sce.SavedWriteBool(p.vExisted))
+	return sce.SaveSession(engine, &StaticHostNotifySavedShape, variables,
+		sce.SaveHistory[StaticHostNotifyState, StaticHostNotifyEvent](p, StaticHostNotifyHistories),
+		nil, wallNowMs)
+}
+
+// StaticHostNotifySave is StaticHostNotifySaveAt at the host's wall clock now.
+func StaticHostNotifySave(engine *sce.Engine[StaticHostNotifyState, StaticHostNotifyEvent]) (*sce.SavedState, error) {
+	return StaticHostNotifySaveAt(engine, sce.SavedWallClockMs())
+}
+
+// StaticHostNotifyJudge refuses saved unless a machine of this document could
+// restore it, building nothing: what a parent's restore asks of each child it
+// holds (docs/adr/0045, section 3, step 1).
+func StaticHostNotifyJudge(saved *sce.SavedState) error {
+	p := &StaticHostNotifyPolicy{}
+	grown, err := sce.UpgradeSavedState(saved, &StaticHostNotifySavedShape)
+	if err != nil {
+		return err
+	}
+	if _, err := sce.RestoreHistory[StaticHostNotifyState, StaticHostNotifyEvent](p, grown, StaticHostNotifyHistories); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("id"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadBoundedString(raw, "id", 64); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("title"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadBoundedString(raw, "title", 128); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("body"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadBoundedString(raw, "body", 512); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("at_ms"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadInt64(raw, "at_ms"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("outcome"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadBoundedString(raw, "outcome", 24); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("permission"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadBoundedString(raw, "permission", 16); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("status"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadBoundedString(raw, "status", 16); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("existed"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadBool(raw, "existed"); err != nil {
+		return err
+	}
+	return sce.JudgeSession[StaticHostNotifyState, StaticHostNotifyEvent](p, grown)
+}
+
+// StaticHostNotifyRestoreAt is a machine of policy standing where saved left
+// one, measuring time by clock: in place of `Initialize`, so no `<onentry>` runs
+// and no `<data>` is evaluated, since the saved run already did both. Every value
+// is read and the state judged before any is written, so a refused restore leaves
+// policy as it was.
+//
+// Each delayed `<send>` saved is armed against clock, which is the one the
+// machine measures time by; wallNowMs is what time it is on the wall clock the
+// saved `due`s were written against. A send comes due when its saved moment does,
+// and one already due comes due now.
+//
+// The host registers its invokers and its processors on the machine this
+// returns, and drives it as it would one it had initialized.
+func StaticHostNotifyRestoreAt(policy *StaticHostNotifyPolicy, saved *sce.SavedState, clock sce.SceClock, wallNowMs int64) (*sce.Engine[StaticHostNotifyState, StaticHostNotifyEvent], error) {
+	// The state as one of this machine: each record saved at an earlier revision
+	// of its schema holds the defaults of the fields added since.
+	grown, err := sce.UpgradeSavedState(saved, &StaticHostNotifySavedShape)
+	if err != nil {
+		return nil, err
+	}
+	history, err := sce.RestoreHistory[StaticHostNotifyState, StaticHostNotifyEvent](policy, grown, StaticHostNotifyHistories)
+	if err != nil {
+		return nil, err
+	}
+	raw1, err := grown.Variable("id")
+	if err != nil {
+		return nil, err
+	}
+	read1, err := sce.SavedReadBoundedString(raw1, "id", 64)
+	if err != nil {
+		return nil, err
+	}
+	raw2, err := grown.Variable("title")
+	if err != nil {
+		return nil, err
+	}
+	read2, err := sce.SavedReadBoundedString(raw2, "title", 128)
+	if err != nil {
+		return nil, err
+	}
+	raw3, err := grown.Variable("body")
+	if err != nil {
+		return nil, err
+	}
+	read3, err := sce.SavedReadBoundedString(raw3, "body", 512)
+	if err != nil {
+		return nil, err
+	}
+	raw4, err := grown.Variable("at_ms")
+	if err != nil {
+		return nil, err
+	}
+	read4, err := sce.SavedReadInt64(raw4, "at_ms")
+	if err != nil {
+		return nil, err
+	}
+	raw5, err := grown.Variable("outcome")
+	if err != nil {
+		return nil, err
+	}
+	read5, err := sce.SavedReadBoundedString(raw5, "outcome", 24)
+	if err != nil {
+		return nil, err
+	}
+	raw6, err := grown.Variable("permission")
+	if err != nil {
+		return nil, err
+	}
+	read6, err := sce.SavedReadBoundedString(raw6, "permission", 16)
+	if err != nil {
+		return nil, err
+	}
+	raw7, err := grown.Variable("status")
+	if err != nil {
+		return nil, err
+	}
+	read7, err := sce.SavedReadBoundedString(raw7, "status", 16)
+	if err != nil {
+		return nil, err
+	}
+	raw8, err := grown.Variable("existed")
+	if err != nil {
+		return nil, err
+	}
+	read8, err := sce.SavedReadBool(raw8, "existed")
+	if err != nil {
+		return nil, err
+	}
+	if err := sce.JudgeSession[StaticHostNotifyState, StaticHostNotifyEvent](policy, grown); err != nil {
+		return nil, err
+	}
+	policy.vId = read1
+	policy.vTitle = read2
+	policy.vBody = read3
+	policy.vAtMs = read4
+	policy.vOutcome = read5
+	policy.vPermission = read6
+	policy.vStatus = read7
+	policy.vExisted = read8
+	for _, recorded := range history {
+		policy.SetHistoryValue(recorded.History, recorded.States)
+	}
+	return sce.EnterSession[StaticHostNotifyState, StaticHostNotifyEvent](policy, grown, clock, wallNowMs)
+}
+
+// StaticHostNotifyRestore is StaticHostNotifyRestoreAt at the host's wall
+// clock now.
+func StaticHostNotifyRestore(policy *StaticHostNotifyPolicy, saved *sce.SavedState, clock sce.SceClock) (*sce.Engine[StaticHostNotifyState, StaticHostNotifyEvent], error) {
+	return StaticHostNotifyRestoreAt(policy, saved, clock, sce.SavedWallClockMs())
+}
+
+// SetSessionID gives this session the id its host has for it, in place of the
+// one it drew: an XML Nmtoken, since another session addresses this one as
+// `#_scxml_<id>` and every child's id is this one's and the id the child was
+// started under (docs/adr/0045). Refused for anything else. Called before the
+// machine starts, since what it sends names it by the id it began with.
+func (p *StaticHostNotifyPolicy) SetSessionID(id string) error {
+	if reason := sce.SessionIDRefusalOf(id); reason != "" {
+		return sce.Refuse(reason)
+	}
+	p.SessionID = id
+	return nil
+}
+
+// OwnSessionID is this session's id, `_sessionid`, which a saved state names it
+// by (sce.SavedPolicy).
+func (p *StaticHostNotifyPolicy) OwnSessionID() string { return p.SessionID }
+
+// BindSessionID makes id this session's own: a restore of a format-2 state
+// carries on under the id it was saved with (sce.SavedPolicy).
+func (p *StaticHostNotifyPolicy) BindSessionID(id string) { p.SessionID = id }
+
+// RunningInvokes is the id of each `<invoke>` whose child session is running,
+// in document order (sce.SavedPolicy). This document starts no child session.
+func (p *StaticHostNotifyPolicy) RunningInvokes() []string { return nil }
+
+// InvokeStarts is how many times each `<invoke>` has started in this session
+// (sce.SavedPolicy). This document starts no child session.
+func (p *StaticHostNotifyPolicy) InvokeStarts() []sce.SavedInvokeStart { return nil }
+
+// InvokeOwner is the state that holds the `<invoke>` id, and false for an id the
+// document does not invoke (sce.SavedPolicy). This document starts no child
+// session.
+func (p *StaticHostNotifyPolicy) InvokeOwner(id string) (StaticHostNotifyState, bool) {
+	return 0, false
+}
+
+// HostInvokeOwner is the state that holds the host-run `<invoke>` of this type
+// and id, and false for one the document does not have a host invoker run
+// (sce.SavedPolicy).
+func (p *StaticHostNotifyPolicy) HostInvokeOwner(processorType, id string) (StaticHostNotifyState, bool) {
+	if processorType == "sce-host-notify-post" && id == "far" {
+		return StaticHostNotifyStatePostingFar, true
+	}
+	if processorType == "sce-host-notify-permission" && id == "ask" {
+		return StaticHostNotifyStateAsking, true
+	}
+	if processorType == "sce-host-notify-request-permission" && id == "prompt" {
+		return StaticHostNotifyStateRequesting, true
+	}
+	if processorType == "sce-host-notify-post" && id == "post" {
+		return StaticHostNotifyStatePosting, true
+	}
+	if processorType == "sce-host-notify-cancel" && id == "cancel" {
+		return StaticHostNotifyStateCancelling, true
+	}
+	return 0, false
+}
+
+// JudgeChild refuses a running child, which this document does not start
+// (sce.SavedPolicy).
+func (p *StaticHostNotifyPolicy) JudgeChild(child sce.SavedChild) error {
+	return sce.Refuse(fmt.Sprintf("the document starts no child session, so '%s' cannot be one it was running", child.ID))
+}
+
+// ResumeChildren resumes no child, which this document does not start
+// (sce.SavedPolicy).
+func (p *StaticHostNotifyPolicy) ResumeChildren(engine *sce.Engine[StaticHostNotifyState, StaticHostNotifyEvent], children []sce.SavedChild, wallNowMs int64) error {
+	if len(children) > 0 {
+		return p.JudgeChild(children[0])
+	}
+	return nil
+}
+
+// RestartInvokes starts no invocation again, which this document does not start
+// (sce.SavedPolicy).
+func (p *StaticHostNotifyPolicy) RestartInvokes(engine *sce.Engine[StaticHostNotifyState, StaticHostNotifyEvent], ids []string) {}
+
+// SetHistoryValue gives history the states a saved state recorded for it
+// (sce.SavedPolicy).
+func (p *StaticHostNotifyPolicy) SetHistoryValue(history sce.HistoryID, states []StaticHostNotifyState) {
+}
+
 // ── SCE Accepted Subset 2.12: typed host-run invoke interface ──────────
 // StaticHostNotifyFarRequest is `sce:request`: the record the host is asked to start `<invoke id="far">`
 // with (SCE Accepted Subset §2.12).
@@ -754,6 +1060,10 @@ type StaticHostNotifyPolicy struct {
 // NewStaticHostNotifyPolicy creates a new policy with default values.
 func NewStaticHostNotifyPolicy() StaticHostNotifyPolicy {
 	return StaticHostNotifyPolicy{
+		// docs/adr/0045: a session has an id, which a saved state names it by. A
+		// host that has one for it gives it with SetSessionID before it starts the
+		// machine; a child's is its parent's and the id it was started under.
+		SessionID: sce.DrawSessionID(),
 		vId: "",
 		vTitle: "",
 		vBody: "",

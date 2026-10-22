@@ -610,6 +610,97 @@ func (r RecordListParentToldRecord) NodeId() uint64 {
 	return r.nodeId
 }
 
+// ToSaved is this value as a saved state writes it.
+func (r RecordListParentToldRecord) ToSaved() any {
+	saved := sce.NewJSONObject()
+	saved.Set("id", (sce.SavedWriteUint32)(r.id))
+	saved.Set("field", (sce.SavedWriteUint16)(r.field))
+	saved.Set("count", (sce.SavedWriteUint32)(r.count))
+	saved.Set("value", (sce.SavedWriteInt64)(r.value))
+	saved.Set("text", (sce.SavedWriteString)(r.text))
+	saved.Set("wallTime", (sce.SavedWriteInt64)(r.wallTime))
+	saved.Set("counter", (sce.SavedWriteUint32)(r.counter))
+	saved.Set("nodeId", (sce.SavedWriteUint64)(r.nodeId))
+	return saved
+}
+
+// RecordListParentToldRecordFromSaved is the value a saved state holds, refused unless it is one.
+func RecordListParentToldRecordFromSaved(value any, what string) (RecordListParentToldRecord, error) {
+	var record RecordListParentToldRecord
+	{
+		saved, err := sce.SavedField(value, what, "id")
+		if err != nil {
+			return record, err
+		}
+		if record.id, err = (sce.SavedReadUint32)(saved, what + ".id"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "field")
+		if err != nil {
+			return record, err
+		}
+		if record.field, err = (sce.SavedReadUint16)(saved, what + ".field"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "count")
+		if err != nil {
+			return record, err
+		}
+		if record.count, err = (sce.SavedReadUint32)(saved, what + ".count"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "value")
+		if err != nil {
+			return record, err
+		}
+		if record.value, err = (sce.SavedReadInt64)(saved, what + ".value"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "text")
+		if err != nil {
+			return record, err
+		}
+		if record.text, err = (sce.SavedBoundedString(96))(saved, what + ".text"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "wallTime")
+		if err != nil {
+			return record, err
+		}
+		if record.wallTime, err = (sce.SavedReadInt64)(saved, what + ".wallTime"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "counter")
+		if err != nil {
+			return record, err
+		}
+		if record.counter, err = (sce.SavedReadUint32)(saved, what + ".counter"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "nodeId")
+		if err != nil {
+			return record, err
+		}
+		if record.nodeId, err = (sce.SavedReadUint64)(saved, what + ".nodeId"); err != nil {
+			return record, err
+		}
+	}
+	return record, nil
+}
 
 // SCE Accepted Subset §2.15: a `record:ToldValue` datamodel value.
 type RecordListParentToldValueRecord struct {
@@ -663,6 +754,97 @@ func (r RecordListParentToldValueRecord) NodeId() uint64 {
 	return r.nodeId
 }
 
+// ToSaved is this value as a saved state writes it.
+func (r RecordListParentToldValueRecord) ToSaved() any {
+	saved := sce.NewJSONObject()
+	saved.Set("id", (sce.SavedWriteUint32)(r.id))
+	saved.Set("field", (sce.SavedWriteUint16)(r.field))
+	saved.Set("ordinal", (sce.SavedWriteUint32)(r.ordinal))
+	saved.Set("value", (sce.SavedWriteInt64)(r.value))
+	saved.Set("text", (sce.SavedWriteString)(r.text))
+	saved.Set("wallTime", (sce.SavedWriteInt64)(r.wallTime))
+	saved.Set("counter", (sce.SavedWriteUint32)(r.counter))
+	saved.Set("nodeId", (sce.SavedWriteUint64)(r.nodeId))
+	return saved
+}
+
+// RecordListParentToldValueRecordFromSaved is the value a saved state holds, refused unless it is one.
+func RecordListParentToldValueRecordFromSaved(value any, what string) (RecordListParentToldValueRecord, error) {
+	var record RecordListParentToldValueRecord
+	{
+		saved, err := sce.SavedField(value, what, "id")
+		if err != nil {
+			return record, err
+		}
+		if record.id, err = (sce.SavedReadUint32)(saved, what + ".id"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "field")
+		if err != nil {
+			return record, err
+		}
+		if record.field, err = (sce.SavedReadUint16)(saved, what + ".field"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "ordinal")
+		if err != nil {
+			return record, err
+		}
+		if record.ordinal, err = (sce.SavedReadUint32)(saved, what + ".ordinal"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "value")
+		if err != nil {
+			return record, err
+		}
+		if record.value, err = (sce.SavedReadInt64)(saved, what + ".value"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "text")
+		if err != nil {
+			return record, err
+		}
+		if record.text, err = (sce.SavedBoundedString(96))(saved, what + ".text"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "wallTime")
+		if err != nil {
+			return record, err
+		}
+		if record.wallTime, err = (sce.SavedReadInt64)(saved, what + ".wallTime"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "counter")
+		if err != nil {
+			return record, err
+		}
+		if record.counter, err = (sce.SavedReadUint32)(saved, what + ".counter"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "nodeId")
+		if err != nil {
+			return record, err
+		}
+		if record.nodeId, err = (sce.SavedReadUint64)(saved, what + ".nodeId"); err != nil {
+			return record, err
+		}
+	}
+	return record, nil
+}
 
 // SCE Accepted Subset §2.15: an `enum:Command` datamodel value.
 type RecordListParentCommandEnum uint8
@@ -699,6 +881,28 @@ func RecordListParentCommandEnumFromUnderlying(raw uint8) (RecordListParentComma
 		return RecordListParentCommandEnum(raw), true
 	}
 	return 0, false
+}
+
+// ToSaved is this value as a saved state writes it.
+func (v RecordListParentCommandEnum) ToSaved() any {
+	return v.String()
+}
+
+// RecordListParentCommandEnumFromSaved is the value a saved state holds, refused unless it is a variant.
+func RecordListParentCommandEnumFromSaved(value any, what string) (RecordListParentCommandEnum, error) {
+	declared, err := sce.SavedReadString(value, what)
+	if err != nil {
+		return 0, err
+	}
+	switch declared {
+	case "edit":
+		return RecordListParentCommandEnumEdit, nil
+	case "clear":
+		return RecordListParentCommandEnumClear, nil
+	case "retire":
+		return RecordListParentCommandEnumRetire, nil
+	}
+	return 0, sce.Refuse(fmt.Sprintf("'%s' (%s) is not a variant of Command", what, declared))
 }
 
 // SCE Accepted Subset §2.15: an `enum:Refusal` datamodel value.
@@ -756,6 +960,40 @@ func RecordListParentRefusalEnumFromUnderlying(raw uint8) (RecordListParentRefus
 	return 0, false
 }
 
+// ToSaved is this value as a saved state writes it.
+func (v RecordListParentRefusalEnum) ToSaved() any {
+	return v.String()
+}
+
+// RecordListParentRefusalEnumFromSaved is the value a saved state holds, refused unless it is a variant.
+func RecordListParentRefusalEnumFromSaved(value any, what string) (RecordListParentRefusalEnum, error) {
+	declared, err := sce.SavedReadString(value, what)
+	if err != nil {
+		return 0, err
+	}
+	switch declared {
+	case "none":
+		return RecordListParentRefusalEnumNone, nil
+	case "notWriter":
+		return RecordListParentRefusalEnumNotWriter, nil
+	case "noRoomForValue":
+		return RecordListParentRefusalEnumNoRoomForValue, nil
+	case "noRoomForHistory":
+		return RecordListParentRefusalEnumNoRoomForHistory, nil
+	case "noRoomForDigest":
+		return RecordListParentRefusalEnumNoRoomForDigest, nil
+	case "textTooLong":
+		return RecordListParentRefusalEnumTextTooLong, nil
+	case "changeTooLarge":
+		return RecordListParentRefusalEnumChangeTooLarge, nil
+	case "registerNamedTwice":
+		return RecordListParentRefusalEnumRegisterNamedTwice, nil
+	case "clockExhausted":
+		return RecordListParentRefusalEnumClockExhausted, nil
+	}
+	return 0, sce.Refuse(fmt.Sprintf("'%s' (%s) is not a variant of Refusal", what, declared))
+}
+
 // SCE Accepted Subset §2.15: a `record:Refused` datamodel value.
 type RecordListParentRefusedRecord struct {
 	id uint32
@@ -784,6 +1022,57 @@ func (r RecordListParentRefusedRecord) Reason() RecordListParentRefusalEnum {
 	return r.reason
 }
 
+// ToSaved is this value as a saved state writes it.
+func (r RecordListParentRefusedRecord) ToSaved() any {
+	saved := sce.NewJSONObject()
+	saved.Set("id", (sce.SavedWriteUint32)(r.id))
+	saved.Set("field", (sce.SavedWriteUint16)(r.field))
+	saved.Set("kind", (func(v RecordListParentCommandEnum) any { return v.ToSaved() })(r.kind))
+	saved.Set("reason", (func(v RecordListParentRefusalEnum) any { return v.ToSaved() })(r.reason))
+	return saved
+}
+
+// RecordListParentRefusedRecordFromSaved is the value a saved state holds, refused unless it is one.
+func RecordListParentRefusedRecordFromSaved(value any, what string) (RecordListParentRefusedRecord, error) {
+	var record RecordListParentRefusedRecord
+	{
+		saved, err := sce.SavedField(value, what, "id")
+		if err != nil {
+			return record, err
+		}
+		if record.id, err = (sce.SavedReadUint32)(saved, what + ".id"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "field")
+		if err != nil {
+			return record, err
+		}
+		if record.field, err = (sce.SavedReadUint16)(saved, what + ".field"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "kind")
+		if err != nil {
+			return record, err
+		}
+		if record.kind, err = (RecordListParentCommandEnumFromSaved)(saved, what + ".kind"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "reason")
+		if err != nil {
+			return record, err
+		}
+		if record.reason, err = (RecordListParentRefusalEnumFromSaved)(saved, what + ".reason"); err != nil {
+			return record, err
+		}
+	}
+	return record, nil
+}
 
 // The bounds this machine is built with, each by the name `sce:limit` gives it (docs/adr/0050).
 
@@ -872,6 +1161,10 @@ type RecordListParentPolicy struct {
 // NewRecordListParentPolicy creates a new policy with default values.
 func NewRecordListParentPolicy() RecordListParentPolicy {
 	return RecordListParentPolicy{
+		// docs/adr/0045: a session has an id, which a saved state names it by. A
+		// host that has one for it gives it with SetSessionID before it starts the
+		// machine; a child's is its parent's and the id it was started under.
+		SessionID: sce.DrawSessionID(),
 		vTold: 0,
 		vShown: RecordListParentToldRecord{id: 0, field: 0, count: 0, value: 0, text: "", wallTime: 0, counter: 0, nodeId: 0},
 		vOthers: nil,
