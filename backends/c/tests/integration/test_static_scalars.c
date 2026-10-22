@@ -1730,19 +1730,20 @@ RECORD_LIST_READER(static_record_list, days, static_record_list_record_day_view_
                    DAY_FIELDS)
 RECORD_LIST_READER(static_record_list, copies, static_record_list_record_day_view_t, static_record_list_record_day_t,
                    DAY_FIELDS)
-static const name_value_t record_list_states[] = {
+static const name_value_t static_record_list_states[] = {
     {"collecting", STATIC_RECORD_LIST_STATE_COLLECTING},
 };
-static const variable_t record_list_variables[] = {
+static const variable_t static_record_list_variables[] = {
     {"total", static_record_list_read_total},
     {"errors", static_record_list_read_errors},
 };
-static const record_variable_t record_list_records[] = {RECORD_ROW(static_record_list, draft),
-                                                        RECORD_ROW(static_record_list, last),
-                                                        RECORD_LIST_ROW(static_record_list, days),
-                                                        RECORD_LIST_ROW(static_record_list, copies),
-                                                        {NULL, NULL, NULL, NULL}};
-STATIC_SCENARIO(static_record_list, record_list_states, record_list_variables, NULL, no_lists, record_list_records)
+static const record_variable_t static_record_list_records[] = {RECORD_ROW(static_record_list, draft),
+                                                               RECORD_ROW(static_record_list, last),
+                                                               RECORD_LIST_ROW(static_record_list, days),
+                                                               RECORD_LIST_ROW(static_record_list, copies),
+                                                               {NULL, NULL, NULL, NULL}};
+STATIC_SCENARIO(static_record_list, static_record_list_states, static_record_list_variables, NULL, no_lists,
+                static_record_list_records)
 
 // static_state_algorithm: the algorithms are handed the records and lists the
 // machine holds and the event's own payload, and what they return is written only
