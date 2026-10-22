@@ -77,9 +77,12 @@ static const {{ _t }}_state_t k_document_order[{{ _u }}_STATE_COUNT] = {
 #define {{ _u }}_ATOMIC_STATES ((uint32_t)0u{% for state_id, state in model.states | dictsort %}{% if not state.children %} | ((uint32_t)1u << (uint32_t){{ _u }}_STATE_{{ state_id | to_c11_upper_ident }}){% endif %}{% endfor %})
 
 /* The most transitions one microstep can take: selection contributes at most
-   one per active atomic state, so the document's atomic state count bounds
-   the optimal enabled transition set and nothing sized by it can overflow. */
-#define {{ _u }}_MAX_SELECTED {{ model.states.values() | rejectattr('children') | list | length }}u
+   one per active atomic state, and a configuration holds only the atomic
+   states of one path through the tree (every region of a <parallel> on it), so
+   that count bounds the optimal enabled transition set and nothing sized by it
+   can overflow. The generator derives it once for every backend
+   (`MicrostepBounds`), the Rust policy's `MAX_ENABLED` among them. */
+#define {{ _u }}_MAX_SELECTED {{ max_enabled }}u
 
 /* One token of a target list, as `c_entry_target.jinja2` encodes it: a state
    below `_STATE_COUNT`, a <history> at `_STATE_COUNT` plus its enumerator. */
@@ -411,8 +414,8 @@ SCE_SM_FN static uint8_t remove_conflicting_transitions(const {{ _t }}_t *sm, {{
    `event` is `_EVENT_NONE`: the optimal enabled transition set, in selection
    order. Returns whether it is non-empty.
 
-   `out` holds `_MAX_SELECTED` entries, which is this document's atomic state
-   count: each atomic state contributes at most one transition, so the set
+   `out` holds `_MAX_SELECTED` entries, the most atomic states one
+   configuration holds: each contributes at most one transition, so the set
    cannot outgrow it and nothing is ever dropped. */
 SCE_SM_FN static bool select_transitions({{ _t }}_t *sm, {{ _t }}_event_t event,
                                          {{ _t }}_transition_info_t *out, uint8_t *out_count) {

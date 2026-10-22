@@ -122,4 +122,10 @@ the stack, not the RAM, to be the limit, with the frames of this decision as the
 - **A document that is not legal** (a machine whose `initial` names two top-level states, which §scxml-3.11 forbids
   and the semantic check refuses) can hold more than its tree bounds; the check is the guard, and a bare-metal push
   past a bound names the generator.
-- **C11 keeps its own sizing** (the document's atomic-state count, bitmaps for the configuration) and is not touched.
+- **C11 reads the selection's bound from the same function.** Its selection, filter and entry buffers
+  (`_MAX_SELECTED`) were the document's atomic-state count, a bound that no configuration reaches: a compound state
+  of five leaves has five atomic states and never more than one of them active. The generator now writes
+  `MicrostepBounds::enabled` there, the number the Rust policy carries as `MAX_ENABLED`, so the two backends cannot
+  disagree about how many transitions a selection holds
+  (`c11_template_sizes_a_selection_by_the_bound_the_rust_policy_carries`). The configuration stays a bitmap, which
+  needs no count.

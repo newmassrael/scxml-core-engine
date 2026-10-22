@@ -3542,6 +3542,10 @@ fn render_c11(
         .get_template("c/state_machine.c.jinja2")
         .map_err(|e| GenerateError::TemplateLoad(format!("Template load error: {e}")))?;
 
+    // The same bound the Rust policy carries (`MAX_ENABLED`), read from the one
+    // function that derives it, so the two backends cannot disagree on how many
+    // transitions a selection holds.
+    let microstep_bounds = crate::microstep_bounds::MicrostepBounds::of(&model_lowered);
     model_lowered.into_artifact_coordinates();
     let model_val = minijinja::Value::from_serialize(&model_lowered);
     let license_val = minijinja::Value::from_serialize(license_config());
@@ -3583,6 +3587,7 @@ fn render_c11(
         model => &model_val,
         base_path => &base_path,
         license_config => &license_val,
+        max_enabled => microstep_bounds.enabled,
         event_payload_type => &payload.type_name,
         event_payload_active => payload.active,
         event_payload_entry_defs => &payload.entry_defs,

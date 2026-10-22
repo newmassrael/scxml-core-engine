@@ -439,6 +439,66 @@ fn rust_template_sizes_the_microstep_to_the_documents_state_tree() {
     }
 }
 
+/// The `_MAX_SELECTED` a C11 machine is sized by.
+fn c11_max_selected(model: &sce_build::model::SCXMLModel, stem: &str) -> String {
+    let out = sce_build::generator::generate_c11(
+        model,
+        &sce_build::find_template_dir_for(sce_build::generator::Language::C11),
+        stem,
+        None,
+    )
+    .expect("C11 render");
+    let source = out
+        .files
+        .iter()
+        .find(|(name, _)| name.ends_with("_sm.c"))
+        .map(|(_, code)| code.as_str())
+        .expect("a C11 source file");
+    source
+        .lines()
+        .find_map(|line| {
+            let rest = line.strip_prefix("#define ")?;
+            let (name, value) = rest.split_once(' ')?;
+            name.ends_with("_MAX_SELECTED").then(|| value.to_string())
+        })
+        .expect("a `_MAX_SELECTED` definition")
+}
+
+#[test]
+fn c11_template_sizes_a_selection_by_the_bound_the_rust_policy_carries() {
+    // One bound, one function: the C11 selection, filter and entry buffers hold
+    // `MicrostepBounds::enabled`, the number the Rust policy writes as
+    // `MAX_ENABLED`. The document's atomic state count is not that bound, since a
+    // configuration holds one path through the tree, so a compound state of many
+    // leaves enables one transition and not one per leaf.
+    let probe = parse(
+        include_str!("fixtures/no_std/parallel_history_probe.scxml"),
+        "parallel_history_probe",
+    );
+    assert_eq!(
+        c11_max_selected(&probe, "parallel_history_probe"),
+        "4u",
+        "four atomic states are active at once in the probe's largest configuration"
+    );
+
+    let wide = parse(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s0">
+  <state id="s0"><transition event="go" target="s1"/></state>
+  <state id="s1"><transition event="go" target="s2"/></state>
+  <state id="s2"><transition event="go" target="s3"/></state>
+  <state id="s3"><transition event="go" target="s4"/></state>
+  <state id="s4"/>
+</scxml>"#,
+        "wide_flat",
+    );
+    assert_eq!(
+        c11_max_selected(&wide, "wide_flat"),
+        "1u",
+        "five sibling states are never active together"
+    );
+}
+
 #[test]
 fn rust_template_builds_no_string_for_a_send_id_or_an_origin() {
     // A `<send>` names an id and stamps an origin, and the bare-metal profile keeps
