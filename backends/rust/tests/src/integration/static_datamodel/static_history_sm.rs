@@ -496,7 +496,7 @@ impl StaticHistoryPolicy {
     fn build(session_id: String) -> Self {
         let resumed: u8 = 0;
         Self {
-            active_states: Default::default(),
+            active_states: StaticHistoryConfiguration::new(),
             history_crew_all: None,
             history_deepest: None,
             history_last: None,

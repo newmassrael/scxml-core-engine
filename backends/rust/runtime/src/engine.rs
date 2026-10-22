@@ -433,8 +433,8 @@ impl<E, S> ScheduledEntry<E, S> {
 }
 
 impl<E: Clone, S: ScheduledSendIdLike> PullScheduler<E, S> {
-    /// Construct an empty scheduler.
-    pub fn new() -> Self {
+    /// Construct an empty scheduler. A constant expression on both profiles.
+    pub const fn new() -> Self {
         Self {
             #[cfg(feature = "std")]
             entries: Vec::new(),
@@ -1161,6 +1161,83 @@ pub struct Engine<P: StatePolicy> {
     pub(crate) auto_send_seq: u64,
 }
 
+/// Every field of a new [`Engine`] and the value it starts at, handed to
+/// `$consumer!` as a list of `field: value,` (attributes kept).
+///
+/// The one list the two constructors share, [`Engine::new_in_place`] (which writes
+/// each field to a slot) and `Engine::new_const` (which builds the engine in a
+/// constant expression), so a field added to the struct is given its starting
+/// value once. What differs between them is only what the policy supplies: the
+/// state the engine names before it initialises and the empty queue, as a
+/// function call for the first and as the policy's constants for the second.
+macro_rules! engine_initial_fields {
+    (
+        $consumer:ident;
+        policy: $policy:expr,
+        state: $state:expr,
+        queue: $queue:expr,
+    ) => {
+        $consumer! {
+            current_state: $state,
+            policy: $policy,
+            internal_queue: $queue,
+            external_queue: $queue,
+            is_running: false,
+            terminal_state: None,
+            interpreter_exited: false,
+            current_event_from_external_queue: false,
+            #[cfg(feature = "std")]
+            late_bound_states: std::collections::HashSet::new(),
+            #[cfg(feature = "std")]
+            completion_callback: None,
+            #[cfg(feature = "std")]
+            host_processors: Default::default(),
+            #[cfg(feature = "std")]
+            refused_host_invoke_completions: 0,
+            #[cfg(feature = "std")]
+            restored_host_invokes: Vec::new(),
+            #[cfg(feature = "std")]
+            child_mesh_routers: None,
+            #[cfg(feature = "std")]
+            installed_mesh: None,
+            #[cfg(feature = "std")]
+            child_mesh_owed: false,
+            #[cfg(feature = "http-send")]
+            on_http_send: None,
+            scheduler: PullScheduler::new(),
+            clock: SceClock::START,
+            turn_now: None,
+            tick_has_run: false,
+            unattended_scheduler_steps: 0,
+            discarded_external_events: 0,
+            last_discarded_event: None,
+            unseen_external_events: 0,
+            last_unseen_event: None,
+            undecodable_payloads: 0,
+            last_undecodable_payload: None,
+            unhandled_error_events: 0,
+            last_unhandled_error: None,
+            handling_error_event: false,
+            error_cascade_depth: 0,
+            error_cascade_events: 0,
+            last_error_cascade_event: None,
+            #[cfg(feature = "macrostep-diagnostics")]
+            truncated_macrosteps: 0,
+            #[cfg(feature = "macrostep-diagnostics")]
+            last_truncated_macrostep_state: None,
+            max_external_events_per_call: MAX_EXTERNAL_EVENTS_PER_CALL,
+            #[cfg(feature = "macrostep-diagnostics")]
+            truncated_event_chains: 0,
+            #[cfg(feature = "macrostep-diagnostics")]
+            last_truncated_event: None,
+            macrostep_microsteps_taken: 0,
+            macrostep_truncated: false,
+            donedata_at_final: SceString::new(),
+            auto_send_seq: 0,
+        }
+    };
+}
+
 impl<P: StatePolicy> Engine<P> {
     // ════════════════════════════════════════
     // Construction
@@ -1215,67 +1292,48 @@ impl<P: StatePolicy> Engine<P> {
                 };
             };
         }
-        write_fields! {
-            current_state: P::initial_state(),
+        engine_initial_fields! {
+            write_fields;
             policy: policy,
-            internal_queue: P::EventQueue::default(),
-            external_queue: P::EventQueue::default(),
-            is_running: false,
-            terminal_state: None,
-            interpreter_exited: false,
-            current_event_from_external_queue: false,
-            #[cfg(feature = "std")]
-            late_bound_states: std::collections::HashSet::new(),
-            #[cfg(feature = "std")]
-            completion_callback: None,
-            #[cfg(feature = "std")]
-            host_processors: Default::default(),
-            #[cfg(feature = "std")]
-            refused_host_invoke_completions: 0,
-            #[cfg(feature = "std")]
-            restored_host_invokes: Vec::new(),
-            #[cfg(feature = "std")]
-            child_mesh_routers: None,
-            #[cfg(feature = "std")]
-            installed_mesh: None,
-            #[cfg(feature = "std")]
-            child_mesh_owed: false,
-            #[cfg(feature = "http-send")]
-            on_http_send: None,
-            scheduler: PullScheduler::new(),
-            clock: SceClock::default(),
-            turn_now: None,
-            tick_has_run: false,
-            unattended_scheduler_steps: 0,
-            discarded_external_events: 0,
-            last_discarded_event: None,
-            unseen_external_events: 0,
-            last_unseen_event: None,
-            undecodable_payloads: 0,
-            last_undecodable_payload: None,
-            unhandled_error_events: 0,
-            last_unhandled_error: None,
-            handling_error_event: false,
-            error_cascade_depth: 0,
-            error_cascade_events: 0,
-            last_error_cascade_event: None,
-            #[cfg(feature = "macrostep-diagnostics")]
-            truncated_macrosteps: 0,
-            #[cfg(feature = "macrostep-diagnostics")]
-            last_truncated_macrostep_state: None,
-            max_external_events_per_call: MAX_EXTERNAL_EVENTS_PER_CALL,
-            #[cfg(feature = "macrostep-diagnostics")]
-            truncated_event_chains: 0,
-            #[cfg(feature = "macrostep-diagnostics")]
-            last_truncated_event: None,
-            macrostep_microsteps_taken: 0,
-            macrostep_truncated: false,
-            donedata_at_final: SceString::new(),
-            auto_send_seq: 0,
+            state: P::initial_state(),
+            queue: P::EventQueue::default(),
         }
         // SAFETY: the list above wrote every field, and the check beside it makes
         // that a property of the source.
         unsafe { slot.assume_init_mut() }
+    }
+
+    /// Construct a new engine in a constant expression, for a `static` or a
+    /// `const` that a bare-metal program places in a section of its choosing.
+    ///
+    /// The same engine [`new`](Self::new) returns, with nothing computed at run
+    /// time: the initial state and the empty queues are the policy's constants
+    /// ([`ConstStatePolicy`](crate::policy::ConstStatePolicy)), and the rest of the engine starts at the zeroes
+    /// and empties every constructor gives it. The program keeps no copy of it on
+    /// any stack and runs no code at start-up, which [`new_in_place`](Self::new_in_place)
+    /// still needs a call to do.
+    ///
+    /// Only where the engine holds nothing the heap makes: the `std` profile
+    /// keeps a hash set of late-bound states and a registry of host processors,
+    /// and neither can be built in a constant expression, so a host there builds
+    /// its engine with [`new`](Self::new) (and holds it in a `LazyLock` or a
+    /// `OnceLock` if it must be a `static`).
+    #[cfg(not(feature = "std"))]
+    pub const fn new_const(policy: P) -> Self
+    where
+        P: crate::policy::ConstStatePolicy,
+    {
+        macro_rules! struct_literal {
+            ($($(#[$attr:meta])* $field:ident : $value:expr,)*) => {
+                Self { $($(#[$attr])* $field: $value,)* }
+            };
+        }
+        engine_initial_fields! {
+            struct_literal;
+            policy: policy,
+            state: P::INITIAL_STATE,
+            queue: P::EMPTY_EVENT_QUEUE,
+        }
     }
 
     // ════════════════════════════════════════

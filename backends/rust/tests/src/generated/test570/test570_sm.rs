@@ -250,7 +250,7 @@ impl Test570Policy {
     ) -> Self {
         Self {
             script_engine,
-            active_states: Default::default(),
+            active_states: Test570Configuration::new(),
             pending_event_name: ::sce_rust_runtime::SceString::new(),
             pending_event_arrival_name: ::sce_rust_runtime::SceString::new(),
             pending_event_data: ::sce_rust_runtime::SceString::new(),

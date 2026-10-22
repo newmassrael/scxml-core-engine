@@ -183,7 +183,7 @@ pub struct ParallelRegionRootExternalDomainPolicy {
 impl ParallelRegionRootExternalDomainPolicy {
     fn build(session_id: String) -> Self {
         Self {
-            active_states: Default::default(),
+            active_states: ParallelRegionRootExternalDomainConfiguration::new(),
             session_id: Some(session_id),
             parent_external_queue: None,
             invoke_id: String::new(),

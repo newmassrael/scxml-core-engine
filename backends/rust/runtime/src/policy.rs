@@ -939,6 +939,28 @@ pub trait StatePolicy: Sized + 'static {
     fn clear_event_metadata(&mut self) {}
 }
 
+/// A policy whose engine can be built in a constant expression
+/// (`Engine::new_const`, present on the bare-metal profile), so that a bare-metal
+/// program holds it in a `static` and runs no constructor at start-up and
+/// copies nothing onto its stack.
+///
+/// A separate trait and not two more items of [`StatePolicy`], because a
+/// constant needs a value written as one: `StatePolicy::initial_state` is a
+/// function, and a trait function cannot be called in a constant expression on
+/// the toolchain this crate supports. A policy that is built from run-time
+/// values (a datamodel that reads its initial values from a script, a session id
+/// drawn from the operating system) has no such constants and does not
+/// implement this; it is built by [`Engine::new`](crate::Engine::new) or in its
+/// slot by [`Engine::new_in_place`](crate::Engine::new_in_place).
+pub trait ConstStatePolicy: StatePolicy {
+    /// [`StatePolicy::initial_state`], as a constant.
+    const INITIAL_STATE: Self::State;
+
+    /// An empty [`StatePolicy::EventQueue`], as a constant: what
+    /// `EventQueue::default()` returns.
+    const EMPTY_EVENT_QUEUE: Self::EventQueue;
+}
+
 /// A policy, as the document Appendix D's procedures read: its static tables
 /// are the structure, and its recorded histories are the one piece of run-time
 /// state the entry procedures need.

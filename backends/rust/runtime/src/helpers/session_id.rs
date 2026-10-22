@@ -58,7 +58,7 @@ pub fn is_nmtoken(id: &str) -> bool {
 }
 
 /// XML 1.0 `NameStartChar`.
-fn is_name_start_char(c: char) -> bool {
+const fn is_name_start_char(c: char) -> bool {
     matches!(
         c,
         ':' | 'A'..='Z'
@@ -80,7 +80,7 @@ fn is_name_start_char(c: char) -> bool {
 }
 
 /// XML 1.0 `NameChar`.
-fn is_name_char(c: char) -> bool {
+const fn is_name_char(c: char) -> bool {
     is_name_start_char(c)
         || matches!(
             c,
@@ -88,18 +88,60 @@ fn is_name_char(c: char) -> bool {
         )
 }
 
+/// The character `bytes` holds at `at`, and how many bytes it takes.
+///
+/// `bytes` is the text of a `&str`, so it is well-formed UTF-8 and `at` is the
+/// start of a character: the lead byte says how many bytes follow, each
+/// carrying six bits of the scalar value. A function of its own because
+/// `str::chars` is not a constant expression, and an id a program holds in a
+/// `static` is checked while it is compiled ([`checked`]).
+const fn character_at(bytes: &[u8], at: usize) -> (char, usize) {
+    let lead = bytes[at];
+    let (len, mut scalar) = if lead < 0x80 {
+        (1, lead as u32)
+    } else if lead < 0xE0 {
+        (2, (lead & 0x1F) as u32)
+    } else if lead < 0xF0 {
+        (3, (lead & 0x0F) as u32)
+    } else {
+        (4, (lead & 0x07) as u32)
+    };
+    let mut i = 1;
+    while i < len {
+        scalar = (scalar << 6) | (bytes[at + i] & 0x3F) as u32;
+        i += 1;
+    }
+    match char::from_u32(scalar) {
+        Some(c) => (c, len),
+        // The text of a `&str` holds scalar values only. (A message here would
+        // be a formatting call, which a constant function cannot make.)
+        None => unreachable!(),
+    }
+}
+
 /// `id`, given by a host for a session it creates, if it is an Nmtoken; the
 /// refusal that says why it is not one otherwise. Nothing replaces an id
 /// refused: the host that gave it is told. Allocates nothing, so a `no_std`
 /// machine holds the very text its host gave.
-pub fn checked(id: &str) -> Result<&str, SessionIdRefusal> {
-    if id.is_empty() {
+///
+/// A constant expression: a machine built in a `static`
+/// (`Engine::new_const` and the generated `new_const`) has its id checked
+/// while the program is compiled, and an id that is not an Nmtoken is a
+/// compile error and not a machine that starts without one.
+pub const fn checked(id: &str) -> Result<&str, SessionIdRefusal> {
+    let bytes = id.as_bytes();
+    if bytes.is_empty() {
         return Err(SessionIdRefusal::Empty);
     }
-    match id.chars().find(|c| !is_name_char(*c)) {
-        None => Ok(id),
-        Some(c) => Err(SessionIdRefusal::NotANameCharacter(c)),
+    let mut at = 0;
+    while at < bytes.len() {
+        let (c, len) = character_at(bytes, at);
+        if !is_name_char(c) {
+            return Err(SessionIdRefusal::NotANameCharacter(c));
+        }
+        at += len;
     }
+    Ok(id)
 }
 
 /// [`checked`], owned: the id a machine with an allocator holds.
@@ -184,6 +226,35 @@ mod tests {
         assert_eq!(spaced, SessionIdRefusal::NotANameCharacter(' '));
         assert!(spaced.to_string().contains("' '"), "{spaced}");
         assert!(spaced.to_string().contains("Nmtoken"), "{spaced}");
+    }
+
+    #[test]
+    fn a_character_of_every_length_is_judged_as_the_character_it_is() {
+        // One name character and one that is not, for each length UTF-8 gives
+        // a scalar value, read against `str::chars`, which the constant
+        // expression replaces.
+        for (name_char, other) in [
+            ('a', ' '),
+            ('\u{e9}', '\u{d7}'),
+            ('\u{3b1}', '\u{37e}'),
+            ('\u{4e2d}', '\u{2190}'),
+            ('\u{10000}', '\u{f0000}'),
+        ] {
+            assert!(is_name_char(name_char) && !is_name_char(other));
+            let alone = name_char.to_string();
+            assert_eq!(checked(&alone), Ok(alone.as_str()), "{name_char:?}");
+            let tail = format!("a{name_char}b{name_char}");
+            assert_eq!(checked(&tail), Ok(tail.as_str()), "{tail:?}");
+            let broken = format!("a{name_char}{other}b");
+            let expected = broken.chars().find(|c| !is_name_char(*c));
+            assert_eq!(
+                checked(&broken),
+                expected.map_or(Ok(broken.as_str()), |c| Err(
+                    SessionIdRefusal::NotANameCharacter(c)
+                )),
+                "{broken:?}"
+            );
+        }
     }
 
     #[test]

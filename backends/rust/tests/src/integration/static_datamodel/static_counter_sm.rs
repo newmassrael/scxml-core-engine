@@ -446,7 +446,7 @@ impl StaticCounterPolicy {
         let ready: bool = false;
         let step: u32 = 1;
         Self {
-            active_states: Default::default(),
+            active_states: StaticCounterConfiguration::new(),
             count,
             ready,
             step,

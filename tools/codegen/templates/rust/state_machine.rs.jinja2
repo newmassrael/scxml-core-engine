@@ -885,6 +885,14 @@ pub struct {{ machine_name }}Policy{{ policy_generics_decl }} {
    draws a session id: the predicate `helpers::session_id::drawn` is compiled
    under. #}
 {% set draws_cfg = '#[cfg(not(any(target_os = "none", all(target_arch = "wasm32", target_os = "unknown"))))]' %}
+{# Whether this machine can be built in a constant expression, for a `static`
+   (`new_const`, and the runtime's `ConstStatePolicy` that
+   `Engine::new_const` reads): the bare-metal profile, where nothing it holds
+   comes from the heap, and a document whose every field starts at a constant.
+   A typed event payload starts at its type's `Default` and a datamodel
+   variable at its declared initial value, neither of which this decides is a
+   constant, so a machine with either is built by `new_with_session_id`. #}
+{% set const_buildable = no_std and event_payload_type == '()' and not static_fields %}
 impl{{ policy_generics_decl }} {{ machine_name }}Policy{{ policy_generics_use }} {
 {% if model.needs_script_engine %}
 {# Looked up rather than spelled as a ternary chain: a chain's last arm is a
@@ -933,7 +941,7 @@ impl{{ policy_generics_decl }} {{ machine_name }}Policy{{ policy_generics_use }}
 {% endif %}
             script_engine,
 {% else %}
-    fn build(session_id: {{ session_id_param_type }}{{ ctor_rest_params }}) -> Self {
+    {{ 'const ' if const_buildable else '' }}fn build(session_id: {{ session_id_param_type }}{{ ctor_rest_params }}) -> Self {
 {# SCE Accepted Subset §2.15: each sce-static variable's initial value, in
    declaration order — an initial value reads the variables declared before
    it by these names. #}
@@ -946,7 +954,7 @@ impl{{ policy_generics_decl }} {{ machine_name }}Policy{{ policy_generics_use }}
 {% endif %}
 {% endif %}
 {% if model.has_parallel_states or model.uses_in_predicate %}
-            active_states: Default::default(),
+            active_states: {{ machine_name }}Configuration::new(),
 {% endif %}
 {% if model.needs_event_name %}
             pending_event_name: ::sce_rust_runtime::SceString::new(),
@@ -1112,6 +1120,42 @@ impl{{ policy_generics_decl }} {{ machine_name }}Policy{{ policy_generics_use }}
         Ok(Self::build({{ given_session_id }}{{ ctor_rest_args }}))
     }
 {% endif %}
+{% if const_buildable %}
+
+    /// [`new_with_session_id`](Self::new_with_session_id), in a constant
+    /// expression: the machine a program keeps in a `static`, with
+    /// `Engine::new_const`, so that nothing is built at start-up and no copy of
+    /// it is made on a stack.{% if has_native_duties %} A host whose `REALIZATION` is
+    /// `Simulates` does not compile here.{% endif %}
+    ///
+    /// # Panics
+    ///
+    /// At compile time, when the id is not an XML Nmtoken (the empty text, a
+    /// space, a `#`): a `static` holding such an id does not build. The reason
+    /// is the one `new_with_session_id` gives for the same id.
+    pub const fn new_const(session_id: &'static str{{ ctor_rest_params }}) -> Self {
+{% if has_native_duties %}
+        let () = Self::HOST_PERFORMS_DUTIES;
+{% endif %}
+        Self::build(Self::held_session_id(session_id){{ ctor_rest_args }})
+    }
+{% if has_native_duties %}
+
+    /// [`new_const`](Self::new_const) with a host that only simulates its duties
+    /// — a recorder, a test double — as the caller's statement that it means to.
+    pub const fn new_simulated_const(session_id: &'static str{{ ctor_rest_params }}) -> Self {
+        Self::build(Self::held_session_id(session_id){{ ctor_rest_args }})
+    }
+{% endif %}
+
+    /// `session_id`, held to the Nmtoken rule in a constant expression.
+    const fn held_session_id(session_id: &'static str) -> &'static str {
+        match ::sce_rust_runtime::helpers::session_id::checked(session_id) {
+            Ok(id) => id,
+            Err(_) => panic!("the session id is not an XML Nmtoken"),
+        }
+    }
+{% endif %}
 {% if not no_std %}
 
     /// The policy of a child its parent invokes, under the id the tree gives it,
@@ -1179,6 +1223,16 @@ impl Default for {{ machine_name }}Policy {
 }
 {% endif %}
 
+{% if const_buildable %}
+// The two constants `Engine::new_const` builds its engine from: the state it
+// names before it initialises and an empty queue, as `initial_state` and
+// `EventQueue::default()` give them below.
+impl{{ policy_generics_decl }} sce_rust_runtime::ConstStatePolicy for {{ machine_name }}Policy{{ policy_generics_use }} {
+    const INITIAL_STATE: Self::State = {{ machine_name }}State::{{ default_state_id | to_state_variant }};
+    const EMPTY_EVENT_QUEUE: Self::EventQueue = sce_rust_runtime::EventQueueManager::new();
+}
+
+{% endif %}
 // ======================================================================
 // StatePolicy trait implementation
 // ======================================================================
@@ -1289,7 +1343,11 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
         // concept, sourced from one computation (`default_state_id`) so
         // they can never diverge: `<scxml initial>`, or the first sorted
         // state when the initial attribute is unset.
+{% if const_buildable %}
+        <Self as sce_rust_runtime::ConstStatePolicy>::INITIAL_STATE
+{% else %}
         {{ machine_name }}State::{{ default_state_id | to_state_variant }}
+{% endif %}
     }
 
     fn is_final_state(state: Self::State) -> bool {

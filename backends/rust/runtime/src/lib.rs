@@ -487,7 +487,7 @@ pub use log;
 /// below carries the same name for `std` builds, which is why this one is
 /// spelled from the module that defines it rather than added to that list.
 pub use payload_reading::PayloadReading;
-pub use policy::{PolicyDocument, StatePolicy};
+pub use policy::{ConstStatePolicy, PolicyDocument, StatePolicy};
 pub use sched_send_id::{ElidedSendId, ScheduledSendIdLike};
 #[cfg(feature = "std")]
 pub use scripting::{IScriptEngine, ScriptError, ScriptResult, ScriptValue, SetCurrentEventArgs};

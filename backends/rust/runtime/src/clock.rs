@@ -105,14 +105,22 @@ impl SceClock {
     }
 }
 
+impl SceClock {
+    /// The clock an engine starts on for the platform being compiled for, as a
+    /// constant, so that an engine built in a constant expression
+    /// (`Engine::new_const`, bare-metal profile only) starts on the same one
+    /// as [`Default`] gives.
+    pub(crate) const START: Self = Self::start_clock(cfg!(not(all(
+        target_arch = "wasm32",
+        target_os = "unknown"
+    ))));
+}
+
 impl Default for SceClock {
     /// [`SceClock::Hal`] where the platform has a clock, [`SceClock::Manual`]
     /// at zero where it has none; see the type's documentation.
     fn default() -> Self {
-        Self::start_clock(cfg!(not(all(
-            target_arch = "wasm32",
-            target_os = "unknown"
-        ))))
+        Self::START
     }
 }
 

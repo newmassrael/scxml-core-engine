@@ -52,7 +52,11 @@ pub struct EventQueueManager<T, const N: usize = { crate::MAX_EVENT_QUEUE_DEPTH 
 
 impl<T, const N: usize> EventQueueManager<T, N> {
     /// Construct an empty queue.
-    pub fn new() -> Self {
+    ///
+    /// A constant expression on both profiles, which is what lets a policy
+    /// declare its empty queue as an associated constant
+    /// ([`ConstStatePolicy::EMPTY_EVENT_QUEUE`](crate::ConstStatePolicy::EMPTY_EVENT_QUEUE)).
+    pub const fn new() -> Self {
         Self {
             #[cfg(feature = "std")]
             queue: VecDeque::new(),

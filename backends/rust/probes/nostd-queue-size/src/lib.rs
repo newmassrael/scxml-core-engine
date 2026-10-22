@@ -135,6 +135,17 @@ const _: () = assert!(
      `type EnabledSet` (tools/codegen/templates/rust/state_machine.rs.jinja2).",
 );
 
+/// Constant-construction lever. A bare-metal program holds its engine in a
+/// `static`, so nothing is built at start-up and no copy of the engine is made on
+/// a stack: `Engine::new_const` over the generated policy's `new_const`, which
+/// holds the id to the Nmtoken rule while the program is compiled. A `static`'s
+/// initialiser must be a constant expression, so this item stops compiling if the
+/// generated policy loses its constants (`ConstStatePolicy`), if `build` stops
+/// being a `const fn`, or if the engine gains a field with a starting value that
+/// is not one (a heap-backed collection under the bare-metal profile, say).
+pub static ENGINE_BUILT_IN_ITS_SLOT: Engine<EventQueueCapacityProbePolicy> =
+    Engine::new_const(EventQueueCapacityProbePolicy::new_const("queue-size-probe"));
+
 /// Loose whole-`Engine` sanity bound (measured ~832 B after the scheduler
 /// `send_id` elision, down from ~9.0 KiB). Catches a gross regression that
 /// balloons the engine without tripping the precise per-lever bounds above

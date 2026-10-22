@@ -793,7 +793,7 @@ impl RequestLifePolicy {
         let outcome: String = "".to_string();
         let verdict: RequestLifeVerdictEnum = RequestLifeVerdictEnum::Unanswered;
         Self {
-            active_states: Default::default(),
+            active_states: RequestLifeConfiguration::new(),
             pending_payload: RequestLifePayload::default(),
             holder,
             attempt,

@@ -177,7 +177,7 @@ pub struct Test411Policy {
 impl Test411Policy {
     fn build(session_id: String) -> Self {
         Self {
-            active_states: Default::default(),
+            active_states: Test411Configuration::new(),
             session_id: Some(session_id),
             parent_external_queue: None,
             invoke_id: String::new(),

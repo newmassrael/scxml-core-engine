@@ -129,3 +129,17 @@ the stack, not the RAM, to be the limit, with the frames of this decision as the
   disagree about how many transitions a selection holds
   (`c11_template_sizes_a_selection_by_the_bound_the_rust_policy_carries`). The configuration stays a bitmap, which
   needs no count.
+- **The bare-metal engine is built in a constant expression.** `Engine::new_in_place` still runs a constructor at
+  start-up; a program that holds its engine in a `static` wants none. `Engine::new_const(policy)` (bare-metal
+  profile only: the `std` profile's engine holds a hash set and a registry that no constant expression builds) is
+  the same engine from the policy's constants, `ConstStatePolicy::INITIAL_STATE` and `EMPTY_EVENT_QUEUE`. It is a
+  separate trait and not two items of `StatePolicy`, because a trait function is not callable in a constant
+  expression on the supported toolchain and a handwritten policy has no reason to carry them. The two constructors
+  share one list of fields (`engine_initial_fields!`) and differ only in those two values, so a field added to the
+  engine is given its starting value once. The generator writes the constants, a `const fn build` and
+  `new_const(session_id)` for a bare-metal machine whose every field starts at a constant, which is one with no
+  typed event payload and no datamodel variable; a machine with either keeps `new_with_session_id`. The session id
+  is held to the Nmtoken rule while the program is compiled (`session_id::checked` is a `const fn`), so a `static`
+  holding an id that is not one does not build. The probe `nostd-queue-size` holds such a `static`, and its thumb
+  build is the evidence that every piece is a constant expression
+  (`rust_template_builds_a_bare_metal_machine_in_a_constant_expression` pins when the generator writes them).

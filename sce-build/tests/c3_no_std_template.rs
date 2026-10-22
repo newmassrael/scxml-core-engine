@@ -500,6 +500,39 @@ fn c11_template_sizes_a_selection_by_the_bound_the_rust_policy_carries() {
 }
 
 #[test]
+fn rust_template_builds_a_bare_metal_machine_in_a_constant_expression() {
+    // A `static` holds the machine and its engine, so nothing runs at start-up
+    // and no copy is made on a stack (`Engine::new_const`). The generated policy
+    // supplies what that needs, and only where every field starts at a constant:
+    // the bare-metal profile, with no typed payload and no datamodel variable.
+    let bare = generate(&parse(PLAIN_FSM, "plain_const"), &template_dir(), true)
+        .expect("template render must succeed");
+    for expected in [
+        "pub const fn new_const(session_id: &'static str) -> Self {",
+        "const fn build(session_id: &'static str) -> Self {",
+        "impl sce_rust_runtime::ConstStatePolicy for PlainConstPolicy {",
+        "const EMPTY_EVENT_QUEUE: Self::EventQueue = sce_rust_runtime::EventQueueManager::new();",
+        "<Self as sce_rust_runtime::ConstStatePolicy>::INITIAL_STATE",
+    ] {
+        assert!(
+            bare.contains(expected),
+            "a bare-metal machine must carry `{expected}`"
+        );
+    }
+
+    // Under std the engine holds a hash set and a registry no constant
+    // expression can build, so the machine has no constant constructor either.
+    let hosted = generate(&parse(PLAIN_FSM, "plain_const"), &template_dir(), false)
+        .expect("template render must succeed");
+    for absent in ["new_const", "ConstStatePolicy", "const fn build"] {
+        assert!(
+            !hosted.contains(absent),
+            "a std machine must not carry `{absent}`"
+        );
+    }
+}
+
+#[test]
 fn rust_template_builds_no_string_for_a_send_id_or_an_origin() {
     // A `<send>` names an id and stamps an origin, and the bare-metal profile keeps
     // neither on the event it raises. An owned string for each (`SceString`, a
