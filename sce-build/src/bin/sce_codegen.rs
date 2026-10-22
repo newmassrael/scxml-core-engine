@@ -1303,8 +1303,8 @@ struct RejectedDocument {
 /// and says nothing rather than something false.
 ///
 /// `lexicon` is the language `open` is said in, for the person a host shows
-/// it to; `generate` and `orchestrate` say it in English, and `check` in the
-/// lexicon it was asked for, English unless it was asked otherwise.
+/// it to; `generate` says it in English, and `check` and `orchestrate` in the
+/// lexicon they were asked for, English unless asked otherwise.
 fn build_manifest<'a>(
     report: &'a GenerateReport,
     kind: ManifestKind,
@@ -3668,6 +3668,16 @@ struct OrchestrateArgs {
     /// by a check that never ran.
     #[arg(long, conflicts_with = "forge")]
     lint: bool,
+    /// The language the manifest's `open` says what is left open in, for the
+    /// person a host shows it to, mirroring `check --lexicon`, which a set's
+    /// verdict is predicted under. English is what every gate and record reads.
+    #[arg(
+        long,
+        value_name = "NAME",
+        default_value = "en",
+        value_parser = registered_lexicons()
+    )]
+    lexicon: String,
     /// Hold the statecharts to an authoring profile, mirroring
     /// `generate --profile` and taken by `check` on its document-set route.
     /// Every finding of every statechart is listed and the run ends before
@@ -4106,10 +4116,12 @@ fn cmd_orchestrate(args: OrchestrateArgs, error_format: ErrorFormat) {
         host_invoker,
         strict_unresolved,
         lint,
+        lexicon,
         profile: profile_path,
         format_style,
         no_format,
     } = args;
+    let lexicon = check_lexicon(&lexicon);
     // Before anything else is read: an unusable profile is the first thing
     // said about the run.
     let profile = load_profile(profile_path.as_deref());
@@ -4262,7 +4274,7 @@ fn cmd_orchestrate(args: OrchestrateArgs, error_format: ErrorFormat) {
             ManifestKind::Orchestrate,
             None,
             report.target_language,
-            &sce_build::forge::page::EN,
+            lexicon,
         )
         .to_line()
     );
@@ -5178,7 +5190,7 @@ fn cmd_check_document_set(args: CheckArgs, error_format: ErrorFormat) {
 /// leaves the writes to its caller — so [`cmd_check_document_set`] is
 /// `cmd_orchestrate` with the write loop absent rather than a second
 /// validation path that has to be kept in agreement with it.
-/// The lexicon `check --lexicon` named. Clap has refused a name the registry
+/// The lexicon `check --lexicon` or `orchestrate --lexicon` named. Clap has refused a name the registry
 /// does not carry, so a miss is the parser and the registry disagreeing, and
 /// says which.
 fn check_lexicon(name: &str) -> &'static sce_build::forge::page::Lexicon {
