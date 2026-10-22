@@ -27,8 +27,8 @@ PY
 
 mutation_case "Rust writes the build's id for every execution to share" <<'PY'
 edit("tools/codegen/templates/rust/actions/send.rs.jinja2",
-     "    let send_id = engine.next_auto_send_id();\n{% elif action.auto_send_id %}",
-     "    let send_id = ::sce_rust_runtime::sce_string_from_str(\"{{ action.auto_send_id }}\");\n{% elif action.auto_send_id %}")
+     "    let send_id_generated = engine.next_auto_send_id();\n    let send_id: &str = &send_id_generated;\n{% elif action.auto_send_id %}",
+     "    let send_id: &str = \"{{ action.auto_send_id }}\";\n{% elif action.auto_send_id %}")
 PY
 
 mutation_case "Go writes the build's id for every execution to share" <<'PY'
@@ -51,6 +51,6 @@ PY
 
 mutation_case "Rust draws an id for a send that was given one" <<'PY'
 edit("tools/codegen/templates/rust/actions/send.rs.jinja2",
-     "{% elif action.id %}\n    let send_id = ::sce_rust_runtime::sce_string_from_str(\"{{ action.id }}\");",
-     "{% elif action.id and false %}\n    let send_id = ::sce_rust_runtime::sce_string_from_str(\"{{ action.id }}\");")
+     "{% elif action.id %}\n    // The id is text and stays text:",
+     "{% elif action.id and false %}\n    // The id is text and stays text:")
 PY

@@ -44,9 +44,10 @@
 //!
 //! Under `std` a [`BoundedVec`] is a `Vec`, which grows, and the capacity the
 //! generator wrote is a hint nothing reads. Without it, it is a
-//! `heapless::Vec` of exactly that capacity, so the push paths cannot fail for
-//! any configuration the document can hold — they panic only as a
-//! generator-bug tripwire.
+//! `heapless::Vec` of exactly that capacity (the bare-metal variant of the
+//! statechart runtime, SCE Protocol-Synthesis RFC §synth-5-J-2), so the push
+//! paths cannot fail for any configuration the document can hold — they panic
+//! only as a generator-bug tripwire.
 
 use core::fmt::Debug;
 use core::ops::{Deref, DerefMut};

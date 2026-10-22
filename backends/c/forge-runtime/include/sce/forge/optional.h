@@ -12,8 +12,9 @@
  *
  * It is one value: an assignment, a parameter and a return carry both parts
  * together. It is built only by its two constructors, `sce_optional_<elem>_none()`
- * and `sce_optional_<elem>_some(v)`, and an absent one has every byte zero, its
- * `value` included, so two absent values are the same bytes. Generated code reads
+ * and `sce_optional_<elem>_some(v)`, and an absent one is not present and holds a
+ * zero `value`, so two absent values are the same value (the padding between the
+ * members is not part of it, and a compiler may leave it as it was). Generated code reads
  * `value` only where the build has proven the value present, and through
  * `sce_optional_<elem>_eq`, which compares two optional values as `===` does: equal
  * when both are absent, or both present and their values equal.
@@ -93,7 +94,8 @@ extern "C" {
         T value;                                                                                                       \
     } sce_optional_##elem##_t;                                                                                         \
                                                                                                                        \
-    /* An absent value: every byte zero, the value's included. */                                                      \
+    /* An absent value: not present, and its value zero. The members are what the type says; the                       \
+     * padding between them is not part of the value, and a compiler may leave it as it was. */                        \
     static inline sce_optional_##elem##_t sce_optional_##elem##_none(void) {                                           \
         sce_optional_##elem##_t absent;                                                                                \
         memset(&absent, 0, sizeof(absent));                                                                            \

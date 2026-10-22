@@ -63,7 +63,7 @@
 namespace SCE::Mesh {
 
 /// §mesh-16.7 reason-code vocabulary. One variant per row of the catalog
-/// (`SCE_MESH.md` §mesh-16.7 rows 1-13). Raise sites populate
+/// (`SCE_MESH.md` §mesh-16.7 rows 1-17). Raise sites populate
 /// `CommunicationError::reason` with one of these values; the JSON
 /// wire emission converts to the canonical UPPER_SNAKE string via
 /// `reasonCodeString()`.
@@ -143,6 +143,15 @@ enum class ReasonCode : std::uint8_t {
     /// perfectly alive and merely publishing slower than the deployment
     /// declared it would, which is a different repair.
     NotificationDeadlineMissed,
+    /// §mesh-16.7 row 17 — wire `"RESTORED"`. A machine was restored from a
+    /// checkpoint (§mesh-10.11), and an envelope a peer source sent it after
+    /// that checkpoint was durable may have been admitted and lost with the
+    /// process, which neither side can know. Raised once per peer source in
+    /// each restored session that holds state for it, in the first macrostep
+    /// after the restore. Specified by ADR 0045 and raised once the host cores
+    /// checkpoint (its step 6); the vocabulary carries it from the day the
+    /// catalog does, so a document can already name it in a transition.
+    Restored,
 };
 
 /// Canonical mapping table — single source of truth for both JSON
@@ -150,7 +159,7 @@ enum class ReasonCode : std::uint8_t {
 /// `SCE_MESH.md` §mesh-16.7. Adding a §mesh-16.7 row requires extending
 /// this table; the cross-doc test fails the build if the table and
 /// the markdown catalog diverge.
-inline constexpr std::array<std::pair<ReasonCode, std::string_view>, 16> kReasonCodeTable = {{
+inline constexpr std::array<std::pair<ReasonCode, std::string_view>, 17> kReasonCodeTable = {{
     {ReasonCode::TransportUnavailable, "TRANSPORT_UNAVAILABLE"},
     {ReasonCode::SendFailed, "SEND_FAILED"},
     {ReasonCode::DeliveryExhausted, "DELIVERY_EXHAUSTED"},
@@ -167,10 +176,11 @@ inline constexpr std::array<std::pair<ReasonCode, std::string_view>, 16> kReason
     {ReasonCode::RpcReplyFromUndeclaredPeer, "RPC_REPLY_FROM_UNDECLARED_PEER"},
     {ReasonCode::OutboundStaleDrop, "OUTBOUND_STALE_DROP"},
     {ReasonCode::NotificationDeadlineMissed, "NOTIFICATION_DEADLINE_MISSED"},
+    {ReasonCode::Restored, "RESTORED"},
 }};
 
 /// Map a `ReasonCode` to its canonical wire string. Linear lookup
-/// over the 14-entry table; the compiler collapses the loop under
+/// over the table; the compiler collapses the loop under
 /// `-O2`. Crashes (logic-error path) if a future variant is added
 /// to the enum without extending `kReasonCodeTable` — the missing-
 /// entry case is caught earlier by the cross-doc test, but the

@@ -43,8 +43,8 @@ PY
 
 mutation_case "an immediate external send does not carry the name it was sent under" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     "                meta.metadata = EventMetadata::external(send_id.clone(), origin.clone());\n                meta.metadata.name = crate::sce_string_from_str(arrival);\n",
-     "                meta.metadata = EventMetadata::external(send_id.clone(), origin.clone());\n")
+     "                meta.metadata = EventMetadata::external(send_id, origin);\n                meta.metadata.name = crate::sce_string_from_str(arrival);\n",
+     "                meta.metadata = EventMetadata::external(send_id, origin);\n")
 PY
 
 mutation_case "an immediate internal send does not carry the name it was sent under" <<'PY'

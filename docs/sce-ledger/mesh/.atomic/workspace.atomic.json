@@ -114,6 +114,12 @@
         "No host core checkpoints and no envelope carries pattern 22.",
         "The deploy parser refuses persistence: and receipt: as unknown keys."
       ],
+      "bindings": [
+        {
+          "file": "sce/include/mesh/CommunicationError.h",
+          "kind": "references"
+        }
+      ],
       "coverage_expectation": "out_of_scope_here"
     },
     "mesh-10.2": {

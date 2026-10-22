@@ -2608,7 +2608,12 @@ template <typename T, typename Present> json optionalJson(const std::optional<T>
 TEST(AStaticDatamodelRunsGeneratedCppTest, AValueThatMayBeAbsentIsHeldTestedAndCarried) {
     namespace E = G::static_optional;
     using Machine = E::static_optional;
+    // A variable is a JSON number; a record's field is the text of its digits, as a saved
+    // state writes a 64-bit integer.
     const auto day = [](const auto &value) { return optionalJson(value, [](std::int64_t d) { return json(d); }); };
+    const auto dayText = [](const auto &value) {
+        return optionalJson(value, [](std::int64_t d) { return wideText(d); });
+    };
     const auto text = [](const auto &value) {
         return optionalJson(value, [](const std::string &t) { return json(t); });
     };
@@ -2617,7 +2622,7 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, AValueThatMayBeAbsentIsHeldTestedAndC
     };
     const auto item = [=](const auto &record) {
         return json{{"id", record.id},
-                    {"due", day(record.due)},
+                    {"due", dayText(record.due)},
                     {"title", text(record.title)},
                     {"status", standing(record.status)}};
     };
@@ -2655,9 +2660,13 @@ TEST(AStaticDatamodelRunsGeneratedCppTest, AValueThatMayBeAbsentIsHeldTestedAndC
 // them.
 TEST(AStaticDatamodelRunsGeneratedCppTest, AStatechartHandsAnAlgorithmAValueThatMayBeAbsent) {
     using Machine = G::static_state_algorithm_optional::static_state_algorithm_optional;
+    // A variable is a JSON number; a record's field is the text of its digits.
     const auto day = [](const auto &value) { return optionalJson(value, [](std::int64_t d) { return json(d); }); };
+    const auto dayText = [](const auto &value) {
+        return optionalJson(value, [](std::int64_t d) { return wideText(d); });
+    };
     const auto goal = [=](const auto &record) {
-        return json{{"id", record.id}, {"day", day(record.day)}, {"weight", record.weight}};
+        return json{{"id", record.id}, {"day", dayText(record.day)}, {"weight", record.weight}};
     };
     Driver<Machine> driver({
         {"goals", [=](const Machine &m) { return listedJson(m.goals(), goal); }},

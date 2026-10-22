@@ -3,7 +3,7 @@
 //
 // A value that may be absent (docs/adr/0055) as a `sce-static` machine generated as C
 // holds it: one struct of a flag and a value (`sce/forge/optional.h`), built only by
-// its two constructors, an absent one every byte zero, compared as `===` compares two
+// its two constructors, an absent one not present and holding zero, compared as `===` compares two
 // optional values, and read with a default that is evaluated only when the value is
 // absent. On the wire an absent value is JSON `null`, written with its key, and the
 // payload reader tells a value, `null` and a missing key apart.
@@ -71,11 +71,16 @@ static void the_constructors(void) {
     expect(absent.value == 0, "none() zeroes the value");
     expect(present.present && present.value == INT64_MIN, "some(v) is present and holds v");
 
-    // Two absent values are the same bytes, whatever value a present one held before.
+    // Two absent values are the same value, whatever value a present one held before:
+    // not present, and holding zero. What is compared is what the type says (its members),
+    // not its bytes: the padding between them is not part of the value, and a compiler is
+    // free to leave it as it was.
     sce_optional_int64_t cleared = sce_optional_int64_some(7);
     cleared = sce_optional_int64_none();
     const sce_optional_int64_t fresh = sce_optional_int64_none();
-    expect(memcmp(&cleared, &fresh, sizeof(cleared)) == 0, "two absent values are the same bytes");
+    expect(!cleared.present && !fresh.present, "an absent value is not present");
+    expect(cleared.value == 0 && fresh.value == 0, "an absent value holds zero");
+    expect(sce_optional_int64_eq(cleared, fresh), "two absent values are the same value");
 
     const sce_optional_bool_t yes = sce_optional_bool_some(true);
     const sce_optional_float64_t half = sce_optional_float64_some(0.5);
