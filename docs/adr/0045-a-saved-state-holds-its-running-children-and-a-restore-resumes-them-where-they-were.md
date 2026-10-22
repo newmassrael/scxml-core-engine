@@ -339,8 +339,8 @@ under `<state>.<start>.<id>` (step 2), which the child's events carry as `_event
 tree holds as the child's `invokeid`, so a stored id now has readers: the document, and the restore,
 which keeps the variable as saved and writes nothing. The variable is a declared string whose bound
 exceeds the longest such id (twenty digits of start count); a host-run invocation or a Mesh request,
-started under the id the build wrote, still refuses it. Rust and Kotlin write it; the other four
-backends refuse it by name (`generate/unsupported-feature`) until their format-2 step.
+started under the id the build wrote, still refuses it. Rust, Kotlin and Go write it; the other
+three backends refuse it by name (`generate/unsupported-feature`) until their format-2 step.
 
 **A state written in format 1 is still read.** It holds no child's state, and the build that wrote
 it promised to start each listed child from its beginning; the restoring build does exactly that for
@@ -854,6 +854,30 @@ Each step lands with a test that fails without it.
    root's id in the one spelling of answer 2 in place of the one its process draws today, and held
    to every shared instance. *Exit:* per backend, every instance restored, the tree fixture saved byte
    for byte, the scenario `restore` steps run by its driver.
+
+   *Where it stands: Go.* Done: the runtime holds the format (`saved_state.go`, over an ordered JSON
+   reader that keeps a number's spelling, `saved_json.go`) and reads and writes both formats; the
+   25 shared texts read and write back byte for byte, and a refusal inside a child names its
+   session's path. `SaveSession`, `JudgeSession` and `EnterSession` (`engine_saved.go`) do what the
+   Rust `save`, `judge` and `enter` do, over a `SavedPolicy` a generated policy adds to
+   `StatePolicy`; a generated `<Machine>SaveAt`, `Judge` and `RestoreAt` read and write the
+   variables, the histories and each running child, and a record or an enum writes its own saved
+   form (`ToSaved`, `<Type>FromSaved`). A root draws its session id as a UUID version 4 (or is given
+   one, `SetSessionID`, held to an XML Nmtoken) and a restore binds the saved one. A child is
+   resumed in place of started, its router owed to the factory until the host registers it
+   (`OweChildMesh`), and a format-1 child is started again at the next drive. The tree's host
+   invokers are one registry its sessions share, a request names its session
+   (`HostInvokeRequest.SessionID`) and an ending is routed by it (`CompleteHostInvokeIn`,
+   `FailHostInvokeIn`); a restored host-run invocation starts again at the first drive with the
+   deadline it had left, and one cancelled before that is never started. What a child sends its
+   parent while the parent delivers to it reaches the parent within the delivery
+   (`SettleChildren`), so a save at any boundary finds nothing in transit; and an event a child
+   sends its parent is an external event (it was typed internal, a defect of the Go drain the
+   shared tree text found). An `<invoke idlocation>` of a child session is written. Held by
+   `static_invoke_tree` (the tree fixture saved byte for byte, restored, refused by path, and
+   its `restore` scenario run by `static_scenarios_test.go`), the child resume, hybrid restart,
+   send id, host invocation, delayed host send and Mesh request tests, each a port of Rust's.
+   Open: the mutation round over the new machines, and a send to a session by its id.
 6. **The host cores** (after ADR 0043 steps 3 and 5): the checkpoint document, its schema and its
    row in SCE_WIRE_CONTRACTS.md with a producer status constant in `sce-rust-mesh` and
    `sce-kotlin-mesh`; holding envelopes back; the endpoint section saved and restored; the
