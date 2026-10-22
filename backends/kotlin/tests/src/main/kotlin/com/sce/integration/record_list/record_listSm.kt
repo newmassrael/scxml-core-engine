@@ -400,7 +400,19 @@ private fun call_RegisterValues__v(p0: List<RecordListValueRecord>, p1: ULong, p
 // --- State Machine (W3C SCXML) ---
 
 class RecordListStateMachine(
+    /**
+     * docs/adr/0045: the id of this machine's session (`_sessionid`), which a
+     * saved state names it by and a peer addresses it by (`#_scxml_<id>`), given
+     * by the host that creates it: an XML Nmtoken, refused when it is not one
+     * and never replaced. Drawn (a UUID version 4) when the host gives none. A
+     * child is given the id its parent derives for it, and this is not read.
+     */
+    sessionId: String? = null,
 ) : StateMachineEngine<RecordListState, RecordListEvent>() {
+
+    init {
+        bindRootSessionId(sessionId)
+    }
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
     /** W3C SCXML 5.2: the `node` datamodel variable, published (`sce:direction="out"`). */
@@ -1130,6 +1142,87 @@ class RecordListStateMachine(
 
     /** [restore] at the host's wall clock now. */
     fun restore(saved: SavedState) = restore(saved, SavedState.wallClockMs())
+
+    // docs/adr/0045: this machine as a child session of another's saved state —
+    // saved with it, judged with it before anything is built, and restored in
+    // place of initialized.
+    override fun saveAsSession(wallNowMs: Long): SavedState = save(wallNowMs)
+
+    override fun judgeAsSession(saved: SavedState) {
+        val savedGrown = beginRestore(saved, savedShape)
+        SavedValues.uint64(savedGrown.variable("node"), "node")
+        SavedValues.bool(savedGrown.variable("hub"), "hub")
+        RecordListHlcRecord.fromSaved(savedGrown.variable("clock"), "clock")
+        RecordListHlcRecord.fromSaved(savedGrown.variable("stamp"), "stamp")
+        SavedValues.list(savedGrown.variable("adds"), "adds", 1024) { e, w -> RecordListEntryRecord.fromSaved(e, w) }
+        SavedValues.list(savedGrown.variable("tombstones"), "tombstones", 1024) { e, w -> RecordListEntryRecord.fromSaved(e, w) }
+        SavedValues.list(savedGrown.variable("one"), "one", 1024) { e, w -> RecordListEntryRecord.fromSaved(e, w) }
+        SavedValues.list(savedGrown.variable("stable"), "stable", 1024) { e, w -> RecordListEntryRecord.fromSaved(e, w) }
+        RecordListEntryRecord.fromSaved(savedGrown.variable("entry"), "entry")
+        SavedValues.list(savedGrown.variable("values"), "values", 512) { e, w -> RecordListValueRecord.fromSaved(e, w) }
+        SavedValues.string(savedGrown.variable("typed"), "typed", 32)
+        RecordListValueRecord.fromSaved(savedGrown.variable("held"), "held")
+        SavedValues.list(savedGrown.variable("digest"), "digest", 2048) { e, w -> RecordListNodeRecord.fromSaved(e, w) }
+        SavedValues.uint32(savedGrown.variable("mine"), "mine")
+        SavedValues.uint32(savedGrown.variable("shareId"), "shareId")
+        SavedValues.uint16(savedGrown.variable("shareField"), "shareField")
+        SavedValues.bool(savedGrown.variable("known"), "known")
+        SavedValues.bool(savedGrown.variable("wasLive"), "wasLive")
+        SavedValues.bool(savedGrown.variable("isLive"), "isLive")
+        SavedValues.bool(savedGrown.variable("present"), "present")
+        SavedValues.uint32(savedGrown.variable("refusals"), "refusals")
+        SavedValues.int64(savedGrown.variable("floor"), "floor")
+        SavedValues.bool(savedGrown.variable("stale"), "stale")
+        SavedValues.uint32(savedGrown.variable("late"), "late")
+        SavedValues.int64(savedGrown.variable("frozenFor"), "frozenFor")
+        SavedValues.uint32(savedGrown.variable("frozenHash"), "frozenHash")
+        SavedValues.int64(savedGrown.variable("pending"), "pending")
+        SavedValues.uint32(savedGrown.variable("members"), "members")
+        SavedValues.uint32(savedGrown.variable("agreeing"), "agreeing")
+        SavedValues.list(savedGrown.variable("answers"), "answers", 512) { e, w -> RecordListAnswerRecord.fromSaved(e, w) }
+        RecordListAnswerRecord.fromSaved(savedGrown.variable("answer"), "answer")
+        SavedValues.uint32(savedGrown.variable("agreed"), "agreed")
+        SavedValues.uint32(savedGrown.variable("roomValues"), "roomValues")
+        SavedValues.uint32(savedGrown.variable("roomHistory"), "roomHistory")
+        SavedValues.uint32(savedGrown.variable("roomDigest"), "roomDigest")
+        SavedValues.uint32(savedGrown.variable("full"), "full")
+        SavedValues.list(savedGrown.variable("roster"), "roster", 64) { e, w -> RecordListMemberRecord.fromSaved(e, w) }
+        SavedValues.uint32(savedGrown.variable("denied"), "denied")
+        SavedValues.bool(savedGrown.variable("forbidden"), "forbidden")
+        SavedValues.bool(savedGrown.variable("authorized"), "authorized")
+        SavedValues.bool(savedGrown.variable("announce"), "announce")
+        SavedValues.uint32(savedGrown.variable("announced"), "announced")
+        SavedValues.list(savedGrown.variable("moved"), "moved", 64) { e, w -> SavedValues.uint64(e, w) }
+        SavedValues.bool(savedGrown.variable("listed"), "listed")
+        SavedValues.list(savedGrown.variable("live"), "live", 512) { e, w -> RecordListValueRecord.fromSaved(e, w) }
+        SavedValues.uint32(savedGrown.variable("ordinal"), "ordinal")
+        RecordListValueRecord.fromSaved(savedGrown.variable("empty"), "empty")
+        SavedValues.list(savedGrown.variable("staged"), "staged", 32) { e, w -> RecordListPartRecord.fromSaved(e, w) }
+        SavedValues.bool(savedGrown.variable("holding"), "holding")
+        SavedValues.int64(savedGrown.variable("closingNow"), "closingNow")
+        SavedValues.bool(savedGrown.variable("spoiled"), "spoiled")
+        SavedValues.bool(savedGrown.variable("probing"), "probing")
+        SavedValues.uint32(savedGrown.variable("gone"), "gone")
+        SavedValues.uint32(savedGrown.variable("writes"), "writes")
+        SavedValues.bool(savedGrown.variable("covered"), "covered")
+        RecordListRefusalEnum.fromSaved(savedGrown.variable("probe"), "probe")
+        RecordListRefusalEnum.fromSaved(savedGrown.variable("spoiledFor"), "spoiledFor")
+        SavedValues.uint32(savedGrown.variable("namedId"), "namedId")
+        SavedValues.uint16(savedGrown.variable("namedField"), "namedField")
+        RecordListCommandEnum.fromSaved(savedGrown.variable("namedKind"), "namedKind")
+        SavedValues.list(savedGrown.variable("taking"), "taking", 64) { e, w -> RecordListPartRecord.fromSaved(e, w) }
+        SavedValues.uint32(savedGrown.variable("took"), "took")
+        SavedValues.list(savedGrown.variable("passing"), "passing", 64) { e, w -> RecordListPartRecord.fromSaved(e, w) }
+        SavedValues.uint32(savedGrown.variable("passed"), "passed")
+        SavedValues.list(savedGrown.variable("waiting"), "waiting", 64) { e, w -> RecordListPartRecord.fromSaved(e, w) }
+        SavedValues.list(savedGrown.variable("kept"), "kept", 64) { e, w -> RecordListPartRecord.fromSaved(e, w) }
+        RecordListPartRecord.fromSaved(savedGrown.variable("part"), "part")
+        RecordListPartRecord.fromSaved(savedGrown.variable("op"), "op")
+        SavedValues.bool(savedGrown.variable("already"), "already")
+        SavedValues.uint32(savedGrown.variable("count"), "count")
+    }
+
+    override fun restoreAsSession(saved: SavedState, wallNowMs: Long) = restore(saved, wallNowMs)
 
     // NL→IR Item C1 Path A: the current event's typed `_event.data` payload(s),
     // lifted from the dequeued event by populateTypedPayload and read by the

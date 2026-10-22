@@ -3700,17 +3700,19 @@ fn invoking_below(kid_data: &str) -> String {
 fn an_invoke_idlocation_names_a_string_variable_the_started_id_fits() {
     // docs/adr/0045: each start of a child session is started under
     // `<state>.<start>.<id>`, the id its events carry and a saved tree holds, and
-    // `idlocation` keeps it in a string variable whose bound it fits. Rust writes
-    // it; a backend that does not yet is refused by name, never left to store
-    // nothing, and that for an `idlocation` in a child written in place too,
-    // which `check` asks of the document it is given: a run that generated the
-    // document and failed on its child would stop a regeneration midway.
+    // `idlocation` keeps it in a string variable whose bound it fits. Rust and
+    // Kotlin write it; a backend that does not yet is refused by name, never left
+    // to store nothing, and that for an `idlocation` in a child written in place
+    // too, which `check` asks of the document it is given: a run that generated
+    // the document and failed on its child would stop a regeneration midway.
     let held = r#"<data id="held" sce:type="string" sce:capacity="64" expr="''"/>"#;
     for document in [invoking_into_held(held), invoking_below(held)] {
-        let (ok, out) = run(&["check", "-l", "rust"], &document);
-        assert!(ok, "the started id has a place to go:\n{out}");
-        let (ok, out) = run(&["check", "-l", "kotlin"], &document);
-        assert!(!ok, "Kotlin does not write it yet:\n{out}");
+        for written in ["rust", "kotlin"] {
+            let (ok, out) = run(&["check", "-l", written], &document);
+            assert!(ok, "{written}: the started id has a place to go:\n{out}");
+        }
+        let (ok, out) = run(&["check", "-l", "python"], &document);
+        assert!(!ok, "Python does not write it yet:\n{out}");
         assert!(
             out.contains("generate/unsupported-feature") && out.contains("<invoke idlocation>"),
             "the refusal names the construct:\n{out}"

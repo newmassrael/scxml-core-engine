@@ -1175,6 +1175,11 @@
         {
           "file": "sce/include/common/SendSchedulingHelper.h",
           "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "wireChild",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -5705,6 +5710,21 @@
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "raiseHostInvokeFailure",
           "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "sessionId",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "wireChild",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "completionCallback",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -7253,6 +7273,11 @@
           "file": "sce/include/common/DoneDataHelper.h",
           "symbol": "finish",
           "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "completionCallback",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -11656,6 +11681,16 @@
         {
           "file": "backends/go/runtime/helpers.go",
           "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "resumeChildren",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "wireChild",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -12165,6 +12200,11 @@
         {
           "file": "sce-build/src/forge/native_action.rs",
           "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "sharedHostInvokers",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -14962,6 +15002,11 @@
         {
           "file": "sce/include/scripting/ScriptResultUtils.h",
           "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "noOneTookIt",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {

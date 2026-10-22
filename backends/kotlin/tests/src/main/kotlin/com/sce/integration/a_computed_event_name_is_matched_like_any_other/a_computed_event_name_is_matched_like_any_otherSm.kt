@@ -528,7 +528,7 @@ class AComputedEventNameIsMatchedLikeAnyOtherStateMachine(
             // is the whole name when the member is not called that.
             val sendEvent = resolveArrivingEvent(sendEventName)
             // W3C SCXML 6.2: send to this session's external queue
-            if (sendEvent != null) send(sendEvent, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: "", data = sendData).copy(name = arrivalNameOf(sendEvent, sendEventName)))
+            if (sendEvent != null) send(sendEvent, EventMetadata.external(sendId = "__send_0", origin = sessionId, data = sendData).copy(name = arrivalNameOf(sendEvent, sendEventName)))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -565,7 +565,7 @@ class AComputedEventNameIsMatchedLikeAnyOtherStateMachine(
             // is the whole name when the member is not called that.
             val sendEvent = resolveArrivingEvent(sendEventName)
             // W3C SCXML 6.2: Delayed send
-            if (sendEvent != null) scheduleSend("__send_1", 20L, sendEvent, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: "", data = sendData).copy(name = arrivalNameOf(sendEvent, sendEventName)))
+            if (sendEvent != null) scheduleSend("__send_1", 20L, sendEvent, EventMetadata.external(sendId = "__send_1", origin = sessionId, data = sendData).copy(name = arrivalNameOf(sendEvent, sendEventName)))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was

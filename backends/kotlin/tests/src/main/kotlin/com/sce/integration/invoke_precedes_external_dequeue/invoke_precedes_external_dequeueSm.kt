@@ -203,7 +203,7 @@ class InvokePrecedesExternalDequeueStateMachine(
             if (run send@{
             val sendData = ""
             // W3C SCXML 6.2: send to this session's external queue
-            send(InvokePrecedesExternalDequeueEvent.Kick, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: "", data = sendData))
+            send(InvokePrecedesExternalDequeueEvent.Kick, EventMetadata.external(sendId = "__send_1", origin = sessionId, data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -237,7 +237,7 @@ class InvokePrecedesExternalDequeueStateMachine(
 
                     val childSM = adoptChild(InvokePrecedesExternalDequeueSceSynthInvokeInvWatchStateMachine(), generatedInvokeId)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                    startInvoke("inv_watch", childSM, true, InvokePrecedesExternalDequeueEvent.Done.Invoke, "", generatedInvokeId, "")
+                    startInvoke("inv_watch", childSM, true, InvokePrecedesExternalDequeueEvent.Done.Invoke, "", generatedInvokeId, "", "invoke_precedes_external_dequeue__sce_synth_invoke__inv_watch", "inv_watch")
                 }
             }
             else -> error("the document has no child session '$invokeId' (codegen invariant)")

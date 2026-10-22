@@ -911,7 +911,7 @@ class SendParamPayloadStateMachine(
 
                     val childSM = adoptChild(SendParamPayloadSceSynthInvokeInvEmitterStateMachine(), generatedInvokeId)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                    startInvoke("inv_emitter", childSM, false, SendParamPayloadEvent.Done.Invoke, "", generatedInvokeId, "")
+                    startInvoke("inv_emitter", childSM, false, SendParamPayloadEvent.Done.Invoke, "", generatedInvokeId, "", "send_param_payload__sce_synth_invoke__inv_emitter", "inv_emitter")
                 }
             }
             else -> error("the document has no child session '$invokeId' (codegen invariant)")

@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
-// The entry point of the step server: `--machine <name>`, then one request per line of
-// stdin and one reply per line of stdout, until `shutdown` or the end of stdin.
+// The entry point of the step server: `--machine <name>` and, optionally,
+// `--session-id <id>`, then one request per line of stdin and one reply per line of
+// stdout, until `shutdown` or the end of stdin.
 
 package com.sce.world
 
@@ -29,7 +30,8 @@ fun main(args: Array<String>) {
     System.setOut(System.err)
     val input = BufferedReader(InputStreamReader(System.`in`, Charsets.UTF_8))
 
-    val server = StepServer(name, create)
+    val sessionId = sessionId(args)
+    val server = StepServer(name) { create(sessionId) }
     try {
         while (!server.stopped) {
             // The end of stdin is the world going away without a word: leave quietly.
@@ -45,5 +47,11 @@ fun main(args: Array<String>) {
 
 private fun machineName(args: Array<String>): String? {
     val at = args.indexOf("--machine")
+    return if (at >= 0) args.getOrNull(at + 1) else null
+}
+
+/** `--session-id <id>`: the id the machine's session is named by, or `null` for it to draw one. */
+private fun sessionId(args: Array<String>): String? {
+    val at = args.indexOf("--session-id")
     return if (at >= 0) args.getOrNull(at + 1) else null
 }

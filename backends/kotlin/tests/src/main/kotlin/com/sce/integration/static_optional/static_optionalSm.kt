@@ -94,7 +94,19 @@ data class StaticOptionalDueRecord(val id: UInt, val due: Long?, val title: Stri
 // --- State Machine (W3C SCXML) ---
 
 class StaticOptionalStateMachine(
+    /**
+     * docs/adr/0045: the id of this machine's session (`_sessionid`), which a
+     * saved state names it by and a peer addresses it by (`#_scxml_<id>`), given
+     * by the host that creates it: an XML Nmtoken, refused when it is not one
+     * and never replaced. Drawn (a UUID version 4) when the host gives none. A
+     * child is given the id its parent derives for it, and this is not read.
+     */
+    sessionId: String? = null,
 ) : StateMachineEngine<StaticOptionalState, StaticOptionalEvent>() {
+
+    init {
+        bindRootSessionId(sessionId)
+    }
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
     /** W3C SCXML 5.2: the `due` datamodel variable, published (`sce:direction="out"`). */
@@ -503,6 +515,41 @@ class StaticOptionalStateMachine(
 
     /** [restore] at the host's wall clock now. */
     fun restore(saved: SavedState) = restore(saved, SavedState.wallClockMs())
+
+    // docs/adr/0045: this machine as a child session of another's saved state —
+    // saved with it, judged with it before anything is built, and restored in
+    // place of initialized.
+    override fun saveAsSession(wallNowMs: Long): SavedState = save(wallNowMs)
+
+    override fun judgeAsSession(saved: SavedState) {
+        val savedGrown = beginRestore(saved, savedShape)
+        SavedValues.optional(savedGrown.variable("due"), "due") { e, w -> SavedValues.int64(e, w) }
+        SavedValues.optional(savedGrown.variable("other"), "other") { e, w -> SavedValues.int64(e, w) }
+        SavedValues.optional(savedGrown.variable("title"), "title") { e, w -> SavedValues.string(e, w, 16) }
+        SavedValues.optional(savedGrown.variable("status"), "status") { e, w -> StaticOptionalStatusEnum.fromSaved(e, w) }
+        StaticOptionalDueRecord.fromSaved(savedGrown.variable("item"), "item")
+        SavedValues.list(savedGrown.variable("items"), "items", 3) { e, w -> StaticOptionalDueRecord.fromSaved(e, w) }
+        SavedValues.int64(savedGrown.variable("days"), "days")
+        SavedValues.int64(savedGrown.variable("following"), "following")
+        SavedValues.bool(savedGrown.variable("late"), "late")
+        SavedValues.bool(savedGrown.variable("early"), "early")
+        SavedValues.string(savedGrown.variable("label"), "label", 16)
+        StaticOptionalStatusEnum.fromSaved(savedGrown.variable("plain"), "plain")
+        SavedValues.int64(savedGrown.variable("kept"), "kept")
+        SavedValues.int64(savedGrown.variable("listed"), "listed")
+        SavedValues.uint32(savedGrown.variable("missing"), "missing")
+        SavedValues.bool(savedGrown.variable("same"), "same")
+        SavedValues.bool(savedGrown.variable("absent"), "absent")
+        SavedValues.bool(savedGrown.variable("statusDone"), "statusDone")
+        SavedValues.int64(savedGrown.variable("echoed"), "echoed")
+        SavedValues.optional(savedGrown.variable("echoTitle"), "echoTitle") { e, w -> SavedValues.string(e, w, 16) }
+        SavedValues.optional(savedGrown.variable("echoStatus"), "echoStatus") { e, w -> StaticOptionalStatusEnum.fromSaved(e, w) }
+        SavedValues.uint32(savedGrown.variable("fallbacks"), "fallbacks")
+        SavedValues.uint32(savedGrown.variable("errors"), "errors")
+        SavedValues.int64(savedGrown.variable("huge"), "huge")
+    }
+
+    override fun restoreAsSession(saved: SavedState, wallNowMs: Long) = restore(saved, wallNowMs)
 
     // NL→IR Item C1 Path A: the current event's typed `_event.data` payload(s),
     // lifted from the dequeued event by populateTypedPayload and read by the
@@ -949,7 +996,7 @@ class StaticOptionalStateMachine(
 
             val sendData = buildJsonFromParams(sendPayload)
             // W3C SCXML 6.2: send to this session's external queue
-            send(StaticOptionalEvent.Due.Sent, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: "", data = sendData))
+            send(StaticOptionalEvent.Due.Sent, EventMetadata.external(sendId = "__send_0", origin = sessionId, data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was

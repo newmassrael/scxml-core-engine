@@ -521,7 +521,7 @@ class SessionIdsAreDistinctStateMachine(
 
                     val childSM = adoptChild(SessionIdsAreDistinctSceSynthInvokeInvAStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)")), generatedInvokeId)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                    startInvoke("inv_a", childSM, false, SessionIdsAreDistinctEvent.Done.Invoke, "", generatedInvokeId, "")
+                    startInvoke("inv_a", childSM, false, SessionIdsAreDistinctEvent.Done.Invoke, "", generatedInvokeId, "", "session_ids_are_distinct__sce_synth_invoke__inv_a", "inv_a")
                 }
             }
             "inv_b" -> run {
@@ -532,7 +532,7 @@ class SessionIdsAreDistinctStateMachine(
 
                     val childSM = adoptChild(SessionIdsAreDistinctSceSynthInvokeInvBStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)")), generatedInvokeId)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                    startInvoke("inv_b", childSM, false, SessionIdsAreDistinctEvent.Done.Invoke, "", generatedInvokeId, "")
+                    startInvoke("inv_b", childSM, false, SessionIdsAreDistinctEvent.Done.Invoke, "", generatedInvokeId, "", "session_ids_are_distinct__sce_synth_invoke__inv_b", "inv_b")
                 }
             }
             else -> error("the document has no child session '$invokeId' (codegen invariant)")

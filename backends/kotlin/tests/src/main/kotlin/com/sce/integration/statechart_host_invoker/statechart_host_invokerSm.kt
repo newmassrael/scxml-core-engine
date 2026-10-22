@@ -1876,7 +1876,7 @@ class StatechartHostInvokerStateMachine(
             if (!storeIdInLocation(com.sce.runtime.ScriptSource.lua("slot.sid", "slot.sid"), sendIdGenerated, "<send>")) return@send true
             val sendData = ""
             // W3C SCXML 6.2: send to this session's external queue
-            send(StatechartHostInvokerEvent.Ping, EventMetadata.external(sendId = sendIdGenerated, origin = scriptSessionId ?: "", data = sendData))
+            send(StatechartHostInvokerEvent.Ping, EventMetadata.external(sendId = sendIdGenerated, origin = sessionId, data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -1900,7 +1900,7 @@ class StatechartHostInvokerStateMachine(
             if (!storeIdInLocation(com.sce.runtime.ScriptSource.lua("n.nope.deeper", "n.nope.deeper"), sendIdGenerated, "<send>")) return@send true
             val sendData = ""
             // W3C SCXML 6.2: send to this session's external queue
-            send(StatechartHostInvokerEvent.Leak, EventMetadata.external(sendId = sendIdGenerated, origin = scriptSessionId ?: "", data = sendData))
+            send(StatechartHostInvokerEvent.Leak, EventMetadata.external(sendId = sendIdGenerated, origin = sessionId, data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was

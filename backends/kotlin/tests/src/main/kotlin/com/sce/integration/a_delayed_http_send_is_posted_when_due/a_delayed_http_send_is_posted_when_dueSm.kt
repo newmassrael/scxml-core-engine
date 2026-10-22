@@ -553,7 +553,7 @@ class ADelayedHttpSendIsPostedWhenDueStateMachine(
             if (run send@{
             val sendData = ""
             // W3C SCXML 6.2: Delayed send
-            scheduleSend("__send_3", 300L, ADelayedHttpSendIsPostedWhenDueEvent.Settle, EventMetadata.external(sendId = "__send_3", origin = scriptSessionId ?: "", data = sendData))
+            scheduleSend("__send_3", 300L, ADelayedHttpSendIsPostedWhenDueEvent.Settle, EventMetadata.external(sendId = "__send_3", origin = sessionId, data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was

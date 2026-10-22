@@ -546,7 +546,7 @@ class StatechartHostProcessorStateMachine(
             if (run send@{
             val sendData = ""
             // W3C SCXML 6.2: send to this session's external queue
-            send(StatechartHostProcessorEvent.Plain.Arrived, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: "", data = sendData))
+            send(StatechartHostProcessorEvent.Plain.Arrived, EventMetadata.external(sendId = "__send_0", origin = sessionId, data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -602,7 +602,7 @@ class StatechartHostProcessorStateMachine(
             if (run send@{
             val sendData = ""
             // W3C SCXML 6.2: send to this session's external queue
-            send(StatechartHostProcessorEvent.Advance, EventMetadata.external(sendId = "__send_2", origin = scriptSessionId ?: "", data = sendData))
+            send(StatechartHostProcessorEvent.Advance, EventMetadata.external(sendId = "__send_2", origin = sessionId, data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was

@@ -433,7 +433,7 @@ class AChildReplyArrivesWithoutATickStateMachine(
 
                     val childSM = adoptChild(AChildReplyArrivesWithoutATickSceSynthInvokeKidStateMachine(), generatedInvokeId)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                    startInvoke("kid", childSM, false, AChildReplyArrivesWithoutATickEvent.Done.Invoke, "", generatedInvokeId, "")
+                    startInvoke("kid", childSM, false, AChildReplyArrivesWithoutATickEvent.Done.Invoke, "", generatedInvokeId, "", "a_child_reply_arrives_without_a_tick__sce_synth_invoke__kid", "kid")
                 }
             }
             else -> error("the document has no child session '$invokeId' (codegen invariant)")

@@ -30,7 +30,19 @@ sealed interface StaticMeshRelayEvent : Event {
 // --- State Machine (W3C SCXML) ---
 
 class StaticMeshRelayStateMachine(
+    /**
+     * docs/adr/0045: the id of this machine's session (`_sessionid`), which a
+     * saved state names it by and a peer addresses it by (`#_scxml_<id>`), given
+     * by the host that creates it: an XML Nmtoken, refused when it is not one
+     * and never replaced. Drawn (a UUID version 4) when the host gives none. A
+     * child is given the id its parent derives for it, and this is not read.
+     */
+    sessionId: String? = null,
 ) : StateMachineEngine<StaticMeshRelayState, StaticMeshRelayEvent>() {
+
+    init {
+        bindRootSessionId(sessionId)
+    }
 
     // ── SCE Accepted Subset §2.15: saving this machine, restoring it ─────────
 
@@ -98,6 +110,17 @@ class StaticMeshRelayStateMachine(
 
     /** [restore] at the host's wall clock now. */
     fun restore(saved: SavedState) = restore(saved, SavedState.wallClockMs())
+
+    // docs/adr/0045: this machine as a child session of another's saved state —
+    // saved with it, judged with it before anything is built, and restored in
+    // place of initialized.
+    override fun saveAsSession(wallNowMs: Long): SavedState = save(wallNowMs)
+
+    override fun judgeAsSession(saved: SavedState) {
+        val savedGrown = beginRestore(saved, savedShape)
+    }
+
+    override fun restoreAsSession(saved: SavedState, wallNowMs: Long) = restore(saved, wallNowMs)
 
     // §scxml-6.4: a saved state names the `<invoke>`s whose child is running,
     // and a restore starts each again from its beginning. This document saves
@@ -214,11 +237,29 @@ class StaticMeshRelayStateMachine(
 
                     val childSM = adoptChild(StaticMeshRelaySceSynthInvokeInnerStateMachine(), generatedInvokeId)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                    startInvoke("inner", childSM, false, StaticMeshRelayEvent.Done.Invoke, "", generatedInvokeId, "")
+                    startInvoke("inner", childSM, false, StaticMeshRelayEvent.Done.Invoke, "", generatedInvokeId, "", "static_mesh_relay__sce_synth_invoke__inner", "inner")
                 }
             }
             else -> error("the document has no child session '$invokeId' (codegen invariant)")
         }
+    }
+
+    // docs/adr/0045, section 3, steps 1 and 3: the machine of a running child a
+    // saved state lists, built as the `<invoke>` that started it builds it and
+    // with what a start does with the child once built. Nothing is evaluated here:
+    // no `<param>`, no `srcexpr`, no `idlocation` — the child resumes where it
+    // stood, and a hybrid child is the candidate its saved `document` names,
+    // whatever the `srcexpr` reads now.
+    override fun buildSavedChild(child: SavedChild): ResumedChild<StaticMeshRelayEvent> = when (child.id) {
+        "inner" -> if (child.document == "static_mesh_relay__sce_synth_invoke__inner") {
+            ResumedChild(
+                StaticMeshRelaySceSynthInvokeInnerStateMachine(),
+                false, StaticMeshRelayEvent.Done.Invoke, "", "", "inner",
+            )
+        } else {
+            throw StateRefusal("invokes names '${child.id}' running '${child.document}', a document that `<invoke>` does not start")
+        }
+        else -> throw StateRefusal("the document has no child session '${child.id}'")
     }
 
     // Exit Actions (W3C SCXML 3.9)

@@ -433,7 +433,7 @@ class AChildMaySendManyEventsInOneTickStateMachine(
 
                     val childSM = adoptChild(AChildMaySendManyEventsInOneTickSceSynthInvokeChattyStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)")), generatedInvokeId)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                    startInvoke("chatty", childSM, false, AChildMaySendManyEventsInOneTickEvent.Done.Invoke, "", generatedInvokeId, "")
+                    startInvoke("chatty", childSM, false, AChildMaySendManyEventsInOneTickEvent.Done.Invoke, "", generatedInvokeId, "", "a_child_may_send_many_events_in_one_tick__sce_synth_invoke__chatty", "chatty")
                 }
             }
             else -> error("the document has no child session '$invokeId' (codegen invariant)")

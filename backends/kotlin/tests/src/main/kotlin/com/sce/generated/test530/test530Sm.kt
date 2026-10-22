@@ -428,7 +428,7 @@ class Test530StateMachine(
             if (run send@{
             val sendData = ""
             // W3C SCXML 6.2: Delayed send
-            scheduleSend("__send_0", 2000L, Test530Event.Timeout, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: "", data = sendData))
+            scheduleSend("__send_0", 2000L, Test530Event.Timeout, EventMetadata.external(sendId = "__send_0", origin = sessionId, data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -484,7 +484,7 @@ class Test530StateMachine(
                             // docs/adr/0045: the child takes its id where it is built.
                             val childSM = adoptChild(Test530Hybrid0StateMachine(), generatedInvokeId)
 
-                            startInvoke("_invoke_0", childSM, false, Test530Event.Done.Invoke, "", generatedInvokeId, "")
+                            startInvoke("_invoke_0", childSM, false, Test530Event.Done.Invoke, "", generatedInvokeId, "", "test530_hybrid0", "_invoke_0")
                         } catch (_: Exception) {
                             // W3C SCXML 6.4: the child could not be started. Evaluation
                             // failure no longer reaches here — it has its own raise above,

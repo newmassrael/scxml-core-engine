@@ -373,17 +373,61 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * script engine, as a `sce-static` one).
      */
     private val sessionIdentity: String
-        get() = scriptSessionId ?: assignedSessionId ?: ""
+        get() = scriptSessionId ?: boundSessionIdentity() ?: ""
+
+    /**
+     * Whether this machine is a `datamodel="sce-static"` one, whose root session
+     * has an id bound when it is created (docs/adr/0045, "Questions the owner
+     * answered" 2), and what that id is once it is given, drawn or restored.
+     */
+    private var bindsRootSessionId = false
+    private var rootSessionId: String? = null
+
+    /**
+     * Make this a machine whose root session has an id of its own, never empty
+     * (docs/adr/0045): [given] by the host when it creates the machine, which is
+     * held to the XML Nmtoken production and refused, not replaced, when it is
+     * not one, or else drawn, a UUID version 4, when the id is first read. Called
+     * by the generated constructor of a `sce-static` machine. A child is given
+     * the id its parent derives for it ([adoptChild]) and this one is not used.
+     *
+     * @throws IllegalArgumentException when [given] is not an Nmtoken.
+     */
+    protected fun bindRootSessionId(given: String?) {
+        bindsRootSessionId = true
+        if (given == null) return
+        SessionId.refusalOf(given)?.let { throw IllegalArgumentException(it) }
+        rootSessionId = given
+    }
+
+    /**
+     * The id this session was given, or drawn for a `sce-static` root, or `null`
+     * for a machine that has none to bind (every machine that is not a
+     * `sce-static` one, whose script session is named by the engine).
+     */
+    private fun boundSessionIdentity(): String? =
+        assignedSessionId ?: if (bindsRootSessionId) {
+            rootSessionId ?: SessionId.drawn().also { rootSessionId = it }
+        } else {
+            null
+        }
+
+    /**
+     * This session's id, the value of `_sessionid` (§scxml-5.10): the one a
+     * peer addresses it by (`#_scxml_<id>`), a saved state carries, and every
+     * child's id is derived from.
+     */
+    val sessionId: String get() = sessionIdentity
 
     /**
      * Allocate a script engine session ID.
      * Called by generated ensureScriptEngine() during lazy initialization. A
-     * child takes the id its parent gave it, so its script session and its
+     * session that was given an id takes it, so its script session and its
      * identity are one name.
      */
     @OptIn(ExperimentalAtomicApi::class)
     protected fun allocateScriptSession(): String {
-        val sid = assignedSessionId ?: "session_${scriptSessionIdCounter.incrementAndFetch()}"
+        val sid = boundSessionIdentity() ?: "session_${scriptSessionIdCounter.incrementAndFetch()}"
         scriptSessionId = sid
         return sid
     }
@@ -884,7 +928,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * [completeHostInvoke] or [failHostInvoke], naming the peer that answered.
      */
     fun registerMeshRpcInvoker(router: (HostInvokeEvent) -> HostInvokeResponse?) {
-        hostInvokers[MESH_RPC_INVOKE_TYPE] = router
+        meshRpcInvoker = router
     }
 
     /**
@@ -914,6 +958,15 @@ abstract class StateMachineEngine<S : State, E : Event>(
      */
     fun registerChildMeshRouters(factory: ChildMeshRouters) {
         childMeshRouters = factory
+        // docs/adr/0045: a child a restore resumed is owed its router, asked now
+        // that there is a factory and before the host drives this machine, so the
+        // router is installed before the child does anything. One that has ended
+        // is not asked for, and a factory registered again asks for none twice.
+        val owed = owedChildMeshes.toList()
+        owedChildMeshes.clear()
+        for (resumed in owed) {
+            if (!resumed.child.isInFinalState) startChildMesh(resumed.child, resumed.invokeId, resumed.document)
+        }
     }
 
     /**
@@ -1065,6 +1118,15 @@ abstract class StateMachineEngine<S : State, E : Event>(
          * document starts.
          */
         val restarted: Boolean = false,
+        /**
+         * The id of the session that started the invocation (docs/adr/0045): the
+         * machine's own for one of its `<invoke>`s, a child's for one the child
+         * made. The engine assigns it. A host that serves a type to part of the
+         * tree refuses the other sessions' requests with the response's refusal,
+         * and ends an invocation of any session through the machine it holds, by
+         * this id and the request's [token] ([completeHostInvokeIn]).
+         */
+        val sessionId: String = "",
     )
 
     /**
@@ -1108,7 +1170,25 @@ abstract class StateMachineEngine<S : State, E : Event>(
      */
     data class HostInvokeResponse(val doneData: String? = null, val refusal: String? = null)
 
-    private val hostInvokers = mutableMapOf<String, (HostInvokeEvent) -> HostInvokeResponse?>()
+    /**
+     * The invokers a host registered, by type, which serve every session of this
+     * machine's tree: a parent hands this very map to each child it starts or
+     * resumes, so a registration made later serves the children already running
+     * (docs/adr/0045, section 3). The set of invocable types is the processor's
+     * (§scxml-6.4.1), not a session's, and an invoker carries no identity.
+     */
+    private var sharedHostInvokers = mutableMapOf<String, (HostInvokeEvent) -> HostInvokeResponse?>()
+
+    /**
+     * The invoker Mesh requests reach ([registerMeshRpcInvoker]), this session's
+     * own and never shared: a child's is its router's, and a parent's would send
+     * under the parent's name.
+     */
+    private var meshRpcInvoker: ((HostInvokeEvent) -> HostInvokeResponse?)? = null
+
+    /** The invoker serving [processorType] in this session, or `null` when none does. */
+    private fun hostInvokerFor(processorType: String): ((HostInvokeEvent) -> HostInvokeResponse?)? =
+        if (processorType == MESH_RPC_INVOKE_TYPE) meshRpcInvoker else sharedHostInvokers[processorType]
 
     /**
      * Every host-run invocation started and neither completed nor cancelled,
@@ -1234,11 +1314,11 @@ abstract class StateMachineEngine<S : State, E : Event>(
         handler: (HostInvokeEvent) -> HostInvokeResponse?
     ) {
         refuseReservedType("registerInvoker", processorType)
-        hostInvokers[processorType] = handler
+        sharedHostInvokers[processorType] = handler
     }
 
     /** Whether an invoker is registered for [processorType]. */
-    fun hasInvoker(processorType: String): Boolean = hostInvokers.containsKey(processorType)
+    fun hasInvoker(processorType: String): Boolean = hostInvokerFor(processorType) != null
 
     /**
      * §scxml-6.4.1: start a host-run invocation, reporting whether anything
@@ -1256,7 +1336,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * invocation the engine already knows is running.
      */
     protected fun performHostInvoke(request: HostInvokeRequest): Boolean {
-        if (!hostInvokers.containsKey(request.processorType)) return false
+        if (hostInvokerFor(request.processorType) == null) return false
         // A [HOST_INVOKE_DEADLINE_PARAM] is the engine's, not the host's: it is
         // taken out of the request and armed with the start. A value that is not
         // a whole number of milliseconds raises `error.execution` and starts
@@ -1292,9 +1372,11 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * `false` when no invoker is registered.
      */
     private fun startHostInvoke(request: HostInvokeRequest, deadlineAtMs: Long?): Boolean {
-        val handler = hostInvokers[request.processorType] ?: return false
+        val handler = hostInvokerFor(request.processorType) ?: return false
         val token = nextHostInvokeToken++
-        val started = request.copy(token = token)
+        // Each request names the session that made it, so a host that serves a
+        // type to part of the tree only can refuse the rest (docs/adr/0045).
+        val started = request.copy(token = token, sessionId = sessionIdentity)
         startedHostInvokes[started.processorType to started.invokeId] = StartedHostInvoke(token, started)
         if (deadlineAtMs != null) {
             scheduledSends.add(
@@ -1444,6 +1526,57 @@ abstract class StateMachineEngine<S : State, E : Event>(
         originType: String = "",
     ): Boolean = endHostInvoke(processorType, invokeId, token, failed = true, errorData, origin, originType)
 
+    /**
+     * [completeHostInvoke] for an invocation of the session [sessionId], this
+     * machine or a running descendant of it: the host ends an invocation of any
+     * session of its tree through the machine it holds, by the session's id (the
+     * request's [HostInvokeRequest.sessionId]) and the start's token
+     * (docs/adr/0045, section 3). The session takes the event when its parent next
+     * drives it.
+     *
+     * `false`, raising nothing, for a session the tree does not hold and for a
+     * start that session is not running.
+     */
+    fun completeHostInvokeIn(
+        sessionId: String,
+        processorType: String,
+        invokeId: String,
+        token: Long,
+        doneData: String,
+        origin: String = "",
+        originType: String = "",
+    ): Boolean = sessionHolding(sessionId)
+        ?.completeHostInvoke(processorType, invokeId, token, doneData, origin, originType) ?: false
+
+    /** [failHostInvoke] for an invocation of the session [sessionId], as [completeHostInvokeIn] ends one. */
+    fun failHostInvokeIn(
+        sessionId: String,
+        processorType: String,
+        invokeId: String,
+        token: Long,
+        errorData: String,
+        origin: String = "",
+        originType: String = "",
+    ): Boolean = sessionHolding(sessionId)
+        ?.failHostInvoke(processorType, invokeId, token, errorData, origin, originType) ?: false
+
+    /**
+     * The running session named [id] in the tree this machine is the root of: this
+     * machine, or a descendant whose id is its parent's and a `.` in front of the
+     * rest (the ids being tree paths, docs/adr/0045). A child that has ended is no
+     * session the tree holds.
+     */
+    private fun sessionHolding(id: String): StateMachineEngine<*, *>? {
+        val own = sessionIdentity
+        if (own == id) return this
+        if (own.isEmpty() || !id.startsWith("$own.")) return null
+        for (entry in activeInvokes.values) {
+            if (entry.child.isInFinalState) continue
+            entry.child.sessionHolding(id)?.let { return it }
+        }
+        return null
+    }
+
     /** The one body behind a host-run invocation's completion and failure. */
     private fun endHostInvoke(
         processorType: String,
@@ -1505,7 +1638,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
 
     /** Tell the host to stop start [token] of [invokeId]. */
     private fun deliverHostInvokeCancel(processorType: String, invokeId: String, token: Long): Boolean {
-        val handler = hostInvokers[processorType] ?: return false
+        val handler = hostInvokerFor(processorType) ?: return false
         handler(HostInvokeEvent(cancel = HostInvokeCancel(processorType, invokeId, token)))
         return true
     }
@@ -2619,9 +2752,23 @@ abstract class StateMachineEngine<S : State, E : Event>(
             val fields = lineage.revisions.lastOrNull() ?: continue
             revisions[lineage.key] = SavedRevision(lineage.revision, fields)
         }
+        // A format-2 state names its session, and a session id is never empty
+        // (docs/adr/0045): a machine built by hand that was never given one has
+        // none to save.
+        val session = sessionIdentity
+        if (session.isEmpty()) {
+            throw StateRefusal("the machine has no session id, which a saved state names it by")
+        }
+        // Each running child with its whole state, judged against the session
+        // it is saved in: a refusal inside one names it by its path.
+        val children = savedChildren(wallNowMs)
         return SavedState(
-            shape = if (revisions.isEmpty()) shape.first else shape.revised,
+            // The shape of the format this writes, 2: an enum is named by its document.
+            shape = if (revisions.isEmpty()) shape.format2First else shape.format2Revised,
             revisions = revisions,
+            sessionId = session,
+            invokeStarts = staticInvokes.mapNotNull { (id, _) -> invokeStarts[id]?.let { id to it } }
+                .toMap(LinkedHashMap()),
             configuration = configuration.sortedBy(::documentOrderOf).map(::stateIdOf),
             current = stateIdOf(_currentState.value),
             variables = variables,
@@ -2634,7 +2781,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
                 .sortedBy { it.first }
                 .toMap(LinkedHashMap()),
             pending = pending,
-            invokes = runningInvokes(),
+            invokes = SavedInvokes.Resumed(children),
             hostInvokes = runningHostInvokes(wallNowMs),
             hostInvokeToken = nextHostInvokeToken,
             autoSendSeq = autoSendSeq,
@@ -2751,6 +2898,21 @@ abstract class StateMachineEngine<S : State, E : Event>(
                     sendId = entry.sendId,
                     origin = entry.metadata.origin,
                 )
+                // The session that started this one, and a running child of it: both
+                // are sessions the tree holds (docs/adr/0045).
+                route is ScheduledRoute.Parent -> SavedAct.Parent(
+                    event = route.eventName,
+                    data = route.eventData,
+                    sendId = entry.sendId,
+                    origin = sessionIdentity,
+                )
+                route is ScheduledRoute.Invocation -> SavedAct.Child(
+                    invokeId = route.invokeId,
+                    event = route.eventName,
+                    data = route.eventData,
+                    sendId = entry.sendId,
+                    origin = sessionIdentity,
+                )
                 else -> throw StateRefusal(
                     "the delayed send '${entry.sendId}' is routed to $route, a session a saved " +
                         "state does not carry")
@@ -2783,6 +2945,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
             throw StateRefusal("a machine is restored in place of initialize, and this one has already started")
         }
         val grown = SavedState.upgrade(saved, shape)
+        judgeSessionId(grown)
         val (states, current) = savedConfiguration(grown)
         val verdict = judgeConfiguration(states, current)
         if (verdict != ConfigurationRejection.NONE) {
@@ -2791,10 +2954,134 @@ abstract class StateMachineEngine<S : State, E : Event>(
         savedHistory(grown)
         savedPending(grown)
         savedInvokes(grown, states)
+        judgeChildren(grown)
         savedHostInvokes(grown, states)
         savedExternal(grown)
         return grown
     }
+
+    /**
+     * Refuse [saved] when it names a session id this machine cannot carry on
+     * under: a session a parent started has the id its parent derives for it
+     * (`<parent>.<invokeid>`), and every id the tree holds names sessions by it,
+     * so a child saved under another is not one this tree holds (docs/adr/0045).
+     * A root binds the saved id in place of the one it was given or drew, and has
+     * nothing to refuse.
+     */
+    private fun judgeSessionId(saved: SavedState) {
+        val bound = saved.boundSessionId ?: return
+        val derived = assignedSessionId ?: return
+        if (bound != derived) {
+            throw StateRefusal(
+                "the saved session is named '$bound', and the session this parent starts here is named '$derived'")
+        }
+    }
+
+    /**
+     * The machine to resume [child], a running child a format-2 state lists, as
+     * the `<invoke>` that started it builds it, with what a start would do with
+     * the child once it is built: whether it takes the parent's events on, the
+     * event its ending raises, its `<finalize>`. Overridden by generated code
+     * when the document saves; refuses a child the document does not start.
+     */
+    protected open fun buildSavedChild(child: SavedChild): ResumedChild<E> =
+        throw StateRefusal("the document starts no child session, so '${child.id}' cannot be one it was running")
+
+    /** A child machine a restore builds, and how its start is wired ([buildSavedChild]). */
+    protected class ResumedChild<E>(
+        val engine: StateMachineEngine<*, *>,
+        val autoforward: Boolean,
+        val doneEvent: E?,
+        val finalizeScript: String,
+        /**
+         * What the factory of children's routers is asked with for this child, as a
+         * start asks it (`startInvoke`'s `childDocument`): the stem of the child's
+         * document, empty for one written inline.
+         */
+        val meshDocument: String = "",
+        /**
+         * What `_event.invokeid` is for an event the child sends its parent, as a
+         * start passes it (`startInvoke`'s `eventInvokeId`): the document's own id,
+         * or `null` for an invoke that keeps the id it was started under in an
+         * `idlocation`, which the saved child carries.
+         */
+        val eventInvokeId: String? = null,
+    )
+
+    /**
+     * Judge everything of [saved]'s running children before anything is built
+     * (docs/adr/0045, section 3, step 1): each `start` is the count its `<invoke>`
+     * holds, each `document` is one the `<invoke>` can start, and each session is
+     * of that document's shape, down to the last grandchild. A refusal names the
+     * child by its path and builds nothing.
+     */
+    private fun judgeChildren(saved: SavedState) {
+        val resumed = saved.invokes as? SavedInvokes.Resumed ?: return
+        // A restore of this machine that has already judged these children (the
+        // judgement of a child session is its own restore's, made by its parent
+        // before it resumes it) built them once, and builds them no more: building
+        // one asks the host for the child's host, and a refused or repeated
+        // judgement must not have asked it twice.
+        if (judgedChildren?.first === resumed) return
+        judgedChildren = null
+        val built = ArrayList<ResumedChild<E>>()
+        // A count of starts names an `<invoke>` of the document.
+        for ((id, _) in saved.invokeStarts) {
+            if (staticInvokes.none { it.first == id }) {
+                throw StateRefusal("invokestarts counts '$id', which the document does not invoke")
+            }
+        }
+        resumed.children.forEachIndexed { i, child ->
+            val counted = saved.invokeStart(child.id)
+            if (child.start != counted) {
+                throw StateRefusal(
+                    "invokes[$i] is start ${child.start} of '${child.id}', and the session counts $counted " +
+                        "starts of it: a state re-entered cancels the earlier child before it starts the next one")
+            }
+            // The id the child would be given where it is built, derived from the
+            // parent's own, which this restore is about to bind.
+            val derived = "${saved.sessionId}.${child.invokeId}"
+            if (child.session.sessionId != derived) {
+                throw StateRefusal(
+                    "invokes[$i].session's id is '${child.session.sessionId}', and a child of " +
+                        "'${saved.sessionId}' started under '${child.invokeId}' is '$derived'")
+            }
+            val resumedChild = try {
+                buildSavedChild(child)
+            } catch (refusal: StateRefusal) {
+                throw StateRefusal("invokes[$i]: ${refusal.message}")
+            }
+            resumedChild.engine.assignedSessionId = derived
+            try {
+                resumedChild.engine.judgeAsSession(child.session)
+            } catch (refusal: StateRefusal) {
+                throw refusal.within("invokes[$i].session")
+            }
+            built.add(resumedChild)
+        }
+        // Held for the resume that follows, which resumes these very machines: a
+        // judgement that refused holds nothing.
+        judgedChildren = resumed to built
+    }
+
+    /** The children [judgeChildren] built and judged, for [resumeChildren] to resume in their place. */
+    private var judgedChildren: Pair<SavedInvokes.Resumed, List<ResumedChild<E>>>? = null
+
+    /**
+     * Refuse [saved] unless this machine, fresh as a child is built, could be
+     * restored from it, changing nothing. Overridden by generated code when the
+     * document saves.
+     */
+    protected open fun judgeAsSession(saved: SavedState): Unit =
+        throw StateRefusal("this machine has no saved state, so a session it runs cannot be restored")
+
+    /**
+     * docs/adr/0045: restore this machine from [saved], the state of a child
+     * session, in place of [initialize]. Overridden by generated code when the
+     * document saves.
+     */
+    protected open fun restoreAsSession(saved: SavedState, wallNowMs: Long): Unit =
+        throw StateRefusal("this machine has no saved state, so a session it runs cannot be restored")
 
     /**
      * §scxml-6.4.1: the `<invoke>`s of this document a declared host invoker
@@ -2881,13 +3168,44 @@ abstract class StateMachineEngine<S : State, E : Event>(
     protected open fun restartInvoke(invokeId: String, state: S) {}
 
     /**
-     * The ids of the `<invoke>`s whose child session is running, in document
-     * order. A child that has ended is not running, though its entry may stay
-     * until the macrostep's cleanup: a restore starts every id listed here
-     * again, and an invocation already complete must not run twice.
+     * Every `<invoke>` of this document whose child session is running, in
+     * document order, each with the child's whole state (docs/adr/0045). A
+     * child that has ended is not running, though its entry may stay until the
+     * macrostep's cleanup: its `done.invoke` is in the external queue or already
+     * taken, and a restore must not bring it back. A refusal inside a child's own
+     * state names it by its path from this session.
      */
-    private fun runningInvokes(): List<String> =
-        staticInvokes.map { it.first }.filter { id -> activeInvokes[id]?.child?.isInFinalState == false }
+    private fun savedChildren(wallNowMs: Long): List<SavedChild> {
+        val children = ArrayList<SavedChild>()
+        for ((id, _) in staticInvokes) {
+            val entry = activeInvokes[id] ?: continue
+            if (entry.child.isInFinalState) continue
+            val index = children.size
+            val session = try {
+                entry.child.saveAsSession(wallNowMs)
+            } catch (refusal: StateRefusal) {
+                throw refusal.within("invokes[$index].session")
+            }
+            children.add(
+                SavedChild(
+                    id = id,
+                    start = invokeStarts[id] ?: error("the running child of '$id' was never counted as a start"),
+                    invokeId = entry.generatedInvokeId,
+                    document = entry.document,
+                    session = session,
+                )
+            )
+        }
+        return children
+    }
+
+    /**
+     * docs/adr/0045: this machine's whole state as a child session of another's
+     * saved state. Overridden by generated code when the document saves; a machine
+     * that does not refuses, naming it.
+     */
+    protected open fun saveAsSession(wallNowMs: Long): SavedState =
+        throw StateRefusal("this machine has no saved state, so a session it runs cannot be saved")
 
     /**
      * The running invocations [saved] lists, each with the state that holds it,
@@ -2898,7 +3216,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
      */
     private fun savedInvokes(saved: SavedState, configuration: List<S>): List<Pair<String, S>> {
         val seen = HashSet<String>()
-        return saved.invokes.mapIndexed { i, id ->
+        return saved.invokeIds.mapIndexed { i, id ->
             val owner = staticInvokes.firstOrNull { it.first == id }?.second
                 ?: throw StateRefusal("invokes[$i] is '$id', which the document does not invoke")
             if (owner !in configuration) {
@@ -2953,15 +3271,64 @@ abstract class StateMachineEngine<S : State, E : Event>(
         rearmHostInvokes(saved, wallNowMs)
         nextHostInvokeToken = saved.hostInvokeToken
         autoSendSeq = saved.autoSendSeq
-        // Last, so what a child sends as it starts stands behind what was
-        // already waiting: the saved machine's queue was ahead of it. Started as
-        // entering the state starts them — deferred, then run together — so a
-        // child that ends as it starts raises `done.invoke` the way it would
-        // have.
-        for ((id, owner) in savedInvokes(saved, states)) restartInvoke(id, owner)
-        startDeferredInvokes()
+        // The session carries on under the id it had, which every child's id and a
+        // peer's address name, and numbers a start after the restore on from the
+        // count it had reached.
+        if (assignedSessionId == null && bindsRootSessionId) rootSessionId = saved.boundSessionId ?: rootSessionId
+        invokeStarts.putAll(saved.invokeStarts)
+        when (val invokes = saved.invokes) {
+            // Format 2: each running child was saved whole, and carries on where it
+            // stood; nothing starts and nothing is sent (docs/adr/0045).
+            is SavedInvokes.Resumed -> resumeChildren(invokes, wallNowMs)
+            // Format 1 holds a child by its id alone, so each is started again from
+            // its beginning, the one case in which a child restarts. Last, so what a
+            // child sends as it starts stands behind what was already waiting: the
+            // saved machine's queue was ahead of it. Started as entering the state
+            // starts them — deferred, then run together — so a child that ends as it
+            // starts raises `done.invoke` the way it would have.
+            is SavedInvokes.Restarted -> {
+                for ((id, owner) in savedInvokes(saved, states)) restartInvoke(id, owner)
+                startDeferredInvokes()
+            }
+        }
         onMacrostepComplete(false)
     }
+
+    /**
+     * docs/adr/0045, section 3, step 3: resume each of [children] in the order
+     * given, each built as starting it builds it and restored where it stood in
+     * place of initialized — no `<onentry>`, no `<data>`, no `<param>` or namelist
+     * evaluated, no `idlocation` written, nothing sent. [beginRestore] judged all
+     * of it, so none refuses here.
+     */
+    private fun resumeChildren(resumed: SavedInvokes.Resumed, wallNowMs: Long) {
+        val judged = judgedChildren?.takeIf { it.first === resumed }?.second
+            ?: error("beginRestore judges every child before any is resumed (codegen invariant)")
+        judgedChildren = null
+        resumed.children.forEachIndexed { i, child ->
+            val built = judged[i]
+            val engine = adoptChild(built.engine, child.invokeId)
+            wireChild(child.id, engine, built.eventInvokeId ?: child.invokeId)
+            // §scxml-6.4: the child's delayed sends are measured against the same
+            // clock as ours, as the start of one makes them.
+            engine.clock = clock
+            engine.restoreAsSession(child.session, wallNowMs)
+            val onComplete = completionCallback(child.id, engine, built.doneEvent)
+            activeInvokes[child.id] = InvokeEntry(
+                engine, Job(), built.autoforward, built.finalizeScript, onComplete, child.invokeId, child.document,
+            )
+            // SCE_MESH.md, Child Sessions in Mesh: the router of a resumed child is
+            // owed, not asked for here. This machine is being restored, and its host
+            // registers the factory of its children's routers only once the restore
+            // has returned it ([registerChildMeshRouters]).
+            owedChildMeshes.add(OwedChildMesh(engine, child.id, built.meshDocument))
+        }
+    }
+
+    /** A resumed child whose router has yet to be asked of the factory. */
+    private class OwedChildMesh(val child: StateMachineEngine<*, *>, val invokeId: String, val document: String)
+
+    private val owedChildMeshes = mutableListOf<OwedChildMesh>()
 
     /**
      * What [saved] holds of the delayed sends still waiting, each as the entry
@@ -2975,7 +3342,32 @@ abstract class StateMachineEngine<S : State, E : Event>(
         saved.pending.mapIndexed { i, send ->
             fun event(name: String): E = resolveEventByName(name)
                 ?: throw StateRefusal("pending[$i] is '$name', which the document does not name")
+            // The event the sender is told of a send that finds no one to take it
+            // (§scxml-C-1), which a due entry of this route raises.
+            fun noOneTookIt(): E = resolveEventByName("error.communication")
+                ?: throw StateRefusal("pending[$i] is a send to another session, and the document names no error.communication")
             val entry = when (val act = send.act) {
+                is SavedAct.Parent -> ScheduledSendEntry(
+                    fireTimeMs = 0L,
+                    sequenceNum = 0L,
+                    sendId = act.sendId,
+                    event = null,
+                    metadata = EventMetadata.EMPTY,
+                    route = ScheduledRoute.Parent(act.event, act.data, noOneTookIt()),
+                )
+                is SavedAct.Child -> {
+                    if (staticInvokes.none { it.first == act.invokeId }) {
+                        throw StateRefusal("pending[$i] is a send to '${act.invokeId}', which the document does not invoke")
+                    }
+                    ScheduledSendEntry(
+                        fireTimeMs = 0L,
+                        sequenceNum = 0L,
+                        sendId = act.sendId,
+                        event = null,
+                        metadata = EventMetadata.EMPTY,
+                        route = ScheduledRoute.Invocation(act.invokeId, act.event, act.data, noOneTookIt()),
+                    )
+                }
                 is SavedAct.Raise -> ScheduledSendEntry(
                     fireTimeMs = 0L,
                     sequenceNum = 0L,
@@ -4230,7 +4622,12 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * delay would — the delay does not turn it into an external event.
      */
     protected fun scheduleInternalSend(sendId: String, delayMs: Long, event: E, metadata: EventMetadata) {
-        queueScheduledSend(sendId, delayMs, event, metadata, ScheduledRoute.InternalQueue)
+        // An event a `sce-static` session sends itself names that session as its
+        // origin, as the saved state of every backend writes it (docs/adr/0045); a
+        // machine with no id of its own (every machine that is not `sce-static`)
+        // leaves it as it was.
+        val origin = boundSessionIdentity()?.let { metadata.origin.ifEmpty { it } } ?: metadata.origin
+        queueScheduledSend(sendId, delayMs, event, metadata.copy(origin = origin), ScheduledRoute.InternalQueue)
     }
 
     /**
@@ -4279,7 +4676,11 @@ abstract class StateMachineEngine<S : State, E : Event>(
         val monitorJob: Job,
         val autoforward: Boolean,
         val finalizeScript: String = "",
-        val onComplete: (() -> Unit)? = null
+        val onComplete: (() -> Unit)? = null,
+        /** The id the start was made under (`<state>.<start>.<invoke>`), which a saved child carries. */
+        val generatedInvokeId: String = "",
+        /** The document the child runs, which a saved child carries (docs/adr/0045). */
+        val document: String = "",
     )
     private val activeInvokes = mutableMapOf<String, InvokeEntry>()
 
@@ -4414,6 +4815,13 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * @param childDocument The stem of the document the child was loaded from, empty for a child
      *   written inline: what this machine's factory of children's routers is asked with
      *   ([registerChildMeshRouters])
+     * @param savedDocument The name of the document the child runs, which a saved
+     *   state records for it and a restore resumes it from (docs/adr/0045): the
+     *   child's own name, written inline or not. [childDocument] unless given.
+     * @param eventInvokeId What `_event.invokeid` is for an event the child sends
+     *   its parent: the id the start was made under for an invoke that keeps it in
+     *   an `idlocation` (W3C test 338), the document's own id otherwise (test 228),
+     *   as the Rust backend names it. [generatedInvokeId] unless given.
      * @throws IllegalStateException for a child [adoptChild] did not give the
      *   id of this start (codegen invariant).
      */
@@ -4425,6 +4833,8 @@ abstract class StateMachineEngine<S : State, E : Event>(
         finalizeScript: String = "",
         generatedInvokeId: String = invokeId,
         childDocument: String = "",
+        savedDocument: String = childDocument,
+        eventInvokeId: String = generatedInvokeId,
     ) {
         // docs/adr/0045: the child's id is this session's and the id of the
         // start, given where the child was built ([adoptChild]); a child that
@@ -4438,45 +4848,10 @@ abstract class StateMachineEngine<S : State, E : Event>(
         // machine's factory and installed before the child initializes, since
         // its first `onEntry` may already send to a peer.
         startChildMesh(child, invokeId, childDocument)
-        // §scxml-6.4: Set up child->parent event routing with metadata
-        child.onSendToParent = { eventName, eventData ->
-            resolveArrivingEvent(eventName)?.let {
-                send(it, EventMetadata(
-                    type = "external",
-                    invokeId = generatedInvokeId,
-                    origin = child.sessionIdentity,
-                    originType = "http://www.w3.org/TR/scxml/#SCXMLEventProcessor",
-                    data = eventData,
-                    // §scxml-3.12.1 + §scxml-5.10: the child names the event, and
-                    // its names are not this machine's, so one this document does
-                    // not write reaches it as the event of the longest prefix it
-                    // does, under the name the child sent.
-                    name = arrivalNameOf(it, eventName),
-                ))
-            }
-        }
+        wireChild(invokeId, child, eventInvokeId)
 
         if (syncMode) {
-            // C++ AOT pattern: synchronous child initialization.
-            // §scxml-5.5 + 6.3.1: lift the child's stashed <donedata> onto
-            // done.invoke.<id>._event.data — mirrors the C++ AOT contract in
-            // tools/codegen/templates/invoke_methods.jinja2 (child->donedataAtFinal()
-            // + EventMetadataHelper::createDoneInvokeEvent). Reading the field
-            // inside the closure (not at construction time) lets the generated
-            // onEntry code stash after `activeInvokes[...]` is wired in.
-            val onComplete = if (doneEvent != null) {
-                {
-                    externalEventQueue.addLast(QueuedEvent(doneEvent, EventMetadata(
-                        type = "platform",
-                        invokeId = invokeId,
-                        data = child.donedataAtFinal(),
-                        // §scxml-5.10: the specific name, whichever descriptor
-                        // (`done.invoke.<id>`, `done.invoke`, `done`) it was matched
-                        // through.
-                        name = arrivalNameOf(doneEvent, DONE_INVOKE_PREFIX + invokeId),
-                    )))
-                }
-            } else null
+            val onComplete = completionCallback(invokeId, child, doneEvent)
 
             // §scxml-6.4: the child's delayed sends are measured against the
             // same clock as ours. A child that read its own would start its
@@ -4487,7 +4862,9 @@ abstract class StateMachineEngine<S : State, E : Event>(
             // engine invoked.
             child.clock = clock
             child.initialize()
-            activeInvokes[invokeId] = InvokeEntry(child, Job(), autoforward, finalizeScript, onComplete)
+            activeInvokes[invokeId] = InvokeEntry(
+                child, Job(), autoforward, finalizeScript, onComplete, generatedInvokeId, savedDocument,
+            )
 
             // C++ pattern: if child completed immediately, raise done.invoke
             if (child.isInFinalState) {
@@ -4511,7 +4888,67 @@ abstract class StateMachineEngine<S : State, E : Event>(
             }
         }
 
-        activeInvokes[invokeId] = InvokeEntry(child, monitorJob, autoforward, finalizeScript)
+        activeInvokes[invokeId] = InvokeEntry(
+            child, monitorJob, autoforward, finalizeScript, null, generatedInvokeId, savedDocument,
+        )
+    }
+
+    /**
+     * §scxml-6.4: route what [child], the session of the `<invoke>` [invokeId]
+     * started under [generatedInvokeId], sends to `#_parent` into this machine's
+     * queue, with the metadata the event carries (`_event.invokeid`, `origin`).
+     * One body for a start and for a restore that resumes the child.
+     */
+    private fun wireChild(invokeId: String, child: StateMachineEngine<*, *>, eventInvokeId: String) {
+        // docs/adr/0045: the tree's host invokers, handed on before the child's
+        // invocations start at its first drive, so a resumed child's re-armed ones
+        // find them, and a registration made later serves the child as well.
+        child.sharedHostInvokers = sharedHostInvokers
+        // §scxml-6.4: Set up child->parent event routing with metadata
+        child.onSendToParent = { eventName, eventData ->
+            resolveArrivingEvent(eventName)?.let {
+                send(it, EventMetadata(
+                    type = "external",
+                    invokeId = eventInvokeId,
+                    origin = child.sessionIdentity,
+                    originType = "http://www.w3.org/TR/scxml/#SCXMLEventProcessor",
+                    data = eventData,
+                    // §scxml-3.12.1 + §scxml-5.10: the child names the event, and
+                    // its names are not this machine's, so one this document does
+                    // not write reaches it as the event of the longest prefix it
+                    // does, under the name the child sent.
+                    name = arrivalNameOf(it, eventName),
+                ))
+            }
+        }
+    }
+
+    /**
+     * §scxml-5.5 + 6.3.1: what runs when the child of the `<invoke>` [invokeId]
+     * ends, to lift its stashed `<donedata>` onto `done.invoke.<id>._event.data`
+     * — mirrors the C++ AOT contract in tools/codegen/templates/invoke_methods.jinja2
+     * (child->donedataAtFinal() + EventMetadataHelper::createDoneInvokeEvent).
+     * Reading the field inside the closure (not at construction time) lets the
+     * generated onEntry code stash after `activeInvokes[...]` is wired in. `null`
+     * for an invoke whose document waits on no `done.invoke`.
+     */
+    private fun completionCallback(
+        invokeId: String,
+        child: StateMachineEngine<*, *>,
+        doneEvent: E?,
+    ): (() -> Unit)? {
+        if (doneEvent == null) return null
+        return {
+            externalEventQueue.addLast(QueuedEvent(doneEvent, EventMetadata(
+                type = "platform",
+                invokeId = invokeId,
+                data = child.donedataAtFinal(),
+                // §scxml-5.10: the specific name, whichever descriptor
+                // (`done.invoke.<id>`, `done.invoke`, `done`) it was matched
+                // through.
+                name = arrivalNameOf(doneEvent, DONE_INVOKE_PREFIX + invokeId),
+            )))
+        }
     }
 
     /**
@@ -4607,8 +5044,13 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * Used by test harness (W3CHttpTestBase) to inject HTTP response events
      * back into the SM by string name. Resolves name to typed Event via
      * [resolveArrivingEvent] and dispatches with metadata.
+     *
+     * A host that names an event and nothing more raises an external event of the
+     * SCXML Event I/O Processor, as the Rust door (`raise_external_by_name`) raises
+     * one, so a queue saved after it reads the same on both backends and a child
+     * the event is forwarded to is handed an exact copy of it.
      */
-    fun sendEventByName(name: String, metadata: EventMetadata = EventMetadata.EMPTY) {
+    fun sendEventByName(name: String, metadata: EventMetadata = EventMetadata.external()) {
         // §scxml-5.10: what this machine is told the event is called is a fact about
         // THIS machine's names — an arrival name the caller's metadata carries was
         // matched against the caller's, and says nothing here.

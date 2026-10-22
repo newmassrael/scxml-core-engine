@@ -44,7 +44,19 @@ sealed interface StatechartStaticHostParamsEvent : Event {
 // --- State Machine (W3C SCXML) ---
 
 class StatechartStaticHostParamsStateMachine(
+    /**
+     * docs/adr/0045: the id of this machine's session (`_sessionid`), which a
+     * saved state names it by and a peer addresses it by (`#_scxml_<id>`), given
+     * by the host that creates it: an XML Nmtoken, refused when it is not one
+     * and never replaced. Drawn (a UUID version 4) when the host gives none. A
+     * child is given the id its parent derives for it, and this is not read.
+     */
+    sessionId: String? = null,
 ) : StateMachineEngine<StatechartStaticHostParamsState, StatechartStaticHostParamsEvent>() {
+
+    init {
+        bindRootSessionId(sessionId)
+    }
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
     /** W3C SCXML 5.2: the `count` datamodel variable, the machine's own. */
@@ -224,6 +236,25 @@ class StatechartStaticHostParamsStateMachine(
 
     /** [restore] at the host's wall clock now. */
     fun restore(saved: SavedState) = restore(saved, SavedState.wallClockMs())
+
+    // docs/adr/0045: this machine as a child session of another's saved state —
+    // saved with it, judged with it before anything is built, and restored in
+    // place of initialized.
+    override fun saveAsSession(wallNowMs: Long): SavedState = save(wallNowMs)
+
+    override fun judgeAsSession(saved: SavedState) {
+        val savedGrown = beginRestore(saved, savedShape)
+        SavedValues.uint32(savedGrown.variable("count"), "count")
+        SavedValues.bool(savedGrown.variable("ready"), "ready")
+        SavedValues.string(savedGrown.variable("label"), "label", 16)
+        SavedValues.int16(savedGrown.variable("delta"), "delta")
+        SavedValues.float64(savedGrown.variable("ratio"), "ratio")
+        SavedValues.string(savedGrown.variable("tag"), "tag", 16)
+        SavedValues.uint32(savedGrown.variable("huge"), "huge")
+        SavedValues.uint32(savedGrown.variable("errors"), "errors")
+    }
+
+    override fun restoreAsSession(saved: SavedState, wallNowMs: Long) = restore(saved, wallNowMs)
 
     // §scxml-6.4.1: a saved state names the `<invoke>`s a declared host invoker
     // is running, and a restore starts each again from the request it saved. What

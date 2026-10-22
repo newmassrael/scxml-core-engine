@@ -671,7 +671,7 @@ class ABadInvokeArgumentIsReportedOnceStateMachine(
                     val childSM = adoptChild(ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1StateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)")), generatedInvokeId)
                     setInvokeParams(childSM, invokeParams)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                    startInvoke("inv1", childSM, false, ABadInvokeArgumentIsReportedOnceEvent.Done.Invoke, "", generatedInvokeId, "")
+                    startInvoke("inv1", childSM, false, ABadInvokeArgumentIsReportedOnceEvent.Done.Invoke, "", generatedInvokeId, "", "a_bad_invoke_argument_is_reported_once__sce_synth_invoke__inv1", "inv1")
                 }
             }
             "inv2" -> run {
@@ -696,7 +696,7 @@ class ABadInvokeArgumentIsReportedOnceStateMachine(
                     val childSM = adoptChild(ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv2StateMachine(), generatedInvokeId)
                     setInvokeParams(childSM, invokeParams)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                    startInvoke("inv2", childSM, false, ABadInvokeArgumentIsReportedOnceEvent.Done.Invoke, "", generatedInvokeId, "")
+                    startInvoke("inv2", childSM, false, ABadInvokeArgumentIsReportedOnceEvent.Done.Invoke, "", generatedInvokeId, "", "a_bad_invoke_argument_is_reported_once__sce_synth_invoke__inv2", "inv2")
                 }
             }
             "inv3" -> run {
@@ -729,7 +729,7 @@ class ABadInvokeArgumentIsReportedOnceStateMachine(
                     val childSM = adoptChild(ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3StateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)")), generatedInvokeId)
                     setInvokeParams(childSM, invokeParams)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                    startInvoke("inv3", childSM, false, ABadInvokeArgumentIsReportedOnceEvent.Done.Invoke, "", generatedInvokeId, "")
+                    startInvoke("inv3", childSM, false, ABadInvokeArgumentIsReportedOnceEvent.Done.Invoke, "", generatedInvokeId, "", "a_bad_invoke_argument_is_reported_once__sce_synth_invoke__inv3", "inv3")
                 }
             }
             else -> error("the document has no child session '$invokeId' (codegen invariant)")

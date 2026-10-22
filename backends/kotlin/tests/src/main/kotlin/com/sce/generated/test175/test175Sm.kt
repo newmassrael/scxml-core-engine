@@ -469,7 +469,7 @@ class Test175StateMachine(
             }
             val sendData = ""
             // W3C SCXML 6.2: Delayed send
-            scheduleSend("__send_0", sendDelayMs, Test175Event.Event2, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: "", data = sendData))
+            scheduleSend("__send_0", sendDelayMs, Test175Event.Event2, EventMetadata.external(sendId = "__send_0", origin = sessionId, data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -481,7 +481,7 @@ class Test175StateMachine(
             if (run send@{
             val sendData = ""
             // W3C SCXML 6.2: Delayed send
-            scheduleSend("__send_1", 500L, Test175Event.Event1, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: "", data = sendData))
+            scheduleSend("__send_1", 500L, Test175Event.Event1, EventMetadata.external(sendId = "__send_1", origin = sessionId, data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was

@@ -216,7 +216,19 @@ private fun call_SheetShow__vv(p0: List<SheetPeerLwwCellRecord>, p1: List<Long>)
 // --- State Machine (W3C SCXML) ---
 
 class SheetPeerStateMachine(
+    /**
+     * docs/adr/0045: the id of this machine's session (`_sessionid`), which a
+     * saved state names it by and a peer addresses it by (`#_scxml_<id>`), given
+     * by the host that creates it: an XML Nmtoken, refused when it is not one
+     * and never replaced. Drawn (a UUID version 4) when the host gives none. A
+     * child is given the id its parent derives for it, and this is not read.
+     */
+    sessionId: String? = null,
 ) : StateMachineEngine<SheetPeerState, SheetPeerEvent>() {
+
+    init {
+        bindRootSessionId(sessionId)
+    }
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
     /** W3C SCXML 5.2: the `node` datamodel variable, published (`sce:direction="out"`). */
@@ -564,6 +576,37 @@ class SheetPeerStateMachine(
 
     /** [restore] at the host's wall clock now. */
     fun restore(saved: SavedState) = restore(saved, SavedState.wallClockMs())
+
+    // docs/adr/0045: this machine as a child session of another's saved state —
+    // saved with it, judged with it before anything is built, and restored in
+    // place of initialized.
+    override fun saveAsSession(wallNowMs: Long): SavedState = save(wallNowMs)
+
+    override fun judgeAsSession(saved: SavedState) {
+        val savedGrown = beginRestore(saved, savedShape)
+        SavedValues.uint64(savedGrown.variable("node"), "node")
+        SavedValues.bool(savedGrown.variable("hub"), "hub")
+        SheetPeerHlcRecord.fromSaved(savedGrown.variable("clock"), "clock")
+        SheetPeerHlcRecord.fromSaved(savedGrown.variable("stamp"), "stamp")
+        SavedValues.list(savedGrown.variable("cells"), "cells", 256) { e, w -> SheetPeerLwwCellRecord.fromSaved(e, w) }
+        SavedValues.list(savedGrown.variable("rows"), "rows", 256) { e, w -> SheetPeerRgaNodeRecord.fromSaved(e, w) }
+        SavedValues.list(savedGrown.variable("gone"), "gone", 256) { e, w -> SheetPeerRgaGoneRecord.fromSaved(e, w) }
+        SavedValues.list(savedGrown.variable("cols"), "cols", 256) { e, w -> SheetPeerRgaNodeRecord.fromSaved(e, w) }
+        SavedValues.list(savedGrown.variable("goneCols"), "goneCols", 256) { e, w -> SheetPeerRgaGoneRecord.fromSaved(e, w) }
+        SavedValues.list(savedGrown.variable("trail"), "trail", 768) { e, w -> SavedValues.int64(e, w) }
+        SavedValues.list(savedGrown.variable("shown"), "shown", 256) { e, w -> SheetPeerShownRecord.fromSaved(e, w) }
+        SheetPeerLwwCellRecord.fromSaved(savedGrown.variable("write"), "write")
+        SheetPeerRgaNodeRecord.fromSaved(savedGrown.variable("placed"), "placed")
+        SheetPeerRgaGoneRecord.fromSaved(savedGrown.variable("removal"), "removal")
+        SavedValues.uint64(savedGrown.variable("lamport"), "lamport")
+        SavedValues.uint64(savedGrown.variable("newKey"), "newKey")
+        SavedValues.uint64(savedGrown.variable("noKey"), "noKey")
+        SavedValues.int64(savedGrown.variable("noNumber"), "noNumber")
+        SavedValues.uint32(savedGrown.variable("orphans"), "orphans")
+        SavedValues.uint32(savedGrown.variable("refusals"), "refusals")
+    }
+
+    override fun restoreAsSession(saved: SavedState, wallNowMs: Long) = restore(saved, wallNowMs)
 
     // NL→IR Item C1 Path A: the current event's typed `_event.data` payload(s),
     // lifted from the dequeued event by populateTypedPayload and read by the

@@ -702,7 +702,7 @@ ASelfSentEventNamesItsOriginEvent.Nowhere,
             if (run send@{
             val sendData = ""
             // W3C SCXML 6.2: send to this session's external queue
-            send(ASelfSentEventNamesItsOriginEvent.Settle, EventMetadata.external(sendId = "__send_4", origin = scriptSessionId ?: "", data = sendData))
+            send(ASelfSentEventNamesItsOriginEvent.Settle, EventMetadata.external(sendId = "__send_4", origin = sessionId, data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -720,7 +720,7 @@ ASelfSentEventNamesItsOriginEvent.Nowhere,
             if (run send@{
             val sendData = ""
             // W3C SCXML 6.2: Delayed send
-            scheduleSend("__send_2", 10L, ASelfSentEventNamesItsOriginEvent.Later, EventMetadata.external(sendId = "__send_2", origin = scriptSessionId ?: "", data = sendData))
+            scheduleSend("__send_2", 10L, ASelfSentEventNamesItsOriginEvent.Later, EventMetadata.external(sendId = "__send_2", origin = sessionId, data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -743,7 +743,7 @@ ASelfSentEventNamesItsOriginEvent.Nowhere,
             if (run send@{
             val sendData = ""
             // W3C SCXML 6.2: send to this session's external queue
-            send(ASelfSentEventNamesItsOriginEvent.Ping, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: "", data = sendData))
+            send(ASelfSentEventNamesItsOriginEvent.Ping, EventMetadata.external(sendId = "__send_1", origin = sessionId, data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was

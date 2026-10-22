@@ -449,7 +449,7 @@ class DonedataLateCompletionStateMachine(
 
                     val childSM = adoptChild(DonedataLateCompletionSceSynthInvokeInvLateStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)")), generatedInvokeId)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                    startInvoke("inv_late", childSM, false, DonedataLateCompletionEvent.Done.Invoke.InvLate, "", generatedInvokeId, "")
+                    startInvoke("inv_late", childSM, false, DonedataLateCompletionEvent.Done.Invoke.InvLate, "", generatedInvokeId, "", "donedata_late_completion__sce_synth_invoke__inv_late", "inv_late")
                 }
             }
             else -> error("the document has no child session '$invokeId' (codegen invariant)")

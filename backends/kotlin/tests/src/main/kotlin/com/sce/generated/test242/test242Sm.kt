@@ -241,7 +241,7 @@ class Test242StateMachine(
             if (run send@{
             val sendData = ""
             // W3C SCXML 6.2: Delayed send
-            scheduleSend("__send_0", 1000L, Test242Event.Timeout1, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: "", data = sendData))
+            scheduleSend("__send_0", 1000L, Test242Event.Timeout1, EventMetadata.external(sendId = "__send_0", origin = sessionId, data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -261,7 +261,7 @@ class Test242StateMachine(
             if (run send@{
             val sendData = ""
             // W3C SCXML 6.2: Delayed send
-            scheduleSend("__send_1", 1000L, Test242Event.Timeout2, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: "", data = sendData))
+            scheduleSend("__send_1", 1000L, Test242Event.Timeout2, EventMetadata.external(sendId = "__send_1", origin = sessionId, data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -281,7 +281,7 @@ class Test242StateMachine(
             if (run send@{
             val sendData = ""
             // W3C SCXML 6.2: Delayed send
-            scheduleSend("__send_2", 1000L, Test242Event.Timeout3, EventMetadata.external(sendId = "__send_2", origin = scriptSessionId ?: "", data = sendData))
+            scheduleSend("__send_2", 1000L, Test242Event.Timeout3, EventMetadata.external(sendId = "__send_2", origin = sessionId, data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -315,7 +315,7 @@ class Test242StateMachine(
 
                     val childSM = adoptChild(Test242sub1StateMachine(), generatedInvokeId)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                    startInvoke("_invoke_0", childSM, false, Test242Event.Done.Invoke, "", generatedInvokeId, "test242sub1")
+                    startInvoke("_invoke_0", childSM, false, Test242Event.Done.Invoke, "", generatedInvokeId, "test242sub1", "test242sub1", "_invoke_0")
                 }
             }
             "_invoke_1" -> run {
@@ -326,7 +326,7 @@ class Test242StateMachine(
 
                     val childSM = adoptChild(Test242SceSynthInvokeInvoke1StateMachine(), generatedInvokeId)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                    startInvoke("_invoke_1", childSM, false, Test242Event.Done.Invoke, "", generatedInvokeId, "")
+                    startInvoke("_invoke_1", childSM, false, Test242Event.Done.Invoke, "", generatedInvokeId, "", "test242__sce_synth_invoke__invoke_1", "_invoke_1")
                 }
             }
             "_invoke_2" -> run {
@@ -337,7 +337,7 @@ class Test242StateMachine(
 
                     val childSM = adoptChild(Test242SceSynthInvokeInvoke2StateMachine(), generatedInvokeId)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                    startInvoke("_invoke_2", childSM, false, Test242Event.Done.Invoke, "", generatedInvokeId, "")
+                    startInvoke("_invoke_2", childSM, false, Test242Event.Done.Invoke, "", generatedInvokeId, "", "test242__sce_synth_invoke__invoke_2", "_invoke_2")
                 }
             }
             else -> error("the document has no child session '$invokeId' (codegen invariant)")

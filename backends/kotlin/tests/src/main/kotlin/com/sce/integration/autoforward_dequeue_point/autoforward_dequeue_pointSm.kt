@@ -225,7 +225,7 @@ class AutoforwardDequeuePointStateMachine(
 
                     val childSM = adoptChild(AutoforwardDequeuePointSceSynthInvokeInvProbeStateMachine(), generatedInvokeId)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                    startInvoke("inv_probe", childSM, true, AutoforwardDequeuePointEvent.Done.Invoke, "", generatedInvokeId, "")
+                    startInvoke("inv_probe", childSM, true, AutoforwardDequeuePointEvent.Done.Invoke, "", generatedInvokeId, "", "autoforward_dequeue_point__sce_synth_invoke__inv_probe", "inv_probe")
                 }
             }
             else -> error("the document has no child session '$invokeId' (codegen invariant)")
@@ -265,7 +265,7 @@ class AutoforwardDequeuePointStateMachine(
             if (run send@{
             val sendData = ""
             // W3C SCXML 6.2: send to this session's external queue
-            send(AutoforwardDequeuePointEvent.First, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: "", data = sendData))
+            send(AutoforwardDequeuePointEvent.First, EventMetadata.external(sendId = "__send_0", origin = sessionId, data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -277,7 +277,7 @@ class AutoforwardDequeuePointStateMachine(
             if (run send@{
             val sendData = ""
             // W3C SCXML 6.2: send to this session's external queue
-            send(AutoforwardDequeuePointEvent.Second, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: "", data = sendData))
+            send(AutoforwardDequeuePointEvent.Second, EventMetadata.external(sendId = "__send_1", origin = sessionId, data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was

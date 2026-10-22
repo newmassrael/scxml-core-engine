@@ -444,7 +444,7 @@ class AutoforwardEventFieldsStateMachine(
 
                     val childSM = adoptChild(AutoforwardEventFieldsSceSynthInvokeInvEchoStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)")), generatedInvokeId)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                    startInvoke("inv_echo", childSM, true, AutoforwardEventFieldsEvent.Done.Invoke, "", generatedInvokeId, "")
+                    startInvoke("inv_echo", childSM, true, AutoforwardEventFieldsEvent.Done.Invoke, "", generatedInvokeId, "", "autoforward_event_fields__sce_synth_invoke__inv_echo", "inv_echo")
                 }
             }
             else -> error("the document has no child session '$invokeId' (codegen invariant)")

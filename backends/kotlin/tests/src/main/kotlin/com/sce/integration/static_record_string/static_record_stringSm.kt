@@ -69,7 +69,19 @@ data class StaticRecordStringLabelledRecord(val sensor: UByte, val label: String
 // --- State Machine (W3C SCXML) ---
 
 class StaticRecordStringStateMachine(
+    /**
+     * docs/adr/0045: the id of this machine's session (`_sessionid`), which a
+     * saved state names it by and a peer addresses it by (`#_scxml_<id>`), given
+     * by the host that creates it: an XML Nmtoken, refused when it is not one
+     * and never replaced. Drawn (a UUID version 4) when the host gives none. A
+     * child is given the id its parent derives for it, and this is not read.
+     */
+    sessionId: String? = null,
 ) : StateMachineEngine<StaticRecordStringState, StaticRecordStringEvent>() {
+
+    init {
+        bindRootSessionId(sessionId)
+    }
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
     /** W3C SCXML 5.2: the `last` datamodel variable, published (`sce:direction="out"`). */
@@ -243,6 +255,21 @@ class StaticRecordStringStateMachine(
 
     /** [restore] at the host's wall clock now. */
     fun restore(saved: SavedState) = restore(saved, SavedState.wallClockMs())
+
+    // docs/adr/0045: this machine as a child session of another's saved state —
+    // saved with it, judged with it before anything is built, and restored in
+    // place of initialized.
+    override fun saveAsSession(wallNowMs: Long): SavedState = save(wallNowMs)
+
+    override fun judgeAsSession(saved: SavedState) {
+        val savedGrown = beginRestore(saved, savedShape)
+        StaticRecordStringLabelledRecord.fromSaved(savedGrown.variable("last"), "last")
+        SavedValues.string(savedGrown.variable("note"), "note", 16)
+        SavedValues.list(savedGrown.variable("labels"), "labels", 3) { e, w -> StaticRecordStringLabelledRecord.fromSaved(e, w) }
+        SavedValues.uint32(savedGrown.variable("errors"), "errors")
+    }
+
+    override fun restoreAsSession(saved: SavedState, wallNowMs: Long) = restore(saved, wallNowMs)
 
     // NL→IR Item C1 Path A: the current event's typed `_event.data` payload(s),
     // lifted from the dequeued event by populateTypedPayload and read by the

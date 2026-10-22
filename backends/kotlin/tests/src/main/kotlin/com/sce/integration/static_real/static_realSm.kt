@@ -34,7 +34,19 @@ sealed interface StaticRealEvent : Event {
 // --- State Machine (W3C SCXML) ---
 
 class StaticRealStateMachine(
+    /**
+     * docs/adr/0045: the id of this machine's session (`_sessionid`), which a
+     * saved state names it by and a peer addresses it by (`#_scxml_<id>`), given
+     * by the host that creates it: an XML Nmtoken, refused when it is not one
+     * and never replaced. Drawn (a UUID version 4) when the host gives none. A
+     * child is given the id its parent derives for it, and this is not read.
+     */
+    sessionId: String? = null,
 ) : StateMachineEngine<StaticRealState, StaticRealEvent>() {
+
+    init {
+        bindRootSessionId(sessionId)
+    }
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
     /** W3C SCXML 5.2: the `level` datamodel variable, published (`sce:direction="out"`). */
@@ -225,6 +237,24 @@ class StaticRealStateMachine(
 
     /** [restore] at the host's wall clock now. */
     fun restore(saved: SavedState) = restore(saved, SavedState.wallClockMs())
+
+    // docs/adr/0045: this machine as a child session of another's saved state —
+    // saved with it, judged with it before anything is built, and restored in
+    // place of initialized.
+    override fun saveAsSession(wallNowMs: Long): SavedState = save(wallNowMs)
+
+    override fun judgeAsSession(saved: SavedState) {
+        val savedGrown = beginRestore(saved, savedShape)
+        SavedValues.float64(savedGrown.variable("level"), "level")
+        SavedValues.float64(savedGrown.variable("rate"), "rate")
+        SavedValues.float64(savedGrown.variable("total"), "total")
+        SavedValues.float64(savedGrown.variable("tenth"), "tenth")
+        SavedValues.float64(savedGrown.variable("drift"), "drift")
+        SavedValues.list(savedGrown.variable("samples"), "samples", 3) { e, w -> SavedValues.float64(e, w) }
+        SavedValues.uint32(savedGrown.variable("errors"), "errors")
+    }
+
+    override fun restoreAsSession(saved: SavedState, wallNowMs: Long) = restore(saved, wallNowMs)
 
     override val initialState: StaticRealState = StaticRealState.Low
 

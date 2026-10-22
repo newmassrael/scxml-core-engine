@@ -297,7 +297,7 @@ class StatechartDelayedHostSendStateMachine(
             if (run send@{
             val sendData = ""
             // W3C SCXML 6.2: Delayed send
-            scheduleSend("__send_2", 100L, StatechartDelayedHostSendEvent.Settle, EventMetadata.external(sendId = "__send_2", origin = scriptSessionId ?: "", data = sendData))
+            scheduleSend("__send_2", 100L, StatechartDelayedHostSendEvent.Settle, EventMetadata.external(sendId = "__send_2", origin = sessionId, data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -323,7 +323,7 @@ class StatechartDelayedHostSendStateMachine(
             if (run send@{
             val sendData = ""
             // W3C SCXML 6.2: Delayed send
-            scheduleSend("__send_3", 200L, StatechartDelayedHostSendEvent.Finish, EventMetadata.external(sendId = "__send_3", origin = scriptSessionId ?: "", data = sendData))
+            scheduleSend("__send_3", 200L, StatechartDelayedHostSendEvent.Finish, EventMetadata.external(sendId = "__send_3", origin = sessionId, data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -392,7 +392,7 @@ class StatechartDelayedHostSendStateMachine(
             if (run send@{
             val sendData = ""
             // W3C SCXML 6.2: Delayed send
-            scheduleSend("__send_1", 100L, StatechartDelayedHostSendEvent.Probe, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: "", data = sendData))
+            scheduleSend("__send_1", 100L, StatechartDelayedHostSendEvent.Probe, EventMetadata.external(sendId = "__send_1", origin = sessionId, data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was

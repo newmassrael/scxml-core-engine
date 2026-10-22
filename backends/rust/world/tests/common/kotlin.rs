@@ -111,7 +111,10 @@ impl Cast {
                 ACTORS.contains(who),
                 "{who} is not an actor of the to-do list"
             );
-            let machine = ExternalMachine::spawn(&command)
+            // The copy's session is named by the actor, as its Rust copy is named
+            // (`Mix::world`): what the two save is compared as text, and a drawn id
+            // would be one more word in it (docs/adr/0045).
+            let machine = ExternalMachine::spawn(&command.clone().args(["--session-id", who]))
                 .unwrap_or_else(|failure| panic!("the Kotlin step server for {who}: {failure}"));
             assert_eq!(
                 machine.machine(),
@@ -157,7 +160,11 @@ impl Mix<'_> {
             if self.is_kotlin(who) {
                 world.add_external(who, &self.cast.processes[who], router);
             } else {
-                world.add(who, TodoPeer::new(), router);
+                world.add(
+                    who,
+                    TodoPeer::new_with_session_id(who).expect("an actor's name is an Nmtoken"),
+                    router,
+                );
             }
         })
     }

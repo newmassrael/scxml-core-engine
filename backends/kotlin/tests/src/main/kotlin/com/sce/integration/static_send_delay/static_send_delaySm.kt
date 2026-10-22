@@ -32,7 +32,19 @@ sealed interface StaticSendDelayEvent : Event {
 // --- State Machine (W3C SCXML) ---
 
 class StaticSendDelayStateMachine(
+    /**
+     * docs/adr/0045: the id of this machine's session (`_sessionid`), which a
+     * saved state names it by and a peer addresses it by (`#_scxml_<id>`), given
+     * by the host that creates it: an XML Nmtoken, refused when it is not one
+     * and never replaced. Drawn (a UUID version 4) when the host gives none. A
+     * child is given the id its parent derives for it, and this is not read.
+     */
+    sessionId: String? = null,
 ) : StateMachineEngine<StaticSendDelayState, StaticSendDelayEvent>() {
+
+    init {
+        bindRootSessionId(sessionId)
+    }
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
     /** W3C SCXML 5.2: the `wait` datamodel variable, published (`sce:direction="out"`). */
@@ -187,6 +199,20 @@ class StaticSendDelayStateMachine(
 
     /** [restore] at the host's wall clock now. */
     fun restore(saved: SavedState) = restore(saved, SavedState.wallClockMs())
+
+    // docs/adr/0045: this machine as a child session of another's saved state —
+    // saved with it, judged with it before anything is built, and restored in
+    // place of initialized.
+    override fun saveAsSession(wallNowMs: Long): SavedState = save(wallNowMs)
+
+    override fun judgeAsSession(saved: SavedState) {
+        val savedGrown = beginRestore(saved, savedShape)
+        SavedValues.uint32(savedGrown.variable("wait"), "wait")
+        SavedValues.uint32(savedGrown.variable("beats"), "beats")
+        SavedValues.uint32(savedGrown.variable("refusals"), "refusals")
+    }
+
+    override fun restoreAsSession(saved: SavedState, wallNowMs: Long) = restore(saved, wallNowMs)
 
     override val initialState: StaticSendDelayState = StaticSendDelayState.Idle
 
@@ -374,7 +400,7 @@ class StaticSendDelayStateMachine(
             }
             val sendData = ""
             // W3C SCXML 6.2: Delayed send
-            scheduleSend("__send_0", sendDelayMs, StaticSendDelayEvent.Beat, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: "", data = sendData))
+            scheduleSend("__send_0", sendDelayMs, StaticSendDelayEvent.Beat, EventMetadata.external(sendId = "__send_0", origin = sessionId, data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -406,7 +432,7 @@ class StaticSendDelayStateMachine(
             }
             val sendData = ""
             // W3C SCXML 6.2: Delayed send
-            scheduleSend("__send_1", sendDelayMs, StaticSendDelayEvent.Beat, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: "", data = sendData))
+            scheduleSend("__send_1", sendDelayMs, StaticSendDelayEvent.Beat, EventMetadata.external(sendId = "__send_1", origin = sessionId, data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -436,7 +462,7 @@ class StaticSendDelayStateMachine(
             }
             val sendData = ""
             // W3C SCXML 6.2: Delayed send
-            scheduleSend("__send_2", sendDelayMs, StaticSendDelayEvent.Beat, EventMetadata.external(sendId = "__send_2", origin = scriptSessionId ?: "", data = sendData))
+            scheduleSend("__send_2", sendDelayMs, StaticSendDelayEvent.Beat, EventMetadata.external(sendId = "__send_2", origin = sessionId, data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was

@@ -66,7 +66,19 @@ data class StaticOptionalUnwidenedDueRecord(val id: UInt, val due: Long, val tit
 // --- State Machine (W3C SCXML) ---
 
 class StaticOptionalUnwidenedStateMachine(
+    /**
+     * docs/adr/0045: the id of this machine's session (`_sessionid`), which a
+     * saved state names it by and a peer addresses it by (`#_scxml_<id>`), given
+     * by the host that creates it: an XML Nmtoken, refused when it is not one
+     * and never replaced. Drawn (a UUID version 4) when the host gives none. A
+     * child is given the id its parent derives for it, and this is not read.
+     */
+    sessionId: String? = null,
 ) : StateMachineEngine<StaticOptionalUnwidenedState, StaticOptionalUnwidenedEvent>() {
+
+    init {
+        bindRootSessionId(sessionId)
+    }
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
     /** W3C SCXML 5.2: the `due` datamodel variable, published (`sce:direction="out"`). */
@@ -483,6 +495,41 @@ class StaticOptionalUnwidenedStateMachine(
 
     /** [restore] at the host's wall clock now. */
     fun restore(saved: SavedState) = restore(saved, SavedState.wallClockMs())
+
+    // docs/adr/0045: this machine as a child session of another's saved state —
+    // saved with it, judged with it before anything is built, and restored in
+    // place of initialized.
+    override fun saveAsSession(wallNowMs: Long): SavedState = save(wallNowMs)
+
+    override fun judgeAsSession(saved: SavedState) {
+        val savedGrown = beginRestore(saved, savedShape)
+        SavedValues.int64(savedGrown.variable("due"), "due")
+        SavedValues.int64(savedGrown.variable("other"), "other")
+        SavedValues.string(savedGrown.variable("title"), "title", 16)
+        StaticOptionalUnwidenedStatusEnum.fromSaved(savedGrown.variable("status"), "status")
+        StaticOptionalUnwidenedDueRecord.fromSaved(savedGrown.variable("item"), "item")
+        SavedValues.list(savedGrown.variable("items"), "items", 3) { e, w -> StaticOptionalUnwidenedDueRecord.fromSaved(e, w) }
+        SavedValues.int64(savedGrown.variable("days"), "days")
+        SavedValues.int64(savedGrown.variable("following"), "following")
+        SavedValues.bool(savedGrown.variable("late"), "late")
+        SavedValues.bool(savedGrown.variable("early"), "early")
+        SavedValues.string(savedGrown.variable("label"), "label", 16)
+        StaticOptionalUnwidenedStatusEnum.fromSaved(savedGrown.variable("plain"), "plain")
+        SavedValues.int64(savedGrown.variable("kept"), "kept")
+        SavedValues.int64(savedGrown.variable("listed"), "listed")
+        SavedValues.uint32(savedGrown.variable("missing"), "missing")
+        SavedValues.bool(savedGrown.variable("same"), "same")
+        SavedValues.bool(savedGrown.variable("absent"), "absent")
+        SavedValues.bool(savedGrown.variable("statusDone"), "statusDone")
+        SavedValues.int64(savedGrown.variable("echoed"), "echoed")
+        SavedValues.string(savedGrown.variable("echoTitle"), "echoTitle", 16)
+        StaticOptionalUnwidenedStatusEnum.fromSaved(savedGrown.variable("echoStatus"), "echoStatus")
+        SavedValues.uint32(savedGrown.variable("fallbacks"), "fallbacks")
+        SavedValues.uint32(savedGrown.variable("errors"), "errors")
+        SavedValues.int64(savedGrown.variable("huge"), "huge")
+    }
+
+    override fun restoreAsSession(saved: SavedState, wallNowMs: Long) = restore(saved, wallNowMs)
 
     override val initialState: StaticOptionalUnwidenedState = StaticOptionalUnwidenedState.Tracking
 

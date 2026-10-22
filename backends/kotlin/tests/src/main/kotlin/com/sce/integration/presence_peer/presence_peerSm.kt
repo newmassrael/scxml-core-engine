@@ -85,7 +85,19 @@ data class PresencePeerSeenRecord(val client: UInt, val last: Long, val gen: UIn
 // --- State Machine (W3C SCXML) ---
 
 class PresencePeerStateMachine(
+    /**
+     * docs/adr/0045: the id of this machine's session (`_sessionid`), which a
+     * saved state names it by and a peer addresses it by (`#_scxml_<id>`), given
+     * by the host that creates it: an XML Nmtoken, refused when it is not one
+     * and never replaced. Drawn (a UUID version 4) when the host gives none. A
+     * child is given the id its parent derives for it, and this is not read.
+     */
+    sessionId: String? = null,
 ) : StateMachineEngine<PresencePeerState, PresencePeerEvent>() {
+
+    init {
+        bindRootSessionId(sessionId)
+    }
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
     /** W3C SCXML 5.2: the `node` datamodel variable, published (`sce:direction="out"`). */
@@ -334,6 +346,29 @@ class PresencePeerStateMachine(
 
     /** [restore] at the host's wall clock now. */
     fun restore(saved: SavedState) = restore(saved, SavedState.wallClockMs())
+
+    // docs/adr/0045: this machine as a child session of another's saved state —
+    // saved with it, judged with it before anything is built, and restored in
+    // place of initialized.
+    override fun saveAsSession(wallNowMs: Long): SavedState = save(wallNowMs)
+
+    override fun judgeAsSession(saved: SavedState) {
+        val savedGrown = beginRestore(saved, savedShape)
+        SavedValues.uint32(savedGrown.variable("node"), "node")
+        SavedValues.bool(savedGrown.variable("hub"), "hub")
+        SavedValues.uint32(savedGrown.variable("ttl"), "ttl")
+        SavedValues.uint32(savedGrown.variable("lease"), "lease")
+        SavedValues.list(savedGrown.variable("online"), "online", 128) { e, w -> PresencePeerSeenRecord.fromSaved(e, w) }
+        SavedValues.list(savedGrown.variable("rebuilt"), "rebuilt", 128) { e, w -> PresencePeerSeenRecord.fromSaved(e, w) }
+        PresencePeerSeenRecord.fromSaved(savedGrown.variable("entry"), "entry")
+        SavedValues.uint32(savedGrown.variable("serial"), "serial")
+        SavedValues.bool(savedGrown.variable("known"), "known")
+        SavedValues.bool(savedGrown.variable("fresh"), "fresh")
+        SavedValues.uint32(savedGrown.variable("lost"), "lost")
+        SavedValues.uint32(savedGrown.variable("refusals"), "refusals")
+    }
+
+    override fun restoreAsSession(saved: SavedState, wallNowMs: Long) = restore(saved, wallNowMs)
 
     // NL→IR Item C1 Path A: the current event's typed `_event.data` payload(s),
     // lifted from the dequeued event by populateTypedPayload and read by the
@@ -909,7 +944,7 @@ class PresencePeerStateMachine(
 
             val sendData = buildJsonFromParams(sendPayload)
             // W3C SCXML 6.2: Delayed send
-            scheduleSend("__send_3", sendDelayMs, PresencePeerEvent.Presence.Expire, EventMetadata.external(sendId = "__send_3", origin = scriptSessionId ?: "", data = sendData))
+            scheduleSend("__send_3", sendDelayMs, PresencePeerEvent.Presence.Expire, EventMetadata.external(sendId = "__send_3", origin = sessionId, data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was

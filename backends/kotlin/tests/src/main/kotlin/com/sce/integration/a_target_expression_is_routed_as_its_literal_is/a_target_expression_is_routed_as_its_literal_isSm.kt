@@ -1474,7 +1474,7 @@ ATargetExpressionIsRoutedAsItsLiteralIsEvent.Lost,
 
                     val childSM = adoptChild(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)")), generatedInvokeId)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                    startInvoke("kid", childSM, false, ATargetExpressionIsRoutedAsItsLiteralIsEvent.Done.Invoke, "", generatedInvokeId, "")
+                    startInvoke("kid", childSM, false, ATargetExpressionIsRoutedAsItsLiteralIsEvent.Done.Invoke, "", generatedInvokeId, "", "a_target_expression_is_routed_as_its_literal_is__sce_synth_invoke__kid", "kid")
                 }
             }
             else -> error("the document has no child session '$invokeId' (codegen invariant)")
@@ -2048,7 +2048,7 @@ ATargetExpressionIsRoutedAsItsLiteralIsEvent.SLater,
             if (run send@{
             val sendData = ""
             // W3C SCXML 6.2: Delayed send
-            scheduleSend("__send_6", 300L, ATargetExpressionIsRoutedAsItsLiteralIsEvent.Settle, EventMetadata.external(sendId = "__send_6", origin = scriptSessionId ?: "", data = sendData))
+            scheduleSend("__send_6", 300L, ATargetExpressionIsRoutedAsItsLiteralIsEvent.Settle, EventMetadata.external(sendId = "__send_6", origin = sessionId, data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was

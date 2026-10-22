@@ -61,7 +61,19 @@ data class StaticRecordListIndexDayRecord(val year: UShort, val month: UByte, va
 // --- State Machine (W3C SCXML) ---
 
 class StaticRecordListIndexStateMachine(
+    /**
+     * docs/adr/0045: the id of this machine's session (`_sessionid`), which a
+     * saved state names it by and a peer addresses it by (`#_scxml_<id>`), given
+     * by the host that creates it: an XML Nmtoken, refused when it is not one
+     * and never replaced. Drawn (a UUID version 4) when the host gives none. A
+     * child is given the id its parent derives for it, and this is not read.
+     */
+    sessionId: String? = null,
 ) : StateMachineEngine<StaticRecordListIndexState, StaticRecordListIndexEvent>() {
+
+    init {
+        bindRootSessionId(sessionId)
+    }
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
     /** W3C SCXML 5.2: the `draft` datamodel variable, the machine's own. */
@@ -284,6 +296,26 @@ class StaticRecordListIndexStateMachine(
 
     /** [restore] at the host's wall clock now. */
     fun restore(saved: SavedState) = restore(saved, SavedState.wallClockMs())
+
+    // docs/adr/0045: this machine as a child session of another's saved state —
+    // saved with it, judged with it before anything is built, and restored in
+    // place of initialized.
+    override fun saveAsSession(wallNowMs: Long): SavedState = save(wallNowMs)
+
+    override fun judgeAsSession(saved: SavedState) {
+        val savedGrown = beginRestore(saved, savedShape)
+        StaticRecordListIndexDayRecord.fromSaved(savedGrown.variable("draft"), "draft")
+        StaticRecordListIndexDayRecord.fromSaved(savedGrown.variable("picked"), "picked")
+        SavedValues.list(savedGrown.variable("days"), "days", 3) { e, w -> StaticRecordListIndexDayRecord.fromSaved(e, w) }
+        SavedValues.int32(savedGrown.variable("cursor"), "cursor")
+        SavedValues.uint8(savedGrown.variable("day"), "day")
+        SavedValues.uint16(savedGrown.variable("year"), "year")
+        SavedValues.uint32(savedGrown.variable("sum"), "sum")
+        SavedValues.bool(savedGrown.variable("ordered"), "ordered")
+        SavedValues.uint32(savedGrown.variable("refusals"), "refusals")
+    }
+
+    override fun restoreAsSession(saved: SavedState, wallNowMs: Long) = restore(saved, wallNowMs)
 
     // NL→IR Item C1 Path A: the current event's typed `_event.data` payload(s),
     // lifted from the dequeued event by populateTypedPayload and read by the

@@ -496,7 +496,7 @@ class DonedataLocalInvokeStateMachine(
 
                     val childSM = adoptChild(DonedataLocalInvokeSceSynthInvokeInvContentStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)")), generatedInvokeId)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                    startInvoke("inv_content", childSM, false, DonedataLocalInvokeEvent.Done.Invoke.InvContent, "", generatedInvokeId, "")
+                    startInvoke("inv_content", childSM, false, DonedataLocalInvokeEvent.Done.Invoke.InvContent, "", generatedInvokeId, "", "donedata_local_invoke__sce_synth_invoke__inv_content", "inv_content")
                 }
             }
             "inv_param" -> run {
@@ -507,7 +507,7 @@ class DonedataLocalInvokeStateMachine(
 
                     val childSM = adoptChild(DonedataLocalInvokeSceSynthInvokeInvParamStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)")), generatedInvokeId)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                    startInvoke("inv_param", childSM, false, DonedataLocalInvokeEvent.Done.Invoke.InvParam, "", generatedInvokeId, "")
+                    startInvoke("inv_param", childSM, false, DonedataLocalInvokeEvent.Done.Invoke.InvParam, "", generatedInvokeId, "", "donedata_local_invoke__sce_synth_invoke__inv_param", "inv_param")
                 }
             }
             else -> error("the document has no child session '$invokeId' (codegen invariant)")

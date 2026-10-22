@@ -180,7 +180,7 @@ class Test192SceSynthInvoke0zinvokedzuchildStateMachine(
             if (run send@{
             val sendData = ""
             // W3C SCXML 6.2: Delayed send
-            scheduleSend("__send_2", 3000L, Test192SceSynthInvoke0zinvokedzuchildEvent.Timeout, EventMetadata.external(sendId = "__send_2", origin = scriptSessionId ?: "", data = sendData))
+            scheduleSend("__send_2", 3000L, Test192SceSynthInvoke0zinvokedzuchildEvent.Timeout, EventMetadata.external(sendId = "__send_2", origin = sessionId, data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was

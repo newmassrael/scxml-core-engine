@@ -610,7 +610,7 @@ class ASendContentExprIsThePayloadStateMachine(
                 valueToJson("")
             }
             // W3C SCXML 6.2: send to this session's external queue
-            send(ASendContentExprIsThePayloadEvent.Number, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: "", data = sendData))
+            send(ASendContentExprIsThePayloadEvent.Number, EventMetadata.external(sendId = "__send_0", origin = sessionId, data = sendData))
             paramFailed
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -638,7 +638,7 @@ class ASendContentExprIsThePayloadStateMachine(
                 valueToJson("")
             }
             // W3C SCXML 6.2: send to this session's external queue
-            send(ASendContentExprIsThePayloadEvent.Object, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: "", data = sendData))
+            send(ASendContentExprIsThePayloadEvent.Object, EventMetadata.external(sendId = "__send_1", origin = sessionId, data = sendData))
             paramFailed
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -666,7 +666,7 @@ class ASendContentExprIsThePayloadStateMachine(
                 valueToJson("")
             }
             // W3C SCXML 6.2: send to this session's external queue
-            send(ASendContentExprIsThePayloadEvent.Text, EventMetadata.external(sendId = "__send_2", origin = scriptSessionId ?: "", data = sendData))
+            send(ASendContentExprIsThePayloadEvent.Text, EventMetadata.external(sendId = "__send_2", origin = sessionId, data = sendData))
             paramFailed
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -697,7 +697,7 @@ class ASendContentExprIsThePayloadStateMachine(
                 valueToJson("")
             }
             // W3C SCXML 6.2: send to this session's external queue
-            send(ASendContentExprIsThePayloadEvent.Bad, EventMetadata.external(sendId = "__send_3", origin = scriptSessionId ?: "", data = sendData))
+            send(ASendContentExprIsThePayloadEvent.Bad, EventMetadata.external(sendId = "__send_3", origin = sessionId, data = sendData))
             paramFailed
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -717,7 +717,7 @@ class ASendContentExprIsThePayloadStateMachine(
             if (run send@{
             val sendData = ""
             // W3C SCXML 6.2: send to this session's external queue
-            send(ASendContentExprIsThePayloadEvent.Settle, EventMetadata.external(sendId = "__send_4", origin = scriptSessionId ?: "", data = sendData))
+            send(ASendContentExprIsThePayloadEvent.Settle, EventMetadata.external(sendId = "__send_4", origin = sessionId, data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was

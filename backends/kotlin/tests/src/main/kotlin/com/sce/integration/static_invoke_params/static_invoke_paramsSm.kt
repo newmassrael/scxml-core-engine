@@ -37,7 +37,19 @@ sealed interface StaticInvokeParamsEvent : Event {
 // --- State Machine (W3C SCXML) ---
 
 class StaticInvokeParamsStateMachine(
+    /**
+     * docs/adr/0045: the id of this machine's session (`_sessionid`), which a
+     * saved state names it by and a peer addresses it by (`#_scxml_<id>`), given
+     * by the host that creates it: an XML Nmtoken, refused when it is not one
+     * and never replaced. Drawn (a UUID version 4) when the host gives none. A
+     * child is given the id its parent derives for it, and this is not read.
+     */
+    sessionId: String? = null,
 ) : StateMachineEngine<StaticInvokeParamsState, StaticInvokeParamsEvent>() {
+
+    init {
+        bindRootSessionId(sessionId)
+    }
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
     /** W3C SCXML 5.2: the `base` datamodel variable, the machine's own. */
@@ -182,6 +194,20 @@ class StaticInvokeParamsStateMachine(
 
     /** [restore] at the host's wall clock now. */
     fun restore(saved: SavedState) = restore(saved, SavedState.wallClockMs())
+
+    // docs/adr/0045: this machine as a child session of another's saved state —
+    // saved with it, judged with it before anything is built, and restored in
+    // place of initialized.
+    override fun saveAsSession(wallNowMs: Long): SavedState = save(wallNowMs)
+
+    override fun judgeAsSession(saved: SavedState) {
+        val savedGrown = beginRestore(saved, savedShape)
+        SavedValues.uint32(savedGrown.variable("base"), "base")
+        SavedValues.bool(savedGrown.variable("enabled"), "enabled")
+        SavedValues.uint32(savedGrown.variable("completed"), "completed")
+    }
+
+    override fun restoreAsSession(saved: SavedState, wallNowMs: Long) = restore(saved, wallNowMs)
 
     // §scxml-6.4: a saved state names the `<invoke>`s whose child is running,
     // and a restore starts each again from its beginning. This document saves
@@ -371,7 +397,7 @@ class StaticInvokeParamsStateMachine(
                     val childSM = adoptChild(StaticInvokeParamsSceSynthInvokeControlStateMachine(), generatedInvokeId)
 
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                    startInvoke("control", childSM, false, StaticInvokeParamsEvent.Done.Invoke.Control, "", generatedInvokeId, "")
+                    startInvoke("control", childSM, false, StaticInvokeParamsEvent.Done.Invoke.Control, "", generatedInvokeId, "", "static_invoke_params__sce_synth_invoke__control", "control")
                 }
             }
             "watcher" -> run {
@@ -387,7 +413,7 @@ class StaticInvokeParamsStateMachine(
                     childSM.acceptParams(childSeed)
 
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                    startInvoke("watcher", childSM, false, StaticInvokeParamsEvent.Done.Invoke.Watcher, "", generatedInvokeId, "")
+                    startInvoke("watcher", childSM, false, StaticInvokeParamsEvent.Done.Invoke.Watcher, "", generatedInvokeId, "", "static_invoke_params__sce_synth_invoke__watcher", "watcher")
                 }
             }
             "worker" -> run {
@@ -404,11 +430,45 @@ class StaticInvokeParamsStateMachine(
                     childSM.acceptParams(childSeed)
 
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                    startInvoke("worker", childSM, false, StaticInvokeParamsEvent.Done.Invoke.Worker, "", generatedInvokeId, "")
+                    startInvoke("worker", childSM, false, StaticInvokeParamsEvent.Done.Invoke.Worker, "", generatedInvokeId, "", "static_invoke_params__sce_synth_invoke__worker", "worker")
                 }
             }
             else -> error("the document has no child session '$invokeId' (codegen invariant)")
         }
+    }
+
+    // docs/adr/0045, section 3, steps 1 and 3: the machine of a running child a
+    // saved state lists, built as the `<invoke>` that started it builds it and
+    // with what a start does with the child once built. Nothing is evaluated here:
+    // no `<param>`, no `srcexpr`, no `idlocation` — the child resumes where it
+    // stood, and a hybrid child is the candidate its saved `document` names,
+    // whatever the `srcexpr` reads now.
+    override fun buildSavedChild(child: SavedChild): ResumedChild<StaticInvokeParamsEvent> = when (child.id) {
+        "control" -> if (child.document == "static_invoke_params__sce_synth_invoke__control") {
+            ResumedChild(
+                StaticInvokeParamsSceSynthInvokeControlStateMachine(),
+                false, StaticInvokeParamsEvent.Done.Invoke.Control, "", "", "control",
+            )
+        } else {
+            throw StateRefusal("invokes names '${child.id}' running '${child.document}', a document that `<invoke>` does not start")
+        }
+        "watcher" -> if (child.document == "static_invoke_params__sce_synth_invoke__watcher") {
+            ResumedChild(
+                StaticInvokeParamsSceSynthInvokeWatcherStateMachine(),
+                false, StaticInvokeParamsEvent.Done.Invoke.Watcher, "", "", "watcher",
+            )
+        } else {
+            throw StateRefusal("invokes names '${child.id}' running '${child.document}', a document that `<invoke>` does not start")
+        }
+        "worker" -> if (child.document == "static_invoke_params__sce_synth_invoke__worker") {
+            ResumedChild(
+                StaticInvokeParamsSceSynthInvokeWorkerStateMachine(),
+                false, StaticInvokeParamsEvent.Done.Invoke.Worker, "", "", "worker",
+            )
+        } else {
+            throw StateRefusal("invokes names '${child.id}' running '${child.document}', a document that `<invoke>` does not start")
+        }
+        else -> throw StateRefusal("the document has no child session '${child.id}'")
     }
 
     // Exit Actions (W3C SCXML 3.9)

@@ -251,7 +251,19 @@ interface StaticHostNotifySceHostNotifyRequestPermissionInvoker {
 
 
 class StaticHostNotifyStateMachine(
+    /**
+     * docs/adr/0045: the id of this machine's session (`_sessionid`), which a
+     * saved state names it by and a peer addresses it by (`#_scxml_<id>`), given
+     * by the host that creates it: an XML Nmtoken, refused when it is not one
+     * and never replaced. Drawn (a UUID version 4) when the host gives none. A
+     * child is given the id its parent derives for it, and this is not read.
+     */
+    sessionId: String? = null,
 ) : StateMachineEngine<StaticHostNotifyState, StaticHostNotifyEvent>() {
+
+    init {
+        bindRootSessionId(sessionId)
+    }
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
     /** W3C SCXML 5.2: the `id` datamodel variable, the machine's own. */
@@ -446,6 +458,25 @@ class StaticHostNotifyStateMachine(
 
     /** [restore] at the host's wall clock now. */
     fun restore(saved: SavedState) = restore(saved, SavedState.wallClockMs())
+
+    // docs/adr/0045: this machine as a child session of another's saved state —
+    // saved with it, judged with it before anything is built, and restored in
+    // place of initialized.
+    override fun saveAsSession(wallNowMs: Long): SavedState = save(wallNowMs)
+
+    override fun judgeAsSession(saved: SavedState) {
+        val savedGrown = beginRestore(saved, savedShape)
+        SavedValues.string(savedGrown.variable("id"), "id", 64)
+        SavedValues.string(savedGrown.variable("title"), "title", 128)
+        SavedValues.string(savedGrown.variable("body"), "body", 512)
+        SavedValues.int64(savedGrown.variable("at_ms"), "at_ms")
+        SavedValues.string(savedGrown.variable("outcome"), "outcome", 24)
+        SavedValues.string(savedGrown.variable("permission"), "permission", 16)
+        SavedValues.string(savedGrown.variable("status"), "status", 16)
+        SavedValues.bool(savedGrown.variable("existed"), "existed")
+    }
+
+    override fun restoreAsSession(saved: SavedState, wallNowMs: Long) = restore(saved, wallNowMs)
 
     // §scxml-6.4.1: a saved state names the `<invoke>`s a declared host invoker
     // is running, and a restore starts each again from the request it saved. What

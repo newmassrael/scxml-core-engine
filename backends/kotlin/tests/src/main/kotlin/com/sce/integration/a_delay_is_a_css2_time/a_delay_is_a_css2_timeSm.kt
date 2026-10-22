@@ -560,7 +560,7 @@ class ADelayIsACss2TimeStateMachine(
             }
             val sendData = ""
             // W3C SCXML 6.2: Delayed send
-            scheduleSend("__send_1", sendDelayMs, ADelayIsACss2TimeEvent.Bad, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: "", data = sendData))
+            scheduleSend("__send_1", sendDelayMs, ADelayIsACss2TimeEvent.Bad, EventMetadata.external(sendId = "__send_1", origin = sessionId, data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -596,7 +596,7 @@ class ADelayIsACss2TimeStateMachine(
             }
             val sendData = ""
             // W3C SCXML 6.2: Delayed send
-            scheduleSend("__send_2", sendDelayMs, ADelayIsACss2TimeEvent.A, EventMetadata.external(sendId = "__send_2", origin = scriptSessionId ?: "", data = sendData))
+            scheduleSend("__send_2", sendDelayMs, ADelayIsACss2TimeEvent.A, EventMetadata.external(sendId = "__send_2", origin = sessionId, data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -608,7 +608,7 @@ class ADelayIsACss2TimeStateMachine(
             if (run send@{
             val sendData = ""
             // W3C SCXML 6.2: Delayed send
-            scheduleSend("__send_3", 569L, ADelayIsACss2TimeEvent.B, EventMetadata.external(sendId = "__send_3", origin = scriptSessionId ?: "", data = sendData))
+            scheduleSend("__send_3", 569L, ADelayIsACss2TimeEvent.B, EventMetadata.external(sendId = "__send_3", origin = sessionId, data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was

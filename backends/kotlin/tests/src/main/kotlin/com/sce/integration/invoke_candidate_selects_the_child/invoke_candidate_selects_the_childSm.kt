@@ -498,7 +498,7 @@ class InvokeCandidateSelectsTheChildStateMachine(
                                 }
                             }
 
-                            startInvoke("_invoke_0", childSM, false, null, "", generatedInvokeId, __sceSelected)
+                            startInvoke("_invoke_0", childSM, false, null, "", generatedInvokeId, __sceSelected, __sceSelected, "_invoke_0")
                         } catch (_: Exception) {
                             // W3C SCXML 6.4: the child could not be started. Evaluation
                             // failure no longer reaches here — it has its own raise above,

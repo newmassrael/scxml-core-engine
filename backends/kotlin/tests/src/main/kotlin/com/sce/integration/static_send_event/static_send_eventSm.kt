@@ -36,7 +36,19 @@ sealed interface StaticSendEventEvent : Event {
 // --- State Machine (W3C SCXML) ---
 
 class StaticSendEventStateMachine(
+    /**
+     * docs/adr/0045: the id of this machine's session (`_sessionid`), which a
+     * saved state names it by and a peer addresses it by (`#_scxml_<id>`), given
+     * by the host that creates it: an XML Nmtoken, refused when it is not one
+     * and never replaced. Drawn (a UUID version 4) when the host gives none. A
+     * child is given the id its parent derives for it, and this is not read.
+     */
+    sessionId: String? = null,
 ) : StateMachineEngine<StaticSendEventState, StaticSendEventEvent>() {
+
+    init {
+        bindRootSessionId(sessionId)
+    }
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
     /** W3C SCXML 5.2: the `name` datamodel variable, the machine's own. */
@@ -205,6 +217,22 @@ class StaticSendEventStateMachine(
 
     /** [restore] at the host's wall clock now. */
     fun restore(saved: SavedState) = restore(saved, SavedState.wallClockMs())
+
+    // docs/adr/0045: this machine as a child session of another's saved state —
+    // saved with it, judged with it before anything is built, and restored in
+    // place of initialized.
+    override fun saveAsSession(wallNowMs: Long): SavedState = save(wallNowMs)
+
+    override fun judgeAsSession(saved: SavedState) {
+        val savedGrown = beginRestore(saved, savedShape)
+        SavedValues.string(savedGrown.variable("name"), "name", 16)
+        SavedValues.uint32(savedGrown.variable("scale"), "scale")
+        SavedValues.uint32(savedGrown.variable("pings"), "pings")
+        SavedValues.uint32(savedGrown.variable("pongs"), "pongs")
+        SavedValues.uint32(savedGrown.variable("refusals"), "refusals")
+    }
+
+    override fun restoreAsSession(saved: SavedState, wallNowMs: Long) = restore(saved, wallNowMs)
 
     override val initialState: StaticSendEventState = StaticSendEventState.Idle
 
@@ -419,7 +447,7 @@ class StaticSendEventStateMachine(
             // is the whole name when the member is not called that.
             val sendEvent = resolveArrivingEvent(sendEventName)
             // W3C SCXML 6.2: send to this session's external queue
-            if (sendEvent != null) send(sendEvent, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: "", data = sendData).copy(name = arrivalNameOf(sendEvent, sendEventName)))
+            if (sendEvent != null) send(sendEvent, EventMetadata.external(sendId = "__send_0", origin = sessionId, data = sendData).copy(name = arrivalNameOf(sendEvent, sendEventName)))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -451,7 +479,7 @@ class StaticSendEventStateMachine(
             // is the whole name when the member is not called that.
             val sendEvent = resolveArrivingEvent(sendEventName)
             // W3C SCXML 6.2: send to this session's external queue
-            if (sendEvent != null) send(sendEvent, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: "", data = sendData).copy(name = arrivalNameOf(sendEvent, sendEventName)))
+            if (sendEvent != null) send(sendEvent, EventMetadata.external(sendId = "__send_1", origin = sessionId, data = sendData).copy(name = arrivalNameOf(sendEvent, sendEventName)))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was

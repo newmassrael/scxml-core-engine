@@ -663,7 +663,7 @@ class ADelayedSendReachesWhatItsTargetNamesStateMachine(
             if (run send@{
             val sendData = ""
             // W3C SCXML 6.2: Delayed send
-            scheduleSend("__send_4", 10L, ADelayedSendReachesWhatItsTargetNamesEvent.Early, EventMetadata.external(sendId = "__send_4", origin = scriptSessionId ?: "", data = sendData))
+            scheduleSend("__send_4", 10L, ADelayedSendReachesWhatItsTargetNamesEvent.Early, EventMetadata.external(sendId = "__send_4", origin = sessionId, data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -701,7 +701,7 @@ class ADelayedSendReachesWhatItsTargetNamesStateMachine(
                 return@send true
             }
             // W3C SCXML 6.2.4: this session's own external queue, when due.
-            scheduleSend("__send_6", 20L, ADelayedSendReachesWhatItsTargetNamesEvent.Lost, EventMetadata.external(sendId = "__send_6", origin = scriptSessionId ?: "", data = sendData))
+            scheduleSend("__send_6", 20L, ADelayedSendReachesWhatItsTargetNamesEvent.Lost, EventMetadata.external(sendId = "__send_6", origin = sessionId, data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -742,7 +742,7 @@ class ADelayedSendReachesWhatItsTargetNamesStateMachine(
 
                     val childSM = adoptChild(ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeKidStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)")), generatedInvokeId)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                    startInvoke("kid", childSM, false, ADelayedSendReachesWhatItsTargetNamesEvent.Done.Invoke, "", generatedInvokeId, "")
+                    startInvoke("kid", childSM, false, ADelayedSendReachesWhatItsTargetNamesEvent.Done.Invoke, "", generatedInvokeId, "", "a_delayed_send_reaches_what_its_target_names__sce_synth_invoke__kid", "kid")
                 }
             }
             "gone" -> run {
@@ -753,7 +753,7 @@ class ADelayedSendReachesWhatItsTargetNamesStateMachine(
 
                     val childSM = adoptChild(ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneStateMachine(), generatedInvokeId)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                    startInvoke("gone", childSM, false, ADelayedSendReachesWhatItsTargetNamesEvent.Done.Invoke, "", generatedInvokeId, "")
+                    startInvoke("gone", childSM, false, ADelayedSendReachesWhatItsTargetNamesEvent.Done.Invoke, "", generatedInvokeId, "", "a_delayed_send_reaches_what_its_target_names__sce_synth_invoke__gone", "gone")
                 }
             }
             else -> error("the document has no child session '$invokeId' (codegen invariant)")
@@ -948,7 +948,7 @@ class ADelayedSendReachesWhatItsTargetNamesStateMachine(
             if (run send@{
             val sendData = ""
             // W3C SCXML 6.2: Delayed send
-            scheduleSend("__send_3", 300L, ADelayedSendReachesWhatItsTargetNamesEvent.Settle, EventMetadata.external(sendId = "__send_3", origin = scriptSessionId ?: "", data = sendData))
+            scheduleSend("__send_3", 300L, ADelayedSendReachesWhatItsTargetNamesEvent.Settle, EventMetadata.external(sendId = "__send_3", origin = sessionId, data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was

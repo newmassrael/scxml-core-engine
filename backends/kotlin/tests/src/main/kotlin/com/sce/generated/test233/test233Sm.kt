@@ -426,7 +426,7 @@ class Test233StateMachine(
             if (run send@{
             val sendData = ""
             // W3C SCXML 6.2: Delayed send
-            scheduleSend("__send_0", 3000L, Test233Event.Timeout, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: "", data = sendData))
+            scheduleSend("__send_0", 3000L, Test233Event.Timeout, EventMetadata.external(sendId = "__send_0", origin = sessionId, data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -460,7 +460,7 @@ class Test233StateMachine(
 
                     val childSM = adoptChild(Test233SceSynthInvokeInvoke0StateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)")), generatedInvokeId)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                    startInvoke("_invoke_0", childSM, false, Test233Event.Done.Invoke, "Var1 = _event.data.aParam;", generatedInvokeId, "")
+                    startInvoke("_invoke_0", childSM, false, Test233Event.Done.Invoke, "Var1 = _event.data.aParam;", generatedInvokeId, "", "test233__sce_synth_invoke__invoke_0", "_invoke_0")
                 }
             }
             else -> error("the document has no child session '$invokeId' (codegen invariant)")

@@ -438,7 +438,7 @@ class Test276StateMachine(
                     val childSM = adoptChild(Test276sub1StateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)")), generatedInvokeId)
                     setInvokeParams(childSM, invokeParams)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                    startInvoke("_invoke_0", childSM, false, Test276Event.Done.Invoke, "", generatedInvokeId, "test276sub1")
+                    startInvoke("_invoke_0", childSM, false, Test276Event.Done.Invoke, "", generatedInvokeId, "test276sub1", "test276sub1", "_invoke_0")
                 }
             }
             else -> error("the document has no child session '$invokeId' (codegen invariant)")

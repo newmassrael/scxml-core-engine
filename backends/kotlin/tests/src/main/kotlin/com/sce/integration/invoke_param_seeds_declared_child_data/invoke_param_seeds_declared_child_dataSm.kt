@@ -760,7 +760,7 @@ class InvokeParamSeedsDeclaredChildDataStateMachine(
                     val childSM = adoptChild(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)")), generatedInvokeId)
                     setInvokeParams(childSM, invokeParams)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                    startInvoke("inv_infinite", childSM, false, InvokeParamSeedsDeclaredChildDataEvent.Done.Invoke, "", generatedInvokeId, "")
+                    startInvoke("inv_infinite", childSM, false, InvokeParamSeedsDeclaredChildDataEvent.Done.Invoke, "", generatedInvokeId, "", "invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_infinite", "inv_infinite")
                 }
             }
             "inv_namelist" -> run {
@@ -784,7 +784,7 @@ class InvokeParamSeedsDeclaredChildDataStateMachine(
                     val childSM = adoptChild(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)")), generatedInvokeId)
                     setInvokeParams(childSM, invokeParams)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                    startInvoke("inv_namelist", childSM, false, InvokeParamSeedsDeclaredChildDataEvent.Done.Invoke, "", generatedInvokeId, "")
+                    startInvoke("inv_namelist", childSM, false, InvokeParamSeedsDeclaredChildDataEvent.Done.Invoke, "", generatedInvokeId, "", "invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_namelist", "inv_namelist")
                 }
             }
             "inv_shadow" -> run {
@@ -812,7 +812,7 @@ class InvokeParamSeedsDeclaredChildDataStateMachine(
                     val childSM = adoptChild(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)")), generatedInvokeId)
                     setInvokeParams(childSM, invokeParams)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                    startInvoke("inv_shadow", childSM, false, InvokeParamSeedsDeclaredChildDataEvent.Done.Invoke, "", generatedInvokeId, "")
+                    startInvoke("inv_shadow", childSM, false, InvokeParamSeedsDeclaredChildDataEvent.Done.Invoke, "", generatedInvokeId, "", "invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_shadow", "inv_shadow")
                 }
             }
             "inv_sole" -> run {
@@ -840,7 +840,7 @@ class InvokeParamSeedsDeclaredChildDataStateMachine(
                     val childSM = adoptChild(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)")), generatedInvokeId)
                     setInvokeParams(childSM, invokeParams)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                    startInvoke("inv_sole", childSM, false, InvokeParamSeedsDeclaredChildDataEvent.Done.Invoke, "", generatedInvokeId, "")
+                    startInvoke("inv_sole", childSM, false, InvokeParamSeedsDeclaredChildDataEvent.Done.Invoke, "", generatedInvokeId, "", "invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_sole", "inv_sole")
                 }
             }
             "inv_unmatched" -> run {
@@ -877,7 +877,7 @@ class InvokeParamSeedsDeclaredChildDataStateMachine(
                     val childSM = adoptChild(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)")), generatedInvokeId)
                     setInvokeParams(childSM, invokeParams)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                    startInvoke("inv_unmatched", childSM, false, InvokeParamSeedsDeclaredChildDataEvent.Done.Invoke, "", generatedInvokeId, "")
+                    startInvoke("inv_unmatched", childSM, false, InvokeParamSeedsDeclaredChildDataEvent.Done.Invoke, "", generatedInvokeId, "", "invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_unmatched", "inv_unmatched")
                 }
             }
             else -> error("the document has no child session '$invokeId' (codegen invariant)")

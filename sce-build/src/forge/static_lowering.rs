@@ -1644,6 +1644,12 @@ impl KotlinTarget {
 }
 
 impl StaticTarget for KotlinTarget {
+    // The start site holds the id it generates in the `String` local
+    // `generatedInvokeId` (`deferStaticInvoke`), which it goes on to start the
+    // child under, so the variable takes it as it stands.
+    fn generated_invoke_id(&self) -> Option<&'static str> {
+        Some("generatedInvokeId")
+    }
     fn name(&self) -> &'static str {
         "Kotlin"
     }

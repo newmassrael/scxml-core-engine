@@ -40,7 +40,19 @@ sealed interface StaticInvokeHybridEvent : Event {
 // --- State Machine (W3C SCXML) ---
 
 class StaticInvokeHybridStateMachine(
+    /**
+     * docs/adr/0045: the id of this machine's session (`_sessionid`), which a
+     * saved state names it by and a peer addresses it by (`#_scxml_<id>`), given
+     * by the host that creates it: an XML Nmtoken, refused when it is not one
+     * and never replaced. Drawn (a UUID version 4) when the host gives none. A
+     * child is given the id its parent derives for it, and this is not read.
+     */
+    sessionId: String? = null,
 ) : StateMachineEngine<StaticInvokeHybridState, StaticInvokeHybridEvent>() {
+
+    init {
+        bindRootSessionId(sessionId)
+    }
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
     /** W3C SCXML 5.2: the `pick` datamodel variable, the machine's own. */
@@ -204,6 +216,22 @@ class StaticInvokeHybridStateMachine(
 
     /** [restore] at the host's wall clock now. */
     fun restore(saved: SavedState) = restore(saved, SavedState.wallClockMs())
+
+    // docs/adr/0045: this machine as a child session of another's saved state —
+    // saved with it, judged with it before anything is built, and restored in
+    // place of initialized.
+    override fun saveAsSession(wallNowMs: Long): SavedState = save(wallNowMs)
+
+    override fun judgeAsSession(saved: SavedState) {
+        val savedGrown = beginRestore(saved, savedShape)
+        SavedValues.string(savedGrown.variable("pick"), "pick", 48)
+        SavedValues.uint32(savedGrown.variable("base"), "base")
+        SavedValues.bool(savedGrown.variable("enabled"), "enabled")
+        SavedValues.uint32(savedGrown.variable("completed"), "completed")
+        SavedValues.uint32(savedGrown.variable("errors"), "errors")
+    }
+
+    override fun restoreAsSession(saved: SavedState, wallNowMs: Long) = restore(saved, wallNowMs)
 
     // §scxml-6.4: a saved state names the `<invoke>`s whose child is running,
     // and a restore starts each again from its beginning. This document saves
@@ -566,7 +594,7 @@ class StaticInvokeHybridStateMachine(
                                 }
                             }
 
-                            startInvoke("first_run", childSM, false, StaticInvokeHybridEvent.Done.Invoke.FirstRun, "", generatedInvokeId, __sceSelected)
+                            startInvoke("first_run", childSM, false, StaticInvokeHybridEvent.Done.Invoke.FirstRun, "", generatedInvokeId, __sceSelected, __sceSelected, "first_run")
                         } catch (_: Exception) {
                             // W3C SCXML 6.4: the child could not be started. Evaluation
                             // failure no longer reaches here — it has its own raise above,
@@ -633,7 +661,7 @@ class StaticInvokeHybridStateMachine(
                                 }
                             }
 
-                            startInvoke("lossy_run", childSM, false, StaticInvokeHybridEvent.Done.Invoke.LossyRun, "", generatedInvokeId, __sceSelected)
+                            startInvoke("lossy_run", childSM, false, StaticInvokeHybridEvent.Done.Invoke.LossyRun, "", generatedInvokeId, __sceSelected, __sceSelected, "lossy_run")
                         } catch (_: Exception) {
                             // W3C SCXML 6.4: the child could not be started. Evaluation
                             // failure no longer reaches here — it has its own raise above,
@@ -686,7 +714,7 @@ class StaticInvokeHybridStateMachine(
                                 }
                             }
 
-                            startInvoke("missing_run", childSM, false, StaticInvokeHybridEvent.Done.Invoke.MissingRun, "", generatedInvokeId, __sceSelected)
+                            startInvoke("missing_run", childSM, false, StaticInvokeHybridEvent.Done.Invoke.MissingRun, "", generatedInvokeId, __sceSelected, __sceSelected, "missing_run")
                         } catch (_: Exception) {
                             // W3C SCXML 6.4: the child could not be started. Evaluation
                             // failure no longer reaches here — it has its own raise above,
@@ -753,7 +781,7 @@ class StaticInvokeHybridStateMachine(
                                 }
                             }
 
-                            startInvoke("second_run", childSM, false, StaticInvokeHybridEvent.Done.Invoke.SecondRun, "", generatedInvokeId, __sceSelected)
+                            startInvoke("second_run", childSM, false, StaticInvokeHybridEvent.Done.Invoke.SecondRun, "", generatedInvokeId, __sceSelected, __sceSelected, "second_run")
                         } catch (_: Exception) {
                             // W3C SCXML 6.4: the child could not be started. Evaluation
                             // failure no longer reaches here — it has its own raise above,
@@ -765,6 +793,60 @@ class StaticInvokeHybridStateMachine(
             }
             else -> error("the document has no child session '$invokeId' (codegen invariant)")
         }
+    }
+
+    // docs/adr/0045, section 3, steps 1 and 3: the machine of a running child a
+    // saved state lists, built as the `<invoke>` that started it builds it and
+    // with what a start does with the child once built. Nothing is evaluated here:
+    // no `<param>`, no `srcexpr`, no `idlocation` — the child resumes where it
+    // stood, and a hybrid child is the candidate its saved `document` names,
+    // whatever the `srcexpr` reads now.
+    override fun buildSavedChild(child: SavedChild): ResumedChild<StaticInvokeHybridEvent> = when (child.id) {
+        "first_run" -> when (child.document) {
+            "static_hybrid_first" -> ResumedChild(
+                StaticHybridFirstStateMachine(),
+                false, StaticInvokeHybridEvent.Done.Invoke.FirstRun, "", "static_hybrid_first", "first_run",
+            )
+            "static_hybrid_second" -> ResumedChild(
+                StaticHybridSecondStateMachine(),
+                false, StaticInvokeHybridEvent.Done.Invoke.FirstRun, "", "static_hybrid_second", "first_run",
+            )
+            else -> throw StateRefusal("invokes names '${child.id}' running '${child.document}', a document that `<invoke>` does not start")
+        }
+        "lossy_run" -> when (child.document) {
+            "static_hybrid_first" -> ResumedChild(
+                StaticHybridFirstStateMachine(),
+                false, StaticInvokeHybridEvent.Done.Invoke.LossyRun, "", "static_hybrid_first", "lossy_run",
+            )
+            "static_hybrid_second" -> ResumedChild(
+                StaticHybridSecondStateMachine(),
+                false, StaticInvokeHybridEvent.Done.Invoke.LossyRun, "", "static_hybrid_second", "lossy_run",
+            )
+            else -> throw StateRefusal("invokes names '${child.id}' running '${child.document}', a document that `<invoke>` does not start")
+        }
+        "missing_run" -> when (child.document) {
+            "static_hybrid_first" -> ResumedChild(
+                StaticHybridFirstStateMachine(),
+                false, StaticInvokeHybridEvent.Done.Invoke.MissingRun, "", "static_hybrid_first", "missing_run",
+            )
+            "static_hybrid_second" -> ResumedChild(
+                StaticHybridSecondStateMachine(),
+                false, StaticInvokeHybridEvent.Done.Invoke.MissingRun, "", "static_hybrid_second", "missing_run",
+            )
+            else -> throw StateRefusal("invokes names '${child.id}' running '${child.document}', a document that `<invoke>` does not start")
+        }
+        "second_run" -> when (child.document) {
+            "static_hybrid_first" -> ResumedChild(
+                StaticHybridFirstStateMachine(),
+                false, StaticInvokeHybridEvent.Done.Invoke.SecondRun, "", "static_hybrid_first", "second_run",
+            )
+            "static_hybrid_second" -> ResumedChild(
+                StaticHybridSecondStateMachine(),
+                false, StaticInvokeHybridEvent.Done.Invoke.SecondRun, "", "static_hybrid_second", "second_run",
+            )
+            else -> throw StateRefusal("invokes names '${child.id}' running '${child.document}', a document that `<invoke>` does not start")
+        }
+        else -> throw StateRefusal("the document has no child session '${child.id}'")
     }
 
     // Exit Actions (W3C SCXML 3.9)

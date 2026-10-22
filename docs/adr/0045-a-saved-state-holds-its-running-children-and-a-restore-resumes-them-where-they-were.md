@@ -330,17 +330,17 @@ invokers modelled on ADR 0043's child routers:
   and raises nothing. The child takes the event when its parent next drives it.
 - **The build declares the types once for the tree.** A child written in place is generated with its
   parent's `--host-invoker` declaration, and with the standard types it names.
-- **Backends.** Rust implements it with step 3. Kotlin, Go, Python, C++ and C11 keep raising
-  `error.execution` for a child's host-run invocation, as for one no invoker serves, until each
-  one's format-2 step implements this contract.
+- **Backends.** Rust implements it with step 3 and Kotlin with step 4. Go, Python, C++ and C11
+  keep raising `error.execution` for a child's host-run invocation, as for one no invoker
+  serves, until each one's format-2 step implements this contract.
 
 **An `<invoke idlocation>` of a child session is written under `sce-static`.** Each start is started
 under `<state>.<start>.<id>` (step 2), which the child's events carry as `_event.invokeid` and a saved
 tree holds as the child's `invokeid`, so a stored id now has readers: the document, and the restore,
 which keeps the variable as saved and writes nothing. The variable is a declared string whose bound
 exceeds the longest such id (twenty digits of start count); a host-run invocation or a Mesh request,
-started under the id the build wrote, still refuses it. Rust writes it; the other five backends refuse
-it by name (`generate/unsupported-feature`) until their format-2 step.
+started under the id the build wrote, still refuses it. Rust and Kotlin write it; the other four
+backends refuse it by name (`generate/unsupported-feature`) until their format-2 step.
 
 **A state written in format 1 is still read.** It holds no child's state, and the build that wrote
 it promised to start each listed child from its beginning; the restoring build does exactly that for
@@ -826,6 +826,28 @@ Each step lands with a test that fails without it.
 4. **Kotlin.** The same over `SavedState.kt` and `StateMachineEngine`, the root's id included.
    *Exit:* Kotlin saves the tree fixture byte for byte as Rust does, Kotlin restores the text Rust
    saved, and Rust the text Kotlin saved.
+
+   *Where it stands.* Done: `SavedState` holds `sessionId`, `invokeStarts` and its running
+   children as `SavedInvokes.Resumed` (format 2) or `Restarted` (format 1), writes the format it
+   is of with that format's shape, and reads both; the engine binds the root's id (given as the
+   last constructor parameter of a generated `sce-static` machine, or drawn), saves each running
+   child whole, judges every child down to the last grandchild before it builds one
+   (`buildSavedChild`, `judgeAsSession`) and resumes each, owing the factory of children's routers
+   its router until one is registered; `parent` and `child` delayed sends are acts of the save;
+   the tree's host invokers are one registry the children share, a request names its session
+   (`HostInvokeRequest.sessionId`) and an ending is routed by it (`completeHostInvokeIn`,
+   `failHostInvokeIn`); an `<invoke idlocation>` of a child session is written. The tree fixture
+   `saved/static_invoke_tree_working.json` is saved byte for byte, and restored, by
+   `ASavedTreeHoldsEverySessionWhereItStoodTest`, whose run is Rust's; the cross-language world
+   test (`a_kotlin_copy_sends_and_holds_what_a_rust_copy_does`) holds a Kotlin copy's save to a
+   Rust copy's, each given its actor's name as the root's id. The scenario format's `restore`
+   step runs on Kotlin (`staticInvokeTreeRestoresBetweenItsSteps`). Two things moved with it
+   that the Rust backend already did: an event the host raises by name is an external event of
+   the SCXML processor (`origintype` is set), and `_event.invokeid` of a child's event is the id
+   the start was made under only for an `<invoke>` that keeps it in an `idlocation`, the
+   document's own id otherwise (W3C tests 338 and 228). Open: a send to a session by its id
+   (`#_scxml_<id>`) still removes the save API, and no Kotlin test holds the `nothing in
+   transit` refusal because the Kotlin parent has no buffer a child's event waits in.
 5. **Go, Python, C++, C11**, one backend per step, each reading and writing the whole format, the
    root's id in the one spelling of answer 2 in place of the one its process draws today, and held
    to every shared instance. *Exit:* per backend, every instance restored, the tree fixture saved byte

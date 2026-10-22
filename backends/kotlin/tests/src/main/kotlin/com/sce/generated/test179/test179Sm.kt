@@ -397,7 +397,7 @@ class Test179StateMachine(
             if (run send@{
             val sendData = evaluateSendContent(com.sce.runtime.ScriptSource.lua("123", "123"))
             // W3C SCXML 6.2: send to this session's external queue
-            send(Test179Event.Event1, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: "", data = sendData))
+            send(Test179Event.Event1, EventMetadata.external(sendId = "__send_0", origin = sessionId, data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was

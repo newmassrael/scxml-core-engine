@@ -515,7 +515,7 @@ class Test354StateMachine(
             if (run send@{
             val sendData = ""
             // W3C SCXML 6.2: Delayed send
-            scheduleSend("__send_0", 5000L, Test354Event.Timeout, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: "", data = sendData))
+            scheduleSend("__send_0", 5000L, Test354Event.Timeout, EventMetadata.external(sendId = "__send_0", origin = sessionId, data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -559,7 +559,7 @@ class Test354StateMachine(
             for ((name, value) in sendNamelist) sendPayload[name] = value
             val sendData = buildJsonFromParams(sendPayload)
             // W3C SCXML 6.2: send to this session's external queue
-            send(Test354Event.Event1, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: "", data = sendData))
+            send(Test354Event.Event1, EventMetadata.external(sendId = "__send_1", origin = sessionId, data = sendData))
             paramFailed
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -583,7 +583,7 @@ class Test354StateMachine(
             if (run send@{
             val sendData = ""
             // W3C SCXML 6.2: Delayed send
-            scheduleSend("__send_2", 5000L, Test354Event.Timeout, EventMetadata.external(sendId = "__send_2", origin = scriptSessionId ?: "", data = sendData))
+            scheduleSend("__send_2", 5000L, Test354Event.Timeout, EventMetadata.external(sendId = "__send_2", origin = sessionId, data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -595,7 +595,7 @@ class Test354StateMachine(
             if (run send@{
             val sendData = evaluateSendContent(com.sce.runtime.ScriptSource.lua("123", "123"))
             // W3C SCXML 6.2: send to this session's external queue
-            send(Test354Event.Event2, EventMetadata.external(sendId = "__send_3", origin = scriptSessionId ?: "", data = sendData))
+            send(Test354Event.Event2, EventMetadata.external(sendId = "__send_3", origin = sessionId, data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was

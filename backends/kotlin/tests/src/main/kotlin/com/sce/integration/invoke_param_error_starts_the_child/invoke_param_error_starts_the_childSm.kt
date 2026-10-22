@@ -492,7 +492,7 @@ class InvokeParamErrorStartsTheChildStateMachine(
             if (run send@{
             val sendData = ""
             // W3C SCXML 6.2: Delayed send
-            scheduleSend("__send_0", 3000L, InvokeParamErrorStartsTheChildEvent.Timeout, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: "", data = sendData))
+            scheduleSend("__send_0", 3000L, InvokeParamErrorStartsTheChildEvent.Timeout, EventMetadata.external(sendId = "__send_0", origin = sessionId, data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -557,7 +557,7 @@ class InvokeParamErrorStartsTheChildStateMachine(
                     val childSM = adoptChild(InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)")), generatedInvokeId)
                     setInvokeParams(childSM, invokeParams)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                    startInvoke("inv_probe", childSM, false, InvokeParamErrorStartsTheChildEvent.Done.Invoke, "", generatedInvokeId, "")
+                    startInvoke("inv_probe", childSM, false, InvokeParamErrorStartsTheChildEvent.Done.Invoke, "", generatedInvokeId, "", "invoke_param_error_starts_the_child__sce_synth_invoke__inv_probe", "inv_probe")
                 }
             }
             else -> error("the document has no child session '$invokeId' (codegen invariant)")

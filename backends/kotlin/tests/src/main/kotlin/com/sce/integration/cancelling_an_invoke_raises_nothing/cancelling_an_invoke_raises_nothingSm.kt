@@ -473,7 +473,7 @@ class CancellingAnInvokeRaisesNothingStateMachine(
 
                     val childSM = adoptChild(CancellingAnInvokeRaisesNothingSceSynthInvokeChildStateMachine(), generatedInvokeId)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                    startInvoke("child", childSM, false, CancellingAnInvokeRaisesNothingEvent.Done.Invoke, "", generatedInvokeId, "")
+                    startInvoke("child", childSM, false, CancellingAnInvokeRaisesNothingEvent.Done.Invoke, "", generatedInvokeId, "", "cancelling_an_invoke_raises_nothing__sce_synth_invoke__child", "child")
                 }
             }
             else -> error("the document has no child session '$invokeId' (codegen invariant)")

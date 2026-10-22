@@ -170,7 +170,7 @@ class AChildTimerIsADeadlineOfItsParentStateMachine(
 
                     val childSM = adoptChild(AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidStateMachine(), generatedInvokeId)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                    startInvoke("kid", childSM, false, AChildTimerIsADeadlineOfItsParentEvent.Done.Invoke.Kid, "", generatedInvokeId, "")
+                    startInvoke("kid", childSM, false, AChildTimerIsADeadlineOfItsParentEvent.Done.Invoke.Kid, "", generatedInvokeId, "", "a_child_timer_is_a_deadline_of_its_parent__sce_synth_invoke__kid", "kid")
                 }
             }
             else -> error("the document has no child session '$invokeId' (codegen invariant)")

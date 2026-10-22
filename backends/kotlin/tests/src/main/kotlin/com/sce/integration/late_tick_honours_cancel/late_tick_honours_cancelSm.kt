@@ -189,7 +189,7 @@ class LateTickHonoursCancelStateMachine(
             if (run send@{
             val sendData = ""
             // W3C SCXML 6.2: Delayed send
-            scheduleSend("__send_1", 100L, LateTickHonoursCancelEvent.Finish, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: "", data = sendData))
+            scheduleSend("__send_1", 100L, LateTickHonoursCancelEvent.Finish, EventMetadata.external(sendId = "__send_1", origin = sessionId, data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -217,7 +217,7 @@ class LateTickHonoursCancelStateMachine(
             if (run send@{
             val sendData = ""
             // W3C SCXML 6.2: Delayed send
-            scheduleSend("s1", 200L, LateTickHonoursCancelEvent.Settle, EventMetadata.external(sendId = "s1", origin = scriptSessionId ?: "", data = sendData))
+            scheduleSend("s1", 200L, LateTickHonoursCancelEvent.Settle, EventMetadata.external(sendId = "s1", origin = sessionId, data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -229,7 +229,7 @@ class LateTickHonoursCancelStateMachine(
             if (run send@{
             val sendData = ""
             // W3C SCXML 6.2: Delayed send
-            scheduleSend("__send_0", 100L, LateTickHonoursCancelEvent.Poke, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: "", data = sendData))
+            scheduleSend("__send_0", 100L, LateTickHonoursCancelEvent.Poke, EventMetadata.external(sendId = "__send_0", origin = sessionId, data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was

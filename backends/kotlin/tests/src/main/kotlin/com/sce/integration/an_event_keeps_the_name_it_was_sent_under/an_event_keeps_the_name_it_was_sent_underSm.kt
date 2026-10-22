@@ -462,7 +462,7 @@ class AnEventKeepsTheNameItWasSentUnderStateMachine(
 
                     val childSM = adoptChild(AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)")), generatedInvokeId)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                    startInvoke("listener", childSM, false, AnEventKeepsTheNameItWasSentUnderEvent.Done.Invoke, "", generatedInvokeId, "")
+                    startInvoke("listener", childSM, false, AnEventKeepsTheNameItWasSentUnderEvent.Done.Invoke, "", generatedInvokeId, "", "an_event_keeps_the_name_it_was_sent_under__sce_synth_invoke__listener", "listener")
                 }
             }
             else -> error("the document has no child session '$invokeId' (codegen invariant)")

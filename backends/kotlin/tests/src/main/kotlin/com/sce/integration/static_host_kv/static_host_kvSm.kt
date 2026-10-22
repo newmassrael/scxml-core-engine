@@ -236,7 +236,19 @@ interface StaticHostKvSceHostKvPutInvoker {
 
 
 class StaticHostKvStateMachine(
+    /**
+     * docs/adr/0045: the id of this machine's session (`_sessionid`), which a
+     * saved state names it by and a peer addresses it by (`#_scxml_<id>`), given
+     * by the host that creates it: an XML Nmtoken, refused when it is not one
+     * and never replaced. Drawn (a UUID version 4) when the host gives none. A
+     * child is given the id its parent derives for it, and this is not read.
+     */
+    sessionId: String? = null,
 ) : StateMachineEngine<StaticHostKvState, StaticHostKvEvent>() {
+
+    init {
+        bindRootSessionId(sessionId)
+    }
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
     /** W3C SCXML 5.2: the `key` datamodel variable, the machine's own. */
@@ -467,6 +479,28 @@ class StaticHostKvStateMachine(
 
     /** [restore] at the host's wall clock now. */
     fun restore(saved: SavedState) = restore(saved, SavedState.wallClockMs())
+
+    // docs/adr/0045: this machine as a child session of another's saved state —
+    // saved with it, judged with it before anything is built, and restored in
+    // place of initialized.
+    override fun saveAsSession(wallNowMs: Long): SavedState = save(wallNowMs)
+
+    override fun judgeAsSession(saved: SavedState) {
+        val savedGrown = beginRestore(saved, savedShape)
+        SavedValues.string(savedGrown.variable("key"), "key", 256)
+        SavedValues.string(savedGrown.variable("value"), "value", 4096)
+        SavedValues.string(savedGrown.variable("after"), "after", 256)
+        SavedValues.string(savedGrown.variable("prefix"), "prefix", 256)
+        SavedValues.string(savedGrown.variable("outcome"), "outcome", 24)
+        SavedValues.bool(savedGrown.variable("found"), "found")
+        SavedValues.string(savedGrown.variable("got"), "got", 4096)
+        SavedValues.bool(savedGrown.variable("replaced"), "replaced")
+        SavedValues.bool(savedGrown.variable("existed"), "existed")
+        SavedValues.bool(savedGrown.variable("next_found"), "next_found")
+        SavedValues.string(savedGrown.variable("next"), "next", 256)
+    }
+
+    override fun restoreAsSession(saved: SavedState, wallNowMs: Long) = restore(saved, wallNowMs)
 
     // §scxml-6.4.1: a saved state names the `<invoke>`s a declared host invoker
     // is running, and a restore starts each again from the request it saved. What

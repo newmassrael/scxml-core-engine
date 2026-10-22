@@ -273,7 +273,7 @@ class HostEventReachesTheChildStateMachine(
 
                     val childSM = adoptChild(HostEventReachesTheChildSceSynthInvokeInvProbeStateMachine(), generatedInvokeId)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                    startInvoke("inv_probe", childSM, true, HostEventReachesTheChildEvent.Done.Invoke, "", generatedInvokeId, "")
+                    startInvoke("inv_probe", childSM, true, HostEventReachesTheChildEvent.Done.Invoke, "", generatedInvokeId, "", "host_event_reaches_the_child__sce_synth_invoke__inv_probe", "inv_probe")
                 }
             }
             else -> error("the document has no child session '$invokeId' (codegen invariant)")

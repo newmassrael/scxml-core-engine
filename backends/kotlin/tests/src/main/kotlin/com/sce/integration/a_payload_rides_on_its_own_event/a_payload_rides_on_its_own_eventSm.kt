@@ -579,7 +579,7 @@ class APayloadRidesOnItsOwnEventStateMachine(
 
             val sendData = buildJsonFromParams(sendPayload)
             // W3C SCXML 6.2: send to this session's external queue
-            send(APayloadRidesOnItsOwnEventEvent.ExtV, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: "", data = sendData))
+            send(APayloadRidesOnItsOwnEventEvent.ExtV, EventMetadata.external(sendId = "__send_1", origin = sessionId, data = sendData))
             paramFailed
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -617,7 +617,7 @@ class APayloadRidesOnItsOwnEventStateMachine(
             for ((name, value) in sendNamelist) sendPayload[name] = value
             val sendData = buildJsonFromParams(sendPayload)
             // W3C SCXML 6.2: send to this session's external queue
-            send(APayloadRidesOnItsOwnEventEvent.ExtN, EventMetadata.external(sendId = "__send_2", origin = scriptSessionId ?: "", data = sendData))
+            send(APayloadRidesOnItsOwnEventEvent.ExtN, EventMetadata.external(sendId = "__send_2", origin = sessionId, data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -634,7 +634,7 @@ class APayloadRidesOnItsOwnEventStateMachine(
             if (run send@{
             val sendData = evaluateSendContent(com.sce.runtime.ScriptSource.lua("10", "10"))
             // W3C SCXML 6.2: send to this session's external queue
-            send(APayloadRidesOnItsOwnEventEvent.ExtC, EventMetadata.external(sendId = "__send_3", origin = scriptSessionId ?: "", data = sendData))
+            send(APayloadRidesOnItsOwnEventEvent.ExtC, EventMetadata.external(sendId = "__send_3", origin = sessionId, data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was

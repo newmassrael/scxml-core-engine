@@ -769,7 +769,7 @@ class ExternalChainIsBoundedStateMachine(
             if (run send@{
             val sendData = ""
             // W3C SCXML 6.2: send to this session's external queue
-            send(ExternalChainIsBoundedEvent.Lap, EventMetadata.external(sendId = "__send_3", origin = scriptSessionId ?: "", data = sendData))
+            send(ExternalChainIsBoundedEvent.Lap, EventMetadata.external(sendId = "__send_3", origin = sessionId, data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -790,7 +790,7 @@ class ExternalChainIsBoundedStateMachine(
             if (run send@{
             val sendData = ""
             // W3C SCXML 6.2: send to this session's external queue
-            send(ExternalChainIsBoundedEvent.Beat, EventMetadata.external(sendId = "__send_5", origin = scriptSessionId ?: "", data = sendData))
+            send(ExternalChainIsBoundedEvent.Beat, EventMetadata.external(sendId = "__send_5", origin = sessionId, data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -808,7 +808,7 @@ class ExternalChainIsBoundedStateMachine(
             if (run send@{
             val sendData = ""
             // W3C SCXML 6.2: send to this session's external queue
-            send(ExternalChainIsBoundedEvent.Link, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: "", data = sendData))
+            send(ExternalChainIsBoundedEvent.Link, EventMetadata.external(sendId = "__send_1", origin = sessionId, data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -826,7 +826,7 @@ class ExternalChainIsBoundedStateMachine(
             if (run send@{
             val sendData = ""
             // W3C SCXML 6.2: Delayed send
-            scheduleSend("__send_10", 1L, ExternalChainIsBoundedEvent.Pulse, EventMetadata.external(sendId = "__send_10", origin = scriptSessionId ?: "", data = sendData))
+            scheduleSend("__send_10", 1L, ExternalChainIsBoundedEvent.Pulse, EventMetadata.external(sendId = "__send_10", origin = sessionId, data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -838,7 +838,7 @@ class ExternalChainIsBoundedStateMachine(
             if (run send@{
             val sendData = ""
             // W3C SCXML 6.2: Delayed send
-            scheduleSend("__send_11", 2L, ExternalChainIsBoundedEvent.Pulse, EventMetadata.external(sendId = "__send_11", origin = scriptSessionId ?: "", data = sendData))
+            scheduleSend("__send_11", 2L, ExternalChainIsBoundedEvent.Pulse, EventMetadata.external(sendId = "__send_11", origin = sessionId, data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -850,7 +850,7 @@ class ExternalChainIsBoundedStateMachine(
             if (run send@{
             val sendData = ""
             // W3C SCXML 6.2: Delayed send
-            scheduleSend("__send_12", 3L, ExternalChainIsBoundedEvent.Pulse, EventMetadata.external(sendId = "__send_12", origin = scriptSessionId ?: "", data = sendData))
+            scheduleSend("__send_12", 3L, ExternalChainIsBoundedEvent.Pulse, EventMetadata.external(sendId = "__send_12", origin = sessionId, data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -862,7 +862,7 @@ class ExternalChainIsBoundedStateMachine(
             if (run send@{
             val sendData = ""
             // W3C SCXML 6.2: Delayed send
-            scheduleSend("__send_13", 4L, ExternalChainIsBoundedEvent.Pulse, EventMetadata.external(sendId = "__send_13", origin = scriptSessionId ?: "", data = sendData))
+            scheduleSend("__send_13", 4L, ExternalChainIsBoundedEvent.Pulse, EventMetadata.external(sendId = "__send_13", origin = sessionId, data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -874,7 +874,7 @@ class ExternalChainIsBoundedStateMachine(
             if (run send@{
             val sendData = ""
             // W3C SCXML 6.2: Delayed send
-            scheduleSend("__send_14", 5L, ExternalChainIsBoundedEvent.Pulse, EventMetadata.external(sendId = "__send_14", origin = scriptSessionId ?: "", data = sendData))
+            scheduleSend("__send_14", 5L, ExternalChainIsBoundedEvent.Pulse, EventMetadata.external(sendId = "__send_14", origin = sessionId, data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -886,7 +886,7 @@ class ExternalChainIsBoundedStateMachine(
             if (run send@{
             val sendData = ""
             // W3C SCXML 6.2: Delayed send
-            scheduleSend("__send_15", 6L, ExternalChainIsBoundedEvent.Pulse, EventMetadata.external(sendId = "__send_15", origin = scriptSessionId ?: "", data = sendData))
+            scheduleSend("__send_15", 6L, ExternalChainIsBoundedEvent.Pulse, EventMetadata.external(sendId = "__send_15", origin = sessionId, data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -898,7 +898,7 @@ class ExternalChainIsBoundedStateMachine(
             if (run send@{
             val sendData = ""
             // W3C SCXML 6.2: Delayed send
-            scheduleSend("__send_16", 7L, ExternalChainIsBoundedEvent.Pulse, EventMetadata.external(sendId = "__send_16", origin = scriptSessionId ?: "", data = sendData))
+            scheduleSend("__send_16", 7L, ExternalChainIsBoundedEvent.Pulse, EventMetadata.external(sendId = "__send_16", origin = sessionId, data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -910,7 +910,7 @@ class ExternalChainIsBoundedStateMachine(
             if (run send@{
             val sendData = ""
             // W3C SCXML 6.2: Delayed send
-            scheduleSend("__send_17", 8L, ExternalChainIsBoundedEvent.Pulse, EventMetadata.external(sendId = "__send_17", origin = scriptSessionId ?: "", data = sendData))
+            scheduleSend("__send_17", 8L, ExternalChainIsBoundedEvent.Pulse, EventMetadata.external(sendId = "__send_17", origin = sessionId, data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -928,7 +928,7 @@ class ExternalChainIsBoundedStateMachine(
             if (run send@{
             val sendData = ""
             // W3C SCXML 6.2: Delayed send
-            scheduleSend("__send_7", 0L, ExternalChainIsBoundedEvent.Blink, EventMetadata.external(sendId = "__send_7", origin = scriptSessionId ?: "", data = sendData))
+            scheduleSend("__send_7", 0L, ExternalChainIsBoundedEvent.Blink, EventMetadata.external(sendId = "__send_7", origin = sessionId, data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -962,7 +962,7 @@ class ExternalChainIsBoundedStateMachine(
             }
             val sendData = ""
             // W3C SCXML 6.2: Delayed send
-            scheduleSend("__send_9", sendDelayMs, ExternalChainIsBoundedEvent.Blink, EventMetadata.external(sendId = "__send_9", origin = scriptSessionId ?: "", data = sendData))
+            scheduleSend("__send_9", sendDelayMs, ExternalChainIsBoundedEvent.Blink, EventMetadata.external(sendId = "__send_9", origin = sessionId, data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -1020,7 +1020,7 @@ class ExternalChainIsBoundedStateMachine(
             if (run send@{
             val sendData = ""
             // W3C SCXML 6.2: send to this session's external queue
-            send(ExternalChainIsBoundedEvent.Lap, EventMetadata.external(sendId = "__send_2", origin = scriptSessionId ?: "", data = sendData))
+            send(ExternalChainIsBoundedEvent.Lap, EventMetadata.external(sendId = "__send_2", origin = sessionId, data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -1070,7 +1070,7 @@ class ExternalChainIsBoundedStateMachine(
             if (run send@{
             val sendData = ""
             // W3C SCXML 6.2: send to this session's external queue
-            send(ExternalChainIsBoundedEvent.Beat, EventMetadata.external(sendId = "__send_4", origin = scriptSessionId ?: "", data = sendData))
+            send(ExternalChainIsBoundedEvent.Beat, EventMetadata.external(sendId = "__send_4", origin = sessionId, data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -1109,7 +1109,7 @@ class ExternalChainIsBoundedStateMachine(
             if (run send@{
             val sendData = ""
             // W3C SCXML 6.2: send to this session's external queue
-            send(ExternalChainIsBoundedEvent.Link, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: "", data = sendData))
+            send(ExternalChainIsBoundedEvent.Link, EventMetadata.external(sendId = "__send_0", origin = sessionId, data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -1159,7 +1159,7 @@ class ExternalChainIsBoundedStateMachine(
             if (run send@{
             val sendData = ""
             // W3C SCXML 6.2: Delayed send
-            scheduleSend("__send_6", 0L, ExternalChainIsBoundedEvent.Blink, EventMetadata.external(sendId = "__send_6", origin = scriptSessionId ?: "", data = sendData))
+            scheduleSend("__send_6", 0L, ExternalChainIsBoundedEvent.Blink, EventMetadata.external(sendId = "__send_6", origin = sessionId, data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -1206,7 +1206,7 @@ class ExternalChainIsBoundedStateMachine(
             }
             val sendData = ""
             // W3C SCXML 6.2: Delayed send
-            scheduleSend("__send_8", sendDelayMs, ExternalChainIsBoundedEvent.Blink, EventMetadata.external(sendId = "__send_8", origin = scriptSessionId ?: "", data = sendData))
+            scheduleSend("__send_8", sendDelayMs, ExternalChainIsBoundedEvent.Blink, EventMetadata.external(sendId = "__send_8", origin = sessionId, data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was

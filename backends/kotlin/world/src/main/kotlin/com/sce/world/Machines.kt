@@ -18,11 +18,11 @@ import com.sce.integration.todo_peer.TodoPeerStateMachine
  */
 private const val AT_WALL_MS = 0L
 
-val hostableMachines: Map<String, () -> HostedMachine> =
+val hostableMachines: Map<String, (sessionId: String?) -> HostedMachine> =
     mapOf(
         "todo_peer" to
             hosting(
-                create = { TodoPeerStateMachine() },
+                create = { sessionId -> TodoPeerStateMachine(sessionId = sessionId) },
                 save = { it.save(AT_WALL_MS) },
                 restore = { machine, saved -> machine.restore(saved, AT_WALL_MS) },
             ),

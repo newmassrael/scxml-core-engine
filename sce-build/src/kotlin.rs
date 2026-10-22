@@ -257,6 +257,10 @@ pub fn compute_invoke_entries(model: &SCXMLModel) -> BTreeMap<String, Vec<serde_
                     "params": params_json,
                     "namelist": si.namelist,
                     "idlocation": si.idlocation,
+                    // `datamodel="sce-static"`: the statement that writes the id a
+                    // start generates to the variable `idlocation` names, in
+                    // place of the script engine's write (docs/adr/0045).
+                    "native_idlocation": si.common.native_idlocation,
                     "finalize_content": si.finalize_content,
                     "state_id": state_id,
                     "child_needs_script_engine": si.child_needs_script_engine,
@@ -327,6 +331,7 @@ pub fn compute_invoke_entries(model: &SCXMLModel) -> BTreeMap<String, Vec<serde_
                     "params": params_json,
                     "namelist": hi.namelist,
                     "idlocation": hi.idlocation,
+                    "native_idlocation": hi.common.native_idlocation,
                     "finalize_content": "",
                     "state_id": state_id,
                     "child_needs_script_engine": false,

@@ -78,10 +78,15 @@ fun routed(scenario: JsonObject): Boolean = scenario["router"]?.jsonPrimitive?.b
  *   event to the running child of that path through them, as a peer's event,
  *   and the machine applies it when it next drives the child.
  *
+ * - [restore] discards the machine the driver holds and puts in its place one
+ *   restored from the saved state it is given, a step's `"restore": true`: the
+ *   closures above then read the new machine, so the driver holds it in a
+ *   variable they all name.
+ *
  * A step that states what the driver does not record (`host_calls` with no
  * [hostCalls], an `advance_ms` with no [advance], an `invoke` with no
- * [children]) fails: a step that judged nothing would pass. So does an `invoke`
- * that names no running child.
+ * [children], a `restore` with no [restore]) fails: a step that judged nothing
+ * would pass. So does an `invoke` that names no running child.
  *
  * An event name no event of the machine matches is refused by the Rust and Go
  * twins, which ask the machine's own lookup unless the step says
@@ -104,6 +109,7 @@ fun replay(
     childHosts: (() -> List<JsonElement>)? = null,
     sent: (() -> List<JsonElement>)? = null,
     children: ChildRouters? = null,
+    restore: ((SavedState) -> Unit)? = null,
 ) {
     val steps = scenario.getValue("steps").jsonArray
     if (steps.isEmpty()) {
@@ -134,6 +140,21 @@ fun replay(
                 )
             }
             advance(ms.toLong())
+        }
+        // A step that restores: the driver saves the machine, discards it and
+        // restores it from the text before the step's event or time, so a scenario
+        // states what the restored tree does next (docs/adr/0045, section 8). A
+        // driver with no way to restore fails the step: one that judged nothing
+        // would pass.
+        if (step["restore"]?.jsonPrimitive?.booleanOrNull == true) {
+            if (restore == null) {
+                throw ScenarioMismatch(
+                    n,
+                    note,
+                    "this driver restores no machine, so it cannot hold a step to a restored one",
+                )
+            }
+            restore(save())
         }
         step["event"]?.jsonPrimitive?.content?.let { event ->
             val data = step["data"]?.toString() ?: ""

@@ -485,7 +485,7 @@ class EventOriginIsALocationStateMachine(
 
                     val childSM = adoptChild(EventOriginIsALocationSceSynthInvokeInvPeerStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)")), generatedInvokeId)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                    startInvoke("inv_peer", childSM, false, EventOriginIsALocationEvent.Done.Invoke, "", generatedInvokeId, "")
+                    startInvoke("inv_peer", childSM, false, EventOriginIsALocationEvent.Done.Invoke, "", generatedInvokeId, "", "event_origin_is_a_location__sce_synth_invoke__inv_peer", "inv_peer")
                 }
             }
             else -> error("the document has no child session '$invokeId' (codegen invariant)")

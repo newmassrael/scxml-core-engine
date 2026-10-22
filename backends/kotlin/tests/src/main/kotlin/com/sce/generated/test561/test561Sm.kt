@@ -397,7 +397,7 @@ class Test561StateMachine(
             if (run send@{
             val sendData = "<books xmlns=\"\">\n<book title=\"title1\"/>\n<book title=\"title2\"/>\n</books>"
             // W3C SCXML 6.2: send to this session's external queue
-            send(Test561Event.Foo, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: "", data = sendData))
+            send(Test561Event.Foo, EventMetadata.external(sendId = "__send_0", origin = sessionId, data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was

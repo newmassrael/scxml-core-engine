@@ -452,7 +452,7 @@ class InvokeExpressionFailureIsReportedStateMachine(
                             // docs/adr/0045: the child takes its id where it is built.
                             val childSM = adoptChild(InvokeExpressionFailureIsReportedHybrid0StateMachine(), generatedInvokeId)
 
-                            startInvoke("_invoke_0", childSM, false, InvokeExpressionFailureIsReportedEvent.Done.Invoke, "", generatedInvokeId, "")
+                            startInvoke("_invoke_0", childSM, false, InvokeExpressionFailureIsReportedEvent.Done.Invoke, "", generatedInvokeId, "", "invoke_expression_failure_is_reported_hybrid0", "_invoke_0")
                         } catch (_: Exception) {
                             // W3C SCXML 6.4: the child could not be started. Evaluation
                             // failure no longer reaches here — it has its own raise above,

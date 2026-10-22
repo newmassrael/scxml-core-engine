@@ -63,14 +63,16 @@ interface HostedMachine {
 /**
  * One generated machine, from the three things its class has and no shared interface
  * names: the constructor, and the `save` and `restore` the generator writes for the
- * document.
+ * document. The constructor is given the id the world names the machine's session by,
+ * or `null` for the machine to draw its own (docs/adr/0045): a world that compares
+ * what two backends save names every copy, so no drawn id enters the text.
  */
 fun <M : StateMachineEngine<*, *>> hosting(
-    create: () -> M,
+    create: (sessionId: String?) -> M,
     save: (M) -> SavedState,
     restore: (M, SavedState) -> Unit,
-): () -> HostedMachine = {
-    val machine = create()
+): (sessionId: String?) -> HostedMachine = { sessionId ->
+    val machine = create(sessionId)
     object : HostedMachine {
         override val engine: StateMachineEngine<*, *> = machine
 

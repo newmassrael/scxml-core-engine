@@ -731,7 +731,7 @@ class ASendReachesOnlyWhatItsTargetNamesStateMachine(
                 raisePlatformError(ASendReachesOnlyWhatItsTargetNamesEvent.Error.Communication, "<send target='#_scxml_stranger'> names a session this processor cannot reach", "__send_4")
                 return@send true
             }
-            send(ASendReachesOnlyWhatItsTargetNamesEvent.Lost, EventMetadata.external(sendId = "__send_4", origin = scriptSessionId ?: "", data = sendData))
+            send(ASendReachesOnlyWhatItsTargetNamesEvent.Lost, EventMetadata.external(sendId = "__send_4", origin = sessionId, data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -969,7 +969,7 @@ ASendReachesOnlyWhatItsTargetNamesEvent.Lost,
             // one this processor reaches by that name is its own — the bare
             // prefix names it too (test 190). Any other is not reachable:
             // error.communication, nothing delivered, the block ended (4.9).
-            send(ASendReachesOnlyWhatItsTargetNamesEvent.Bare, EventMetadata.external(sendId = "__send_8", origin = scriptSessionId ?: "", data = sendData))
+            send(ASendReachesOnlyWhatItsTargetNamesEvent.Bare, EventMetadata.external(sendId = "__send_8", origin = sessionId, data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -1003,7 +1003,7 @@ ASendReachesOnlyWhatItsTargetNamesEvent.Lost,
 
                     val childSM = adoptChild(ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)")), generatedInvokeId)
                     // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
-                    startInvoke("kid", childSM, false, ASendReachesOnlyWhatItsTargetNamesEvent.Done.Invoke, "", generatedInvokeId, "")
+                    startInvoke("kid", childSM, false, ASendReachesOnlyWhatItsTargetNamesEvent.Done.Invoke, "", generatedInvokeId, "", "a_send_reaches_only_what_its_target_names__sce_synth_invoke__kid", "kid")
                 }
             }
             else -> error("the document has no child session '$invokeId' (codegen invariant)")
@@ -1121,7 +1121,7 @@ ASendReachesOnlyWhatItsTargetNamesEvent.Lost,
             if (run send@{
             val sendData = ""
             // W3C SCXML 6.2: send to this session's external queue
-            send(ASendReachesOnlyWhatItsTargetNamesEvent.Settle, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: "", data = sendData))
+            send(ASendReachesOnlyWhatItsTargetNamesEvent.Settle, EventMetadata.external(sendId = "__send_1", origin = sessionId, data = sendData))
             false
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
