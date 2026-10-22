@@ -542,6 +542,37 @@ typedef struct {{ csym_prefix }}{{ model.name }}_scheduled_queue {
 } {{ csym_prefix }}{{ model.name }}_scheduled_queue_t;
 {% endif %}
 
+{% if static_saved_shape and model.host_invoker_types %}
+{% set host_request_cap = namespace(n=1) %}
+{% for invoke_info in model.invokes | host_invoker %}
+{% set width = (invoke_info.params | length) + ((invoke_info.namelist | split | length) if invoke_info.namelist else 0) %}
+{% if width > host_request_cap.n %}{% set host_request_cap.n = width %}{% endif %}
+{% endfor %}
+/* ── SCE Accepted Subset §2.15: a host-run invocation a saved state holds ── */
+/* What a host-run `<invoke>` was started with (§scxml-6.4.1), kept for as long as it runs: every
+   field is what the request the host was handed carried, so that a restore can hand it to the
+   host again. `params` is sized by the widest such `<invoke>` of the document. */
+typedef struct {{ csym_prefix }}{{ model.name }}_host_request {
+    uint64_t token;
+    char processor_type[SCE_MAX_ID_LEN];
+    char invoke_id[SCE_MAX_ID_LEN];
+    char src[SCE_MAX_URI_LEN];
+    char content[SCE_MAX_DATA_LEN];
+    char event_data[SCE_MAX_DATA_LEN];
+    uint8_t param_count;
+    char param_names[{{ host_request_cap.n }}][SCE_MAX_ID_LEN];
+    char param_values[{{ host_request_cap.n }}][SCE_MAX_DATA_LEN];
+} {{ csym_prefix }}{{ model.name }}_host_request_t;
+
+/* An invocation a restore re-armed: its request, and when its deadline comes due (`deadline` is
+   0 for none, 1 for one `remaining_ms` away, 2 for one that came due while the machine was away). */
+typedef struct {{ csym_prefix }}{{ model.name }}_restored_host {
+    {{ csym_prefix }}{{ model.name }}_host_request_t request;
+    uint8_t deadline;
+    uint64_t remaining_ms;
+} {{ csym_prefix }}{{ model.name }}_restored_host_t;
+
+{% endif %}
 /* ── Policy state (datamodel + transition tracking) ───────────────── */
 {# C++ `{name}Policy` mutable members: the last microstep's source and
    every <history>'s recorded configuration. #}
@@ -874,6 +905,17 @@ typedef struct {{ csym_prefix }}{{ model.name }} {
     /* W3C SCXML 6.4: host invokes' `done.invoke` events refused at dequeue;
        see `_refused_host_invoke_completions`. */
     uint32_t refused_host_invoke_completions;
+{% if static_saved_shape %}
+    /* SCE Accepted Subset §2.15: the request each running host-run invocation was
+       started with, found by its start's token, which a saved state holds so that a
+       restore can start it again (§scxml-6.4.1). A slot whose token the set no
+       longer holds is free. */
+    {{ csym_prefix }}{{ model.name }}_host_request_t started_host_requests[SCE_MAX_HOST_INVOCATIONS];
+    /* ... and the invocations a restore re-armed, which start at the top of the first
+       macrostep the host drives, once it has registered its invokers. */
+    {{ csym_prefix }}{{ model.name }}_restored_host_t restored_host_invokes[SCE_MAX_HOST_INVOCATIONS];
+    uint8_t restored_host_invoke_count;
+{% endif %}
     {% endif %}
 } {{ csym_prefix }}{{ model.name }}_t;
 
@@ -1915,6 +1957,31 @@ bool {{ csym_prefix }}{{ model.name }}_restore({{ csym_prefix }}{{ model.name }}
                              int64_t wall_now_ms{% if saved_restore_args %},
                              const {{ csym_prefix }}{{ model.name }}_restore_args_t *args{% endif %},
                              sce_saved_error_t *err);
+
+/* ── The session of a tree (docs/adr/0045) ───────────────────────────── */
+/* A tree of sessions is saved by each session writing its own members into the object of its
+   parent's `invokes[i].session`, and restored by each being resumed where it stood. A parent
+   calls these on the child it runs, which it embeds; a host has no use for them. */
+
+/* Write the members of this session into the object `w` has open, in the order every backend
+   writes them. The root's `_save` is this inside the object that names the format. */
+bool {{ csym_prefix }}{{ model.name }}_save_members(const {{ csym_prefix }}{{ model.name }}_t *sm, int64_t wall_now_ms,
+                                    sce_jw_t *w, sce_saved_error_t *err);
+
+/* Refuse `members`, the object a child session was saved as, unless it is a state of this
+   document, building nothing (docs/adr/0045, section 3, step 1). */
+bool {{ csym_prefix }}{{ model.name }}_judge_members(sce_jv_t members, sce_saved_error_t *err);
+
+/* Stand `sm`, a machine its parent has begun (`_invoked_begin`) and not entered, where `members`
+   left it, in place of `_invoked_enter`: no `<onentry>`, no `<data>`, nothing sent. */
+bool {{ csym_prefix }}{{ model.name }}_resume({{ csym_prefix }}{{ model.name }}_t *sm, sce_jv_t members,
+                              int64_t wall_now_ms, sce_saved_error_t *err);
+
+/* Name the session `<parent_id>.<invoke_id>`, the id a child session is known by (docs/adr/0045):
+   its parent's and the id of the start. False when the id does not fit the room a session id
+   has (`SCE_MAX_SESSION_ID_LEN`), in which case the session keeps the id it was given. */
+bool {{ csym_prefix }}{{ model.name }}_bind_session_id({{ csym_prefix }}{{ model.name }}_t *sm, const char *parent_id,
+                                       const char *invoke_id);
 
 SCE_STATIC_ASSERT(SCE_MAX_SESSION_ID_LEN >= (int)(sizeof("{{ model.name | escape_c }}_session_") + 20u),
                   "SCE_MAX_SESSION_ID_LEN too small for the id this machine draws for itself");

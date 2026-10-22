@@ -12,6 +12,7 @@
 {% include 'license_header.jinja2' %}
 {%- import 'c/scriptengine.jinja2' as se %}
 {%- import 'c/param_macros.jinja2' as param_macros %}
+{%- import '_macros/c_invoke_defer.jinja2' as invoke_defer %}
 {%- import '_macros/sce_map_marker.jinja2' as sce_map %}
 {%- import '_macros/sce_annotation_marker.jinja2' as annot %}
 
@@ -2881,16 +2882,8 @@ SCE_SM_FN static void execute_entry_actions({{ csym_prefix }}{{ model.name }}_t 
         {% for invoke_info in state.invokes | scxml %}
         {
             char _invoke_id_buf[SCE_MAX_ID_LEN];
-            ++sm->invoke_starts_{{ invoke_info.field_suffix }};
-            {% if invoke_info.invoke_id and not invoke_info.invoke_id.startswith('_invoke_') %}
-            /* W3C SCXML 3.12.1: author-supplied id="{{ invoke_info.invoke_id }}"
-               wins over the auto-generated format. */
-            sce_copy_bounded_id(_invoke_id_buf, "{{ invoke_info.invoke_id }}");
-            {% else %}
-            sce_invoke_format_start_id(_invoke_id_buf, sizeof(_invoke_id_buf), "{{ state_id }}",
-                                       sm->invoke_starts_{{ invoke_info.field_suffix }},
-                                       "{{ invoke_info.invoke_id | escape_c }}");
-            {% endif %}
+            /* W3C SCXML 3.12.1: an author-supplied id wins over the generated format. */
+            {{ invoke_defer.number_start(state_id, invoke_info, false) }}
             {% if invoke_info.idlocation and model.needs_script_engine %}
             /* W3C SCXML 6.4.1 (test223/224/225/338): expose the spawned
                invoke's id to the parent datamodel via the `idlocation`
@@ -2914,10 +2907,10 @@ SCE_SM_FN static void execute_entry_actions({{ csym_prefix }}{{ model.name }}_t 
                     "<invoke idlocation='{{ invoke_info.idlocation | escape_c }}'> could not take the invoke id");
             } else
             {% endif %}
-            sce_invoke_pending_push(&sm->pending_invokes,
-                                    (int){{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_id | to_c11_upper_ident }},
-                                    {{ loop.index0 }},
-                                    _invoke_id_buf);
+            {# Under `sce-static` the id this start is started under goes to the variable
+               `idlocation` names, at defer time as above; the judge held the variable's
+               bound to one the id fits (SCE Accepted Subset §2.15, docs/adr/0045). #}
+            {{ invoke_defer.queue_start(csym_prefix | upper ~ model.name | upper, state_id, state_id | to_c11_upper_ident, invoke_info, loop.index0) }}
         }
         {% endfor %}
         {% endif %}
@@ -2936,10 +2929,7 @@ SCE_SM_FN static void execute_entry_actions({{ csym_prefix }}{{ model.name }}_t 
         {
             char _invoke_id_buf[SCE_MAX_ID_LEN];
             /* docs/adr/0045: numbered by this start, as the static arm is. */
-            ++sm->invoke_starts_{{ invoke_info.field_suffix }};
-            sce_invoke_format_start_id(_invoke_id_buf, sizeof(_invoke_id_buf), "{{ state_id }}",
-                                       sm->invoke_starts_{{ invoke_info.field_suffix }},
-                                       "{{ invoke_info.invoke_id | escape_c }}");
+            {{ invoke_defer.number_start(state_id, invoke_info, true) }}
             {% if invoke_info.idlocation and model.needs_script_engine %}
             /* W3C SCXML 6.4.1: idlocation propagation — same shape as the
                static-scxml branch, stored before the invocation is queued. */
@@ -2951,10 +2941,7 @@ SCE_SM_FN static void execute_entry_actions({{ csym_prefix }}{{ model.name }}_t 
                     "<invoke idlocation='{{ invoke_info.idlocation | escape_c }}'> could not take the invoke id");
             } else
             {% endif %}
-            sce_invoke_pending_push(&sm->pending_invokes,
-                                    (int){{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_id | to_c11_upper_ident }},
-                                    {{ (state.invokes | scxml | length) + loop.index0 }},
-                                    _invoke_id_buf);
+            {{ invoke_defer.queue_start(csym_prefix | upper ~ model.name | upper, state_id, state_id | to_c11_upper_ident, invoke_info, (state.invokes | scxml | length) + loop.index0) }}
         }
         {% endfor %}
         {% endif %}
@@ -4776,7 +4763,16 @@ SCE_SM_FN static void check_eventless_transitions({{ csym_prefix }}{{ model.name
    yet while that drain runs, so everything `<onentry>` queued for this
    session on the way in is consumed with no autoforward child to receive it
    — and there is no later point at which it is delivered. */
+{% if static_saved_shape and model.host_invoker_types %}
+SCE_SM_FN static void start_restored_host_invokes({{ csym_prefix }}{{ model.name }}_t *sm);
+{% endif %}
 SCE_SM_FN static void run_main_event_loop({{ csym_prefix }}{{ model.name }}_t *sm) {
+{% if static_saved_shape and model.host_invoker_types %}
+    /* SCE Accepted Subset §2.15: the invocations a restore re-armed start before anything else
+       this drive does, as the macrostep's start would start ones the document had just entered
+       (§scxml-6.4). */
+    start_restored_host_invokes(sm);
+{% endif %}
     /* External events this invocation has taken off the queue, against
        `external_event_budget`. A local, because the budget is one invocation's:
        a cut leaves the queue as it is and the next invocation gets a budget of
@@ -5146,6 +5142,13 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_tick({{ csym_prefix }}{{ model.
    interval — which cannot straddle two fire times it was never told about.
    The queue is sorted by fire time, so the answer is its head. */
 SCE_SM_FN int64_t {{ csym_prefix }}{{ model.name }}_time_until_next_scheduled_ms(const {{ csym_prefix }}{{ model.name }}_t *sm) {
+{% if static_saved_shape and model.host_invoker_types %}
+    /* SCE Accepted Subset §2.15: an invocation a restore re-armed starts at the top of the next
+       drive, so the machine needs one now. */
+    if (sm->restored_host_invoke_count != 0u) {
+        return 0;
+    }
+{% endif %}
     if (sm->scheduled_queue.count == 0u) {
         return -1;
     }
@@ -5814,6 +5817,44 @@ SCE_SM_FN static void expire_host_invoke({{ csym_prefix }}{{ model.name }}_t *sm
 }
 {% endif %}
 
+{% if static_saved_shape %}
+/* SCE Accepted Subset §2.15: keep the request start `start->token` was handed, for as long as it
+   runs, so that a saved state can hold it (§scxml-6.4.1). A slot is free when the set no longer
+   holds the token it was written under. A field that does not fit its slot is cut, as the
+   delayed-send queue cuts one: the request the start site built is bounded by the same sizes. */
+SCE_SM_FN static void note_host_request({{ csym_prefix }}{{ model.name }}_t *sm, const sce_host_invoke_event_t *start) {
+    {{ csym_prefix }}{{ model.name }}_host_request_t *slot = NULL;
+    for (size_t i = 0u; i < (size_t)SCE_MAX_HOST_INVOCATIONS && slot == NULL; ++i) {
+        bool live = false;
+        for (int j = 0; j < sm->started_host_invokes.count; ++j) {
+            if (sm->started_host_invokes.tokens[j] == sm->started_host_requests[i].token &&
+                sm->started_host_requests[i].invoke_id[0] != '\0' &&
+                strcmp(sm->started_host_invokes.ids[j], sm->started_host_requests[i].invoke_id) == 0) {
+                live = true;
+            }
+        }
+        if (!live) {
+            slot = &sm->started_host_requests[i];
+        }
+    }
+    if (slot == NULL) {
+        return;
+    }
+    memset(slot, 0, sizeof(*slot));
+    slot->token = start->token;
+    sce_copy_bounded_id(slot->processor_type, start->processor_type);
+    sce_copy_bounded_id(slot->invoke_id, start->invoke_id);
+    sce_copy_bounded_n(slot->src, start->src, sizeof(slot->src));
+    sce_copy_bounded_data(slot->content, start->content);
+    sce_copy_bounded_data(slot->event_data, start->event_data);
+    for (int i = 0; i < start->param_count && i < (int)(sizeof(slot->param_names) / sizeof(slot->param_names[0])); ++i) {
+        sce_copy_bounded_id(slot->param_names[i], start->params[i].name);
+        sce_copy_bounded_data(slot->param_values[i], start->params[i].value);
+        slot->param_count++;
+    }
+}
+
+{% endif %}
 /* W3C SCXML 6.4.1: start a host-run invocation, reporting whether an invoker
    ran it. `false` means none was registered, which the start site turns into
    `error.execution`.
@@ -5872,6 +5913,10 @@ SCE_SM_FN static bool {{ csym_prefix }}{{ model.name }}_perform_host_invoke({{ c
     start->params = param_count > 0 ? params : NULL;
     start->param_count = param_count;
     start->token = sce_host_invocation_mark(&sm->started_host_invokes, start->processor_type, start->invoke_id);
+    start->session_id = sm->session_id;
+{% if static_saved_shape %}
+    note_host_request(sm, start);
+{% endif %}
 {% if model.has_host_invoke_deadline %}
     if (has_deadline) {
         schedule_host_invoke_deadline(sm, start->processor_type, start->invoke_id, start->token, deadline_ms);
@@ -5902,6 +5947,95 @@ SCE_SM_FN static bool {{ csym_prefix }}{{ model.name }}_perform_host_invoke({{ c
     return true;
 }
 
+{% if static_saved_shape %}
+/* SCE Accepted Subset §2.15: tell the document a host-run invocation a restore found failed, as
+   `error.invoke.<id>` with the reason as its data: `"deadline"` for a deadline that passed while
+   the machine was away, `"interrupted"` for a call a restore must not send again. The JSON
+   spelling of the string, as every other backend carries it. */
+SCE_SM_FN static void raise_host_invoke_failure({{ csym_prefix }}{{ model.name }}_t *sm, const char *invoke_id,
+                                                const char *reason) {
+    char name[SCE_MAX_ID_LEN];
+    const size_t prefix_len = sizeof(SCE_ERROR_INVOKE_PREFIX) - 1u;
+    const size_t id_len = strlen(invoke_id);
+    {{ csym_prefix }}{{ model.name }}_event_with_meta_t raised;
+    memset(&raised, 0, sizeof(raised));
+    if (prefix_len + id_len >= sizeof(name)) {
+        return;
+    }
+    memcpy(name, SCE_ERROR_INVOKE_PREFIX, prefix_len);
+    memcpy(name + prefix_len, invoke_id, id_len);
+    name[prefix_len + id_len] = '\0';
+    if ({{ csym_prefix }}{{ model.name }}_arrive(name, prefix_len + id_len, &raised.event, raised.name)) {
+        (void)snprintf(raised.data, sizeof(raised.data), "\"%s\"", reason);
+        sce_copy_bounded_id(raised.invoke_id, invoke_id);
+        {{ csym_prefix }}{{ model.name }}_raise_external(sm, &raised);
+    }
+}
+
+/* SCE Accepted Subset §2.15: start the invocations a restore re-armed, as the macrostep's start
+   would start ones the document had just entered (§scxml-6.4).
+
+   A deadline that came due while the machine was away ends the invocation without a start: the
+   host is not asked to begin what it would be told to stop at once, and the document receives
+   the `error.invoke` the deadline raises. A request SCE sends on the document's behalf (a Mesh
+   request) may already have reached its peer, which would act on it twice if it were sent again,
+   and the router that carried it is gone with the process that saved it: it is not started, the
+   document is told the call was interrupted, and sends a new one if it means to ask again. An
+   invoker that is not registered by now is the same error a document's own start gets. */
+SCE_SM_FN static void start_restored_host_invokes({{ csym_prefix }}{{ model.name }}_t *sm) {
+    const uint8_t owed = sm->restored_host_invoke_count;
+    if (owed == 0u) {
+        return;
+    }
+    sm->restored_host_invoke_count = 0u;
+    for (uint8_t i = 0u; i < owed; ++i) {
+        {{ csym_prefix }}{{ model.name }}_restored_host_t *restored = &sm->restored_host_invokes[i];
+        {{ csym_prefix }}{{ model.name }}_host_request_t *request = &restored->request;
+        if (restored->deadline == 2u) {
+            raise_host_invoke_failure(sm, request->invoke_id, "deadline");
+        } else if (sce_is_reserved_host_type(request->processor_type)) {
+            raise_host_invoke_failure(sm, request->invoke_id, "interrupted");
+        } else if (sce_host_invoker_find(&sm->host_invokers, request->processor_type) == NULL) {
+{% if 'error.execution' in model.events %}
+            {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                "<invoke> names an invoker the host declared but never registered");
+{% endif %}
+        } else {
+            sce_host_send_param_t params[sizeof(request->param_names) / sizeof(request->param_names[0]) + 1u];
+            char deadline_text[24];
+            sce_host_invoke_event_t start;
+            int count = 0;
+            memset(&start, 0, sizeof(start));
+            start.phase = SCE_HOST_INVOKE_START;
+            start.restarted = true;
+            start.processor_type = request->processor_type;
+            start.invoke_id = request->invoke_id;
+            start.src = request->src;
+            start.content = request->content;
+            start.event_data = request->event_data;
+            for (; count < (int)request->param_count; ++count) {
+                params[count].name = request->param_names[count];
+                params[count].value = request->param_values[count];
+            }
+{% if model.has_host_invoke_deadline %}
+            if (restored->deadline == 1u) {
+                /* The machine's own parameter, which the start takes out of what the host is
+                   handed and arms: the time left. */
+                (void)snprintf(deadline_text, sizeof(deadline_text), "%llu", (unsigned long long)restored->remaining_ms);
+                params[count].name = SCE_HOST_INVOKE_DEADLINE_PARAM;
+                params[count].value = deadline_text;
+                ++count;
+            }
+{% else %}
+            (void)deadline_text;
+{% endif %}
+            (void){{ csym_prefix }}{{ model.name }}_perform_host_invoke(sm, &start, params, count);
+        }
+    }
+}
+
+{% endif %}
 /* W3C SCXML 6.4: stop a host-run invocation whose state has exited, or from
    outside the exit chain.
 

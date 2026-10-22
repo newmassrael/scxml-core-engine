@@ -19,6 +19,7 @@
     The `_save`, `_judge` and `_restore` doors are declared in the header.
 #}
 
+{%- import '_macros/c_child_begin.jinja2' as child_begin %}
 {#- A variable's saved form. `is_enum` says the value is of an enum, written and
     read by the functions its type declares beside it. -#}
 {% macro put_scalar(is_enum, stype, expr) -%}
@@ -89,6 +90,12 @@ if (({{ expr }}).present) {
 
 {% set _t = csym_prefix ~ model.name %}
 {% set _u = csym_prefix | upper ~ model.name | upper %}
+{# The child sessions this document starts: a `type="scxml"` invoke, and a hybrid one that
+   chooses among declared candidates (§scxml-6.4). #}
+{% set family = model.invokes | scxml_family | list %}
+{# §scxml-6.4: the clock a child this machine starts measures its delays on, as the start gives
+   it (`c/invoke_methods.jinja2`). #}
+{% set child_clock_c = 'sce_clock_following(&sm->clock)' if model.needs_event_scheduler else 'sce_clock_monotonic()' %}
 {# What `_restore` is handed besides the text: the seams every `_init*` takes
    (the clock, the host's processors and invokers, the acts it performs). Kept in
    step with the same `set`s in `state_machine.h.jinja2`. #}
@@ -234,7 +241,7 @@ SCE_SM_FN static bool {{ _t }}_saved_read_{{ field.name }}(sce_jv_t v, const cha
         }
         (void)sce_jv_iter(v, &it);
         for (size_t i = 0u; sce_jiter_element(&it, &item); ++i) {
-            (void)snprintf(element_what, sizeof(element_what), "%s[%lu]", what, (unsigned long)i);
+            sce_saved_path_index(element_what, sizeof(element_what), what, i);
 {% if field.saved_kind == "list" %}
             if (!{{ get_scalar(false, field.saved_type, none, "item", "element_what", "value.data[i]") }}) {
                 return false;
@@ -267,6 +274,8 @@ SCE_SM_FN static bool {{ _t }}_saved_read_{{ field.name }}(sce_jv_t v, const cha
 SCE_SM_FN static bool {{ _t }}_saved_read_variables(const sce_saved_session_t *s, const unsigned *record_at,
                                                   {{ _t }}_policy_t *policy, sce_saved_error_t *err) {
     sce_jv_t v;
+    (void)s;
+    (void)err;
     (void)record_at;
     (void)policy;
     (void)v;
@@ -476,6 +485,30 @@ SCE_SM_FN static bool {{ _t }}_saved_histories_read(const sce_saved_session_t *s
 }
 
 {% endif %}
+{% if family %}
+/* The state that holds each `<invoke>` that starts a child session, by the id the document gives
+   it. */
+typedef struct {
+    const char *id;
+    {{ _t }}_state_t owner;
+} {{ _t }}_saved_invoke_owner_t;
+
+static const {{ _t }}_saved_invoke_owner_t {{ _t }}_saved_invoke_owners[] = {
+{% for inv in family %}
+    { "{{ inv.invoke_id | escape_c }}", {{ _u }}_STATE_{{ inv.state_name | to_c11_upper_ident }} },
+{% endfor %}
+};
+
+SCE_SM_FN static const {{ _t }}_saved_invoke_owner_t *{{ _t }}_saved_invoke_owner(sce_jv_t id) {
+    for (size_t i = 0u; i < sizeof({{ _t }}_saved_invoke_owners) / sizeof({{ _t }}_saved_invoke_owners[0]); ++i) {
+        if (sce_jv_string_is(id, {{ _t }}_saved_invoke_owners[i].id)) {
+            return &{{ _t }}_saved_invoke_owners[i];
+        }
+    }
+    return NULL;
+}
+
+{% endif %}
 {# ── The queues ─────────────────────────────────────────────────────────── #}
 /* The events `s` queues for this session, judged and, given the machine, queued. The name an event
    arrived under is the document's own event for it, or the one it extends (§scxml-3.12.1); one
@@ -550,6 +583,62 @@ SCE_SM_FN static bool {{ _t }}_saved_events(const sce_saved_session_t *s, {{ _t 
     return true;
 }
 
+{% if model.has_delayed_host_send %}
+/* A delayed `<send>` a host-served processor performs, as the text holds it: every field is what
+   the document wrote when the block ran (§scxml-6.2.5), so each is held to the room its slot has.
+   `slot` is where it is kept, NULL to judge it and keep nothing. */
+SCE_SM_FN static bool {{ _t }}_saved_host_send(const sce_saved_send_t *send, const char *what,
+                                             {{ _t }}_scheduled_entry_t *slot, sce_saved_error_t *err) {
+    const {{ _t }}_scheduled_entry_t *shape = NULL;
+    char field[SCE_SAVED_AT_LEN];
+    (void)shape;
+{% for member, key, source in [('host_processor_type', 'type', 'type'), ('host_event_name', 'event', 'event'), ('host_target', 'target', 'target'), ('host_content', 'content', 'content'), ('host_event_data', 'data', 'data'), ('host_invoke_id', 'invokeid', 'invoke_id')] %}
+    sce_saved_path_field(field, sizeof(field), what, "{{ key }}");
+    if (!sce_saved_text_into(send->{{ source }}, field, slot != NULL ? slot->{{ member }} : NULL, sizeof(shape->{{ member }}), err)) {
+        return false;
+    }
+{% endfor %}
+    {
+        sce_jiter_t names;
+        sce_jiter_t values;
+        sce_jv_t name;
+        sce_jv_t list;
+        sce_jv_t value;
+        size_t kept = 0u;
+        (void)sce_jv_iter(send->params, &names);
+        while (sce_jiter_member(&names, &name, &list)) {
+            (void)sce_jv_iter(list, &values);
+            while (sce_jiter_element(&values, &value)) {
+{% if model.delayed_host_send_max_params > 0 %}
+                if (kept >= {{ model.delayed_host_send_max_params }}u) {
+                    return sce_saved_refuse(err, "'%s.params' holds more than the {{ model.delayed_host_send_max_params }} this document's widest host-served send carries", what);
+                }
+                sce_saved_path_field(field, sizeof(field), what, "params");
+                if (!sce_saved_text_into(name, field, slot != NULL ? slot->host_param_names[kept] : NULL, sizeof(shape->host_param_names[0]), err) ||
+                    !sce_saved_text_into(value, field, slot != NULL ? slot->host_param_values[kept] : NULL, sizeof(shape->host_param_values[0]), err)) {
+                    return false;
+                }
+{% else %}
+                return sce_saved_refuse(err, "'%s.params' holds a value, and this document's host-served sends carry none", what);
+{% endif %}
+                ++kept;
+            }
+        }
+{% if model.delayed_host_send_max_params > 0 %}
+        if (slot != NULL) {
+            slot->host_param_count = (uint8_t)kept;
+        }
+{% else %}
+        (void)kept;
+{% endif %}
+    }
+    if (slot != NULL) {
+        slot->host_send = true;
+    }
+    return true;
+}
+
+{% endif %}
 {% if model.needs_event_scheduler %}
 /* The delayed `<send>`s `s` waits on, judged and, given the machine, armed against its clock: each
    comes due `due - wall_now_ms` after now, and one that came due while the machine was away comes
@@ -596,14 +685,36 @@ SCE_SM_FN static bool {{ _t }}_saved_sends(const sce_saved_session_t *s, {{ _t }
             return sce_saved_refuse(err, "%s is a send to the parent, which the document never makes", what);
 {% endif %}
         case SCE_SAVED_ACT_CHILD:
-        case SCE_SAVED_ACT_HOST:
+{% if family %}
+            /* The child is named by the `<invoke>` the target names, which must be one of the
+               document's: a send to any other is one the save would have been refused for. */
+            if ({{ _t }}_saved_invoke_owner(send.invoke_id) == NULL) {
+                sce_saved_quote_(send.invoke_id, quoted, sizeof(quoted));
+                return sce_saved_refuse(err, "%s is a send to the child '%s', which the document does not invoke", what,
+                                        quoted);
+            }
+            break;
+{% else %}
             return sce_saved_refuse(err, "%s is a send this document never makes", what);
+{% endif %}
+        case SCE_SAVED_ACT_HOST:
+{% if model.has_delayed_host_send %}
+            if (!{{ _t }}_saved_host_send(&send, what, NULL, err)) {
+                return false;
+            }
+            break;
+{% else %}
+            return sce_saved_refuse(err, "%s is a send this document never makes", what);
+{% endif %}
         }
         (void)snprintf(field, sizeof(field), "%s.sendid", what);
         if (!sce_saved_text_into(send.send_id, field, NULL, sizeof(slot->send_id), err)) {
             return false;
         }
         (void)snprintf(field, sizeof(field), "%s.data", what);
+{% if model.has_delayed_host_send %}
+        if (send.act != SCE_SAVED_ACT_HOST)
+{% endif %}
 {% if model.needs_script_engine or model.has_delayed_send_payload %}
         if (!sce_saved_text_into(send.data, field, NULL, sizeof(slot->data), err)) {
             return false;
@@ -611,6 +722,22 @@ SCE_SM_FN static bool {{ _t }}_saved_sends(const sce_saved_session_t *s, {{ _t }
 {% else %}
         if (sce_jv_string_len(send.data) != 0u) {
             return sce_saved_refuse(err, "'%s' is a payload, which no delayed send of this document carries", field);
+        }
+{% endif %}
+{% if model.may_address_parent or family %}
+        if (send.act == SCE_SAVED_ACT_PARENT || send.act == SCE_SAVED_ACT_CHILD) {
+            sce_saved_path_field(field, sizeof(field), what, "event");
+            if (!sce_saved_text_into(send.event, field, NULL, sizeof(slot->route_event), err)) {
+                return false;
+            }
+        }
+{% endif %}
+{% if family %}
+        if (send.act == SCE_SAVED_ACT_CHILD) {
+            sce_saved_path_field(field, sizeof(field), what, "invokeid");
+            if (!sce_saved_text_into(send.invoke_id, field, NULL, sizeof(slot->route_invoke), err)) {
+                return false;
+            }
         }
 {% endif %}
         if (sm != NULL) {
@@ -621,6 +748,14 @@ SCE_SM_FN static bool {{ _t }}_saved_sends(const sce_saved_session_t *s, {{ _t }
             }
             slot->event = resolved;
             (void)sce_jv_string(send.send_id, slot->send_id, sizeof(slot->send_id), NULL);
+{% if model.has_delayed_host_send %}
+            if (send.act == SCE_SAVED_ACT_HOST) {
+                slot->event = {{ _u }}_EVENT_NONE;
+                if (!{{ _t }}_saved_host_send(&send, what, slot, err)) {
+                    return false;
+                }
+            } else
+{% endif %}
 {% if model.needs_script_engine or model.has_delayed_send_payload %}
             (void)sce_jv_string(send.data, slot->data, sizeof(slot->data), NULL);
 {% endif %}
@@ -633,18 +768,389 @@ SCE_SM_FN static bool {{ _t }}_saved_sends(const sce_saved_session_t *s, {{ _t }
                 (void)sce_jv_string(send.event, slot->route_event, sizeof(slot->route_event), NULL);
 {% endif %}
             }
+{% if family %}
+            if (send.act == SCE_SAVED_ACT_CHILD) {
+                slot->route = (uint8_t){{ _u }}_SCHED_ROUTE_INVOCATION;
+                slot->event = {{ _u }}_EVENT_NONE;
+                (void)sce_jv_string(send.event, slot->route_event, sizeof(slot->route_event), NULL);
+                (void)sce_jv_string(send.invoke_id, slot->route_invoke, sizeof(slot->route_invoke), NULL);
+            }
+{% endif %}
         }
     }
     return true;
 }
 {% endif %}
 
+{# ── Host-run invocations (§scxml-6.4.1) ───────────────────────────────── #}
+{% if model.host_invoker_types %}
+/* The state that holds each host-run `<invoke>` of the document, by the type the host serves and
+   the id the document gives it. */
+typedef struct {
+    const char *type;
+    const char *id;
+    {{ _t }}_state_t owner;
+} {{ _t }}_saved_host_owner_t;
+
+static const {{ _t }}_saved_host_owner_t {{ _t }}_saved_host_owners[] = {
+{% for inv in model.invokes | host_invoker %}
+    { "{{ inv.invoke_type | escape_c }}", "{{ inv.invoke_id | escape_c }}", {{ _u }}_STATE_{{ inv.state_name | to_c11_upper_ident }} },
+{% endfor %}
+};
+
+/* The host-run invocations `s` holds, judged and, given the machine, re-armed: each is started
+   again from the request it was started with at the top of the first macrostep the host drives,
+   once it has registered its invokers (§scxml-6.4.1). `held` is the saved configuration as a
+   bitmap. A deadline already due ends the invocation without a start; one that is not comes due
+   `due - wall_now_ms` after the start. */
+SCE_SM_FN static bool {{ _t }}_saved_host_invokes(const sce_saved_session_t *s, uint32_t held, {{ _t }}_t *sm,
+                                                int64_t wall_now_ms, sce_saved_error_t *err) {
+    sce_jiter_t it;
+    sce_jv_t item;
+    const size_t count = sce_jv_count(s->host_invokes);
+    const {{ _t }}_host_request_t *shape = NULL;
+    (void)shape;
+    (void)wall_now_ms;
+    if (count > (size_t)SCE_MAX_HOST_INVOCATIONS) {
+        return sce_saved_refuse(err, "'hostinvokes' holds %lu invocations, past the %lu this build runs",
+                                (unsigned long)count, (unsigned long)SCE_MAX_HOST_INVOCATIONS);
+    }
+    (void)sce_jv_iter(s->host_invokes, &it);
+    for (size_t at = 0u; sce_jiter_element(&it, &item); ++at) {
+        sce_saved_host_invoke_t host;
+        char what[SCE_SAVED_WHAT_LEN];
+        char field[SCE_SAVED_AT_LEN];
+        char quoted_type[SCE_SAVED_QUOTE_LEN];
+        char quoted_id[SCE_SAVED_QUOTE_LEN];
+        const {{ _t }}_saved_host_owner_t *owner = NULL;
+        {{ _t }}_restored_host_t *slot = sm != NULL ? &sm->restored_host_invokes[sm->restored_host_invoke_count] : NULL;
+        (void)snprintf(what, sizeof(what), "hostinvokes[%lu]", (unsigned long)at);
+        if (!sce_saved_host_invoke_read(item, what, &host, err)) {
+            return false;
+        }
+        (void)sce_jv_string(host.type, quoted_type, sizeof(quoted_type), NULL);
+        (void)sce_jv_string(host.id, quoted_id, sizeof(quoted_id), NULL);
+        for (size_t i = 0u; i < sizeof({{ _t }}_saved_host_owners) / sizeof({{ _t }}_saved_host_owners[0]); ++i) {
+            if (sce_jv_string_is(host.type, {{ _t }}_saved_host_owners[i].type) &&
+                sce_jv_string_is(host.id, {{ _t }}_saved_host_owners[i].id)) {
+                owner = &{{ _t }}_saved_host_owners[i];
+            }
+        }
+        if (owner == NULL) {
+            return sce_saved_refuse(err,
+                                    "%s is '%s' of type '%s', which the document does not have a host invoker run", what,
+                                    quoted_id, quoted_type);
+        }
+        if ((held & state_bit(owner->owner)) == 0u) {
+            return sce_saved_refuse(err, "%s is '%s', whose state the saved configuration does not stand in", what,
+                                    quoted_id);
+        }
+        {
+            /* Named twice: an earlier entry is the same `(type, id)`. */
+            sce_jiter_t earlier;
+            sce_jv_t before;
+            sce_saved_host_invoke_t other;
+            sce_saved_error_t ignored;
+            (void)sce_jv_iter(s->host_invokes, &earlier);
+            for (size_t k = 0u; k < at && sce_jiter_element(&earlier, &before); ++k) {
+                if (sce_saved_host_invoke_read(before, "hostinvokes", &other, &ignored) &&
+                    sce_jv_string_equal(other.type, host.type) && sce_jv_string_equal(other.id, host.id)) {
+                    return sce_saved_refuse(err, "%s is '%s', which an earlier entry already names", what, quoted_id);
+                }
+            }
+        }
+{% if not model.has_host_invoke_deadline %}
+        if (host.has_due) {
+            return sce_saved_refuse(err, "%s carries a deadline, and no host-run invocation of the document has one", what);
+        }
+{% endif %}
+{% for member, key, source in [('processor_type', 'type', 'type'), ('invoke_id', 'id', 'id'), ('src', 'src', 'src'), ('content', 'content', 'content'), ('event_data', 'data', 'data')] %}
+        sce_saved_path_field(field, sizeof(field), what, "{{ key }}");
+        if (!sce_saved_text_into(host.{{ source }}, field, slot != NULL ? slot->request.{{ member }} : NULL,
+                                 sizeof(shape->{{ member }}), err)) {
+            return false;
+        }
+{% endfor %}
+        {
+            sce_jiter_t names;
+            sce_jiter_t values;
+            sce_jv_t name;
+            sce_jv_t list;
+            sce_jv_t value;
+            size_t kept = 0u;
+            (void)sce_jv_iter(host.params, &names);
+            while (sce_jiter_member(&names, &name, &list)) {
+                (void)sce_jv_iter(list, &values);
+                while (sce_jiter_element(&values, &value)) {
+                    if (kept >= sizeof(shape->param_names) / sizeof(shape->param_names[0])) {
+                        return sce_saved_refuse(err, "'%s.params' holds more than the %lu this document's widest host-run invocation carries", what,
+                                                (unsigned long)(sizeof(shape->param_names) / sizeof(shape->param_names[0])));
+                    }
+                    sce_saved_path_field(field, sizeof(field), what, "params");
+                    if (!sce_saved_text_into(name, field, slot != NULL ? slot->request.param_names[kept] : NULL,
+                                             sizeof(shape->param_names[0]), err) ||
+                        !sce_saved_text_into(value, field, slot != NULL ? slot->request.param_values[kept] : NULL,
+                                             sizeof(shape->param_values[0]), err)) {
+                        return false;
+                    }
+                    ++kept;
+                }
+            }
+            if (slot != NULL) {
+                slot->request.param_count = (uint8_t)kept;
+            }
+        }
+        if (slot != NULL) {
+            slot->deadline = 0u;
+            slot->remaining_ms = 0u;
+            if (host.has_due) {
+                if (host.due <= wall_now_ms) {
+                    slot->deadline = 2u;
+                } else {
+                    slot->deadline = 1u;
+                    slot->remaining_ms = (uint64_t)(host.due - wall_now_ms);
+                }
+            }
+            sm->restored_host_invoke_count++;
+        }
+    }
+    return true;
+}
+
+{% endif %}
+{# ── Child sessions (§scxml-6.4; docs/adr/0045) ────────────────────────── #}
+{% if family %}
+/* Refuse `child`, the `index`-th running child of the session being judged, unless its session is a
+   state of the document it names, to any depth (docs/adr/0045, section 3, step 1). Builds
+   nothing. */
+SCE_SM_FN static bool {{ _t }}_saved_judge_child(const sce_saved_child_t *child, size_t index, sce_saved_error_t *err) {
+    char path[SCE_SAVED_WHAT_LEN];
+    char id[SCE_SAVED_QUOTE_LEN];
+    char document[SCE_SAVED_QUOTE_LEN];
+    (void)snprintf(path, sizeof(path), "invokes[%lu].session", (unsigned long)index);
+{% for inv in family %}
+{% for target in (inv.candidates if inv.candidates else []) %}
+    if (sce_jv_string_is(child->id, "{{ inv.invoke_id | escape_c }}") && sce_jv_string_is(child->document, "{{ target.stem | escape_c }}")) {
+        return {{ csym_prefix }}{{ target.stem }}_judge_members(child->session, err) || sce_saved_within(err, path);
+    }
+{% endfor %}
+{% if not inv.candidates and inv.kind == 'Scxml' %}
+    if (sce_jv_string_is(child->id, "{{ inv.invoke_id | escape_c }}") && sce_jv_string_is(child->document, "{{ inv.child_name | escape_c }}")) {
+        return {{ csym_prefix }}{{ inv.child_name }}_judge_members(child->session, err) || sce_saved_within(err, path);
+    }
+{% endif %}
+{% endfor %}
+    sce_saved_quote_(child->id, id, sizeof(id));
+    sce_saved_quote_(child->document, document, sizeof(document));
+    return sce_saved_refuse(err, "invokes names '%s' running '%s', a document that `<invoke>` does not start", id,
+                            document);
+}
+
+/* Resume `child`, the `index`-th running child of the session being restored: built as its start
+   builds it — given its host, its parent and its clock — and restored where it stood in place of
+   entered: no `<onentry>`, no `<data>`, no `<param>` or namelist evaluated, no `idlocation`
+   written, nothing sent (docs/adr/0045, section 3, step 3). */
+SCE_SM_FN static bool {{ _t }}_saved_resume_child({{ _t }}_t *sm, const sce_saved_child_t *child, size_t index,
+                                                int64_t wall_now_ms, sce_saved_error_t *err) {
+    char invoke_id[SCE_MAX_ID_LEN];
+    char path[SCE_SAVED_WHAT_LEN];
+    (void)snprintf(path, sizeof(path), "invokes[%lu].session", (unsigned long)index);
+    if (!sce_jv_string(child->invoke_id, invoke_id, sizeof(invoke_id), NULL)) {
+        return sce_saved_refuse(err, "invokes[%lu].invokeid holds more than the %lu bytes an id has", (unsigned long)index,
+                                (unsigned long)(SCE_MAX_ID_LEN - 1));
+    }
+{% for inv in family %}
+{% for target in (inv.candidates if inv.candidates else ([{'stem': inv.child_name, 'child_host_call': inv.child_host_call, 'child_declares_host_duties': inv.child_declares_host_duties, 'child_has_send_to_parent': inv.child_has_send_to_parent}] if inv.kind == 'Scxml' else [])) %}
+{% set slot = ('child_' ~ (inv.field_suffix | candidate_identifier(target.stem))) if inv.candidates else ('child_' ~ inv.field_suffix) %}
+    if (sce_jv_string_is(child->id, "{{ inv.invoke_id | escape_c }}") && sce_jv_string_is(child->document, "{{ target.stem | escape_c }}")) {
+{% call child_begin.begin_static_child(csym_prefix, model.name, 'sm->' ~ slot, target.stem, target.child_host_call, target.child_declares_host_duties, target.child_has_send_to_parent, 'invoke_id', child_clock_c) %}
+        return sce_saved_refuse(err, "invokes[%lu] could not be given the host its child declares", (unsigned long)index);
+{% endcall %}
+{% if model.host_processor_types %}
+        {
+            /* SCE_MESH.md, Child Sessions in Mesh: the child's router, asked of this machine's
+               factory as a start asks it, and installed before the child is resumed. */
+            sce_child_mesh_router_t router;
+            const sce_child_mesh_router_t *asked = sce_child_mesh_routers_ask(
+                &sm->host_processors.child_mesh_routers, "{{ inv.invoke_id | escape_c }}",
+                "{% if inv.candidates %}{{ target.stem | escape_c }}{% elif not inv.src.startswith('#') %}{{ inv.child_name | escape_c }}{% endif %}", &router);
+            if (asked != NULL) {
+                {{ csym_prefix }}{{ target.stem }}_install_mesh_router(&sm->{{ slot }}, asked);
+            }
+        }
+{% endif %}
+        sm->{{ slot }}_active = true;
+        sce_copy_bounded_id(sm->child_{{ inv.field_suffix }}_invoke_id, invoke_id);
+        return {{ csym_prefix }}{{ target.stem }}_resume(&sm->{{ slot }}, child->session, wall_now_ms, err) ||
+               sce_saved_within(err, path);
+    }
+{% endfor %}
+{% endfor %}
+    return sce_saved_refuse(err, "invokes[%lu] names a document that `<invoke>` does not start", (unsigned long)index);
+}
+
+/* Start `id`, a running `<invoke>` of a format-1 saved state, again from its beginning, as
+   entering its state starts it: the start is deferred to the macrostep the host drives next,
+   which runs it, so the restore itself takes no step. What a format-1 state holds of a running
+   child is its id alone (docs/adr/0045). */
+SCE_SM_FN static void {{ _t }}_saved_restart_invoke({{ _t }}_t *sm, sce_jv_t id) {
+{% for state_id, state in model.states | dictsort %}
+{% for inv in state.invokes | scxml %}
+    if (sce_jv_string_is(id, "{{ inv.invoke_id | escape_c }}")) {
+        char _invoke_id_buf[SCE_MAX_ID_LEN];
+        {{ invoke_defer.number_start(state_id, inv, false) }}
+        {{ invoke_defer.queue_start(_u, state_id, state_id | to_c11_upper_ident, inv, loop.index0) }}
+        return;
+    }
+{% endfor %}
+{% for inv in state.invokes | hybrid %}
+    if (sce_jv_string_is(id, "{{ inv.invoke_id | escape_c }}")) {
+        char _invoke_id_buf[SCE_MAX_ID_LEN];
+        {{ invoke_defer.number_start(state_id, inv, true) }}
+        {{ invoke_defer.queue_start(_u, state_id, state_id | to_c11_upper_ident, inv, (state.invokes | scxml | length) + loop.index0) }}
+        return;
+    }
+{% endfor %}
+{% endfor %}
+    (void)sm;
+    (void)id;
+}
+
+/* The running child sessions `s` holds, judged and, given the machine, brought back. A running
+   `<invoke>` is one the document has, whose state the saved configuration stands in, named once;
+   a count of starts names one the document has; and in a tree each child is the one its session
+   could be running: its start is the count the session holds for its `<invoke>`, and its session
+   id is the session's and the id it was started under (docs/adr/0045, section 3). `held` is the
+   saved configuration as a bitmap. */
+SCE_SM_FN static bool {{ _t }}_saved_invokes(const sce_saved_session_t *s, uint32_t held, {{ _t }}_t *sm,
+                                           int64_t wall_now_ms, sce_saved_error_t *err) {
+    sce_jiter_t it;
+    sce_jv_t item;
+    char quoted[SCE_SAVED_QUOTE_LEN];
+    size_t at = 0u;
+    if (s->format == SCE_SAVED_FORMAT_2) {
+        sce_jv_t name;
+        sce_jv_t count;
+        (void)sce_jv_iter(s->invoke_starts, &it);
+        while (sce_jiter_member(&it, &name, &count)) {
+            if ({{ _t }}_saved_invoke_owner(name) == NULL) {
+                sce_saved_quote_(name, quoted, sizeof(quoted));
+                return sce_saved_refuse(err, "invokestarts counts '%s', which the document does not invoke", quoted);
+            }
+        }
+    }
+    (void)sce_jv_iter(s->invokes, &it);
+    for (; sce_jiter_element(&it, &item); ++at) {
+        sce_saved_child_t child;
+        sce_jv_t id = item;
+        const {{ _t }}_saved_invoke_owner_t *owner;
+        sce_jiter_t earlier;
+        sce_jv_t before;
+        memset(&child, 0, sizeof(child));
+        if (s->format == SCE_SAVED_FORMAT_2) {
+            if (!sce_saved_child_read(item, at, &child, err)) {
+                return false;
+            }
+            id = child.id;
+        }
+        sce_saved_quote_(id, quoted, sizeof(quoted));
+        owner = {{ _t }}_saved_invoke_owner(id);
+        if (owner == NULL) {
+            return sce_saved_refuse(err, "invokes[%lu] is '%s', which the document does not invoke", (unsigned long)at,
+                                    quoted);
+        }
+        if ((held & state_bit(owner->owner)) == 0u) {
+            return sce_saved_refuse(err, "invokes[%lu] is '%s', whose state the saved configuration does not stand in",
+                                    (unsigned long)at, quoted);
+        }
+        (void)sce_jv_iter(s->invokes, &earlier);
+        for (size_t k = 0u; k < at && sce_jiter_element(&earlier, &before); ++k) {
+            sce_jv_t other = before;
+            sce_saved_child_t peer;
+            sce_saved_error_t ignored;
+            if (s->format == SCE_SAVED_FORMAT_2) {
+                if (!sce_saved_child_read(before, k, &peer, &ignored)) {
+                    continue;
+                }
+                other = peer.id;
+            }
+            if (sce_jv_string_equal(other, id)) {
+                return sce_saved_refuse(err, "invokes[%lu] is '%s', which an earlier entry already names",
+                                        (unsigned long)at, quoted);
+            }
+        }
+        if (s->format == SCE_SAVED_FORMAT_2) {
+            /* Its start is the count the session holds for its `<invoke>`, and its session is the
+               one its parent derived its id for. */
+            char id_text[SCE_MAX_ID_LEN];
+            char derived[SCE_MAX_SESSION_ID_LEN + SCE_MAX_ID_LEN + 2];
+            char child_session[SCE_MAX_SESSION_ID_LEN];
+            char parent_session[SCE_MAX_SESSION_ID_LEN];
+            char started_under[SCE_MAX_ID_LEN];
+            sce_jv_t child_id;
+            int64_t count;
+            (void)sce_jv_string(id, id_text, sizeof(id_text), NULL);
+            count = sce_saved_invoke_start(s, id_text);
+            if (child.start != count) {
+                return sce_saved_refuse(err,
+                                        "invokes[%lu] is start %ld of '%s', and the session counts %ld starts of it: a "
+                                        "state re-entered cancels the earlier child before it starts the next one",
+                                        (unsigned long)at, (long)child.start, quoted, (long)count);
+            }
+            {
+                sce_saved_session_t inner;
+                if (!sce_saved_session_read(child.session, SCE_SAVED_FORMAT_2, &inner, err)) {
+                    return false;
+                }
+                child_id = inner.session_id;
+            }
+            if (!sce_saved_text_into(child.invoke_id, "invokes.invokeid", started_under, sizeof(started_under), err)) {
+                return false;
+            }
+            (void)sce_jv_string(s->session_id, parent_session, sizeof(parent_session), NULL);
+            (void)sce_jv_string(child_id, child_session, sizeof(child_session), NULL);
+            (void)snprintf(derived, sizeof(derived), "%s.%s", parent_session, started_under);
+            if (strcmp(child_session, derived) != 0) {
+                return sce_saved_refuse(err,
+                                        "invokes[%lu].session's id is '%s', and a child of '%s' started under '%s' is '%s'",
+                                        (unsigned long)at, child_session, parent_session, started_under, derived);
+            }
+            if (!{{ _t }}_saved_judge_child(&child, at, err)) {
+                return false;
+            }
+        }
+    }
+    if (sm == NULL) {
+        return true;
+    }
+    /* A start after the restore is numbered on from the saved count. */
+{% for inv in family %}
+    sm->invoke_starts_{{ inv.field_suffix }} = (uint64_t)sce_saved_invoke_start(s, "{{ inv.invoke_id | escape_c }}");
+{% endfor %}
+    (void)sce_jv_iter(s->invokes, &it);
+    for (at = 0u; sce_jiter_element(&it, &item); ++at) {
+        if (s->format == SCE_SAVED_FORMAT_2) {
+            sce_saved_child_t child;
+            if (!sce_saved_child_read(item, at, &child, err) ||
+                !{{ _t }}_saved_resume_child(sm, &child, at, wall_now_ms, err)) {
+                return false;
+            }
+        } else {
+            /* Last, so what a child sends as it starts stands behind what was already waiting. */
+            {{ _t }}_saved_restart_invoke(sm, item);
+        }
+    }
+    return true;
+}
+
+{% endif %}
 {# ── Judging a session ──────────────────────────────────────────────────── #}
 /* What a judge of a session finds, kept for the restore: the configuration and the current state,
    the revision each schema was saved at, and what each history recorded. */
 typedef struct {
     {{ _t }}_state_t configuration[{{ _u }}_STATE_COUNT];
     size_t configuration_count;
+    uint32_t active;
     {{ _t }}_state_t current;
     unsigned record_at[{{ [n_records, 1] | max }}];
     unsigned enum_at[{{ [n_enums, 1] | max }}];
@@ -699,6 +1205,7 @@ SCE_SM_FN static bool {{ _t }}_saved_judge_session(const sce_saved_session_t *s,
             return sce_saved_refuse(err, "the document has no state '%s'", name);
         }
         judged->configuration[judged->configuration_count++] = state;
+        judged->active |= state_bit(state);
     }
     (void)sce_jv_string(s->current, quoted, sizeof(quoted), NULL);
     if (!{{ _t }}_state_from_name(quoted, &current)) {
@@ -740,14 +1247,34 @@ SCE_SM_FN static bool {{ _t }}_saved_judge_session(const sce_saved_session_t *s,
                                 (unsigned long)sce_jv_count(s->pending));
     }
 {% endif %}
+{% if family %}
+    if (!{{ _t }}_saved_invokes(s, judged->active, NULL, 0, err)) {
+        return false;
+    }
+{% else %}
     if (sce_jv_count(s->invokes) != 0u) {
         (void)sce_jv_iter(s->invokes, &it);
         (void)sce_jiter_element(&it, &item);
         return sce_saved_refuse(err, "invokes[0] is a child session, and the document starts none");
     }
+    if (s->format == SCE_SAVED_FORMAT_2 && sce_jv_count(s->invoke_starts) != 0u) {
+        sce_jv_t name;
+        sce_jv_t count;
+        (void)sce_jv_iter(s->invoke_starts, &it);
+        (void)sce_jiter_member(&it, &name, &count);
+        sce_saved_quote_(name, quoted, sizeof(quoted));
+        return sce_saved_refuse(err, "invokestarts counts '%s', which the document does not invoke", quoted);
+    }
+{% endif %}
+{% if model.host_invoker_types %}
+    if (!{{ _t }}_saved_host_invokes(s, judged->active, NULL, 0, err)) {
+        return false;
+    }
+{% else %}
     if (sce_jv_count(s->host_invokes) != 0u) {
         return sce_saved_refuse(err, "hostinvokes[0] is a host-run invocation, which the document does not have a host invoker run");
     }
+{% endif %}
     return true;
 }
 
@@ -756,8 +1283,7 @@ SCE_SM_FN static bool {{ _t }}_saved_judge_session(const sce_saved_session_t *s,
    configuration and where the machine stands, every variable, what each history recorded, the
    delayed sends still waiting as the wall-clock moment each comes due, the children, the host-run
    invocations, the counters, the queue and the revision each schema is past its first at. */
-SCE_SM_FN static bool {{ _t }}_saved_write_members(const {{ _t }}_t *sm, int64_t wall_now_ms, sce_jw_t *w,
-                                                 sce_saved_error_t *err) {
+bool {{ _t }}_save_members(const {{ _t }}_t *sm, int64_t wall_now_ms, sce_jw_t *w, sce_saved_error_t *err) {
     (void)wall_now_ms;
     if (sm == NULL || !sm->is_running) {
         return sce_saved_refuse(err, "the machine is not running: it was never started, or it has ended");
@@ -806,6 +1332,25 @@ SCE_SM_FN static bool {{ _t }}_saved_write_members(const {{ _t }}_t *sm, int64_t
         for (uint8_t i = 0u; i < sm->scheduled_queue.count; ++i) {
             const {{ _t }}_scheduled_entry_t *entry = &sm->scheduled_queue.buf[i];
             sce_saved_send_out_t send;
+{% if model.has_host_invoke_deadline %}
+            if (entry->host_invoke_deadline) {
+                /* The deadline of a running host-run invocation is not a send: it is saved with the
+                   invocation, as its `due`. One that belongs to no running invocation is refused,
+                   as is a send the format cannot carry. */
+                bool running = false;
+                for (int j = 0; j < sm->started_host_invokes.count; ++j) {
+                    if (sm->started_host_invokes.tokens[j] == entry->deadline_token &&
+                        strcmp(sm->started_host_invokes.ids[j], entry->deadline_invoke_id) == 0) {
+                        running = true;
+                    }
+                }
+                if (!running) {
+                    return sce_saved_refuse(err, "the deadline of the invocation '%s' belongs to no invocation this machine is running",
+                                            entry->deadline_invoke_id);
+                }
+                continue;
+            }
+{% endif %}
             memset(&send, 0, sizeof(send));
             send.due = sce_saved_due_on(wall_now_ms, now_ms, entry->fire_time_ms);
             send.send_id = entry->send_id;
@@ -815,9 +1360,34 @@ SCE_SM_FN static bool {{ _t }}_saved_write_members(const {{ _t }}_t *sm, int64_t
             send.data = entry->data;
 {% endif %}
             send.invoke_id = "";
+{% if model.has_delayed_host_send %}
+            if (entry->host_send) {
+                send.act = SCE_SAVED_ACT_HOST;
+                send.type = entry->host_processor_type;
+                send.event = entry->host_event_name;
+                send.target = entry->host_target;
+                send.content = entry->host_content;
+                send.data = entry->host_event_data;
+                send.invoke_id = entry->host_invoke_id;
+{% if model.delayed_host_send_max_params > 0 %}
+                send.param_count = entry->host_param_count;
+                send.param_names = &entry->host_param_names[0][0];
+                send.param_name_stride = sizeof(entry->host_param_names[0]);
+                send.param_values = &entry->host_param_values[0][0];
+                send.param_value_stride = sizeof(entry->host_param_values[0]);
+{% endif %}
+            } else
+{% endif %}
 {% if model.may_address_parent %}
             if (entry->route == (uint8_t){{ _u }}_SCHED_ROUTE_PARENT) {
                 send.act = SCE_SAVED_ACT_PARENT;
+                send.event = entry->route_event;
+            } else
+{% endif %}
+{% if family %}
+            if (entry->route == (uint8_t){{ _u }}_SCHED_ROUTE_INVOCATION) {
+                send.act = SCE_SAVED_ACT_CHILD;
+                send.invoke_id = entry->route_invoke;
                 send.event = entry->route_event;
             } else
 {% endif %}
@@ -836,15 +1406,141 @@ SCE_SM_FN static bool {{ _t }}_saved_write_members(const {{ _t }}_t *sm, int64_t
     sce_jw_end_array(w);
     sce_jw_key(w, "invokes");
     sce_jw_begin_array(w);
+{% if family %}
+    {
+        /* Each running child, saved through the document it runs with its whole state, in document
+           order: what a saved state holds in place of the ids of format 1, and what a restore
+           resumes (docs/adr/0045, section 1). */
+        size_t written = 0u;
+        char path[SCE_SAVED_WHAT_LEN];
+{% for inv in family %}
+{% for target in (inv.candidates if inv.candidates else ([{'stem': inv.child_name}] if inv.kind == 'Scxml' else [])) %}
+{% set slot = ('child_' ~ (inv.field_suffix | candidate_identifier(target.stem))) if inv.candidates else ('child_' ~ inv.field_suffix) %}
+        if (sm->{{ slot }}_active && !{{ csym_prefix }}{{ target.stem }}_is_in_final_state(&sm->{{ slot }})) {
+            sce_jw_element(w);
+            sce_jw_begin_object(w);
+            sce_saved_write_member_text(w, "id", "{{ inv.invoke_id | escape_c }}");
+            sce_jw_key(w, "start");
+            sce_saved_write_count(w, (int64_t)sm->invoke_starts_{{ inv.field_suffix }});
+            sce_saved_write_member_text(w, "invokeid", sm->child_{{ inv.field_suffix }}_invoke_id);
+            sce_saved_write_member_text(w, "document", "{{ target.stem | escape_c }}");
+            sce_jw_key(w, "session");
+            sce_jw_begin_object(w);
+            if (!{{ csym_prefix }}{{ target.stem }}_save_members(&sm->{{ slot }}, wall_now_ms, w, err)) {
+                (void)snprintf(path, sizeof(path), "invokes[%lu].session", (unsigned long)written);
+                return sce_saved_within(err, path);
+            }
+            sce_jw_end_object(w);
+            sce_jw_end_object(w);
+            ++written;
+        }
+{% endfor %}
+{% endfor %}
+    }
+{% endif %}
     sce_jw_end_array(w);
     sce_jw_key(w, "invokestarts");
     sce_jw_begin_object(w);
+{% for inv in family %}
+    if (sm->invoke_starts_{{ inv.field_suffix }} != 0u) {
+        sce_jw_key(w, "{{ inv.invoke_id | escape_c }}");
+        sce_saved_write_count(w, (int64_t)sm->invoke_starts_{{ inv.field_suffix }});
+    }
+{% endfor %}
     sce_jw_end_object(w);
     sce_jw_key(w, "hostinvokes");
     sce_jw_begin_array(w);
+{% if model.host_invoker_types %}
+    {
+        /* Every host-run invocation that is running, or was re-armed by a restore and has yet to
+           start, as the request it was started with and the wall-clock moment its deadline comes
+           due, ordered by `(type, id)` so every backend writes them in the same order. */
+        typedef struct {
+            const {{ _t }}_host_request_t *request;
+            bool has_due;
+            uint64_t ready_at_ms;
+        } host_view_t;
+        host_view_t views[2u * (size_t)SCE_MAX_HOST_INVOCATIONS];
+        size_t shown = 0u;
+{% if model.needs_event_scheduler %}
+        const uint64_t now_ms = sched_now_ms(sm);
+{% else %}
+        const uint64_t now_ms = 0u;
+{% endif %}
+        for (int j = 0; j < sm->started_host_invokes.count; ++j) {
+            const {{ _t }}_host_request_t *found = NULL;
+            host_view_t view;
+            for (size_t k = 0u; k < (size_t)SCE_MAX_HOST_INVOCATIONS; ++k) {
+                if (sm->started_host_requests[k].token == sm->started_host_invokes.tokens[j] &&
+                    strcmp(sm->started_host_requests[k].invoke_id, sm->started_host_invokes.ids[j]) == 0) {
+                    found = &sm->started_host_requests[k];
+                }
+            }
+            if (found == NULL) {
+                return sce_saved_refuse(err, "the running invocation '%s' has no request kept, a defect of the generated machine",
+                                        sm->started_host_invokes.ids[j]);
+            }
+            view.request = found;
+            view.has_due = false;
+            view.ready_at_ms = 0u;
+{% if model.has_host_invoke_deadline %}
+            for (uint8_t i = 0u; i < sm->scheduled_queue.count; ++i) {
+                const {{ _t }}_scheduled_entry_t *entry = &sm->scheduled_queue.buf[i];
+                if (entry->host_invoke_deadline && entry->deadline_token == found->token) {
+                    view.has_due = true;
+                    view.ready_at_ms = entry->fire_time_ms;
+                    break;
+                }
+            }
+{% endif %}
+            views[shown++] = view;
+        }
+        for (uint8_t j = 0u; j < sm->restored_host_invoke_count; ++j) {
+            host_view_t view;
+            view.request = &sm->restored_host_invokes[j].request;
+            view.has_due = sm->restored_host_invokes[j].deadline != 0u;
+            view.ready_at_ms = sm->restored_host_invokes[j].deadline == 1u ? now_ms + sm->restored_host_invokes[j].remaining_ms : now_ms;
+            views[shown++] = view;
+        }
+        for (size_t a = 1u; a < shown; ++a) {
+            const host_view_t held = views[a];
+            size_t b = a;
+            while (b > 0u && (strcmp(views[b - 1u].request->processor_type, held.request->processor_type) > 0 ||
+                              (strcmp(views[b - 1u].request->processor_type, held.request->processor_type) == 0 &&
+                               strcmp(views[b - 1u].request->invoke_id, held.request->invoke_id) > 0))) {
+                views[b] = views[b - 1u];
+                --b;
+            }
+            views[b] = held;
+        }
+        for (size_t a = 0u; a < shown; ++a) {
+            const {{ _t }}_host_request_t *request = views[a].request;
+            sce_saved_host_invoke_out_t host;
+            memset(&host, 0, sizeof(host));
+            host.type = request->processor_type;
+            host.id = request->invoke_id;
+            host.src = request->src;
+            host.data = request->event_data;
+            host.content = request->content;
+            host.has_due = views[a].has_due;
+            host.due = sce_saved_due_on(wall_now_ms, now_ms, views[a].ready_at_ms);
+            host.param_count = request->param_count;
+            host.param_names = &request->param_names[0][0];
+            host.param_name_stride = sizeof(request->param_names[0]);
+            host.param_values = &request->param_values[0][0];
+            host.param_value_stride = sizeof(request->param_values[0]);
+            sce_jw_element(w);
+            sce_saved_write_host_invoke(w, &host);
+        }
+    }
+{% endif %}
     sce_jw_end_array(w);
     sce_jw_key(w, "hostinvoketoken");
+{% if model.host_invoker_types %}
+    sce_saved_write_count(w, (int64_t)sm->started_host_invokes.next_token);
+{% else %}
     sce_saved_write_count(w, 0);
+{% endif %}
     sce_jw_key(w, "sendseq");
 {% if model.needs_auto_send_id %}
     sce_saved_write_count(w, (int64_t)sm->auto_send_seq);
@@ -863,7 +1559,9 @@ SCE_SM_FN static bool {{ _t }}_saved_write_members(const {{ _t }}_t *sm, int64_t
                gives the machine the same `_event.name`. */
             event.name = queued->name[0] != '\0' ? queued->name : {{ _t }}_saved_event_name(queued->event);
             event.data = queued->data;
-            event.type = queued->type;
+            /* An event raised by the host or by the machine's own platform door leaves its type
+               unset, and the queue it waits on is the external one. */
+            event.type = queued->type[0] != '\0' ? queued->type : "external";
             event.send_id = queued->send_id;
             event.origin = queued->origin;
             event.origin_type = queued->origin_type;
@@ -918,7 +1616,7 @@ bool {{ _t }}_save(const {{ _t }}_t *sm, int64_t wall_now_ms, char *buf, size_t 
     sce_jw_begin_object(&w);
     sce_jw_key(&w, "format");
     sce_jw_uint(&w, (uint64_t)SCE_SAVED_FORMAT);
-    if (!{{ _t }}_saved_write_members(sm, wall_now_ms, &w, err)) {
+    if (!{{ _t }}_save_members(sm, wall_now_ms, &w, err)) {
         return false;
     }
     sce_jw_end_object(&w);
@@ -936,6 +1634,92 @@ bool {{ _t }}_save(const {{ _t }}_t *sm, int64_t wall_now_ms, char *buf, size_t 
 }
 
 {# ── Judging and restoring ──────────────────────────────────────────────── #}
+/* The session `session`, judged, stood up in `sm`, a machine constructed and not entered: its id,
+   its variables and histories, where it stands, its queue, its waiting sends, its host-run
+   invocations, and each child it was running, resumed where it stood. No `<onentry>` runs and no
+   `<data>` is evaluated: the saved run already did both. */
+SCE_SM_FN static bool {{ _t }}_saved_apply({{ _t }}_t *sm, const sce_saved_session_t *session,
+                                         const {{ _t }}_saved_judged_t *judged, int64_t wall_now_ms,
+                                         sce_saved_error_t *err) {
+    /* A format-2 state carries on under the id it was saved with, which every child's id and a
+       peer's address name (docs/adr/0045); a format-1 state holds none, so the machine keeps the
+       one it drew. */
+    if (session->format == SCE_SAVED_FORMAT_2) {
+        (void)sce_jv_string(session->session_id, sm->session_id, sizeof(sm->session_id), NULL);
+        (void)snprintf(sm->scxml_location, sizeof(sm->scxml_location), "sce://scxml/%s", sm->session_id);
+    }
+    if (!{{ _t }}_saved_read_variables(session, judged->record_at, &sm->policy, err)) {
+        return false;
+    }
+{% if model.has_history_states %}
+    for (size_t i = 0u; i < {{ n_histories }}u; ++i) {
+        if (judged->history_recorded[i]) {
+            {{ _t }}_saved_history_set(sm, i, judged->history_bits[i]);
+        }
+    }
+{% endif %}
+    {{ _t }}_stand_in(sm, judged->configuration, judged->configuration_count);
+    sm->policy.current_state = judged->current;
+    if (!{{ _t }}_saved_events(session, sm, err)) {
+        return false;
+    }
+{% if model.host_invoker_types %}
+    /* Each re-armed invocation starts at the top of the first macrostep the host drives; the
+       token the next start receives carries on from the saved count. */
+    sm->started_host_invokes.next_token = (uint64_t)session->host_invoke_token;
+    if (!{{ _t }}_saved_host_invokes(session, judged->active, sm, wall_now_ms, err)) {
+        return false;
+    }
+{% endif %}
+{% if model.needs_event_scheduler %}
+    if (!{{ _t }}_saved_sends(session, sm, wall_now_ms, err)) {
+        return false;
+    }
+{% endif %}
+{% if model.needs_auto_send_id %}
+    sm->auto_send_seq = (uint64_t)session->auto_send_seq;
+{% endif %}
+{% if family %}
+    /* Children last, so what one sends as it is resumed stands behind what was already waiting. */
+    if (!{{ _t }}_saved_invokes(session, judged->active, sm, wall_now_ms, err)) {
+        return false;
+    }
+{% endif %}
+    (void)wall_now_ms;
+    return true;
+}
+
+bool {{ _t }}_judge_members(sce_jv_t members, sce_saved_error_t *err) {
+    sce_saved_session_t session;
+    {{ _t }}_saved_judged_t judged;
+    return sce_saved_session_read(members, SCE_SAVED_FORMAT_2, &session, err) &&
+           {{ _t }}_saved_judge_session(&session, &judged, err);
+}
+
+bool {{ _t }}_resume({{ _t }}_t *sm, sce_jv_t members, int64_t wall_now_ms, sce_saved_error_t *err) {
+    sce_saved_session_t session;
+    {{ _t }}_saved_judged_t judged;
+    if (sm == NULL) {
+        return sce_saved_refuse(err, "there is no machine to resume");
+    }
+    if (!sce_saved_session_read(members, SCE_SAVED_FORMAT_2, &session, err) ||
+        !{{ _t }}_saved_judge_session(&session, &judged, err)) {
+        return false;
+    }
+    return {{ _t }}_saved_apply(sm, &session, &judged, wall_now_ms, err);
+}
+
+bool {{ _t }}_bind_session_id({{ _t }}_t *sm, const char *parent_id, const char *invoke_id) {
+    const size_t parent = strlen(parent_id);
+    const size_t invoke = strlen(invoke_id);
+    if (sm == NULL || parent + 1u + invoke + 1u > sizeof(sm->session_id)) {
+        return false;
+    }
+    sce_saved_path_field(sm->session_id, sizeof(sm->session_id), parent_id, invoke_id);
+    (void)snprintf(sm->scxml_location, sizeof(sm->scxml_location), "sce://scxml/%s", sm->session_id);
+    return true;
+}
+
 bool {{ _t }}_judge(const char *text, size_t len, sce_saved_error_t *err) {
     sce_saved_session_t session;
     {{ _t }}_saved_judged_t judged;
@@ -966,38 +1750,5 @@ bool {{ _t }}_restore({{ _t }}_t *sm, const char *text, size_t len, int64_t wall
     if (!{{ _t }}_init_construct(sm{% if model.needs_event_scheduler %}, args->clock{% endif %}{% if model.needs_script_engine %}, NULL{% endif %}{% if model.host_processor_types %}, args->host_processors{% endif %}{% if model.host_invoker_types %}, args->host_invokers{% endif %}{% if has_native_actions %}, args->actions{% endif %}{% if takes_simulated_host %}, args->accept_simulated{% endif %})) {
         return sce_saved_refuse(err, "the host does not perform every act this document declares");
     }
-    /* A format-2 state carries on under the id it was saved with, which every child's id and a
-       peer's address name (docs/adr/0045); a format-1 state holds none, so the machine keeps the
-       one it drew. */
-    if (session.format == SCE_SAVED_FORMAT_2) {
-        (void)sce_jv_string(session.session_id, sm->session_id, sizeof(sm->session_id), NULL);
-        (void)snprintf(sm->scxml_location, sizeof(sm->scxml_location), "sce://scxml/%s", sm->session_id);
-    }
-    if (!{{ _t }}_saved_read_variables(&session, judged.record_at, &sm->policy, err)) {
-        return false;
-    }
-{% if model.has_history_states %}
-    for (size_t i = 0u; i < {{ n_histories }}u; ++i) {
-        if (judged.history_recorded[i]) {
-            {{ _t }}_saved_history_set(sm, i, judged.history_bits[i]);
-        }
-    }
-{% endif %}
-    /* No `<onentry>` runs and no `<data>` is evaluated: the saved run already did both. */
-    {{ _t }}_stand_in(sm, judged.configuration, judged.configuration_count);
-    sm->policy.current_state = judged.current;
-    if (!{{ _t }}_saved_events(&session, sm, err)) {
-        return false;
-    }
-{% if model.needs_event_scheduler %}
-    if (!{{ _t }}_saved_sends(&session, sm, wall_now_ms, err)) {
-        return false;
-    }
-{% else %}
-    (void)wall_now_ms;
-{% endif %}
-{% if model.needs_auto_send_id %}
-    sm->auto_send_seq = (uint64_t)session.auto_send_seq;
-{% endif %}
-    return true;
+    return {{ _t }}_saved_apply(sm, &session, &judged, wall_now_ms, err);
 }

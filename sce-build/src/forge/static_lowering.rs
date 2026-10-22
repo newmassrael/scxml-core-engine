@@ -8661,7 +8661,7 @@ fn c_record_saved_members(
             )
         };
         reads.push_str(&format!(
-            "{take}    (void)snprintf(member_what, sizeof(member_what), \"%s.%s\", what, \"{id}\");\n{read}"
+            "{take}    sce_saved_path_field(member_what, sizeof(member_what), what, \"{id}\");\n{read}"
         ));
     }
     (writes, reads)
@@ -8854,6 +8854,13 @@ impl CTarget {
 impl StaticTarget for CTarget {
     fn name(&self) -> &'static str {
         "C11"
+    }
+    // The start is deferred to the macrostep's end by the entry of the state, which
+    // formats the id it generates into the char buffer `_invoke_id_buf` and writes it
+    // to the `idlocation` there, before the invocation is queued and so before a sibling
+    // read in the same macrostep (§scxml-6.4.1, test225).
+    fn generated_invoke_id(&self) -> Option<&'static str> {
+        Some("_invoke_id_buf")
     }
     // An algorithm's list is passed and returned by value, a few copies of it at a call.
     fn list_stack_limit_bytes(&self) -> Option<u64> {

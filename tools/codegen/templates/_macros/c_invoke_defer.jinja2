@@ -1,0 +1,45 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{#
+    The two halves of deferring the start of a child session to the end of the macrostep
+    (§scxml-6.4): numbering the start and forming the id it is started under, and queueing
+    it. The entry of the state defers a start with them (`c/state_machine.c.jinja2`), and so
+    does the restore of a format-1 saved state, which names a running child by its `<invoke>`
+    alone and so starts it again from its beginning (SCE Accepted Subset §2.15,
+    docs/adr/0045). One text for both, so that a start a restore makes is numbered and named
+    as the one the state's entry makes.
+
+    Both write into the char buffer `_invoke_id_buf` of the block they are in.
+#}
+
+{# Number this start, and form the id it is started under: `<state>.<start>.<invoke>`
+   (W3C SCXML 3.12.1; docs/adr/0045), or the literal an author wrote as `id`, which wins
+   over the generated format. Every start is counted either way. A hybrid invoke writes no
+   `id` of its own, so it is always the generated one. #}
+{% macro number_start(state_id, invoke_info, hybrid) -%}
+++sm->invoke_starts_{{ invoke_info.field_suffix }};
+{% if not hybrid and invoke_info.invoke_id and not invoke_info.invoke_id.startswith('_invoke_') %}
+sce_copy_bounded_id(_invoke_id_buf, "{{ invoke_info.invoke_id }}");
+{% else %}
+sce_invoke_format_start_id(_invoke_id_buf, sizeof(_invoke_id_buf), "{{ state_id }}",
+                           sm->invoke_starts_{{ invoke_info.field_suffix }},
+                           "{{ invoke_info.invoke_id | escape_c }}");
+{% endif %}
+{%- endmacro %}
+
+{# Queue the start: the id goes to the variable `idlocation` names (under `sce-static`, at
+   defer time, so that a sibling read in the same macrostep sees it), then the start waits for
+   the end of the macrostep. `push_index` is the invoke's place among its state's, the key the
+   start finds it by. #}
+{% macro queue_start(upper, state_id, state_ident, invoke_info, push_index) -%}
+{
+{% if invoke_info.native_idlocation %}
+{{ invoke_info.native_idlocation }}
+{% endif %}
+sce_invoke_pending_push(&sm->pending_invokes,
+                        (int){{ upper }}_STATE_{{ state_ident }},
+                        {{ push_index }},
+                        _invoke_id_buf);
+}
+{%- endmacro %}

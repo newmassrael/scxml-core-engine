@@ -12,6 +12,7 @@
    (`sce_invoke_pending_queue_t`) live in `backends/c/runtime/include/sce/invoke.h`
    as static inline helpers — no .c source.                             #}
 {%- import 'c/param_macros.jinja2' as param_macros %}
+{%- import '_macros/c_child_begin.jinja2' as child_begin %}
 {# §scxml-6.4: the clock a child this machine starts measures its delays on —
    this machine's own, read through `sce_clock_following`, so a host that owns
    the parent's time owns the child's too. A parent with no scheduler has no
@@ -655,40 +656,31 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
                of the `<param>`s and the `namelist`, and only then entered, so
                an `<onentry>` of its initial configuration reads what it was
                handed. Its parent routing is stamped by the same call. */
-            {% if invoke_info.child_host_call %}
-            /* docs/adr/0005, decision 6: the child declares `<sce:action>`s, so it
-               is begun with the table its parent's own table answers for it,
-               asked here — where the invocation starts — and copied before the
-               entry walk. A host that has none to give, or an incomplete one, is
-               an invocation that cannot start: it is reported and nothing is
-               spawned, as an invoke of a type no invoker serves is. */
-            if (!{{ csym_prefix }}{{ invoke_info.child_name }}_invoked_begin(
-                    &sm->child_{{ invoke_info.field_suffix }},
-                    {{ invoke_info.child_host_call }},
-                    {% if invoke_info.child_declares_host_duties %}
-                    sm->accept_simulated_host,
-                    {% endif %}
-                    {% if invoke_info.child_has_send_to_parent %}sm,
-                    {{ csym_prefix }}{{ model.name }}_dispatch_external_by_name{% else %}NULL,
-                    NULL{% endif %},
-                    p->invoke_id,
-                    {{ child_clock_c }})) {
+            {# docs/adr/0005, decision 6: a child that declares `<sce:action>`s is begun with
+               the table its parent's own table answers for it, asked here — where the
+               invocation starts — and copied before the entry walk. A host that has none to
+               give, or an incomplete one, is an invocation that cannot start: it is reported
+               and nothing is spawned, as an invoke of a type no invoker serves is. #}
+            {% call child_begin.begin_static_child(csym_prefix, model.name, 'sm->child_' ~ invoke_info.field_suffix, invoke_info.child_name, invoke_info.child_host_call, invoke_info.child_declares_host_duties, invoke_info.child_has_send_to_parent, 'p->invoke_id', child_clock_c) %}
 {% if 'error.execution' in model.events %}
                 {{ csym_prefix }}{{ model.name }}_raise_platform_error(
                     sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
                     "<invoke id='{{ invoke_info.invoke_id | escape_c }}'> was given no complete host for its child");
 {% endif %}
                 continue;
+            {% endcall %}
+{% if static_saved_shape %}
+            {# docs/adr/0045: a child session is known by its parent's id and the id its start
+               is made under, so a saved tree names every session from the root alone. #}
+            if (!{{ csym_prefix }}{{ invoke_info.child_name }}_bind_session_id(&sm->child_{{ invoke_info.field_suffix }}, sm->session_id, p->invoke_id)) {
+{% if 'error.execution' in model.events %}
+                {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                    "<invoke id='{{ invoke_info.invoke_id | escape_c }}'>'s session id does not fit the id this build holds");
+{% endif %}
+                continue;
             }
-            {% else %}
-            {{ csym_prefix }}{{ invoke_info.child_name }}_invoked_begin(
-                &sm->child_{{ invoke_info.field_suffix }},
-                {% if invoke_info.child_has_send_to_parent %}sm,
-                {{ csym_prefix }}{{ model.name }}_dispatch_external_by_name{% else %}NULL,
-                NULL{% endif %},
-                p->invoke_id,
-                {{ child_clock_c }});
-            {% endif %}
+{% endif %}
             {% elif invoke_info.child_has_send_to_parent %}
             /* W3C SCXML 6.4 (test191/338): stamp parent-routing fields
                BEFORE the configuration entry walk by passing them
@@ -914,37 +906,26 @@ sce_copy_bounded_id(_done_evt.name, "done.invoke.{{ invoke_info.invoke_id | esca
                    then entered, so an `<onentry>` of its initial configuration
                    reads what it was handed. Its parent routing is stamped by
                    the same call. */
-{% if candidate.child_host_call %}
-                /* docs/adr/0005, decision 6: a candidate that declares
-                   `<sce:action>`s is begun with the table the parent's own table
-                   answers for IT, and refused as the invoke above is when there is
-                   none to give. */
-                if (!{{ csym_prefix }}{{ candidate.stem }}_invoked_begin(
-                        &sm->child_{{ invoke_info.field_suffix | candidate_identifier(candidate.stem) }},
-                        {{ candidate.child_host_call }},
-                        {% if candidate.child_declares_host_duties %}
-                        sm->accept_simulated_host,
-                        {% endif %}
-                        {% if candidate.child_has_send_to_parent %}sm,
-                        {{ csym_prefix }}{{ model.name }}_dispatch_external_by_name{% else %}NULL,
-                        NULL{% endif %},
-                        p->invoke_id,
-                        {{ child_clock_c }})) {
+{# docs/adr/0005, decision 6: a candidate that declares `<sce:action>`s is begun with the
+   table the parent's own table answers for IT, and refused as the invoke above is when
+   there is none to give. #}
+{% call child_begin.begin_static_child(csym_prefix, model.name, 'sm->child_' ~ (invoke_info.field_suffix | candidate_identifier(candidate.stem)), candidate.stem, candidate.child_host_call, candidate.child_declares_host_duties, candidate.child_has_send_to_parent, 'p->invoke_id', child_clock_c) %}
 {% if 'error.execution' in model.events %}
                     {{ csym_prefix }}{{ model.name }}_raise_platform_error(
                         sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
                         "<invoke id='{{ invoke_info.invoke_id | escape_c }}'> was given no complete host for its child");
 {% endif %}
                     continue;
+{% endcall %}
+{% if static_saved_shape %}
+                if (!{{ csym_prefix }}{{ candidate.stem }}_bind_session_id(&sm->child_{{ invoke_info.field_suffix | candidate_identifier(candidate.stem) }}, sm->session_id, p->invoke_id)) {
+{% if 'error.execution' in model.events %}
+                    {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                        "<invoke id='{{ invoke_info.invoke_id | escape_c }}'>'s session id does not fit the id this build holds");
+{% endif %}
+                    continue;
                 }
-{% else %}
-                {{ csym_prefix }}{{ candidate.stem }}_invoked_begin(
-                    &sm->child_{{ invoke_info.field_suffix | candidate_identifier(candidate.stem) }},
-                    {% if candidate.child_has_send_to_parent %}sm,
-                    {{ csym_prefix }}{{ model.name }}_dispatch_external_by_name{% else %}NULL,
-                    NULL{% endif %},
-                    p->invoke_id,
-                    {{ child_clock_c }});
 {% endif %}
 {% else %}
                 {{ csym_prefix }}{{ candidate.stem }}_init_with_parent(

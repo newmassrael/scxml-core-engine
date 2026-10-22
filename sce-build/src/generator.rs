@@ -1689,6 +1689,7 @@ const STATIC_INVOKE_IDLOCATION_BACKENDS: &[Language] = &[
     Language::Go,
     Language::Python,
     Language::Cpp,
+    Language::C11,
 ];
 
 /// Refuse a `sce-static` document, or a child written in place in it at any
@@ -3421,15 +3422,11 @@ pub fn generate_c11_with_templates(
 }
 
 /// Whether a `sce-static` machine's state is one the C11 backend saves and restores whole
-/// (SCE Accepted Subset §2.15; docs/adr/0045): a machine that starts no child session, has no
-/// host-run `<invoke>` and sends no delayed host-served `<send>`. The backend saves a machine
-/// with one as it comes to hold each; a machine that does not save has no save API, as one the
-/// saved state cannot hold whole has none on any backend.
+/// (SCE Accepted Subset §2.15; docs/adr/0045): one whose state the saved-state shape can hold
+/// whole, a tree of sessions included, and that holds no script engine. A machine the shape
+/// cannot hold has no save API, on any backend.
 fn c11_saves(model: &SCXMLModel) -> bool {
     !model.needs_script_engine
-        && model.host_invoker_types.is_empty()
-        && !model.has_delayed_host_send
-        && model.states.values().all(|state| state.invokes.is_empty())
 }
 
 fn render_c11(

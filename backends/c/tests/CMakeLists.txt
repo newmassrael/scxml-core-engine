@@ -3029,6 +3029,16 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_timers.scxml"
     )
 
+    # A tree of sessions (docs/adr/0045, section 8): a child written in place, and under it a
+    # grandchild started by a hybrid invoke that chooses among two candidates. Generated once and
+    # used by two executables: the scenarios below, whose steps save the tree and restore it, and
+    # the cases of the shared saved text of the tree further down.
+    sce_generate_static_integration_c_test(static_invoke_tree
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_invoke_tree.scxml"
+        STAGE_ALSO schema_revised.scxml enum_view_mode.scxml
+    )
+
     # The `<invoke type="scxml">` machines of `static_invoke`, `static_invoke_params`
     # and `static_invoke_string` are generated once and used by two executables:
     # the scenarios below, and the child-session cases further down.
@@ -3132,6 +3142,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         ${INTEGRATION_C_TEST_static_cancel_expr_SOURCES}
         ${INTEGRATION_C_TEST_static_send_idlocation_SOURCES}
         ${INTEGRATION_C_TEST_static_timers_SOURCES}
+        ${INTEGRATION_C_TEST_static_invoke_tree_SOURCES}
         ${INTEGRATION_C_TEST_static_history_SOURCES}
         ${INTEGRATION_C_TEST_static_host_call_SOURCES}
         ${INTEGRATION_C_TEST_static_host_duty_SOURCES}
@@ -3719,6 +3730,36 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         COMMAND sce_c_integration_static_host_invoke
     )
     set_tests_properties(c11_integration_static_host_invoke PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
+    # SCE Accepted Subset §2.15, "Saving and restoring": a host-run invocation is saved with the
+    # request it was started with and the deadline it had left, and a restore starts it again from
+    # that request (§scxml-6.4.1). The machine is generated above.
+    add_executable(sce_c_integration_static_host_invoke_saved
+        integration/test_a_saved_host_invocation_is_started_again_after_a_restore.c
+        ${INTEGRATION_C_TEST_statechart_static_host_invoke_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_static_host_invoke_saved PRIVATE
+        sce_c_runtime sce_c_runtime_posix sce_c_base
+    )
+    target_include_directories(sce_c_integration_static_host_invoke_saved PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include"
+    )
+    target_compile_definitions(sce_c_integration_static_host_invoke_saved PRIVATE
+        SCE_HOST_SAVED_FIXTURES_DIR="${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/host_processor/saved"
+    )
+    set_target_properties(sce_c_integration_static_host_invoke_saved PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_static_host_invoke_saved
+        COMMAND sce_c_integration_static_host_invoke_saved
+    )
+    set_tests_properties(c11_integration_static_host_invoke_saved PROPERTIES
         TIMEOUT 30
         LABELS "integration;c11;aot"
     )

@@ -76,6 +76,49 @@ static inline bool sce_saved_within(sce_saved_error_t *err, const char *path) {
     return sce_saved_refuse(err, "%s%s: %s", SCE_SAVED_SESSION_AT_, path, reason);
 }
 
+/* The path a refusal names a member of `what` by: `what.id`, cut at what `dst` has room for. */
+static inline void sce_saved_path_field(char *dst, size_t cap, const char *what, const char *id) {
+    size_t n = strlen(what);
+    const size_t m = strlen(id);
+    if (cap == 0u) {
+        return;
+    }
+    if (n > cap - 1u) {
+        n = cap - 1u;
+    }
+    memcpy(dst, what, n);
+    if (n + 1u < cap) {
+        dst[n++] = '.';
+    }
+    if (n + m >= cap) {
+        memcpy(dst + n, id, cap - 1u - n);
+        dst[cap - 1u] = '\0';
+        return;
+    }
+    memcpy(dst + n, id, m + 1u);
+}
+
+/* The path a refusal names an element of `what` by: `what[index]`, cut at what `dst` has room for. */
+static inline void sce_saved_path_index(char *dst, size_t cap, const char *what, size_t index) {
+    char digits[24];
+    size_t n = strlen(what);
+    size_t m;
+    if (cap == 0u) {
+        return;
+    }
+    (void)snprintf(digits, sizeof(digits), "[%lu]", (unsigned long)index);
+    m = strlen(digits);
+    if (n > cap - 1u) {
+        n = cap - 1u;
+    }
+    memcpy(dst, what, n);
+    if (n + m >= cap) {
+        m = cap - 1u - n;
+    }
+    memcpy(dst + n, digits, m);
+    dst[n + m] = '\0';
+}
+
 /* A text a refusal quotes: `value` decoded, cut at what a refusal has room for. */
 static inline void sce_saved_quote_(sce_jv_t value, char *out, size_t cap) {
     size_t len = 0u;

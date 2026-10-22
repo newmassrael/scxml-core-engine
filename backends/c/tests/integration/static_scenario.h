@@ -157,6 +157,12 @@ typedef struct {
     // reader of that type. A driver whose machine holds no optional value may leave
     // this unset: a step that states `null` then fails.
     int (*presence)(void *sm, const char *name, size_t index, const char *field);
+    // Save the machine, discard it and restore it from the text, in the storage it stood in
+    // (docs/adr/0045, section 8): the restored machine carries on where the saved one stood. A
+    // scenario states it as a step's `restore`, which takes place before the step's event or
+    // time. False when the machine could not be saved or the text was refused. Unset for a driver
+    // that does not restore, and a step that states `restore` then fails.
+    bool (*restore)(void *sm);
 } sce_scenario_driver_t;
 
 // `index` of a record that is a variable of its own, not an element of a list.
@@ -1277,6 +1283,8 @@ static int sce_scenario_step(sce_scenario_cursor_t *c, const sce_scenario_driver
     // started it; the event then goes to it through its Mesh router.
     char invoke[128] = "";
     bool has_invoke = false;
+    // The step saves the machine and restores it from the text before anything else it states.
+    bool restore = false;
     sce_scenario_cursor_t expect = {NULL};
     if (!sce_scenario_take(c, '{')) {
         return sce_scenario_fail(d, step, "a step is not an object");
@@ -1296,6 +1304,12 @@ static int sce_scenario_step(sce_scenario_cursor_t *c, const sce_scenario_driver
                     return sce_scenario_fail(d, step, "`invoke` is not a path of invoke ids");
                 }
                 has_invoke = true;
+            } else if (strcmp(key, "restore") == 0) {
+                int64_t want = 0;
+                if (!sce_scenario_number(c, &want)) {
+                    return sce_scenario_fail(d, step, "`restore` is not a bool");
+                }
+                restore = want != 0;
             } else if (strcmp(key, "dropped") == 0) {
                 int64_t want = 0;
                 if (!sce_scenario_number(c, &want)) {
@@ -1335,6 +1349,14 @@ static int sce_scenario_step(sce_scenario_cursor_t *c, const sce_scenario_driver
             if (!sce_scenario_take(c, ',')) {
                 return sce_scenario_fail(d, step, "a step is not well formed");
             }
+        }
+    }
+    if (restore) {
+        if (d->restore == NULL) {
+            return sce_scenario_fail(d, step, "this driver does not restore, so it cannot run a step that does");
+        }
+        if (!d->restore(d->sm)) {
+            return sce_scenario_fail(d, step, "the machine could not be saved and restored");
         }
     }
     if (has_invoke) {

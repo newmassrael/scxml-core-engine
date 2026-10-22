@@ -594,6 +594,18 @@ typedef struct sce_host_invoke_event_s {
         what the cancelled process sends is ignored). Distinct for every
         start of every invocation within one machine. */
     uint64_t token;
+    /** The session that started the invocation (`_sessionid`; docs/adr/0045):
+        the root the host built, or a child session of it,
+        `<parent>.<invokeid>`. The invokers a host registers serve the whole
+        tree of sessions, so a host that means to serve a type for part of it
+        only refuses the others by this id. NULL on a cancel. */
+    const char *session_id;
+    /** Whether this start is a restore starting the invocation again: the
+        machine saved while it ran, and the process the host began for it did
+        not outlive the one that saved. What the host does with that is its
+        business; a host that cannot tell a second start from a first does not
+        read it. false on a cancel. */
+    bool restarted;
 } sce_host_invoke_event_t;
 
 /**

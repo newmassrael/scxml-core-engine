@@ -157,6 +157,7 @@
 #include "static_invoke_params_sm.h"
 #include "static_invoke_sm.h"
 #include "static_invoke_string_sm.h"
+#include "static_invoke_tree_sm.h"
 #include "static_list_assign_sm.h"
 #include "static_list_index_sm.h"
 #include "static_list_sm.h"
@@ -358,8 +359,8 @@ static bool find(const name_value_t *table, size_t count, const char *name, int 
 // the Mesh router the driver gave it, or is NULL for a machine whose children are
 // given none. PRESENCE answers whether a value that may be absent is present
 // (docs/adr/0055), or is NULL for a machine that holds none.
-#define STATIC_SCENARIO_CORE(M, STATES, VARIABLES, TEXT, LISTS, RECORDS, DONE, REAL, REAL_LIST, RECORD_REAL, INIT,     \
-                             ADVANCE, HOST_CALLS, SENT, CHILD_HOSTS, DELIVER, PRESENCE)                                \
+#define STATIC_SCENARIO_CORE_RESTORING(M, STATES, VARIABLES, TEXT, LISTS, RECORDS, DONE, REAL, REAL_LIST, RECORD_REAL, \
+                                       INIT, ADVANCE, HOST_CALLS, SENT, CHILD_HOSTS, DELIVER, PRESENCE, RESTORE)       \
     static bool M##_read_record_field(void *sm, const char *name, size_t index, const char *field, int64_t *out) {     \
         for (size_t i = 0; RECORDS[i].name != NULL; ++i) {                                                             \
             if (strcmp(RECORDS[i].name, name) == 0) {                                                                  \
@@ -462,7 +463,8 @@ static bool find(const name_value_t *table, size_t count, const char *name, int 
                                               sent,                                                                    \
                                               CHILD_HOSTS,                                                             \
                                               DELIVER,                                                                 \
-                                              PRESENCE};                                                               \
+                                              PRESENCE,                                                                \
+                                              RESTORE};                                                                \
         char path[512];                                                                                                \
         (void)snprintf(path, sizeof(path), "%s/%s.json", SCE_STATIC_SCENARIO_DIR, scenario);                           \
         int replayed = 0;                                                                                              \
@@ -480,6 +482,12 @@ static bool find(const name_value_t *table, size_t count, const char *name, int 
         INIT;                                                                                                          \
         return M##_replay(&sm, SENT, scenario, min_steps);                                                             \
     }
+
+// A machine whose driver does not save and restore it, which is every machine but a tree.
+#define STATIC_SCENARIO_CORE(M, STATES, VARIABLES, TEXT, LISTS, RECORDS, DONE, REAL, REAL_LIST, RECORD_REAL, INIT,     \
+                             ADVANCE, HOST_CALLS, SENT, CHILD_HOSTS, DELIVER, PRESENCE)                                \
+    STATIC_SCENARIO_CORE_RESTORING(M, STATES, VARIABLES, TEXT, LISTS, RECORDS, DONE, REAL, REAL_LIST, RECORD_REAL,     \
+                                   INIT, ADVANCE, HOST_CALLS, SENT, CHILD_HOSTS, DELIVER, PRESENCE, NULL)
 
 // A machine that waits on no clock, started as `_init` starts it.
 #define STATIC_SCENARIO_FULL(M, STATES, VARIABLES, TEXT, LISTS, RECORDS, DONE, REAL, REAL_LIST, RECORD_REAL)           \
@@ -2919,6 +2927,58 @@ static const variable_t timers_variables[] = {
 };
 STATIC_SCENARIO_TIMED(static_timers, timers_states, timers_variables, NULL, no_lists, no_records)
 
+// static_invoke_tree: a tree of sessions, saved whole and resumed where each session stood
+// (docs/adr/0045). A step marked `restore` saves the machine, discards it and restores it from
+// the text, in the storage it stood in; the restored tree carries on where the saved one stood,
+// the child resumed in the state it had reached and not started again, so every expected value
+// is the one a run without the restores holds. The tree waits on a clock the scenario owns.
+VARIABLE_READER(static_invoke_tree, answers)
+VARIABLE_READER(static_invoke_tree, reports)
+VARIABLE_READER(static_invoke_tree, stamps)
+
+static const name_value_t tree_states[] = {
+    {"working", STATIC_INVOKE_TREE_STATE_WORKING},
+    {"resting", STATIC_INVOKE_TREE_STATE_RESTING},
+};
+static const variable_t tree_variables[] = {
+    {"answers", static_invoke_tree_read_answers},
+    {"reports", static_invoke_tree_read_reports},
+    {"stamps", static_invoke_tree_read_stamps},
+};
+
+static bool static_invoke_tree_advance_clock(void *sm, int64_t ms) {
+    static_invoke_tree_advance_time_ms((static_invoke_tree_t *)sm, (uint64_t)ms);
+    static_invoke_tree_run((static_invoke_tree_t *)sm);
+    return true;
+}
+
+// The wall-clock moment the tree is saved at and restored at: nothing passes between the two, so
+// every delayed send keeps the time it had left.
+#define TREE_SAVED_AT_MS INT64_C(1700000000000)
+
+static bool static_invoke_tree_save_and_restore(void *sm) {
+    static char text[32768];
+    size_t len = 0u;
+    sce_saved_error_t err;
+    static_invoke_tree_restore_args_t args;
+    if (!static_invoke_tree_save((const static_invoke_tree_t *)sm, TREE_SAVED_AT_MS, text, sizeof(text), &len, &err)) {
+        (void)fprintf(stderr, "static_invoke_tree: the tree was not saved: %s\n", err.message);
+        return false;
+    }
+    static_invoke_tree_destroy((static_invoke_tree_t *)sm);
+    memset(&args, 0, sizeof(args));
+    args.clock = sce_clock_manual(0u);
+    if (!static_invoke_tree_restore((static_invoke_tree_t *)sm, text, len, TREE_SAVED_AT_MS, &args, &err)) {
+        (void)fprintf(stderr, "static_invoke_tree: the tree was not restored: %s\n%s\n", err.message, text);
+        return false;
+    }
+    return true;
+}
+STATIC_SCENARIO_CORE_RESTORING(static_invoke_tree, tree_states, tree_variables, NULL, no_lists, no_records, NULL, NULL,
+                               NULL, NULL, static_invoke_tree_init_with_clock(&sm, sce_clock_manual(0u)),
+                               static_invoke_tree_advance_clock, NULL, NULL, NULL, NULL, NULL,
+                               static_invoke_tree_save_and_restore)
+
 // static_donedata_record: a top-level final whose `<donedata>` names a record in
 // its `<content expr>` hands its done event the pairs of the record's fields, read
 // when the state is entered — an enum field as the name its enum declares.
@@ -3437,6 +3497,7 @@ int main(void) {
     bad |= static_invoke_string_scenario("static_invoke_string", 1);
     bad |= static_timers_scenario("static_timers", 6);
     bad |= static_timers_scenario("static_timers_stop", 5);
+    bad |= static_invoke_tree_scenario("static_invoke_tree", 7);
     bad |= sync_client_scenario("sync_client", 30);
     bad |= todo_peer_scenario("todo_peer_alice", 13);
     bad |= todo_peer_scenario("todo_peer_bob", 13);
