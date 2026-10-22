@@ -2670,14 +2670,15 @@ fn c11_found_reading(name: &str, value: &str, params: &str, about: &str, body: &
          /* {about} */\n\
          {result}\
          static inline {name}_result_t {name}({params}) {{\n    \
-         {name}_result_t result = {{0}};\n    \
+         {name}_result_t result;\n    \
+         memset(&result, 0, sizeof(result));\n    \
          result.why = SCE_FORGE_ALGORITHM_OUT_OF_RANGE;\n\
          {body}    \
          return result;\n}}\n\n\
          {take}\
          #endif  /* {guard} */",
         result = c11_result_struct(&format!("    {value} value;\n"), name, true),
-        take = c11_take(value, name),
+        take = c11_take_of_a_scalar(value, name),
     )
 }
 
@@ -30761,6 +30762,18 @@ fn c11_take(value_type: &str, primary_symbol: &str) -> String {
     )
 }
 
+/// [`c11_take`] of a value that is a number, a `bool` or a value of an enum: the
+/// zero it answers on a failure is written `(T)0`, which is a value of every such
+/// type in C and in C++ alike. `(T){0}`, which [`c11_take`] writes for a record,
+/// converts an `int` to an enum, which C++ refuses, and a header a C++ program
+/// includes must compile there (the `cxx_consumption` units).
+fn c11_take_of_a_scalar(value_type: &str, primary_symbol: &str) -> String {
+    c11_take(value_type, primary_symbol).replace(
+        &format!("return ({value_type}){{0}};"),
+        &format!("return ({value_type})0;"),
+    )
+}
+
 /// C11's `<symbol>_take` of a result that is its own value — a list, whose
 /// `items` and `len` are the struct's: the struct itself, or the failure recorded
 /// in the caller's `sce_failure_` and a zero one the statement around it never
@@ -32172,7 +32185,11 @@ fn render_algorithm(
         (_, Language::C11) if may_fail => format!(
             "{}{}",
             c11_result_struct(&format!("    {value_type} value;\n"), &primary_symbol, true),
-            c11_take(&value_type, &primary_symbol)
+            if return_scalar.is_some() {
+                c11_take_of_a_scalar(&value_type, &primary_symbol)
+            } else {
+                c11_take(&value_type, &primary_symbol)
+            }
         ),
         (
             _,
