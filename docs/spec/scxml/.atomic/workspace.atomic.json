@@ -17735,10 +17735,6 @@
       "decision_status": "active",
       "bindings": [
         {
-          "file": "backends/rust/runtime/src/lib.rs",
-          "kind": "references"
-        },
-        {
           "file": "sce/include/core/ConflictResolutionHelper.h",
           "symbol": "removeConflictingTransitions",
           "kind": "references"
@@ -22100,6 +22096,12 @@
       "target_kind": "section",
       "target_id": "scxml-5.2.2",
       "reason": "the cite moved to the section that states the rule (data element attributes, children, binding)"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-selectTransitions",
+      "reason": "Its only cite sat on MAX_ENABLED_TRANSITIONS, the global bound on the enabled set; the Rust microstep sizes that set by the document's tree (ADR 0056), so the constant and its cite are gone"
     }
   ],
   "frames": {},
