@@ -3244,7 +3244,7 @@ line of the element or attribute that breaks it:
 | a `<send typeexpr>` that declares no `sce:types`, one written beside a `type` or a `targetexpr`, or a `sce:types` that names a type other than the SCXML or BasicHTTP processor, two entries of one type, no entry, or a send with no `typeexpr` | See **A computed type** below. A `typeexpr` is a string expression; the processors it can take are declared, since a machine with no script engine has nothing to learn them from when the send runs. Refused at the attribute as `scxml/static-datamodel-rule` (the missing declaration and the two types or targets) or where `sce:types` is written (`validation/incompatible-attributes`, `validation/empty-value`) |
 | a `<send targetexpr>` that declares no `sce:targets`, one written beside a `target`, or a `sce:targets` that names a route the SCXML Event I/O Processor cannot address, a Mesh peer, two entries of one route, no entry, a send with no `targetexpr`, or a `type` other than the SCXML processor | See **A computed target** below. A `targetexpr` is a string expression; the routes it can take are declared, since a machine with no script engine has nothing to learn them from when the send runs. Refused at the attribute as `scxml/static-datamodel-rule` (the missing declaration and the two targets) or where `sce:targets` is written (`validation/incompatible-attributes`, `validation/empty-value`) |
 | a hybrid `<invoke>` that declares no `sce:candidates`, one whose `<content expr>` produces the child's document, a candidate that is not a `sce-static` document this build read, a `srcexpr` that is not a string, or an argument no candidate declares a variable for or of another type than the candidate's variable | See **A hybrid `<invoke>`** under §2.13. Refused at the `<invoke>` (or its `<param>`) as `scxml/static-datamodel-rule`: with no declared set there is no finite list of children to lower, and an argument every candidate would drop is refused as a static invoke's is |
-| `<invoke idlocation>` on a host-run invocation or a Mesh request | Refused: such an invocation is started under the id the build wrote (the `id`, or `<state>.platform_N`), so there is no generated id to keep; a document that must name it writes `id`, which `done.invoke.<id>` and `error.invoke.<id>` already match. On a child session (`type="scxml"`, in-line, by `src` or hybrid) it is admitted: each start is started under `<state>.<start>.<id>` (docs/adr/0045), the id the child's events carry and a saved tree holds as the child's `invokeid`, and `idlocation` names a string variable the document declares whose `sce:capacity` exceeds the longest such id (the start a count of up to twenty digits), or is refused on its line. Rust, Kotlin and Go write it; Python, C++ and C11 refuse it by name (`generate/unsupported-feature`) until their format-2 step |
+| `<invoke idlocation>` on a host-run invocation or a Mesh request | Refused: such an invocation is started under the id the build wrote (the `id`, or `<state>.platform_N`), so there is no generated id to keep; a document that must name it writes `id`, which `done.invoke.<id>` and `error.invoke.<id>` already match. On a child session (`type="scxml"`, in-line, by `src` or hybrid) it is admitted: each start is started under `<state>.<start>.<id>` (docs/adr/0045), the id the child's events carry and a saved tree holds as the child's `invokeid`, and `idlocation` names a string variable the document declares whose `sce:capacity` exceeds the longest such id (the start a count of up to twenty digits), or is refused on its line. Rust, Kotlin, Go and Python write it; C++ and C11 refuse it by name (`generate/unsupported-feature`) until their format-2 step |
 | a `<param>` or a `namelist` name of an `<invoke type="scxml">` whose child is not a `sce-static` document this build read, does not declare the name as a top-level `<data>`, declares it as a list, a record, an enum or bytes, is handed it twice, or is handed a value not of the variable's type | See **Child sessions** below. Refused at the `<param>` as `scxml/static-datamodel-rule` (a value of the wrong type as the expression's own refusal) rather than accepted and never delivered |
 | a `<finalize>` of an `<invoke type="scxml">` | §6.5 runs it in the invoking machine before a child's event is processed, but the model keeps its body as one script text and the generated code hands that text to a script engine this model never builds (measured 2026-10-01: the Rust body is an empty block, Kotlin finds no engine): the assignment would be accepted and never run. Refused at the `<invoke>` as `scxml/static-datamodel-rule`; the invoking state takes what the child sent in a transition. An EMPTY `<finalize/>` beside a `<param location>` or a `namelist` is the same refusal: §6.5.2 gives it the meaning "update each from the event's data of that name", which the model writes out as that script text. Lowering a body is not the obstacle — a `<finalize>` runs before any child event is processed, to read that event's `_event.data`, and no type rule reaches a payload that arrives from whichever event comes next; a body that reads none has no consumer. Under `ecmascript` the same document runs it |
 | a `<param>` or a `namelist` name of a `<send>` whose value is of a kind the field that reads it cannot hold — a field of the schema this document declares the event by, or of the schema a child the send is delivered to (`#_<id>`) declares it by | See **Child sessions** below ("What a send carries is held to the field that reads it"). Refused at the `<param>` as `scxml/static-datamodel-rule`: no delivery of it fits the schema |
@@ -4190,9 +4190,10 @@ published one through a borrow, and a copy of one — an append, an assignment f
 another record — is a clone. In Kotlin the record is the immutable data class it
 already is, so a copy is the same value, and a saved string is read back through the
 runtime's bounded reader. In Go the record is a struct copied by value, so a copy is
-the same value too; a Go machine is not saved, so there is no restore to refuse. In
-Python the record is a frozen dataclass changed a field at a time by replacement, so
-a copy is the same value, and a Python machine is not saved either. In C++ the record
+the same value too, and a saved string is read back through the runtime's bounded
+reader. In Python the record is a frozen dataclass changed a field at a time by
+replacement, so a copy is the same value, and a saved string is read back through the
+runtime's bounded reader too. In C++ the record
 is an aggregate with a `std::string` member, copied by value, and a C++ machine is not
 saved. In C11 the field is a buffer of the bound, `sce_static_string_<N>_t`, the type
 a string variable of that bound is held in, so the record is a struct that is still
@@ -5331,7 +5332,8 @@ machine at a macrostep boundary and restores it into a new process in place
 of `initialize`: Kotlin `sm.save()` / `sm.restore(saved)` on a machine not
 yet started, Rust `engine.save()` / `Engine::<P>::restore(policy, &saved)`
 through the generated `<Machine>Persist` trait, Go `<Machine>Save(engine)` /
-`<Machine>Restore(&policy, saved, clock)` as functions of the generated package.
+`<Machine>Restore(&policy, saved, clock)` as functions of the generated package,
+Python `save(engine)` / `restore(saved)` as functions of the generated module.
 A saved state holds every
 variable, the machine's own included, the configuration, the current leaf,
 what each `<history>` recorded, the delayed `<send>`s still waiting, the
@@ -5375,7 +5377,8 @@ would be late by exactly as long as it was dead. The engine's own clock is
 monotonic and has no epoch, so the host says what time it is on the wall: Rust
 `save_at(wall_now_ms)` and `restore_with(policy, &saved, clock, wall_now_ms)`,
 Kotlin `save(wallNowMs)` and `restore(saved, wallNowMs)`, Go `<Machine>SaveAt(engine,
-wallNowMs)` and `<Machine>RestoreAt(&policy, saved, clock, wallNowMs)`; the forms
+wallNowMs)` and `<Machine>RestoreAt(&policy, saved, clock, wallNowMs)`, Python
+`save_at(engine, wall_now_ms)` and `restore(saved, wall_now_ms=...)`; the forms
 without it read the system's wall clock, and a Rust build for a target that has none
 (`wasm32-unknown-unknown`) does not have them. A restore arms each entry to come due
 `due - wall_now_ms` after now on the machine's own clock — which is installed
@@ -5440,9 +5443,9 @@ run on a format-1 state of the same moment.
 removes it (docs/adr/0045). A child that holds state worth keeping, such as a
 shared record list (docs/adr/0042), would otherwise lose it on every restore, and
 for good where no peer holds a copy. Format 2 is specified by
-`schemas/sce-saved-state.v2.schema.json`. The Rust, Kotlin and Go backends write it
-and read both formats (steps 3, 4 and 5 of the ADR), and the other backends gain a
-saved state in step 5. A reader that
+`schemas/sce-saved-state.v2.schema.json`. The Rust, Kotlin, Go and Python backends
+write it and read both formats (steps 3, 4 and 5 of the ADR), and the other backends
+gain a saved state in step 5. A reader that
 reads format 2 keeps reading format 1, whose children it starts from the
 beginning because that is all a format-1 text holds. The shared instances under
 `saved/` are format 2, each root given the id `fixture-root` as a host may give
@@ -5528,7 +5531,7 @@ restore every backend moves to.
   API. This holds already for format 1, so that no machine offers a save its
   format-2 successor would have to take away.
 - **Backends.** Format 2 is written and read by every generated backend once its
-  step lands: Rust, Kotlin and Go have, then Python, C++ and C11, which have no saved
+  step lands: Rust, Kotlin, Go and Python have, then C++ and C11, which have no saved
   state today. The Interpreter does not save: it does not run a `sce-static` document,
   whose typed variables are what a shape is computed from.
 - **Shared instances and scenarios.** Today's instances stay and are restored by
@@ -5567,12 +5570,14 @@ is when its parent first drives it. An ending for a session the tree does not ho
 session is no longer running, is refused with the reason and raises nothing. A
 build declares its invoke types once for the tree: a child written in place is
 generated with its parent's declaration. The Mesh request invoker is not handed
-on: a child's is the router its parent's factory gave it (docs/adr/0043). Rust and
-Kotlin implement this (Kotlin: `HostInvokeRequest.sessionId`, and
+on: a child's is the router its parent's factory gave it (docs/adr/0043). Rust,
+Kotlin, Go and Python implement this (Kotlin: `HostInvokeRequest.sessionId`, and
 `completeHostInvokeIn` and `failHostInvokeIn`, which answer `false`, raising
-nothing, for a session the tree does not hold); on Go, Python, C++ and C11 a
-child's host-run invocation raises `error.execution` until each backend's format-2
-step, as one no invoker serves does.
+nothing, for a session the tree does not hold; Go: `HostInvokeRequest.SessionID`,
+`CompleteHostInvokeIn` and `FailHostInvokeIn`; Python: `HostInvokeRequest.session_id`,
+`complete_host_invoke_in` and `fail_host_invoke_in`, which raise `StateRefusal` for a
+session the tree does not hold); on C++ and C11 a child's host-run invocation raises
+`error.execution` until each backend's format-2 step, as one no invoker serves does.
 
 A restore does not call the host. A Rust host registers its invokers on the
 engine the restore returns, so at that moment nobody could run one, and Kotlin
@@ -5727,10 +5732,10 @@ since its revision does not declare it. An event in the saved external queue or
 in a waiting send holds its data as the wire carried it, and the lift reads it
 with the defaults when it is delivered. The shared fixtures
 `saved/static_schema_revision*.json` are a state of `static_schema_revision`
-saved at its third revision (the text both backends save) and the same machine
-saved by builds of its first and second revisions, one with a delivery of the
-first revision still queued; both backends restore each. Go, Python, C11, C++
-and the Interpreter have no saved state.
+saved at its third revision (the text every saving backend writes) and the same
+machine saved by builds of its first and second revisions, one with a delivery of the
+first revision still queued; each saving backend restores each. C11, C++ and the
+Interpreter have no saved state.
 
 An enum grows the same way ("An enum that grows", in the EventSchema kind
 section). The shape names the variants of an enum's first revision only — of a

@@ -88,6 +88,19 @@ STATIC_MESH_REQUEST_FIXTURE="sce-build/tests/fixtures/host_processor/statechart_
 "$CODEGEN" generate "$STATIC_MESH_REQUEST_FIXTURE" -l python -o "$TMP/" \
     --input-root "$INPUT_ROOT"
 
+# The saving fixtures (SCE Accepted Subset §2.15, docs/adr/0045): a
+# `datamodel="sce-static"` machine whose host-run `<invoke>` a saved state carries
+# (invoker declaration only — it sends nothing), and one whose delayed host-served
+# `<send>` it carries (processor declaration only — it invokes nothing). Each is a
+# document of its own because the kinds of waiting act (a send to itself, a host
+# invocation, a host send) are separate things a restore must each give back.
+STATIC_INVOKE_FIXTURE="sce-build/tests/fixtures/host_processor/statechart_static_host_invoke.scxml"
+"$CODEGEN" generate "$STATIC_INVOKE_FIXTURE" -l python -o "$TMP/" \
+    --input-root "$INPUT_ROOT" --host-invoker "$HOST_INVOKER"
+STATIC_DELAYED_SEND_FIXTURE="sce-build/tests/fixtures/host_processor/statechart_static_delayed_host_send.scxml"
+"$CODEGEN" generate "$STATIC_DELAYED_SEND_FIXTURE" -l python -o "$TMP/" \
+    --input-root "$INPUT_ROOT" --host-processor "$HOST_PROCESSOR"
+
 mkdir -p "$GENERATED_DIR"
 source "$REPO_ROOT/scripts/lib/sce_generated_tree.sh"
 sce_generated_tree_clear "$GENERATED_DIR"
@@ -104,3 +117,5 @@ echo "  $INVOKER_FIXTURE (--host-invoker $HOST_INVOKER)"
 echo "  $STATIC_PARAMS_FIXTURE (--host-processor $HOST_PROCESSOR --host-invoker $HOST_INVOKER)"
 echo "  $STATIC_LITERAL_FIXTURE (--host-processor $HOST_PROCESSOR)"
 echo "  $STATIC_MESH_REQUEST_FIXTURE (no host declaration)"
+echo "  $STATIC_INVOKE_FIXTURE (--host-invoker $HOST_INVOKER)"
+echo "  $STATIC_DELAYED_SEND_FIXTURE (--host-processor $HOST_PROCESSOR)"

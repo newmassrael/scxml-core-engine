@@ -40,7 +40,17 @@ sys.path.insert(0, str(_HERE.parents[1]))
 sys.path.insert(0, str(_HERE.parents[2] / "runtime"))
 sys.path.insert(0, str(_HERE.parents[2] / "forge-runtime"))
 
-from sce_runtime import ActionRealization, EventMetadata, MeshRaise  # noqa: E402 -- path inserted above
+from sce_runtime import (  # noqa: E402 -- path inserted above
+    ActionRealization,
+    EventMetadata,
+    MeshRaise,
+    saved_state_from_json,
+)
+
+# The id a shared fixture's root session is given, and the moment on the wall clock
+# a scenario's `restore` step saves it at (docs/adr/0045, section 8).
+_ROOT_SESSION_ID = "fixture-root"
+_SAVED_AT_MS = 1_700_000_000_000
 
 # Where the scenarios live, from this file's directory.
 _SCENARIOS = _HERE.parents[4] / "sce-build" / "tests" / "fixtures" / "static_datamodel" / "scenarios"
@@ -371,7 +381,13 @@ def replay(name: str, machine: str | None = None) -> None:
     # The host here records and so only simulates: a machine that states a duty,
     # or builds a child that does, takes it by being told so (docs/adr/0038).
     opt_in = {"accept_simulated_host": True} if "accept_simulated_host" in parameters else {}
-    engine = module.create_engine() if host is None else module.create_engine(host, **opt_in)
+    # The shared fixtures give the root's id explicitly, so a saved text of one is
+    # the text on every backend (docs/adr/0045, "Questions the owner answered" 2).
+    engine = (
+        module.create_engine(session_id=_ROOT_SESSION_ID)
+        if host is None
+        else module.create_engine(host, session_id=_ROOT_SESSION_ID, **opt_in)
+    )
     # Every machine is given the router that records, before it starts, so that
     # what its start sends is recorded too: one with no send to a Mesh peer never
     # calls it. A scenario that says `"router": false` is of a machine whose host
@@ -391,8 +407,29 @@ def replay(name: str, machine: str | None = None) -> None:
     engine.initialize()
     policy = engine.policy
     readers = module.SCE_HOST_NAMES["readers"]
+
+    def restore() -> None:
+        """Save the machine, discard it and restore it from the text, as a state that
+        crossed a process boundary would be: the restored machine carries on where
+        the saved one stood (docs/adr/0045, section 8). It is given what the host
+        gave the first -- its router and the factory of its children's routers --
+        and the children it resumed are asked for theirs when the factory arrives."""
+        nonlocal engine, policy
+        saved = module.save_at(engine, _SAVED_AT_MS)
+        through_its_text = saved_state_from_json(saved.to_json())
+        arguments = () if host is None else (host,)
+        engine = module.restore(*arguments, through_its_text, wall_now_ms=_SAVED_AT_MS, **opt_in)
+        policy = engine.policy
+        if routed:
+            engine.register_mesh_router(peers.route)
+            engine.register_child_mesh_routers(routers.factory)
+
     for n, step in enumerate(steps):
         where = f"{name} step {n}: {step.get('note', '')}"
+        # The machine is saved and restored before the step's event or time, so what
+        # the step then expects is what the restored one does.
+        if step.get("restore"):
+            restore()
         # A step that moves the machine's time on, for a scenario of a delayed
         # send: the engine never reads a clock of its own, so a wait is the one
         # the step names.
@@ -933,6 +970,10 @@ def test_a_child_is_given_a_mesh_router_of_its_own() -> None:
 
 # An `<invoke>` hands its child the values its `<param>`s and `namelist` name, as
 # they stand when the invoke executes, after the entry actions, and once.
+def test_an_invoke_tree_restores_between_its_steps() -> None:
+    replay("static_invoke_tree")
+
+
 def test_an_invoke_hands_its_child_its_values_once() -> None:
     replay("static_invoke_params")
 

@@ -30,7 +30,7 @@
     Port-of-Go template: tools/codegen/templates/go/invoke_methods.go.jinja2.
 #}
 
-{%- import '_macros/sce_annotation_marker.jinja2' as annot %}
+{%- import '_macros/python_invoke_start.jinja2' as invoke_start %}
 
     # ── Invokes (W3C SCXML 6.4) ───────────────────────────────────
 
@@ -40,40 +40,7 @@
 {% if scxml_list %}
         if state == {{ machine_name }}State.{{ state_id | to_python_const }}:
 {% for inv in scxml_list %}
-{{ annot.annotation_block(inv, "python", "            ") }}            # W3C SCXML 6.4.1: Generate the runtime invoke id with the
-            # `<state_id>.<instance>.<element_id>` shape (test224 checks
-            # the `stateid.` prefix; test338 compares an `idlocation`
-            # binding against `_event.invokeid` on a child-raised event,
-            # so both must share the same runtime id). The instance part is
-            # the number of this start (docs/adr/0045), so the id comes from
-            # the tree alone and is the text every backend writes.
-            self._invoke_starts_{{ inv.field_suffix }} += 1
-            _start = self._invoke_starts_{{ inv.field_suffix }}
-            _runtime_invoke_id = f"{{ state_id }}.{_start}.{{ inv.invoke_id }}"
-{% if inv.idlocation %}
-            # W3C SCXML 6.4.1: Store the generated id in the datamodel
-            # so author expressions (`<assign>` from `_event.invokeid`,
-            # transition `cond="Var1==Var2"`) can match against it. The
-            # write is the assignment `<assign>` makes, so a member path
-            # lands and a location that cannot take the id starts nothing.
-            if self._store_id_in_location(
-                engine,
-                {{ inv.idlocation | to_lua_location | py_string_literal }},
-                _runtime_invoke_id,
-                "<invoke>",
-            ):
-                engine._pending_invokes.append(PendingInvoke(
-                    invoke_id=_runtime_invoke_id,
-                    owner_state_name={{ state_id | py_string_literal }},
-                    document_id={{ inv.invoke_id | py_string_literal }},
-                ))
-{% else %}
-            engine._pending_invokes.append(PendingInvoke(
-                invoke_id=_runtime_invoke_id,
-                owner_state_name={{ state_id | py_string_literal }},
-                document_id={{ inv.invoke_id | py_string_literal }},
-            ))
-{% endif %}
+{{ invoke_start.defer_scxml_invoke(inv, state_id, "            ") }}
 {% endfor %}
 {% endif %}
 {% set unsup_list = state.invokes | unsupported | list %}
@@ -273,6 +240,9 @@
                     script_engine=engine._script_engine,
                     session_id=f"{self._session_id}.{entry.invoke_id}",
                 )
+                # docs/adr/0045: the invokers a host registered serve every
+                # session of the tree, this child's too, before it runs.
+                engine.share_host_invokers_with(_child_engine)
 {# `datamodel="sce-static"`: each argument is native code
    (`Param::native_seed`), read from the machine's own fields when the invoke
    executes, and handed to the child's variable of the same name through its
@@ -453,7 +423,15 @@
                     {{ inv.invoke_id | py_string_literal }},
                     {% if inv.candidates %}__sce_selected_{{ inv.field_suffix | to_python_const }}{% elif inv.src is defined and inv.src and not inv.src.startswith('#') %}{{ inv.child_name | py_string_literal }}{% else %}""{% endif %},
                 )
-                _invoke = ScxmlInvoke(_child_engine, _child_policy._parent_queue)
+                # docs/adr/0045: what a save of the tree asks of this child: the
+                # document it runs, and the child's own `save_at` (a document
+                # generated without the save API has none).
+                _invoke = ScxmlInvoke(
+                    _child_engine,
+                    _child_policy._parent_queue,
+                    saved_document={% if inv.candidates %}__sce_selected_{{ inv.field_suffix | to_python_const }}{% else %}{{ inv.child_name | py_string_literal }}{% endif %},
+                    save_session=getattr(_child_module_{{ inv.field_suffix | to_python_const }}, "save_at", None),
+                )
                 _invoke.start(engine)
                 # W3C SCXML 6.4: key `_active_invokes` by the static
                 # element id so `<send target="#_<id>">` (explicit id
@@ -464,6 +442,8 @@
                 engine._active_invokes[{{ inv.invoke_id | py_string_literal }}] = _invoke
 {% if inv.idlocation %}
                 _invoke_id_field = entry.invoke_id
+                # The events the child sends on later drives carry the same id.
+                _invoke.event_invoke_id = _invoke_id_field
 {% else %}
                 _invoke_id_field = {{ inv.invoke_id | py_string_literal }}
 {% endif %}

@@ -22,7 +22,9 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, Generic, Iterable, List, Optional, Tuple, TypeVar
+from typing import Any, Callable, Generic, Iterable, List, Optional, Tuple, TypeVar
+
+from .saved_state import StateRefusal
 
 E = TypeVar("E")
 
@@ -137,10 +139,49 @@ class ScxmlInvoke(Invoke):
     bound events. Forwarding and cancellation route through the
     child's `Engine` API directly; no extra metadata is invented."""
 
-    def __init__(self, child_engine, parent_event_queue: List[Tuple[str, Any]]):
+    def __init__(
+        self,
+        child_engine,
+        parent_event_queue: List[Tuple[str, Any]],
+        saved_document: str = "",
+        save_session: Optional[Callable[[Any, int], Any]] = None,
+        resumed: bool = False,
+    ):
         self._child = child_engine
         self._parent_queue = parent_event_queue
-        self._started = False
+        # A child a restore resumed stands where it was saved, so `start` has
+        # nothing to initialize (docs/adr/0045).
+        self._started = resumed
+        # docs/adr/0045 — what a save of the tree asks of a running child: the
+        # document it runs (the child's name for a static `<invoke>`, the
+        # candidate's for a hybrid one), and the function that saves its session,
+        # the child's own generated ``save_at``.
+        self._saved_document = saved_document
+        self._save_session = save_session
+        # The id the events this child sends its parent carry as `_event.invokeid`,
+        # and `done.invoke.<id>` is named by, where it is not the document's own: the
+        # id the start was made under for an `<invoke>` that keeps it in an
+        # `idlocation` (docs/adr/0045, W3C tests 338 and 228). Empty means the key the
+        # parent holds this invoke under, the document's own id.
+        self.event_invoke_id = ""
+
+    @property
+    def saved_document(self) -> str:
+        """The document this child runs, as a saved state names it."""
+        return self._saved_document
+
+    @property
+    def parent_queue(self) -> List[Tuple[str, Any]]:
+        """The events the child sent its parent that the parent has not taken."""
+        return self._parent_queue
+
+    def save_as_session(self, wall_now_ms: int) -> Any:
+        """This child's saved state, a session of the tree its parent saves
+        (docs/adr/0045). Refused for a child started without the means to save
+        it."""
+        if self._save_session is None:
+            raise StateRefusal("the running child is not one a saved state holds")
+        return self._save_session(self._child, wall_now_ms)
 
     def start(self, parent_engine) -> None:
         if not self._started:

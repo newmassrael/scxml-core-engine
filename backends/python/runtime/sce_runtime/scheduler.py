@@ -225,5 +225,11 @@ class Scheduler(Generic[E]):
         `Engine.time_until_next_scheduled_ms`."""
         return self._heap[0].due_ms if self._heap else None
 
+    def pending(self) -> List[ScheduledEvent[E]]:
+        """Every entry still queued, in the order the scheduler would deliver them:
+        by `due_ms`, and by the order they were scheduled in among those due at the
+        same moment. What a save writes (`sce_runtime.saved_engine`)."""
+        return sorted(self._heap)
+
     def __len__(self) -> int:
         return len(self._heap)

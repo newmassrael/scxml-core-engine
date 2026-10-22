@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import math
 import struct
-from typing import Any, Callable, List, Optional, TypeVar
+from typing import Any, Callable, Dict, List, Optional, TypeVar
 
 from .number_text import number_text
 from .saved_json import JsonNumber
@@ -143,6 +143,14 @@ def saved_write_bytes(value: bytes) -> Any:
 def saved_write_list(value: List[T], write: Callable[[T], Any]) -> Any:
     """A list, each element by ``write``."""
     return [write(item) for item in value]
+
+
+def saved_write_optional(value: Optional[T], write: Callable[[T], Any]) -> Any:
+    """A value that may be absent (docs/adr/0055, section 4): null where it is
+    absent, and what ``write`` makes of the value where it is present. Presence is
+    ``is not None``, never a truth test: a present ``0``, ``''`` or ``False`` is
+    written as the value it is."""
+    return None if value is None else write(value)
 
 
 def saved_read_uint8(value: Any, what: str) -> int:
@@ -275,6 +283,16 @@ def saved_read_list(
     if len(value) > capacity:
         raise StateRefusal(f"'{what}' holds {len(value)} elements, past the {capacity} it is bounded by")
     return [element(item, f"{what}[{at}]") for at, item in enumerate(value)]
+
+
+def saved_read_variant(value: Any, what: str, alias: str, variants: Dict[str, T]) -> T:
+    """An enum value read back from the name its document declares for the variant:
+    refused unless it is a text and one of `variants`, by that name. `alias` is the
+    enum, as the document imports it, which a refusal names."""
+    declared = saved_read_string(value, what)
+    if declared not in variants:
+        raise StateRefusal(f"'{what}' ({declared}) is not a variant of {alias}")
+    return variants[declared]
 
 
 def saved_read_optional(value: Any, what: str, present: Callable[[Any, str], T]) -> Optional[T]:

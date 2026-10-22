@@ -330,17 +330,17 @@ invokers modelled on ADR 0043's child routers:
   and raises nothing. The child takes the event when its parent next drives it.
 - **The build declares the types once for the tree.** A child written in place is generated with its
   parent's `--host-invoker` declaration, and with the standard types it names.
-- **Backends.** Rust implements it with step 3 and Kotlin with step 4. Go, Python, C++ and C11
-  keep raising `error.execution` for a child's host-run invocation, as for one no invoker
-  serves, until each one's format-2 step implements this contract.
+- **Backends.** Rust implements it with step 3 and Kotlin with step 4, Go and Python with their
+  step 5. C++ and C11 keep raising `error.execution` for a child's host-run invocation, as for one
+  no invoker serves, until each one's format-2 step implements this contract.
 
 **An `<invoke idlocation>` of a child session is written under `sce-static`.** Each start is started
 under `<state>.<start>.<id>` (step 2), which the child's events carry as `_event.invokeid` and a saved
 tree holds as the child's `invokeid`, so a stored id now has readers: the document, and the restore,
 which keeps the variable as saved and writes nothing. The variable is a declared string whose bound
 exceeds the longest such id (twenty digits of start count); a host-run invocation or a Mesh request,
-started under the id the build wrote, still refuses it. Rust, Kotlin and Go write it; the other
-three backends refuse it by name (`generate/unsupported-feature`) until their format-2 step.
+started under the id the build wrote, still refuses it. Rust, Kotlin, Go and Python write it; the
+other two backends refuse it by name (`generate/unsupported-feature`) until their format-2 step.
 
 **A state written in format 1 is still read.** It holds no child's state, and the build that wrote
 it promised to start each listed child from its beginning; the restoring build does exactly that for
@@ -878,6 +878,43 @@ Each step lands with a test that fails without it.
    its `restore` scenario run by `static_scenarios_test.go`), the child resume, hybrid restart,
    send id, host invocation, delayed host send and Mesh request tests, each a port of Rust's.
    Open: the mutation round over the new machines, and a send to a session by its id.
+
+   *Where it stands: Python.* Done: the runtime holds the format (`saved_state.py`, over
+   an ordered JSON reader that keeps a number's spelling, `saved_json.py`, and the
+   per-type value readers and writers of `saved_values.py`) and reads and writes both
+   formats; the 25 shared texts read and write back byte for byte, and a refusal inside
+   a child names its session's path. `save_session`, `judge_session` and
+   `enter_session` (`saved_engine.py`) do what Go's `SaveSession`, `JudgeSession` and
+   `EnterSession` do, over the hooks a generated policy adds (`running_invokes`,
+   `invoke_starts`, `invoke_owner`, `host_invoke_owner`, `judge_child`,
+   `resume_children`, `restart_invokes`); a generated module's `save_at`, `judge`,
+   `restore_at` and `restore` read and write the variables, the histories and each
+   running child, and a record or an enum writes its own saved form (`to_saved`,
+   `from_saved`). A root's session id is a UUID version 4 in the one spelling (the
+   engine draws it, or `create_engine(session_id=...)` gives it, held to an XML
+   Nmtoken) and a restore builds the engine under the saved one. A child is resumed in
+   place of started, its router owed to the factory until the host registers it
+   (`owe_child_mesh`), and a format-1 child is started again at the next drive. The
+   tree's host invokers are one registry its sessions share (`TreeInvokers`), a request
+   names its session (`HostInvokeRequest.session_id`) and an ending is routed by it
+   (`complete_host_invoke_in`, `fail_host_invoke_in`); a restored host-run invocation
+   starts again at the first drive, in the main loop and at the top of `advance_time`,
+   with the deadline it had left, and one cancelled before that is never started. An
+   `<invoke idlocation>` of a child session is written. Held by
+   `test_a_state_another_backend_saved_is_restored`, the tree tests (the shared text
+   restored and saved again, refused by path), the scenario `restore` step of
+   `static_invoke_tree`, and the child resume, hybrid restart, send id, host
+   invocation, delayed host send and Mesh request tests, each a port of Rust's.
+   Python drives a child synchronously: an event the parent forwards (or delivers
+   with a `<send>`) is taken by the child within the delivery, and its replies are on
+   the parent's queue before the call returns, so a tree saved at a boundary never
+   finds an event in transit, and the state in which a child's own queue still holds an
+   event its parent sent is reached by a restore of the text and not by a run; the tree
+   test holds that state by the shared text. A machine records the document-order-first
+   atomic state as its current leaf (`Engine.current_state`), as `enter_at` already
+   stated, so for a `<parallel>` the text differs from one Rust writes in that member
+   alone. Open: the mutation round over the new machines, and a send to a session by its
+   id.
 6. **The host cores** (after ADR 0043 steps 3 and 5): the checkpoint document, its schema and its
    row in SCE_WIRE_CONTRACTS.md with a producer status constant in `sce-rust-mesh` and
    `sce-kotlin-mesh`; holding envelopes back; the endpoint section saved and restored; the

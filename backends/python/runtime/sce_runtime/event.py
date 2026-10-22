@@ -7,6 +7,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Generic, Optional, TypeVar
 
+from .scripting.i_script_engine import ScriptValue
+
 E = TypeVar("E")
 
 
@@ -65,6 +67,43 @@ class EventWithMetadata(Generic[E]):
     @property
     def name(self) -> Any:
         return self.event
+
+
+def event_data_text(data: Any) -> str:
+    """W3C SCXML 5.10 + B-2-9 — the text of an event's data, which is the WIRE: a
+    reader parses it under §scxml-B-2-8-1's three readings (XML → DOM, JSON →
+    value, otherwise a space-normalized string). Generated Python code marshals
+    `<send>` payloads as a dict of named params or a bare scalar, which are
+    written here into that wire, for the script engine's `set_current_event` and
+    for a saved state, which holds an event's data as text.
+
+    - dict / list → JSON encode (so `_event.data.foo` becomes a real table member
+      at the receiving parse);
+    - str → returned unchanged, which the string reading gives back whole;
+    - int / float / bool → the JSON spelling, so a numeric payload arrives as a
+      number rather than as its text;
+    - None → `""` so the Lua side leaves `_event.data` unbound.
+
+    What is deliberately absent is a spelling only the sender's own engine could
+    read back: the receiving side used to RUN this string as Lua before parsing
+    it, so a payload could execute at the far end."""
+    if data is None:
+        return ""
+    if isinstance(data, str):
+        return data
+    if isinstance(data, bool):
+        return "true" if data else "false"
+    if isinstance(data, int):
+        return str(data)
+    if isinstance(data, (float, dict, list)):
+        # The one writer of JSON text this backend has (ARCHITECTURE.md,
+        # "JSON Text", "JSON Number Text" and "JSON Object Key Order"): compact,
+        # UTF-8, members in byte order, a float as ECMAScript spells it.
+        # `json.dumps` did none of the last two — it spells a float with Python's
+        # `repr` (`1.0`, `1e-07`) and keeps the order a dict was built in — so the
+        # same payload differed byte for byte from the one another backend sent.
+        return ScriptValue.of(data).to_json_literal()
+    return str(data)
 
 
 def is_error_event(event_name: str) -> bool:

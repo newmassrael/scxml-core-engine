@@ -1683,8 +1683,12 @@ fn reject_static_datamodel_in_unsupported_lang(
 /// The backends that write the id a start of a child session is started under
 /// to the `<invoke>`'s `idlocation` under `datamodel="sce-static"`
 /// (docs/adr/0045). The others refuse it by name until their format-2 step.
-const STATIC_INVOKE_IDLOCATION_BACKENDS: &[Language] =
-    &[Language::Rust, Language::Kotlin, Language::Go];
+const STATIC_INVOKE_IDLOCATION_BACKENDS: &[Language] = &[
+    Language::Rust,
+    Language::Kotlin,
+    Language::Go,
+    Language::Python,
+];
 
 /// Refuse a `sce-static` document, or a child written in place in it at any
 /// depth, whose child-session `<invoke>` names an `idlocation`, for a backend
@@ -4189,6 +4193,7 @@ fn render_python(env: &mut Environment, model: &SCXMLModel) -> Result<String, Ge
         static_adapter_defs => static_lowering.adapter_defs.join("\n\n"),
         static_imports => &static_lowering.imports,
         static_format2_shape => format2_keys(&static_lowering),
+        static_saved_shape => &static_lowering.saved_shape,
     };
     tmpl.render(ctx).map_err(render_error)
 }

@@ -1,0 +1,58 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+{%- import '_macros/sce_annotation_marker.jinja2' as annot %}
+{#
+   The start of the child session `inv` of `state_id`, deferred to the macrostep
+   the host drives next, which runs it: the entry of its state starts it, and so
+   does a restore of a format-1 saved state, which holds a running child by id
+   alone (docs/adr/0045). `indent` is what each line of the start is indented by.
+   The one definition both reach, so a start and a restart cannot number the id
+   differently. The Python twin of `defer_with_idlocation` of the Go entry
+   template.
+#}
+{% macro defer_scxml_invoke(inv, state_id, indent) %}
+{{ annot.annotation_block(inv, "python", indent) }}{{ indent }}# W3C SCXML 6.4.1: Generate the runtime invoke id with the
+{{ indent }}# `<state_id>.<instance>.<element_id>` shape (test224 checks
+{{ indent }}# the `stateid.` prefix; test338 compares an `idlocation`
+{{ indent }}# binding against `_event.invokeid` on a child-raised event,
+{{ indent }}# so both must share the same runtime id). The instance part is
+{{ indent }}# the number of this start (docs/adr/0045), so the id comes from
+{{ indent }}# the tree alone and is the text every backend writes.
+{{ indent }}self._invoke_starts_{{ inv.field_suffix }} += 1
+{{ indent }}_start = self._invoke_starts_{{ inv.field_suffix }}
+{{ indent }}_runtime_invoke_id = f"{{ state_id }}.{_start}.{{ inv.invoke_id }}"
+{% if inv.native_idlocation %}
+{{ indent }}# docs/adr/0045: under `datamodel="sce-static"` the id is written to the
+{{ indent }}# string variable `idlocation` names, whose bound the build held to one
+{{ indent }}# the id fits.
+{{ indent }}{{ inv.native_idlocation }}
+{{ indent }}engine._pending_invokes.append(PendingInvoke(
+{{ indent }}    invoke_id=_runtime_invoke_id,
+{{ indent }}    owner_state_name={{ state_id | py_string_literal }},
+{{ indent }}    document_id={{ inv.invoke_id | py_string_literal }},
+{{ indent }}))
+{%- elif inv.idlocation %}
+{{ indent }}# W3C SCXML 6.4.1: Store the generated id in the datamodel
+{{ indent }}# so author expressions (`<assign>` from `_event.invokeid`,
+{{ indent }}# transition `cond="Var1==Var2"`) can match against it. The
+{{ indent }}# write is the assignment `<assign>` makes, so a member path
+{{ indent }}# lands and a location that cannot take the id starts nothing.
+{{ indent }}if self._store_id_in_location(
+{{ indent }}    engine,
+{{ indent }}    {{ inv.idlocation | to_lua_location | py_string_literal }},
+{{ indent }}    _runtime_invoke_id,
+{{ indent }}    "<invoke>",
+{{ indent }}):
+{{ indent }}    engine._pending_invokes.append(PendingInvoke(
+{{ indent }}        invoke_id=_runtime_invoke_id,
+{{ indent }}        owner_state_name={{ state_id | py_string_literal }},
+{{ indent }}        document_id={{ inv.invoke_id | py_string_literal }},
+{{ indent }}    ))
+{%- else %}
+{{ indent }}engine._pending_invokes.append(PendingInvoke(
+{{ indent }}    invoke_id=_runtime_invoke_id,
+{{ indent }}    owner_state_name={{ state_id | py_string_literal }},
+{{ indent }}    document_id={{ inv.invoke_id | py_string_literal }},
+{{ indent }}))
+{%- endif %}
+{%- endmacro %}

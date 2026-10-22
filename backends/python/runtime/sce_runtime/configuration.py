@@ -24,8 +24,9 @@ hierarchy, so a configuration one engine accepts is one the others accept.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from enum import Enum
-from typing import Sequence, TypeVar
+from typing import Generic, List, Optional, Sequence, TypeVar
 
 from .policy import StatePolicy
 
@@ -116,24 +117,9 @@ def validate_configuration(
         return ConfigurationRejection.ROOT_COUNT
 
     for state in members:
-        children = sum(
-            1 for candidate in members if policy.get_parent(candidate) == state
-        )
-
-        if policy.is_parallel_state(state):
-            regions = policy.get_child_states(state)
-            for region in regions:
-                if region not in members:
-                    return ConfigurationRejection.PARALLEL_REGION_MISSING
-            if children != len(regions):
-                return ConfigurationRejection.PARALLEL_CHILD_COUNT
-            continue
-
-        if policy.is_compound_state(state):
-            if children != 1:
-                return ConfigurationRejection.COMPOUND_CHILD_COUNT
-        elif children != 0:
-            return ConfigurationRejection.ATOMIC_HAS_CHILDREN
+        verdict = _child_arity(policy, members, state)
+        if verdict is not ConfigurationRejection.NONE:
+            return verdict
 
     if current not in members:
         return ConfigurationRejection.CURRENT_NOT_ACTIVE
@@ -141,3 +127,122 @@ def validate_configuration(
         return ConfigurationRejection.CURRENT_NOT_ATOMIC
 
     return ConfigurationRejection.NONE
+
+
+def _child_arity(
+    policy: StatePolicy[S, E], among: Sequence[S], state: S
+) -> ConfigurationRejection:
+    """Whether ``state``, in the set ``among``, holds the number of children a
+    configuration gives it: one for a compound state (W3C SCXML 3.11), every
+    region and nothing else for a ``<parallel>`` (3.4), none for an atomic one."""
+    children = sum(1 for candidate in among if policy.get_parent(candidate) == state)
+
+    if policy.is_parallel_state(state):
+        regions = policy.get_child_states(state)
+        for region in regions:
+            if region not in among:
+                return ConfigurationRejection.PARALLEL_REGION_MISSING
+        if children != len(regions):
+            return ConfigurationRejection.PARALLEL_CHILD_COUNT
+        return ConfigurationRejection.NONE
+
+    if policy.is_compound_state(state):
+        if children != 1:
+            return ConfigurationRejection.COMPOUND_CHILD_COUNT
+    elif children != 0:
+        return ConfigurationRejection.ATOMIC_HAS_CHILDREN
+    return ConfigurationRejection.NONE
+
+
+class HistoryRejectionKind(Enum):
+    """Why a recorded ``<history>`` value was refused (W3C SCXML 3.10)."""
+
+    ACCEPTED = "accepted"
+    # The value holds no state. A history records at least one.
+    EMPTY = "empty"
+    # A state appears more than once.
+    DUPLICATE = "duplicate"
+    # A state is not below the history's parent.
+    NOT_BELOW = "not_below"
+    # A shallow history records the children of its parent, and a state is deeper.
+    NOT_A_CHILD = "not_a_child"
+    # A deep history records atomic states, and one has children.
+    NOT_ATOMIC = "not_atomic"
+    # What the value holds is part of no configuration of the document: a compound
+    # state with two active children, a region missing.
+    ARITY = "arity"
+
+
+@dataclass(frozen=True)
+class HistoryRejection(Generic[S]):
+    """The verdict on a recorded ``<history>`` value: its kind, the state it is
+    about and the history's parent where the kind names them, and the
+    configuration rule broken for ``ARITY``."""
+
+    kind: HistoryRejectionKind
+    state: Optional[S] = None
+    parent: Optional[S] = None
+    arity: ConfigurationRejection = ConfigurationRejection.NONE
+
+
+def validate_history(
+    policy: StatePolicy[S, E], parent: S, deep: bool, recorded: Sequence[S]
+) -> HistoryRejection[S]:
+    """Whether ``recorded`` is a value the ``<history>`` of ``parent`` could have
+    recorded: its active children for a shallow one, the active atomic states below
+    it for a deep one (``deep``) (W3C SCXML 3.10).
+
+    What a history recorded is part of a configuration, so a value read back from a
+    saved state is held to that, and the restored machine can only be taken through
+    the history to a configuration its document could have been in. It is read as a
+    configuration of the subtree under ``parent``: the recorded states and every
+    state between each of them and ``parent`` satisfy the child arity a whole
+    configuration does. A shallow history records only the children, so the arity is
+    judged on ``parent`` alone.
+
+    The Python twin of ``sce.ValidateHistory`` (Go)."""
+    if not recorded:
+        return HistoryRejection(HistoryRejectionKind.EMPTY)
+    for at, state in enumerate(recorded):
+        if state in recorded[:at]:
+            return HistoryRejection(HistoryRejectionKind.DUPLICATE, state=state)
+
+    # The recorded states, and every state between each of them and parent.
+    subtree: List[S] = [parent]
+    for state in recorded:
+        chain: List[S] = []
+        at_state: Optional[S] = state
+        while at_state != parent:
+            chain.append(at_state)
+            at_state = policy.get_parent(at_state)
+            if at_state is None:
+                return HistoryRejection(
+                    HistoryRejectionKind.NOT_BELOW, state=state, parent=parent
+                )
+        # A state equal to parent is below nothing.
+        if not chain:
+            return HistoryRejection(
+                HistoryRejectionKind.NOT_BELOW, state=state, parent=parent
+            )
+        for between in chain:
+            if between not in subtree:
+                subtree.append(between)
+
+    if deep:
+        for state in recorded:
+            if policy.get_child_states(state):
+                return HistoryRejection(HistoryRejectionKind.NOT_ATOMIC, state=state)
+        for state in subtree:
+            verdict = _child_arity(policy, subtree, state)
+            if verdict is not ConfigurationRejection.NONE:
+                return HistoryRejection(HistoryRejectionKind.ARITY, arity=verdict)
+        return HistoryRejection(HistoryRejectionKind.ACCEPTED)
+    for state in recorded:
+        if policy.get_parent(state) != parent:
+            return HistoryRejection(
+                HistoryRejectionKind.NOT_A_CHILD, state=state, parent=parent
+            )
+    verdict = _child_arity(policy, subtree, parent)
+    if verdict is not ConfigurationRejection.NONE:
+        return HistoryRejection(HistoryRejectionKind.ARITY, arity=verdict)
+    return HistoryRejection(HistoryRejectionKind.ACCEPTED)

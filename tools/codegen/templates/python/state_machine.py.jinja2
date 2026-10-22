@@ -82,6 +82,10 @@ from sce_runtime import request_field as _request_field
 from sce_runtime import request_field_wire as _request_field_wire
 from sce_runtime.event_payload import TypedPayloadError as _RequestRefusal
 {% endif %}
+# W3C SCXML 5.10 + B-2-9: the text an event's data is on the wire, which the
+# script engine's `set_current_event` takes and a saved state holds.
+from sce_runtime.event import event_data_text as _coerce_event_data_str
+from sce_runtime import session_id as _sce_session_id
 from sce_runtime.scripting import (
     LuaScriptEngine as _LuaScriptEngine,
     ScriptError as _ScriptError,
@@ -101,6 +105,15 @@ import sce_forge_runtime.algorithm as sce_algorithm
 # A record variable is a frozen dataclass, changed a field at a time by
 # replacing it.
 import dataclasses as sce_dataclasses
+{% endif %}
+{% if static_fields or static_saved_shape %}
+# SCE Accepted Subset §2.15: how each type of a datamodel is written into a saved
+# state and read back (docs/adr/0045).
+import sce_runtime.saved_values as sce_saved
+{% endif %}
+{% if static_saved_shape %}
+import sce_runtime.saved_state as sce_saved_state
+import sce_runtime.saved_engine as sce_saved_engine
 {% endif %}
 {% if static_imports %}
 # SCE Accepted Subset §2.15: each algorithm the document calls is a module
@@ -251,46 +264,6 @@ class _ActionAbort(Exception):
     enqueued by the helper (when the document declares it) so the
     caller does not raise it a second time."""
     pass
-
-
-def _coerce_event_data_str(data: Any) -> str:
-    """W3C SCXML 5.10 + B-2-9 — the script engine's `set_current_event`
-    takes `event_data` as a single string, and that string is the WIRE:
-    the reader parses it under §scxml-B-2-8-1's three readings (XML →
-    DOM, JSON → value, otherwise a space-normalized string). Generated
-    Python code marshals `<send>` payloads as a dict of named params or
-    a bare scalar; we serialise them here into that wire.
-
-    - dict / list → JSON encode (so `_event.data.foo` becomes a real
-      table member at the receiving parse);
-    - str → returned unchanged, which the string reading gives back
-      whole;
-    - int / float / bool → the JSON spelling, so a numeric payload
-      arrives as a number rather than as its text;
-    - None → `""` so the Lua side leaves `_event.data` unbound.
-
-    What is deliberately absent is a spelling only the sender's own
-    engine could read back: the receiving side used to RUN this string
-    as Lua before parsing it, so a payload could execute at the far
-    end."""
-    if data is None:
-        return ""
-    if isinstance(data, str):
-        return data
-    if isinstance(data, bool):
-        return "true" if data else "false"
-    if isinstance(data, int):
-        return str(data)
-    if isinstance(data, (float, dict, list)):
-        # The one writer of JSON text this backend has (ARCHITECTURE.md,
-        # "JSON Text", "JSON Number Text" and "JSON Object Key Order"):
-        # compact, UTF-8, members in byte order, a float as ECMAScript
-        # spells it. `json.dumps` did none of the last two — it spells a
-        # float with Python's `repr` (`1.0`, `1e-07`) and keeps the order
-        # a dict was built in — so the same payload differed byte for byte
-        # from the one another backend sent.
-        return _ScriptValue.of(data).to_json_literal()
-    return str(data)
 
 
 {% if event_payload_active %}
@@ -745,6 +718,8 @@ class {{ machine_name }}Policy(StatePolicy[{{ machine_name }}State, {{ machine_n
 
 {% include 'invoke_methods.py.jinja2' %}
 
+{% include 'saved_policy.py.jinja2' %}
+
 {% include 'scriptengine_helpers.py.jinja2' %}
 
 
@@ -812,11 +787,12 @@ _HISTORY_DEFAULT_TARGETS: Dict[str, Tuple[Any, ...]] = {
 }
 {% endif %}
 
+{% include 'saved_functions.py.jinja2' %}
 # ======================================================================
 # Convenience factory
 # ======================================================================
 
-def create_engine({% if has_native_actions %}actions: {{ native_actions_interface }}, {% endif %}script_engine=None{% if accepts_simulated_host %}, *, accept_simulated_host: bool = False{% endif %}) -> Engine[{{ machine_name }}State, {{ machine_name }}Event]:
+def create_engine({% if has_native_actions %}actions: {{ native_actions_interface }}, {% endif %}script_engine=None, *, {% if accepts_simulated_host %}accept_simulated_host: bool = False, {% endif %}session_id: Optional[str] = None) -> Engine[{{ machine_name }}State, {{ machine_name }}Event]:
     """Construct a runnable engine bound to a fresh policy instance.
 
     Engine DI Parity RFC (Path B+): every Engine instance owns its script
@@ -836,7 +812,17 @@ def create_engine({% if has_native_actions %}actions: {{ native_actions_interfac
     for a host that only simulates its duties (a recorder, a test double) on
     purpose. The statement covers the children the machine builds with a host.
 {% endif %}
+
+    docs/adr/0045: `session_id` is the id the host has for this session
+    (`_sessionid`), in place of the one the engine draws: an XML Nmtoken, since
+    another session addresses this one as `#_scxml_<id>` and every child's id is
+    this one's and the id the child was started under. Refused with a
+    `ValueError` for anything else, never replaced by another.
     """
+    if session_id is not None:
+        reason = _sce_session_id.refusal_of(session_id)
+        if reason is not None:
+            raise ValueError(reason)
 {% if accepts_simulated_host %}
     policy = {{ machine_name }}Policy(actions, accept_simulated_host=accept_simulated_host)
 {% elif has_native_actions %}
@@ -847,7 +833,7 @@ def create_engine({% if has_native_actions %}actions: {{ native_actions_interfac
     if script_engine is None:
         script_engine = _LuaScriptEngine()
         script_engine.initialize()
-    return Engine(policy, script_engine=script_engine)
+    return Engine(policy, script_engine=script_engine, session_id=session_id)
 
 
 {% if event_payload_active %}
@@ -894,4 +880,12 @@ __all__ = [
     "Policy",
     "SCE_HOST_NAMES",
     "create_engine",
+{% if static_saved_shape %}
+    "SAVED_SHAPE",
+    "judge",
+    "restore",
+    "restore_at",
+    "save",
+    "save_at",
+{% endif %}
 ]

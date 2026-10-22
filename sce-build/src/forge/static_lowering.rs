@@ -7629,6 +7629,12 @@ impl PythonTarget {
 pub(crate) const PYTHON_PRESENT: &str = "sce_present";
 
 impl StaticTarget for PythonTarget {
+    // The start site holds the id it generates in the `str` local
+    // `_runtime_invoke_id` (`defer_invokes_on_entry`), which it goes on to start
+    // the child under, so the variable takes it as it stands.
+    fn generated_invoke_id(&self) -> Option<&'static str> {
+        Some("_runtime_invoke_id")
+    }
     fn name(&self) -> &'static str {
         "Python"
     }
@@ -7862,6 +7868,20 @@ impl StaticTarget for PythonTarget {
                 field.id
             ));
         }
+        // The methods a record writes and reads its saved form with are named on the
+        // type, beside its fields: one field cannot have either name.
+        if let Some((alias, field)) = model.imported_records.iter().find_map(|(alias, schema)| {
+            schema
+                .fields
+                .iter()
+                .find(|f| f.id == "to_saved" || f.id == "from_saved")
+                .map(|f| (alias, f))
+        }) {
+            return Some(format!(
+                "record:{alias} with the field `{}`, a name Python writes the saved form of a record with",
+                field.id
+            ));
+        }
         for state in model.states.values() {
             let blocks = state
                 .on_entry_blocks
@@ -7953,9 +7973,83 @@ impl StaticTarget for PythonTarget {
                 format!("    {}: {field_ty}\n", self.record_field(&field.id))
             })
             .collect();
+        // Its saved form (`sce_runtime.SavedState`) lives on the type: an object of
+        // the schema's fields keyed by their ids, written by `to_saved` and read by
+        // `from_saved`, the names the enum's own saved form has
+        // ([`Self::enum_def`]). An optional field is written as null or as its
+        // present value, and read back absent from null and otherwise as its
+        // present value is (docs/adr/0055, section 4).
+        let writes: String = schema
+            .fields
+            .iter()
+            .map(|field| {
+                let member = self.record_field(&field.id);
+                let writer = match field.sce_type.present_type() {
+                    SceType::Enum(_) => "lambda v: v.to_saved()".to_string(),
+                    other => format!("sce_saved.saved_write_{}", other.as_attr()),
+                };
+                let saved = match (&field.sce_type, field.sce_type.present_type()) {
+                    (FieldType::Optional { .. }, _) => {
+                        format!("sce_saved.saved_write_optional(self.{member}, {writer})")
+                    }
+                    (FieldType::Scalar(_), SceType::Enum(_)) => format!("self.{member}.to_saved()"),
+                    (FieldType::Scalar(_), other) => {
+                        format!("sce_saved.saved_write_{}(self.{member})", other.as_attr())
+                    }
+                };
+                format!(
+                    "            {}: {saved},\n",
+                    filters::py_string_literal(field.id.clone())
+                )
+            })
+            .collect();
+        let reads: String = schema
+            .fields
+            .iter()
+            .map(|field| {
+                let id = filters::py_string_literal(field.id.clone());
+                let reader = match (field.sce_type.present_type(), field.max_size) {
+                    (SceType::Enum(reference), _) => {
+                        format!("{}.from_saved", enum_types[&reference.alias])
+                    }
+                    // A string is read back only if it fits the bound the schema
+                    // declares, as a string variable's is, and so is a byte string,
+                    // in bytes.
+                    (SceType::String, Some(bound)) => {
+                        format!("sce_saved.saved_bounded_string({bound})")
+                    }
+                    (SceType::Bytes, Some(bound)) => {
+                        format!("sce_saved.saved_bounded_bytes({bound})")
+                    }
+                    (SceType::Bytes, None) => {
+                        format!("sce_saved.saved_bounded_bytes({})", i32::MAX)
+                    }
+                    (other, _) => format!("sce_saved.saved_read_{}", other.as_attr()),
+                };
+                let what = format!(
+                    "what + {}",
+                    filters::py_string_literal(format!(".{}", field.id))
+                );
+                let held = format!("sce_saved.saved_field(value, what, {id})");
+                let read = match &field.sce_type {
+                    FieldType::Optional { .. } => {
+                        format!("sce_saved.saved_read_optional({held}, {what}, {reader})")
+                    }
+                    FieldType::Scalar(_) => format!("({reader})({held}, {what})"),
+                };
+                format!("            {}={read},\n", self.record_field(&field.id))
+            })
+            .collect();
         format!(
             "@sce_dataclasses.dataclass(frozen=True)\nclass {ty}:\n    \
-             \"\"\"SCE Accepted Subset §2.15: a `record:{alias}` datamodel value.\"\"\"\n\n{fields}"
+             \"\"\"SCE Accepted Subset §2.15: a `record:{alias}` datamodel value.\"\"\"\n\n{fields}\n    \
+             def to_saved(self):\n        \
+             \"\"\"This value as a saved state writes it.\"\"\"\n        \
+             return {{\n{writes}        }}\n\n    \
+             @classmethod\n    \
+             def from_saved(cls, value, what):\n        \
+             \"\"\"The value a saved state holds, refused unless it is one.\"\"\"\n        \
+             return cls(\n{reads}        )\n"
         )
     }
     fn record_field(&self, id: &str) -> String {
@@ -8005,6 +8099,19 @@ impl StaticTarget for PythonTarget {
         // accessors, by the same names and shapes (`forge/python/enum.py.jinja2`):
         // what `<alias>.toNumber` and `<alias>.fromNumber` are lowered to
         // ([`StaticTarget::enum_number_symbols`]).
+        // Its saved form lives on the type, as a record's does: the declared name the
+        // enum document gives the variant.
+        let saved_variants: Vec<String> = model
+            .variants
+            .iter()
+            .map(|v| {
+                format!(
+                    "{}: cls.{}",
+                    filters::py_string_literal(v.name.clone()),
+                    self.enum_variant(ty, &model.name, &v.name)
+                )
+            })
+            .collect();
         format!(
             "class {ty}(IntEnum):\n    \
              \"\"\"SCE Accepted Subset §2.15: an `enum:{alias}` datamodel value.\"\"\"\n\n\
@@ -8020,8 +8127,17 @@ impl StaticTarget for PythonTarget {
              try:\n            \
              return cls(raw)\n        \
              except ValueError:\n            \
-             return None\n",
-            names.join(", ")
+             return None\n\n    \
+             def to_saved(self):\n        \
+             \"\"\"This value as a saved state writes it.\"\"\"\n        \
+             return self.sce_name\n\n    \
+             @classmethod\n    \
+             def from_saved(cls, value, what):\n        \
+             \"\"\"The value a saved state holds, refused unless it is a variant.\"\"\"\n        \
+             return sce_saved.saved_read_variant(value, what, {}, {{{}}})\n",
+            names.join(", "),
+            filters::py_string_literal(alias.to_string()),
+            saved_variants.join(", ")
         )
     }
     fn enum_number_symbols(&self, ty: &str, _model: &EnumModel) -> (String, String) {

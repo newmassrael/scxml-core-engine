@@ -1,0 +1,246 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{#
+    Saving this machine and restoring it (SCE Accepted Subset §2.15,
+    docs/adr/0045): the module-level functions of a `sce-static` document that
+    saves. Port-of-Go template: the saved block of
+    tools/codegen/templates/go/state_machine.go.jinja2.
+#}
+
+{#- A variable's saved form, written from the policy `source`: a record's or an
+    enum's own (`to_saved` / `from_saved`, emitted with the type by the static
+    lowering), and every other type's by the runtime's `sce_saved` functions. -#}
+{% macro saved_write(field, source) -%}
+{%- if field.saved_kind == "optional" and field.saved_elem == "enum" -%}
+sce_saved.saved_write_optional({{ source }}.{{ field.name }}, lambda v: v.to_saved())
+{%- elif field.saved_kind == "optional" -%}
+sce_saved.saved_write_optional({{ source }}.{{ field.name }}, sce_saved.saved_write_{{ field.saved_type }})
+{%- elif field.saved_kind == "record" or field.saved_kind == "enum" -%}
+{{ source }}.{{ field.name }}.to_saved()
+{%- elif field.saved_kind == "list" -%}
+sce_saved.saved_write_list({{ source }}.{{ field.name }}, sce_saved.saved_write_{{ field.saved_type }})
+{%- elif field.saved_kind == "record_list" -%}
+sce_saved.saved_write_list({{ source }}.{{ field.name }}, lambda r: r.to_saved())
+{%- else -%}
+sce_saved.saved_write_{{ field.saved_type }}({{ source }}.{{ field.name }})
+{%- endif -%}
+{%- endmacro %}
+{% macro saved_read(field, raw) -%}
+{%- if field.saved_kind == "optional" and field.saved_elem == "enum" -%}
+sce_saved.saved_read_optional({{ raw }}, {{ field.id | py_string_literal }}, {{ field.saved_type }}.from_saved)
+{%- elif field.saved_kind == "optional" and field.saved_type == "bytes" -%}
+sce_saved.saved_read_optional({{ raw }}, {{ field.id | py_string_literal }}, sce_saved.saved_bounded_bytes({{ field.bound if field.bound is not none else 2147483647 }}))
+{%- elif field.saved_kind == "optional" and field.saved_type == "string" and field.bound is not none -%}
+sce_saved.saved_read_optional({{ raw }}, {{ field.id | py_string_literal }}, sce_saved.saved_bounded_string({{ field.bound }}))
+{%- elif field.saved_kind == "optional" -%}
+sce_saved.saved_read_optional({{ raw }}, {{ field.id | py_string_literal }}, sce_saved.saved_read_{{ field.saved_type }})
+{%- elif field.saved_kind == "record" or field.saved_kind == "enum" -%}
+{{ field.saved_type }}.from_saved({{ raw }}, {{ field.id | py_string_literal }})
+{%- elif field.saved_kind == "list" -%}
+sce_saved.saved_read_list({{ raw }}, {{ field.id | py_string_literal }}, {{ field.bound }}, sce_saved.saved_read_{{ field.saved_type }})
+{%- elif field.saved_kind == "record_list" -%}
+sce_saved.saved_read_list({{ raw }}, {{ field.id | py_string_literal }}, {{ field.bound }}, {{ field.saved_type }}.from_saved)
+{%- elif field.saved_type == "bytes" -%}
+sce_saved.saved_read_bytes({{ raw }}, {{ field.id | py_string_literal }}, {{ field.bound if field.bound is not none else 2147483647 }})
+{%- elif field.saved_type == "string" and field.bound is not none -%}
+sce_saved.saved_read_bounded_string({{ raw }}, {{ field.id | py_string_literal }}, {{ field.bound }})
+{%- else -%}
+sce_saved.saved_read_{{ field.saved_type }}({{ raw }}, {{ field.id | py_string_literal }})
+{%- endif -%}
+{%- endmacro %}
+{% if static_saved_shape %}
+# ======================================================================
+# SCE Accepted Subset §2.15: saving this machine, restoring it
+# ======================================================================
+
+# What a saved state of this document is bound to: a state saved from a document
+# that renamed, re-typed or moved a state or a variable is refused, one saved
+# before a guard or an action changed is not, and one saved at an earlier revision
+# of a record schema is read with each field a later revision added at its default.
+SAVED_SHAPE = sce_saved_state.SavedShape(
+    first={{ static_saved_shape.first | py_string_literal }},
+    revised={{ static_saved_shape.revised | py_string_literal }},
+    format2_first={{ static_saved_shape.format2_first | py_string_literal }},
+    format2_revised={{ static_saved_shape.format2_revised | py_string_literal }},
+    records=[
+{% for record in static_saved_shape.records %}
+        sce_saved_state.RecordLineage(
+            event={{ record.event | py_string_literal }},
+            revision={{ record.revision }},
+            revisions=[{% for fields in record.revisions %}{{ fields | py_string_literal }}{{ ", " if not loop.last }}{% endfor %}],
+            added=[
+{% for field in record.added %}
+                sce_saved_state.AddedField(id={{ field.id | py_string_literal }}, since={{ field.since }}, default={{ field.default | py_string_literal }}),
+{% endfor %}
+            ],
+            holders=[
+{% for holder in record.holders %}
+                sce_saved_state.RecordHolder(variable={{ holder.variable | py_string_literal }}, list={{ "True" if holder.list else "False" }}),
+{% endfor %}
+            ],
+        ),
+{% endfor %}
+    ],
+    enums=[
+{% for lineage in static_saved_shape.enums %}
+        sce_saved_state.EnumLineage(
+            key={{ lineage.key | py_string_literal }},
+            revision={{ lineage.revision }},
+            revisions=[{% for fields in lineage.revisions %}{{ fields | py_string_literal }}{{ ", " if not loop.last }}{% endfor %}],
+            added=[
+{% for variant in lineage.added %}
+                sce_saved_state.AddedVariant(name={{ variant.name | py_string_literal }}, since={{ variant.since }}),
+{% endfor %}
+            ],
+            holders=[
+{% for holder in lineage.holders %}
+{% if holder.field is not none %}
+                sce_saved_state.EnumHolder(variable={{ holder.variable | py_string_literal }}, field={{ holder.field | py_string_literal }}, list={{ "True" if holder.list else "False" }}),
+{% else %}
+                sce_saved_state.EnumHolder(variable={{ holder.variable | py_string_literal }}, list={{ "True" if holder.list else "False" }}),
+{% endif %}
+{% endfor %}
+            ],
+        ),
+{% endfor %}
+    ],
+)
+
+# The document's `<history>` pseudo-states, by the id a saved state keys them by:
+# what a saved state records of each, and what a restore reads.
+SAVED_HISTORIES = ({% for history_id in model.history_states | sort %}{{ history_id | py_string_literal }},{{ " " if not loop.last }}{% endfor %})
+
+
+def _sce_child_module(stem: str):
+    """The generated module of the child document `stem`: a sibling of this one,
+    a module of this one's own package when it has one (a machine that calls an
+    algorithm is one of a package, and its child is imported beside it), a
+    top-level module beside it otherwise."""
+    import importlib as _importlib
+
+    return _importlib.import_module(("." if __package__ else "") + stem + "_sm", __package__ or None)
+
+
+def _sce_read_variables(grown) -> Dict[str, Any]:
+    """Every variable `grown` holds, read as the value of its type, or the refusal
+    that names the first that is not one. Judged before any is written, so a state
+    with one bad variable restores none of them."""
+    values: Dict[str, Any] = {}
+{% for field in static_fields %}
+    values[{{ field.name | py_string_literal }}] = {{ saved_read(field, 'grown.variable(' ~ (field.id | py_string_literal) ~ ')') }}
+{% endfor %}
+    return values
+
+
+def save_at(engine, wall_now_ms: int):
+    """`engine`'s whole state at the macrostep boundary it stands at: every
+    variable, the machine's own included, and where it stands, as the
+    `sce-saved-state` document every backend reads (`SavedState.to_json`). Each
+    delayed `<send>` still waiting is written as the moment it comes due on the wall
+    clock whose reading now is `wall_now_ms`, in milliseconds since the Unix epoch.
+
+    Refused for a machine that is not running, one that has ended, one whose last
+    macrostep stopped at the microstep ceiling, and one built around another
+    document's policy."""
+    policy = engine.policy
+    if not isinstance(policy, {{ machine_name }}Policy):
+        raise sce_saved_state.StateRefusal("the engine is not one of {{ machine_name }}")
+    variables: Dict[str, Any] = {}
+{% for field in static_fields %}
+    variables[{{ field.id | py_string_literal }}] = {{ saved_write(field, 'policy') }}
+{% endfor %}
+{% if model.invokes | scxml_family %}
+    # docs/adr/0045: each running child, with its whole state.
+    children = policy._saved_children(engine, wall_now_ms)
+{% else %}
+    children = []
+{% endif %}
+    return sce_saved_engine.save_session(
+        engine,
+        SAVED_SHAPE,
+        variables,
+        sce_saved_engine.save_history(policy, engine, SAVED_HISTORIES),
+        children,
+        wall_now_ms,
+    )
+
+
+def save(engine):
+    """`save_at` at the host's wall clock now."""
+    return save_at(engine, sce_saved_state.saved_wall_clock_ms())
+
+
+def judge(saved) -> None:
+    """Refuse `saved` unless a machine of this document could restore it, building
+    nothing: what a parent's restore asks of each child it holds (docs/adr/0045,
+    section 3, step 1)."""
+    # Judging asks the document's own tables and nothing a session holds, so it is
+    # made of a policy no session built: no host is asked for the acts of a child.
+    policy = {{ machine_name }}Policy.__new__({{ machine_name }}Policy)
+    grown = sce_saved_state.upgrade_saved_state(saved, SAVED_SHAPE)
+    sce_saved_engine.restore_history(policy, grown, SAVED_HISTORIES)
+    _sce_read_variables(grown)
+    sce_saved_engine.judge_session(policy, grown)
+
+
+def restore_at(engine, saved, wall_now_ms: int) -> None:
+    """Stand `engine`, a machine of a fresh policy of this document built under the
+    id `saved` names (`restore`), where `saved` left one: in place of `initialize`,
+    so no `<onentry>` runs and no `<data>` is evaluated, since the saved run already
+    did both. Every value is read and the state judged before any is written, so a
+    refused restore leaves the policy as it was.
+
+    Each delayed `<send>` saved is armed against the engine's clock; `wall_now_ms` is
+    what time it is on the wall clock the saved `due`s were written against. A send
+    comes due when its saved moment does, and one already due comes due now.
+
+    The host registers its invokers and its processors on the machine, and drives it
+    as it would one it had initialized."""
+    policy = engine.policy
+    # The state as one of this machine: each record saved at an earlier revision of
+    # its schema holds the defaults of the fields added since.
+    grown = sce_saved_state.upgrade_saved_state(saved, SAVED_SHAPE)
+    history = sce_saved_engine.restore_history(policy, grown, SAVED_HISTORIES)
+    values = _sce_read_variables(grown)
+    sce_saved_engine.judge_session(policy, grown)
+    for name, value in values.items():
+        setattr(policy, name, value)
+    for history_id, states in history:
+        engine._history[history_id] = list(states)
+{% for inv in model.invokes | scxml_family %}
+    # A start after the restore is numbered on from the saved count.
+    policy._invoke_starts_{{ inv.field_suffix }} = grown.invoke_start({{ inv.invoke_id | py_string_literal }})
+{% endfor %}
+    sce_saved_engine.enter_session(engine, grown, wall_now_ms)
+
+
+def restore({% if has_native_actions %}actions: {{ native_actions_interface }}, {% endif %}saved, script_engine=None, *, {% if accepts_simulated_host %}accept_simulated_host: bool = False, {% endif %}wall_now_ms: Optional[int] = None) -> Engine[{{ machine_name }}State, {{ machine_name }}Event]:
+    """Construct a runnable engine bound to a fresh policy, standing where `saved`
+    left a machine of this document, as `create_engine` constructs one that has yet
+    to start. A format-2 state carries on under the id it was saved with, which every
+    child's id and a peer's address name (docs/adr/0045); a format-1 state holds none,
+    so the machine keeps a drawn one. `wall_now_ms` is what time it is on the wall
+    clock the saved `due`s were written against, the host's own where it is not
+    given.
+{% if has_native_actions %}
+
+    `actions` is the host implementation of every `<sce:action>` this document
+    declares, and leads the parameter list as it does in `create_engine`.
+{% endif %}"""
+{% if accepts_simulated_host %}
+    policy = {{ machine_name }}Policy(actions, accept_simulated_host=accept_simulated_host)
+{% elif has_native_actions %}
+    policy = {{ machine_name }}Policy(actions)
+{% else %}
+    policy = {{ machine_name }}Policy()
+{% endif %}
+    if script_engine is None:
+        script_engine = _LuaScriptEngine()
+        script_engine.initialize()
+    engine = Engine(policy, script_engine=script_engine, session_id=saved.bound_session_id())
+    restore_at(engine, saved, sce_saved_state.saved_wall_clock_ms() if wall_now_ms is None else wall_now_ms)
+    return engine
+
+
+{% endif %}

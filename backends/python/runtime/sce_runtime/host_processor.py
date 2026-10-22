@@ -160,6 +160,22 @@ class HostInvokeRequest:
     #: the cancelled process sends is ignored). Distinct for every start of
     #: every invocation within one engine.
     token: int = 0
+    #: The session that started the invocation (`_sessionid`; docs/adr/0045): the
+    #: root the host built, or a child session of it, `<parent>.<invokeid>`. The
+    #: engine fills it as it starts the invocation.
+    #:
+    #: The invokers a host registers serve the whole tree of sessions, so a host
+    #: that means to serve a type for part of it only refuses the others by this
+    #: id (`HostInvokeResponse.refusal`); there is no second registration. It is
+    #: also the id a host hands back with the token to end the invocation
+    #: (`Engine.complete_host_invoke_in`), which reaches the session that started
+    #: it wherever it stands in the tree.
+    session_id: str = ""
+    #: Whether this start is a restore starting the invocation again: the machine
+    #: saved while it ran, and the process the host began for it did not outlive
+    #: the one that saved. What the host does with that is its business; a host
+    #: that cannot tell a second start from a first does not see it.
+    restarted: bool = False
 
 
 @dataclass
@@ -304,6 +320,38 @@ def refuse_reserved_type(call: str, processor_type: str) -> None:
             "router with register_mesh_router and register_mesh_rpc_invoker, "
             "and give a host type another prefix, such as `x-`"
         )
+
+
+class TreeInvokers:
+    """The invokers a host registered for the types it serves, shared by every
+    session of one tree (docs/adr/0045): the engine the host built makes it, and a
+    parent hands its own to each child it starts or resumes. Opaque: a host
+    registers through `Engine.register_invoker`, and the generated parent only
+    passes it on. The set of invocable types is the processor's, not a session's
+    (§scxml-6.4.1)."""
+
+    __slots__ = ("handlers",)
+
+    def __init__(self) -> None:
+        self.handlers: Dict[str, HostInvokeHandler] = {}
+
+
+@dataclass
+class HostInvokeEnding:
+    """How a host ends a host-run invocation of some session of a tree: the start
+    it ends, and whether it completed (``done.invoke``) or failed
+    (``error.invoke``), with `data` as the event's ``_event.data``."""
+
+    #: The `type` the request named.
+    processor_type: str
+    #: The invocation's id, as the request named it.
+    invoke_id: str
+    #: The token the request carried.
+    token: int
+    #: True for a completion and False for a failure.
+    done: bool
+    #: ``_event.data`` of the event the ending raises.
+    data: str = ""
 
 
 @dataclass

@@ -30,7 +30,6 @@ Around that core:
 from __future__ import annotations
 
 import dataclasses
-import uuid
 from collections import deque
 from typing import (
     Any,
@@ -53,13 +52,16 @@ from .host_processor import (
     MESH_RPC_INVOKE_TYPE,
     HostInvokeCancel,
     HostInvokeDeadline,
+    HostInvokeEnding,
     HostInvokeEvent,
     HostInvokeHandler,
     HostInvokeRequest,
     HostSendHandler,
     HostSendRequest,
     HostSendResponse,
+    TreeInvokers,
     is_host_invoke_completion,
+    is_reserved_type,
     parse_host_invoke_deadline_ms,
     refuse_reserved_type,
 )
@@ -93,7 +95,9 @@ from .microstep import (
 from .payload_reading import PayloadReading
 from .root_start import RootStartRefusal
 from .policy import StatePolicy
+from .saved_state import StateRefusal
 from .scheduler import ScheduledRoute, Scheduler
+from .session_id import draw as _draw_session_id
 
 S = TypeVar("S")
 E = TypeVar("E")
@@ -204,6 +208,35 @@ MAX_MACROSTEP_MICROSTEPS = 1000
 MAX_EXTERNAL_EVENTS_PER_CALL = 10_000
 
 
+@dataclasses.dataclass
+class _StartedHostInvoke:
+    """A host-run invocation started and neither completed nor cancelled: its
+    token, and the request the host was handed, which a save writes."""
+
+    token: int
+    request: HostInvokeRequest
+
+
+# What a restored host-run invocation has left of its deadline.
+RESTORED_NO_DEADLINE = "none"
+RESTORED_DEADLINE_AT = "at"
+RESTORED_DEADLINE_PASSED = "passed"
+
+
+@dataclasses.dataclass
+class _RestoredHostInvoke:
+    """A host-run invocation a saved state listed, waiting for the first
+    macrostep the host drives to start it again. `request` is what the saved
+    machine started it with, marked `restarted`; `deadline` says what it has left
+    of its deadline and `at_ms` is the moment of this engine's clock a deadline in
+    `RESTORED_DEADLINE_AT` comes due, worked out from the wall-clock moment the saved
+    state holds."""
+
+    request: HostInvokeRequest
+    deadline: str = RESTORED_NO_DEADLINE
+    at_ms: int = 0
+
+
 class Engine(Generic[S, E]):
     """Generic SCXML engine bound to a concrete StatePolicy.
 
@@ -229,8 +262,10 @@ class Engine(Generic[S, E]):
         # A child is given its id by the parent that starts it,
         # `<parent>.<invokeid>`, so it comes from the tree alone and is the
         # text every backend writes (docs/adr/0045); a machine a host starts
-        # draws one of its own.
-        self._session_id: str = session_id if session_id is not None else uuid.uuid4().hex
+        # draws one of its own, a UUID version 4 in the one spelling every
+        # backend draws (docs/adr/0045, "Questions the owner answered" 2), unless
+        # the host gives it.
+        self._session_id: str = session_id if session_id is not None else _draw_session_id()
         # Path B+ RFC Q1=(d) Python=duck-typed ref; Q5=(a) instance member;
         # Q2=(a) mandatory-when-needed: every Engine now ships with its own
         # engine instance, mirroring Kotlin's constructor-injected pattern.
@@ -392,22 +427,37 @@ class Engine(Generic[S, E]):
         # delivering an event is not the same capability as running a
         # process with a lifecycle; see `host_processor.py`'s invoker half.
         self._host_invokers: Dict[str, HostInvokeHandler] = {}
+        # docs/adr/0045 — the invokers a host registered, shared by every session
+        # of this machine's tree: made when this machine registers the first, and
+        # handed to each child as it is started or resumed (`share_host_invokers_with`).
+        # `_host_invokers` above keeps only what is this session's alone, the
+        # invoker of a type SCE serves on a session's behalf.
+        self._tree_invokers: Optional[TreeInvokers] = None
         # SCE_MESH.md, Child Sessions in Mesh — the factory of the routers of
         # this machine's children (registered by the host, or on a child by the
         # router its parent gave it), and the router this machine was given as
         # a child session.
         self._child_mesh_routers: Optional[ChildMeshRouters] = None
         self._installed_mesh: Optional[ChildMeshRouter] = None
+        # docs/adr/0045 — the children a restore resumed, whose routers are asked
+        # of the factory once the host has registered it (`owe_child_mesh`).
+        self._owed_child_meshes: List[Tuple["Engine[Any, Any]", str, str]] = []
         # §scxml-6.4 — every host-run invocation started and neither
-        # completed nor cancelled, mapped to its start's token, so the emitted
-        # exit chain can be an unconditional call and a completion can be
-        # judged against the run it names. One entry per key: an `<invoke>`
-        # belongs to one state and a state is in the configuration at most
-        # once, so the same id is never running twice; a restart replaces the
-        # entry, and its new token is what makes the first run's reply stale.
-        self._started_host_invokes: Dict[Tuple[str, str], int] = {}
+        # completed nor cancelled, with its start's token and the request the host
+        # was handed (what a save writes), so the emitted exit chain can be an
+        # unconditional call and a completion can be judged against the run it
+        # names. One entry per key: an `<invoke>` belongs to one state and a state
+        # is in the configuration at most once, so the same id is never running
+        # twice; a restart replaces the entry, and its new token is what makes the
+        # first run's reply stale.
+        self._started_host_invokes: Dict[Tuple[str, str], _StartedHostInvoke] = {}
         # The token the next host-run start receives.
         self._next_host_invoke_token: int = 0
+        # docs/adr/0045 — the host-run invocations a restore re-armed, which start
+        # at the top of the first macrostep the host drives
+        # (`_start_restored_host_invokes`), and until then are neither running nor
+        # gone.
+        self._restored_host_invokes: List[_RestoredHostInvoke] = []
         # See `refused_host_invoke_completions`.
         self._refused_host_invoke_completions: int = 0
         # §scxml-5.5 + 6.3.1 — donedata stashed when a top-level
@@ -1203,6 +1253,25 @@ class Engine(Generic[S, E]):
         its peer send raises ``error.execution`` in the child, and nothing
         falls back to this machine's router."""
         self._child_mesh_routers = factory
+        # The children a restore resumed before the host had a factory to give:
+        # each is asked now, before anything drives it (`owe_child_mesh`).
+        owed, self._owed_child_meshes = self._owed_child_meshes, []
+        for child, invoke_id, document in owed:
+            self.start_child_mesh(child, invoke_id, document)
+
+    def owe_child_mesh(self, child: "Engine[Any, Any]", invoke_id: str, document: str) -> None:
+        """Record that `child`, which a restore resumed, is owed the router this
+        machine's factory gives the invoke `invoke_id` of the document whose stem
+        is `document`: not asked here, since this machine is being restored and its
+        host registers the factory of its children's routers only once the restore
+        has returned it. `register_child_mesh_routers` asks for each, before
+        anything drives the child (SCE_MESH.md, Child Sessions in Mesh;
+        docs/adr/0045, section 3, step 3). A factory registered already is asked
+        at once."""
+        if self._child_mesh_routers is not None:
+            self.start_child_mesh(child, invoke_id, document)
+            return
+        self._owed_child_meshes.append((child, invoke_id, document))
 
     def start_child_mesh(self, child: "Engine[Any, Any]", invoke_id: str, document: str) -> None:
         """Ask this machine's factory for the router of `child`, which the
@@ -1336,13 +1405,126 @@ class Engine(Generic[S, E]):
 
         Registering twice for one type replaces the handler, for the reason
         the send half does. Raises `ValueError` when `processor_type` is under
-        `RESERVED_TYPE_PREFIX`, for the reason the send half does."""
+        `RESERVED_TYPE_PREFIX`, for the reason the send half does.
+
+        docs/adr/0045: the invoker serves every session of this machine's tree,
+        the children it starts included, since the set of invocable types is the
+        processor's and not a session's (§scxml-6.4.1); each request names the
+        session that made it (`HostInvokeRequest.session_id`)."""
         refuse_reserved_type("register_invoker", processor_type)
-        self._host_invokers[processor_type] = handler
+        self._tree().handlers[processor_type] = handler
 
     def has_invoker(self, processor_type: str) -> bool:
         """Whether an invoker is registered for `processor_type`."""
-        return processor_type in self._host_invokers
+        return self._invoker_for(processor_type) is not None
+
+    def _tree(self) -> TreeInvokers:
+        """The invokers this session is served by, made when it has none yet."""
+        if self._tree_invokers is None:
+            self._tree_invokers = TreeInvokers()
+        return self._tree_invokers
+
+    def _invoker_for(self, processor_type: str) -> Optional[HostInvokeHandler]:
+        """What runs the ``<invoke type>`` `processor_type`: the invoker of a type
+        SCE serves on a session's behalf (`RESERVED_TYPE_PREFIX`: a Mesh request) is
+        this session's alone, since a child's is its router's and never its
+        parent's, which would send under the parent's name (docs/adr/0043); every
+        other is the tree's."""
+        if is_reserved_type(processor_type):
+            return self._host_invokers.get(processor_type)
+        return self._tree().handlers.get(processor_type)
+
+    def share_host_invokers_with(self, child: "Engine[Any, Any]") -> None:
+        """Hand this machine's invokers to `child`, a session it is starting or
+        resuming, before the child runs (docs/adr/0045): the types a host registers
+        through `register_invoker` serve every session of the tree. An invoker
+        registered afterwards serves the child too, since it is the tree's own
+        registry the child holds. The Mesh request invoker is not handed on: a
+        child's is the router its parent's factory gave it."""
+        child.adopt_host_invokers(self._tree())
+
+    def adopt_host_invokers(self, invokers: TreeInvokers) -> None:
+        """Be served by `invokers`, the tree's, and hand them on to every child
+        this machine holds now: a child a restore resumed holds children of its
+        own, resumed with it before its parent could hand it anything."""
+        self._tree_invokers = invokers
+        for invoke in self._active_invokes.values():
+            child = getattr(invoke, "child", None)
+            adopt = getattr(child, "adopt_host_invokers", None)
+            if adopt is not None:
+                adopt(invokers)
+
+    def route_host_invoke_end(self, session_id: str, ending: HostInvokeEnding) -> Tuple[bool, Optional[str]]:
+        """Deliver `ending` to the session `session_id` names, if that session is
+        this machine or one in the tree below it. Answers whether it is, and the
+        reason it was refused when it is and does not run that start: ``(False,
+        None)`` when it is neither, so the parent that asked can try another
+        child."""
+        if session_id == self._session_id:
+            if self._end_host_invoke(
+                ending.processor_type,
+                ending.invoke_id,
+                ending.token,
+                create_done_invoke_event_name(ending.invoke_id)
+                if ending.done
+                else f"{ERROR_INVOKE_PREFIX}{ending.invoke_id}",
+                ending.data,
+                "",
+                "",
+            ):
+                return True, None
+            return True, (
+                f"session '{session_id}' is not running start {ending.token} of the "
+                f"'{ending.processor_type}' invocation '{ending.invoke_id}': it was cancelled, "
+                "has ended, or was started again since"
+            )
+        for invoke in self._active_invokes.values():
+            child = getattr(invoke, "child", None)
+            route = getattr(child, "route_host_invoke_end", None)
+            if route is None:
+                continue
+            routed, refusal = route(session_id, ending)
+            if routed:
+                return True, refusal
+        return False, None
+
+    def end_host_invoke_in(self, session_id: str, ending: HostInvokeEnding) -> None:
+        """End a host-run invocation of the session `session_id`, this one or one
+        below it at any depth, reached by its id as a send to a child session is.
+        The session's queue takes ``done.invoke`` or ``error.invoke`` as
+        `complete_host_invoke` and `fail_host_invoke` raise them; a child takes it
+        when its parent next drives it.
+
+        Raises `StateRefusal` saying which when no session of that id runs in the
+        tree, or that session is not running that start of the invocation
+        (cancelled, ended, or started again since). Nothing is raised then."""
+        routed, refusal = self.route_host_invoke_end(session_id, ending)
+        if not routed:
+            raise StateRefusal(
+                f"no session '{session_id}' runs in this tree: it was never started, or it has ended"
+            )
+        if refusal is not None:
+            raise StateRefusal(refusal)
+
+    def complete_host_invoke_in(
+        self, session_id: str, processor_type: str, invoke_id: str, token: int, done_data: str = ""
+    ) -> None:
+        """`end_host_invoke_in` for a completion: ``done.invoke.<invoke_id>`` with
+        `done_data` as ``_event.data``, in the session `session_id` names. What a
+        host that serves the whole tree calls with the session id and token the
+        request carried."""
+        self.end_host_invoke_in(
+            session_id, HostInvokeEnding(processor_type, invoke_id, token, True, done_data)
+        )
+
+    def fail_host_invoke_in(
+        self, session_id: str, processor_type: str, invoke_id: str, token: int, error_data: str = ""
+    ) -> None:
+        """`end_host_invoke_in` for a failure: ``error.invoke.<invoke_id>`` with
+        `error_data` as ``_event.data``."""
+        self.end_host_invoke_in(
+            session_id, HostInvokeEnding(processor_type, invoke_id, token, False, error_data)
+        )
 
     def perform_host_invoke(self, request: HostInvokeRequest) -> bool:
         """W3C SCXML 6.4.1 — start a host-run invocation, reporting whether
@@ -1372,7 +1554,7 @@ class Engine(Generic[S, E]):
         (§scxml-6.4.1) — and the call answers `True` because the report has
         been made; `False` is kept for "no invoker ran it", which is asked
         first because it is the prior fact."""
-        handler = self._host_invokers.get(request.processor_type)
+        handler = self._invoker_for(request.processor_type)
         if handler is None:
             return False
         try:
@@ -1391,13 +1573,39 @@ class Engine(Generic[S, E]):
                     ),
                 )
             return True
+        self._start_host_invoke(
+            handler, request, None if deadline_ms is None else self._now_ms + deadline_ms
+        )
+        return True
+
+    def _start_host_invoke(
+        self,
+        handler: HostInvokeHandler,
+        request: HostInvokeRequest,
+        deadline_at_ms: Optional[int],
+    ) -> None:
+        """The start itself, once the invoker is known and the deadline, if there
+        is one, is the moment of this engine's clock it comes due: the token is
+        assigned and the run recorded before the handler is asked, so a handler
+        that completes at once completes a run the engine already knows. A restore
+        starts an invocation again through here, with the deadline it had left (SCE
+        Accepted Subset §2.15)."""
         token = self._next_host_invoke_token
         self._next_host_invoke_token += 1
         request.token = token
-        self._started_host_invokes[(request.processor_type, request.invoke_id)] = token
-        if deadline_ms is not None:
+        # docs/adr/0045: the session that starts it, which the host may serve or
+        # refuse it by, and names again to end it.
+        request.session_id = self._session_id
+        # What a save writes is the request as the host was handed it, so the run
+        # keeps its own copy of the parameters the host may go on to change.
+        kept = dataclasses.replace(
+            request, params={name: list(values) for name, values in request.params.items()}
+        )
+        key = (request.processor_type, request.invoke_id)
+        self._started_host_invokes[key] = _StartedHostInvoke(token, kept)
+        if deadline_at_ms is not None:
             self._scheduler.schedule(
-                self._now_ms + deadline_ms,
+                deadline_at_ms,
                 "",
                 None,
                 "",
@@ -1412,19 +1620,95 @@ class Engine(Generic[S, E]):
             # §scxml-6.4.1: the host could not start it, so it never
             # started — taken back out of the running set with its deadline
             # dropped, and the element's error raised with what the host said.
-            del self._started_host_invokes[(request.processor_type, request.invoke_id)]
+            del self._started_host_invokes[key]
             self._scheduler.drop_host_invoke_deadline(token)
             event = self._policy.get_event_from_name("error.execution")
             if event is not None:
                 self.raise_internal(
                     event, EventMetadata(event_type="platform", data=response.refusal)
                 )
-            return True
+            return
         if response is not None and response.done_data is not None:
             self.complete_host_invoke(
                 request.processor_type, request.invoke_id, token, response.done_data
             )
-        return True
+
+    def rearm_host_invoke(
+        self, request: HostInvokeRequest, deadline: str, at_ms: int
+    ) -> None:
+        """A host-run invocation a saved state listed: it starts again, from
+        `request`, at the top of the first macrostep the host drives. A restore
+        calls this once per invocation, in the order the state lists them."""
+        request.restarted = True
+        self._restored_host_invokes.append(_RestoredHostInvoke(request, deadline, at_ms))
+
+    def _start_restored_host_invokes(self) -> None:
+        """Start the invocations a restore re-armed, as the macrostep's start
+        would start ones the document had just entered (§scxml-6.4).
+
+        A deadline that came due while the machine was away ends the invocation
+        without a start: the host is not asked to begin what it would be told to
+        stop at once, and the document receives the ``error.invoke`` the deadline
+        raises. An invoker that is not registered by now is the same error a
+        document's own start gets."""
+        if not self._restored_host_invokes:
+            return
+        restored, self._restored_host_invokes = self._restored_host_invokes, []
+        for host in restored:
+            invoke_id = host.request.invoke_id
+            # A request SCE sends on the document's behalf (a Mesh request) may
+            # already have reached its peer, which would act on it twice if it were
+            # sent again, and the router that carried it is gone with the process
+            # that saved it. It is not started: the document is told the call was
+            # interrupted, and sends a new one if it means to ask again.
+            if host.deadline == RESTORED_DEADLINE_PASSED:
+                self._raise_host_invoke_failure(invoke_id, "deadline")
+            elif is_reserved_type(host.request.processor_type):
+                self._raise_host_invoke_failure(invoke_id, "interrupted")
+            else:
+                handler = self._invoker_for(host.request.processor_type)
+                if handler is None:
+                    event = self._policy.get_event_from_name("error.execution")
+                    if event is not None:
+                        self.raise_internal(
+                            event,
+                            EventMetadata(
+                                event_type="platform",
+                                data="<invoke> names an invoker the host declared but never registered",
+                            ),
+                        )
+                    continue
+                self._start_host_invoke(
+                    handler,
+                    host.request,
+                    host.at_ms if host.deadline == RESTORED_DEADLINE_AT else None,
+                )
+
+    def _raise_host_invoke_failure(self, invoke_id: str, reason: str) -> None:
+        """Tell the document a host-run invocation failed, as
+        ``error.invoke.<id>`` with the reason as its data: ``"deadline"`` for a
+        deadline that passed, ``"interrupted"`` when a restore found a call it must
+        not send again. The JSON spelling of the string, as every other backend
+        carries it: §scxml-B-2-8-1 reads data as JSON first, so a bare word would
+        reach ``_event.data`` only through the fallback rung."""
+        name = f"{ERROR_INVOKE_PREFIX}{invoke_id}"
+        event = self._policy.resolve_event_by_name(name)
+        if event is None:
+            return
+        self._external_queue.append(
+            EventWithMetadata(
+                event=event,
+                metadata=EventMetadata(
+                    event_type="external",
+                    data=f'"{reason}"',
+                    invoke_id=invoke_id,
+                    # §scxml-5.10: `_event.name` is the specific name, whichever
+                    # descriptor of the document (`error.invoke.<id>`,
+                    # `error.invoke`, `error`) it was matched through.
+                    name=name if self._policy.get_event_from_name(name) is None else "",
+                ),
+            )
+        )
 
     def complete_host_invoke(
         self,
@@ -1507,7 +1791,8 @@ class Engine(Generic[S, E]):
         """The one body behind a host-run invocation's completion and
         failure: the token check, the deadline drop, and the event."""
         key = (processor_type, invoke_id)
-        if self._started_host_invokes.get(key) != token:
+        running = self._started_host_invokes.get(key)
+        if running is None or running.token != token:
             return False
         del self._started_host_invokes[key]
         self._scheduler.drop_host_invoke_deadline(token)
@@ -1555,18 +1840,29 @@ class Engine(Generic[S, E]):
         Unconditional from the emitted exit chain; the engine knows whether
         the invocation is still running and stays silent when it never
         started or already completed."""
+        # One a restore re-armed and has not started again was never started by
+        # this engine, so there is nothing to tell the host to stop; it is dropped,
+        # so it is never started.
+        self._restored_host_invokes = [
+            restored
+            for restored in self._restored_host_invokes
+            if not (
+                restored.request.processor_type == processor_type
+                and restored.request.invoke_id == invoke_id
+            )
+        ]
         key = (processor_type, invoke_id)
-        token = self._started_host_invokes.pop(key, None)
-        if token is None:
+        started = self._started_host_invokes.pop(key, None)
+        if started is None:
             return False
-        self._scheduler.drop_host_invoke_deadline(token)
-        return self._deliver_host_invoke_cancel(processor_type, invoke_id, token)
+        self._scheduler.drop_host_invoke_deadline(started.token)
+        return self._deliver_host_invoke_cancel(processor_type, invoke_id, started.token)
 
     def _deliver_host_invoke_cancel(
         self, processor_type: str, invoke_id: str, token: int
     ) -> bool:
         """Tell the host to stop start `token` of `invoke_id`."""
-        handler = self._host_invokers.get(processor_type)
+        handler = self._invoker_for(processor_type)
         if handler is None:
             return False
         handler(
@@ -1589,34 +1885,15 @@ class Engine(Generic[S, E]):
         happens: a completion that arrives afterwards finds nothing, and a
         deadline that fires after a completion finds nothing either."""
         key = (deadline.processor_type, deadline.invoke_id)
-        if self._started_host_invokes.get(key) != deadline.token:
+        running = self._started_host_invokes.get(key)
+        if running is None or running.token != deadline.token:
             return
         del self._started_host_invokes[key]
         if not self._deliver_host_invoke_cancel(
             deadline.processor_type, deadline.invoke_id, deadline.token
         ):
             return
-        name = f"{ERROR_INVOKE_PREFIX}{deadline.invoke_id}"
-        event = self._policy.resolve_event_by_name(name)
-        if event is None:
-            return
-        # The JSON spelling of the string, as every other backend carries it:
-        # §scxml-B-2-8-1 reads data as JSON first, so a bare word would reach
-        # `_event.data` only through the fallback rung.
-        self._external_queue.append(
-            EventWithMetadata(
-                event=event,
-                metadata=EventMetadata(
-                    event_type="external",
-                    data='"deadline"',
-                    invoke_id=deadline.invoke_id,
-                    # §scxml-5.10: `_event.name` is the specific name, whichever
-                    # descriptor of the document (`error.invoke.<id>`,
-                    # `error.invoke`, `error`) it was matched through.
-                    name=name if self._policy.get_event_from_name(name) is None else "",
-                ),
-            )
-        )
+        self._raise_host_invoke_failure(deadline.invoke_id, "deadline")
 
     @staticmethod
     def _take_host_invoke_deadline(request: HostInvokeRequest) -> Optional[int]:
@@ -2080,6 +2357,10 @@ class Engine(Generic[S, E]):
         sides."""
         if ms < 0:
             raise ValueError("advance_time requires a non-negative delta")
+        # The host-run invocations a restore re-armed start at the top of the first
+        # macrostep the host drives, before this clock moves, so the deadline each
+        # kept is armed against the moment it was worked out for.
+        self._start_restored_host_invokes()
         self._now_ms += ms
         # §scxml-6.4 — propagate the time delta to every active
         # child so its scheduler stays in lock-step with the parent's
@@ -2168,7 +2449,15 @@ class Engine(Generic[S, E]):
         two timers of 200, had spoken at 600 ms in three moves of 200 and had not
         in one move of 600. The answer is the nearest of the session's own and
         each unfinished child's (a child's own children included, since it asks the
-        same question)."""
+        same question).
+
+        A restore that re-armed a host-run invocation owes the machine a tick
+        before any clock does: the invocation starts at the top of the first
+        macrostep and the deadline it keeps is armed there, so until that tick the
+        scheduler holds nothing to wait for and a host asleep on this answer would
+        never drive the machine at all. That is now."""
+        if self._restored_host_invokes:
+            return 0
         soonest: Optional[int] = None
         next_due = self._scheduler.peek_next_due_ms()
         if next_due is not None:
@@ -2252,6 +2541,10 @@ class Engine(Generic[S, E]):
                 return
             # §scxml-6.4: invokes for states entered during this macrostep.
             self._start_pending_invokes()
+            # The host-run invocations a restore re-armed start as the ones the
+            # document just entered do (SCE Accepted Subset §2.15), before the
+            # external queue is touched.
+            self._start_restored_host_invokes()
             # §scxml-6.4: what an invoked child sent this session is an
             # external event of this session the moment it is sent. A child
             # runs synchronously — when it starts, and when a `<send
@@ -2643,11 +2936,15 @@ class Engine(Generic[S, E]):
                 # into the child's external queue.
                 self._advance_child_time(invoke, ms)
             invoke.tick()
+            # The id its events carry: the one the start was made under for an
+            # `<invoke>` that keeps it in an `idlocation`, the document's own
+            # otherwise.
+            carried_id = getattr(invoke, "event_invoke_id", "") or invoke_id
             for event_name, data in invoke.drain_events():
                 self.send_external_by_name(
                     event_name,
                     data=data,
-                    invoke_id=invoke_id,
+                    invoke_id=carried_id,
                     origin=invoke.origin(),
                     origin_type=SCXML_EVENT_PROCESSOR_URI,
                 )
@@ -2660,9 +2957,9 @@ class Engine(Generic[S, E]):
             # to completion before this driver is next entered).
             if invoke.is_done() and not self._done_invoke_emitted.get(invoke_id, False):
                 self.send_external_by_name(
-                    create_done_invoke_event_name(invoke_id),
+                    create_done_invoke_event_name(carried_id),
                     data=invoke.done_data() or "",
-                    invoke_id=invoke_id,
+                    invoke_id=carried_id,
                 )
                 self._done_invoke_emitted[invoke_id] = True
 

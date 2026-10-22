@@ -1,0 +1,218 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{%- import '_macros/python_invoke_start.jinja2' as invoke_start %}
+
+{#
+    What a saved state asks of the policy (SCE Accepted Subset §2.15,
+    docs/adr/0045): the hooks `sce_runtime.saved_engine` calls on a policy of a
+    document that saves, which only the document knows — the children it runs, the
+    counts of their starts, the states that hold an `<invoke>`, and how a child is
+    judged, resumed and (for a format-1 state) started again. The generated
+    `save_at`, `judge` and `restore_at` of the module read the variables and the
+    histories.
+
+    Port-of-Go template: `SavedPolicy` of tools/codegen/templates/go/state_machine.go.jinja2.
+#}
+
+{#- docs/adr/0045, section 3, step 3: the child a saved state holds for the invoke
+    `inv`, from the document whose stem is `stem`, built as starting it builds it
+    and then restored from its saved session in place of initialized: no
+    `<onentry>`, no `<data>`, no argument read, no `idlocation` written, nothing
+    sent. `slot` names the method; `target` carries the host the child is built
+    with (the invoke itself for a static child, the candidate for a hybrid one);
+    `mesh_document` is the stem the child's Mesh router is asked for. -#}
+{% macro resume_child_method(inv, target, stem, slot, mesh_document) %}
+
+    def _resume_child_{{ slot }}(self, engine, child, wall_now_ms: int) -> None:
+        """Resume the child of the `<invoke>` `{{ inv.invoke_id }}` a saved state
+        holds, from the document `{{ stem }}`, where it stood."""
+        _child_module = _sce_child_module({{ stem | py_string_literal }})
+{% if target.child_declares_host_duties %}
+        _child_policy = _child_module.Policy({{ target.child_host_call | default('', true) }}, accept_simulated_host=self._accept_simulated_host)
+{% else %}
+        _child_policy = _child_module.Policy({{ target.child_host_call | default('', true) }})
+{% endif %}
+        # W3C SCXML 6.4: the link a child's `#_parent` sends travel, and, as when
+        # it starts, the id it is known by: its parent's and the id of the start.
+        _child_policy._parent_queue = []
+        _child_engine = Engine(
+            _child_policy,
+            script_engine=engine._script_engine,
+            session_id=f"{self._session_id}.{child.invoke_id}",
+        )
+        _invoke = ScxmlInvoke(
+            _child_engine,
+            _child_policy._parent_queue,
+            saved_document={{ stem | py_string_literal }},
+            save_session=getattr(_child_module, "save_at", None),
+            resumed=True,
+        )
+        _child_module.restore_at(_child_engine, child.session, wall_now_ms)
+{% if inv.idlocation %}
+        # The id its events carry is the one the start was made under.
+        _invoke.event_invoke_id = child.invoke_id
+{% endif %}
+        engine._active_invokes[{{ inv.invoke_id | py_string_literal }}] = _invoke
+        # docs/adr/0045: the tree's host invokers, handed on before the child's
+        # re-armed invocations start at its first drive.
+        engine.share_host_invokers_with(_child_engine)
+        # Child sessions in Mesh (SCE_MESH.md; docs/adr/0043): the router of the
+        # resumed child is owed, not asked here. This machine is being restored,
+        # and its host registers the factory of its children's routers only once
+        # the restore has returned it.
+        engine.owe_child_mesh(_child_engine, {{ inv.invoke_id | py_string_literal }}, {{ mesh_document | py_string_literal }})
+{%- endmacro %}
+
+{% if static_saved_shape %}
+    # ── SCE Accepted Subset §2.15: what a saved state asks of this policy ──
+
+    def running_invokes(self) -> List[str]:
+        """The id of each `<invoke>` whose child session is running, in document
+        order: a child that has ended is not running, though the policy keeps it
+        until its state exits, and its `done.invoke` is in the external queue or
+        already taken, so a restore must not bring it back."""
+{% if model.invokes | scxml_family %}
+        _active = self._engine_ref._active_invokes
+        running: List[str] = []
+{% for inv in model.invokes | scxml_family %}
+        _invoke = _active.get({{ inv.invoke_id | py_string_literal }})
+        if _invoke is not None and not _invoke.is_done():
+            running.append({{ inv.invoke_id | py_string_literal }})
+{% endfor %}
+        return running
+{% else %}
+        return []
+{% endif %}
+
+    def invoke_starts(self) -> List[sce_saved_state.SavedInvokeStart]:
+        """How many times each `<invoke>` has started in this session, for each
+        started at least once, in document order."""
+{% if model.invokes | scxml_family %}
+        starts: List[sce_saved_state.SavedInvokeStart] = []
+{% for inv in model.invokes | scxml_family %}
+        if self._invoke_starts_{{ inv.field_suffix }} > 0:
+            starts.append(sce_saved_state.SavedInvokeStart({{ inv.invoke_id | py_string_literal }}, self._invoke_starts_{{ inv.field_suffix }}))
+{% endfor %}
+        return starts
+{% else %}
+        return []
+{% endif %}
+
+    def invoke_owner(self, invoke_id: str) -> Optional[{{ machine_name }}State]:
+        """The state that holds the `<invoke>` `invoke_id`, and `None` for an id the
+        document does not invoke."""
+{% for inv in model.invokes | scxml_family %}
+        if invoke_id == {{ inv.invoke_id | py_string_literal }}:
+            return {{ machine_name }}State.{{ inv.state_name | to_python_const }}
+{% endfor %}
+        return None
+
+    def host_invoke_owner(self, processor_type: str, invoke_id: str) -> Optional[{{ machine_name }}State]:
+        """The state that holds the host-run `<invoke>` of this type and id, and
+        `None` for one the document does not have a host invoker run (§scxml-6.4.1)."""
+{% for inv in model.invokes | host_invoker %}
+        if processor_type == {{ inv.invoke_type | py_string_literal }} and invoke_id == {{ inv.invoke_id | py_string_literal }}:
+            return {{ machine_name }}State.{{ inv.state_name | to_python_const }}
+{% endfor %}
+        return None
+
+{% if model.invokes | scxml_family %}
+
+    def _saved_children(self, engine, wall_now_ms: int) -> List[sce_saved_state.SavedChild]:
+        """Each running child, saved through the document it runs with its whole
+        state, in document order: what a saved state holds in place of the ids of
+        format 1, and what a restore resumes (docs/adr/0045, section 1)."""
+        children: List[sce_saved_state.SavedChild] = []
+{% for inv in model.invokes | scxml_family %}
+        _invoke = engine._active_invokes.get({{ inv.invoke_id | py_string_literal }})
+        if _invoke is not None and not _invoke.is_done():
+            sce_saved_engine.nothing_in_transit(_invoke.parent_queue, {{ inv.invoke_id | py_string_literal }})
+            try:
+                _saved = _invoke.save_as_session(wall_now_ms)
+            except sce_saved_state.StateRefusal as refused:
+                raise sce_saved_state.refusal_within(refused, f"invokes[{len(children)}].session") from None
+            children.append(sce_saved_state.SavedChild(
+                id={{ inv.invoke_id | py_string_literal }},
+                start=self._invoke_starts_{{ inv.field_suffix }},
+                invoke_id=_invoke.origin()[len(self._session_id) + 1:],
+                document=_invoke.saved_document,
+                session=_saved,
+            ))
+{% endfor %}
+        return children
+
+    def judge_child(self, child) -> None:
+        """Refuse a running child unless its session is a state of the document it
+        names, to any depth."""
+{% for inv in model.invokes | scxml_family %}
+{% if inv.candidates %}
+{% for candidate in inv.candidates %}
+        if child.id == {{ inv.invoke_id | py_string_literal }} and child.document == {{ candidate.stem | py_string_literal }}:
+            _sce_child_module({{ candidate.stem | py_string_literal }}).judge(child.session)
+            return
+{% endfor %}
+{% else %}
+        if child.id == {{ inv.invoke_id | py_string_literal }} and child.document == {{ inv.child_name | py_string_literal }}:
+            _sce_child_module({{ inv.child_name | py_string_literal }}).judge(child.session)
+            return
+{% endif %}
+{% endfor %}
+        raise sce_saved_state.StateRefusal(f"invokes names '{child.id}' running '{child.document}', a document that `<invoke>` does not start")
+
+    def resume_children(self, engine, children, wall_now_ms: int) -> None:
+        """Resume each of `children` in the order given, each built as starting it
+        builds it and restored where it stood."""
+        for child in children:
+{% for inv in model.invokes | scxml_family %}
+{% if inv.candidates %}
+{% for candidate in inv.candidates %}
+            if child.id == {{ inv.invoke_id | py_string_literal }} and child.document == {{ candidate.stem | py_string_literal }}:
+                self._resume_child_{{ inv.field_suffix | candidate_identifier(candidate.stem) }}(engine, child, wall_now_ms)
+                continue
+{% endfor %}
+{% else %}
+            if child.id == {{ inv.invoke_id | py_string_literal }} and child.document == {{ inv.child_name | py_string_literal }}:
+                self._resume_child_{{ inv.field_suffix }}(engine, child, wall_now_ms)
+                continue
+{% endif %}
+{% endfor %}
+            raise sce_saved_state.StateRefusal(f"invokes names '{child.id}' running '{child.document}', a document that `<invoke>` does not start")
+{% for inv in model.invokes | scxml_family %}
+{% if inv.candidates %}
+{% for candidate in inv.candidates %}
+{{ resume_child_method(inv, candidate, candidate.stem, (inv.field_suffix | candidate_identifier(candidate.stem)), candidate.stem) }}
+{% endfor %}
+{% else %}
+{{ resume_child_method(inv, inv, inv.child_name, inv.field_suffix, ('' if (inv.src is not defined or not inv.src or inv.src.startswith('#')) else inv.child_name)) }}
+{% endif %}
+{% endfor %}
+{% else %}
+
+    def judge_child(self, child) -> None:
+        """Refuse a running child, which this document does not start."""
+        raise sce_saved_state.StateRefusal(f"the document starts no child session, so '{child.id}' cannot be one it was running")
+
+    def resume_children(self, engine, children, wall_now_ms: int) -> None:
+        """Resume no child, which this document does not start."""
+        if children:
+            self.judge_child(children[0])
+{% endif %}
+
+    def restart_invokes(self, engine, ids) -> None:
+        """Start each of `ids` again from its beginning, as entering its state
+        starts it: the start is deferred to the macrostep the host drives next,
+        which runs it, so the restore itself takes no step. What a format-1 saved
+        state holds of a running child is its id alone (docs/adr/0045)."""
+{% if model.invokes | scxml_family %}
+        for _id in ids:
+{% for state_id, state in model.states | dictsort %}
+{% for inv in state.invokes | scxml_family %}
+            if _id == {{ inv.invoke_id | py_string_literal }}:
+{{ invoke_start.defer_scxml_invoke(inv, state_id, "                ") }}
+{% endfor %}
+{% endfor %}
+{% else %}
+        return
+{% endif %}
+{% endif %}

@@ -386,11 +386,6 @@ const ACCEPTED: &[(Language, &str, Why)] = &[
         Why::NotYet("the E17 extension built it for Rust and Kotlin"),
     ),
     (
-        Language::Python,
-        "save and restore",
-        Why::NotYet("the E17 extension built it for Rust and Kotlin"),
-    ),
-    (
         Language::C11,
         "save and restore",
         Why::NotYet("the E17 extension built it for Rust and Kotlin"),

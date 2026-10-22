@@ -1205,6 +1205,10 @@
         {
           "file": "backends/go/runtime/engine_saved.go",
           "kind": "references"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/saved_engine.py",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -5772,6 +5776,15 @@
         },
         {
           "file": "backends/go/runtime/engine_saved.go",
+          "kind": "references"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/saved_engine.py",
+          "kind": "references"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "_raise_host_invoke_failure",
           "kind": "references"
         }
       ],
@@ -12299,6 +12312,11 @@
         },
         {
           "file": "backends/go/runtime/host_invoke_tree.go",
+          "kind": "references"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "_start_host_invoke",
           "kind": "references"
         }
       ],
