@@ -216,9 +216,10 @@ func StaticInvokeStringSceSynthInvokeFitsSaveAt(engine *sce.Engine[StaticInvokeS
 	}
 	variables := sce.NewJSONObject()
 	variables.Set("title", sce.SavedWriteString(p.vTitle))
+	var children []sce.SavedChild
 	return sce.SaveSession(engine, &StaticInvokeStringSceSynthInvokeFitsSavedShape, variables,
 		sce.SaveHistory[StaticInvokeStringSceSynthInvokeFitsState, StaticInvokeStringSceSynthInvokeFitsEvent](p, StaticInvokeStringSceSynthInvokeFitsHistories),
-		nil, wallNowMs)
+		children, wallNowMs)
 }
 
 // StaticInvokeStringSceSynthInvokeFitsSave is StaticInvokeStringSceSynthInvokeFitsSaveAt at the host's wall clock now.

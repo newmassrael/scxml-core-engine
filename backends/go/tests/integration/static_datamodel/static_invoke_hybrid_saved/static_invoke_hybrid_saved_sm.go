@@ -184,6 +184,359 @@ const StaticInvokeHybridSavedSavedShapeFormat2Revised = "f58e4e0ef0bd5c4afde2c75
 // names it by, and the format-2 shape spells it by.
 var StaticInvokeHybridSavedSavedEnumKeys = [...]string{}
 
+// ── SCE Accepted Subset §2.15: saving this machine, restoring it ──────────
+
+// StaticInvokeHybridSavedSavedShape is what a saved state of this document is bound
+// to: a state saved from a document that renamed, re-typed or moved a state or a
+// variable is refused, one saved before a guard or an action changed is not, and
+// one saved at an earlier revision of a record schema is read with each field a
+// later revision added at its default.
+var StaticInvokeHybridSavedSavedShape = sce.SavedShape{
+	First:          "f86ee6b2a368019b8e1fdad9e63e1a2c94c4fe8037e7a0815c468753bfd23715",
+	Revised:        "f58e4e0ef0bd5c4afde2c75a7f3bd909a92ae6b85dc2f2e96a794adb38e370d9",
+	Format2First:   "f86ee6b2a368019b8e1fdad9e63e1a2c94c4fe8037e7a0815c468753bfd23715",
+	Format2Revised: "f58e4e0ef0bd5c4afde2c75a7f3bd909a92ae6b85dc2f2e96a794adb38e370d9",
+	Records: []sce.RecordLineage{
+	},
+	Enums: []sce.EnumLineage{
+	},
+}
+
+// StaticInvokeHybridSavedHistories is the document's `<history>` pseudo-states, by
+// the id a saved state keys them by: what a saved state records of each, and
+// what a restore reads.
+var StaticInvokeHybridSavedHistories = []sce.HistoryDecl{
+}
+
+// StaticInvokeHybridSavedSaveAt is engine's whole state at the macrostep boundary it
+// stands at: every variable, the machine's own included, and where it stands, as
+// the `sce-saved-state` document every backend reads (sce.SavedState.ToJSON).
+// Each delayed `<send>` still waiting is written as the moment it comes due on
+// the wall clock whose reading now is wallNowMs, in milliseconds since the Unix
+// epoch.
+//
+// Refused for a machine that is not running, one that has ended, one whose last
+// macrostep stopped at the microstep ceiling, and one built around another
+// document's policy.
+func StaticInvokeHybridSavedSaveAt(engine *sce.Engine[StaticInvokeHybridSavedState, StaticInvokeHybridSavedEvent], wallNowMs int64) (*sce.SavedState, error) {
+	p, ok := engine.Policy().(*StaticInvokeHybridSavedPolicy)
+	if !ok {
+		return nil, sce.Refuse("the engine is not one of StaticInvokeHybridSaved")
+	}
+	variables := sce.NewJSONObject()
+	variables.Set("pick", sce.SavedWriteString(p.vPick))
+	variables.Set("base", sce.SavedWriteUint32(p.vBase))
+	variables.Set("completed", sce.SavedWriteUint32(p.vCompleted))
+	// docs/adr/0045: each running child, with its whole state.
+	children, err := p.savedChildren(wallNowMs)
+	if err != nil {
+		return nil, err
+	}
+	return sce.SaveSession(engine, &StaticInvokeHybridSavedSavedShape, variables,
+		sce.SaveHistory[StaticInvokeHybridSavedState, StaticInvokeHybridSavedEvent](p, StaticInvokeHybridSavedHistories),
+		children, wallNowMs)
+}
+
+// StaticInvokeHybridSavedSave is StaticInvokeHybridSavedSaveAt at the host's wall clock now.
+func StaticInvokeHybridSavedSave(engine *sce.Engine[StaticInvokeHybridSavedState, StaticInvokeHybridSavedEvent]) (*sce.SavedState, error) {
+	return StaticInvokeHybridSavedSaveAt(engine, sce.SavedWallClockMs())
+}
+
+// StaticInvokeHybridSavedJudge refuses saved unless a machine of this document could
+// restore it, building nothing: what a parent's restore asks of each child it
+// holds (docs/adr/0045, section 3, step 1).
+func StaticInvokeHybridSavedJudge(saved *sce.SavedState) error {
+	p := &StaticInvokeHybridSavedPolicy{}
+	grown, err := sce.UpgradeSavedState(saved, &StaticInvokeHybridSavedSavedShape)
+	if err != nil {
+		return err
+	}
+	if _, err := sce.RestoreHistory[StaticInvokeHybridSavedState, StaticInvokeHybridSavedEvent](p, grown, StaticInvokeHybridSavedHistories); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("pick"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadBoundedString(raw, "pick", 48); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("base"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "base"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("completed"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "completed"); err != nil {
+		return err
+	}
+	return sce.JudgeSession[StaticInvokeHybridSavedState, StaticInvokeHybridSavedEvent](p, grown)
+}
+
+// StaticInvokeHybridSavedRestoreAt is a machine of policy standing where saved left
+// one, measuring time by clock: in place of `Initialize`, so no `<onentry>` runs
+// and no `<data>` is evaluated, since the saved run already did both. Every value
+// is read and the state judged before any is written, so a refused restore leaves
+// policy as it was.
+//
+// Each delayed `<send>` saved is armed against clock, which is the one the
+// machine measures time by; wallNowMs is what time it is on the wall clock the
+// saved `due`s were written against. A send comes due when its saved moment does,
+// and one already due comes due now.
+//
+// The host registers its invokers and its processors on the machine this
+// returns, and drives it as it would one it had initialized.
+func StaticInvokeHybridSavedRestoreAt(policy *StaticInvokeHybridSavedPolicy, saved *sce.SavedState, clock sce.SceClock, wallNowMs int64) (*sce.Engine[StaticInvokeHybridSavedState, StaticInvokeHybridSavedEvent], error) {
+	// The state as one of this machine: each record saved at an earlier revision
+	// of its schema holds the defaults of the fields added since.
+	grown, err := sce.UpgradeSavedState(saved, &StaticInvokeHybridSavedSavedShape)
+	if err != nil {
+		return nil, err
+	}
+	history, err := sce.RestoreHistory[StaticInvokeHybridSavedState, StaticInvokeHybridSavedEvent](policy, grown, StaticInvokeHybridSavedHistories)
+	if err != nil {
+		return nil, err
+	}
+	raw1, err := grown.Variable("pick")
+	if err != nil {
+		return nil, err
+	}
+	read1, err := sce.SavedReadBoundedString(raw1, "pick", 48)
+	if err != nil {
+		return nil, err
+	}
+	raw2, err := grown.Variable("base")
+	if err != nil {
+		return nil, err
+	}
+	read2, err := sce.SavedReadUint32(raw2, "base")
+	if err != nil {
+		return nil, err
+	}
+	raw3, err := grown.Variable("completed")
+	if err != nil {
+		return nil, err
+	}
+	read3, err := sce.SavedReadUint32(raw3, "completed")
+	if err != nil {
+		return nil, err
+	}
+	if err := sce.JudgeSession[StaticInvokeHybridSavedState, StaticInvokeHybridSavedEvent](policy, grown); err != nil {
+		return nil, err
+	}
+	policy.vPick = read1
+	policy.vBase = read2
+	policy.vCompleted = read3
+	for _, recorded := range history {
+		policy.SetHistoryValue(recorded.History, recorded.States)
+	}
+	// A start after the restore is numbered on from the saved count.
+	policy.invokeStartsWatch = uint64(grown.InvokeStart("watch"))
+	return sce.EnterSession[StaticInvokeHybridSavedState, StaticInvokeHybridSavedEvent](policy, grown, clock, wallNowMs)
+}
+
+// StaticInvokeHybridSavedRestore is StaticInvokeHybridSavedRestoreAt at the host's wall
+// clock now.
+func StaticInvokeHybridSavedRestore(policy *StaticInvokeHybridSavedPolicy, saved *sce.SavedState, clock sce.SceClock) (*sce.Engine[StaticInvokeHybridSavedState, StaticInvokeHybridSavedEvent], error) {
+	return StaticInvokeHybridSavedRestoreAt(policy, saved, clock, sce.SavedWallClockMs())
+}
+
+// SetSessionID gives this session the id its host has for it, in place of the
+// one it drew: an XML Nmtoken, since another session addresses this one as
+// `#_scxml_<id>` and every child's id is this one's and the id the child was
+// started under (docs/adr/0045). Refused for anything else. Called before the
+// machine starts, since what it sends names it by the id it began with.
+func (p *StaticInvokeHybridSavedPolicy) SetSessionID(id string) error {
+	if reason := sce.SessionIDRefusalOf(id); reason != "" {
+		return sce.Refuse(reason)
+	}
+	p.SessionID = id
+	return nil
+}
+
+// OwnSessionID is this session's id, `_sessionid`, which a saved state names it
+// by (sce.SavedPolicy).
+func (p *StaticInvokeHybridSavedPolicy) OwnSessionID() string { return p.SessionID }
+
+// BindSessionID makes id this session's own: a restore of a format-2 state
+// carries on under the id it was saved with (sce.SavedPolicy).
+func (p *StaticInvokeHybridSavedPolicy) BindSessionID(id string) { p.SessionID = id }
+
+// RunningInvokes is the id of each `<invoke>` whose child session is running,
+// in document order (sce.SavedPolicy): a child that has ended is not running,
+// though the policy keeps it until its state exits, and its `done.invoke` is in
+// the external queue or already taken, so a restore must not bring it back.
+func (p *StaticInvokeHybridSavedPolicy) RunningInvokes() []string {
+	var running []string
+	if p.childWatch != nil && !p.pendingDoneInvokeWatch && !p.childWatch.IsInFinalState() {
+		running = append(running, "watch")
+	}
+	return running
+}
+
+// InvokeStarts is how many times each `<invoke>` has started in this session,
+// for each started at least once, in document order (sce.SavedPolicy).
+func (p *StaticInvokeHybridSavedPolicy) InvokeStarts() []sce.SavedInvokeStart {
+	var starts []sce.SavedInvokeStart
+	if p.invokeStartsWatch > 0 {
+		starts = append(starts, sce.SavedInvokeStart{ID: "watch", Count: int64(p.invokeStartsWatch)})
+	}
+	return starts
+}
+
+// InvokeOwner is the state that holds the `<invoke>` id, and false for an id the
+// document does not invoke (sce.SavedPolicy).
+func (p *StaticInvokeHybridSavedPolicy) InvokeOwner(id string) (StaticInvokeHybridSavedState, bool) {
+	switch id {
+	case "watch":
+		return StaticInvokeHybridSavedStateWorking, true
+	}
+	return 0, false
+}
+
+// HostInvokeOwner is the state that holds the host-run `<invoke>` of this type
+// and id, and false for one the document does not have a host invoker run
+// (sce.SavedPolicy).
+func (p *StaticInvokeHybridSavedPolicy) HostInvokeOwner(processorType, id string) (StaticInvokeHybridSavedState, bool) {
+	return 0, false
+}
+
+
+// resumeChildWatch0jStaticHybridWatcher resumes the child of the `<invoke>` `watch` a saved
+// state holds, from the document `static_hybrid_watcher`, where it stood.
+func (p *StaticInvokeHybridSavedPolicy) resumeChildWatch0jStaticHybridWatcher(engine *sce.Engine[StaticInvokeHybridSavedState, StaticInvokeHybridSavedEvent], child sce.SavedChild, wallNowMs int64) error {
+	// W3C SCXML 6.5: the child's session id, which its events carry as their origin.
+	childSessionID := fmt.Sprintf("%s.%s", p.SessionID, child.InvokeID)
+	childPolicy := NewStaticHybridWatcherPolicy()
+	childPolicy.ParentExternalQueue = sce.NewParentEventQueue()
+	childPolicy.InvokeID = child.InvokeID
+	childPolicy.ChildSessionID = childSessionID
+	childPolicy.SessionID = childSessionID
+
+	p.activeInvokes["watch"] = &sce.ChildSession{
+		SessionID:       childSessionID,
+		InvokeID:        "watch",
+		ParentSessionID: p.SessionID,
+		Autoforward:     false,
+		FinalizeScript:  "",
+	}
+
+	childEngine, err := StaticHybridWatcherRestoreAt(&childPolicy, child.Session, engine.Clock(), wallNowMs)
+	if err != nil {
+		delete(p.activeInvokes, "watch")
+		return err
+	}
+	childEngine.SetCompletionCallback(func() {})
+	// Child sessions in Mesh (SCE_MESH.md; docs/adr/0043): the router of the
+	// resumed child is owed, not asked here. This machine is being restored, and
+	// its host registers the factory of its children's routers only once the
+	// restore has returned it.
+	engine.OweChildMesh(childEngine, "watch", "static_hybrid_watcher")
+	p.childWatch = &childEngineWrapperStaticInvokeHybridSaved_Watch0jStaticHybridWatcher{engine: childEngine, policy: &childPolicy}
+	return nil
+}
+
+
+// resumeChildWatch0jStaticHybridHolder resumes the child of the `<invoke>` `watch` a saved
+// state holds, from the document `static_hybrid_holder`, where it stood.
+func (p *StaticInvokeHybridSavedPolicy) resumeChildWatch0jStaticHybridHolder(engine *sce.Engine[StaticInvokeHybridSavedState, StaticInvokeHybridSavedEvent], child sce.SavedChild, wallNowMs int64) error {
+	// W3C SCXML 6.5: the child's session id, which its events carry as their origin.
+	childSessionID := fmt.Sprintf("%s.%s", p.SessionID, child.InvokeID)
+	childPolicy := NewStaticHybridHolderPolicy()
+	childPolicy.ParentExternalQueue = sce.NewParentEventQueue()
+	childPolicy.InvokeID = child.InvokeID
+	childPolicy.ChildSessionID = childSessionID
+	childPolicy.SessionID = childSessionID
+
+	p.activeInvokes["watch"] = &sce.ChildSession{
+		SessionID:       childSessionID,
+		InvokeID:        "watch",
+		ParentSessionID: p.SessionID,
+		Autoforward:     false,
+		FinalizeScript:  "",
+	}
+
+	childEngine, err := StaticHybridHolderRestoreAt(&childPolicy, child.Session, engine.Clock(), wallNowMs)
+	if err != nil {
+		delete(p.activeInvokes, "watch")
+		return err
+	}
+	childEngine.SetCompletionCallback(func() {})
+	// Child sessions in Mesh (SCE_MESH.md; docs/adr/0043): the router of the
+	// resumed child is owed, not asked here. This machine is being restored, and
+	// its host registers the factory of its children's routers only once the
+	// restore has returned it.
+	engine.OweChildMesh(childEngine, "watch", "static_hybrid_holder")
+	p.childWatch = &childEngineWrapperStaticInvokeHybridSaved_Watch0jStaticHybridHolder{engine: childEngine, policy: &childPolicy}
+	return nil
+}
+
+
+// savedChildren is each running child, saved through the document it runs with
+// its whole state, in document order: what a saved state holds in place of the
+// ids of format 1, and what a restore resumes (docs/adr/0045, section 1).
+func (p *StaticInvokeHybridSavedPolicy) savedChildren(wallNowMs int64) ([]sce.SavedChild, error) {
+	children := []sce.SavedChild{}
+	if running := p.childWatch; running != nil && !p.pendingDoneInvokeWatch && !running.IsInFinalState() {
+		saveable, saves := running.(sce.SavedChildEngine)
+		session, tracked := p.activeInvokes["watch"]
+		if !saves || !tracked {
+			return nil, sce.Refuse("the running child of 'watch' is not one a saved state holds")
+		}
+		if err := sce.NothingInTransit(running.GetParentEventQueue(), "watch"); err != nil {
+			return nil, err
+		}
+		saved, err := saveable.SaveAsSession(wallNowMs)
+		if err != nil {
+			return nil, sce.RefusalWithin(err, fmt.Sprintf("invokes[%d].session", len(children)))
+		}
+		children = append(children, sce.SavedChild{
+			ID:       "watch",
+			Start:    int64(p.invokeStartsWatch),
+			InvokeID: strings.TrimPrefix(session.SessionID, p.SessionID+"."),
+			Document: saveable.SavedDocument(),
+			Session:  saved,
+		})
+	}
+	return children, nil
+}
+
+// JudgeChild refuses a running child unless its session is a state of the
+// document it names, to any depth (sce.SavedPolicy).
+func (p *StaticInvokeHybridSavedPolicy) JudgeChild(child sce.SavedChild) error {
+	switch {
+	case child.ID == "watch" && child.Document == "static_hybrid_watcher":
+		return StaticHybridWatcherJudge(child.Session)
+	case child.ID == "watch" && child.Document == "static_hybrid_holder":
+		return StaticHybridHolderJudge(child.Session)
+	}
+	return sce.Refuse(fmt.Sprintf("invokes names '%s' running '%s', a document that `<invoke>` does not start", child.ID, child.Document))
+}
+
+// ResumeChildren resumes each of children in the order given, each built as
+// starting it builds it and restored where it stood (sce.SavedPolicy).
+func (p *StaticInvokeHybridSavedPolicy) ResumeChildren(engine *sce.Engine[StaticInvokeHybridSavedState, StaticInvokeHybridSavedEvent], children []sce.SavedChild, wallNowMs int64) error {
+	for _, child := range children {
+		var err error
+		switch {
+		case child.ID == "watch" && child.Document == "static_hybrid_watcher":
+			err = p.resumeChildWatch0jStaticHybridWatcher(engine, child, wallNowMs)
+		case child.ID == "watch" && child.Document == "static_hybrid_holder":
+			err = p.resumeChildWatch0jStaticHybridHolder(engine, child, wallNowMs)
+		default:
+			err = sce.Refuse(fmt.Sprintf("invokes names '%s' running '%s', a document that `<invoke>` does not start", child.ID, child.Document))
+		}
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// SetHistoryValue gives history the states a saved state recorded for it
+// (sce.SavedPolicy).
+func (p *StaticInvokeHybridSavedPolicy) SetHistoryValue(history sce.HistoryID, states []StaticInvokeHybridSavedState) {
+}
+
 // ======================================================================
 // Policy struct
 // ======================================================================
@@ -535,6 +888,8 @@ func (w *childEngineWrapperStaticInvokeHybridSaved_Watch0jStaticHybridWatcher) D
 func (w *childEngineWrapperStaticInvokeHybridSaved_Watch0jStaticHybridWatcher) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
 func (w *childEngineWrapperStaticInvokeHybridSaved_Watch0jStaticHybridWatcher) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
 func (w *childEngineWrapperStaticInvokeHybridSaved_Watch0jStaticHybridWatcher) DetachMesh() { w.engine.DetachMesh() }
+func (w *childEngineWrapperStaticInvokeHybridSaved_Watch0jStaticHybridWatcher) SaveAsSession(wallNowMs int64) (*sce.SavedState, error) { return StaticHybridWatcherSaveAt(w.engine, wallNowMs) }
+func (w *childEngineWrapperStaticInvokeHybridSaved_Watch0jStaticHybridWatcher) SavedDocument() string { return "static_hybrid_watcher" }
 type childEngineWrapperStaticInvokeHybridSaved_Watch0jStaticHybridHolder struct {
 	engine *sce.Engine[StaticHybridHolderState, StaticHybridHolderEvent]
 	policy *StaticHybridHolderPolicy
@@ -552,6 +907,8 @@ func (w *childEngineWrapperStaticInvokeHybridSaved_Watch0jStaticHybridHolder) Do
 func (w *childEngineWrapperStaticInvokeHybridSaved_Watch0jStaticHybridHolder) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
 func (w *childEngineWrapperStaticInvokeHybridSaved_Watch0jStaticHybridHolder) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
 func (w *childEngineWrapperStaticInvokeHybridSaved_Watch0jStaticHybridHolder) DetachMesh() { w.engine.DetachMesh() }
+func (w *childEngineWrapperStaticInvokeHybridSaved_Watch0jStaticHybridHolder) SaveAsSession(wallNowMs int64) (*sce.SavedState, error) { return StaticHybridHolderSaveAt(w.engine, wallNowMs) }
+func (w *childEngineWrapperStaticInvokeHybridSaved_Watch0jStaticHybridHolder) SavedDocument() string { return "static_hybrid_holder" }
 
 
 // DeliverToParent delivers a delayed `<send target="#_parent">` whose wait is
@@ -791,6 +1148,25 @@ func (p *StaticInvokeHybridSavedPolicy) ExecuteEntryActions(state StaticInvokeHy
 		}
 	default:
 		// No entry actions
+	}
+}
+
+// RestartInvokes starts each of ids again from its beginning, as entering its
+// state starts it: the start is deferred to the macrostep the host drives next,
+// which runs it, so the restore itself takes no step. What a format-1 saved state
+// holds of a running child is its id alone (sce.SavedPolicy, docs/adr/0045).
+func (p *StaticInvokeHybridSavedPolicy) RestartInvokes(engine *sce.Engine[StaticInvokeHybridSavedState, StaticInvokeHybridSavedEvent], ids []string) {
+	for _, id := range ids {
+		switch id {
+		case "watch":
+			p.invokeStartsWatch++
+			generatedInvokeID := fmt.Sprintf("%s.%d.watch", "working", p.invokeStartsWatch)
+			sce.DeferInvoke(&p.pendingInvokes, sce.PendingInvoke[StaticInvokeHybridSavedState]{
+				InvokeID:   generatedInvokeID,
+				State:      StaticInvokeHybridSavedStateWorking,
+				DocumentID: "watch",
+			})
+		}
 	}
 }
 

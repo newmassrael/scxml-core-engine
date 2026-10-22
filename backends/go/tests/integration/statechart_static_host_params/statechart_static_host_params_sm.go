@@ -268,9 +268,10 @@ func StatechartStaticHostParamsSaveAt(engine *sce.Engine[StatechartStaticHostPar
 	variables.Set("tag", sce.SavedWriteString(p.vTag))
 	variables.Set("huge", sce.SavedWriteUint32(p.vHuge))
 	variables.Set("errors", sce.SavedWriteUint32(p.vErrors))
+	var children []sce.SavedChild
 	return sce.SaveSession(engine, &StatechartStaticHostParamsSavedShape, variables,
 		sce.SaveHistory[StatechartStaticHostParamsState, StatechartStaticHostParamsEvent](p, StatechartStaticHostParamsHistories),
-		nil, wallNowMs)
+		children, wallNowMs)
 }
 
 // StatechartStaticHostParamsSave is StatechartStaticHostParamsSaveAt at the host's wall clock now.

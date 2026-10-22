@@ -378,9 +378,10 @@ func SyncClientSaveAt(engine *sce.Engine[SyncClientState, SyncClientEvent], wall
 	variables.Set("discarded", sce.SavedWriteUint32(p.vDiscarded))
 	variables.Set("pages", sce.SavedWriteUint32(p.vPages))
 	variables.Set("refusals", sce.SavedWriteUint32(p.vRefusals))
+	var children []sce.SavedChild
 	return sce.SaveSession(engine, &SyncClientSavedShape, variables,
 		sce.SaveHistory[SyncClientState, SyncClientEvent](p, SyncClientHistories),
-		nil, wallNowMs)
+		children, wallNowMs)
 }
 
 // SyncClientSave is SyncClientSaveAt at the host's wall clock now.

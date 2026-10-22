@@ -236,9 +236,10 @@ func StaticReal32SaveAt(engine *sce.Engine[StaticReal32State, StaticReal32Event]
 	variables.Set("wide", sce.SavedWriteFloat64(p.vWide))
 	variables.Set("samples", sce.SavedWriteList(p.vSamples, sce.SavedWriteFloat32))
 	variables.Set("total", sce.SavedWriteFloat32(p.vTotal))
+	var children []sce.SavedChild
 	return sce.SaveSession(engine, &StaticReal32SavedShape, variables,
 		sce.SaveHistory[StaticReal32State, StaticReal32Event](p, StaticReal32Histories),
-		nil, wallNowMs)
+		children, wallNowMs)
 }
 
 // StaticReal32Save is StaticReal32SaveAt at the host's wall clock now.

@@ -292,9 +292,10 @@ func StaticWireWideSaveAt(engine *sce.Engine[StaticWireWideState, StaticWireWide
 	variables.Set("negative", sce.SavedWriteBool(p.vNegative))
 	variables.Set("relays", sce.SavedWriteUint32(p.vRelays))
 	variables.Set("refusals", sce.SavedWriteUint32(p.vRefusals))
+	var children []sce.SavedChild
 	return sce.SaveSession(engine, &StaticWireWideSavedShape, variables,
 		sce.SaveHistory[StaticWireWideState, StaticWireWideEvent](p, StaticWireWideHistories),
-		nil, wallNowMs)
+		children, wallNowMs)
 }
 
 // StaticWireWideSave is StaticWireWideSaveAt at the host's wall clock now.

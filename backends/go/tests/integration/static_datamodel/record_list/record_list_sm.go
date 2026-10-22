@@ -1874,9 +1874,10 @@ func RecordListSaveAt(engine *sce.Engine[RecordListState, RecordListEvent], wall
 	variables.Set("op", p.vOp.ToSaved())
 	variables.Set("already", sce.SavedWriteBool(p.vAlready))
 	variables.Set("count", sce.SavedWriteUint32(p.vCount))
+	var children []sce.SavedChild
 	return sce.SaveSession(engine, &RecordListSavedShape, variables,
 		sce.SaveHistory[RecordListState, RecordListEvent](p, RecordListHistories),
-		nil, wallNowMs)
+		children, wallNowMs)
 }
 
 // RecordListSave is RecordListSaveAt at the host's wall clock now.

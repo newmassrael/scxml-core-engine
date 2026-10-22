@@ -233,9 +233,10 @@ func StaticSendIdlocationSaveAt(engine *sce.Engine[StaticSendIdlocationState, St
 	variables.Set("first_fired", sce.SavedWriteUint32(p.vFirstFired))
 	variables.Set("second_fired", sce.SavedWriteUint32(p.vSecondFired))
 	variables.Set("refusals", sce.SavedWriteUint32(p.vRefusals))
+	var children []sce.SavedChild
 	return sce.SaveSession(engine, &StaticSendIdlocationSavedShape, variables,
 		sce.SaveHistory[StaticSendIdlocationState, StaticSendIdlocationEvent](p, StaticSendIdlocationHistories),
-		nil, wallNowMs)
+		children, wallNowMs)
 }
 
 // StaticSendIdlocationSave is StaticSendIdlocationSaveAt at the host's wall clock now.

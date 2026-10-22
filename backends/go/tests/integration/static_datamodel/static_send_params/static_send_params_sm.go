@@ -302,9 +302,10 @@ func StaticSendParamsSaveAt(engine *sce.Engine[StaticSendParamsState, StaticSend
 	variables.Set("partialTotal", sce.SavedWriteUint32(p.vPartialTotal))
 	variables.Set("partialPart", sce.SavedWriteUint8(p.vPartialPart))
 	variables.Set("refusals", sce.SavedWriteUint32(p.vRefusals))
+	var children []sce.SavedChild
 	return sce.SaveSession(engine, &StaticSendParamsSavedShape, variables,
 		sce.SaveHistory[StaticSendParamsState, StaticSendParamsEvent](p, StaticSendParamsHistories),
-		nil, wallNowMs)
+		children, wallNowMs)
 }
 
 // StaticSendParamsSave is StaticSendParamsSaveAt at the host's wall clock now.

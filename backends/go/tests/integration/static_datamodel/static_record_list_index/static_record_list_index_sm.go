@@ -362,9 +362,10 @@ func StaticRecordListIndexSaveAt(engine *sce.Engine[StaticRecordListIndexState, 
 	variables.Set("sum", sce.SavedWriteUint32(p.vSum))
 	variables.Set("ordered", sce.SavedWriteBool(p.vOrdered))
 	variables.Set("refusals", sce.SavedWriteUint32(p.vRefusals))
+	var children []sce.SavedChild
 	return sce.SaveSession(engine, &StaticRecordListIndexSavedShape, variables,
 		sce.SaveHistory[StaticRecordListIndexState, StaticRecordListIndexEvent](p, StaticRecordListIndexHistories),
-		nil, wallNowMs)
+		children, wallNowMs)
 }
 
 // StaticRecordListIndexSave is StaticRecordListIndexSaveAt at the host's wall clock now.

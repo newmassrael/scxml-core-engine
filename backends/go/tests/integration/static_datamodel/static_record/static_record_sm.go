@@ -336,9 +336,10 @@ func StaticRecordSaveAt(engine *sce.Engine[StaticRecordState, StaticRecordEvent]
 	variables := sce.NewJSONObject()
 	variables.Set("shown", p.vShown.ToSaved())
 	variables.Set("refusals", sce.SavedWriteUint32(p.vRefusals))
+	var children []sce.SavedChild
 	return sce.SaveSession(engine, &StaticRecordSavedShape, variables,
 		sce.SaveHistory[StaticRecordState, StaticRecordEvent](p, StaticRecordHistories),
-		nil, wallNowMs)
+		children, wallNowMs)
 }
 
 // StaticRecordSave is StaticRecordSaveAt at the host's wall clock now.

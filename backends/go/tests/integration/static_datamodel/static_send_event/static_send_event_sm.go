@@ -235,9 +235,10 @@ func StaticSendEventSaveAt(engine *sce.Engine[StaticSendEventState, StaticSendEv
 	variables.Set("pings", sce.SavedWriteUint32(p.vPings))
 	variables.Set("pongs", sce.SavedWriteUint32(p.vPongs))
 	variables.Set("refusals", sce.SavedWriteUint32(p.vRefusals))
+	var children []sce.SavedChild
 	return sce.SaveSession(engine, &StaticSendEventSavedShape, variables,
 		sce.SaveHistory[StaticSendEventState, StaticSendEventEvent](p, StaticSendEventHistories),
-		nil, wallNowMs)
+		children, wallNowMs)
 }
 
 // StaticSendEventSave is StaticSendEventSaveAt at the host's wall clock now.

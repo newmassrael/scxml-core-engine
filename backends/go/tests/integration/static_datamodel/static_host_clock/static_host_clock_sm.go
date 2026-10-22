@@ -296,9 +296,10 @@ func StaticHostClockSaveAt(engine *sce.Engine[StaticHostClockState, StaticHostCl
 	variables.Set("monotonic_ms", sce.SavedWriteInt64(p.vMonotonicMs))
 	variables.Set("zone_id", sce.SavedWriteString(p.vZoneId))
 	variables.Set("utc_offset_s", sce.SavedWriteInt32(p.vUtcOffsetS))
+	var children []sce.SavedChild
 	return sce.SaveSession(engine, &StaticHostClockSavedShape, variables,
 		sce.SaveHistory[StaticHostClockState, StaticHostClockEvent](p, StaticHostClockHistories),
-		nil, wallNowMs)
+		children, wallNowMs)
 }
 
 // StaticHostClockSave is StaticHostClockSaveAt at the host's wall clock now.

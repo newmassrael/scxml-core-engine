@@ -364,9 +364,10 @@ func StaticEnumNumberSaveAt(engine *sce.Engine[StaticEnumNumberState, StaticEnum
 	variables.Set("status", p.vStatus.ToSaved())
 	variables.Set("checks", sce.SavedWriteUint32(p.vChecks))
 	variables.Set("refusals", sce.SavedWriteUint32(p.vRefusals))
+	var children []sce.SavedChild
 	return sce.SaveSession(engine, &StaticEnumNumberSavedShape, variables,
 		sce.SaveHistory[StaticEnumNumberState, StaticEnumNumberEvent](p, StaticEnumNumberHistories),
-		nil, wallNowMs)
+		children, wallNowMs)
 }
 
 // StaticEnumNumberSave is StaticEnumNumberSaveAt at the host's wall clock now.

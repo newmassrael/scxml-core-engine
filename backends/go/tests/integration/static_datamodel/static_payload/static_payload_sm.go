@@ -259,9 +259,10 @@ func StaticPayloadSaveAt(engine *sce.Engine[StaticPayloadState, StaticPayloadEve
 	variables.Set("late", sce.SavedWriteBool(p.vLate))
 	variables.Set("sinceEpoch", sce.SavedWriteUint16(p.vSinceEpoch))
 	variables.Set("refusals", sce.SavedWriteUint32(p.vRefusals))
+	var children []sce.SavedChild
 	return sce.SaveSession(engine, &StaticPayloadSavedShape, variables,
 		sce.SaveHistory[StaticPayloadState, StaticPayloadEvent](p, StaticPayloadHistories),
-		nil, wallNowMs)
+		children, wallNowMs)
 }
 
 // StaticPayloadSave is StaticPayloadSaveAt at the host's wall clock now.

@@ -478,9 +478,10 @@ func StaticHostKvSaveAt(engine *sce.Engine[StaticHostKvState, StaticHostKvEvent]
 	variables.Set("existed", sce.SavedWriteBool(p.vExisted))
 	variables.Set("next_found", sce.SavedWriteBool(p.vNextFound))
 	variables.Set("next", sce.SavedWriteString(p.vNext))
+	var children []sce.SavedChild
 	return sce.SaveSession(engine, &StaticHostKvSavedShape, variables,
 		sce.SaveHistory[StaticHostKvState, StaticHostKvEvent](p, StaticHostKvHistories),
-		nil, wallNowMs)
+		children, wallNowMs)
 }
 
 // StaticHostKvSave is StaticHostKvSaveAt at the host's wall clock now.

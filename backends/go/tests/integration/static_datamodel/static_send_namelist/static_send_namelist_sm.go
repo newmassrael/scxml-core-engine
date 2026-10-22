@@ -346,9 +346,10 @@ func StaticSendNamelistSaveAt(engine *sce.Engine[StaticSendNamelistState, Static
 	variables.Set("received", p.vReceived.ToSaved())
 	variables.Set("level", sce.SavedWriteUint8(p.vLevel))
 	variables.Set("deliveries", sce.SavedWriteUint32(p.vDeliveries))
+	var children []sce.SavedChild
 	return sce.SaveSession(engine, &StaticSendNamelistSavedShape, variables,
 		sce.SaveHistory[StaticSendNamelistState, StaticSendNamelistEvent](p, StaticSendNamelistHistories),
-		nil, wallNowMs)
+		children, wallNowMs)
 }
 
 // StaticSendNamelistSave is StaticSendNamelistSaveAt at the host's wall clock now.

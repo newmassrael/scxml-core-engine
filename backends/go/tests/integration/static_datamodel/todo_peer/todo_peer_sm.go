@@ -2250,9 +2250,10 @@ func TodoPeerSaveAt(engine *sce.Engine[TodoPeerState, TodoPeerEvent], wallNowMs 
 	variables.Set("denied", sce.SavedWriteUint32(p.vDenied))
 	variables.Set("forbidden", sce.SavedWriteBool(p.vForbidden))
 	variables.Set("authorized", sce.SavedWriteBool(p.vAuthorized))
+	var children []sce.SavedChild
 	return sce.SaveSession(engine, &TodoPeerSavedShape, variables,
 		sce.SaveHistory[TodoPeerState, TodoPeerEvent](p, TodoPeerHistories),
-		nil, wallNowMs)
+		children, wallNowMs)
 }
 
 // TodoPeerSave is TodoPeerSaveAt at the host's wall clock now.

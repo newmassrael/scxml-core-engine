@@ -520,9 +520,10 @@ func StaticPayloadEnumUnimportedSaveAt(engine *sce.Engine[StaticPayloadEnumUnimp
 	variables.Set("kept", sce.SavedWriteList(p.vKept, func(r StaticPayloadEnumUnimportedRefusedRecord) any { return r.ToSaved() }))
 	variables.Set("row", sce.SavedWriteUint32(p.vRow))
 	variables.Set("refusals", sce.SavedWriteUint32(p.vRefusals))
+	var children []sce.SavedChild
 	return sce.SaveSession(engine, &StaticPayloadEnumUnimportedSavedShape, variables,
 		sce.SaveHistory[StaticPayloadEnumUnimportedState, StaticPayloadEnumUnimportedEvent](p, StaticPayloadEnumUnimportedHistories),
-		nil, wallNowMs)
+		children, wallNowMs)
 }
 
 // StaticPayloadEnumUnimportedSave is StaticPayloadEnumUnimportedSaveAt at the host's wall clock now.

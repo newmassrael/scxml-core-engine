@@ -256,9 +256,10 @@ func StaticDonedataContentSaveAt(engine *sce.Engine[StaticDonedataContentState, 
 	variables := sce.NewJSONObject()
 	variables.Set("count", sce.SavedWriteUint32(p.vCount))
 	variables.Set("label", sce.SavedWriteString(p.vLabel))
+	var children []sce.SavedChild
 	return sce.SaveSession(engine, &StaticDonedataContentSavedShape, variables,
 		sce.SaveHistory[StaticDonedataContentState, StaticDonedataContentEvent](p, StaticDonedataContentHistories),
-		nil, wallNowMs)
+		children, wallNowMs)
 }
 
 // StaticDonedataContentSave is StaticDonedataContentSaveAt at the host's wall clock now.

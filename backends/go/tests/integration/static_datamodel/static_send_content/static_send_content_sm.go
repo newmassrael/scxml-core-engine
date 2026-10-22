@@ -432,9 +432,10 @@ func StaticSendContentSaveAt(engine *sce.Engine[StaticSendContentState, StaticSe
 	variables.Set("received", p.vReceived.ToSaved())
 	variables.Set("level", sce.SavedWriteUint8(p.vLevel))
 	variables.Set("relays", sce.SavedWriteUint32(p.vRelays))
+	var children []sce.SavedChild
 	return sce.SaveSession(engine, &StaticSendContentSavedShape, variables,
 		sce.SaveHistory[StaticSendContentState, StaticSendContentEvent](p, StaticSendContentHistories),
-		nil, wallNowMs)
+		children, wallNowMs)
 }
 
 // StaticSendContentSave is StaticSendContentSaveAt at the host's wall clock now.

@@ -62,6 +62,7 @@ import (
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_host_duty"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_invoke"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_invoke_params"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_invoke_tree"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_invoke_string"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_list"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_list_assign"
@@ -501,6 +502,11 @@ type machine struct {
 	// child of that path is running. Nil for a machine whose driver gives its
 	// children no routers.
 	deliver func(path, name, data string) bool
+	// restore saves the machine, discards it and restores it from the text, so a
+	// step that says `restore` states what the restored machine does next
+	// (docs/adr/0045, section 8). Nil for a machine whose driver does not restore,
+	// which fails such a step.
+	restore func()
 }
 
 // childRouters is the routers a driver gives the child sessions of the machine
@@ -769,6 +775,7 @@ func replay(t *testing.T, name string, m machine) {
 		Router *bool `json:"router"`
 		Steps  []struct {
 			Note      string          `json:"note"`
+			Restore   bool            `json:"restore"`
 			Event     *string         `json:"event"`
 			Invoke    *string         `json:"invoke"`
 			AdvanceMs *int64          `json:"advance_ms"`
@@ -800,6 +807,14 @@ func replay(t *testing.T, name string, m machine) {
 	}
 	for n, step := range scenario.Steps {
 		where := func() string { return fmt.Sprintf("%s step %d: %s", name, n, step.Note) }
+		// The machine is saved and restored before the step's event or time, so
+		// what the step then expects is what the restored one does.
+		if step.Restore {
+			if m.restore == nil {
+				t.Fatalf("%s: this driver does not restore, so it cannot run a step that does", where())
+			}
+			m.restore()
+		}
 		if step.AdvanceMs != nil {
 			m.advance(*step.AdvanceMs)
 		}
@@ -1944,6 +1959,90 @@ func TestAnInvokedChildIsDrivenAndCounted(t *testing.T) {
 	replay(t, "static_invoke", drive[static_invoke.StaticInvokeState, static_invoke.StaticInvokeEvent](&policy, map[string]func() any{
 		"completed": func() any { return policy.Completed() },
 	}))
+}
+
+// staticInvokeTree drives the tree machine, restoring it between the steps that
+// say so: it saves the machine, discards it and restores it from the text, the
+// restored tree carrying on where the saved one stood (docs/adr/0045, section 8).
+// The clock its child asks its host for is served by no host here, which the
+// child does not read.
+func staticInvokeTree(t *testing.T) machine {
+	t.Helper()
+	type tree = static_invoke_tree.StaticInvokeTreePolicy
+	start := func() (*tree, *sce.Engine[static_invoke_tree.StaticInvokeTreeState, static_invoke_tree.StaticInvokeTreeEvent]) {
+		policy := static_invoke_tree.NewStaticInvokeTreePolicy()
+		if err := policy.SetSessionID("fixture-root"); err != nil {
+			t.Fatal(err)
+		}
+		engine := sce.NewEngine[static_invoke_tree.StaticInvokeTreeState, static_invoke_tree.StaticInvokeTreeEvent](&policy)
+		engine.SetClock(sce.NewManualClock(0))
+		engine.Initialize()
+		return &policy, engine
+	}
+	policy, engine := start()
+	settle := func() {
+		for i := 0; i < settleTicks; i++ {
+			engine.Tick()
+		}
+	}
+	settle()
+	return machine{
+		send: func(name, data string) {
+			engine.RaiseExternalByName(name, data)
+			settle()
+		},
+		resolves: func(name string) bool {
+			_, ok := engine.ResolveEventByName(name)
+			return ok
+		},
+		advance: engine.AdvanceTimeMs,
+		state: func() string {
+			var atomic []string
+			for _, state := range engine.GetActiveStates() {
+				if !policy.IsCompoundState(state) {
+					atomic = append(atomic, state.String())
+				}
+			}
+			if len(atomic) != 1 {
+				return fmt.Sprintf("<%d active atomic states>", len(atomic))
+			}
+			return atomic[0]
+		},
+		configuration: func() []string {
+			var ids []string
+			for _, state := range engine.GetActiveStates() {
+				ids = append(ids, state.String())
+			}
+			return ids
+		},
+		ended:    func() bool { return engine.IsInFinalState() },
+		donedata: func() string { return engine.DonedataAtFinal() },
+		variables: map[string]func() any{
+			"answers": func() any { return policy.Answers() },
+			"reports": func() any { return policy.Reports() },
+		},
+		restore: func() {
+			saved, err := static_invoke_tree.StaticInvokeTreeSaveAt(engine, savedAtMs)
+			if err != nil {
+				t.Fatalf("the tree saves: %v", err)
+			}
+			// Through its text, as a state that crossed a process boundary would.
+			again, err := sce.SavedStateFromJSON(saved.ToJSON())
+			if err != nil {
+				t.Fatalf("the saved text reads: %v", err)
+			}
+			next := static_invoke_tree.NewStaticInvokeTreePolicy()
+			restored, err := static_invoke_tree.StaticInvokeTreeRestoreAt(&next, again, sce.NewManualClock(0), savedAtMs)
+			if err != nil {
+				t.Fatalf("the tree restores: %v", err)
+			}
+			policy, engine = &next, restored
+		},
+	}
+}
+
+func TestAnInvokeTreeRestoresBetweenItsSteps(t *testing.T) {
+	replay(t, "static_invoke_tree", staticInvokeTree(t))
 }
 
 // An <invoke> hands its child the values its <param>s and `namelist` name, as

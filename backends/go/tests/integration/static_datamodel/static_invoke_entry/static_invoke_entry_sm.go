@@ -190,6 +190,420 @@ const StaticInvokeEntrySavedShapeFormat2Revised = "21469587a0d6f15201e1f1cedd155
 // names it by, and the format-2 shape spells it by.
 var StaticInvokeEntrySavedEnumKeys = [...]string{}
 
+// ── SCE Accepted Subset §2.15: saving this machine, restoring it ──────────
+
+// StaticInvokeEntrySavedShape is what a saved state of this document is bound
+// to: a state saved from a document that renamed, re-typed or moved a state or a
+// variable is refused, one saved before a guard or an action changed is not, and
+// one saved at an earlier revision of a record schema is read with each field a
+// later revision added at its default.
+var StaticInvokeEntrySavedShape = sce.SavedShape{
+	First:          "f7f070b9834211c785c4ed0e26fe35b0421d9ebe8d636befd0b3628dd0b46728",
+	Revised:        "21469587a0d6f15201e1f1cedd15548a232a4bb56399aa8743192c6092844106",
+	Format2First:   "f7f070b9834211c785c4ed0e26fe35b0421d9ebe8d636befd0b3628dd0b46728",
+	Format2Revised: "21469587a0d6f15201e1f1cedd15548a232a4bb56399aa8743192c6092844106",
+	Records: []sce.RecordLineage{
+	},
+	Enums: []sce.EnumLineage{
+	},
+}
+
+// StaticInvokeEntryHistories is the document's `<history>` pseudo-states, by
+// the id a saved state keys them by: what a saved state records of each, and
+// what a restore reads.
+var StaticInvokeEntryHistories = []sce.HistoryDecl{
+}
+
+// StaticInvokeEntrySaveAt is engine's whole state at the macrostep boundary it
+// stands at: every variable, the machine's own included, and where it stands, as
+// the `sce-saved-state` document every backend reads (sce.SavedState.ToJSON).
+// Each delayed `<send>` still waiting is written as the moment it comes due on
+// the wall clock whose reading now is wallNowMs, in milliseconds since the Unix
+// epoch.
+//
+// Refused for a machine that is not running, one that has ended, one whose last
+// macrostep stopped at the microstep ceiling, and one built around another
+// document's policy.
+func StaticInvokeEntrySaveAt(engine *sce.Engine[StaticInvokeEntryState, StaticInvokeEntryEvent], wallNowMs int64) (*sce.SavedState, error) {
+	p, ok := engine.Policy().(*StaticInvokeEntryPolicy)
+	if !ok {
+		return nil, sce.Refuse("the engine is not one of StaticInvokeEntry")
+	}
+	variables := sce.NewJSONObject()
+	variables.Set("base", sce.SavedWriteUint32(p.vBase))
+	variables.Set("big", sce.SavedWriteUint32(p.vBig))
+	variables.Set("completed", sce.SavedWriteUint32(p.vCompleted))
+	variables.Set("errors", sce.SavedWriteUint32(p.vErrors))
+	variables.Set("greetings", sce.SavedWriteUint32(p.vGreetings))
+	// docs/adr/0045: each running child, with its whole state.
+	children, err := p.savedChildren(wallNowMs)
+	if err != nil {
+		return nil, err
+	}
+	return sce.SaveSession(engine, &StaticInvokeEntrySavedShape, variables,
+		sce.SaveHistory[StaticInvokeEntryState, StaticInvokeEntryEvent](p, StaticInvokeEntryHistories),
+		children, wallNowMs)
+}
+
+// StaticInvokeEntrySave is StaticInvokeEntrySaveAt at the host's wall clock now.
+func StaticInvokeEntrySave(engine *sce.Engine[StaticInvokeEntryState, StaticInvokeEntryEvent]) (*sce.SavedState, error) {
+	return StaticInvokeEntrySaveAt(engine, sce.SavedWallClockMs())
+}
+
+// StaticInvokeEntryJudge refuses saved unless a machine of this document could
+// restore it, building nothing: what a parent's restore asks of each child it
+// holds (docs/adr/0045, section 3, step 1).
+func StaticInvokeEntryJudge(saved *sce.SavedState) error {
+	p := &StaticInvokeEntryPolicy{}
+	grown, err := sce.UpgradeSavedState(saved, &StaticInvokeEntrySavedShape)
+	if err != nil {
+		return err
+	}
+	if _, err := sce.RestoreHistory[StaticInvokeEntryState, StaticInvokeEntryEvent](p, grown, StaticInvokeEntryHistories); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("base"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "base"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("big"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "big"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("completed"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "completed"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("errors"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "errors"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("greetings"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "greetings"); err != nil {
+		return err
+	}
+	return sce.JudgeSession[StaticInvokeEntryState, StaticInvokeEntryEvent](p, grown)
+}
+
+// StaticInvokeEntryRestoreAt is a machine of policy standing where saved left
+// one, measuring time by clock: in place of `Initialize`, so no `<onentry>` runs
+// and no `<data>` is evaluated, since the saved run already did both. Every value
+// is read and the state judged before any is written, so a refused restore leaves
+// policy as it was.
+//
+// Each delayed `<send>` saved is armed against clock, which is the one the
+// machine measures time by; wallNowMs is what time it is on the wall clock the
+// saved `due`s were written against. A send comes due when its saved moment does,
+// and one already due comes due now.
+//
+// The host registers its invokers and its processors on the machine this
+// returns, and drives it as it would one it had initialized.
+func StaticInvokeEntryRestoreAt(policy *StaticInvokeEntryPolicy, saved *sce.SavedState, clock sce.SceClock, wallNowMs int64) (*sce.Engine[StaticInvokeEntryState, StaticInvokeEntryEvent], error) {
+	// The state as one of this machine: each record saved at an earlier revision
+	// of its schema holds the defaults of the fields added since.
+	grown, err := sce.UpgradeSavedState(saved, &StaticInvokeEntrySavedShape)
+	if err != nil {
+		return nil, err
+	}
+	history, err := sce.RestoreHistory[StaticInvokeEntryState, StaticInvokeEntryEvent](policy, grown, StaticInvokeEntryHistories)
+	if err != nil {
+		return nil, err
+	}
+	raw1, err := grown.Variable("base")
+	if err != nil {
+		return nil, err
+	}
+	read1, err := sce.SavedReadUint32(raw1, "base")
+	if err != nil {
+		return nil, err
+	}
+	raw2, err := grown.Variable("big")
+	if err != nil {
+		return nil, err
+	}
+	read2, err := sce.SavedReadUint32(raw2, "big")
+	if err != nil {
+		return nil, err
+	}
+	raw3, err := grown.Variable("completed")
+	if err != nil {
+		return nil, err
+	}
+	read3, err := sce.SavedReadUint32(raw3, "completed")
+	if err != nil {
+		return nil, err
+	}
+	raw4, err := grown.Variable("errors")
+	if err != nil {
+		return nil, err
+	}
+	read4, err := sce.SavedReadUint32(raw4, "errors")
+	if err != nil {
+		return nil, err
+	}
+	raw5, err := grown.Variable("greetings")
+	if err != nil {
+		return nil, err
+	}
+	read5, err := sce.SavedReadUint32(raw5, "greetings")
+	if err != nil {
+		return nil, err
+	}
+	if err := sce.JudgeSession[StaticInvokeEntryState, StaticInvokeEntryEvent](policy, grown); err != nil {
+		return nil, err
+	}
+	policy.vBase = read1
+	policy.vBig = read2
+	policy.vCompleted = read3
+	policy.vErrors = read4
+	policy.vGreetings = read5
+	for _, recorded := range history {
+		policy.SetHistoryValue(recorded.History, recorded.States)
+	}
+	// A start after the restore is numbered on from the saved count.
+	policy.invokeStartsFirst = uint64(grown.InvokeStart("first"))
+	// A start after the restore is numbered on from the saved count.
+	policy.invokeStartsSecond = uint64(grown.InvokeStart("second"))
+	return sce.EnterSession[StaticInvokeEntryState, StaticInvokeEntryEvent](policy, grown, clock, wallNowMs)
+}
+
+// StaticInvokeEntryRestore is StaticInvokeEntryRestoreAt at the host's wall
+// clock now.
+func StaticInvokeEntryRestore(policy *StaticInvokeEntryPolicy, saved *sce.SavedState, clock sce.SceClock) (*sce.Engine[StaticInvokeEntryState, StaticInvokeEntryEvent], error) {
+	return StaticInvokeEntryRestoreAt(policy, saved, clock, sce.SavedWallClockMs())
+}
+
+// SetSessionID gives this session the id its host has for it, in place of the
+// one it drew: an XML Nmtoken, since another session addresses this one as
+// `#_scxml_<id>` and every child's id is this one's and the id the child was
+// started under (docs/adr/0045). Refused for anything else. Called before the
+// machine starts, since what it sends names it by the id it began with.
+func (p *StaticInvokeEntryPolicy) SetSessionID(id string) error {
+	if reason := sce.SessionIDRefusalOf(id); reason != "" {
+		return sce.Refuse(reason)
+	}
+	p.SessionID = id
+	return nil
+}
+
+// OwnSessionID is this session's id, `_sessionid`, which a saved state names it
+// by (sce.SavedPolicy).
+func (p *StaticInvokeEntryPolicy) OwnSessionID() string { return p.SessionID }
+
+// BindSessionID makes id this session's own: a restore of a format-2 state
+// carries on under the id it was saved with (sce.SavedPolicy).
+func (p *StaticInvokeEntryPolicy) BindSessionID(id string) { p.SessionID = id }
+
+// RunningInvokes is the id of each `<invoke>` whose child session is running,
+// in document order (sce.SavedPolicy): a child that has ended is not running,
+// though the policy keeps it until its state exits, and its `done.invoke` is in
+// the external queue or already taken, so a restore must not bring it back.
+func (p *StaticInvokeEntryPolicy) RunningInvokes() []string {
+	var running []string
+	if p.childFirst != nil && !p.pendingDoneInvokeFirst && !p.childFirst.IsInFinalState() {
+		running = append(running, "first")
+	}
+	if p.childSecond != nil && !p.pendingDoneInvokeSecond && !p.childSecond.IsInFinalState() {
+		running = append(running, "second")
+	}
+	return running
+}
+
+// InvokeStarts is how many times each `<invoke>` has started in this session,
+// for each started at least once, in document order (sce.SavedPolicy).
+func (p *StaticInvokeEntryPolicy) InvokeStarts() []sce.SavedInvokeStart {
+	var starts []sce.SavedInvokeStart
+	if p.invokeStartsFirst > 0 {
+		starts = append(starts, sce.SavedInvokeStart{ID: "first", Count: int64(p.invokeStartsFirst)})
+	}
+	if p.invokeStartsSecond > 0 {
+		starts = append(starts, sce.SavedInvokeStart{ID: "second", Count: int64(p.invokeStartsSecond)})
+	}
+	return starts
+}
+
+// InvokeOwner is the state that holds the `<invoke>` id, and false for an id the
+// document does not invoke (sce.SavedPolicy).
+func (p *StaticInvokeEntryPolicy) InvokeOwner(id string) (StaticInvokeEntryState, bool) {
+	switch id {
+	case "first":
+		return StaticInvokeEntryStateRunning, true
+	case "second":
+		return StaticInvokeEntryStateOverflowing, true
+	}
+	return 0, false
+}
+
+// HostInvokeOwner is the state that holds the host-run `<invoke>` of this type
+// and id, and false for one the document does not have a host invoker run
+// (sce.SavedPolicy).
+func (p *StaticInvokeEntryPolicy) HostInvokeOwner(processorType, id string) (StaticInvokeEntryState, bool) {
+	return 0, false
+}
+
+
+// resumeChildFirst resumes the child of the `<invoke>` `first` a saved
+// state holds, from the document `static_invoke_entry__sce_synth_invoke__first`, where it stood.
+func (p *StaticInvokeEntryPolicy) resumeChildFirst(engine *sce.Engine[StaticInvokeEntryState, StaticInvokeEntryEvent], child sce.SavedChild, wallNowMs int64) error {
+	// W3C SCXML 6.5: the child's session id, which its events carry as their origin.
+	childSessionID := fmt.Sprintf("%s.%s", p.SessionID, child.InvokeID)
+	childPolicy := NewStaticInvokeEntrySceSynthInvokeFirstPolicy()
+	childPolicy.ParentExternalQueue = sce.NewParentEventQueue()
+	childPolicy.InvokeID = child.InvokeID
+	childPolicy.ChildSessionID = childSessionID
+	childPolicy.SessionID = childSessionID
+
+	p.activeInvokes["first"] = &sce.ChildSession{
+		SessionID:       childSessionID,
+		InvokeID:        "first",
+		ParentSessionID: p.SessionID,
+		Autoforward:     false,
+		FinalizeScript:  "",
+	}
+
+	childEngine, err := StaticInvokeEntrySceSynthInvokeFirstRestoreAt(&childPolicy, child.Session, engine.Clock(), wallNowMs)
+	if err != nil {
+		delete(p.activeInvokes, "first")
+		return err
+	}
+	childEngine.SetCompletionCallback(func() {})
+	// Child sessions in Mesh (SCE_MESH.md; docs/adr/0043): the router of the
+	// resumed child is owed, not asked here. This machine is being restored, and
+	// its host registers the factory of its children's routers only once the
+	// restore has returned it.
+	engine.OweChildMesh(childEngine, "first", "")
+	p.childFirst = &childEngineWrapperStaticInvokeEntry_First{engine: childEngine, policy: &childPolicy}
+	return nil
+}
+
+
+// resumeChildSecond resumes the child of the `<invoke>` `second` a saved
+// state holds, from the document `static_invoke_entry__sce_synth_invoke__second`, where it stood.
+func (p *StaticInvokeEntryPolicy) resumeChildSecond(engine *sce.Engine[StaticInvokeEntryState, StaticInvokeEntryEvent], child sce.SavedChild, wallNowMs int64) error {
+	// W3C SCXML 6.5: the child's session id, which its events carry as their origin.
+	childSessionID := fmt.Sprintf("%s.%s", p.SessionID, child.InvokeID)
+	childPolicy := NewStaticInvokeEntrySceSynthInvokeSecondPolicy()
+	childPolicy.ParentExternalQueue = sce.NewParentEventQueue()
+	childPolicy.InvokeID = child.InvokeID
+	childPolicy.ChildSessionID = childSessionID
+	childPolicy.SessionID = childSessionID
+
+	p.activeInvokes["second"] = &sce.ChildSession{
+		SessionID:       childSessionID,
+		InvokeID:        "second",
+		ParentSessionID: p.SessionID,
+		Autoforward:     false,
+		FinalizeScript:  "",
+	}
+
+	childEngine, err := StaticInvokeEntrySceSynthInvokeSecondRestoreAt(&childPolicy, child.Session, engine.Clock(), wallNowMs)
+	if err != nil {
+		delete(p.activeInvokes, "second")
+		return err
+	}
+	childEngine.SetCompletionCallback(func() {})
+	// Child sessions in Mesh (SCE_MESH.md; docs/adr/0043): the router of the
+	// resumed child is owed, not asked here. This machine is being restored, and
+	// its host registers the factory of its children's routers only once the
+	// restore has returned it.
+	engine.OweChildMesh(childEngine, "second", "")
+	p.childSecond = &childEngineWrapperStaticInvokeEntry_Second{engine: childEngine, policy: &childPolicy}
+	return nil
+}
+
+
+// savedChildren is each running child, saved through the document it runs with
+// its whole state, in document order: what a saved state holds in place of the
+// ids of format 1, and what a restore resumes (docs/adr/0045, section 1).
+func (p *StaticInvokeEntryPolicy) savedChildren(wallNowMs int64) ([]sce.SavedChild, error) {
+	children := []sce.SavedChild{}
+	if running := p.childFirst; running != nil && !p.pendingDoneInvokeFirst && !running.IsInFinalState() {
+		saveable, saves := running.(sce.SavedChildEngine)
+		session, tracked := p.activeInvokes["first"]
+		if !saves || !tracked {
+			return nil, sce.Refuse("the running child of 'first' is not one a saved state holds")
+		}
+		if err := sce.NothingInTransit(running.GetParentEventQueue(), "first"); err != nil {
+			return nil, err
+		}
+		saved, err := saveable.SaveAsSession(wallNowMs)
+		if err != nil {
+			return nil, sce.RefusalWithin(err, fmt.Sprintf("invokes[%d].session", len(children)))
+		}
+		children = append(children, sce.SavedChild{
+			ID:       "first",
+			Start:    int64(p.invokeStartsFirst),
+			InvokeID: strings.TrimPrefix(session.SessionID, p.SessionID+"."),
+			Document: saveable.SavedDocument(),
+			Session:  saved,
+		})
+	}
+	if running := p.childSecond; running != nil && !p.pendingDoneInvokeSecond && !running.IsInFinalState() {
+		saveable, saves := running.(sce.SavedChildEngine)
+		session, tracked := p.activeInvokes["second"]
+		if !saves || !tracked {
+			return nil, sce.Refuse("the running child of 'second' is not one a saved state holds")
+		}
+		if err := sce.NothingInTransit(running.GetParentEventQueue(), "second"); err != nil {
+			return nil, err
+		}
+		saved, err := saveable.SaveAsSession(wallNowMs)
+		if err != nil {
+			return nil, sce.RefusalWithin(err, fmt.Sprintf("invokes[%d].session", len(children)))
+		}
+		children = append(children, sce.SavedChild{
+			ID:       "second",
+			Start:    int64(p.invokeStartsSecond),
+			InvokeID: strings.TrimPrefix(session.SessionID, p.SessionID+"."),
+			Document: saveable.SavedDocument(),
+			Session:  saved,
+		})
+	}
+	return children, nil
+}
+
+// JudgeChild refuses a running child unless its session is a state of the
+// document it names, to any depth (sce.SavedPolicy).
+func (p *StaticInvokeEntryPolicy) JudgeChild(child sce.SavedChild) error {
+	switch {
+	case child.ID == "first" && child.Document == "static_invoke_entry__sce_synth_invoke__first":
+		return StaticInvokeEntrySceSynthInvokeFirstJudge(child.Session)
+	case child.ID == "second" && child.Document == "static_invoke_entry__sce_synth_invoke__second":
+		return StaticInvokeEntrySceSynthInvokeSecondJudge(child.Session)
+	}
+	return sce.Refuse(fmt.Sprintf("invokes names '%s' running '%s', a document that `<invoke>` does not start", child.ID, child.Document))
+}
+
+// ResumeChildren resumes each of children in the order given, each built as
+// starting it builds it and restored where it stood (sce.SavedPolicy).
+func (p *StaticInvokeEntryPolicy) ResumeChildren(engine *sce.Engine[StaticInvokeEntryState, StaticInvokeEntryEvent], children []sce.SavedChild, wallNowMs int64) error {
+	for _, child := range children {
+		var err error
+		switch {
+		case child.ID == "first" && child.Document == "static_invoke_entry__sce_synth_invoke__first":
+			err = p.resumeChildFirst(engine, child, wallNowMs)
+		case child.ID == "second" && child.Document == "static_invoke_entry__sce_synth_invoke__second":
+			err = p.resumeChildSecond(engine, child, wallNowMs)
+		default:
+			err = sce.Refuse(fmt.Sprintf("invokes names '%s' running '%s', a document that `<invoke>` does not start", child.ID, child.Document))
+		}
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// SetHistoryValue gives history the states a saved state recorded for it
+// (sce.SavedPolicy).
+func (p *StaticInvokeEntryPolicy) SetHistoryValue(history sce.HistoryID, states []StaticInvokeEntryState) {
+}
+
 // ======================================================================
 // Policy struct
 // ======================================================================
@@ -655,6 +1069,8 @@ func (w *childEngineWrapperStaticInvokeEntry_First) DonedataAtFinal() string { r
 func (w *childEngineWrapperStaticInvokeEntry_First) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
 func (w *childEngineWrapperStaticInvokeEntry_First) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
 func (w *childEngineWrapperStaticInvokeEntry_First) DetachMesh() { w.engine.DetachMesh() }
+func (w *childEngineWrapperStaticInvokeEntry_First) SaveAsSession(wallNowMs int64) (*sce.SavedState, error) { return StaticInvokeEntrySceSynthInvokeFirstSaveAt(w.engine, wallNowMs) }
+func (w *childEngineWrapperStaticInvokeEntry_First) SavedDocument() string { return "static_invoke_entry__sce_synth_invoke__first" }
 type childEngineWrapperStaticInvokeEntry_Second struct {
 	engine *sce.Engine[StaticInvokeEntrySceSynthInvokeSecondState, StaticInvokeEntrySceSynthInvokeSecondEvent]
 	policy *StaticInvokeEntrySceSynthInvokeSecondPolicy
@@ -672,6 +1088,8 @@ func (w *childEngineWrapperStaticInvokeEntry_Second) DonedataAtFinal() string { 
 func (w *childEngineWrapperStaticInvokeEntry_Second) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
 func (w *childEngineWrapperStaticInvokeEntry_Second) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
 func (w *childEngineWrapperStaticInvokeEntry_Second) DetachMesh() { w.engine.DetachMesh() }
+func (w *childEngineWrapperStaticInvokeEntry_Second) SaveAsSession(wallNowMs int64) (*sce.SavedState, error) { return StaticInvokeEntrySceSynthInvokeSecondSaveAt(w.engine, wallNowMs) }
+func (w *childEngineWrapperStaticInvokeEntry_Second) SavedDocument() string { return "static_invoke_entry__sce_synth_invoke__second" }
 
 
 // DeliverToParent delivers a delayed `<send target="#_parent">` whose wait is
@@ -921,6 +1339,33 @@ func (p *StaticInvokeEntryPolicy) ExecuteEntryActions(state StaticInvokeEntrySta
 		}
 	default:
 		// No entry actions
+	}
+}
+
+// RestartInvokes starts each of ids again from its beginning, as entering its
+// state starts it: the start is deferred to the macrostep the host drives next,
+// which runs it, so the restore itself takes no step. What a format-1 saved state
+// holds of a running child is its id alone (sce.SavedPolicy, docs/adr/0045).
+func (p *StaticInvokeEntryPolicy) RestartInvokes(engine *sce.Engine[StaticInvokeEntryState, StaticInvokeEntryEvent], ids []string) {
+	for _, id := range ids {
+		switch id {
+		case "second":
+			p.invokeStartsSecond++
+			generatedInvokeID := fmt.Sprintf("%s.%d.second", "overflowing", p.invokeStartsSecond)
+			sce.DeferInvoke(&p.pendingInvokes, sce.PendingInvoke[StaticInvokeEntryState]{
+				InvokeID:   generatedInvokeID,
+				State:      StaticInvokeEntryStateOverflowing,
+				DocumentID: "second",
+			})
+		case "first":
+			p.invokeStartsFirst++
+			generatedInvokeID := fmt.Sprintf("%s.%d.first", "running", p.invokeStartsFirst)
+			sce.DeferInvoke(&p.pendingInvokes, sce.PendingInvoke[StaticInvokeEntryState]{
+				InvokeID:   generatedInvokeID,
+				State:      StaticInvokeEntryStateRunning,
+				DocumentID: "first",
+			})
+		}
 	}
 }
 

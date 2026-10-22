@@ -225,9 +225,10 @@ func StaticChildMeshSceSynthInvokeListSaveAt(engine *sce.Engine[StaticChildMeshS
 		return nil, sce.Refuse("the engine is not one of StaticChildMeshSceSynthInvokeList")
 	}
 	variables := sce.NewJSONObject()
+	var children []sce.SavedChild
 	return sce.SaveSession(engine, &StaticChildMeshSceSynthInvokeListSavedShape, variables,
 		sce.SaveHistory[StaticChildMeshSceSynthInvokeListState, StaticChildMeshSceSynthInvokeListEvent](p, StaticChildMeshSceSynthInvokeListHistories),
-		nil, wallNowMs)
+		children, wallNowMs)
 }
 
 // StaticChildMeshSceSynthInvokeListSave is StaticChildMeshSceSynthInvokeListSaveAt at the host's wall clock now.

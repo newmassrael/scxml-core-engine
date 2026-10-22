@@ -226,9 +226,10 @@ func StaticOverflowSaveAt(engine *sce.Engine[StaticOverflowState, StaticOverflow
 	variables := sce.NewJSONObject()
 	variables.Set("level", sce.SavedWriteUint8(p.vLevel))
 	variables.Set("refusals", sce.SavedWriteUint32(p.vRefusals))
+	var children []sce.SavedChild
 	return sce.SaveSession(engine, &StaticOverflowSavedShape, variables,
 		sce.SaveHistory[StaticOverflowState, StaticOverflowEvent](p, StaticOverflowHistories),
-		nil, wallNowMs)
+		children, wallNowMs)
 }
 
 // StaticOverflowSave is StaticOverflowSaveAt at the host's wall clock now.

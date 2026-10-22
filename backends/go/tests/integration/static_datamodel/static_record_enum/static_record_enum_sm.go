@@ -387,9 +387,10 @@ func StaticRecordEnumSaveAt(engine *sce.Engine[StaticRecordEnumState, StaticReco
 	variables.Set("weeks", sce.SavedWriteUint32(p.vWeeks))
 	variables.Set("flips", sce.SavedWriteUint32(p.vFlips))
 	variables.Set("leads", sce.SavedWriteUint32(p.vLeads))
+	var children []sce.SavedChild
 	return sce.SaveSession(engine, &StaticRecordEnumSavedShape, variables,
 		sce.SaveHistory[StaticRecordEnumState, StaticRecordEnumEvent](p, StaticRecordEnumHistories),
-		nil, wallNowMs)
+		children, wallNowMs)
 }
 
 // StaticRecordEnumSave is StaticRecordEnumSaveAt at the host's wall clock now.

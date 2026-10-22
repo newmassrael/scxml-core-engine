@@ -338,9 +338,10 @@ func StaticRecordFieldsSaveAt(engine *sce.Engine[StaticRecordFieldsState, Static
 	variables := sce.NewJSONObject()
 	variables.Set("shown", p.vShown.ToSaved())
 	variables.Set("refusals", sce.SavedWriteUint32(p.vRefusals))
+	var children []sce.SavedChild
 	return sce.SaveSession(engine, &StaticRecordFieldsSavedShape, variables,
 		sce.SaveHistory[StaticRecordFieldsState, StaticRecordFieldsEvent](p, StaticRecordFieldsHistories),
-		nil, wallNowMs)
+		children, wallNowMs)
 }
 
 // StaticRecordFieldsSave is StaticRecordFieldsSaveAt at the host's wall clock now.

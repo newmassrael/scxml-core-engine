@@ -224,9 +224,10 @@ func StaticCounterSaveAt(engine *sce.Engine[StaticCounterState, StaticCounterEve
 	variables.Set("count", sce.SavedWriteUint32(p.vCount))
 	variables.Set("ready", sce.SavedWriteBool(p.vReady))
 	variables.Set("step", sce.SavedWriteUint32(p.vStep))
+	var children []sce.SavedChild
 	return sce.SaveSession(engine, &StaticCounterSavedShape, variables,
 		sce.SaveHistory[StaticCounterState, StaticCounterEvent](p, StaticCounterHistories),
-		nil, wallNowMs)
+		children, wallNowMs)
 }
 
 // StaticCounterSave is StaticCounterSaveAt at the host's wall clock now.

@@ -307,7 +307,7 @@ var {{ machine_name }}SavedEnumKeys = [...]string{}
 {% endif %}
 
 {% endif %}
-{% if static_saved_shape and not (model.invokes | scxml_family) %}
+{% if static_saved_shape %}
 {# The Go type a saved state's `sce:type` spelling is held in, for the places a
    present value is named (`optional.None[T]`). A record's or an enum's own type
    is its backend type already. #}
@@ -436,9 +436,18 @@ func {{ machine_name }}SaveAt(engine *sce.Engine[{{ machine_name }}State, {{ mac
 {% for field in static_fields %}
 	variables.Set("{{ field.id | escape_go }}", {{ saved_write(field) }})
 {% endfor %}
+{% if model.invokes | scxml_family %}
+	// docs/adr/0045: each running child, with its whole state.
+	children, err := p.savedChildren(wallNowMs)
+	if err != nil {
+		return nil, err
+	}
+{% else %}
+	var children []sce.SavedChild
+{% endif %}
 	return sce.SaveSession(engine, &{{ machine_name }}SavedShape, variables,
 		sce.SaveHistory[{{ machine_name }}State, {{ machine_name }}Event](p, {{ machine_name }}Histories),
-		nil, wallNowMs)
+		children, wallNowMs)
 }
 
 // {{ machine_name }}Save is {{ machine_name }}SaveAt at the host's wall clock now.
@@ -511,6 +520,10 @@ func {{ machine_name }}RestoreAt(policy *{{ machine_name }}Policy, saved *sce.Sa
 	for _, recorded := range history {
 		policy.SetHistoryValue(recorded.History, recorded.States)
 	}
+{% for invoke_info in model.invokes | scxml_family %}
+	// A start after the restore is numbered on from the saved count.
+	policy.invokeStarts{{ invoke_info.field_suffix | to_pascal_case }} = uint64(grown.InvokeStart("{{ invoke_info.invoke_id | escape_go }}"))
+{% endfor %}
 	return sce.EnterSession[{{ machine_name }}State, {{ machine_name }}Event](policy, grown, clock, wallNowMs)
 }
 
@@ -541,6 +554,45 @@ func (p *{{ machine_name }}Policy) OwnSessionID() string { return p.SessionID }
 // carries on under the id it was saved with (sce.SavedPolicy).
 func (p *{{ machine_name }}Policy) BindSessionID(id string) { p.SessionID = id }
 
+{% if model.invokes | scxml_family %}
+// RunningInvokes is the id of each `<invoke>` whose child session is running,
+// in document order (sce.SavedPolicy): a child that has ended is not running,
+// though the policy keeps it until its state exits, and its `done.invoke` is in
+// the external queue or already taken, so a restore must not bring it back.
+func (p *{{ machine_name }}Policy) RunningInvokes() []string {
+	var running []string
+{% for invoke_info in model.invokes | scxml_family %}
+	if p.child{{ invoke_info.field_suffix | to_pascal_case }} != nil && !p.pendingDoneInvoke{{ invoke_info.field_suffix | to_pascal_case }} && !p.child{{ invoke_info.field_suffix | to_pascal_case }}.IsInFinalState() {
+		running = append(running, "{{ invoke_info.invoke_id | escape_go }}")
+	}
+{% endfor %}
+	return running
+}
+
+// InvokeStarts is how many times each `<invoke>` has started in this session,
+// for each started at least once, in document order (sce.SavedPolicy).
+func (p *{{ machine_name }}Policy) InvokeStarts() []sce.SavedInvokeStart {
+	var starts []sce.SavedInvokeStart
+{% for invoke_info in model.invokes | scxml_family %}
+	if p.invokeStarts{{ invoke_info.field_suffix | to_pascal_case }} > 0 {
+		starts = append(starts, sce.SavedInvokeStart{ID: "{{ invoke_info.invoke_id | escape_go }}", Count: int64(p.invokeStarts{{ invoke_info.field_suffix | to_pascal_case }})})
+	}
+{% endfor %}
+	return starts
+}
+
+// InvokeOwner is the state that holds the `<invoke>` id, and false for an id the
+// document does not invoke (sce.SavedPolicy).
+func (p *{{ machine_name }}Policy) InvokeOwner(id string) ({{ machine_name }}State, bool) {
+	switch id {
+{% for invoke_info in model.invokes | scxml_family %}
+	case "{{ invoke_info.invoke_id | escape_go }}":
+		return {{ machine_name }}State{{ invoke_info.state_name | to_state_variant }}, true
+{% endfor %}
+	}
+	return 0, false
+}
+{% else %}
 // RunningInvokes is the id of each `<invoke>` whose child session is running,
 // in document order (sce.SavedPolicy). This document starts no child session.
 func (p *{{ machine_name }}Policy) RunningInvokes() []string { return nil }
@@ -555,6 +607,7 @@ func (p *{{ machine_name }}Policy) InvokeStarts() []sce.SavedInvokeStart { retur
 func (p *{{ machine_name }}Policy) InvokeOwner(id string) ({{ machine_name }}State, bool) {
 	return 0, false
 }
+{% endif %}
 
 // HostInvokeOwner is the state that holds the host-run `<invoke>` of this type
 // and id, and false for one the document does not have a host invoker run
@@ -568,6 +621,154 @@ func (p *{{ machine_name }}Policy) HostInvokeOwner(processorType, id string) ({{
 	return 0, false
 }
 
+{% if model.invokes | scxml_family %}
+{#- docs/adr/0045, section 3, step 3: the child a saved state holds for the
+    invoke `invoke_info`, from the document whose stem is `stem`, built as
+    starting it builds it and then restored from its saved session in place of
+    initialized: no `<onentry>`, no `<data>`, no argument read, no `idlocation`
+    written, nothing sent. `target` describes the session — the invoke itself
+    for a static child, the chosen candidate for a hybrid one — and `slot` names
+    the wrapper that holds it. `keyed` is whether `_event.invokeid` is the id the
+    child was started under (an invoke that keeps it in an `idlocation`) and not
+    the document's own. -#}
+{% macro resume_child_method(invoke_info, target, stem, slot, finalize, keyed, mesh_document) %}
+
+// resumeChild{{ slot }} resumes the child of the `<invoke>` `{{ invoke_info.invoke_id }}` a saved
+// state holds, from the document `{{ stem }}`, where it stood.
+func (p *{{ machine_name }}Policy) resumeChild{{ slot }}(engine *sce.Engine[{{ machine_name }}State, {{ machine_name }}Event], child sce.SavedChild, wallNowMs int64) error {
+	// W3C SCXML 6.5: the child's session id, which its events carry as their origin.
+	childSessionID := fmt.Sprintf("%s.%s", p.SessionID, child.InvokeID)
+{% if target.child_declares_host_duties %}
+	childPolicy := new{{ stem | to_machine_name }}Policy({{ target.child_host_call }}, p.acceptSimulatedHost)
+{% else %}
+	childPolicy := New{{ stem | to_machine_name }}Policy({{ target.child_host_call }})
+{% endif %}
+{% if target.child_needs_script_engine %}
+	childPolicy.ScriptEngine = p.ScriptEngine
+{% endif %}
+	childPolicy.ParentExternalQueue = sce.NewParentEventQueue()
+	childPolicy.InvokeID = child.InvokeID
+	childPolicy.ChildSessionID = childSessionID
+	childPolicy.SessionID = childSessionID
+
+	p.activeInvokes["{{ invoke_info.invoke_id | escape_go }}"] = &sce.ChildSession{
+		SessionID:       childSessionID,
+{% if keyed %}
+		InvokeID:        child.InvokeID,
+{% else %}
+		InvokeID:        "{{ invoke_info.invoke_id | escape_go }}",
+{% endif %}
+		ParentSessionID: p.SessionID,
+		Autoforward:     {{ 'true' if invoke_info.autoforward else 'false' }},
+		FinalizeScript:  {{ finalize }},
+	}
+
+	childEngine, err := {{ stem | to_machine_name }}RestoreAt(&childPolicy, child.Session, engine.Clock(), wallNowMs)
+	if err != nil {
+		delete(p.activeInvokes, "{{ invoke_info.invoke_id | escape_go }}")
+		return err
+	}
+	childEngine.SetCompletionCallback(func() {})
+	// Child sessions in Mesh (SCE_MESH.md; docs/adr/0043): the router of the
+	// resumed child is owed, not asked here. This machine is being restored, and
+	// its host registers the factory of its children's routers only once the
+	// restore has returned it.
+	engine.OweChildMesh(childEngine, "{{ invoke_info.invoke_id | escape_go }}", "{{ mesh_document }}")
+	p.child{{ invoke_info.field_suffix | to_pascal_case }} = &childEngineWrapper{{ machine_name }}_{{ slot }}{engine: childEngine, policy: &childPolicy}
+	return nil
+}
+{% endmacro %}
+{% for invoke_info in model.invokes | scxml_family %}
+{% if invoke_info.candidates %}
+{% for candidate in invoke_info.candidates %}
+{{ resume_child_method(invoke_info, candidate, candidate.stem, (invoke_info.field_suffix | candidate_identifier(candidate.stem) | to_pascal_case), '""', false, candidate.stem) }}
+{% endfor %}
+{% elif invoke_info.kind == "Hybrid" %}
+{{ resume_child_method(invoke_info, invoke_info, invoke_info.child_name, (invoke_info.field_suffix | to_pascal_case), '""', false, '') }}
+{% else %}
+{{ resume_child_method(invoke_info, invoke_info, invoke_info.child_name, (invoke_info.field_suffix | to_pascal_case), '"' ~ (invoke_info.finalize_content | to_lua_script | escape_go) ~ '"', invoke_info.idlocation, ('' if invoke_info.src.startswith('#') else invoke_info.child_name)) }}
+{% endif %}
+{% endfor %}
+
+// savedChildren is each running child, saved through the document it runs with
+// its whole state, in document order: what a saved state holds in place of the
+// ids of format 1, and what a restore resumes (docs/adr/0045, section 1).
+func (p *{{ machine_name }}Policy) savedChildren(wallNowMs int64) ([]sce.SavedChild, error) {
+	children := []sce.SavedChild{}
+{% for invoke_info in model.invokes | scxml_family %}
+	if running := p.child{{ invoke_info.field_suffix | to_pascal_case }}; running != nil && !p.pendingDoneInvoke{{ invoke_info.field_suffix | to_pascal_case }} && !running.IsInFinalState() {
+		saveable, saves := running.(sce.SavedChildEngine)
+		session, tracked := p.activeInvokes["{{ invoke_info.invoke_id | escape_go }}"]
+		if !saves || !tracked {
+			return nil, sce.Refuse("the running child of '{{ invoke_info.invoke_id | escape_go }}' is not one a saved state holds")
+		}
+		if err := sce.NothingInTransit(running.GetParentEventQueue(), "{{ invoke_info.invoke_id | escape_go }}"); err != nil {
+			return nil, err
+		}
+		saved, err := saveable.SaveAsSession(wallNowMs)
+		if err != nil {
+			return nil, sce.RefusalWithin(err, fmt.Sprintf("invokes[%d].session", len(children)))
+		}
+		children = append(children, sce.SavedChild{
+			ID:       "{{ invoke_info.invoke_id | escape_go }}",
+			Start:    int64(p.invokeStarts{{ invoke_info.field_suffix | to_pascal_case }}),
+			InvokeID: strings.TrimPrefix(session.SessionID, p.SessionID+"."),
+			Document: saveable.SavedDocument(),
+			Session:  saved,
+		})
+	}
+{% endfor %}
+	return children, nil
+}
+
+// JudgeChild refuses a running child unless its session is a state of the
+// document it names, to any depth (sce.SavedPolicy).
+func (p *{{ machine_name }}Policy) JudgeChild(child sce.SavedChild) error {
+	switch {
+{% for invoke_info in model.invokes | scxml_family %}
+{% if invoke_info.candidates %}
+{% for candidate in invoke_info.candidates %}
+	case child.ID == "{{ invoke_info.invoke_id | escape_go }}" && child.Document == "{{ candidate.stem | escape_go }}":
+		return {{ candidate.stem | to_machine_name }}Judge(child.Session)
+{% endfor %}
+{% else %}
+	case child.ID == "{{ invoke_info.invoke_id | escape_go }}" && child.Document == "{{ invoke_info.child_name | escape_go }}":
+		return {{ invoke_info.child_name | to_machine_name }}Judge(child.Session)
+{% endif %}
+{% endfor %}
+	}
+	return sce.Refuse(fmt.Sprintf("invokes names '%s' running '%s', a document that `<invoke>` does not start", child.ID, child.Document))
+}
+
+// ResumeChildren resumes each of children in the order given, each built as
+// starting it builds it and restored where it stood (sce.SavedPolicy).
+func (p *{{ machine_name }}Policy) ResumeChildren(engine *sce.Engine[{{ machine_name }}State, {{ machine_name }}Event], children []sce.SavedChild, wallNowMs int64) error {
+	for _, child := range children {
+		var err error
+		switch {
+{% for invoke_info in model.invokes | scxml_family %}
+{% if invoke_info.candidates %}
+{% for candidate in invoke_info.candidates %}
+		case child.ID == "{{ invoke_info.invoke_id | escape_go }}" && child.Document == "{{ candidate.stem | escape_go }}":
+			err = p.resumeChild{{ invoke_info.field_suffix | candidate_identifier(candidate.stem) | to_pascal_case }}(engine, child, wallNowMs)
+{% endfor %}
+{% else %}
+		case child.ID == "{{ invoke_info.invoke_id | escape_go }}" && child.Document == "{{ invoke_info.child_name | escape_go }}":
+			err = p.resumeChild{{ invoke_info.field_suffix | to_pascal_case }}(engine, child, wallNowMs)
+{% endif %}
+{% endfor %}
+		default:
+			err = sce.Refuse(fmt.Sprintf("invokes names '%s' running '%s', a document that `<invoke>` does not start", child.ID, child.Document))
+		}
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+{# RestartInvokes is emitted with the entry actions, whose deferral of a start
+   it reuses (entry_exit_actions.go.jinja2). #}
+{% else %}
 // JudgeChild refuses a running child, which this document does not start
 // (sce.SavedPolicy).
 func (p *{{ machine_name }}Policy) JudgeChild(child sce.SavedChild) error {
@@ -586,6 +787,7 @@ func (p *{{ machine_name }}Policy) ResumeChildren(engine *sce.Engine[{{ machine_
 // RestartInvokes starts no invocation again, which this document does not start
 // (sce.SavedPolicy).
 func (p *{{ machine_name }}Policy) RestartInvokes(engine *sce.Engine[{{ machine_name }}State, {{ machine_name }}Event], ids []string) {}
+{% endif %}
 
 // SetHistoryValue gives history the states a saved state recorded for it
 // (sce.SavedPolicy).

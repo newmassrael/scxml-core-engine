@@ -411,9 +411,10 @@ func StaticSchemaRevisionSaveAt(engine *sce.Engine[StaticSchemaRevisionState, St
 	variables.Set("last", p.vLast.ToSaved())
 	variables.Set("taken", sce.SavedWriteUint32(p.vTaken))
 	variables.Set("refusals", sce.SavedWriteUint32(p.vRefusals))
+	var children []sce.SavedChild
 	return sce.SaveSession(engine, &StaticSchemaRevisionSavedShape, variables,
 		sce.SaveHistory[StaticSchemaRevisionState, StaticSchemaRevisionEvent](p, StaticSchemaRevisionHistories),
-		nil, wallNowMs)
+		children, wallNowMs)
 }
 
 // StaticSchemaRevisionSave is StaticSchemaRevisionSaveAt at the host's wall clock now.

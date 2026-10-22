@@ -305,9 +305,10 @@ func StaticBytesWireSaveAt(engine *sce.Engine[StaticBytesWireState, StaticBytesW
 	variables.Set("echo", sce.SavedWriteBytes(p.vEcho))
 	variables.Set("relays", sce.SavedWriteUint32(p.vRelays))
 	variables.Set("errors", sce.SavedWriteUint32(p.vErrors))
+	var children []sce.SavedChild
 	return sce.SaveSession(engine, &StaticBytesWireSavedShape, variables,
 		sce.SaveHistory[StaticBytesWireState, StaticBytesWireEvent](p, StaticBytesWireHistories),
-		nil, wallNowMs)
+		children, wallNowMs)
 }
 
 // StaticBytesWireSave is StaticBytesWireSaveAt at the host's wall clock now.

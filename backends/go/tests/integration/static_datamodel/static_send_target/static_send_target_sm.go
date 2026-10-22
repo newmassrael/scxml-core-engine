@@ -233,9 +233,10 @@ func StaticSendTargetSaveAt(engine *sce.Engine[StaticSendTargetState, StaticSend
 	variables.Set("route", sce.SavedWriteString(p.vRoute))
 	variables.Set("landed", sce.SavedWriteUint32(p.vLanded))
 	variables.Set("refused", sce.SavedWriteUint32(p.vRefused))
+	var children []sce.SavedChild
 	return sce.SaveSession(engine, &StaticSendTargetSavedShape, variables,
 		sce.SaveHistory[StaticSendTargetState, StaticSendTargetEvent](p, StaticSendTargetHistories),
-		nil, wallNowMs)
+		children, wallNowMs)
 }
 
 // StaticSendTargetSave is StaticSendTargetSaveAt at the host's wall clock now.

@@ -261,9 +261,10 @@ func StaticOptionalWidenedSaveAt(engine *sce.Engine[StaticOptionalWidenedState, 
 	variables.Set("remind", optional.Wire(p.vRemind, sce.SavedWriteInt64))
 	variables.Set("taken", sce.SavedWriteUint32(p.vTaken))
 	variables.Set("refusals", sce.SavedWriteUint32(p.vRefusals))
+	var children []sce.SavedChild
 	return sce.SaveSession(engine, &StaticOptionalWidenedSavedShape, variables,
 		sce.SaveHistory[StaticOptionalWidenedState, StaticOptionalWidenedEvent](p, StaticOptionalWidenedHistories),
-		nil, wallNowMs)
+		children, wallNowMs)
 }
 
 // StaticOptionalWidenedSave is StaticOptionalWidenedSaveAt at the host's wall clock now.

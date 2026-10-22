@@ -445,9 +445,10 @@ func StaticHostNotifySaveAt(engine *sce.Engine[StaticHostNotifyState, StaticHost
 	variables.Set("permission", sce.SavedWriteString(p.vPermission))
 	variables.Set("status", sce.SavedWriteString(p.vStatus))
 	variables.Set("existed", sce.SavedWriteBool(p.vExisted))
+	var children []sce.SavedChild
 	return sce.SaveSession(engine, &StaticHostNotifySavedShape, variables,
 		sce.SaveHistory[StaticHostNotifyState, StaticHostNotifyEvent](p, StaticHostNotifyHistories),
-		nil, wallNowMs)
+		children, wallNowMs)
 }
 
 // StaticHostNotifySave is StaticHostNotifySaveAt at the host's wall clock now.

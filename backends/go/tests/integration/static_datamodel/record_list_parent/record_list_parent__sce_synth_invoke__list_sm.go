@@ -1874,9 +1874,10 @@ func RecordListParentSceSynthInvokeListSaveAt(engine *sce.Engine[RecordListParen
 	variables.Set("op", p.vOp.ToSaved())
 	variables.Set("already", sce.SavedWriteBool(p.vAlready))
 	variables.Set("count", sce.SavedWriteUint32(p.vCount))
+	var children []sce.SavedChild
 	return sce.SaveSession(engine, &RecordListParentSceSynthInvokeListSavedShape, variables,
 		sce.SaveHistory[RecordListParentSceSynthInvokeListState, RecordListParentSceSynthInvokeListEvent](p, RecordListParentSceSynthInvokeListHistories),
-		nil, wallNowMs)
+		children, wallNowMs)
 }
 
 // RecordListParentSceSynthInvokeListSave is RecordListParentSceSynthInvokeListSaveAt at the host's wall clock now.

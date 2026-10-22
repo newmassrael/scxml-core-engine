@@ -392,9 +392,10 @@ func StaticForgeCallsSaveAt(engine *sce.Engine[StaticForgeCallsState, StaticForg
 	variables.Set("weight", p.vWeight.ToSaved())
 	variables.Set("customer", sce.SavedWriteString(p.vCustomer))
 	variables.Set("known", sce.SavedWriteBool(p.vKnown))
+	var children []sce.SavedChild
 	return sce.SaveSession(engine, &StaticForgeCallsSavedShape, variables,
 		sce.SaveHistory[StaticForgeCallsState, StaticForgeCallsEvent](p, StaticForgeCallsHistories),
-		nil, wallNowMs)
+		children, wallNowMs)
 }
 
 // StaticForgeCallsSave is StaticForgeCallsSaveAt at the host's wall clock now.

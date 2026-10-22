@@ -367,9 +367,10 @@ func StaticPayloadRelaySaveAt(engine *sce.Engine[StaticPayloadRelayState, Static
 	variables.Set("zoom", sce.SavedWriteUint8(p.vZoom))
 	variables.Set("relays", sce.SavedWriteUint32(p.vRelays))
 	variables.Set("refusals", sce.SavedWriteUint32(p.vRefusals))
+	var children []sce.SavedChild
 	return sce.SaveSession(engine, &StaticPayloadRelaySavedShape, variables,
 		sce.SaveHistory[StaticPayloadRelayState, StaticPayloadRelayEvent](p, StaticPayloadRelayHistories),
-		nil, wallNowMs)
+		children, wallNowMs)
 }
 
 // StaticPayloadRelaySave is StaticPayloadRelaySaveAt at the host's wall clock now.

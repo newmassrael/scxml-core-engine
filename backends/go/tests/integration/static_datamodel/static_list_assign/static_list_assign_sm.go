@@ -235,9 +235,10 @@ func StaticListAssignSaveAt(engine *sce.Engine[StaticListAssignState, StaticList
 	variables.Set("count", sce.SavedWriteUint32(p.vCount))
 	variables.Set("size", sce.SavedWriteUint32(p.vSize))
 	variables.Set("refusals", sce.SavedWriteUint32(p.vRefusals))
+	var children []sce.SavedChild
 	return sce.SaveSession(engine, &StaticListAssignSavedShape, variables,
 		sce.SaveHistory[StaticListAssignState, StaticListAssignEvent](p, StaticListAssignHistories),
-		nil, wallNowMs)
+		children, wallNowMs)
 }
 
 // StaticListAssignSave is StaticListAssignSaveAt at the host's wall clock now.

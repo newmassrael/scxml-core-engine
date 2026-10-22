@@ -215,9 +215,10 @@ func StaticBlockEndsListSaveAt(engine *sce.Engine[StaticBlockEndsListState, Stat
 	variables.Set("picked", sce.SavedWriteList(p.vPicked, sce.SavedWriteUint8))
 	variables.Set("afterAppend", sce.SavedWriteUint8(p.vAfterAppend))
 	variables.Set("errors", sce.SavedWriteUint8(p.vErrors))
+	var children []sce.SavedChild
 	return sce.SaveSession(engine, &StaticBlockEndsListSavedShape, variables,
 		sce.SaveHistory[StaticBlockEndsListState, StaticBlockEndsListEvent](p, StaticBlockEndsListHistories),
-		nil, wallNowMs)
+		children, wallNowMs)
 }
 
 // StaticBlockEndsListSave is StaticBlockEndsListSaveAt at the host's wall clock now.

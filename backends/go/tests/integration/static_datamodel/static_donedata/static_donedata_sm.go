@@ -308,9 +308,10 @@ func StaticDonedataSaveAt(engine *sce.Engine[StaticDonedataState, StaticDonedata
 	variables.Set("small", sce.SavedWriteUint8(p.vSmall))
 	variables.Set("label", sce.SavedWriteString(p.vLabel))
 	variables.Set("layout", p.vLayout.ToSaved())
+	var children []sce.SavedChild
 	return sce.SaveSession(engine, &StaticDonedataSavedShape, variables,
 		sce.SaveHistory[StaticDonedataState, StaticDonedataEvent](p, StaticDonedataHistories),
-		nil, wallNowMs)
+		children, wallNowMs)
 }
 
 // StaticDonedataSave is StaticDonedataSaveAt at the host's wall clock now.

@@ -412,9 +412,10 @@ func StaticOptionalUnwidenedSaveAt(engine *sce.Engine[StaticOptionalUnwidenedSta
 	variables.Set("fallbacks", sce.SavedWriteUint32(p.vFallbacks))
 	variables.Set("errors", sce.SavedWriteUint32(p.vErrors))
 	variables.Set("huge", sce.SavedWriteInt64(p.vHuge))
+	var children []sce.SavedChild
 	return sce.SaveSession(engine, &StaticOptionalUnwidenedSavedShape, variables,
 		sce.SaveHistory[StaticOptionalUnwidenedState, StaticOptionalUnwidenedEvent](p, StaticOptionalUnwidenedHistories),
-		nil, wallNowMs)
+		children, wallNowMs)
 }
 
 // StaticOptionalUnwidenedSave is StaticOptionalUnwidenedSaveAt at the host's wall clock now.

@@ -139,6 +139,21 @@ func IsInvokePending[S comparable](pending []PendingInvoke[S], invokeID string) 
 	return false
 }
 
+// SavedChildEngine is a ChildEngine that a saved state of its parent can hold:
+// generated code implements it for the children of a document that saves.
+type SavedChildEngine interface {
+	ChildEngine
+
+	// SaveAsSession is this child's whole state as a child session of the saved
+	// state of the machine that runs it (docs/adr/0045, section 1).
+	SaveAsSession(wallNowMs int64) (*SavedState, error)
+
+	// SavedDocument is the document this child runs, which a saved state names it
+	// by: the child's name for a static `<invoke>`, the candidate's for a hybrid
+	// one.
+	SavedDocument() string
+}
+
 // ChildEngine is the interface that parent state machines use to interact with
 // child invoke sessions (§scxml-6.4). Generated code implements this for
 // each concrete child state machine type.

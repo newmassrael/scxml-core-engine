@@ -219,9 +219,10 @@ func StaticInvokeEntrySceSynthInvokeSecondSaveAt(engine *sce.Engine[StaticInvoke
 	}
 	variables := sce.NewJSONObject()
 	variables.Set("start", sce.SavedWriteUint32(p.vStart))
+	var children []sce.SavedChild
 	return sce.SaveSession(engine, &StaticInvokeEntrySceSynthInvokeSecondSavedShape, variables,
 		sce.SaveHistory[StaticInvokeEntrySceSynthInvokeSecondState, StaticInvokeEntrySceSynthInvokeSecondEvent](p, StaticInvokeEntrySceSynthInvokeSecondHistories),
-		nil, wallNowMs)
+		children, wallNowMs)
 }
 
 // StaticInvokeEntrySceSynthInvokeSecondSave is StaticInvokeEntrySceSynthInvokeSecondSaveAt at the host's wall clock now.

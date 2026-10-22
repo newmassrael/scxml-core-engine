@@ -213,9 +213,10 @@ func StaticHostedFirstSaveAt(engine *sce.Engine[StaticHostedFirstState, StaticHo
 		return nil, sce.Refuse("the engine is not one of StaticHostedFirst")
 	}
 	variables := sce.NewJSONObject()
+	var children []sce.SavedChild
 	return sce.SaveSession(engine, &StaticHostedFirstSavedShape, variables,
 		sce.SaveHistory[StaticHostedFirstState, StaticHostedFirstEvent](p, StaticHostedFirstHistories),
-		nil, wallNowMs)
+		children, wallNowMs)
 }
 
 // StaticHostedFirstSave is StaticHostedFirstSaveAt at the host's wall clock now.

@@ -234,9 +234,10 @@ func StaticTimersSaveAt(engine *sce.Engine[StaticTimersState, StaticTimersEvent]
 	}
 	variables := sce.NewJSONObject()
 	variables.Set("trace", sce.SavedWriteUint32(p.vTrace))
+	var children []sce.SavedChild
 	return sce.SaveSession(engine, &StaticTimersSavedShape, variables,
 		sce.SaveHistory[StaticTimersState, StaticTimersEvent](p, StaticTimersHistories),
-		nil, wallNowMs)
+		children, wallNowMs)
 }
 
 // StaticTimersSave is StaticTimersSaveAt at the host's wall clock now.

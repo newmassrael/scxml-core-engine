@@ -363,9 +363,10 @@ func StaticRecordStringSaveAt(engine *sce.Engine[StaticRecordStringState, Static
 	variables.Set("note", sce.SavedWriteString(p.vNote))
 	variables.Set("labels", sce.SavedWriteList(p.vLabels, func(r StaticRecordStringLabelledRecord) any { return r.ToSaved() }))
 	variables.Set("errors", sce.SavedWriteUint32(p.vErrors))
+	var children []sce.SavedChild
 	return sce.SaveSession(engine, &StaticRecordStringSavedShape, variables,
 		sce.SaveHistory[StaticRecordStringState, StaticRecordStringEvent](p, StaticRecordStringHistories),
-		nil, wallNowMs)
+		children, wallNowMs)
 }
 
 // StaticRecordStringSave is StaticRecordStringSaveAt at the host's wall clock now.

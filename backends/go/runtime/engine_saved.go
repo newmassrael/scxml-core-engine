@@ -251,6 +251,20 @@ func dueOn(wallNowMs, nowMs, readyAtMs int64) int64 {
 	return saturatingAddMs(wallNowMs, left)
 }
 
+// NothingInTransit refuses a save of a child whose `#_parent` events still wait in
+// queue, neither in the child's past nor in the parent's queue. The generated
+// parent drains the buffer after every drive of the child, so a tree saved at a
+// boundary of its root holds nothing in transit, and this is never reached by
+// generated code: a refusal is a defect of the generator, never a timing a host
+// can meet, and leaving the event out would lose it.
+func NothingInTransit(queue *ParentEventQueue, invokeID string) error {
+	if queue == nil || queue.Len() == 0 {
+		return nil
+	}
+	return refuse("%d event(s) the child '%s' sent to its parent are in transit, which the generated parent "+
+		"drains after every drive of its child", queue.Len(), invokeID)
+}
+
 // SaveSession is engine's saved state, a machine of the document whose saved
 // state is bound to shape, with the variables, the histories and the running
 // children its generated Save read. The configuration is written in document

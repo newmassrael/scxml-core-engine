@@ -217,9 +217,10 @@ func StaticInvokeParamsSceSynthInvokeWorkerSaveAt(engine *sce.Engine[StaticInvok
 	variables := sce.NewJSONObject()
 	variables.Set("start", sce.SavedWriteUint32(p.vStart))
 	variables.Set("enabled", sce.SavedWriteBool(p.vEnabled))
+	var children []sce.SavedChild
 	return sce.SaveSession(engine, &StaticInvokeParamsSceSynthInvokeWorkerSavedShape, variables,
 		sce.SaveHistory[StaticInvokeParamsSceSynthInvokeWorkerState, StaticInvokeParamsSceSynthInvokeWorkerEvent](p, StaticInvokeParamsSceSynthInvokeWorkerHistories),
-		nil, wallNowMs)
+		children, wallNowMs)
 }
 
 // StaticInvokeParamsSceSynthInvokeWorkerSave is StaticInvokeParamsSceSynthInvokeWorkerSaveAt at the host's wall clock now.

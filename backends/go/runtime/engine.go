@@ -99,6 +99,10 @@ type Engine[S comparable, E comparable] struct {
 	// on a machine it starts, and on a child by the router its parent gave it.
 	childMeshRouters ChildMeshRouters
 
+	// owedChildMeshes are the children a restore resumed, whose routers are asked
+	// of the factory once the host registers it. See OweChildMesh.
+	owedChildMeshes []owedChildMesh
+
 	// installedMesh is the router this machine was given as a child session;
 	// nil for a machine its host started, and for a child given none.
 	installedMesh ChildMeshRouter

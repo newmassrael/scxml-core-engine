@@ -213,6 +213,375 @@ const StaticChildMeshSavedShapeFormat2Revised = "b428739571d63d80edb7874f3bddb4b
 // names it by, and the format-2 shape spells it by.
 var StaticChildMeshSavedEnumKeys = [...]string{}
 
+// ── SCE Accepted Subset §2.15: saving this machine, restoring it ──────────
+
+// StaticChildMeshSavedShape is what a saved state of this document is bound
+// to: a state saved from a document that renamed, re-typed or moved a state or a
+// variable is refused, one saved before a guard or an action changed is not, and
+// one saved at an earlier revision of a record schema is read with each field a
+// later revision added at its default.
+var StaticChildMeshSavedShape = sce.SavedShape{
+	First:          "da543ed16b83c929a0920b9a9aac50cd56e51ff437dd739e049e2f87b699a9fe",
+	Revised:        "b428739571d63d80edb7874f3bddb4b4c6c3d1f4c245f5a2cc0f5c72da4fd05e",
+	Format2First:   "da543ed16b83c929a0920b9a9aac50cd56e51ff437dd739e049e2f87b699a9fe",
+	Format2Revised: "b428739571d63d80edb7874f3bddb4b4c6c3d1f4c245f5a2cc0f5c72da4fd05e",
+	Records: []sce.RecordLineage{
+	},
+	Enums: []sce.EnumLineage{
+	},
+}
+
+// StaticChildMeshHistories is the document's `<history>` pseudo-states, by
+// the id a saved state keys them by: what a saved state records of each, and
+// what a restore reads.
+var StaticChildMeshHistories = []sce.HistoryDecl{
+}
+
+// StaticChildMeshSaveAt is engine's whole state at the macrostep boundary it
+// stands at: every variable, the machine's own included, and where it stands, as
+// the `sce-saved-state` document every backend reads (sce.SavedState.ToJSON).
+// Each delayed `<send>` still waiting is written as the moment it comes due on
+// the wall clock whose reading now is wallNowMs, in milliseconds since the Unix
+// epoch.
+//
+// Refused for a machine that is not running, one that has ended, one whose last
+// macrostep stopped at the microstep ceiling, and one built around another
+// document's policy.
+func StaticChildMeshSaveAt(engine *sce.Engine[StaticChildMeshState, StaticChildMeshEvent], wallNowMs int64) (*sce.SavedState, error) {
+	p, ok := engine.Policy().(*StaticChildMeshPolicy)
+	if !ok {
+		return nil, sce.Refuse("the engine is not one of StaticChildMesh")
+	}
+	variables := sce.NewJSONObject()
+	variables.Set("pick", sce.SavedWriteString(p.vPick))
+	variables.Set("refusals", sce.SavedWriteUint32(p.vRefusals))
+	// docs/adr/0045: each running child, with its whole state.
+	children, err := p.savedChildren(wallNowMs)
+	if err != nil {
+		return nil, err
+	}
+	return sce.SaveSession(engine, &StaticChildMeshSavedShape, variables,
+		sce.SaveHistory[StaticChildMeshState, StaticChildMeshEvent](p, StaticChildMeshHistories),
+		children, wallNowMs)
+}
+
+// StaticChildMeshSave is StaticChildMeshSaveAt at the host's wall clock now.
+func StaticChildMeshSave(engine *sce.Engine[StaticChildMeshState, StaticChildMeshEvent]) (*sce.SavedState, error) {
+	return StaticChildMeshSaveAt(engine, sce.SavedWallClockMs())
+}
+
+// StaticChildMeshJudge refuses saved unless a machine of this document could
+// restore it, building nothing: what a parent's restore asks of each child it
+// holds (docs/adr/0045, section 3, step 1).
+func StaticChildMeshJudge(saved *sce.SavedState) error {
+	p := &StaticChildMeshPolicy{}
+	grown, err := sce.UpgradeSavedState(saved, &StaticChildMeshSavedShape)
+	if err != nil {
+		return err
+	}
+	if _, err := sce.RestoreHistory[StaticChildMeshState, StaticChildMeshEvent](p, grown, StaticChildMeshHistories); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("pick"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadBoundedString(raw, "pick", 48); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("refusals"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "refusals"); err != nil {
+		return err
+	}
+	return sce.JudgeSession[StaticChildMeshState, StaticChildMeshEvent](p, grown)
+}
+
+// StaticChildMeshRestoreAt is a machine of policy standing where saved left
+// one, measuring time by clock: in place of `Initialize`, so no `<onentry>` runs
+// and no `<data>` is evaluated, since the saved run already did both. Every value
+// is read and the state judged before any is written, so a refused restore leaves
+// policy as it was.
+//
+// Each delayed `<send>` saved is armed against clock, which is the one the
+// machine measures time by; wallNowMs is what time it is on the wall clock the
+// saved `due`s were written against. A send comes due when its saved moment does,
+// and one already due comes due now.
+//
+// The host registers its invokers and its processors on the machine this
+// returns, and drives it as it would one it had initialized.
+func StaticChildMeshRestoreAt(policy *StaticChildMeshPolicy, saved *sce.SavedState, clock sce.SceClock, wallNowMs int64) (*sce.Engine[StaticChildMeshState, StaticChildMeshEvent], error) {
+	// The state as one of this machine: each record saved at an earlier revision
+	// of its schema holds the defaults of the fields added since.
+	grown, err := sce.UpgradeSavedState(saved, &StaticChildMeshSavedShape)
+	if err != nil {
+		return nil, err
+	}
+	history, err := sce.RestoreHistory[StaticChildMeshState, StaticChildMeshEvent](policy, grown, StaticChildMeshHistories)
+	if err != nil {
+		return nil, err
+	}
+	raw1, err := grown.Variable("pick")
+	if err != nil {
+		return nil, err
+	}
+	read1, err := sce.SavedReadBoundedString(raw1, "pick", 48)
+	if err != nil {
+		return nil, err
+	}
+	raw2, err := grown.Variable("refusals")
+	if err != nil {
+		return nil, err
+	}
+	read2, err := sce.SavedReadUint32(raw2, "refusals")
+	if err != nil {
+		return nil, err
+	}
+	if err := sce.JudgeSession[StaticChildMeshState, StaticChildMeshEvent](policy, grown); err != nil {
+		return nil, err
+	}
+	policy.vPick = read1
+	policy.vRefusals = read2
+	for _, recorded := range history {
+		policy.SetHistoryValue(recorded.History, recorded.States)
+	}
+	// A start after the restore is numbered on from the saved count.
+	policy.invokeStartsList = uint64(grown.InvokeStart("list"))
+	// A start after the restore is numbered on from the saved count.
+	policy.invokeStartsPeer = uint64(grown.InvokeStart("peer"))
+	return sce.EnterSession[StaticChildMeshState, StaticChildMeshEvent](policy, grown, clock, wallNowMs)
+}
+
+// StaticChildMeshRestore is StaticChildMeshRestoreAt at the host's wall
+// clock now.
+func StaticChildMeshRestore(policy *StaticChildMeshPolicy, saved *sce.SavedState, clock sce.SceClock) (*sce.Engine[StaticChildMeshState, StaticChildMeshEvent], error) {
+	return StaticChildMeshRestoreAt(policy, saved, clock, sce.SavedWallClockMs())
+}
+
+// SetSessionID gives this session the id its host has for it, in place of the
+// one it drew: an XML Nmtoken, since another session addresses this one as
+// `#_scxml_<id>` and every child's id is this one's and the id the child was
+// started under (docs/adr/0045). Refused for anything else. Called before the
+// machine starts, since what it sends names it by the id it began with.
+func (p *StaticChildMeshPolicy) SetSessionID(id string) error {
+	if reason := sce.SessionIDRefusalOf(id); reason != "" {
+		return sce.Refuse(reason)
+	}
+	p.SessionID = id
+	return nil
+}
+
+// OwnSessionID is this session's id, `_sessionid`, which a saved state names it
+// by (sce.SavedPolicy).
+func (p *StaticChildMeshPolicy) OwnSessionID() string { return p.SessionID }
+
+// BindSessionID makes id this session's own: a restore of a format-2 state
+// carries on under the id it was saved with (sce.SavedPolicy).
+func (p *StaticChildMeshPolicy) BindSessionID(id string) { p.SessionID = id }
+
+// RunningInvokes is the id of each `<invoke>` whose child session is running,
+// in document order (sce.SavedPolicy): a child that has ended is not running,
+// though the policy keeps it until its state exits, and its `done.invoke` is in
+// the external queue or already taken, so a restore must not bring it back.
+func (p *StaticChildMeshPolicy) RunningInvokes() []string {
+	var running []string
+	if p.childList != nil && !p.pendingDoneInvokeList && !p.childList.IsInFinalState() {
+		running = append(running, "list")
+	}
+	if p.childPeer != nil && !p.pendingDoneInvokePeer && !p.childPeer.IsInFinalState() {
+		running = append(running, "peer")
+	}
+	return running
+}
+
+// InvokeStarts is how many times each `<invoke>` has started in this session,
+// for each started at least once, in document order (sce.SavedPolicy).
+func (p *StaticChildMeshPolicy) InvokeStarts() []sce.SavedInvokeStart {
+	var starts []sce.SavedInvokeStart
+	if p.invokeStartsList > 0 {
+		starts = append(starts, sce.SavedInvokeStart{ID: "list", Count: int64(p.invokeStartsList)})
+	}
+	if p.invokeStartsPeer > 0 {
+		starts = append(starts, sce.SavedInvokeStart{ID: "peer", Count: int64(p.invokeStartsPeer)})
+	}
+	return starts
+}
+
+// InvokeOwner is the state that holds the `<invoke>` id, and false for an id the
+// document does not invoke (sce.SavedPolicy).
+func (p *StaticChildMeshPolicy) InvokeOwner(id string) (StaticChildMeshState, bool) {
+	switch id {
+	case "list":
+		return StaticChildMeshStateWorking, true
+	case "peer":
+		return StaticChildMeshStateJoined, true
+	}
+	return 0, false
+}
+
+// HostInvokeOwner is the state that holds the host-run `<invoke>` of this type
+// and id, and false for one the document does not have a host invoker run
+// (sce.SavedPolicy).
+func (p *StaticChildMeshPolicy) HostInvokeOwner(processorType, id string) (StaticChildMeshState, bool) {
+	return 0, false
+}
+
+
+// resumeChildList resumes the child of the `<invoke>` `list` a saved
+// state holds, from the document `static_child_mesh__sce_synth_invoke__list`, where it stood.
+func (p *StaticChildMeshPolicy) resumeChildList(engine *sce.Engine[StaticChildMeshState, StaticChildMeshEvent], child sce.SavedChild, wallNowMs int64) error {
+	// W3C SCXML 6.5: the child's session id, which its events carry as their origin.
+	childSessionID := fmt.Sprintf("%s.%s", p.SessionID, child.InvokeID)
+	childPolicy := NewStaticChildMeshSceSynthInvokeListPolicy()
+	childPolicy.ParentExternalQueue = sce.NewParentEventQueue()
+	childPolicy.InvokeID = child.InvokeID
+	childPolicy.ChildSessionID = childSessionID
+	childPolicy.SessionID = childSessionID
+
+	p.activeInvokes["list"] = &sce.ChildSession{
+		SessionID:       childSessionID,
+		InvokeID:        "list",
+		ParentSessionID: p.SessionID,
+		Autoforward:     false,
+		FinalizeScript:  "",
+	}
+
+	childEngine, err := StaticChildMeshSceSynthInvokeListRestoreAt(&childPolicy, child.Session, engine.Clock(), wallNowMs)
+	if err != nil {
+		delete(p.activeInvokes, "list")
+		return err
+	}
+	childEngine.SetCompletionCallback(func() {})
+	// Child sessions in Mesh (SCE_MESH.md; docs/adr/0043): the router of the
+	// resumed child is owed, not asked here. This machine is being restored, and
+	// its host registers the factory of its children's routers only once the
+	// restore has returned it.
+	engine.OweChildMesh(childEngine, "list", "")
+	p.childList = &childEngineWrapperStaticChildMesh_List{engine: childEngine, policy: &childPolicy}
+	return nil
+}
+
+
+// resumeChildPeer0jStaticMeshRelay resumes the child of the `<invoke>` `peer` a saved
+// state holds, from the document `static_mesh_relay`, where it stood.
+func (p *StaticChildMeshPolicy) resumeChildPeer0jStaticMeshRelay(engine *sce.Engine[StaticChildMeshState, StaticChildMeshEvent], child sce.SavedChild, wallNowMs int64) error {
+	// W3C SCXML 6.5: the child's session id, which its events carry as their origin.
+	childSessionID := fmt.Sprintf("%s.%s", p.SessionID, child.InvokeID)
+	childPolicy := NewStaticMeshRelayPolicy()
+	childPolicy.ParentExternalQueue = sce.NewParentEventQueue()
+	childPolicy.InvokeID = child.InvokeID
+	childPolicy.ChildSessionID = childSessionID
+	childPolicy.SessionID = childSessionID
+
+	p.activeInvokes["peer"] = &sce.ChildSession{
+		SessionID:       childSessionID,
+		InvokeID:        "peer",
+		ParentSessionID: p.SessionID,
+		Autoforward:     false,
+		FinalizeScript:  "",
+	}
+
+	childEngine, err := StaticMeshRelayRestoreAt(&childPolicy, child.Session, engine.Clock(), wallNowMs)
+	if err != nil {
+		delete(p.activeInvokes, "peer")
+		return err
+	}
+	childEngine.SetCompletionCallback(func() {})
+	// Child sessions in Mesh (SCE_MESH.md; docs/adr/0043): the router of the
+	// resumed child is owed, not asked here. This machine is being restored, and
+	// its host registers the factory of its children's routers only once the
+	// restore has returned it.
+	engine.OweChildMesh(childEngine, "peer", "static_mesh_relay")
+	p.childPeer = &childEngineWrapperStaticChildMesh_Peer0jStaticMeshRelay{engine: childEngine, policy: &childPolicy}
+	return nil
+}
+
+
+// savedChildren is each running child, saved through the document it runs with
+// its whole state, in document order: what a saved state holds in place of the
+// ids of format 1, and what a restore resumes (docs/adr/0045, section 1).
+func (p *StaticChildMeshPolicy) savedChildren(wallNowMs int64) ([]sce.SavedChild, error) {
+	children := []sce.SavedChild{}
+	if running := p.childList; running != nil && !p.pendingDoneInvokeList && !running.IsInFinalState() {
+		saveable, saves := running.(sce.SavedChildEngine)
+		session, tracked := p.activeInvokes["list"]
+		if !saves || !tracked {
+			return nil, sce.Refuse("the running child of 'list' is not one a saved state holds")
+		}
+		if err := sce.NothingInTransit(running.GetParentEventQueue(), "list"); err != nil {
+			return nil, err
+		}
+		saved, err := saveable.SaveAsSession(wallNowMs)
+		if err != nil {
+			return nil, sce.RefusalWithin(err, fmt.Sprintf("invokes[%d].session", len(children)))
+		}
+		children = append(children, sce.SavedChild{
+			ID:       "list",
+			Start:    int64(p.invokeStartsList),
+			InvokeID: strings.TrimPrefix(session.SessionID, p.SessionID+"."),
+			Document: saveable.SavedDocument(),
+			Session:  saved,
+		})
+	}
+	if running := p.childPeer; running != nil && !p.pendingDoneInvokePeer && !running.IsInFinalState() {
+		saveable, saves := running.(sce.SavedChildEngine)
+		session, tracked := p.activeInvokes["peer"]
+		if !saves || !tracked {
+			return nil, sce.Refuse("the running child of 'peer' is not one a saved state holds")
+		}
+		if err := sce.NothingInTransit(running.GetParentEventQueue(), "peer"); err != nil {
+			return nil, err
+		}
+		saved, err := saveable.SaveAsSession(wallNowMs)
+		if err != nil {
+			return nil, sce.RefusalWithin(err, fmt.Sprintf("invokes[%d].session", len(children)))
+		}
+		children = append(children, sce.SavedChild{
+			ID:       "peer",
+			Start:    int64(p.invokeStartsPeer),
+			InvokeID: strings.TrimPrefix(session.SessionID, p.SessionID+"."),
+			Document: saveable.SavedDocument(),
+			Session:  saved,
+		})
+	}
+	return children, nil
+}
+
+// JudgeChild refuses a running child unless its session is a state of the
+// document it names, to any depth (sce.SavedPolicy).
+func (p *StaticChildMeshPolicy) JudgeChild(child sce.SavedChild) error {
+	switch {
+	case child.ID == "list" && child.Document == "static_child_mesh__sce_synth_invoke__list":
+		return StaticChildMeshSceSynthInvokeListJudge(child.Session)
+	case child.ID == "peer" && child.Document == "static_mesh_relay":
+		return StaticMeshRelayJudge(child.Session)
+	}
+	return sce.Refuse(fmt.Sprintf("invokes names '%s' running '%s', a document that `<invoke>` does not start", child.ID, child.Document))
+}
+
+// ResumeChildren resumes each of children in the order given, each built as
+// starting it builds it and restored where it stood (sce.SavedPolicy).
+func (p *StaticChildMeshPolicy) ResumeChildren(engine *sce.Engine[StaticChildMeshState, StaticChildMeshEvent], children []sce.SavedChild, wallNowMs int64) error {
+	for _, child := range children {
+		var err error
+		switch {
+		case child.ID == "list" && child.Document == "static_child_mesh__sce_synth_invoke__list":
+			err = p.resumeChildList(engine, child, wallNowMs)
+		case child.ID == "peer" && child.Document == "static_mesh_relay":
+			err = p.resumeChildPeer0jStaticMeshRelay(engine, child, wallNowMs)
+		default:
+			err = sce.Refuse(fmt.Sprintf("invokes names '%s' running '%s', a document that `<invoke>` does not start", child.ID, child.Document))
+		}
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// SetHistoryValue gives history the states a saved state recorded for it
+// (sce.SavedPolicy).
+func (p *StaticChildMeshPolicy) SetHistoryValue(history sce.HistoryID, states []StaticChildMeshState) {
+}
+
 // ======================================================================
 // Policy struct
 // ======================================================================
@@ -618,6 +987,8 @@ func (w *childEngineWrapperStaticChildMesh_List) DonedataAtFinal() string { retu
 func (w *childEngineWrapperStaticChildMesh_List) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
 func (w *childEngineWrapperStaticChildMesh_List) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
 func (w *childEngineWrapperStaticChildMesh_List) DetachMesh() { w.engine.DetachMesh() }
+func (w *childEngineWrapperStaticChildMesh_List) SaveAsSession(wallNowMs int64) (*sce.SavedState, error) { return StaticChildMeshSceSynthInvokeListSaveAt(w.engine, wallNowMs) }
+func (w *childEngineWrapperStaticChildMesh_List) SavedDocument() string { return "static_child_mesh__sce_synth_invoke__list" }
 type childEngineWrapperStaticChildMesh_Peer0jStaticMeshRelay struct {
 	engine *sce.Engine[StaticMeshRelayState, StaticMeshRelayEvent]
 	policy *StaticMeshRelayPolicy
@@ -635,6 +1006,8 @@ func (w *childEngineWrapperStaticChildMesh_Peer0jStaticMeshRelay) DonedataAtFina
 func (w *childEngineWrapperStaticChildMesh_Peer0jStaticMeshRelay) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
 func (w *childEngineWrapperStaticChildMesh_Peer0jStaticMeshRelay) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
 func (w *childEngineWrapperStaticChildMesh_Peer0jStaticMeshRelay) DetachMesh() { w.engine.DetachMesh() }
+func (w *childEngineWrapperStaticChildMesh_Peer0jStaticMeshRelay) SaveAsSession(wallNowMs int64) (*sce.SavedState, error) { return StaticMeshRelaySaveAt(w.engine, wallNowMs) }
+func (w *childEngineWrapperStaticChildMesh_Peer0jStaticMeshRelay) SavedDocument() string { return "static_mesh_relay" }
 
 
 // DeliverToParent delivers a delayed `<send target="#_parent">` whose wait is
@@ -892,6 +1265,33 @@ func (p *StaticChildMeshPolicy) ExecuteEntryActions(state StaticChildMeshState, 
 		}
 	default:
 		// No entry actions
+	}
+}
+
+// RestartInvokes starts each of ids again from its beginning, as entering its
+// state starts it: the start is deferred to the macrostep the host drives next,
+// which runs it, so the restore itself takes no step. What a format-1 saved state
+// holds of a running child is its id alone (sce.SavedPolicy, docs/adr/0045).
+func (p *StaticChildMeshPolicy) RestartInvokes(engine *sce.Engine[StaticChildMeshState, StaticChildMeshEvent], ids []string) {
+	for _, id := range ids {
+		switch id {
+		case "peer":
+			p.invokeStartsPeer++
+			generatedInvokeID := fmt.Sprintf("%s.%d.peer", "joined", p.invokeStartsPeer)
+			sce.DeferInvoke(&p.pendingInvokes, sce.PendingInvoke[StaticChildMeshState]{
+				InvokeID:   generatedInvokeID,
+				State:      StaticChildMeshStateJoined,
+				DocumentID: "peer",
+			})
+		case "list":
+			p.invokeStartsList++
+			generatedInvokeID := fmt.Sprintf("%s.%d.list", "working", p.invokeStartsList)
+			sce.DeferInvoke(&p.pendingInvokes, sce.PendingInvoke[StaticChildMeshState]{
+				InvokeID:   generatedInvokeID,
+				State:      StaticChildMeshStateWorking,
+				DocumentID: "list",
+			})
+		}
 	}
 }
 

@@ -396,9 +396,10 @@ func StaticWholePayloadSaveAt(engine *sce.Engine[StaticWholePayloadState, Static
 	variables.Set("updates", sce.SavedWriteUint32(p.vUpdates))
 	variables.Set("agendas", sce.SavedWriteUint32(p.vAgendas))
 	variables.Set("others", sce.SavedWriteUint32(p.vOthers))
+	var children []sce.SavedChild
 	return sce.SaveSession(engine, &StaticWholePayloadSavedShape, variables,
 		sce.SaveHistory[StaticWholePayloadState, StaticWholePayloadEvent](p, StaticWholePayloadHistories),
-		nil, wallNowMs)
+		children, wallNowMs)
 }
 
 // StaticWholePayloadSave is StaticWholePayloadSaveAt at the host's wall clock now.

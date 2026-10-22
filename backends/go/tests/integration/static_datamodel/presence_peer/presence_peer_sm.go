@@ -508,9 +508,10 @@ func PresencePeerSaveAt(engine *sce.Engine[PresencePeerState, PresencePeerEvent]
 	variables.Set("fresh", sce.SavedWriteBool(p.vFresh))
 	variables.Set("lost", sce.SavedWriteUint32(p.vLost))
 	variables.Set("refusals", sce.SavedWriteUint32(p.vRefusals))
+	var children []sce.SavedChild
 	return sce.SaveSession(engine, &PresencePeerSavedShape, variables,
 		sce.SaveHistory[PresencePeerState, PresencePeerEvent](p, PresencePeerHistories),
-		nil, wallNowMs)
+		children, wallNowMs)
 }
 
 // PresencePeerSave is PresencePeerSaveAt at the host's wall clock now.

@@ -890,6 +890,10 @@ func (w *childEngineWrapper{{ machine_name }}_{{ invoke_info.field_suffix | to_p
 func (w *childEngineWrapper{{ machine_name }}_{{ invoke_info.field_suffix | to_pascal_case }}) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
 func (w *childEngineWrapper{{ machine_name }}_{{ invoke_info.field_suffix | to_pascal_case }}) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
 func (w *childEngineWrapper{{ machine_name }}_{{ invoke_info.field_suffix | to_pascal_case }}) DetachMesh() { w.engine.DetachMesh() }
+{% if static_saved_shape %}
+func (w *childEngineWrapper{{ machine_name }}_{{ invoke_info.field_suffix | to_pascal_case }}) SaveAsSession(wallNowMs int64) (*sce.SavedState, error) { return {{ invoke_info.child_name | to_machine_name }}SaveAt(w.engine, wallNowMs) }
+func (w *childEngineWrapper{{ machine_name }}_{{ invoke_info.field_suffix | to_pascal_case }}) SavedDocument() string { return "{{ invoke_info.child_name | escape_go }}" }
+{% endif %}
 {% endfor %}
 {% for invoke_info in model.invokes | hybrid %}
 {#- §scxml-6.4 + SCE_ACCEPTED_SUBSET.md §2.13: with candidates declared the
@@ -917,6 +921,10 @@ func (w *{{ wrapper }}) DonedataAtFinal() string { return w.engine.DonedataAtFin
 func (w *{{ wrapper }}) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
 func (w *{{ wrapper }}) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
 func (w *{{ wrapper }}) DetachMesh() { w.engine.DetachMesh() }
+{% if static_saved_shape %}
+func (w *{{ wrapper }}) SaveAsSession(wallNowMs int64) (*sce.SavedState, error) { return {{ target.stem | to_machine_name }}SaveAt(w.engine, wallNowMs) }
+func (w *{{ wrapper }}) SavedDocument() string { return "{{ target.stem | escape_go }}" }
+{% endif %}
 {% endfor %}
 {% endfor %}
 

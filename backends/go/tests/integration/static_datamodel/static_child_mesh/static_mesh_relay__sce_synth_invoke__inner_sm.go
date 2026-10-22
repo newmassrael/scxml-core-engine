@@ -213,9 +213,10 @@ func StaticMeshRelaySceSynthInvokeInnerSaveAt(engine *sce.Engine[StaticMeshRelay
 		return nil, sce.Refuse("the engine is not one of StaticMeshRelaySceSynthInvokeInner")
 	}
 	variables := sce.NewJSONObject()
+	var children []sce.SavedChild
 	return sce.SaveSession(engine, &StaticMeshRelaySceSynthInvokeInnerSavedShape, variables,
 		sce.SaveHistory[StaticMeshRelaySceSynthInvokeInnerState, StaticMeshRelaySceSynthInvokeInnerEvent](p, StaticMeshRelaySceSynthInvokeInnerHistories),
-		nil, wallNowMs)
+		children, wallNowMs)
 }
 
 // StaticMeshRelaySceSynthInvokeInnerSave is StaticMeshRelaySceSynthInvokeInnerSaveAt at the host's wall clock now.

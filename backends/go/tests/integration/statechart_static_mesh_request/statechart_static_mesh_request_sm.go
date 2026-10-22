@@ -256,9 +256,10 @@ func StatechartStaticMeshRequestSaveAt(engine *sce.Engine[StatechartStaticMeshRe
 	variables.Set("answered", sce.SavedWriteUint32(p.vAnswered))
 	variables.Set("failed", sce.SavedWriteUint32(p.vFailed))
 	variables.Set("refused", sce.SavedWriteUint32(p.vRefused))
+	var children []sce.SavedChild
 	return sce.SaveSession(engine, &StatechartStaticMeshRequestSavedShape, variables,
 		sce.SaveHistory[StatechartStaticMeshRequestState, StatechartStaticMeshRequestEvent](p, StatechartStaticMeshRequestHistories),
-		nil, wallNowMs)
+		children, wallNowMs)
 }
 
 // StatechartStaticMeshRequestSave is StatechartStaticMeshRequestSaveAt at the host's wall clock now.

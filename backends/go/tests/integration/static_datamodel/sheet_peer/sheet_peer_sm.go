@@ -1215,9 +1215,10 @@ func SheetPeerSaveAt(engine *sce.Engine[SheetPeerState, SheetPeerEvent], wallNow
 	variables.Set("noNumber", sce.SavedWriteInt64(p.vNoNumber))
 	variables.Set("orphans", sce.SavedWriteUint32(p.vOrphans))
 	variables.Set("refusals", sce.SavedWriteUint32(p.vRefusals))
+	var children []sce.SavedChild
 	return sce.SaveSession(engine, &SheetPeerSavedShape, variables,
 		sce.SaveHistory[SheetPeerState, SheetPeerEvent](p, SheetPeerHistories),
-		nil, wallNowMs)
+		children, wallNowMs)
 }
 
 // SheetPeerSave is SheetPeerSaveAt at the host's wall clock now.

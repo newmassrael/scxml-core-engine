@@ -407,9 +407,10 @@ func StaticWireEnumSaveAt(engine *sce.Engine[StaticWireEnumState, StaticWireEnum
 	variables.Set("shown", p.vShown.ToSaved())
 	variables.Set("received", p.vReceived.ToSaved())
 	variables.Set("deliveries", sce.SavedWriteUint32(p.vDeliveries))
+	var children []sce.SavedChild
 	return sce.SaveSession(engine, &StaticWireEnumSavedShape, variables,
 		sce.SaveHistory[StaticWireEnumState, StaticWireEnumEvent](p, StaticWireEnumHistories),
-		nil, wallNowMs)
+		children, wallNowMs)
 }
 
 // StaticWireEnumSave is StaticWireEnumSaveAt at the host's wall clock now.

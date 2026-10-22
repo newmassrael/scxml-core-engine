@@ -216,9 +216,10 @@ func StaticInvokeStringSceSynthInvokeOverSaveAt(engine *sce.Engine[StaticInvokeS
 	}
 	variables := sce.NewJSONObject()
 	variables.Set("title", sce.SavedWriteString(p.vTitle))
+	var children []sce.SavedChild
 	return sce.SaveSession(engine, &StaticInvokeStringSceSynthInvokeOverSavedShape, variables,
 		sce.SaveHistory[StaticInvokeStringSceSynthInvokeOverState, StaticInvokeStringSceSynthInvokeOverEvent](p, StaticInvokeStringSceSynthInvokeOverHistories),
-		nil, wallNowMs)
+		children, wallNowMs)
 }
 
 // StaticInvokeStringSceSynthInvokeOverSave is StaticInvokeStringSceSynthInvokeOverSaveAt at the host's wall clock now.

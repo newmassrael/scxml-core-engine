@@ -360,9 +360,10 @@ func StaticDonedataRecordSaveAt(engine *sce.Engine[StaticDonedataRecordState, St
 	}
 	variables := sce.NewJSONObject()
 	variables.Set("shown", p.vShown.ToSaved())
+	var children []sce.SavedChild
 	return sce.SaveSession(engine, &StaticDonedataRecordSavedShape, variables,
 		sce.SaveHistory[StaticDonedataRecordState, StaticDonedataRecordEvent](p, StaticDonedataRecordHistories),
-		nil, wallNowMs)
+		children, wallNowMs)
 }
 
 // StaticDonedataRecordSave is StaticDonedataRecordSaveAt at the host's wall clock now.

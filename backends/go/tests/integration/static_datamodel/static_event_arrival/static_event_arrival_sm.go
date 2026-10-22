@@ -214,9 +214,10 @@ func StaticEventArrivalSaveAt(engine *sce.Engine[StaticEventArrivalState, Static
 	variables := sce.NewJSONObject()
 	variables.Set("requests", sce.SavedWriteUint32(p.vRequests))
 	variables.Set("specials", sce.SavedWriteUint32(p.vSpecials))
+	var children []sce.SavedChild
 	return sce.SaveSession(engine, &StaticEventArrivalSavedShape, variables,
 		sce.SaveHistory[StaticEventArrivalState, StaticEventArrivalEvent](p, StaticEventArrivalHistories),
-		nil, wallNowMs)
+		children, wallNowMs)
 }
 
 // StaticEventArrivalSave is StaticEventArrivalSaveAt at the host's wall clock now.

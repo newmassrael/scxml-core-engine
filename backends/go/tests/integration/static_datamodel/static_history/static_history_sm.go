@@ -383,9 +383,10 @@ func StaticHistorySaveAt(engine *sce.Engine[StaticHistoryState, StaticHistoryEve
 	}
 	variables := sce.NewJSONObject()
 	variables.Set("resumed", sce.SavedWriteUint8(p.vResumed))
+	var children []sce.SavedChild
 	return sce.SaveSession(engine, &StaticHistorySavedShape, variables,
 		sce.SaveHistory[StaticHistoryState, StaticHistoryEvent](p, StaticHistoryHistories),
-		nil, wallNowMs)
+		children, wallNowMs)
 }
 
 // StaticHistorySave is StaticHistorySaveAt at the host's wall clock now.

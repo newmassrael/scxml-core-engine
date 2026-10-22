@@ -235,9 +235,10 @@ func StaticCancelExprSaveAt(engine *sce.Engine[StaticCancelExprState, StaticCanc
 	variables.Set("a_fired", sce.SavedWriteUint32(p.vAFired))
 	variables.Set("b_fired", sce.SavedWriteUint32(p.vBFired))
 	variables.Set("refusals", sce.SavedWriteUint32(p.vRefusals))
+	var children []sce.SavedChild
 	return sce.SaveSession(engine, &StaticCancelExprSavedShape, variables,
 		sce.SaveHistory[StaticCancelExprState, StaticCancelExprEvent](p, StaticCancelExprHistories),
-		nil, wallNowMs)
+		children, wallNowMs)
 }
 
 // StaticCancelExprSave is StaticCancelExprSaveAt at the host's wall clock now.

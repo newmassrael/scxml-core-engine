@@ -288,9 +288,10 @@ func StaticListIndexSaveAt(engine *sce.Engine[StaticListIndexState, StaticListIn
 	variables.Set("room", sce.SavedWriteBool(p.vRoom))
 	variables.Set("count", sce.SavedWriteUint32(p.vCount))
 	variables.Set("refusals", sce.SavedWriteUint32(p.vRefusals))
+	var children []sce.SavedChild
 	return sce.SaveSession(engine, &StaticListIndexSavedShape, variables,
 		sce.SaveHistory[StaticListIndexState, StaticListIndexEvent](p, StaticListIndexHistories),
-		nil, wallNowMs)
+		children, wallNowMs)
 }
 
 // StaticListIndexSave is StaticListIndexSaveAt at the host's wall clock now.

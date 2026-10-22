@@ -112,6 +112,36 @@ type meshChild interface {
 // router.
 func (e *Engine[S, E]) RegisterChildMeshRouters(factory ChildMeshRouters) {
 	e.childMeshRouters = factory
+	// The children a restore resumed before the host had a factory to give: each
+	// is asked now, before anything drives it (OweChildMesh).
+	owed := e.owedChildMeshes
+	e.owedChildMeshes = nil
+	for _, child := range owed {
+		e.StartChildMesh(child.child, child.invokeID, child.document)
+	}
+}
+
+// owedChildMesh is a resumed child whose router has yet to be asked of the
+// factory.
+type owedChildMesh struct {
+	child    meshChild
+	invokeID string
+	document string
+}
+
+// OweChildMesh records that child, which a restore resumed, is owed the router
+// this machine's factory gives the invoke invokeID of the document whose stem is
+// document: not asked here, since this machine is being restored and its host
+// registers the factory of its children's routers only once the restore has
+// returned it. RegisterChildMeshRouters asks for each, before anything drives
+// the child (SCE_MESH.md, Child Sessions in Mesh; docs/adr/0045, section 3,
+// step 3). A factory registered already is asked at once.
+func (e *Engine[S, E]) OweChildMesh(child meshChild, invokeID, document string) {
+	if e.childMeshRouters != nil {
+		e.StartChildMesh(child, invokeID, document)
+		return
+	}
+	e.owedChildMeshes = append(e.owedChildMeshes, owedChildMesh{child, invokeID, document})
 }
 
 // StartChildMesh asks this machine's factory for the router of child, which

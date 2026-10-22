@@ -217,9 +217,10 @@ func StaticHybridFirstSaveAt(engine *sce.Engine[StaticHybridFirstState, StaticHy
 	variables := sce.NewJSONObject()
 	variables.Set("start", sce.SavedWriteUint32(p.vStart))
 	variables.Set("enabled", sce.SavedWriteBool(p.vEnabled))
+	var children []sce.SavedChild
 	return sce.SaveSession(engine, &StaticHybridFirstSavedShape, variables,
 		sce.SaveHistory[StaticHybridFirstState, StaticHybridFirstEvent](p, StaticHybridFirstHistories),
-		nil, wallNowMs)
+		children, wallNowMs)
 }
 
 // StaticHybridFirstSave is StaticHybridFirstSaveAt at the host's wall clock now.

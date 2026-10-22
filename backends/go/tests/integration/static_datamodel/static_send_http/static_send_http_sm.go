@@ -227,9 +227,10 @@ func StaticSendHttpSaveAt(engine *sce.Engine[StaticSendHttpState, StaticSendHttp
 	variables.Set("delta", sce.SavedWriteInt16(p.vDelta))
 	variables.Set("ratio", sce.SavedWriteFloat64(p.vRatio))
 	variables.Set("errors", sce.SavedWriteUint32(p.vErrors))
+	var children []sce.SavedChild
 	return sce.SaveSession(engine, &StaticSendHttpSavedShape, variables,
 		sce.SaveHistory[StaticSendHttpState, StaticSendHttpEvent](p, StaticSendHttpHistories),
-		nil, wallNowMs)
+		children, wallNowMs)
 }
 
 // StaticSendHttpSave is StaticSendHttpSaveAt at the host's wall clock now.

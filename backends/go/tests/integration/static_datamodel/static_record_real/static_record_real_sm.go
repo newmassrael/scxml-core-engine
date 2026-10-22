@@ -315,9 +315,10 @@ func StaticRecordRealSaveAt(engine *sce.Engine[StaticRecordRealState, StaticReco
 	variables := sce.NewJSONObject()
 	variables.Set("last", p.vLast.ToSaved())
 	variables.Set("sum", sce.SavedWriteFloat64(p.vSum))
+	var children []sce.SavedChild
 	return sce.SaveSession(engine, &StaticRecordRealSavedShape, variables,
 		sce.SaveHistory[StaticRecordRealState, StaticRecordRealEvent](p, StaticRecordRealHistories),
-		nil, wallNowMs)
+		children, wallNowMs)
 }
 
 // StaticRecordRealSave is StaticRecordRealSaveAt at the host's wall clock now.

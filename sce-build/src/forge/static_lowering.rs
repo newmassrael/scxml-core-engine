@@ -6597,6 +6597,12 @@ impl GoTarget<'_> {
 }
 
 impl StaticTarget for GoTarget<'_> {
+    // The start site holds the id it generates in the `string` local
+    // `generatedInvokeID` (`ExecuteEntryActions`), which it goes on to start the
+    // child under, so the variable takes it as it stands.
+    fn generated_invoke_id(&self) -> Option<&'static str> {
+        Some("generatedInvokeID")
+    }
     fn name(&self) -> &'static str {
         "Go"
     }

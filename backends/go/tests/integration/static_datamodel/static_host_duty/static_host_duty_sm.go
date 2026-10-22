@@ -222,9 +222,10 @@ func StaticHostDutySaveAt(engine *sce.Engine[StaticHostDutyState, StaticHostDuty
 		return nil, sce.Refuse("the engine is not one of StaticHostDuty")
 	}
 	variables := sce.NewJSONObject()
+	var children []sce.SavedChild
 	return sce.SaveSession(engine, &StaticHostDutySavedShape, variables,
 		sce.SaveHistory[StaticHostDutyState, StaticHostDutyEvent](p, StaticHostDutyHistories),
-		nil, wallNowMs)
+		children, wallNowMs)
 }
 
 // StaticHostDutySave is StaticHostDutySaveAt at the host's wall clock now.

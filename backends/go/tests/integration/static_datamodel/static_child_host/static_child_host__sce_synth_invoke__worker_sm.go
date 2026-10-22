@@ -231,9 +231,10 @@ func StaticChildHostSceSynthInvokeWorkerSaveAt(engine *sce.Engine[StaticChildHos
 	}
 	variables := sce.NewJSONObject()
 	variables.Set("steps", sce.SavedWriteUint32(p.vSteps))
+	var children []sce.SavedChild
 	return sce.SaveSession(engine, &StaticChildHostSceSynthInvokeWorkerSavedShape, variables,
 		sce.SaveHistory[StaticChildHostSceSynthInvokeWorkerState, StaticChildHostSceSynthInvokeWorkerEvent](p, StaticChildHostSceSynthInvokeWorkerHistories),
-		nil, wallNowMs)
+		children, wallNowMs)
 }
 
 // StaticChildHostSceSynthInvokeWorkerSave is StaticChildHostSceSynthInvokeWorkerSaveAt at the host's wall clock now.

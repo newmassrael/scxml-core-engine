@@ -381,6 +381,13 @@ func (q *ParentEventQueue) Push(ev ParentEvent) {
 	q.mu.Unlock()
 }
 
+// Len is how many events wait in the queue.
+func (q *ParentEventQueue) Len() int {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return len(q.events)
+}
+
 // Drain removes and returns every queued event, oldest first.
 func (q *ParentEventQueue) Drain() []ParentEvent {
 	q.mu.Lock()

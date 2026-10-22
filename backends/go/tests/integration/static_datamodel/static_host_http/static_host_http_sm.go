@@ -302,9 +302,10 @@ func StaticHostHttpSaveAt(engine *sce.Engine[StaticHostHttpState, StaticHostHttp
 	variables.Set("status", sce.SavedWriteUint16(p.vStatus))
 	variables.Set("response_headers", sce.SavedWriteString(p.vResponseHeaders))
 	variables.Set("response_body", sce.SavedWriteString(p.vResponseBody))
+	var children []sce.SavedChild
 	return sce.SaveSession(engine, &StaticHostHttpSavedShape, variables,
 		sce.SaveHistory[StaticHostHttpState, StaticHostHttpEvent](p, StaticHostHttpHistories),
-		nil, wallNowMs)
+		children, wallNowMs)
 }
 
 // StaticHostHttpSave is StaticHostHttpSaveAt at the host's wall clock now.

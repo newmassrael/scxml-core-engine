@@ -217,9 +217,10 @@ func StaticHybridSecondSaveAt(engine *sce.Engine[StaticHybridSecondState, Static
 	variables := sce.NewJSONObject()
 	variables.Set("start", sce.SavedWriteUint32(p.vStart))
 	variables.Set("extra", sce.SavedWriteUint32(p.vExtra))
+	var children []sce.SavedChild
 	return sce.SaveSession(engine, &StaticHybridSecondSavedShape, variables,
 		sce.SaveHistory[StaticHybridSecondState, StaticHybridSecondEvent](p, StaticHybridSecondHistories),
-		nil, wallNowMs)
+		children, wallNowMs)
 }
 
 // StaticHybridSecondSave is StaticHybridSecondSaveAt at the host's wall clock now.

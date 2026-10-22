@@ -217,9 +217,10 @@ func StaticHostCallArgumentsSaveAt(engine *sce.Engine[StaticHostCallArgumentsSta
 	variables := sce.NewJSONObject()
 	variables.Set("level", sce.SavedWriteUint8(p.vLevel))
 	variables.Set("errors", sce.SavedWriteUint8(p.vErrors))
+	var children []sce.SavedChild
 	return sce.SaveSession(engine, &StaticHostCallArgumentsSavedShape, variables,
 		sce.SaveHistory[StaticHostCallArgumentsState, StaticHostCallArgumentsEvent](p, StaticHostCallArgumentsHistories),
-		nil, wallNowMs)
+		children, wallNowMs)
 }
 
 // StaticHostCallArgumentsSave is StaticHostCallArgumentsSaveAt at the host's wall clock now.

@@ -236,9 +236,10 @@ func StaticBytesSaveAt(engine *sce.Engine[StaticBytesState, StaticBytesEvent], w
 	variables.Set("matches", sce.SavedWriteUint32(p.vMatches))
 	variables.Set("misses", sce.SavedWriteUint32(p.vMisses))
 	variables.Set("errors", sce.SavedWriteUint32(p.vErrors))
+	var children []sce.SavedChild
 	return sce.SaveSession(engine, &StaticBytesSavedShape, variables,
 		sce.SaveHistory[StaticBytesState, StaticBytesEvent](p, StaticBytesHistories),
-		nil, wallNowMs)
+		children, wallNowMs)
 }
 
 // StaticBytesSave is StaticBytesSaveAt at the host's wall clock now.

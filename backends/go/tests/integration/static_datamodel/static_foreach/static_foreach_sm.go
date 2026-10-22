@@ -247,9 +247,10 @@ func StaticForeachSaveAt(engine *sce.Engine[StaticForeachState, StaticForeachEve
 	variables.Set("visited", sce.SavedWriteUint32(p.vVisited))
 	variables.Set("finished", sce.SavedWriteUint32(p.vFinished))
 	variables.Set("errors", sce.SavedWriteUint32(p.vErrors))
+	var children []sce.SavedChild
 	return sce.SaveSession(engine, &StaticForeachSavedShape, variables,
 		sce.SaveHistory[StaticForeachState, StaticForeachEvent](p, StaticForeachHistories),
-		nil, wallNowMs)
+		children, wallNowMs)
 }
 
 // StaticForeachSave is StaticForeachSaveAt at the host's wall clock now.

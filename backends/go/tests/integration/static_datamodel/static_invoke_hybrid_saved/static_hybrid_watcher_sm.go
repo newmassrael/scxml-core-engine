@@ -216,9 +216,10 @@ func StaticHybridWatcherSaveAt(engine *sce.Engine[StaticHybridWatcherState, Stat
 	}
 	variables := sce.NewJSONObject()
 	variables.Set("start", sce.SavedWriteUint32(p.vStart))
+	var children []sce.SavedChild
 	return sce.SaveSession(engine, &StaticHybridWatcherSavedShape, variables,
 		sce.SaveHistory[StaticHybridWatcherState, StaticHybridWatcherEvent](p, StaticHybridWatcherHistories),
-		nil, wallNowMs)
+		children, wallNowMs)
 }
 
 // StaticHybridWatcherSave is StaticHybridWatcherSaveAt at the host's wall clock now.

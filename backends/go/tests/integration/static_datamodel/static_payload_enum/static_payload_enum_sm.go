@@ -332,9 +332,10 @@ func StaticPayloadEnumSaveAt(engine *sce.Engine[StaticPayloadEnumState, StaticPa
 	variables.Set("zoom", sce.SavedWriteUint8(p.vZoom))
 	variables.Set("agenda", sce.SavedWriteBool(p.vAgenda))
 	variables.Set("shown", sce.SavedWriteUint32(p.vShown))
+	var children []sce.SavedChild
 	return sce.SaveSession(engine, &StaticPayloadEnumSavedShape, variables,
 		sce.SaveHistory[StaticPayloadEnumState, StaticPayloadEnumEvent](p, StaticPayloadEnumHistories),
-		nil, wallNowMs)
+		children, wallNowMs)
 }
 
 // StaticPayloadEnumSave is StaticPayloadEnumSaveAt at the host's wall clock now.

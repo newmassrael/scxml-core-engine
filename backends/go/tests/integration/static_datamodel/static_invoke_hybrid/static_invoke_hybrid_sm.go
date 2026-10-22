@@ -225,6 +225,716 @@ const StaticInvokeHybridSavedShapeFormat2Revised = "039391213c4d9db4886165effd47
 // names it by, and the format-2 shape spells it by.
 var StaticInvokeHybridSavedEnumKeys = [...]string{}
 
+// ── SCE Accepted Subset §2.15: saving this machine, restoring it ──────────
+
+// StaticInvokeHybridSavedShape is what a saved state of this document is bound
+// to: a state saved from a document that renamed, re-typed or moved a state or a
+// variable is refused, one saved before a guard or an action changed is not, and
+// one saved at an earlier revision of a record schema is read with each field a
+// later revision added at its default.
+var StaticInvokeHybridSavedShape = sce.SavedShape{
+	First:          "972ab8ed39c25ae07affaee242de1ae666cf4699c734a946880fc52a11084868",
+	Revised:        "039391213c4d9db4886165effd4737cd44a24b3e626866ecb867a40301922e58",
+	Format2First:   "972ab8ed39c25ae07affaee242de1ae666cf4699c734a946880fc52a11084868",
+	Format2Revised: "039391213c4d9db4886165effd4737cd44a24b3e626866ecb867a40301922e58",
+	Records: []sce.RecordLineage{
+	},
+	Enums: []sce.EnumLineage{
+	},
+}
+
+// StaticInvokeHybridHistories is the document's `<history>` pseudo-states, by
+// the id a saved state keys them by: what a saved state records of each, and
+// what a restore reads.
+var StaticInvokeHybridHistories = []sce.HistoryDecl{
+}
+
+// StaticInvokeHybridSaveAt is engine's whole state at the macrostep boundary it
+// stands at: every variable, the machine's own included, and where it stands, as
+// the `sce-saved-state` document every backend reads (sce.SavedState.ToJSON).
+// Each delayed `<send>` still waiting is written as the moment it comes due on
+// the wall clock whose reading now is wallNowMs, in milliseconds since the Unix
+// epoch.
+//
+// Refused for a machine that is not running, one that has ended, one whose last
+// macrostep stopped at the microstep ceiling, and one built around another
+// document's policy.
+func StaticInvokeHybridSaveAt(engine *sce.Engine[StaticInvokeHybridState, StaticInvokeHybridEvent], wallNowMs int64) (*sce.SavedState, error) {
+	p, ok := engine.Policy().(*StaticInvokeHybridPolicy)
+	if !ok {
+		return nil, sce.Refuse("the engine is not one of StaticInvokeHybrid")
+	}
+	variables := sce.NewJSONObject()
+	variables.Set("pick", sce.SavedWriteString(p.vPick))
+	variables.Set("base", sce.SavedWriteUint32(p.vBase))
+	variables.Set("enabled", sce.SavedWriteBool(p.vEnabled))
+	variables.Set("completed", sce.SavedWriteUint32(p.vCompleted))
+	variables.Set("errors", sce.SavedWriteUint32(p.vErrors))
+	// docs/adr/0045: each running child, with its whole state.
+	children, err := p.savedChildren(wallNowMs)
+	if err != nil {
+		return nil, err
+	}
+	return sce.SaveSession(engine, &StaticInvokeHybridSavedShape, variables,
+		sce.SaveHistory[StaticInvokeHybridState, StaticInvokeHybridEvent](p, StaticInvokeHybridHistories),
+		children, wallNowMs)
+}
+
+// StaticInvokeHybridSave is StaticInvokeHybridSaveAt at the host's wall clock now.
+func StaticInvokeHybridSave(engine *sce.Engine[StaticInvokeHybridState, StaticInvokeHybridEvent]) (*sce.SavedState, error) {
+	return StaticInvokeHybridSaveAt(engine, sce.SavedWallClockMs())
+}
+
+// StaticInvokeHybridJudge refuses saved unless a machine of this document could
+// restore it, building nothing: what a parent's restore asks of each child it
+// holds (docs/adr/0045, section 3, step 1).
+func StaticInvokeHybridJudge(saved *sce.SavedState) error {
+	p := &StaticInvokeHybridPolicy{}
+	grown, err := sce.UpgradeSavedState(saved, &StaticInvokeHybridSavedShape)
+	if err != nil {
+		return err
+	}
+	if _, err := sce.RestoreHistory[StaticInvokeHybridState, StaticInvokeHybridEvent](p, grown, StaticInvokeHybridHistories); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("pick"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadBoundedString(raw, "pick", 48); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("base"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "base"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("enabled"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadBool(raw, "enabled"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("completed"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "completed"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("errors"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "errors"); err != nil {
+		return err
+	}
+	return sce.JudgeSession[StaticInvokeHybridState, StaticInvokeHybridEvent](p, grown)
+}
+
+// StaticInvokeHybridRestoreAt is a machine of policy standing where saved left
+// one, measuring time by clock: in place of `Initialize`, so no `<onentry>` runs
+// and no `<data>` is evaluated, since the saved run already did both. Every value
+// is read and the state judged before any is written, so a refused restore leaves
+// policy as it was.
+//
+// Each delayed `<send>` saved is armed against clock, which is the one the
+// machine measures time by; wallNowMs is what time it is on the wall clock the
+// saved `due`s were written against. A send comes due when its saved moment does,
+// and one already due comes due now.
+//
+// The host registers its invokers and its processors on the machine this
+// returns, and drives it as it would one it had initialized.
+func StaticInvokeHybridRestoreAt(policy *StaticInvokeHybridPolicy, saved *sce.SavedState, clock sce.SceClock, wallNowMs int64) (*sce.Engine[StaticInvokeHybridState, StaticInvokeHybridEvent], error) {
+	// The state as one of this machine: each record saved at an earlier revision
+	// of its schema holds the defaults of the fields added since.
+	grown, err := sce.UpgradeSavedState(saved, &StaticInvokeHybridSavedShape)
+	if err != nil {
+		return nil, err
+	}
+	history, err := sce.RestoreHistory[StaticInvokeHybridState, StaticInvokeHybridEvent](policy, grown, StaticInvokeHybridHistories)
+	if err != nil {
+		return nil, err
+	}
+	raw1, err := grown.Variable("pick")
+	if err != nil {
+		return nil, err
+	}
+	read1, err := sce.SavedReadBoundedString(raw1, "pick", 48)
+	if err != nil {
+		return nil, err
+	}
+	raw2, err := grown.Variable("base")
+	if err != nil {
+		return nil, err
+	}
+	read2, err := sce.SavedReadUint32(raw2, "base")
+	if err != nil {
+		return nil, err
+	}
+	raw3, err := grown.Variable("enabled")
+	if err != nil {
+		return nil, err
+	}
+	read3, err := sce.SavedReadBool(raw3, "enabled")
+	if err != nil {
+		return nil, err
+	}
+	raw4, err := grown.Variable("completed")
+	if err != nil {
+		return nil, err
+	}
+	read4, err := sce.SavedReadUint32(raw4, "completed")
+	if err != nil {
+		return nil, err
+	}
+	raw5, err := grown.Variable("errors")
+	if err != nil {
+		return nil, err
+	}
+	read5, err := sce.SavedReadUint32(raw5, "errors")
+	if err != nil {
+		return nil, err
+	}
+	if err := sce.JudgeSession[StaticInvokeHybridState, StaticInvokeHybridEvent](policy, grown); err != nil {
+		return nil, err
+	}
+	policy.vPick = read1
+	policy.vBase = read2
+	policy.vEnabled = read3
+	policy.vCompleted = read4
+	policy.vErrors = read5
+	for _, recorded := range history {
+		policy.SetHistoryValue(recorded.History, recorded.States)
+	}
+	// A start after the restore is numbered on from the saved count.
+	policy.invokeStartsFirstRun = uint64(grown.InvokeStart("first_run"))
+	// A start after the restore is numbered on from the saved count.
+	policy.invokeStartsSecondRun = uint64(grown.InvokeStart("second_run"))
+	// A start after the restore is numbered on from the saved count.
+	policy.invokeStartsLossyRun = uint64(grown.InvokeStart("lossy_run"))
+	// A start after the restore is numbered on from the saved count.
+	policy.invokeStartsMissingRun = uint64(grown.InvokeStart("missing_run"))
+	return sce.EnterSession[StaticInvokeHybridState, StaticInvokeHybridEvent](policy, grown, clock, wallNowMs)
+}
+
+// StaticInvokeHybridRestore is StaticInvokeHybridRestoreAt at the host's wall
+// clock now.
+func StaticInvokeHybridRestore(policy *StaticInvokeHybridPolicy, saved *sce.SavedState, clock sce.SceClock) (*sce.Engine[StaticInvokeHybridState, StaticInvokeHybridEvent], error) {
+	return StaticInvokeHybridRestoreAt(policy, saved, clock, sce.SavedWallClockMs())
+}
+
+// SetSessionID gives this session the id its host has for it, in place of the
+// one it drew: an XML Nmtoken, since another session addresses this one as
+// `#_scxml_<id>` and every child's id is this one's and the id the child was
+// started under (docs/adr/0045). Refused for anything else. Called before the
+// machine starts, since what it sends names it by the id it began with.
+func (p *StaticInvokeHybridPolicy) SetSessionID(id string) error {
+	if reason := sce.SessionIDRefusalOf(id); reason != "" {
+		return sce.Refuse(reason)
+	}
+	p.SessionID = id
+	return nil
+}
+
+// OwnSessionID is this session's id, `_sessionid`, which a saved state names it
+// by (sce.SavedPolicy).
+func (p *StaticInvokeHybridPolicy) OwnSessionID() string { return p.SessionID }
+
+// BindSessionID makes id this session's own: a restore of a format-2 state
+// carries on under the id it was saved with (sce.SavedPolicy).
+func (p *StaticInvokeHybridPolicy) BindSessionID(id string) { p.SessionID = id }
+
+// RunningInvokes is the id of each `<invoke>` whose child session is running,
+// in document order (sce.SavedPolicy): a child that has ended is not running,
+// though the policy keeps it until its state exits, and its `done.invoke` is in
+// the external queue or already taken, so a restore must not bring it back.
+func (p *StaticInvokeHybridPolicy) RunningInvokes() []string {
+	var running []string
+	if p.childFirstRun != nil && !p.pendingDoneInvokeFirstRun && !p.childFirstRun.IsInFinalState() {
+		running = append(running, "first_run")
+	}
+	if p.childSecondRun != nil && !p.pendingDoneInvokeSecondRun && !p.childSecondRun.IsInFinalState() {
+		running = append(running, "second_run")
+	}
+	if p.childLossyRun != nil && !p.pendingDoneInvokeLossyRun && !p.childLossyRun.IsInFinalState() {
+		running = append(running, "lossy_run")
+	}
+	if p.childMissingRun != nil && !p.pendingDoneInvokeMissingRun && !p.childMissingRun.IsInFinalState() {
+		running = append(running, "missing_run")
+	}
+	return running
+}
+
+// InvokeStarts is how many times each `<invoke>` has started in this session,
+// for each started at least once, in document order (sce.SavedPolicy).
+func (p *StaticInvokeHybridPolicy) InvokeStarts() []sce.SavedInvokeStart {
+	var starts []sce.SavedInvokeStart
+	if p.invokeStartsFirstRun > 0 {
+		starts = append(starts, sce.SavedInvokeStart{ID: "first_run", Count: int64(p.invokeStartsFirstRun)})
+	}
+	if p.invokeStartsSecondRun > 0 {
+		starts = append(starts, sce.SavedInvokeStart{ID: "second_run", Count: int64(p.invokeStartsSecondRun)})
+	}
+	if p.invokeStartsLossyRun > 0 {
+		starts = append(starts, sce.SavedInvokeStart{ID: "lossy_run", Count: int64(p.invokeStartsLossyRun)})
+	}
+	if p.invokeStartsMissingRun > 0 {
+		starts = append(starts, sce.SavedInvokeStart{ID: "missing_run", Count: int64(p.invokeStartsMissingRun)})
+	}
+	return starts
+}
+
+// InvokeOwner is the state that holds the `<invoke>` id, and false for an id the
+// document does not invoke (sce.SavedPolicy).
+func (p *StaticInvokeHybridPolicy) InvokeOwner(id string) (StaticInvokeHybridState, bool) {
+	switch id {
+	case "first_run":
+		return StaticInvokeHybridStateFirst, true
+	case "second_run":
+		return StaticInvokeHybridStateSecond, true
+	case "lossy_run":
+		return StaticInvokeHybridStateLossy, true
+	case "missing_run":
+		return StaticInvokeHybridStateMissing, true
+	}
+	return 0, false
+}
+
+// HostInvokeOwner is the state that holds the host-run `<invoke>` of this type
+// and id, and false for one the document does not have a host invoker run
+// (sce.SavedPolicy).
+func (p *StaticInvokeHybridPolicy) HostInvokeOwner(processorType, id string) (StaticInvokeHybridState, bool) {
+	return 0, false
+}
+
+
+// resumeChildFirstRun0jStaticHybridFirst resumes the child of the `<invoke>` `first_run` a saved
+// state holds, from the document `static_hybrid_first`, where it stood.
+func (p *StaticInvokeHybridPolicy) resumeChildFirstRun0jStaticHybridFirst(engine *sce.Engine[StaticInvokeHybridState, StaticInvokeHybridEvent], child sce.SavedChild, wallNowMs int64) error {
+	// W3C SCXML 6.5: the child's session id, which its events carry as their origin.
+	childSessionID := fmt.Sprintf("%s.%s", p.SessionID, child.InvokeID)
+	childPolicy := NewStaticHybridFirstPolicy()
+	childPolicy.ParentExternalQueue = sce.NewParentEventQueue()
+	childPolicy.InvokeID = child.InvokeID
+	childPolicy.ChildSessionID = childSessionID
+	childPolicy.SessionID = childSessionID
+
+	p.activeInvokes["first_run"] = &sce.ChildSession{
+		SessionID:       childSessionID,
+		InvokeID:        "first_run",
+		ParentSessionID: p.SessionID,
+		Autoforward:     false,
+		FinalizeScript:  "",
+	}
+
+	childEngine, err := StaticHybridFirstRestoreAt(&childPolicy, child.Session, engine.Clock(), wallNowMs)
+	if err != nil {
+		delete(p.activeInvokes, "first_run")
+		return err
+	}
+	childEngine.SetCompletionCallback(func() {})
+	// Child sessions in Mesh (SCE_MESH.md; docs/adr/0043): the router of the
+	// resumed child is owed, not asked here. This machine is being restored, and
+	// its host registers the factory of its children's routers only once the
+	// restore has returned it.
+	engine.OweChildMesh(childEngine, "first_run", "static_hybrid_first")
+	p.childFirstRun = &childEngineWrapperStaticInvokeHybrid_FirstRun0jStaticHybridFirst{engine: childEngine, policy: &childPolicy}
+	return nil
+}
+
+
+// resumeChildFirstRun0jStaticHybridSecond resumes the child of the `<invoke>` `first_run` a saved
+// state holds, from the document `static_hybrid_second`, where it stood.
+func (p *StaticInvokeHybridPolicy) resumeChildFirstRun0jStaticHybridSecond(engine *sce.Engine[StaticInvokeHybridState, StaticInvokeHybridEvent], child sce.SavedChild, wallNowMs int64) error {
+	// W3C SCXML 6.5: the child's session id, which its events carry as their origin.
+	childSessionID := fmt.Sprintf("%s.%s", p.SessionID, child.InvokeID)
+	childPolicy := NewStaticHybridSecondPolicy()
+	childPolicy.ParentExternalQueue = sce.NewParentEventQueue()
+	childPolicy.InvokeID = child.InvokeID
+	childPolicy.ChildSessionID = childSessionID
+	childPolicy.SessionID = childSessionID
+
+	p.activeInvokes["first_run"] = &sce.ChildSession{
+		SessionID:       childSessionID,
+		InvokeID:        "first_run",
+		ParentSessionID: p.SessionID,
+		Autoforward:     false,
+		FinalizeScript:  "",
+	}
+
+	childEngine, err := StaticHybridSecondRestoreAt(&childPolicy, child.Session, engine.Clock(), wallNowMs)
+	if err != nil {
+		delete(p.activeInvokes, "first_run")
+		return err
+	}
+	childEngine.SetCompletionCallback(func() {})
+	// Child sessions in Mesh (SCE_MESH.md; docs/adr/0043): the router of the
+	// resumed child is owed, not asked here. This machine is being restored, and
+	// its host registers the factory of its children's routers only once the
+	// restore has returned it.
+	engine.OweChildMesh(childEngine, "first_run", "static_hybrid_second")
+	p.childFirstRun = &childEngineWrapperStaticInvokeHybrid_FirstRun0jStaticHybridSecond{engine: childEngine, policy: &childPolicy}
+	return nil
+}
+
+
+// resumeChildSecondRun0jStaticHybridFirst resumes the child of the `<invoke>` `second_run` a saved
+// state holds, from the document `static_hybrid_first`, where it stood.
+func (p *StaticInvokeHybridPolicy) resumeChildSecondRun0jStaticHybridFirst(engine *sce.Engine[StaticInvokeHybridState, StaticInvokeHybridEvent], child sce.SavedChild, wallNowMs int64) error {
+	// W3C SCXML 6.5: the child's session id, which its events carry as their origin.
+	childSessionID := fmt.Sprintf("%s.%s", p.SessionID, child.InvokeID)
+	childPolicy := NewStaticHybridFirstPolicy()
+	childPolicy.ParentExternalQueue = sce.NewParentEventQueue()
+	childPolicy.InvokeID = child.InvokeID
+	childPolicy.ChildSessionID = childSessionID
+	childPolicy.SessionID = childSessionID
+
+	p.activeInvokes["second_run"] = &sce.ChildSession{
+		SessionID:       childSessionID,
+		InvokeID:        "second_run",
+		ParentSessionID: p.SessionID,
+		Autoforward:     false,
+		FinalizeScript:  "",
+	}
+
+	childEngine, err := StaticHybridFirstRestoreAt(&childPolicy, child.Session, engine.Clock(), wallNowMs)
+	if err != nil {
+		delete(p.activeInvokes, "second_run")
+		return err
+	}
+	childEngine.SetCompletionCallback(func() {})
+	// Child sessions in Mesh (SCE_MESH.md; docs/adr/0043): the router of the
+	// resumed child is owed, not asked here. This machine is being restored, and
+	// its host registers the factory of its children's routers only once the
+	// restore has returned it.
+	engine.OweChildMesh(childEngine, "second_run", "static_hybrid_first")
+	p.childSecondRun = &childEngineWrapperStaticInvokeHybrid_SecondRun0jStaticHybridFirst{engine: childEngine, policy: &childPolicy}
+	return nil
+}
+
+
+// resumeChildSecondRun0jStaticHybridSecond resumes the child of the `<invoke>` `second_run` a saved
+// state holds, from the document `static_hybrid_second`, where it stood.
+func (p *StaticInvokeHybridPolicy) resumeChildSecondRun0jStaticHybridSecond(engine *sce.Engine[StaticInvokeHybridState, StaticInvokeHybridEvent], child sce.SavedChild, wallNowMs int64) error {
+	// W3C SCXML 6.5: the child's session id, which its events carry as their origin.
+	childSessionID := fmt.Sprintf("%s.%s", p.SessionID, child.InvokeID)
+	childPolicy := NewStaticHybridSecondPolicy()
+	childPolicy.ParentExternalQueue = sce.NewParentEventQueue()
+	childPolicy.InvokeID = child.InvokeID
+	childPolicy.ChildSessionID = childSessionID
+	childPolicy.SessionID = childSessionID
+
+	p.activeInvokes["second_run"] = &sce.ChildSession{
+		SessionID:       childSessionID,
+		InvokeID:        "second_run",
+		ParentSessionID: p.SessionID,
+		Autoforward:     false,
+		FinalizeScript:  "",
+	}
+
+	childEngine, err := StaticHybridSecondRestoreAt(&childPolicy, child.Session, engine.Clock(), wallNowMs)
+	if err != nil {
+		delete(p.activeInvokes, "second_run")
+		return err
+	}
+	childEngine.SetCompletionCallback(func() {})
+	// Child sessions in Mesh (SCE_MESH.md; docs/adr/0043): the router of the
+	// resumed child is owed, not asked here. This machine is being restored, and
+	// its host registers the factory of its children's routers only once the
+	// restore has returned it.
+	engine.OweChildMesh(childEngine, "second_run", "static_hybrid_second")
+	p.childSecondRun = &childEngineWrapperStaticInvokeHybrid_SecondRun0jStaticHybridSecond{engine: childEngine, policy: &childPolicy}
+	return nil
+}
+
+
+// resumeChildLossyRun0jStaticHybridFirst resumes the child of the `<invoke>` `lossy_run` a saved
+// state holds, from the document `static_hybrid_first`, where it stood.
+func (p *StaticInvokeHybridPolicy) resumeChildLossyRun0jStaticHybridFirst(engine *sce.Engine[StaticInvokeHybridState, StaticInvokeHybridEvent], child sce.SavedChild, wallNowMs int64) error {
+	// W3C SCXML 6.5: the child's session id, which its events carry as their origin.
+	childSessionID := fmt.Sprintf("%s.%s", p.SessionID, child.InvokeID)
+	childPolicy := NewStaticHybridFirstPolicy()
+	childPolicy.ParentExternalQueue = sce.NewParentEventQueue()
+	childPolicy.InvokeID = child.InvokeID
+	childPolicy.ChildSessionID = childSessionID
+	childPolicy.SessionID = childSessionID
+
+	p.activeInvokes["lossy_run"] = &sce.ChildSession{
+		SessionID:       childSessionID,
+		InvokeID:        "lossy_run",
+		ParentSessionID: p.SessionID,
+		Autoforward:     false,
+		FinalizeScript:  "",
+	}
+
+	childEngine, err := StaticHybridFirstRestoreAt(&childPolicy, child.Session, engine.Clock(), wallNowMs)
+	if err != nil {
+		delete(p.activeInvokes, "lossy_run")
+		return err
+	}
+	childEngine.SetCompletionCallback(func() {})
+	// Child sessions in Mesh (SCE_MESH.md; docs/adr/0043): the router of the
+	// resumed child is owed, not asked here. This machine is being restored, and
+	// its host registers the factory of its children's routers only once the
+	// restore has returned it.
+	engine.OweChildMesh(childEngine, "lossy_run", "static_hybrid_first")
+	p.childLossyRun = &childEngineWrapperStaticInvokeHybrid_LossyRun0jStaticHybridFirst{engine: childEngine, policy: &childPolicy}
+	return nil
+}
+
+
+// resumeChildLossyRun0jStaticHybridSecond resumes the child of the `<invoke>` `lossy_run` a saved
+// state holds, from the document `static_hybrid_second`, where it stood.
+func (p *StaticInvokeHybridPolicy) resumeChildLossyRun0jStaticHybridSecond(engine *sce.Engine[StaticInvokeHybridState, StaticInvokeHybridEvent], child sce.SavedChild, wallNowMs int64) error {
+	// W3C SCXML 6.5: the child's session id, which its events carry as their origin.
+	childSessionID := fmt.Sprintf("%s.%s", p.SessionID, child.InvokeID)
+	childPolicy := NewStaticHybridSecondPolicy()
+	childPolicy.ParentExternalQueue = sce.NewParentEventQueue()
+	childPolicy.InvokeID = child.InvokeID
+	childPolicy.ChildSessionID = childSessionID
+	childPolicy.SessionID = childSessionID
+
+	p.activeInvokes["lossy_run"] = &sce.ChildSession{
+		SessionID:       childSessionID,
+		InvokeID:        "lossy_run",
+		ParentSessionID: p.SessionID,
+		Autoforward:     false,
+		FinalizeScript:  "",
+	}
+
+	childEngine, err := StaticHybridSecondRestoreAt(&childPolicy, child.Session, engine.Clock(), wallNowMs)
+	if err != nil {
+		delete(p.activeInvokes, "lossy_run")
+		return err
+	}
+	childEngine.SetCompletionCallback(func() {})
+	// Child sessions in Mesh (SCE_MESH.md; docs/adr/0043): the router of the
+	// resumed child is owed, not asked here. This machine is being restored, and
+	// its host registers the factory of its children's routers only once the
+	// restore has returned it.
+	engine.OweChildMesh(childEngine, "lossy_run", "static_hybrid_second")
+	p.childLossyRun = &childEngineWrapperStaticInvokeHybrid_LossyRun0jStaticHybridSecond{engine: childEngine, policy: &childPolicy}
+	return nil
+}
+
+
+// resumeChildMissingRun0jStaticHybridFirst resumes the child of the `<invoke>` `missing_run` a saved
+// state holds, from the document `static_hybrid_first`, where it stood.
+func (p *StaticInvokeHybridPolicy) resumeChildMissingRun0jStaticHybridFirst(engine *sce.Engine[StaticInvokeHybridState, StaticInvokeHybridEvent], child sce.SavedChild, wallNowMs int64) error {
+	// W3C SCXML 6.5: the child's session id, which its events carry as their origin.
+	childSessionID := fmt.Sprintf("%s.%s", p.SessionID, child.InvokeID)
+	childPolicy := NewStaticHybridFirstPolicy()
+	childPolicy.ParentExternalQueue = sce.NewParentEventQueue()
+	childPolicy.InvokeID = child.InvokeID
+	childPolicy.ChildSessionID = childSessionID
+	childPolicy.SessionID = childSessionID
+
+	p.activeInvokes["missing_run"] = &sce.ChildSession{
+		SessionID:       childSessionID,
+		InvokeID:        "missing_run",
+		ParentSessionID: p.SessionID,
+		Autoforward:     false,
+		FinalizeScript:  "",
+	}
+
+	childEngine, err := StaticHybridFirstRestoreAt(&childPolicy, child.Session, engine.Clock(), wallNowMs)
+	if err != nil {
+		delete(p.activeInvokes, "missing_run")
+		return err
+	}
+	childEngine.SetCompletionCallback(func() {})
+	// Child sessions in Mesh (SCE_MESH.md; docs/adr/0043): the router of the
+	// resumed child is owed, not asked here. This machine is being restored, and
+	// its host registers the factory of its children's routers only once the
+	// restore has returned it.
+	engine.OweChildMesh(childEngine, "missing_run", "static_hybrid_first")
+	p.childMissingRun = &childEngineWrapperStaticInvokeHybrid_MissingRun0jStaticHybridFirst{engine: childEngine, policy: &childPolicy}
+	return nil
+}
+
+
+// resumeChildMissingRun0jStaticHybridSecond resumes the child of the `<invoke>` `missing_run` a saved
+// state holds, from the document `static_hybrid_second`, where it stood.
+func (p *StaticInvokeHybridPolicy) resumeChildMissingRun0jStaticHybridSecond(engine *sce.Engine[StaticInvokeHybridState, StaticInvokeHybridEvent], child sce.SavedChild, wallNowMs int64) error {
+	// W3C SCXML 6.5: the child's session id, which its events carry as their origin.
+	childSessionID := fmt.Sprintf("%s.%s", p.SessionID, child.InvokeID)
+	childPolicy := NewStaticHybridSecondPolicy()
+	childPolicy.ParentExternalQueue = sce.NewParentEventQueue()
+	childPolicy.InvokeID = child.InvokeID
+	childPolicy.ChildSessionID = childSessionID
+	childPolicy.SessionID = childSessionID
+
+	p.activeInvokes["missing_run"] = &sce.ChildSession{
+		SessionID:       childSessionID,
+		InvokeID:        "missing_run",
+		ParentSessionID: p.SessionID,
+		Autoforward:     false,
+		FinalizeScript:  "",
+	}
+
+	childEngine, err := StaticHybridSecondRestoreAt(&childPolicy, child.Session, engine.Clock(), wallNowMs)
+	if err != nil {
+		delete(p.activeInvokes, "missing_run")
+		return err
+	}
+	childEngine.SetCompletionCallback(func() {})
+	// Child sessions in Mesh (SCE_MESH.md; docs/adr/0043): the router of the
+	// resumed child is owed, not asked here. This machine is being restored, and
+	// its host registers the factory of its children's routers only once the
+	// restore has returned it.
+	engine.OweChildMesh(childEngine, "missing_run", "static_hybrid_second")
+	p.childMissingRun = &childEngineWrapperStaticInvokeHybrid_MissingRun0jStaticHybridSecond{engine: childEngine, policy: &childPolicy}
+	return nil
+}
+
+
+// savedChildren is each running child, saved through the document it runs with
+// its whole state, in document order: what a saved state holds in place of the
+// ids of format 1, and what a restore resumes (docs/adr/0045, section 1).
+func (p *StaticInvokeHybridPolicy) savedChildren(wallNowMs int64) ([]sce.SavedChild, error) {
+	children := []sce.SavedChild{}
+	if running := p.childFirstRun; running != nil && !p.pendingDoneInvokeFirstRun && !running.IsInFinalState() {
+		saveable, saves := running.(sce.SavedChildEngine)
+		session, tracked := p.activeInvokes["first_run"]
+		if !saves || !tracked {
+			return nil, sce.Refuse("the running child of 'first_run' is not one a saved state holds")
+		}
+		if err := sce.NothingInTransit(running.GetParentEventQueue(), "first_run"); err != nil {
+			return nil, err
+		}
+		saved, err := saveable.SaveAsSession(wallNowMs)
+		if err != nil {
+			return nil, sce.RefusalWithin(err, fmt.Sprintf("invokes[%d].session", len(children)))
+		}
+		children = append(children, sce.SavedChild{
+			ID:       "first_run",
+			Start:    int64(p.invokeStartsFirstRun),
+			InvokeID: strings.TrimPrefix(session.SessionID, p.SessionID+"."),
+			Document: saveable.SavedDocument(),
+			Session:  saved,
+		})
+	}
+	if running := p.childSecondRun; running != nil && !p.pendingDoneInvokeSecondRun && !running.IsInFinalState() {
+		saveable, saves := running.(sce.SavedChildEngine)
+		session, tracked := p.activeInvokes["second_run"]
+		if !saves || !tracked {
+			return nil, sce.Refuse("the running child of 'second_run' is not one a saved state holds")
+		}
+		if err := sce.NothingInTransit(running.GetParentEventQueue(), "second_run"); err != nil {
+			return nil, err
+		}
+		saved, err := saveable.SaveAsSession(wallNowMs)
+		if err != nil {
+			return nil, sce.RefusalWithin(err, fmt.Sprintf("invokes[%d].session", len(children)))
+		}
+		children = append(children, sce.SavedChild{
+			ID:       "second_run",
+			Start:    int64(p.invokeStartsSecondRun),
+			InvokeID: strings.TrimPrefix(session.SessionID, p.SessionID+"."),
+			Document: saveable.SavedDocument(),
+			Session:  saved,
+		})
+	}
+	if running := p.childLossyRun; running != nil && !p.pendingDoneInvokeLossyRun && !running.IsInFinalState() {
+		saveable, saves := running.(sce.SavedChildEngine)
+		session, tracked := p.activeInvokes["lossy_run"]
+		if !saves || !tracked {
+			return nil, sce.Refuse("the running child of 'lossy_run' is not one a saved state holds")
+		}
+		if err := sce.NothingInTransit(running.GetParentEventQueue(), "lossy_run"); err != nil {
+			return nil, err
+		}
+		saved, err := saveable.SaveAsSession(wallNowMs)
+		if err != nil {
+			return nil, sce.RefusalWithin(err, fmt.Sprintf("invokes[%d].session", len(children)))
+		}
+		children = append(children, sce.SavedChild{
+			ID:       "lossy_run",
+			Start:    int64(p.invokeStartsLossyRun),
+			InvokeID: strings.TrimPrefix(session.SessionID, p.SessionID+"."),
+			Document: saveable.SavedDocument(),
+			Session:  saved,
+		})
+	}
+	if running := p.childMissingRun; running != nil && !p.pendingDoneInvokeMissingRun && !running.IsInFinalState() {
+		saveable, saves := running.(sce.SavedChildEngine)
+		session, tracked := p.activeInvokes["missing_run"]
+		if !saves || !tracked {
+			return nil, sce.Refuse("the running child of 'missing_run' is not one a saved state holds")
+		}
+		if err := sce.NothingInTransit(running.GetParentEventQueue(), "missing_run"); err != nil {
+			return nil, err
+		}
+		saved, err := saveable.SaveAsSession(wallNowMs)
+		if err != nil {
+			return nil, sce.RefusalWithin(err, fmt.Sprintf("invokes[%d].session", len(children)))
+		}
+		children = append(children, sce.SavedChild{
+			ID:       "missing_run",
+			Start:    int64(p.invokeStartsMissingRun),
+			InvokeID: strings.TrimPrefix(session.SessionID, p.SessionID+"."),
+			Document: saveable.SavedDocument(),
+			Session:  saved,
+		})
+	}
+	return children, nil
+}
+
+// JudgeChild refuses a running child unless its session is a state of the
+// document it names, to any depth (sce.SavedPolicy).
+func (p *StaticInvokeHybridPolicy) JudgeChild(child sce.SavedChild) error {
+	switch {
+	case child.ID == "first_run" && child.Document == "static_hybrid_first":
+		return StaticHybridFirstJudge(child.Session)
+	case child.ID == "first_run" && child.Document == "static_hybrid_second":
+		return StaticHybridSecondJudge(child.Session)
+	case child.ID == "second_run" && child.Document == "static_hybrid_first":
+		return StaticHybridFirstJudge(child.Session)
+	case child.ID == "second_run" && child.Document == "static_hybrid_second":
+		return StaticHybridSecondJudge(child.Session)
+	case child.ID == "lossy_run" && child.Document == "static_hybrid_first":
+		return StaticHybridFirstJudge(child.Session)
+	case child.ID == "lossy_run" && child.Document == "static_hybrid_second":
+		return StaticHybridSecondJudge(child.Session)
+	case child.ID == "missing_run" && child.Document == "static_hybrid_first":
+		return StaticHybridFirstJudge(child.Session)
+	case child.ID == "missing_run" && child.Document == "static_hybrid_second":
+		return StaticHybridSecondJudge(child.Session)
+	}
+	return sce.Refuse(fmt.Sprintf("invokes names '%s' running '%s', a document that `<invoke>` does not start", child.ID, child.Document))
+}
+
+// ResumeChildren resumes each of children in the order given, each built as
+// starting it builds it and restored where it stood (sce.SavedPolicy).
+func (p *StaticInvokeHybridPolicy) ResumeChildren(engine *sce.Engine[StaticInvokeHybridState, StaticInvokeHybridEvent], children []sce.SavedChild, wallNowMs int64) error {
+	for _, child := range children {
+		var err error
+		switch {
+		case child.ID == "first_run" && child.Document == "static_hybrid_first":
+			err = p.resumeChildFirstRun0jStaticHybridFirst(engine, child, wallNowMs)
+		case child.ID == "first_run" && child.Document == "static_hybrid_second":
+			err = p.resumeChildFirstRun0jStaticHybridSecond(engine, child, wallNowMs)
+		case child.ID == "second_run" && child.Document == "static_hybrid_first":
+			err = p.resumeChildSecondRun0jStaticHybridFirst(engine, child, wallNowMs)
+		case child.ID == "second_run" && child.Document == "static_hybrid_second":
+			err = p.resumeChildSecondRun0jStaticHybridSecond(engine, child, wallNowMs)
+		case child.ID == "lossy_run" && child.Document == "static_hybrid_first":
+			err = p.resumeChildLossyRun0jStaticHybridFirst(engine, child, wallNowMs)
+		case child.ID == "lossy_run" && child.Document == "static_hybrid_second":
+			err = p.resumeChildLossyRun0jStaticHybridSecond(engine, child, wallNowMs)
+		case child.ID == "missing_run" && child.Document == "static_hybrid_first":
+			err = p.resumeChildMissingRun0jStaticHybridFirst(engine, child, wallNowMs)
+		case child.ID == "missing_run" && child.Document == "static_hybrid_second":
+			err = p.resumeChildMissingRun0jStaticHybridSecond(engine, child, wallNowMs)
+		default:
+			err = sce.Refuse(fmt.Sprintf("invokes names '%s' running '%s', a document that `<invoke>` does not start", child.ID, child.Document))
+		}
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// SetHistoryValue gives history the states a saved state recorded for it
+// (sce.SavedPolicy).
+func (p *StaticInvokeHybridPolicy) SetHistoryValue(history sce.HistoryID, states []StaticInvokeHybridState) {
+}
+
 // ======================================================================
 // Policy struct
 // ======================================================================
@@ -1288,6 +1998,8 @@ func (w *childEngineWrapperStaticInvokeHybrid_FirstRun0jStaticHybridFirst) Doned
 func (w *childEngineWrapperStaticInvokeHybrid_FirstRun0jStaticHybridFirst) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
 func (w *childEngineWrapperStaticInvokeHybrid_FirstRun0jStaticHybridFirst) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
 func (w *childEngineWrapperStaticInvokeHybrid_FirstRun0jStaticHybridFirst) DetachMesh() { w.engine.DetachMesh() }
+func (w *childEngineWrapperStaticInvokeHybrid_FirstRun0jStaticHybridFirst) SaveAsSession(wallNowMs int64) (*sce.SavedState, error) { return StaticHybridFirstSaveAt(w.engine, wallNowMs) }
+func (w *childEngineWrapperStaticInvokeHybrid_FirstRun0jStaticHybridFirst) SavedDocument() string { return "static_hybrid_first" }
 type childEngineWrapperStaticInvokeHybrid_FirstRun0jStaticHybridSecond struct {
 	engine *sce.Engine[StaticHybridSecondState, StaticHybridSecondEvent]
 	policy *StaticHybridSecondPolicy
@@ -1305,6 +2017,8 @@ func (w *childEngineWrapperStaticInvokeHybrid_FirstRun0jStaticHybridSecond) Done
 func (w *childEngineWrapperStaticInvokeHybrid_FirstRun0jStaticHybridSecond) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
 func (w *childEngineWrapperStaticInvokeHybrid_FirstRun0jStaticHybridSecond) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
 func (w *childEngineWrapperStaticInvokeHybrid_FirstRun0jStaticHybridSecond) DetachMesh() { w.engine.DetachMesh() }
+func (w *childEngineWrapperStaticInvokeHybrid_FirstRun0jStaticHybridSecond) SaveAsSession(wallNowMs int64) (*sce.SavedState, error) { return StaticHybridSecondSaveAt(w.engine, wallNowMs) }
+func (w *childEngineWrapperStaticInvokeHybrid_FirstRun0jStaticHybridSecond) SavedDocument() string { return "static_hybrid_second" }
 type childEngineWrapperStaticInvokeHybrid_SecondRun0jStaticHybridFirst struct {
 	engine *sce.Engine[StaticHybridFirstState, StaticHybridFirstEvent]
 	policy *StaticHybridFirstPolicy
@@ -1322,6 +2036,8 @@ func (w *childEngineWrapperStaticInvokeHybrid_SecondRun0jStaticHybridFirst) Done
 func (w *childEngineWrapperStaticInvokeHybrid_SecondRun0jStaticHybridFirst) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
 func (w *childEngineWrapperStaticInvokeHybrid_SecondRun0jStaticHybridFirst) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
 func (w *childEngineWrapperStaticInvokeHybrid_SecondRun0jStaticHybridFirst) DetachMesh() { w.engine.DetachMesh() }
+func (w *childEngineWrapperStaticInvokeHybrid_SecondRun0jStaticHybridFirst) SaveAsSession(wallNowMs int64) (*sce.SavedState, error) { return StaticHybridFirstSaveAt(w.engine, wallNowMs) }
+func (w *childEngineWrapperStaticInvokeHybrid_SecondRun0jStaticHybridFirst) SavedDocument() string { return "static_hybrid_first" }
 type childEngineWrapperStaticInvokeHybrid_SecondRun0jStaticHybridSecond struct {
 	engine *sce.Engine[StaticHybridSecondState, StaticHybridSecondEvent]
 	policy *StaticHybridSecondPolicy
@@ -1339,6 +2055,8 @@ func (w *childEngineWrapperStaticInvokeHybrid_SecondRun0jStaticHybridSecond) Don
 func (w *childEngineWrapperStaticInvokeHybrid_SecondRun0jStaticHybridSecond) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
 func (w *childEngineWrapperStaticInvokeHybrid_SecondRun0jStaticHybridSecond) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
 func (w *childEngineWrapperStaticInvokeHybrid_SecondRun0jStaticHybridSecond) DetachMesh() { w.engine.DetachMesh() }
+func (w *childEngineWrapperStaticInvokeHybrid_SecondRun0jStaticHybridSecond) SaveAsSession(wallNowMs int64) (*sce.SavedState, error) { return StaticHybridSecondSaveAt(w.engine, wallNowMs) }
+func (w *childEngineWrapperStaticInvokeHybrid_SecondRun0jStaticHybridSecond) SavedDocument() string { return "static_hybrid_second" }
 type childEngineWrapperStaticInvokeHybrid_LossyRun0jStaticHybridFirst struct {
 	engine *sce.Engine[StaticHybridFirstState, StaticHybridFirstEvent]
 	policy *StaticHybridFirstPolicy
@@ -1356,6 +2074,8 @@ func (w *childEngineWrapperStaticInvokeHybrid_LossyRun0jStaticHybridFirst) Doned
 func (w *childEngineWrapperStaticInvokeHybrid_LossyRun0jStaticHybridFirst) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
 func (w *childEngineWrapperStaticInvokeHybrid_LossyRun0jStaticHybridFirst) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
 func (w *childEngineWrapperStaticInvokeHybrid_LossyRun0jStaticHybridFirst) DetachMesh() { w.engine.DetachMesh() }
+func (w *childEngineWrapperStaticInvokeHybrid_LossyRun0jStaticHybridFirst) SaveAsSession(wallNowMs int64) (*sce.SavedState, error) { return StaticHybridFirstSaveAt(w.engine, wallNowMs) }
+func (w *childEngineWrapperStaticInvokeHybrid_LossyRun0jStaticHybridFirst) SavedDocument() string { return "static_hybrid_first" }
 type childEngineWrapperStaticInvokeHybrid_LossyRun0jStaticHybridSecond struct {
 	engine *sce.Engine[StaticHybridSecondState, StaticHybridSecondEvent]
 	policy *StaticHybridSecondPolicy
@@ -1373,6 +2093,8 @@ func (w *childEngineWrapperStaticInvokeHybrid_LossyRun0jStaticHybridSecond) Done
 func (w *childEngineWrapperStaticInvokeHybrid_LossyRun0jStaticHybridSecond) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
 func (w *childEngineWrapperStaticInvokeHybrid_LossyRun0jStaticHybridSecond) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
 func (w *childEngineWrapperStaticInvokeHybrid_LossyRun0jStaticHybridSecond) DetachMesh() { w.engine.DetachMesh() }
+func (w *childEngineWrapperStaticInvokeHybrid_LossyRun0jStaticHybridSecond) SaveAsSession(wallNowMs int64) (*sce.SavedState, error) { return StaticHybridSecondSaveAt(w.engine, wallNowMs) }
+func (w *childEngineWrapperStaticInvokeHybrid_LossyRun0jStaticHybridSecond) SavedDocument() string { return "static_hybrid_second" }
 type childEngineWrapperStaticInvokeHybrid_MissingRun0jStaticHybridFirst struct {
 	engine *sce.Engine[StaticHybridFirstState, StaticHybridFirstEvent]
 	policy *StaticHybridFirstPolicy
@@ -1390,6 +2112,8 @@ func (w *childEngineWrapperStaticInvokeHybrid_MissingRun0jStaticHybridFirst) Don
 func (w *childEngineWrapperStaticInvokeHybrid_MissingRun0jStaticHybridFirst) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
 func (w *childEngineWrapperStaticInvokeHybrid_MissingRun0jStaticHybridFirst) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
 func (w *childEngineWrapperStaticInvokeHybrid_MissingRun0jStaticHybridFirst) DetachMesh() { w.engine.DetachMesh() }
+func (w *childEngineWrapperStaticInvokeHybrid_MissingRun0jStaticHybridFirst) SaveAsSession(wallNowMs int64) (*sce.SavedState, error) { return StaticHybridFirstSaveAt(w.engine, wallNowMs) }
+func (w *childEngineWrapperStaticInvokeHybrid_MissingRun0jStaticHybridFirst) SavedDocument() string { return "static_hybrid_first" }
 type childEngineWrapperStaticInvokeHybrid_MissingRun0jStaticHybridSecond struct {
 	engine *sce.Engine[StaticHybridSecondState, StaticHybridSecondEvent]
 	policy *StaticHybridSecondPolicy
@@ -1407,6 +2131,8 @@ func (w *childEngineWrapperStaticInvokeHybrid_MissingRun0jStaticHybridSecond) Do
 func (w *childEngineWrapperStaticInvokeHybrid_MissingRun0jStaticHybridSecond) TimeUntilNextScheduled() (time.Duration, bool) { return w.engine.TimeUntilNextScheduled() }
 func (w *childEngineWrapperStaticInvokeHybrid_MissingRun0jStaticHybridSecond) ApplyMeshCalls() { w.engine.ApplyMeshCalls() }
 func (w *childEngineWrapperStaticInvokeHybrid_MissingRun0jStaticHybridSecond) DetachMesh() { w.engine.DetachMesh() }
+func (w *childEngineWrapperStaticInvokeHybrid_MissingRun0jStaticHybridSecond) SaveAsSession(wallNowMs int64) (*sce.SavedState, error) { return StaticHybridSecondSaveAt(w.engine, wallNowMs) }
+func (w *childEngineWrapperStaticInvokeHybrid_MissingRun0jStaticHybridSecond) SavedDocument() string { return "static_hybrid_second" }
 
 
 // DeliverToParent delivers a delayed `<send target="#_parent">` whose wait is
@@ -1734,6 +2460,49 @@ func (p *StaticInvokeHybridPolicy) ExecuteEntryActions(state StaticInvokeHybridS
 		}
 	default:
 		// No entry actions
+	}
+}
+
+// RestartInvokes starts each of ids again from its beginning, as entering its
+// state starts it: the start is deferred to the macrostep the host drives next,
+// which runs it, so the restore itself takes no step. What a format-1 saved state
+// holds of a running child is its id alone (sce.SavedPolicy, docs/adr/0045).
+func (p *StaticInvokeHybridPolicy) RestartInvokes(engine *sce.Engine[StaticInvokeHybridState, StaticInvokeHybridEvent], ids []string) {
+	for _, id := range ids {
+		switch id {
+		case "first_run":
+			p.invokeStartsFirstRun++
+			generatedInvokeID := fmt.Sprintf("%s.%d.first_run", "first", p.invokeStartsFirstRun)
+			sce.DeferInvoke(&p.pendingInvokes, sce.PendingInvoke[StaticInvokeHybridState]{
+				InvokeID:   generatedInvokeID,
+				State:      StaticInvokeHybridStateFirst,
+				DocumentID: "first_run",
+			})
+		case "lossy_run":
+			p.invokeStartsLossyRun++
+			generatedInvokeID := fmt.Sprintf("%s.%d.lossy_run", "lossy", p.invokeStartsLossyRun)
+			sce.DeferInvoke(&p.pendingInvokes, sce.PendingInvoke[StaticInvokeHybridState]{
+				InvokeID:   generatedInvokeID,
+				State:      StaticInvokeHybridStateLossy,
+				DocumentID: "lossy_run",
+			})
+		case "missing_run":
+			p.invokeStartsMissingRun++
+			generatedInvokeID := fmt.Sprintf("%s.%d.missing_run", "missing", p.invokeStartsMissingRun)
+			sce.DeferInvoke(&p.pendingInvokes, sce.PendingInvoke[StaticInvokeHybridState]{
+				InvokeID:   generatedInvokeID,
+				State:      StaticInvokeHybridStateMissing,
+				DocumentID: "missing_run",
+			})
+		case "second_run":
+			p.invokeStartsSecondRun++
+			generatedInvokeID := fmt.Sprintf("%s.%d.second_run", "second", p.invokeStartsSecondRun)
+			sce.DeferInvoke(&p.pendingInvokes, sce.PendingInvoke[StaticInvokeHybridState]{
+				InvokeID:   generatedInvokeID,
+				State:      StaticInvokeHybridStateSecond,
+				DocumentID: "second_run",
+			})
+		}
 	}
 }
 

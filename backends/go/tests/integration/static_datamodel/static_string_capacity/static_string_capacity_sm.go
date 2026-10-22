@@ -235,9 +235,10 @@ func StaticStringCapacitySaveAt(engine *sce.Engine[StaticStringCapacityState, St
 	variables.Set("copied", sce.SavedWriteUint32(p.vCopied))
 	variables.Set("measured", sce.SavedWriteUint32(p.vMeasured))
 	variables.Set("refusals", sce.SavedWriteUint32(p.vRefusals))
+	var children []sce.SavedChild
 	return sce.SaveSession(engine, &StaticStringCapacitySavedShape, variables,
 		sce.SaveHistory[StaticStringCapacityState, StaticStringCapacityEvent](p, StaticStringCapacityHistories),
-		nil, wallNowMs)
+		children, wallNowMs)
 }
 
 // StaticStringCapacitySave is StaticStringCapacitySaveAt at the host's wall clock now.

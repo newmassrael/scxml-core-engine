@@ -354,9 +354,10 @@ func StaticRecordListSaveAt(engine *sce.Engine[StaticRecordListState, StaticReco
 	variables.Set("copies", sce.SavedWriteList(p.vCopies, func(r StaticRecordListDayRecord) any { return r.ToSaved() }))
 	variables.Set("total", sce.SavedWriteUint32(p.vTotal))
 	variables.Set("errors", sce.SavedWriteUint32(p.vErrors))
+	var children []sce.SavedChild
 	return sce.SaveSession(engine, &StaticRecordListSavedShape, variables,
 		sce.SaveHistory[StaticRecordListState, StaticRecordListEvent](p, StaticRecordListHistories),
-		nil, wallNowMs)
+		children, wallNowMs)
 }
 
 // StaticRecordListSave is StaticRecordListSaveAt at the host's wall clock now.

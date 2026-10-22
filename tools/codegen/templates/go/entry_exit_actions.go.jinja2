@@ -32,7 +32,17 @@
    evaluated does. `model`, `machine_name` and `state_id` are parameters
    because a macro body does not see the render context. #}
 {% macro defer_with_idlocation(invoke_info, model, machine_name, state_id) %}
-{% if invoke_info.idlocation %}
+{% if invoke_info.native_idlocation %}
+			// docs/adr/0045: under `datamodel="sce-static"` the id is written to the
+			// string variable `idlocation` names, whose bound the build held to one
+			// the id fits.
+			{{ invoke_info.native_idlocation }}
+			sce.DeferInvoke(&p.pendingInvokes, sce.PendingInvoke[{{ machine_name }}State]{
+				InvokeID:   generatedInvokeID,
+				State:      {{ machine_name }}State{{ state_id | to_state_variant }},
+				DocumentID: "{{ invoke_info.invoke_id }}",
+			})
+{%- elif invoke_info.idlocation %}
 			if err := p.storeIDInLocation(`{{ invoke_info.idlocation | to_lua_location }}`, generatedInvokeID); err != nil {
 {% if 'error.execution' in model.events %}
 				engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<invoke idlocation='{{ invoke_info.idlocation | escape_go }}'> could not take the invoke id"))
@@ -352,6 +362,33 @@ func (p *{{ machine_name }}Policy) ExecuteEntryActions(state {{ machine_name }}S
 	}
 }
 
+{% if static_saved_shape and model.invokes | scxml_family %}
+// RestartInvokes starts each of ids again from its beginning, as entering its
+// state starts it: the start is deferred to the macrostep the host drives next,
+// which runs it, so the restore itself takes no step. What a format-1 saved state
+// holds of a running child is its id alone (sce.SavedPolicy, docs/adr/0045).
+func (p *{{ machine_name }}Policy) RestartInvokes(engine *sce.Engine[{{ machine_name }}State, {{ machine_name }}Event], ids []string) {
+	for _, id := range ids {
+		switch id {
+{% for state_id, state in model.states | dictsort %}
+{% for invoke_info in state.invokes | scxml %}
+		case "{{ invoke_info.invoke_id | escape_go }}":
+			p.invokeStarts{{ invoke_info.field_suffix | to_pascal_case }}++
+			generatedInvokeID := fmt.Sprintf("%s.%d.{{ invoke_info.invoke_id }}", "{{ state_id }}", p.invokeStarts{{ invoke_info.field_suffix | to_pascal_case }})
+{{ defer_with_idlocation(invoke_info, model, machine_name, state_id) }}
+{% endfor %}
+{% for invoke_info in state.invokes | hybrid %}
+		case "{{ invoke_info.invoke_id | escape_go }}":
+			p.invokeStarts{{ invoke_info.field_suffix | to_pascal_case }}++
+			generatedInvokeID := fmt.Sprintf("%s.%d.{{ invoke_info.invoke_id }}", "{{ state_id }}", p.invokeStarts{{ invoke_info.field_suffix | to_pascal_case }})
+{{ defer_with_idlocation(invoke_info, model, machine_name, state_id) }}
+{% endfor %}
+{% endfor %}
+		}
+	}
+}
+
+{% endif %}
 // ExecuteHistoryDefaultContent runs a <history>'s default transition content
 // (W3C SCXML 3.10.2), after its parent's onentry (and after the parent's own
 // <initial> content) when the history was taken with nothing recorded. The

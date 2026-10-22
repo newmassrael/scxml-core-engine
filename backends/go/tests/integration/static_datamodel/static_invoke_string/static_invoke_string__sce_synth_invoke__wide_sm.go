@@ -216,9 +216,10 @@ func StaticInvokeStringSceSynthInvokeWideSaveAt(engine *sce.Engine[StaticInvokeS
 	}
 	variables := sce.NewJSONObject()
 	variables.Set("title", sce.SavedWriteString(p.vTitle))
+	var children []sce.SavedChild
 	return sce.SaveSession(engine, &StaticInvokeStringSceSynthInvokeWideSavedShape, variables,
 		sce.SaveHistory[StaticInvokeStringSceSynthInvokeWideState, StaticInvokeStringSceSynthInvokeWideEvent](p, StaticInvokeStringSceSynthInvokeWideHistories),
-		nil, wallNowMs)
+		children, wallNowMs)
 }
 
 // StaticInvokeStringSceSynthInvokeWideSave is StaticInvokeStringSceSynthInvokeWideSaveAt at the host's wall clock now.

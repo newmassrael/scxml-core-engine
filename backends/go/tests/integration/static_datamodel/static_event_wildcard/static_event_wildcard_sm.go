@@ -214,9 +214,10 @@ func StaticEventWildcardSaveAt(engine *sce.Engine[StaticEventWildcardState, Stat
 	variables := sce.NewJSONObject()
 	variables.Set("requests", sce.SavedWriteUint32(p.vRequests))
 	variables.Set("strays", sce.SavedWriteUint32(p.vStrays))
+	var children []sce.SavedChild
 	return sce.SaveSession(engine, &StaticEventWildcardSavedShape, variables,
 		sce.SaveHistory[StaticEventWildcardState, StaticEventWildcardEvent](p, StaticEventWildcardHistories),
-		nil, wallNowMs)
+		children, wallNowMs)
 }
 
 // StaticEventWildcardSave is StaticEventWildcardSaveAt at the host's wall clock now.

@@ -228,9 +228,10 @@ func StaticSendDelaySaveAt(engine *sce.Engine[StaticSendDelayState, StaticSendDe
 	variables.Set("wait", sce.SavedWriteUint32(p.vWait))
 	variables.Set("beats", sce.SavedWriteUint32(p.vBeats))
 	variables.Set("refusals", sce.SavedWriteUint32(p.vRefusals))
+	var children []sce.SavedChild
 	return sce.SaveSession(engine, &StaticSendDelaySavedShape, variables,
 		sce.SaveHistory[StaticSendDelayState, StaticSendDelayEvent](p, StaticSendDelayHistories),
-		nil, wallNowMs)
+		children, wallNowMs)
 }
 
 // StaticSendDelaySave is StaticSendDelaySaveAt at the host's wall clock now.

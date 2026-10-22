@@ -392,9 +392,10 @@ func StaticStateAlgorithmSaveAt(engine *sce.Engine[StaticStateAlgorithmState, St
 	variables.Set("idsum", sce.SavedWriteUint32(p.vIdsum))
 	variables.Set("large", sce.SavedWriteUint32(p.vLarge))
 	variables.Set("refusals", sce.SavedWriteUint32(p.vRefusals))
+	var children []sce.SavedChild
 	return sce.SaveSession(engine, &StaticStateAlgorithmSavedShape, variables,
 		sce.SaveHistory[StaticStateAlgorithmState, StaticStateAlgorithmEvent](p, StaticStateAlgorithmHistories),
-		nil, wallNowMs)
+		children, wallNowMs)
 }
 
 // StaticStateAlgorithmSave is StaticStateAlgorithmSaveAt at the host's wall clock now.

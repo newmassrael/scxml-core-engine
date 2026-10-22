@@ -213,9 +213,10 @@ func StaticHostCallSaveAt(engine *sce.Engine[StaticHostCallState, StaticHostCall
 	}
 	variables := sce.NewJSONObject()
 	variables.Set("attempts", sce.SavedWriteUint32(p.vAttempts))
+	var children []sce.SavedChild
 	return sce.SaveSession(engine, &StaticHostCallSavedShape, variables,
 		sce.SaveHistory[StaticHostCallState, StaticHostCallEvent](p, StaticHostCallHistories),
-		nil, wallNowMs)
+		children, wallNowMs)
 }
 
 // StaticHostCallSave is StaticHostCallSaveAt at the host's wall clock now.

@@ -409,9 +409,10 @@ func StaticSchemaPendingSaveAt(engine *sce.Engine[StaticSchemaPendingState, Stat
 	variables.Set("last", p.vLast.ToSaved())
 	variables.Set("taken", sce.SavedWriteUint32(p.vTaken))
 	variables.Set("refusals", sce.SavedWriteUint32(p.vRefusals))
+	var children []sce.SavedChild
 	return sce.SaveSession(engine, &StaticSchemaPendingSavedShape, variables,
 		sce.SaveHistory[StaticSchemaPendingState, StaticSchemaPendingEvent](p, StaticSchemaPendingHistories),
-		nil, wallNowMs)
+		children, wallNowMs)
 }
 
 // StaticSchemaPendingSave is StaticSchemaPendingSaveAt at the host's wall clock now.
