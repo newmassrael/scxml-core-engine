@@ -51,6 +51,13 @@ const NEEDS = [
     [/<invoke\b/, 'an <invoke>: a child session needs a dispatcher'],
     [/<send\b/, 'a <send>: the runner wires no dispatcher for what a machine sends'],
     [/<sce:action\b/, 'a host action: the runner is given no host'],
+    // The lowering refuses the call by its kind (docs/adr/0048), and a test of the
+    // generator holds it to that, so this is not a failure of the page's path.
+    [
+        /<sce:import\b[^>]*\bkind="(?:transform|condition|lookup|interpolation|validator)"/,
+        'a call of an imported transform, condition, lookup, interpolation or validator: '
+            + 'the Interpreter has no lowering of it yet',
+    ],
 ];
 
 /** Why a scenario cannot be replayed here, or null when it can. */
