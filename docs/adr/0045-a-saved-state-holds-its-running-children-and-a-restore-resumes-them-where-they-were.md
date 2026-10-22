@@ -846,8 +846,10 @@ Each step lands with a test that fails without it.
    the SCXML processor (`origintype` is set), and `_event.invokeid` of a child's event is the id
    the start was made under only for an `<invoke>` that keeps it in an `idlocation`, the
    document's own id otherwise (W3C tests 338 and 228). Open: a send to a session by its id
-   (`#_scxml_<id>`) still removes the save API, and no Kotlin test holds the `nothing in
-   transit` refusal because the Kotlin parent has no buffer a child's event waits in.
+   (`#_scxml_<id>`) still removes the save API. The Kotlin parent has no buffer a child's event
+   waits in, so it has no `nothing in transit` refusal to reach;
+   `ASavedTreeHoldsEverySessionWhereItStoodTest` holds that a save after any raise or tick
+   restores and saves again byte for byte.
 5. **Go, Python, C++, C11**, one backend per step, each reading and writing the whole format, the
    root's id in the one spelling of answer 2 in place of the one its process draws today, and held
    to every shared instance. *Exit:* per backend, every instance restored, the tree fixture saved byte
