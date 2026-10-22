@@ -4267,9 +4267,12 @@ refuses a value that is no text or holds a character past U+00FF.
 
 The bound is held where the bytes are written, as a string's is, and not where they are
 read, with one structural exception the shared scenario does not state: an engine whose
-payload buffer is the bound itself (C11, and Rust without an allocator) refuses a payload
-longer than its field's `sce:max-size` whole at the lift, even on a route that writes none
-of it, where the others read it and only compare it. Measured 2026-10-07 by the scenario,
+payload buffer is the bound itself (C11's byte string, and Rust without an allocator)
+refuses a payload longer than its field's `sce:max-size` whole at the lift, even on a route
+that writes none of it, where the others read it and only compare it. C11's text is not
+one of them: it is lifted into a buffer of the size the data arrived in, so a text past its
+bound is an assignment that fails inside the transition, as it is in the other engines
+(`scenarios/record_list_parent.json` states the refusal that follows). Measured 2026-10-07 by the scenario,
 the C++ payload lift had read the bytes of the UTF-8 text as the bytes of the field and
 written them into a JSON string as they were, and C11 had read a character written as
 itself byte by byte. Both now read the Latin-1 text (C++ through `SCE::Latin1Bytes`, which

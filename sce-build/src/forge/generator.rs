@@ -4024,13 +4024,13 @@ pub fn build_c11_event_payload(
                 }
                 SceType::String => {
                     // The machine owns where a lifted text lives — see
-                    // `lift_storage`. Bounded by the field's own `sce:max-size`
-                    // when it declares one, else by the data buffer the text
-                    // arrived in, which nothing longer can have fitted.
-                    let cap = match f.max_size {
-                        Some(n) => format!("{}u", n + 1),
-                        None => "SCE_MAX_DATA_LEN".to_string(),
-                    };
+                    // `lift_storage`. Bounded by the data buffer the text
+                    // arrived in, which nothing longer can have fitted, and
+                    // not by the field's `sce:max-size`: that bound is held
+                    // where the text is written, as every other engine holds
+                    // it, so a text past it is an assignment that fails inside
+                    // the transition and not a payload refused before one.
+                    let cap = "SCE_MAX_DATA_LEN";
                     lift_storage.push_str(&format!(
                         "    /* NL\u{2192}IR Item C1 Path A: where `{event}`'s lifted `{id}` lives \
 (the payload\n       field is a borrowed `const char *`). */\n    \
