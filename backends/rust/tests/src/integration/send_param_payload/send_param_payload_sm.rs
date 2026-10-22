@@ -1152,7 +1152,7 @@ impl StatePolicy for SendParamPayloadPolicy {
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
                     {
-                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_3");
+                        let send_id: &str = "__send_3";
 
                         let mut _param_failed = false;
 
@@ -1247,7 +1247,7 @@ impl StatePolicy for SendParamPayloadPolicy {
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
                     {
-                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_0");
+                        let send_id: &str = "__send_0";
 
                         // W3C SCXML 6.2 + B-2-9: every value is a literal, so the payload is
                         // finished here. It has to be: this arm is what a machine with no script
@@ -1280,7 +1280,7 @@ impl StatePolicy for SendParamPayloadPolicy {
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
                     {
-                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_2");
+                        let send_id: &str = "__send_2";
 
                         let mut _param_failed = false;
 
@@ -1363,7 +1363,7 @@ impl StatePolicy for SendParamPayloadPolicy {
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
                     {
-                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_1");
+                        let send_id: &str = "__send_1";
 
                         let mut _param_failed = false;
 

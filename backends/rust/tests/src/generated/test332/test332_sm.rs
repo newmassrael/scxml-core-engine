@@ -719,7 +719,8 @@ impl StatePolicy for Test332Policy {
                         // send runs — one per execution of the element, not one per element, so a
                         // `<cancel>` by the id the document holds removes the send it was handed
                         // for and no other.
-                        let send_id = engine.next_auto_send_id();
+                        let send_id_generated = engine.next_auto_send_id();
+                        let send_id: &str = &send_id_generated;
 
                         self.ensure_script_engine();
                         let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
@@ -735,7 +736,7 @@ impl StatePolicy for Test332Policy {
                             __sce_arg_se,
                             &__sce_arg_sid,
                             "Var1",
-                            send_id.as_str(),
+                            send_id,
                         ) {
                             _send_arg_error =
                                 Some("<send idlocation='Var1'> could not take the send id");
@@ -746,7 +747,8 @@ impl StatePolicy for Test332Policy {
                                 Test332Event::ErrorExecution,
                                 __sce_why,
                             );
-                            err_meta.metadata.send_id = send_id.clone();
+                            err_meta.metadata.send_id =
+                                ::sce_rust_runtime::sce_string_from_str(send_id);
                             engine.raise(err_meta);
                             break 'action_block; // W3C SCXML 4.9: the error ends the block
                         } else {
@@ -755,7 +757,8 @@ impl StatePolicy for Test332Policy {
                             {
                                 // W3C SCXML 6.2.4/5.10: test 332 — the error event MUST carry the sendid
                                 let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(Test332Event::ErrorExecution, "<send target='!invalid'> is not a target this processor can address");
-                                err_meta.metadata.send_id = send_id.clone();
+                                err_meta.metadata.send_id =
+                                    ::sce_rust_runtime::sce_string_from_str(send_id);
                                 engine.raise(err_meta);
                             }
                             let _ = send_id; // the refusal may carry no error event to name it

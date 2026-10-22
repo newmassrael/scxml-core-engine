@@ -896,7 +896,7 @@ impl StatePolicy for StaticSendTargetPolicy {
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
                             {
-                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_0");
+                                let send_id: &str = "__send_0";
 
                                 let mut _send_arg_error: Option<&'static str> = None;
                                 // docs/adr/0005, decision 3: the target is a string computed from the machine's
@@ -921,7 +921,8 @@ impl StatePolicy for StaticSendTargetPolicy {
                                             StaticSendTargetEvent::ErrorExecution,
                                             __sce_why,
                                         );
-                                    err_meta.metadata.send_id = send_id.clone();
+                                    err_meta.metadata.send_id =
+                                        ::sce_rust_runtime::sce_string_from_str(send_id);
                                     engine.raise(err_meta);
                                     break 'action_block; // W3C SCXML 4.9: the error ends the block
                                 } else {
@@ -934,7 +935,8 @@ impl StatePolicy for StaticSendTargetPolicy {
                                         // W3C SCXML C.1 (test 496, 521): a target that names nothing raises
                                         // error.communication.
                                         let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(StaticSendTargetEvent::ErrorCommunication, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach");
-                                        err_meta.metadata.send_id = send_id.clone();
+                                        err_meta.metadata.send_id =
+                                            ::sce_rust_runtime::sce_string_from_str(send_id);
                                         engine.raise(err_meta);
                                         break 'action_block; // W3C SCXML 4.9: the error ends the block
                                     }
@@ -967,7 +969,10 @@ impl StatePolicy for StaticSendTargetPolicy {
                                                 == sce_rust_runtime::TargetSendOutcome::Unsupported
                                             {
                                                 let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(StaticSendTargetEvent::ErrorExecution, "<send> targetexpr produced a value that is not a target");
-                                                err_meta.metadata.send_id = send_id.clone();
+                                                err_meta.metadata.send_id =
+                                                    ::sce_rust_runtime::sce_string_from_str(
+                                                        send_id,
+                                                    );
                                                 engine.raise(err_meta);
                                                 break 'action_block; // W3C SCXML 4.9: the error ends the block
                                             }
@@ -975,7 +980,10 @@ impl StatePolicy for StaticSendTargetPolicy {
                                                 == sce_rust_runtime::TargetSendOutcome::Unreachable
                                             {
                                                 let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(StaticSendTargetEvent::ErrorCommunication, "<send> targetexpr names a session this processor cannot reach");
-                                                err_meta.metadata.send_id = send_id.clone();
+                                                err_meta.metadata.send_id =
+                                                    ::sce_rust_runtime::sce_string_from_str(
+                                                        send_id,
+                                                    );
                                                 engine.raise(err_meta);
                                                 break 'action_block; // W3C SCXML 4.9: the error ends the block
                                             }
@@ -994,7 +1002,7 @@ impl StatePolicy for StaticSendTargetPolicy {
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
                             {
-                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_1");
+                                let send_id: &str = "__send_1";
 
                                 let mut _send_arg_error: Option<&'static str> = None;
                                 // docs/adr/0005, decision 3: the target is a string computed from the machine's
@@ -1017,7 +1025,8 @@ impl StatePolicy for StaticSendTargetPolicy {
                                             StaticSendTargetEvent::ErrorExecution,
                                             __sce_why,
                                         );
-                                    err_meta.metadata.send_id = send_id.clone();
+                                    err_meta.metadata.send_id =
+                                        ::sce_rust_runtime::sce_string_from_str(send_id);
                                     engine.raise(err_meta);
                                     break 'action_block; // W3C SCXML 4.9: the error ends the block
                                 } else {
@@ -1030,7 +1039,8 @@ impl StatePolicy for StaticSendTargetPolicy {
                                         // W3C SCXML C.1 (test 496, 521): a target that names nothing raises
                                         // error.communication.
                                         let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(StaticSendTargetEvent::ErrorCommunication, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach");
-                                        err_meta.metadata.send_id = send_id.clone();
+                                        err_meta.metadata.send_id =
+                                            ::sce_rust_runtime::sce_string_from_str(send_id);
                                         engine.raise(err_meta);
                                         break 'action_block; // W3C SCXML 4.9: the error ends the block
                                     }
@@ -1063,7 +1073,10 @@ impl StatePolicy for StaticSendTargetPolicy {
                                                 == sce_rust_runtime::TargetSendOutcome::Unsupported
                                             {
                                                 let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(StaticSendTargetEvent::ErrorExecution, "<send> targetexpr produced a value that is not a target");
-                                                err_meta.metadata.send_id = send_id.clone();
+                                                err_meta.metadata.send_id =
+                                                    ::sce_rust_runtime::sce_string_from_str(
+                                                        send_id,
+                                                    );
                                                 engine.raise(err_meta);
                                                 break 'action_block; // W3C SCXML 4.9: the error ends the block
                                             }
@@ -1071,7 +1084,10 @@ impl StatePolicy for StaticSendTargetPolicy {
                                                 == sce_rust_runtime::TargetSendOutcome::Unreachable
                                             {
                                                 let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(StaticSendTargetEvent::ErrorCommunication, "<send> targetexpr names a session this processor cannot reach");
-                                                err_meta.metadata.send_id = send_id.clone();
+                                                err_meta.metadata.send_id =
+                                                    ::sce_rust_runtime::sce_string_from_str(
+                                                        send_id,
+                                                    );
                                                 engine.raise(err_meta);
                                                 break 'action_block; // W3C SCXML 4.9: the error ends the block
                                             }

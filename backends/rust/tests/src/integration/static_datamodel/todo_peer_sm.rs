@@ -4349,8 +4349,7 @@ impl StatePolicy for TodoPeerPolicy {
                                     // W3C SCXML 5.9: cond="o.element === entry.element"
                                     if o.element == self.entry.element {
                                         {
-                                            let send_id =
-                                                ::sce_rust_runtime::sce_string_from_str("__send_0");
+                                            let send_id: &str = "__send_0";
 
                                             // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                                             // delivered, so each name carries a vector. The typed value is kept
@@ -4428,8 +4427,7 @@ impl StatePolicy for TodoPeerPolicy {
                                         }
 
                                         {
-                                            let send_id =
-                                                ::sce_rust_runtime::sce_string_from_str("__send_1");
+                                            let send_id: &str = "__send_1";
 
                                             // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                                             // delivered, so each name carries a vector. The typed value is kept
@@ -4534,8 +4532,7 @@ impl StatePolicy for TodoPeerPolicy {
                                 }
 
                                 {
-                                    let send_id =
-                                        ::sce_rust_runtime::sce_string_from_str("__send_2");
+                                    let send_id: &str = "__send_2";
 
                                     // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                                     // delivered, so each name carries a vector. The typed value is kept
@@ -4613,8 +4610,7 @@ impl StatePolicy for TodoPeerPolicy {
                                 }
 
                                 {
-                                    let send_id =
-                                        ::sce_rust_runtime::sce_string_from_str("__send_3");
+                                    let send_id: &str = "__send_3";
 
                                     // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                                     // delivered, so each name carries a vector. The typed value is kept
@@ -4979,8 +4975,7 @@ impl StatePolicy for TodoPeerPolicy {
                                     }
 
                                     {
-                                        let send_id =
-                                            ::sce_rust_runtime::sce_string_from_str("__send_4");
+                                        let send_id: &str = "__send_4";
 
                                         // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                                         // delivered, so each name carries a vector. The typed value is kept
@@ -5055,8 +5050,7 @@ impl StatePolicy for TodoPeerPolicy {
                                 // W3C SCXML 5.9: cond="hub && _event.data.nodeId !== 1"
                                 if self.hub && ev.nodeId != 1 {
                                     {
-                                        let send_id =
-                                            ::sce_rust_runtime::sce_string_from_str("__send_5");
+                                        let send_id: &str = "__send_5";
 
                                         // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                                         // delivered, so each name carries a vector. The typed value is kept
@@ -5167,8 +5161,7 @@ impl StatePolicy for TodoPeerPolicy {
                                 // W3C SCXML 5.9: cond="hub && _event.data.nodeId !== 2"
                                 if self.hub && ev.nodeId != 2 {
                                     {
-                                        let send_id =
-                                            ::sce_rust_runtime::sce_string_from_str("__send_6");
+                                        let send_id: &str = "__send_6";
 
                                         // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                                         // delivered, so each name carries a vector. The typed value is kept
@@ -5450,8 +5443,7 @@ impl StatePolicy for TodoPeerPolicy {
                                 // W3C SCXML 5.9: cond="!known"
                                 if !self.known {
                                     {
-                                        let send_id =
-                                            ::sce_rust_runtime::sce_string_from_str("__send_7");
+                                        let send_id: &str = "__send_7";
 
                                         // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                                         // delivered, so each name carries a vector. The typed value is kept
@@ -5526,8 +5518,7 @@ impl StatePolicy for TodoPeerPolicy {
                                 // W3C SCXML 5.9: cond="wasLive"
                                 if self.was_live {
                                     {
-                                        let send_id =
-                                            ::sce_rust_runtime::sce_string_from_str("__send_8");
+                                        let send_id: &str = "__send_8";
 
                                         // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                                         // delivered, so each name carries a vector. The typed value is kept
@@ -5602,8 +5593,7 @@ impl StatePolicy for TodoPeerPolicy {
                                 // W3C SCXML 5.9: cond="hub && _event.data.by !== 1"
                                 if self.hub && ev.by != 1 {
                                     {
-                                        let send_id =
-                                            ::sce_rust_runtime::sce_string_from_str("__send_9");
+                                        let send_id: &str = "__send_9";
 
                                         // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                                         // delivered, so each name carries a vector. The typed value is kept
@@ -5706,8 +5696,7 @@ impl StatePolicy for TodoPeerPolicy {
                                 // W3C SCXML 5.9: cond="hub && _event.data.by !== 2"
                                 if self.hub && ev.by != 2 {
                                     {
-                                        let send_id =
-                                            ::sce_rust_runtime::sce_string_from_str("__send_10");
+                                        let send_id: &str = "__send_10";
 
                                         // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                                         // delivered, so each name carries a vector. The typed value is kept
@@ -5988,8 +5977,7 @@ impl StatePolicy for TodoPeerPolicy {
                                 }
 
                                 {
-                                    let send_id =
-                                        ::sce_rust_runtime::sce_string_from_str("__send_11");
+                                    let send_id: &str = "__send_11";
 
                                     // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                                     // delivered, so each name carries a vector. The typed value is kept
@@ -6054,8 +6042,7 @@ impl StatePolicy for TodoPeerPolicy {
                                 }
 
                                 {
-                                    let send_id =
-                                        ::sce_rust_runtime::sce_string_from_str("__send_12");
+                                    let send_id: &str = "__send_12";
 
                                     // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                                     // delivered, so each name carries a vector. The typed value is kept
@@ -6193,8 +6180,7 @@ impl StatePolicy for TodoPeerPolicy {
                                 }
 
                                 {
-                                    let send_id =
-                                        ::sce_rust_runtime::sce_string_from_str("__send_13");
+                                    let send_id: &str = "__send_13";
 
                                     // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                                     // delivered, so each name carries a vector. The typed value is kept
@@ -6387,8 +6373,7 @@ impl StatePolicy for TodoPeerPolicy {
                                     self.frozen_hash = self.mine;
 
                                     {
-                                        let send_id =
-                                            ::sce_rust_runtime::sce_string_from_str("__send_14");
+                                        let send_id: &str = "__send_14";
 
                                         // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                                         // delivered, so each name carries a vector. The typed value is kept
@@ -6462,8 +6447,7 @@ impl StatePolicy for TodoPeerPolicy {
                                     }
 
                                     {
-                                        let send_id =
-                                            ::sce_rust_runtime::sce_string_from_str("__send_15");
+                                        let send_id: &str = "__send_15";
 
                                         // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                                         // delivered, so each name carries a vector. The typed value is kept
@@ -6537,8 +6521,7 @@ impl StatePolicy for TodoPeerPolicy {
                                     }
 
                                     {
-                                        let send_id =
-                                            ::sce_rust_runtime::sce_string_from_str("__send_16");
+                                        let send_id: &str = "__send_16";
 
                                         // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                                         // delivered, so each name carries a vector. The typed value is kept
@@ -6594,8 +6577,7 @@ impl StatePolicy for TodoPeerPolicy {
                                 // W3C SCXML 5.9: cond="_event.data.hash !== mine && floor > 0"
                                 if ev.hash != self.mine && self.floor > 0 {
                                     {
-                                        let send_id =
-                                            ::sce_rust_runtime::sce_string_from_str("__send_17");
+                                        let send_id: &str = "__send_17";
 
                                         // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                                         // delivered, so each name carries a vector. The typed value is kept
@@ -6669,8 +6651,7 @@ impl StatePolicy for TodoPeerPolicy {
                                     }
 
                                     {
-                                        let send_id =
-                                            ::sce_rust_runtime::sce_string_from_str("__send_18");
+                                        let send_id: &str = "__send_18";
 
                                         // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                                         // delivered, so each name carries a vector. The typed value is kept
@@ -6898,7 +6879,7 @@ impl StatePolicy for TodoPeerPolicy {
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
                             {
-                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_19");
+                                let send_id: &str = "__send_19";
 
                                 // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                                 // delivered, so each name carries a vector. The typed value is kept
@@ -6980,8 +6961,7 @@ impl StatePolicy for TodoPeerPolicy {
                             // W3C SCXML 5.9: cond="!hub"
                             if !self.hub {
                                 {
-                                    let send_id =
-                                        ::sce_rust_runtime::sce_string_from_str("__send_20");
+                                    let send_id: &str = "__send_20";
 
                                     // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                                     // delivered, so each name carries a vector. The typed value is kept
@@ -7076,8 +7056,7 @@ impl StatePolicy for TodoPeerPolicy {
                             // W3C SCXML 5.9: cond="hub && _event.data.to !== 2"
                             if self.hub && ev.to != 2 {
                                 {
-                                    let send_id =
-                                        ::sce_rust_runtime::sce_string_from_str("__send_21");
+                                    let send_id: &str = "__send_21";
 
                                     // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                                     // delivered, so each name carries a vector. The typed value is kept
@@ -7174,8 +7153,7 @@ impl StatePolicy for TodoPeerPolicy {
                             // W3C SCXML 5.9: cond="hub && (_event.data.to === 2 || _event.data.to === 0)"
                             if self.hub && (ev.to == 2 || ev.to == 0) {
                                 {
-                                    let send_id =
-                                        ::sce_rust_runtime::sce_string_from_str("__send_22");
+                                    let send_id: &str = "__send_22";
 
                                     // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                                     // delivered, so each name carries a vector. The typed value is kept
@@ -7297,8 +7275,7 @@ impl StatePolicy for TodoPeerPolicy {
                                 // W3C SCXML 5.9: cond="mine !== _event.data.hash && _event.data.depth < 30"
                                 if self.mine != ev.hash && ev.depth < 30 {
                                     {
-                                        let send_id =
-                                            ::sce_rust_runtime::sce_string_from_str("__send_23");
+                                        let send_id: &str = "__send_23";
 
                                         let mut _param_failed = false;
 
@@ -7384,8 +7361,7 @@ impl StatePolicy for TodoPeerPolicy {
                                     }
 
                                     {
-                                        let send_id =
-                                            ::sce_rust_runtime::sce_string_from_str("__send_24");
+                                        let send_id: &str = "__send_24";
 
                                         let mut _param_failed = false;
 
@@ -7471,8 +7447,7 @@ impl StatePolicy for TodoPeerPolicy {
                                     }
 
                                     {
-                                        let send_id =
-                                            ::sce_rust_runtime::sce_string_from_str("__send_25");
+                                        let send_id: &str = "__send_25";
 
                                         let mut _param_failed = false;
 
@@ -7561,8 +7536,7 @@ impl StatePolicy for TodoPeerPolicy {
                                 // W3C SCXML 5.9: cond="mine !== _event.data.hash && _event.data.depth === 30"
                                 if self.mine != ev.hash && ev.depth == 30 {
                                     {
-                                        let send_id =
-                                            ::sce_rust_runtime::sce_string_from_str("__send_26");
+                                        let send_id: &str = "__send_26";
 
                                         // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                                         // delivered, so each name carries a vector. The typed value is kept
@@ -7615,8 +7589,7 @@ impl StatePolicy for TodoPeerPolicy {
                                 // W3C SCXML 5.9: cond="mine !== _event.data.hash && _event.data.depth === 30 && !_event.data.reply"
                                 if self.mine != ev.hash && ev.depth == 30 && !ev.reply {
                                     {
-                                        let send_id =
-                                            ::sce_rust_runtime::sce_string_from_str("__send_27");
+                                        let send_id: &str = "__send_27";
 
                                         // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                                         // delivered, so each name carries a vector. The typed value is kept
@@ -7743,7 +7716,7 @@ if !self.hub {
 
 
 {
-    let send_id = ::sce_rust_runtime::sce_string_from_str("__send_28");
+    let send_id: &str = "__send_28";
 
 
     // W3C SCXML 6.2 / test178: a name may repeat and every value must be
@@ -7818,7 +7791,7 @@ if self.hub && ev.to != 2 {
 
 
 {
-    let send_id = ::sce_rust_runtime::sce_string_from_str("__send_29");
+    let send_id: &str = "__send_29";
 
 
     // W3C SCXML 6.2 / test178: a name may repeat and every value must be
@@ -7893,7 +7866,7 @@ if self.hub && ev.to == 2 {
 
 
 {
-    let send_id = ::sce_rust_runtime::sce_string_from_str("__send_30");
+    let send_id: &str = "__send_30";
 
 
     // W3C SCXML 6.2 / test178: a name may repeat and every value must be
@@ -8023,7 +7996,7 @@ if !self.hub {
 
 
 {
-    let send_id = ::sce_rust_runtime::sce_string_from_str("__send_31");
+    let send_id: &str = "__send_31";
 
 
     // W3C SCXML 6.2 / test178: a name may repeat and every value must be
@@ -8096,7 +8069,7 @@ if self.hub && ev.to != 2 {
 
 
 {
-    let send_id = ::sce_rust_runtime::sce_string_from_str("__send_32");
+    let send_id: &str = "__send_32";
 
 
     // W3C SCXML 6.2 / test178: a name may repeat and every value must be
@@ -8169,7 +8142,7 @@ if self.hub && ev.to == 2 {
 
 
 {
-    let send_id = ::sce_rust_runtime::sce_string_from_str("__send_33");
+    let send_id: &str = "__send_33";
 
 
     // W3C SCXML 6.2 / test178: a name may repeat and every value must be

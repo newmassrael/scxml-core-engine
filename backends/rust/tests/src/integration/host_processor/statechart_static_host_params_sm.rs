@@ -1107,7 +1107,7 @@ impl StatePolicy for StatechartStaticHostParamsPolicy {
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
                     {
-                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_0");
+                        let send_id: &str = "__send_0";
 
                         let mut _param_failed = false;
 
@@ -1231,7 +1231,7 @@ impl StatePolicy for StatechartStaticHostParamsPolicy {
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
                     {
-                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_1");
+                        let send_id: &str = "__send_1";
 
                         let mut _param_failed = false;
 
@@ -1302,7 +1302,7 @@ impl StatePolicy for StatechartStaticHostParamsPolicy {
                     }
 
                     {
-                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_2");
+                        let send_id: &str = "__send_2";
 
                         // W3C SCXML 5.6.2: the value of <content expr> is the output of <content>,
                         // the event's data. Under `datamodel="sce-static"` it is one typed value
@@ -1359,7 +1359,7 @@ impl StatePolicy for StatechartStaticHostParamsPolicy {
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
                     {
-                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_3");
+                        let send_id: &str = "__send_3";
 
                         let mut _param_failed = false;
 
@@ -1430,7 +1430,7 @@ impl StatePolicy for StatechartStaticHostParamsPolicy {
                     }
 
                     {
-                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_4");
+                        let send_id: &str = "__send_4";
 
                         // W3C SCXML 5.6.2: the value of <content expr> is the output of <content>,
                         // the event's data. Under `datamodel="sce-static"` it is one typed value

@@ -493,7 +493,10 @@ impl StatePolicy for StatechartDelayedHostSendPolicy {
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
                     {
-                        let send_id = ::sce_rust_runtime::sce_string_from_str("h2");
+                        // The id is text and stays text: a literal is borrowed, and the engine builds
+                        // the one string it keeps (a scheduled send's cancel key, `_event.sendid` under
+                        // std), so no buffer of the string bound sits in this action's frame for it.
+                        let send_id: &str = "h2";
 
                         let event_data: &str = "";
 
@@ -536,7 +539,7 @@ impl StatePolicy for StatechartDelayedHostSendPolicy {
                     }
 
                     {
-                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_2");
+                        let send_id: &str = "__send_2";
 
                         let event_data: &str = "";
 
@@ -548,9 +551,7 @@ impl StatePolicy for StatechartDelayedHostSendPolicy {
                             core::time::Duration::from_millis(100_u64),
                             &send_id,
                             event_data,
-                            &::sce_rust_runtime::sce_string_from_str(
-                                self.session_id.as_deref().unwrap_or(""),
-                            ),
+                            &self.session_id.as_deref().unwrap_or(""),
                         );
 
                         let _ = event_data; // suppress unused warning in branches that skip dispatch
@@ -567,7 +568,7 @@ impl StatePolicy for StatechartDelayedHostSendPolicy {
                     engine.cancel_event("h2");
 
                     {
-                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_3");
+                        let send_id: &str = "__send_3";
 
                         let event_data: &str = "";
 
@@ -579,9 +580,7 @@ impl StatePolicy for StatechartDelayedHostSendPolicy {
                             core::time::Duration::from_millis(200_u64),
                             &send_id,
                             event_data,
-                            &::sce_rust_runtime::sce_string_from_str(
-                                self.session_id.as_deref().unwrap_or(""),
-                            ),
+                            &self.session_id.as_deref().unwrap_or(""),
                         );
 
                         let _ = event_data; // suppress unused warning in branches that skip dispatch
@@ -595,7 +594,7 @@ impl StatePolicy for StatechartDelayedHostSendPolicy {
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
                     {
-                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_0");
+                        let send_id: &str = "__send_0";
 
                         let event_data: &str = "";
 
@@ -638,7 +637,7 @@ impl StatePolicy for StatechartDelayedHostSendPolicy {
                     }
 
                     {
-                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_1");
+                        let send_id: &str = "__send_1";
 
                         let event_data: &str = "";
 
@@ -650,9 +649,7 @@ impl StatePolicy for StatechartDelayedHostSendPolicy {
                             core::time::Duration::from_millis(100_u64),
                             &send_id,
                             event_data,
-                            &::sce_rust_runtime::sce_string_from_str(
-                                self.session_id.as_deref().unwrap_or(""),
-                            ),
+                            &self.session_id.as_deref().unwrap_or(""),
                         );
 
                         let _ = event_data; // suppress unused warning in branches that skip dispatch

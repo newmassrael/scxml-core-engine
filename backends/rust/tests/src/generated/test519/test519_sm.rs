@@ -704,7 +704,7 @@ impl StatePolicy for Test519Policy {
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
                     {
-                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_0");
+                        let send_id: &str = "__send_0";
 
                         let event_data: &str = "";
 
@@ -716,9 +716,7 @@ impl StatePolicy for Test519Policy {
                             core::time::Duration::from_millis(30000_u64),
                             &send_id,
                             event_data,
-                            &::sce_rust_runtime::sce_string_from_str(
-                                self.session_id.as_deref().unwrap_or(""),
-                            ),
+                            &self.session_id.as_deref().unwrap_or(""),
                         );
 
                         let _ = event_data; // suppress unused warning in branches that skip dispatch
@@ -726,7 +724,7 @@ impl StatePolicy for Test519Policy {
                     }
 
                     {
-                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_1");
+                        let send_id: &str = "__send_1";
 
                         self.ensure_script_engine();
                         let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
@@ -769,7 +767,8 @@ impl StatePolicy for Test519Policy {
                                 Test519Event::ErrorExecution,
                                 __sce_why,
                             );
-                            err_meta.metadata.send_id = send_id.clone();
+                            err_meta.metadata.send_id =
+                                ::sce_rust_runtime::sce_string_from_str(send_id);
                             engine.raise(err_meta);
                             break 'action_block; // W3C SCXML 4.9: the error ends the block
                         } else {
@@ -788,7 +787,8 @@ impl StatePolicy for Test519Policy {
                                 // W3C SCXML C.1 (test 496, 521): a target that names nothing raises
                                 // error.communication.
                                 let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(Test519Event::ErrorCommunication, "<send> targetexpr evaluated to nothing, so there is no target to reach");
-                                err_meta.metadata.send_id = send_id.clone();
+                                err_meta.metadata.send_id =
+                                    ::sce_rust_runtime::sce_string_from_str(send_id);
                                 engine.raise(err_meta);
                                 break 'action_block; // W3C SCXML 4.9: the error ends the block
                             }
@@ -800,7 +800,7 @@ impl StatePolicy for Test519Policy {
                                 if !sce_rust_runtime::helpers::send::is_supported_send_type(sce_rust_runtime::helpers::scxml_constants::BASIC_HTTP_EVENT_PROCESSOR_TYPE) {
         ::sce_rust_runtime::sce_log_error!("<send type='http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor'>: this build has no BasicHTTP processor (sce-rust-runtime's `http-send` feature)");
         let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(Test519Event::ErrorExecution, "<send type='http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor'> names a processor this platform does not support");
-        err_meta.metadata.send_id = send_id.clone();
+        err_meta.metadata.send_id = ::sce_rust_runtime::sce_string_from_str(send_id);
         engine.raise(err_meta);
         break 'action_block;  // W3C SCXML 4.9: the error ends the block
     } else {
@@ -844,7 +844,7 @@ impl StatePolicy for Test519Policy {
         // W3C SCXML C.2: Validate dynamic target is HTTP URL
         if !_rt.starts_with("http://") && !_rt.starts_with("https://") {
             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(Test519Event::ErrorCommunication, "<send> over BasicHTTPEventProcessor resolved a target that is not an http(s) URL");
-            err_meta.metadata.send_id = send_id.clone();
+            err_meta.metadata.send_id = ::sce_rust_runtime::sce_string_from_str(send_id);
             engine.raise(err_meta);
             break 'action_block;  // W3C SCXML 4.9: the error ends the block
         } else {
@@ -858,7 +858,7 @@ impl StatePolicy for Test519Policy {
 "test".to_string(),
 "".to_string(),
             http_params,
-            send_id.clone(),
+            send_id.to_string(),
         );
         }
     }

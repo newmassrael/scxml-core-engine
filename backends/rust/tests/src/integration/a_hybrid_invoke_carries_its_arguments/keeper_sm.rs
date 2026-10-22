@@ -925,7 +925,7 @@ impl StatePolicy for KeeperPolicy {
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
                             {
-                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_0");
+                                let send_id: &str = "__send_0";
 
                                 let mut _param_failed = false;
 

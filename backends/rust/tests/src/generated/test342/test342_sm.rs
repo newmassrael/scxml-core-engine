@@ -739,7 +739,7 @@ impl StatePolicy for Test342Policy {
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
                     {
-                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_0");
+                        let send_id: &str = "__send_0";
 
                         self.ensure_script_engine();
                         let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
@@ -769,7 +769,8 @@ impl StatePolicy for Test342Policy {
                                 Test342Event::ErrorExecution,
                                 __sce_why,
                             );
-                            err_meta.metadata.send_id = send_id.clone();
+                            err_meta.metadata.send_id =
+                                ::sce_rust_runtime::sce_string_from_str(send_id);
                             engine.raise(err_meta);
                             break 'action_block; // W3C SCXML 4.9: the error ends the block
                         } else {
@@ -781,9 +782,7 @@ impl StatePolicy for Test342Policy {
                                 None,
                                 &send_id,
                                 event_data,
-                                &::sce_rust_runtime::sce_string_from_str(
-                                    self.session_id.as_deref().unwrap_or(""),
-                                ),
+                                &self.session_id.as_deref().unwrap_or(""),
                             );
 
                             let _ = event_data; // suppress unused warning in branches that skip dispatch

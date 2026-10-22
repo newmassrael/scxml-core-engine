@@ -1075,7 +1075,10 @@ impl StatePolicy for StaticSchemaPendingPolicy {
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
                             {
-                                let send_id = ::sce_rust_runtime::sce_string_from_str("later");
+                                // The id is text and stays text: a literal is borrowed, and the engine builds
+                                // the one string it keeps (a scheduled send's cancel key, `_event.sendid` under
+                                // std), so no buffer of the string bound sits in this action's frame for it.
+                                let send_id: &str = "later";
 
                                 // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                                 // delivered, so each name carries a vector. The typed value is kept
@@ -1118,9 +1121,7 @@ impl StatePolicy for StaticSchemaPendingPolicy {
                                     core::time::Duration::from_millis(1000_u64),
                                     &send_id,
                                     event_data,
-                                    &::sce_rust_runtime::sce_string_from_str(
-                                        self.session_id.as_deref().unwrap_or(""),
-                                    ),
+                                    &self.session_id.as_deref().unwrap_or(""),
                                 );
 
                                 let _ = event_data; // suppress unused warning in branches that skip dispatch

@@ -1698,7 +1698,7 @@ impl StatePolicy for AiLoopPolicy {
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
                     {
-                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_7");
+                        let send_id: &str = "__send_7";
 
                         let mut _param_failed = false;
 
@@ -1773,7 +1773,8 @@ impl StatePolicy for AiLoopPolicy {
                             // event, so a wiring mistake cannot read as success.
                             if __sce_served.is_none() && !engine.has_event_processor("x-sce-host") {
                                 let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(AiLoopEvent::ErrorExecution, "<send type='x-sce-host'> names a processor the host declared but never registered");
-                                err_meta.metadata.send_id = send_id.clone();
+                                err_meta.metadata.send_id =
+                                    ::sce_rust_runtime::sce_string_from_str(send_id);
                                 engine.raise(err_meta);
                             }
                         }
@@ -1795,7 +1796,7 @@ impl StatePolicy for AiLoopPolicy {
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
                     {
-                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_3");
+                        let send_id: &str = "__send_3";
 
                         let mut _param_failed = false;
 
@@ -1873,7 +1874,8 @@ impl StatePolicy for AiLoopPolicy {
                             // event, so a wiring mistake cannot read as success.
                             if __sce_served.is_none() && !engine.has_event_processor("x-sce-host") {
                                 let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(AiLoopEvent::ErrorExecution, "<send type='x-sce-host'> names a processor the host declared but never registered");
-                                err_meta.metadata.send_id = send_id.clone();
+                                err_meta.metadata.send_id =
+                                    ::sce_rust_runtime::sce_string_from_str(send_id);
                                 engine.raise(err_meta);
                             }
                         }
@@ -1895,7 +1897,7 @@ impl StatePolicy for AiLoopPolicy {
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
                     {
-                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_8");
+                        let send_id: &str = "__send_8";
 
                         let event_data: &str = "";
 
@@ -1926,7 +1928,8 @@ impl StatePolicy for AiLoopPolicy {
                             // event, so a wiring mistake cannot read as success.
                             if __sce_served.is_none() && !engine.has_event_processor("x-sce-host") {
                                 let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(AiLoopEvent::ErrorExecution, "<send type='x-sce-host'> names a processor the host declared but never registered");
-                                err_meta.metadata.send_id = send_id.clone();
+                                err_meta.metadata.send_id =
+                                    ::sce_rust_runtime::sce_string_from_str(send_id);
                                 engine.raise(err_meta);
                             }
                         }
@@ -1942,7 +1945,7 @@ impl StatePolicy for AiLoopPolicy {
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
                     {
-                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_0");
+                        let send_id: &str = "__send_0";
 
                         let mut _param_failed = false;
 
@@ -2017,7 +2020,8 @@ impl StatePolicy for AiLoopPolicy {
                             // event, so a wiring mistake cannot read as success.
                             if __sce_served.is_none() && !engine.has_event_processor("x-sce-host") {
                                 let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(AiLoopEvent::ErrorExecution, "<send type='x-sce-host'> names a processor the host declared but never registered");
-                                err_meta.metadata.send_id = send_id.clone();
+                                err_meta.metadata.send_id =
+                                    ::sce_rust_runtime::sce_string_from_str(send_id);
                                 engine.raise(err_meta);
                             }
                         }
@@ -2065,7 +2069,7 @@ impl StatePolicy for AiLoopPolicy {
                     }
 
                     {
-                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_5");
+                        let send_id: &str = "__send_5";
 
                         let event_data: &str = "";
 
@@ -2096,7 +2100,8 @@ impl StatePolicy for AiLoopPolicy {
                             // event, so a wiring mistake cannot read as success.
                             if __sce_served.is_none() && !engine.has_event_processor("x-sce-host") {
                                 let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(AiLoopEvent::ErrorExecution, "<send type='x-sce-host'> names a processor the host declared but never registered");
-                                err_meta.metadata.send_id = send_id.clone();
+                                err_meta.metadata.send_id =
+                                    ::sce_rust_runtime::sce_string_from_str(send_id);
                                 engine.raise(err_meta);
                             }
                         }
@@ -2153,7 +2158,7 @@ impl StatePolicy for AiLoopPolicy {
                     }
 
                     {
-                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_6");
+                        let send_id: &str = "__send_6";
 
                         let event_data: &str = "";
 
@@ -2184,7 +2189,8 @@ impl StatePolicy for AiLoopPolicy {
                             // event, so a wiring mistake cannot read as success.
                             if __sce_served.is_none() && !engine.has_event_processor("x-sce-host") {
                                 let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(AiLoopEvent::ErrorExecution, "<send type='x-sce-host'> names a processor the host declared but never registered");
-                                err_meta.metadata.send_id = send_id.clone();
+                                err_meta.metadata.send_id =
+                                    ::sce_rust_runtime::sce_string_from_str(send_id);
                                 engine.raise(err_meta);
                             }
                         }
@@ -2226,7 +2232,7 @@ impl StatePolicy for AiLoopPolicy {
                     }
 
                     {
-                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_1");
+                        let send_id: &str = "__send_1";
 
                         let event_data: &str = "";
 
@@ -2257,7 +2263,8 @@ impl StatePolicy for AiLoopPolicy {
                             // event, so a wiring mistake cannot read as success.
                             if __sce_served.is_none() && !engine.has_event_processor("x-sce-host") {
                                 let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(AiLoopEvent::ErrorExecution, "<send type='x-sce-host'> names a processor the host declared but never registered");
-                                err_meta.metadata.send_id = send_id.clone();
+                                err_meta.metadata.send_id =
+                                    ::sce_rust_runtime::sce_string_from_str(send_id);
                                 engine.raise(err_meta);
                             }
                         }
@@ -2835,7 +2842,7 @@ impl StatePolicy for AiLoopPolicy {
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
                             {
-                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_2");
+                                let send_id: &str = "__send_2";
 
                                 let mut _param_failed = false;
 
@@ -2913,7 +2920,8 @@ impl StatePolicy for AiLoopPolicy {
                                         && !engine.has_event_processor("x-sce-host")
                                     {
                                         let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(AiLoopEvent::ErrorExecution, "<send type='x-sce-host'> names a processor the host declared but never registered");
-                                        err_meta.metadata.send_id = send_id.clone();
+                                        err_meta.metadata.send_id =
+                                            ::sce_rust_runtime::sce_string_from_str(send_id);
                                         engine.raise(err_meta);
                                     }
                                 }
@@ -3069,7 +3077,7 @@ impl StatePolicy for AiLoopPolicy {
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
                             {
-                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_4");
+                                let send_id: &str = "__send_4";
 
                                 let mut _param_failed = false;
 
@@ -3147,7 +3155,8 @@ impl StatePolicy for AiLoopPolicy {
                                         && !engine.has_event_processor("x-sce-host")
                                     {
                                         let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(AiLoopEvent::ErrorExecution, "<send type='x-sce-host'> names a processor the host declared but never registered");
-                                        err_meta.metadata.send_id = send_id.clone();
+                                        err_meta.metadata.send_id =
+                                            ::sce_rust_runtime::sce_string_from_str(send_id);
                                         engine.raise(err_meta);
                                     }
                                 }

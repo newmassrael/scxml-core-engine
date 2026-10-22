@@ -989,7 +989,7 @@ impl StatePolicy for Test233Policy {
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
                     {
-                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_0");
+                        let send_id: &str = "__send_0";
 
                         let event_data: &str = "";
 
@@ -1001,9 +1001,7 @@ impl StatePolicy for Test233Policy {
                             core::time::Duration::from_millis(3000_u64),
                             &send_id,
                             event_data,
-                            &::sce_rust_runtime::sce_string_from_str(
-                                self.session_id.as_deref().unwrap_or(""),
-                            ),
+                            &self.session_id.as_deref().unwrap_or(""),
                         );
 
                         let _ = event_data; // suppress unused warning in branches that skip dispatch

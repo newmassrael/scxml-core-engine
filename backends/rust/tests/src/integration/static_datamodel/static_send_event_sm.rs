@@ -941,7 +941,7 @@ impl StatePolicy for StaticSendEventPolicy {
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
                             {
-                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_0");
+                                let send_id: &str = "__send_0";
 
                                 let mut _send_arg_error: Option<&'static str> = None;
                                 // The event's name is a string computed from the machine's fields now. A name
@@ -964,7 +964,8 @@ impl StatePolicy for StaticSendEventPolicy {
                                             StaticSendEventEvent::ErrorExecution,
                                             __sce_why,
                                         );
-                                    err_meta.metadata.send_id = send_id.clone();
+                                    err_meta.metadata.send_id =
+                                        ::sce_rust_runtime::sce_string_from_str(send_id);
                                     engine.raise(err_meta);
                                     break 'action_block; // W3C SCXML 4.9: the error ends the block
                                 } else {
@@ -976,9 +977,7 @@ impl StatePolicy for StaticSendEventPolicy {
                                         None,
                                         &send_id,
                                         event_data,
-                                        &::sce_rust_runtime::sce_string_from_str(
-                                            self.session_id.as_deref().unwrap_or(""),
-                                        ),
+                                        &self.session_id.as_deref().unwrap_or(""),
                                     );
 
                                     let _ = event_data; // suppress unused warning in branches that skip dispatch
@@ -993,7 +992,7 @@ impl StatePolicy for StaticSendEventPolicy {
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
                             {
-                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_1");
+                                let send_id: &str = "__send_1";
 
                                 let mut _send_arg_error: Option<&'static str> = None;
                                 // The event's name is a string computed from the machine's fields now. A name
@@ -1019,7 +1018,8 @@ impl StatePolicy for StaticSendEventPolicy {
                                             StaticSendEventEvent::ErrorExecution,
                                             __sce_why,
                                         );
-                                    err_meta.metadata.send_id = send_id.clone();
+                                    err_meta.metadata.send_id =
+                                        ::sce_rust_runtime::sce_string_from_str(send_id);
                                     engine.raise(err_meta);
                                     break 'action_block; // W3C SCXML 4.9: the error ends the block
                                 } else {
@@ -1031,9 +1031,7 @@ impl StatePolicy for StaticSendEventPolicy {
                                         None,
                                         &send_id,
                                         event_data,
-                                        &::sce_rust_runtime::sce_string_from_str(
-                                            self.session_id.as_deref().unwrap_or(""),
-                                        ),
+                                        &self.session_id.as_deref().unwrap_or(""),
                                     );
 
                                     let _ = event_data; // suppress unused warning in branches that skip dispatch

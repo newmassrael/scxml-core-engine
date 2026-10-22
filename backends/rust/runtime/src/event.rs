@@ -18,6 +18,7 @@
 //! `--no-default-features`. The cap and motivation are documented at
 //! [`crate::MAX_EVENT_STRING_LEN`].
 
+#[cfg(feature = "std")]
 use crate::SceString;
 // Only the std arm of `EventMetadata::external` stores string metadata; under
 // no_std the `_event.*` strings are elided, so the converter is std-only.
@@ -183,13 +184,17 @@ impl EventMetadata {
     /// metadata is elided (no script-engine reader exists), so the `send_id` /
     /// `origin` arguments are accepted for a uniform call shape across profiles
     /// but not stored.
-    pub fn external(send_id: SceString, origin: SceString) -> Self {
+    ///
+    /// Both are borrowed, so a profile that stores nothing builds nothing: a
+    /// caller holding an owned string for each, to hand over a copy that is then
+    /// dropped, would spend two buffers of the string bound on its stack for it.
+    pub fn external(send_id: &str, origin: &str) -> Self {
         #[cfg(feature = "std")]
         {
             Self {
                 event_type: EventType::External,
-                send_id,
-                origin,
+                send_id: sce_string_from_str(send_id),
+                origin: sce_string_from_str(origin),
                 origin_type: sce_string_from_str(
                     crate::helpers::scxml_constants::SCXML_EVENT_PROCESSOR_TYPE,
                 ),

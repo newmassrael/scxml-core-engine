@@ -1410,7 +1410,7 @@ impl StatePolicy for ADelayedSendReachesWhatItsTargetNamesPolicy {
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
                     {
-                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_4");
+                        let send_id: &str = "__send_4";
 
                         let event_data: &str = "";
 
@@ -1422,9 +1422,7 @@ impl StatePolicy for ADelayedSendReachesWhatItsTargetNamesPolicy {
                             core::time::Duration::from_millis(10_u64),
                             &send_id,
                             event_data,
-                            &::sce_rust_runtime::sce_string_from_str(
-                                self.session_id.as_deref().unwrap_or(""),
-                            ),
+                            &self.session_id.as_deref().unwrap_or(""),
                         );
 
                         let _ = event_data; // suppress unused warning in branches that skip dispatch
@@ -1432,7 +1430,7 @@ impl StatePolicy for ADelayedSendReachesWhatItsTargetNamesPolicy {
                     }
 
                     {
-                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_5");
+                        let send_id: &str = "__send_5";
 
                         let event_data: &str = "";
 
@@ -1443,9 +1441,7 @@ impl StatePolicy for ADelayedSendReachesWhatItsTargetNamesPolicy {
                             core::time::Duration::from_millis(20_u64),
                             &send_id,
                             event_data,
-                            &::sce_rust_runtime::sce_string_from_str(
-                                self.session_id.as_deref().unwrap_or(""),
-                            ),
+                            &self.session_id.as_deref().unwrap_or(""),
                             sce_rust_runtime::ScheduledRoute::InternalQueue,
                         );
 
@@ -1457,7 +1453,7 @@ impl StatePolicy for ADelayedSendReachesWhatItsTargetNamesPolicy {
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
                     {
-                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_6");
+                        let send_id: &str = "__send_6";
 
                         let event_data: &str = "";
 
@@ -1467,7 +1463,8 @@ impl StatePolicy for ADelayedSendReachesWhatItsTargetNamesPolicy {
                         // nothing delivered, the block ended (W3C SCXML 4.9).
                         if self.session_id.as_deref() != Some("stranger") {
                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ADelayedSendReachesWhatItsTargetNamesEvent::ErrorCommunication, "<send target='#_scxml_stranger'> names a session this processor cannot reach");
-                            err_meta.metadata.send_id = send_id.clone();
+                            err_meta.metadata.send_id =
+                                ::sce_rust_runtime::sce_string_from_str(send_id);
                             engine.raise(err_meta);
                             break 'action_block;
                         } else {
@@ -1478,9 +1475,7 @@ impl StatePolicy for ADelayedSendReachesWhatItsTargetNamesPolicy {
                                 core::time::Duration::from_millis(20_u64),
                                 &send_id,
                                 event_data,
-                                &::sce_rust_runtime::sce_string_from_str(
-                                    self.session_id.as_deref().unwrap_or(""),
-                                ),
+                                &self.session_id.as_deref().unwrap_or(""),
                             );
                         }
 
@@ -2029,7 +2024,7 @@ impl StatePolicy for ADelayedSendReachesWhatItsTargetNamesPolicy {
                             }
 
                             {
-                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_0");
+                                let send_id: &str = "__send_0";
 
                                 let mut _param_failed = false;
 
@@ -2070,9 +2065,7 @@ impl StatePolicy for ADelayedSendReachesWhatItsTargetNamesPolicy {
                                         core::time::Duration::from_millis(20_u64),
                                         &send_id,
                                         event_data,
-                                        &::sce_rust_runtime::sce_string_from_str(
-                                            self.session_id.as_deref().unwrap_or(""),
-                                        ),
+                                        &self.session_id.as_deref().unwrap_or(""),
                                         sce_rust_runtime::ScheduledRoute::Invocation {
                                             invoke_id: "kid".to_string(),
                                             event_name: "ping".to_string(),
@@ -2082,7 +2075,8 @@ impl StatePolicy for ADelayedSendReachesWhatItsTargetNamesPolicy {
                                     // W3C SCXML C.1: the invocation is not running, so the session the
                                     // target names is not there to reach.
                                     let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ADelayedSendReachesWhatItsTargetNamesEvent::ErrorCommunication, "<send target='#_kid'> names an invocation that is not running");
-                                    err_meta.metadata.send_id = send_id.clone();
+                                    err_meta.metadata.send_id =
+                                        ::sce_rust_runtime::sce_string_from_str(send_id);
                                     engine.raise(err_meta);
                                     break 'action_block;
                                 }
@@ -2098,7 +2092,7 @@ impl StatePolicy for ADelayedSendReachesWhatItsTargetNamesPolicy {
                             }
 
                             {
-                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_1");
+                                let send_id: &str = "__send_1";
 
                                 let event_data: &str = "";
 
@@ -2117,9 +2111,7 @@ impl StatePolicy for ADelayedSendReachesWhatItsTargetNamesPolicy {
                                         core::time::Duration::from_millis(100_u64),
                                         &send_id,
                                         event_data,
-                                        &::sce_rust_runtime::sce_string_from_str(
-                                            self.session_id.as_deref().unwrap_or(""),
-                                        ),
+                                        &self.session_id.as_deref().unwrap_or(""),
                                         sce_rust_runtime::ScheduledRoute::Invocation {
                                             invoke_id: "gone".to_string(),
                                             event_name: "lost".to_string(),
@@ -2129,7 +2121,8 @@ impl StatePolicy for ADelayedSendReachesWhatItsTargetNamesPolicy {
                                     // W3C SCXML C.1: the invocation is not running, so the session the
                                     // target names is not there to reach.
                                     let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ADelayedSendReachesWhatItsTargetNamesEvent::ErrorCommunication, "<send target='#_gone'> names an invocation that is not running");
-                                    err_meta.metadata.send_id = send_id.clone();
+                                    err_meta.metadata.send_id =
+                                        ::sce_rust_runtime::sce_string_from_str(send_id);
                                     engine.raise(err_meta);
                                     break 'action_block;
                                 }
@@ -2139,7 +2132,7 @@ impl StatePolicy for ADelayedSendReachesWhatItsTargetNamesPolicy {
                             }
 
                             {
-                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_2");
+                                let send_id: &str = "__send_2";
 
                                 let event_data: &str = "";
 
@@ -2161,7 +2154,8 @@ impl StatePolicy for ADelayedSendReachesWhatItsTargetNamesPolicy {
                                     // W3C SCXML C.1: the invocation is not running, so the session the
                                     // target names is not there to reach.
                                     let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ADelayedSendReachesWhatItsTargetNamesEvent::ErrorCommunication, "<send target='#_gone'> names an invocation that is not running");
-                                    err_meta.metadata.send_id = send_id.clone();
+                                    err_meta.metadata.send_id =
+                                        ::sce_rust_runtime::sce_string_from_str(send_id);
                                     engine.raise(err_meta);
                                     break 'action_block;
                                 }
@@ -2279,7 +2273,7 @@ impl StatePolicy for ADelayedSendReachesWhatItsTargetNamesPolicy {
                             }
 
                             {
-                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_3");
+                                let send_id: &str = "__send_3";
 
                                 let event_data: &str = "";
 
@@ -2291,9 +2285,7 @@ impl StatePolicy for ADelayedSendReachesWhatItsTargetNamesPolicy {
                                     core::time::Duration::from_millis(300_u64),
                                     &send_id,
                                     event_data,
-                                    &::sce_rust_runtime::sce_string_from_str(
-                                        self.session_id.as_deref().unwrap_or(""),
-                                    ),
+                                    &self.session_id.as_deref().unwrap_or(""),
                                 );
 
                                 let _ = event_data; // suppress unused warning in branches that skip dispatch

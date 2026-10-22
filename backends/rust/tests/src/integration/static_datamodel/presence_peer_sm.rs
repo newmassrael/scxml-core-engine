@@ -1447,7 +1447,7 @@ impl StatePolicy for PresencePeerPolicy {
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
                             {
-                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_0");
+                                let send_id: &str = "__send_0";
 
                                 // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                                 // delivered, so each name carries a vector. The typed value is kept
@@ -1526,7 +1526,7 @@ impl StatePolicy for PresencePeerPolicy {
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
                             {
-                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_1");
+                                let send_id: &str = "__send_1";
 
                                 // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                                 // delivered, so each name carries a vector. The typed value is kept
@@ -1578,7 +1578,7 @@ impl StatePolicy for PresencePeerPolicy {
                             }
 
                             {
-                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_2");
+                                let send_id: &str = "__send_2";
 
                                 // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                                 // delivered, so each name carries a vector. The typed value is kept
@@ -1761,8 +1761,7 @@ impl StatePolicy for PresencePeerPolicy {
                                 }
 
                                 {
-                                    let send_id =
-                                        ::sce_rust_runtime::sce_string_from_str("__send_3");
+                                    let send_id: &str = "__send_3";
 
                                     let mut _send_arg_error: Option<&'static str> = None;
                                     // The delay is a string computed from the machine's fields now, and read as
@@ -1788,7 +1787,8 @@ impl StatePolicy for PresencePeerPolicy {
                                                 PresencePeerEvent::ErrorExecution,
                                                 __sce_why,
                                             );
-                                        err_meta.metadata.send_id = send_id.clone();
+                                        err_meta.metadata.send_id =
+                                            ::sce_rust_runtime::sce_string_from_str(send_id);
                                         engine.raise(err_meta);
                                         break 'action_block; // W3C SCXML 4.9: the error ends the block
                                     } else {
@@ -1826,9 +1826,7 @@ impl StatePolicy for PresencePeerPolicy {
                                             core::time::Duration::from_millis(_send_delay_ms),
                                             &send_id,
                                             event_data,
-                                            &::sce_rust_runtime::sce_string_from_str(
-                                                self.session_id.as_deref().unwrap_or(""),
-                                            ),
+                                            &self.session_id.as_deref().unwrap_or(""),
                                         );
 
                                         let _ = event_data; // suppress unused warning in branches that skip dispatch
@@ -1904,8 +1902,7 @@ impl StatePolicy for PresencePeerPolicy {
                                 // W3C SCXML 5.9: cond="hub"
                                 if self.hub {
                                     {
-                                        let send_id =
-                                            ::sce_rust_runtime::sce_string_from_str("__send_4");
+                                        let send_id: &str = "__send_4";
 
                                         // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                                         // delivered, so each name carries a vector. The typed value is kept

@@ -1148,7 +1148,7 @@ impl StatePolicy for Test388Policy {
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
                             {
-                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_0");
+                                let send_id: &str = "__send_0";
 
                                 let event_data: &str = "";
 
@@ -1160,9 +1160,7 @@ impl StatePolicy for Test388Policy {
                                     core::time::Duration::from_millis(2000_u64),
                                     &send_id,
                                     event_data,
-                                    &::sce_rust_runtime::sce_string_from_str(
-                                        self.session_id.as_deref().unwrap_or(""),
-                                    ),
+                                    &self.session_id.as_deref().unwrap_or(""),
                                 );
 
                                 let _ = event_data; // suppress unused warning in branches that skip dispatch

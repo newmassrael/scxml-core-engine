@@ -739,7 +739,7 @@ impl StatePolicy for Test186Policy {
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
                     {
-                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_0");
+                        let send_id: &str = "__send_0";
 
                         let mut _param_failed = false;
 
@@ -799,9 +799,7 @@ impl StatePolicy for Test186Policy {
                             core::time::Duration::from_millis(1000_u64),
                             &send_id,
                             event_data,
-                            &::sce_rust_runtime::sce_string_from_str(
-                                self.session_id.as_deref().unwrap_or(""),
-                            ),
+                            &self.session_id.as_deref().unwrap_or(""),
                         );
 
                         // W3C SCXML 4.9: a <param> that could not be read raised an error while

@@ -1882,7 +1882,10 @@ impl StatePolicy for StaticInvokeTreeSceSynthInvokeWorkerPolicy {
                             }
 
                             {
-                                let send_id = ::sce_rust_runtime::sce_string_from_str("report");
+                                // The id is text and stays text: a literal is borrowed, and the engine builds
+                                // the one string it keeps (a scheduled send's cancel key, `_event.sendid` under
+                                // std), so no buffer of the string bound sits in this action's frame for it.
+                                let send_id: &str = "report";
 
                                 let event_data: &str = "";
 
@@ -1895,9 +1898,7 @@ impl StatePolicy for StaticInvokeTreeSceSynthInvokeWorkerPolicy {
                                     core::time::Duration::from_millis(5000_u64),
                                     &send_id,
                                     event_data,
-                                    &::sce_rust_runtime::sce_string_from_str(
-                                        self.session_id.as_deref().unwrap_or(""),
-                                    ),
+                                    &self.session_id.as_deref().unwrap_or(""),
                                     sce_rust_runtime::ScheduledRoute::Parent {
                                         event_name: "report".to_string(),
                                     },
@@ -1914,7 +1915,7 @@ impl StatePolicy for StaticInvokeTreeSceSynthInvokeWorkerPolicy {
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
                             {
-                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_0");
+                                let send_id: &str = "__send_0";
 
                                 let event_data: &str = "";
 
@@ -1949,7 +1950,7 @@ impl StatePolicy for StaticInvokeTreeSceSynthInvokeWorkerPolicy {
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
                             {
-                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_1");
+                                let send_id: &str = "__send_1";
 
                                 let event_data: &str = "";
 
@@ -2021,7 +2022,7 @@ impl StatePolicy for StaticInvokeTreeSceSynthInvokeWorkerPolicy {
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
                             {
-                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_2");
+                                let send_id: &str = "__send_2";
 
                                 let event_data: &str = "";
 

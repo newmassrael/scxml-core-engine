@@ -1178,8 +1178,7 @@ impl StatePolicy for AnErrorInsideAForeachEndsItsBlockPolicy {
                                         }
 
                                         {
-                                            let send_id =
-                                                ::sce_rust_runtime::sce_string_from_str("__send_1");
+                                            let send_id: &str = "__send_1";
 
                                             let mut _param_failed = false;
 
@@ -1776,10 +1775,7 @@ impl StatePolicy for AnErrorInsideAForeachEndsItsBlockPolicy {
                                                 }
 
                                                 {
-                                                    let send_id =
-                                                        ::sce_rust_runtime::sce_string_from_str(
-                                                            "__send_0",
-                                                        );
+                                                    let send_id: &str = "__send_0";
 
                                                     let mut _param_failed = false;
 

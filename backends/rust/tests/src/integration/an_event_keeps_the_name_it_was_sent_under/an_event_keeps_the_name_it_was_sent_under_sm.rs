@@ -1137,7 +1137,7 @@ impl StatePolicy for AnEventKeepsTheNameItWasSentUnderPolicy {
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
                             {
-                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_0");
+                                let send_id: &str = "__send_0";
 
                                 let event_data: &str = "";
 
@@ -1159,7 +1159,8 @@ impl StatePolicy for AnEventKeepsTheNameItWasSentUnderPolicy {
                                     // W3C SCXML C.1: the invocation is not running, so the session the
                                     // target names is not there to reach.
                                     let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(AnEventKeepsTheNameItWasSentUnderEvent::ErrorCommunication, "<send target='#_listener'> names an invocation that is not running");
-                                    err_meta.metadata.send_id = send_id.clone();
+                                    err_meta.metadata.send_id =
+                                        ::sce_rust_runtime::sce_string_from_str(send_id);
                                     engine.raise(err_meta);
                                     break 'action_block;
                                 }

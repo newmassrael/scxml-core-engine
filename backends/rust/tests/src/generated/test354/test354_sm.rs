@@ -760,7 +760,7 @@ impl StatePolicy for Test354Policy {
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
                     {
-                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_0");
+                        let send_id: &str = "__send_0";
 
                         let event_data: &str = "";
 
@@ -772,9 +772,7 @@ impl StatePolicy for Test354Policy {
                             core::time::Duration::from_millis(5000_u64),
                             &send_id,
                             event_data,
-                            &::sce_rust_runtime::sce_string_from_str(
-                                self.session_id.as_deref().unwrap_or(""),
-                            ),
+                            &self.session_id.as_deref().unwrap_or(""),
                         );
 
                         let _ = event_data; // suppress unused warning in branches that skip dispatch
@@ -782,7 +780,7 @@ impl StatePolicy for Test354Policy {
                     }
 
                     {
-                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_1");
+                        let send_id: &str = "__send_1";
 
                         self.ensure_script_engine();
                         let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
@@ -818,7 +816,8 @@ impl StatePolicy for Test354Policy {
                                 Test354Event::ErrorExecution,
                                 __sce_why,
                             );
-                            err_meta.metadata.send_id = send_id.clone();
+                            err_meta.metadata.send_id =
+                                ::sce_rust_runtime::sce_string_from_str(send_id);
                             engine.raise(err_meta);
                             break 'action_block; // W3C SCXML 4.9: the error ends the block
                         } else {
@@ -881,10 +880,8 @@ impl StatePolicy for Test354Policy {
                                     sce_rust_runtime::EventWithMetadata::new(Test354Event::Event1);
                                 // W3C SCXML 5.10.1: External send — preserve sendid and SCXML event processor origintype
                                 meta.metadata = sce_rust_runtime::EventMetadata::external(
-                                    send_id.clone(),
-                                    ::sce_rust_runtime::sce_string_from_str(
-                                        self.session_id.as_deref().unwrap_or(""),
-                                    ),
+                                    send_id,
+                                    self.session_id.as_deref().unwrap_or(""),
                                 );
                                 meta.set_event_data(event_data);
                                 engine.raise_external_with_meta(meta);
@@ -908,7 +905,7 @@ impl StatePolicy for Test354Policy {
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
                     {
-                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_2");
+                        let send_id: &str = "__send_2";
 
                         let event_data: &str = "";
 
@@ -920,9 +917,7 @@ impl StatePolicy for Test354Policy {
                             core::time::Duration::from_millis(5000_u64),
                             &send_id,
                             event_data,
-                            &::sce_rust_runtime::sce_string_from_str(
-                                self.session_id.as_deref().unwrap_or(""),
-                            ),
+                            &self.session_id.as_deref().unwrap_or(""),
                         );
 
                         let _ = event_data; // suppress unused warning in branches that skip dispatch
@@ -930,7 +925,7 @@ impl StatePolicy for Test354Policy {
                     }
 
                     {
-                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_3");
+                        let send_id: &str = "__send_3";
 
                         // W3C SCXML B.2: inline text takes the ordered readings — an expression
                         // when it is one, XML when it opens with `<`, otherwise the string. The
@@ -965,10 +960,8 @@ impl StatePolicy for Test354Policy {
                                 sce_rust_runtime::EventWithMetadata::new(Test354Event::Event2);
                             // W3C SCXML 5.10.1: External send — preserve sendid and SCXML event processor origintype
                             meta.metadata = sce_rust_runtime::EventMetadata::external(
-                                send_id.clone(),
-                                ::sce_rust_runtime::sce_string_from_str(
-                                    self.session_id.as_deref().unwrap_or(""),
-                                ),
+                                send_id,
+                                self.session_id.as_deref().unwrap_or(""),
                             );
                             meta.set_event_data(event_data);
                             engine.raise_external_with_meta(meta);

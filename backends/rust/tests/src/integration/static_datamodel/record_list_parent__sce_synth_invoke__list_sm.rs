@@ -4644,8 +4644,7 @@ impl StatePolicy for RecordListParentSceSynthInvokeListPolicy {
                                 self.closing_now = ev.now;
 
                                 {
-                                    let send_id =
-                                        ::sce_rust_runtime::sce_string_from_str("__send_0");
+                                    let send_id: &str = "__send_0";
 
                                     let event_data: &str = "";
 
@@ -4745,8 +4744,7 @@ impl StatePolicy for RecordListParentSceSynthInvokeListPolicy {
                                 self.closing_now = ev.now;
 
                                 {
-                                    let send_id =
-                                        ::sce_rust_runtime::sce_string_from_str("__send_1");
+                                    let send_id: &str = "__send_1";
 
                                     let event_data: &str = "";
 
@@ -4846,8 +4844,7 @@ impl StatePolicy for RecordListParentSceSynthInvokeListPolicy {
                                 self.closing_now = ev.now;
 
                                 {
-                                    let send_id =
-                                        ::sce_rust_runtime::sce_string_from_str("__send_2");
+                                    let send_id: &str = "__send_2";
 
                                     let event_data: &str = "";
 
@@ -5494,7 +5491,7 @@ for t in self.taking.clone() {
 
 
 {
-    let send_id = ::sce_rust_runtime::sce_string_from_str("__send_3");
+    let send_id: &str = "__send_3";
 
 
     let event_data: &str = "";
@@ -5517,7 +5514,7 @@ for t in self.passing.clone() {
 
 
 {
-    let send_id = ::sce_rust_runtime::sce_string_from_str("__send_4");
+    let send_id: &str = "__send_4";
 
 
     let event_data: &str = "";
@@ -5571,8 +5568,7 @@ self.staged.clear();}
                                 // W3C SCXML 5.9: cond="announce"
                                 if self.announce {
                                     {
-                                        let send_id =
-                                            ::sce_rust_runtime::sce_string_from_str("__send_5");
+                                        let send_id: &str = "__send_5";
 
                                         let mut _send_arg_error: Option<&'static str> = None;
                                         // docs/adr/0005, decision 3: the target is a string computed from the machine's
@@ -5591,7 +5587,8 @@ self.staged.clear();}
                                         if let Some(__sce_why) = _send_arg_error {
                                             ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
                                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, __sce_why);
-                                            err_meta.metadata.send_id = send_id.clone();
+                                            err_meta.metadata.send_id =
+                                                ::sce_rust_runtime::sce_string_from_str(send_id);
                                             engine.raise(err_meta);
                                             break 'action_block; // W3C SCXML 4.9: the error ends the block
                                         } else {
@@ -5604,7 +5601,10 @@ self.staged.clear();}
                                                 // W3C SCXML C.1 (test 496, 521): a target that names nothing raises
                                                 // error.communication.
                                                 let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorCommunication, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach");
-                                                err_meta.metadata.send_id = send_id.clone();
+                                                err_meta.metadata.send_id =
+                                                    ::sce_rust_runtime::sce_string_from_str(
+                                                        send_id,
+                                                    );
                                                 engine.raise(err_meta);
                                                 break 'action_block; // W3C SCXML 4.9: the error ends the block
                                             }
@@ -5686,13 +5686,13 @@ None,
         );
                                                     if __sce_routed == sce_rust_runtime::TargetSendOutcome::Unsupported {
             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<send> targetexpr produced a value that is not a target");
-            err_meta.metadata.send_id = send_id.clone();
+            err_meta.metadata.send_id = ::sce_rust_runtime::sce_string_from_str(send_id);
             engine.raise(err_meta);
             break 'action_block;  // W3C SCXML 4.9: the error ends the block
         }
                                                     if __sce_routed == sce_rust_runtime::TargetSendOutcome::Unreachable {
             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorCommunication, "<send> targetexpr names a session this processor cannot reach");
-            err_meta.metadata.send_id = send_id.clone();
+            err_meta.metadata.send_id = ::sce_rust_runtime::sce_string_from_str(send_id);
             engine.raise(err_meta);
             break 'action_block;  // W3C SCXML 4.9: the error ends the block
         }
@@ -6013,8 +6013,7 @@ None,
                                     }
 
                                     {
-                                        let send_id =
-                                            ::sce_rust_runtime::sce_string_from_str("__send_6");
+                                        let send_id: &str = "__send_6";
 
                                         // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                                         // delivered, so each name carries a vector. The typed value is kept
@@ -6087,8 +6086,7 @@ None,
                                 // W3C SCXML 5.9: cond="isLive && !present && announce"
                                 if self.is_live && !self.present && self.announce {
                                     {
-                                        let send_id =
-                                            ::sce_rust_runtime::sce_string_from_str("__send_7");
+                                        let send_id: &str = "__send_7";
 
                                         // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                                         // delivered, so each name carries a vector. The typed value is kept
@@ -6290,8 +6288,7 @@ None,
                                 // W3C SCXML 5.9: cond="!known"
                                 if !self.known {
                                     {
-                                        let send_id =
-                                            ::sce_rust_runtime::sce_string_from_str("__send_8");
+                                        let send_id: &str = "__send_8";
 
                                         // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                                         // delivered, so each name carries a vector. The typed value is kept
@@ -6364,8 +6361,7 @@ None,
                                 // W3C SCXML 5.9: cond="wasLive"
                                 if self.was_live {
                                     {
-                                        let send_id =
-                                            ::sce_rust_runtime::sce_string_from_str("__send_9");
+                                        let send_id: &str = "__send_9";
 
                                         // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                                         // delivered, so each name carries a vector. The typed value is kept
@@ -6438,8 +6434,7 @@ None,
                                 // W3C SCXML 5.9: cond="wasLive && announce"
                                 if self.was_live && self.announce {
                                     {
-                                        let send_id =
-                                            ::sce_rust_runtime::sce_string_from_str("__send_10");
+                                        let send_id: &str = "__send_10";
 
                                         // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                                         // delivered, so each name carries a vector. The typed value is kept
@@ -6626,8 +6621,7 @@ None,
                             // W3C SCXML 5.9: cond="op.kind === 0 && op.parts <= 1 && !hub"
                             if self.op.kind == 0 && self.op.parts <= 1 && !self.hub {
                                 {
-                                    let send_id =
-                                        ::sce_rust_runtime::sce_string_from_str("__send_11");
+                                    let send_id: &str = "__send_11";
 
                                     // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                                     // delivered, so each name carries a vector. The typed value is kept
@@ -6732,8 +6726,7 @@ None,
                             // W3C SCXML 5.9: cond="op.kind === 0 && op.parts > 1 && !hub"
                             if self.op.kind == 0 && self.op.parts > 1 && !self.hub {
                                 {
-                                    let send_id =
-                                        ::sce_rust_runtime::sce_string_from_str("__send_12");
+                                    let send_id: &str = "__send_12";
 
                                     // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                                     // delivered, so each name carries a vector. The typed value is kept
@@ -6844,8 +6837,7 @@ None,
                             // W3C SCXML 5.9: cond="op.kind === 0 && op.parts <= 1 && hub"
                             if self.op.kind == 0 && self.op.parts <= 1 && self.hub {
                                 {
-                                    let send_id =
-                                        ::sce_rust_runtime::sce_string_from_str("__send_13");
+                                    let send_id: &str = "__send_13";
 
                                     // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                                     // delivered, so each name carries a vector. The typed value is kept
@@ -6950,8 +6942,7 @@ None,
                             // W3C SCXML 5.9: cond="op.kind === 0 && op.parts > 1 && hub"
                             if self.op.kind == 0 && self.op.parts > 1 && self.hub {
                                 {
-                                    let send_id =
-                                        ::sce_rust_runtime::sce_string_from_str("__send_14");
+                                    let send_id: &str = "__send_14";
 
                                     // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                                     // delivered, so each name carries a vector. The typed value is kept
@@ -7062,8 +7053,7 @@ None,
                             // W3C SCXML 5.9: cond="op.kind === 1 && op.parts <= 1 && !hub"
                             if self.op.kind == 1 && self.op.parts <= 1 && !self.hub {
                                 {
-                                    let send_id =
-                                        ::sce_rust_runtime::sce_string_from_str("__send_15");
+                                    let send_id: &str = "__send_15";
 
                                     // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                                     // delivered, so each name carries a vector. The typed value is kept
@@ -7162,8 +7152,7 @@ None,
                             // W3C SCXML 5.9: cond="op.kind === 1 && op.parts > 1 && !hub"
                             if self.op.kind == 1 && self.op.parts > 1 && !self.hub {
                                 {
-                                    let send_id =
-                                        ::sce_rust_runtime::sce_string_from_str("__send_16");
+                                    let send_id: &str = "__send_16";
 
                                     // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                                     // delivered, so each name carries a vector. The typed value is kept
@@ -7282,8 +7271,7 @@ None,
                             // W3C SCXML 5.9: cond="op.kind === 1 && op.parts <= 1 && hub"
                             if self.op.kind == 1 && self.op.parts <= 1 && self.hub {
                                 {
-                                    let send_id =
-                                        ::sce_rust_runtime::sce_string_from_str("__send_17");
+                                    let send_id: &str = "__send_17";
 
                                     // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                                     // delivered, so each name carries a vector. The typed value is kept
@@ -7382,8 +7370,7 @@ None,
                             // W3C SCXML 5.9: cond="op.kind === 1 && op.parts > 1 && hub"
                             if self.op.kind == 1 && self.op.parts > 1 && self.hub {
                                 {
-                                    let send_id =
-                                        ::sce_rust_runtime::sce_string_from_str("__send_18");
+                                    let send_id: &str = "__send_18";
 
                                     // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                                     // delivered, so each name carries a vector. The typed value is kept
@@ -7647,8 +7634,7 @@ None,
                                 self.part.parts = ev.parts;
 
                                 {
-                                    let send_id =
-                                        ::sce_rust_runtime::sce_string_from_str("__send_19");
+                                    let send_id: &str = "__send_19";
 
                                     let event_data: &str = "";
 
@@ -7786,8 +7772,7 @@ None,
                                 self.part.parts = ev.parts;
 
                                 {
-                                    let send_id =
-                                        ::sce_rust_runtime::sce_string_from_str("__send_20");
+                                    let send_id: &str = "__send_20";
 
                                     let event_data: &str = "";
 
@@ -8016,9 +8001,7 @@ None,
                                         let _ = &t;
 
                                         {
-                                            let send_id = ::sce_rust_runtime::sce_string_from_str(
-                                                "__send_21",
-                                            );
+                                            let send_id: &str = "__send_21";
 
                                             let event_data: &str = "";
 
@@ -8057,8 +8040,7 @@ None,
                                 }
 
                                 {
-                                    let send_id =
-                                        ::sce_rust_runtime::sce_string_from_str("__send_22");
+                                    let send_id: &str = "__send_22";
 
                                     let event_data: &str = "";
 
@@ -8097,8 +8079,7 @@ None,
                                 }
 
                                 {
-                                    let send_id =
-                                        ::sce_rust_runtime::sce_string_from_str("__send_23");
+                                    let send_id: &str = "__send_23";
 
                                     let event_data: &str = "";
 
@@ -8163,8 +8144,7 @@ None,
                             // W3C SCXML 5.9: cond="len(moved) === 0"
                             if (self.moved).len() as u32 == 0 {
                                 {
-                                    let send_id =
-                                        ::sce_rust_runtime::sce_string_from_str("__send_24");
+                                    let send_id: &str = "__send_24";
 
                                     let event_data: &str = "";
 
@@ -8255,8 +8235,7 @@ None,
                                 // W3C SCXML 5.9: cond="len(live) === 0"
                                 if (self.live).len() as u32 == 0 {
                                     {
-                                        let send_id =
-                                            ::sce_rust_runtime::sce_string_from_str("__send_25");
+                                        let send_id: &str = "__send_25";
 
                                         let mut _send_arg_error: Option<&'static str> = None;
                                         // docs/adr/0005, decision 3: the target is a string computed from the machine's
@@ -8275,7 +8254,8 @@ None,
                                         if let Some(__sce_why) = _send_arg_error {
                                             ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
                                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, __sce_why);
-                                            err_meta.metadata.send_id = send_id.clone();
+                                            err_meta.metadata.send_id =
+                                                ::sce_rust_runtime::sce_string_from_str(send_id);
                                             engine.raise(err_meta);
                                             break 'action_block; // W3C SCXML 4.9: the error ends the block
                                         } else {
@@ -8288,7 +8268,10 @@ None,
                                                 // W3C SCXML C.1 (test 496, 521): a target that names nothing raises
                                                 // error.communication.
                                                 let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorCommunication, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach");
-                                                err_meta.metadata.send_id = send_id.clone();
+                                                err_meta.metadata.send_id =
+                                                    ::sce_rust_runtime::sce_string_from_str(
+                                                        send_id,
+                                                    );
                                                 engine.raise(err_meta);
                                                 break 'action_block; // W3C SCXML 4.9: the error ends the block
                                             }
@@ -8402,13 +8385,13 @@ None,
         );
                                                     if __sce_routed == sce_rust_runtime::TargetSendOutcome::Unsupported {
             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<send> targetexpr produced a value that is not a target");
-            err_meta.metadata.send_id = send_id.clone();
+            err_meta.metadata.send_id = ::sce_rust_runtime::sce_string_from_str(send_id);
             engine.raise(err_meta);
             break 'action_block;  // W3C SCXML 4.9: the error ends the block
         }
                                                     if __sce_routed == sce_rust_runtime::TargetSendOutcome::Unreachable {
             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorCommunication, "<send> targetexpr names a session this processor cannot reach");
-            err_meta.metadata.send_id = send_id.clone();
+            err_meta.metadata.send_id = ::sce_rust_runtime::sce_string_from_str(send_id);
             engine.raise(err_meta);
             break 'action_block;  // W3C SCXML 4.9: the error ends the block
         }
@@ -8444,9 +8427,7 @@ None,
                                     // W3C SCXML 5.9: cond="ordinal === 0"
                                     if self.ordinal == 0 {
                                         {
-                                            let send_id = ::sce_rust_runtime::sce_string_from_str(
-                                                "__send_26",
-                                            );
+                                            let send_id: &str = "__send_26";
 
                                             let mut _send_arg_error: Option<&'static str> = None;
                                             // docs/adr/0005, decision 3: the target is a string computed from the machine's
@@ -8467,7 +8448,10 @@ None,
                                             if let Some(__sce_why) = _send_arg_error {
                                                 ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
                                                 let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, __sce_why);
-                                                err_meta.metadata.send_id = send_id.clone();
+                                                err_meta.metadata.send_id =
+                                                    ::sce_rust_runtime::sce_string_from_str(
+                                                        send_id,
+                                                    );
                                                 engine.raise(err_meta);
                                                 break 'action_block; // W3C SCXML 4.9: the error ends the block
                                             } else {
@@ -8480,7 +8464,10 @@ None,
                                                     // W3C SCXML C.1 (test 496, 521): a target that names nothing raises
                                                     // error.communication.
                                                     let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorCommunication, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach");
-                                                    err_meta.metadata.send_id = send_id.clone();
+                                                    err_meta.metadata.send_id =
+                                                        ::sce_rust_runtime::sce_string_from_str(
+                                                            send_id,
+                                                        );
                                                     engine.raise(err_meta);
                                                     break 'action_block; // W3C SCXML 4.9: the error ends the block
                                                 }
@@ -8538,13 +8525,13 @@ None,
         );
                                                         if __sce_routed == sce_rust_runtime::TargetSendOutcome::Unsupported {
             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<send> targetexpr produced a value that is not a target");
-            err_meta.metadata.send_id = send_id.clone();
+            err_meta.metadata.send_id = ::sce_rust_runtime::sce_string_from_str(send_id);
             engine.raise(err_meta);
             break 'action_block;  // W3C SCXML 4.9: the error ends the block
         }
                                                         if __sce_routed == sce_rust_runtime::TargetSendOutcome::Unreachable {
             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorCommunication, "<send> targetexpr names a session this processor cannot reach");
-            err_meta.metadata.send_id = send_id.clone();
+            err_meta.metadata.send_id = ::sce_rust_runtime::sce_string_from_str(send_id);
             engine.raise(err_meta);
             break 'action_block;  // W3C SCXML 4.9: the error ends the block
         }
@@ -8560,9 +8547,7 @@ None,
                                     // W3C SCXML 5.9: cond="ordinal !== 0"
                                     if self.ordinal != 0 {
                                         {
-                                            let send_id = ::sce_rust_runtime::sce_string_from_str(
-                                                "__send_27",
-                                            );
+                                            let send_id: &str = "__send_27";
 
                                             let mut _send_arg_error: Option<&'static str> = None;
                                             // docs/adr/0005, decision 3: the target is a string computed from the machine's
@@ -8583,7 +8568,10 @@ None,
                                             if let Some(__sce_why) = _send_arg_error {
                                                 ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
                                                 let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, __sce_why);
-                                                err_meta.metadata.send_id = send_id.clone();
+                                                err_meta.metadata.send_id =
+                                                    ::sce_rust_runtime::sce_string_from_str(
+                                                        send_id,
+                                                    );
                                                 engine.raise(err_meta);
                                                 break 'action_block; // W3C SCXML 4.9: the error ends the block
                                             } else {
@@ -8596,7 +8584,10 @@ None,
                                                     // W3C SCXML C.1 (test 496, 521): a target that names nothing raises
                                                     // error.communication.
                                                     let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorCommunication, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach");
-                                                    err_meta.metadata.send_id = send_id.clone();
+                                                    err_meta.metadata.send_id =
+                                                        ::sce_rust_runtime::sce_string_from_str(
+                                                            send_id,
+                                                        );
                                                     engine.raise(err_meta);
                                                     break 'action_block; // W3C SCXML 4.9: the error ends the block
                                                 }
@@ -8654,13 +8645,13 @@ None,
         );
                                                         if __sce_routed == sce_rust_runtime::TargetSendOutcome::Unsupported {
             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorExecution, "<send> targetexpr produced a value that is not a target");
-            err_meta.metadata.send_id = send_id.clone();
+            err_meta.metadata.send_id = ::sce_rust_runtime::sce_string_from_str(send_id);
             engine.raise(err_meta);
             break 'action_block;  // W3C SCXML 4.9: the error ends the block
         }
                                                         if __sce_routed == sce_rust_runtime::TargetSendOutcome::Unreachable {
             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentSceSynthInvokeListEvent::ErrorCommunication, "<send> targetexpr names a session this processor cannot reach");
-            err_meta.metadata.send_id = send_id.clone();
+            err_meta.metadata.send_id = ::sce_rust_runtime::sce_string_from_str(send_id);
             engine.raise(err_meta);
             break 'action_block;  // W3C SCXML 4.9: the error ends the block
         }
@@ -8935,8 +8926,7 @@ None,
                                 }
 
                                 {
-                                    let send_id =
-                                        ::sce_rust_runtime::sce_string_from_str("__send_28");
+                                    let send_id: &str = "__send_28";
 
                                     // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                                     // delivered, so each name carries a vector. The typed value is kept
@@ -9076,8 +9066,7 @@ None,
                                 }
 
                                 {
-                                    let send_id =
-                                        ::sce_rust_runtime::sce_string_from_str("__send_29");
+                                    let send_id: &str = "__send_29";
 
                                     // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                                     // delivered, so each name carries a vector. The typed value is kept
@@ -9272,8 +9261,7 @@ None,
                                     self.frozen_hash = self.mine;
 
                                     {
-                                        let send_id =
-                                            ::sce_rust_runtime::sce_string_from_str("__send_30");
+                                        let send_id: &str = "__send_30";
 
                                         // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                                         // delivered, so each name carries a vector. The typed value is kept
@@ -9324,8 +9312,7 @@ None,
                                     self.pending = -1;
 
                                     {
-                                        let send_id =
-                                            ::sce_rust_runtime::sce_string_from_str("__send_31");
+                                        let send_id: &str = "__send_31";
 
                                         // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                                         // delivered, so each name carries a vector. The typed value is kept
@@ -9402,8 +9389,7 @@ None,
                                 // W3C SCXML 5.9: cond="_event.data.hash !== mine && floor > 0"
                                 if ev.hash != self.mine && self.floor > 0 {
                                     {
-                                        let send_id =
-                                            ::sce_rust_runtime::sce_string_from_str("__send_32");
+                                        let send_id: &str = "__send_32";
 
                                         // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                                         // delivered, so each name carries a vector. The typed value is kept
@@ -9700,8 +9686,7 @@ None,
                                 let _ = &t;
 
                                 {
-                                    let send_id =
-                                        ::sce_rust_runtime::sce_string_from_str("__send_33");
+                                    let send_id: &str = "__send_33";
 
                                     let event_data: &str = "";
 
@@ -9721,7 +9706,7 @@ None,
                             }
 
                             {
-                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_34");
+                                let send_id: &str = "__send_34";
 
                                 // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                                 // delivered, so each name carries a vector. The typed value is kept
@@ -9805,8 +9790,7 @@ None,
                             // W3C SCXML 5.9: cond="!hub"
                             if !self.hub {
                                 {
-                                    let send_id =
-                                        ::sce_rust_runtime::sce_string_from_str("__send_35");
+                                    let send_id: &str = "__send_35";
 
                                     // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                                     // delivered, so each name carries a vector. The typed value is kept
@@ -9901,8 +9885,7 @@ None,
                             // W3C SCXML 5.9: cond="hub"
                             if self.hub {
                                 {
-                                    let send_id =
-                                        ::sce_rust_runtime::sce_string_from_str("__send_36");
+                                    let send_id: &str = "__send_36";
 
                                     // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                                     // delivered, so each name carries a vector. The typed value is kept
@@ -10026,8 +10009,7 @@ None,
                                 // W3C SCXML 5.9: cond="mine !== _event.data.hash && _event.data.depth < 30"
                                 if self.mine != ev.hash && ev.depth < 30 {
                                     {
-                                        let send_id =
-                                            ::sce_rust_runtime::sce_string_from_str("__send_37");
+                                        let send_id: &str = "__send_37";
 
                                         let mut _param_failed = false;
 
@@ -10111,8 +10093,7 @@ None,
                                     }
 
                                     {
-                                        let send_id =
-                                            ::sce_rust_runtime::sce_string_from_str("__send_38");
+                                        let send_id: &str = "__send_38";
 
                                         let mut _param_failed = false;
 
@@ -10196,8 +10177,7 @@ None,
                                     }
 
                                     {
-                                        let send_id =
-                                            ::sce_rust_runtime::sce_string_from_str("__send_39");
+                                        let send_id: &str = "__send_39";
 
                                         let mut _param_failed = false;
 
@@ -10284,8 +10264,7 @@ None,
                                 // W3C SCXML 5.9: cond="mine !== _event.data.hash && _event.data.depth === 30"
                                 if self.mine != ev.hash && ev.depth == 30 {
                                     {
-                                        let send_id =
-                                            ::sce_rust_runtime::sce_string_from_str("__send_40");
+                                        let send_id: &str = "__send_40";
 
                                         // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                                         // delivered, so each name carries a vector. The typed value is kept
@@ -10336,8 +10315,7 @@ None,
                                 // W3C SCXML 5.9: cond="mine !== _event.data.hash && _event.data.depth === 30 && !_event.data.reply"
                                 if self.mine != ev.hash && ev.depth == 30 && !ev.reply {
                                     {
-                                        let send_id =
-                                            ::sce_rust_runtime::sce_string_from_str("__send_41");
+                                        let send_id: &str = "__send_41";
 
                                         // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                                         // delivered, so each name carries a vector. The typed value is kept
@@ -10464,7 +10442,7 @@ if !self.hub {
 
 
 {
-    let send_id = ::sce_rust_runtime::sce_string_from_str("__send_42");
+    let send_id: &str = "__send_42";
 
 
     // W3C SCXML 6.2 / test178: a name may repeat and every value must be
@@ -10539,7 +10517,7 @@ if self.hub {
 
 
 {
-    let send_id = ::sce_rust_runtime::sce_string_from_str("__send_43");
+    let send_id: &str = "__send_43";
 
 
     // W3C SCXML 6.2 / test178: a name may repeat and every value must be
@@ -10669,7 +10647,7 @@ if !self.hub {
 
 
 {
-    let send_id = ::sce_rust_runtime::sce_string_from_str("__send_44");
+    let send_id: &str = "__send_44";
 
 
     // W3C SCXML 6.2 / test178: a name may repeat and every value must be
@@ -10742,7 +10720,7 @@ if self.hub {
 
 
 {
-    let send_id = ::sce_rust_runtime::sce_string_from_str("__send_45");
+    let send_id: &str = "__send_45";
 
 
     // W3C SCXML 6.2 / test178: a name may repeat and every value must be
@@ -10851,8 +10829,7 @@ if self.hub {
                                 // W3C SCXML 5.9: cond="!holding"
                                 if !self.holding {
                                     {
-                                        let send_id =
-                                            ::sce_rust_runtime::sce_string_from_str("__send_46");
+                                        let send_id: &str = "__send_46";
 
                                         let event_data: &str = "";
 

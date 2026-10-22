@@ -915,7 +915,7 @@ impl StatePolicy for StaticSendHttpPolicy {
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
                             {
-                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_0");
+                                let send_id: &str = "__send_0";
 
                                 // W3C SCXML 6.2 + C.2: the BasicHTTP processor is the runtime's `http-send`
                                 // feature. A build without it does not support the type, so the send is
@@ -924,7 +924,7 @@ impl StatePolicy for StaticSendHttpPolicy {
                                 if !sce_rust_runtime::helpers::send::is_supported_send_type(sce_rust_runtime::helpers::scxml_constants::BASIC_HTTP_EVENT_PROCESSOR_TYPE) {
         ::sce_rust_runtime::sce_log_error!("<send type='http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor'>: this build has no BasicHTTP processor (sce-rust-runtime's `http-send` feature)");
         let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(StaticSendHttpEvent::ErrorExecution, "<send type='http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor'> names a processor this platform does not support");
-        err_meta.metadata.send_id = send_id.clone();
+        err_meta.metadata.send_id = ::sce_rust_runtime::sce_string_from_str(send_id);
         engine.raise(err_meta);
         break 'action_block;  // W3C SCXML 4.9: the error ends the block
     } else {
@@ -985,7 +985,7 @@ impl StatePolicy for StaticSendHttpPolicy {
 "note".to_string(),
 "".to_string(),
             http_params,
-            send_id.clone(),
+            send_id.to_string(),
         );
     }
 
@@ -1008,7 +1008,7 @@ impl StatePolicy for StaticSendHttpPolicy {
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
                             {
-                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_1");
+                                let send_id: &str = "__send_1";
 
                                 // W3C SCXML 6.2 + C.2: the BasicHTTP processor is the runtime's `http-send`
                                 // feature. A build without it does not support the type, so the send is
@@ -1017,7 +1017,7 @@ impl StatePolicy for StaticSendHttpPolicy {
                                 if !sce_rust_runtime::helpers::send::is_supported_send_type(sce_rust_runtime::helpers::scxml_constants::BASIC_HTTP_EVENT_PROCESSOR_TYPE) {
         ::sce_rust_runtime::sce_log_error!("<send type='http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor'>: this build has no BasicHTTP processor (sce-rust-runtime's `http-send` feature)");
         let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(StaticSendHttpEvent::ErrorExecution, "<send type='http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor'> names a processor this platform does not support");
-        err_meta.metadata.send_id = send_id.clone();
+        err_meta.metadata.send_id = ::sce_rust_runtime::sce_string_from_str(send_id);
         engine.raise(err_meta);
         break 'action_block;  // W3C SCXML 4.9: the error ends the block
     } else {
@@ -1070,7 +1070,7 @@ impl StatePolicy for StaticSendHttpPolicy {
 "note".to_string(),
 "".to_string(),
             http_params,
-            send_id.clone(),
+            send_id.to_string(),
         );
     }
 

@@ -941,7 +941,10 @@ impl StatePolicy for StaticCancelExprPolicy {
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
                             {
-                                let send_id = ::sce_rust_runtime::sce_string_from_str("a");
+                                // The id is text and stays text: a literal is borrowed, and the engine builds
+                                // the one string it keeps (a scheduled send's cancel key, `_event.sendid` under
+                                // std), so no buffer of the string bound sits in this action's frame for it.
+                                let send_id: &str = "a";
 
                                 let event_data: &str = "";
 
@@ -953,9 +956,7 @@ impl StatePolicy for StaticCancelExprPolicy {
                                     core::time::Duration::from_millis(200_u64),
                                     &send_id,
                                     event_data,
-                                    &::sce_rust_runtime::sce_string_from_str(
-                                        self.session_id.as_deref().unwrap_or(""),
-                                    ),
+                                    &self.session_id.as_deref().unwrap_or(""),
                                 );
 
                                 let _ = event_data; // suppress unused warning in branches that skip dispatch
@@ -963,7 +964,10 @@ impl StatePolicy for StaticCancelExprPolicy {
                             }
 
                             {
-                                let send_id = ::sce_rust_runtime::sce_string_from_str("b");
+                                // The id is text and stays text: a literal is borrowed, and the engine builds
+                                // the one string it keeps (a scheduled send's cancel key, `_event.sendid` under
+                                // std), so no buffer of the string bound sits in this action's frame for it.
+                                let send_id: &str = "b";
 
                                 let event_data: &str = "";
 
@@ -975,9 +979,7 @@ impl StatePolicy for StaticCancelExprPolicy {
                                     core::time::Duration::from_millis(200_u64),
                                     &send_id,
                                     event_data,
-                                    &::sce_rust_runtime::sce_string_from_str(
-                                        self.session_id.as_deref().unwrap_or(""),
-                                    ),
+                                    &self.session_id.as_deref().unwrap_or(""),
                                 );
 
                                 let _ = event_data; // suppress unused warning in branches that skip dispatch

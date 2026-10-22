@@ -1026,7 +1026,7 @@ impl StatePolicy for StaticWireWidePolicy {
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
                             {
-                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_0");
+                                let send_id: &str = "__send_0";
 
                                 let mut _param_failed = false;
 
@@ -1078,10 +1078,8 @@ impl StatePolicy for StaticWireWidePolicy {
                                     );
                                     // W3C SCXML 5.10.1: External send — preserve sendid and SCXML event processor origintype
                                     meta.metadata = sce_rust_runtime::EventMetadata::external(
-                                        send_id.clone(),
-                                        ::sce_rust_runtime::sce_string_from_str(
-                                            self.session_id.as_deref().unwrap_or(""),
-                                        ),
+                                        send_id,
+                                        self.session_id.as_deref().unwrap_or(""),
                                     );
                                     meta.set_event_data(event_data);
                                     engine.raise_external_with_meta(meta);

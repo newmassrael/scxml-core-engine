@@ -1320,7 +1320,7 @@ impl StatePolicy for StaticInvokeTreePolicy {
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
                             {
-                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_0");
+                                let send_id: &str = "__send_0";
 
                                 let event_data: &str = "";
 
@@ -1357,7 +1357,10 @@ impl StatePolicy for StaticInvokeTreePolicy {
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
                             {
-                                let send_id = ::sce_rust_runtime::sce_string_from_str("poke");
+                                // The id is text and stays text: a literal is borrowed, and the engine builds
+                                // the one string it keeps (a scheduled send's cancel key, `_event.sendid` under
+                                // std), so no buffer of the string bound sits in this action's frame for it.
+                                let send_id: &str = "poke";
 
                                 let event_data: &str = "";
 
@@ -1376,9 +1379,7 @@ impl StatePolicy for StaticInvokeTreePolicy {
                                         core::time::Duration::from_millis(5000_u64),
                                         &send_id,
                                         event_data,
-                                        &::sce_rust_runtime::sce_string_from_str(
-                                            self.session_id.as_deref().unwrap_or(""),
-                                        ),
+                                        &self.session_id.as_deref().unwrap_or(""),
                                         sce_rust_runtime::ScheduledRoute::Invocation {
                                             invoke_id: "worker".to_string(),
                                             event_name: "nudge".to_string(),

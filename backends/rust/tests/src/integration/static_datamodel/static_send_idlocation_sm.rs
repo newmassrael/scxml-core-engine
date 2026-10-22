@@ -954,8 +954,7 @@ impl StatePolicy for StaticSendIdlocationPolicy {
                                 // id the send is known by (`Action::native_sendid`).
                                 self.first = engine.next_auto_send_id().to_string();
                                 let send_id_text: String = self.first.to_string();
-                                let send_id =
-                                    ::sce_rust_runtime::sce_string_from_str(&send_id_text);
+                                let send_id: &str = &send_id_text;
 
                                 let event_data: &str = "";
 
@@ -967,9 +966,7 @@ impl StatePolicy for StaticSendIdlocationPolicy {
                                     core::time::Duration::from_millis(200_u64),
                                     &send_id,
                                     event_data,
-                                    &::sce_rust_runtime::sce_string_from_str(
-                                        self.session_id.as_deref().unwrap_or(""),
-                                    ),
+                                    &self.session_id.as_deref().unwrap_or(""),
                                 );
 
                                 let _ = event_data; // suppress unused warning in branches that skip dispatch
@@ -983,8 +980,7 @@ impl StatePolicy for StaticSendIdlocationPolicy {
                                 // id the send is known by (`Action::native_sendid`).
                                 self.second = engine.next_auto_send_id().to_string();
                                 let send_id_text: String = self.second.to_string();
-                                let send_id =
-                                    ::sce_rust_runtime::sce_string_from_str(&send_id_text);
+                                let send_id: &str = &send_id_text;
 
                                 let event_data: &str = "";
 
@@ -996,9 +992,7 @@ impl StatePolicy for StaticSendIdlocationPolicy {
                                     core::time::Duration::from_millis(200_u64),
                                     &send_id,
                                     event_data,
-                                    &::sce_rust_runtime::sce_string_from_str(
-                                        self.session_id.as_deref().unwrap_or(""),
-                                    ),
+                                    &self.session_id.as_deref().unwrap_or(""),
                                 );
 
                                 let _ = event_data; // suppress unused warning in branches that skip dispatch
@@ -1018,8 +1012,7 @@ impl StatePolicy for StaticSendIdlocationPolicy {
                                 // id the send is known by (`Action::native_sendid`).
                                 self.first = engine.next_auto_send_id().to_string();
                                 let send_id_text: String = self.first.to_string();
-                                let send_id =
-                                    ::sce_rust_runtime::sce_string_from_str(&send_id_text);
+                                let send_id: &str = &send_id_text;
 
                                 let mut _send_arg_error: Option<&'static str> = None;
                                 // The delay is a string computed from the machine's fields now, and read as
@@ -1049,7 +1042,8 @@ impl StatePolicy for StaticSendIdlocationPolicy {
                                             StaticSendIdlocationEvent::ErrorExecution,
                                             __sce_why,
                                         );
-                                    err_meta.metadata.send_id = send_id.clone();
+                                    err_meta.metadata.send_id =
+                                        ::sce_rust_runtime::sce_string_from_str(send_id);
                                     engine.raise(err_meta);
                                     break 'action_block; // W3C SCXML 4.9: the error ends the block
                                 } else {
@@ -1063,9 +1057,7 @@ impl StatePolicy for StaticSendIdlocationPolicy {
                                         core::time::Duration::from_millis(_send_delay_ms),
                                         &send_id,
                                         event_data,
-                                        &::sce_rust_runtime::sce_string_from_str(
-                                            self.session_id.as_deref().unwrap_or(""),
-                                        ),
+                                        &self.session_id.as_deref().unwrap_or(""),
                                     );
 
                                     let _ = event_data; // suppress unused warning in branches that skip dispatch

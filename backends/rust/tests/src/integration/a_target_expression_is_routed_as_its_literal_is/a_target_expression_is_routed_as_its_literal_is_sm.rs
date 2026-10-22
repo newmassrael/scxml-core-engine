@@ -1706,7 +1706,7 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
                     {
-                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_7");
+                        let send_id: &str = "__send_7";
 
                         self.ensure_script_engine();
                         let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
@@ -1747,7 +1747,8 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                                 ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution,
                                 __sce_why,
                             );
-                            err_meta.metadata.send_id = send_id.clone();
+                            err_meta.metadata.send_id =
+                                ::sce_rust_runtime::sce_string_from_str(send_id);
                             engine.raise(err_meta);
                             break 'action_block; // W3C SCXML 4.9: the error ends the block
                         } else {
@@ -1766,7 +1767,8 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                                 // W3C SCXML C.1 (test 496, 521): a target that names nothing raises
                                 // error.communication.
                                 let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorCommunication, "<send> targetexpr evaluated to nothing, so there is no target to reach");
-                                err_meta.metadata.send_id = send_id.clone();
+                                err_meta.metadata.send_id =
+                                    ::sce_rust_runtime::sce_string_from_str(send_id);
                                 engine.raise(err_meta);
                                 break 'action_block; // W3C SCXML 4.9: the error ends the block
                             }
@@ -1803,7 +1805,8 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                                             && !engine.has_event_processor("sce:mesh")
                                         {
                                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
-                                            err_meta.metadata.send_id = send_id.clone();
+                                            err_meta.metadata.send_id =
+                                                ::sce_rust_runtime::sce_string_from_str(send_id);
                                             engine.raise(err_meta);
                                         }
                                     }
@@ -1835,7 +1838,8 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                                             == sce_rust_runtime::TargetSendOutcome::Unsupported
                                         {
                                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution, "<send> targetexpr produced a value that is not a target");
-                                            err_meta.metadata.send_id = send_id.clone();
+                                            err_meta.metadata.send_id =
+                                                ::sce_rust_runtime::sce_string_from_str(send_id);
                                             engine.raise(err_meta);
                                             break 'action_block; // W3C SCXML 4.9: the error ends the block
                                         }
@@ -1843,7 +1847,8 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                                             == sce_rust_runtime::TargetSendOutcome::Unreachable
                                         {
                                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorCommunication, "<send> targetexpr names a session this processor cannot reach");
-                                            err_meta.metadata.send_id = send_id.clone();
+                                            err_meta.metadata.send_id =
+                                                ::sce_rust_runtime::sce_string_from_str(send_id);
                                             engine.raise(err_meta);
                                             break 'action_block; // W3C SCXML 4.9: the error ends the block
                                         }
@@ -1886,7 +1891,7 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
                     {
-                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_8");
+                        let send_id: &str = "__send_8";
 
                         self.ensure_script_engine();
                         let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
@@ -1927,7 +1932,8 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                                 ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution,
                                 __sce_why,
                             );
-                            err_meta.metadata.send_id = send_id.clone();
+                            err_meta.metadata.send_id =
+                                ::sce_rust_runtime::sce_string_from_str(send_id);
                             engine.raise(err_meta);
                             break 'action_block; // W3C SCXML 4.9: the error ends the block
                         } else {
@@ -1946,7 +1952,8 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                                 // W3C SCXML C.1 (test 496, 521): a target that names nothing raises
                                 // error.communication.
                                 let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorCommunication, "<send> targetexpr evaluated to nothing, so there is no target to reach");
-                                err_meta.metadata.send_id = send_id.clone();
+                                err_meta.metadata.send_id =
+                                    ::sce_rust_runtime::sce_string_from_str(send_id);
                                 engine.raise(err_meta);
                                 break 'action_block; // W3C SCXML 4.9: the error ends the block
                             }
@@ -2015,7 +2022,8 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                                             == sce_rust_runtime::TargetSendOutcome::Unsupported
                                         {
                                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution, "<send> targetexpr produced a value that is not a target");
-                                            err_meta.metadata.send_id = send_id.clone();
+                                            err_meta.metadata.send_id =
+                                                ::sce_rust_runtime::sce_string_from_str(send_id);
                                             engine.raise(err_meta);
                                             break 'action_block; // W3C SCXML 4.9: the error ends the block
                                         }
@@ -2023,7 +2031,8 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                                             == sce_rust_runtime::TargetSendOutcome::Unreachable
                                         {
                                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorCommunication, "<send> targetexpr names a session this processor cannot reach");
-                                            err_meta.metadata.send_id = send_id.clone();
+                                            err_meta.metadata.send_id =
+                                                ::sce_rust_runtime::sce_string_from_str(send_id);
                                             engine.raise(err_meta);
                                             break 'action_block; // W3C SCXML 4.9: the error ends the block
                                         }
@@ -2066,7 +2075,7 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
                     {
-                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_9");
+                        let send_id: &str = "__send_9";
 
                         self.ensure_script_engine();
                         let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
@@ -2106,7 +2115,8 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                                 ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution,
                                 __sce_why,
                             );
-                            err_meta.metadata.send_id = send_id.clone();
+                            err_meta.metadata.send_id =
+                                ::sce_rust_runtime::sce_string_from_str(send_id);
                             engine.raise(err_meta);
                             break 'action_block; // W3C SCXML 4.9: the error ends the block
                         } else {
@@ -2125,7 +2135,8 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                                 // W3C SCXML C.1 (test 496, 521): a target that names nothing raises
                                 // error.communication.
                                 let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorCommunication, "<send> targetexpr evaluated to nothing, so there is no target to reach");
-                                err_meta.metadata.send_id = send_id.clone();
+                                err_meta.metadata.send_id =
+                                    ::sce_rust_runtime::sce_string_from_str(send_id);
                                 engine.raise(err_meta);
                                 break 'action_block; // W3C SCXML 4.9: the error ends the block
                             }
@@ -2162,7 +2173,8 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                                             && !engine.has_event_processor("sce:mesh")
                                         {
                                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
-                                            err_meta.metadata.send_id = send_id.clone();
+                                            err_meta.metadata.send_id =
+                                                ::sce_rust_runtime::sce_string_from_str(send_id);
                                             engine.raise(err_meta);
                                         }
                                     }
@@ -2194,7 +2206,8 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                                             == sce_rust_runtime::TargetSendOutcome::Unsupported
                                         {
                                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution, "<send> targetexpr produced a value that is not a target");
-                                            err_meta.metadata.send_id = send_id.clone();
+                                            err_meta.metadata.send_id =
+                                                ::sce_rust_runtime::sce_string_from_str(send_id);
                                             engine.raise(err_meta);
                                             break 'action_block; // W3C SCXML 4.9: the error ends the block
                                         }
@@ -2202,7 +2215,8 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                                             == sce_rust_runtime::TargetSendOutcome::Unreachable
                                         {
                                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorCommunication, "<send> targetexpr names a session this processor cannot reach");
-                                            err_meta.metadata.send_id = send_id.clone();
+                                            err_meta.metadata.send_id =
+                                                ::sce_rust_runtime::sce_string_from_str(send_id);
                                             engine.raise(err_meta);
                                             break 'action_block; // W3C SCXML 4.9: the error ends the block
                                         }
@@ -2245,7 +2259,7 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
                     {
-                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_10");
+                        let send_id: &str = "__send_10";
 
                         self.ensure_script_engine();
                         let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
@@ -2285,7 +2299,8 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                                 ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution,
                                 __sce_why,
                             );
-                            err_meta.metadata.send_id = send_id.clone();
+                            err_meta.metadata.send_id =
+                                ::sce_rust_runtime::sce_string_from_str(send_id);
                             engine.raise(err_meta);
                             break 'action_block; // W3C SCXML 4.9: the error ends the block
                         } else {
@@ -2304,7 +2319,8 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                                 // W3C SCXML C.1 (test 496, 521): a target that names nothing raises
                                 // error.communication.
                                 let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorCommunication, "<send> targetexpr evaluated to nothing, so there is no target to reach");
-                                err_meta.metadata.send_id = send_id.clone();
+                                err_meta.metadata.send_id =
+                                    ::sce_rust_runtime::sce_string_from_str(send_id);
                                 engine.raise(err_meta);
                                 break 'action_block; // W3C SCXML 4.9: the error ends the block
                             }
@@ -2373,7 +2389,8 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                                             == sce_rust_runtime::TargetSendOutcome::Unsupported
                                         {
                                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution, "<send> targetexpr produced a value that is not a target");
-                                            err_meta.metadata.send_id = send_id.clone();
+                                            err_meta.metadata.send_id =
+                                                ::sce_rust_runtime::sce_string_from_str(send_id);
                                             engine.raise(err_meta);
                                             break 'action_block; // W3C SCXML 4.9: the error ends the block
                                         }
@@ -2381,7 +2398,8 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                                             == sce_rust_runtime::TargetSendOutcome::Unreachable
                                         {
                                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorCommunication, "<send> targetexpr names a session this processor cannot reach");
-                                            err_meta.metadata.send_id = send_id.clone();
+                                            err_meta.metadata.send_id =
+                                                ::sce_rust_runtime::sce_string_from_str(send_id);
                                             engine.raise(err_meta);
                                             break 'action_block; // W3C SCXML 4.9: the error ends the block
                                         }
@@ -2424,7 +2442,7 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
                     {
-                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_11");
+                        let send_id: &str = "__send_11";
 
                         self.ensure_script_engine();
                         let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
@@ -2464,7 +2482,8 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                                 ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution,
                                 __sce_why,
                             );
-                            err_meta.metadata.send_id = send_id.clone();
+                            err_meta.metadata.send_id =
+                                ::sce_rust_runtime::sce_string_from_str(send_id);
                             engine.raise(err_meta);
                             break 'action_block; // W3C SCXML 4.9: the error ends the block
                         } else {
@@ -2483,7 +2502,8 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                                 // W3C SCXML C.1 (test 496, 521): a target that names nothing raises
                                 // error.communication.
                                 let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorCommunication, "<send> targetexpr evaluated to nothing, so there is no target to reach");
-                                err_meta.metadata.send_id = send_id.clone();
+                                err_meta.metadata.send_id =
+                                    ::sce_rust_runtime::sce_string_from_str(send_id);
                                 engine.raise(err_meta);
                                 break 'action_block; // W3C SCXML 4.9: the error ends the block
                             }
@@ -2520,7 +2540,8 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                                             && !engine.has_event_processor("sce:mesh")
                                         {
                                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
-                                            err_meta.metadata.send_id = send_id.clone();
+                                            err_meta.metadata.send_id =
+                                                ::sce_rust_runtime::sce_string_from_str(send_id);
                                             engine.raise(err_meta);
                                         }
                                     }
@@ -2552,7 +2573,8 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                                             == sce_rust_runtime::TargetSendOutcome::Unsupported
                                         {
                                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution, "<send> targetexpr produced a value that is not a target");
-                                            err_meta.metadata.send_id = send_id.clone();
+                                            err_meta.metadata.send_id =
+                                                ::sce_rust_runtime::sce_string_from_str(send_id);
                                             engine.raise(err_meta);
                                             break 'action_block; // W3C SCXML 4.9: the error ends the block
                                         }
@@ -2560,7 +2582,8 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                                             == sce_rust_runtime::TargetSendOutcome::Unreachable
                                         {
                                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorCommunication, "<send> targetexpr names a session this processor cannot reach");
-                                            err_meta.metadata.send_id = send_id.clone();
+                                            err_meta.metadata.send_id =
+                                                ::sce_rust_runtime::sce_string_from_str(send_id);
                                             engine.raise(err_meta);
                                             break 'action_block; // W3C SCXML 4.9: the error ends the block
                                         }
@@ -2603,7 +2626,7 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
                     {
-                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_12");
+                        let send_id: &str = "__send_12";
 
                         self.ensure_script_engine();
                         let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
@@ -2643,7 +2666,8 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                                 ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution,
                                 __sce_why,
                             );
-                            err_meta.metadata.send_id = send_id.clone();
+                            err_meta.metadata.send_id =
+                                ::sce_rust_runtime::sce_string_from_str(send_id);
                             engine.raise(err_meta);
                             break 'action_block; // W3C SCXML 4.9: the error ends the block
                         } else {
@@ -2662,7 +2686,8 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                                 // W3C SCXML C.1 (test 496, 521): a target that names nothing raises
                                 // error.communication.
                                 let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorCommunication, "<send> targetexpr evaluated to nothing, so there is no target to reach");
-                                err_meta.metadata.send_id = send_id.clone();
+                                err_meta.metadata.send_id =
+                                    ::sce_rust_runtime::sce_string_from_str(send_id);
                                 engine.raise(err_meta);
                                 break 'action_block; // W3C SCXML 4.9: the error ends the block
                             }
@@ -2731,7 +2756,8 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                                             == sce_rust_runtime::TargetSendOutcome::Unsupported
                                         {
                                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution, "<send> targetexpr produced a value that is not a target");
-                                            err_meta.metadata.send_id = send_id.clone();
+                                            err_meta.metadata.send_id =
+                                                ::sce_rust_runtime::sce_string_from_str(send_id);
                                             engine.raise(err_meta);
                                             break 'action_block; // W3C SCXML 4.9: the error ends the block
                                         }
@@ -2739,7 +2765,8 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                                             == sce_rust_runtime::TargetSendOutcome::Unreachable
                                         {
                                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorCommunication, "<send> targetexpr names a session this processor cannot reach");
-                                            err_meta.metadata.send_id = send_id.clone();
+                                            err_meta.metadata.send_id =
+                                                ::sce_rust_runtime::sce_string_from_str(send_id);
                                             engine.raise(err_meta);
                                             break 'action_block; // W3C SCXML 4.9: the error ends the block
                                         }
@@ -3129,7 +3156,7 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                             }
 
                             {
-                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_0");
+                                let send_id: &str = "__send_0";
 
                                 self.ensure_script_engine();
                                 let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
@@ -3170,7 +3197,8 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                                 if let Some(__sce_why) = _send_arg_error {
                                     ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
                                     let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution, __sce_why);
-                                    err_meta.metadata.send_id = send_id.clone();
+                                    err_meta.metadata.send_id =
+                                        ::sce_rust_runtime::sce_string_from_str(send_id);
                                     engine.raise(err_meta);
                                     break 'action_block; // W3C SCXML 4.9: the error ends the block
                                 } else {
@@ -3189,7 +3217,8 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                                         // W3C SCXML C.1 (test 496, 521): a target that names nothing raises
                                         // error.communication.
                                         let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorCommunication, "<send> targetexpr evaluated to nothing, so there is no target to reach");
-                                        err_meta.metadata.send_id = send_id.clone();
+                                        err_meta.metadata.send_id =
+                                            ::sce_rust_runtime::sce_string_from_str(send_id);
                                         engine.raise(err_meta);
                                         break 'action_block; // W3C SCXML 4.9: the error ends the block
                                     }
@@ -3233,7 +3262,10 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                                                     && !engine.has_event_processor("sce:mesh")
                                                 {
                                                     let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
-                                                    err_meta.metadata.send_id = send_id.clone();
+                                                    err_meta.metadata.send_id =
+                                                        ::sce_rust_runtime::sce_string_from_str(
+                                                            send_id,
+                                                        );
                                                     engine.raise(err_meta);
                                                 }
                                             }
@@ -3257,13 +3289,13 @@ None,
         );
                                                 if __sce_routed == sce_rust_runtime::TargetSendOutcome::Unsupported {
             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution, "<send> targetexpr produced a value that is not a target");
-            err_meta.metadata.send_id = send_id.clone();
+            err_meta.metadata.send_id = ::sce_rust_runtime::sce_string_from_str(send_id);
             engine.raise(err_meta);
             break 'action_block;  // W3C SCXML 4.9: the error ends the block
         }
                                                 if __sce_routed == sce_rust_runtime::TargetSendOutcome::Unreachable {
             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorCommunication, "<send> targetexpr names a session this processor cannot reach");
-            err_meta.metadata.send_id = send_id.clone();
+            err_meta.metadata.send_id = ::sce_rust_runtime::sce_string_from_str(send_id);
             engine.raise(err_meta);
             break 'action_block;  // W3C SCXML 4.9: the error ends the block
         }
@@ -3277,7 +3309,7 @@ None,
                             }
 
                             {
-                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_1");
+                                let send_id: &str = "__send_1";
 
                                 self.ensure_script_engine();
                                 let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
@@ -3318,7 +3350,8 @@ None,
                                 if let Some(__sce_why) = _send_arg_error {
                                     ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
                                     let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution, __sce_why);
-                                    err_meta.metadata.send_id = send_id.clone();
+                                    err_meta.metadata.send_id =
+                                        ::sce_rust_runtime::sce_string_from_str(send_id);
                                     engine.raise(err_meta);
                                     break 'action_block; // W3C SCXML 4.9: the error ends the block
                                 } else {
@@ -3337,7 +3370,8 @@ None,
                                         // W3C SCXML C.1 (test 496, 521): a target that names nothing raises
                                         // error.communication.
                                         let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorCommunication, "<send> targetexpr evaluated to nothing, so there is no target to reach");
-                                        err_meta.metadata.send_id = send_id.clone();
+                                        err_meta.metadata.send_id =
+                                            ::sce_rust_runtime::sce_string_from_str(send_id);
                                         engine.raise(err_meta);
                                         break 'action_block; // W3C SCXML 4.9: the error ends the block
                                     }
@@ -3406,13 +3440,13 @@ Some(core::time::Duration::from_millis(10_u64)),
         );
                                                 if __sce_routed == sce_rust_runtime::TargetSendOutcome::Unsupported {
             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution, "<send> targetexpr produced a value that is not a target");
-            err_meta.metadata.send_id = send_id.clone();
+            err_meta.metadata.send_id = ::sce_rust_runtime::sce_string_from_str(send_id);
             engine.raise(err_meta);
             break 'action_block;  // W3C SCXML 4.9: the error ends the block
         }
                                                 if __sce_routed == sce_rust_runtime::TargetSendOutcome::Unreachable {
             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorCommunication, "<send> targetexpr names a session this processor cannot reach");
-            err_meta.metadata.send_id = send_id.clone();
+            err_meta.metadata.send_id = ::sce_rust_runtime::sce_string_from_str(send_id);
             engine.raise(err_meta);
             break 'action_block;  // W3C SCXML 4.9: the error ends the block
         }
@@ -3426,7 +3460,7 @@ Some(core::time::Duration::from_millis(10_u64)),
                             }
 
                             {
-                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_2");
+                                let send_id: &str = "__send_2";
 
                                 self.ensure_script_engine();
                                 let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
@@ -3467,7 +3501,8 @@ Some(core::time::Duration::from_millis(10_u64)),
                                 if let Some(__sce_why) = _send_arg_error {
                                     ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
                                     let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution, __sce_why);
-                                    err_meta.metadata.send_id = send_id.clone();
+                                    err_meta.metadata.send_id =
+                                        ::sce_rust_runtime::sce_string_from_str(send_id);
                                     engine.raise(err_meta);
                                     break 'action_block; // W3C SCXML 4.9: the error ends the block
                                 } else {
@@ -3486,7 +3521,8 @@ Some(core::time::Duration::from_millis(10_u64)),
                                         // W3C SCXML C.1 (test 496, 521): a target that names nothing raises
                                         // error.communication.
                                         let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorCommunication, "<send> targetexpr evaluated to nothing, so there is no target to reach");
-                                        err_meta.metadata.send_id = send_id.clone();
+                                        err_meta.metadata.send_id =
+                                            ::sce_rust_runtime::sce_string_from_str(send_id);
                                         engine.raise(err_meta);
                                         break 'action_block; // W3C SCXML 4.9: the error ends the block
                                     }
@@ -3530,7 +3566,10 @@ Some(core::time::Duration::from_millis(10_u64)),
                                                     && !engine.has_event_processor("sce:mesh")
                                                 {
                                                     let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
-                                                    err_meta.metadata.send_id = send_id.clone();
+                                                    err_meta.metadata.send_id =
+                                                        ::sce_rust_runtime::sce_string_from_str(
+                                                            send_id,
+                                                        );
                                                     engine.raise(err_meta);
                                                 }
                                             }
@@ -3554,13 +3593,13 @@ None,
         );
                                                 if __sce_routed == sce_rust_runtime::TargetSendOutcome::Unsupported {
             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution, "<send> targetexpr produced a value that is not a target");
-            err_meta.metadata.send_id = send_id.clone();
+            err_meta.metadata.send_id = ::sce_rust_runtime::sce_string_from_str(send_id);
             engine.raise(err_meta);
             break 'action_block;  // W3C SCXML 4.9: the error ends the block
         }
                                                 if __sce_routed == sce_rust_runtime::TargetSendOutcome::Unreachable {
             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorCommunication, "<send> targetexpr names a session this processor cannot reach");
-            err_meta.metadata.send_id = send_id.clone();
+            err_meta.metadata.send_id = ::sce_rust_runtime::sce_string_from_str(send_id);
             engine.raise(err_meta);
             break 'action_block;  // W3C SCXML 4.9: the error ends the block
         }
@@ -3574,7 +3613,7 @@ None,
                             }
 
                             {
-                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_3");
+                                let send_id: &str = "__send_3";
 
                                 self.ensure_script_engine();
                                 let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
@@ -3615,7 +3654,8 @@ None,
                                 if let Some(__sce_why) = _send_arg_error {
                                     ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
                                     let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution, __sce_why);
-                                    err_meta.metadata.send_id = send_id.clone();
+                                    err_meta.metadata.send_id =
+                                        ::sce_rust_runtime::sce_string_from_str(send_id);
                                     engine.raise(err_meta);
                                     break 'action_block; // W3C SCXML 4.9: the error ends the block
                                 } else {
@@ -3634,7 +3674,8 @@ None,
                                         // W3C SCXML C.1 (test 496, 521): a target that names nothing raises
                                         // error.communication.
                                         let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorCommunication, "<send> targetexpr evaluated to nothing, so there is no target to reach");
-                                        err_meta.metadata.send_id = send_id.clone();
+                                        err_meta.metadata.send_id =
+                                            ::sce_rust_runtime::sce_string_from_str(send_id);
                                         engine.raise(err_meta);
                                         break 'action_block; // W3C SCXML 4.9: the error ends the block
                                     }
@@ -3703,13 +3744,13 @@ Some(core::time::Duration::from_millis(10_u64)),
         );
                                                 if __sce_routed == sce_rust_runtime::TargetSendOutcome::Unsupported {
             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution, "<send> targetexpr produced a value that is not a target");
-            err_meta.metadata.send_id = send_id.clone();
+            err_meta.metadata.send_id = ::sce_rust_runtime::sce_string_from_str(send_id);
             engine.raise(err_meta);
             break 'action_block;  // W3C SCXML 4.9: the error ends the block
         }
                                                 if __sce_routed == sce_rust_runtime::TargetSendOutcome::Unreachable {
             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorCommunication, "<send> targetexpr names a session this processor cannot reach");
-            err_meta.metadata.send_id = send_id.clone();
+            err_meta.metadata.send_id = ::sce_rust_runtime::sce_string_from_str(send_id);
             engine.raise(err_meta);
             break 'action_block;  // W3C SCXML 4.9: the error ends the block
         }
@@ -3723,7 +3764,7 @@ Some(core::time::Duration::from_millis(10_u64)),
                             }
 
                             {
-                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_4");
+                                let send_id: &str = "__send_4";
 
                                 self.ensure_script_engine();
                                 let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
@@ -3764,7 +3805,8 @@ Some(core::time::Duration::from_millis(10_u64)),
                                 if let Some(__sce_why) = _send_arg_error {
                                     ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
                                     let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution, __sce_why);
-                                    err_meta.metadata.send_id = send_id.clone();
+                                    err_meta.metadata.send_id =
+                                        ::sce_rust_runtime::sce_string_from_str(send_id);
                                     engine.raise(err_meta);
                                     break 'action_block; // W3C SCXML 4.9: the error ends the block
                                 } else {
@@ -3783,7 +3825,8 @@ Some(core::time::Duration::from_millis(10_u64)),
                                         // W3C SCXML C.1 (test 496, 521): a target that names nothing raises
                                         // error.communication.
                                         let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorCommunication, "<send> targetexpr evaluated to nothing, so there is no target to reach");
-                                        err_meta.metadata.send_id = send_id.clone();
+                                        err_meta.metadata.send_id =
+                                            ::sce_rust_runtime::sce_string_from_str(send_id);
                                         engine.raise(err_meta);
                                         break 'action_block; // W3C SCXML 4.9: the error ends the block
                                     }
@@ -3827,7 +3870,10 @@ Some(core::time::Duration::from_millis(10_u64)),
                                                     && !engine.has_event_processor("sce:mesh")
                                                 {
                                                     let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
-                                                    err_meta.metadata.send_id = send_id.clone();
+                                                    err_meta.metadata.send_id =
+                                                        ::sce_rust_runtime::sce_string_from_str(
+                                                            send_id,
+                                                        );
                                                     engine.raise(err_meta);
                                                 }
                                             }
@@ -3851,13 +3897,13 @@ None,
         );
                                                 if __sce_routed == sce_rust_runtime::TargetSendOutcome::Unsupported {
             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution, "<send> targetexpr produced a value that is not a target");
-            err_meta.metadata.send_id = send_id.clone();
+            err_meta.metadata.send_id = ::sce_rust_runtime::sce_string_from_str(send_id);
             engine.raise(err_meta);
             break 'action_block;  // W3C SCXML 4.9: the error ends the block
         }
                                                 if __sce_routed == sce_rust_runtime::TargetSendOutcome::Unreachable {
             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorCommunication, "<send> targetexpr names a session this processor cannot reach");
-            err_meta.metadata.send_id = send_id.clone();
+            err_meta.metadata.send_id = ::sce_rust_runtime::sce_string_from_str(send_id);
             engine.raise(err_meta);
             break 'action_block;  // W3C SCXML 4.9: the error ends the block
         }
@@ -3871,7 +3917,7 @@ None,
                             }
 
                             {
-                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_5");
+                                let send_id: &str = "__send_5";
 
                                 self.ensure_script_engine();
                                 let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
@@ -3912,7 +3958,8 @@ None,
                                 if let Some(__sce_why) = _send_arg_error {
                                     ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
                                     let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution, __sce_why);
-                                    err_meta.metadata.send_id = send_id.clone();
+                                    err_meta.metadata.send_id =
+                                        ::sce_rust_runtime::sce_string_from_str(send_id);
                                     engine.raise(err_meta);
                                     break 'action_block; // W3C SCXML 4.9: the error ends the block
                                 } else {
@@ -3931,7 +3978,8 @@ None,
                                         // W3C SCXML C.1 (test 496, 521): a target that names nothing raises
                                         // error.communication.
                                         let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorCommunication, "<send> targetexpr evaluated to nothing, so there is no target to reach");
-                                        err_meta.metadata.send_id = send_id.clone();
+                                        err_meta.metadata.send_id =
+                                            ::sce_rust_runtime::sce_string_from_str(send_id);
                                         engine.raise(err_meta);
                                         break 'action_block; // W3C SCXML 4.9: the error ends the block
                                     }
@@ -4000,13 +4048,13 @@ Some(core::time::Duration::from_millis(10_u64)),
         );
                                                 if __sce_routed == sce_rust_runtime::TargetSendOutcome::Unsupported {
             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution, "<send> targetexpr produced a value that is not a target");
-            err_meta.metadata.send_id = send_id.clone();
+            err_meta.metadata.send_id = ::sce_rust_runtime::sce_string_from_str(send_id);
             engine.raise(err_meta);
             break 'action_block;  // W3C SCXML 4.9: the error ends the block
         }
                                                 if __sce_routed == sce_rust_runtime::TargetSendOutcome::Unreachable {
             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorCommunication, "<send> targetexpr names a session this processor cannot reach");
-            err_meta.metadata.send_id = send_id.clone();
+            err_meta.metadata.send_id = ::sce_rust_runtime::sce_string_from_str(send_id);
             engine.raise(err_meta);
             break 'action_block;  // W3C SCXML 4.9: the error ends the block
         }
@@ -4020,7 +4068,7 @@ Some(core::time::Duration::from_millis(10_u64)),
                             }
 
                             {
-                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_6");
+                                let send_id: &str = "__send_6";
 
                                 let event_data: &str = "";
 
@@ -4032,9 +4080,7 @@ Some(core::time::Duration::from_millis(10_u64)),
                                     core::time::Duration::from_millis(300_u64),
                                     &send_id,
                                     event_data,
-                                    &::sce_rust_runtime::sce_string_from_str(
-                                        self.session_id.as_deref().unwrap_or(""),
-                                    ),
+                                    &self.session_id.as_deref().unwrap_or(""),
                                 );
 
                                 let _ = event_data; // suppress unused warning in branches that skip dispatch

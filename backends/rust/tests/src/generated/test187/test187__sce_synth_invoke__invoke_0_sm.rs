@@ -437,7 +437,7 @@ impl StatePolicy for Test187SceSynthInvokeInvoke0Policy {
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
                     {
-                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_0");
+                        let send_id: &str = "__send_0";
 
                         let event_data: &str = "";
 
@@ -450,9 +450,7 @@ impl StatePolicy for Test187SceSynthInvokeInvoke0Policy {
                             core::time::Duration::from_millis(500_u64),
                             &send_id,
                             event_data,
-                            &::sce_rust_runtime::sce_string_from_str(
-                                self.session_id.as_deref().unwrap_or(""),
-                            ),
+                            &self.session_id.as_deref().unwrap_or(""),
                             sce_rust_runtime::ScheduledRoute::Parent {
                                 event_name: "childToParent".to_string(),
                             },

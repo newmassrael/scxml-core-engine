@@ -813,8 +813,7 @@ impl StatePolicy for AChildMaySendManyEventsInOneTickSceSynthInvokeChattyPolicy 
                                         // own error and leaves the enclosing block from here.
 
                                         {
-                                            let send_id =
-                                                ::sce_rust_runtime::sce_string_from_str("__send_0");
+                                            let send_id: &str = "__send_0";
 
                                             let event_data: &str = "";
 

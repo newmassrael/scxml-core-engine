@@ -710,7 +710,10 @@ impl StatePolicy for StatechartStaticDelayedHostSendPolicy {
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
                     {
-                        let send_id = ::sce_rust_runtime::sce_string_from_str("a");
+                        // The id is text and stays text: a literal is borrowed, and the engine builds
+                        // the one string it keeps (a scheduled send's cancel key, `_event.sendid` under
+                        // std), so no buffer of the string bound sits in this action's frame for it.
+                        let send_id: &str = "a";
 
                         // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                         // delivered, so each name carries a vector. The typed value is kept

@@ -718,7 +718,7 @@ impl StatePolicy for Test253SceSynthInvokeFooPolicy {
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
                     {
-                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_0");
+                        let send_id: &str = "__send_0";
 
                         let event_data: &str = "";
 
@@ -955,7 +955,7 @@ impl StatePolicy for Test253SceSynthInvokeFooPolicy {
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
                             {
-                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_1");
+                                let send_id: &str = "__send_1";
 
                                 let event_data: &str = "";
 
@@ -987,7 +987,7 @@ impl StatePolicy for Test253SceSynthInvokeFooPolicy {
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
                             {
-                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_2");
+                                let send_id: &str = "__send_2";
 
                                 let event_data: &str = "";
 
@@ -1019,7 +1019,7 @@ impl StatePolicy for Test253SceSynthInvokeFooPolicy {
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
                             {
-                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_3");
+                                let send_id: &str = "__send_3";
 
                                 let event_data: &str = "";
 

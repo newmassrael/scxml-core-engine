@@ -101,7 +101,13 @@ MEASURED_WITH='rustc 1.99.1 (58cf8f9c3 2026-10-13)'
 # from 1932 to 668 bytes (disassembly, thumbv7em, opt-level s). The code that
 # pays for it is the in-place filter, the separate call, and one more machine
 # symbol (40, was 39).
-TOTAL_BYTES=5334
+#
+# 5334 -> 5200 (2026-10-22): a generated `<send>` no longer builds a string for the id it
+# names or for the origin it stamps. They were buffers of the runtime's string bound
+# (`heapless::String<256>`) made to be cloned into metadata that the bare-metal profile
+# elides, or dropped; the id is text now, borrowed, and the engine builds the one string it
+# keeps. What the bytes were: the clones, and the copy of 256 bytes behind each.
+TOTAL_BYTES=5200
 
 # The same sum without the macrostep REPORT, the bound left in place: the probe
 # built with no feature, so the runtime has none either. That is the build a
@@ -154,7 +160,10 @@ TOTAL_BYTES=5334
 #
 # 5184 -> 5288 (2026-10-22), on rustc 1.99.1: the stack change of TOTAL_BYTES
 # above; the figure with the report moved by 98 and this one by 104.
-TOTAL_BYTES_NO_DIAGNOSTICS=5288
+#
+# 5288 -> 5148 (2026-10-22): the strings a `<send>` no longer builds, as above; the figure
+# with the report moved by 134 and this one by 140.
+TOTAL_BYTES_NO_DIAGNOSTICS=5148
 
 # Drift allowed either way before the gate speaks, in BYTES. Wide enough that
 # an unrelated inlining decision does not cry wolf, tight enough that one more
@@ -207,10 +216,18 @@ MIN_SYMBOLS=24
 # `complete_macrostep`, `take_event`, `microstep` and `enter_entry_set` to a `Vec<u8, 256>`
 # clone and `memcpy`. The tolerance is the footprint's, in kind: wide enough for an inlining
 # decision, narrow enough that one more buffer in a frame of that chain trips it.
+#
+# 1776 -> 1584 (2026-10-22): the generated `<send>` stopped building strings (see
+# TOTAL_BYTES), which took the policy's entry actions out of the worst chain: it is now the
+# recursion of Appendix D's entry walk, `add_descendant_states_to_enter` through
+# `add_ancestor_states_to_enter` and `add_region_defaults`, taken to the six levels
+# STACK_RECURSION states. That is the stated bound and not what the probe machine reaches
+# (it is four levels deep), so the figure now holds the runtime's own walk and the policy's
+# chain stays under it; a policy chain that grows past it moves the figure again.
 STACK_ROOTS='Engine<sce_nostd_build_probe::ParallelHistoryProbePolicy>>::step Engine<sce_nostd_build_probe::ParallelHistoryProbePolicy>>::initialize Engine<sce_nostd_build_probe::ParallelHistoryProbePolicy>>::process_event'
 STACK_RECURSION='add_descendant_states_to_enter=6 add_effective_target_states=3 is_in_final_state=4'
 STACK_ASSUME='core::fmt::write=256'
 STACK_INDIRECT_BYTES=64
 STACK_MIN_FUNCTIONS=200
-STACK_BYTES=1776
+STACK_BYTES=1584
 STACK_TOLERANCE_BYTES=256

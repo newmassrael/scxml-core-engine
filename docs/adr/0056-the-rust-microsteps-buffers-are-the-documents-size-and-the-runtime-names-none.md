@@ -110,6 +110,15 @@ the stack, not the RAM, to be the limit, with the frames of this decision as the
   (`opt-level = "z"`, fat LTO) inlines the policy's entry actions into the entry procedure, so its 1776 bytes include
   an 872-byte frame that is the generated policy's, not the runtime's; a mutation that widens the enabled set from
   4 to 40 slots moves it to 2928 and trips the band. GNU's and LLVM's disassemblers give the same figure.
+- **The generated code builds only what its profile keeps.** The first stack gate showed the chain was set by
+  the policy's own entry actions, not the runtime's: a `<send>` built an owned `SceString` (a buffer of the string
+  bound, 256 bytes) for its id and another for its origin, cloned them into `EventMetadata` that the bare-metal
+  profile elides, and dropped them. The id and the origin are text now: `EventMetadata::external` and
+  `ScheduledSendIdLike::store` take `&str`, a generated send id is a borrowed literal, and the engine builds the one
+  string it stores. On the probe machine `.text` fell 5340 -> 5200 bytes (diagnostics on) and 5288 -> 5148 (off), and
+  the worst chain left the policy: it is now the runtime's own entry walk. Under `std` the strings are built where
+  they are stored, which is where they always were read. The strings the scheduler returns, and the per-document
+  size of the strings a `<send>` can name, are not built; the first is an API the std profile uses.
 - **A document that is not legal** (a machine whose `initial` names two top-level states, which §scxml-3.11 forbids
   and the semantic check refuses) can hold more than its tree bounds; the check is the guard, and a bare-metal push
   past a bound names the generator.

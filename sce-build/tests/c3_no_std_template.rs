@@ -440,6 +440,36 @@ fn rust_template_sizes_the_microstep_to_the_documents_state_tree() {
 }
 
 #[test]
+fn rust_template_builds_no_string_for_a_send_id_or_an_origin() {
+    // A `<send>` names an id and stamps an origin, and the bare-metal profile keeps
+    // neither on the event it raises. An owned string for each (`SceString`, a
+    // buffer of the string bound) made at the send site and cloned into metadata
+    // that drops it sat in the frame of the action, several times over where an
+    // entry block holds several sends; the id is text, borrowed, and the engine
+    // builds the one string it stores. The MCU probe's worst-case stack and
+    // `.text` hold the same fact from the object's side.
+    let model = parse(
+        include_str!("fixtures/no_std/parallel_history_probe.scxml"),
+        "parallel_history_probe",
+    );
+    let code = generate(&model, &template_dir(), true).expect("render");
+    assert!(
+        code.contains("let send_id: &str = \"__send_0\";"),
+        "a generated send id is text"
+    );
+    for owned in [
+        "let send_id = ::sce_rust_runtime::sce_string_from_str(",
+        "EventMetadata::external(send_id.clone()",
+        "&::sce_rust_runtime::SceString::new()",
+    ] {
+        assert!(
+            !code.contains(owned),
+            "a bare-metal emission must not build `{owned}` for a send"
+        );
+    }
+}
+
+#[test]
 fn rust_template_elides_parent_external_queue_field_under_no_std() {
     let model = parse(PLAIN_FSM, "plain_nostd_pq");
     let code = generate(&model, &template_dir(), true).expect("template render must succeed");

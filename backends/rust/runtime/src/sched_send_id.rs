@@ -35,9 +35,10 @@ use core::fmt::Debug;
 pub trait ScheduledSendIdLike: Debug {
     /// Capture the resolved send id into the stored representation.
     ///
-    /// Takes the id by reference so the [`ElidedSendId`] impl can drop it
-    /// without an owning clone; the [`SceString`] impl clones it.
-    fn store(send_id: &SceString) -> Self;
+    /// Takes the id as text so the [`ElidedSendId`] impl can drop it without
+    /// anything having been built for it, and the [`SceString`] impl builds the
+    /// one string it stores.
+    fn store(send_id: &str) -> Self;
 
     /// Whether this stored id equals `send_id` (the `<cancel sendid>` key).
     fn matches(&self, send_id: &str) -> bool;
@@ -45,8 +46,8 @@ pub trait ScheduledSendIdLike: Debug {
 
 impl ScheduledSendIdLike for SceString {
     #[inline]
-    fn store(send_id: &SceString) -> Self {
-        send_id.clone()
+    fn store(send_id: &str) -> Self {
+        crate::sce_string_from_str(send_id)
     }
 
     #[inline]
@@ -74,7 +75,7 @@ pub struct ElidedSendId;
 
 impl ScheduledSendIdLike for ElidedSendId {
     #[inline]
-    fn store(_send_id: &SceString) -> Self {
+    fn store(_send_id: &str) -> Self {
         ElidedSendId
     }
 

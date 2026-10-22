@@ -899,7 +899,7 @@ impl StatePolicy for ADelayIsACss2TimePolicy {
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
                     {
-                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_0");
+                        let send_id: &str = "__send_0";
                         // W3C SCXML 6.2: the written delay is not a CSS2 time (ARCHITECTURE.md,
                         // "Durations"; the build decided it once). It is known before anything is
                         // evaluated, so the send ends here with the argument error, as it does on
@@ -909,7 +909,8 @@ impl StatePolicy for ADelayIsACss2TimePolicy {
                                 ADelayIsACss2TimeEvent::ErrorExecution,
                                 "<send> delay is not a CSS2 time",
                             );
-                            err_meta.metadata.send_id = send_id.clone();
+                            err_meta.metadata.send_id =
+                                ::sce_rust_runtime::sce_string_from_str(send_id);
                             engine.raise(err_meta);
                         }
                         let _ = send_id; // the refusal may carry no error event to name it
@@ -920,7 +921,7 @@ impl StatePolicy for ADelayIsACss2TimePolicy {
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
                     {
-                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_1");
+                        let send_id: &str = "__send_1";
 
                         self.ensure_script_engine();
                         let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
@@ -960,7 +961,8 @@ impl StatePolicy for ADelayIsACss2TimePolicy {
                                 ADelayIsACss2TimeEvent::ErrorExecution,
                                 __sce_why,
                             );
-                            err_meta.metadata.send_id = send_id.clone();
+                            err_meta.metadata.send_id =
+                                ::sce_rust_runtime::sce_string_from_str(send_id);
                             engine.raise(err_meta);
                             break 'action_block; // W3C SCXML 4.9: the error ends the block
                         } else {
@@ -974,9 +976,7 @@ impl StatePolicy for ADelayIsACss2TimePolicy {
                                 core::time::Duration::from_millis(_send_delay_ms),
                                 &send_id,
                                 event_data,
-                                &::sce_rust_runtime::sce_string_from_str(
-                                    self.session_id.as_deref().unwrap_or(""),
-                                ),
+                                &self.session_id.as_deref().unwrap_or(""),
                             );
 
                             let _ = event_data; // suppress unused warning in branches that skip dispatch
@@ -1011,7 +1011,7 @@ impl StatePolicy for ADelayIsACss2TimePolicy {
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
                     {
-                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_2");
+                        let send_id: &str = "__send_2";
 
                         self.ensure_script_engine();
                         let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
@@ -1051,7 +1051,8 @@ impl StatePolicy for ADelayIsACss2TimePolicy {
                                 ADelayIsACss2TimeEvent::ErrorExecution,
                                 __sce_why,
                             );
-                            err_meta.metadata.send_id = send_id.clone();
+                            err_meta.metadata.send_id =
+                                ::sce_rust_runtime::sce_string_from_str(send_id);
                             engine.raise(err_meta);
                             break 'action_block; // W3C SCXML 4.9: the error ends the block
                         } else {
@@ -1065,9 +1066,7 @@ impl StatePolicy for ADelayIsACss2TimePolicy {
                                 core::time::Duration::from_millis(_send_delay_ms),
                                 &send_id,
                                 event_data,
-                                &::sce_rust_runtime::sce_string_from_str(
-                                    self.session_id.as_deref().unwrap_or(""),
-                                ),
+                                &self.session_id.as_deref().unwrap_or(""),
                             );
 
                             let _ = event_data; // suppress unused warning in branches that skip dispatch
@@ -1076,7 +1075,7 @@ impl StatePolicy for ADelayIsACss2TimePolicy {
                     }
 
                     {
-                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_3");
+                        let send_id: &str = "__send_3";
 
                         let event_data: &str = "";
 
@@ -1088,9 +1087,7 @@ impl StatePolicy for ADelayIsACss2TimePolicy {
                             core::time::Duration::from_millis(569_u64),
                             &send_id,
                             event_data,
-                            &::sce_rust_runtime::sce_string_from_str(
-                                self.session_id.as_deref().unwrap_or(""),
-                            ),
+                            &self.session_id.as_deref().unwrap_or(""),
                         );
 
                         let _ = event_data; // suppress unused warning in branches that skip dispatch

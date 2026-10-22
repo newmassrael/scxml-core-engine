@@ -442,7 +442,7 @@ impl StatePolicy for Test194Policy {
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
                     {
-                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_0");
+                        let send_id: &str = "__send_0";
 
                         // W3C SCXML 6.2.4: "!invalid" is not a target this processor can
                         // address — `Action::target_unsupported`, decided once at build time.

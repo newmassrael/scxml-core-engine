@@ -641,7 +641,7 @@ impl<E: Clone, S: ScheduledSendIdLike> PullScheduler<E, S> {
                 invoke_id: invoke_id.to_string(),
                 token,
             },
-            send_id: S::store(&SceString::new()),
+            send_id: S::store(""),
             ready_at,
         };
         self.push_scheduled(entry);
@@ -1884,7 +1884,7 @@ impl<P: StatePolicy> Engine<P> {
                         // immediate send stamps, restored when the wait ends,
                         // and §scxml-5.10: the name it was sent under.
                         let mut meta = EventWithMetadata::new(event);
-                        meta.metadata = EventMetadata::external(send_id, origin);
+                        meta.metadata = EventMetadata::external(&send_id, &origin);
                         meta.metadata.name = name;
                         meta.set_event_data(&event_data);
                         self.raise_external_with_meta(meta);
@@ -2897,9 +2897,9 @@ impl<P: StatePolicy> Engine<P> {
         &mut self,
         name: &str,
         delay: Option<Duration>,
-        send_id: &SceString,
+        send_id: &str,
         event_data: &str,
-        origin: &SceString,
+        origin: &str,
     ) {
         let Some(event) = P::resolve_event_by_name(name) else {
             return;
@@ -2913,7 +2913,7 @@ impl<P: StatePolicy> Engine<P> {
             }
             None => {
                 let mut meta = EventWithMetadata::new(event);
-                meta.metadata = EventMetadata::external(send_id.clone(), origin.clone());
+                meta.metadata = EventMetadata::external(send_id, origin);
                 meta.metadata.name = crate::sce_string_from_str(arrival);
                 meta.set_event_data(event_data);
                 self.raise_external_with_meta(meta);
@@ -2929,9 +2929,9 @@ impl<P: StatePolicy> Engine<P> {
         &mut self,
         name: &str,
         delay: Option<Duration>,
-        send_id: &SceString,
+        send_id: &str,
         event_data: &str,
-        origin: &SceString,
+        origin: &str,
     ) {
         let Some(event) = P::resolve_event_by_name(name) else {
             return;
@@ -3008,10 +3008,7 @@ impl<P: StatePolicy> Engine<P> {
                         }
                         None => {
                             let mut meta = EventWithMetadata::new(event);
-                            meta.metadata = EventMetadata::external(
-                                crate::sce_string_from_str(send_id),
-                                crate::sce_string_from_str(origin),
-                            );
+                            meta.metadata = EventMetadata::external(send_id, origin);
                             meta.metadata.name = crate::sce_string_from_str(arrival);
                             meta.set_event_data(event_data);
                             engine.raise_external_with_meta(meta);
@@ -3509,7 +3506,7 @@ impl<P: StatePolicy> Engine<P> {
         if let Some(cb) = self.on_http_send.as_mut() {
             let response = cb(request);
             if let Some(resp) = response {
-                let mut metadata = EventMetadata::external(SceString::new(), SceString::new());
+                let mut metadata = EventMetadata::external("", "");
                 metadata.data = resp.event_data;
                 if let Some(meta) = Self::arriving_event(&resp.event_name, metadata) {
                     self.external_queue.raise(meta);
@@ -4436,8 +4433,7 @@ impl<P: StatePolicy> Engine<P> {
             HostInvokeEnd::Done => crate::invoke::create_done_invoke_event_name(invoke_id),
             HostInvokeEnd::Failed => format!("{}{invoke_id}", crate::invoke::ERROR_INVOKE_PREFIX),
         };
-        let mut metadata =
-            EventMetadata::external(SceString::new(), crate::sce_string_from_str(origin));
+        let mut metadata = EventMetadata::external("", origin);
         // An empty `origin_type` keeps the one every host completion has
         // carried, so `complete_host_invoke` reads as it always did.
         if !origin_type.is_empty() {
@@ -4517,7 +4513,7 @@ impl<P: StatePolicy> Engine<P> {
     #[cfg(feature = "std")]
     fn raise_host_invoke_failure(&mut self, invoke_id: &str, reason: &str) {
         let event_name = format!("{}{invoke_id}", crate::invoke::ERROR_INVOKE_PREFIX);
-        let mut metadata = EventMetadata::external(SceString::new(), SceString::new());
+        let mut metadata = EventMetadata::external("", "");
         metadata.data = crate::sce_string_from_str(&format!("\"{reason}\""));
         metadata.invoke_id = crate::sce_string_from_str(invoke_id);
         if let Some(meta) = Self::arriving_event(&event_name, metadata) {
@@ -4576,7 +4572,7 @@ impl<P: StatePolicy> Engine<P> {
             // §scxml-C-1: a reply from outside the machine arrives on the external
             // queue, like any event the host raises; and `_event.name` is the name
             // the host gave it (§scxml-5.10).
-            let mut metadata = EventMetadata::external(SceString::new(), SceString::new());
+            let mut metadata = EventMetadata::external("", "");
             metadata.data = reply.event_data.clone();
             if let Some(meta) = Self::arriving_event(&reply.event_name, metadata) {
                 self.external_queue.raise(meta);

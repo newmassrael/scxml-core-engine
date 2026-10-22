@@ -726,14 +726,15 @@ impl StatePolicy for Test159Policy {
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
                     {
-                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_0");
+                        let send_id: &str = "__send_0";
 
                         // W3C SCXML 6.2.4: "!invalid" is not a target this processor can
                         // address — `Action::target_unsupported`, decided once at build time.
                         {
                             // W3C SCXML 6.2.4/5.10: test 332 — the error event MUST carry the sendid
                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(Test159Event::ErrorExecution, "<send target='!invalid'> is not a target this processor can address");
-                            err_meta.metadata.send_id = send_id.clone();
+                            err_meta.metadata.send_id =
+                                ::sce_rust_runtime::sce_string_from_str(send_id);
                             engine.raise(err_meta);
                         }
                         let _ = send_id; // the refusal may carry no error event to name it

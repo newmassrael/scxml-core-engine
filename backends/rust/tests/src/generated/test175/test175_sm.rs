@@ -760,7 +760,7 @@ impl StatePolicy for Test175Policy {
                     }
 
                     {
-                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_0");
+                        let send_id: &str = "__send_0";
 
                         self.ensure_script_engine();
                         let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
@@ -800,7 +800,8 @@ impl StatePolicy for Test175Policy {
                                 Test175Event::ErrorExecution,
                                 __sce_why,
                             );
-                            err_meta.metadata.send_id = send_id.clone();
+                            err_meta.metadata.send_id =
+                                ::sce_rust_runtime::sce_string_from_str(send_id);
                             engine.raise(err_meta);
                             break 'action_block; // W3C SCXML 4.9: the error ends the block
                         } else {
@@ -814,9 +815,7 @@ impl StatePolicy for Test175Policy {
                                 core::time::Duration::from_millis(_send_delay_ms),
                                 &send_id,
                                 event_data,
-                                &::sce_rust_runtime::sce_string_from_str(
-                                    self.session_id.as_deref().unwrap_or(""),
-                                ),
+                                &self.session_id.as_deref().unwrap_or(""),
                             );
 
                             let _ = event_data; // suppress unused warning in branches that skip dispatch
@@ -825,7 +824,7 @@ impl StatePolicy for Test175Policy {
                     }
 
                     {
-                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_1");
+                        let send_id: &str = "__send_1";
 
                         let event_data: &str = "";
 
@@ -837,9 +836,7 @@ impl StatePolicy for Test175Policy {
                             core::time::Duration::from_millis(500_u64),
                             &send_id,
                             event_data,
-                            &::sce_rust_runtime::sce_string_from_str(
-                                self.session_id.as_deref().unwrap_or(""),
-                            ),
+                            &self.session_id.as_deref().unwrap_or(""),
                         );
 
                         let _ = event_data; // suppress unused warning in branches that skip dispatch

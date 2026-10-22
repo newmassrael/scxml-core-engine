@@ -910,7 +910,7 @@ impl StatePolicy for StatechartHostProcessorPolicy {
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
                     {
-                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_0");
+                        let send_id: &str = "__send_0";
 
                         let event_data: &str = "";
 
@@ -921,10 +921,8 @@ impl StatePolicy for StatechartHostProcessorPolicy {
                             );
                             // W3C SCXML 5.10.1: External send — preserve sendid and SCXML event processor origintype
                             meta.metadata = sce_rust_runtime::EventMetadata::external(
-                                send_id.clone(),
-                                ::sce_rust_runtime::sce_string_from_str(
-                                    self.session_id.as_deref().unwrap_or(""),
-                                ),
+                                send_id,
+                                self.session_id.as_deref().unwrap_or(""),
                             );
                             meta.set_event_data(event_data);
                             engine.raise_external_with_meta(meta);
@@ -935,7 +933,7 @@ impl StatePolicy for StatechartHostProcessorPolicy {
                     }
 
                     {
-                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_1");
+                        let send_id: &str = "__send_1";
 
                         // W3C SCXML 6.2 + B-2-9: every value is a literal, so the payload is
                         // finished here. It has to be: this arm is what a machine with no script
@@ -979,7 +977,8 @@ impl StatePolicy for StatechartHostProcessorPolicy {
                             // event, so a wiring mistake cannot read as success.
                             if __sce_served.is_none() && !engine.has_event_processor("x-sce-host") {
                                 let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(StatechartHostProcessorEvent::ErrorExecution, "<send type='x-sce-host'> names a processor the host declared but never registered");
-                                err_meta.metadata.send_id = send_id.clone();
+                                err_meta.metadata.send_id =
+                                    ::sce_rust_runtime::sce_string_from_str(send_id);
                                 engine.raise(err_meta);
                             }
                         }
@@ -989,7 +988,7 @@ impl StatePolicy for StatechartHostProcessorPolicy {
                     }
 
                     {
-                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_2");
+                        let send_id: &str = "__send_2";
 
                         let event_data: &str = "";
 
@@ -1000,10 +999,8 @@ impl StatePolicy for StatechartHostProcessorPolicy {
                             );
                             // W3C SCXML 5.10.1: External send — preserve sendid and SCXML event processor origintype
                             meta.metadata = sce_rust_runtime::EventMetadata::external(
-                                send_id.clone(),
-                                ::sce_rust_runtime::sce_string_from_str(
-                                    self.session_id.as_deref().unwrap_or(""),
-                                ),
+                                send_id,
+                                self.session_id.as_deref().unwrap_or(""),
                             );
                             meta.set_event_data(event_data);
                             engine.raise_external_with_meta(meta);
@@ -1020,7 +1017,7 @@ impl StatePolicy for StatechartHostProcessorPolicy {
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
                     {
-                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_4");
+                        let send_id: &str = "__send_4";
 
                         self.ensure_script_engine();
                         let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
@@ -1056,7 +1053,8 @@ impl StatePolicy for StatechartHostProcessorPolicy {
                                 StatechartHostProcessorEvent::ErrorExecution,
                                 __sce_why,
                             );
-                            err_meta.metadata.send_id = send_id.clone();
+                            err_meta.metadata.send_id =
+                                ::sce_rust_runtime::sce_string_from_str(send_id);
                             engine.raise(err_meta);
                             break 'action_block; // W3C SCXML 4.9: the error ends the block
                         } else {
@@ -1144,7 +1142,8 @@ impl StatePolicy for StatechartHostProcessorPolicy {
                                     && !engine.has_event_processor("x-sce-host")
                                 {
                                     let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(StatechartHostProcessorEvent::ErrorExecution, "<send type='x-sce-host'> names a processor the host declared but never registered");
-                                    err_meta.metadata.send_id = send_id.clone();
+                                    err_meta.metadata.send_id =
+                                        ::sce_rust_runtime::sce_string_from_str(send_id);
                                     engine.raise(err_meta);
                                 }
                             }
@@ -1488,7 +1487,7 @@ impl StatePolicy for StatechartHostProcessorPolicy {
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
                             {
-                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_3");
+                                let send_id: &str = "__send_3";
 
                                 let event_data: &str = "";
 
@@ -1521,7 +1520,8 @@ impl StatePolicy for StatechartHostProcessorPolicy {
                                         && !engine.has_event_processor("x-sce-host")
                                     {
                                         let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(StatechartHostProcessorEvent::ErrorExecution, "<send type='x-sce-host'> names a processor the host declared but never registered");
-                                        err_meta.metadata.send_id = send_id.clone();
+                                        err_meta.metadata.send_id =
+                                            ::sce_rust_runtime::sce_string_from_str(send_id);
                                         engine.raise(err_meta);
                                     }
                                 }

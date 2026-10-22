@@ -709,7 +709,7 @@ impl StatePolicy for Test352Policy {
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
                     {
-                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_0");
+                        let send_id: &str = "__send_0";
 
                         let event_data: &str = "";
 
@@ -721,9 +721,7 @@ impl StatePolicy for Test352Policy {
                             core::time::Duration::from_millis(5000_u64),
                             &send_id,
                             event_data,
-                            &::sce_rust_runtime::sce_string_from_str(
-                                self.session_id.as_deref().unwrap_or(""),
-                            ),
+                            &self.session_id.as_deref().unwrap_or(""),
                         );
 
                         let _ = event_data; // suppress unused warning in branches that skip dispatch
@@ -731,7 +729,7 @@ impl StatePolicy for Test352Policy {
                     }
 
                     {
-                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_1");
+                        let send_id: &str = "__send_1";
 
                         let event_data: &str = "";
 
@@ -741,10 +739,8 @@ impl StatePolicy for Test352Policy {
                                 sce_rust_runtime::EventWithMetadata::new(Test352Event::S0Event);
                             // W3C SCXML 5.10.1: External send — preserve sendid and SCXML event processor origintype
                             meta.metadata = sce_rust_runtime::EventMetadata::external(
-                                send_id.clone(),
-                                ::sce_rust_runtime::sce_string_from_str(
-                                    self.session_id.as_deref().unwrap_or(""),
-                                ),
+                                send_id,
+                                self.session_id.as_deref().unwrap_or(""),
                             );
                             meta.set_event_data(event_data);
                             engine.raise_external_with_meta(meta);

@@ -989,7 +989,7 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
                     {
-                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_3");
+                        let send_id: &str = "__send_3";
 
                         let event_data: &str = "";
 
@@ -1000,10 +1000,8 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                             );
                             // W3C SCXML 5.10.1: External send — preserve sendid and SCXML event processor origintype
                             meta.metadata = sce_rust_runtime::EventMetadata::external(
-                                send_id.clone(),
-                                ::sce_rust_runtime::sce_string_from_str(
-                                    self.session_id.as_deref().unwrap_or(""),
-                                ),
+                                send_id,
+                                self.session_id.as_deref().unwrap_or(""),
                             );
                             meta.set_event_data(event_data);
                             engine.raise_external_with_meta(meta);
@@ -1020,7 +1018,7 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
                     {
-                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_5");
+                        let send_id: &str = "__send_5";
 
                         let event_data: &str = "";
 
@@ -1031,10 +1029,8 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                             );
                             // W3C SCXML 5.10.1: External send — preserve sendid and SCXML event processor origintype
                             meta.metadata = sce_rust_runtime::EventMetadata::external(
-                                send_id.clone(),
-                                ::sce_rust_runtime::sce_string_from_str(
-                                    self.session_id.as_deref().unwrap_or(""),
-                                ),
+                                send_id,
+                                self.session_id.as_deref().unwrap_or(""),
                             );
                             meta.set_event_data(event_data);
                             engine.raise_external_with_meta(meta);
@@ -1051,7 +1047,7 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
                     {
-                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_1");
+                        let send_id: &str = "__send_1";
 
                         let event_data: &str = "";
 
@@ -1062,10 +1058,8 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                             );
                             // W3C SCXML 5.10.1: External send — preserve sendid and SCXML event processor origintype
                             meta.metadata = sce_rust_runtime::EventMetadata::external(
-                                send_id.clone(),
-                                ::sce_rust_runtime::sce_string_from_str(
-                                    self.session_id.as_deref().unwrap_or(""),
-                                ),
+                                send_id,
+                                self.session_id.as_deref().unwrap_or(""),
                             );
                             meta.set_event_data(event_data);
                             engine.raise_external_with_meta(meta);
@@ -1082,7 +1076,7 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
                     {
-                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_10");
+                        let send_id: &str = "__send_10";
 
                         let event_data: &str = "";
 
@@ -1094,9 +1088,7 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                             core::time::Duration::from_millis(1_u64),
                             &send_id,
                             event_data,
-                            &::sce_rust_runtime::sce_string_from_str(
-                                self.session_id.as_deref().unwrap_or(""),
-                            ),
+                            &self.session_id.as_deref().unwrap_or(""),
                         );
 
                         let _ = event_data; // suppress unused warning in branches that skip dispatch
@@ -1104,7 +1096,7 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                     }
 
                     {
-                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_11");
+                        let send_id: &str = "__send_11";
 
                         let event_data: &str = "";
 
@@ -1116,9 +1108,7 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                             core::time::Duration::from_millis(2_u64),
                             &send_id,
                             event_data,
-                            &::sce_rust_runtime::sce_string_from_str(
-                                self.session_id.as_deref().unwrap_or(""),
-                            ),
+                            &self.session_id.as_deref().unwrap_or(""),
                         );
 
                         let _ = event_data; // suppress unused warning in branches that skip dispatch
@@ -1126,7 +1116,7 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                     }
 
                     {
-                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_12");
+                        let send_id: &str = "__send_12";
 
                         let event_data: &str = "";
 
@@ -1138,9 +1128,7 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                             core::time::Duration::from_millis(3_u64),
                             &send_id,
                             event_data,
-                            &::sce_rust_runtime::sce_string_from_str(
-                                self.session_id.as_deref().unwrap_or(""),
-                            ),
+                            &self.session_id.as_deref().unwrap_or(""),
                         );
 
                         let _ = event_data; // suppress unused warning in branches that skip dispatch
@@ -1148,7 +1136,7 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                     }
 
                     {
-                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_13");
+                        let send_id: &str = "__send_13";
 
                         let event_data: &str = "";
 
@@ -1160,9 +1148,7 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                             core::time::Duration::from_millis(4_u64),
                             &send_id,
                             event_data,
-                            &::sce_rust_runtime::sce_string_from_str(
-                                self.session_id.as_deref().unwrap_or(""),
-                            ),
+                            &self.session_id.as_deref().unwrap_or(""),
                         );
 
                         let _ = event_data; // suppress unused warning in branches that skip dispatch
@@ -1170,7 +1156,7 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                     }
 
                     {
-                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_14");
+                        let send_id: &str = "__send_14";
 
                         let event_data: &str = "";
 
@@ -1182,9 +1168,7 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                             core::time::Duration::from_millis(5_u64),
                             &send_id,
                             event_data,
-                            &::sce_rust_runtime::sce_string_from_str(
-                                self.session_id.as_deref().unwrap_or(""),
-                            ),
+                            &self.session_id.as_deref().unwrap_or(""),
                         );
 
                         let _ = event_data; // suppress unused warning in branches that skip dispatch
@@ -1192,7 +1176,7 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                     }
 
                     {
-                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_15");
+                        let send_id: &str = "__send_15";
 
                         let event_data: &str = "";
 
@@ -1204,9 +1188,7 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                             core::time::Duration::from_millis(6_u64),
                             &send_id,
                             event_data,
-                            &::sce_rust_runtime::sce_string_from_str(
-                                self.session_id.as_deref().unwrap_or(""),
-                            ),
+                            &self.session_id.as_deref().unwrap_or(""),
                         );
 
                         let _ = event_data; // suppress unused warning in branches that skip dispatch
@@ -1214,7 +1196,7 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                     }
 
                     {
-                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_16");
+                        let send_id: &str = "__send_16";
 
                         let event_data: &str = "";
 
@@ -1226,9 +1208,7 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                             core::time::Duration::from_millis(7_u64),
                             &send_id,
                             event_data,
-                            &::sce_rust_runtime::sce_string_from_str(
-                                self.session_id.as_deref().unwrap_or(""),
-                            ),
+                            &self.session_id.as_deref().unwrap_or(""),
                         );
 
                         let _ = event_data; // suppress unused warning in branches that skip dispatch
@@ -1236,7 +1216,7 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                     }
 
                     {
-                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_17");
+                        let send_id: &str = "__send_17";
 
                         let event_data: &str = "";
 
@@ -1248,9 +1228,7 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                             core::time::Duration::from_millis(8_u64),
                             &send_id,
                             event_data,
-                            &::sce_rust_runtime::sce_string_from_str(
-                                self.session_id.as_deref().unwrap_or(""),
-                            ),
+                            &self.session_id.as_deref().unwrap_or(""),
                         );
 
                         let _ = event_data; // suppress unused warning in branches that skip dispatch
@@ -1264,7 +1242,7 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
                     {
-                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_7");
+                        let send_id: &str = "__send_7";
 
                         let event_data: &str = "";
 
@@ -1275,10 +1253,8 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                             );
                             // W3C SCXML 5.10.1: External send — preserve sendid and SCXML event processor origintype
                             meta.metadata = sce_rust_runtime::EventMetadata::external(
-                                send_id.clone(),
-                                ::sce_rust_runtime::sce_string_from_str(
-                                    self.session_id.as_deref().unwrap_or(""),
-                                ),
+                                send_id,
+                                self.session_id.as_deref().unwrap_or(""),
                             );
                             meta.set_event_data(event_data);
                             engine.raise_external_with_meta(meta);
@@ -1295,7 +1271,7 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
                     {
-                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_9");
+                        let send_id: &str = "__send_9";
 
                         self.ensure_script_engine();
                         let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
@@ -1335,7 +1311,8 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                                 ExternalChainIsBoundedEvent::ErrorExecution,
                                 __sce_why,
                             );
-                            err_meta.metadata.send_id = send_id.clone();
+                            err_meta.metadata.send_id =
+                                ::sce_rust_runtime::sce_string_from_str(send_id);
                             engine.raise(err_meta);
                             break 'action_block; // W3C SCXML 4.9: the error ends the block
                         } else {
@@ -1349,9 +1326,7 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                                 core::time::Duration::from_millis(_send_delay_ms),
                                 &send_id,
                                 event_data,
-                                &::sce_rust_runtime::sce_string_from_str(
-                                    self.session_id.as_deref().unwrap_or(""),
-                                ),
+                                &self.session_id.as_deref().unwrap_or(""),
                             );
 
                             let _ = event_data; // suppress unused warning in branches that skip dispatch
@@ -1766,7 +1741,7 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                             }
 
                             {
-                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_2");
+                                let send_id: &str = "__send_2";
 
                                 let event_data: &str = "";
 
@@ -1777,10 +1752,8 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                                     );
                                     // W3C SCXML 5.10.1: External send — preserve sendid and SCXML event processor origintype
                                     meta.metadata = sce_rust_runtime::EventMetadata::external(
-                                        send_id.clone(),
-                                        ::sce_rust_runtime::sce_string_from_str(
-                                            self.session_id.as_deref().unwrap_or(""),
-                                        ),
+                                        send_id,
+                                        self.session_id.as_deref().unwrap_or(""),
                                     );
                                     meta.set_event_data(event_data);
                                     engine.raise_external_with_meta(meta);
@@ -1937,7 +1910,7 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                             }
 
                             {
-                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_4");
+                                let send_id: &str = "__send_4";
 
                                 let event_data: &str = "";
 
@@ -1948,10 +1921,8 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                                     );
                                     // W3C SCXML 5.10.1: External send — preserve sendid and SCXML event processor origintype
                                     meta.metadata = sce_rust_runtime::EventMetadata::external(
-                                        send_id.clone(),
-                                        ::sce_rust_runtime::sce_string_from_str(
-                                            self.session_id.as_deref().unwrap_or(""),
-                                        ),
+                                        send_id,
+                                        self.session_id.as_deref().unwrap_or(""),
                                     );
                                     meta.set_event_data(event_data);
                                     engine.raise_external_with_meta(meta);
@@ -2069,7 +2040,7 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                             }
 
                             {
-                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_0");
+                                let send_id: &str = "__send_0";
 
                                 let event_data: &str = "";
 
@@ -2080,10 +2051,8 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                                     );
                                     // W3C SCXML 5.10.1: External send — preserve sendid and SCXML event processor origintype
                                     meta.metadata = sce_rust_runtime::EventMetadata::external(
-                                        send_id.clone(),
-                                        ::sce_rust_runtime::sce_string_from_str(
-                                            self.session_id.as_deref().unwrap_or(""),
-                                        ),
+                                        send_id,
+                                        self.session_id.as_deref().unwrap_or(""),
                                     );
                                     meta.set_event_data(event_data);
                                     engine.raise_external_with_meta(meta);
@@ -2240,7 +2209,7 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                             }
 
                             {
-                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_6");
+                                let send_id: &str = "__send_6";
 
                                 let event_data: &str = "";
 
@@ -2251,10 +2220,8 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                                     );
                                     // W3C SCXML 5.10.1: External send — preserve sendid and SCXML event processor origintype
                                     meta.metadata = sce_rust_runtime::EventMetadata::external(
-                                        send_id.clone(),
-                                        ::sce_rust_runtime::sce_string_from_str(
-                                            self.session_id.as_deref().unwrap_or(""),
-                                        ),
+                                        send_id,
+                                        self.session_id.as_deref().unwrap_or(""),
                                     );
                                     meta.set_event_data(event_data);
                                     engine.raise_external_with_meta(meta);
@@ -2338,7 +2305,7 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                             }
 
                             {
-                                let send_id = ::sce_rust_runtime::sce_string_from_str("__send_8");
+                                let send_id: &str = "__send_8";
 
                                 self.ensure_script_engine();
                                 let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
@@ -2382,7 +2349,8 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                                             ExternalChainIsBoundedEvent::ErrorExecution,
                                             __sce_why,
                                         );
-                                    err_meta.metadata.send_id = send_id.clone();
+                                    err_meta.metadata.send_id =
+                                        ::sce_rust_runtime::sce_string_from_str(send_id);
                                     engine.raise(err_meta);
                                     break 'action_block; // W3C SCXML 4.9: the error ends the block
                                 } else {
@@ -2396,9 +2364,7 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                                         core::time::Duration::from_millis(_send_delay_ms),
                                         &send_id,
                                         event_data,
-                                        &::sce_rust_runtime::sce_string_from_str(
-                                            self.session_id.as_deref().unwrap_or(""),
-                                        ),
+                                        &self.session_id.as_deref().unwrap_or(""),
                                     );
 
                                     let _ = event_data; // suppress unused warning in branches that skip dispatch
