@@ -53,6 +53,86 @@ pub enum EntryTarget<S, H> {
     History(H),
 }
 
+/// A list of targets the entry walk goes through twice, as Appendix D's
+/// addDescendantStatesToEnter does: every descendant first, then every ancestor.
+///
+/// Named by the state or the `<history>` it belongs to and read from the
+/// [`Document`] at each step, so a step of the walk holds an index and not a
+/// slice.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Listed<S, H> {
+    /// A compound state's initial transition targets.
+    Initial(S),
+    /// The states a `<history>` recorded.
+    Recorded(H),
+    /// The targets of a `<history>`'s default transition.
+    Defaults(H),
+}
+
+/// One step a walk over the document still owes: Appendix D writes the entry set
+/// (addDescendantStatesToEnter, addAncestorStatesToEnter), the effective targets
+/// (getEffectiveTargetStates) and the completion check (isInFinalState) as
+/// recursions, and a bare-metal program cannot say how deep a recursion goes
+/// without assuming it. Each is run here over a stack of these steps instead, in
+/// the order the recursion would have run them, so the stack a call needs is a
+/// number of the document ([`Document::Walk`]) and the machine's worst-case
+/// stack is the sum of its frames, with nothing stated beyond them.
+///
+/// A step that has more to do after the step it spawns puts itself back first,
+/// with its next index, so a stack holds one step for each level the recursion
+/// would have been at, and never a list of siblings.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WalkStep<S, H> {
+    /// addDescendantStatesToEnter(target).
+    Descendants(EntryTarget<S, H>),
+    /// addAncestorStatesToEnter(target, stop): the ancestors of `target` below
+    /// `stop` (`None`: up to the `<scxml>` element).
+    Ancestors(EntryTarget<S, H>, Option<S>),
+    /// What is left of an addAncestorStatesToEnter loop: `from` is the next
+    /// ancestor to enter.
+    AncestorsFrom {
+        /// The next ancestor to enter.
+        from: S,
+        /// The state the loop ends below.
+        stop: Option<S>,
+    },
+    /// The regions of a `<parallel>` from child `index` on, each entered by
+    /// default unless the entry set already goes into it.
+    Regions {
+        /// The `<parallel>`.
+        parallel: S,
+        /// The next child to look at.
+        index: u16,
+    },
+    /// A list of targets, in the pass `ancestors` names, from `index` on.
+    Listed {
+        /// Whose list it is.
+        source: Listed<S, H>,
+        /// The next target of the list.
+        index: u16,
+        /// Whether this is the ancestors pass (the descendants pass otherwise).
+        ancestors: bool,
+    },
+    /// One target of getEffectiveTargetStates.
+    EffectiveTarget(EntryTarget<S, H>),
+    /// What is left of the default transition targets of a `<history>` that
+    /// recorded nothing, from `index` on.
+    EffectiveDefaults {
+        /// The `<history>`.
+        history: H,
+        /// The next target of its default transition.
+        index: u16,
+    },
+    /// What is left of isInFinalState for a `<parallel>`: its children from
+    /// `index` on must each be in a final state.
+    Final {
+        /// The `<parallel>`.
+        parallel: S,
+        /// The next child to look at.
+        index: u16,
+    },
+}
+
 /// The history type of a document that declares no `<history>`.
 ///
 /// Uninhabited, so no target list can name one and every procedure that would
@@ -217,6 +297,14 @@ pub trait Document {
     /// with nothing recorded, one pair for each parent: at most the number of
     /// states that have a `<history>`.
     type HistoryDefaults: Bounded<(Self::State, Self::History)>;
+
+    /// The stack the walks of this module run over instead of recursing
+    /// ([`WalkStep`]). Its capacity is what the document's tree needs: three
+    /// steps for each level of the tree, one for each `<history>`, and three more
+    /// for the steps one step puts down at once, which is
+    /// `3 * MAX_DEPTH + histories + 3` (`sce_build::microstep_bounds`). A
+    /// document without a `<history>` and one level deep needs six.
+    type Walk: Bounded<WalkStep<Self::State, Self::History>>;
 
     /// How many levels the deepest state sits at, counting itself — the number of
     /// steps that always reach the `<scxml>` element from any state. A walk up the
@@ -419,37 +507,59 @@ pub fn effective_target_states<D: Document>(
     doc: &D,
     targets: &[EntryTarget<D::State, D::History>],
 ) -> D::Configuration {
-    let mut effective = D::Configuration::default();
-    add_effective_target_states(doc, targets, &mut effective);
-    effective
+    let mut stack = D::Walk::default();
+    effective_target_states_on(doc, targets, &mut stack)
 }
 
-fn add_effective_target_states<D: Document>(
+/// [`effective_target_states`] over a stack the caller lends, so a caller that
+/// already holds one does not put a second on the call stack.
+fn effective_target_states_on<D: Document>(
     doc: &D,
     targets: &[EntryTarget<D::State, D::History>],
-    effective: &mut D::Configuration,
-) {
+    stack: &mut D::Walk,
+) -> D::Configuration {
+    let mut effective = D::Configuration::default();
     for &target in targets {
-        match target {
-            EntryTarget::State(state) => add_once(effective, state),
-            // §scxml-D-getEffectiveTargetStates: a history stands for the
-            // configuration it recorded, and before its parent was ever exited
-            // for the targets of its default transition — which may name
-            // histories themselves, hence the recursion.
-            EntryTarget::History(history) => match doc.history_value(history) {
-                Some(recorded) if !recorded.is_empty() => {
-                    for &state in recorded {
-                        add_once(effective, state);
+        stack.push_bounded(WalkStep::EffectiveTarget(target));
+        while let Some(&step) = stack.last() {
+            stack.truncate(stack.len() - 1);
+            match step {
+                WalkStep::EffectiveTarget(EntryTarget::State(state)) => {
+                    add_once(&mut effective, state);
+                }
+                // §scxml-D-getEffectiveTargetStates: a history stands for the
+                // configuration it recorded, and before its parent was ever
+                // exited for the targets of its default transition — which may
+                // name histories themselves, so those are walked in turn.
+                WalkStep::EffectiveTarget(EntryTarget::History(history)) => {
+                    match doc.history_value(history) {
+                        Some(recorded) if !recorded.is_empty() => {
+                            for &state in recorded {
+                                add_once(&mut effective, state);
+                            }
+                        }
+                        _ => stack.push_bounded(WalkStep::EffectiveDefaults { history, index: 0 }),
                     }
                 }
-                _ => add_effective_target_states(
-                    doc,
-                    doc.history_default_targets(history),
-                    effective,
-                ),
-            },
+                WalkStep::EffectiveDefaults { history, index } => {
+                    if let Some(&next) =
+                        doc.history_default_targets(history).get(usize::from(index))
+                    {
+                        stack.push_bounded(WalkStep::EffectiveDefaults {
+                            history,
+                            index: index + 1,
+                        });
+                        stack.push_bounded(WalkStep::EffectiveTarget(next));
+                    }
+                }
+                // The walk puts down steps of its own kind only. No message: a
+                // formatted one would bring the formatting machinery into every
+                // bare-metal image for a branch nothing reaches.
+                _ => unreachable!(),
+            }
         }
     }
+    effective
 }
 
 /// Appendix D's getTransitionDomain, for a transition that has targets.
@@ -602,12 +712,27 @@ pub fn microstep<R: Run>(
     // it is reached, and never gathered into a list of those: that list was a
     // buffer of the enabled bound on the stack of the deepest call chain, the
     // stack the entered states' own `<onentry>` code then ran on top of.
+    let entry = entry_set_of_enabled(run, transitions);
+    enter_entry_set(run, &entry);
+    entry
+}
+
+/// The entry set of the transitions a selection enabled, in entry order.
+///
+/// Apart from [`microstep`] so that the walks' stack is gone before the entered
+/// states' own `<onentry>` code runs: that code is on the stack of the deepest
+/// call chain, and a frame that held the walks' buffer would be under it.
+#[inline(never)]
+fn entry_set_of_enabled<R: Run>(
+    run: &R,
+    transitions: &[EnabledTransition<R::State, R::History>],
+) -> EntrySetOf<R> {
     let mut entry = EntrySet::new();
+    let mut stack = R::Walk::default();
     for transition in transitions {
-        add_transition_to_entry_set(run, &transition.entry_transition(), &mut entry);
+        add_transition_to_entry_set(run, &transition.entry_transition(), &mut stack, &mut entry);
     }
     sort_in_entry_order(run, &mut entry);
-    enter_entry_set(run, &entry);
     entry
 }
 
@@ -702,8 +827,11 @@ pub fn compute_entry_set<D: Document>(
     transitions: &[EntryTransition<D::State, D::History>],
 ) -> EntrySetOf<D> {
     let mut entry = EntrySet::new();
+    // One stack for the whole entry set: the walks run one after another, so
+    // one stack of the document's size serves them all.
+    let mut stack = D::Walk::default();
     for transition in transitions {
-        add_transition_to_entry_set(doc, transition, &mut entry);
+        add_transition_to_entry_set(doc, transition, &mut stack, &mut entry);
     }
     sort_in_entry_order(doc, &mut entry);
     entry
@@ -714,6 +842,7 @@ pub fn compute_entry_set<D: Document>(
 fn add_transition_to_entry_set<D: Document>(
     doc: &D,
     transition: &EntryTransition<D::State, D::History>,
+    stack: &mut D::Walk,
     entry: &mut EntrySetOf<D>,
 ) {
     // §scxml-D-computeEntrySet: first every target with its default
@@ -723,15 +852,20 @@ fn add_transition_to_entry_set<D: Document>(
     // descends into must be seen as taken before the ancestor walk fills
     // the rest with defaults.
     for &target in transition.targets {
-        add_descendant_states_to_enter(doc, target, entry);
+        walk_entry(doc, WalkStep::Descendants(target), stack, entry);
     }
-    let effective = effective_target_states(doc, transition.targets);
+    let effective = effective_target_states_on(doc, transition.targets, stack);
     if effective.is_empty() {
         return;
     }
     let domain = transition_domain(doc, transition.source, &effective, transition.is_internal);
     for &state in effective.iter() {
-        add_ancestor_states_to_enter(doc, EntryTarget::State(state), domain, entry);
+        walk_entry(
+            doc,
+            WalkStep::Ancestors(EntryTarget::State(state), domain),
+            stack,
+            entry,
+        );
     }
 }
 
@@ -754,72 +888,8 @@ pub fn add_descendant_states_to_enter<D: Document>(
     target: EntryTarget<D::State, D::History>,
     entry: &mut EntrySetOf<D>,
 ) {
-    let state = match target {
-        EntryTarget::State(state) => state,
-        EntryTarget::History(history) => {
-            let parent = doc.history_parent(history);
-            // §scxml-3.10: a transition to a history behaves as a transition to
-            // the configuration it stored, or — before its parent was ever
-            // visited — to its default stored configuration.
-            match doc.history_value(history) {
-                Some(recorded) if !recorded.is_empty() => {
-                    // §scxml-D-addDescendantStatesToEnter: a history that has
-                    // recorded a configuration enters it, and the ancestors
-                    // between it and the history's parent — a deep history
-                    // records atomic states, which need not be children.
-                    for &state in recorded {
-                        add_descendant_states_to_enter(doc, EntryTarget::State(state), entry);
-                    }
-                    for &state in recorded {
-                        add_ancestor_states_to_enter(
-                            doc,
-                            EntryTarget::State(state),
-                            Some(parent),
-                            entry,
-                        );
-                    }
-                }
-                _ => {
-                    // §scxml-D-addDescendantStatesToEnter: nothing recorded
-                    // yet, so the default transition is taken, and its content
-                    // is owed once the parent has been entered — keyed by the
-                    // parent, a later history of the same parent replacing it.
-                    set_default_history_content(
-                        &mut entry.default_history_content,
-                        parent,
-                        history,
-                    );
-                    let defaults = doc.history_default_targets(history);
-                    for &default in defaults {
-                        add_descendant_states_to_enter(doc, default, entry);
-                    }
-                    for &default in defaults {
-                        add_ancestor_states_to_enter(doc, default, Some(parent), entry);
-                    }
-                }
-            }
-            return;
-        }
-    };
-
-    add_once(&mut entry.states_to_enter, state);
-    if doc.is_compound(state) {
-        // §scxml-D-addDescendantStatesToEnter: a compound state entered as a
-        // target is entered by DEFAULT — the one condition under which its
-        // initial transition's content runs. Its initial transition names the
-        // child or children it enters (§scxml-3.3), possibly several and
-        // possibly deep (§scxml-3.6).
-        add_once(&mut entry.states_for_default_entry, state);
-        let initial = doc.initial_targets(state);
-        for &child in initial {
-            add_descendant_states_to_enter(doc, child, entry);
-        }
-        for &child in initial {
-            add_ancestor_states_to_enter(doc, child, Some(state), entry);
-        }
-    } else if doc.is_parallel(state) {
-        add_region_defaults(doc, state, entry);
-    }
+    let mut stack = D::Walk::default();
+    walk_entry(doc, WalkStep::Descendants(target), &mut stack, entry);
 }
 
 /// Appendix D's addAncestorStatesToEnter.
@@ -833,69 +903,231 @@ pub fn add_ancestor_states_to_enter<D: Document>(
     ancestor: Option<D::State>,
     entry: &mut EntrySetOf<D>,
 ) {
-    for &anc in proper_ancestors(doc, target, ancestor).iter() {
-        // §scxml-D-addAncestorStatesToEnter: an ancestor is entered WITHOUT its
-        // default initial state — the set already holds the descendant it leads
-        // to. A `<parallel>` still gives its other regions their defaults,
-        // because all of them are entered.
-        add_once(&mut entry.states_to_enter, anc);
-        if doc.is_parallel(anc) {
-            add_region_defaults(doc, anc, entry);
-        }
-    }
-}
-
-/// Appendix D's getProperAncestors: the ancestors of `target` in ancestry
-/// order up to, not including, `ancestor` — and nothing at all when `ancestor`
-/// is not above it.
-///
-/// A `<history>` sits in its parent, so the parent is its first proper
-/// ancestor. `ancestor` `None` is the `<scxml>` element, which is above every
-/// state and is never entered, so it is not in the list.
-fn proper_ancestors<D: Document>(
-    doc: &D,
-    target: EntryTarget<D::State, D::History>,
-    ancestor: Option<D::State>,
-) -> D::Configuration {
-    let mut chain = D::Configuration::default();
-    let mut current = match target {
-        EntryTarget::State(state) => doc.parent_of(state),
-        EntryTarget::History(history) => Some(doc.history_parent(history)),
-    };
-    for _ in 0..D::MAX_DEPTH {
-        let Some(state) = current else {
-            // §scxml-D-getProperAncestors: `ancestor` is the state's parent,
-            // the state itself, or one of its descendants — none of which the
-            // walk can meet — so the answer is the empty set.
-            if ancestor.is_some() {
-                chain.clear();
-            }
-            return chain;
-        };
-        if ancestor == Some(state) {
-            return chain;
-        }
-        chain.push_bounded(state);
-        current = doc.parent_of(state);
-    }
-    panic!(
-        "proper_ancestors: cyclic parent relationship detected walking from {:?}",
-        target
+    let mut stack = D::Walk::default();
+    walk_entry(
+        doc,
+        WalkStep::Ancestors(target, ancestor),
+        &mut stack,
+        entry,
     );
 }
 
-fn add_region_defaults<D: Document>(doc: &D, parallel: D::State, entry: &mut EntrySetOf<D>) {
-    // §scxml-3.4: every child of an active `<parallel>` is active, so a region
-    // nothing on the set descends into is entered by default.
-    for &child in doc.child_states(parallel) {
-        let taken = entry
-            .states_to_enter
-            .iter()
-            .any(|&state| is_descendant(doc, state, child));
-        if !taken {
-            add_descendant_states_to_enter(doc, EntryTarget::State(child), entry);
+/// Runs the entry-set procedures from `first` to the end over `stack`, which is
+/// empty on entry and on return.
+///
+/// Appendix D writes addDescendantStatesToEnter, addAncestorStatesToEnter and the
+/// region defaults they share as one recursion. Each step here is what one call
+/// of it does before and between the calls it makes, and each call it would make
+/// is a step put on the stack above the step that resumes after it, so the steps
+/// run in exactly the order the calls would have: that order is not incidental,
+/// since the regions of a `<parallel>` are judged against what the entry set
+/// holds when each is reached.
+fn walk_entry<D: Document>(
+    doc: &D,
+    first: WalkStep<D::State, D::History>,
+    stack: &mut D::Walk,
+    entry: &mut EntrySetOf<D>,
+) {
+    stack.push_bounded(first);
+    while let Some(&step) = stack.last() {
+        stack.truncate(stack.len() - 1);
+        match step {
+            WalkStep::Descendants(EntryTarget::State(state)) => {
+                add_once(&mut entry.states_to_enter, state);
+                if doc.is_compound(state) {
+                    // §scxml-D-addDescendantStatesToEnter: a compound state
+                    // entered as a target is entered by DEFAULT — the one
+                    // condition under which its initial transition's content
+                    // runs. Its initial transition names the child or children
+                    // it enters (§scxml-3.3), possibly several and possibly deep
+                    // (§scxml-3.6).
+                    add_once(&mut entry.states_for_default_entry, state);
+                    stack.push_bounded(WalkStep::Listed {
+                        source: Listed::Initial(state),
+                        index: 0,
+                        ancestors: false,
+                    });
+                } else if doc.is_parallel(state) {
+                    stack.push_bounded(WalkStep::Regions {
+                        parallel: state,
+                        index: 0,
+                    });
+                }
+            }
+            WalkStep::Descendants(EntryTarget::History(history)) => {
+                // §scxml-3.10: a transition to a history behaves as a transition
+                // to the configuration it stored, or — before its parent was ever
+                // visited — to its default stored configuration.
+                let source = match doc.history_value(history) {
+                    // §scxml-D-addDescendantStatesToEnter: a history that has
+                    // recorded a configuration enters it, and the ancestors
+                    // between it and the history's parent — a deep history
+                    // records atomic states, which need not be children.
+                    Some(recorded) if !recorded.is_empty() => Listed::Recorded(history),
+                    _ => {
+                        // §scxml-D-addDescendantStatesToEnter: nothing recorded
+                        // yet, so the default transition is taken, and its
+                        // content is owed once the parent has been entered —
+                        // keyed by the parent, a later history of the same
+                        // parent replacing it.
+                        set_default_history_content(
+                            &mut entry.default_history_content,
+                            doc.history_parent(history),
+                            history,
+                        );
+                        Listed::Defaults(history)
+                    }
+                };
+                stack.push_bounded(WalkStep::Listed {
+                    source,
+                    index: 0,
+                    ancestors: false,
+                });
+            }
+            WalkStep::Listed {
+                source,
+                index,
+                ancestors,
+            } => {
+                if let Some(target) = listed_target(doc, source, index) {
+                    // The rest of the list resumes once this target is done.
+                    stack.push_bounded(WalkStep::Listed {
+                        source,
+                        index: index + 1,
+                        ancestors,
+                    });
+                    stack.push_bounded(if ancestors {
+                        WalkStep::Ancestors(target, listed_stop(doc, source))
+                    } else {
+                        WalkStep::Descendants(target)
+                    });
+                } else if !ancestors {
+                    // Every descendant is in; now the ancestors of each.
+                    stack.push_bounded(WalkStep::Listed {
+                        source,
+                        index: 0,
+                        ancestors: true,
+                    });
+                }
+            }
+            WalkStep::Ancestors(target, stop) => {
+                if let Some(first) = first_proper_ancestor(doc, target, stop) {
+                    stack.push_bounded(WalkStep::AncestorsFrom { from: first, stop });
+                }
+            }
+            WalkStep::AncestorsFrom { from, stop } => {
+                // §scxml-D-addAncestorStatesToEnter: an ancestor is entered
+                // WITHOUT its default initial state — the set already holds the
+                // descendant it leads to. A `<parallel>` still gives its other
+                // regions their defaults, because all of them are entered.
+                add_once(&mut entry.states_to_enter, from);
+                if let Some(next) = doc.parent_of(from).filter(|&next| Some(next) != stop) {
+                    stack.push_bounded(WalkStep::AncestorsFrom { from: next, stop });
+                }
+                if doc.is_parallel(from) {
+                    // Above the step that resumes the walk up, so the regions
+                    // are done before the next ancestor is entered.
+                    stack.push_bounded(WalkStep::Regions {
+                        parallel: from,
+                        index: 0,
+                    });
+                }
+            }
+            WalkStep::Regions { parallel, index } => {
+                // §scxml-3.4: every child of an active `<parallel>` is active, so
+                // a region nothing on the set descends into is entered by
+                // default.
+                let children = doc.child_states(parallel);
+                let mut next = usize::from(index);
+                while let Some(&child) = children.get(next) {
+                    next += 1;
+                    let taken = entry
+                        .states_to_enter
+                        .iter()
+                        .any(|&state| is_descendant(doc, state, child));
+                    if !taken {
+                        if next < children.len() {
+                            stack.push_bounded(WalkStep::Regions {
+                                parallel,
+                                index: next as u16,
+                            });
+                        }
+                        stack.push_bounded(WalkStep::Descendants(EntryTarget::State(child)));
+                        break;
+                    }
+                }
+            }
+            // The walk puts down steps of its own kind only; see
+            // `effective_target_states_on` for why there is no message.
+            _ => unreachable!(),
         }
     }
+}
+
+/// The `index`th target of `source`'s list, or `None` once the list has ended.
+fn listed_target<D: Document>(
+    doc: &D,
+    source: Listed<D::State, D::History>,
+    index: u16,
+) -> Option<EntryTarget<D::State, D::History>> {
+    let index = usize::from(index);
+    match source {
+        Listed::Initial(state) => doc.initial_targets(state).get(index).copied(),
+        Listed::Recorded(history) => doc
+            .history_value(history)
+            .and_then(|recorded| recorded.get(index))
+            .map(|&state| EntryTarget::State(state)),
+        Listed::Defaults(history) => doc.history_default_targets(history).get(index).copied(),
+    }
+}
+
+/// The state the ancestors of `source`'s targets are entered up to, not
+/// including it: the compound state itself for its initial targets, the
+/// `<history>`'s parent for a history's.
+fn listed_stop<D: Document>(doc: &D, source: Listed<D::State, D::History>) -> Option<D::State> {
+    match source {
+        Listed::Initial(state) => Some(state),
+        Listed::Recorded(history) | Listed::Defaults(history) => Some(doc.history_parent(history)),
+    }
+}
+
+/// Appendix D's getProperAncestors, as far as the walk up needs it: the first of
+/// the ancestors of `target` in ancestry order up to, not including, `stop` —
+/// which is none at all when `stop` is not above `target`.
+///
+/// A `<history>` sits in its parent, so the parent is its first proper
+/// ancestor. `stop` `None` is the `<scxml>` element, which is above every
+/// state and is never entered, so it is not in the list. The rest of the list
+/// is each one's parent in turn, which [`WalkStep::AncestorsFrom`] reads off the
+/// document as it goes: this walk is what says the list is not empty, and that
+/// `stop` is on the way up.
+fn first_proper_ancestor<D: Document>(
+    doc: &D,
+    target: EntryTarget<D::State, D::History>,
+    stop: Option<D::State>,
+) -> Option<D::State> {
+    let first = match target {
+        EntryTarget::State(state) => doc.parent_of(state),
+        EntryTarget::History(history) => Some(doc.history_parent(history)),
+    }?;
+    let mut current = Some(first);
+    for _ in 0..D::MAX_DEPTH {
+        let Some(state) = current else {
+            // §scxml-D-getProperAncestors: `stop` is the state's parent, the
+            // state itself, or one of its descendants — none of which the walk
+            // can meet — so the answer is the empty set.
+            return if stop.is_none() { Some(first) } else { None };
+        };
+        if stop == Some(state) {
+            // The first ancestor is `stop` itself: nothing lies between.
+            return if state == first { None } else { Some(first) };
+        }
+        current = doc.parent_of(state);
+    }
+    panic!(
+        "first_proper_ancestor: cyclic parent relationship detected walking from {:?}",
+        target
+    );
 }
 
 fn set_default_history_content<S: PartialEq, H, X: Bounded<(S, H)>>(
@@ -952,24 +1184,63 @@ pub fn recorded_history<D: Document>(
 
 /// Appendix D's isInFinalState: a compound state is in a final state when one
 /// of its `<final>` children is active; a `<parallel>` when EVERY one of its
-/// child states is — asked recursively, so a region that is itself a
+/// child states is — asked of each region in turn, so a region that is itself a
 /// `<parallel>` counts only once all of ITS regions do. Nothing else ever is.
 pub fn is_in_final_state<D: Document>(
     doc: &D,
     state: D::State,
     configuration: &[D::State],
 ) -> bool {
+    // The question is asked of a compound state directly. A `<parallel>` is in a
+    // final state when every region is, so the regions that are themselves
+    // `<parallel>`s are walked in turn, over a stack and not a call: the answer
+    // is `false` as soon as one region is not.
     if doc.is_compound(state) {
-        doc.child_states(state)
-            .iter()
-            .any(|&child| doc.is_final(child) && configuration.contains(&child))
-    } else if doc.is_parallel(state) {
-        doc.child_states(state)
-            .iter()
-            .all(|&child| is_in_final_state(doc, child, configuration))
-    } else {
-        false
+        return in_final_child(doc, state, configuration);
     }
+    if !doc.is_parallel(state) {
+        return false;
+    }
+    let mut stack = D::Walk::default();
+    stack.push_bounded(WalkStep::Final {
+        parallel: state,
+        index: 0,
+    });
+    while let Some(&step) = stack.last() {
+        stack.truncate(stack.len() - 1);
+        let WalkStep::Final { parallel, index } = step else {
+            // The walk puts down steps of its own kind only; see
+            // `effective_target_states_on` for why there is no message.
+            unreachable!()
+        };
+        let Some(&region) = doc.child_states(parallel).get(usize::from(index)) else {
+            continue;
+        };
+        stack.push_bounded(WalkStep::Final {
+            parallel,
+            index: index + 1,
+        });
+        if doc.is_compound(region) {
+            if !in_final_child(doc, region, configuration) {
+                return false;
+            }
+        } else if doc.is_parallel(region) {
+            stack.push_bounded(WalkStep::Final {
+                parallel: region,
+                index: 0,
+            });
+        } else {
+            return false;
+        }
+    }
+    true
+}
+
+/// Whether one of the `<final>` children of the compound state `state` is active.
+fn in_final_child<D: Document>(doc: &D, state: D::State, configuration: &[D::State]) -> bool {
+    doc.child_states(state)
+        .iter()
+        .any(|&child| doc.is_final(child) && configuration.contains(&child))
 }
 
 /// Appendix D's isDescendant: whether `state` lies strictly below `ancestor`.

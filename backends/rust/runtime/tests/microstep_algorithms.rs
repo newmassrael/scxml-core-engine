@@ -42,7 +42,7 @@ use sce_rust_runtime::helpers::hierarchy::BoundedVec;
 use sce_rust_runtime::helpers::microstep::{
     compute_entry_set, compute_exit_set, compute_states_to_exit, effective_target_states,
     is_descendant, is_in_final_state, microstep, select_transitions, transition_domain, Document,
-    EnabledTransition, EntryTarget, EntryTransition, Run,
+    EnabledTransition, EntryTarget, EntryTransition, Run, WalkStep,
 };
 
 // Declared in document order, so a discriminant IS the document position.
@@ -175,6 +175,9 @@ impl Document for Chart {
     type Configuration = BoundedVec<St, 8>;
     type EnabledSet = BoundedVec<EnabledTransition<St, H>, 3>;
     type HistoryDefaults = BoundedVec<(St, H), 2>;
+    // The walks' stack: three steps for each of the five levels, one for each of
+    // the two histories, and three of headroom.
+    type Walk = BoundedVec<WalkStep<St, H>, 20>;
     const MAX_DEPTH: usize = 5;
 
     fn parent_of(&self, state: St) -> Option<St> {
@@ -910,6 +913,8 @@ impl Document for Completion {
     type Configuration = BoundedVec<C, 8>;
     type EnabledSet = BoundedVec<EnabledTransition<C, Self::History>, 3>;
     type HistoryDefaults = BoundedVec<(C, Self::History), 0>;
+    // Three steps for each of the four levels, and three of headroom.
+    type Walk = BoundedVec<WalkStep<C, Self::History>, 15>;
     const MAX_DEPTH: usize = 4;
 
     fn parent_of(&self, state: C) -> Option<C> {
@@ -1077,5 +1082,635 @@ fn neither_an_atomic_state_nor_a_final_element_is_in_a_final_state() {
     assert!(
         !is_in_final_state(&doc, C::FormDone, &configuration),
         "being a <final> element is not being IN a final state — the predicate asks about children"
+    );
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// The stack walks, held to the recursion they replace
+// ════════════════════════════════════════════════════════════════════════
+//
+// Appendix D writes the entry set, the effective targets and the completion check
+// as recursions, and the runtime runs them over a stack of steps so that its
+// worst-case stack assumes no depth. The two must answer alike for EVERY
+// document, not only the ones written out above, and what the recursion answers
+// depends on the ORDER it visits things in: a `<parallel>` region is judged
+// against what the entry set holds when it is reached, and a later `<history>` of
+// a parent replaces an earlier one's default content. So the reference below is
+// the recursion itself, as the transcription first wrote it, and random documents
+// ask both. The same documents show the stack never needs more steps than the
+// capacity the generator gives it (`sce_build::microstep_bounds`).
+
+use sce_rust_runtime::helpers::hierarchy::Bounded;
+use sce_rust_runtime::BoundedPush;
+
+/// Appendix D's recursions, as the transcription first wrote them.
+mod recursion {
+    use std::fmt::Debug;
+
+    use sce_rust_runtime::helpers::hierarchy::Bounded;
+    use sce_rust_runtime::helpers::microstep::{
+        is_descendant, transition_domain, Document, EntrySet, EntrySetOf, EntryTarget,
+        EntryTransition,
+    };
+    use sce_rust_runtime::BoundedPush;
+
+    fn add_once<S: Copy + PartialEq + Debug, B: Bounded<S>>(set: &mut B, state: S) {
+        if !set.contains(&state) {
+            set.push_bounded(state);
+        }
+    }
+
+    pub fn effective_target_states<D: Document>(
+        doc: &D,
+        targets: &[EntryTarget<D::State, D::History>],
+    ) -> D::Configuration {
+        let mut effective = D::Configuration::default();
+        add_effective_target_states(doc, targets, &mut effective);
+        effective
+    }
+
+    fn add_effective_target_states<D: Document>(
+        doc: &D,
+        targets: &[EntryTarget<D::State, D::History>],
+        effective: &mut D::Configuration,
+    ) {
+        for &target in targets {
+            match target {
+                EntryTarget::State(state) => add_once(effective, state),
+                EntryTarget::History(history) => match doc.history_value(history) {
+                    Some(recorded) if !recorded.is_empty() => {
+                        for &state in recorded {
+                            add_once(effective, state);
+                        }
+                    }
+                    _ => add_effective_target_states(
+                        doc,
+                        doc.history_default_targets(history),
+                        effective,
+                    ),
+                },
+            }
+        }
+    }
+
+    pub fn compute_entry_set<D: Document>(
+        doc: &D,
+        transitions: &[EntryTransition<D::State, D::History>],
+    ) -> EntrySetOf<D> {
+        let mut entry = EntrySet {
+            states_to_enter: D::Configuration::default(),
+            states_for_default_entry: D::Configuration::default(),
+            default_history_content: D::HistoryDefaults::default(),
+        };
+        for transition in transitions {
+            for &target in transition.targets {
+                add_descendant_states_to_enter(doc, target, &mut entry);
+            }
+            let effective = effective_target_states(doc, transition.targets);
+            if effective.is_empty() {
+                continue;
+            }
+            let domain =
+                transition_domain(doc, transition.source, &effective, transition.is_internal);
+            for &state in effective.iter() {
+                add_ancestor_states_to_enter(doc, EntryTarget::State(state), domain, &mut entry);
+            }
+        }
+        entry
+            .states_to_enter
+            .sort_by_key(|&state| doc.document_order(state));
+        entry
+    }
+
+    fn add_descendant_states_to_enter<D: Document>(
+        doc: &D,
+        target: EntryTarget<D::State, D::History>,
+        entry: &mut EntrySetOf<D>,
+    ) {
+        let state = match target {
+            EntryTarget::State(state) => state,
+            EntryTarget::History(history) => {
+                let parent = doc.history_parent(history);
+                match doc.history_value(history) {
+                    Some(recorded) if !recorded.is_empty() => {
+                        for &state in recorded {
+                            add_descendant_states_to_enter(doc, EntryTarget::State(state), entry);
+                        }
+                        for &state in recorded {
+                            add_ancestor_states_to_enter(
+                                doc,
+                                EntryTarget::State(state),
+                                Some(parent),
+                                entry,
+                            );
+                        }
+                    }
+                    _ => {
+                        match entry
+                            .default_history_content
+                            .iter_mut()
+                            .find(|slot| slot.0 == parent)
+                        {
+                            Some(slot) => slot.1 = history,
+                            None => entry
+                                .default_history_content
+                                .push_bounded((parent, history)),
+                        }
+                        let defaults = doc.history_default_targets(history);
+                        for &default in defaults {
+                            add_descendant_states_to_enter(doc, default, entry);
+                        }
+                        for &default in defaults {
+                            add_ancestor_states_to_enter(doc, default, Some(parent), entry);
+                        }
+                    }
+                }
+                return;
+            }
+        };
+
+        add_once(&mut entry.states_to_enter, state);
+        if doc.is_compound(state) {
+            add_once(&mut entry.states_for_default_entry, state);
+            let initial = doc.initial_targets(state);
+            for &child in initial {
+                add_descendant_states_to_enter(doc, child, entry);
+            }
+            for &child in initial {
+                add_ancestor_states_to_enter(doc, child, Some(state), entry);
+            }
+        } else if doc.is_parallel(state) {
+            add_region_defaults(doc, state, entry);
+        }
+    }
+
+    fn add_ancestor_states_to_enter<D: Document>(
+        doc: &D,
+        target: EntryTarget<D::State, D::History>,
+        ancestor: Option<D::State>,
+        entry: &mut EntrySetOf<D>,
+    ) {
+        for &anc in proper_ancestors(doc, target, ancestor).iter() {
+            add_once(&mut entry.states_to_enter, anc);
+            if doc.is_parallel(anc) {
+                add_region_defaults(doc, anc, entry);
+            }
+        }
+    }
+
+    fn proper_ancestors<D: Document>(
+        doc: &D,
+        target: EntryTarget<D::State, D::History>,
+        ancestor: Option<D::State>,
+    ) -> D::Configuration {
+        let mut chain = D::Configuration::default();
+        let mut current = match target {
+            EntryTarget::State(state) => doc.parent_of(state),
+            EntryTarget::History(history) => Some(doc.history_parent(history)),
+        };
+        for _ in 0..D::MAX_DEPTH {
+            let Some(state) = current else {
+                if ancestor.is_some() {
+                    chain.clear();
+                }
+                return chain;
+            };
+            if ancestor == Some(state) {
+                return chain;
+            }
+            chain.push_bounded(state);
+            current = doc.parent_of(state);
+        }
+        panic!("cyclic parent relationship walking from {target:?}");
+    }
+
+    fn add_region_defaults<D: Document>(doc: &D, parallel: D::State, entry: &mut EntrySetOf<D>) {
+        for &child in doc.child_states(parallel) {
+            let taken = entry
+                .states_to_enter
+                .iter()
+                .any(|&state| is_descendant(doc, state, child));
+            if !taken {
+                add_descendant_states_to_enter(doc, EntryTarget::State(child), entry);
+            }
+        }
+    }
+
+    pub fn is_in_final_state<D: Document>(
+        doc: &D,
+        state: D::State,
+        configuration: &[D::State],
+    ) -> bool {
+        if doc.is_compound(state) {
+            doc.child_states(state)
+                .iter()
+                .any(|&child| doc.is_final(child) && configuration.contains(&child))
+        } else if doc.is_parallel(state) {
+            doc.child_states(state)
+                .iter()
+                .all(|&child| is_in_final_state(doc, child, configuration))
+        } else {
+            false
+        }
+    }
+}
+
+/// A small xorshift generator: the documents are a function of the seed alone, so
+/// a failure names the seed that reproduces it.
+struct Rng(u64);
+
+impl Rng {
+    fn draw(&mut self) -> u64 {
+        self.0 ^= self.0 >> 12;
+        self.0 ^= self.0 << 25;
+        self.0 ^= self.0 >> 27;
+        self.0.wrapping_mul(0x2545_F491_4F6C_DD1D)
+    }
+
+    fn below(&mut self, n: usize) -> usize {
+        (self.draw() % n as u64) as usize
+    }
+
+    fn chance(&mut self, one_in: usize) -> bool {
+        self.below(one_in) == 0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Rs(u8);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Rh(u8);
+
+type RTarget = EntryTarget<Rs, Rh>;
+type RStep = WalkStep<Rs, Rh>;
+
+thread_local! {
+    /// The most steps any walk of the document being asked has had on its stack.
+    static HIGH_WATER: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// The walks' stack for a random document: a `Vec` that says how tall it has been.
+#[derive(Debug, Clone, Default)]
+struct Watched(Vec<RStep>);
+
+impl BoundedPush<RStep> for Watched {
+    fn push_bounded(&mut self, item: RStep) {
+        self.0.push(item);
+        HIGH_WATER.with(|high| high.set(high.get().max(self.0.len())));
+    }
+}
+
+impl std::ops::Deref for Watched {
+    type Target = [RStep];
+    fn deref(&self) -> &[RStep] {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for Watched {
+    fn deref_mut(&mut self) -> &mut [RStep] {
+        &mut self.0
+    }
+}
+
+impl IntoIterator for Watched {
+    type Item = RStep;
+    type IntoIter = std::vec::IntoIter<RStep>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
+impl Bounded<RStep> for Watched {
+    fn clear(&mut self) {
+        self.0.clear();
+    }
+    fn truncate(&mut self, len: usize) {
+        self.0.truncate(len);
+    }
+    fn retain<F: FnMut(&RStep) -> bool>(&mut self, keep: F) {
+        self.0.retain(keep);
+    }
+}
+
+/// A document of up to twelve states drawn at random: a forest, each state with
+/// children a `<parallel>` or a compound state, initial targets anywhere below a
+/// compound state, and up to three `<history>` elements that recorded something,
+/// recorded nothing or recorded an empty set, and whose default transitions may
+/// name a later `<history>` below their parent.
+struct Random {
+    parent: Vec<Option<usize>>,
+    kids: Vec<&'static [Rs]>,
+    parallel: Vec<bool>,
+    compound: Vec<bool>,
+    is_final: Vec<bool>,
+    initial: Vec<&'static [RTarget]>,
+    history_parent: Vec<usize>,
+    history_recorded: Vec<Option<Vec<Rs>>>,
+    history_defaults: Vec<&'static [RTarget]>,
+    /// Levels, a `<history>` counting as one below its parent.
+    depth: usize,
+}
+
+/// Lent for the life of the test process: the [`Document`] hands out
+/// `&'static` slices, as a generated machine's tables are.
+fn leak<T>(items: Vec<T>) -> &'static [T] {
+    Box::leak(items.into_boxed_slice())
+}
+
+fn random_document(rng: &mut Rng) -> Random {
+    let n = 1 + rng.below(12);
+    let mut parent: Vec<Option<usize>> = Vec::new();
+    for i in 0..n {
+        parent.push(if i == 0 || rng.chance(4) {
+            None
+        } else {
+            Some(rng.below(i))
+        });
+    }
+    let mut children: Vec<Vec<usize>> = vec![Vec::new(); n];
+    for (i, p) in parent.iter().enumerate() {
+        if let Some(p) = p {
+            children[*p].push(i);
+        }
+    }
+    let parallel: Vec<bool> = children
+        .iter()
+        .map(|c| !c.is_empty() && rng.chance(3))
+        .collect();
+    let compound: Vec<bool> = (0..n)
+        .map(|i| !children[i].is_empty() && !parallel[i])
+        .collect();
+    let is_final: Vec<bool> = children
+        .iter()
+        .map(|c| c.is_empty() && rng.chance(3))
+        .collect();
+    let below = |state: usize| -> Vec<usize> {
+        let mut found = Vec::new();
+        let mut frontier = children[state].clone();
+        while let Some(next) = frontier.pop() {
+            found.push(next);
+            frontier.extend(children[next].iter().copied());
+        }
+        found
+    };
+    let pick = |rng: &mut Rng, from: &[usize]| from[rng.below(from.len())];
+
+    let initial: Vec<&'static [RTarget]> = (0..n)
+        .map(|i| {
+            if !compound[i] {
+                return leak(Vec::new());
+            }
+            let inside = below(i);
+            let count = 1 + rng.below(2);
+            leak(
+                (0..count)
+                    .map(|_| RTarget::State(Rs(pick(rng, &inside) as u8)))
+                    .collect(),
+            )
+        })
+        .collect();
+
+    let with_children: Vec<usize> = (0..n).filter(|&i| !children[i].is_empty()).collect();
+    let histories = if with_children.is_empty() {
+        0
+    } else {
+        rng.below(4)
+    };
+    let history_parent: Vec<usize> = (0..histories).map(|_| pick(rng, &with_children)).collect();
+    let mut history_recorded = Vec::new();
+    let mut history_defaults: Vec<&'static [RTarget]> = Vec::new();
+    for h in 0..histories {
+        let inside = below(history_parent[h]);
+        history_recorded.push(match rng.below(3) {
+            0 => None,
+            1 => Some(Vec::new()),
+            _ => Some(
+                (0..1 + rng.below(3))
+                    .map(|_| Rs(pick(rng, &inside) as u8))
+                    .collect(),
+            ),
+        });
+        // A default transition may name a later history whose parent is this
+        // one's or lies below it: a later one only, so the names never loop.
+        let named: Vec<usize> = (h + 1..histories)
+            .filter(|&j| {
+                history_parent[j] == history_parent[h] || inside.contains(&history_parent[j])
+            })
+            .collect();
+        let count = 1 + rng.below(2);
+        history_defaults.push(leak(
+            (0..count)
+                .map(|_| {
+                    if !named.is_empty() && rng.chance(4) {
+                        RTarget::History(Rh(pick(rng, &named) as u8))
+                    } else {
+                        RTarget::State(Rs(pick(rng, &inside) as u8))
+                    }
+                })
+                .collect(),
+        ));
+    }
+
+    let level = |mut state: usize| {
+        let mut levels = 1;
+        while let Some(up) = parent[state] {
+            levels += 1;
+            state = up;
+        }
+        levels
+    };
+    let mut depth = (0..n).map(level).max().unwrap_or(1);
+    for &p in &history_parent {
+        depth = depth.max(level(p) + 1);
+    }
+
+    Random {
+        kids: children
+            .iter()
+            .map(|c| leak(c.iter().map(|&i| Rs(i as u8)).collect()))
+            .collect(),
+        parent,
+        parallel,
+        compound,
+        is_final,
+        initial,
+        history_parent,
+        history_recorded,
+        history_defaults,
+        depth,
+    }
+}
+
+impl Random {
+    fn histories(&self) -> usize {
+        self.history_parent.len()
+    }
+
+    /// The capacity the generator gives the walks' stack for this document
+    /// (`sce_build::microstep_bounds`).
+    fn walk_bound(&self) -> usize {
+        3 * self.depth + self.histories() + 3
+    }
+}
+
+impl Document for Random {
+    type State = Rs;
+    type History = Rh;
+    type Configuration = Vec<Rs>;
+    type EnabledSet = Vec<EnabledTransition<Rs, Rh>>;
+    type HistoryDefaults = Vec<(Rs, Rh)>;
+    type Walk = Watched;
+    const MAX_DEPTH: usize = 32;
+
+    fn parent_of(&self, state: Rs) -> Option<Rs> {
+        self.parent[usize::from(state.0)].map(|p| Rs(p as u8))
+    }
+
+    fn is_compound(&self, state: Rs) -> bool {
+        self.compound[usize::from(state.0)]
+    }
+
+    fn is_parallel(&self, state: Rs) -> bool {
+        self.parallel[usize::from(state.0)]
+    }
+
+    fn is_final(&self, state: Rs) -> bool {
+        self.is_final[usize::from(state.0)]
+    }
+
+    fn child_states(&self, state: Rs) -> &'static [Rs] {
+        self.kids[usize::from(state.0)]
+    }
+
+    fn initial_targets(&self, state: Rs) -> &'static [RTarget] {
+        self.initial[usize::from(state.0)]
+    }
+
+    fn history_parent(&self, history: Rh) -> Rs {
+        Rs(self.history_parent[usize::from(history.0)] as u8)
+    }
+
+    fn history_value(&self, history: Rh) -> Option<&[Rs]> {
+        self.history_recorded[usize::from(history.0)].as_deref()
+    }
+
+    fn history_default_targets(&self, history: Rh) -> &'static [RTarget] {
+        self.history_defaults[usize::from(history.0)]
+    }
+
+    fn document_order(&self, state: Rs) -> u32 {
+        u32::from(state.0)
+    }
+}
+
+fn random_target(rng: &mut Rng, doc: &Random) -> RTarget {
+    if doc.histories() > 0 && rng.chance(3) {
+        RTarget::History(Rh(rng.below(doc.histories()) as u8))
+    } else {
+        RTarget::State(Rs(rng.below(doc.parent.len()) as u8))
+    }
+}
+
+fn random_transition(rng: &mut Rng, doc: &Random) -> EntryTransition<Rs, Rh> {
+    let source = if rng.chance(6) {
+        None
+    } else {
+        Some(Rs(rng.below(doc.parent.len()) as u8))
+    };
+    let count = 1 + rng.below(3);
+    EntryTransition {
+        source,
+        targets: leak((0..count).map(|_| random_target(rng, doc)).collect()),
+        is_internal: rng.chance(2),
+    }
+}
+
+#[test]
+fn the_stack_walks_answer_as_the_recursion_they_replace_for_any_document() {
+    let mut deepest_walk = 0;
+    for seed in 1..=4000u64 {
+        let mut rng = Rng(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1);
+        let doc = random_document(&mut rng);
+        HIGH_WATER.with(|high| high.set(0));
+
+        for _ in 0..8 {
+            let first = random_transition(&mut rng, &doc);
+            let second = random_transition(&mut rng, &doc);
+
+            // One transition, then two, so the walks also run one after another
+            // over the stack the entry set lends them.
+            for transitions in [&[first][..], &[first, second][..]] {
+                let walked = compute_entry_set(&doc, transitions);
+                let reference = recursion::compute_entry_set(&doc, transitions);
+                assert_eq!(
+                    walked.states_to_enter, reference.states_to_enter,
+                    "seed {seed}: states to enter, for {transitions:?}"
+                );
+                let by_state = |states: &[Rs]| {
+                    let mut states = states.to_vec();
+                    states.sort_by_key(|state| state.0);
+                    states
+                };
+                assert_eq!(
+                    by_state(&walked.states_for_default_entry),
+                    by_state(&reference.states_for_default_entry),
+                    "seed {seed}: states entered by default, for {transitions:?}"
+                );
+                // Keyed by parent, a later history replacing an earlier one's, so
+                // what is compared is the pair each parent ends with.
+                let by_parent = |pairs: &[(Rs, Rh)]| {
+                    let mut pairs = pairs.to_vec();
+                    pairs.sort_by_key(|pair| (pair.0 .0, pair.1 .0));
+                    pairs
+                };
+                assert_eq!(
+                    by_parent(&walked.default_history_content),
+                    by_parent(&reference.default_history_content),
+                    "seed {seed}: history default content, for {transitions:?}"
+                );
+            }
+
+            assert_eq!(
+                effective_target_states(&doc, first.targets),
+                recursion::effective_target_states(&doc, first.targets),
+                "seed {seed}: effective targets of {:?}",
+                first.targets
+            );
+        }
+
+        // Completion, for every state against random configurations.
+        for state in 0..doc.parent.len() {
+            for _ in 0..6 {
+                let configuration: Vec<Rs> = (0..doc.parent.len())
+                    .filter(|_| rng.chance(2))
+                    .map(|i| Rs(i as u8))
+                    .collect();
+                let state = Rs(state as u8);
+                assert_eq!(
+                    is_in_final_state(&doc, state, &configuration),
+                    recursion::is_in_final_state(&doc, state, &configuration),
+                    "seed {seed}: is_in_final_state({state:?}) over {configuration:?}"
+                );
+            }
+        }
+
+        let high = HIGH_WATER.with(std::cell::Cell::get);
+        assert!(
+            high <= doc.walk_bound(),
+            "seed {seed}: the walks stacked {high} steps, and the generator gives a stack of {} \
+             for a document {} levels deep with {} histories",
+            doc.walk_bound(),
+            doc.depth,
+            doc.histories()
+        );
+        deepest_walk = deepest_walk.max(high);
+    }
+    // The documents do reach into the stack, so the bound above was asked a real
+    // question and not an empty one.
+    assert!(
+        deepest_walk >= 6,
+        "the deepest walk was {deepest_walk} steps"
     );
 }

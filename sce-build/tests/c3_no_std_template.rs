@@ -400,7 +400,9 @@ fn rust_template_sizes_the_microstep_to_the_documents_state_tree() {
     // so the largest configuration is top, ra and a state of it, rb and a state
     // of it, rc, pc, c1 and c2 (9), a selection takes one transition from each
     // of the four atomic states a configuration holds, the deepest state (c1) is
-    // at level 4, and two parents have a history.
+    // at level 4, and two parents have a history. The walks over the entry set
+    // run over a stack of three steps for each of the four levels, one for each
+    // of the two histories and three of headroom: 17.
     let model = parse(
         include_str!("fixtures/no_std/parallel_history_probe.scxml"),
         "parallel_history_probe",
@@ -412,6 +414,8 @@ fn rust_template_sizes_the_microstep_to_the_documents_state_tree() {
             "const MAX_ENABLED: usize = 4;",
             "const MAX_DEPTH: usize = 4;",
             "BoundedVec<(Self::State, Self::History), 2>;",
+            "type EntryWalk = ::sce_rust_runtime::helpers::hierarchy::BoundedVec<\
+             ::sce_rust_runtime::helpers::microstep::WalkStep<Self::State, Self::History>, 17>;",
             "pub type ParallelHistoryProbeConfiguration = \
              ::sce_rust_runtime::helpers::hierarchy::BoundedVec<ParallelHistoryProbeState, 9>;",
         ] {
@@ -431,6 +435,7 @@ fn rust_template_sizes_the_microstep_to_the_documents_state_tree() {
         "const MAX_ENABLED: usize = 1;",
         "const MAX_DEPTH: usize = 1;",
         "BoundedVec<(Self::State, Self::History), 0>;",
+        "::sce_rust_runtime::helpers::microstep::WalkStep<Self::State, Self::History>, 6>;",
     ] {
         assert!(
             flat.contains(expected),

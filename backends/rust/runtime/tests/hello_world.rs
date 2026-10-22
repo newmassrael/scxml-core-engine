@@ -13,7 +13,7 @@
 // template-driven generation. Pins that baseline.
 
 use sce_rust_runtime::helpers::hierarchy::BoundedVec;
-use sce_rust_runtime::{EnabledTransition, Engine, EntryTarget, NoHistory, StatePolicy};
+use sce_rust_runtime::{EnabledTransition, Engine, EntryTarget, NoHistory, StatePolicy, WalkStep};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum HwState {
@@ -66,6 +66,7 @@ impl StatePolicy for HwPolicy {
     type Configuration = BoundedVec<HwState, 1>;
     type EnabledSet = BoundedVec<EnabledTransition<Self::State, Self::History>, 1>;
     type HistoryDefaults = BoundedVec<(Self::State, Self::History), 0>;
+    type EntryWalk = BoundedVec<WalkStep<Self::State, Self::History>, 6>;
     const MAX_CONFIGURATION: usize = 1;
     const MAX_ENABLED: usize = 1;
     const MAX_DEPTH: usize = 1;

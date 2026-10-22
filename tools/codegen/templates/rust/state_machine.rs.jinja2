@@ -1299,6 +1299,11 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
     type Configuration = {{ machine_name }}Configuration;
     type EnabledSet = ::sce_rust_runtime::helpers::hierarchy::BoundedVec<::sce_rust_runtime::EnabledTransition<Self::State, Self::History>, {{ max_enabled }}>;
     type HistoryDefaults = ::sce_rust_runtime::helpers::hierarchy::BoundedVec<(Self::State, Self::History), {{ max_history_defaults }}>;
+    // Appendix D's entry procedures, the effective targets and the completion
+    // check are run over a stack of steps and not by recursion, so a call needs
+    // no depth the program has to assume: {{ max_entry_walk }} step(s) at most, three for each level
+    // of the tree, one for each `<history>` and three of headroom.
+    type EntryWalk = ::sce_rust_runtime::helpers::hierarchy::BoundedVec<::sce_rust_runtime::helpers::microstep::WalkStep<Self::State, Self::History>, {{ max_entry_walk }}>;
     const MAX_CONFIGURATION: usize = {{ max_configuration }};
     const MAX_ENABLED: usize = {{ max_enabled }};
     const MAX_DEPTH: usize = {{ max_depth }};

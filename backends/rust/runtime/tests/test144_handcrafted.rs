@@ -29,7 +29,7 @@
 
 use sce_rust_runtime::helpers::hierarchy::BoundedVec;
 use sce_rust_runtime::{
-    EnabledTransition, Engine, EntryTarget, EventWithMetadata, NoHistory, StatePolicy,
+    EnabledTransition, Engine, EntryTarget, EventWithMetadata, NoHistory, StatePolicy, WalkStep,
 };
 
 // `Fail` mirrors the W3C SCXML enum shape (test144 has both pass and fail
@@ -75,6 +75,7 @@ impl StatePolicy for Test144Policy {
     type Configuration = BoundedVec<Test144State, 1>;
     type EnabledSet = BoundedVec<EnabledTransition<Self::State, Self::History>, 1>;
     type HistoryDefaults = BoundedVec<(Self::State, Self::History), 0>;
+    type EntryWalk = BoundedVec<WalkStep<Self::State, Self::History>, 6>;
     const MAX_CONFIGURATION: usize = 1;
     const MAX_ENABLED: usize = 1;
     const MAX_DEPTH: usize = 1;

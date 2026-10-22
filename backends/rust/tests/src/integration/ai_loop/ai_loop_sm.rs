@@ -1261,6 +1261,14 @@ impl StatePolicy for AiLoopPolicy {
     >;
     type HistoryDefaults =
         ::sce_rust_runtime::helpers::hierarchy::BoundedVec<(Self::State, Self::History), 1>;
+    // Appendix D's entry procedures, the effective targets and the completion
+    // check are run over a stack of steps and not by recursion, so a call needs
+    // no depth the program has to assume: 16 step(s) at most, three for each level
+    // of the tree, one for each `<history>` and three of headroom.
+    type EntryWalk = ::sce_rust_runtime::helpers::hierarchy::BoundedVec<
+        ::sce_rust_runtime::helpers::microstep::WalkStep<Self::State, Self::History>,
+        16,
+    >;
     const MAX_CONFIGURATION: usize = 8;
     const MAX_ENABLED: usize = 3;
     const MAX_DEPTH: usize = 4;

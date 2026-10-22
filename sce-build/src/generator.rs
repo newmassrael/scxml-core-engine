@@ -3119,6 +3119,7 @@ fn render_rust(
         max_enabled => microstep_bounds.enabled,
         max_history_defaults => microstep_bounds.history_defaults,
         max_depth => microstep_bounds.depth,
+        max_entry_walk => microstep_bounds.entry_walk,
         state_derives_attr => &state_derives_attr,
         event_derives_attr => &event_derives_attr,
         default_state_id => &default_state_id,

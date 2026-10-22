@@ -46,6 +46,21 @@ pub struct MicrostepBounds {
     /// How many levels the deepest state or `<history>` is at
     /// (`StatePolicy::MAX_DEPTH`), the `<scxml>` element's child being at 1.
     pub depth: usize,
+    /// The most steps the entry walks have owed at once (the capacity of
+    /// `StatePolicy::EntryWalk`): `3 * depth + histories + 3`.
+    ///
+    /// Appendix D's recursions are run over a stack of steps, and a step that has
+    /// more to do puts itself back with its next index before the step it spawns,
+    /// so a stack holds one step for each recursion level, never a list of
+    /// siblings. Every level lies strictly inside the subtree of the level above
+    /// it (a target's descendants, its ancestors below the state that named it,
+    /// the regions of a `<parallel>` among them), so there are at most `depth`
+    /// levels. A level holds a list's resumption, the resumption of the walk up
+    /// and the resumption of the region loop: three. A `<history>` adds the
+    /// resumption of its own list at the level of its parent's children, which is
+    /// one more for each of them, and the step being taken puts down at most two
+    /// at once, with one in hand: three of headroom.
+    pub entry_walk: usize,
 }
 
 impl MicrostepBounds {
@@ -88,14 +103,16 @@ impl MicrostepBounds {
         }
 
         let configuration = configuration.unwrap_or(0).max(1);
+        let depth = depth.max(1);
         Self {
             configuration,
+            entry_walk: 3 * depth + model.history_states.len() + 3,
             // A selection that finds nothing still holds an empty buffer, and a
             // buffer of no slots has no use to anything that holds one, so the
             // floor is one.
             enabled: enabled.unwrap_or(0).max(1),
             history_defaults: history_parents.len().min(configuration),
-            depth: depth.max(1),
+            depth,
         }
     }
 }
@@ -275,7 +292,8 @@ mod tests {
                 configuration: 1,
                 enabled: 1,
                 history_defaults: 0,
-                depth: 1
+                depth: 1,
+                entry_walk: 6
             }
         );
     }
@@ -401,8 +419,43 @@ mod tests {
                 configuration: 1,
                 enabled: 1,
                 history_defaults: 0,
-                depth: 1
+                depth: 1,
+                entry_walk: 6
             }
         );
+    }
+
+    #[test]
+    fn the_entry_walk_is_three_steps_a_level_and_one_a_history() {
+        // The nested document of the depth test: three levels, and no history.
+        let model = document(&[
+            ("a", None, false),
+            ("a1", Some("a"), false),
+            ("a2", Some("a"), false),
+            ("a2x", Some("a2"), false),
+            ("b", None, false),
+        ]);
+        assert_eq!(MicrostepBounds::of(&model).entry_walk, 3 * 3 + 3);
+
+        // Two histories add one step each, and the deeper level one history of
+        // the deepest state opens adds three.
+        let mut model = document(&[("a", None, false), ("a1", Some("a"), false)]);
+        for (id, parent) in [("h1", "a1"), ("h2", "a")] {
+            model.history_states.insert(
+                id.to_string(),
+                HistoryInfo {
+                    parent: parent.to_string(),
+                    history_type: "shallow".to_string(),
+                    default_target: String::new(),
+                    default_targets: vec![],
+                    leaf_target: String::new(),
+                    default_actions: vec![],
+                    source_location: None,
+                },
+            );
+        }
+        let bounds = MicrostepBounds::of(&model);
+        assert_eq!(bounds.depth, 3);
+        assert_eq!(bounds.entry_walk, 3 * 3 + 2 + 3);
     }
 }

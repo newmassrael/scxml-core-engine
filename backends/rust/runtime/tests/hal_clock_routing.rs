@@ -22,7 +22,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use sce_rust_runtime::helpers::hierarchy::BoundedVec;
-use sce_rust_runtime::{EnabledTransition, Engine, EntryTarget, Hal, NoHistory, StatePolicy};
+use sce_rust_runtime::{
+    EnabledTransition, Engine, EntryTarget, Hal, NoHistory, StatePolicy, WalkStep,
+};
 
 // ─────────────────────────────────────────────────────────────
 // MockHal: process-global tick the test drives by hand
@@ -105,6 +107,7 @@ impl StatePolicy for MockPolicy {
     type Configuration = BoundedVec<St, 1>;
     type EnabledSet = BoundedVec<EnabledTransition<Self::State, Self::History>, 1>;
     type HistoryDefaults = BoundedVec<(Self::State, Self::History), 0>;
+    type EntryWalk = BoundedVec<WalkStep<Self::State, Self::History>, 6>;
     const MAX_CONFIGURATION: usize = 1;
     const MAX_ENABLED: usize = 1;
     const MAX_DEPTH: usize = 1;

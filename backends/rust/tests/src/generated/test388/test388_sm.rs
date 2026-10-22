@@ -576,6 +576,14 @@ impl StatePolicy for Test388Policy {
     >;
     type HistoryDefaults =
         ::sce_rust_runtime::helpers::hierarchy::BoundedVec<(Self::State, Self::History), 1>;
+    // Appendix D's entry procedures, the effective targets and the completion
+    // check are run over a stack of steps and not by recursion, so a call needs
+    // no depth the program has to assume: 14 step(s) at most, three for each level
+    // of the tree, one for each `<history>` and three of headroom.
+    type EntryWalk = ::sce_rust_runtime::helpers::hierarchy::BoundedVec<
+        ::sce_rust_runtime::helpers::microstep::WalkStep<Self::State, Self::History>,
+        14,
+    >;
     const MAX_CONFIGURATION: usize = 3;
     const MAX_ENABLED: usize = 1;
     const MAX_DEPTH: usize = 3;

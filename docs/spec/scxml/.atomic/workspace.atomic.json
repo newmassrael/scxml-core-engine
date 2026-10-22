@@ -388,11 +388,6 @@
           "kind": "implements"
         },
         {
-          "file": "backends/rust/runtime/src/helpers/microstep.rs",
-          "symbol": "add_descendant_states_to_enter",
-          "kind": "implements"
-        },
-        {
           "file": "backends/rust/runtime/src/policy.rs",
           "symbol": "History",
           "kind": "references"
@@ -491,6 +486,11 @@
         {
           "file": "backends/rust/runtime/src/saved_state.rs",
           "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/microstep.rs",
+          "symbol": "walk_entry",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -2622,11 +2622,6 @@
           "kind": "implements"
         },
         {
-          "file": "backends/rust/runtime/src/helpers/microstep.rs",
-          "symbol": "add_descendant_states_to_enter",
-          "kind": "references"
-        },
-        {
           "file": "backends/rust/runtime/src/policy.rs",
           "symbol": "get_initial_targets",
           "kind": "references"
@@ -2671,6 +2666,11 @@
         },
         {
           "file": "sce-build/src/gui_structure.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/microstep.rs",
+          "symbol": "walk_entry",
           "kind": "references"
         }
       ],
@@ -2891,11 +2891,6 @@
           "kind": "references"
         },
         {
-          "file": "backends/rust/runtime/src/helpers/microstep.rs",
-          "symbol": "add_region_defaults",
-          "kind": "implements"
-        },
-        {
           "file": "backends/python/runtime/sce_runtime/microstep.py",
           "symbol": "_add_region_defaults",
           "kind": "implements"
@@ -2936,6 +2931,11 @@
         {
           "file": "sce-build/src/microstep_bounds.rs",
           "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/microstep.rs",
+          "symbol": "walk_entry",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -3132,11 +3132,6 @@
           "kind": "implements"
         },
         {
-          "file": "backends/rust/runtime/src/helpers/microstep.rs",
-          "symbol": "add_descendant_states_to_enter",
-          "kind": "references"
-        },
-        {
           "file": "backends/python/runtime/sce_runtime/microstep.py",
           "symbol": "add_descendant_states_to_enter",
           "kind": "references"
@@ -3149,6 +3144,11 @@
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/Microstep.kt",
           "symbol": "addDescendantStatesToEnter",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/microstep.rs",
+          "symbol": "walk_entry",
           "kind": "references"
         }
       ],
@@ -16040,11 +16040,6 @@
           "kind": "implements"
         },
         {
-          "file": "backends/rust/runtime/src/helpers/microstep.rs",
-          "symbol": "add_ancestor_states_to_enter",
-          "kind": "implements"
-        },
-        {
           "file": "backends/python/runtime/sce_runtime/microstep.py",
           "symbol": "add_ancestor_states_to_enter",
           "kind": "implements"
@@ -16057,6 +16052,11 @@
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/Microstep.kt",
           "symbol": "addAncestorStatesToEnter",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/microstep.rs",
+          "symbol": "walk_entry",
           "kind": "implements"
         }
       ],
@@ -16088,11 +16088,6 @@
           "kind": "implements"
         },
         {
-          "file": "backends/rust/runtime/src/helpers/microstep.rs",
-          "symbol": "add_descendant_states_to_enter",
-          "kind": "implements"
-        },
-        {
           "file": "backends/python/runtime/sce_runtime/microstep.py",
           "symbol": "add_descendant_states_to_enter",
           "kind": "implements"
@@ -16105,6 +16100,11 @@
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/Microstep.kt",
           "symbol": "addDescendantStatesToEnter",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/microstep.rs",
+          "symbol": "walk_entry",
           "kind": "implements"
         }
       ],
@@ -17082,11 +17082,6 @@
           "kind": "implements"
         },
         {
-          "file": "backends/rust/runtime/src/helpers/microstep.rs",
-          "symbol": "add_effective_target_states",
-          "kind": "implements"
-        },
-        {
           "file": "backends/python/runtime/sce_runtime/microstep.py",
           "symbol": "_add_effective_target_states",
           "kind": "implements"
@@ -17099,6 +17094,11 @@
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/Microstep.kt",
           "symbol": "addEffectiveTargetStates",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/microstep.rs",
+          "symbol": "effective_target_states_on",
           "kind": "implements"
         }
       ],
@@ -17130,11 +17130,6 @@
           "kind": "implements"
         },
         {
-          "file": "backends/rust/runtime/src/helpers/microstep.rs",
-          "symbol": "proper_ancestors",
-          "kind": "implements"
-        },
-        {
           "file": "backends/python/runtime/sce_runtime/microstep.py",
           "symbol": "_proper_ancestors",
           "kind": "implements"
@@ -17147,6 +17142,11 @@
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/Microstep.kt",
           "symbol": "properAncestors",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/microstep.rs",
+          "symbol": "first_proper_ancestor",
           "kind": "implements"
         }
       ],
@@ -22102,6 +22102,54 @@
       "target_kind": "section",
       "target_id": "scxml-D-selectTransitions",
       "reason": "Its only cite sat on MAX_ENABLED_TRANSITIONS, the global bound on the enabled set; the Rust microstep sizes that set by the document's tree (ADR 0056), so the constant and its cite are gone"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.10",
+      "reason": "The entry walk runs over a stack in walk_entry, where the section is cited; the recursive function of this name is a wrapper that carries no citation."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.3",
+      "reason": "The entry walk runs over a stack in walk_entry, where the section is cited; the recursive function of this name is a wrapper that carries no citation."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.6",
+      "reason": "The entry walk runs over a stack in walk_entry, where the section is cited; the recursive function of this name is a wrapper that carries no citation."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.4",
+      "reason": "The region defaults are a step of the entry walk (WalkStep::Regions in walk_entry), which cites the section; add_region_defaults no longer exists."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-addAncestorStatesToEnter",
+      "reason": "The ancestors walk is a step of the entry walk in walk_entry, which cites the section; the function of this name is a wrapper that carries no citation."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-addDescendantStatesToEnter",
+      "reason": "The descendants walk is a step of the entry walk in walk_entry, which cites the section; the function of this name is a wrapper that carries no citation."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-getEffectiveTargetStates",
+      "reason": "The recursion became a walk over a stack in effective_target_states_on, which cites the section; add_effective_target_states no longer exists."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-getProperAncestors",
+      "reason": "The ancestors list is read off the document as the walk goes; first_proper_ancestor decides it is not empty and cites the section; proper_ancestors no longer exists."
     }
   ],
   "frames": {},

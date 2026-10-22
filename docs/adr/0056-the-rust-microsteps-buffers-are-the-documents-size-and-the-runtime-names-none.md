@@ -99,14 +99,16 @@ the stack, not the RAM, to be the limit, with the frames of this decision as the
   5288 after this one, inside the band of the budget (it is not re-pinned).
 - **API.** Under `std` nothing changes for a consumer that did not name a removed type: `get_active_states` returns
   `Vec<State>` as before. Under `no_std` it returns the document's `Configuration`; `Engine::enter_at` and
-  `StatePolicy::set_active_states` take a slice; a hand-written policy states the six items above. A consumer's
+  `StatePolicy::set_active_states` take a slice; a hand-written policy states the seven items above (the six, and
+  the `EntryWalk` stack of the bullet on recursion below). A consumer's
   hand-written `StatePolicy` is the one thing that fails to compile, once, with the missing items named.
 - **The frames are held, not only measured.** `scripts/gates/nostd-mcu.sh` now computes the worst-case stack from the
   footprint probe's disassembly (`tools/mcu_stack/worst_case_stack.py`: each function's frame from its prologue,
   and the largest sum along the calls of the object) and holds it to `STACK_BYTES` in `footprint.budget`, in both
   directions, in both configurations. It is static and says so: a host callback is taken to need a stated number of
-  bytes, the formatting machinery a stated number, a recursion ends only at a bound the budget states (the document's
-  depth), and an indirect call or a cycle the budget does not account for fails the run. The probe's profile
+  bytes, the formatting machinery a stated number, and an indirect call or a cycle the budget does not account for
+  fails the run; a recursion could end only at a bound the budget stated (the document's depth), until the
+  walks stopped recursing (the bullet on recursion below). The probe's profile
   (`opt-level = "z"`, fat LTO) inlines the policy's entry actions into the entry procedure, so its 1776 bytes include
   an 872-byte frame that is the generated policy's, not the runtime's; a mutation that widens the enabled set from
   4 to 40 slots moves it to 2928 and trips the band. GNU's and LLVM's disassemblers give the same figure.
@@ -129,6 +131,27 @@ the stack, not the RAM, to be the limit, with the frames of this decision as the
   disagree about how many transitions a selection holds
   (`c11_template_sizes_a_selection_by_the_bound_the_rust_policy_carries`). The configuration stays a bitmap, which
   needs no count.
+- **The walks of Appendix D do not recurse.** The entry set (addDescendantStatesToEnter, addAncestorStatesToEnter
+  and the region defaults they share), the effective targets and the completion check were recursions, and the
+  stack gate could bound them only by a depth its budget stated. They run over an explicit stack of steps now
+  (`helpers::microstep::WalkStep`, the `Document::Walk` buffer): each step is what one call did before and between
+  the calls it made, and each call is a step put above the step that resumes after it, so the steps run in the
+  order the calls would have. That order is the algorithm, not an incident of it: a `<parallel>` region is judged
+  against what the entry set holds when it is reached, and a later `<history>` of a parent replaces an earlier one's
+  default content. A step that has more to do puts itself back with its next index before the step it spawns, so a
+  stack holds one step for each level and never a list of siblings, and every level lies strictly inside the one above
+  it: its capacity is `3 * depth + histories + 3` (`sce_build::microstep_bounds`), spelled on the policy as
+  `EntryWalk`, and it is empty before the entered states' `<onentry>` code runs (`entry_set_of_enabled` is a call
+  of its own). The evidence is a differential test: 4000 random documents (forests, `<parallel>`s, initial targets
+  deep below a compound state, up to three `<history>`s that recorded something, nothing or an empty set, default
+  transitions that name later histories) ask the recursion as it was first written, kept in the test as the
+  reference, and the walks, for the entry set (states, default entries, history content), the effective targets and
+  completion, and the walks' stack never exceeds the capacity. A mutant that runs a compound state's ancestors
+  before its descendants fails 8 hand-written cases and the differential test at its first seed. What it cost,
+  measured: `.text` +474 / +478 bytes, and no stack saved, because the chain that sets the worst case is the
+  generated policy's entry actions (`enter_entry_set` 600 bytes and `sce_string_from_str` 280), which the recursion had
+  stood above by 80 bytes. What it bought is a stack figure that is a sum of frames with nothing stated, and a
+  runtime with no recursion on the bare-metal profile.
 - **The bare-metal engine is built in a constant expression.** `Engine::new_in_place` still runs a constructor at
   start-up; a program that holds its engine in a `static` wants none. `Engine::new_const(policy)` (bare-metal
   profile only: the `std` profile's engine holds a hash set and a registry that no constant expression builds) is

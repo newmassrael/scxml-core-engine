@@ -268,8 +268,10 @@ sce_footprint_stack() {
     for item in $STACK_RECURSION; do recursion+=(--recursion "$item"); done
     for item in $STACK_ASSUME; do assume+=(--assume "$item"); done
 
+    # `${recursion[@]+...}`: the list is empty while no walk recurses, and an empty array is an
+    # unbound variable to `set -u` on a bash older than 4.4.
     report="$(python3 tools/mcu_stack/worst_case_stack.py "$disassembly" \
-        "${roots[@]}" "${recursion[@]}" "${assume[@]}" --indirect "$STACK_INDIRECT_BYTES" \
+        "${roots[@]}" ${recursion[@]+"${recursion[@]}"} "${assume[@]}" --indirect "$STACK_INDIRECT_BYTES" \
         --min-functions "$STACK_MIN_FUNCTIONS" --report)" \
         || sce_gate_fail "worst-case stack could not be computed ($label)"
     # The last line is the worst root's number; the lines above it are each root's chain.

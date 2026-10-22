@@ -25,7 +25,7 @@
 use sce_rust_runtime::helpers::hierarchy::BoundedVec;
 use sce_rust_runtime::{
     BoundedPush, ConfigurationRejection, EnabledTransition, Engine, EntryTarget, EventWithMetadata,
-    NoHistory, StatePolicy,
+    NoHistory, StatePolicy, WalkStep,
 };
 
 /// One targeted transition of `source`, as a policy reports it.
@@ -98,6 +98,8 @@ impl StatePolicy for ParallelPolicy {
     type Configuration = BoundedVec<PState, 5>;
     type EnabledSet = BoundedVec<EnabledTransition<Self::State, Self::History>, 2>;
     type HistoryDefaults = BoundedVec<(Self::State, Self::History), 0>;
+    // Three steps for each of the three levels, and three of headroom.
+    type EntryWalk = BoundedVec<WalkStep<Self::State, Self::History>, 12>;
     const MAX_CONFIGURATION: usize = 5;
     const MAX_ENABLED: usize = 2;
     const MAX_DEPTH: usize = 3;
@@ -325,6 +327,8 @@ impl StatePolicy for LinearPolicy {
     type Configuration = BoundedVec<LState, 2>;
     type EnabledSet = BoundedVec<EnabledTransition<Self::State, Self::History>, 1>;
     type HistoryDefaults = BoundedVec<(Self::State, Self::History), 0>;
+    // Three steps for each of the two levels, and three of headroom.
+    type EntryWalk = BoundedVec<WalkStep<Self::State, Self::History>, 9>;
     const MAX_CONFIGURATION: usize = 2;
     const MAX_ENABLED: usize = 1;
     const MAX_DEPTH: usize = 2;

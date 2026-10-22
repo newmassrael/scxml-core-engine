@@ -107,7 +107,15 @@ MEASURED_WITH='rustc 1.99.1 (58cf8f9c3 2026-10-13)'
 # (`heapless::String<256>`) made to be cloned into metadata that the bare-metal profile
 # elides, or dropped; the id is text now, borrowed, and the engine builds the one string it
 # keeps. What the bytes were: the clones, and the copy of 256 bytes behind each.
-TOTAL_BYTES=5200
+#
+# 5200 -> 5674 (2026-10-22): what the bytes bought is no recursion. Appendix D's entry walk,
+# the effective targets and the completion check ran by recursion, and the stack gate below had
+# to state how deep each went; they run over an explicit stack of steps now
+# (`helpers::microstep::WalkStep`, ADR 0056), in the order the calls would have run, so the
+# worst-case stack is a sum of frames and no depth is assumed. The loop that interprets the
+# steps (`walk_entry` 776 bytes, `effective_target_states_on` 248) is larger than the small
+# functions it replaces; the figure moved by 474 here and by 478 without the report.
+TOTAL_BYTES=5674
 
 # The same sum without the macrostep REPORT, the bound left in place: the probe
 # built with no feature, so the runtime has none either. That is the build a
@@ -163,7 +171,10 @@ TOTAL_BYTES=5200
 #
 # 5288 -> 5148 (2026-10-22): the strings a `<send>` no longer builds, as above; the figure
 # with the report moved by 134 and this one by 140.
-TOTAL_BYTES_NO_DIAGNOSTICS=5148
+#
+# 5148 -> 5626 (2026-10-22): the walks of Appendix D no longer recurse, as above; the figure
+# with the report moved by 474 and this one by 478.
+TOTAL_BYTES_NO_DIAGNOSTICS=5626
 
 # Drift allowed either way before the gate speaks, in BYTES. Wide enough that
 # an unrelated inlining decision does not cry wolf, tight enough that one more
@@ -205,12 +216,10 @@ MIN_SYMBOLS=24
 # pointer the host gave the engine (its clock reading, which an inlining may have put in any
 # function) is taken to need STACK_INDIRECT_BYTES; the formatting machinery calls whatever
 # `Display` it is handed, so `core::fmt::write` is taken to need STACK_ASSUME below its own
-# frame; a recursion ends only at a bound this file states: Appendix D's walks go one level of
-# the document's hierarchy at a time (`add_descendant_states_to_enter`: the document's four
-# levels and the two `<history>` defaults it can chain through), and a history's default
-# targets chain through the document's two histories (`add_effective_target_states`). An
-# indirect call or a cycle this file does not account for fails the run, so none is
-# assumed away.
+# frame. There is no recursion to bound: Appendix D's walks (the entry set, the effective
+# targets, the completion check) run over an explicit stack of steps, so nothing of the
+# document's depth is stated here. An indirect call or a cycle this file does not account for
+# fails the run, so none is assumed away.
 #
 # 1776 (2026-10-22), on rustc 1.99.1, both configurations: `initialize` through the main loop,
 # `complete_macrostep`, `take_event`, `microstep` and `enter_entry_set` to a `Vec<u8, 256>`
@@ -224,10 +233,18 @@ MIN_SYMBOLS=24
 # STACK_RECURSION states. That is the stated bound and not what the probe machine reaches
 # (it is four levels deep), so the figure now holds the runtime's own walk and the policy's
 # chain stays under it; a policy chain that grows past it moves the figure again.
+#
+# 1584 -> 1616 (2026-10-22): the recursion is gone (see TOTAL_BYTES), so no depth is stated in
+# this file and the figure is a sum of frames and nothing else. The chain it holds is the
+# policy's entry actions again: `initialize` through the main loop, `complete_macrostep`,
+# `take_event`, `microstep`, `enter_entry_set` (600 bytes, the policy's code inlined into it),
+# `sce_string_from_str` (280) and `memcpy`. The recursion had stood above it by 80 bytes. The
+# figure moved by 32 because `initialize` now holds the walks' stack with the entry set, 240
+# bytes where it held 136.
 STACK_ROOTS='Engine<sce_nostd_build_probe::ParallelHistoryProbePolicy>>::step Engine<sce_nostd_build_probe::ParallelHistoryProbePolicy>>::initialize Engine<sce_nostd_build_probe::ParallelHistoryProbePolicy>>::process_event'
-STACK_RECURSION='add_descendant_states_to_enter=6 add_effective_target_states=3 is_in_final_state=4'
+STACK_RECURSION=''
 STACK_ASSUME='core::fmt::write=256'
 STACK_INDIRECT_BYTES=64
 STACK_MIN_FUNCTIONS=200
-STACK_BYTES=1584
+STACK_BYTES=1616
 STACK_TOLERANCE_BYTES=256

@@ -157,7 +157,7 @@ pub trait StatePolicy: Sized + 'static {
     // ──────────────────────────────────────────────
     // What the document's state tree bounds
     //
-    // The generator reads the tree and writes all six, so every buffer of the
+    // The generator reads the tree and writes all seven, so every buffer of the
     // microstep is the size this document needs and no larger. Like the
     // associated types above they have no default: a default could only be the
     // guess the generator exists to replace.
@@ -185,6 +185,17 @@ pub trait StatePolicy: Sized + 'static {
     /// Spelled `BoundedVec<(State, History), N>`, `N` the number of such parents;
     /// empty — capacity 0 — for a document with no `<history>`.
     type HistoryDefaults: Bounded<(Self::State, Self::History)>;
+
+    /// The stack the entry procedures, the effective targets and the completion
+    /// check of Appendix D run over instead of recursing
+    /// ([`WalkStep`](crate::helpers::microstep::WalkStep)), so the worst-case stack of
+    /// a call is the sum of the frames on it and no depth is assumed.
+    ///
+    /// Spelled `BoundedVec<WalkStep<State, History>, N>` with `N` = three steps
+    /// for each level of the document's tree, one for each `<history>`, and three
+    /// more for the steps one step puts down at once
+    /// (`sce_build::microstep_bounds`).
+    type EntryWalk: Bounded<crate::helpers::microstep::WalkStep<Self::State, Self::History>>;
 
     /// The most states one configuration of this document holds (§scxml-3.4): the
     /// states on one root-to-leaf path with, for each `<parallel>` on it, every
@@ -981,6 +992,7 @@ impl<P: StatePolicy> Document for PolicyDocument<'_, P> {
     type Configuration = P::Configuration;
     type EnabledSet = P::EnabledSet;
     type HistoryDefaults = P::HistoryDefaults;
+    type Walk = P::EntryWalk;
     const MAX_DEPTH: usize = P::MAX_DEPTH;
 
     fn parent_of(&self, state: P::State) -> Option<P::State> {

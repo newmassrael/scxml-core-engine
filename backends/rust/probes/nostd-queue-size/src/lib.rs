@@ -146,6 +146,27 @@ const _: () = assert!(
 pub static ENGINE_BUILT_IN_ITS_SLOT: Engine<EventQueueCapacityProbePolicy> =
     Engine::new_const(EventQueueCapacityProbePolicy::new_const("queue-size-probe"));
 
+/// The walks' stack, spelled to the document too: three steps for each level of the
+/// tree (one here) and three of headroom is six, and a stack of six steps is those
+/// and its length. Appendix D's recursions run over it, so a generator that wrote a
+/// constant would put a stack of that size under every call of every machine.
+const ENTRY_WALK_STEPS: usize = 6;
+
+const _: () = assert!(
+    core::mem::size_of::<<EventQueueCapacityProbePolicy as StatePolicy>::EntryWalk>()
+        <= ENTRY_WALK_STEPS
+            * core::mem::size_of::<
+                sce_rust_runtime::WalkStep<
+                    <EventQueueCapacityProbePolicy as StatePolicy>::State,
+                    <EventQueueCapacityProbePolicy as StatePolicy>::History,
+                >,
+            >()
+            + core::mem::size_of::<usize>(),
+    "the entry walk's stack is larger than the document's three steps a level and three of \
+     headroom: its type was spelled with another capacity. See the Rust template's \
+     `type EntryWalk` (tools/codegen/templates/rust/state_machine.rs.jinja2).",
+);
+
 /// Loose whole-`Engine` sanity bound (measured ~832 B after the scheduler
 /// `send_id` elision, down from ~9.0 KiB). Catches a gross regression that
 /// balloons the engine without tripping the precise per-lever bounds above

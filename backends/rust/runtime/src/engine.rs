@@ -5318,6 +5318,7 @@ impl<P: StatePolicy> microstep::Document for EngineHost<'_, P> {
     type Configuration = P::Configuration;
     type EnabledSet = P::EnabledSet;
     type HistoryDefaults = P::HistoryDefaults;
+    type Walk = P::EntryWalk;
     const MAX_DEPTH: usize = P::MAX_DEPTH;
 
     fn parent_of(&self, state: P::State) -> Option<P::State> {
