@@ -693,6 +693,37 @@ apply_sce_test_policies(json_text_test)
 add_test(NAME JsonText COMMAND json_text_test)
 
 # ============================================================================
+# The saved-state model (SCE Accepted Subset §2.15, docs/adr/0045): the ordered JSON
+# reader and writer, the format-1 and format-2 model, the value readers and writers, and
+# the session id, held to the shared texts under
+# sce-build/tests/fixtures/static_datamodel/saved/. Linked against googletest alone, for
+# the reason the target below gives: a generated machine compiles and links against
+# `sce/include` with no runtime library.
+# ============================================================================
+add_executable(saved_state_test
+    saved/SavedStateTest.cpp
+)
+
+target_include_directories(saved_state_test
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/sce/include
+)
+
+target_link_libraries(saved_state_test
+    PRIVATE
+        GTest::gtest_main
+)
+
+target_compile_definitions(saved_state_test
+    PRIVATE
+        SCE_SAVED_FIXTURES_DIR="${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/saved"
+)
+
+apply_sce_test_policies(saved_state_test)
+
+add_test(NAME SavedState COMMAND saved_state_test)
+
+# ============================================================================
 # How a byte string rides in a text (docs/adr/0005, decision 2): the Latin-1
 # spelling a typed payload's wire carries, in SCE::Latin1Bytes and the payload lift
 # that uses it. Linked against googletest alone: a generated machine compiles and
