@@ -227,6 +227,33 @@ for src in "$GO_STATIC_MESH_TMP"/*_sm.go; do
 done
 cp "$GO_STATIC_MESH_TMP"/*_sm.go "$GO_STATIC_MESH_DIR/"
 
+# The saving documents: a host-run `<invoke>` and a delayed host-served `<send>` a
+# saved state carries (SCE Accepted Subset §2.15), each in a Go directory of its
+# own for the package-name reason above.
+GO_STATIC_INVOKE_DIR="backends/go/tests/integration/statechart_static_host_invoke"
+GO_STATIC_INVOKE_TMP="$(mktemp -d)"
+GO_STATIC_DELAYED_DIR="backends/go/tests/integration/statechart_static_delayed_host_send"
+GO_STATIC_DELAYED_TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP" "$GO_TMP" "$GO_DELAYED_TMP" "$GO_INVOKER_TMP" "$GO_STATIC_PARAMS_TMP" "$GO_STATIC_MESH_TMP" "$GO_STATIC_INVOKE_TMP" "$GO_STATIC_DELAYED_TMP"' EXIT
+
+"$CODEGEN" generate "$STATIC_INVOKE_FIXTURE" -l go -o "$GO_STATIC_INVOKE_TMP/" --host-invoker "$HOST_INVOKER"
+mkdir -p "$GO_STATIC_INVOKE_DIR"
+sce_generated_tree_clear "$GO_STATIC_INVOKE_DIR"
+for src in "$GO_STATIC_INVOKE_TMP"/*_sm.go; do
+    [[ -f "$src" ]] || continue
+    sed -i "s|// From: ${GO_STATIC_INVOKE_TMP}/|// From: $(dirname "$STATIC_INVOKE_FIXTURE")/|g" "$src"
+done
+cp "$GO_STATIC_INVOKE_TMP"/*_sm.go "$GO_STATIC_INVOKE_DIR/"
+
+"$CODEGEN" generate "$STATIC_DELAYED_SEND_FIXTURE" -l go -o "$GO_STATIC_DELAYED_TMP/" --host-processor "$HOST_PROCESSOR"
+mkdir -p "$GO_STATIC_DELAYED_DIR"
+sce_generated_tree_clear "$GO_STATIC_DELAYED_DIR"
+for src in "$GO_STATIC_DELAYED_TMP"/*_sm.go; do
+    [[ -f "$src" ]] || continue
+    sed -i "s|// From: ${GO_STATIC_DELAYED_TMP}/|// From: $(dirname "$STATIC_DELAYED_SEND_FIXTURE")/|g" "$src"
+done
+cp "$GO_STATIC_DELAYED_TMP"/*_sm.go "$GO_STATIC_DELAYED_DIR/"
+
 echo "Regenerated: $GENERATED_DIR/ from"
 echo "  $FIXTURE (--host-processor $HOST_PROCESSOR)"
 echo "  $INVOKER_FIXTURE (--host-invoker $HOST_INVOKER)"
@@ -241,3 +268,7 @@ echo "Regenerated: $GO_STATIC_PARAMS_DIR/ from"
 echo "  $STATIC_PARAMS_FIXTURE (--host-processor $HOST_PROCESSOR --host-invoker $HOST_INVOKER)"
 echo "Regenerated: $GO_STATIC_MESH_DIR/ from"
 echo "  $STATIC_MESH_REQUEST_FIXTURE (no host declaration)"
+echo "Regenerated: $GO_STATIC_INVOKE_DIR/ from"
+echo "  $STATIC_INVOKE_FIXTURE (--host-invoker $HOST_INVOKER)"
+echo "Regenerated: $GO_STATIC_DELAYED_DIR/ from"
+echo "  $STATIC_DELAYED_SEND_FIXTURE (--host-processor $HOST_PROCESSOR)"

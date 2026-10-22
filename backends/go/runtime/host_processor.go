@@ -660,6 +660,12 @@ func (e *Engine[S, E]) RefusedHostInvokeCompletions() uint64 {
 // running and stays silent when it never started or already completed, so the
 // emitted exit chain does not need its own bookkeeping.
 func (e *Engine[S, E]) CancelHostInvoke(processorType, invokeID string) bool {
+	// One a restore re-armed and has not started again was never started by this
+	// engine, so there is nothing to tell the host to stop; it is dropped, so it
+	// is never started.
+	e.restoredHostInvokes = slices.DeleteFunc(e.restoredHostInvokes, func(restored restoredHostInvoke) bool {
+		return restored.request.ProcessorType == processorType && restored.request.InvokeID == invokeID
+	})
 	key := hostInvokeKey{processorType, invokeID}
 	started, running := e.startedHostInvokes[key]
 	if !running {
