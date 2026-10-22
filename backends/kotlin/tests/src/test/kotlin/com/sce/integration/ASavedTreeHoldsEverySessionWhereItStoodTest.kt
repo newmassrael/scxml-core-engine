@@ -239,4 +239,45 @@ class ASavedTreeHoldsEverySessionWhereItStoodTest {
             sm.cleanup()
         }
     }
+
+    @Test
+    fun aSaveAfterAnyHostCallFindsNothingInTransit() {
+        // Half of the Rust suite's `nothing_is_in_transit_when_a_tree_is_saved.rs`.
+        // The refusal itself has no Kotlin test, because the Kotlin parent has no
+        // buffer an event of a child waits in between two sessions (what a child
+        // sends `#_parent` is handed to its parent where it is sent), so there is
+        // nothing for a save to meet. What the refusal guards is held here: after
+        // each call of a run that drives the child every way there is (a send made
+        // at once, a delayed one armed, a forwarded event, a tick, a start again),
+        // the tree saves, the text it saves restores, and the restored tree saves
+        // that text again.
+        val sm = StaticInvokeTreeStateMachine(sessionId = root)
+        try {
+            sm.clock = ManualClock(0)
+            sm.registerInvoker(clock) { _ -> null }
+            sm.initialize()
+            val run = listOf("ask", "go", "ask", "swap", "ask", "arm", "ask", "rest", "back", "ask", "go", "ask")
+            for (event in run) {
+                // The two calls a host makes: the event it raises, then the tick.
+                sm.sendEventByName(event)
+                assertSavesAndRestores(sm, "raising `$event`")
+                sm.tick()
+                assertSavesAndRestores(sm, "ticking after `$event`")
+            }
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    /** The tree saves where it stands, and what it saves restores and saves again as it was. */
+    private fun assertSavesAndRestores(sm: StaticInvokeTreeStateMachine, after: String) {
+        val text = try {
+            saved(sm).toJson()
+        } catch (refusal: StateRefusal) {
+            error("the tree saves at every boundary, but after $after: ${refusal.message}")
+        }
+        restored(text) { copy ->
+            assertEquals(text, saved(copy).toJson(), "the tree restored after $after stands where it was saved")
+        }
+    }
 }
