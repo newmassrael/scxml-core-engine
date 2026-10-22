@@ -25,7 +25,7 @@ use sce_forge_runtime::heapless::Vec as HeaplessVec;
 
 use super::codec_nested_body::CodecNestedBody;
 
-use sce_forge_runtime::codec::ListView;
+use sce_forge_runtime::codec::{ListView, ListWalk};
 use super::codec_nested_body::CodecNestedBodyView;
 
 // pub API: codecs are intended for cross-crate consumption (SCE_FORGE.md
@@ -201,13 +201,26 @@ impl<'a> CodecNestedParent<'a> {
 // frames `CodecNestedParent::decode` refuses, with the same error: the entries
 // are decoded once to check them, and a walk afterwards cannot fail.
 #[allow(dead_code)]
+pub struct CodecNestedParentBodyListWalk;
+
+impl ListWalk<0> for CodecNestedParentBodyListWalk {
+    type Entry<'b> = CodecNestedBodyView<'b>;
+
+    fn decode<'b>(_c: &mut SceCursor<'b>, _a: &[u8; 0]) -> Result<Self::Entry<'b>, CodecError> {
+        CodecNestedBodyView::decode(_c)
+    }
+
+    fn advance(_e: &Self::Entry<'_>, _s: &mut [u8; 0]) {  }
+}
+
+#[allow(dead_code)]
 #[derive(Default, Debug, Clone, PartialEq)]
 pub struct CodecNestedParentView<'a> {
     pub hdr: u8,
     pub m: u8,
     pub required_body: CodecNestedBodyView<'a>,
     pub optional_body: Option<CodecNestedBodyView<'a>>,
-    pub body_list: ListView<'a, CodecNestedBodyView<'a>, 0>,
+    pub body_list: ListView<'a, CodecNestedParentBodyListWalk, 0>,
 }
 
 #[allow(dead_code)]
@@ -271,7 +284,7 @@ impl<'a> CodecNestedParentView<'a> {
                 }
                 _count += 1;
             }
-            _out.body_list = ListView::new(_rest, _count, [], |_c, _a| CodecNestedBodyView::decode(_c), |_, _| {});
+            _out.body_list = ListView::new(_rest, _count, []);
         }
         _out.hdr = hdr;
         _out.m = m;

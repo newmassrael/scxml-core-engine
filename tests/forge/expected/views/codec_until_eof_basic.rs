@@ -25,7 +25,7 @@ use sce_forge_runtime::heapless::Vec as HeaplessVec;
 
 use super::codec_repeat_elem::CodecRepeatElem;
 
-use sce_forge_runtime::codec::ListView;
+use sce_forge_runtime::codec::{ListView, ListWalk};
 use super::codec_repeat_elem::CodecRepeatElemView;
 
 // pub API: codecs are intended for cross-crate consumption (SCE_FORGE.md
@@ -153,9 +153,22 @@ impl CodecUntilEofBasic {
 // frames `CodecUntilEofBasic::decode` refuses, with the same error: the entries
 // are decoded once to check them, and a walk afterwards cannot fail.
 #[allow(dead_code)]
+pub struct CodecUntilEofBasicMsgsWalk;
+
+impl ListWalk<0> for CodecUntilEofBasicMsgsWalk {
+    type Entry<'b> = CodecRepeatElemView;
+
+    fn decode<'b>(_c: &mut SceCursor<'b>, _a: &[u8; 0]) -> Result<Self::Entry<'b>, CodecError> {
+        CodecRepeatElemView::decode(_c)
+    }
+
+    fn advance(_e: &Self::Entry<'_>, _s: &mut [u8; 0]) {  }
+}
+
+#[allow(dead_code)]
 #[derive(Default, Debug, Clone, PartialEq)]
 pub struct CodecUntilEofBasicView<'a> {
-    pub msgs: ListView<'a, CodecRepeatElemView, 0>,
+    pub msgs: ListView<'a, CodecUntilEofBasicMsgsWalk, 0>,
 }
 
 #[allow(dead_code)]
@@ -201,7 +214,7 @@ impl<'a> CodecUntilEofBasicView<'a> {
                 }
                 _count += 1;
             }
-            _out.msgs = ListView::new(_rest, _count, [], |_c, _a| CodecRepeatElemView::decode(_c), |_, _| {});
+            _out.msgs = ListView::new(_rest, _count, []);
         }
         Ok(())
     }

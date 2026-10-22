@@ -6723,10 +6723,25 @@ fn render_codec(
                             .into(),
                         );
                         let entry = format!("{body_type}View");
+                        // How the list reads an entry: a marker type of its own,
+                        // so the list holds no function over the bytes' lifetime.
+                        let walk = rust_view::walk_name(&m.name, &f.id);
+                        obj.insert(
+                            "view_walk_item".into(),
+                            rust_view::walk_item(
+                                &walk,
+                                &entry,
+                                &rust_view::view_type(imports, alias, &body_type)
+                                    .replace("<'a>", "<'b>"),
+                                repeat_thread.inputs.len(),
+                                &[],
+                            )
+                            .into(),
+                        );
                         obj.insert(
                             "view_rs_type".into(),
                             rust_view::list_type(
-                                &rust_view::view_type(imports, alias, &body_type),
+                                &walk,
                                 repeat_thread.inputs.len(),
                                 f.present_if.is_some(),
                             )
@@ -6960,23 +6975,35 @@ fn render_codec(
                             .into(),
                         );
                         let entry = format!("{body_type}View");
+                        let view_list = rust_view::ViewList {
+                            field: f,
+                            fields: &m.fields,
+                            entry: &entry,
+                            inputs: &entry_thread.inputs,
+                            decode_arg: &entry_thread.decode_arg,
+                        };
+                        // How the list reads an entry, and what it carries from
+                        // one to the next: a marker type of its own, so the list
+                        // holds no function over the bytes' lifetime.
+                        let walk = rust_view::walk_name(&m.name, &f.id);
                         obj.insert(
-                            "view_rs_type".into(),
-                            rust_view::list_type(
-                                &rust_view::view_type(imports, alias, &body_type),
+                            "view_walk_item".into(),
+                            rust_view::walk_item(
+                                &walk,
+                                &entry,
+                                &rust_view::view_type(imports, alias, &body_type)
+                                    .replace("<'a>", "<'b>"),
                                 entry_thread.inputs.len(),
-                                gated,
+                                &rust_view::chain_advance(&view_list, &entry_binds),
                             )
                             .into(),
                         );
+                        obj.insert(
+                            "view_rs_type".into(),
+                            rust_view::list_type(&walk, entry_thread.inputs.len(), gated).into(),
+                        );
                         let view_stmt = rust_view::tlv_chain_decode_stmt(
-                            &rust_view::ViewList {
-                                field: f,
-                                fields: &m.fields,
-                                entry: &entry,
-                                inputs: &entry_thread.inputs,
-                                decode_arg: &entry_thread.decode_arg,
-                            },
+                            &view_list,
                             &rust_view::ViewChain {
                                 entry_binds: &entry_binds,
                                 max_depth: *max_depth,

@@ -249,7 +249,7 @@ where
 // one module path for the cursor, the sink and the storage policy alike.
 pub use crate::storage::*;
 // The list of a generated view, spelled from the same path as the rest.
-pub use crate::view::{ListIter, ListView};
+pub use crate::view::{ListIter, ListView, ListWalk};
 
 impl From<sce_portable_bytes::CapacityExceeded> for CodecError {
     /// A fixed-capacity `from_slice` past its bound is the same

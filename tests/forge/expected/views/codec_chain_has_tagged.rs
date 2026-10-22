@@ -25,7 +25,7 @@ use sce_forge_runtime::heapless::Vec as HeaplessVec;
 
 use super::codec_chain_has_tagged_entry::CodecChainHasTaggedEntry;
 
-use sce_forge_runtime::codec::ListView;
+use sce_forge_runtime::codec::{ListView, ListWalk};
 use super::codec_chain_has_tagged_entry::CodecChainHasTaggedEntryView;
 
 // pub API: codecs are intended for cross-crate consumption (SCE_FORGE.md
@@ -239,10 +239,23 @@ impl CodecChainHasTagged {
 // frames `CodecChainHasTagged::decode` refuses, with the same error: the entries
 // are decoded once to check them, and a walk afterwards cannot fail.
 #[allow(dead_code)]
+pub struct CodecChainHasTaggedEntriesWalk;
+
+impl ListWalk<0> for CodecChainHasTaggedEntriesWalk {
+    type Entry<'b> = CodecChainHasTaggedEntryView;
+
+    fn decode<'b>(_c: &mut SceCursor<'b>, _a: &[u8; 0]) -> Result<Self::Entry<'b>, CodecError> {
+        CodecChainHasTaggedEntryView::decode(_c)
+    }
+
+    fn advance(_e: &Self::Entry<'_>, _s: &mut [u8; 0]) {  }
+}
+
+#[allow(dead_code)]
 #[derive(Default, Debug, Clone, PartialEq)]
 pub struct CodecChainHasTaggedView<'a> {
     pub header: u8,
-    pub entries: ListView<'a, CodecChainHasTaggedEntryView, 0>,
+    pub entries: ListView<'a, CodecChainHasTaggedEntriesWalk, 0>,
     pub priority: Option<u8>,
     pub checksum: Option<u16>,
 }
@@ -303,7 +316,7 @@ impl<'a> CodecChainHasTaggedView<'a> {
             if _more {
                 return Err(CodecError::TlvChainOverflow);
             }
-            _out.entries = ListView::new(_rest, _count, [], |_c, _a| CodecChainHasTaggedEntryView::decode(_c), |_, _| {});
+            _out.entries = ListView::new(_rest, _count, []);
         }
         let _has_entries_7 = _out.entries.iter().any(|_e| u64::from(_e.entry_type) == 7u64);
         let _has_entries_9 = _out.entries.iter().any(|_e| u64::from(_e.entry_type) == 9u64);

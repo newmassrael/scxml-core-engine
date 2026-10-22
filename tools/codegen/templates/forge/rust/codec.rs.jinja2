@@ -42,7 +42,7 @@ use sce_forge_runtime::heapless::Vec as HeaplessVec;
 {% if emit_views %}
 
 {% if has_view_lists %}
-use sce_forge_runtime::codec::ListView;
+use sce_forge_runtime::codec::{ListView, ListWalk};
 {% endif %}
 {% for stmt in view_imports %}
 {{ stmt }}
@@ -366,6 +366,14 @@ impl{{ view_variant_lifetime }} Default for {{ struct_name }}ViewVariant{{ view_
 }
 
 {% endif %}
+{# How each list of the view reads its entries: one marker type for each, which the
+   list names by type (`ListWalk`) so that it holds no function over the lifetime of
+   the bytes and stays covariant in it. #}
+{% for field in fields %}
+{% if field.view_walk_item is defined %}
+{{ field.view_walk_item }}
+{% endif %}
+{% endfor %}
 #[allow(dead_code)]
 {{ codec_struct_derives_attr }}
 pub struct {{ struct_name }}View{{ view_lifetime }} {

@@ -58,7 +58,8 @@ stay as they are. A view holds what a decode learned, not a copy of what the wir
 - a scalar, a string or a byte field: as today (decoded eagerly; a string is validated as UTF-8 at decode);
 - an embedded body: its own `YView<'a>`;
 - a variant: an enum whose arms are views, so its size is the largest view and not the largest record;
-- a `<sce:repeat>` or `<sce:tlv-chain>`: a `ListView<'a, EView<'a>>` of the byte span the entries occupy, their count,
+- a `<sce:repeat>` or `<sce:tlv-chain>`: a `ListView<'a, W, K>` (`W` the marker type of the list, see the amendment of
+  2026-10-22) of the byte span the entries occupy, their count,
   and the few values a re-walk needs (what an `entry-flag-bind` carries from one entry to the next).
 
 A view is `Copy`, and its size depends on the number of fields and not on any `sce:max-count`.
@@ -239,3 +240,28 @@ not size.
 3. Is a Rust-only generation option, off by default and in the manner of `--owned-origin`, acceptable beside five
    backends that keep their own list forms?
 4. Is the value-returning `decode` ever retired, or kept for good beside the view?
+
+## Amendment, 2026-10-22: a list holds no function over the lifetime of its bytes
+
+The first `ListView<'a, E, K>` held how an entry is read as two function pointers,
+`fn(&mut SceCursor<'a>, &[u8; K]) -> Result<E, CodecError>` and `fn(&E, &mut [u8; K])`. A function pointer
+whose argument names `'a` is contravariant in it, the span `&'a [u8]` is covariant, so the list was **invariant** in
+`'a`: a view decoded from a buffer that lives long could not be lent where a shorter lifetime is asked for, which a
+borrowed view exists to allow. A consumer met it as two views of different lifetimes that would not go to one function,
+and as a view that could not be kept in a struct of a shorter life than its buffer. It was a defect of the view, not a
+request for a feature.
+
+How an entry is read is a type now: `ListWalk<K>`, a trait with a generic associated type (`type Entry<'b>`) and the
+two functions `decode` and `advance`, implemented by a marker type the generator writes for each list
+(`{Codec}{Field}Walk`). `ListView<'a, W, K>` holds a span, a count and the carried values, and names `W` through a
+`PhantomData<fn() -> W>`: it is covariant in `'a`, `Copy`, and two function pointers smaller. The entries it yields are
+`W::Entry<'a>`, the same types as before, so a reader of a view changes nothing; a generated codec spells the list's
+type differently (`ListView<'a, CodecRepeatBasicFragsWalk, 0>`), which is a source change for a consumer that named it.
+
+The evidence is two tests. A compile-time one in `view.rs` lends a list for less than it lives, which did not compile
+before. And `view_generated.rs` compiles six committed view goldens (a repeat to a count, to the end of the frame, a
+repeat with a flag carried to its entries, a chain that ends on a flag, a chain that carries the previous entry's
+flag) as modules of the runtime crate and asks each, over 40,000 frames from a fixed seed, whether the view and the
+eager decode answer alike: the same error, or the same value, the same bytes consumed and a builder equal to the eager
+value. Before it the goldens were held to their text and to compiling, and nothing ran a view; a golden whose
+`advance` tests the wrong value fails it at its first accepted frame.

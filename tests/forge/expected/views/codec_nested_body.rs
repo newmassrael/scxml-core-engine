@@ -25,7 +25,7 @@ use sce_forge_runtime::heapless::Vec as HeaplessVec;
 
 use super::codec_zenoh_locator::CodecZenohLocator;
 
-use sce_forge_runtime::codec::ListView;
+use sce_forge_runtime::codec::{ListView, ListWalk};
 use super::codec_zenoh_locator::CodecZenohLocatorView;
 
 // pub API: codecs are intended for cross-crate consumption (SCE_FORGE.md
@@ -162,10 +162,23 @@ impl<'a> CodecNestedBody<'a> {
 // frames `CodecNestedBody::decode` refuses, with the same error: the entries
 // are decoded once to check them, and a walk afterwards cannot fail.
 #[allow(dead_code)]
+pub struct CodecNestedBodyLocsWalk;
+
+impl ListWalk<0> for CodecNestedBodyLocsWalk {
+    type Entry<'b> = CodecZenohLocatorView<'b>;
+
+    fn decode<'b>(_c: &mut SceCursor<'b>, _a: &[u8; 0]) -> Result<Self::Entry<'b>, CodecError> {
+        CodecZenohLocatorView::decode(_c)
+    }
+
+    fn advance(_e: &Self::Entry<'_>, _s: &mut [u8; 0]) {  }
+}
+
+#[allow(dead_code)]
 #[derive(Default, Debug, Clone, PartialEq)]
 pub struct CodecNestedBodyView<'a> {
     pub n: u8,
-    pub locs: ListView<'a, CodecZenohLocatorView<'a>, 0>,
+    pub locs: ListView<'a, CodecNestedBodyLocsWalk, 0>,
 }
 
 #[allow(dead_code)]
@@ -217,7 +230,7 @@ impl<'a> CodecNestedBodyView<'a> {
                 }
                 _count += 1;
             }
-            _out.locs = ListView::new(_rest, _count, [], |_c, _a| CodecZenohLocatorView::decode(_c), |_, _| {});
+            _out.locs = ListView::new(_rest, _count, []);
         }
         _out.n = n;
         Ok(())

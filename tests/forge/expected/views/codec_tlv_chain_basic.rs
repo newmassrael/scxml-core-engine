@@ -25,7 +25,7 @@ use sce_forge_runtime::heapless::Vec as HeaplessVec;
 
 use super::codec_tlv_entry::CodecTlvEntry;
 
-use sce_forge_runtime::codec::ListView;
+use sce_forge_runtime::codec::{ListView, ListWalk};
 use super::codec_tlv_entry::CodecTlvEntryView;
 
 // pub API: codecs are intended for cross-crate consumption (SCE_FORGE.md
@@ -169,10 +169,23 @@ impl<'a> CodecTlvChainBasic<'a> {
 // frames `CodecTlvChainBasic::decode` refuses, with the same error: the entries
 // are decoded once to check them, and a walk afterwards cannot fail.
 #[allow(dead_code)]
+pub struct CodecTlvChainBasicExtensionsWalk;
+
+impl ListWalk<0> for CodecTlvChainBasicExtensionsWalk {
+    type Entry<'b> = CodecTlvEntryView<'b>;
+
+    fn decode<'b>(_c: &mut SceCursor<'b>, _a: &[u8; 0]) -> Result<Self::Entry<'b>, CodecError> {
+        CodecTlvEntryView::decode(_c)
+    }
+
+    fn advance(_e: &Self::Entry<'_>, _s: &mut [u8; 0]) {  }
+}
+
+#[allow(dead_code)]
 #[derive(Default, Debug, Clone, PartialEq)]
 pub struct CodecTlvChainBasicView<'a> {
     pub header_flags: u8,
-    pub extensions: ListView<'a, CodecTlvEntryView<'a>, 0>,
+    pub extensions: ListView<'a, CodecTlvChainBasicExtensionsWalk, 0>,
 }
 
 #[allow(dead_code)]
@@ -225,7 +238,7 @@ impl<'a> CodecTlvChainBasicView<'a> {
             if cursor.remaining() > 0 {
                 return Err(CodecError::TlvChainOverflow);
             }
-            _out.extensions = ListView::new(_rest, _count, [], |_c, _a| CodecTlvEntryView::decode(_c), |_, _| {});
+            _out.extensions = ListView::new(_rest, _count, []);
         }
         _out.header_flags = header_flags;
         Ok(())

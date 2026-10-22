@@ -25,7 +25,7 @@ use sce_forge_runtime::heapless::Vec as HeaplessVec;
 
 use super::codec_chain_prev_entry::CodecChainPrevEntry;
 
-use sce_forge_runtime::codec::ListView;
+use sce_forge_runtime::codec::{ListView, ListWalk};
 use super::codec_chain_prev_entry::CodecChainPrevEntryView;
 
 // pub API: codecs are intended for cross-crate consumption (SCE_FORGE.md
@@ -197,10 +197,23 @@ impl CodecChainPrevCarrier {
 // frames `CodecChainPrevCarrier::decode` refuses, with the same error: the entries
 // are decoded once to check them, and a walk afterwards cannot fail.
 #[allow(dead_code)]
+pub struct CodecChainPrevCarrierEntriesWalk;
+
+impl ListWalk<2> for CodecChainPrevCarrierEntriesWalk {
+    type Entry<'b> = CodecChainPrevEntryView;
+
+    fn decode<'b>(_c: &mut SceCursor<'b>, _a: &[u8; 2]) -> Result<Self::Entry<'b>, CodecError> {
+        CodecChainPrevEntryView::decode(_c, _a[0], _a[1])
+    }
+
+    fn advance(_e: &Self::Entry<'_>, _s: &mut [u8; 2]) { _s[0] = u8::from(u64::from(_e.ext_id()) == 4u64); }
+}
+
+#[allow(dead_code)]
 #[derive(Default, Debug, Clone, PartialEq)]
 pub struct CodecChainPrevCarrierView<'a> {
     pub head: u8,
-    pub entries: ListView<'a, CodecChainPrevEntryView, 2>,
+    pub entries: ListView<'a, CodecChainPrevCarrierEntriesWalk, 2>,
 }
 
 #[allow(dead_code)]
@@ -261,7 +274,7 @@ impl<'a> CodecChainPrevCarrierView<'a> {
             if _more {
                 return Err(CodecError::TlvChainOverflow);
             }
-            _out.entries = ListView::new(_rest, _count, [0, head & 0x1], |_c, _a| CodecChainPrevEntryView::decode(_c, _a[0], _a[1]), |_e, _s| { _s[0] = u8::from(u64::from(_e.ext_id()) == 4u64); });
+            _out.entries = ListView::new(_rest, _count, [0, head & 0x1]);
         }
         _out.head = head;
         Ok(())

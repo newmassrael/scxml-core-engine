@@ -37,15 +37,64 @@ pub(super) fn view_lifetime(borrowed: bool) -> &'static str {
     }
 }
 
-/// The type of a list field of a view: a [`ListView`](sce_forge_runtime::view::ListView) of the
-/// entry's view, `K` being how many flag inputs an entry's decode takes.
-pub(super) fn list_type(entry_view_ty: &str, inputs: usize, gated: bool) -> String {
-    let list = format!("ListView<'a, {entry_view_ty}, {inputs}>");
+/// The type of a list field of a view: a [`ListView`](sce_forge_runtime::view::ListView) read by
+/// the marker type `walk` ([`walk_item`]), `K` being how many flag inputs an entry's decode
+/// takes.
+pub(super) fn list_type(walk: &str, inputs: usize, gated: bool) -> String {
+    let list = format!("ListView<'a, {walk}, {inputs}>");
     if gated {
         format!("Option<{list}>")
     } else {
         list
     }
+}
+
+/// The name of the marker type that reads the entries of list field `field` of codec `codec`:
+/// `{Codec}{Field}Walk`, both in Pascal case.
+pub(super) fn walk_name(codec: &str, field: &str) -> String {
+    format!(
+        "{}{}Walk",
+        filters::to_pascal_case(codec.to_string()),
+        filters::to_pascal_case(field.to_string())
+    )
+}
+
+/// The marker type of one list and how it reads an entry
+/// ([`ListWalk`](sce_forge_runtime::view::ListWalk)): the item a view's list names by type, in
+/// place of the two function pointers it used to hold.
+///
+/// Function pointers over the lifetime of the bytes (`fn(&mut SceCursor<'a>, ..)`) made the list
+/// invariant in that lifetime, so a view decoded from a long-lived buffer could not be lent for a
+/// shorter time. The entry is `Entry<'b>` for the cursor's `'b` here, as a generic associated type
+/// says and a function pointer cannot.
+///
+/// `entry` is the entry's view as a path for a call (`{Entry}View`), `entry_ty` as a type with the
+/// lifetime `'b` where it carries one, and `inputs` how many flag inputs its decode takes, each
+/// handed over from `args` by position. `advance` rewrites the carried values from `_e`, the entry
+/// just read, into `_s`.
+pub(super) fn walk_item(
+    walk: &str,
+    entry: &str,
+    entry_ty: &str,
+    inputs: usize,
+    advance: &[String],
+) -> String {
+    let call_args: String = (0..inputs).map(|i| format!(", _a[{i}]")).collect();
+    let advance = advance.join(" ");
+    format!(
+        "#[allow(dead_code)]\n\
+         pub struct {walk};\n\
+         \n\
+         impl ListWalk<{inputs}> for {walk} {{\n    \
+             type Entry<'b> = {entry_ty};\n\
+         \n    \
+             fn decode<'b>(_c: &mut SceCursor<'b>, _a: &[u8; {inputs}]) -> Result<Self::Entry<'b>, CodecError> {{\n        \
+                 {entry}::decode(_c{call_args})\n    \
+             }}\n\
+         \n    \
+             fn advance(_e: &Self::Entry<'_>, _s: &mut [u8; {inputs}]) {{ {advance} }}\n\
+         }}\n"
+    )
 }
 
 /// One list of a view, as the scan that reads it needs it.
@@ -70,32 +119,22 @@ impl ViewList<'_> {
     /// `args` are what the walk starts with: what the parent fixes for every
     /// entry, evaluated here, after the scan, where the parent's locals are
     /// still in scope; and 0 for what a chain carries from one entry to the
-    /// next, which is 0 before the first entry (`ChainEntryBinds::decls`).
-    /// `advance` rewrites the carried values from the entry just read.
-    fn build(&self, advance: &[String]) -> String {
+    /// next, which is 0 before the first entry (`ChainEntryBinds::decls`). How an
+    /// entry is read is the field's marker type ([`walk_item`]), which the
+    /// list's type names.
+    fn build(&self) -> String {
         let args = self
             .inputs
             .iter()
             .map(|i| if i.from_chain { "0" } else { i.expr.as_str() })
             .collect::<Vec<_>>()
             .join(", ");
-        let call_args: String = (0..self.inputs.len())
-            .map(|i| format!(", _a[{i}]"))
-            .collect();
-        let entry = self.entry;
-        let advance = if advance.is_empty() {
-            "|_, _| {}".to_string()
-        } else {
-            format!("|_e, _s| {{ {} }}", advance.join(" "))
-        };
-        format!(
-            "ListView::new(_rest, _count, [{args}], |_c, _a| {entry}::decode(_c{call_args}), {advance})"
-        )
+        format!("ListView::new(_rest, _count, [{args}])")
     }
 
     /// The field's value, from `build`, as the field holds it.
-    fn value(&self, advance: &[String]) -> String {
-        let list = self.build(advance);
+    fn value(&self) -> String {
+        let list = self.build();
         if self.field.present_if.is_some() {
             format!("Some({list})")
         } else {
@@ -134,7 +173,7 @@ pub(super) fn repeat_decode_stmt(list: &ViewList, max_count: u32) -> String {
              }}"
         )
     };
-    let value = list.value(&[]);
+    let value = list.value();
     match &field.present_if {
         None => {
             let head = match count_ref {
@@ -241,22 +280,7 @@ pub(super) fn tlv_chain_decode_stmt(list: &ViewList, chain: &ViewChain) -> Strin
     }
     let body = chain_loop_body(indent, Some("            "), &lines);
     let more_decl = more_decl_line(lang, &entry_flag_acc, entry_binds, "            ");
-    let advance: Vec<String> = entry_binds
-        .binds
-        .iter()
-        .map(|bind| {
-            let position = list
-                .inputs
-                .iter()
-                .position(|i| i.from_chain && i.input == bind.input)
-                .expect("an entry-flag-bind names an input the entry codec declares");
-            format!(
-                "_s[{position}] = u8::from({});",
-                entry_binds.previous_entry_test(bind, field, "_e", lang)
-            )
-        })
-        .collect();
-    let value = list.value(&advance);
+    let value = list.value();
     let scan = format!(
         "{SCAN_OPEN}\n            \
          {more_decl}for _ in 0..{max_depth}u32 {{\n{body}\
@@ -274,6 +298,33 @@ pub(super) fn tlv_chain_decode_stmt(list: &ViewList, chain: &ViewChain) -> Strin
             )
         }
     }
+}
+
+/// What a walk of a `<sce:tlv-chain>` carries from one entry to the next, as the statements
+/// of [`ListWalk::advance`](sce_forge_runtime::view::ListWalk::advance): each
+/// `entry-flag-bind` rewrites its input from the entry just read (`_e`) with the same test the
+/// scan's loop makes. Empty for a chain that carries nothing.
+pub(super) fn chain_advance(list: &ViewList, entry_binds: &ChainEntryBinds) -> Vec<String> {
+    entry_binds
+        .binds
+        .iter()
+        .map(|bind| {
+            let position = list
+                .inputs
+                .iter()
+                .position(|i| i.from_chain && i.input == bind.input)
+                .expect("an entry-flag-bind names an input the entry codec declares");
+            format!(
+                "_s[{position}] = u8::from({});",
+                entry_binds.previous_entry_test(
+                    bind,
+                    list.field,
+                    "_e",
+                    crate::generator::Language::Rust
+                )
+            )
+        })
+        .collect()
 }
 
 /// `into_builder` of a field a view holds as the codec holds it (a number, a

@@ -33,6 +33,13 @@ pub mod queue;
 pub mod storage;
 pub mod timer;
 pub mod view;
+// The generated views, compiled from where they are committed and run against the
+// eager codecs (`view_generated`). They spell this crate as `sce_forge_runtime`, as
+// every consumer does, so the crate says that name for itself in a test build.
+#[cfg(test)]
+extern crate self as sce_forge_runtime;
+#[cfg(test)]
+mod view_generated;
 
 // Re-export `heapless` so generated codec output can spell its bounded
 // inline list type as `sce_forge_runtime::heapless::Vec<T, N>` without a
