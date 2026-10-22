@@ -5447,6 +5447,48 @@ SCE_SM_FN static {{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_impl({{ cs
 {% endif %}
 }
 
+/* W3C SCXML 3.2: stand a constructed machine in a configuration already judged
+   to be one of this document, entering nothing. What `_init_at` does after it
+   has constructed the machine, and what a restore of a saved state does
+   (SCE Accepted Subset §2.15) after the same. */
+SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_stand_in(
+    {{ csym_prefix }}{{ model.name }}_t *sm, const {{ csym_prefix }}{{ model.name }}_state_t *configuration, size_t count) {
+    /* W3C SCXML 3.2: the configuration IS the bitmap on this backend, so the
+       restore is the set of bits the host recorded — no entry walk, and so no
+       `<onentry>`. `_init_construct` has already memset it to zero, which is
+       what makes this an assignment of the whole configuration rather than a
+       merge with whatever was there. */
+    for (size_t i = 0u; i < count; ++i) {
+        sm->active |= state_bit(configuration[i]);
+    }
+    /* The restored states were entered by the run being resumed, so their
+       late-bound <data> is that run's — the host restores it, and a later
+       re-entry must not bind it again (§scxml-D-enterStates isFirstEntry). */
+    sm->late_bound = sm->active;
+
+    /* A configuration restored AT a top-level <final> is a run that has
+       already ended there; a legal configuration holds at most one. */
+    for (size_t i = 0u; i < count; ++i) {
+        if ((state_bit(configuration[i]) & {{ csym_prefix | upper }}{{ model.name | upper }}_FINAL_MASK) != 0u) {
+            sm->terminal_state = configuration[i];
+            sm->has_terminal_state = true;
+            break;
+        }
+    }
+{% if static_saved_shape %}
+    /* SCE Accepted Subset §2.15: the first atomic state of the configuration in
+       document order, which is the one it holds when it holds no <parallel>.
+       A host that knows better (a restore of a saved state) says so after. */
+    for (uint32_t k = 0u; k < (uint32_t){{ csym_prefix | upper }}{{ model.name | upper }}_STATE_COUNT; ++k) {
+        const {{ csym_prefix }}{{ model.name }}_state_t s = k_document_order[k];
+        if ((sm->active & state_bit(s)) != 0u && k_child_states[s] == 0u) {
+            sm->policy.current_state = s;
+            break;
+        }
+    }
+{% endif %}
+}
+
 /* W3C SCXML 3.2 — the resume door. See the header for what it is for, what it
    refuses, and why it is an `_init` variant rather than a call on a live
    machine. */
@@ -5476,31 +5518,14 @@ SCE_SM_FN {{ csym_prefix }}{{ model.name }}_configuration_rejection_t {{ csym_pr
     (void){{ csym_prefix }}{{ model.name }}_init_construct(sm{% if model.needs_event_scheduler %}, clock{% endif %}{% if model.needs_script_engine %}, basic_http_access_uri{% endif %}{% if model.host_processor_types %}, host_processors{% endif %}{% if model.host_invoker_types %}, NULL{% endif %});
 {% endif %}
 
-    /* W3C SCXML 3.2: the configuration IS the bitmap on this backend, so the
-       restore is the set of bits the host recorded — no entry walk, and so no
-       `<onentry>`. `_init_construct` has already memset it to zero, which is
-       what makes this an assignment of the whole configuration rather than a
-       merge with whatever was there. */
-    for (size_t i = 0u; i < count; ++i) {
-        sm->active |= state_bit(configuration[i]);
-    }
-    /* The restored states were entered by the run being resumed, so their
-       late-bound <data> is that run's — the host restores it, and a later
-       re-entry must not bind it again (§scxml-D-enterStates isFirstEntry). */
-    sm->late_bound = sm->active;
-
-    /* A configuration restored AT a top-level <final> is a run that has
-       already ended there; a legal configuration holds at most one. */
-    for (size_t i = 0u; i < count; ++i) {
-        if ((state_bit(configuration[i]) & {{ csym_prefix | upper }}{{ model.name | upper }}_FINAL_MASK) != 0u) {
-            sm->terminal_state = configuration[i];
-            sm->has_terminal_state = true;
-            break;
-        }
-    }
-
+    {{ csym_prefix }}{{ model.name }}_stand_in(sm, configuration, count);
     return {{ csym_prefix | upper }}{{ model.name | upper }}_CONFIG_NONE;
 }
+
+{% if static_saved_shape %}
+{% include 'c/saved.c.jinja2' %}
+
+{% endif %}
 
 {% if has_native_actions %}
 SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_init_with_actions({{ csym_prefix }}{{ model.name }}_t *sm,

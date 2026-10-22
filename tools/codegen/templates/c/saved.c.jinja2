@@ -1,0 +1,1003 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{#
+    Saving this machine and restoring it (SCE Accepted Subset §2.15, docs/adr/0045):
+    the functions of a `sce-static` document that saves, included by
+    `state_machine.c.jinja2` after the doors that construct a machine. The C11
+    twin of the saved block of tools/codegen/templates/go/state_machine.go.jinja2
+    and of tools/codegen/templates/python/saved_functions.py.jinja2.
+
+    The profile is the C11 one: nothing is allocated. A text a machine restores is
+    read in place (`sce/saved_state.h`), a text it saves is written into a buffer
+    the host owns (`sce/saved_json.h`), and a value is read into the machine's own
+    fields by a reader that judges it without keeping it when it is handed no place
+    to keep it. So a state is judged before anything is written, and a restore a
+    machine refuses leaves it as the caller had it (`_restore` constructs the
+    machine only after the judge has passed).
+
+    The `_save`, `_judge` and `_restore` doors are declared in the header.
+#}
+
+{#- A variable's saved form. `is_enum` says the value is of an enum, written and
+    read by the functions its type declares beside it. -#}
+{% macro put_scalar(is_enum, stype, expr) -%}
+{%- if is_enum -%}
+{{ stype }}_saved_write(w, {{ expr }});
+{%- elif stype == "string" -%}
+sce_saved_write_string(w, ({{ expr }}).data);
+{%- elif stype == "bytes" -%}
+sce_saved_write_bytes(w, ({{ expr }}).data, ({{ expr }}).len);
+{%- else -%}
+sce_saved_write_{{ stype }}(w, {{ expr }});
+{%- endif -%}
+{%- endmacro %}
+{% macro get_scalar(is_enum, stype, bound, member, what, dest) -%}
+{%- if is_enum -%}
+{{ stype }}_saved_read({{ member }}, {{ what }}, &{{ dest }}, err)
+{%- elif stype == "string" -%}
+sce_saved_read_string_bounded({{ member }}, {{ what }}, ({{ dest }}).data, {{ bound }}u, err)
+{%- elif stype == "bytes" -%}
+sce_saved_read_bytes({{ member }}, {{ what }}, ({{ dest }}).data, {{ bound }}u, &({{ dest }}).len, err)
+{%- else -%}
+sce_saved_read_{{ stype }}({{ member }}, {{ what }}, &{{ dest }}, err)
+{%- endif -%}
+{%- endmacro %}
+{#- The statement that writes the variable `field`, held in `expr`. -#}
+{% macro put_value(field, expr) -%}
+{%- if field.saved_kind == "scalar" -%}
+{{ put_scalar(false, field.saved_type, expr) }}
+{%- elif field.saved_kind == "enum" -%}
+{{ put_scalar(true, field.saved_type, expr) }}
+{%- elif field.saved_kind == "record" -%}
+{{ field.saved_type }}_saved_write(w, &{{ expr }});
+{%- elif field.saved_kind == "list" -%}
+sce_jw_begin_array(w);
+    for (size_t at_ = 0u; at_ < ({{ expr }}).len; ++at_) {
+        sce_jw_element(w);
+        {{ put_scalar(false, field.saved_type, expr ~ ".data[at_]") }}
+    }
+    sce_jw_end_array(w);
+{%- elif field.saved_kind == "record_list" -%}
+sce_jw_begin_array(w);
+    for (size_t at_ = 0u; at_ < ({{ expr }}).len; ++at_) {
+        sce_jw_element(w);
+        {{ field.saved_type }}_saved_write(w, &({{ expr }}).data[at_]);
+    }
+    sce_jw_end_array(w);
+{%- elif field.saved_kind == "optional" -%}
+if (({{ expr }}).present) {
+        {{ put_scalar(field.saved_elem == "enum", field.saved_type, expr ~ ".value") }}
+    } else {
+        sce_jw_null(w);
+    }
+{%- endif -%}
+{%- endmacro %}
+{#- Which revision of its schema the record the variable `field` holds was saved at:
+    the entry of `record_at` for the lineage that names the variable a holder, and 1
+    for a variable that is no record. -#}
+{% macro record_at_of(field) -%}
+{%- set found = namespace(index=-1) -%}
+{%- for record in static_saved_shape.records -%}
+{%- set outer = loop.index0 -%}
+{%- for holder in record.holders -%}
+{%- if holder.variable == field.id -%}{%- set found.index = outer -%}{%- endif -%}
+{%- endfor -%}
+{%- endfor -%}
+{%- if found.index >= 0 -%}record_at[{{ found.index }}]{%- else -%}1u{%- endif -%}
+{%- endmacro %}
+
+{% set _t = csym_prefix ~ model.name %}
+{% set _u = csym_prefix | upper ~ model.name | upper %}
+{# What `_restore` is handed besides the text: the seams every `_init*` takes
+   (the clock, the host's processors and invokers, the acts it performs). Kept in
+   step with the same `set`s in `state_machine.h.jinja2`. #}
+{% set host_duty_children = namespace(any=false) %}
+{% for invoke_info in model.invokes | scxml %}
+{% if invoke_info.child_declares_host_duties %}{% set host_duty_children.any = true %}{% endif %}
+{% endfor %}
+{% for invoke_info in model.invokes | hybrid %}
+{% for candidate in invoke_info.candidates %}
+{% if candidate.child_declares_host_duties %}{% set host_duty_children.any = true %}{% endif %}
+{% endfor %}
+{% endfor %}
+{% set takes_simulated_host = has_native_duties or host_duty_children.any %}
+{% set saved_restore_args = model.needs_event_scheduler or model.host_processor_types or model.host_invoker_types or has_native_actions %}
+{% set n_records = static_saved_shape.records | length %}
+{% set n_enums = static_saved_shape.enums | length %}
+{% set n_histories = model.history_states | length %}
+{% set shape_revised = namespace(any=false) %}
+{% for record in static_saved_shape.records %}{% if record.revisions %}{% set shape_revised.any = true %}{% endif %}{% endfor %}
+{% for lineage in static_saved_shape.enums %}{% if lineage.revisions %}{% set shape_revised.any = true %}{% endif %}{% endfor %}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   SCE Accepted Subset §2.15: saving this machine, restoring it
+   ══════════════════════════════════════════════════════════════════════════ */
+
+{% for record in static_saved_shape.records %}
+{% if record.revisions %}
+static const char *const {{ _t }}_saved_digests_record_{{ loop.index0 }}[] = {
+{% for digest in record.revisions %}
+    "{{ digest }}",
+{% endfor %}
+};
+{% endif %}
+{% endfor %}
+{% for lineage in static_saved_shape.enums %}
+{% if lineage.revisions %}
+static const char *const {{ _t }}_saved_digests_enum_{{ loop.index0 }}[] = {
+{% for digest in lineage.revisions %}
+    "{{ digest }}",
+{% endfor %}
+};
+{% endif %}
+{% if lineage.added %}
+static const sce_saved_added_variant_t {{ _t }}_saved_added_enum_{{ loop.index0 }}[] = {
+{% for variant in lineage.added %}
+    { "{{ variant.name | escape_c }}", {{ variant.since }}u },
+{% endfor %}
+};
+{% endif %}
+{% if lineage.holders %}
+static const sce_saved_enum_holder_t {{ _t }}_saved_holders_enum_{{ loop.index0 }}[] = {
+{% for holder in lineage.holders %}
+    { "{{ holder.variable | escape_c }}", {% if holder.field is not none %}"{{ holder.field | escape_c }}"{% else %}NULL{% endif %}, {{ 'true' if holder.list else 'false' }} },
+{% endfor %}
+};
+{% endif %}
+{% endfor %}
+{% if n_records %}
+static const sce_saved_lineage_t {{ _t }}_saved_records[] = {
+{% for record in static_saved_shape.records %}
+    { "{{ record.event | escape_c }}", {{ record.revision }}u, {% if record.revisions %}{{ _t }}_saved_digests_record_{{ loop.index0 }}{% else %}NULL{% endif %}, {{ record.revisions | length }}u, NULL, 0u, NULL, 0u },
+{% endfor %}
+};
+{% endif %}
+{% if n_enums %}
+static const sce_saved_lineage_t {{ _t }}_saved_enums[] = {
+{% for lineage in static_saved_shape.enums %}
+    { "{{ lineage.key | escape_c }}", {{ lineage.revision }}u, {% if lineage.revisions %}{{ _t }}_saved_digests_enum_{{ loop.index0 }}{% else %}NULL{% endif %}, {{ lineage.revisions | length }}u,
+      {% if lineage.added %}{{ _t }}_saved_added_enum_{{ loop.index0 }}{% else %}NULL{% endif %}, {{ lineage.added | length }}u,
+      {% if lineage.holders %}{{ _t }}_saved_holders_enum_{{ loop.index0 }}{% else %}NULL{% endif %}, {{ lineage.holders | length }}u },
+{% endfor %}
+};
+{% endif %}
+
+/* What a saved state of this document is bound to: a state saved from a document
+   that renamed, re-typed or moved a state or a variable is refused, one saved
+   before a guard or an action changed is not, and one saved at an earlier revision
+   of a record schema is read with each field a later revision added at its
+   default. */
+static const sce_saved_shape_t {{ _t }}_saved_shape = {
+    "{{ static_saved_shape.first }}",
+    "{{ static_saved_shape.revised }}",
+    "{{ static_saved_shape.format2_first }}",
+    "{{ static_saved_shape.format2_revised }}",
+    {% if n_records %}{{ _t }}_saved_records{% else %}NULL{% endif %}, {{ n_records }}u,
+    {% if n_enums %}{{ _t }}_saved_enums{% else %}NULL{% endif %}, {{ n_enums }}u
+};
+
+/* The name the document writes for an event, which a saved state holds it by. */
+SCE_SM_FN static SCE_C_UNUSED const char *{{ _t }}_saved_event_name({{ _t }}_event_t event) {
+    switch (event) {
+{% for event_name in model.events | sort %}
+    case {{ _u }}_EVENT_{{ event_name | to_c11_upper_ident }}:
+        return "{{ event_name | event_wire_name }}";
+{% endfor %}
+    default:
+        return "";
+    }
+}
+
+/* The states of `bits`, in document order, as a saved state lists them. */
+SCE_SM_FN static void {{ _t }}_saved_write_states(sce_jw_t *w, uint32_t bits) {
+    sce_jw_begin_array(w);
+    for (uint32_t k = 0u; k < (uint32_t){{ _u }}_STATE_COUNT; ++k) {
+        const {{ _t }}_state_t s = k_document_order[k];
+        if ((bits & state_bit(s)) != 0u) {
+            sce_jw_element(w);
+            sce_jw_string(w, {{ _t }}_state_name(s));
+        }
+    }
+    sce_jw_end_array(w);
+}
+
+{# ── Variables ─────────────────────────────────────────────────────────── #}
+{% for field in static_fields %}
+/* The variable `{{ field.id }}`, read from its saved form; `out` may be NULL, which judges the
+   value and keeps nothing. */
+SCE_SM_FN static bool {{ _t }}_saved_read_{{ field.name }}(sce_jv_t v, const char *what, unsigned at, {{ field.ty }} *out,
+                                                        sce_saved_error_t *err) {
+    {{ field.ty }} value;
+    (void)at;
+    memset(&value, 0, sizeof(value));
+{% if field.saved_kind == "scalar" %}
+    if (!{{ get_scalar(false, field.saved_type, field.bound, "v", "what", "value") }}) {
+        return false;
+    }
+{% elif field.saved_kind == "enum" %}
+    if (!{{ get_scalar(true, field.saved_type, field.bound, "v", "what", "value") }}) {
+        return false;
+    }
+{% elif field.saved_kind == "record" %}
+    if (!{{ field.saved_type }}_saved_read(v, what, at, &value, err)) {
+        return false;
+    }
+{% elif field.saved_kind == "list" or field.saved_kind == "record_list" %}
+    {
+        size_t count = 0u;
+        sce_jiter_t it;
+        sce_jv_t item;
+        char element_what[SCE_SAVED_AT_LEN];
+        if (!sce_saved_list(v, what, {{ field.bound }}u, &count, err)) {
+            return false;
+        }
+        (void)sce_jv_iter(v, &it);
+        for (size_t i = 0u; sce_jiter_element(&it, &item); ++i) {
+            (void)snprintf(element_what, sizeof(element_what), "%s[%lu]", what, (unsigned long)i);
+{% if field.saved_kind == "list" %}
+            if (!{{ get_scalar(false, field.saved_type, none, "item", "element_what", "value.data[i]") }}) {
+                return false;
+            }
+{% else %}
+            if (!{{ field.saved_type }}_saved_read(item, element_what, at, &value.data[i], err)) {
+                return false;
+            }
+{% endif %}
+        }
+        value.len = count;
+    }
+{% elif field.saved_kind == "optional" %}
+    if (!sce_jv_is_null(v)) {
+        value.present = true;
+        if (!{{ get_scalar(field.saved_elem == "enum", field.saved_type, field.bound, "v", "what", "value.value") }}) {
+            return false;
+        }
+    }
+{% endif %}
+    if (out != NULL) {
+        *out = value;
+    }
+    return true;
+}
+
+{% endfor %}
+/* Every variable of `s`, read as the value of its type, or the refusal that names the first that
+   is not one. `policy` is where they are kept, NULL to judge them and keep none. */
+SCE_SM_FN static bool {{ _t }}_saved_read_variables(const sce_saved_session_t *s, const unsigned *record_at,
+                                                  {{ _t }}_policy_t *policy, sce_saved_error_t *err) {
+    sce_jv_t v;
+    (void)record_at;
+    (void)policy;
+    (void)v;
+{% for field in static_fields %}
+    if (!sce_jv_get(s->variables, "{{ field.id | escape_c }}", &v)) {
+        return sce_saved_refuse(err, "the saved state has no variable '{{ field.id | escape_c }}'");
+    }
+    if (!{{ _t }}_saved_read_{{ field.name }}(v, "{{ field.id | escape_c }}", {{ record_at_of(field) }},
+                                              policy != NULL ? &policy->{{ field.name }} : NULL, err)) {
+        return false;
+    }
+{% endfor %}
+    return true;
+}
+
+{# ── Histories (§scxml-3.10) ───────────────────────────────────────────── #}
+{% if model.has_history_states %}
+typedef struct {
+    const char *id;
+    {{ _t }}_state_t parent;
+    bool deep;
+} {{ _t }}_saved_history_t;
+
+/* The document's `<history>` elements, by id, which is the order a saved state lists them in. */
+static const {{ _t }}_saved_history_t {{ _t }}_saved_histories[] = {
+{% for hid, info in model.history_states | dictsort(case_sensitive=true) %}
+    { "{{ hid | escape_c }}", {{ _u }}_STATE_{{ info.parent | to_c11_upper_ident }}, {{ 'true' if info.type == 'deep' else 'false' }} },
+{% endfor %}
+};
+
+/* What history `index` recorded, as the states of its snapshot; false when it has recorded
+   nothing. */
+SCE_SM_FN static bool {{ _t }}_saved_history_get(const {{ _t }}_t *sm, size_t index, uint32_t *bits) {
+    switch (index) {
+{% for hid, info in model.history_states | dictsort(case_sensitive=true) %}
+    case {{ loop.index0 }}u:
+        *bits = sm->policy.history_{{ hid }}_snapshot;
+        return sm->policy.history_{{ hid }}_recorded && sm->policy.history_{{ hid }}_snapshot != 0u;
+{% endfor %}
+    default:
+        return false;
+    }
+}
+
+SCE_SM_FN static void {{ _t }}_saved_history_set({{ _t }}_t *sm, size_t index, uint32_t bits) {
+    switch (index) {
+{% for hid, info in model.history_states | dictsort(case_sensitive=true) %}
+    case {{ loop.index0 }}u:
+        sm->policy.history_{{ hid }}_snapshot = bits;
+        sm->policy.history_{{ hid }}_recorded = true;
+        break;
+{% endfor %}
+    default:
+        break;
+    }
+}
+
+/* §scxml-3.11, for a subtree: whether `state`, in the set `among`, holds the number of children a
+   configuration gives it. */
+SCE_SM_FN static {{ _t }}_configuration_rejection_t {{ _t }}_saved_child_arity(uint32_t among, {{ _t }}_state_t state) {
+    const uint32_t children = k_child_states[state];
+    uint32_t held = among & children;
+    size_t count = 0u;
+    while (held != 0u) {
+        held &= held - 1u;
+        ++count;
+    }
+    if (state_is_parallel(state)) {
+        if ((children & ~among) != 0u) {
+            return {{ _u }}_CONFIG_PARALLEL_REGION_MISSING;
+        }
+        size_t regions = 0u;
+        for (uint32_t rest = children; rest != 0u; rest &= rest - 1u) {
+            ++regions;
+        }
+        return count != regions ? {{ _u }}_CONFIG_PARALLEL_CHILD_COUNT : {{ _u }}_CONFIG_NONE;
+    }
+    if (state_is_compound(state)) {
+        return count != 1u ? {{ _u }}_CONFIG_COMPOUND_CHILD_COUNT : {{ _u }}_CONFIG_NONE;
+    }
+    return count != 0u ? {{ _u }}_CONFIG_ATOMIC_HAS_CHILDREN : {{ _u }}_CONFIG_NONE;
+}
+
+/* The history `history` of the parent `parent`, deep or shallow, as a saved state records it:
+   its active children for a shallow one, the active atomic states below it for a deep one
+   (§scxml-3.10). What it recorded is part of a configuration, so a value read back is held to
+   that, and the restored machine can only be taken through the history to a configuration its
+   document could have been in. Refused with the words of the other backends, naming the state. */
+SCE_SM_FN static bool {{ _t }}_saved_history_read(sce_jv_t names, const char *history, {{ _t }}_state_t parent, bool deep,
+                                                uint32_t *bits, sce_saved_error_t *err) {
+    sce_jiter_t it;
+    sce_jv_t item;
+    uint32_t held = 0u;
+    uint32_t subtree = state_bit(parent);
+    char name[SCE_SAVED_QUOTE_LEN];
+    size_t count = 0u;
+    (void)sce_jv_iter(names, &it);
+    while (sce_jiter_element(&it, &item)) {
+        {{ _t }}_state_t state;
+        (void)sce_jv_string(item, name, sizeof(name), NULL);
+        if (!{{ _t }}_state_from_name(name, &state)) {
+            return sce_saved_refuse(err, "the history '%s' records '%s', which the document does not name", history, name);
+        }
+        if ((held & state_bit(state)) != 0u) {
+            return sce_saved_refuse(err, "the history '%s' records '%s' twice", history, name);
+        }
+        held |= state_bit(state);
+        ++count;
+    }
+    if (count == 0u) {
+        return sce_saved_refuse(err, "the history '%s' records no state, and a history records at least one", history);
+    }
+    for (uint32_t k = 0u; k < (uint32_t){{ _u }}_STATE_COUNT; ++k) {
+        /* The recorded states, and every state between each of them and `parent`. */
+        {{ _t }}_state_t state = ({{ _t }}_state_t)k;
+        uint32_t chain = 0u;
+        bool has_parent = true;
+        if ((held & state_bit(state)) == 0u) {
+            continue;
+        }
+        while (has_parent && state != parent) {
+            chain |= state_bit(state);
+            state = state_get_parent(state, &has_parent);
+        }
+        if (!has_parent || chain == 0u) {
+            return sce_saved_refuse(err, "the history '%s' records '%s', which is not below its parent '%s'", history,
+                                    {{ _t }}_state_name(({{ _t }}_state_t)k), {{ _t }}_state_name(parent));
+        }
+        subtree |= chain;
+    }
+    if (deep) {
+        for (uint32_t k = 0u; k < (uint32_t){{ _u }}_STATE_COUNT; ++k) {
+            if ((held & state_bit(({{ _t }}_state_t)k)) != 0u && k_child_states[k] != 0u) {
+                return sce_saved_refuse(err,
+                                        "the history '%s' records '%s', which has children (a deep history records "
+                                        "atomic states)",
+                                        history, {{ _t }}_state_name(({{ _t }}_state_t)k));
+            }
+        }
+        for (uint32_t k = 0u; k < (uint32_t){{ _u }}_STATE_COUNT; ++k) {
+            if ((subtree & state_bit(({{ _t }}_state_t)k)) != 0u) {
+                const {{ _t }}_configuration_rejection_t verdict = {{ _t }}_saved_child_arity(subtree, ({{ _t }}_state_t)k);
+                if (verdict != {{ _u }}_CONFIG_NONE) {
+                    return sce_saved_refuse(err, "the history '%s' records states of no configuration: %s", history,
+                                            {{ _t }}_configuration_rejection_text(verdict));
+                }
+            }
+        }
+    } else {
+        for (uint32_t k = 0u; k < (uint32_t){{ _u }}_STATE_COUNT; ++k) {
+            bool has_parent = false;
+            if ((held & state_bit(({{ _t }}_state_t)k)) != 0u &&
+                (state_get_parent(({{ _t }}_state_t)k, &has_parent) != parent || !has_parent)) {
+                return sce_saved_refuse(err,
+                                        "the history '%s' records '%s', which is not a child of '%s' (a shallow history "
+                                        "records the children)",
+                                        history, {{ _t }}_state_name(({{ _t }}_state_t)k), {{ _t }}_state_name(parent));
+            }
+        }
+        {
+            const {{ _t }}_configuration_rejection_t verdict = {{ _t }}_saved_child_arity(subtree, parent);
+            if (verdict != {{ _u }}_CONFIG_NONE) {
+                return sce_saved_refuse(err, "the history '%s' records states of no configuration: %s", history,
+                                        {{ _t }}_configuration_rejection_text(verdict));
+            }
+        }
+    }
+    *bits = held;
+    return true;
+}
+
+/* What `s` records for each `<history>` of the document, as the states of this document, or the
+   refusal that says which value is not one. A history the document does not declare is refused.
+   `bits[i]` and `recorded[i]` are history `i`'s. */
+SCE_SM_FN static bool {{ _t }}_saved_histories_read(const sce_saved_session_t *s, uint32_t *bits, bool *recorded,
+                                                  sce_saved_error_t *err) {
+    sce_jiter_t it;
+    sce_jv_t key;
+    sce_jv_t names;
+    for (size_t i = 0u; i < {{ n_histories }}u; ++i) {
+        bits[i] = 0u;
+        recorded[i] = false;
+    }
+    (void)sce_jv_iter(s->history, &it);
+    while (sce_jiter_member(&it, &key, &names)) {
+        size_t index = 0u;
+        char id[SCE_SAVED_QUOTE_LEN];
+        bool found = false;
+        (void)sce_jv_string(key, id, sizeof(id), NULL);
+        for (size_t i = 0u; i < {{ n_histories }}u && !found; ++i) {
+            if (sce_jv_string_is(key, {{ _t }}_saved_histories[i].id)) {
+                index = i;
+                found = true;
+            }
+        }
+        if (!found) {
+            return sce_saved_refuse(err,
+                                    "the saved state records the history '%s', which the document does not declare", id);
+        }
+        if (!{{ _t }}_saved_history_read(names, {{ _t }}_saved_histories[index].id, {{ _t }}_saved_histories[index].parent,
+                                         {{ _t }}_saved_histories[index].deep, &bits[index], err)) {
+            return false;
+        }
+        recorded[index] = true;
+    }
+    return true;
+}
+
+{% endif %}
+{# ── The queues ─────────────────────────────────────────────────────────── #}
+/* The events `s` queues for this session, judged and, given the machine, queued. The name an event
+   arrived under is the document's own event for it, or the one it extends (§scxml-3.12.1); one
+   the document does not name refuses the restore, not the queue before it. */
+SCE_SM_FN static bool {{ _t }}_saved_events(const sce_saved_session_t *s, {{ _t }}_t *sm, sce_saved_error_t *err) {
+    sce_jiter_t it;
+    sce_jv_t item;
+    const size_t held = sce_jv_count(s->external);
+    (void)sm;
+    if (held > (size_t)SCE_MAX_EVENTS) {
+        return sce_saved_refuse(err, "'external' holds %lu events, past the %lu this build queues", (unsigned long)held,
+                                (unsigned long)SCE_MAX_EVENTS);
+    }
+    (void)sce_jv_iter(s->external, &it);
+    for (size_t at = 0u; sce_jiter_element(&it, &item); ++at) {
+        sce_saved_event_t event;
+        {{ _t }}_event_with_meta_t queued;
+        char what[SCE_SAVED_WHAT_LEN];
+        char field[SCE_SAVED_AT_LEN];
+        char name[SCE_MAX_ID_LEN];
+        char quoted[SCE_SAVED_QUOTE_LEN];
+        char kind[SCE_MAX_EVENT_TYPE_LEN];
+        (void)snprintf(what, sizeof(what), "external[%lu]", (unsigned long)at);
+        if (!sce_saved_event_read(item, what, &event, err)) {
+            return false;
+        }
+        memset(&queued, 0, sizeof(queued));
+        (void)sce_jv_string(event.name, quoted, sizeof(quoted), NULL);
+        if (!sce_jv_string(event.name, name, sizeof(name), NULL) ||
+            !{{ _t }}_arrive(name, strlen(name), &queued.event, queued.name)) {
+            return sce_saved_refuse(err, "%s is '%s', which the document does not name", what, quoted);
+        }
+        if (!sce_jv_string(event.type, kind, sizeof(kind), NULL) ||
+            (strcmp(kind, "internal") != 0 && strcmp(kind, "external") != 0 && strcmp(kind, "platform") != 0)) {
+            (void)sce_jv_string(event.type, quoted, sizeof(quoted), NULL);
+            return sce_saved_refuse(err, "%s has the type '%s', which is not an event type", what, quoted);
+        }
+        (void)snprintf(field, sizeof(field), "%s.data", what);
+        if (!sce_saved_text_into(event.data, field, queued.data, sizeof(queued.data), err)) {
+            return false;
+        }
+        (void)snprintf(field, sizeof(field), "%s.sendid", what);
+        if (!sce_saved_text_into(event.send_id, field, queued.send_id, sizeof(queued.send_id), err)) {
+            return false;
+        }
+        (void)snprintf(field, sizeof(field), "%s.origin", what);
+        if (!sce_saved_text_into(event.origin, field, queued.origin, sizeof(queued.origin), err)) {
+            return false;
+        }
+        (void)snprintf(field, sizeof(field), "%s.origintype", what);
+        if (!sce_saved_text_into(event.origin_type, field, queued.origin_type, sizeof(queued.origin_type), err)) {
+            return false;
+        }
+        (void)snprintf(field, sizeof(field), "%s.invokeid", what);
+        if (!sce_saved_text_into(event.invoke_id, field, queued.invoke_id, sizeof(queued.invoke_id), err)) {
+            return false;
+        }
+        (void)sce_jv_string(event.type, queued.type, sizeof(queued.type), NULL);
+{% if model.host_invoker_types %}
+        queued.has_host_invoke_token = event.has_host_invoke_token;
+        queued.host_invoke_token = (uint64_t)event.host_invoke_token;
+{% else %}
+        if (event.has_host_invoke_token) {
+            return sce_saved_refuse(err, "%s carries the token of a host-run invocation, and the document runs none",
+                                    what);
+        }
+{% endif %}
+        if (sm != NULL) {
+            event_queue_push(&sm->external_queue, &queued);
+        }
+    }
+    return true;
+}
+
+{% if model.needs_event_scheduler %}
+/* The delayed `<send>`s `s` waits on, judged and, given the machine, armed against its clock: each
+   comes due `due - wall_now_ms` after now, and one that came due while the machine was away comes
+   due now, behind the ones due before it. */
+SCE_SM_FN static bool {{ _t }}_saved_sends(const sce_saved_session_t *s, {{ _t }}_t *sm, int64_t wall_now_ms,
+                                         sce_saved_error_t *err) {
+    sce_jiter_t it;
+    sce_jv_t item;
+    const size_t held = sce_jv_count(s->pending);
+    const uint64_t now_ms = sm != NULL ? sched_now_ms(sm) : 0u;
+    (void)wall_now_ms;
+    (void)now_ms;
+    if (held > (size_t)SCE_MAX_SCHEDULED) {
+        return sce_saved_refuse(err, "'pending' holds %lu sends, past the %lu this build queues", (unsigned long)held,
+                                (unsigned long)SCE_MAX_SCHEDULED);
+    }
+    (void)sce_jv_iter(s->pending, &it);
+    for (size_t at = 0u; sce_jiter_element(&it, &item); ++at) {
+        sce_saved_send_t send;
+        {{ _t }}_event_t resolved = {{ _u }}_EVENT_NONE;
+        {{ _t }}_scheduled_entry_t *slot;
+        char what[SCE_SAVED_WHAT_LEN];
+        char field[SCE_SAVED_AT_LEN];
+        char name[SCE_MAX_ID_LEN];
+        char quoted[SCE_SAVED_QUOTE_LEN];
+        char arrival[SCE_MAX_ID_LEN];
+        (void)snprintf(what, sizeof(what), "pending[%lu]", (unsigned long)at);
+        if (!sce_saved_send_read(item, what, s->format, &send, err)) {
+            return false;
+        }
+        (void)sce_jv_string(send.event, quoted, sizeof(quoted), NULL);
+        switch (send.act) {
+        case SCE_SAVED_ACT_RAISE:
+        case SCE_SAVED_ACT_INTERNAL:
+            if (!sce_jv_string(send.event, name, sizeof(name), NULL) ||
+                !{{ _t }}_arrive(name, strlen(name), &resolved, arrival)) {
+                return sce_saved_refuse(err, "%s is '%s', which the document does not name", what, quoted);
+            }
+            break;
+        case SCE_SAVED_ACT_PARENT:
+{% if model.may_address_parent %}
+            break;
+{% else %}
+            return sce_saved_refuse(err, "%s is a send to the parent, which the document never makes", what);
+{% endif %}
+        case SCE_SAVED_ACT_CHILD:
+        case SCE_SAVED_ACT_HOST:
+            return sce_saved_refuse(err, "%s is a send this document never makes", what);
+        }
+        (void)snprintf(field, sizeof(field), "%s.sendid", what);
+        if (!sce_saved_text_into(send.send_id, field, NULL, sizeof(slot->send_id), err)) {
+            return false;
+        }
+        (void)snprintf(field, sizeof(field), "%s.data", what);
+{% if model.needs_script_engine or model.has_delayed_send_payload %}
+        if (!sce_saved_text_into(send.data, field, NULL, sizeof(slot->data), err)) {
+            return false;
+        }
+{% else %}
+        if (sce_jv_string_len(send.data) != 0u) {
+            return sce_saved_refuse(err, "'%s' is a payload, which no delayed send of this document carries", field);
+        }
+{% endif %}
+        if (sm != NULL) {
+            slot = scheduled_reserve(sm, sce_saved_ready_at(wall_now_ms, now_ms, send.due),
+                                     "the scheduled-send queue is full, so this <send delay> was dropped");
+            if (slot == NULL) {
+                return sce_saved_refuse(err, "%s could not be armed: the scheduled-send queue is full", what);
+            }
+            slot->event = resolved;
+            (void)sce_jv_string(send.send_id, slot->send_id, sizeof(slot->send_id), NULL);
+{% if model.needs_script_engine or model.has_delayed_send_payload %}
+            (void)sce_jv_string(send.data, slot->data, sizeof(slot->data), NULL);
+{% endif %}
+            if (send.act == SCE_SAVED_ACT_INTERNAL) {
+                slot->route = (uint8_t){{ _u }}_SCHED_ROUTE_INTERNAL;
+            } else if (send.act == SCE_SAVED_ACT_PARENT) {
+{% if model.may_address_parent %}
+                slot->route = (uint8_t){{ _u }}_SCHED_ROUTE_PARENT;
+                slot->event = {{ _u }}_EVENT_NONE;
+                (void)sce_jv_string(send.event, slot->route_event, sizeof(slot->route_event), NULL);
+{% endif %}
+            }
+        }
+    }
+    return true;
+}
+{% endif %}
+
+{# ── Judging a session ──────────────────────────────────────────────────── #}
+/* What a judge of a session finds, kept for the restore: the configuration and the current state,
+   the revision each schema was saved at, and what each history recorded. */
+typedef struct {
+    {{ _t }}_state_t configuration[{{ _u }}_STATE_COUNT];
+    size_t configuration_count;
+    {{ _t }}_state_t current;
+    unsigned record_at[{{ [n_records, 1] | max }}];
+    unsigned enum_at[{{ [n_enums, 1] | max }}];
+    uint32_t history_bits[{{ [n_histories, 1] | max }}];
+    bool history_recorded[{{ [n_histories, 1] | max }}];
+} {{ _t }}_saved_judged_t;
+
+/* Refuse `s` unless it can be a state of this document, building nothing (docs/adr/0045,
+   section 3, step 1): its shape and the revision of each schema, its histories and variables, its
+   configuration, its queue and its waiting sends. */
+SCE_SM_FN static bool {{ _t }}_saved_judge_session(const sce_saved_session_t *s, {{ _t }}_saved_judged_t *judged,
+                                                 sce_saved_error_t *err) {
+    sce_jiter_t it;
+    sce_jv_t item;
+    char quoted[SCE_SAVED_QUOTE_LEN];
+    {{ _t }}_state_t current;
+    memset(judged, 0, sizeof(*judged));
+    if (!sce_saved_check_shape(s, &{{ _t }}_saved_shape, judged->record_at, judged->enum_at, err)) {
+        return false;
+    }
+{% if model.has_history_states %}
+    if (!{{ _t }}_saved_histories_read(s, judged->history_bits, judged->history_recorded, err)) {
+        return false;
+    }
+{% else %}
+    if (sce_jv_count(s->history) != 0u) {
+        (void)sce_jv_iter(s->history, &it);
+        {
+            sce_jv_t key;
+            sce_jv_t names;
+            (void)sce_jiter_member(&it, &key, &names);
+            (void)sce_jv_string(key, quoted, sizeof(quoted), NULL);
+        }
+        return sce_saved_refuse(err, "the saved state records the history '%s', which the document does not declare",
+                                quoted);
+    }
+{% endif %}
+    if (!{{ _t }}_saved_read_variables(s, judged->record_at, NULL, err)) {
+        return false;
+    }
+    /* The configuration, then the current state, as the document names them. */
+    if (sce_jv_count(s->configuration) > (size_t){{ _u }}_STATE_COUNT) {
+        return sce_saved_refuse(err, "the saved configuration is refused: %s",
+                                {{ _t }}_configuration_rejection_text({{ _u }}_CONFIG_DUPLICATE));
+    }
+    (void)sce_jv_iter(s->configuration, &it);
+    while (sce_jiter_element(&it, &item)) {
+        char name[SCE_SAVED_QUOTE_LEN];
+        {{ _t }}_state_t state;
+        (void)sce_jv_string(item, name, sizeof(name), NULL);
+        if (!{{ _t }}_state_from_name(name, &state)) {
+            return sce_saved_refuse(err, "the document has no state '%s'", name);
+        }
+        judged->configuration[judged->configuration_count++] = state;
+    }
+    (void)sce_jv_string(s->current, quoted, sizeof(quoted), NULL);
+    if (!{{ _t }}_state_from_name(quoted, &current)) {
+        return sce_saved_refuse(err, "the document has no state '%s'", quoted);
+    }
+    judged->current = current;
+    {
+        const {{ _t }}_configuration_rejection_t verdict =
+            {{ _t }}_validate_configuration(judged->configuration, judged->configuration_count);
+        uint32_t held = 0u;
+        for (size_t i = 0u; i < judged->configuration_count; ++i) {
+            held |= state_bit(judged->configuration[i]);
+        }
+        if (verdict != {{ _u }}_CONFIG_NONE) {
+            return sce_saved_refuse(err, "the saved configuration is refused: %s",
+                                    {{ _t }}_configuration_rejection_text(verdict));
+        }
+        if ((held & state_bit(current)) == 0u) {
+            return sce_saved_refuse(err, "the saved configuration is refused: the current state is not in the configuration");
+        }
+        if (k_child_states[current] != 0u) {
+            return sce_saved_refuse(err, "the saved configuration is refused: the current state must be the atomic state the engine descended to");
+        }
+    }
+    if (s->format == SCE_SAVED_FORMAT_2 &&
+        !sce_saved_text_into(s->session_id, "sessionid", NULL, (size_t)SCE_MAX_SESSION_ID_LEN, err)) {
+        return false;
+    }
+    if (!{{ _t }}_saved_events(s, NULL, err)) {
+        return false;
+    }
+{% if model.needs_event_scheduler %}
+    if (!{{ _t }}_saved_sends(s, NULL, 0, err)) {
+        return false;
+    }
+{% else %}
+    if (sce_jv_count(s->pending) != 0u) {
+        return sce_saved_refuse(err, "'pending' holds %lu sends, and the document makes no delayed <send>",
+                                (unsigned long)sce_jv_count(s->pending));
+    }
+{% endif %}
+    if (sce_jv_count(s->invokes) != 0u) {
+        (void)sce_jv_iter(s->invokes, &it);
+        (void)sce_jiter_element(&it, &item);
+        return sce_saved_refuse(err, "invokes[0] is a child session, and the document starts none");
+    }
+    if (sce_jv_count(s->host_invokes) != 0u) {
+        return sce_saved_refuse(err, "hostinvokes[0] is a host-run invocation, which the document does not have a host invoker run");
+    }
+    return true;
+}
+
+{# ── Saving a session ───────────────────────────────────────────────────── #}
+/* The members of this session, in the order every backend writes them: the shape and the id, the
+   configuration and where the machine stands, every variable, what each history recorded, the
+   delayed sends still waiting as the wall-clock moment each comes due, the children, the host-run
+   invocations, the counters, the queue and the revision each schema is past its first at. */
+SCE_SM_FN static bool {{ _t }}_saved_write_members(const {{ _t }}_t *sm, int64_t wall_now_ms, sce_jw_t *w,
+                                                 sce_saved_error_t *err) {
+    (void)wall_now_ms;
+    if (sm == NULL || !sm->is_running) {
+        return sce_saved_refuse(err, "the machine is not running: it was never started, or it has ended");
+    }
+    if (sm->macrostep_truncated) {
+        return sce_saved_refuse(err,
+                                "the machine's last macrostep stopped at the microstep ceiling, so it does not stand at a "
+                                "settled configuration");
+    }
+    if (sm->internal_queue.count != 0u) {
+        return sce_saved_refuse(err, "the machine's internal queue holds %lu event(s), so it does not stand at a macrostep boundary",
+                                (unsigned long)sm->internal_queue.count);
+    }
+    sce_jw_key(w, "shape");
+    sce_jw_string(w, "{{ static_saved_shape.format2_revised if shape_revised.any else static_saved_shape.format2_first }}");
+    sce_jw_key(w, "sessionid");
+    sce_jw_string(w, sm->session_id);
+    sce_jw_key(w, "configuration");
+    {{ _t }}_saved_write_states(w, sm->active);
+    sce_jw_key(w, "current");
+    sce_jw_string(w, {{ _t }}_state_name(sm->policy.current_state));
+    sce_jw_key(w, "variables");
+    sce_jw_begin_object(w);
+{% for field in static_fields %}
+    sce_jw_key(w, "{{ field.id | escape_c }}");
+    {{ put_value(field, "sm->policy." ~ field.name) }}
+{% endfor %}
+    sce_jw_end_object(w);
+    sce_jw_key(w, "history");
+    sce_jw_begin_object(w);
+{% if model.has_history_states %}
+    for (size_t i = 0u; i < {{ n_histories }}u; ++i) {
+        uint32_t bits;
+        if ({{ _t }}_saved_history_get(sm, i, &bits)) {
+            sce_jw_key(w, {{ _t }}_saved_histories[i].id);
+            {{ _t }}_saved_write_states(w, bits);
+        }
+    }
+{% endif %}
+    sce_jw_end_object(w);
+    sce_jw_key(w, "pending");
+    sce_jw_begin_array(w);
+{% if model.needs_event_scheduler %}
+    {
+        const uint64_t now_ms = sched_now_ms(sm);
+        for (uint8_t i = 0u; i < sm->scheduled_queue.count; ++i) {
+            const {{ _t }}_scheduled_entry_t *entry = &sm->scheduled_queue.buf[i];
+            sce_saved_send_out_t send;
+            memset(&send, 0, sizeof(send));
+            send.due = sce_saved_due_on(wall_now_ms, now_ms, entry->fire_time_ms);
+            send.send_id = entry->send_id;
+            send.origin = sm->session_id;
+            send.data = "";
+{% if model.needs_script_engine or model.has_delayed_send_payload %}
+            send.data = entry->data;
+{% endif %}
+            send.invoke_id = "";
+{% if model.may_address_parent %}
+            if (entry->route == (uint8_t){{ _u }}_SCHED_ROUTE_PARENT) {
+                send.act = SCE_SAVED_ACT_PARENT;
+                send.event = entry->route_event;
+            } else
+{% endif %}
+            if (entry->route == (uint8_t){{ _u }}_SCHED_ROUTE_INTERNAL) {
+                send.act = SCE_SAVED_ACT_INTERNAL;
+                send.event = {{ _t }}_saved_event_name(entry->event);
+            } else {
+                send.act = SCE_SAVED_ACT_RAISE;
+                send.event = {{ _t }}_saved_event_name(entry->event);
+            }
+            sce_jw_element(w);
+            sce_saved_write_send(w, &send);
+        }
+    }
+{% endif %}
+    sce_jw_end_array(w);
+    sce_jw_key(w, "invokes");
+    sce_jw_begin_array(w);
+    sce_jw_end_array(w);
+    sce_jw_key(w, "invokestarts");
+    sce_jw_begin_object(w);
+    sce_jw_end_object(w);
+    sce_jw_key(w, "hostinvokes");
+    sce_jw_begin_array(w);
+    sce_jw_end_array(w);
+    sce_jw_key(w, "hostinvoketoken");
+    sce_saved_write_count(w, 0);
+    sce_jw_key(w, "sendseq");
+{% if model.needs_auto_send_id %}
+    sce_saved_write_count(w, (int64_t)sm->auto_send_seq);
+{% else %}
+    sce_saved_write_count(w, 0);
+{% endif %}
+    sce_jw_key(w, "external");
+    sce_jw_begin_array(w);
+    {
+        uint16_t at = sm->external_queue.head;
+        for (uint16_t i = 0u; i < sm->external_queue.count; ++i) {
+            const {{ _t }}_event_with_meta_t *queued = &sm->external_queue.buf[at];
+            sce_saved_event_out_t event;
+            memset(&event, 0, sizeof(event));
+            /* §scxml-5.10: a queued event is saved under the name it ARRIVED under, so a restore
+               gives the machine the same `_event.name`. */
+            event.name = queued->name[0] != '\0' ? queued->name : {{ _t }}_saved_event_name(queued->event);
+            event.data = queued->data;
+            event.type = queued->type;
+            event.send_id = queued->send_id;
+            event.origin = queued->origin;
+            event.origin_type = queued->origin_type;
+            event.invoke_id = queued->invoke_id;
+{% if model.host_invoker_types %}
+            event.has_host_invoke_token = queued->has_host_invoke_token;
+            event.host_invoke_token = queued->host_invoke_token;
+{% endif %}
+            sce_jw_element(w);
+            sce_saved_write_event(w, &event);
+            at = (uint16_t)((at + 1u) % (uint16_t)SCE_MAX_EVENTS);
+        }
+    }
+    sce_jw_end_array(w);
+{% if shape_revised.any %}
+    /* The revision of each record schema and each enum past its first, whose digest list is empty
+       exactly when it is in its first revision: the record schemas first, then the enums, each in
+       the order the generator gave them. */
+    sce_jw_key(w, "revisions");
+    sce_jw_begin_object(w);
+{% for record in static_saved_shape.records %}
+{% if record.revisions %}
+    sce_jw_key(w, "{{ record.event | escape_c }}");
+    sce_jw_begin_object(w);
+    sce_jw_key(w, "revision");
+    sce_jw_uint(w, {{ record.revision }}u);
+    sce_jw_key(w, "fields");
+    sce_jw_string(w, "{{ record.revisions | last }}");
+    sce_jw_end_object(w);
+{% endif %}
+{% endfor %}
+{% for lineage in static_saved_shape.enums %}
+{% if lineage.revisions %}
+    sce_jw_key(w, "{{ lineage.key | escape_c }}");
+    sce_jw_begin_object(w);
+    sce_jw_key(w, "revision");
+    sce_jw_uint(w, {{ lineage.revision }}u);
+    sce_jw_key(w, "fields");
+    sce_jw_string(w, "{{ lineage.revisions | last }}");
+    sce_jw_end_object(w);
+{% endif %}
+{% endfor %}
+    sce_jw_end_object(w);
+{% endif %}
+    return true;
+}
+
+bool {{ _t }}_save(const {{ _t }}_t *sm, int64_t wall_now_ms, char *buf, size_t cap, size_t *len,
+                   sce_saved_error_t *err) {
+    sce_jw_t w;
+    sce_jw_init(&w, buf, cap);
+    sce_jw_begin_object(&w);
+    sce_jw_key(&w, "format");
+    sce_jw_uint(&w, (uint64_t)SCE_SAVED_FORMAT);
+    if (!{{ _t }}_saved_write_members(sm, wall_now_ms, &w, err)) {
+        return false;
+    }
+    sce_jw_end_object(&w);
+    if (len != NULL) {
+        *len = w.len;
+    }
+    if (buf == NULL) {
+        return !w.too_deep;
+    }
+    if (!sce_jw_finish(&w)) {
+        return sce_saved_refuse(err, "the buffer holds %lu bytes, and the saved state needs %lu", (unsigned long)cap,
+                                (unsigned long)(w.len + 1u));
+    }
+    return true;
+}
+
+{# ── Judging and restoring ──────────────────────────────────────────────── #}
+bool {{ _t }}_judge(const char *text, size_t len, sce_saved_error_t *err) {
+    sce_saved_session_t session;
+    {{ _t }}_saved_judged_t judged;
+    return sce_saved_read(text, len, &session, err) && {{ _t }}_saved_judge_session(&session, &judged, err);
+}
+
+bool {{ _t }}_restore({{ _t }}_t *sm, const char *text, size_t len, int64_t wall_now_ms{% if saved_restore_args %},
+                      const {{ _t }}_restore_args_t *args{% endif %}, sce_saved_error_t *err) {
+    sce_saved_session_t session;
+    {{ _t }}_saved_judged_t judged;
+{% if saved_restore_args %}
+    {{ _t }}_restore_args_t defaults;
+{% endif %}
+    if (sm == NULL) {
+        return sce_saved_refuse(err, "there is no machine to restore into");
+    }
+    /* Every value is read and the state judged before the machine is touched, so a refused
+       restore leaves the caller's storage exactly as it was. */
+    if (!sce_saved_read(text, len, &session, err) || !{{ _t }}_saved_judge_session(&session, &judged, err)) {
+        return false;
+    }
+{% if saved_restore_args %}
+    if (args == NULL) {
+        memset(&defaults, 0, sizeof(defaults));
+        args = &defaults;
+    }
+{% endif %}
+    if (!{{ _t }}_init_construct(sm{% if model.needs_event_scheduler %}, args->clock{% endif %}{% if model.needs_script_engine %}, NULL{% endif %}{% if model.host_processor_types %}, args->host_processors{% endif %}{% if model.host_invoker_types %}, args->host_invokers{% endif %}{% if has_native_actions %}, args->actions{% endif %}{% if takes_simulated_host %}, args->accept_simulated{% endif %})) {
+        return sce_saved_refuse(err, "the host does not perform every act this document declares");
+    }
+    /* A format-2 state carries on under the id it was saved with, which every child's id and a
+       peer's address name (docs/adr/0045); a format-1 state holds none, so the machine keeps the
+       one it drew. */
+    if (session.format == SCE_SAVED_FORMAT_2) {
+        (void)sce_jv_string(session.session_id, sm->session_id, sizeof(sm->session_id), NULL);
+        (void)snprintf(sm->scxml_location, sizeof(sm->scxml_location), "sce://scxml/%s", sm->session_id);
+    }
+    if (!{{ _t }}_saved_read_variables(&session, judged.record_at, &sm->policy, err)) {
+        return false;
+    }
+{% if model.has_history_states %}
+    for (size_t i = 0u; i < {{ n_histories }}u; ++i) {
+        if (judged.history_recorded[i]) {
+            {{ _t }}_saved_history_set(sm, i, judged.history_bits[i]);
+        }
+    }
+{% endif %}
+    /* No `<onentry>` runs and no `<data>` is evaluated: the saved run already did both. */
+    {{ _t }}_stand_in(sm, judged.configuration, judged.configuration_count);
+    sm->policy.current_state = judged.current;
+    if (!{{ _t }}_saved_events(&session, sm, err)) {
+        return false;
+    }
+{% if model.needs_event_scheduler %}
+    if (!{{ _t }}_saved_sends(&session, sm, wall_now_ms, err)) {
+        return false;
+    }
+{% else %}
+    (void)wall_now_ms;
+{% endif %}
+{% if model.needs_auto_send_id %}
+    sm->auto_send_seq = (uint64_t)session.auto_send_seq;
+{% endif %}
+    return true;
+}

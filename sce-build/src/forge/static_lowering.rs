@@ -346,6 +346,14 @@ pub struct StaticRecordField {
     /// `null` or as its present value, which is read as [`Self::saved_type`]
     /// and [`Self::bound`] say.
     pub optional: bool,
+    /// The revision that added the field (`sce:since`), `None` for a field of the
+    /// first revision. A saved record written at an earlier revision holds no
+    /// member for it, and a backend that reads the record itself, rather than
+    /// from a state grown by the runtime, takes [`Self::default`] for it.
+    pub since: Option<u32>,
+    /// The default of a field a later revision added, as saved-state JSON
+    /// ([`SavedAddedField::default`]); `None` for a field of the first revision.
+    pub default: Option<String>,
 }
 
 /// An enum type a `sce-static` machine declares, as a saved state writes it:
@@ -4623,6 +4631,10 @@ impl<'t> TypeDeclarations<'t> {
                         .then_some(f.max_size)
                         .flatten(),
                         optional: f.sce_type.optional_elem().is_some(),
+                        since: f.since,
+                        default: f
+                            .since
+                            .and_then(|_| crate::forge::schema_revision::default_wire(f)),
                     })
                     .collect(),
             });
@@ -8534,6 +8546,127 @@ pub(crate) fn c_string_storage_def(capacity: u32) -> String {
     )
 }
 
+/// The C statement that writes `value`, a place holding a `ty`, to the saved
+/// state `w` writes (`sce/saved_values.h`): a number and a `bool` by the function
+/// named for the type, a text and a byte string from the buffer that holds them,
+/// and an enum by the function its type declares beside it
+/// ([`CTarget::enum_def`]).
+fn c_saved_write(ty: &SceType, enum_ty: Option<&str>, value: &str) -> String {
+    match ty {
+        SceType::Enum(_) => format!(
+            "{}_saved_write(w, {value});",
+            enum_ty.expect("an enum value is written by the type of its enum")
+        ),
+        SceType::String => format!("sce_saved_write_string(w, ({value}).data);"),
+        SceType::Bytes => format!("sce_saved_write_bytes(w, ({value}).data, ({value}).len);"),
+        other => format!("sce_saved_write_{}(w, {value});", other.as_attr()),
+    }
+}
+
+/// The C condition that reads the saved value `member`, which `what` names in a
+/// refusal, into `dest`, a place holding a `ty` of at most `bound` bytes when it
+/// is a text or a byte string. True when the value was one, with the refusal in
+/// `err` otherwise.
+fn c_saved_read(
+    ty: &SceType,
+    bound: Option<u32>,
+    enum_ty: Option<&str>,
+    member: &str,
+    what: &str,
+    dest: &str,
+) -> String {
+    match (ty, bound) {
+        (SceType::Enum(_), _) => format!(
+            "{}_saved_read({member}, {what}, &{dest}, err)",
+            enum_ty.expect("an enum value is read by the type of its enum")
+        ),
+        (SceType::String, Some(bound)) => {
+            format!("sce_saved_read_string_bounded({member}, {what}, ({dest}).data, {bound}u, err)")
+        }
+        (SceType::Bytes, Some(bound)) => format!(
+            "sce_saved_read_bytes({member}, {what}, ({dest}).data, {bound}u, &({dest}).len, err)"
+        ),
+        (other, _) => format!(
+            "sce_saved_read_{}({member}, {what}, &{dest}, err)",
+            other.as_attr()
+        ),
+    }
+}
+
+/// The statements that write each field of `schema` into a saved record, and the
+/// ones that read them back (`value` being the record read and `at` the revision
+/// it was saved at): an object keyed by the fields' ids, an optional field
+/// written as `null` or as its present value, and a field a later revision added
+/// taken at its default from a record saved before it (docs/adr/0044).
+fn c_record_saved_members(
+    schema: &EventSchemaModel,
+    enum_types: &std::collections::BTreeMap<String, String>,
+    target: &CTarget,
+) -> (String, String) {
+    let mut writes = String::new();
+    let mut reads = String::new();
+    for field in &schema.fields {
+        let name = target.record_field(&field.id);
+        let id = filters::escape_c(field.id.clone());
+        let ty = field.sce_type.present_type();
+        let enum_ty = match ty {
+            SceType::Enum(reference) => Some(enum_types[&reference.alias].as_str()),
+            _ => None,
+        };
+        let bound = matches!(ty, SceType::String | SceType::Bytes)
+            .then_some(field.max_size)
+            .flatten();
+        let optional = field.sce_type.optional_elem().is_some();
+        let held = format!("value->{name}");
+        let write = if optional {
+            format!(
+                "if ({held}.present) {{\n        {}\n    }} else {{\n        sce_jw_null(w);\n    }}",
+                c_saved_write(ty, enum_ty, &format!("{held}.value"))
+            )
+        } else {
+            c_saved_write(ty, enum_ty, &held)
+        };
+        writes.push_str(&format!("    sce_jw_key(w, \"{id}\");\n    {write}\n"));
+
+        let dest = format!("value.{name}");
+        let take = match field.since {
+            None => format!(
+                "    if (!sce_saved_field(v, what, \"{id}\", &member, err)) {{\n        return false;\n    }}\n"
+            ),
+            Some(since) => {
+                let default = crate::forge::schema_revision::default_wire(field)
+                    .map(filters::escape_c)
+                    .unwrap_or_default();
+                let event = filters::escape_c(schema.event_name.clone());
+                format!(
+                    "    if (at >= {since}u) {{\n        \
+                     if (!sce_saved_field(v, what, \"{id}\", &member, err)) {{\n            return false;\n        }}\n    }} else {{\n        \
+                     if (sce_jv_get(v, \"{id}\", &member)) {{\n            \
+                     return sce_saved_refuse(err, \"'%s' holds '{id}', which revision %u of '{event}' does not declare: revision {since} added it\", what, at);\n        }}\n        \
+                     if (!sce_json_parse(\"{default}\", strlen(\"{default}\"), &member, err)) {{\n            return false;\n        }}\n    }}\n"
+                )
+            }
+        };
+        let what = "member_what";
+        let read = if optional {
+            format!(
+                "    if (sce_jv_is_null(member)) {{\n        memset(&{dest}, 0, sizeof({dest}));\n    }} else {{\n        \
+                 {dest}.present = true;\n        if (!{}) {{\n            return false;\n        }}\n    }}\n",
+                c_saved_read(ty, bound, enum_ty, "member", what, &format!("{dest}.value"))
+            )
+        } else {
+            format!(
+                "    if (!{}) {{\n        return false;\n    }}\n",
+                c_saved_read(ty, bound, enum_ty, "member", what, &dest)
+            )
+        };
+        reads.push_str(&format!(
+            "{take}    (void)snprintf(member_what, sizeof(member_what), \"%s.%s\", what, \"{id}\");\n{read}"
+        ));
+    }
+    (writes, reads)
+}
+
 /// The type a byte string of at most `capacity` bytes is held in: a buffer and
 /// the length it holds, named by the bound so that two variables, or a variable
 /// and a record's field, of one bound share it ([`CTarget::bytes_storage`]).
@@ -9263,19 +9396,49 @@ impl StaticTarget for CTarget {
             .iter()
             .map(|v| (v.name.clone(), v.value))
             .collect();
+        // Its saved form is the name the enum document declares for the variant, the
+        // same on every backend: written by `{ty}_saved_write` and read by
+        // `{ty}_saved_read`, beside the type under its guard, so a program that
+        // includes two machines of one enum declares them once. The reader names the
+        // enum by the document, which both machines import it from, and not by the
+        // alias one of them happens to.
+        let saved_names: String = model
+            .variants
+            .iter()
+            .map(|v| format!("        \"{}\",\n", filters::escape_c(v.name.clone())))
+            .collect();
+        let saved_values: String = model
+            .variants
+            .iter()
+            .map(|v| format!("        {},\n", self.enum_variant(ty, &model.name, &v.name)))
+            .collect();
         format!(
             "{}\n\n#ifndef {guard}\n#define {guard}\n\
              /* SCE Accepted Subset §2.15: an `enum:{alias}` datamodel value. */\n\
              typedef {} {ty};\n\n\
              /* The number the enum document declares for `value`. */\n\
-             static inline {carrier} {prefix}_number({ty} value) {{\n    return ({carrier})value;\n}}\n#endif\n\n{}",
+             static inline {carrier} {prefix}_number({ty} value) {{\n    return ({carrier})value;\n}}\n\n\
+             /* `value` as a saved state writes it: the name the enum document declares for it. */\n\
+             static inline void {ty}_saved_write(sce_jw_t *w, {ty} value) {{\n    \
+             const char *declared = {prefix}_declared_name(value);\n    \
+             sce_jw_string(w, declared != NULL ? declared : \"\");\n}}\n\n\
+             /* The value a saved state holds, refused unless it is a variant. `out` may be NULL, \
+             which judges the value and keeps nothing. */\n\
+             static inline bool {ty}_saved_read(sce_jv_t v, const char *what, {ty} *out, sce_saved_error_t *err) {{\n    \
+             static const char *const names[] = {{\n{saved_names}    }};\n    \
+             static const {ty} values[] = {{\n{saved_values}    }};\n    \
+             size_t index = 0u;\n    \
+             if (!sce_saved_read_variant(v, what, \"{document}\", names, sizeof(names) / sizeof(names[0]), &index, err)) {{\n        \
+             return false;\n    }}\n    \
+             if (out != NULL) {{\n        *out = values[index];\n    }}\n    return true;\n}}\n#endif\n\n{}",
             crate::forge::generator::c11_enum_declaration(model),
             crate::forge::generator::enum_qualified_type(&model.name, Language::C11),
             crate::forge::generator::c11_enum_from_number(
                 &model.name,
                 &model.underlying_type,
                 &variants
-            )
+            ),
+            document = filters::escape_c(model.name.clone())
         )
     }
     fn enum_number_symbols(&self, _ty: &str, model: &EnumModel) -> (String, String) {
@@ -9353,12 +9516,28 @@ impl StaticTarget for CTarget {
             })
             .collect();
         let view = format!("{}_view_t", ty.trim_end_matches("_t"));
+        let (writes, reads) = c_record_saved_members(schema, enum_types, self);
         format!(
             "/* SCE Accepted Subset §2.15: a `record:{alias}` datamodel value. */\n\
              typedef struct {{\n{fields}}} {ty};\n\n\
              /* A borrowed view of a list of them: what a host reads, and cannot grow past\n   \
              the bound the machine keeps. */\n\
-             typedef struct {{\n    const {ty} *data;\n    size_t len;\n}} {view};"
+             typedef struct {{\n    const {ty} *data;\n    size_t len;\n}} {view};\n\n\
+             /* `value` as a saved state writes it: an object of the schema's fields keyed by\n   \
+             their ids. */\n\
+             static inline void {ty}_saved_write(sce_jw_t *w, const {ty} *value) {{\n    \
+             sce_jw_begin_object(w);\n{writes}    sce_jw_end_object(w);\n}}\n\n\
+             /* The value a saved state holds, refused unless it is one. `at` is the revision of\n   \
+             the schema it was saved at: a field a later revision added is taken at its default\n   \
+             (docs/adr/0044). `out` may be NULL, which judges the value and keeps nothing. */\n\
+             static inline bool {ty}_saved_read(sce_jv_t v, const char *what, unsigned at, {ty} *out,\n    \
+             sce_saved_error_t *err) {{\n    \
+             {ty} value;\n    char member_what[SCE_SAVED_AT_LEN];\n    sce_jv_t member;\n    \
+             (void)at;\n    (void)member_what;\n    (void)member;\n    \
+             memset(&value, 0, sizeof(value));\n    \
+             if (sce_jv_kind(v) != SCE_JSON_OBJECT) {{\n        \
+             return sce_saved_refuse(err, \"'%s' is not an object\", what);\n    }}\n{reads}    \
+             if (out != NULL) {{\n        *out = value;\n    }}\n    return true;\n}}"
         )
     }
     // The author's spelling, which is what an expression's member access writes

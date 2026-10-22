@@ -37,6 +37,17 @@
 #define SCE_MAX_URI_LEN 256
 #endif
 
+/* SCE Accepted Subset §2.15: the most bytes of a session id a machine that saves
+   and restores holds (docs/adr/0045). A restored session carries on under the id
+   it was saved with, which another backend drew (a UUID is 36 bytes) or a parent
+   derived from its own (`parent.state.N.invoke`, one segment more for each level
+   of a tree), so the id the machine drew for itself (`<name>_session_<n>`) is
+   not the size to hold. A saved id past it is refused by the restore that meets
+   it, naming this bound; a deployment with a deeper tree overrides at build time. */
+#ifndef SCE_MAX_SESSION_ID_LEN
+#define SCE_MAX_SESSION_ID_LEN 128
+#endif
+
 #ifndef SCE_MAX_INVOKES
 #define SCE_MAX_INVOKES 4
 #endif

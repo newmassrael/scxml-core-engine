@@ -3420,6 +3420,18 @@ pub fn generate_c11_with_templates(
     render_c11(&mut env, model, input_stem, None)
 }
 
+/// Whether a `sce-static` machine's state is one the C11 backend saves and restores whole
+/// (SCE Accepted Subset §2.15; docs/adr/0045): a machine that starts no child session, has no
+/// host-run `<invoke>` and sends no delayed host-served `<send>`. The backend saves a machine
+/// with one as it comes to hold each; a machine that does not save has no save API, as one the
+/// saved state cannot hold whole has none on any backend.
+fn c11_saves(model: &SCXMLModel) -> bool {
+    !model.needs_script_engine
+        && model.host_invoker_types.is_empty()
+        && !model.has_delayed_host_send
+        && model.states.values().all(|state| state.invokes.is_empty())
+}
+
 fn render_c11(
     env: &mut Environment,
     model: &SCXMLModel,
@@ -3524,6 +3536,12 @@ fn render_c11(
         .iter()
         .filter(|f| f.published)
         .collect();
+    // SCE Accepted Subset §2.15: what a saved state of the machine is bound to, for a machine
+    // whose state the C11 backend saves and restores (`c11_saves`).
+    let static_saved_shape = static_lowering
+        .saved_shape
+        .as_ref()
+        .filter(|_| c11_saves(&model_lowered));
     // SCE Accepted Subset §2.15: a final's `<donedata>` pairs, lowered to native
     // values, are written as JSON into a buffer the machine holds, which a host
     // reads and a compound final's done event is built from. So is an inline
@@ -3581,6 +3599,7 @@ fn render_c11(
         static_published => minijinja::Value::from_serialize(&static_published),
         static_type_defs => static_lowering.type_defs.join("\n\n"),
         static_format2_shape => format2_keys(&static_lowering),
+        static_saved_shape => &static_saved_shape,
         static_done_data => static_done_data,
         static_datamodel => model.datamodel == crate::model::Datamodel::SceStatic,
         // docs/adr/0055: the runtime's optional type, which the policy, a record
@@ -3616,6 +3635,7 @@ fn render_c11(
         static_published => minijinja::Value::from_serialize(&static_published),
         static_imports => &static_lowering.imports,
         static_adapter_defs => static_lowering.adapter_defs.join("\n\n"),
+        static_saved_shape => &static_saved_shape,
     };
 
     let header_code = header_tmpl.render(header_ctx).map_err(render_error)?;

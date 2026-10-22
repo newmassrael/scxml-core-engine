@@ -48,6 +48,12 @@
 #include <stddef.h>
 
 #include "sce/types.h"
+{% if static_type_defs or static_saved_shape %}
+{# SCE Accepted Subset §2.15: a record and an enum a machine declares are
+   written to a saved state and read back by the functions declared beside them,
+   and a machine that saves declares its own. #}
+#include "sce/saved_state.h"
+{% endif %}
 {% if static_published | selectattr('view') | rejectattr('read') | list %}
 {# SCE Accepted Subset §2.15: a published list is read through the library's
    borrowed view of its elements, `{data, len}`, which the host cannot grow past
@@ -544,6 +550,14 @@ typedef struct {{ csym_prefix }}{{ model.name }}_policy {
        a truncated macrostep names, since this profile keeps its
        configuration in a bitmap and has no single current state. */
     {{ csym_prefix }}{{ model.name }}_state_t last_transition_source_state;
+{% if static_saved_shape %}
+    /* SCE Accepted Subset §2.15: the atomic state the machine last stood in,
+       which a saved state names beside the configuration — in a document with
+       a <parallel> the configuration alone does not say which region the last
+       transition entered. Set where states are entered (`settle_current_state`)
+       and by a restore. */
+    {{ csym_prefix }}{{ model.name }}_state_t current_state;
+{% endif %}
 {% if model.has_history_states %}
     {# W3C SCXML 3.10: per-history-state snapshot. `_recorded` distinguishes
        "first entry, use default transition target" from "captured snapshot
@@ -733,8 +747,17 @@ typedef struct {{ csym_prefix }}{{ model.name }} {
        which is where the ordinal that distinguishes two sessions lives.
        20 digits is `unsigned long`'s widest decimal form, and the
        `sizeof` of the literal carries the terminator. */
+{% if static_saved_shape %}
+    /* SCE Accepted Subset §2.15: a saved state of a session carries on under
+       the id it was saved with, which another backend drew (a UUID is 36
+       bytes) or a parent derived from its own (`parent.state.N.invoke`), so a
+       machine that restores holds an id of `SCE_MAX_SESSION_ID_LEN` bytes. */
+    char session_id[SCE_MAX_SESSION_ID_LEN];
+    char scxml_location[sizeof("sce://scxml/") + SCE_MAX_SESSION_ID_LEN];
+{% else %}
     char session_id[sizeof("{{ model.name | escape_c }}_session_") + 20u];
     char scxml_location[sizeof("sce://scxml/{{ model.name | escape_c }}_session_") + 20u];
+{% endif %}
     void (*completion_callback)(void *user_data);
     void *completion_callback_user_data;
     {% if (model.invokes | scxml_family) or (model.invokes | unsupported) %}
@@ -1824,6 +1847,77 @@ void {{ cb }}(const sce_sample_t *sample SCE_PARAM_TYPESTATE(unconsumed), void *
 {% endif %}
 {% endfor %}
 {% endfor %}
+
+{% endif %}
+{% if static_saved_shape %}
+{% set saved_restore_args = model.needs_event_scheduler or model.host_processor_types or model.host_invoker_types or has_native_actions %}
+/* ── SCE Accepted Subset §2.15: saving this machine, restoring it ───── */
+/* A running machine saved at a macrostep boundary, and restored into a new process in place of
+   `_init` (docs/adr/0045). The saved state is JSON (`sce-saved-state`, format 2), the same on
+   every backend, so a state another backend saved is one this machine restores, and the other way
+   round. Nothing is allocated: the host owns the buffer a state is written into and the text one
+   is read from, and every refusal is one sentence in `err` (`sce/saved_json.h`), in the words the
+   other backends use. */
+
+{% if saved_restore_args %}
+/* What a restore is handed besides the text: the seams `_init_with_*` take, since this is the one
+   call where a host has all of them to hand. A zeroed value is the default of each (the
+   link-time monotonic clock, no registered processor or invoker); a machine that declares
+   `<sce:action>`s needs its table. */
+typedef struct {{ csym_prefix }}{{ model.name }}_restore_args {
+{% if model.needs_event_scheduler %}
+    sce_clock_t clock;
+{% endif %}
+{% if model.host_processor_types %}
+    const sce_host_processor_registry_t *host_processors;
+{% endif %}
+{% if model.host_invoker_types %}
+    const sce_host_invoker_registry_t *host_invokers;
+{% endif %}
+{% if has_native_actions %}
+    const {{ native_actions_interface }} *actions;
+{% if takes_simulated_host %}
+    bool accept_simulated;
+{% endif %}
+{% endif %}
+} {{ csym_prefix }}{{ model.name }}_restore_args_t;
+
+{% endif %}
+/* The state of `sm`, written to `buf` of `cap` bytes as `sce-saved-state` JSON, terminated.
+   `wall_now_ms` is what time it is on the wall clock, in milliseconds since the Unix epoch: each
+   delayed `<send>` still waiting is written as the moment it comes due on that clock, not as a
+   wait, which would start again when the process came back.
+
+   `*len` is the length of the text, not counting its terminator, whether or not it fit: called
+   with `buf` NULL, this measures the text, and a host sizes its buffer by it. False, with the
+   reason in `err`, for a machine that is not running, one whose last macrostep stopped at the
+   microstep ceiling, and a buffer too small. */
+bool {{ csym_prefix }}{{ model.name }}_save(const {{ csym_prefix }}{{ model.name }}_t *sm, int64_t wall_now_ms, char *buf,
+                          size_t cap, size_t *len, sce_saved_error_t *err);
+
+/* Whether `text` is a state a machine of this document could restore, built from nothing and
+   touching no machine: its shape, its variables, its configuration, its queue and its waiting
+   sends are judged. What a parent's restore asks of the state of each child it holds. */
+bool {{ csym_prefix }}{{ model.name }}_judge(const char *text, size_t len, sce_saved_error_t *err);
+
+/* Stand `sm`, storage the caller owns, where `text` left a machine of this document: in place of
+   `_init`, so no `<onentry>` runs and no `<data>` is evaluated, since the saved run already did
+   both. Every value is read and the state judged before `sm` is touched, so a refused restore
+   leaves the storage as it was.
+
+   `wall_now_ms` is what time it is on the wall clock the saved `due`s were written against. A
+   delayed `<send>` is armed against the machine's clock to come due `due - wall_now_ms` after
+   now, and one that came due while the machine was away comes due now. A format-2 state carries
+   on under the id it was saved with, which every child's id and a peer's address name; a
+   format-1 state holds none, so the machine keeps the one it drew. The host drives the machine
+   on as it would one it had initialized. */
+bool {{ csym_prefix }}{{ model.name }}_restore({{ csym_prefix }}{{ model.name }}_t *sm, const char *text, size_t len,
+                             int64_t wall_now_ms{% if saved_restore_args %},
+                             const {{ csym_prefix }}{{ model.name }}_restore_args_t *args{% endif %},
+                             sce_saved_error_t *err);
+
+SCE_STATIC_ASSERT(SCE_MAX_SESSION_ID_LEN >= (int)(sizeof("{{ model.name | escape_c }}_session_") + 20u),
+                  "SCE_MAX_SESSION_ID_LEN too small for the id this machine draws for itself");
 
 {% endif %}
 /* ── Compile-time invariants ──────────────────────────────────────── */

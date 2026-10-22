@@ -3097,6 +3097,15 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_history.scxml"
     )
 
+    # A machine that holds a record of a schema that grew, whose enum grew, and that waits on a
+    # delayed send of the schema's event (docs/adr/0044): the shared saved text of the first
+    # revisions is restored by a build of the second.
+    sce_generate_static_integration_c_test(static_schema_pending
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_schema_pending.scxml"
+        STAGE_ALSO schema_signal.scxml enum_signal_level.scxml
+    )
+
     add_executable(sce_c_integration_static_scalars
         integration/test_static_scalars.c
         ${INTEGRATION_C_TEST_static_counter_SOURCES}
@@ -3198,6 +3207,46 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         COMMAND sce_c_integration_static_scalars
     )
     set_tests_properties(c11_integration_static_scalars PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
+    # Saving a machine and restoring it (SCE Accepted Subset §2.15, docs/adr/0045): every shared
+    # saved text restored by the machine of its document and saved as it was, a waiting send
+    # surviving a restore, and a state that is not the document's refused. The machines are
+    # generated above.
+    add_executable(sce_c_integration_static_saved
+        integration/test_a_state_another_backend_saved_is_restored.c
+        ${INTEGRATION_C_TEST_static_enum_SOURCES}
+        ${INTEGRATION_C_TEST_static_history_SOURCES}
+        ${INTEGRATION_C_TEST_static_list_SOURCES}
+        ${INTEGRATION_C_TEST_static_optional_SOURCES}
+        ${INTEGRATION_C_TEST_static_record_SOURCES}
+        ${_DAYS_IN_MONTH_HEADER}
+        ${INTEGRATION_C_TEST_static_schema_pending_SOURCES}
+        ${INTEGRATION_C_TEST_static_schema_revision_SOURCES}
+        ${INTEGRATION_C_TEST_static_send_idlocation_SOURCES}
+        ${INTEGRATION_C_TEST_static_timers_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_static_saved PRIVATE
+        sce_c_runtime sce_c_runtime_posix sce_c_base
+    )
+    target_include_directories(sce_c_integration_static_saved PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include"
+    )
+    target_compile_definitions(sce_c_integration_static_saved PRIVATE
+        SCE_SAVED_FIXTURES_DIR="${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/saved"
+    )
+    set_target_properties(sce_c_integration_static_saved PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_static_saved
+        COMMAND sce_c_integration_static_saved
+    )
+    set_tests_properties(c11_integration_static_saved PROPERTIES
         TIMEOUT 30
         LABELS "integration;c11;aot"
     )
@@ -4555,6 +4604,22 @@ set_target_properties(sce_c_saved_json_unit_test PROPERTIES
 )
 add_test(NAME c11_unit_saved_json COMMAND sce_c_saved_json_unit_test)
 set_tests_properties(c11_unit_saved_json PROPERTIES
+    TIMEOUT 10
+    LABELS "unit;c11"
+)
+# The members of a saved session (docs/adr/0045): what a machine reads of a state and writes
+# of one, in the words and the order every backend uses.
+add_executable(sce_c_saved_state_unit_test unit/saved_state_test.c)
+target_link_libraries(sce_c_saved_state_unit_test PRIVATE sce_c_runtime m)
+target_compile_definitions(sce_c_saved_state_unit_test PRIVATE
+    SCE_SAVED_FIXTURES_DIR="${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/saved")
+set_target_properties(sce_c_saved_state_unit_test PROPERTIES
+    C_STANDARD 11
+    C_STANDARD_REQUIRED ON
+    C_EXTENSIONS OFF
+)
+add_test(NAME c11_unit_saved_state COMMAND sce_c_saved_state_unit_test)
+set_tests_properties(c11_unit_saved_state PROPERTIES
     TIMEOUT 10
     LABELS "unit;c11"
 )

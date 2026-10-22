@@ -10040,6 +10040,10 @@
         {
           "file": "backends/go/runtime/saved_state.go",
           "kind": "references"
+        },
+        {
+          "file": "backends/c/runtime/include/sce/saved_state.h",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -12351,6 +12355,10 @@
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "startHostInvoke",
+          "kind": "references"
+        },
+        {
+          "file": "backends/c/runtime/include/sce/saved_state.h",
           "kind": "references"
         }
       ],

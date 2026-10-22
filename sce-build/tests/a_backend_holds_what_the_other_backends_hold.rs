@@ -379,12 +379,6 @@ const ACCEPTED: &[(Language, &str, Why)] = &[
         "host Mesh core over `zenoh_inbox`",
         Why::NotYet("no host Mesh core for this backend; the E5 extension opened Rust and Kotlin"),
     ),
-    // Saving and restoring a machine (SCE Accepted Subset §2.15).
-    (
-        Language::C11,
-        "save and restore",
-        Why::NotYet("the E17 extension built it for Rust and Kotlin"),
-    ),
     // Swift, which is decided at every site that decides per backend and emits
     // nothing yet. Every entry below closes as its emitter lands, and the stale
     // check removes it then; the list is what is left of the backend.

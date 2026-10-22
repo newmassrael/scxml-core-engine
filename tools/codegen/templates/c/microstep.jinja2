@@ -706,6 +706,97 @@ SCE_SM_FN static void execute_transition_content({{ _t }}_t *sm, const {{ _t }}_
     }
 }
 
+{% if static_saved_shape %}
+{% set _has_parallel = (model.states.values() | selectattr('is_parallel') | list | length) > 0 %}
+/* SCE Accepted Subset §2.15: the atomic state the machine last stood in, which
+   a saved state names beside the configuration. The configuration of a
+   document with a <parallel> does not say which of its regions the last
+   transition entered, and this backend keeps its configuration as a bitmap
+   with no single current state, so the machine keeps the one the other
+   engines name (`settleCurrentState`): the first state the last transition
+   with a target names, dereferenced, then down through the configuration to an
+   atomic state. */
+{% if _has_parallel %}
+SCE_SM_FN static bool first_effective_target(const {{ _t }}_t *sm, const uint8_t *targets, uint8_t count,
+                                             {{ _t }}_state_t *out) {
+    for (uint8_t i = 0u; i < count; ++i) {
+        const uint8_t token = targets[i];
+{% if model.has_history_states %}
+        if (target_is_history(token)) {
+            const {{ _t }}_history_t h = target_history(token);
+            uint32_t recorded;
+            if (history_value(sm, h, &recorded) && recorded != 0u) {
+                for (uint32_t k = 0u; k < (uint32_t){{ _u }}_STATE_COUNT; ++k) {
+                    if ((recorded & state_bit(k_document_order[k])) != 0u) {
+                        *out = k_document_order[k];
+                        return true;
+                    }
+                }
+            } else {
+                const uint8_t *defaults;
+                const uint8_t n = history_default_targets(h, &defaults);
+                if (first_effective_target(sm, defaults, n, out)) {
+                    return true;
+                }
+            }
+            continue;
+        }
+{% endif %}
+        (void)sm;
+        *out = target_state(token);
+        return true;
+    }
+    return false;
+}
+
+SCE_SM_FN static {{ _t }}_state_t descend_to_leaf(const {{ _t }}_t *sm, {{ _t }}_state_t s) {
+    for (uint32_t depth = 0u; depth < (uint32_t){{ _u }}_STATE_COUNT; ++depth) {
+        if (k_child_states[s] == 0u) {
+            return s;
+        }
+        bool found = false;
+        for (uint32_t k = 0u; k < (uint32_t){{ _u }}_STATE_COUNT && !found; ++k) {
+            const {{ _t }}_state_t child = k_document_order[k];
+            if ((k_child_states[s] & sm->active & state_bit(child)) != 0u) {
+                s = child;
+                found = true;
+            }
+        }
+        if (!found) {
+            return s;
+        }
+    }
+    return s;
+}
+{% endif %}
+SCE_SM_FN static void settle_current_state({{ _t }}_t *sm, const {{ _t }}_entry_transition_t *transitions, uint8_t count,
+                                           uint32_t entered) {
+    if (entered == 0u) {
+        return;
+    }
+{% if _has_parallel %}
+    for (uint8_t i = count; i-- > 0u;) {
+        {{ _t }}_state_t first;
+        if (first_effective_target(sm, transitions[i].targets, transitions[i].target_count, &first)) {
+            sm->policy.current_state = descend_to_leaf(sm, first);
+            return;
+        }
+    }
+{% else %}
+    /* No <parallel>: the configuration is one chain, and the entry set ends on
+       its atomic state. */
+    (void)transitions;
+    (void)count;
+    for (uint32_t k = (uint32_t){{ _u }}_STATE_COUNT; k-- > 0u;) {
+        if ((entered & state_bit(k_document_order[k])) != 0u) {
+            sm->policy.current_state = k_document_order[k];
+            return;
+        }
+    }
+{% endif %}
+}
+
+{% endif %}
 /* §scxml-D-enterStates. Also the whole of the appendix's entry into the
    initial configuration (§scxml-D-interpret): hand it the document's initial
    transition, whose source is the <scxml> element. */
@@ -745,6 +836,9 @@ SCE_SM_FN static void enter_states({{ _t }}_t *sm, const {{ _t }}_entry_transiti
         }
 {% endif %}
     }
+{% if static_saved_shape %}
+    settle_current_state(sm, transitions, count, entry.states_to_enter);
+{% endif %}
 }
 
 /* §scxml-D-microstepProcedure: every exit, then every transition's content,
