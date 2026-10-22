@@ -860,7 +860,12 @@ struct {{ model.name }}Policy {
         // W3C SCXML 6.4.2: Cancel all pending delayed sends to parent on child termination
         // SimpleScheduler destructor automatically cleans up pending events
         {% endif %}
-        {% if model.needs_script_engine or model.invokes | scxml or model.invokes | hybrid or model.invokes | scxml_remote %}
+        {# The script session this machine opened is the one to close, and only
+           a machine with a script engine opened one: `getScriptEngine` is
+           declared under that same condition, so a machine whose only link to
+           the engine is an `<invoke>` (a `sce-static` relay that starts a
+           child) has no such call to make. #}
+        {% if model.needs_script_engine %}
         if (sessionId_.has_value()) {
             auto& scriptEngine = getScriptEngine();
             scriptEngine.destroySession(sessionId_.value());
