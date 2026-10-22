@@ -72,6 +72,7 @@ use crate::helpers::configuration::ConfigurationRejection;
 use crate::helpers::event_queue::EventQueueLike;
 use crate::helpers::microstep::{self, EnabledTransition, EntryTarget, EntryTransition};
 use crate::helpers::state_policy_concepts as concepts;
+use crate::helpers::unique_id_generator::AUTO_SEND_ID_MAX_LEN;
 use crate::sched_send_id::ScheduledSendIdLike;
 // The HTTP module is the `http-send` feature (docs/adr/0053), which asks for
 // `std`: it is alloc-coupled (HashMap<String, Vec<String>>). The codegen-time
@@ -484,6 +485,38 @@ impl<E: Clone, S: ScheduledSendIdLike> PullScheduler<E, S> {
         } else {
             crate::sce_string_from_str(send_id)
         };
+        self.schedule_event_as(
+            event,
+            ready_at,
+            &effective_send_id,
+            event_data,
+            origin,
+            name,
+        );
+        effective_send_id
+    }
+
+    /// [`schedule_event_named_at`](Self::schedule_event_named_at) under the id the
+    /// caller names, which it does not get back: no id is made, and none is built
+    /// to be thrown away.
+    ///
+    /// For a caller that already holds its id, as a generated `<send>` does: its
+    /// id is a literal, or one drawn for it, and the document reads it from where
+    /// it keeps it, not from this call. Returning an owned [`SceString`] made the
+    /// call build one — a buffer of the string bound under the bare-metal profile,
+    /// 280 bytes of the stack of the deepest call chain — to drop it. An empty id
+    /// is a send nobody can `<cancel>`, as the deadline of a host-run invocation
+    /// is (see `schedule_host_invoke_deadline_at`): a caller that wants an id made
+    /// for it uses `schedule_event_named_at`.
+    pub fn schedule_event_as(
+        &mut self,
+        event: E,
+        ready_at: SchedTimePoint,
+        send_id: &str,
+        event_data: &str,
+        origin: &str,
+        name: &str,
+    ) {
         // no_std elides the per-entry strings (see `ScheduledEntry`); the
         // parameters are then unused (mirrors `raise_external`'s `let _ = ...`).
         #[cfg(not(feature = "std"))]
@@ -493,21 +526,19 @@ impl<E: Clone, S: ScheduledSendIdLike> PullScheduler<E, S> {
             act: ScheduledAct::Raise {
                 event,
                 event_data: crate::sce_string_from_str(event_data),
-                send_id: effective_send_id.clone(),
+                send_id: crate::sce_string_from_str(send_id),
                 origin: crate::sce_string_from_str(origin),
                 name: crate::sce_string_from_str(name),
             },
             #[cfg(not(feature = "std"))]
             event,
             // `S::store` borrows the id; the load-bearing `SceString` impl
-            // clones it, the zero-size `ElidedSendId` impl drops it. The id is
-            // still returned below by move (callers may use it to `<cancel>`),
-            // so cancel-free machines pay nothing for the discarded storage.
-            send_id: S::store(&effective_send_id),
+            // clones it, the zero-size `ElidedSendId` impl drops it, so a
+            // cancel-free machine pays nothing for it.
+            send_id: S::store(send_id),
             ready_at,
         };
         self.push_scheduled(entry);
-        effective_send_id
     }
 
     /// §scxml-6.2: schedule a delayed send whose target is not this session's
@@ -2915,6 +2946,23 @@ impl<P: StatePolicy> Engine<P> {
             .schedule_event_at(event, ready_at, send_id, event_data, origin)
     }
 
+    /// [`schedule_event`](Self::schedule_event) under the id the caller names,
+    /// which it does not get back — what a generated `<send>` calls, since its id
+    /// is known where it is written
+    /// ([`PullScheduler::schedule_event_as`]).
+    pub fn schedule_event_as(
+        &mut self,
+        event: P::Event,
+        delay: Duration,
+        send_id: &str,
+        event_data: &str,
+        origin: &str,
+    ) {
+        let ready_at = self.sched_now_plus(delay);
+        self.scheduler
+            .schedule_event_as(event, ready_at, send_id, event_data, origin, "");
+    }
+
     /// §scxml-6.2: schedule a delayed send whose target is not this session's
     /// own external queue. Returns the send ID.
     ///
@@ -4240,7 +4288,7 @@ impl<P: StatePolicy> Engine<P> {
     /// has generated, counted from one. Unique within the machine, as the send's
     /// id must be, and the same text on every backend
     /// ([`crate::helpers::unique_id_generator::format_auto_send_id`]).
-    pub fn next_auto_send_id(&mut self) -> SceString {
+    pub fn next_auto_send_id(&mut self) -> crate::SendIdString<AUTO_SEND_ID_MAX_LEN> {
         self.auto_send_seq += 1;
         crate::helpers::unique_id_generator::format_auto_send_id(self.auto_send_seq)
     }

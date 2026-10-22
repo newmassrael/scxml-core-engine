@@ -23,6 +23,7 @@
 //! when it does not. Mirrors the per-machine
 //! [`StatePolicy::EventQueue`](crate::StatePolicy::EventQueue) sizing lever.
 
+#[cfg(feature = "std")]
 use crate::SceString;
 use core::fmt::Debug;
 
@@ -44,10 +45,36 @@ pub trait ScheduledSendIdLike: Debug {
     fn matches(&self, send_id: &str) -> bool;
 }
 
+#[cfg(feature = "std")]
 impl ScheduledSendIdLike for SceString {
     #[inline]
     fn store(send_id: &str) -> Self {
         crate::sce_string_from_str(send_id)
+    }
+
+    #[inline]
+    fn matches(&self, send_id: &str) -> bool {
+        self.as_str() == send_id
+    }
+}
+
+/// The key of a machine whose `<cancel>` reads it, in the capacity the document
+/// gives it ([`SendIdString`](crate::SendIdString)).
+///
+/// An id longer than `N` is not stored empty or cut short, which would be a send
+/// that can never be cancelled, or one a `<cancel>` of a longer name could not
+/// tell from its prefix: the program stops, as every buffer of the document's
+/// size does when the document turns out to need more. The generator takes `N` from
+/// the longest id the document can send under, so a generated machine does not
+/// reach it; a hand-written policy that names `N` states its own.
+#[cfg(not(feature = "std"))]
+impl<const N: usize> ScheduledSendIdLike for ::heapless::String<N> {
+    #[inline]
+    fn store(send_id: &str) -> Self {
+        Self::try_from(send_id).expect(
+            "a scheduled send's id is longer than the capacity its document gave the cancel key \
+             (the generator spells it from the longest id the document can send under)",
+        )
     }
 
     #[inline]

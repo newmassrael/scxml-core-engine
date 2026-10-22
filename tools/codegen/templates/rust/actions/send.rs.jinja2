@@ -33,7 +33,9 @@
     // W3C SCXML 6.2: delayed to this session's external queue. §scxml-C-1: the
     // origin is this session, as on the immediate path.
 {% if action.event %}
-    engine.schedule_event({{ machine_name }}Event::{{ action.event | to_event_variant }}, {{ delay_rs }}, &send_id, event_data, &{{ self_origin(no_std) }});
+    // The id is known here, so it is handed over and none is handed back: the
+    // returned owned string was a buffer of the string bound to drop.
+    engine.schedule_event_as({{ machine_name }}Event::{{ action.event | to_event_variant }}, {{ delay_rs }}, &send_id, event_data, &{{ self_origin(no_std) }});
 {% else %}
     // W3C SCXML 3.12.1 + 5.10: a computed name is delivered as the event the
     // document's names resolve it to, and `_event.name` is the whole name.

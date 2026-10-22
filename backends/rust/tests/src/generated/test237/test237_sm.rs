@@ -664,7 +664,9 @@ impl StatePolicy for Test237Policy {
                         // W3C SCXML 6.2: Default send (no target = external event)
                         // W3C SCXML 6.2: delayed to this session's external queue. §scxml-C-1: the
                         // origin is this session, as on the immediate path.
-                        engine.schedule_event(
+                        // The id is known here, so it is handed over and none is handed back: the
+                        // returned owned string was a buffer of the string bound to drop.
+                        engine.schedule_event_as(
                             Test237Event::Timeout1,
                             core::time::Duration::from_millis(1000_u64),
                             &send_id,
@@ -694,7 +696,9 @@ impl StatePolicy for Test237Policy {
                         // W3C SCXML 6.2: Default send (no target = external event)
                         // W3C SCXML 6.2: delayed to this session's external queue. §scxml-C-1: the
                         // origin is this session, as on the immediate path.
-                        engine.schedule_event(
+                        // The id is known here, so it is handed over and none is handed back: the
+                        // returned owned string was a buffer of the string bound to drop.
+                        engine.schedule_event_as(
                             Test237Event::Timeout2,
                             core::time::Duration::from_millis(1500_u64),
                             &send_id,

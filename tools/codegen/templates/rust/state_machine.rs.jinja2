@@ -1285,7 +1285,11 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
     // this one emission compiles on both runtime profiles. Mirrors the
     // EventQueue per-machine sizing lever above.
 {% if model.uses_cancel %}
-    type ScheduledSendId = sce_rust_runtime::SceString;
+    // The key is the document's own size: the longest id a `<send>` of it is sent
+    // under, {{ max_send_id }} byte(s), and not a buffer of the string bound for each slot of the
+    // scheduler and each temporary a copy of it passes through. Under std it is a
+    // `String`, whatever the number.
+    type ScheduledSendId = ::sce_rust_runtime::SendIdString<{{ max_send_id }}>;
 {% else %}
     type ScheduledSendId = sce_rust_runtime::ElidedSendId;
 {% endif %}

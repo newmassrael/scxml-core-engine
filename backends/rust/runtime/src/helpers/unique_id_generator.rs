@@ -89,7 +89,11 @@ fn format_invoke_id(state_id: &str, counter: u64) -> SceString {
 /// from one), so a machine of a document hands the document the same id
 /// wherever it runs and a saved state carries on from the number alone. At most
 /// 31 bytes: [`AUTO_SEND_ID_MAX_LEN`].
-pub fn format_auto_send_id(number: u64) -> SceString {
+///
+/// Of the capacity those bytes need and no more ([`SendIdString`](crate::SendIdString)):
+/// a buffer of the string bound for a value of 31 bytes is on the stack of the
+/// action that holds it, where a `<send idlocation>` holds it for the whole send.
+pub fn format_auto_send_id(number: u64) -> crate::SendIdString<AUTO_SEND_ID_MAX_LEN> {
     #[cfg(feature = "std")]
     {
         format!("_auto_send_{}", number)
@@ -97,7 +101,7 @@ pub fn format_auto_send_id(number: u64) -> SceString {
     #[cfg(not(feature = "std"))]
     {
         use core::fmt::Write;
-        let mut s = SceString::new();
+        let mut s = crate::SendIdString::<AUTO_SEND_ID_MAX_LEN>::new();
         let _ = write!(&mut s, "_auto_send_{}", number);
         s
     }

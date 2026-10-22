@@ -3120,6 +3120,7 @@ fn render_rust(
         max_history_defaults => microstep_bounds.history_defaults,
         max_depth => microstep_bounds.depth,
         max_entry_walk => microstep_bounds.entry_walk,
+        max_send_id => crate::send_id_bound::send_id_max_bytes(model),
         state_derives_attr => &state_derives_attr,
         event_derives_attr => &event_derives_attr,
         default_state_id => &default_state_id,

@@ -546,14 +546,39 @@ fn rust_template_builds_no_string_for_a_send_id_or_an_origin() {
     // entry block holds several sends; the id is text, borrowed, and the engine
     // builds the one string it stores. The MCU probe's worst-case stack and
     // `.text` hold the same fact from the object's side.
-    let model = parse(
+    let mut model = parse(
         include_str!("fixtures/no_std/parallel_history_probe.scxml"),
         "parallel_history_probe",
     );
+    // Analysed, as the command line does before it renders: whether the document
+    // cancels is what decides whether the scheduler keeps its sends' ids.
+    sce_build::analyzer::analyze(&mut model, "parallel_history_probe");
     let code = generate(&model, &template_dir(), true).expect("render");
     assert!(
         code.contains("let send_id: &str = \"__send_0\";"),
         "a generated send id is text"
+    );
+    // A delayed send hands its id over and gets none back: the scheduler's other
+    // entry point returns an owned string, a buffer of the string bound that the
+    // send site would drop, on the stack of the deepest call chain.
+    assert!(
+        code.contains("engine.schedule_event_as("),
+        "a delayed send names its id and takes none back"
+    );
+    assert!(
+        !code.contains("engine.schedule_event("),
+        "a delayed send must not take an owned id back"
+    );
+    // The probe cancels, so the scheduler keeps its sends' ids, and keeps them in
+    // the document's own size: its longest is `d_delayed`, nine bytes, where a
+    // buffer of the string bound would be 256 for each slot of the scheduler.
+    assert!(
+        code.contains("type ScheduledSendId = ::sce_rust_runtime::SendIdString<9>;"),
+        "the cancel key is the document's longest send id"
+    );
+    assert!(
+        !code.contains("type ScheduledSendId = sce_rust_runtime::SceString;"),
+        "the cancel key must not be a buffer of the string bound"
     );
     for owned in [
         "let send_id = ::sce_rust_runtime::sce_string_from_str(",

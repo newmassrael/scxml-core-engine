@@ -115,7 +115,16 @@ MEASURED_WITH='rustc 1.99.1 (58cf8f9c3 2026-10-13)'
 # worst-case stack is a sum of frames and no depth is assumed. The loop that interprets the
 # steps (`walk_entry` 776 bytes, `effective_target_states_on` 248) is larger than the small
 # functions it replaces; the figure moved by 474 here and by 478 without the report.
-TOTAL_BYTES=5674
+#
+# 5674 -> 5590 (2026-10-22): what the bytes were is a string no document needed, twice. A
+# delayed `<send>` named its id and was handed one back, an owned `SceString` built to be
+# dropped; and a document that cancels kept each send's id in a buffer of the string bound
+# (256 bytes) that was copied into the scheduler's entry and again into the scheduler. The
+# generated send hands its id over and takes none back (`Engine::schedule_event_as`), and
+# the scheduler's key is the document's own size, `SendIdString<N>` with `N` the longest id
+# the document sends under (`sce_build::send_id_bound`): nine bytes for this probe. The
+# figure moved by -84 here and by -88 without the report.
+TOTAL_BYTES=5590
 
 # The same sum without the macrostep REPORT, the bound left in place: the probe
 # built with no feature, so the runtime has none either. That is the build a
@@ -174,7 +183,10 @@ TOTAL_BYTES=5674
 #
 # 5148 -> 5626 (2026-10-22): the walks of Appendix D no longer recurse, as above; the figure
 # with the report moved by 474 and this one by 478.
-TOTAL_BYTES_NO_DIAGNOSTICS=5626
+#
+# 5626 -> 5538 (2026-10-22): the two strings a delayed send no longer builds, as above; the
+# figure with the report moved by -84 and this one by -88.
+TOTAL_BYTES_NO_DIAGNOSTICS=5538
 
 # Drift allowed either way before the gate speaks, in BYTES. Wide enough that
 # an unrelated inlining decision does not cry wolf, tight enough that one more
@@ -209,8 +221,10 @@ MIN_SYMBOLS=24
 # WHAT IT IS NOT. Static, and the probe's own profile (`opt-level = "z"`, fat LTO): inlining
 # moves a frame from one function to its caller, so the number is a property of this build and
 # a consumer's own profile will differ; what it holds is that the engine's chain does not grow
-# unseen. The 872 bytes of `enter_entry_set` in it are the generated policy's entry actions,
-# inlined into the entry procedure by LTO; they are the policy's, not the runtime's.
+# unseen. A policy's entry actions are inlined into `enter_entry_set` by LTO, so a frame there
+# is the generated policy's and not the runtime's: it was the longest chain until a delayed
+# send stopped building strings (see the 1056 entry below), and is a chain this figure still
+# holds, since one that grows past the runtime's own moves it.
 #
 # WHAT IS NOT STATIC IS STATED HERE, AND PRINTED BY THE GATE. A function reached through a
 # pointer the host gave the engine (its clock reading, which an inlining may have put in any
@@ -241,10 +255,19 @@ MIN_SYMBOLS=24
 # `sce_string_from_str` (280) and `memcpy`. The recursion had stood above it by 80 bytes. The
 # figure moved by 32 because `initialize` now holds the walks' stack with the entry set, 240
 # bytes where it held 136.
+#
+# 1616 -> 1056 (2026-10-22): the 608 bytes of `enter_entry_set` were two copies of a string no
+# document needed (see TOTAL_BYTES): the id a delayed send was handed back (a buffer of the
+# string bound) and the scheduler entry a cancel key of that size made 272 bytes, built in the
+# frame and copied into the scheduler. With the id handed over and the key the document's own
+# size, the policy's entry actions are no longer the longest chain; it is the runtime's own:
+# `initialize` (232 bytes, the walks' stack and the entry set) through the main loop,
+# `take_event`, `select_transitions` (224), `remove_conflicting_transitions`, `compute_exit_set`
+# and `effective_target_states` (128).
 STACK_ROOTS='Engine<sce_nostd_build_probe::ParallelHistoryProbePolicy>>::step Engine<sce_nostd_build_probe::ParallelHistoryProbePolicy>>::initialize Engine<sce_nostd_build_probe::ParallelHistoryProbePolicy>>::process_event'
 STACK_RECURSION=''
 STACK_ASSUME='core::fmt::write=256'
 STACK_INDIRECT_BYTES=64
 STACK_MIN_FUNCTIONS=200
-STACK_BYTES=1616
+STACK_BYTES=1056
 STACK_TOLERANCE_BYTES=256

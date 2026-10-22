@@ -119,8 +119,21 @@ the stack, not the RAM, to be the limit, with the frames of this decision as the
   `ScheduledSendIdLike::store` take `&str`, a generated send id is a borrowed literal, and the engine builds the one
   string it stores. On the probe machine `.text` fell 5340 -> 5200 bytes (diagnostics on) and 5288 -> 5148 (off), and
   the worst chain left the policy: it is now the runtime's own entry walk. Under `std` the strings are built where
-  they are stored, which is where they always were read. The strings the scheduler returns, and the per-document
-  size of the strings a `<send>` can name, are not built; the first is an API the std profile uses.
+  they are stored, which is where they always were read. The string the scheduler returned and the size of the
+  key it stored were the next two, in the bullet that follows.
+- **A send's id is the document's size.** The stack gate's next chain ended in `enter_entry_set`, a 608-byte frame
+  that the disassembly showed to be two copies of a string no document needed: a delayed `<send>` was handed back
+  the id it had just named, an owned `SceString` built to be dropped, and a document that cancels kept each send's id
+  in a buffer of the string bound (256 bytes) that was copied into the scheduler's entry (272 bytes) and again into
+  the scheduler. `Engine::schedule_event_as` takes the id and gives none back, which is all a generated send needs
+  (`schedule_event` returns it for a caller that asked the scheduler to make one). The scheduler's key is
+  `SendIdString<N>` (`heapless::String<N>` under `no_std`, `String` under `std`), `N` the longest id a `<send>` of
+  the document can be sent under: the ids it writes, the name the parser gives one without, and, for a
+  `<send idlocation>`, the 31 bytes of the id the machine generates (`sce_build::send_id_bound`;
+  `next_auto_send_id` is a string of that size too). An id longer than `N` stops the program with the reason, where
+  `SceString::store` used to make it empty and so a send no `<cancel>` could reach. On the probe machine the worst
+  chain fell 1616 -> 1056 bytes and `.text` by 84 / 88 (the figures for the two configurations), and each slot of the
+  scheduler holds its key in nine bytes where it held 256.
 - **A document that is not legal** (a machine whose `initial` names two top-level states, which §scxml-3.11 forbids
   and the semantic check refuses) can hold more than its tree bounds; the check is the guard, and a bare-metal push
   past a bound names the generator.

@@ -315,6 +315,9 @@ pub mod scxml_send_delay;
 /// every construct a pure function of (leaf state, event) cannot represent,
 /// refused where it is written.
 pub mod scxml_transition_function;
+/// How long the id of a `<send>` of a document can be: the capacity the Rust
+/// runtime's scheduler gives the key a `<cancel>` finds a delayed send by.
+pub mod send_id_bound;
 /// A number as the author wrote it, beside the number it denotes —
 /// so the pseudocode review surface can show `0x1a` where the model
 /// holds `26`. See [`source_literal`].

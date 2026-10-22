@@ -1091,7 +1091,9 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                         // W3C SCXML 6.2: Default send (no target = external event)
                         // W3C SCXML 6.2: delayed to this session's external queue. §scxml-C-1: the
                         // origin is this session, as on the immediate path.
-                        engine.schedule_event(
+                        // The id is known here, so it is handed over and none is handed back: the
+                        // returned owned string was a buffer of the string bound to drop.
+                        engine.schedule_event_as(
                             ExternalChainIsBoundedEvent::Pulse,
                             core::time::Duration::from_millis(1_u64),
                             &send_id,
@@ -1111,7 +1113,9 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                         // W3C SCXML 6.2: Default send (no target = external event)
                         // W3C SCXML 6.2: delayed to this session's external queue. §scxml-C-1: the
                         // origin is this session, as on the immediate path.
-                        engine.schedule_event(
+                        // The id is known here, so it is handed over and none is handed back: the
+                        // returned owned string was a buffer of the string bound to drop.
+                        engine.schedule_event_as(
                             ExternalChainIsBoundedEvent::Pulse,
                             core::time::Duration::from_millis(2_u64),
                             &send_id,
@@ -1131,7 +1135,9 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                         // W3C SCXML 6.2: Default send (no target = external event)
                         // W3C SCXML 6.2: delayed to this session's external queue. §scxml-C-1: the
                         // origin is this session, as on the immediate path.
-                        engine.schedule_event(
+                        // The id is known here, so it is handed over and none is handed back: the
+                        // returned owned string was a buffer of the string bound to drop.
+                        engine.schedule_event_as(
                             ExternalChainIsBoundedEvent::Pulse,
                             core::time::Duration::from_millis(3_u64),
                             &send_id,
@@ -1151,7 +1157,9 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                         // W3C SCXML 6.2: Default send (no target = external event)
                         // W3C SCXML 6.2: delayed to this session's external queue. §scxml-C-1: the
                         // origin is this session, as on the immediate path.
-                        engine.schedule_event(
+                        // The id is known here, so it is handed over and none is handed back: the
+                        // returned owned string was a buffer of the string bound to drop.
+                        engine.schedule_event_as(
                             ExternalChainIsBoundedEvent::Pulse,
                             core::time::Duration::from_millis(4_u64),
                             &send_id,
@@ -1171,7 +1179,9 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                         // W3C SCXML 6.2: Default send (no target = external event)
                         // W3C SCXML 6.2: delayed to this session's external queue. §scxml-C-1: the
                         // origin is this session, as on the immediate path.
-                        engine.schedule_event(
+                        // The id is known here, so it is handed over and none is handed back: the
+                        // returned owned string was a buffer of the string bound to drop.
+                        engine.schedule_event_as(
                             ExternalChainIsBoundedEvent::Pulse,
                             core::time::Duration::from_millis(5_u64),
                             &send_id,
@@ -1191,7 +1201,9 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                         // W3C SCXML 6.2: Default send (no target = external event)
                         // W3C SCXML 6.2: delayed to this session's external queue. §scxml-C-1: the
                         // origin is this session, as on the immediate path.
-                        engine.schedule_event(
+                        // The id is known here, so it is handed over and none is handed back: the
+                        // returned owned string was a buffer of the string bound to drop.
+                        engine.schedule_event_as(
                             ExternalChainIsBoundedEvent::Pulse,
                             core::time::Duration::from_millis(6_u64),
                             &send_id,
@@ -1211,7 +1223,9 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                         // W3C SCXML 6.2: Default send (no target = external event)
                         // W3C SCXML 6.2: delayed to this session's external queue. §scxml-C-1: the
                         // origin is this session, as on the immediate path.
-                        engine.schedule_event(
+                        // The id is known here, so it is handed over and none is handed back: the
+                        // returned owned string was a buffer of the string bound to drop.
+                        engine.schedule_event_as(
                             ExternalChainIsBoundedEvent::Pulse,
                             core::time::Duration::from_millis(7_u64),
                             &send_id,
@@ -1231,7 +1245,9 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                         // W3C SCXML 6.2: Default send (no target = external event)
                         // W3C SCXML 6.2: delayed to this session's external queue. §scxml-C-1: the
                         // origin is this session, as on the immediate path.
-                        engine.schedule_event(
+                        // The id is known here, so it is handed over and none is handed back: the
+                        // returned owned string was a buffer of the string bound to drop.
+                        engine.schedule_event_as(
                             ExternalChainIsBoundedEvent::Pulse,
                             core::time::Duration::from_millis(8_u64),
                             &send_id,
@@ -1329,7 +1345,9 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                             // W3C SCXML 6.2: Default send (no target = external event)
                             // W3C SCXML 6.2: delayed to this session's external queue. §scxml-C-1: the
                             // origin is this session, as on the immediate path.
-                            engine.schedule_event(
+                            // The id is known here, so it is handed over and none is handed back: the
+                            // returned owned string was a buffer of the string bound to drop.
+                            engine.schedule_event_as(
                                 ExternalChainIsBoundedEvent::Blink,
                                 core::time::Duration::from_millis(_send_delay_ms),
                                 &send_id,
@@ -2367,7 +2385,9 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                                     // W3C SCXML 6.2: Default send (no target = external event)
                                     // W3C SCXML 6.2: delayed to this session's external queue. §scxml-C-1: the
                                     // origin is this session, as on the immediate path.
-                                    engine.schedule_event(
+                                    // The id is known here, so it is handed over and none is handed back: the
+                                    // returned owned string was a buffer of the string bound to drop.
+                                    engine.schedule_event_as(
                                         ExternalChainIsBoundedEvent::Blink,
                                         core::time::Duration::from_millis(_send_delay_ms),
                                         &send_id,

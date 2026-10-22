@@ -2822,7 +2822,11 @@ impl StatePolicy for StatechartHostInvokerPolicy {
     // load-bearing `SceString`. Behaviour-preserving under std either way, so
     // this one emission compiles on both runtime profiles. Mirrors the
     // EventQueue per-machine sizing lever above.
-    type ScheduledSendId = sce_rust_runtime::SceString;
+    // The key is the document's own size: the longest id a `<send>` of it is sent
+    // under, 31 byte(s), and not a buffer of the string bound for each slot of the
+    // scheduler and each temporary a copy of it passes through. Under std it is a
+    // `String`, whatever the number.
+    type ScheduledSendId = ::sce_rust_runtime::SendIdString<31>;
 
     // W3C SCXML 3.4: what this document's state tree bounds, read by the
     // generator and written here so every buffer of the runtime's microstep is

@@ -523,7 +523,11 @@ impl StatePolicy for Test210Policy {
     // load-bearing `SceString`. Behaviour-preserving under std either way, so
     // this one emission compiles on both runtime profiles. Mirrors the
     // EventQueue per-machine sizing lever above.
-    type ScheduledSendId = sce_rust_runtime::SceString;
+    // The key is the document's own size: the longest id a `<send>` of it is sent
+    // under, 8 byte(s), and not a buffer of the string bound for each slot of the
+    // scheduler and each temporary a copy of it passes through. Under std it is a
+    // `String`, whatever the number.
+    type ScheduledSendId = ::sce_rust_runtime::SendIdString<8>;
 
     // W3C SCXML 3.4: what this document's state tree bounds, read by the
     // generator and written here so every buffer of the runtime's microstep is
@@ -750,7 +754,9 @@ impl StatePolicy for Test210Policy {
                         // W3C SCXML 6.2: Default send (no target = external event)
                         // W3C SCXML 6.2: delayed to this session's external queue. §scxml-C-1: the
                         // origin is this session, as on the immediate path.
-                        engine.schedule_event(
+                        // The id is known here, so it is handed over and none is handed back: the
+                        // returned owned string was a buffer of the string bound to drop.
+                        engine.schedule_event_as(
                             Test210Event::Event1,
                             core::time::Duration::from_millis(1000_u64),
                             &send_id,
@@ -770,7 +776,9 @@ impl StatePolicy for Test210Policy {
                         // W3C SCXML 6.2: Default send (no target = external event)
                         // W3C SCXML 6.2: delayed to this session's external queue. §scxml-C-1: the
                         // origin is this session, as on the immediate path.
-                        engine.schedule_event(
+                        // The id is known here, so it is handed over and none is handed back: the
+                        // returned owned string was a buffer of the string bound to drop.
+                        engine.schedule_event_as(
                             Test210Event::Event2,
                             core::time::Duration::from_millis(1500_u64),
                             &send_id,

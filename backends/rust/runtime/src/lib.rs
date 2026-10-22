@@ -222,6 +222,25 @@ pub type SceString = ::std::string::String;
 #[cfg(not(feature = "std"))]
 pub type SceString = ::heapless::String<MAX_EVENT_STRING_LEN>;
 
+/// A send id's string, of the capacity the document gives it.
+///
+/// [`SceString`] holds [`MAX_EVENT_STRING_LEN`] bytes whatever it is asked to
+/// hold, and a scheduler entry carries one for its cancel key, so a document
+/// that names its delayed sends `d_delayed` kept 256 bytes for each of nine, in
+/// every one of the scheduler's slots and again in each temporary a copy of it
+/// went through. The ids a document can send under are known when it is built
+/// (the ones it writes, and the ones a `<send idlocation>` has the machine
+/// generate, [`AUTO_SEND_ID_MAX_LEN`](crate::helpers::unique_id_generator::AUTO_SEND_ID_MAX_LEN)
+/// at most), so the generator spells the longest of them as `N`.
+///
+/// - std build: `String`, `N` is not read.
+/// - no_std build: `heapless::String<N>`.
+#[cfg(feature = "std")]
+pub type SendIdString<const N: usize> = ::std::string::String;
+/// no_std variant of [`SendIdString`]. See the std-variant doc-comment above.
+#[cfg(not(feature = "std"))]
+pub type SendIdString<const N: usize> = ::heapless::String<N>;
+
 /// Owned byte-sequence type for typed `_event.data` payload fields whose
 /// `sce:type="bytes"` carries a per-field `sce:max-size` bound.
 ///
