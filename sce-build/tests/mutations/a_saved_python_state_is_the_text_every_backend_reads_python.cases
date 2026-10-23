@@ -1,0 +1,109 @@
+# Mutation cases for the saved-state model of the Python runtime
+# (docs/SCE_ACCEPTED_SUBSET.md section 2.15, "Saving and restoring"; docs/adr/0045, section 8):
+# the texts every backend reads and writes, the refusal each member that breaks a format is held
+# to, and what a child session of a tree is held to when its text is read.
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_saved_python_state_is_the_text_every_backend_reads_python.cases`.
+#
+# The test reads every shared text under `saved/` and `saved/format1/` and writes it back byte
+# for byte, refuses a table of texts for the member that breaks them, reads a child session
+# refused by its path, and holds a format-1 text to hold no session. The mutants below each take
+# one decision away and leave a runtime that still imports and runs:
+#
+#   a child that states a format of its own is read;
+#   a refusal inside a child does not name the session it is about;
+#   a count of starts written with a leading zero is read;
+#   a format-1 text may hold the acts of a tree, a send to the parent or to a child;
+#   a session id that is not an XML Nmtoken is read;
+#   a format-1 text binds the restored machine to a session id;
+#   a count of starts is written one more than the session holds;
+#   a saved child is written under the invoke's own id, not the id its start was made under.
+#
+# Python compiles nothing and the test imports the runtime directly, so no regeneration is
+# declared; the module on disk is what every run reads.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_pytest backends/python/tests saved_state/test_saved_state.py
+mutation_runtime_targets backends/python/runtime/sce_runtime/saved_state.py
+mutation_oracles backends/python/tests/saved_state/test_saved_state.py sce-build/tests/fixtures/static_datamodel/saved/static_invoke_working.json sce-build/tests/fixtures/static_datamodel/saved/static_invoke_tree_working.json sce-build/tests/fixtures/static_datamodel/saved/format1/static_invoke_working.json
+
+## What a child session is held to when its text is read
+#
+# `test_a_child_that_states_a_format_is_refused` expects the refusal "states a format, which only
+# the root of a tree does".
+
+mutation_case "a child that states a format of its own is read" <<'PY'
+edit("backends/python/runtime/sce_runtime/saved_state.py",
+     "    if \"format\" in session_members:",
+     "    if False:")
+PY
+
+# `test_a_child_session_is_refused_by_its_path` expects the whole message
+# "the session at invokes[0].session: 'configuration' is not a text".
+
+mutation_case "a refusal inside a child does not name the session it is about" <<'PY'
+edit("backends/python/runtime/sce_runtime/saved_state.py",
+     "        raise refusal_within(err, what + \".session\") from None",
+     "        raise err from None")
+PY
+
+## What a member is held to
+#
+# The row `"invokestarts":{"w":"01"}` of
+# `test_a_text_the_formats_do_not_carry_is_refused_for_the_member_that_breaks_it`.
+
+mutation_case "a count of starts written with a leading zero is read" <<'PY'
+edit("backends/python/runtime/sce_runtime/saved_state.py",
+     "    if n is None or n < 1 or written.startswith(\"0\"):",
+     "    if n is None or n < 1:")
+PY
+
+# The row of a format-1 text holding a pending send whose act is `parent`, in the same test.
+
+mutation_case "a format-1 text may hold the acts of a tree" <<'PY'
+edit("backends/python/runtime/sce_runtime/saved_state.py",
+     "        if form != SAVED_FORMAT_2:",
+     "        if False:")
+PY
+
+# The row whose `sessionid` is `a b` of the same test.
+
+mutation_case "a session id that is not an XML Nmtoken is read" <<'PY'
+edit("backends/python/runtime/sce_runtime/saved_state.py",
+     "        if session_id_refusal_of(session_id) is not None:",
+     "        if False:")
+PY
+
+## What a format-1 text binds
+#
+# `saved.bound_session_id() is None` in
+# `test_a_format_one_text_is_of_format_one_and_holds_no_session`: the empty id is not none.
+
+mutation_case "a format-1 text binds the restored machine to a session id" <<'PY'
+edit("backends/python/runtime/sce_runtime/saved_state.py",
+     "            return self.session_id\n        return None\n",
+     "            return self.session_id\n        return self.session_id\n")
+PY
+
+## What is written
+#
+# `test_every_shared_saved_text_reads_and_writes_back_as_it_was` for the tree text and the
+# single-child text, whose `invokestarts` is read and written back one more than it was.
+
+mutation_case "a count of starts is written one more than the session holds" <<'PY'
+edit("backends/python/runtime/sce_runtime/saved_state.py",
+     "            members[\"invokestarts\"] = {started.id: str(started.count) for started in self.invoke_starts}",
+     "            members[\"invokestarts\"] = {started.id: str(started.count + 1) for started in self.invoke_starts}")
+PY
+
+# The same test for `static_invoke_working.json`, whose child is written as `worker` instead of
+# `working.1.worker`.
+
+mutation_case "a saved child is written under the invoke's own id" <<'PY'
+edit("backends/python/runtime/sce_runtime/saved_state.py",
+     "        \"invokeid\": child.invoke_id,",
+     "        \"invokeid\": child.id,")
+PY

@@ -1,0 +1,126 @@
+# Mutation cases for a saved host-run invocation and a saved Mesh request under the Python
+# backend (docs/SCE_ACCEPTED_SUBSET.md section 2.15, "Saving and restoring"; docs/adr/0045,
+# section 3): an `<invoke>` the host runs is saved with the request it was started with and the
+# deadline it had left, a restore starts it again at the first drive with the next token and what
+# was left of the deadline, and a Mesh request, which the peer may already have acted on, is not
+# sent again: the document is told the call was interrupted.
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_saved_python_host_invocation_is_started_again_after_a_restore_python.cases`.
+#
+# `statechart_static_host_invoke.scxml` hands a job to the host from `working` with a deadline
+# of 5000 ms; `statechart_static_mesh_request.scxml` asks a peer from `asking`. Both tests are
+# driven on the engine's virtual clock. The mutants below each take one decision away and leave a
+# runtime that still imports and runs:
+#
+#   a restore does not carry the next token on, so the restart reuses the first run's token;
+#   a restart is not marked as one;
+#   a deadline that came due while the machine was away starts the invocation instead of ending it;
+#   a completion carrying a stale token is accepted;
+#   a Mesh request is started again by a restore;
+#   an invocation cancelled before it was started again is started anyway;
+#   a machine owing a start does not say it needs a tick now;
+#   a save does not write the moment the deadline comes due.
+#
+# The generated machines are gitignored and are regenerated before the tests; every edit here is
+# to the runtime, which is read from disk on every run, the evidence the harness asks of a
+# runtime target.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_pytest backends/python/tests integration/host_processor/test_a_saved_host_invocation_is_started_again_after_a_restore.py integration/host_processor/test_a_saved_mesh_request_is_not_sent_again_after_a_restore.py
+mutation_regen scripts/regen_host_processor_python.sh
+mutation_runtime_targets backends/python/runtime/sce_runtime/engine.py backends/python/runtime/sce_runtime/saved_engine.py
+mutation_oracles backends/python/tests/integration/host_processor/test_a_saved_host_invocation_is_started_again_after_a_restore.py backends/python/tests/integration/host_processor/test_a_saved_mesh_request_is_not_sent_again_after_a_restore.py sce-build/tests/fixtures/host_processor/statechart_static_host_invoke.scxml sce-build/tests/fixtures/host_processor/statechart_static_mesh_request.scxml sce-build/tests/fixtures/host_processor/saved/statechart_static_host_invoke_running.json sce-build/tests/fixtures/host_processor/saved/statechart_static_mesh_request_asking.json
+
+## What a restart is handed
+#
+# The restart takes token 0, the first run's, instead of the 1 the saved state carried:
+# `again.token == 1` in `test_a_restored_invocation_is_started_again_from_the_request_it_was_saved_with`,
+# and the first run's late reply is accepted in
+# `test_what_the_first_run_handed_a_host_cannot_answer_for_the_second`.
+
+mutation_case "a restore does not carry the next token on" <<'PY'
+edit("backends/python/runtime/sce_runtime/saved_engine.py",
+     "    engine._next_host_invoke_token = saved.host_invoke_token",
+     "    engine._next_host_invoke_token = 0")
+PY
+
+# `assert again.restarted` in
+# `test_a_restored_invocation_is_started_again_from_the_request_it_was_saved_with`.
+
+mutation_case "a restart is not marked as one" <<'PY'
+edit("backends/python/runtime/sce_runtime/engine.py",
+     "        request.restarted = True",
+     "        request.restarted = False")
+PY
+
+## The deadline it had left
+#
+# Restored 6000 ms after a save made 5000 ms before the deadline, the invocation is armed with a
+# moment already past, so the host is started and told to stop instead of never asked:
+# `host.log == []` in
+# `test_a_deadline_that_passed_while_the_machine_was_away_ends_the_invocation_unstarted`.
+
+mutation_case "a deadline that passed while the machine was away does not end the invocation unstarted" <<'PY'
+edit("backends/python/runtime/sce_runtime/saved_engine.py",
+     "            if host.due <= wall_now_ms:",
+     "            if False:")
+PY
+
+# The save leaves the deadline out: `entry.due == _SAVED_AT_MS + 5000` in
+# `test_a_machine_is_saved_with_the_request_its_invocation_was_started_with`, and the text is no
+# longer the shared one.
+
+mutation_case "a save does not write the moment the deadline comes due" <<'PY'
+edit("backends/python/runtime/sce_runtime/saved_engine.py",
+     "                due=None if due_at is None else _due_on(wall_now_ms, now, due_at),",
+     "                due=None,")
+PY
+
+## Who may end a run
+#
+# `assert not engine.complete_host_invoke(_HOST_TYPE, "h", 0, "late")` in
+# `test_what_the_first_run_handed_a_host_cannot_answer_for_the_second`: the reply of the process
+# that saved the machine ends the run the restore started.
+
+mutation_case "a completion carrying a stale token is accepted" <<'PY'
+edit("backends/python/runtime/sce_runtime/engine.py",
+     "        if running is None or running.token != token:",
+     "        if running is None:")
+PY
+
+## What a restore does not start
+#
+# The Mesh request goes out again to the router the test registered: `router.log == []` in
+# `test_a_restored_request_is_not_sent_again_and_the_document_is_told_it_was_interrupted` and in
+# `test_a_call_is_interrupted_whenever_the_machine_comes_back`.
+
+mutation_case "a Mesh request is started again by a restore" <<'PY'
+edit("backends/python/runtime/sce_runtime/engine.py",
+     "            elif is_reserved_type(host.request.processor_type):",
+     "            elif False:")
+PY
+
+# The cancel finds the re-armed run still in the list, so the first drive starts it:
+# `host.log == []` in `test_an_invocation_cancelled_before_it_was_started_again_is_never_started`.
+
+mutation_case "an invocation cancelled before it was started again is started anyway" <<'PY'
+edit("backends/python/runtime/sce_runtime/engine.py",
+     "            if not (\n                restored.request.processor_type == processor_type\n                and restored.request.invoke_id == invoke_id\n            )\n",
+     "            if True\n")
+PY
+
+## What a host that sleeps on the answer is told
+#
+# With nothing scheduled yet the answer is "nothing to wait for", not 0:
+# `engine.time_until_next_scheduled_ms() == 0` in
+# `test_a_restored_machine_owing_a_start_says_it_needs_a_tick_now` and in
+# `test_a_machine_owing_the_interruption_says_it_needs_a_tick_now`.
+
+mutation_case "a machine owing a start does not say it needs a tick now" <<'PY'
+edit("backends/python/runtime/sce_runtime/engine.py",
+     "        if self._restored_host_invokes:\n            return 0\n",
+     "")
+PY

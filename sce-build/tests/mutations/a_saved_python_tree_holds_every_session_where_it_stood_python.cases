@@ -1,0 +1,121 @@
+# Mutation cases for the saved tree of sessions and the host invocations of its children under
+# the Python backend (docs/SCE_ACCEPTED_SUBSET.md section 2.15, "Saving and restoring";
+# docs/adr/0045, sections 3 and 8): a saved tree holds every session where it stood, the host
+# invokers a host registers on the root serve every session of the tree, a request names the
+# session that made it, and an ending is routed to that session.
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_saved_python_tree_holds_every_session_where_it_stood_python.cases`.
+#
+# `static_invoke_tree.scxml` runs a child that asks its host for the time and holds a
+# grandchild under a hybrid candidate. The test restores the shared text and saves it again byte
+# for byte, reads each session's queue and waiting sends, ends the child's host invocation
+# through the root by the session id the request carried, and registers the invoker on a
+# restored root after the restore. The mutants below each take one decision away and leave a
+# runtime and a machine that still import and run:
+#
+#   a restore does not put a session's saved queue back;
+#   a delayed send to a child is saved as a send to the parent;
+#   a started request does not name the session that made it;
+#   a root takes every ending whatever session it names;
+#   an ending is not offered to the children of a session;
+#   a refusal of an ending the session does not run is dropped;
+#   a child a session starts is not handed the tree's invokers;
+#   a child a restore resumes is not handed the tree's invokers.
+#
+# The Python machines are generated and gitignored, so the regeneration runs after each case and
+# is what carries a mutated template into the tests. The edits to the runtime are read from
+# disk on every run, which is the evidence the harness asks of a runtime target.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_pytest backends/python/tests integration/static_datamodel/test_a_saved_tree_holds_every_session_where_it_stood.py
+mutation_regen scripts/regen_static_datamodel_python.sh
+mutation_runtime_targets backends/python/runtime/sce_runtime/engine.py backends/python/runtime/sce_runtime/saved_engine.py tools/codegen/templates/python/saved_policy.py.jinja2
+mutation_oracles backends/python/tests/integration/static_datamodel/test_a_saved_tree_holds_every_session_where_it_stood.py sce-build/tests/fixtures/static_datamodel/static_invoke_tree.scxml sce-build/tests/fixtures/static_datamodel/saved/static_invoke_tree_working.json
+
+## What a restore brings back, and what a save writes
+#
+# The queue of the root holds `answer` and the queue of the child holds `swap`; without the
+# append `test_the_restored_tree_stands_where_the_text_says` reads two empty queues, and
+# `test_the_shared_text_restores_and_saves_again_as_it_was` saves a text without them.
+
+mutation_case "a restore does not put a session's saved queue back" <<'PY'
+edit("backends/python/runtime/sce_runtime/saved_engine.py",
+     "        engine._external_queue.append(queued)",
+     "        pass")
+PY
+
+# The parent's delayed `nudge` to its child is saved as an act to the parent, so
+# `_acts_of(root.pending, "child") == ["nudge"]` in
+# `test_the_tree_a_run_reaches_holds_every_session_where_it_stood` reads an empty list.
+
+mutation_case "a delayed send to a child is saved as a send to the parent" <<'PY'
+edit("backends/python/runtime/sce_runtime/saved_engine.py",
+     "            act = SavedAct(\n                kind=ACT_CHILD,\n",
+     "            act = SavedAct(\n                kind=ACT_PARENT,\n")
+PY
+
+## A request names its session, and an ending is routed by it
+#
+# `request.session_id == _WORKER` in
+# `test_a_childs_invocation_reaches_the_roots_invoker_and_is_ended_through_the_root`.
+
+mutation_case "a started request does not name the session that made it" <<'PY'
+edit("backends/python/runtime/sce_runtime/engine.py",
+     "        request.session_id = self._session_id",
+     "        request.session_id = \"\"")
+PY
+
+# The root takes the child's ending for its own and finds no such start, so
+# `complete_host_invoke_in` raises where the test expects the child to take
+# `done.invoke.clock`.
+
+mutation_case "a root takes every ending whatever session it names" <<'PY'
+edit("backends/python/runtime/sce_runtime/engine.py",
+     "        if session_id == self._session_id:",
+     "        if True:")
+PY
+
+# Without the descent an ending for the child's session finds no session in the tree, and
+# `test_a_childs_invocation_reaches_the_roots_invoker_and_is_ended_through_the_root` is
+# refused with "no session".
+
+mutation_case "an ending is not offered to the children of a session" <<'PY'
+edit("backends/python/runtime/sce_runtime/engine.py",
+     "            if routed:\n                return True, refusal",
+     "            if False:\n                return True, refusal")
+PY
+
+# `test_an_ending_for_a_session_the_tree_does_not_hold_or_a_start_it_does_not_run_is_refused`
+# expects `StateRefusal` ("is not running") for the root, which runs no clock, and for a start
+# that was ended once; without the raise both are accepted in silence.
+
+mutation_case "the refusal of an ending the session does not run is dropped" <<'PY'
+edit("backends/python/runtime/sce_runtime/engine.py",
+     "        if refusal is not None:\n            raise StateRefusal(refusal)",
+     "        if False:\n            raise StateRefusal(refusal)")
+PY
+
+## A child is served by the tree's invokers
+#
+# A child a session starts holds an empty registry of its own, so the clock is never asked and
+# `starts.only()` of `test_a_childs_invocation_reaches_the_roots_invoker_and_is_ended_through_the_root`
+# reads no request.
+
+mutation_case "a child a session starts is not handed the tree's invokers" <<'PY'
+edit("backends/python/runtime/sce_runtime/engine.py",
+     "        child.adopt_host_invokers(self._tree())",
+     "        pass")
+PY
+
+# The invoker is registered on the root a restore returned, after the child was resumed, so
+# only the shared registry reaches the child: `served.only()` of
+# `test_a_resumed_childs_invocation_starts_again_at_its_first_drive` reads no request.
+
+mutation_case "a child a restore resumes is not handed the tree's invokers" <<'PY'
+edit("tools/codegen/templates/python/saved_policy.py.jinja2",
+     "        engine.share_host_invokers_with(_child_engine)\n",
+     "")
+PY

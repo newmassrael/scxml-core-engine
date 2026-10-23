@@ -1,0 +1,123 @@
+# Mutation cases for the saved state of a child session under the Python backend
+# (docs/SCE_ACCEPTED_SUBSET.md section 2.15, "Saving and restoring"; docs/adr/0045): a saved
+# state holds each running child inside its parent, started under
+# `<state>.<start>.<invoke>`, and a restore resumes it where it stood; a format-1 state names
+# the invocation alone, and its restore starts the child again from its beginning.
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_saved_python_child_session_is_resumed_where_it_stood_python.cases`.
+#
+# `static_invoke.scxml` invokes `worker`, a child that takes `a` and then `b` and ends. The
+# test saves the machine and holds the text to the shared one, saves it after `a` and restores
+# it so that `b` alone ends the child, saves it after the child ended, and changes the text so
+# that each part of a child is refused by the path to it. The mutants below each take one
+# decision away and leave a runtime and a machine that still import and run:
+#
+#   the saved child is named by the invoke's own id, not the id its start was made under;
+#   a resumed child is not registered with its parent, so the parent never drives or saves it;
+#   a restore does not carry the count of starts on;
+#   a child that has ended is saved as if it were running;
+#   a saved child's start is not held to the count its session holds;
+#   a saved child's session id is not held to its parent's and the id it was started under;
+#   a child's session is not judged against the document it names before anything is built;
+#   a format-1 restore names the invocation and starts nothing.
+#
+# The Python machines are generated and gitignored, so the regeneration runs after each case and
+# is what carries a mutated template into the tests. The edits to the runtime are read from
+# disk on every run, which is the evidence the harness asks of a runtime target.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_pytest backends/python/tests integration/static_datamodel/test_a_saved_child_session_is_resumed_after_a_restore.py
+mutation_regen scripts/regen_static_datamodel_python.sh
+mutation_runtime_targets tools/codegen/templates/python/saved_policy.py.jinja2 tools/codegen/templates/python/saved_functions.py.jinja2 backends/python/runtime/sce_runtime/saved_engine.py
+mutation_oracles backends/python/tests/integration/static_datamodel/test_a_saved_child_session_is_resumed_after_a_restore.py sce-build/tests/fixtures/static_datamodel/static_invoke.scxml sce-build/tests/fixtures/static_datamodel/saved/static_invoke_working.json sce-build/tests/fixtures/static_datamodel/saved/format1/static_invoke_working.json
+
+## What a saved child is named by
+#
+# The child is saved under `worker`, so the assertion `child.invoke_id == "working.1.worker"` of
+# `test_a_machine_is_saved_with_the_whole_state_of_the_child_it_is_running` fails, and the
+# session id a restore derives from it no longer matches the child's own.
+
+mutation_case "the saved child is named by the invoke's own id, not the id its start was made under" <<'PY'
+edit("tools/codegen/templates/python/saved_policy.py.jinja2",
+     "                invoke_id=_invoke.origin()[len(self._session_id) + 1:],",
+     "                invoke_id={{ inv.invoke_id | py_string_literal }},")
+PY
+
+## What a restore brings back
+#
+# Without the registration the restored parent lists no running child:
+# `test_a_restored_tree_saves_the_text_it_was_restored_from` saves a text with `"invokes":[]`,
+# and `test_a_child_that_had_taken_an_event_is_resumed_with_it_taken` finds `b` forwarded to nobody.
+
+mutation_case "a resumed child is not registered with its parent" <<'PY'
+edit("tools/codegen/templates/python/saved_policy.py.jinja2",
+     "        engine._active_invokes[{{ inv.invoke_id | py_string_literal }}] = _invoke\n",
+     "")
+PY
+
+# The count a restore carries on is what `invoke_starts()` lists and what a child is saved under:
+# `test_the_count_of_starts_is_carried_through_a_restore` asserts [("worker", 1)] after the run.
+
+mutation_case "a restore does not carry the count of starts on" <<'PY'
+edit("tools/codegen/templates/python/saved_functions.py.jinja2",
+     "    policy._invoke_starts_{{ inv.field_suffix }} = grown.invoke_start({{ inv.invoke_id | py_string_literal }})",
+     "    policy._invoke_starts_{{ inv.field_suffix }} = 0")
+PY
+
+## What a save lists
+#
+# Both reads of "running" treat a finished child as running, so the save after `b` no longer
+# answers `invoke_ids() == []` (`test_a_child_that_has_ended_is_not_resumed_or_started_again`
+# and `test_the_count_of_starts_is_carried_through_a_restore`); a save of the finished child is
+# refused or lists it, and either turns the test red.
+
+mutation_case "a child that has ended is saved as if it were running" <<'PY'
+edit("tools/codegen/templates/python/saved_policy.py.jinja2",
+     "        if _invoke is not None and not _invoke.is_done():\n            running.append(",
+     "        if _invoke is not None:\n            running.append(")
+edit("tools/codegen/templates/python/saved_policy.py.jinja2",
+     "        if _invoke is not None and not _invoke.is_done():\n            sce_saved_engine.nothing_in_transit(",
+     "        if _invoke is not None:\n            sce_saved_engine.nothing_in_transit(")
+PY
+
+## What a judge of a tree holds a child to
+#
+# The parametrised `test_a_tree_whose_child_is_not_one_the_document_could_run_is_refused_whole`
+# changes `"start":"1"` to 2, then the child's session id to `elsewhere`, and expects the refusal
+# each one earns.
+
+mutation_case "a saved child's start is not held to the count its session holds" <<'PY'
+edit("backends/python/runtime/sce_runtime/saved_engine.py",
+     "    if child.start != count:",
+     "    if False:")
+PY
+
+mutation_case "a saved child's session id is not held to its parent's and its start's" <<'PY'
+edit("backends/python/runtime/sce_runtime/saved_engine.py",
+     "    if child.session.session_id != derived:",
+     "    if False:")
+PY
+
+# The same parametrised test changes the child's shape digest and the state it stands in. Without
+# the judge the refusal still comes, from the child's own restore, but it no longer names the
+# path `the session at invokes[0].session:` the assertion expects.
+
+mutation_case "a child's session is not judged against the document it names" <<'PY'
+edit("tools/codegen/templates/python/saved_policy.py.jinja2",
+     "            _sce_child_module({{ inv.child_name | py_string_literal }}).judge(child.session)\n            return",
+     "            return")
+PY
+
+## A format-1 restore starts the child again
+#
+# `test_a_format_one_state_starts_its_child_again_from_the_beginning` sends `a` then `b` to a
+# restored format-1 machine and expects `completed == 1`; with no child started nothing ends.
+
+mutation_case "a format-1 restore names the invocation and starts nothing" <<'PY'
+edit("backends/python/runtime/sce_runtime/saved_engine.py",
+     "        judged.restarts = list(saved.invokes.ids)",
+     "        judged.restarts = []")
+PY
