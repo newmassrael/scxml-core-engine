@@ -39,6 +39,9 @@
 
 use std::fs;
 
+use sce_build::forge::codegen_matrix::{emitting, emitting_in_part};
+use sce_build::forge::model::ForgeKind;
+use sce_build::generator::Language;
 use sce_build::template_registry::{embedded_templates_for, SUPPORTED_LANGUAGES};
 use sce_build::{compile_from_string_lang, compile_scxml_lang_typed, find_template_dir_for};
 
@@ -57,6 +60,37 @@ const FIXTURE: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
   <final id="b"/>
 </scxml>
 "#;
+
+/// The same three templates reached by a document a backend that writes only
+/// part of the statechart kind lowers (`codegen_matrix::emitting_in_part`):
+/// `datamodel="null"`, an `<onentry>` that raises, a targeted transition and a
+/// final. Swift wrote statecharts of this datamodel alone when it arrived, and
+/// handed [`FIXTURE`] it refused by name, which this test read as the filesystem
+/// entry failing (2026-10-23). A backend is compared on a document it lowers,
+/// and every backend is compared.
+const PARTIAL_FIXTURE: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="null" initial="a" name="reg">
+  <state id="a">
+    <onentry><raise event="go"/></onentry>
+    <transition event="go" target="b"/>
+  </state>
+  <final id="b"/>
+</scxml>
+"#;
+
+/// The document `language` is compared on: [`FIXTURE`] for a backend that
+/// writes the statechart kind, [`PARTIAL_FIXTURE`] for one that writes part of
+/// it. A supported backend that writes neither is a registry that lists a
+/// language with no statechart route, which no fixture can compare.
+fn fixture_for(language: Language) -> &'static str {
+    if emitting(ForgeKind::Statechart).any(|l| l == language) {
+        FIXTURE
+    } else if emitting_in_part(ForgeKind::Statechart).any(|l| l == language) {
+        PARTIAL_FIXTURE
+    } else {
+        panic!("{language:?} is a supported language that writes no statechart")
+    }
+}
 
 /// The stem both routes must agree on: the filesystem entry derives output
 /// names from the path, the in-memory entry is told the name outright.
@@ -103,7 +137,6 @@ fn without_provenance(body: &str) -> (Vec<&str>, usize) {
 fn both_entries_emit_the_same_bytes_for_every_language() {
     let dir = tempfile::tempdir().expect("a temp dir for the fixture");
     let scxml_path = dir.path().join(format!("{STEM}.scxml"));
-    fs::write(&scxml_path, FIXTURE).expect("the fixture is writable");
     let path_str = scxml_path.to_str().expect("utf-8 temp path");
 
     // Floors first, and they are the point rather than ceremony. Every
@@ -121,6 +154,8 @@ fn both_entries_emit_the_same_bytes_for_every_language() {
     let mut bytes_compared = 0usize;
 
     for &language in SUPPORTED_LANGUAGES {
+        let fixture = fixture_for(language);
+        fs::write(&scxml_path, fixture).expect("the fixture is writable");
         let template_dir = find_template_dir_for(language);
         let from_fs = compile_scxml_lang_typed(path_str, &template_dir, language)
             .unwrap_or_else(|e| panic!("{language:?}: filesystem entry failed: {e}"));
@@ -140,7 +175,7 @@ fn both_entries_emit_the_same_bytes_for_every_language() {
         // "reg.scxml" matches the sourcemap and produces
         // `reg.scxml_sm.h`. There is no argument that satisfies both —
         // which is the shape of the difference, not a bad choice here.
-        let from_memory = compile_from_string_lang(FIXTURE, STEM, &embedded, language)
+        let from_memory = compile_from_string_lang(fixture, STEM, &embedded, language)
             .unwrap_or_else(|e| panic!("{language:?}: in-memory entry failed: {e}"));
 
         assert!(

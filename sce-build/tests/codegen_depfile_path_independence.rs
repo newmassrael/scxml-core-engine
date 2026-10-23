@@ -36,6 +36,8 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use sce_build::forge::codegen_matrix::emitting;
+use sce_build::forge::model::ForgeKind;
 use sce_build::generator::Language;
 use sce_build::template_registry::SUPPORTED_LANGUAGES;
 use tempfile::TempDir;
@@ -46,9 +48,16 @@ use tempfile::TempDir;
 /// generator that declared nothing anywhere would pass this gate.
 const MIN_DECLARED_TEMPLATES: usize = 15;
 
-/// One probe per (backend, pipeline). Pinned exactly so a scenario that
-/// stops being generated fails here rather than quietly shrinking the
-/// matrix.
+/// One probe per (backend, pipeline) where the backend emits the kind the
+/// pipeline's probe is. Pinned exactly so a scenario that stops being
+/// generated fails here rather than quietly shrinking the matrix, and so a
+/// backend that starts emitting a kind is noticed joining it.
+///
+/// Read from the codegen matrix and not from `SUPPORTED_LANGUAGES`: a backend
+/// that writes only part of a kind, or none, has a probe it can only refuse.
+/// The matrix used to be every supported language, and Swift's arrival made it
+/// 14 probes of which its two were refusals, which the count reported before the
+/// refusals could be read (2026-10-23).
 const EXPECTED_PROBES: usize = 12;
 
 fn codegen_bin() -> &'static str {
@@ -119,6 +128,14 @@ impl Pipeline {
         match self {
             Pipeline::Statechart => "statechart",
             Pipeline::Forge => "forge",
+        }
+    }
+
+    /// The kind of the document this pipeline's probe generates.
+    fn kind(self) -> ForgeKind {
+        match self {
+            Pipeline::Statechart => ForgeKind::Statechart,
+            Pipeline::Forge => ForgeKind::Codec,
         }
     }
 }
@@ -234,8 +251,8 @@ fn a_depfile_declares_the_same_templates_wherever_the_checkout_lives() {
     let mut violations: Vec<String> = Vec::new();
     let mut probes = 0usize;
 
-    for language in SUPPORTED_LANGUAGES {
-        for pipeline in [Pipeline::Statechart, Pipeline::Forge] {
+    for pipeline in [Pipeline::Statechart, Pipeline::Forge] {
+        for language in emitting(pipeline.kind()) {
             probes += 1;
             let lang = language.canonical_name();
             let case = format!("{lang}/{}", pipeline.label());
