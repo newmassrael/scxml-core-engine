@@ -23,7 +23,7 @@
 
 mutation_ctest --test-dir build -R '^static_datamodel_generated_cpp$'
 mutation_targets tools/codegen/templates/actions/send.jinja2
-mutation_oracles tests/integration/AStaticDatamodelRunsGeneratedCppTest.cpp sce-build/tests/fixtures/static_datamodel/static_send_http.scxml
+mutation_oracles tests/integration/AStaticHttpSendTest.cpp sce-build/tests/fixtures/static_datamodel/static_send_http.scxml
 
 mutation_case "the text of a param that cannot fail is not put in the map" <<'PY'
 edit("tools/codegen/templates/actions/send.jinja2",

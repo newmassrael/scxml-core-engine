@@ -973,7 +973,7 @@ fn every_backend_lowers_the_model_with_no_script_engine() {
     // natively, so the machine it generates carries no engine — the manifest
     // says so, and each integration suite (StaticDatamodelTest.kt,
     // backends/rust/tests/tests/static_datamodel.rs,
-    // tests/integration/AStaticDatamodelRunsGeneratedCppTest.cpp,
+    // tests/integration/static_scenarios,
     // backends/go/tests/integration/static_datamodel,
     // backends/python/tests/integration/static_datamodel,
     // backends/c/tests/integration/test_static_scalars.c) drives the machines.
@@ -5979,41 +5979,56 @@ fn an_algorithm_import_under_another_data_model_is_refused() {
 
 // ── Every scenario is replayed on every backend that lowers the model ────
 
-/// The driver that replays scenarios on a backend, and the text it names a
-/// scenario by (`{s}`, the scenario file's own name — a machine can have
-/// several). A backend that lowers sce-static and is not listed here fails
-/// the test below until it has one.
-const SCENARIO_DRIVERS: &[(&str, &str, &str)] = &[
+/// How a backend's driver reaches the scenarios.
+enum Reach {
+    /// It names each one: the text, with `{s}` the scenario file's own name (a
+    /// machine can have several), is in the driver for every scenario it replays.
+    Names(&'static str),
+    /// It finds them by scanning the scenario directory, as the Interpreter does,
+    /// so it replays every scenario with no line naming one, and a scenario added
+    /// to the directory with no edit. The text is the scan, in the driver.
+    Scans(&'static str),
+}
+
+/// The driver that replays scenarios on a backend, and how it reaches them. A
+/// backend that lowers sce-static and is not listed here fails the test below
+/// until it has one.
+const SCENARIO_DRIVERS: &[(&str, &str, Reach)] = &[
     (
         "rust",
         "backends/rust/tests/tests/static_scenarios.rs",
-        "static_datamodel/scenarios/{s}.json",
+        Reach::Names("static_datamodel/scenarios/{s}.json"),
     ),
     (
         "kotlin",
         "backends/kotlin/tests/src/test/kotlin/com/sce/integration/StaticScenarioTest.kt",
-        "scenario(\"{s}\")",
+        Reach::Names("scenario(\"{s}\")"),
     ),
+    // One unit per machine, made by the build from the scenario directory
+    // (tests/integration/static_scenarios/StaticScenarioMachineTest.cpp.in).
     (
         "cpp",
-        "tests/integration/AStaticDatamodelRunsGeneratedCppTest.cpp",
-        "replay(\"{s}\"",
+        "tests/CMakeLists.txt",
+        Reach::Scans(
+            "sce_add_static_scenario_suite(\n    TARGET static_datamodel_generated_cpp_test\n    \
+             SCENARIOS ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/scenarios\n",
+        ),
     ),
     (
         "go",
         "backends/go/tests/integration/static_datamodel/static_scenarios_test.go",
-        "replay(t, \"{s}\"",
+        Reach::Names("replay(t, \"{s}\""),
     ),
     (
         "python",
         "backends/python/tests/integration/static_datamodel/test_static_scenarios.py",
-        "replay(\"{s}\")",
+        Reach::Names("replay(\"{s}\")"),
     ),
     // Built by CMake from the fixtures, so there is no machine to commit.
     (
         "c11",
         "backends/c/tests/integration/test_static_scalars.c",
-        "_scenario(\"{s}\"",
+        Reach::Names("_scenario(\"{s}\""),
     ),
 ];
 
@@ -6267,15 +6282,22 @@ fn every_scenario_is_replayed_on_every_backend_that_lowers_its_machine() {
             );
         }
         for lang in lowering {
-            let (_, driver, marker) = SCENARIO_DRIVERS
+            let (_, driver, reach) = SCENARIO_DRIVERS
                 .iter()
                 .find(|(l, _, _)| *l == lang)
                 .unwrap_or_else(|| panic!("{lang} lowers sce-static but has no scenario driver"));
             let source = std::fs::read_to_string(root.join(driver)).expect("a driver");
-            assert!(
-                source.contains(&marker.replace("{s}", stem)),
-                "{lang}: {driver} does not replay the scenario {stem}"
-            );
+            match reach {
+                Reach::Names(marker) => assert!(
+                    source.contains(&marker.replace("{s}", stem)),
+                    "{lang}: {driver} does not replay the scenario {stem}"
+                ),
+                Reach::Scans(scan) => assert!(
+                    source.contains(scan),
+                    "{lang}: {driver} no longer scans the scenario directory, so nothing \
+                     replays {stem} there"
+                ),
+            }
         }
     }
 }

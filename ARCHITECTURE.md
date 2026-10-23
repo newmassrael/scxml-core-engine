@@ -1070,7 +1070,7 @@ through it:
 
 | Engine | Rule | Held by |
 |--------|------|---------|
-| C++ AOT and Mesh dispatch | `SCE::Core::resolveArrivingEventName` | `tests/integration/AStaticDatamodelRunsGeneratedCppTest.cpp` |
+| C++ AOT and Mesh dispatch | `SCE::Core::resolveArrivingEventName` | `tests/integration/static_scenarios/StaticScenarioReplay.h` |
 | Rust | `StatePolicy::resolve_event_by_name` | `backends/rust/tests/tests/static_scenarios.rs` |
 | Go | `Engine.ResolveEventByName` | `backends/go/tests/integration/static_datamodel/static_scenarios_test.go` |
 | Kotlin | `StateMachineEngine.resolveArrivingEvent` | `backends/kotlin/tests/.../integration/StaticScenarioTest.kt` |

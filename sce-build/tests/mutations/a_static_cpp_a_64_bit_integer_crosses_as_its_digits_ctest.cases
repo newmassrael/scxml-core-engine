@@ -18,7 +18,7 @@
 mutation_ctest --test-dir build -R '^static_datamodel_generated_cpp$'
 mutation_targets sce-build/src/forge/static_lowering.rs
 mutation_targets sce/include/common/EventPayloadLift.h
-mutation_oracles tests/integration/AStaticDatamodelRunsGeneratedCppTest.cpp sce-build/tests/fixtures/static_datamodel/scenarios/static_wire_wide.json
+mutation_oracles tests/integration/static_scenarios/StaticScenarioReplay.h sce-build/tests/fixtures/static_datamodel/scenarios/static_wire_wide.json
 
 mutation_case "a 64-bit param is written as a JSON number" <<'PY'
 edit("sce-build/src/forge/static_lowering.rs",

@@ -21,7 +21,7 @@
 
 mutation_ctest --test-dir build -R '^static_datamodel_generated_cpp$'
 mutation_targets sce-build/src/forge/static_lowering.rs
-mutation_oracles tests/integration/AStaticDatamodelRunsGeneratedCppTest.cpp sce-build/tests/fixtures/static_datamodel/scenarios/static_bytes_wire.json
+mutation_oracles tests/integration/static_scenarios/StaticScenarioReplay.h sce-build/tests/fixtures/static_datamodel/scenarios/static_bytes_wire.json
 
 mutation_case "a byte vector crosses as the string of its own bytes" <<'PY'
 edit("sce-build/src/forge/static_lowering.rs",

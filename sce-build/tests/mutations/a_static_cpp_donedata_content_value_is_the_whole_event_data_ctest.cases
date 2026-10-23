@@ -25,7 +25,7 @@
 
 mutation_ctest --test-dir build -R '^static_datamodel_generated_cpp$'
 mutation_targets tools/codegen/templates/entry_exit_actions.jinja2
-mutation_oracles tests/integration/AStaticDatamodelRunsGeneratedCppTest.cpp sce-build/tests/fixtures/static_datamodel/scenarios/static_donedata_content_value.json sce-build/tests/fixtures/static_datamodel/scenarios/static_donedata_content_text.json sce-build/tests/fixtures/static_datamodel/scenarios/static_donedata_content_lost.json sce-build/tests/fixtures/static_datamodel/static_donedata_content.scxml
+mutation_oracles tests/integration/static_scenarios/StaticScenarioReplay.h sce-build/tests/fixtures/static_datamodel/scenarios/static_donedata_content_value.json sce-build/tests/fixtures/static_datamodel/scenarios/static_donedata_content_text.json sce-build/tests/fixtures/static_datamodel/scenarios/static_donedata_content_lost.json sce-build/tests/fixtures/static_datamodel/static_donedata_content.scxml
 
 # ── A value that cannot be computed is the empty string ────────────
 

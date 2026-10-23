@@ -7,7 +7,7 @@
 // a failing computation costs.
 //
 // The two documents are the ones the C++ suite drives
-// (`tests/integration/AStaticDatamodelRunsGeneratedCppTest.cpp`), and the
+// (`tests/integration/AStaticHostIsHandedTypedValuesTest.cpp`), and the
 // expected calls are the ones it states:
 //
 //   * `static_host_call`: each argument is read when the call is made — one call

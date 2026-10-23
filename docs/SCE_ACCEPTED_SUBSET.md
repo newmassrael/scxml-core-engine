@@ -4923,13 +4923,12 @@ computed into a local first and written only when it did not fail, so a failed
 host call's arguments that can fail are computed into locals the same way, and
 the host is called only when none of them failed; otherwise `error.execution`
 is raised in the call's place (the block does not end, as in Kotlin and Rust).
-`tests/integration/AStaticDatamodelRunsGeneratedCppTest.cpp` replays the
-scenarios `static_counter`, `static_counter_bound`, `static_overflow`,
-`static_block_ends`, `static_payload`, `static_payload_enum`, `static_enum`, `static_list`, `static_foreach`,
-`static_real`, `static_real32`, `static_record_real`, `static_record_real32` and `static_block_ends_list` against the generated machines (an
-event's `data` goes in as the JSON text every other producer fills, and the
-machine lifts the typed fields out of it), and drives `static_host_call`
-and `static_host_call_arguments` with a recording host.
+The C++ suite replays every scenario against the generated machines, one unit per
+machine made from the scenario directory (`tests/integration/static_scenarios/`),
+and reads each machine back through its saved state (an event's `data` goes in as
+the JSON text every other producer fills, and the machine lifts the typed fields
+out of it); `tests/integration/AStaticHostIsHandedTypedValuesTest.cpp` drives
+`static_host_call` and `static_host_call_arguments` with a recording host.
 
 Go lowers the model through the same walk (`GoTarget`), and refuses what it does
 not by name: scalar variables of a number, a bool or a string, an enum, a record,
@@ -6288,12 +6287,12 @@ waits the time a step names: a scenario keeps every read at least 500ms from a
 due time, and the time it moves is the time the Interpreter spends on it.
 
 What holds the scenarios to one meaning. Each driver — `static_scenarios.rs`
-(Rust), `StaticScenarioTest.kt`, `AStaticDatamodelRunsGeneratedCppTest.cpp`,
-`static_scenarios_test.go`, `test_static_scenarios.py`, and `test_static_scalars.c`
-with `static_scenario.h` — must name every scenario of a machine its backend
-lowers, which `every_scenario_is_replayed_on_every_backend_that_lowers_its_machine`
-asks the generator rather than a list; the Interpreter finds them by scanning the
-directory. The Rust table `backends/rust/scenarios/src/machines.rs` is also built
+(Rust), `StaticScenarioTest.kt`, `static_scenarios_test.go`,
+`test_static_scenarios.py`, and `test_static_scalars.c` with `static_scenario.h` —
+must name every scenario of a machine its backend lowers, which
+`every_scenario_is_replayed_on_every_backend_that_lowers_its_machine` asks the
+generator rather than a list; the C++ build (`sce_add_static_scenario_suite` in
+`tests/CMakeLists.txt`) and the Interpreter find them by scanning the directory. The Rust table `backends/rust/scenarios/src/machines.rs` is also built
 for `wasm32-unknown-unknown` and run under Node and Chrome
 (`scripts/gate wasm32-scenarios`). A member a driver does not know is ignored by
 most and refused by the C one, so a misspelt key would pass where nothing reads

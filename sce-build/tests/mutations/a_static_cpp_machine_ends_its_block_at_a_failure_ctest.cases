@@ -9,7 +9,7 @@
 # it did, the transition's guard is the lowered expression itself, and an
 # error ends the block it stands in. The values those three decide are the
 # ones `scenarios/*.json` state, replayed by
-# `tests/integration/AStaticDatamodelRunsGeneratedCppTest.cpp` over machines
+# `tests/integration/static_scenarios/StaticScenarioReplay.h` over machines
 # generated from the fixtures beside them.
 #
 # What is easy to get wrong and reads as success: a block that goes on after a
@@ -26,7 +26,7 @@
 
 mutation_ctest --test-dir build -R '^static_datamodel_generated_cpp$'
 mutation_targets tools/codegen/templates/actions/_native_statement.jinja2 tools/codegen/templates/actions/if.jinja2 tools/codegen/templates/actions/send.jinja2 tools/codegen/templates/process_transition.jinja2 tools/codegen/templates/entry_exit_actions.jinja2 tools/codegen/templates/invoke_methods.jinja2
-mutation_oracles tests/integration/AStaticDatamodelRunsGeneratedCppTest.cpp tests/integration/StaticHostParamsAotTest.cpp sce-build/tests/fixtures/host_processor/statechart_static_host_params.scxml
+mutation_oracles tests/integration/static_scenarios/StaticScenarioReplay.h tests/integration/StaticHostParamsAotTest.cpp sce-build/tests/fixtures/host_processor/statechart_static_host_params.scxml
 
 # ── A failed statement ends its block ──────────────────────────────
 

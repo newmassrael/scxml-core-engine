@@ -13,7 +13,7 @@
 # AOT engine and of the Mesh dispatch reaches the machine through, and
 # `sce-build/tests/fixtures/static_datamodel/scenarios/static_event_arrival.json`
 # and `static_event_wildcard.json` state what it decides, replayed by
-# `tests/integration/AStaticDatamodelRunsGeneratedCppTest.cpp`.
+# `tests/integration/static_scenarios/StaticScenarioReplay.h`.
 #
 # Things that are easy to get wrong and read as success: a walk that never leaves
 # the whole name (every document that writes its names whole still passes), a
@@ -29,7 +29,7 @@
 
 mutation_ctest --test-dir build -R '^static_datamodel_generated_cpp$'
 mutation_targets sce/include/core/EventNameResolver.h
-mutation_oracles tests/integration/AStaticDatamodelRunsGeneratedCppTest.cpp
+mutation_oracles tests/integration/static_scenarios/StaticScenarioReplay.h
 
 mutation_case "the walk never leaves the whole name" <<'PY'
 edit("sce/include/core/EventNameResolver.h",

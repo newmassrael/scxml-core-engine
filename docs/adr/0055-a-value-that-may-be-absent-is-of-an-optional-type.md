@@ -643,7 +643,7 @@ documents, not observed from a backend.
    arguments and readers, sets `lowers_optional`, takes itself off the scenario's list, and replays
    `static_optional.json` (Rust `static_scenarios`, Kotlin `StaticScenarioTest`, Go
    `static_scenarios_test.go`, Python `test_static_scenarios.py`, C++
-   `AStaticDatamodelRunsGeneratedCppTest`, the Interpreter
+   scenario suite `tests/integration/static_scenarios/`, the Interpreter
    `AStaticDatamodelRunsLoweredUnderTheInterpreterTest`, and for C11 a hand-written
    `backends/c/tests/integration/test_static_optional.c`, as the other C scenarios are). The
    committed trees of its backend that its template change reaches are regenerated with it.

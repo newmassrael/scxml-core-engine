@@ -371,12 +371,104 @@ endif()
 # 2.7. datamodel="sce-static" under generated C++ (SCE Accepted Subset §2.15)
 #
 # A variable is a member of the generated policy, every expression was lowered
-# to C++ at build time, and no script engine is built. The scenarios Kotlin,
-# Rust and the Interpreter replay are replayed against machines generated from
-# the fixtures beside them, so the four engines are held to one answer.
+# to C++ at build time, and no script engine is built. The scenarios every other
+# engine replays are replayed against machines generated from the fixtures beside
+# them, so the engines are held to one answer.
 # ============================================================================
+
+# sce_add_static_scenario_suite(TARGET <target> SCENARIOS <dir> FIXTURES <dir>)
+#
+# Every scenario under SCENARIOS replayed against the machine its `machine` names, one
+# translation unit per machine (integration/static_scenarios/StaticScenarioMachineTest.cpp.in)
+# with a test for each of its scenarios, and the machine generated into TARGET from
+# FIXTURES/<machine>.scxml, or from the library for a `sce:std/<path>`.
+#
+# Derived from the directory and not listed, so a scenario added there is replayed
+# with no edit to this file or to a test, and no unit compiles more than one machine.
+# The scenarios used to be replayed from one hand-written unit that named each
+# machine, its readers and a converter per record type; at 76 machines it took
+# 20.57 GB and 556 s to compile (measured 2026-10-23), past what the hosted runner
+# holds, and the C++ lane died of it on every push from c31a261a72 on.
+#
+# A machine whose host takes part in its run has its host in
+# integration/static_scenarios/hosts/<machine>.h, which its unit includes.
+function(sce_add_static_scenario_suite)
+    cmake_parse_arguments(PARSE_ARGV 0 _suite "" "TARGET;SCENARIOS;FIXTURES" "")
+    set(_here "${CMAKE_CURRENT_SOURCE_DIR}/integration/static_scenarios")
+    file(GLOB _scenario_files CONFIGURE_DEPENDS "${_suite_SCENARIOS}/*.json")
+    file(GLOB _host_files CONFIGURE_DEPENDS "${_here}/hosts/*.h")
+    if(NOT _scenario_files)
+        message(FATAL_ERROR "no scenario under ${_suite_SCENARIOS}: the suite would replay nothing")
+    endif()
+    list(SORT _scenario_files)
+
+    set(_machines)
+    foreach(_file IN LISTS _scenario_files)
+        get_filename_component(_scenario "${_file}" NAME_WE)
+        file(READ "${_file}" _text)
+        string(JSON _source ERROR_VARIABLE _error GET "${_text}" machine)
+        if(_error)
+            message(FATAL_ERROR "${_file} names no machine (${_error}), so nothing replays it")
+        endif()
+        # A machine named by its library name is generated from the library the
+        # generator embeds, and named for the last part of its path.
+        if(_source MATCHES "^sce:std/")
+            get_filename_component(_machine "${_source}" NAME)
+            set(_scxml "${_source}.scxml")
+        else()
+            set(_machine "${_source}")
+            set(_scxml "${_suite_FIXTURES}/${_source}.scxml")
+        endif()
+        if(NOT _machine IN_LIST _machines)
+            list(APPEND _machines "${_machine}")
+            set(_scxml_of_${_machine} "${_scxml}")
+            set(_scenarios_of_${_machine})
+        endif()
+        list(APPEND _scenarios_of_${_machine} "\"${_scenario}\"")
+    endforeach()
+
+    # A host no scenario's machine takes is a file nothing compiles.
+    foreach(_host IN LISTS _host_files)
+        get_filename_component(_hosted "${_host}" NAME_WE)
+        if(NOT _hosted IN_LIST _machines)
+            message(FATAL_ERROR "${_host} is the host of ${_hosted}, which no scenario replays")
+        endif()
+    endforeach()
+
+    foreach(_machine IN LISTS _machines)
+        sce_add_state_machine(TARGET ${_suite_TARGET} SCXML_FILE "${_scxml_of_${_machine}}")
+        # googletest asks for suite names without an underscore, so the suite is the
+        # machine's name with each part capitalised: static_counter is StaticCounter.
+        string(REPLACE "_" ";" _parts "${_machine}")
+        set(SCE_SCENARIO_SUITE "")
+        foreach(_part IN LISTS _parts)
+            string(SUBSTRING "${_part}" 0 1 _head)
+            string(TOUPPER "${_head}" _head)
+            string(SUBSTRING "${_part}" 1 -1 _tail)
+            string(APPEND SCE_SCENARIO_SUITE "${_head}${_tail}")
+        endforeach()
+        set(SCE_SCENARIO_MACHINE "${_machine}")
+        set(SCE_SCENARIO_HEADER "${_machine}_sm.h")
+        list(JOIN _scenarios_of_${_machine} ", " SCE_SCENARIO_NAMES)
+        if("${_here}/hosts/${_machine}.h" IN_LIST _host_files)
+            set(SCE_SCENARIO_HOSTS_INCLUDE "#include \"integration/static_scenarios/hosts/${_machine}.h\"")
+        else()
+            set(SCE_SCENARIO_HOSTS_INCLUDE "")
+        endif()
+        set(_unit "${CMAKE_CURRENT_BINARY_DIR}/static_scenarios/${_machine}_scenarios.cpp")
+        configure_file("${_here}/StaticScenarioMachineTest.cpp.in" "${_unit}" @ONLY)
+        target_sources(${_suite_TARGET} PRIVATE "${_unit}")
+    endforeach()
+endfunction()
+
 add_executable(static_datamodel_generated_cpp_test
-    integration/AStaticDatamodelRunsGeneratedCppTest.cpp
+    integration/static_scenarios/StaticScenarioReplay.cpp
+    integration/AStaticHttpSendTest.cpp
+    integration/AStaticHostDutyTest.cpp
+    integration/AStaticHostIsHandedTypedValuesTest.cpp
+    integration/AStaticChildSessionTest.cpp
+    integration/AStaticMeshRouterTest.cpp
+    integration/AStaticOptionalValueTest.cpp
     integration/AChildIsGivenItsHostByItsParentTest.cpp
     integration/StaticHostParamsAotTest.cpp
     integration/AStateAnotherBackendSavedIsRestoredTest.cpp
@@ -408,18 +500,20 @@ target_compile_definitions(static_datamodel_generated_cpp_test
 
 apply_sce_test_policies(static_datamodel_generated_cpp_test)
 
-foreach(_STATIC_CPP_MACHINE static_child_host static_child_host_hybrid static_child_mesh static_counter static_event_arrival static_event_wildcard static_overflow static_block_ends static_host_call static_host_duty static_payload static_enum static_enum_number static_forge_calls static_list static_list_assign static_list_index static_foreach static_history static_block_ends_list static_bytes static_bytes_wire static_record_fields static_record_list static_record_list_index static_record_enum static_record sync_client static_donedata static_donedata_content static_donedata_record static_invoke static_invoke_hybrid static_invoke_hybrid_saved static_invoke_tree static_invoke_params static_invoke_string static_cancel_expr static_send_content static_send_delay static_send_event static_send_http static_send_idlocation static_send_namelist static_send_params static_send_target static_send_type static_string_capacity static_timers static_real static_real32 static_record_real static_record_real32 static_record_bytes static_record_string static_payload_bytes static_payload_enum static_payload_relay static_whole_payload static_schema_revision static_schema_pending static_wire_enum static_state_algorithm static_state_algorithm_enum static_state_algorithm_optional static_text_record static_wire_wide static_optional static_optional_widened todo_peer sheet_peer presence_peer record_list_parent)
+sce_add_static_scenario_suite(
+    TARGET static_datamodel_generated_cpp_test
+    SCENARIOS ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/scenarios
+    FIXTURES ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel
+)
+# The machines of the target's other tests that no scenario replays: a BasicHTTP
+# send, whose request a scenario has no word for; the hybrid invokes held to which
+# candidate starts; and the pending schema revision a saved state is restored into.
+foreach(_STATIC_CPP_MACHINE static_send_http static_invoke_hybrid static_invoke_hybrid_saved static_schema_pending)
     sce_add_state_machine(
         TARGET static_datamodel_generated_cpp_test
         SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/${_STATIC_CPP_MACHINE}.scxml
     )
 endforeach()
-# The standard statecharts a scenario names by their library names, generated from the
-# library the generator embeds: the shared record list.
-sce_add_state_machine(
-    TARGET static_datamodel_generated_cpp_test
-    SCXML_FILE sce:std/shared/record_list.scxml
-)
 
 # The algorithms those machines call. A machine includes the header its own
 # generation names and does not generate it, so each is generated beside the

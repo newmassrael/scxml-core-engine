@@ -1,0 +1,30 @@
+// SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+// SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+//
+// Made by `sce_add_static_scenario_suite` (tests/CMakeLists.txt) from
+// tests/integration/static_scenarios/StaticScenarioMachineTest.cpp.in, for the machine
+// `@SCE_SCENARIO_MACHINE@`: every scenario of
+// sce-build/tests/fixtures/static_datamodel/scenarios whose `machine` it is, replayed
+// against the machine generated from it (StaticScenarioReplay.h). One unit per machine, so
+// what a unit compiles is one machine and the replay.
+
+#include "@SCE_SCENARIO_HEADER@"
+#include "integration/static_scenarios/StaticScenarioReplay.h"
+@SCE_SCENARIO_HOSTS_INCLUDE@
+
+namespace {
+
+using Machine = ::SCE::Generated::@SCE_SCENARIO_MACHINE@::@SCE_SCENARIO_MACHINE@;
+
+// The suite is named for the machine in the spelling googletest asks for, with no
+// underscore, and each test for its scenario's file.
+class @SCE_SCENARIO_SUITE@ : public ::testing::TestWithParam<const char *> {};
+
+TEST_P(@SCE_SCENARIO_SUITE@, Replays) {
+    ::SCE::Tests::StaticScenario::replay<Machine>(GetParam());
+}
+
+INSTANTIATE_TEST_SUITE_P(StaticScenario, @SCE_SCENARIO_SUITE@, ::testing::Values(@SCE_SCENARIO_NAMES@),
+                         [](const ::testing::TestParamInfo<const char *> &info) { return std::string(info.param); });
+
+}  // namespace

@@ -10,7 +10,7 @@
   its parent's host answers, so the child makes its own refusal of a host that
   only simulates `begin_work`, at its own construction, and the opt-in the
   caller gave the parent covers the child the parent builds. The document sits
-  beside AStaticDatamodelRunsGeneratedCppTest for the reason
+  beside AStaticHostDutyTest for the reason
   static_host_call_arguments.scxml does: the host is the C++ interface the
   generator emits, so that test alone reads it.
 -->
