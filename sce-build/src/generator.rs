@@ -452,8 +452,22 @@ impl Language {
     /// one that can be asked for Lua. It owns a template, or the answer is no.
     pub fn can_lower_expressions_on_request(self) -> bool {
         self.owns_a_template()
+            && self.has_an_expression_site()
             && self.unmigrated_expression_sites().is_empty()
             && self.unclassified_expression_sites().is_empty()
+    }
+
+    /// Whether any template this backend owns hands a model expression to an
+    /// engine, or could.
+    ///
+    /// Without one there is no second arm to be asked for: both lists above are
+    /// empty because there is nothing to list, and reading that as "every site
+    /// migrated" would give a backend whose templates lower no expression a
+    /// choice between two engines it has no site for. Swift's statecharts are
+    /// `datamodel="null"` so far, and it stays on the side of the seam with no
+    /// lowering until a template of its own carries one.
+    fn has_an_expression_site(self) -> bool {
+        !self.expression_sites().is_empty()
     }
 
     /// Whether any template in the embedded tree is this backend's.
@@ -2505,12 +2519,12 @@ pub fn transition_function_files(
     if !model.transition_function_declared || model.emitted_transition_function.is_none() {
         return Ok(Vec::new());
     }
-    // The function is a file of the machine's own backend; Swift has no machine
-    // template yet, so a document that declares one is refused as the machine is.
+    // The function is a file of the machine's own backend, with a template of its
+    // own; Swift has none yet, so a document that declares one is refused by name.
     if language == Language::Swift {
-        return Err(crate::forge::codegen_matrix::emit_missing(
-            crate::forge::model::ForgeKind::Statechart,
-            language,
+        return Err(swift_unsupported(
+            format!("the transition function of '{}'", model.name),
+            model.source_location.clone(),
         ));
     }
     let target = TransitionFunctionTarget::of(model, input_stem, language, naming);
@@ -2711,8 +2725,9 @@ pub fn machine_unit_dir(
             package.split('.').collect()
         }
         Language::Go => PathBuf::from(go_machine_package(name)),
-        Language::Cpp | Language::Rust | Language::Python | Language::C11 => PathBuf::new(),
-        Language::Swift => crate::forge::codegen_matrix::no_swift_emitter("machine_unit_dir"),
+        Language::Cpp | Language::Rust | Language::Python | Language::C11 | Language::Swift => {
+            PathBuf::new()
+        }
     }
 }
 
@@ -2977,9 +2992,9 @@ pub fn emitted_beside_templates(model: &SCXMLModel, language: Language) -> Strin
             }
             out.push_str(&crate::forge::host_invoker_interface::render_python(&model));
         }
-        Language::Swift => {
-            crate::forge::codegen_matrix::no_swift_emitter("emitted_beside_templates")
-        }
+        // The Swift machine declares everything it needs in the templates' own
+        // text; nothing is emitted ahead of them yet.
+        Language::Swift => {}
     }
     out
 }
@@ -3913,6 +3928,161 @@ pub fn generate_go_with_templates(
     load_template_strings(&mut env, templates, Language::Go)?;
     filters::register_go_filters(&mut env, &document_scope(model));
     render_go(&mut env, model, None)
+}
+
+// ── Swift generator ─────────────────────────────────────────────
+//
+// The Swift backend generates a statechart as a final class conforming to the
+// runtime's `StatePolicy` (`backends/swift/runtime`, module `SceRuntime`), driven
+// by its `Engine`. It is built up by the constructs it lowers, and refuses by
+// name the ones it does not yet ([`reject_swift_unsupported_features`]): a
+// document it accepts produces a machine that runs, and one it does not is told
+// which construct stands in the way.
+
+/// Generate Swift code from an analyzed SCXMLModel (filesystem-based).
+pub fn generate_swift(model: &SCXMLModel, template_dir: &Path) -> Result<String, GenerateError> {
+    reject_swift_unsupported_features(model)?;
+    let mut env = new_env();
+    load_templates(&mut env, template_dir, Language::Swift)?;
+    filters::register_swift_filters(&mut env, &document_scope(model));
+    render_swift(&mut env, model)
+}
+
+/// Generate Swift code using pre-loaded template strings (WASM-compatible).
+pub fn generate_swift_with_templates(
+    model: &SCXMLModel,
+    templates: &[(&str, &str)],
+) -> Result<String, GenerateError> {
+    reject_swift_unsupported_features(model)?;
+    let mut env = new_env();
+    load_template_strings(&mut env, templates, Language::Swift)?;
+    filters::register_swift_filters(&mut env, &document_scope(model));
+    render_swift(&mut env, model)
+}
+
+/// The refusal for a construct the Swift backend does not lower yet.
+fn swift_unsupported(
+    what: impl std::fmt::Display,
+    at: Option<crate::forge::error::SourceLocation>,
+) -> GenerateError {
+    GenerateError::unsupported_at(format!("{what} has no Swift codegen path yet"), at)
+}
+
+/// Whether `actions` hold, at any depth, an executable element the Swift
+/// templates do not lower: the first one's type and position.
+fn first_unlowered_swift_action(
+    actions: &[crate::model::Action],
+) -> Option<(String, Option<crate::forge::error::SourceLocation>)> {
+    for action in actions {
+        if action.action_type != "raise" {
+            return Some((
+                format!("<{}>", action.action_type.replace('_', ":")),
+                action.source_location.clone(),
+            ));
+        }
+        for block in action.nested_blocks() {
+            if let Some(hit) = first_unlowered_swift_action(block.actions) {
+                return Some(hit);
+            }
+        }
+    }
+    None
+}
+
+/// Refuse a document that holds a construct the Swift templates do not lower,
+/// naming it and where the document wrote it.
+///
+/// Asked before a template runs, because the alternative is worse than a
+/// refusal: a template reads an element it has no arm for as nothing, and the
+/// machine it produced would compile and not do what the document said.
+fn reject_swift_unsupported_features(model: &SCXMLModel) -> Result<(), GenerateError> {
+    if model.datamodel != crate::model::Datamodel::Null {
+        return Err(swift_unsupported(
+            format!(
+                "datamodel=\"{}\" in '{}'",
+                model.datamodel.as_str(),
+                model.name
+            ),
+            model.source_location.clone(),
+        ));
+    }
+    let mut states: Vec<&crate::model::State> = model.states.values().collect();
+    states.sort_by_key(|state| state.document_order);
+    for state in states {
+        if let Some(invoke) = state.invokes.first() {
+            return Err(swift_unsupported(
+                format!("an <invoke> in state '{}'", state.id),
+                invoke.base().source_location.clone(),
+            ));
+        }
+        if state.is_final && state.donedata.is_some() {
+            return Err(swift_unsupported(
+                format!("the <donedata> of final state '{}'", state.id),
+                state.source_location.clone(),
+            ));
+        }
+        for transition in &state.transitions {
+            if !transition.cond.is_empty() && !transition.is_pure_in_predicate {
+                return Err(swift_unsupported(
+                    format!(
+                        "cond=\"{}\" in state '{}' (only an In() predicate is a guard of a \
+                         datamodel=\"null\" document)",
+                        transition.cond, state.id
+                    ),
+                    transition.source_location.clone(),
+                ));
+            }
+            if let Some((what, at)) = first_unlowered_swift_action(&transition.actions) {
+                return Err(swift_unsupported(
+                    format!("{what} in a transition of state '{}'", state.id),
+                    at.or_else(|| transition.source_location.clone()),
+                ));
+            }
+        }
+        let blocks = state
+            .on_entry_blocks
+            .iter()
+            .chain(state.on_exit_blocks.iter())
+            .map(Vec::as_slice)
+            .chain(std::iter::once(state.initial_transition_actions.as_slice()));
+        for block in blocks {
+            if let Some((what, at)) = first_unlowered_swift_action(block) {
+                return Err(swift_unsupported(
+                    format!("{what} in state '{}'", state.id),
+                    at.or_else(|| state.source_location.clone()),
+                ));
+            }
+        }
+    }
+    for (id, history) in &model.history_states {
+        if !history.default_actions.is_empty() {
+            return Err(swift_unsupported(
+                format!("the default content of <history> '{id}'"),
+                history.source_location.clone(),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn render_swift(env: &mut Environment, model: &SCXMLModel) -> Result<String, GenerateError> {
+    let machine_name = filters::to_pascal_case(model.name.clone());
+    let mut model_lowered = model.clone();
+    // Stamp each transition with the symbol identity the sourcemap keys off, before
+    // any analysis pass clones or serialises the transitions.
+    symbol_mangling::stamp_symbol_attribution(&mut model_lowered);
+    model_lowered.into_artifact_coordinates();
+    let model = &model_lowered;
+
+    let tmpl = env
+        .get_template("state_machine.swift.jinja2")
+        .map_err(|e| GenerateError::TemplateLoad(format!("Template load error: {e}")))?;
+    let ctx = minijinja::context! {
+        model => minijinja::Value::from_serialize(model),
+        machine_name => machine_name,
+        license_config => minijinja::Value::from_serialize(license_config()),
+    };
+    tmpl.render(ctx).map_err(render_error)
 }
 
 // ── Python generator ────────────────────────────────────────────
@@ -7022,12 +7192,29 @@ mod tests {
     /// writes nothing where the run built none.
     #[test]
     fn a_backend_with_no_emitter_refuses_the_function_it_cannot_write() {
-        use crate::forge::codegen_matrix::{emit_missing, emitting};
+        use crate::forge::codegen_matrix::{emit_missing, emitting, emitting_in_part};
         use crate::forge::model::ForgeKind;
         let declared = transition_function_model(true, true);
         let mut refused = 0usize;
         for &language in Language::ALL {
             if emitting(ForgeKind::Statechart).any(|emits| emits == language) {
+                continue;
+            }
+            // A backend that writes a statechart in part refuses the function by
+            // the construct, as it does every one it does not lower yet.
+            if emitting_in_part(ForgeKind::Statechart).any(|emits| emits == language) {
+                let error =
+                    named_function_files(&declared, language, TransitionFunctionNaming::default())
+                        .expect_err("a backend that does not write the function wrote one");
+                assert_eq!(
+                    error.to_string(),
+                    format!(
+                        "feature unsupported in this language: the transition function of \
+                         'lamp' has no {language:?} codegen path yet"
+                    ),
+                    "{language:?}"
+                );
+                refused += 1;
                 continue;
             }
             let error =

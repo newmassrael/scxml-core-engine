@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A statechart of datamodel="null", which is the whole of what the Swift backend
+  lowers so far: states and their hierarchy, transitions on named and eventless
+  descriptors, <raise>, and the In() predicate as the only guard.
+
+  The lamp is off until `power`; switched on it enters `green`, whose <onentry>
+  raises `warm`, and the eventless transition out of `green` waits for `warm` to be
+  seen as In('green') while it is still there, so the three kinds meet: an internal
+  event, an eventless step and a guard that asks the configuration.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="off"
+       datamodel="null" name="structure_light">
+  <state id="off">
+    <transition event="power" target="on"/>
+  </state>
+  <state id="on" initial="green">
+    <transition event="power" target="off"/>
+    <state id="green">
+      <onentry><raise event="warm"/></onentry>
+      <transition event="warm" cond="In('green')" target="yellow"/>
+      <transition event="timer" target="yellow"/>
+    </state>
+    <state id="yellow">
+      <transition event="timer" target="red"/>
+    </state>
+    <state id="red">
+      <transition event="timer" target="green"/>
+      <transition event="halt" target="stopped"/>
+    </state>
+  </state>
+  <final id="stopped"/>
+</scxml>

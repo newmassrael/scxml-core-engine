@@ -603,7 +603,7 @@ pub fn validate_emitted_files_have_markers_in(
     let files = tree.files_under(out_dir).into_iter().filter(|path| {
         matches!(
             path.extension().and_then(|e| e.to_str()),
-            Some("rs" | "cpp" | "h" | "kt" | "go" | "py" | "c")
+            Some("rs" | "cpp" | "h" | "kt" | "go" | "py" | "c" | "swift")
         )
     });
 

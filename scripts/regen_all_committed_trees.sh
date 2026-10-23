@@ -123,6 +123,12 @@ scripts/regen_static_datamodel_rust.sh
 stage "Static datamodel Go tree"
 scripts/regen_static_datamodel_go.sh
 
+# The Swift backend: its statecharts are the fixtures of
+# `sce-build/tests/fixtures/swift_statecharts`, a committed tree of its own that
+# compiles against the Swift runtime.
+stage "Swift statechart tree"
+scripts/regen_swift_statecharts.sh
+
 # W3C SCXML G.7 `<sce:action>` native host dispatch gate, driven by its own
 # regen script like the EventSchema gates above.
 #

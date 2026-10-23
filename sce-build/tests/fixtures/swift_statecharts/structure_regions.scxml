@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A <parallel> of two regions, each ending in a <final>: the <parallel> completes
+  when both have, and `done.state.work` is the event that says so (W3C SCXML 3.4,
+  Appendix D isInFinalState). A history of the <state> around them remembers which
+  regions were done when it was left.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="idle"
+       datamodel="null" name="structure_regions">
+  <state id="idle">
+    <transition event="start" target="job"/>
+    <transition event="resume" target="remembered"/>
+  </state>
+  <state id="job" initial="work">
+    <history id="remembered" type="deep">
+      <transition target="work"/>
+    </history>
+    <parallel id="work">
+      <state id="left" initial="left_busy">
+        <state id="left_busy">
+          <transition event="left.done" target="left_done"/>
+        </state>
+        <final id="left_done"/>
+      </state>
+      <state id="right" initial="right_busy">
+        <state id="right_busy">
+          <transition event="right.done" target="right_done"/>
+        </state>
+        <final id="right_done"/>
+      </state>
+      <transition event="done.state.work" target="finished"/>
+    </parallel>
+    <final id="finished"/>
+    <transition event="pause" target="idle"/>
+  </state>
+</scxml>

@@ -1152,6 +1152,45 @@ pub fn register_go_filters(env: &mut minijinja::Environment, scope: &Arc<Documen
     env.add_filter("callback_lang", filter_callback_lang);
 }
 
+/// Register all Swift-specific filters on the minijinja environment.
+///
+/// A state or an event is a case of the policy's own enum, spelled lowerCamel as
+/// every Swift enum case is ([`to_swift_variant`]). No keyword filter is
+/// registered: a document id that spells a Swift keyword is refused at parse for
+/// every backend at once (`validation/reserved-code-identifier`,
+/// [`crate::reader_names`]), so no id reaches a template as one.
+pub fn register_swift_filters(env: &mut minijinja::Environment, _scope: &Arc<DocumentScope>) {
+    env.add_filter("w3c_session_name", w3c_session_name);
+    register_invoke_filters(env);
+    register_event_wire_filters(env);
+    env.add_filter("to_pascal_case", to_pascal_case);
+    env.add_filter("to_camel_case", to_camel_case);
+    env.add_filter("to_snake_case", to_snake_case);
+    env.add_filter("to_event_variant", to_swift_variant);
+    env.add_filter("to_state_variant", to_swift_variant);
+    env.add_filter("to_in_predicate_swift", to_in_predicate_swift);
+    env.add_filter("normalize_ws", normalize_ws);
+    env.add_filter("to_machine_name", to_pascal_case);
+}
+
+/// A state id or an event name as the case of a Swift enum: lowerCamel, the
+/// spelling `crate::scxml_identifier` and `crate::reader_names` hold a document
+/// name against for this backend.
+pub fn to_swift_variant(name: String) -> String {
+    to_camel_case(name)
+}
+
+/// Transform C++ In() predicate code to Swift: a call on the policy itself.
+fn to_in_predicate_swift(cond_cpp: String) -> String {
+    if cond_cpp.is_empty() {
+        return String::new();
+    }
+    let result = cond_cpp.replace("this->", "");
+    RE_IS_STATE_ACTIVE
+        .replace_all(&result, r#"isStateActive("$1")"#)
+        .to_string()
+}
+
 /// Map SCXML variable type to Go type.
 fn to_go_type(var_type: String) -> String {
     match var_type.as_str() {

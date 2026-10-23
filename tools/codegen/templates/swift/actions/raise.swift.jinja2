@@ -1,0 +1,7 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{# W3C SCXML 4.2: Raise internal event #}
+{% if action.event %}
+            engine.raise(EventWithMetadata({{ machine_name }}Event.{{ action.event | to_event_variant }}))
+{% endif %}

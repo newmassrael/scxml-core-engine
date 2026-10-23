@@ -70,6 +70,7 @@ pub const SUPPORTED_LANGUAGES: &[Language] = &[
     Language::Kotlin,
     Language::Go,
     Language::Python,
+    Language::Swift,
 ];
 
 #[cfg(test)]
@@ -88,6 +89,31 @@ mod tests {
   <final id="b"/>
 </scxml>
 "#;
+
+    /// [`FIXTURE`] as far as a backend that writes a statechart in part lowers
+    /// it: the same three templates are reached, through the one action and the
+    /// one datamodel it lowers.
+    const FIXTURE_IN_PART: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="null" initial="a" name="reg">
+  <state id="a">
+    <onentry><raise event="entered"/></onentry>
+    <transition event="go" target="b"/>
+  </state>
+  <final id="b"/>
+</scxml>
+"#;
+
+    /// The machine a language's templates are rendered against.
+    fn fixture_for(language: Language) -> &'static str {
+        if crate::forge::codegen_matrix::ships_in_part(
+            crate::forge::model::ForgeKind::Statechart,
+            language,
+        ) {
+            FIXTURE_IN_PART
+        } else {
+            FIXTURE
+        }
+    }
 
     /// The registry is non-empty and every language resolves a set.
     ///
@@ -249,9 +275,10 @@ mod tests {
         for &language in SUPPORTED_LANGUAGES {
             let templates = embedded_templates_for(language);
             let borrowed: Vec<(&str, &str)> = templates.clone();
-            crate::compile_from_string_lang(FIXTURE, "reg", &borrowed, language).unwrap_or_else(
-                |e| panic!("{language:?} failed to render from the embedded registry: {e}"),
-            );
+            crate::compile_from_string_lang(fixture_for(language), "reg", &borrowed, language)
+                .unwrap_or_else(|e| {
+                    panic!("{language:?} failed to render from the embedded registry: {e}")
+                });
         }
     }
 

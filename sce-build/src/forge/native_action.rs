@@ -1055,8 +1055,9 @@ fn method_name(lang: Language, name: &str) -> String {
             filters::to_snake_case(name.to_string())
         }
         Language::Go => filters::to_pascal_case(name.to_string()),
-        Language::Cpp | Language::Kotlin => filters::to_camel_case(name.to_string()),
-        Language::Swift => no_swift_emitter("method_name"),
+        Language::Cpp | Language::Kotlin | Language::Swift => {
+            filters::to_camel_case(name.to_string())
+        }
     }
 }
 
@@ -1066,8 +1067,9 @@ fn param_ident(lang: Language, name: &str) -> String {
         Language::Rust | Language::Python | Language::C11 => {
             filters::to_snake_case(name.to_string())
         }
-        Language::Go | Language::Kotlin | Language::Cpp => filters::to_camel_case(name.to_string()),
-        Language::Swift => no_swift_emitter("param_ident"),
+        Language::Go | Language::Kotlin | Language::Cpp | Language::Swift => {
+            filters::to_camel_case(name.to_string())
+        }
     }
 }
 

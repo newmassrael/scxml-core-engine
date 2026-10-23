@@ -1460,11 +1460,14 @@ pub fn compile_from_string_lang_typed(
             generator::generate_c11_with_templates(&model, templates, scxml_name)
                 .map_err(|e| locate_codegen_error(e, scxml_name, &model))
         }
-        generator::Language::Swift => Err(locate_codegen_error(
-            forge::codegen_matrix::emit_missing(forge::model::ForgeKind::Statechart, language),
-            scxml_name,
-            &model,
-        )),
+        generator::Language::Swift => {
+            let code = generator::generate_swift_with_templates(&model, templates)
+                .map_err(|e| locate_codegen_error(e, scxml_name, &model))?;
+            Ok(generator::GeneratedOutput {
+                files: vec![(format!("{scxml_name}_sm.swift"), code)],
+                ..Default::default()
+            })
+        }
     }?;
     // The same seam as the file entry's, under the default roots the machine
     // above is generated under too: this entry takes no naming prefix.
@@ -1818,11 +1821,12 @@ pub fn emit_model_artifacts(
                 .map_err(|e| locate_codegen_error(e, source_name, model))?
         }
         generator::Language::Swift => {
-            return Err(locate_codegen_error(
-                forge::codegen_matrix::emit_missing(forge::model::ForgeKind::Statechart, language),
-                source_name,
-                model,
-            ));
+            let code = generator::generate_swift(model, template_dir)
+                .map_err(|e| locate_codegen_error(e, source_name, model))?;
+            generator::GeneratedOutput {
+                files: vec![(format!("{input_stem}_sm.swift"), code)],
+                deps: Vec::new(),
+            }
         }
     };
     // The transition function a document may declare (SCE Accepted Subset

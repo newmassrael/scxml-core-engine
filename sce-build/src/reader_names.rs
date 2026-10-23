@@ -741,10 +741,16 @@ fn member_patterns(language: Language) -> Vec<Regex> {
             regex(r"\b([A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)*_)(?:[^A-Za-z0-9_]|\{\{)"),
         ],
         Language::Kotlin => vec![regex(r"\bfun\s+(?:<[^>]*>\s*)?([A-Za-z_][A-Za-z0-9_]*)")],
-        // Methods. Swift keeps a type's properties and methods in one
-        // namespace, so the properties the Swift templates declare are scanned
-        // for here once they exist; there is no Swift template to read yet.
-        Language::Swift => vec![regex(r"\bfunc\s+(?:<[^>]*>\s*)?`?([A-Za-z_][A-Za-z0-9_]*)")],
+        // Methods, and the properties of the policy class. Swift keeps a type's
+        // properties and methods in one namespace, and the class body is written
+        // at one indent, so a `var` or `let` at that indent is a member, where one
+        // deeper is a local.
+        Language::Swift => vec![
+            regex(r"\bfunc\s+(?:<[^>]*>\s*)?`?([A-Za-z_][A-Za-z0-9_]*)"),
+            regex(
+                r"(?m)^    (?:(?:public|private|fileprivate|internal|final|static|lazy)\s+)*(?:var|let)\s+`?([A-Za-z_][A-Za-z0-9_]*)",
+            ),
+        ],
         // Methods; the policy struct's fields are read from its body alone
         // (`GO_POLICY_FIELD`), because a package-level constant shares no
         // namespace with a method and the same line shape declares one.

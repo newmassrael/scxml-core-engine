@@ -282,6 +282,34 @@ pub const fn template_ships(kind: ForgeKind, lang: Language) -> bool {
     }
 }
 
+/// Whether the template for `(kind, lang)` ships but lowers only part of what the
+/// kind admits, refusing the rest by name: a backend on its way to
+/// [`template_ships`], that already writes what it lowers.
+///
+/// Kept apart from [`template_ships`] on purpose. That one is the claim that a
+/// backend writes the kind the way every other does, and a check that holds every
+/// backend to what one of them writes ([`emitting`]) is right to include the
+/// backend only when the claim is true: a partial backend refusing a document the
+/// others accept would turn every such check red for a reason that is not a defect.
+/// What a partial backend does lower is held by the checks written for it
+/// ([`emitting_in_part`]), and a backend moves to [`template_ships`] when nothing
+/// it refuses is left.
+///
+/// Swift's statechart lowers `datamodel="null"` documents so far
+/// (`generator::reject_swift_unsupported_features` names each construct it does
+/// not yet).
+pub const fn ships_in_part(kind: ForgeKind, lang: Language) -> bool {
+    matches!((kind, lang), (ForgeKind::Statechart, Language::Swift))
+}
+
+/// The backends that write `kind` in whole or in part, in [`Language::ALL`] order:
+/// [`emitting`] and the backends [`ships_in_part`] names.
+pub fn emitting_in_part(kind: ForgeKind) -> impl Iterator<Item = Language> {
+    Language::ALL.iter().copied().filter(move |lang| {
+        matches!(lookup(kind, *lang), EmitOutcome::Emit) || ships_in_part(kind, *lang)
+    })
+}
+
 /// Walk the matrix for `(kind, language)`. Returns `EmitOutcome::Emit`
 /// when the template ships and the pair is on-policy; otherwise the
 /// outcome names the §synth-5-J-4 violation.
@@ -334,6 +362,23 @@ pub fn emits_anything(lang: Language) -> bool {
             .iter()
             .filter_map(|name| ForgeKind::from_attr(name))
             .any(|kind| matches!(lookup(kind, lang), EmitOutcome::Emit))
+}
+
+/// Whether `lang` writes anything at all, in whole or in part: [`emits_anything`],
+/// or a kind in part ([`ships_in_part`]).
+///
+/// What a route that writes files serves, and what a refusal means by a backend
+/// that "emits nothing yet": a backend that writes a statechart in part is asked
+/// to generate one, and refuses by the construct what it does not lower. A sweep
+/// over "every backend" ([`emits_anything`]) leaves it out until nothing it
+/// refuses is left, since a verdict that refuses most documents says nothing
+/// about the document.
+pub fn writes_something(lang: Language) -> bool {
+    emits_anything(lang)
+        || ForgeKind::ALL_ATTR_NAMES
+            .iter()
+            .filter_map(|name| ForgeKind::from_attr(name))
+            .any(|kind| ships_in_part(kind, lang))
 }
 
 /// Reject `(kind, lang)` with the matching `GenerateError` if the

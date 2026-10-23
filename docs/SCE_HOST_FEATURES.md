@@ -323,7 +323,8 @@ Three things differ by lane and are not hidden:
 These are not built, and nothing here stands in for them:
 
 - **Swift and iOS.** The build machines carry a Swift toolchain, and `Language`
-  names the backend, but it emits nothing yet: every kind is refused for it with
+  names the backend, but it writes only a statechart of `datamodel="null"` so
+  far, and every Forge kind is refused for it with
   `codegen/generic-kind-backend-emit-missing`. So there is no iOS host, no Swift
   generated interface for these types, and no `UserNotifications` binding.
 - **Android.** No `NotificationManager` host, no Android key-value store

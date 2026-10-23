@@ -515,7 +515,14 @@ impl DriftContext {
 fn is_drift_eligible_path(path: &Path) -> bool {
     matches!(
         path.extension().and_then(|e| e.to_str()),
-        Some("rs") | Some("cpp") | Some("h") | Some("kt") | Some("go") | Some("py") | Some("c"),
+        Some("rs")
+            | Some("cpp")
+            | Some("h")
+            | Some("kt")
+            | Some("go")
+            | Some("py")
+            | Some("c")
+            | Some("swift"),
     )
 }
 
@@ -12456,7 +12463,7 @@ fn collect_generated_files(out_dir: &Path) -> Vec<std::path::PathBuf> {
             if path.is_dir() {
                 walk(&path, out);
             } else if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-                if matches!(ext, "rs" | "cpp" | "h" | "kt" | "go" | "py" | "c") {
+                if matches!(ext, "rs" | "cpp" | "h" | "kt" | "go" | "py" | "c" | "swift") {
                     out.insert(path);
                 }
             }

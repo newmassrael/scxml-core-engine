@@ -10,7 +10,11 @@
                    empirical preservation test asserts that rustdoc
                    keeps the `#[doc]` form on every emitted function.
      - Kotlin:     `// SCE-MAP: {file}:{line}`
-     - Go:         `//line {file}:{line}` (recognised by `go vet` +
+     - Swift:      `// SCE-MAP: {file}:{line}` (the comment form at every
+                   level: `#sourceLocation` would renumber the lines of the
+                   file after it, and the markers are for a reader of the
+                   listing)
+     - Go:        `//line {file}:{line}` (recognised by `go vet` +
                                            panic stack traces)
      - Python:     `# SCE-MAP: {file}:{line}`
 
@@ -121,7 +125,7 @@
 #[doc = "SCE-MAP: {{ loc.file }}:{{ range_part }}{{ sym_suffix }}"]
 // SCE-MAP: {{ loc.file }}:{{ range_part }}{{ sym_suffix }}
 {%- endif %}
-{%- elif backend == "kotlin" %}
+{%- elif backend == "kotlin" or backend == "swift" %}
 // SCE-MAP: {{ loc.file }}:{{ range_part }}{{ sym_suffix }}
 {%- elif backend == "go" -%}
 {#- Go's `//line` directive remaps subsequent line numbers in panic

@@ -49,6 +49,7 @@ const EXPECTED_OWNED: &[(Language, Option<&str>)] = &[
     (Language::Go, Some("go")),
     (Language::Python, Some("python")),
     (Language::C11, Some("c")),
+    (Language::Swift, Some("swift")),
     // C++ templates sit at the tree root, so no path prefix identifies
     // them. That is why a C11 build still lists the root C++ templates
     // among its inputs — stated rather than silently tolerated.

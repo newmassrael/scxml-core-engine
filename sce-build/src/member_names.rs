@@ -179,6 +179,10 @@ fn python_event(name: &str) -> Option<String> {
     Some(filters::to_python_const(name.to_string()))
 }
 
+fn swift_name(name: &str) -> Option<String> {
+    Some(filters::to_swift_variant(name.to_string()))
+}
+
 fn c11_upper(name: &str) -> Option<String> {
     Some(filters::to_c11_upper_ident(Cow::Borrowed(name)))
 }
@@ -324,7 +328,55 @@ const FAMILIES: &[Family] = &[
         spell: c11_upper,
         sentinels: &["NONE"],
     },
+    // Swift: the cases of the policy's own `State` and `Event` enums, spelled
+    // lowerCamel, and the statics of the namespace a machine's `<history>` ids
+    // are. The two enums are `Int` enums, so a case of the name of a member the
+    // language gives them is refused (`reserved_of`).
+    Family {
+        language: Language::Swift,
+        label: "State",
+        source: Source::States,
+        spell: swift_name,
+        sentinels: &[],
+    },
+    Family {
+        language: Language::Swift,
+        label: "History",
+        source: Source::Histories,
+        spell: swift_name,
+        sentinels: &[],
+    },
+    Family {
+        language: Language::Swift,
+        label: "Event",
+        source: Source::Events,
+        spell: swift_name,
+        sentinels: &["null"],
+    },
 ];
+
+/// The members a family's type has whatever its template declares: a case of one
+/// of these names would declare it a second time, so it is refused as a sentinel
+/// is, but the template writes none of them and the rendered code does not show
+/// them (`sentinels` are what the template writes).
+///
+/// A Swift enum with a raw type is `RawRepresentable` and `Hashable`, which gives
+/// it `rawValue`, `hashValue` and `hash(into:)`.
+fn reserved_of(family: &Family) -> &'static [&'static str] {
+    match (family.language, family.label) {
+        (Language::Swift, "State" | "Event") => &["rawValue", "hashValue", "hash"],
+        (Language::Swift, _) => &[],
+        (
+            Language::Rust
+            | Language::Cpp
+            | Language::Kotlin
+            | Language::Go
+            | Language::Python
+            | Language::C11,
+            _,
+        ) => &[],
+    }
+}
 
 /// One set of symbols, as this module expects a backend to declare it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -411,6 +463,7 @@ fn family_collision(family: &Family, model: &SCXMLModel) -> Option<(String, Clas
     let mut taken: BTreeMap<String, Option<&str>> = family
         .sentinels
         .iter()
+        .chain(reserved_of(family))
         .map(|s| (s.to_string(), None))
         .collect();
     let mut names = family.source.names(model);
@@ -452,7 +505,10 @@ fn spellings_of(
                 Clash::Name(other) => {
                     in_family(other) && (family.spell)(other).as_ref() == Some(&member)
                 }
-                Clash::Generated => family.sentinels.contains(&member.as_str()),
+                Clash::Generated => {
+                    family.sentinels.contains(&member.as_str())
+                        || reserved_of(family).contains(&member.as_str())
+                }
             };
             if folds {
                 spelled = Some(member);

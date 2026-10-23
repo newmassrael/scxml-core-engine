@@ -379,13 +379,11 @@ const ACCEPTED: &[(Language, &str, Why)] = &[
         "host Mesh core over `zenoh_inbox`",
         Why::NotYet("no host Mesh core for this backend; the E5 extension opened Rust and Kotlin"),
     ),
-    // Swift, which is decided at every site that decides per backend and emits
-    // nothing yet. Every entry below closes as its emitter lands, and the stale
-    // check removes it then; the list is what is left of the backend.
+    // Swift, which is decided at every site that decides per backend and writes a
+    // statechart in part. Every entry below closes as its emitter grows, and the
+    // stale check removes it then; the list is what is left of the backend.
     //
-    // The CLI routes that write files serve the backends that emit something.
-    (Language::Swift, "`generate` route", Why::NotYet(SWIFT_NO_EMITTER)),
-    (Language::Swift, "`orchestrate` route", Why::NotYet(SWIFT_NO_EMITTER)),
+    // The CLI routes that write files serve the backends that write something.
     (Language::Swift, "`generate-w3c` route", Why::NotYet(SWIFT_NO_EMITTER)),
     (Language::Swift, "`generate-integration` route", Why::NotYet(SWIFT_NO_EMITTER)),
     (Language::Swift, "`generate-conformance` route", Why::NotYet(SWIFT_NO_EMITTER)),
@@ -413,7 +411,6 @@ const ACCEPTED: &[(Language, &str, Why)] = &[
     // What the emitters carry, once they exist.
     (Language::Swift, "sce-static data model", Why::NotYet(SWIFT_NO_EMITTER)),
     (Language::Swift, "may-fail algorithm bodies", Why::NotYet(SWIFT_NO_FORGE)),
-    (Language::Swift, "embedded template registry", Why::NotYet(SWIFT_NO_EMITTER)),
     (Language::Swift, "CBOR codec", Why::NotYet(SWIFT_NO_FORGE)),
     (Language::Swift, "content-line codec", Why::NotYet(SWIFT_NO_FORGE)),
     (
@@ -425,12 +422,12 @@ const ACCEPTED: &[(Language, &str, Why)] = &[
     (
         Language::Swift,
         "artifact for the lua engine",
-        Why::NotYet("it has no emitter, so no artifact; its Lua target is built with the W3C lane"),
+        Why::NotYet("no Swift template hands an expression to an engine yet; its Lua target is built with the W3C lane"),
     ),
     (
         Language::Swift,
         "ECMA-262 lowered-artifact gate",
-        Why::NotYet("it has no emitter, so no lowered artifact for the gate to read"),
+        Why::NotYet("it lowers no expression yet, so no lowered artifact for the gate to read"),
     ),
     // The numerical conformance harness and its kind fragments.
     (Language::Swift, "numerical conformance harness", Why::NotYet(SWIFT_NO_FORGE)),
@@ -458,9 +455,9 @@ const ACCEPTED: &[(Language, &str, Why)] = &[
     (Language::Swift, "host Mesh core over `zenoh_inbox`", Why::NotYet(SWIFT_NO_MESH)),
 ];
 
-/// Swift has no statechart emitter, so nothing that reads one exists for it.
+/// Swift writes a statechart in part, so what reads a whole one does not exist for it.
 const SWIFT_NO_EMITTER: &str =
-    "Swift emits nothing yet; the statechart emitter is the first thing built for it";
+    "Swift writes a datamodel null statechart so far; the rest of the emitter is built after it";
 
 /// Swift's Forge emitters are built after its statechart emitter and runtime.
 const SWIFT_NO_FORGE: &str =

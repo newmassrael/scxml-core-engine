@@ -23,7 +23,7 @@ use std::path::{Path, PathBuf};
 use regex::Regex;
 use tempfile::tempdir;
 
-use sce_build::forge::codegen_matrix::emitting;
+use sce_build::forge::codegen_matrix::{emitting, emitting_in_part};
 use sce_build::forge::error::ForgeError;
 use sce_build::forge::model::ForgeKind;
 use sce_build::generator::Language;
@@ -101,6 +101,16 @@ fn every_backend() -> Vec<&'static str> {
         .collect()
 }
 
+/// [`every_backend`] and the backends that write a statechart in part
+/// ([`emitting_in_part`]): Swift declares its members and is asked the refusal
+/// like the rest, so a pair it folds names it, as one it keeps apart (a pair of
+/// states that differ only in case) leaves it out.
+fn every_backend_that_declares() -> Vec<&'static str> {
+    emitting_in_part(ForgeKind::Statechart)
+        .map(|language| language.canonical_name())
+        .collect()
+}
+
 #[test]
 fn two_states_that_differ_only_in_case_are_refused_for_every_backend() {
     // XML Names are case-sensitive, so these are two conforming states
@@ -117,7 +127,8 @@ fn two_states_that_differ_only_in_case_are_refused_for_every_backend() {
 #[test]
 fn camel_and_snake_case_states_are_refused_where_the_backend_folds_them() {
     // C++ keeps `DoorOpen` and `Door_open` apart and C11 `DOOROPEN` and
-    // `DOOR_OPEN`; the four PascalCase and UPPER_SNAKE backends do not.
+    // `DOOR_OPEN`; the PascalCase backends and Swift's lowerCamel (`doorOpen`
+    // for both) do not.
     let (_, name, clash, backends) = refusal(
         r#"<state id="doorOpen"><transition event="go" target="door_open"/></state>
            <state id="door_open"><transition event="go" target="doorOpen"/></state>"#,
@@ -126,13 +137,13 @@ fn camel_and_snake_case_states_are_refused_where_the_backend_folds_them() {
         (name.as_str(), clash),
         ("door_open", Clash::Name("doorOpen".into()))
     );
-    assert_eq!(backends, ["rust", "kotlin", "go", "python"]);
+    assert_eq!(backends, ["rust", "kotlin", "go", "python", "swift"]);
 }
 
 #[test]
 fn a_dash_and_an_underscore_in_a_state_are_one_member_everywhere() {
     // `-` is written as a delimiter by every backend, so `door-open` and
-    // `door_open` meet in all six.
+    // `door_open` meet in all seven.
     let (_, name, clash, backends) = refusal(
         r#"<state id="door-open"><transition event="go" target="door_open"/></state>
            <state id="door_open"><transition event="go" target="door-open"/></state>"#,
@@ -141,7 +152,7 @@ fn a_dash_and_an_underscore_in_a_state_are_one_member_everywhere() {
         (name.as_str(), clash),
         ("door_open", Clash::Name("door-open".into()))
     );
-    assert_eq!(backends, every_backend());
+    assert_eq!(backends, every_backend_that_declares());
 }
 
 #[test]
@@ -160,7 +171,7 @@ fn a_dotted_and_an_underscored_event_are_refused_where_they_fold() {
         (name.as_str(), clash),
         ("door_open", Clash::Name("door.open".into()))
     );
-    let folding: Vec<&str> = emitting(ForgeKind::Statechart)
+    let folding: Vec<&str> = emitting_in_part(ForgeKind::Statechart)
         // Kotlin: keeps the dotted and the underscored event apart.
         .filter(|language| *language != Language::Kotlin)
         .map(Language::canonical_name)
@@ -196,12 +207,12 @@ fn an_event_spelled_as_the_wildcards_member_is_refused_for_every_backend() {
 
 #[test]
 fn an_event_spelled_as_the_eventless_null_is_refused_where_it_is_declared() {
-    // Rust and Go declare `Null`; Python spells the event `NULL_` to avoid
-    // its own sentinel, and C++ and C11 reserve a different word.
+    // Rust and Go declare `Null` and Swift `null`; Python spells the event
+    // `NULL_` to avoid its own sentinel, and C++ and C11 reserve a different word.
     let (_, name, clash, backends) =
         refusal(r#"<state id="a"><transition event="null" target="b"/></state><final id="b"/>"#);
     assert_eq!((name.as_str(), clash), ("null", Clash::Generated));
-    assert_eq!(backends, ["rust", "go"]);
+    assert_eq!(backends, ["rust", "go", "swift"]);
 }
 
 #[test]
@@ -328,6 +339,17 @@ fn rendered(language: Language, label: &str, files: &[(String, String)]) -> BTre
             enumerators(block("enum names_history_e {", "}"), "NAMES_HIST_")
         }
         (Language::C11, "Event") => enumerators(block("enum names_event_e {", "}"), "NAMES_EVENT_"),
+        (Language::Swift, "State" | "Event") => capture(
+            &block(
+                &format!("public enum Names{label}: Int, Hashable, Sendable {{"),
+                "\n}",
+            ),
+            r"(?m)^    case (\w+) = \d+",
+        ),
+        (Language::Swift, "History") => capture(
+            &block("public enum NamesHistory {", "\n}"),
+            r"(?m)^    public static let (\w+) = HistoryID\(",
+        ),
         (Language::C11, "on_entry") => capture(&all, r"names_on_entry_(\w+)_block_\d+\("),
         (Language::C11, "on_exit") => capture(&all, r"names_on_exit_(\w+)_block_\d+\("),
         // A family no reader above covers, for any backend. The backends are
@@ -345,10 +367,47 @@ fn rendered(language: Language, label: &str, files: &[(String, String)]) -> BTre
     }
 }
 
+/// What [`EVERY_CONVERSION`] holds for Swift, which lowers a statechart in part
+/// and refuses the `<log>` that document carries: a `datamodel="null"` machine,
+/// with the one action it lowers.
+const SWIFT_CONVERSION: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" name="names" datamodel="null">
+  <state id="idle">
+    <onentry><raise event="go"/></onentry>
+    <transition event="go" target="door-open"/>
+    <transition event="door.open" target="coolDown"/>
+  </state>
+  <state id="door-open">
+    <transition event="cool-down" target="s_1"/>
+    <transition event="a.b.c" target="a.b"/>
+  </state>
+  <state id="coolDown" initial="warm">
+    <history id="h_deep" type="deep"><transition target="warm"/></history>
+    <state id="warm"><transition event="*" target="done"/></state>
+    <transition event="back" target="h_deep"/>
+  </state>
+  <state id="a.b"><transition event="a.b" target="s_1"/></state>
+  <state id="s_1"><transition event="go" target="done"/></state>
+  <final id="done"/>
+</scxml>
+"#;
+
 #[test]
 fn every_member_a_backend_declares_is_the_spelling_the_refusal_asks() {
+    every_member_is_the_spelling_the_refusal_asks(
+        &document(EVERY_CONVERSION),
+        emitting(ForgeKind::Statechart).collect(),
+    );
+}
+
+#[test]
+fn every_member_swift_declares_is_the_spelling_the_refusal_asks() {
+    every_member_is_the_spelling_the_refusal_asks(SWIFT_CONVERSION, vec![Language::Swift]);
+}
+
+fn every_member_is_the_spelling_the_refusal_asks(text: &str, languages: Vec<Language>) {
     let dir = tempdir().expect("tempdir");
-    let path = write(dir.path(), &document(EVERY_CONVERSION));
+    let path = write(dir.path(), text);
     let path_str = path.to_str().unwrap();
 
     let mut parser = sce_build::parser::SCXMLParser::new();
@@ -362,12 +421,12 @@ fn every_member_a_backend_declares_is_the_spelling_the_refusal_asks() {
     let declared = sce_build::member_names::declared(&model);
     // Every backend has at least its state family here, so a language whose
     // families vanished from the table would not pass by having none.
-    for language in emitting(ForgeKind::Statechart) {
+    for &language in &languages {
         assert!(declared
             .iter()
             .any(|d| d.language == language && d.label == "State"));
     }
-    for language in emitting(ForgeKind::Statechart) {
+    for &language in &languages {
         let output = compile_scxml_lang_typed(path_str, &find_template_dir_for(language), language)
             .unwrap_or_else(|e| panic!("{language:?} refused the conformance document: {e:?}"));
         for family in declared.iter().filter(|d| d.language == language) {

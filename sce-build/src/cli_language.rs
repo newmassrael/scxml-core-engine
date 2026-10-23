@@ -44,10 +44,22 @@ use std::sync::LazyLock;
 fn emitless_backends() -> String {
     Language::ALL
         .iter()
-        .filter(|language| !crate::forge::codegen_matrix::emits_anything(**language))
+        .filter(|language| !crate::forge::codegen_matrix::writes_something(**language))
         .map(|language| language.canonical_name())
         .collect::<Vec<_>>()
         .join(", ")
+}
+
+/// The sentence a route's exclusion reason ends with for the backends that emit
+/// nothing yet, led by `lead` ("; " or ". "), and nothing at all while every
+/// backend emits something.
+fn emitless_sentence(lead: &str, subject: &str) -> String {
+    let emitless = emitless_backends();
+    if emitless.is_empty() {
+        String::new()
+    } else {
+        format!("{lead}A backend that emits nothing yet ({emitless}) is absent{subject}")
+    }
 }
 
 use crate::generator::Language;
@@ -122,14 +134,29 @@ impl LanguageRoute {
             Language::ALL
                 .iter()
                 .copied()
-                .filter(|language| crate::forge::codegen_matrix::emits_anything(*language))
+                .filter(|language| crate::forge::codegen_matrix::writes_something(*language))
                 .collect()
         });
         match self {
             LanguageRoute::Check | LanguageRoute::ListFixtures => Language::ALL,
-            LanguageRoute::Generate
-            | LanguageRoute::Orchestrate
-            | LanguageRoute::GenerateConformance => EMITTING.as_slice(),
+            LanguageRoute::Generate | LanguageRoute::Orchestrate => EMITTING.as_slice(),
+            // The numerical harness is a Forge kind's, rendered per backend:
+            // a backend that emits statecharts and no Forge kind has none.
+            LanguageRoute::GenerateConformance => {
+                static SERVED: LazyLock<Vec<Language>> = LazyLock::new(|| {
+                    EMITTING
+                        .iter()
+                        .copied()
+                        .filter(|language| {
+                            crate::forge::codegen_matrix::emitting(
+                                crate::forge::model::ForgeKind::Transform,
+                            )
+                            .any(|emits| emits == *language)
+                        })
+                        .collect()
+                });
+                SERVED.as_slice()
+            }
             // Every backend but the ones the batch suite has no emitter
             // for, so a backend added to `Language` is served here until
             // a reason to leave it out is written beside the filter.
@@ -144,7 +171,10 @@ impl LanguageRoute {
                         // different emitter and does work — which is why
                         // the refusal below has to say so rather than
                         // leave the caller reading a five-name menu.
-                        .filter(|language| *language != Language::C11)
+                        //
+                        // Swift's statecharts carry no ECMAScript datamodel
+                        // yet, and every W3C test is written in one.
+                        .filter(|language| !matches!(language, Language::C11 | Language::Swift))
                         .collect()
                 });
                 SERVED.as_slice()
@@ -174,24 +204,30 @@ impl LanguageRoute {
     /// reason is a route whose refusal tells the caller to go away
     /// without saying where.
     pub fn exclusion_reason(self) -> Option<String> {
-        let emitless = emitless_backends();
         match self {
             LanguageRoute::GenerateW3c => Some(format!(
                 "C11 is absent because no C11 W3C statechart emitter exists yet (RFC §5.J.1); \
-                 single-document `generate -l c11` uses a different emitter and does work. A \
-                 backend that emits nothing yet ({emitless}) is absent too",
+                 single-document `generate -l c11` uses a different emitter and does work. \
+                 swift is absent because its statecharts carry no ECMAScript datamodel yet, \
+                 which every W3C test is written in{}",
+                emitless_sentence(". ", " too"),
             )),
             LanguageRoute::GenerateIntegration => Some(format!(
                 "cpp and c11 are absent because their integration fixtures emit at CMake build \
                  time through `sce_generate_static_integration_test`, leaving no committed tree \
-                 for this subcommand to regenerate. A backend that emits nothing yet \
-                 ({emitless}) is absent too",
+                 for this subcommand to regenerate. swift is absent because its integration \
+                 fixtures are not generated yet{}",
+                emitless_sentence(". ", " too"),
             )),
-            LanguageRoute::Generate
-            | LanguageRoute::Orchestrate
-            | LanguageRoute::GenerateConformance => Some(format!(
-                "a backend that emits nothing yet ({emitless}) is absent"
+            LanguageRoute::GenerateConformance => Some(format!(
+                "swift is absent because it emits no Forge kind yet, and the numerical harness \
+                 is one{}",
+                emitless_sentence(". ", " too"),
             )),
+            LanguageRoute::Generate | LanguageRoute::Orchestrate => {
+                let emitless = emitless_sentence("", "");
+                (!emitless.is_empty()).then_some(emitless)
+            }
             LanguageRoute::Check | LanguageRoute::ListFixtures => None,
         }
     }

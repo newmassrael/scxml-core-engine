@@ -1,0 +1,146 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{#
+    Entry/Exit Actions Template (Swift Jinja2)
+
+    W3C SCXML 3.7/3.8/3.9: Entry and exit action execution.
+
+    Generates:
+    - executeEntryActions(_:engine:isDefaultEntry:)
+    - executeExitActions(_:engine:configurationBeforeExit:)
+    - executeHistoryDefaultContent(_:engine:)
+
+    Each answers for ONE state. Which states a microstep enters and exits, and
+    in which order, is the runtime's Appendix D procedure (Microstep.swift): it
+    enters its entry set front to back and exits its exit set in exit order, so
+    nothing here enters a region, descends to an initial child, or exits a
+    descendant. `isDefaultEntry` is the entry set's statesForDefaultEntry
+    answer: whether this state's initial transition content runs.
+
+    The Swift twin of go/entry_exit_actions.go.jinja2. Action field is
+    `action.type` (serde rename from `action_type`).
+#}
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{%- import '_macros/sce_annotation_marker.jinja2' as annot %}
+
+    /// Enters one state (W3C SCXML 3.8): adds it to the configuration, runs its
+    /// `<onentry>`, and its `<initial>` transition's content when its initial
+    /// state is entered by default.
+    public func executeEntryActions(_ state: {{ machine_name }}State, engine: Engine<{{ machine_name }}Policy>, isDefaultEntry: Bool) {
+{% if model.has_parallel_states or model.uses_in_predicate %}
+        // W3C SCXML 3.4/3.12.1: Add state to active configuration for parallel
+        // states and In() predicate
+        if activeStates.contains(state) {
+            return  // W3C SCXML 3.8: Skip onentry actions for duplicate state entry
+        }
+        activeStates.append(state)
+{% endif %}
+        switch state {
+{% for state_id, state in model.states | dictsort %}
+{% if state.on_entry_blocks or state.initial_transition_actions or (state.is_final and state.parent) %}
+        case .{{ state_id | to_state_variant }}:
+{% for block in state.on_entry_blocks %}
+            // W3C SCXML 3.8 + 4.9: onentry block {{ loop.index0 }}.
+            do {
+{% for action in block %}
+                {% with in_action_block=true %}{% include 'actions/' ~ action.type ~ '.swift.jinja2' %}{% endwith %}
+
+{% endfor %}
+            }
+{% endfor %}
+{% if state.initial_transition_actions %}
+            // W3C SCXML 3.3.2 / §scxml-D-enterStates: the <initial> transition's
+            // content runs when this state's initial state is entered by DEFAULT,
+            // not when the state is entered only as an ancestor of a deeper target.
+            if isDefaultEntry {
+                do {
+{% for action in state.initial_transition_actions %}
+                    {% with in_action_block=true %}{% include 'actions/' ~ action.type ~ '.swift.jinja2' %}{% endwith %}
+
+{% endfor %}
+                }
+            }
+{% endif %}
+{% if state.is_final and state.parent %}
+{% set done_event = ("done.state." ~ state.parent) | to_event_variant %}
+            // W3C SCXML 3.7: Final state reached; raise done.state.{{ state.parent }}
+            engine.raise(EventWithMetadata({{ machine_name }}Event.{{ done_event }}))
+{% if model.has_parallel_states and state.parent in model.states and model.states[state.parent].parent %}
+{% set grandparent_id = model.states[state.parent].parent %}
+{% if grandparent_id in model.states and model.states[grandparent_id].is_parallel and ('done.state.' ~ grandparent_id) in model.events %}
+            // W3C SCXML 3.4 / §scxml-D-enterStates: a region of {{ grandparent_id }}
+            // has reached a final state, and the <parallel> completes when every one
+            // of its child states is in one: Appendix D's isInFinalState, which
+            // counts a region that is itself a <parallel> only once all of ITS
+            // regions are.
+            if PolicyDocument(self).isInFinalState(.{{ grandparent_id | to_state_variant }}, configuration: activeStates) {
+                engine.raise(EventWithMetadata({{ machine_name }}Event.{{ ('done.state.' ~ grandparent_id) | to_event_variant }}))
+            }
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}
+{% endfor %}
+        default:
+            break  // No entry actions
+        }
+    }
+
+    /// Runs a `<history>`'s default transition content (W3C SCXML 3.10.2), after
+    /// its parent's onentry (and after the parent's own `<initial>` content) when
+    /// the history was taken with nothing recorded. The engine asks for it by the
+    /// entry set's defaultHistoryContent answer; a history that restored what it
+    /// recorded runs nothing.
+    public func executeHistoryDefaultContent(_ history: HistoryID, engine: Engine<{{ machine_name }}Policy>) {
+        // W3C SCXML 3.10.2: no <history> in this document has default content.
+    }
+
+    /// Exits one state (W3C SCXML 3.9): records its histories, runs its `<onexit>`,
+    /// cancels its invocations and removes it from the configuration, in
+    /// §scxml-D-exitStates's order.
+    public func executeExitActions(_ state: {{ machine_name }}State, engine: Engine<{{ machine_name }}Policy>, configurationBeforeExit: [{{ machine_name }}State]) {
+{% if model.history_states %}
+        // W3C SCXML 3.10 / §scxml-D-exitStates: record the histories of this state
+        // from the configuration the microstep started from. The engine hands every
+        // exit the configuration as it stood before the first one, so every history
+        // in one microstep reads the same configuration.
+{% for history_id, history_info in model.history_states | dictsort %}
+        if state == .{{ history_info.parent | to_state_variant }} {
+            // W3C SCXML 3.10: {{ history_info.type }} history {{ history_id }}
+            history{{ history_id | to_pascal_case }} = PolicyDocument(self).recordedHistory(
+                parent: .{{ history_info.parent | to_state_variant }},
+                deep: {{ 'true' if history_info.type == 'deep' else 'false' }},
+                configurationBeforeExit: configurationBeforeExit
+            )
+        }
+{% endfor %}
+{% endif %}
+        // §scxml-D-exitStates orders one state's exit as onexit, then cancelInvoke,
+        // then configuration.delete(s), so `In(s)` inside s's own handler is true:
+        // the <onexit> switch comes first and the removal from the configuration
+        // last.
+        switch state {
+{% for state_id, state in model.states | dictsort %}
+{% if state.on_exit_blocks %}
+        case .{{ state_id | to_state_variant }}:
+{% for block in state.on_exit_blocks %}
+            // W3C SCXML 3.9 + 4.9: onexit block {{ loop.index0 }}.
+            do {
+{% for action in block %}
+                {% with in_action_block=true %}{% include 'actions/' ~ action.type ~ '.swift.jinja2' %}{% endwith %}
+
+{% endfor %}
+            }
+{% endfor %}
+{% endif %}
+{% endfor %}
+        default:
+            break  // No exit actions
+        }
+{% if model.has_parallel_states or model.uses_in_predicate %}
+        // §scxml-D-exitStates: out of the configuration only after its onexit and
+        // invoke cancellation: the configuration.delete(s) step.
+        activeStates.removeAll { $0 == state }
+{% endif %}
+    }
