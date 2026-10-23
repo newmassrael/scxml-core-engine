@@ -3700,22 +3700,25 @@ fn invoking_below(kid_data: &str) -> String {
 fn an_invoke_idlocation_names_a_string_variable_the_started_id_fits() {
     // docs/adr/0045: each start of a child session is started under
     // `<state>.<start>.<id>`, the id its events carry and a saved tree holds, and
-    // `idlocation` keeps it in a string variable whose bound it fits. Rust and
-    // Kotlin write it; a backend that does not yet is refused by name, never left
-    // to store nothing, and that for an `idlocation` in a child written in place
-    // too, which `check` asks of the document it is given: a run that generated
-    // the document and failed on its child would stop a regeneration midway.
+    // `idlocation` keeps it in a string variable whose bound it fits. Every
+    // backend that lowers `sce-static` writes it, for an `idlocation` in a child
+    // written in place too, which `check` asks of the document it is given: a run
+    // that generated the document and failed on its child would stop a
+    // regeneration midway. A backend that lowers `sce-static` before it writes the
+    // id is refused by the construct (`reject_static_invoke_idlocation_outside`),
+    // never left to store nothing; none is in that state now, and one that does
+    // not lower `sce-static` at all is refused for that first.
     let held = r#"<data id="held" sce:type="string" sce:capacity="64" expr="''"/>"#;
     for document in [invoking_into_held(held), invoking_below(held)] {
-        for written in ["rust", "kotlin"] {
+        for written in emitting(ForgeKind::Statechart).map(|language| language.canonical_name()) {
             let (ok, out) = run(&["check", "-l", written], &document);
             assert!(ok, "{written}: the started id has a place to go:\n{out}");
         }
-        let (ok, out) = run(&["check", "-l", "python"], &document);
-        assert!(!ok, "Python does not write it yet:\n{out}");
+        let (ok, out) = run(&["check", "-l", "swift"], &document);
+        assert!(!ok, "Swift does not lower sce-static yet:\n{out}");
         assert!(
-            out.contains("generate/unsupported-feature") && out.contains("<invoke idlocation>"),
-            "the refusal names the construct:\n{out}"
+            out.contains("generate/unsupported-feature") && out.contains("sce-static"),
+            "the refusal names the data model:\n{out}"
         );
     }
 }
