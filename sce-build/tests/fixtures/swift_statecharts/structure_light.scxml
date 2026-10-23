@@ -10,21 +10,21 @@
   event, an eventless step and a guard that asks the configuration.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="off"
-       datamodel="null" name="structure_light">
+       xmlns:sce="http://sce.dev/ext" datamodel="null" name="structure_light">
   <state id="off">
     <transition event="power" target="on"/>
   </state>
   <state id="on" initial="green">
     <transition event="power" target="off"/>
-    <state id="green">
+    <state id="green" sce:unhandled="halt">
       <onentry><raise event="warm"/></onentry>
       <transition event="warm" cond="In('green')" target="yellow"/>
       <transition event="timer" target="yellow"/>
     </state>
-    <state id="yellow">
+    <state id="yellow" sce:unhandled="halt warm">
       <transition event="timer" target="red"/>
     </state>
-    <state id="red">
+    <state id="red" sce:unhandled="warm">
       <transition event="timer" target="green"/>
       <transition event="halt" target="stopped"/>
     </state>
