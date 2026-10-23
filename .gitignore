@@ -218,6 +218,9 @@ backends/python/tests/integration/static_datamodel/*.py
 !backends/python/tests/integration/static_datamodel/__init__.py
 !backends/python/tests/integration/static_datamodel/test_*.py
 
+# SwiftPM build output of the Swift packages under backends/swift.
+backends/swift/**/.build/
+
 build_debug_qjs/
 
 # Bazel
