@@ -3767,6 +3767,36 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         LABELS "integration;c11;aot"
     )
 
+    # SCE Accepted Subset §2.15, "Saving and restoring" (docs/adr/0045): a child session is saved
+    # inside its parent and resumed where it stood; a format-1 state starts it again. The machine of
+    # `static_invoke` is generated above.
+    add_executable(sce_c_integration_static_child_saved
+        integration/test_a_saved_child_session_is_resumed_after_a_restore.c
+        ${INTEGRATION_C_TEST_static_invoke_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_static_child_saved PRIVATE
+        sce_c_runtime sce_c_runtime_posix sce_c_base
+    )
+    target_include_directories(sce_c_integration_static_child_saved PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include"
+    )
+    target_compile_definitions(sce_c_integration_static_child_saved PRIVATE
+        SCE_SAVED_FIXTURES_DIR="${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/saved"
+    )
+    set_target_properties(sce_c_integration_static_child_saved PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_static_child_saved
+        COMMAND sce_c_integration_static_child_saved
+    )
+    set_tests_properties(c11_integration_static_child_saved PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
     # SCE Accepted Subset §2.15, "Saving and restoring": a host-run invocation is saved with the
     # request it was started with and the deadline it had left, and a restore starts it again from
     # that request (§scxml-6.4.1). The machine is generated above.
@@ -3793,6 +3823,36 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         COMMAND sce_c_integration_static_host_invoke_saved
     )
     set_tests_properties(c11_integration_static_host_invoke_saved PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
+    # SCE Accepted Subset §2.15, "Saving and restoring": a delayed `<send>` the host serves is a wait
+    # a saved machine carries, with the request it will make when the wait ends. The machine of
+    # `statechart_static_delayed_host_send` is generated above.
+    add_executable(sce_c_integration_static_host_send_saved
+        integration/test_a_generated_machines_waiting_host_send_survives_a_restore.c
+        ${INTEGRATION_C_TEST_statechart_static_delayed_host_send_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_static_host_send_saved PRIVATE
+        sce_c_runtime sce_c_runtime_posix sce_c_base
+    )
+    target_include_directories(sce_c_integration_static_host_send_saved PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include"
+    )
+    target_compile_definitions(sce_c_integration_static_host_send_saved PRIVATE
+        SCE_HOST_SAVED_FIXTURES_DIR="${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/host_processor/saved"
+    )
+    set_target_properties(sce_c_integration_static_host_send_saved PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_static_host_send_saved
+        COMMAND sce_c_integration_static_host_send_saved
+    )
+    set_tests_properties(c11_integration_static_host_send_saved PROPERTIES
         TIMEOUT 30
         LABELS "integration;c11;aot"
     )
@@ -3863,6 +3923,36 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         COMMAND sce_c_integration_static_mesh_request
     )
     set_tests_properties(c11_integration_static_mesh_request PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
+    # SCE Accepted Subset §2.15, "Saving and restoring": a Mesh request in flight is saved as the call
+    # it was and a restore does not send it again; the document is told it was interrupted. The
+    # machine of `statechart_static_mesh_request` is generated above.
+    add_executable(sce_c_integration_static_mesh_request_saved
+        integration/test_a_saved_mesh_request_is_not_sent_again_after_a_restore.c
+        ${INTEGRATION_C_TEST_statechart_static_mesh_request_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_static_mesh_request_saved PRIVATE
+        sce_c_runtime sce_c_runtime_posix sce_c_base
+    )
+    target_include_directories(sce_c_integration_static_mesh_request_saved PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include"
+    )
+    target_compile_definitions(sce_c_integration_static_mesh_request_saved PRIVATE
+        SCE_HOST_SAVED_FIXTURES_DIR="${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/host_processor/saved"
+    )
+    set_target_properties(sce_c_integration_static_mesh_request_saved PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_static_mesh_request_saved
+        COMMAND sce_c_integration_static_mesh_request_saved
+    )
+    set_tests_properties(c11_integration_static_mesh_request_saved PROPERTIES
         TIMEOUT 30
         LABELS "integration;c11;aot"
     )

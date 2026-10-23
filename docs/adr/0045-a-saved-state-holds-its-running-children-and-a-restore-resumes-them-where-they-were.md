@@ -966,9 +966,11 @@ Each step lands with a test that fails without it.
    started it, so an event forwarded to it does not wait in its queue; an event a child sends its
    parent carries no origin or origin type. Held by `c11_unit_saved_state`,
    `c11_integration_static_saved` (every shared instance read and written back),
-   `c11_integration_static_host_invoke_saved`, `c11_integration_static_saved_tree`, and the
-   scenario `restore` step of `static_invoke_tree`. Open: the shared host-processor fixtures and
-   the format-1 restart as tests of their own, and the mutation round over the new machines.
+   `c11_integration_static_host_invoke_saved`, `c11_integration_static_saved_tree`,
+   `c11_integration_static_child_saved` (the child resume and the format-1 restart),
+   `c11_integration_static_host_send_saved` (a waiting host send), `c11_integration_static_mesh_request_saved`
+   (a Mesh request not sent again), and the scenario `restore` step of `static_invoke_tree`.
+   Open: the mutation round over the new machines.
 6. **The host cores** (after ADR 0043 steps 3 and 5): the checkpoint document, its schema and its
    row in SCE_WIRE_CONTRACTS.md with a producer status constant in `sce-rust-mesh` and
    `sce-kotlin-mesh`; holding envelopes back; the endpoint section saved and restored; the

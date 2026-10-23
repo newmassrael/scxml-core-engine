@@ -5596,6 +5596,10 @@ state or its API meets:
   forwarded to a child does not wait in the child's own queue.
 - **A child's events to its parent.** An event a child sends its parent carries no `origin`
   and no `origintype`.
+- **A restored machine owing a start or an interruption.** A C11 machine that has no delayed
+  `<send>` has no wake-up query (`_time_until_next_scheduled_ms` is emitted with the scheduler),
+  so a host steps such a machine once after a restore: that macrostep tells the document a Mesh
+  request was interrupted. A machine with a scheduler answers `0` until then, as the others do.
 - **Documents that do not save.** A C11 document that needs the script engine has no saved
   state, as a document under another data model has none on any backend.
 
