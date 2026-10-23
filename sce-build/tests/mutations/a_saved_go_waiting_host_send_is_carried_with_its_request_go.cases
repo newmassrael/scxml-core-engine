@@ -1,0 +1,99 @@
+# Mutation cases for "a delayed send the host serves is a wait a saved machine carries,
+# with the request it will make when the wait ends" under the Go backend (docs/adr/0045,
+# section 3; docs/SCE_ACCEPTED_SUBSET.md section 2.15, "Saving and restoring").
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_saved_go_waiting_host_send_is_carried_with_its_request_go.cases`.
+#
+# `statechart_static_delayed_host_send` arms a send to the host with two typed `<param>`s
+# read from the machine's fields, then changes one of them (`bump`) while the send waits.
+# `savePending` writes the waiting send as the wall-clock moment it comes due and the
+# request it was armed with, and `armPending` arms it again against the clock of the
+# restored machine, `due - wallNowMs` after now, and at once for one already due. The
+# request the wait carries is the one the document made, never one evaluated again. The
+# tests are in `a_generated_machines_waiting_host_send_survives_a_restore_test.go`, on a
+# manual clock and against the shared text
+# `saved/statechart_static_delayed_host_send_waiting.json`. The mutants take one decision
+# away each:
+#
+#   a waiting send is saved without its params;
+#   a waiting send is saved without its target;
+#   a waiting send is saved without the data the host will be handed;
+#   a waiting send is saved as due a wait counted from the clock's zero;
+#   a restored send is not armed;
+#   a restored send is armed without its params;
+#   a restored send is armed without its data;
+#   a send already due when the machine comes back waits a millisecond.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_go backends/go/tests ./integration/statechart_static_delayed_host_send/
+mutation_targets backends/go/runtime/engine_saved.go
+mutation_oracles backends/go/tests/integration/statechart_static_delayed_host_send/a_generated_machines_waiting_host_send_survives_a_restore_test.go sce-build/tests/fixtures/host_processor/saved/statechart_static_delayed_host_send_waiting.json
+
+# Caught by TestAWaitingSendIsSavedWithTheRequestItWasArmedWith (`act.Params` is
+# `job` 7 and `label` report, and the text is the shared one).
+mutation_case "a waiting send is saved without its params" <<'PY'
+edit("backends/go/runtime/engine_saved.go",
+     "Params:        cloneParams(act.HostSend.Params),",
+     "Params:        nil,")
+PY
+
+# Caught by TestAWaitingSendIsSavedWithTheRequestItWasArmedWith (`act.Target` is
+# `job://report`).
+mutation_case "a waiting send is saved without its target" <<'PY'
+edit("backends/go/runtime/engine_saved.go",
+     "Target:        act.HostSend.Target,",
+     'Target:        "",')
+PY
+
+# Caught by TestAWaitingSendIsSavedWithTheRequestItWasArmedWith (the text is the shared
+# one, whose `data` is the payload armed with `job` 7).
+mutation_case "a waiting send is saved without the data the host will be handed" <<'PY'
+edit("backends/go/runtime/engine_saved.go",
+     "Data:          act.HostSend.EventData,",
+     'Data:          "",')
+PY
+
+# The machine has waited 100 ms of 500 when it is saved, so the wait that is left is
+# 400 ms. Caught by TestAWaitingSendIsSavedWithTheRequestItWasArmedWith (`entry.Due`
+# is the save moment plus 400 ms).
+mutation_case "a waiting send is saved as due a wait counted from the clock's zero" <<'PY'
+edit("backends/go/runtime/engine_saved.go",
+     "due := dueOn(wallNowMs, now, entry.ReadyAtMs)",
+     "due := dueOn(wallNowMs, now*0, entry.ReadyAtMs)")
+PY
+
+# Caught by TestARestoredSendIsMadeWhenItsMomentComesWithTheJobItWasArmedWith (no send
+# is made at 350 ms), TestAWaitingSendSavedInFormatOneIsMadeWhenItsMomentComes and
+# TestARestoredMachineCarriesOnWithTheJobItHad.
+mutation_case "a restored send is not armed" <<'PY'
+edit("backends/go/runtime/engine_saved.go",
+     "case SavedActHost:",
+     'case SavedActKind("host-not-armed"):')
+PY
+
+# Caught by TestARestoredSendIsMadeWhenItsMomentComesWithTheJobItWasArmedWith (the
+# request has `job` 7).
+mutation_case "a restored send is armed without its params" <<'PY'
+edit("backends/go/runtime/engine_saved.go",
+     "Params:        cloneParams(act.Params),",
+     "Params:        nil,")
+PY
+
+# Caught by TestARestoredSendIsMadeWhenItsMomentComesWithTheJobItWasArmedWith (event
+# data is `{"job":7,"label":"report"}`).
+mutation_case "a restored send is armed without its data" <<'PY'
+edit("backends/go/runtime/engine_saved.go",
+     "EventData:     act.Data,",
+     'EventData:     "",')
+PY
+
+# Caught by TestASendAlreadyDueWhenTheMachineComesBackIsMadeWhenItIsDriven (the send is
+# made when the machine is driven at the moment it comes back, not a millisecond later).
+mutation_case "a send already due when the machine comes back waits a millisecond" <<'PY'
+edit("backends/go/runtime/engine_saved.go",
+     "wait = 0",
+     "wait = 1")
+PY

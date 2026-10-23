@@ -1,0 +1,93 @@
+# Mutation cases for "a saved host-run invocation is started again by a restore, from the
+# request it was saved with and the deadline it had left" under the Go backend
+# (docs/adr/0045, section 3; docs/SCE_ACCEPTED_SUBSET.md section 2.15, "Running host
+# invocations").
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_saved_go_host_invocation_is_started_again_go.cases`.
+#
+# `statechart_static_host_invoke` hands a job to the host from `working`, with a deadline of
+# five seconds. A restore re-arms each saved invocation (`rearmHostInvokes`), asks nothing
+# of the host, and the first macrostep the host drives starts it again
+# (`startRestoredHostInvokes`): marked as a restart, under the next token the saved text
+# carries, with the deadline it had left, or not at all when the deadline came due while the
+# machine was away, when the document hears `error.invoke.h` instead. A machine that owes
+# such a start says it needs a tick now. The tests are in
+# `a_saved_host_invocation_is_started_again_after_a_restore_test.go`, on a manual clock.
+# The mutants take one decision away each:
+#
+#   a deadline that passed while the machine was away does not end the invocation;
+#   a restored invocation is not marked as a restart;
+#   a restore does not carry the next token on;
+#   a restored invocation loses the deadline it had left;
+#   an invocation cancelled before it was started again is started all the same;
+#   an invocation whose invoker is not registered raises no error;
+#   a machine that owes a start does not say it needs a tick now.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_go backends/go/tests ./integration/statechart_static_host_invoke/
+mutation_targets backends/go/runtime/engine_saved.go
+mutation_targets backends/go/runtime/host_processor.go
+mutation_targets backends/go/runtime/engine.go
+mutation_oracles backends/go/tests/integration/statechart_static_host_invoke/a_saved_host_invocation_is_started_again_after_a_restore_test.go sce-build/tests/fixtures/host_processor/saved/statechart_static_host_invoke_running.json
+
+# The host is asked to begin what it would be told to stop at once. Caught by
+# TestADeadlineThatPassedWhileTheMachineWasAwayEndsTheInvocationUnstarted (the host log
+# is not empty, and `error.invoke.h` is not heard at the first tick).
+mutation_case "a deadline that passed while the machine was away does not end the invocation" <<'PY'
+edit("backends/go/runtime/engine_saved.go",
+     "case host.deadline == restoredDeadlinePassed:",
+     "case host.deadline == restoredDeadlinePassed && host.atMs < 0:")
+PY
+
+# Caught by TestARestoredInvocationIsStartedAgainFromTheRequestItWasSavedWith (the host
+# is told this is a resumption).
+mutation_case "a restored invocation is not marked as a restart" <<'PY'
+edit("backends/go/runtime/engine_saved.go",
+     "request.Restarted = true",
+     "request.Restarted = false")
+PY
+
+# Caught by TestARestoredInvocationIsStartedAgainFromTheRequestItWasSavedWith (the next
+# token is 1, not 0) and TestWhatTheFirstRunHandedAHostCannotAnswerForTheSecond (a reply
+# carrying token 0 would be accepted by the second run).
+mutation_case "a restore does not carry the next token on" <<'PY'
+edit("backends/go/runtime/engine_saved.go",
+     "engine.nextHostInvokeToken = uint64(saved.HostInvokeToken)",
+     "engine.nextHostInvokeToken = 0")
+PY
+
+# Caught by TestARestoredInvocationKeepsTheDeadlineItHadLeft (nothing ends the invocation
+# at 4000 ms) and TestADeadlineThatPassedWhileTheMachineWasAwayEndsTheInvocationUnstarted.
+mutation_case "a restored invocation loses the deadline it had left" <<'PY'
+edit("backends/go/runtime/engine_saved.go",
+     "if host.Due != nil {",
+     "if host.Due != nil && wallNowMs < 0 {")
+PY
+
+# Caught by TestAnInvocationCancelledBeforeItWasStartedAgainIsNeverStarted (the host log
+# is not empty after the first tick).
+mutation_case "an invocation cancelled before it was started again is started all the same" <<'PY'
+edit("backends/go/runtime/host_processor.go",
+     "return restored.request.ProcessorType == processorType && restored.request.InvokeID == invokeID",
+     "return false")
+PY
+
+# `error.execution` is a name the document's event table does not hold under the
+# mutated spelling, so nothing is raised. Caught by
+# TestARestartNobodyCanRunIsTheErrorAStartNobodyCanRunIs (one unhandled error expected).
+mutation_case "an invocation whose invoker is not registered raises no error" <<'PY'
+edit("backends/go/runtime/engine_saved.go",
+     'GetEventFromName("error.execution")',
+     'GetEventFromName("error.execution.unregistered")')
+PY
+
+# Caught by TestARestoredMachineOwingAStartSaysItNeedsATickNow (the wait is 0 and there
+# is one, at 1000 ms and at 6000 ms after the save).
+mutation_case "a machine that owes a start does not say it needs a tick now" <<'PY'
+edit("backends/go/runtime/engine.go",
+     "if len(e.restoredHostInvokes) > 0 {",
+     "if len(e.restoredHostInvokes) > 1 {")
+PY

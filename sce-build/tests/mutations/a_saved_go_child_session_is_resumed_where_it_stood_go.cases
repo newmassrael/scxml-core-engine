@@ -1,0 +1,130 @@
+# Mutation cases for "a saved state holds its running children, and a restore
+# resumes each one where it stood" under the Go backend (docs/adr/0045, step 5;
+# docs/SCE_ACCEPTED_SUBSET.md section 2.15, "Saving and restoring").
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_saved_go_child_session_is_resumed_where_it_stood_go.cases`.
+#
+# The generated machine writes each running child into its parent (`savedChildren`),
+# names which children are running (`RunningInvokes`), carries the count of starts
+# of each `<invoke>` through a restore, and resumes a child in place of starting it
+# (`resumeChild...`); a format-1 text names a child by its id alone and `RestartInvokes`
+# starts it again. All of that is emitted by `state_machine.go.jinja2` and
+# `entry_exit_actions.go.jinja2`, so each mutant is an edit of a template and the
+# committed machines are regenerated before the tests are compiled.
+#
+# `a_saved_child_session_is_resumed_after_a_restore_test.go` drives `static_invoke`
+# (a child that takes `a` then `b` and ends, reached through its parent's
+# `autoforward`) and holds the shared text `saved/static_invoke_working.json` byte for
+# byte; `a_saved_tree_holds_every_session_where_it_stood_test.go` holds the tree text
+# in which `worker` was started twice. The mutants take one decision away each:
+#
+#   a saved child names the id of its `<invoke>` where it must name the id it was
+#     started under;
+#   a saved child's start is not the count the parent holds for its `<invoke>`;
+#   a restore does not carry the count of starts of an `<invoke>` on;
+#   a child that has ended is still counted among the running ones;
+#   a resumed child is not the one the parent drives;
+#   a resumed child is not recorded as an active invocation of its parent;
+#   a resumed child is registered under an id other than the one it was started under;
+#   a format-1 restart starts nothing.
+#
+# Anchors are literal slices of the templates; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_go backends/go/tests ./integration/static_datamodel/
+mutation_targets tools/codegen/templates/go/state_machine.go.jinja2
+mutation_targets tools/codegen/templates/go/entry_exit_actions.go.jinja2
+# Every committed machine that holds a child session: the regeneration rewrites these
+# from the mutated template and the round restores them.
+mutation_targets backends/go/tests/integration/static_datamodel/record_list_parent/record_list_parent_sm.go
+mutation_targets backends/go/tests/integration/static_datamodel/static_child_host/static_child_host_sm.go
+mutation_targets backends/go/tests/integration/static_datamodel/static_child_host_hybrid/static_child_host_hybrid_sm.go
+mutation_targets backends/go/tests/integration/static_datamodel/static_child_mesh/static_child_mesh_sm.go
+mutation_targets backends/go/tests/integration/static_datamodel/static_child_mesh/static_mesh_relay_sm.go
+mutation_targets backends/go/tests/integration/static_datamodel/static_host_duty_child/static_host_duty_child_sm.go
+mutation_targets backends/go/tests/integration/static_datamodel/static_invoke/static_invoke_sm.go
+mutation_targets backends/go/tests/integration/static_datamodel/static_invoke_entry/static_invoke_entry_sm.go
+mutation_targets backends/go/tests/integration/static_datamodel/static_invoke_hybrid/static_invoke_hybrid_sm.go
+mutation_targets backends/go/tests/integration/static_datamodel/static_invoke_hybrid_saved/static_invoke_hybrid_saved_sm.go
+mutation_targets backends/go/tests/integration/static_datamodel/static_invoke_params/static_invoke_params_sm.go
+mutation_targets backends/go/tests/integration/static_datamodel/static_invoke_string/static_invoke_string_sm.go
+mutation_targets backends/go/tests/integration/static_datamodel/static_invoke_tree/static_invoke_tree__sce_synth_invoke__worker_sm.go
+mutation_targets backends/go/tests/integration/static_datamodel/static_invoke_tree/static_invoke_tree_sm.go
+mutation_regen scripts/regen_static_datamodel_go.sh
+mutation_oracles backends/go/tests/integration/static_datamodel/a_saved_child_session_is_resumed_after_a_restore_test.go backends/go/tests/integration/static_datamodel/a_saved_tree_holds_every_session_where_it_stood_test.go backends/go/tests/integration/static_datamodel/a_static_hybrid_invoke_is_started_again_by_a_restore_test.go sce-build/tests/fixtures/static_datamodel/saved/static_invoke_working.json sce-build/tests/fixtures/static_datamodel/saved/static_invoke_tree_working.json sce-build/tests/fixtures/static_datamodel/saved/format1/static_invoke_working.json
+
+# Caught by TestAMachineIsSavedWithTheWholeStateOfTheChildItIsRunning
+# (`child.InvokeID` is "working.1.worker", and the text is the shared one) and by
+# TestTheTreeSavesTheSharedTextByteForByte.
+mutation_case "a saved child names the id of its invoke, not the id it was started under" <<'PY'
+edit("tools/codegen/templates/go/state_machine.go.jinja2",
+     'InvokeID: strings.TrimPrefix(session.SessionID, p.SessionID+"."),',
+     'InvokeID: session.InvokeID,')
+PY
+
+# Caught by TestTheTreeHoldsEverySessionWhereItStood (`worker.Start` is 2: it was
+# started twice) and TestTheTreeSavesTheSharedTextByteForByte. `static_invoke` starts
+# its child once, so only the tree fixture can tell a count from a constant 1.
+mutation_case "a saved child's start is not the count of starts of its invoke" <<'PY'
+edit("tools/codegen/templates/go/state_machine.go.jinja2",
+     "			Start:    int64(p.invokeStarts{{ invoke_info.field_suffix | to_pascal_case }}),",
+     "			Start:    1,")
+PY
+
+# Caught by TestTheCountOfStartsIsCarriedThroughARestore: after the resumed child ends,
+# the machine's starts are still `worker: 1`, and without the carried count it lists none.
+mutation_case "a restore does not carry the count of starts of an invoke on" <<'PY'
+edit("tools/codegen/templates/go/state_machine.go.jinja2",
+     ' = uint64(grown.InvokeStart("{{ invoke_info.invoke_id | escape_go }}"))',
+     ' = uint64(0 * grown.InvokeStart("{{ invoke_info.invoke_id | escape_go }}"))')
+PY
+
+# RunningInvokes then lists a child the save leaves out, and SaveSession refuses a save
+# whose children are not the children the machine runs. Caught by
+# TestAChildThatHasEndedIsNotResumedOrStartedAgain and
+# TestTheCountOfStartsIsCarriedThroughARestore, which save a machine whose child ended
+# and whose parent still stands in the state that invokes it.
+mutation_case "a child that has ended is still counted among the running ones" <<'PY'
+edit("tools/codegen/templates/go/state_machine.go.jinja2",
+     " != nil && !p.pendingDoneInvoke{{ invoke_info.field_suffix | to_pascal_case }} && !p.child{{ invoke_info.field_suffix | to_pascal_case }}.IsInFinalState() {",
+     " != nil {")
+PY
+
+# The restore returns, the child is built and restored, and the parent never drives it:
+# the autoforwarded `b` goes nowhere. Caught by
+# TestAChildThatHadTakenAnEventIsResumedWithItTaken (`completed` stays 0).
+mutation_case "a resumed child is not the one the parent drives" <<'PY'
+edit("tools/codegen/templates/go/state_machine.go.jinja2",
+     "p.child{{ invoke_info.field_suffix | to_pascal_case }} = &childEngineWrapper{{ machine_name }}_{{ slot }}{engine: childEngine, policy: &childPolicy}",
+     "_ = childPolicy")
+PY
+
+# The parent saves a running child only when it also tracks the invocation, so a
+# resumed child that is not tracked refuses the next save. Caught by
+# TestARestoredTreeSavesTheTextItWasRestoredFrom and
+# TestTheSharedTextRestoresAndSavesAgainAsItWas (the restored machine saves again).
+mutation_case "a resumed child is not recorded as an active invocation of its parent" <<'PY'
+edit("tools/codegen/templates/go/state_machine.go.jinja2",
+     'p.activeInvokes["{{ invoke_info.invoke_id | escape_go }}"] = &sce.ChildSession{',
+     'p.activeInvokes["{{ invoke_info.invoke_id | escape_go }}.resumed"] = &sce.ChildSession{')
+PY
+
+# The id a saved child is written under comes from the session the parent tracks it by,
+# so a resumed child tracked under another id saves "worker" in place of
+# "working.1.worker". Caught by TestARestoredTreeSavesTheTextItWasRestoredFrom and
+# TestTheSharedTextRestoresAndSavesAgainAsItWas.
+mutation_case "a resumed child is registered under an id other than the one it was started under" <<'PY'
+edit("tools/codegen/templates/go/state_machine.go.jinja2",
+     'childSessionID := fmt.Sprintf("%s.%s", p.SessionID, child.InvokeID)',
+     'childSessionID := fmt.Sprintf("%s.%s", p.SessionID, child.ID)')
+PY
+
+# Caught by TestAFormatOneStateStartsItsChildAgainFromTheBeginning (the child never
+# starts, so `a` then `b` ends nothing) and, for a hybrid invoke, by
+# TestAFormatOneRestoreHandsTheChildTheValuesTheRestoredMachineHolds.
+mutation_case "a format-1 restart starts nothing" <<'PY'
+edit("tools/codegen/templates/go/entry_exit_actions.go.jinja2",
+     "	for _, id := range ids {",
+     "	for _, id := range ids[:0] {")
+PY

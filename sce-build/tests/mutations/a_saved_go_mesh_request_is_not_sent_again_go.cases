@@ -1,0 +1,73 @@
+# Mutation cases for "a saved Mesh request is not sent again by a restore, and the document
+# is told it was interrupted" under the Go backend (docs/adr/0045, section 3;
+# docs/SCE_ACCEPTED_SUBSET.md section 2.15, "Running host invocations").
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_saved_go_mesh_request_is_not_sent_again_go.cases`.
+#
+# A request to a peer (`<invoke type="sce:mesh-rpc">`) may already have been acted on, and
+# the router that carried it went with the process that saved it. A saved state holds the
+# call as it was sent, and a restore re-arms it like any host-run invocation; the first
+# macrostep does not hand it to a router but raises `error.invoke.<id>` with `"interrupted"`
+# (`startRestoredHostInvokes`, the reserved-type branch), and a machine that owes that tells
+# its host it needs a tick now. `statechart_static_mesh_request` asks `#motor` from `asking`;
+# `done.invoke.ask` and `error.invoke.ask` each leave it and count in `answered` and
+# `failed`. The tests are in `a_saved_mesh_request_is_not_sent_again_after_a_restore_test.go`,
+# on a manual clock. The mutants take one decision away each:
+#
+#   a restored Mesh request is sent to the router again;
+#   a restored call loses the type that marks it a Mesh request;
+#   a machine that owes the interruption does not say it needs a tick now;
+#   a request in flight is left out of a save;
+#   a call re-armed and not yet driven is left out of a save.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_go backends/go/tests ./integration/statechart_static_mesh_request/
+mutation_targets backends/go/runtime/engine_saved.go
+mutation_targets backends/go/runtime/engine.go
+mutation_oracles backends/go/tests/integration/statechart_static_mesh_request/a_saved_mesh_request_is_not_sent_again_after_a_restore_test.go sce-build/tests/fixtures/host_processor/saved/statechart_static_mesh_request_asking.json
+
+# The call is taken for an ordinary host-run one, and the router registered on the
+# restored machine is handed it. Caught by
+# TestARestoredRequestIsNotSentAgainAndTheDocumentIsToldItWasInterrupted (the router log
+# is not empty, `failed` is 0) and TestACallIsInterruptedWheneverTheMachineComesBack.
+mutation_case "a restored Mesh request is sent to the router again" <<'PY'
+edit("backends/go/runtime/engine_saved.go",
+     "case IsReservedType(host.request.ProcessorType):",
+     'case host.request.ProcessorType == "":')
+PY
+
+# The call is re-armed as the type of an ordinary invoker, no such invoker is registered,
+# and the document hears `error.execution` and not `error.invoke.ask`. Caught by
+# TestARestoredRequestIsNotSentAgainAndTheDocumentIsToldItWasInterrupted (`failed` is 1 and
+# the run ends in `done`) and TestACallIsInterruptedWheneverTheMachineComesBack.
+mutation_case "a restored call loses the type that marks it a Mesh request" <<'PY'
+edit("backends/go/runtime/engine_saved.go",
+     "ProcessorType: host.ProcessorType,",
+     'ProcessorType: "x-sce-host",')
+PY
+
+# Caught by TestAMachineOwingTheInterruptionSaysItNeedsATickNow (the answer is a wait of
+# zero, and there is one).
+mutation_case "a machine that owes the interruption does not say it needs a tick now" <<'PY'
+edit("backends/go/runtime/engine.go",
+     "if len(e.restoredHostInvokes) > 0 {",
+     "if len(e.restoredHostInvokes) > 1 {")
+PY
+
+# Caught by TestARequestInFlightIsSavedAsTheCallItWas (one call in flight is expected).
+mutation_case "a request in flight is left out of a save" <<'PY'
+edit("backends/go/runtime/engine_saved.go",
+     "for _, started := range e.startedHostInvokes {",
+     "for _, started := range map[hostInvokeKey]startedHostInvoke(nil) {")
+PY
+
+# Caught by TestARestoredMachineSavedAgainBeforeItWasDrivenKeepsTheCall (the call is
+# still held after a restore that was saved again before the first tick).
+mutation_case "a call re-armed and not yet driven is left out of a save" <<'PY'
+edit("backends/go/runtime/engine_saved.go",
+     "for _, restored := range e.restoredHostInvokes {",
+     "for _, restored := range []restoredHostInvoke(nil) {")
+PY

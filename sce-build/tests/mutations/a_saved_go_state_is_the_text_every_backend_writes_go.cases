@@ -1,0 +1,99 @@
+# Mutation cases for "a saved state is the text every backend writes, byte for byte, and a
+# state another backend saved restores and saves again as it was" under the Go backend
+# (docs/adr/0045, section 8; docs/SCE_ACCEPTED_SUBSET.md section 2.15).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_saved_go_state_is_the_text_every_backend_writes_go.cases`.
+#
+# The shared texts under `sce-build/tests/fixtures/static_datamodel/saved/` are written by
+# one backend and read by all. `SaveSession` and `SaveHistory` fix the order of everything
+# an author does not order (a history's states in document order, the histories by id), the
+# shape a machine past its first revision writes, and the fields of a waiting send;
+# `armPending` arms a send back with the origin it was saved with; the text writer in
+# `saved_state.go` writes a child's document and the count of starts of each `<invoke>`.
+# `a_state_another_backend_saved_is_restored_test.go` restores every shared text with a
+# machine of its document and saves it again at the moment it was restored at, expecting
+# the same text; the child and tree tests hold the writer of a child and of the counts.
+# The mutants take one decision away each:
+#
+#   the histories of a state are written in the opposite order of their ids;
+#   the states a history recorded are written in the opposite order of the document;
+#   a machine past its first revision writes the shape of its first;
+#   a waiting event is saved without the origin it was sent from;
+#   a waiting internal event is saved without its send id;
+#   a restored waiting event loses its origin;
+#   the count of starts of an invoke is written one too many;
+#   a running child is written without the document it runs.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_go backends/go/tests ./integration/static_datamodel/
+mutation_targets backends/go/runtime/engine_saved.go
+mutation_targets backends/go/runtime/saved_state.go
+mutation_oracles backends/go/tests/integration/static_datamodel/a_state_another_backend_saved_is_restored_test.go backends/go/tests/integration/static_datamodel/a_saved_child_session_is_resumed_after_a_restore_test.go backends/go/tests/integration/static_datamodel/a_saved_tree_holds_every_session_where_it_stood_test.go sce-build/tests/fixtures/static_datamodel/saved/static_history.json sce-build/tests/fixtures/static_datamodel/saved/static_timers.json sce-build/tests/fixtures/static_datamodel/saved/static_schema_revision.json
+
+# Caught by TestAFormatTwoStateAnotherBackendSavedIsRestoredAndSavedAsItWas, on
+# `static_history`, which records three histories (`crew_all`, `deepest`, `last`).
+mutation_case "the histories of a state are written in the opposite order of their ids" <<'PY'
+edit("backends/go/runtime/engine_saved.go",
+     "return saved[i].ID < saved[j].ID",
+     "return saved[i].ID > saved[j].ID")
+PY
+
+# Caught by TestAFormatTwoStateAnotherBackendSavedIsRestoredAndSavedAsItWas, on the
+# history `crew_all`, which recorded `l2` and `r2`.
+mutation_case "the states a history recorded are written in the opposite order of the document" <<'PY'
+edit("backends/go/runtime/engine_saved.go",
+     "return policy.GetDocumentOrder(states[i]) < policy.GetDocumentOrder(states[j])",
+     "return policy.GetDocumentOrder(states[i]) > policy.GetDocumentOrder(states[j])")
+PY
+
+# Caught by TestAFormatTwoStateAnotherBackendSavedIsRestoredAndSavedAsItWas, on
+# `static_schema_revision`, whose one revised record puts the revised shape in the text.
+mutation_case "a machine past its first revision writes the shape of its first" <<'PY'
+edit("backends/go/runtime/engine_saved.go",
+     "if len(revisions) > 0 {",
+     "if len(revisions) > 1 {")
+PY
+
+# Caught by TestAFormatTwoStateAnotherBackendSavedIsRestoredAndSavedAsItWas, on
+# `static_timers`, whose waiting `beat` and `echo` are sent from `fixture-root`.
+mutation_case "a waiting event is saved without the origin it was sent from" <<'PY'
+edit("backends/go/runtime/engine_saved.go",
+     "Kind: SavedActRaise, Event: policy.GetEventName(act.Event), Data: act.Data,\n\t\t\t\tSendID: act.SendID, Origin: act.Origin}",
+     "Kind: SavedActRaise, Event: policy.GetEventName(act.Event), Data: act.Data,\n\t\t\t\tSendID: act.SendID}")
+PY
+
+# Caught by TestAFormatTwoStateAnotherBackendSavedIsRestoredAndSavedAsItWas, on
+# `static_timers`, whose waiting `inner` is an internal event sent under `__send_2`.
+mutation_case "a waiting internal event is saved without its send id" <<'PY'
+edit("backends/go/runtime/engine_saved.go",
+     "Kind: SavedActInternal, Event: policy.GetEventName(act.Event), Data: act.Data,\n\t\t\t\tSendID: act.SendID, Origin: act.Origin}",
+     "Kind: SavedActInternal, Event: policy.GetEventName(act.Event), Data: act.Data,\n\t\t\t\tOrigin: act.Origin}")
+PY
+
+# Caught by TestAFormatTwoStateAnotherBackendSavedIsRestoredAndSavedAsItWas, on
+# `static_timers`: the restored `beat` and `echo` are saved again with an empty origin.
+mutation_case "a restored waiting event loses its origin" <<'PY'
+edit("backends/go/runtime/engine_saved.go",
+     "engine.scheduler.ScheduleEventAt(read.event, readyAt(read.due), act.SendID, act.Data, act.Origin)",
+     'engine.scheduler.ScheduleEventAt(read.event, readyAt(read.due), act.SendID, act.Data, "")')
+PY
+
+# Caught by TestAMachineIsSavedWithTheWholeStateOfTheChildItIsRunning and
+# TestTheTreeSavesTheSharedTextByteForByte, whose `invokestarts` hold the counts 1 and 2.
+mutation_case "the count of starts of an invoke is written one too many" <<'PY'
+edit("backends/go/runtime/saved_state.go",
+     "starts.Set(started.ID, strconv.FormatInt(started.Count, 10))",
+     "starts.Set(started.ID, strconv.FormatInt(started.Count+1, 10))")
+PY
+
+# Caught by TestAMachineIsSavedWithTheWholeStateOfTheChildItIsRunning (the text is the
+# shared one) and by every test that restores a text it saved: the restore names no
+# document to resume the child with.
+mutation_case "a running child is written without the document it runs" <<'PY'
+edit("backends/go/runtime/saved_state.go",
+     'members.Set("document", c.Document)',
+     'members.Set("document", "")')
+PY

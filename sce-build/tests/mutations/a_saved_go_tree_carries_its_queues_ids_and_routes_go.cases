@@ -1,0 +1,88 @@
+# Mutation cases for "a restored session carries on as the saved one stood: under the id
+# it was saved with, holding the events it had queued, the ids it had generated and the
+# sends it was waiting to make" under the Go backend (docs/adr/0045, sections 1 and 3;
+# docs/SCE_ACCEPTED_SUBSET.md section 2.15).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_saved_go_tree_carries_its_queues_ids_and_routes_go.cases`.
+#
+# `EnterSession` binds the session id a format-2 text names, puts the saved external
+# queue back, restores the count that numbers the next generated send id, and arms each
+# waiting send; a send to the session's parent or to a child of it is armed as a routed
+# send, which the save writes back by its route. `SaveSession` writes the count of
+# generated ids. Nothing here is generated per document, so the mutants edit the runtime
+# alone and the committed machines are compiled as they are.
+#
+# The tests are `a_saved_tree_holds_every_session_where_it_stood_test.go` (the tree text
+# restores and saves again as it was, the child's queue holds the parent's `swap`, the
+# parent holds a delayed `nudge` for the child and the child a delayed `report` for the
+# parent), `a_saved_child_session_is_resumed_after_a_restore_test.go` (an event saved in a
+# child's queue is taken by the resumed child) and `a_generated_send_id_survives_a_restore_test.go`
+# (the next ids are numbered after the saved count). The mutants take one decision away
+# each:
+#
+#   a restore keeps the session id the machine drew in place of the one saved;
+#   a restore drops the events saved in a queue;
+#   a restore starts numbering generated send ids from the beginning;
+#   a save does not write the count of generated send ids;
+#   a send saved for the parent is armed without the event it names;
+#   a send saved for a child is armed without the child it names.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_go backends/go/tests ./integration/static_datamodel/
+mutation_targets backends/go/runtime/engine_saved.go
+mutation_oracles backends/go/tests/integration/static_datamodel/a_saved_tree_holds_every_session_where_it_stood_test.go backends/go/tests/integration/static_datamodel/a_saved_child_session_is_resumed_after_a_restore_test.go backends/go/tests/integration/static_datamodel/a_generated_send_id_survives_a_restore_test.go sce-build/tests/fixtures/static_datamodel/saved/static_invoke_tree_working.json sce-build/tests/fixtures/static_datamodel/saved/static_send_idlocation_armed.json
+
+# The restored root and its children save under a random id, so the text saved again is
+# not the one restored. Caught by TestARestoredTreeSavesTheTextItWasRestoredFrom,
+# TestTheSharedTextRestoresAndSavesAgainAsItWas and
+# TestAFormatTwoStateAnotherBackendSavedIsRestoredAndSavedAsItWas.
+mutation_case "a restore keeps the session id the machine drew in place of the one saved" <<'PY'
+edit("backends/go/runtime/engine_saved.go",
+     "policy.BindSessionID(id)",
+     "_ = id")
+PY
+
+# Caught by TestAnEventSavedInTheChildsQueueIsTakenByTheResumedChild (the child never
+# takes the `a` saved in its queue, so `b` alone does not end it) and
+# TestTheSharedTextRestoresAndSavesAgainAsItWas (the `answer` and the `swap` saved in the
+# tree's queues are gone from the text saved again).
+mutation_case "a restore drops the events saved in a queue" <<'PY'
+edit("backends/go/runtime/engine_saved.go",
+     "engine.externalQueue.Raise(queued)",
+     "_ = queued")
+PY
+
+# Caught by TestARestoredMachineNumbersItsNextIdsAfterTheSavedCount: `arm` after the
+# restore writes `_auto_send_1` and `_auto_send_2` again, and the count it saves is 2.
+mutation_case "a restore starts numbering generated send ids from the beginning" <<'PY'
+edit("backends/go/runtime/engine_saved.go",
+     "engine.autoSendSeq = uint64(saved.AutoSendSeq)",
+     "engine.autoSendSeq = 0")
+PY
+
+# Caught by TestAMachineThatArmedTwoSendsSavesTheIdsItGenerated (the count saved is 2,
+# and the text is the shared one).
+mutation_case "a save does not write the count of generated send ids" <<'PY'
+edit("backends/go/runtime/engine_saved.go",
+     "int64(engine.autoSendSeq),",
+     "0,")
+PY
+
+# The resumed child's delayed `report` is armed for its parent with no event name, and
+# the save writes it back so. Caught by TestTheSharedTextRestoresAndSavesAgainAsItWas.
+mutation_case "a send saved for the parent is armed without the event it names" <<'PY'
+edit("backends/go/runtime/engine_saved.go",
+     "ScheduledRoute{Kind: RouteParent, EventName: act.Event})",
+     "ScheduledRoute{Kind: RouteParent})")
+PY
+
+# The parent's delayed `nudge` is armed for no child. Caught by
+# TestTheSharedTextRestoresAndSavesAgainAsItWas (`invokeid` of the saved send).
+mutation_case "a send saved for a child is armed without the child it names" <<'PY'
+edit("backends/go/runtime/engine_saved.go",
+     "ScheduledRoute{Kind: RouteInvocation, InvokeID: act.InvokeID, EventName: act.Event})",
+     "ScheduledRoute{Kind: RouteInvocation, EventName: act.Event})")
+PY

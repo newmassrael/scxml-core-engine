@@ -1,0 +1,111 @@
+# Mutation cases for "a saved tree a document could not have been in is refused whole,
+# naming the session at fault, before any session is built" under the Go backend
+# (docs/adr/0045, section 3, step 1; docs/SCE_ACCEPTED_SUBSET.md section 2.15).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_saved_go_tree_is_judged_before_anything_is_built_go.cases`.
+#
+# A restore judges the whole text first: `judgeSession` reads the configuration, the
+# queue, the waiting sends and the running invocations of one session against its
+# document, `judgeChildEntry` holds each running child to the count of starts its
+# parent keeps and to the session id its start made, and the generated `JudgeChild`
+# hands the child's own session to the `Judge` of the document the child names, to any
+# depth. Each refusal names its path, so a refusal inside a child begins with
+# `the session at invokes[0].session`.
+#
+# `a_saved_child_session_is_resumed_after_a_restore_test.go` changes one member of the
+# shared `static_invoke_working.json` at a time (a child the document does not invoke, a
+# start that is not the count its invoke holds, a document the invoke does not start, a
+# session id that is not the parent's, a child of another shape, a child that stands in
+# no state) and of the format-1 text (an id the document does not invoke, an id named
+# twice, an invocation whose state the configuration is not in), and expects the refusal
+# to say which. The mutants take one check away each:
+#
+#   the generated judge of a child accepts any child it is handed;
+#   a child's start is not held to the count its parent keeps;
+#   a child's session id is not held to the parent's id and the id it was started under;
+#   an invocation the document does not have is not refused;
+#   an invocation whose state the configuration does not stand in is not refused;
+#   an invocation named twice is not refused.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_go backends/go/tests ./integration/static_datamodel/
+mutation_targets backends/go/runtime/engine_saved.go
+mutation_targets tools/codegen/templates/go/state_machine.go.jinja2
+# Every committed machine that holds a child session: the regeneration rewrites these
+# from the mutated template and the round restores them.
+mutation_targets backends/go/tests/integration/static_datamodel/record_list_parent/record_list_parent_sm.go
+mutation_targets backends/go/tests/integration/static_datamodel/static_child_host/static_child_host_sm.go
+mutation_targets backends/go/tests/integration/static_datamodel/static_child_host_hybrid/static_child_host_hybrid_sm.go
+mutation_targets backends/go/tests/integration/static_datamodel/static_child_mesh/static_child_mesh_sm.go
+mutation_targets backends/go/tests/integration/static_datamodel/static_child_mesh/static_mesh_relay_sm.go
+mutation_targets backends/go/tests/integration/static_datamodel/static_host_duty_child/static_host_duty_child_sm.go
+mutation_targets backends/go/tests/integration/static_datamodel/static_invoke/static_invoke_sm.go
+mutation_targets backends/go/tests/integration/static_datamodel/static_invoke_entry/static_invoke_entry_sm.go
+mutation_targets backends/go/tests/integration/static_datamodel/static_invoke_hybrid/static_invoke_hybrid_sm.go
+mutation_targets backends/go/tests/integration/static_datamodel/static_invoke_hybrid_saved/static_invoke_hybrid_saved_sm.go
+mutation_targets backends/go/tests/integration/static_datamodel/static_invoke_params/static_invoke_params_sm.go
+mutation_targets backends/go/tests/integration/static_datamodel/static_invoke_string/static_invoke_string_sm.go
+mutation_targets backends/go/tests/integration/static_datamodel/static_invoke_tree/static_invoke_tree__sce_synth_invoke__worker_sm.go
+mutation_targets backends/go/tests/integration/static_datamodel/static_invoke_tree/static_invoke_tree_sm.go
+mutation_regen scripts/regen_static_datamodel_go.sh
+mutation_oracles backends/go/tests/integration/static_datamodel/a_saved_child_session_is_resumed_after_a_restore_test.go backends/go/tests/integration/static_datamodel/a_saved_tree_holds_every_session_where_it_stood_test.go sce-build/tests/fixtures/static_datamodel/saved/static_invoke_working.json sce-build/tests/fixtures/static_datamodel/saved/static_invoke_tree_working.json sce-build/tests/fixtures/static_datamodel/saved/format1/static_invoke_working.json
+
+# The child is then judged only when it is restored, whose refusal does not carry the
+# path of the session it is about. Caught by
+# TestATreeWhoseChildIsNotOneTheDocumentCouldRunIsRefusedWhole, the cases "a child of
+# another shape" and "a child that stands in no state of its document" (both expect the
+# text `the session at invokes[0].session`), and by TestAGrandchildOfAnotherShapeRefusesTheTreeByItsPath
+# and TestAChildOfALaterRevisionRefusesTheTreeByItsPath.
+mutation_case "the generated judge of a child accepts any child it is handed" <<'PY'
+edit("tools/codegen/templates/go/state_machine.go.jinja2",
+     "return {{ invoke_info.child_name | to_machine_name }}Judge(child.Session)",
+     "return nil")
+PY
+
+# Caught by TestATreeWhoseChildIsNotOneTheDocumentCouldRunIsRefusedWhole, the case "a
+# start that is not the count its invoke holds" (start 2 against the one start the
+# session counts): the text is restored.
+mutation_case "a child's start is not held to the count its parent keeps" <<'PY'
+edit("backends/go/runtime/engine_saved.go",
+     "child.Start != count",
+     "child.Start < count")
+PY
+
+# Caught by TestATreeWhoseChildIsNotOneTheDocumentCouldRunIsRefusedWhole, the case "a
+# child whose id is not its parent's and the id it was started under" (`elsewhere`).
+mutation_case "a child's session id is not held to the parent's id and the id it was started under" <<'PY'
+edit("backends/go/runtime/engine_saved.go",
+     "if child.Session.SessionID != derived {",
+     'if child.Session.SessionID == "" {')
+PY
+
+# The id then reaches the child count check first, which names the start and not the
+# document. Caught by TestATreeWhoseChildIsNotOneTheDocumentCouldRunIsRefusedWhole, the
+# case "a child the document does not invoke" (expects `which the document does not
+# invoke`), and TestAFormatOneStateNamingAnInvocationTheDocumentCannotHaveRunIsRefused,
+# the case "an id the document does not invoke".
+mutation_case "an invocation the document does not have is not refused" <<'PY'
+edit("backends/go/runtime/engine_saved.go",
+     "owner, owned := policy.InvokeOwner(id)\n\t\tif !owned {",
+     'owner, owned := policy.InvokeOwner(id)\n\t\tif !owned && id == "" {')
+PY
+
+# Caught by TestAFormatOneStateNamingAnInvocationTheDocumentCannotHaveRunIsRefused, the
+# case "an invocation whose state the configuration is not in" (the format-1 text with
+# the configuration moved to `idle`).
+mutation_case "an invocation whose state the configuration does not stand in is not refused" <<'PY'
+edit("backends/go/runtime/engine_saved.go",
+     "if !slices.Contains(judged.configuration, owner) {\n\t\t\treturn nil, refuse(\"invokes[%d]",
+     "if !slices.Contains(judged.configuration, owner) && len(ids) == 0 {\n\t\t\treturn nil, refuse(\"invokes[%d]")
+PY
+
+# Caught by TestAFormatOneStateNamingAnInvocationTheDocumentCannotHaveRunIsRefused, the
+# case "an id named twice" (expects `which an earlier entry already names`).
+mutation_case "an invocation named twice is not refused" <<'PY'
+edit("backends/go/runtime/engine_saved.go",
+     "slices.Contains(ids[:at], id)",
+     "slices.Contains(ids[:0], id)")
+PY

@@ -1,0 +1,105 @@
+# Mutation cases for "a host-run invocation of a child session is served by the invokers
+# of the whole tree, named by its session, ended through the root, and started again by
+# a restore" under the Go backend (docs/adr/0045, section 3; docs/SCE_ACCEPTED_SUBSET.md
+# section 2.15, "Running host invocations").
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_saved_go_child_sessions_host_invocation_is_reached_through_the_tree_go.cases`.
+#
+# `static_invoke_tree` has an in-place child, `worker`, that asks its host for the time
+# (`sce-host-clock-now`, id `clock`) as it enters `second`. The host registers its
+# invoker on the root alone; a request names the session that made it
+# (`HostInvokeRequest.SessionID`), and the host ends it through the root with that
+# session and the request's token (`CompleteHostInvokeIn`, `FailHostInvokeIn`), which
+# `RouteHostInvokeEnd` carries to the session that started it, wherever it stands.
+# A restore resumes the child with its invocation re-armed, and the invocation starts
+# again, marked as a restart, at the first drive of the child by its parent.
+# `a_child_sessions_host_invocation_is_served_by_the_trees_host_test.go` holds all of it.
+# The mutants take one decision away each:
+#
+#   a request does not name the session that made it;
+#   the root takes every ending for its own;
+#   an ending is not carried to a child session;
+#   a completion is delivered as a failure;
+#   a restored invocation is not marked as a restart;
+#   a resumed child is not served by the tree's invokers.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_go backends/go/tests ./integration/static_datamodel/
+mutation_targets backends/go/runtime/host_invoke_tree.go
+mutation_targets backends/go/runtime/host_processor.go
+mutation_targets backends/go/runtime/engine_saved.go
+mutation_targets tools/codegen/templates/go/state_machine.go.jinja2
+# Every committed machine that holds a child session: the regeneration rewrites these
+# from the mutated template and the round restores them.
+mutation_targets backends/go/tests/integration/static_datamodel/record_list_parent/record_list_parent_sm.go
+mutation_targets backends/go/tests/integration/static_datamodel/static_child_host/static_child_host_sm.go
+mutation_targets backends/go/tests/integration/static_datamodel/static_child_host_hybrid/static_child_host_hybrid_sm.go
+mutation_targets backends/go/tests/integration/static_datamodel/static_child_mesh/static_child_mesh_sm.go
+mutation_targets backends/go/tests/integration/static_datamodel/static_child_mesh/static_mesh_relay_sm.go
+mutation_targets backends/go/tests/integration/static_datamodel/static_host_duty_child/static_host_duty_child_sm.go
+mutation_targets backends/go/tests/integration/static_datamodel/static_invoke/static_invoke_sm.go
+mutation_targets backends/go/tests/integration/static_datamodel/static_invoke_entry/static_invoke_entry_sm.go
+mutation_targets backends/go/tests/integration/static_datamodel/static_invoke_hybrid/static_invoke_hybrid_sm.go
+mutation_targets backends/go/tests/integration/static_datamodel/static_invoke_hybrid_saved/static_invoke_hybrid_saved_sm.go
+mutation_targets backends/go/tests/integration/static_datamodel/static_invoke_params/static_invoke_params_sm.go
+mutation_targets backends/go/tests/integration/static_datamodel/static_invoke_string/static_invoke_string_sm.go
+mutation_targets backends/go/tests/integration/static_datamodel/static_invoke_tree/static_invoke_tree__sce_synth_invoke__worker_sm.go
+mutation_targets backends/go/tests/integration/static_datamodel/static_invoke_tree/static_invoke_tree_sm.go
+mutation_regen scripts/regen_static_datamodel_go.sh
+mutation_oracles backends/go/tests/integration/static_datamodel/a_child_sessions_host_invocation_is_served_by_the_trees_host_test.go
+
+# Caught by TestAChildsInvocationReachesTheRootsInvokerAndIsEndedThroughTheRoot (the
+# request names `fixture-root.working.1.worker`) and TestAResumedChildsInvocationStartsAgainAtItsFirstDrive.
+mutation_case "a request does not name the session that made it" <<'PY'
+edit("backends/go/runtime/host_processor.go",
+     "request.SessionID = e.sessionID()",
+     'request.SessionID = ""')
+PY
+
+# The root then looks for the start among its own, finds none and refuses it. Caught
+# by TestAChildsInvocationReachesTheRootsInvokerAndIsEndedThroughTheRoot (the ending of
+# the child's start is refused) and TestAnEndingForASessionTheTreeDoesNotHoldOrAStartItDoesNotRunIsRefused
+# (a session the tree does not hold is refused as "is not running", not as "no session").
+mutation_case "the root takes every ending for its own" <<'PY'
+edit("backends/go/runtime/host_invoke_tree.go",
+     "if sessionID == e.sessionID() {",
+     'if sessionID != "" {')
+PY
+
+# Caught by TestAChildsInvocationReachesTheRootsInvokerAndIsEndedThroughTheRoot (the
+# ending of the child's start comes back as "no session") and
+# TestAResumedChildsInvocationStartsAgainAtItsFirstDrive.
+mutation_case "an ending is not carried to a child session" <<'PY'
+edit("backends/go/runtime/host_invoke_tree.go",
+     "return holder.RouteHostInvokeEndToChild(sessionID, ending)",
+     'return holder.RouteHostInvokeEndToChild("", ending)')
+PY
+
+# The child takes `error.invoke.clock` where it waits for `done.invoke.clock`. Caught by
+# TestAChildsInvocationReachesTheRootsInvokerAndIsEndedThroughTheRoot (`stamps` stays 0).
+mutation_case "a completion is delivered as a failure" <<'PY'
+edit("backends/go/runtime/host_invoke_tree.go",
+     "ending.Token, !ending.Done, ending.Data",
+     "ending.Token, ending.Done, ending.Data")
+PY
+
+# Caught by TestAResumedChildsInvocationStartsAgainAtItsFirstDrive ("started again from
+# the saved request").
+mutation_case "a restored invocation is not marked as a restart" <<'PY'
+edit("backends/go/runtime/engine_saved.go",
+     "request.Restarted = true",
+     "request.Restarted = false")
+PY
+
+# The child keeps an empty registry of its own, finds no invoker for the clock when its
+# invocation starts again, and the host is never asked. Caught by
+# TestAResumedChildsInvocationStartsAgainAtItsFirstDrive (one start expected after the
+# first drive).
+mutation_case "a resumed child is not served by the tree's invokers" <<'PY'
+edit("tools/codegen/templates/go/state_machine.go.jinja2",
+     "engine.ShareHostInvokersWith(childEngine)",
+     "_ = engine")
+PY

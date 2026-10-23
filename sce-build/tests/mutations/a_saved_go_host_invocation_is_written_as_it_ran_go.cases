@@ -1,0 +1,90 @@
+# Mutation cases for "a saved state holds a running host-run invocation as the host was
+# handed it, and a completion still queued keeps the token that proves it genuine" under
+# the Go backend (docs/adr/0045, section 3; docs/SCE_ACCEPTED_SUBSET.md section 2.15,
+# "Running host invocations").
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_saved_go_host_invocation_is_written_as_it_ran_go.cases`.
+#
+# `SaveSession` writes each running invocation with the request it was started with and the
+# wall-clock moment its deadline comes due (`saveHostInvokes`), the next token, and every
+# queued event with the token it carries. A completion is accepted only while its start is
+# running and carries that start's token; a completion raised the ordinary way carries none
+# and is refused when it is taken (`RefusedHostInvokeCompletions`), so a queued one must come
+# back with its token or the restore would refuse a reply the host really made. The tests
+# are in `a_saved_host_invocation_is_started_again_after_a_restore_test.go`, against the
+# shared text `saved/statechart_static_host_invoke_running.json` every backend writes. The
+# mutants take one decision away each:
+#
+#   the content of a request is not saved;
+#   the deadline of an invocation is not saved;
+#   the next token is not saved;
+#   a queued completion is saved without its token;
+#   a queued completion is restored without its token;
+#   a reply of an earlier start is accepted by a later one;
+#   an invocation whose state the configuration does not stand in is not refused.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_go backends/go/tests ./integration/statechart_static_host_invoke/
+mutation_targets backends/go/runtime/engine_saved.go
+mutation_targets backends/go/runtime/host_processor.go
+mutation_oracles backends/go/tests/integration/statechart_static_host_invoke/a_saved_host_invocation_is_started_again_after_a_restore_test.go sce-build/tests/fixtures/host_processor/saved/statechart_static_host_invoke_running.json
+
+# Caught by TestAMachineIsSavedWithTheRequestItsInvocationWasStartedWith (`entry.Content`
+# is the request's, and the text is the shared one).
+mutation_case "the content of a request is not saved" <<'PY'
+edit("backends/go/runtime/engine_saved.go",
+     "Content:       running.request.Content,",
+     'Content:       "",')
+PY
+
+# Caught by TestAMachineIsSavedWithTheRequestItsInvocationWasStartedWith (`entry.Due` is
+# five seconds after the save) and TestAMachineRestoredAndSavedAgainBeforeItWasDrivenKeepsItsInvocation.
+mutation_case "the deadline of an invocation is not saved" <<'PY'
+edit("backends/go/runtime/engine_saved.go",
+     "if running.dueAtMs != nil {",
+     "if running.dueAtMs != nil && wallNowMs < 0 {")
+PY
+
+# Caught by TestAMachineIsSavedWithTheRequestItsInvocationWasStartedWith (the next token
+# is 1) and TestAMachineRestoredAndSavedAgainBeforeItWasDrivenKeepsItsInvocation.
+mutation_case "the next token is not saved" <<'PY'
+edit("backends/go/runtime/engine_saved.go",
+     "HostInvokeToken: int64(engine.nextHostInvokeToken),",
+     "HostInvokeToken: 0,")
+PY
+
+# Caught by TestACompletionStillQueuedWhenTheMachineWasSavedIsAcceptedAfterTheRestore
+# (the one queued completion carries token 0).
+mutation_case "a queued completion is saved without its token" <<'PY'
+edit("backends/go/runtime/engine_saved.go",
+     "event.HostInvokeToken = &saved",
+     "_ = saved")
+PY
+
+# The restored completion looks like one raised the ordinary way and is refused when it is
+# taken. Caught by TestACompletionStillQueuedWhenTheMachineWasSavedIsAcceptedAfterTheRestore
+# (`seen` stays 0 and the completion is counted as refused).
+mutation_case "a queued completion is restored without its token" <<'PY'
+edit("backends/go/runtime/engine_saved.go",
+     "queued.Metadata.HostInvokeToken = &token",
+     "_ = token")
+PY
+
+# Caught by TestWhatTheFirstRunHandedAHostCannotAnswerForTheSecond: the second run holds
+# token 1, and a late reply carrying token 0 must not be accepted.
+mutation_case "a reply of an earlier start is accepted by a later one" <<'PY'
+edit("backends/go/runtime/host_processor.go",
+     "if running, ok := e.startedHostInvokes[key]; !ok || running.token != token {",
+     "if running, ok := e.startedHostInvokes[key]; !ok || running.token < token {")
+PY
+
+# Caught by TestASavedStateNamingAHostInvocationTheDocumentCannotHaveRunIsRefused, the case
+# "an invocation whose state the configuration is not in".
+mutation_case "an invocation whose state the configuration does not stand in is not refused" <<'PY'
+edit("backends/go/runtime/engine_saved.go",
+     "if !slices.Contains(judged.configuration, owner) {\n\t\t\treturn nil, refuse(\"hostinvokes[%d]",
+     "if !slices.Contains(judged.configuration, owner) && len(saved.HostInvokes) == 0 {\n\t\t\treturn nil, refuse(\"hostinvokes[%d]")
+PY
