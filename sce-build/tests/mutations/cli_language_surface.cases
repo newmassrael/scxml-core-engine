@@ -32,20 +32,21 @@ mutation_targets sce-build/src/cli_language.rs \
                  sce-build/tests/cli_language_surface.rs \
                  sce-build/src/bin/sce_codegen.rs
 
+# Re-aimed 2026-10-23: the filter now leaves out Swift beside C11; the mutant
+# still lets C11 back into the batch suite while its reason stays written.
 mutation_case "the batch suite documents the backend it has no emitter for" <<'PY'
 edit("sce-build/src/cli_language.rs",
-     "                        .filter(|language| *language != Language::C11)\n",
-     "")
+     "                        .filter(|language| !matches!(language, Language::C11 | Language::Swift))\n",
+     "                        .filter(|language| !matches!(language, Language::Swift))\n")
 PY
 
-# Re-aimed 2026-10-22: the routes that write files now serve the backends that
-# emit something (`EMITTING`) rather than `Language::ALL`, since Swift emits
-# nothing yet. The mutant still pulls `generate-conformance` out of the shared
-# arm and hands it a written list that drops C11, a backend it serves.
+# Re-aimed 2026-10-23: `generate-conformance` now has an arm of its own, which
+# serves the backends that emit a Forge kind. The mutant still drops C11, a
+# backend it serves, from that set.
 mutation_case "a route hides a backend it serves" <<'PY'
 edit("sce-build/src/cli_language.rs",
-     "            LanguageRoute::Generate\n            | LanguageRoute::Orchestrate\n            | LanguageRoute::GenerateConformance => EMITTING.as_slice(),",
-     "            LanguageRoute::Generate | LanguageRoute::Orchestrate => EMITTING.as_slice(),\n            LanguageRoute::GenerateConformance => &[\n                Language::Rust,\n                Language::Cpp,\n                Language::Kotlin,\n                Language::Go,\n                Language::Python,\n            ],")
+     "                            .any(|emits| emits == *language)\n",
+     "                            .any(|emits| emits == *language)\n                                && *language != Language::C11\n")
 PY
 
 # Re-aimed 2026-10-22: the refusing arm also names `Language::Swift`, which
@@ -68,11 +69,11 @@ edit("sce-build/src/cli_language.rs",
      '        format!("{lead}.")')
 PY
 
-# Re-aimed 2026-10-22: the reason is now formatted, so it can also name the
-# backends that emit nothing yet; the mutant still drops the whole reason.
+# Re-aimed 2026-10-23: the reason now names Swift and takes the emitless
+# sentence as an argument; the mutant still drops the whole reason.
 mutation_case "a restricted route stops saying why it is restricted" <<'PY'
 edit("sce-build/src/cli_language.rs",
-     '            LanguageRoute::GenerateIntegration => Some(format!(\n                "cpp and c11 are absent because their integration fixtures emit at CMake build \\\n                 time through `sce_generate_static_integration_test`, leaving no committed tree \\\n                 for this subcommand to regenerate. A backend that emits nothing yet \\\n                 ({emitless}) is absent too",\n            )),',
+     '            LanguageRoute::GenerateIntegration => Some(format!(\n                "cpp and c11 are absent because their integration fixtures emit at CMake build \\\n                 time through `sce_generate_static_integration_test`, leaving no committed tree \\\n                 for this subcommand to regenerate. swift is absent because its integration \\\n                 fixtures are not generated yet{}",\n                emitless_sentence(". ", " too"),\n            )),',
      '            LanguageRoute::GenerateIntegration => None,')
 PY
 

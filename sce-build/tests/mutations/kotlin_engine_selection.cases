@@ -435,10 +435,14 @@ PY
 # Re-aimed 2026-10-22: the predicate first asks whether the backend owns a
 # template at all (a backend that renders nothing cannot be asked for Lua);
 # the mutant still forces the whole answer false.
+#
+# Re-aimed 2026-10-23: it also asks whether the backend has an expression site
+# at all (Swift's `datamodel="null"` statecharts have none).
 mutation_case "no backend is classified as carrying two arms" <<'PY'
 edit("sce-build/src/generator.rs",
      """    pub fn can_lower_expressions_on_request(self) -> bool {
         self.owns_a_template()
+            && self.has_an_expression_site()
             && self.unmigrated_expression_sites().is_empty()
             && self.unclassified_expression_sites().is_empty()
     }""",
