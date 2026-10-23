@@ -437,17 +437,16 @@ PY
 # the mutant still forces the whole answer false.
 #
 # Re-aimed 2026-10-23: it also asks whether the backend has an expression site
-# at all (Swift's `datamodel="null"` statecharts have none).
+# at all (Swift's `datamodel="null"` statecharts have none). The mutant keeps
+# every question asked and answers false after them: a body of `false` alone
+# leaves `has_an_expression_site` unread, and `-D warnings` refuses the dead
+# code before a test runs (INCONCLUSIVE in CI run 39929067369).
 mutation_case "no backend is classified as carrying two arms" <<'PY'
 edit("sce-build/src/generator.rs",
-     """    pub fn can_lower_expressions_on_request(self) -> bool {
-        self.owns_a_template()
-            && self.has_an_expression_site()
-            && self.unmigrated_expression_sites().is_empty()
-            && self.unclassified_expression_sites().is_empty()
+     """            && self.unclassified_expression_sites().is_empty()
     }""",
-     """    pub fn can_lower_expressions_on_request(self) -> bool {
-        false
+     """            && self.unclassified_expression_sites().is_empty()
+            && false
     }""")
 PY
 
