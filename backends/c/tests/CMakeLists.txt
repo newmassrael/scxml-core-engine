@@ -3223,44 +3223,67 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         LABELS "integration;c11;aot"
     )
 
-    # Saving a machine and restoring it (SCE Accepted Subset §2.15, docs/adr/0045): every shared
-    # saved text restored by the machine of its document and saved as it was, a waiting send
-    # surviving a restore, and a state that is not the document's refused. The machines are
-    # generated above.
-    add_executable(sce_c_integration_static_saved
-        integration/test_a_state_another_backend_saved_is_restored.c
-        ${INTEGRATION_C_TEST_static_enum_SOURCES}
-        ${INTEGRATION_C_TEST_static_history_SOURCES}
-        ${INTEGRATION_C_TEST_static_list_SOURCES}
-        ${INTEGRATION_C_TEST_static_optional_SOURCES}
-        ${INTEGRATION_C_TEST_static_record_SOURCES}
-        ${_DAYS_IN_MONTH_HEADER}
-        ${INTEGRATION_C_TEST_static_schema_pending_SOURCES}
-        ${INTEGRATION_C_TEST_static_schema_revision_SOURCES}
-        ${INTEGRATION_C_TEST_static_send_idlocation_SOURCES}
-        ${INTEGRATION_C_TEST_static_timers_SOURCES}
-    )
-    target_link_libraries(sce_c_integration_static_saved PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base
-    )
-    target_include_directories(sce_c_integration_static_saved PRIVATE
-        "${SCE_C_INTEGRATION_GENERATED_DIR}"
-        "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include"
-    )
-    target_compile_definitions(sce_c_integration_static_saved PRIVATE
-        SCE_SAVED_FIXTURES_DIR="${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/saved"
-    )
-    set_target_properties(sce_c_integration_static_saved PROPERTIES
+    # The saved-state tests compare what a machine writes with the shared text every backend writes,
+    # deadlines included, so each runs on a manual clock. They link `integration/no_wall_clock.c` in
+    # place of `sce_c_runtime_posix`: a machine that reads the wall clock stops at its first reading,
+    # every run, instead of saving a deadline a millisecond short on a loaded machine now and then.
+    add_library(sce_c_test_no_wall_clock STATIC integration/no_wall_clock.c)
+    set_target_properties(sce_c_test_no_wall_clock PROPERTIES
         C_STANDARD 11
         C_STANDARD_REQUIRED ON
         C_EXTENSIONS OFF
     )
-    add_test(NAME c11_integration_static_saved
-        COMMAND sce_c_integration_static_saved
-    )
-    set_tests_properties(c11_integration_static_saved PROPERTIES
-        TIMEOUT 30
-        LABELS "integration;c11;aot"
+
+    # One saved-state test: the executable `sce_c_integration_<name>`, registered as
+    # `c11_integration_<name>`, with the directory of its shared texts defined as FIXTURES_DEFINE.
+    # Every saved-state test is registered here, so none links a clock it could read.
+    function(sce_c_add_saved_state_test name)
+        cmake_parse_arguments(PARSE_ARGV 1 _saved "" "FIXTURES_DEFINE;FIXTURES_DIR" "SOURCES")
+        set(_target sce_c_integration_${name})
+        add_executable(${_target} ${_saved_SOURCES})
+        target_link_libraries(${_target} PRIVATE
+            sce_c_runtime sce_c_test_no_wall_clock sce_c_base
+        )
+        target_include_directories(${_target} PRIVATE
+            "${SCE_C_INTEGRATION_GENERATED_DIR}"
+            "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include"
+        )
+        target_compile_definitions(${_target} PRIVATE
+            "${_saved_FIXTURES_DEFINE}=\"${_saved_FIXTURES_DIR}\""
+        )
+        set_target_properties(${_target} PROPERTIES
+            C_STANDARD 11
+            C_STANDARD_REQUIRED ON
+            C_EXTENSIONS OFF
+        )
+        add_test(NAME c11_integration_${name}
+            COMMAND ${_target}
+        )
+        set_tests_properties(c11_integration_${name} PROPERTIES
+            TIMEOUT 30
+            LABELS "integration;c11;aot"
+        )
+    endfunction()
+
+    # Saving a machine and restoring it (SCE Accepted Subset §2.15, docs/adr/0045): every shared
+    # saved text restored by the machine of its document and saved as it was, a waiting send
+    # surviving a restore, and a state that is not the document's refused. The machines are
+    # generated above.
+    sce_c_add_saved_state_test(static_saved
+        FIXTURES_DEFINE SCE_SAVED_FIXTURES_DIR
+        FIXTURES_DIR "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/saved"
+        SOURCES
+            integration/test_a_state_another_backend_saved_is_restored.c
+            ${INTEGRATION_C_TEST_static_enum_SOURCES}
+            ${INTEGRATION_C_TEST_static_history_SOURCES}
+            ${INTEGRATION_C_TEST_static_list_SOURCES}
+            ${INTEGRATION_C_TEST_static_optional_SOURCES}
+            ${INTEGRATION_C_TEST_static_record_SOURCES}
+            ${_DAYS_IN_MONTH_HEADER}
+            ${INTEGRATION_C_TEST_static_schema_pending_SOURCES}
+            ${INTEGRATION_C_TEST_static_schema_revision_SOURCES}
+            ${INTEGRATION_C_TEST_static_send_idlocation_SOURCES}
+            ${INTEGRATION_C_TEST_static_timers_SOURCES}
     )
 
     # A host action whose arguments are typed expressions of the machine's own
@@ -3740,121 +3763,45 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     # as it was, refused by the path to the session
     # that is not the document's, and saved at every boundary a host calls at. The machine is
     # generated above.
-    add_executable(sce_c_integration_static_saved_tree
-        integration/test_a_saved_tree_holds_every_session_where_it_stood.c
-        ${INTEGRATION_C_TEST_static_invoke_tree_SOURCES}
-    )
-    target_link_libraries(sce_c_integration_static_saved_tree PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base
-    )
-    target_include_directories(sce_c_integration_static_saved_tree PRIVATE
-        "${SCE_C_INTEGRATION_GENERATED_DIR}"
-        "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include"
-    )
-    target_compile_definitions(sce_c_integration_static_saved_tree PRIVATE
-        SCE_SAVED_FIXTURES_DIR="${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/saved"
-    )
-    set_target_properties(sce_c_integration_static_saved_tree PROPERTIES
-        C_STANDARD 11
-        C_STANDARD_REQUIRED ON
-        C_EXTENSIONS OFF
-    )
-    add_test(NAME c11_integration_static_saved_tree
-        COMMAND sce_c_integration_static_saved_tree
-    )
-    set_tests_properties(c11_integration_static_saved_tree PROPERTIES
-        TIMEOUT 30
-        LABELS "integration;c11;aot"
+    sce_c_add_saved_state_test(static_saved_tree
+        FIXTURES_DEFINE SCE_SAVED_FIXTURES_DIR
+        FIXTURES_DIR "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/saved"
+        SOURCES
+            integration/test_a_saved_tree_holds_every_session_where_it_stood.c
+            ${INTEGRATION_C_TEST_static_invoke_tree_SOURCES}
     )
 
     # SCE Accepted Subset §2.15, "Saving and restoring" (docs/adr/0045): a child session is saved
     # inside its parent and resumed where it stood; a format-1 state starts it again. The machine of
     # `static_invoke` is generated above.
-    add_executable(sce_c_integration_static_child_saved
-        integration/test_a_saved_child_session_is_resumed_after_a_restore.c
-        ${INTEGRATION_C_TEST_static_invoke_SOURCES}
-    )
-    target_link_libraries(sce_c_integration_static_child_saved PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base
-    )
-    target_include_directories(sce_c_integration_static_child_saved PRIVATE
-        "${SCE_C_INTEGRATION_GENERATED_DIR}"
-        "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include"
-    )
-    target_compile_definitions(sce_c_integration_static_child_saved PRIVATE
-        SCE_SAVED_FIXTURES_DIR="${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/saved"
-    )
-    set_target_properties(sce_c_integration_static_child_saved PROPERTIES
-        C_STANDARD 11
-        C_STANDARD_REQUIRED ON
-        C_EXTENSIONS OFF
-    )
-    add_test(NAME c11_integration_static_child_saved
-        COMMAND sce_c_integration_static_child_saved
-    )
-    set_tests_properties(c11_integration_static_child_saved PROPERTIES
-        TIMEOUT 30
-        LABELS "integration;c11;aot"
+    sce_c_add_saved_state_test(static_child_saved
+        FIXTURES_DEFINE SCE_SAVED_FIXTURES_DIR
+        FIXTURES_DIR "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/saved"
+        SOURCES
+            integration/test_a_saved_child_session_is_resumed_after_a_restore.c
+            ${INTEGRATION_C_TEST_static_invoke_SOURCES}
     )
 
     # SCE Accepted Subset §2.15, "Saving and restoring": a host-run invocation is saved with the
     # request it was started with and the deadline it had left, and a restore starts it again from
     # that request (§scxml-6.4.1). The machine is generated above.
-    add_executable(sce_c_integration_static_host_invoke_saved
-        integration/test_a_saved_host_invocation_is_started_again_after_a_restore.c
-        ${INTEGRATION_C_TEST_statechart_static_host_invoke_SOURCES}
-    )
-    target_link_libraries(sce_c_integration_static_host_invoke_saved PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base
-    )
-    target_include_directories(sce_c_integration_static_host_invoke_saved PRIVATE
-        "${SCE_C_INTEGRATION_GENERATED_DIR}"
-        "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include"
-    )
-    target_compile_definitions(sce_c_integration_static_host_invoke_saved PRIVATE
-        SCE_HOST_SAVED_FIXTURES_DIR="${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/host_processor/saved"
-    )
-    set_target_properties(sce_c_integration_static_host_invoke_saved PROPERTIES
-        C_STANDARD 11
-        C_STANDARD_REQUIRED ON
-        C_EXTENSIONS OFF
-    )
-    add_test(NAME c11_integration_static_host_invoke_saved
-        COMMAND sce_c_integration_static_host_invoke_saved
-    )
-    set_tests_properties(c11_integration_static_host_invoke_saved PROPERTIES
-        TIMEOUT 30
-        LABELS "integration;c11;aot"
+    sce_c_add_saved_state_test(static_host_invoke_saved
+        FIXTURES_DEFINE SCE_HOST_SAVED_FIXTURES_DIR
+        FIXTURES_DIR "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/host_processor/saved"
+        SOURCES
+            integration/test_a_saved_host_invocation_is_started_again_after_a_restore.c
+            ${INTEGRATION_C_TEST_statechart_static_host_invoke_SOURCES}
     )
 
     # SCE Accepted Subset §2.15, "Saving and restoring": a delayed `<send>` the host serves is a wait
     # a saved machine carries, with the request it will make when the wait ends. The machine of
     # `statechart_static_delayed_host_send` is generated above.
-    add_executable(sce_c_integration_static_host_send_saved
-        integration/test_a_generated_machines_waiting_host_send_survives_a_restore.c
-        ${INTEGRATION_C_TEST_statechart_static_delayed_host_send_SOURCES}
-    )
-    target_link_libraries(sce_c_integration_static_host_send_saved PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base
-    )
-    target_include_directories(sce_c_integration_static_host_send_saved PRIVATE
-        "${SCE_C_INTEGRATION_GENERATED_DIR}"
-        "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include"
-    )
-    target_compile_definitions(sce_c_integration_static_host_send_saved PRIVATE
-        SCE_HOST_SAVED_FIXTURES_DIR="${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/host_processor/saved"
-    )
-    set_target_properties(sce_c_integration_static_host_send_saved PROPERTIES
-        C_STANDARD 11
-        C_STANDARD_REQUIRED ON
-        C_EXTENSIONS OFF
-    )
-    add_test(NAME c11_integration_static_host_send_saved
-        COMMAND sce_c_integration_static_host_send_saved
-    )
-    set_tests_properties(c11_integration_static_host_send_saved PROPERTIES
-        TIMEOUT 30
-        LABELS "integration;c11;aot"
+    sce_c_add_saved_state_test(static_host_send_saved
+        FIXTURES_DEFINE SCE_HOST_SAVED_FIXTURES_DIR
+        FIXTURES_DIR "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/host_processor/saved"
+        SOURCES
+            integration/test_a_generated_machines_waiting_host_send_survives_a_restore.c
+            ${INTEGRATION_C_TEST_statechart_static_delayed_host_send_SOURCES}
     )
 
     # SCE Accepted Subset §2.15: the one document every channel drives for what a
@@ -3930,31 +3877,12 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     # SCE Accepted Subset §2.15, "Saving and restoring": a Mesh request in flight is saved as the call
     # it was and a restore does not send it again; the document is told it was interrupted. The
     # machine of `statechart_static_mesh_request` is generated above.
-    add_executable(sce_c_integration_static_mesh_request_saved
-        integration/test_a_saved_mesh_request_is_not_sent_again_after_a_restore.c
-        ${INTEGRATION_C_TEST_statechart_static_mesh_request_SOURCES}
-    )
-    target_link_libraries(sce_c_integration_static_mesh_request_saved PRIVATE
-        sce_c_runtime sce_c_runtime_posix sce_c_base
-    )
-    target_include_directories(sce_c_integration_static_mesh_request_saved PRIVATE
-        "${SCE_C_INTEGRATION_GENERATED_DIR}"
-        "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include"
-    )
-    target_compile_definitions(sce_c_integration_static_mesh_request_saved PRIVATE
-        SCE_HOST_SAVED_FIXTURES_DIR="${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/host_processor/saved"
-    )
-    set_target_properties(sce_c_integration_static_mesh_request_saved PROPERTIES
-        C_STANDARD 11
-        C_STANDARD_REQUIRED ON
-        C_EXTENSIONS OFF
-    )
-    add_test(NAME c11_integration_static_mesh_request_saved
-        COMMAND sce_c_integration_static_mesh_request_saved
-    )
-    set_tests_properties(c11_integration_static_mesh_request_saved PROPERTIES
-        TIMEOUT 30
-        LABELS "integration;c11;aot"
+    sce_c_add_saved_state_test(static_mesh_request_saved
+        FIXTURES_DEFINE SCE_HOST_SAVED_FIXTURES_DIR
+        FIXTURES_DIR "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/host_processor/saved"
+        SOURCES
+            integration/test_a_saved_mesh_request_is_not_sent_again_after_a_restore.c
+            ${INTEGRATION_C_TEST_statechart_static_mesh_request_SOURCES}
     )
 
     # SCE Accepted Subset §2.15: a `<param>` name that repeats is one array in the

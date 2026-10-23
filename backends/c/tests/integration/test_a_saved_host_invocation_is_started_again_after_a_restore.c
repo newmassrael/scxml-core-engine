@@ -155,12 +155,14 @@ static void drive(machine_t *sm, uint64_t ms) {
     statechart_static_host_invoke_run(sm);
 }
 
-// A machine on a manual clock that the host's invoker is registered on, which `init` starts.
+// A machine on a manual clock that the host's invoker is registered on, which `init` starts. The
+// clock is passed to `init` itself: `_init_with_host_invokers` would install the wall clock, and the
+// deadline saved below would then be short by however long the build machine took to get there.
 static void boot(machine_t *sm, host_t *host) {
     sce_host_invoker_registry_t wiring;
     memset(&wiring, 0, sizeof(wiring));
     CHECK(sce_host_invoker_register(&wiring, HOST_TYPE, invoker, host), "the invoker registers");
-    statechart_static_host_invoke_init_with_host_invokers(sm, &wiring);
+    statechart_static_host_invoke_init_with_clock_and_host_invokers(sm, sce_clock_manual(0u), &wiring);
 }
 
 // A machine standing in `working`, its invocation started with token 0.
