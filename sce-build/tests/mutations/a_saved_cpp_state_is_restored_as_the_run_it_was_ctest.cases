@@ -1,0 +1,114 @@
+# Mutation cases for the saved state of a `datamodel="sce-static"` machine generated as C++
+# (docs/SCE_ACCEPTED_SUBSET.md §2.15, "Saving and restoring"; docs/adr/0045): a saved child is
+# the child its session could be running, a host-run invocation is saved with the request it
+# was started with and the deadline it had left and is started again as a restart, a waiting
+# host send is saved with the request it will make, and the counters of a run carry through.
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_saved_cpp_state_is_restored_as_the_run_it_was_ctest.cases`.
+#
+# The saved-state suites are compiled into the one test binary of the static data model under
+# C++: the child resume, the tree, the host invocation, the waiting send and the shared texts
+# every backend reads. Each suite either saves a machine and holds the text to the shared one,
+# or restores a text and reads what the machine does next. The mutants below each take one
+# decision away and leave a header that still compiles:
+#
+#   a saved child's start is not held to the count its session holds;
+#   a saved child's session id is not held to its parent's and the id it was started under;
+#   a format-1 restore names the running children and starts none;
+#   a restored invocation is not marked as a restart;
+#   an invocation whose deadline passed is armed rather than ended;
+#   a restore does not carry the next token of the host invocations on;
+#   a restore does not carry the count of generated send ids on;
+#   a running invocation is saved without its deadline;
+#   a running invocation is saved without its `src`;
+#   a waiting host send is saved without its target;
+#   a waiting host send is saved without its event data;
+#   a waiting host send is saved without its params.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^static_datamodel_generated_cpp$'
+mutation_targets sce/include/saved/SavedEngine.h
+mutation_oracles tests/integration/ASavedChildSessionIsResumedAfterARestoreTest.cpp tests/integration/ASavedTreeHoldsEverySessionWhereItStoodTest.cpp tests/integration/ASavedHostInvocationIsStartedAgainAfterARestoreTest.cpp tests/integration/ASavedWaitingSendSurvivesARestoreTest.cpp tests/integration/AStateAnotherBackendSavedIsRestoredTest.cpp sce-build/tests/fixtures/static_datamodel/saved/static_invoke_working.json sce-build/tests/fixtures/host_processor/saved/statechart_static_host_invoke_running.json sce-build/tests/fixtures/host_processor/saved/statechart_static_delayed_host_send_waiting.json
+
+# ── What a judge of a tree holds a child to ─────────────────────────
+
+mutation_case "a saved child's start is not held to the count its session holds" <<'PY'
+edit("sce/include/saved/SavedEngine.h",
+     "        if (child.start != count) {",
+     "        if (false) {")
+PY
+
+mutation_case "a saved child's session id is not held to its parent's and its start's" <<'PY'
+edit("sce/include/saved/SavedEngine.h",
+     "        if (child.session->sessionId != derived) {",
+     "        if (false) {")
+PY
+
+# ── What a restore brings back ──────────────────────────────────────
+
+mutation_case "a format-1 restore names the running children and starts none" <<'PY'
+edit("sce/include/saved/SavedEngine.h",
+     "            judged.restarts = saved.invokes.ids;",
+     "            judged.restarts = {};")
+PY
+
+mutation_case "a restored invocation is not marked as a restart" <<'PY'
+edit("sce/include/saved/SavedEngine.h",
+     "            restored.request.restarted = true;",
+     "            restored.request.restarted = false;")
+PY
+
+mutation_case "an invocation whose deadline passed is armed rather than ended" <<'PY'
+edit("sce/include/saved/SavedEngine.h",
+     "                if (*host.due <= wallNowMs) {",
+     "                if (false) {")
+PY
+
+mutation_case "a restore does not carry the next token of the host invocations on" <<'PY'
+edit("sce/include/saved/SavedEngine.h",
+     "        engine.nextHostInvokeToken_ = static_cast<std::uint64_t>(saved.hostInvokeToken);",
+     "        engine.nextHostInvokeToken_ = 0;")
+PY
+
+mutation_case "a restore does not carry the count of generated send ids on" <<'PY'
+edit("sce/include/saved/SavedEngine.h",
+     "        engine.autoSendSeq_ = static_cast<std::uint64_t>(saved.autoSendSeq);",
+     "        engine.autoSendSeq_ = 0;")
+PY
+
+# ── What a save writes of a running invocation ──────────────────────
+
+mutation_case "a running invocation is saved without its deadline" <<'PY'
+edit("sce/include/saved/SavedEngine.h",
+     "            if (dueAt.has_value()) {",
+     "            if (false) {")
+PY
+
+mutation_case "a running invocation is saved without its src" <<'PY'
+edit("sce/include/saved/SavedEngine.h",
+     "            host.src = request->src;",
+     "            host.src = std::string();")
+PY
+
+# ── What a save writes of a waiting host send ───────────────────────
+
+mutation_case "a waiting host send is saved without its target" <<'PY'
+edit("sce/include/saved/SavedEngine.h",
+     "                act.target = request.target;",
+     "                act.target = std::string();")
+PY
+
+mutation_case "a waiting host send is saved without its event data" <<'PY'
+edit("sce/include/saved/SavedEngine.h",
+     "                act.data = request.eventData;",
+     "                act.data = std::string();")
+PY
+
+mutation_case "a waiting host send is saved without its params" <<'PY'
+edit("sce/include/saved/SavedEngine.h",
+     "                act.params = detail::cloneParams(request.params);",
+     "                act.params = {};")
+PY

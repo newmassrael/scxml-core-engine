@@ -941,9 +941,11 @@ Each step lands with a test that fails without it.
    the build generates, which is not a host-run invocation a saved state could hold, so a
    restore could not tell the document it was interrupted. Held by
    `AStateAnotherBackendSavedIsRestoredTest`, `ASavedTreeHoldsEverySessionWhereItStoodTest`,
-   `ASavedHostInvocationIsStartedAgainAfterARestoreTest`, and the scenario `restore` step of
-   `static_invoke_tree`. Open: the child resume, hybrid restart, send id and delayed host send
-   tests as ports of Rust's, and the mutation round over the new machines.
+   `ASavedHostInvocationIsStartedAgainAfterARestoreTest`,
+   `ASavedChildSessionIsResumedAfterARestoreTest` (the child resume, the hybrid restart),
+   `ASavedWaitingSendSurvivesARestoreTest` (the send ids and the delayed host send), and the
+   scenario `restore` step of `static_invoke_tree`. The mutation cases are
+   `a_saved_cpp_state_is_restored_as_the_run_it_was_ctest.cases`; their round is judged by CI.
 
    *Where it stands: C11.* Done, with no allocation: the runtime is header-only (`saved_json.h`,
    `saved_values.h`, `saved_state.h`). A writer counts the bytes that do not fit, so a save run
