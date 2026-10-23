@@ -6629,29 +6629,54 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_install_host_invokers({{ csym_p
 {% set complete_in.targets = complete_in.targets + [{'slot': 'child_' ~ inv.field_suffix, 'stem': inv.child_name}] %}
 {% endif %}
 {% endfor %}
-SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_complete_host_invoke_in({{ csym_prefix }}{{ model.name }}_t *sm,
+/* The one walk behind `_complete_host_invoke_in` and `_fail_host_invoke_in`: the ending of a
+   host-run invocation of the session named `session_id`, found wherever it stands in the tree.
+   `failed` says which ending it is, and `data` is its `done_data` or `error_data`. */
+SCE_SM_FN static bool {{ csym_prefix }}{{ model.name }}_end_host_invoke_in({{ csym_prefix }}{{ model.name }}_t *sm,
                                          const char *session_id, const char *processor_type,
-                                         const char *invoke_id, uint64_t token, const char *done_data) {
+                                         const char *invoke_id, uint64_t token, bool failed, const char *data,
+                                         const char *origin, const char *origin_type) {
     if (sm == NULL || session_id == NULL) {
         return false;
     }
 {% if model.host_invoker_types %}
     if (strcmp(session_id, sm->session_id) == 0) {
-        return {{ csym_prefix }}{{ model.name }}_complete_host_invoke(sm, processor_type, invoke_id, token, done_data);
+        return failed ? {{ csym_prefix }}{{ model.name }}_fail_host_invoke(sm, processor_type, invoke_id, token, data, origin, origin_type)
+                      : {{ csym_prefix }}{{ model.name }}_complete_host_invoke_from(sm, processor_type, invoke_id, token, data, origin, origin_type);
     }
 {% endif %}
 {% for target in complete_in.targets %}
     if (sm->{{ target.slot }}_active &&
-        {{ csym_prefix }}{{ target.stem }}_complete_host_invoke_in(&sm->{{ target.slot }}, session_id, processor_type,
-                                                                   invoke_id, token, done_data)) {
+        (failed ? {{ csym_prefix }}{{ target.stem }}_fail_host_invoke_in(&sm->{{ target.slot }}, session_id, processor_type,
+                                                                         invoke_id, token, data, origin, origin_type)
+                : {{ csym_prefix }}{{ target.stem }}_complete_host_invoke_in(&sm->{{ target.slot }}, session_id, processor_type,
+                                                                             invoke_id, token, data))) {
         return true;
     }
 {% endfor %}
     (void)processor_type;
     (void)invoke_id;
     (void)token;
-    (void)done_data;
+    (void)failed;
+    (void)data;
+    (void)origin;
+    (void)origin_type;
     return false;
+}
+
+SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_complete_host_invoke_in({{ csym_prefix }}{{ model.name }}_t *sm,
+                                         const char *session_id, const char *processor_type,
+                                         const char *invoke_id, uint64_t token, const char *done_data) {
+    return {{ csym_prefix }}{{ model.name }}_end_host_invoke_in(sm, session_id, processor_type, invoke_id, token, false,
+                                                                done_data, NULL, NULL);
+}
+
+SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_fail_host_invoke_in({{ csym_prefix }}{{ model.name }}_t *sm,
+                                         const char *session_id, const char *processor_type,
+                                         const char *invoke_id, uint64_t token, const char *error_data,
+                                         const char *origin, const char *origin_type) {
+    return {{ csym_prefix }}{{ model.name }}_end_host_invoke_in(sm, session_id, processor_type, invoke_id, token, true,
+                                                                error_data, origin, origin_type);
 }
 
 /* Apply what arrived for this child on its router, in the order the router

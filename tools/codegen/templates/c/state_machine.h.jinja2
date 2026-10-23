@@ -1318,6 +1318,15 @@ bool {{ csym_prefix }}{{ model.name }}_complete_host_invoke_in({{ csym_prefix }}
                                          const char *session_id, const char *processor_type,
                                          const char *invoke_id, uint64_t token, const char *done_data);
 
+/* `_fail_host_invoke`, for a host-run invocation of any session of the tree this machine is the
+   root of, found by `session_id` as `_complete_host_invoke_in` finds it: the session that started
+   it raises `error.invoke.<invoke_id>`. False for a session that is not running, and for a
+   failure the session refuses (a stale token). */
+bool {{ csym_prefix }}{{ model.name }}_fail_host_invoke_in({{ csym_prefix }}{{ model.name }}_t *sm,
+                                         const char *session_id, const char *processor_type,
+                                         const char *invoke_id, uint64_t token, const char *error_data,
+                                         const char *origin, const char *origin_type);
+
 /* Apply what arrived for this child on its router, oldest first: an event is
    raised on its external queue with the `_event` a Mesh event carries
    (SCE_MESH.md §mesh-10.7), the end of a Mesh request ends it. The parent

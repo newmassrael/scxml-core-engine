@@ -1,0 +1,72 @@
+# Mutation cases for what a saved C11 machine holds of the work its host serves
+# (docs/SCE_ACCEPTED_SUBSET.md §2.15, "Saving and restoring"; docs/adr/0045): a delayed
+# `<send>` the host serves is saved with the request it will make, a host-run invocation is
+# started again from the request it was started with and the deadline it had left, a deadline
+# that passed while the machine was away ends the invocation, and a Mesh request is never sent
+# again, the document being told it was interrupted.
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_saved_c11_host_work_is_restored_as_the_call_it_was_ctest.cases`.
+#
+# Three tests hold the three kinds of work: the host-run invocation of
+# `statechart_static_host_invoke`, the waiting send of `statechart_static_delayed_host_send`,
+# and the request of `statechart_static_mesh_request`. Each saves a machine and holds the text
+# to the shared one, or restores the shared text and reads what the host is asked. The mutants
+# below each take one decision away and leave a tree that still compiles:
+#
+#   a deadline that passed does not end the invocation;
+#   a Mesh request is started again like any other invocation;
+#   an invocation is started again without the deadline it had left;
+#   a waiting send is saved without its event data;
+#   a waiting send is saved without its target;
+#   a waiting send is saved without its params.
+#
+# The templates reach the tests through the tree the build generates, and the generator
+# embeds them, so the runner rebuilds `sce-codegen` itself before the tree is built.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^c11_integration_static_(host_invoke|host_send|mesh_request)_saved$'
+mutation_targets tools/codegen/templates/c/saved.c.jinja2 tools/codegen/templates/c/state_machine.c.jinja2
+mutation_oracles backends/c/tests/integration/test_a_saved_host_invocation_is_started_again_after_a_restore.c backends/c/tests/integration/test_a_generated_machines_waiting_host_send_survives_a_restore.c backends/c/tests/integration/test_a_saved_mesh_request_is_not_sent_again_after_a_restore.c sce-build/tests/fixtures/host_processor/saved/statechart_static_host_invoke_running.json sce-build/tests/fixtures/host_processor/saved/statechart_static_delayed_host_send_waiting.json sce-build/tests/fixtures/host_processor/saved/statechart_static_mesh_request_asking.json
+
+# ── A restored invocation ───────────────────────────────────────────
+
+mutation_case "a deadline that passed does not end the invocation" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     "        if (restored->deadline == 2u) {",
+     "        if (false) {")
+PY
+
+mutation_case "a Mesh request is started again like any other invocation" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     "        } else if (sce_is_reserved_host_type(request->processor_type)) {",
+     "        } else if (false) {")
+PY
+
+mutation_case "an invocation is started again without the deadline it had left" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     "            if (restored->deadline == 1u) {",
+     "            if (false) {")
+PY
+
+# ── A waiting send ──────────────────────────────────────────────────
+
+mutation_case "a waiting send is saved without its event data" <<'PY'
+edit("tools/codegen/templates/c/saved.c.jinja2",
+     "                send.data = entry->host_event_data;",
+     "                send.data = \"\";")
+PY
+
+mutation_case "a waiting send is saved without its target" <<'PY'
+edit("tools/codegen/templates/c/saved.c.jinja2",
+     "                send.target = entry->host_target;",
+     "                send.target = \"\";")
+PY
+
+mutation_case "a waiting send is saved without its params" <<'PY'
+edit("tools/codegen/templates/c/saved.c.jinja2",
+     "                send.param_count = entry->host_param_count;",
+     "                send.param_count = 0;")
+PY

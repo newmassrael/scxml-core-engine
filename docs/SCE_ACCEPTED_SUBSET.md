@@ -5581,8 +5581,9 @@ nothing, for a session the tree does not hold; Go: `HostInvokeRequest.SessionID`
 session the tree does not hold; C++: `HostInvokeRequest::sessionId`,
 `completeHostInvokeIn` and `failHostInvokeIn`, which answer `NoSuchSession` or
 `NotRunning` for a session the tree does not hold or a start it does not run); C11:
-`sce_host_invoke_event_t::session_id` and `<machine>_complete_host_invoke_in`, which answer
-`false` for a session the tree does not hold or a start it does not run.
+`sce_host_invoke_event_t::session_id`, `<machine>_complete_host_invoke_in` and
+`<machine>_fail_host_invoke_in`, which answer `false` for a session the tree does not hold or a
+start it does not run.
 
 **What C11 does otherwise** (docs/adr/0045, step 5), the deviations a reader of its saved
 state or its API meets:
