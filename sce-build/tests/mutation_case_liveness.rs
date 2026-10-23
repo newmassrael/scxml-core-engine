@@ -355,6 +355,23 @@ fn a_selector_naming_a_suite_that_does_not_exist_is_refused() {
     assert_rejected(&f, "names no test target");
 }
 
+/// A suite whose target declares `required-features` the selector does not
+/// enable is one cargo refuses to build, so every case would read
+/// INCONCLUSIVE; the check names the feature instead. The target is a real one
+/// of this package that requires `cli`, which is what makes it a fixture of the
+/// refusal and not of a typo.
+#[test]
+fn a_selector_that_leaves_out_a_feature_its_suite_requires_is_refused() {
+    let f = fixture_with_selector(
+        "mutation_tests -p sce-build --test a_static_datamodel_holds_every_variable_to_a_type",
+        "fn keep(x: u8) -> u8 {\n    x + 1\n}\n",
+        "mutation_case \"the suite is never built\" <<'PY'\n\
+         edit(TARGET, \"x + 1\", \"x + 2\")\n\
+         PY\n",
+    );
+    assert_rejected(&f, "requires the feature(s) cli");
+}
+
 // ── A run-time target that is not read at run time ──
 
 /// A casefile declaring one extra file, under whichever declaration and at

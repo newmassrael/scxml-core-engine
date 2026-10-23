@@ -2623,6 +2623,8 @@ meta = json.load(open(sys.argv[1]))
 
 named_pkgs, wanted_tests, wanted_features = [], [], []
 want_lib = False
+all_features = False
+default_features = True
 i = 0
 while i < len(args):
     a = args[i]
@@ -2635,6 +2637,10 @@ while i < len(args):
         i += 2; continue
     if a == "--lib":
         want_lib = True
+    if a == "--all-features":
+        all_features = True
+    if a == "--no-default-features":
+        default_features = False
     i += 1
 
 packages = {p["name"]: p for p in meta["packages"]}
@@ -2668,6 +2674,42 @@ if want_lib and not any(LIB_KINDS.intersection(t["kind"])
 for feature in wanted_features:
     if not any(feature in p.get("features", {}) for p in scope):
         problems.append("--features %s names a feature no package in scope declares" % feature)
+
+# A test target that declares `required-features` is one cargo will not build
+# unless the selector enables them, and it refuses the whole command when it is
+# named by `--test`: "requires the features: `cli`". Every case of the casefile
+# then reads INCONCLUSIVE, a verdict about the selector and not about the
+# mutation, and it arrives only when a push first reaches the casefile. Measured
+# 2026-10-23: `a_static_c_string_join_is_written_into_a_buffer_the_model_sizes`
+# named `a_static_datamodel_holds_every_variable_to_a_type` without `cli` from
+# the day it was written, and this check said "selector resolves" all along.
+def enabled_features(package):
+    declared = package.get("features", {})
+    if all_features:
+        return set(declared)
+    pending = list(wanted_features) + (["default"] if default_features and "default" in declared else [])
+    enabled = set()
+    while pending:
+        feature = pending.pop()
+        if feature in enabled or feature not in declared:
+            continue
+        enabled.add(feature)
+        # A feature enables the package's own features it lists; `dep:x` and
+        # `crate/feature` entries are about dependencies and enable none here.
+        pending += [f for f in declared[feature] if ":" not in f and "/" not in f]
+    return enabled
+
+for test in wanted_tests:
+    for p in scope:
+        for t in p["targets"]:
+            if t["name"] != test or "test" not in t["kind"]:
+                continue
+            missing = sorted(set(t.get("required-features", [])) - enabled_features(p))
+            if missing:
+                problems.append(
+                    "--test %s requires the feature(s) %s, which the selector does not enable: "
+                    "cargo refuses to build it, and every case would read INCONCLUSIVE "
+                    "(add --features %s)" % (test, ", ".join(missing), ",".join(missing)))
 
 for problem in problems:
     print("  " + problem, file=sys.stderr)
