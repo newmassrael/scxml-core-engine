@@ -211,6 +211,11 @@ source "$SCE_REPO_ROOT/scripts/lib/mutation_build_refusal.sh"
 # harness rather than a habit of whoever ran it.
 # shellcheck source=scripts/lib/mutation_ledger.sh
 source "$SCE_REPO_ROOT/scripts/lib/mutation_ledger.sh"
+# And where the BasicHTTP fixture answers. The gate starts it on a free port and
+# exports that port, so a check that spelled 8080 here asked about a listener
+# the gate never started (CI run 39903807901).
+# shellcheck source=scripts/lib/sce_http_endpoint.sh
+source "$SCE_REPO_ROOT/scripts/lib/sce_http_endpoint.sh"
 MUTATION_OBJCOPY="$(command -v objcopy || true)"
 
 WORK="$(mktemp -d)"
@@ -600,8 +605,9 @@ mutation_regen() { MUTATION_REGEN_CMDS+=("$*"); }
 # compiler, not a configured build directory, but a listener something under
 # test talks to.
 #
-# The one service today is `http-fixture`: the W3C harness server on
-# localhost:8080/test (`tests/w3c/standalone_http_server.js`), which every
+# The one service today is `http-fixture`: the W3C harness server at the
+# endpoint `scripts/lib/sce_http_endpoint.sh` reads
+# (`tests/w3c/standalone_http_server.js`), which every
 # BasicHTTP fixture posts to. `backends/rust/tests/src/harness.rs` refuses to
 # run such a test without it, by design and with instructions — and that
 # refusal is a FAILING TEST, which is what a round reads as "baseline is not
@@ -2738,7 +2744,7 @@ mutation_ctest_check_selector() {
 # Checked, never STARTED. Which process owns the listener is the caller's
 # question and the callers disagree for good reasons: `mutation-rounds` brings
 # one up around the rounds that asked for it and takes it down again, because
-# the ctest rounds beside them bind 8080 themselves; a developer running one
+# the ctest rounds beside them bind the endpoint themselves; a developer running one
 # casefile by hand already has the line in their scrollback. A harness that
 # started its own would be a third owner racing the other two for the port.
 #
@@ -2749,22 +2755,29 @@ mutation_ctest_check_selector() {
 # stood over two CI runs of `send_namelist_reaches_the_form.cases` before
 # anybody traced it to a server nobody had started.
 mutation_check_needs() {
-    local service failed=0
+    local service failed=0 port path
     while IFS= read -r service; do
         [[ -n "$service" ]] || continue
         case "$service" in
         http-fixture)
-            if timeout 2 bash -c 'exec 3<>/dev/tcp/localhost/8080' 2>/dev/null; then
-                dim "declared service is up: http-fixture (localhost:8080)"
+            if ! port="$(sce_http_endpoint_port "$SCE_REPO_ROOT")" \
+                || ! path="$(sce_http_endpoint_path "$SCE_REPO_ROOT")"; then
+                red "the casefile declares 'mutation_needs http-fixture' and the"
+                red "endpoint it would be checked at could not be read (above)."
+                failed=1
+                continue
+            fi
+            if timeout 2 bash -c "exec 3<>/dev/tcp/localhost/$port" 2>/dev/null; then
+                dim "declared service is up: http-fixture (localhost:$port)"
             else
                 red "the casefile declares 'mutation_needs http-fixture' and nothing is"
-                red "listening on localhost:8080. Every case below would read as CAUGHT"
+                red "listening on localhost:$port. Every case below would read as CAUGHT"
                 red "for that reason rather than for the clause it defends."
                 red ""
-                red "  node tests/w3c/standalone_http_server.js 8080 /test"
+                red "  node tests/w3c/standalone_http_server.js $port $path"
                 red ""
                 red "The mutation-rounds gate starts it for the rounds that declare it;"
-                red "by hand, start it first and stop it afterwards — a live 8080 makes"
+                red "by hand, start it first and stop it afterwards — a live $port makes"
                 red "the C++ ctest suite report 13 of its cases Not Run."
                 failed=1
             fi
