@@ -81,6 +81,7 @@ const TEMPLATE_DIRS: &[(&str, Syntax)] = &[
     ("/templates/kotlin/", Syntax::Kotlin),
     ("/templates/python/", Syntax::Python),
     ("/templates/rust/", Syntax::Rust),
+    ("/templates/swift/", Syntax::Swift),
 ];
 
 /// Where the C++ backend's own templates live. They predate the
