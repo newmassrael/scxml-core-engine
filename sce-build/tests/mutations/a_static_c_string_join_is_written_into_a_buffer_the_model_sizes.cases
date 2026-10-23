@@ -23,7 +23,7 @@
 # Anchors are literal slices of the source; an edit that moves one is reported
 # INCONCLUSIVE with the anchor quoted, never as a pass.
 
-mutation_tests -p sce-build --test a_static_datamodel_holds_every_variable_to_a_type
+mutation_tests -p sce-build --features cli --test a_static_datamodel_holds_every_variable_to_a_type
 mutation_targets sce-build/src/forge/expr.rs
 mutation_oracles sce-build/tests/a_static_datamodel_holds_every_variable_to_a_type.rs
 
