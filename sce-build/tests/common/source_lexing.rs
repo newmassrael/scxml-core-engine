@@ -45,6 +45,7 @@ pub fn language_of(path: &str) -> Option<Lang> {
         "go" => Some(Lang::Go),
         "kt" | "kts" => Some(Lang::Kotlin),
         "py" => Some(Lang::Python),
+        "swift" => Some(Lang::Swift),
         "jinja2" => Some(target_language_of_template(path)),
         _ => None,
     }
@@ -58,6 +59,7 @@ pub enum Lang {
     Go,
     Kotlin,
     Python,
+    Swift,
     /// A template: `{# #}` on top of the emitted language's own rules.
     Template(Syntax),
 }
@@ -138,6 +140,7 @@ pub fn classes(source: &str, lang: Lang) -> Option<Vec<Class>> {
         Lang::Go => classify(source, Syntax::Go),
         Lang::Kotlin => classify(source, Syntax::Kotlin),
         Lang::Python => classify(source, Syntax::Python),
+        Lang::Swift => classify(source, Syntax::Swift),
         Lang::Template(syntax) => classify_template(source, syntax),
     })
 }

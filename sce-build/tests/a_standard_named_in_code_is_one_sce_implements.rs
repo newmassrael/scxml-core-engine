@@ -313,10 +313,10 @@ const CLOSURE_PATH: &[&str] = &[
 /// while checking 8 % of the tree, arriving again one gate later.
 ///
 /// The segment is the convention the tree already follows, including the
-/// JVM spelling `src/test/`, so a test directory added anywhere is covered
-/// on the day it appears. [`the_test_trees_are_derived_not_listed`] is what
-/// keeps that true.
-const TEST_TREE_SEGMENTS: &[&str] = &["tests", "test"];
+/// JVM spelling `src/test/` and the SwiftPM spelling `Tests/`, so a test
+/// directory added anywhere is covered on the day it appears.
+/// [`the_test_trees_are_derived_not_listed`] is what keeps that true.
+const TEST_TREE_SEGMENTS: &[&str] = &["tests", "test", "Tests"];
 
 /// Trees excluded for a reason other than holding tests.
 const NOT_PRODUCTION: &[&str] = &[
@@ -729,6 +729,7 @@ fn language_name(lang: Lang) -> &'static str {
         Lang::Go => "go",
         Lang::Kotlin => "kotlin",
         Lang::Python => "python",
+        Lang::Swift => "swift",
         Lang::Template(_) => "template",
     }
 }
@@ -743,6 +744,7 @@ fn language_name(lang: Lang) -> &'static str {
 ///
 /// Measured 2026-09-12, at roughly 90 % of what the tree holds:
 /// rust 153, c-family 598, go 45, kotlin 59, python 43, template 270.
+/// Swift arrived later and was measured on 2026-10-23: swift 25.
 ///
 /// ⚠ These are much smaller than the first numbers written here — rust
 /// alone fell from 969 — and the difference is not a tree that shrank. It
@@ -755,6 +757,7 @@ const FILE_FLOORS: &[(&str, usize)] = &[
     ("go", 40),
     ("kotlin", 53),
     ("python", 38),
+    ("swift", 22),
     ("template", 243),
 ];
 

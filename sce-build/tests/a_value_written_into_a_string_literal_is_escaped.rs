@@ -556,6 +556,7 @@ fn hostile_free_text_stays_inside_the_literal_in_every_backend() {
                     common::source_lexing::Lang::Go => Syntax::Go,
                     common::source_lexing::Lang::Kotlin => Syntax::Kotlin,
                     common::source_lexing::Lang::Python => Syntax::Python,
+                    common::source_lexing::Lang::Swift => Syntax::Swift,
                     common::source_lexing::Lang::Template(_) => continue,
                 };
                 for body in literal_bodies(&hostile, syntax) {
