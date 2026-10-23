@@ -14,7 +14,7 @@ only the document knows about the sessions and invocations a saved state names:
 
 ``running_invokes()``
     the id the document gives each ``<invoke>`` whose child session is running,
-    in document order (§scxml-6.4);
+    in document order;
 ``invoke_starts()``
     how many times each ``<invoke>`` of the document has started in this session,
     for each started at least once, in document order;
@@ -23,7 +23,7 @@ only the document knows about the sessions and invocations a saved state names:
     document does not invoke;
 ``host_invoke_owner(processor_type, id)``
     the state that holds the host-run ``<invoke>`` of this type and id, and
-    ``None`` for one the document does not have a host invoker run (§scxml-6.4.1);
+    ``None`` for one the document does not have a host invoker run;
 ``judge_child(child)``
     refuses ``child``, a running child a format-2 state lists, unless its session
     is a state of the document the child names, to any depth (docs/adr/0045,
@@ -181,6 +181,8 @@ def save_session(
         raise StateRefusal("the machine has no session id, which a saved state names it by")
     # What the generated machine saved is every child it runs, and nothing else:
     # one left out would restore a parent whose child is gone.
+    # §scxml-6.4: the children are the document's `<invoke>`s whose session is
+    # running, in document order.
     running = list(policy.running_invokes())
     saved_ids = [child.id for child in children]
     if running != saved_ids:
@@ -567,6 +569,8 @@ def _judge(policy: Any, saved: SavedState) -> _JudgedSession:
     # not have, one whose state the saved configuration does not stand in, or one
     # named twice is a run the saved machine could not have had.
     for at, host in enumerate(saved.host_invokes):
+        # §scxml-6.4.1: the owner is the state whose `<invoke>` of this type and id
+        # the document has a host invoker run, and `None` for one it does not.
         owner = policy.host_invoke_owner(host.processor_type, host.invoke_id)
         if owner is None:
             raise StateRefusal(

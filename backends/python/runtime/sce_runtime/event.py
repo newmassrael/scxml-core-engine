@@ -71,8 +71,8 @@ class EventWithMetadata(Generic[E]):
 
 def event_data_text(data: Any) -> str:
     """W3C SCXML 5.10 + B-2-9 — the text of an event's data, which is the WIRE: a
-    reader parses it under §scxml-B-2-8-1's three readings (XML → DOM, JSON →
-    value, otherwise a space-normalized string). Generated Python code marshals
+    reader parses it under the three readings of an event's data (XML → DOM,
+    JSON → value, otherwise a space-normalized string). Generated Python code marshals
     `<send>` payloads as a dict of named params or a bare scalar, which are
     written here into that wire, for the script engine's `set_current_event` and
     for a saved state, which holds an event's data as text.
@@ -87,6 +87,9 @@ def event_data_text(data: Any) -> str:
     What is deliberately absent is a spelling only the sender's own engine could
     read back: the receiving side used to RUN this string as Lua before parsing
     it, so a payload could execute at the far end."""
+    # §scxml-B-2-8-1: the text written here is what the receiver reads under the
+    # three readings, so each spelling below is one the string reading gives back
+    # whole or the JSON reading gives back as the value.
     if data is None:
         return ""
     if isinstance(data, str):

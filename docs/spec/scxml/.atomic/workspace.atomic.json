@@ -11805,6 +11805,10 @@
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "startRestoredHostInvokes",
           "kind": "references"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/saved_engine.py",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -12359,6 +12363,10 @@
         },
         {
           "file": "backends/c/runtime/include/sce/saved_state.h",
+          "kind": "references"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/saved_engine.py",
           "kind": "references"
         }
       ],
@@ -14350,6 +14358,10 @@
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "raiseHostInvokeFailure",
+          "kind": "references"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/event.py",
           "kind": "references"
         }
       ],
