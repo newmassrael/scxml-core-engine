@@ -2862,11 +2862,11 @@ SCE_SM_FN static void execute_entry_actions({{ csym_prefix }}{{ model.name }}_t 
             char _invoke_id_buf[SCE_MAX_ID_LEN];
             sce_invoke_format_id(_invoke_id_buf, sizeof(_invoke_id_buf),
                                  "{{ state_id }}", (const void *)sm,
-                                 {{ loop.index0 + (state.invokes | scxml | length) }});
+                                 {{ loop.index0 + (state.invokes | scxml | length) + (state.invokes | hybrid | length) }});
             sce_invoke_pending_push(&sm->pending_invokes,
                                     (int){{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_id | to_c11_upper_ident }},
-                                    {{ loop.index0 + (state.invokes | scxml | length) }},
-                                    _invoke_id_buf);
+                                    {{ loop.index0 + (state.invokes | scxml | length) + (state.invokes | hybrid | length) }},
+                                    _invoke_id_buf, _invoke_id_buf);
         }
         {% endfor %}
         {% endif %}
@@ -2882,7 +2882,9 @@ SCE_SM_FN static void execute_entry_actions({{ csym_prefix }}{{ model.name }}_t 
         {% for invoke_info in state.invokes | scxml %}
         {
             char _invoke_id_buf[SCE_MAX_ID_LEN];
-            /* W3C SCXML 3.12.1: an author-supplied id wins over the generated format. */
+            char _runtime_id_buf[SCE_MAX_ID_LEN];
+            /* W3C SCXML 3.12.1: an author-supplied id wins over the generated format, as the
+               id the child's events carry; the session is named by the generated one. */
             {{ invoke_defer.number_start(state_id, invoke_info, false) }}
             {% if invoke_info.idlocation and model.needs_script_engine %}
             /* W3C SCXML 6.4.1 (test223/224/225/338): expose the spawned
@@ -2928,6 +2930,7 @@ SCE_SM_FN static void execute_entry_actions({{ csym_prefix }}{{ model.name }}_t 
         {% for invoke_info in state.invokes | hybrid %}
         {
             char _invoke_id_buf[SCE_MAX_ID_LEN];
+            char _runtime_id_buf[SCE_MAX_ID_LEN];
             /* docs/adr/0045: numbered by this start, as the static arm is. */
             {{ invoke_defer.number_start(state_id, invoke_info, true) }}
             {% if invoke_info.idlocation and model.needs_script_engine %}
@@ -6596,6 +6599,59 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_install_mesh_router({{ csym_pre
         (void)sce_host_invoker_register_mesh_rpc_invoker(&sm->host_invokers, router->invoke, router->user_data);
     }
 {% endif %}
+}
+
+SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_install_host_invokers({{ csym_prefix }}{{ model.name }}_t *sm,
+                                         const sce_host_invoker_registry_t *invokers) {
+{% if model.host_invoker_types %}
+    if (sm == NULL || invokers == NULL) {
+        return;
+    }
+    sm->host_invokers = *invokers;
+{% else %}
+    (void)sm;
+    (void)invokers;
+{% endif %}
+}
+
+{# The sessions of the tree below this one that can run a host-run invocation of their own: a
+   child session written as a `sce-static` document, and each candidate of a hybrid invoke that
+   is one. #}
+{% set complete_in = namespace(targets=[]) %}
+{% for inv in model.invokes | scxml_family %}
+{% if inv.candidates %}
+{% for c in inv.candidates %}
+{% if c.child_is_static %}
+{% set complete_in.targets = complete_in.targets + [{'slot': 'child_' ~ (inv.field_suffix | candidate_identifier(c.stem)), 'stem': c.stem}] %}
+{% endif %}
+{% endfor %}
+{% elif inv.kind == 'Scxml' and inv.child_is_static %}
+{% set complete_in.targets = complete_in.targets + [{'slot': 'child_' ~ inv.field_suffix, 'stem': inv.child_name}] %}
+{% endif %}
+{% endfor %}
+SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_complete_host_invoke_in({{ csym_prefix }}{{ model.name }}_t *sm,
+                                         const char *session_id, const char *processor_type,
+                                         const char *invoke_id, uint64_t token, const char *done_data) {
+    if (sm == NULL || session_id == NULL) {
+        return false;
+    }
+{% if model.host_invoker_types %}
+    if (strcmp(session_id, sm->session_id) == 0) {
+        return {{ csym_prefix }}{{ model.name }}_complete_host_invoke(sm, processor_type, invoke_id, token, done_data);
+    }
+{% endif %}
+{% for target in complete_in.targets %}
+    if (sm->{{ target.slot }}_active &&
+        {{ csym_prefix }}{{ target.stem }}_complete_host_invoke_in(&sm->{{ target.slot }}, session_id, processor_type,
+                                                                   invoke_id, token, done_data)) {
+        return true;
+    }
+{% endfor %}
+    (void)processor_type;
+    (void)invoke_id;
+    (void)token;
+    (void)done_data;
+    return false;
 }
 
 /* Apply what arrived for this child on its router, in the order the router

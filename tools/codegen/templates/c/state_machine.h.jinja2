@@ -1300,6 +1300,24 @@ void {{ csym_prefix }}{{ model.name }}_invoked_enter({{ csym_prefix }}{{ model.n
 void {{ csym_prefix }}{{ model.name }}_install_mesh_router({{ csym_prefix }}{{ model.name }}_t *sm,
                                        const sce_child_mesh_router_t *router);
 
+/* SCE Accepted Subset §2.12 + docs/adr/0045: the invokers the host registered on the root of
+   the tree, which serve every session of it — a child session's host-run `<invoke>` is run by
+   the invoker of its type like any other, and the request it is started with names the session
+   (`session_id`). Installed between `_invoked_begin` and `_invoked_enter` by the parent that
+   begins this machine, and by the restore that resumes it. Nothing for a machine that declares
+   no host-run invocation. */
+void {{ csym_prefix }}{{ model.name }}_install_host_invokers({{ csym_prefix }}{{ model.name }}_t *sm,
+                                         const sce_host_invoker_registry_t *invokers);
+
+/* `_complete_host_invoke`, for a host-run invocation of any session of the tree this machine is
+   the root of: `session_id` is the one the request named when the invocation was started
+   (`sce_host_invoke_event_t::session_id`), and the completion reaches the session that started
+   it wherever it stands in the tree. False for a session that is not running, and for a
+   completion the session refuses (a stale token). */
+bool {{ csym_prefix }}{{ model.name }}_complete_host_invoke_in({{ csym_prefix }}{{ model.name }}_t *sm,
+                                         const char *session_id, const char *processor_type,
+                                         const char *invoke_id, uint64_t token, const char *done_data);
+
 /* Apply what arrived for this child on its router, oldest first: an event is
    raised on its external queue with the `_event` a Mesh event carries
    (SCE_MESH.md §mesh-10.7), the end of a Mesh request ends it. The parent

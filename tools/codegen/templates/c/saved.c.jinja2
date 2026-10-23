@@ -792,10 +792,16 @@ typedef struct {
     {{ _t }}_state_t owner;
 } {{ _t }}_saved_host_owner_t;
 
+/* How many there are; a document that declares a host invoker may run none of its own (a child
+   session does, and its parent only serves the type), and an array has no zero length, so the
+   table ends in an entry no invocation names. */
+#define {{ _u }}_SAVED_HOST_OWNER_COUNT {{ (model.invokes | host_invoker | list) | length }}u
+
 static const {{ _t }}_saved_host_owner_t {{ _t }}_saved_host_owners[] = {
 {% for inv in model.invokes | host_invoker %}
     { "{{ inv.invoke_type | escape_c }}", "{{ inv.invoke_id | escape_c }}", {{ _u }}_STATE_{{ inv.state_name | to_c11_upper_ident }} },
 {% endfor %}
+    { NULL, NULL, ({{ _t }}_state_t)0 }
 };
 
 /* The host-run invocations `s` holds, judged and, given the machine, re-armed: each is started
@@ -830,12 +836,14 @@ SCE_SM_FN static bool {{ _t }}_saved_host_invokes(const sce_saved_session_t *s, 
         }
         (void)sce_jv_string(host.type, quoted_type, sizeof(quoted_type), NULL);
         (void)sce_jv_string(host.id, quoted_id, sizeof(quoted_id), NULL);
-        for (size_t i = 0u; i < sizeof({{ _t }}_saved_host_owners) / sizeof({{ _t }}_saved_host_owners[0]); ++i) {
+{% if (model.invokes | host_invoker | list) | length > 0 %}
+        for (size_t i = 0u; i < (size_t){{ _u }}_SAVED_HOST_OWNER_COUNT; ++i) {
             if (sce_jv_string_is(host.type, {{ _t }}_saved_host_owners[i].type) &&
                 sce_jv_string_is(host.id, {{ _t }}_saved_host_owners[i].id)) {
                 owner = &{{ _t }}_saved_host_owners[i];
             }
         }
+{% endif %}
         if (owner == NULL) {
             return sce_saved_refuse(err,
                                     "%s is '%s' of type '%s', which the document does not have a host invoker run", what,
@@ -963,9 +971,16 @@ SCE_SM_FN static bool {{ _t }}_saved_resume_child({{ _t }}_t *sm, const sce_save
 {% for target in (inv.candidates if inv.candidates else ([{'stem': inv.child_name, 'child_host_call': inv.child_host_call, 'child_declares_host_duties': inv.child_declares_host_duties, 'child_has_send_to_parent': inv.child_has_send_to_parent}] if inv.kind == 'Scxml' else [])) %}
 {% set slot = ('child_' ~ (inv.field_suffix | candidate_identifier(target.stem))) if inv.candidates else ('child_' ~ inv.field_suffix) %}
     if (sce_jv_string_is(child->id, "{{ inv.invoke_id | escape_c }}") && sce_jv_string_is(child->document, "{{ target.stem | escape_c }}")) {
+{% if inv.kind != 'Hybrid' and inv.invoke_id and not inv.invoke_id.startswith('_invoke_') %}
+        /* The author's own `id` is the id the machine's events from the child carry. */
+        sce_copy_bounded_id(invoke_id, "{{ inv.invoke_id | escape_c }}");
+{% endif %}
 {% call child_begin.begin_static_child(csym_prefix, model.name, 'sm->' ~ slot, target.stem, target.child_host_call, target.child_declares_host_duties, target.child_has_send_to_parent, 'invoke_id', child_clock_c) %}
         return sce_saved_refuse(err, "invokes[%lu] could not be given the host its child declares", (unsigned long)index);
 {% endcall %}
+{% if model.host_invoker_types %}
+        {{ csym_prefix }}{{ target.stem }}_install_host_invokers(&sm->{{ slot }}, &sm->host_invokers);
+{% endif %}
 {% if model.host_processor_types %}
         {
             /* SCE_MESH.md, Child Sessions in Mesh: the child's router, asked of this machine's
@@ -998,6 +1013,7 @@ SCE_SM_FN static void {{ _t }}_saved_restart_invoke({{ _t }}_t *sm, sce_jv_t id)
 {% for inv in state.invokes | scxml %}
     if (sce_jv_string_is(id, "{{ inv.invoke_id | escape_c }}")) {
         char _invoke_id_buf[SCE_MAX_ID_LEN];
+        char _runtime_id_buf[SCE_MAX_ID_LEN];
         {{ invoke_defer.number_start(state_id, inv, false) }}
         {{ invoke_defer.queue_start(_u, state_id, state_id | to_c11_upper_ident, inv, loop.index0) }}
         return;
@@ -1006,6 +1022,7 @@ SCE_SM_FN static void {{ _t }}_saved_restart_invoke({{ _t }}_t *sm, sce_jv_t id)
 {% for inv in state.invokes | hybrid %}
     if (sce_jv_string_is(id, "{{ inv.invoke_id | escape_c }}")) {
         char _invoke_id_buf[SCE_MAX_ID_LEN];
+        char _runtime_id_buf[SCE_MAX_ID_LEN];
         {{ invoke_defer.number_start(state_id, inv, true) }}
         {{ invoke_defer.queue_start(_u, state_id, state_id | to_c11_upper_ident, inv, (state.invokes | scxml | length) + loop.index0) }}
         return;
@@ -1422,7 +1439,15 @@ bool {{ _t }}_save_members(const {{ _t }}_t *sm, int64_t wall_now_ms, sce_jw_t *
             sce_saved_write_member_text(w, "id", "{{ inv.invoke_id | escape_c }}");
             sce_jw_key(w, "start");
             sce_saved_write_count(w, (int64_t)sm->invoke_starts_{{ inv.field_suffix }});
-            sce_saved_write_member_text(w, "invokeid", sm->child_{{ inv.field_suffix }}_invoke_id);
+            {
+                /* The id the child was started under, the one its session id is made with: the
+                   same text on every backend, whatever `id` the author wrote. */
+                char runtime_id[SCE_MAX_ID_LEN];
+                sce_invoke_format_start_id(runtime_id, sizeof(runtime_id), "{{ inv.state_name }}",
+                                           sm->invoke_starts_{{ inv.field_suffix }},
+                                           "{{ inv.invoke_id | escape_c }}");
+                sce_saved_write_member_text(w, "invokeid", runtime_id);
+            }
             sce_saved_write_member_text(w, "document", "{{ target.stem | escape_c }}");
             sce_jw_key(w, "session");
             sce_jw_begin_object(w);

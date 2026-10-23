@@ -34,11 +34,15 @@ extern "C" {
    generated `<sm>_execute_pending_invokes` that dispatches to the right
    child SM creation arm. `invoke_id` carries the §scxml-6.4.2
    identifier (auto-generated `<state>.<platformid>._invoke_<n>` or
-   user-provided). */
+   user-provided), the one the machine's events from the child carry as
+   `_event.invokeid`. `runtime_id` is the id the child session is named by
+   (`sce_invoke_format_start_id`); the two are the same text unless the author wrote
+   an `id` (docs/adr/0045). */
 typedef struct sce_invoke_pending_s {
     int state;
     int invoke_idx;
     char invoke_id[SCE_MAX_ID_LEN];
+    char runtime_id[SCE_MAX_ID_LEN];
 } sce_invoke_pending_t;
 
 /* Bounded queue — per-SM pending invokes. SCE_MAX_INVOKES (default 4)
@@ -56,13 +60,14 @@ typedef struct sce_invoke_pending_queue_s {
    bounded array matches the runtime/scheduler discipline applied to
    every other queue in this engine (event_queue, scheduled_queue). */
 SCE_C_UNUSED static inline void sce_invoke_pending_push(sce_invoke_pending_queue_t *q, int state, int invoke_idx,
-                                                        const char *invoke_id) {
+                                                        const char *invoke_id, const char *runtime_id) {
     if (q->count >= (int)SCE_MAX_INVOKES) {
         return;
     }
     q->entries[q->count].state = state;
     q->entries[q->count].invoke_idx = invoke_idx;
     sce_copy_bounded_id(q->entries[q->count].invoke_id, invoke_id);
+    sce_copy_bounded_id(q->entries[q->count].runtime_id, runtime_id);
     q->count++;
 }
 

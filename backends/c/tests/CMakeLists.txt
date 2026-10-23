@@ -3037,6 +3037,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
         SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_invoke_tree.scxml"
         STAGE_ALSO schema_revised.scxml enum_view_mode.scxml
+        HOST_INVOKER sce-host-clock-now
     )
 
     # The `<invoke type="scxml">` machines of `static_invoke`, `static_invoke_params`
@@ -3730,6 +3731,38 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         COMMAND sce_c_integration_static_host_invoke
     )
     set_tests_properties(c11_integration_static_host_invoke PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
+    # SCE Accepted Subset §2.15, "Format 2: a tree of sessions" (docs/adr/0045, section 8): the
+    # tree saved with every session where it stood, restored from the shared text and saved again
+    # as it was, refused by the path to the session
+    # that is not the document's, and saved at every boundary a host calls at. The machine is
+    # generated above.
+    add_executable(sce_c_integration_static_saved_tree
+        integration/test_a_saved_tree_holds_every_session_where_it_stood.c
+        ${INTEGRATION_C_TEST_static_invoke_tree_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_static_saved_tree PRIVATE
+        sce_c_runtime sce_c_runtime_posix sce_c_base
+    )
+    target_include_directories(sce_c_integration_static_saved_tree PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include"
+    )
+    target_compile_definitions(sce_c_integration_static_saved_tree PRIVATE
+        SCE_SAVED_FIXTURES_DIR="${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/saved"
+    )
+    set_target_properties(sce_c_integration_static_saved_tree PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_static_saved_tree
+        COMMAND sce_c_integration_static_saved_tree
+    )
+    set_tests_properties(c11_integration_static_saved_tree PROPERTIES
         TIMEOUT 30
         LABELS "integration;c11;aot"
     )

@@ -331,16 +331,15 @@ invokers modelled on ADR 0043's child routers:
 - **The build declares the types once for the tree.** A child written in place is generated with its
   parent's `--host-invoker` declaration, and with the standard types it names.
 - **Backends.** Rust implements it with step 3 and Kotlin with step 4, Go, Python and C++ with their
-  step 5. C11 keeps raising `error.execution` for a child's host-run invocation, as for one
-  no invoker serves, until its format-2 step implements this contract.
+  step 5, and C11 with its own.
 
 **An `<invoke idlocation>` of a child session is written under `sce-static`.** Each start is started
 under `<state>.<start>.<id>` (step 2), which the child's events carry as `_event.invokeid` and a saved
 tree holds as the child's `invokeid`, so a stored id now has readers: the document, and the restore,
 which keeps the variable as saved and writes nothing. The variable is a declared string whose bound
 exceeds the longest such id (twenty digits of start count); a host-run invocation or a Mesh request,
-started under the id the build wrote, still refuses it. Rust, Kotlin, Go, Python and C++ write it; C11
-refuses it by name (`generate/unsupported-feature`) until its format-2 step.
+started under the id the build wrote, still refuses it. Every backend that saves writes it, C11
+among them.
 
 **A state written in format 1 is still read.** It holds no child's state, and the build that wrote
 it promised to start each listed child from its beginning; the restoring build does exactly that for
@@ -945,6 +944,31 @@ Each step lands with a test that fails without it.
    `ASavedHostInvocationIsStartedAgainAfterARestoreTest`, and the scenario `restore` step of
    `static_invoke_tree`. Open: the child resume, hybrid restart, send id and delayed host send
    tests as ports of Rust's, and the mutation round over the new machines.
+
+   *Where it stands: C11.* Done, with no allocation: the runtime is header-only (`saved_json.h`,
+   `saved_values.h`, `saved_state.h`). A writer counts the bytes that do not fit, so a save run
+   with no buffer measures the text and one run with a buffer of that size writes it; a reader is
+   a set of spans over the text, and each reader of a value takes no output to only judge. A
+   record reads a field a later revision added from the default its schema declares, and an enum
+   holder is checked from a table. A restore reads and judges the whole text, then builds the
+   machine and applies it (variables, histories, the current state, the queues, the waiting
+   sends, the host-run invocations, the children last), so a refused restore leaves the caller's
+   storage as it was. A child is resumed in place of started, by the macro its start is built
+   with, and a session is known by its parent's id and the id its start was made under
+   (`<state>.<start>.<invoke>`, the same text on every backend even where the author wrote an
+   `id`, which stays the id the machine's events from the child carry). The tree's host invokers
+   are one registry its sessions share; a request names its session and is answered through
+   `_complete_host_invoke_in`; a restored host-run invocation starts again at the first drive
+   with the deadline it had left. An `<invoke idlocation>` of a child session is written.
+   Deviations from the other backends, each recorded in SCE_ACCEPTED_SUBSET.md: a root draws
+   `<name>_session_<n>` and has no id before it is created; the save takes the exact size by a
+   second call in place of a bound the generator states; a child is driven in the macrostep that
+   started it, so an event forwarded to it does not wait in its queue; an event a child sends its
+   parent carries no origin or origin type. Held by `c11_unit_saved_state`,
+   `c11_integration_static_saved` (every shared instance read and written back),
+   `c11_integration_static_host_invoke_saved`, `c11_integration_static_saved_tree`, and the
+   scenario `restore` step of `static_invoke_tree`. Open: the shared host-processor fixtures and
+   the format-1 restart as tests of their own, and the mutation round over the new machines.
 6. **The host cores** (after ADR 0043 steps 3 and 5): the checkpoint document, its schema and its
    row in SCE_WIRE_CONTRACTS.md with a producer status constant in `sce-rust-mesh` and
    `sce-kotlin-mesh`; holding envelopes back; the endpoint section saved and restored; the

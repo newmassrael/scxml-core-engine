@@ -341,7 +341,7 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
         {% for state_id, state in model.states | dictsort %}
         {% for invoke_info in state.invokes | unsupported %}
         if (p->state == (int){{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_id | to_c11_upper_ident }}
-            && p->invoke_idx == {{ loop.index0 + (state.invokes | scxml | length) }}) {
+            && p->invoke_idx == {{ loop.index0 + (state.invokes | scxml | length) + (state.invokes | hybrid | length) }}) {
 {% if invoke_info.host_served %}
             /* W3C SCXML 6.4.1: the host declared this `type`, so START the
                invocation rather than refusing it. The id handed over is the
@@ -669,10 +669,14 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
 {% endif %}
                 continue;
             {% endcall %}
+{% if model.host_invoker_types %}
+            {# docs/adr/0045: the invokers the host registered on the root serve the whole tree. #}
+            {{ csym_prefix }}{{ invoke_info.child_name }}_install_host_invokers(&sm->child_{{ invoke_info.field_suffix }}, &sm->host_invokers);
+{% endif %}
 {% if static_saved_shape %}
             {# docs/adr/0045: a child session is known by its parent's id and the id its start
                is made under, so a saved tree names every session from the root alone. #}
-            if (!{{ csym_prefix }}{{ invoke_info.child_name }}_bind_session_id(&sm->child_{{ invoke_info.field_suffix }}, sm->session_id, p->invoke_id)) {
+            if (!{{ csym_prefix }}{{ invoke_info.child_name }}_bind_session_id(&sm->child_{{ invoke_info.field_suffix }}, sm->session_id, p->runtime_id)) {
 {% if 'error.execution' in model.events %}
                 {{ csym_prefix }}{{ model.name }}_raise_platform_error(
                     sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
@@ -917,8 +921,11 @@ sce_copy_bounded_id(_done_evt.name, "done.invoke.{{ invoke_info.invoke_id | esca
 {% endif %}
                     continue;
 {% endcall %}
+{% if model.host_invoker_types %}
+                {{ csym_prefix }}{{ candidate.stem }}_install_host_invokers(&sm->child_{{ invoke_info.field_suffix | candidate_identifier(candidate.stem) }}, &sm->host_invokers);
+{% endif %}
 {% if static_saved_shape %}
-                if (!{{ csym_prefix }}{{ candidate.stem }}_bind_session_id(&sm->child_{{ invoke_info.field_suffix | candidate_identifier(candidate.stem) }}, sm->session_id, p->invoke_id)) {
+                if (!{{ csym_prefix }}{{ candidate.stem }}_bind_session_id(&sm->child_{{ invoke_info.field_suffix | candidate_identifier(candidate.stem) }}, sm->session_id, p->runtime_id)) {
 {% if 'error.execution' in model.events %}
                     {{ csym_prefix }}{{ model.name }}_raise_platform_error(
                         sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,

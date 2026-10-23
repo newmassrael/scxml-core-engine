@@ -8856,11 +8856,11 @@ impl StaticTarget for CTarget {
         "C11"
     }
     // The start is deferred to the macrostep's end by the entry of the state, which
-    // formats the id it generates into the char buffer `_invoke_id_buf` and writes it
-    // to the `idlocation` there, before the invocation is queued and so before a sibling
-    // read in the same macrostep (§scxml-6.4.1, test225).
+    // formats the id it generates, `<state>.<start>.<invoke>`, into the char buffer
+    // `_runtime_id_buf` and writes it to the `idlocation` there, before the invocation is
+    // queued and so before a sibling read in the same macrostep (§scxml-6.4.1, test225).
     fn generated_invoke_id(&self) -> Option<&'static str> {
-        Some("_invoke_id_buf")
+        Some("_runtime_id_buf")
     }
     // An algorithm's list is passed and returned by value, a few copies of it at a call.
     fn list_stack_limit_bytes(&self) -> Option<u64> {
