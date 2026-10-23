@@ -1,0 +1,92 @@
+# Mutation cases for the saved state of a child session under the C11 backend
+# (docs/SCE_ACCEPTED_SUBSET.md §2.15, "Saving and restoring"; docs/adr/0045): a saved state
+# holds each running child inside its parent, started under `<state>.<start>.<invoke>`, and
+# a restore resumes it where it stood; a format-1 state names the invocation alone, and its
+# restore starts the child again from its beginning.
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_saved_c11_child_session_is_resumed_where_it_stood_ctest.cases`.
+#
+# `static_invoke.scxml` invokes `worker` with an `id` the author wrote, which is the id its
+# events carry, apart from the id its session is named by. The test saves the machine and holds
+# the text to the shared one, saves it after `a` and restores it so that `b` alone ends the
+# child, saves it after the child ended, and changes the text so that each part of a child is
+# refused by the path to it. The mutants below each take one decision away and leave a tree
+# that still compiles:
+#
+#   the saved child is named by the id its events carry, not the id it was started under;
+#   a resumed child is not known by the id the author wrote for its events;
+#   a resumed child is not marked running, so the parent never drives it;
+#   a child that has ended is saved as if it were running;
+#   a restore does not carry the count of starts on;
+#   a saved child's start is not held to the count its session holds;
+#   a saved child's session id is not held to its parent's and the id it was started under;
+#   a format-1 restore names the invocation and starts nothing.
+#
+# The templates reach the test through the tree the build generates, and the generator embeds
+# them, so the runner rebuilds `sce-codegen` itself before the tree is built.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^c11_integration_static_child_saved$'
+mutation_targets tools/codegen/templates/c/saved.c.jinja2
+mutation_oracles backends/c/tests/integration/test_a_saved_child_session_is_resumed_after_a_restore.c sce-build/tests/fixtures/static_datamodel/static_invoke.scxml sce-build/tests/fixtures/static_datamodel/saved/static_invoke_working.json sce-build/tests/fixtures/static_datamodel/saved/format1/static_invoke_working.json
+
+# ── What a saved child is named by ──────────────────────────────────
+
+mutation_case "the saved child is named by the id its events carry" <<'PY'
+edit("tools/codegen/templates/c/saved.c.jinja2",
+     "                sce_saved_write_member_text(w, \"invokeid\", runtime_id);",
+     "                (void)runtime_id;\n                sce_saved_write_member_text(w, \"invokeid\", sm->child_{{ inv.field_suffix }}_invoke_id);")
+PY
+
+mutation_case "a resumed child is not known by the id the author wrote for its events" <<'PY'
+edit("tools/codegen/templates/c/saved.c.jinja2",
+     "        sce_copy_bounded_id(invoke_id, \"{{ inv.invoke_id | escape_c }}\");\n",
+     "")
+PY
+
+# ── What a restore brings back ──────────────────────────────────────
+
+mutation_case "a resumed child is not marked running" <<'PY'
+edit("tools/codegen/templates/c/saved.c.jinja2",
+     "        sm->{{ slot }}_active = true;\n        sce_copy_bounded_id(sm->child_",
+     "        sce_copy_bounded_id(sm->child_")
+PY
+
+mutation_case "a restore does not carry the count of starts on" <<'PY'
+edit("tools/codegen/templates/c/saved.c.jinja2",
+     "    sm->invoke_starts_{{ inv.field_suffix }} = (uint64_t)sce_saved_invoke_start(s, \"{{ inv.invoke_id | escape_c }}\");",
+     "    sm->invoke_starts_{{ inv.field_suffix }} = 0u;")
+PY
+
+# ── What a save lists ───────────────────────────────────────────────
+
+mutation_case "a child that has ended is saved as if it were running" <<'PY'
+edit("tools/codegen/templates/c/saved.c.jinja2",
+     "        if (sm->{{ slot }}_active && !{{ csym_prefix }}{{ target.stem }}_is_in_final_state(&sm->{{ slot }})) {",
+     "        if (sm->{{ slot }}_active) {")
+PY
+
+# ── What a judge of a tree holds a child to ─────────────────────────
+
+mutation_case "a saved child's start is not held to the count its session holds" <<'PY'
+edit("tools/codegen/templates/c/saved.c.jinja2",
+     "            if (child.start != count) {",
+     "            if (false) {")
+PY
+
+mutation_case "a saved child's session id is not held to its parent's and its start's" <<'PY'
+edit("tools/codegen/templates/c/saved.c.jinja2",
+     "            if (strcmp(child_session, derived) != 0) {",
+     "            if (false) {")
+PY
+
+# ── A format-1 restore starts the child again ───────────────────────
+
+mutation_case "a format-1 restore names the invocation and starts nothing" <<'PY'
+edit("tools/codegen/templates/c/saved.c.jinja2",
+     "        {{ invoke_defer.queue_start(_u, state_id, state_id | to_c11_upper_ident, inv, loop.index0) }}\n        return;",
+     "        return;")
+PY
