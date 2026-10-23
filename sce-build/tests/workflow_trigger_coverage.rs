@@ -358,6 +358,11 @@ const UNFILTERABLE_GATES: &[&str] = &[
     // whichever tree a generator writes it into next, and neither the helper
     // under `scripts/lib/` nor bx.toml is in any lane's filter.
     "a_regeneration_removes_what_it_no_longer_writes",
+    // Asks `git ls-files` for every C++ unit and counts the generated machines each
+    // includes. The unit that breaks the bound is one an author writes next, in a
+    // directory no C++ lane's filter needs to name, and the lane that would show it
+    // is the one that dies of it without a test failing.
+    "a_cpp_test_unit_compiles_a_bounded_number_of_machines",
     "workflow_trigger_coverage",
 ];
 

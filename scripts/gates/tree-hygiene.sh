@@ -232,4 +232,5 @@ cargo test -p sce-build --features cli,ffi \
     --test hybrid_stubs_are_tracked_as_generated \
     --test no_conformance_document_declares_the_transition_function \
     --test a_regeneration_removes_what_it_no_longer_writes \
+    --test a_cpp_test_unit_compiles_a_bounded_number_of_machines \
     || sce_gate_fail "tree-wide hygiene gates"
