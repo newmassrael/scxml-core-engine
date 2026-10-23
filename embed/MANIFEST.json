@@ -1,6 +1,6 @@
 {
   "clang_version": "Ubuntu clang version 19.1.7 (++20250804090312+cd708029e0b2-1~exp1~20250804210325.79)",
-  "embed_version": "86dc4f41b8",
+  "embed_version": "b3193e2ec3",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
   "symbol_count": 316,
@@ -604,6 +604,20 @@
     {
       "header": "core/ConfigurationHelper.h",
       "kind": "enum",
+      "name": "SCE::Core::HistoryRejectionKind",
+      "values": [
+        "Accepted",
+        "Empty",
+        "Duplicate",
+        "NotBelow",
+        "NotAChild",
+        "NotAtomic",
+        "Arity"
+      ]
+    },
+    {
+      "header": "core/ConfigurationHelper.h",
+      "kind": "enum",
       "name": "SCE::Core::SpecificationBreach",
       "values": [
         "None",
@@ -633,8 +647,31 @@
     {
       "header": "core/ConfigurationHelper.h",
       "kind": "function",
+      "name": "SCE::Core::detail::childArity<T>",
+      "signature": "ConfigurationRejection SCE::Core::detail::childArity<T>(const std::vector<typename Policy::State> &, typename Policy::State)"
+    },
+    {
+      "header": "core/ConfigurationHelper.h",
+      "kind": "function",
       "name": "SCE::Core::validateConfiguration<T>",
       "signature": "ConfigurationRejection SCE::Core::validateConfiguration<T>(const std::vector<typename Policy::State> &, typename Policy::State)"
+    },
+    {
+      "header": "core/ConfigurationHelper.h",
+      "kind": "function",
+      "name": "SCE::Core::validateHistory<T>",
+      "signature": "HistoryRejection<typename Policy::State> SCE::Core::validateHistory<T>(typename Policy::State, bool, const std::vector<typename Policy::State> &)"
+    },
+    {
+      "header": "core/ConfigurationHelper.h",
+      "kind": "struct",
+      "members": [
+        "field ConfigurationRejection arity",
+        "field HistoryRejectionKind kind",
+        "field std::optional<State> parent",
+        "field std::optional<State> state"
+      ],
+      "name": "SCE::Core::HistoryRejection<T>"
     },
     {
       "header": "core/ConfigurationHelper.h",
@@ -863,6 +900,16 @@
     },
     {
       "header": "core/HostProcessor.h",
+      "kind": "enum",
+      "name": "SCE::HostInvokeEndOutcome",
+      "values": [
+        "Delivered",
+        "NoSuchSession",
+        "NotRunning"
+      ]
+    },
+    {
+      "header": "core/HostProcessor.h",
       "kind": "function",
       "name": "SCE::isHostInvokeCompletion",
       "signature": "bool SCE::isHostInvokeCompletion(std::string_view, std::string_view, const std::string_view *, std::size_t)"
@@ -872,6 +919,84 @@
       "kind": "function",
       "name": "SCE::parseHostInvokeDeadlineMs",
       "signature": "std::optional<uint64_t> SCE::parseHostInvokeDeadlineMs(std::string_view)"
+    },
+    {
+      "header": "core/HostProcessor.h",
+      "kind": "struct",
+      "members": [
+        "field bool delivered",
+        "field bool reached"
+      ],
+      "name": "SCE::HostInvokeRoute"
+    },
+    {
+      "header": "core/HostProcessor.h",
+      "kind": "struct",
+      "members": [
+        "field bool done",
+        "field std::string data",
+        "field std::string invokeId",
+        "field std::string processorType",
+        "field uint64_t token",
+        "method HostInvokeEnding &(HostInvokeEnding &&) operator=",
+        "method HostInvokeEnding &(const HostInvokeEnding &) operator=",
+        "method void () noexcept ~HostInvokeEnding",
+        "method void (HostInvokeEnding &&) HostInvokeEnding",
+        "method void (const HostInvokeEnding &) HostInvokeEnding"
+      ],
+      "name": "SCE::HostInvokeEnding"
+    },
+    {
+      "header": "core/HostProcessor.h",
+      "kind": "struct",
+      "members": [
+        "field bool done",
+        "field std::string data",
+        "field std::string invokeId",
+        "field std::string processorType",
+        "field uint64_t token",
+        "method HostInvokeEnding &(HostInvokeEnding &&) operator=",
+        "method HostInvokeEnding &(const HostInvokeEnding &) operator=",
+        "method void () ~HostInvokeEnding",
+        "method void (HostInvokeEnding &&) HostInvokeEnding",
+        "method void (const HostInvokeEnding &) HostInvokeEnding"
+      ],
+      "name": "SCE::HostInvokeEnding"
+    },
+    {
+      "header": "core/HostProcessor.h",
+      "kind": "struct",
+      "members": [
+        "field bool restarted",
+        "field std::map<std::string, std::vector<std::string>> params",
+        "field std::string content",
+        "field std::string eventData",
+        "field std::string invokeId",
+        "field std::string processorType",
+        "field std::string sessionId",
+        "field std::string src",
+        "field uint64_t token",
+        "method HostInvokeRequest &(HostInvokeRequest &&) noexcept operator=",
+        "method HostInvokeRequest &(const HostInvokeRequest &) noexcept(false) operator=",
+        "method void () noexcept HostInvokeRequest",
+        "method void () noexcept ~HostInvokeRequest",
+        "method void (HostInvokeRequest &&) noexcept HostInvokeRequest",
+        "method void (const HostInvokeRequest &) noexcept(false) HostInvokeRequest"
+      ],
+      "name": "SCE::HostInvokeRequest"
+    },
+    {
+      "header": "core/HostProcessor.h",
+      "kind": "struct",
+      "members": [
+        "field std::map<std::string, HostInvokeHandler> handlers",
+        "method TreeInvokers &(TreeInvokers &&) operator=",
+        "method TreeInvokers &(const TreeInvokers &) operator=",
+        "method void () ~TreeInvokers",
+        "method void (TreeInvokers &&) TreeInvokers",
+        "method void (const TreeInvokers &) TreeInvokers"
+      ],
+      "name": "SCE::TreeInvokers"
     },
     {
       "header": "core/HostProcessor.h",
@@ -913,26 +1038,6 @@
         "method void (const HostSendRequest &) HostSendRequest"
       ],
       "name": "SCE::HostSendRequest"
-    },
-    {
-      "header": "core/HostProcessor.h",
-      "kind": "struct",
-      "members": [
-        "field std::map<std::string, std::vector<std::string>> params",
-        "field std::string content",
-        "field std::string eventData",
-        "field std::string invokeId",
-        "field std::string processorType",
-        "field std::string src",
-        "field uint64_t token",
-        "method HostInvokeRequest &(HostInvokeRequest &&) noexcept operator=",
-        "method HostInvokeRequest &(const HostInvokeRequest &) noexcept(false) operator=",
-        "method void () noexcept HostInvokeRequest",
-        "method void () noexcept ~HostInvokeRequest",
-        "method void (HostInvokeRequest &&) noexcept HostInvokeRequest",
-        "method void (const HostInvokeRequest &) noexcept(false) HostInvokeRequest"
-      ],
-      "name": "SCE::HostInvokeRequest"
     },
     {
       "header": "core/HostProcessor.h",
@@ -1207,6 +1312,12 @@
       "header": "core/StatePolicyConcepts.h",
       "kind": "struct",
       "members": [],
+      "name": "SCE::Core::HasHostInvokerChildrenTrait<T>"
+    },
+    {
+      "header": "core/StatePolicyConcepts.h",
+      "kind": "struct",
+      "members": [],
       "name": "SCE::Core::HasInvocationDeliveryTrait<T>"
     },
     {
@@ -1226,6 +1337,12 @@
       "kind": "struct",
       "members": [],
       "name": "SCE::Core::HasParentDeliveryTrait<T>"
+    },
+    {
+      "header": "core/StatePolicyConcepts.h",
+      "kind": "struct",
+      "members": [],
+      "name": "SCE::Core::HasSessionIdTextTrait<T>"
     },
     {
       "header": "core/StatePolicyConcepts.h",
@@ -2468,87 +2585,6 @@
       "kind": "class",
       "members": [],
       "name": "SCE::XMLElement"
-    },
-    {
-      "header": "static/StaticExecutionEngine.h",
-      "kind": "class",
-      "members": [],
-      "name": "SCE::Static::IChildMeshRouter"
-    },
-    {
-      "header": "static/StaticExecutionEngine.h",
-      "kind": "class",
-      "members": [],
-      "name": "SCE::Static::StaticExecutionEngine<T>"
-    },
-    {
-      "header": "static/StaticExecutionEngine.h",
-      "kind": "struct",
-      "members": [
-        "field bool configurationChanged",
-        "field bool selected",
-        "method void () noexcept ~EventOutcome"
-      ],
-      "name": "SCE::Static::EventOutcome"
-    },
-    {
-      "header": "static/StaticExecutionEngine.h",
-      "kind": "struct",
-      "members": [
-        "field std::map<std::string, std::vector<std::string>> params",
-        "field std::string content",
-        "field std::string eventName",
-        "field std::string sendId",
-        "field std::string target",
-        "method HttpSendRequest &(HttpSendRequest &&) operator=",
-        "method HttpSendRequest &(const HttpSendRequest &) operator=",
-        "method void () noexcept ~HttpSendRequest",
-        "method void (HttpSendRequest &&) HttpSendRequest",
-        "method void (const HttpSendRequest &) HttpSendRequest"
-      ],
-      "name": "SCE::Static::HttpSendRequest"
-    },
-    {
-      "header": "static/StaticExecutionEngine.h",
-      "kind": "typedef",
-      "name": "SCE::Static::ChildMeshRouters",
-      "type": "std::function<std::shared_ptr<IChildMeshRouter> (const std::string &, const std::string &)>"
-    },
-    {
-      "header": "static/StaticExecutionEngine.h",
-      "kind": "typedef",
-      "name": "SCE::Static::MeshCancelCallback",
-      "type": "std::function<bool (const std::string &, const std::string &)>"
-    },
-    {
-      "header": "static/StaticExecutionEngine.h",
-      "kind": "typedef",
-      "name": "SCE::Static::MeshInvokeCallback",
-      "type": "std::function<bool (const std::string &, const std::string &, const std::string &, const std::string &)>"
-    },
-    {
-      "header": "static/StaticExecutionEngine.h",
-      "kind": "typedef",
-      "name": "SCE::Static::MeshSendCallback",
-      "type": "std::function<bool (const std::string &, const std::string &, const std::string &, const std::string &, const std::string &)>"
-    },
-    {
-      "header": "static/StaticExecutionEngine.h",
-      "kind": "typedef",
-      "name": "SCE::Static::ScxmlInvokeCancelCallback",
-      "type": "std::function<bool (const std::string &, const std::string &)>"
-    },
-    {
-      "header": "static/StaticExecutionEngine.h",
-      "kind": "typedef",
-      "name": "SCE::Static::ScxmlInvokeParentEventCallback",
-      "type": "std::function<bool (const std::string &, const std::string &, const std::string &, const std::string &, const std::string &)>"
-    },
-    {
-      "header": "static/StaticExecutionEngine.h",
-      "kind": "typedef",
-      "name": "SCE::Static::ScxmlInvokeStartCallback",
-      "type": "std::function<bool (const std::string &, const std::string &, const std::string &)>"
     },
     {
       "header": "types.h",
