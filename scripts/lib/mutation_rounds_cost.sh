@@ -35,23 +35,22 @@
 
 # `setup per-case`, in minutes, by runner; the worst measured, rounded UP:
 #
-#   ctest   80 100   PROVISIONAL: measured off the lane, until a lane job's
-#                    `this job took N of the M minutes` replaces it. The round
-#                    builds only the closure of the executables its tests run
-#                    (`scripts/mutate`, 2026-10-24), and no lane job has run
-#                    that way yet. On the build machine (i9-14900KF, two
-#                    jobserver slots, ccache off, compiles kept local) for
-#                    `static_datamodel_generated_cpp_test`: the cold closure
-#                    483 s (402 steps); after a template edit 483 s, 237 steps,
-#                    1571 CPU-seconds. A hosted runner's four vCPUs are about
-#                    1.3 of those cores, so one build is about 20 minutes there;
-#                    doubled for the estimate it is, a case is two builds of 40
-#                    and its test run (100), and setup is the 26 minutes the
-#                    lane measured before any build, the configure and one cold
-#                    closure (80). The whole-tree path this replaced measured
-#                    98 setup and 246 for one case end to end, which no slice
-#                    fits: under a generator whose graph the harness cannot
-#                    read, a ctest casefile cannot be scheduled into this lane.
+#   ctest   90  60   The round builds only the closure of the executables its
+#                    tests run (`scripts/mutate`, 2026-10-24). Measured on run
+#                    40054201618, the first lane jobs to run that way:
+#                    `a_static_cpp_donedata_content_value_is_the_whole_event_
+#                    data_ctest`, one case a job, setup 84 and 69 minutes
+#                    (job start to baseline: configure and the cold closure of
+#                    `static_datamodel_generated_cpp_test`), a case 55 and 47
+#                    end to end (mutant build and run 38 and 31, restore build
+#                    17 and 16). That target is the heaviest a ctest casefile
+#                    selects: on a build machine its rebuild after a template
+#                    edit took 1571 CPU-seconds against 1166 for
+#                    `integration_tests` and 258 for `static_datamodel_lowered`.
+#                    The whole-tree path this replaced measured 98 setup and
+#                    246 for one case, which no slice fits: under a generator
+#                    whose graph the harness cannot read, a ctest casefile
+#                    cannot be scheduled into this lane.
 #   *       15  13   `mutation_rounds_selection`, 21 cargo cases in 4h16m:
 #                    about 12.2 each, because its cases drive whole gate
 #                    scripts. `go`, `pytest` and `gradle` are carried by this
@@ -59,7 +58,7 @@
 #                    worst measured one.
 mutation_rounds_cost() {
     case "$1" in
-        ctest) printf '80 100\n' ;;
+        ctest) printf '90 60\n' ;;
         *) printf '15 13\n' ;;
     esac
 }
