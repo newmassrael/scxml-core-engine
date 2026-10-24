@@ -31,6 +31,9 @@
 mutation_tests -p sce-build --test mutation_rounds_selection \
     --test mutation_corpus_fits_its_lane
 mutation_runtime_targets scripts/gates/mutation-rounds.sh
+# The cost model the gate sources to size every job and to judge what each job
+# took against what it was promised.
+mutation_runtime_targets scripts/lib/mutation_rounds_cost.sh
 # The lane's selection step is read out of the YAML and executed by
 # `the_lane_configures_a_cmake_tree_when_the_selection_needs_one`, so the
 # workflow is a runtime target too. The gate answering correctly was never the
@@ -145,17 +148,37 @@ PY
 
 # ── The slice grows past what a job is measured to finish ──────────
 #
-# The number this changes is the whole of the repair. Measured on dispatch
-# 32803356117: eight of twenty-four rounds ran to the lane's 330-minute
-# ceiling and were `cancelled`, the largest holding 16 ctest cases in one job.
-# A ctest case costs about an hour, so four to a job crosses the ceiling
-# again — and the shape of the failure is the one that says nothing: a
-# cancelled lane is neither green nor red.
+# The slice is derived from the cost model and the ceiling, and the derivation
+# is the whole of the repair. Measured on dispatch 32803356117: eight of
+# twenty-four rounds ran to the lane's 330-minute ceiling and were `cancelled`,
+# the largest holding 16 ctest cases in one job — and the shape of the failure
+# is the one that says nothing: a cancelled lane is neither green nor red. A
+# derivation that forgets the setup a job pays before its first case fills the
+# job past what the model says it can finish.
 
-mutation_case "a ctest job is given more cases than it can finish" <<'PY'
-edit("scripts/gates/mutation-rounds.sh",
-     """        ctest) printf '3\\n' ;;""",
-     """        ctest) printf '9\\n' ;;""")
+mutation_case "a job's slice is sized without the setup it pays first" <<'PY'
+edit("scripts/lib/mutation_rounds_cost.sh",
+     """    printf '%s\\n' "$(( (budget - setup) / per_case ))\"""",
+     """    printf '%s\\n' "$(( budget / per_case ))\"""")
+PY
+
+# ── A job past its promise reads as inside it ──────────────────────
+#
+# The promise is what keeps the model honest: a job that ran past it is the
+# model falling behind the tree, and reading it as inside the promise is the
+# silence that let a stale cost schedule C++ jobs into a ceiling they could
+# only be cancelled at.
+
+mutation_case "a job that ran past its promise is read as inside it" <<'PY'
+edit("scripts/lib/mutation_rounds_cost.sh",
+     """    (( took > $3 ))""",
+     """    (( took > $3 + 60 ))""")
+PY
+
+mutation_case "the promise is the setup alone" <<'PY'
+edit("scripts/lib/mutation_rounds_cost.sh",
+     """    printf '%s\\n' "$(( setup + ($2 + shards - 1) / shards * per_case ))\"""",
+     """    printf '%s\\n' "$(( setup ))\"""")
 PY
 
 # ── The casefile becomes one job again ─────────────────────────────
@@ -358,24 +381,28 @@ PY
 
 mutation_case "the tree is built for every job or for none" <<'PY'
 edit(".github/workflows/mutation-rounds.yml",
-     """    - name: Configure and build the CMake tree
+     """    - name: Configure the CMake tree
       if: matrix.runner == 'ctest'""",
-     """    - name: Configure and build the CMake tree
+     """    - name: Configure the CMake tree
       if: needs.select.outputs.count != '0'""")
 PY
 
-# ── The tree is configured and never built ─────────────────────────
+# ── The tree is configured, and the round builds what it runs ──────
 #
-# `scripts/mutate` builds its own baseline with the output discarded, so a tree
-# that does not compile surfaces there as a round that proves nothing rather
-# than as the build failure it is. The first build in the open is what makes
-# that attributable.
+# A whole-tree build before the round was 60 to 75 minutes of every C++ round
+# job, mostly on targets the round never ran, and it put those jobs past the
+# lane's ceiling. The round builds the closure of its tests, and a baseline that
+# does not build stops it with the build's own output.
 
-mutation_case "the prepared tree is never built" <<'PY'
+mutation_case "the prepared tree is built whole again" <<'PY'
 edit("scripts/prepare_ctest_tree.sh",
-     """cmake --build "$SCE_MAIN_BUILD_DIR" --parallel "$(sce_build_jobs)" \\
-    || sce_gate_fail "the main tree does not build; the rounds below it would have nothing to judge\"""",
-     "true")
+     """C++ round job, spent mostly on targets the round never ran.
+sce_main_build_dir
+""",
+     """C++ round job, spent mostly on targets the round never ran.
+sce_main_build_dir
+cmake --build "$SCE_MAIN_BUILD_DIR" --parallel "$(sce_build_jobs)"
+""")
 PY
 
 mutation_case "the lane derives the runner in its own shell again" <<'PY'

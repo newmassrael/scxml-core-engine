@@ -52,6 +52,15 @@ fn repo_root() -> PathBuf {
         .to_path_buf()
 }
 
+/// What the gate reads, and so what every copy of the tree it runs in carries:
+/// the harness and the gate, the corpus, and the workflow whose ceiling the
+/// gate sizes each job against (`scripts/lib/mutation_rounds_cost.sh`).
+const GATE_TREE: [&str; 3] = [
+    "scripts",
+    "sce-build/tests/mutations",
+    ".github/workflows/mutation-rounds.yml",
+];
+
 /// A copy of the harness, the gate and the corpus under a fresh git index.
 ///
 /// A copy rather than the checkout itself: the gate enumerates its corpus with
@@ -61,7 +70,7 @@ fn repo_root() -> PathBuf {
 /// harness's oracle resolution has to answer "no paths" in rather than refuse.
 fn gate_fixture() -> tempfile::TempDir {
     let dir = tempdir().expect("tempdir");
-    for entry in ["scripts", "sce-build/tests/mutations"] {
+    for entry in GATE_TREE {
         let dest = dir.path().join(entry);
         fs::create_dir_all(dest.parent().expect("a parent")).expect("create the fixture tree");
         copy_tree(&repo_root().join(entry), &dest);
@@ -1051,9 +1060,9 @@ fn the_lane_configures_a_cmake_tree_when_the_selection_needs_one() {
          than CI does. Move the expression into the step's `env:`:\n{script}"
     );
     assert_eq!(
-        step_condition(&workflow, "Configure and build the CMake tree").trim(),
+        step_condition(&workflow, "Configure the CMake tree").trim(),
         "matrix.runner == 'ctest'",
-        "⚠ the step that builds the tree must key off the runner the selection \
+        "⚠ the step that configures the tree must key off the runner the selection \
          step recorded for THIS casefile. A verdict nothing reads is the same \
          silence as no verdict at all, and a lane-wide answer would make every \
          cargo casefile in a mixed selection pay for a tree it never opens."
@@ -1756,7 +1765,7 @@ struct RoundArgv {
 fn round_argv(rounds: &[&str], shard: Option<&str>) -> RoundArgv {
     let dir = tempdir().expect("tempdir");
     let root = dir.path();
-    for entry in ["scripts", "sce-build/tests/mutations"] {
+    for entry in GATE_TREE {
         let dest = root.join(entry);
         fs::create_dir_all(dest.parent().expect("a parent")).expect("create the fixture tree");
         copy_tree(&repo_root().join(entry), &dest);
@@ -1962,7 +1971,7 @@ fn is_configure(command: &str) -> bool {
 fn the_lane_prepares_the_tree_the_rounds_judge() {
     let workflow = fs::read_to_string(repo_root().join(".github/workflows/mutation-rounds.yml"))
         .expect("read the mutation-rounds workflow");
-    let step = run_body_named(&workflow, "Configure and build the CMake tree");
+    let step = run_body_named(&workflow, "Configure the CMake tree");
     assert!(
         !step.contains("${{"),
         "⚠ the step interpolates a workflow expression, which bash sees \
@@ -2009,13 +2018,19 @@ fn the_lane_prepares_the_tree_the_rounds_judge() {
          lane: {lane:?}\ngate: {gate:?}"
     );
 
+    // Configured and not built: what a round builds is the round's to decide,
+    // because only it knows which executables its tests run. A whole-tree build
+    // here was 60 to 75 minutes of every C++ round job on run 39948952108, and
+    // the attribution it once bought is the baseline's now — a baseline that
+    // does not build stops the round with the build's own output.
     assert!(
-        lane.iter()
+        !lane
+            .iter()
             .any(|command| command.starts_with("cmake --build")),
-        "⚠ the lane must BUILD the tree, not only configure it. `scripts/mutate` \
-         builds its own baseline with the output discarded, so a compile error \
-         first met there is reported as a round that proves nothing rather than \
-         as the build failure it is. Commands were: {lane:?}\n{lane_log}"
+        "⚠ the lane builds the tree before the round has said what it runs. \
+         `scripts/mutate` builds the closure of the selected tests itself, and a \
+         whole-tree build first is the setup cost that put C++ rounds past the \
+         lane's ceiling. Commands were: {lane:?}\n{lane_log}"
     );
 }
 
@@ -2212,7 +2227,7 @@ struct RoundsRun {
 fn rounds_observed(rounds: &[&str]) -> RoundsRun {
     let dir = tempdir().expect("tempdir");
     let root = dir.path();
-    for entry in ["scripts", "sce-build/tests/mutations"] {
+    for entry in GATE_TREE {
         let dest = root.join(entry);
         fs::create_dir_all(dest.parent().expect("a parent")).expect("create the fixture tree");
         copy_tree(&repo_root().join(entry), &dest);

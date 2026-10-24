@@ -1358,7 +1358,15 @@ mutation_ctest_resolve() {
     #
     # Failure is ignored here on purpose — a tree that cannot build is the
     # baseline's verdict to give, with its diagnostics, a few lines below.
-    cmake --build "$MUTATION_BUILD_DIR" --parallel "$(sce_build_jobs_value)" >/dev/null 2>&1 || true
+    #
+    # The executables the selected tests name, and what they are built from,
+    # where ninja can name that set (`mutation_ctest_closure_of_selection`);
+    # the whole tree otherwise. A configured tree is all a round needs before
+    # it starts, so the lane's job does not build the rest of the tree first.
+    local selected=()
+    mapfile -t selected < <(mutation_ctest_closure_of_selection)
+    cmake --build "$MUTATION_BUILD_DIR" --parallel "$(sce_build_jobs_value)" \
+        ${selected[@]+--target "${selected[@]}"} >/dev/null 2>&1 || true
 
     json="$(ctest "${MUTATION_RUNNER_ARGS[@]}" --show-only=json-v1 2>/dev/null)" || {
         red "ctest could not enumerate the suite: ${MUTATION_RUNNER_ARGS[*]}"
@@ -1427,14 +1435,154 @@ for test in json.load(sys.stdin).get("tests", []):
         red "the selector matched no in-repository test artifacts: ${MUTATION_RUNNER_ARGS[*]}"
         exit 2
     fi
+
+    mutation_ctest_scope "$json"
 }
 
-# The default target, not the artifact list. A test whose executable this
-# harness resolved is not the only thing a mutation can break: a source it
-# links reaches other targets too, and building only the resolved set would
-# leave the tree half-rebuilt and the next case measuring a mixture. This is
-# the same reasoning `scripts/gates/cpp-suite.sh` states for not naming
-# targets.
+# The build outputs the selected tests name on their command lines, one per
+# line, relative to the build tree; nothing, which means the whole tree, where
+# that set cannot be named before anything is built.
+#
+# Asked before resolution, and so of a tree that may hold no executable yet:
+# ctest lists a test's command from the configure step, and ninja answers for
+# an output that does not exist. Every test the selector matched must name at
+# least one such output, fixtures aside — a test whose command names none (a
+# script in the source tree, say) runs something only it knows, and building
+# part of the tree would resolve it against binaries left over from an older
+# build. The narrower question, whether each case may build only the closure,
+# is `mutation_ctest_scope`'s, asked once the artifacts are known.
+mutation_ctest_closure_of_selection() {
+    local generator build_real json
+    generator="$(sed -n 's/^CMAKE_GENERATOR:INTERNAL=//p' \
+        "$MUTATION_BUILD_DIR/CMakeCache.txt" 2>/dev/null || true)"
+    [[ "$generator" == "Ninja" ]] && command -v ninja >/dev/null 2>&1 || return 0
+    build_real="$(realpath "$MUTATION_BUILD_DIR")"
+    json="$(ctest "${MUTATION_RUNNER_ARGS[@]}" --show-only=json-v1 2>/dev/null)" || return 0
+    printf '%s\n' "$json" | python3 -c '
+import json, os, subprocess, sys
+
+build = sys.argv[1]
+outputs = []
+for test in json.load(sys.stdin).get("tests", []):
+    properties = {
+        entry.get("name"): entry.get("value")
+        for entry in test.get("properties") or []
+    }
+    if properties.get("FIXTURES_SETUP") or properties.get("FIXTURES_CLEANUP"):
+        continue
+    named = []
+    for token in test.get("command") or []:
+        path = os.path.realpath(token)
+        if os.path.commonpath([build, path]) != build or path == build:
+            continue
+        relative = os.path.relpath(path, build)
+        query = subprocess.run(
+            ["ninja", "-C", build, "-t", "query", relative],
+            capture_output=True, text=True,
+        )
+        if query.returncode == 0 and "\n  input:" in query.stdout:
+            named.append(relative)
+    if not named:
+        sys.exit(0)
+    outputs.extend(n for n in named if n not in outputs)
+if outputs:
+    print("\n".join(outputs))
+' "$build_real" || true
+}
+
+# What one case rebuilds: the files the selected tests run, as build outputs,
+# and everything those are built from. Empty means the whole tree.
+MUTATION_CTEST_BUILD_TARGETS=()
+# `--fixture-exclude-setup` for the fixtures whose setup builds the whole tree
+# this harness has just built the part of that the run reads. Empty while
+# every case builds the whole tree, which is when that setup is a no-op.
+MUTATION_CTEST_FIXTURE_ARGS=()
+
+# The build closure of the artifacts, and not the default target.
+#
+# A verdict reads the tests the selector names, and those run the artifacts
+# resolved above; a target outside their closure is compiled and never run, so
+# rebuilding it per case is cost that buys no evidence. It is not small: a
+# template mutation regenerates every machine the tree holds. Measured on run
+# 39948952108 (2026-10-23), the C++ static-datamodel casefiles spent 90 to 125
+# minutes per case rebuilding 2453 steps to run ONE test executable, and three
+# of six ran into the lane's 330-minute ceiling with a case still unjudged.
+#
+# Building only part of the tree leaves no mixture behind, because the measured
+# set is rebuilt as a whole for every case and for the restore: ninja rebuilds
+# whatever in a target's closure the current sources moved, including the
+# targets CMake was told it needs at run time (`add_dependencies`). What lies
+# outside the closure is never run by the round, and a mutation that reaches
+# only such a target hashes identical artifacts, which the round reports as
+# INCONCLUSIVE rather than as a pass.
+#
+# The whole tree is still built wherever the closure cannot be named exactly:
+# a generator other than Ninja, no ninja to ask, or an artifact that is not a
+# build output — a script in the source tree, say, which may run any binary.
+#
+# The fixture follows from the closure. This repository's tests require
+# `sce_built`, whose setup is `cmake --build` over the whole tree (see
+# `tests/CMakeLists.txt`): left in the run, it would rebuild everything the
+# closure skipped, and a mutant that breaks a target no test runs would stop
+# the run before the test that does.
+mutation_ctest_scope() {
+    local json="$1" generator build_real artifact relative fixtures
+    MUTATION_CTEST_BUILD_TARGETS=()
+    MUTATION_CTEST_FIXTURE_ARGS=()
+
+    generator="$(sed -n 's/^CMAKE_GENERATOR:INTERNAL=//p' \
+        "$MUTATION_BUILD_DIR/CMakeCache.txt" 2>/dev/null || true)"
+    if [[ "$generator" != "Ninja" ]] || ! command -v ninja >/dev/null 2>&1; then
+        dim "each case rebuilds the whole tree: its closure is read from ninja," \
+            "and this tree is built by '${generator:-an unknown generator}'"
+        return 0
+    fi
+
+    build_real="$(realpath "$MUTATION_BUILD_DIR")"
+    for artifact in "${MUTATION_ARTIFACTS[@]}"; do
+        relative="${artifact#"$build_real"/}"
+        # A node with an `input:` is an output of some edge; a source, or a
+        # file the configure step wrote, has none and builds nothing.
+        if [[ "$relative" == "$artifact" ]] ||
+            [[ "$(ninja -C "$build_real" -t query "$relative" 2>/dev/null || true)" != *$'\n  input:'* ]]; then
+            MUTATION_CTEST_BUILD_TARGETS=()
+            dim "each case rebuilds the whole tree: $artifact is not a build output"
+            return 0
+        fi
+        MUTATION_CTEST_BUILD_TARGETS+=("$relative")
+    done
+
+    fixtures="$(printf '%s\n' "$json" | python3 -c '
+import json, os, re, sys
+
+build = os.path.realpath(sys.argv[1])
+names = []
+for test in json.load(sys.stdin).get("tests", []):
+    properties = {
+        entry.get("name"): entry.get("value")
+        for entry in test.get("properties") or []
+    }
+    setup = properties.get("FIXTURES_SETUP")
+    command = test.get("command") or []
+    if not setup or not command or not os.path.basename(command[0]).startswith("cmake"):
+        continue
+    if "--build" not in command or "--target" in command or "-t" in command:
+        continue
+    at = command.index("--build") + 1
+    if at >= len(command) or os.path.realpath(command[at]) != build:
+        continue
+    for name in setup if isinstance(setup, list) else [setup]:
+        if name not in names:
+            names.append(name)
+print("|".join(re.escape(name) for name in names))
+' "$build_real")"
+    if [[ -n "$fixtures" ]]; then
+        MUTATION_CTEST_FIXTURE_ARGS=(--fixture-exclude-setup "^(${fixtures})\$")
+    fi
+    dim "each case rebuilds ${#MUTATION_CTEST_BUILD_TARGETS[@]} build output(s) and their closure" \
+        "${fixtures:+(the whole-tree build fixture '$fixtures' is left out of the run)}"
+}
+
 # How many parallel jobs this harness may ask the machine for: whatever
 # `scripts/lib/sce_build_jobs.sh` says, sourced above. The rule and its
 # measurement live in that file's header, with the other six readers.
@@ -1481,6 +1629,7 @@ mutation_ctest_build_and_hash() {
             >>"$MUTATION_BUILD_LOG" 2>&1 || return 1
     fi
     cmake --build "$MUTATION_BUILD_DIR" --parallel "$(sce_build_jobs_value)" \
+        ${MUTATION_CTEST_BUILD_TARGETS[@]+--target "${MUTATION_CTEST_BUILD_TARGETS[@]}"} \
         >>"$MUTATION_BUILD_LOG" 2>&1 || return 1
     mutation_hash_artifacts
 }
@@ -1509,6 +1658,7 @@ mutation_ctest_supervise() {
     local report="$1" console="$2" rc=0
     : > "$WORK/runner-stopped.txt"
     ctest "${MUTATION_RUNNER_ARGS[@]}" --no-tests=error -j "$(sce_build_jobs_value)" \
+        ${MUTATION_CTEST_FIXTURE_ARGS[@]+"${MUTATION_CTEST_FIXTURE_ARGS[@]}"} \
         --output-on-failure --output-junit "$report" >"$console" 2>&1 &
     local pid=$! rss=0
     while kill -0 "$pid" 2>/dev/null; do

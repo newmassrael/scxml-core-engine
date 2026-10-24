@@ -184,35 +184,72 @@ fi
 # marginal from the completed jobs sits between 35 and 60.
 #
 # So the case count is turned into a JOB count here, and the casefile stops
-# being the unit that has to fit. The reciprocal — how many cases one job may
-# hold — is the number below, and it is the only place it is written down:
-# `mutation-rounds.yml` expands whatever this prints, and
-# `mutation_corpus_fits_its_lane` reads these values back out of this file and
-# checks them against the timeout the workflow declares. A constant with two
-# spellings is one that can be changed in the wrong one.
+# being the unit that has to fit. How many cases one job may hold is derived
+# from what each runner is measured to cost and from the ceiling the workflow
+# declares, in `scripts/lib/mutation_rounds_cost.sh`, which states the
+# measurement and why it is the cost and not the count that is written down.
+source "$SCE_REPO_ROOT/scripts/lib/mutation_rounds_cost.sh"
+MUTATION_ROUNDS_WORKFLOW="$SCE_REPO_ROOT/.github/workflows/mutation-rounds.yml"
+MUTATION_ROUNDS_CEILING="$(mutation_rounds_ceiling "$MUTATION_ROUNDS_WORKFLOW")"
+
+# Every runner the corpus uses can fit one case in a job. Called in this shell,
+# not a command substitution, so that a refusal ends the gate.
 #
-# ⚠ The remedy when a runner's rounds start being cancelled again is to LOWER
-# its number here, not to raise the workflow's ceiling: the ceiling is 30
-# minutes below the platform's own, which is what makes a timeout arrive with
-# this lane's name on it.
-mutation_rounds_cases_per_job() {
-    case "$1" in
-        # 3 x 60 marginal + ~100 fixed = ~280 against a 330 ceiling. Two would
-        # waste a fixed cost that is most of a job; four crosses it.
-        ctest) printf '3\n' ;;
-        # The worst measured elsewhere is `mutation_rounds_selection`, 21
-        # cargo cases in 4h16m — about 12 minutes each, because its cases
-        # drive whole gate scripts rather than a crate. 20 x 12 = 240.
-        *) printf '20\n' ;;
-    esac
+# When it fires, no slice size can help: the remedy is to make one case cheaper
+# (what a case rebuilds, what setup builds), not to raise the ceiling, which
+# would only move the cancellation later.
+mutation_rounds_model_holds() {
+    local runner setup per_case
+    [[ "$MUTATION_ROUNDS_CEILING" =~ ^[0-9]+$ ]] || sce_gate_fail "no \`timeout-minutes:\` under the \`rounds:\` job of
+.github/workflows/mutation-rounds.yml, so no job can be sized against it"
+    for runner in $(printf '%s\n' "${RUNNER_OF[@]}" | sort -u); do
+        if (( $(mutation_rounds_cases_per_job "$runner" "$MUTATION_ROUNDS_CEILING") < 1 )); then
+            read -r setup per_case <<<"$(mutation_rounds_cost "$runner")"
+            sce_gate_fail "one \`$runner\` case is measured at $setup + $per_case minutes, past the
+$(mutation_rounds_budget "$MUTATION_ROUNDS_CEILING") a job is scheduled into ($MUTATION_ROUNDS_BUDGET_PERCENT% of the lane's $MUTATION_ROUNDS_CEILING): no slice
+fits. Make one case cheaper; raising the ceiling only moves the cancellation."
+        fi
+    done
 }
 
-# Ceiling division: a casefile of 16 ctest cases is 6 jobs, not 5 and a
-# remainder nobody runs. `scripts/mutate --shard` spreads the remainder over
-# the leading shards, so the jobs differ by at most one case.
+# What this job was promised against what it took, once its round is done.
+#
+# The lane notes when the job started (`SCE_MUTATION_JOB_STARTED`, epoch
+# seconds); a run by hand has no such moment and is not judged. A job past its
+# promise is red even when every case was caught: the model it was scheduled by
+# no longer describes the tree, and the next job of the same shape is the one
+# that reaches the ceiling and says nothing.
+#
+# Returns 1 rather than failing the gate, so that the round's own verdict is
+# still printed after it.
+mutation_rounds_budget_check() {
+    local casefile="$1" started="${SCE_MUTATION_JOB_STARTED:-}" runner shards
+    local promised took
+    if [[ ! "$started" =~ ^[0-9]+$ ]]; then
+        sce_gate_step "job duration not judged: SCE_MUTATION_JOB_STARTED is not set (the lane sets it)"
+        return 0
+    fi
+    runner="${RUNNER_OF[$casefile]}"
+    shards="${SCE_MUTATION_SHARD#*/}"
+    [[ "$shards" =~ ^[0-9]+$ ]] || shards=1
+    promised="$(mutation_rounds_promise "$runner" "${CASES_OF[$casefile]:-0}" "$shards")"
+    if took="$(mutation_rounds_overran "$started" "$(date +%s)" "$promised")"; then
+        printf '\nERROR gate[%s]: %s\n' "$SCE_GATE_SLUG" "this job took $took minutes; the cost model promised $promised for it.
+The \`$runner\` row of mutation_rounds_cost (scripts/lib/mutation_rounds_cost.sh)
+no longer describes the tree, and the next job of this shape is the one that
+reaches the lane's ceiling and is cancelled. Re-measure that runner's setup and
+per-case minutes and write them there." >&2
+        return 1
+    fi
+    sce_gate_step "this job took $took of the $promised minutes its model promised"
+}
+
+# Ceiling division: a casefile of 16 ctest cases is 16 jobs at one case a job.
+# `scripts/mutate --shard` spreads the remainder over the leading shards, so
+# the jobs differ by at most one case.
 mutation_rounds_shards_for() {
     local cases="$1" per_job
-    per_job="$(mutation_rounds_cases_per_job "$2")"
+    per_job="$(mutation_rounds_cases_per_job "$2" "$MUTATION_ROUNDS_CEILING")"
     if (( cases <= 0 )); then
         printf '1\n'
         return
@@ -317,6 +354,10 @@ sce_gate_step "${#SELECTED[@]} of ${#CASEFILES[@]} casefile(s) to run — $reaso
 # alternative is a second derivation. It is the shard count from
 # `mutation_rounds_cases_per_job` above, and the workflow expands one matrix
 # entry per shard from it.
+#
+# The model is held first: a shard count derived from a runner whose single
+# case does not fit would schedule jobs that can only be cancelled.
+mutation_rounds_model_holds
 if [[ -n "${SCE_MUTATION_ROUNDS_DRY_RUN:-}" ]]; then
     for casefile in ${SELECTED[@]+"${SELECTED[@]}"}; do
         printf '%s\t%s\t%s\n' "$casefile" "${RUNNER_OF[$casefile]}" \
@@ -418,6 +459,12 @@ for casefile in "${SELECTED[@]}"; do
     fi
 done
 
+# One casefile is the shape a lane job has; the promise is per job.
+over_budget=0
+if (( ${#SELECTED[@]} == 1 )); then
+    mutation_rounds_budget_check "${SELECTED[0]}" || over_budget=1
+fi
+
 if (( ${#failed[@]} > 0 )); then
     sce_gate_fail "${#failed[@]} casefile(s) no longer prove what they claim: ${failed[*]}
 Read the verdict above for which case and which kind. INCONCLUSIVE means the
@@ -426,5 +473,6 @@ build — re-aim the case at a site that is still compiled into them. SURVIVED
 means the suite no longer turns red, which is a finding about the suite, not
 about the case: the clause that case defends is currently defended by nothing."
 fi
+(( over_budget == 0 )) || exit 1
 
 sce_gate_step "${#SELECTED[@]} casefile(s) still turn their suites red"

@@ -36,12 +36,24 @@
 //! `scripts/mutate --shard I/N` over its own slice.
 //!
 //! This test is the arithmetic tying that slice size to the ceiling. It reads
-//! the ceiling out of the workflow and the slice size out of the gate, so
-//! neither number is restated here — a constant with two spellings is one that
-//! can be changed in the wrong one — and then checks that a full slice fits.
+//! the ceiling out of the workflow and the cost model out of the gate, so
+//! neither is restated here — a constant with two spellings is one that can be
+//! changed in the wrong one — and then checks that a full slice fits.
 //!
-//! The remedy when it fires is to LOWER the cases-per-job in
-//! `scripts/gates/mutation-rounds.sh`, not to raise the workflow's ceiling:
+//! ## Why the cost model is the gate's and not this file's
+//!
+//! It used to live here, as `(setup, per-case)` minutes measured on 2026-08-25,
+//! while the gate held a slice size chosen against it. The tree grew and the
+//! constant did not: on runs 39782655402 and 39948952108 (2026-10-22/23) a C++
+//! round spent up to 98 minutes before its baseline and up to 176 on one case,
+//! so the three-case slice this file still certified was 626 minutes, and every
+//! multi-case C++ casefile was cancelled. The arithmetic was right; its input
+//! was stale, and nothing that ran could notice. The gate now derives the slice
+//! from the cost and checks every job's duration against what the cost
+//! promised it, so a stale model turns a job red while the job still finishes.
+//!
+//! The remedy when this fires is to make a case cheaper or re-measure the cost
+//! in `scripts/gates/mutation-rounds.sh`, not to raise the workflow's ceiling:
 //! 330 sits 30 minutes below the platform's own so that a timeout arrives with
 //! this lane's name on it, and raising it spends that margin to move the
 //! cancellation later.
@@ -52,24 +64,8 @@ use std::path::{Path, PathBuf};
 mod common;
 use common::gate_selectors::gate_shell;
 
-/// What one case costs, in minutes, by runner: `(setup, per-case)`.
-///
-/// Measured from dispatch 32803356117's own job durations on `ubuntu-latest`,
-/// rounded UP, because this is a ceiling check and an optimistic cost model
-/// would license exactly the schedule that was cancelled.
-///
-/// * ctest — the single-case job `parallel_microstep_owns_exit_and_entry` took
-///   95.8 minutes, and the marginal cost across the completed multi-case jobs
-///   ranged from 27.9 to 51.4 minutes (5-case `targetless_…` at 301.4, 7-case
-///   `discarded_…` at 300.6, 4-case `host_processor_dispatch_cpp` at 179.4).
-///   It is that expensive because these mutations land in headers the whole
-///   tree includes, so nearly everything is rebuilt for every case.
-/// * everything else — the worst measured is `mutation_rounds_selection`, 21
-///   cargo cases in 4h16m, about 12.2 minutes each, because its cases drive
-///   whole gate scripts rather than a crate. The `go` and `pytest` runners are
-///   carried by this same row: neither has a job in the measured window, and
-///   the honest default for an unmeasured runner is the worst measured one.
-const COST: [(&str, u32, u32); 2] = [("ctest", 100, 60), ("*", 15, 13)];
+/// The cost model and its arithmetic, sourced by the gate.
+const COST_MODEL: &str = "scripts/lib/mutation_rounds_cost.sh";
 
 fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -105,16 +101,18 @@ fn lane_timeout_minutes(workflow: &str) -> u32 {
         })
 }
 
-/// The cases-per-job the gate hands each runner, read out of its own `case`
-/// arms: `ctest) printf '3\n' ;;` and the `*)` default.
+/// What one job costs, by runner, as `(setup, per-case)` minutes, read out of
+/// the cost model's own `case` arms: `ctest) printf '100 180\n' ;;` and the
+/// `*)` default.
 ///
-/// The gate is the one place this is decided — the workflow expands whatever
-/// it prints — so it is also the one place to read it from.
-fn cases_per_job(gate: &str) -> BTreeMap<String, u32> {
+/// The model is the one place this is decided — the gate derives the slice
+/// from it and the workflow expands whatever the gate prints — so it is also
+/// the one place to read it from.
+fn cost_model(gate: &str) -> BTreeMap<String, (u32, u32)> {
     let mut found = BTreeMap::new();
     let mut inside = false;
     for line in gate.lines() {
-        if line.starts_with("mutation_rounds_cases_per_job()") {
+        if line.starts_with("mutation_rounds_cost()") {
             inside = true;
             continue;
         }
@@ -128,50 +126,188 @@ fn cases_per_job(gate: &str) -> BTreeMap<String, u32> {
         let Some((label, body)) = trimmed.split_once(')') else {
             continue;
         };
-        // `ctest) printf '3\n' ;;` — the number between the quotes.
+        // `ctest) printf '100 180\n' ;;` — the two numbers between the quotes.
         let Some(rest) = body.trim().strip_prefix("printf '") else {
             continue;
         };
-        let Some((digits, _)) = rest.split_once('\\') else {
+        let Some((numbers, _)) = rest.split_once('\\') else {
             continue;
         };
-        if let Ok(value) = digits.parse() {
-            found.insert(label.trim().to_string(), value);
+        let mut minutes = numbers.split_whitespace().map(str::parse::<u32>);
+        if let (Some(Ok(setup)), Some(Ok(per_case)), None) =
+            (minutes.next(), minutes.next(), minutes.next())
+        {
+            found.insert(label.trim().to_string(), (setup, per_case));
         }
     }
     found
+}
+
+/// The share of the ceiling the gate schedules a job into
+/// (`MUTATION_ROUNDS_BUDGET_PERCENT=85`).
+fn budget_percent(model: &str) -> u32 {
+    model
+        .lines()
+        .find_map(|line| line.strip_prefix("MUTATION_ROUNDS_BUDGET_PERCENT="))
+        .and_then(|value| value.trim().parse().ok())
+        .expect(
+            "no `MUTATION_ROUNDS_BUDGET_PERCENT=` in scripts/lib/mutation_rounds_cost.sh, \
+             so the share of the ceiling a job is scheduled into cannot be read",
+        )
+}
+
+/// What the model's own function prints for `call`, asked of bash with the
+/// model sourced: the arithmetic under test is the shell's, so it is the shell
+/// that answers.
+fn model_says(call: &str) -> (bool, String) {
+    let out = std::process::Command::new("bash")
+        .arg("-c")
+        .arg(format!("source {COST_MODEL} && {call}"))
+        .current_dir(repo_root())
+        .output()
+        .expect("run bash");
+    (
+        out.status.success(),
+        String::from_utf8_lossy(&out.stdout).trim().to_string(),
+    )
+}
+
+/// The promise a job is held to is its setup and its largest slice: a job of
+/// one ctest case is promised setup plus one case, and a 21-case cargo
+/// casefile split in two is promised setup plus eleven.
+#[test]
+fn a_job_is_promised_its_setup_and_its_largest_slice() {
+    let model = cost_model(&std::fs::read_to_string(repo_root().join(COST_MODEL)).unwrap());
+    let (ctest_setup, ctest_case) = model["ctest"];
+    let (cargo_setup, cargo_case) = model["*"];
+    for (call, expected) in [
+        (
+            "mutation_rounds_promise ctest 1 1".to_string(),
+            ctest_setup + ctest_case,
+        ),
+        (
+            "mutation_rounds_promise cargo 21 2".to_string(),
+            cargo_setup + 11 * cargo_case,
+        ),
+    ] {
+        let (ok, said) = model_says(&call);
+        assert!(ok, "`{call}` failed");
+        assert_eq!(
+            said,
+            expected.to_string(),
+            "`{call}` promised {said} minutes; setup and the largest slice are \
+             {expected}. A promise smaller than the job's real shape reads every \
+             honest job as overrunning, and a larger one hides a stale model."
+        );
+    }
+}
+
+/// A job is judged against its promise in whole minutes rounded UP, so one
+/// that overran by seconds is read as past it, and one inside it is not.
+#[test]
+fn a_job_past_its_promise_is_read_as_past_it() {
+    let started = 1_000_000u64;
+    for (ended, promised, overran) in [
+        (started + 280 * 60, 280, false),
+        (started + 280 * 60 + 1, 280, true),
+        (started + 400 * 60, 280, true),
+        (started + 10 * 60, 280, false),
+    ] {
+        let call = format!("mutation_rounds_overran {started} {ended} {promised}");
+        let (said_overran, took) = model_says(&call);
+        assert_eq!(
+            said_overran, overran,
+            "`{call}` (took {took} min) answered overran={said_overran}. A job \
+             past its promise is the cost model falling behind the tree, and \
+             reading it as inside the promise is the silence that scheduled C++ \
+             jobs into a ceiling they could only be cancelled at."
+        );
+    }
+}
+
+/// The lane notes the job's start in its first step, and the gate judges every
+/// job's duration after its round. Either half missing leaves the promise
+/// unchecked, and the gate says "not judged" rather than failing a run by hand.
+#[test]
+fn every_lane_job_is_judged_against_its_promise() {
+    let root = repo_root();
+    let workflow = std::fs::read_to_string(root.join(".github/workflows/mutation-rounds.yml"))
+        .expect("read the mutation-rounds workflow");
+    let first_step = workflow
+        .lines()
+        .skip_while(|line| *line != "  rounds:")
+        .skip_while(|line| line.trim() != "steps:")
+        .find(|line| line.trim_start().starts_with("- name:"))
+        .unwrap_or_default();
+    assert_eq!(
+        first_step.trim(),
+        "- name: Note when the job started",
+        "the rounds job's first step is not the one noting its start, so the \
+         setup the cost model prices is not measured from the job's beginning"
+    );
+    assert!(
+        workflow.contains("echo \"SCE_MUTATION_JOB_STARTED=$(date +%s)\" >> \"$GITHUB_ENV\""),
+        "the rounds job does not export SCE_MUTATION_JOB_STARTED, so no job's \
+         duration is ever judged against its promise"
+    );
+    let gate = std::fs::read_to_string(root.join("scripts/gates/mutation-rounds.sh"))
+        .expect("read the mutation-rounds gate");
+    assert!(
+        gate.contains("    mutation_rounds_budget_check \"${SELECTED[0]}\" || over_budget=1")
+            && gate.contains("(( over_budget == 0 )) || exit 1"),
+        "the gate no longer judges a lane job against its promise, or no longer \
+         turns an overrun red"
+    );
+}
+
+/// The cases a job may hold for each runner, derived as the gate derives it:
+/// what the budget leaves after setup, divided by one case.
+fn cases_per_job(gate: &str, ceiling: u32) -> BTreeMap<String, u32> {
+    let budget = ceiling * budget_percent(gate) / 100;
+    cost_model(gate)
+        .into_iter()
+        .map(|(runner, (setup, per_case))| (runner, budget.saturating_sub(setup) / per_case.max(1)))
+        .collect()
 }
 
 #[test]
 fn no_job_is_scheduled_with_more_cases_than_it_can_finish() {
     let root = repo_root();
     let workflow_path = root.join(".github/workflows/mutation-rounds.yml");
-    let gate_path = root.join("scripts/gates/mutation-rounds.sh");
+    let gate_path = root.join(COST_MODEL);
     let workflow = std::fs::read_to_string(&workflow_path)
         .unwrap_or_else(|e| panic!("read {}: {e}", workflow_path.display()));
     let gate = std::fs::read_to_string(&gate_path)
         .unwrap_or_else(|e| panic!("read {}: {e}", gate_path.display()));
 
     let ceiling = lane_timeout_minutes(&workflow);
-    let per_job = cases_per_job(&gate);
+    let model = cost_model(&gate);
+    let per_job = cases_per_job(&gate, ceiling);
 
     // A floor before any arithmetic. A parse that stopped finding the `case`
     // arms would leave an empty map, and an empty map satisfies every
     // inequality below without reading a single number — the shape where a
     // scan reports green because it found the file and not the thing.
     assert!(
-        per_job.contains_key("ctest") && per_job.contains_key("*"),
-        "read {per_job:?} out of `mutation_rounds_cases_per_job` in {}. The \
-         function moved or its arms were respelled, and this test cannot check \
-         an arithmetic whose terms it did not find",
+        model.contains_key("ctest") && model.contains_key("*"),
+        "read {model:?} out of `mutation_rounds_cost` in {}. The function moved \
+         or its arms were respelled, and this test cannot check an arithmetic \
+         whose terms it did not find",
         gate_path.display()
     );
 
-    for (runner, setup, per_case) in COST {
-        let cases = per_job
-            .get(runner)
-            .copied()
-            .unwrap_or_else(|| panic!("no cases-per-job for `{runner}` in {per_job:?}"));
+    for (runner, &(setup, per_case)) in &model {
+        let cases = per_job[runner];
+        // At least one: a slice of none schedules jobs that run no case, and
+        // the gate refuses such a model before it schedules anything.
+        assert!(
+            cases >= 1,
+            "one `{runner}` case is measured at {setup} + {per_case} minutes, \
+             which does not fit the {}% of the lane's {ceiling}-minute ceiling a \
+             job is scheduled into. No slice size can help: make one case \
+             cheaper (what it rebuilds, what setup builds) in the harness.",
+            budget_percent(&gate)
+        );
         let cost = setup + cases * per_case;
         assert!(
             cost <= ceiling,
@@ -180,9 +316,9 @@ fn no_job_is_scheduled_with_more_cases_than_it_can_finish() {
              {ceiling}-minute ceiling. A job that crosses it is `cancelled`, \
              which is neither green nor red: eight rounds of dispatch \
              32803356117 ended exactly that way and said nothing about any \
-             case. Lower the cases-per-job for `{runner}` in {}; raising \
-             `timeout-minutes` in {} only spends the 30-minute margin that \
-             makes the failure arrive with this lane's name on it.",
+             case. The derivation in {} admitted a slice the model says cannot \
+             finish; raising `timeout-minutes` in {} only spends the 30-minute \
+             margin that makes the failure arrive with this lane's name on it.",
             gate_path.display(),
             workflow_path.display(),
         );
@@ -199,9 +335,10 @@ fn no_job_is_scheduled_with_more_cases_than_it_can_finish() {
 #[test]
 fn the_gate_sizes_every_slice_it_hands_the_lane() {
     let root = repo_root();
-    let gate = std::fs::read_to_string(root.join("scripts/gates/mutation-rounds.sh"))
-        .expect("read the mutation-rounds gate");
-    let per_job = cases_per_job(&gate);
+    let model_source = std::fs::read_to_string(root.join(COST_MODEL)).expect("read the cost model");
+    let workflow = std::fs::read_to_string(root.join(".github/workflows/mutation-rounds.yml"))
+        .expect("read the mutation-rounds workflow");
+    let per_job = cases_per_job(&model_source, lane_timeout_minutes(&workflow));
     let ctest_per_job = per_job["ctest"];
     let default_per_job = per_job["*"];
 
@@ -354,7 +491,7 @@ fn declarations() -> BTreeMap<String, Declared> {
 /// test binary never ends runs the whole bound before it is CAUGHT, and every
 /// job runs its own baseline first. So the worst a job of `n` cases costs is
 /// `setup + bound + n x (per-case + bound)`, with the setup and per-case
-/// minutes this file already measured for the runner. The harness caps one
+/// minutes the gate's cost model holds for the runner. The harness caps one
 /// declaration at an hour so that a typo cannot reach a day on its own; this is
 /// the check that a declaration under that cap still fits the job it lands in,
 /// and its remedy is to lower the bound or split the casefile, as the cases per
@@ -364,10 +501,10 @@ fn a_declared_bound_fits_the_job_it_is_scheduled_into() {
     let root = repo_root();
     let workflow = std::fs::read_to_string(root.join(".github/workflows/mutation-rounds.yml"))
         .expect("read the mutation-rounds workflow");
-    let gate = std::fs::read_to_string(root.join("scripts/gates/mutation-rounds.sh"))
-        .expect("read the mutation-rounds gate");
+    let model_source = std::fs::read_to_string(root.join(COST_MODEL)).expect("read the cost model");
     let ceiling = lane_timeout_minutes(&workflow);
-    let per_job = cases_per_job(&gate);
+    let model = cost_model(&model_source);
+    let per_job = cases_per_job(&model_source, ceiling);
     let declarations = declarations();
 
     // A floor before any arithmetic, for the reason the test above has one: a
@@ -396,11 +533,10 @@ fn a_declared_bound_fits_the_job_it_is_scheduled_into() {
         let declared = &declarations[path];
         let seconds = declared.timeout.expect("filtered to declared bounds");
         let bound = seconds.div_ceil(60);
-        let (_, setup, per_case) = COST
-            .iter()
-            .find(|(runner, _, _)| *runner == declared.runner)
-            .or_else(|| COST.iter().find(|(runner, _, _)| *runner == "*"))
-            .expect("the cost table has a default row");
+        let &(setup, per_case) = model
+            .get(&declared.runner)
+            .or_else(|| model.get("*"))
+            .expect("the cost model has a default row");
         let in_a_job = per_job
             .get(&declared.runner)
             .or_else(|| per_job.get("*"))

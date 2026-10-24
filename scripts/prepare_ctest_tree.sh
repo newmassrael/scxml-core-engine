@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 #
-# Configure and build the main CMake tree, for a caller that is about to run
-# something which needs one.
+# Configure the main CMake tree, for a caller that is about to run a ctest
+# mutation round over it.
 #
 # `mutation-rounds` refuses (exit 3) when a selected casefile drives its round
 # through ctest and `build/` is not configured: there is nothing to select from
@@ -37,14 +37,12 @@
 
 source "$(dirname "${BASH_SOURCE[0]}")/gates/lib.sh"
 
+#
+# Configured and not built. The round builds what its tests run and what those
+# are built from (`mutation_ctest_closure_of_selection` in `scripts/mutate`),
+# and a baseline that does not build stops the round with the build's own
+# output, so nothing is left for a whole-tree build here to attribute. It used
+# to build everything, because the round once discarded its build log; measured
+# on run 39948952108 (2026-10-23), that build was 60 to 75 minutes of every
+# C++ round job, spent mostly on targets the round never ran.
 sce_main_build_dir
-
-# Built here rather than left to the first round, and with its output on the
-# terminal. `scripts/mutate` builds its own baseline with stdout and stderr
-# discarded — deliberately, because a round's interesting output is the test
-# run — so a tree that does not compile at all would surface there as a round
-# that proves nothing rather than as the build failure it is. That attribution
-# is what a first build in the open buys.
-sce_gate_step "building $SCE_MAIN_BUILD_DIR"
-cmake --build "$SCE_MAIN_BUILD_DIR" --parallel "$(sce_build_jobs)" \
-    || sce_gate_fail "the main tree does not build; the rounds below it would have nothing to judge"

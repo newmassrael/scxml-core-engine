@@ -542,10 +542,13 @@ jobs:
     # slice size to this number is checked by `mutation_corpus_fits_its_lane`
     # — which reads this value out of this file rather than restating it.
     #
-    # ⚠ The remedy when rounds start reaching this again is to lower the
-    # cases-per-job in `scripts/gates/mutation-rounds.sh`, not to raise this:
-    # a bigger number here only moves the cancellation later and takes the
-    # 30-minute margin with it.
+    # ⚠ The cases a job holds are derived from this number and from the cost
+    # each runner is measured at (`mutation_rounds_cost` in
+    # `scripts/gates/mutation-rounds.sh`), and every job compares its own
+    # duration with what that model promised it. The remedy when a job goes
+    # red for running past its promise is to re-measure the cost there, not to
+    # raise this: a bigger number here only moves the cancellation later and
+    # takes the 30-minute margin with it.
     timeout-minutes: 330
 
     strategy:
@@ -574,6 +577,13 @@ jobs:
       matrix: ${{ fromJSON(needs.select.outputs.matrix) }}
 
     steps:
+    # First, so the moment is the job's own start: the gate compares how long
+    # the job took with what its cost model promised it
+    # (`mutation_rounds_budget_check`), and the setup that model prices begins
+    # here, not at the round.
+    - name: Note when the job started
+      run: echo "SCE_MUTATION_JOB_STARTED=$(date +%s)" >> "$GITHUB_ENV"
+
     # `fetch-depth: 0` because a case is only judged where its precondition
     # holds. `the_rewriter_is_retired_not_merely_second`'s pin case makes a
     # ledger row name a commit the repository does not carry, and the arm it
@@ -755,7 +765,7 @@ jobs:
     #
     # `scripts/prepare_ctest_tree.sh` is the one recipe, and the gate's refusal
     # names it too, so a developer configuring by hand gets the tree CI gets.
-    - name: Configure and build the CMake tree
+    - name: Configure the CMake tree
       if: matrix.runner == 'ctest'
       run: scripts/prepare_ctest_tree.sh
 

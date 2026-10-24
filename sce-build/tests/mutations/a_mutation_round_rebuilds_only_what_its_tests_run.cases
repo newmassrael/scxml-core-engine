@@ -1,0 +1,42 @@
+# Mutation cases for the build a ctest round does per case: the closure of the
+# artifacts its tests run, with the whole-tree build fixture left out of the run
+# (`mutation_ctest_scope` in `scripts/mutate`).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_mutation_round_rebuilds_only_what_its_tests_run.cases`.
+#
+# What is easy to get wrong and reads as success: either half alone. A round
+# that builds the closure but keeps the fixture rebuilds the whole tree inside
+# the ctest run, and one that drops the fixture but builds the default target
+# pays the same cost before it. Both still judge every case a working tree
+# gives them, so only a mutant that breaks a target no test runs tells them
+# apart, which is the tree `a_mutation_round_rebuilds_only_what_its_tests_run`
+# builds.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --test a_mutation_round_rebuilds_only_what_its_tests_run
+mutation_runtime_targets scripts/mutate
+mutation_oracles sce-build/tests/a_mutation_round_rebuilds_only_what_its_tests_run.rs
+
+mutation_case "a case rebuilds the whole tree where its closure is named" <<'PY'
+edit("scripts/mutate",
+     """        ${MUTATION_CTEST_BUILD_TARGETS[@]+--target "${MUTATION_CTEST_BUILD_TARGETS[@]}"} \\
+""",
+     "")
+PY
+
+mutation_case "the whole-tree build fixture stays in the run" <<'PY'
+edit("scripts/mutate",
+     """        ${MUTATION_CTEST_FIXTURE_ARGS[@]+"${MUTATION_CTEST_FIXTURE_ARGS[@]}"} \\
+""",
+     "")
+PY
+
+mutation_case "an artifact the graph does not build is taken as a build output" <<'PY'
+edit("scripts/mutate",
+     """        if [[ "$relative" == "$artifact" ]] ||
+            [[ "$(ninja -C "$build_real" -t query "$relative" 2>/dev/null || true)" != *$'\\n  input:'* ]]; then""",
+     """        if [[ "$relative" == "$artifact" ]]; then""")
+PY

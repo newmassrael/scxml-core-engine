@@ -166,6 +166,11 @@ pub const HARNESS_TOOLS: &[(&str, ToolSource)] = &[
     // binary needs this exact package. The runner image carries other
     // majors, which the resolver rejects.
     ("clang-format", ToolSource::AptPackage("clang-format-19")),
+    // The generator whose build graph `scripts/mutate` reads to rebuild only
+    // what a ctest round runs (`a_mutation_round_rebuilds_only_what_its_tests_
+    // run`). Under any other generator that round builds the whole tree, so
+    // the closure is only measured where ninja is.
+    ("ninja", ToolSource::AptPackage("ninja-build")),
     // Host toolchains, version managers, and interpreters the runner
     // image ships. `ld` arrives with binutils, which gcc depends on, so
     // no image carrying a C compiler is missing it.

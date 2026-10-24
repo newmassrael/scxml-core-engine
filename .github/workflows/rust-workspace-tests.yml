@@ -301,10 +301,14 @@ jobs:
     # with clang-format pinned to major 19 and refuses to run without it
     # (docs/SCE_CODEGEN_DETERMINISM.md §9). The runner image carries other
     # majors, which the generator rejects; the suite's CLI tests generate C++.
+    #
+    # ninja-build because `scripts/mutate` names a ctest round's build closure
+    # by asking ninja, and builds the whole tree under any other generator;
+    # `a_mutation_round_rebuilds_only_what_its_tests_run` drives that path.
     - name: Install Dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y pkg-config libxml2-dev clang gcc-arm-none-eabi clang-format-19
+        sudo apt-get install -y pkg-config libxml2-dev clang gcc-arm-none-eabi clang-format-19 ninja-build
 
     - uses: actions/setup-python@v7
       with:
