@@ -160,7 +160,7 @@ fn budget_percent(model: &str) -> u32 {
 /// model sourced: the arithmetic under test is the shell's, so it is the shell
 /// that answers.
 fn model_says(call: &str) -> (bool, String) {
-    let out = std::process::Command::new("bash")
+    let out = gate_shell()
         .arg("-c")
         .arg(format!("source {COST_MODEL} && {call}"))
         .current_dir(repo_root())
@@ -170,6 +170,40 @@ fn model_says(call: &str) -> (bool, String) {
         out.status.success(),
         String::from_utf8_lossy(&out.stdout).trim().to_string(),
     )
+}
+
+/// The slice the gate hands a job is what the budget leaves after setup,
+/// divided by one case, for every runner and at any ceiling.
+///
+/// Asked of the model's own function over several ceilings rather than read
+/// off the corpus: whether a wrong derivation moves a shard count depends on
+/// which case counts the corpus happens to hold. Measured on run 40054201618,
+/// a derivation that forgot the setup changed the cargo slice from 20 to 21
+/// and no casefile's shard count with it, so the corpus-driven check above
+/// read it as correct.
+#[test]
+fn the_slice_is_what_the_budget_leaves_after_setup() {
+    let source =
+        std::fs::read_to_string(repo_root().join(COST_MODEL)).expect("read the cost model");
+    let model = cost_model(&source);
+    for ceiling in [100u32, 120, 200, 330, 600] {
+        let derived = cases_per_job(&source, ceiling);
+        for (runner, label) in [("ctest", "ctest"), ("cargo", "*")] {
+            let (setup, per_case) = model[label];
+            let call = format!("mutation_rounds_cases_per_job {runner} {ceiling}");
+            let (ok, said) = model_says(&call);
+            assert!(ok, "`{call}` failed");
+            assert_eq!(
+                said,
+                derived[label].to_string(),
+                "`{call}` sized a job at {said} case(s); {}% of {ceiling} minutes \
+                 less {setup} of setup, at {per_case} a case, is {}. A slice that \
+                 forgets the setup holds more cases than the job can finish.",
+                budget_percent(&source),
+                derived[label]
+            );
+        }
+    }
 }
 
 /// The promise a job is held to is its setup and its largest slice: a job of

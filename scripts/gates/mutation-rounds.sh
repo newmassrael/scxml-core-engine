@@ -188,8 +188,8 @@ fi
 # from what each runner is measured to cost and from the ceiling the workflow
 # declares, in `scripts/lib/mutation_rounds_cost.sh`, which states the
 # measurement and why it is the cost and not the count that is written down.
-source "$SCE_REPO_ROOT/scripts/lib/mutation_rounds_cost.sh"
-MUTATION_ROUNDS_WORKFLOW="$SCE_REPO_ROOT/.github/workflows/mutation-rounds.yml"
+source scripts/lib/mutation_rounds_cost.sh
+MUTATION_ROUNDS_WORKFLOW=.github/workflows/mutation-rounds.yml
 MUTATION_ROUNDS_CEILING="$(mutation_rounds_ceiling "$MUTATION_ROUNDS_WORKFLOW")"
 
 # Every runner the corpus uses can fit one case in a job. Called in this shell,
@@ -234,11 +234,11 @@ mutation_rounds_budget_check() {
     [[ "$shards" =~ ^[0-9]+$ ]] || shards=1
     promised="$(mutation_rounds_promise "$runner" "${CASES_OF[$casefile]:-0}" "$shards")"
     if took="$(mutation_rounds_overran "$started" "$(date +%s)" "$promised")"; then
-        printf '\nERROR gate[%s]: %s\n' "$SCE_GATE_SLUG" "this job took $took minutes; the cost model promised $promised for it.
+        sce_gate_error "this job took $took minutes; the cost model promised $promised for it.
 The \`$runner\` row of mutation_rounds_cost (scripts/lib/mutation_rounds_cost.sh)
 no longer describes the tree, and the next job of this shape is the one that
 reaches the lane's ceiling and is cancelled. Re-measure that runner's setup and
-per-case minutes and write them there." >&2
+per-case minutes and write them there."
         return 1
     fi
     sce_gate_step "this job took $took of the $promised minutes its model promised"

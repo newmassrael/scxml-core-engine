@@ -28,8 +28,14 @@ SCE_GATE_SLUG="$(basename "${BASH_SOURCE[1]:-unknown}" .sh)"
 # message, a doc reference and a memory note all keep pointing at the same
 # gate after the run order changes.
 sce_gate_fail() {
-    printf '\nERROR gate[%s]: %s\n' "$SCE_GATE_SLUG" "$1" >&2
+    sce_gate_error "$1"
     exit 1
+}
+
+# The same message without ending the gate, for a finding that must still let
+# the gate print the verdicts after it; the caller decides the exit.
+sce_gate_error() {
+    printf '\nERROR gate[%s]: %s\n' "$SCE_GATE_SLUG" "$1" >&2
 }
 
 # Exit status for "this check could not run", kept distinct from 1 ("what the

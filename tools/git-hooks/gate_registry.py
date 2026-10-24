@@ -612,7 +612,11 @@ GATES: dict[str, dict] = {
         # edit to it changes every verdict this lane produces. It was not
         # declared, and `--ci-owed` therefore did not name this lane for a
         # commit that changed nothing else (`script-read-coverage`).
-        "extra": ["scripts/mutate"],
+        #
+        # The cost model, because the gate sizes every job from it and judges
+        # every job's duration against it: an edit to a runner's row changes
+        # how many jobs the lane schedules and which of them turn red.
+        "extra": ["scripts/mutate", "scripts/lib/mutation_rounds_cost.sh"],
         "cost_s": 877,
         "summary": "changed mutation targets still turn their suites red",
     },

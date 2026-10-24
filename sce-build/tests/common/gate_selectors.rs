@@ -30,7 +30,7 @@
 //! had already missed one.
 //!
 //! So the list is DERIVED from the gate script and there is one command
-//! builder. A fifth selector added to the gate tomorrow is cleared at every
+//! builder. A new selector added to the gate tomorrow is cleared at every
 //! site the day it lands, with nothing here to update.
 
 #![allow(dead_code)]

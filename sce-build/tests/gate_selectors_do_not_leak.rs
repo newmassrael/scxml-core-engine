@@ -3,8 +3,9 @@
 //
 // A selector in the caller's environment does not become the test's scenario.
 //
-// The `mutation-rounds` gate reads four environment variables to decide WHAT
-// TO RUN, and the suites that drive it run it as a subprocess — which inherits
+// The `mutation-rounds` gate reads five environment variables to decide WHAT
+// TO RUN and how to judge it, and the suites that drive it run it as a
+// subprocess — which inherits
 // whatever the caller had. The caller is not hypothetical: the round job in
 // `.github/workflows/mutation-rounds.yml` sets `SCE_MUTATION_ROUNDS` and
 // `SCE_MUTATION_SHARD` on purpose, and everything that job starts gets both.
@@ -64,7 +65,7 @@ const LEAKED: &str = "LEAKED-BY-THE-PROBE";
 // ── 1. The derivation ──────────────────────────────────────────────
 
 #[test]
-fn the_selectors_are_derived_from_the_gate_and_there_are_four() {
+fn the_selectors_are_derived_from_the_gate_and_there_are_five() {
     let selectors = mutation_rounds_selectors();
     // The floor first: a derivation that finds nothing reports no leak for
     // every call site, which reads exactly like a tree with no leak.
@@ -72,8 +73,13 @@ fn the_selectors_are_derived_from_the_gate_and_there_are_four() {
         !selectors.is_empty(),
         "no selector derived from {GATE_SCRIPT} — the derivation has lost its subject"
     );
+    // `SCE_MUTATION_JOB_STARTED` is the fifth, and a selector in the sense
+    // this file means: the round job exports it to every later step, so a
+    // suite driving the gate inside that job would have its fixture's duration
+    // judged against the real job's start.
     let expected: BTreeSet<String> = [
         "SCE_GATE_CHANGED_FILE",
+        "SCE_MUTATION_JOB_STARTED",
         "SCE_MUTATION_ROUNDS",
         "SCE_MUTATION_ROUNDS_DRY_RUN",
         "SCE_MUTATION_SHARD",
@@ -82,7 +88,7 @@ fn the_selectors_are_derived_from_the_gate_and_there_are_four() {
     .map(str::to_string)
     .collect();
     // Stated as a set rather than a count, and as the answer this test expects
-    // rather than one it reads back out of the thing it measures. A FIFTH
+    // rather than one it reads back out of the thing it measures. A NEW
     // selector added to the gate is meant to fail here — the failure is the
     // notice that every call site now clears something new, which is the whole
     // point of deriving the list.
