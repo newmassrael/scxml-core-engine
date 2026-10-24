@@ -6,8 +6,19 @@
 # `scripts/gates/mutation-rounds.sh`; side-effect free, so that
 # `mutation_corpus_fits_its_lane` can ask the same functions the gate asks.
 #
-# A round is a rebuild and a test run PER CASE, so a job's cost is
-# `setup + cases x per-case`, and both terms are properties of the RUNNER.
+# A round builds TWICE per case: the mutant, then — once the test run has read
+# it — the restored tree, which `scripts/mutate` rebuilds and hashes to prove the
+# baseline is back before the next case. So a job's cost is
+# `setup + cases x per-case`, where per-case is a case end to end (the mutant's
+# build, its test run and the restore build after it), and both terms are
+# properties of the RUNNER.
+#
+# The restore build was missing from the first version of this model, which
+# priced a case as the interval from one verdict to the next. The interval
+# after the LAST case is not one of those: measured on run 39948952108,
+# `a_static_cpp_bytes_cross_a_param_as_their_latin1_text_ctest` held one case,
+# reached its verdict 201 minutes in, and spent 124 more restoring, ending at
+# 325 against a promise of 280.
 #
 # What is written down is the COST, not the count. The count used to be a
 # constant — three ctest cases a job — chosen against a cost measured once, on
@@ -24,11 +35,23 @@
 
 # `setup per-case`, in minutes, by runner; the worst measured, rounded UP:
 #
-#   ctest  100 180   setup 98 (`a_static_cpp_a_64_bit_integer_crosses_as_its_
-#                    digits_ctest`, 2026-10-23); one case 176 (`a_static_cpp_a_
-#                    machine_hands_its_state_to_an_algorithm_ctest`,
-#                    2026-10-22). A template mutation regenerates every machine
-#                    the target compiles.
+#   ctest   80 100   PROVISIONAL: measured off the lane, until a lane job's
+#                    `this job took N of the M minutes` replaces it. The round
+#                    builds only the closure of the executables its tests run
+#                    (`scripts/mutate`, 2026-10-24), and no lane job has run
+#                    that way yet. On the build machine (i9-14900KF, two
+#                    jobserver slots, ccache off, compiles kept local) for
+#                    `static_datamodel_generated_cpp_test`: the cold closure
+#                    483 s (402 steps); after a template edit 483 s, 237 steps,
+#                    1571 CPU-seconds. A hosted runner's four vCPUs are about
+#                    1.3 of those cores, so one build is about 20 minutes there;
+#                    doubled for the estimate it is, a case is two builds of 40
+#                    and its test run (100), and setup is the 26 minutes the
+#                    lane measured before any build, the configure and one cold
+#                    closure (80). The whole-tree path this replaced measured
+#                    98 setup and 246 for one case end to end, which no slice
+#                    fits: under a generator whose graph the harness cannot
+#                    read, a ctest casefile cannot be scheduled into this lane.
 #   *       15  13   `mutation_rounds_selection`, 21 cargo cases in 4h16m:
 #                    about 12.2 each, because its cases drive whole gate
 #                    scripts. `go`, `pytest` and `gradle` are carried by this
@@ -36,7 +59,7 @@
 #                    worst measured one.
 mutation_rounds_cost() {
     case "$1" in
-        ctest) printf '100 180\n' ;;
+        ctest) printf '80 100\n' ;;
         *) printf '15 13\n' ;;
     esac
 }
