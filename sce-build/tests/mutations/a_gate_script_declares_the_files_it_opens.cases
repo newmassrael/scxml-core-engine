@@ -72,8 +72,8 @@ PY
 
 mutation_case "the harness a lane runs is no longer one of its inputs" <<'PY'
 edit("tools/git-hooks/gate_registry.py",
-     '        "extra": ["scripts/mutate"],\n',
-     "")
+     '        "extra": ["scripts/mutate", ',
+     '        "extra": [')
 PY
 
 # ── Prose is not an input ──────────────────────────────────────────
