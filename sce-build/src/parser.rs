@@ -2444,6 +2444,71 @@ impl SCXMLParser {
     /// parse each have a diagnostic of their own, anchored where the author can
     /// act on it: the `<sce:import>` line of this document, or the line of the
     /// sibling's own defect.
+    /// The document as a product line (ADR 0057): its feature model, read from
+    /// `dir` through the document's `<sce:import kind="feature-model">`, and the
+    /// conditions its elements carry. `None` for a document that imports no
+    /// model; a condition in such a document is refused by
+    /// [`crate::product_line::ProductLine::read`] all the same.
+    fn read_product_line(
+        doc: &roxmltree::Document,
+        model: &SCXMLModel,
+        dir: Option<&Path>,
+        diag_label: &str,
+    ) -> Result<
+        Option<crate::product_line::ProductLine>,
+        crate::forge::error::Located<crate::forge::error::ForgeError>,
+    > {
+        use crate::forge::error::{ImportError, Located, ValidationError};
+        use crate::forge::model::{ForgeDocument, ForgeKind};
+        let root = doc.root_element();
+        let Some(node) = crate::product_line::feature_model_import(&root, diag_label)? else {
+            return crate::product_line::ProductLine::read(doc, None, diag_label);
+        };
+        let import = model
+            .forge_imports
+            .iter()
+            .find(|import| import.kind == ForgeKind::FeatureModel)
+            .expect("parse_imports read every <sce:import> of the root");
+        let at_the_import = |error: crate::forge::error::ForgeError| {
+            Located::new(error, diag_label, import.line, None)
+        };
+        let Some(dir) = dir else {
+            return Err(at_the_import(
+                ValidationError::FeatureModelNotRead {
+                    src: import.src.clone(),
+                }
+                .into(),
+            ));
+        };
+        let source = crate::forge::import_source::ImportSource::read(dir, import)
+            .map_err(|error| at_the_import(error.into()))?;
+        // A defect of the model is reported at the model, in its own words.
+        let Some(parsed) = source.parse()? else {
+            return Err(at_the_import(
+                ImportError::NotForge {
+                    src: import.src.clone(),
+                }
+                .into(),
+            ));
+        };
+        let ForgeDocument::FeatureModel(features) = &parsed.document else {
+            return Err(at_the_import(
+                ImportError::KindMismatch {
+                    src: import.src.clone(),
+                    declared: import.kind.to_string(),
+                    actual: parsed.document.kind().to_string(),
+                }
+                .into(),
+            ));
+        };
+        let feature_model = features.feature_model();
+        crate::product_line::ProductLine::read(
+            doc,
+            Some((&feature_model, features.name.as_str(), node)),
+            diag_label,
+        )
+    }
+
     fn parse_imported_forge_siblings(
         model: &SCXMLModel,
         base_dir: &Path,
@@ -3040,6 +3105,16 @@ impl SCXMLParser {
         // Every reader below takes the one directory `import_dir` chooses, so
         // they cannot disagree about where a relative `src` points.
         let import_dir = base_dir.map(|dir| self.import_dir(&model, dir));
+        // ADR 0057: the conditions on the document's elements, read against
+        // the feature model it imports, and the family check of its
+        // references. Read here, inside the parse's ledger, so a condition is a
+        // read attribute; every reader below sees the document as the variant
+        // with every feature on, which holds every element.
+        model.product_line =
+            Self::read_product_line(&doc, &model, import_dir.as_deref(), diag_label)?;
+        if let Some(product_line) = &model.product_line {
+            product_line.check_references(diag_label)?;
+        }
         if let Some(dir) = import_dir.as_deref() {
             let (schemas_by_stem, enums_by_stem) =
                 Self::parse_imported_forge_siblings(&model, dir, diag_label)?;

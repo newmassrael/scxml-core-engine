@@ -159,6 +159,11 @@ pub enum RelatedRole {
     /// together with what it imports (`generate --with-imports`) reached it.
     /// One entry per step, the document named on the command line first.
     ReachedFrom,
+    /// The element the record's site names — a transition's target state —
+    /// when the relation between the two is what is refused: a state some
+    /// configuration removes while the element that names it stays (ADR 0057
+    /// §5).
+    Referent,
 }
 
 impl RelatedRole {
@@ -169,6 +174,7 @@ impl RelatedRole {
         RelatedRole::AlsoRefused,
         RelatedRole::MustFollow,
         RelatedRole::ReachedFrom,
+        RelatedRole::Referent,
     ];
 }
 
@@ -4571,6 +4577,113 @@ pub enum ValidationError {
         cycle: Vec<String>,
     },
 
+    /// A statechart imports a second feature model. A statechart is written
+    /// against one model (ADR 0057 §2).
+    ///
+    /// Wire code: `validation/feature-model-imported-twice`.
+    #[error(
+        "<sce:import kind=\"feature-model\" src=\"{src}\"> is a second feature model: a \
+         statechart is written against one"
+    )]
+    FeatureModelImportedTwice {
+        /// The `src` of the second import.
+        src: String,
+    },
+
+    /// A statechart imports a feature model and the parse has no directory to
+    /// read it from (a document parsed from a string). Its conditions cannot be
+    /// resolved without the model, and a parse that ignored them would hold the
+    /// document to nothing it says.
+    ///
+    /// Wire code: `validation/feature-model-not-read`.
+    #[error(
+        "the feature model '{src}' this statechart imports is not read: the document was \
+         parsed with no directory to read its imports from — parse it from its file"
+    )]
+    FeatureModelNotRead {
+        /// The `src` of the import.
+        src: String,
+    },
+
+    /// An `sce:requires` (or, on an SCE element, `requires`) value is not a
+    /// condition of the grammar `NAME | all(P, …) | any(P, …)` (ADR 0057 §3).
+    ///
+    /// Wire code: `validation/feature-condition-malformed`.
+    #[error("'{condition}' is not a feature condition: {reason}")]
+    FeatureConditionMalformed {
+        /// The attribute value as written.
+        condition: String,
+        /// What the reader expected where it stopped.
+        reason: String,
+    },
+
+    /// A condition names a feature the imported feature model does not
+    /// declare, or the document imports no feature model at all.
+    ///
+    /// Wire code: `validation/feature-undeclared`.
+    #[error("{}", feature_undeclared_message(feature, model.as_deref()))]
+    FeatureUndeclared {
+        /// The name the condition writes.
+        feature: String,
+        /// The imported model's document name; `None` when the document
+        /// imports none.
+        model: Option<String>,
+    },
+
+    /// A condition on an element that takes none (ADR 0057 §3): one whose
+    /// removal would not leave a document of the accepted subset.
+    ///
+    /// Wire code: `validation/feature-gate-unsupported`.
+    #[error("<{element}> takes no feature condition: {reason}")]
+    FeatureGateUnsupported {
+        /// The element as written.
+        element: String,
+        /// Why this element takes none, and what to gate instead.
+        reason: String,
+    },
+
+    /// A condition that holds wherever the condition of its enclosing elements
+    /// holds, so it removes nothing: a condition is written once, where the
+    /// variation is.
+    ///
+    /// Wire code: `validation/feature-condition-redundant`.
+    #[error(
+        "<{element}>'s condition '{condition}' holds wherever the condition '{enclosing}' of the \
+         elements around it does, so it removes nothing — write a condition once, where the \
+         variation is"
+    )]
+    FeatureConditionRedundant {
+        /// The element as written.
+        element: String,
+        /// Its condition as written.
+        condition: String,
+        /// The enclosing condition, in its canonical spelling.
+        enclosing: String,
+    },
+
+    /// An element names a state that some configuration removes while keeping
+    /// the element (ADR 0057 §5): the variant of that configuration would
+    /// refer to a state it does not have. `witness` is the least such
+    /// configuration.
+    ///
+    /// Wire code: `validation/feature-gate-escapes`.
+    #[error(
+        "<{element} {attribute}> names '{referent}', which is absent while the <{element}> is \
+         present when {}",
+        witness_phrase(witness)
+    )]
+    FeatureGateEscapes {
+        /// The referring element: `transition`, `state`, `scxml`.
+        element: String,
+        /// The attribute that names the referent: `target`, `initial`.
+        attribute: String,
+        /// The id it names.
+        referent: String,
+        /// The features of the least configuration that shows it, in the
+        /// model's order.
+        witness: Vec<String>,
+    },
+
     /// An EventSchema
     /// document declares `sce:event-name="<X>"` against an event name
     /// that is reserved for the W3C SCXML platform (`error.*`,
@@ -5340,6 +5453,31 @@ pub fn joined_or_none(candidates: &[String]) -> String {
         return "<none>".to_string();
     }
     candidates.join(", ")
+}
+
+/// The message of [`ValidationError::FeatureUndeclared`]: a name the model
+/// lacks, or a document that imports no model.
+fn feature_undeclared_message(feature: &str, model: Option<&str>) -> String {
+    match model {
+        Some(model) => format!(
+            "the condition names feature '{feature}', which the feature model '{model}' does \
+             not declare"
+        ),
+        None => format!(
+            "the condition names feature '{feature}', and this document imports no feature \
+             model — import one with <sce:import kind=\"feature-model\">"
+        ),
+    }
+}
+
+/// The configuration of a [`ValidationError::FeatureGateEscapes`] witness, as
+/// the end of its sentence.
+fn witness_phrase(witness: &[String]) -> String {
+    match witness {
+        [] => "no feature is on".to_string(),
+        [one] => format!("only the feature {one} is on"),
+        many => format!("only the features {} are on", many.join(", ")),
+    }
 }
 
 /// The message one record of [`ValidationError::UnreadSceAttributes`]

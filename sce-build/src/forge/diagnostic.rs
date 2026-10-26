@@ -3492,6 +3492,35 @@ pub enum DiagnosticCode {
     /// [`ValidationError::FeatureModelCycle`].
     #[serde(rename = "validation/feature-model-cycle")]
     ValidationFeatureModelCycle,
+    // ── ADR 0057: conditions on a statechart's elements ──
+    /// A statechart imports a second feature model — see
+    /// [`ValidationError::FeatureModelImportedTwice`].
+    #[serde(rename = "validation/feature-model-imported-twice")]
+    ValidationFeatureModelImportedTwice,
+    /// The imported feature model cannot be read by this parse — see
+    /// [`ValidationError::FeatureModelNotRead`].
+    #[serde(rename = "validation/feature-model-not-read")]
+    ValidationFeatureModelNotRead,
+    /// A condition is not of the grammar — see
+    /// [`ValidationError::FeatureConditionMalformed`].
+    #[serde(rename = "validation/feature-condition-malformed")]
+    ValidationFeatureConditionMalformed,
+    /// A condition names a feature no imported model declares — see
+    /// [`ValidationError::FeatureUndeclared`].
+    #[serde(rename = "validation/feature-undeclared")]
+    ValidationFeatureUndeclared,
+    /// A condition on an element that takes none — see
+    /// [`ValidationError::FeatureGateUnsupported`].
+    #[serde(rename = "validation/feature-gate-unsupported")]
+    ValidationFeatureGateUnsupported,
+    /// A condition that removes nothing — see
+    /// [`ValidationError::FeatureConditionRedundant`].
+    #[serde(rename = "validation/feature-condition-redundant")]
+    ValidationFeatureConditionRedundant,
+    /// A reference that some configuration leaves dangling — see
+    /// [`ValidationError::FeatureGateEscapes`].
+    #[serde(rename = "validation/feature-gate-escapes")]
+    ValidationFeatureGateEscapes,
 
     // ── NL→IR Item C1 Path A: EventSchema kind ───────
     //    Three new codes for the 18th Forge kind:
@@ -4119,6 +4148,14 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ValidationFeatureDeclaredTwice,
         ValidationFeatureRequirementUndeclared,
         ValidationFeatureModelCycle,
+        // ── ADR 0057: conditions on a statechart's elements ──
+        ValidationFeatureModelImportedTwice,
+        ValidationFeatureModelNotRead,
+        ValidationFeatureConditionMalformed,
+        ValidationFeatureUndeclared,
+        ValidationFeatureGateUnsupported,
+        ValidationFeatureConditionRedundant,
+        ValidationFeatureGateEscapes,
         // ── NL→IR Item C1 Path A: EventSchema kind ────
         ValidationEventSchemaOnBuiltinEvent,
         ValidationEventPayloadFieldUnknown,
@@ -5081,7 +5118,14 @@ impl DiagnosticCode {
             | ValidationFeatureNameInvalid
             | ValidationFeatureDeclaredTwice
             | ValidationFeatureRequirementUndeclared
-            | ValidationFeatureModelCycle => None,
+            | ValidationFeatureModelCycle
+            | ValidationFeatureModelImportedTwice
+            | ValidationFeatureModelNotRead
+            | ValidationFeatureConditionMalformed
+            | ValidationFeatureUndeclared
+            | ValidationFeatureGateUnsupported
+            | ValidationFeatureConditionRedundant
+            | ValidationFeatureGateEscapes => None,
         }
     }
 
@@ -5692,6 +5736,14 @@ impl DiagnosticCode {
             ValidationFeatureDeclaredTwice => "validation/feature-declared-twice",
             ValidationFeatureRequirementUndeclared => "validation/feature-requirement-undeclared",
             ValidationFeatureModelCycle => "validation/feature-model-cycle",
+            // ── ADR 0057: conditions on a statechart's elements ──
+            ValidationFeatureModelImportedTwice => "validation/feature-model-imported-twice",
+            ValidationFeatureModelNotRead => "validation/feature-model-not-read",
+            ValidationFeatureConditionMalformed => "validation/feature-condition-malformed",
+            ValidationFeatureUndeclared => "validation/feature-undeclared",
+            ValidationFeatureGateUnsupported => "validation/feature-gate-unsupported",
+            ValidationFeatureConditionRedundant => "validation/feature-condition-redundant",
+            ValidationFeatureGateEscapes => "validation/feature-gate-escapes",
             // ── NL→IR Item C1 Path A: EventSchema kind ──
             ValidationEventSchemaOnBuiltinEvent => "validation/event-schema-on-builtin-event",
             ValidationEventPayloadFieldUnknown => "validation/event-payload-field-unknown",
@@ -9710,6 +9762,78 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             fix: None,
             key_fragments: std::iter::once(model.clone())
                 .chain(cycle.iter().cloned())
+                .collect(),
+        },
+        // ── ADR 0057: conditions on a statechart's elements ──
+        ValidationError::FeatureModelImportedTwice { src } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationFeatureModelImportedTwice,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(src.clone()),
+            fix: None,
+            key_fragments: vec![src.clone()],
+        },
+        ValidationError::FeatureModelNotRead { src } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationFeatureModelNotRead,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(src.clone()),
+            fix: None,
+            key_fragments: vec![src.clone()],
+        },
+        // The reason is the reader's sentence, which SCE writes itself.
+        ValidationError::FeatureConditionMalformed { condition, reason } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationFeatureConditionMalformed,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(condition.clone()),
+            fix: None,
+            key_fragments: vec![condition.clone(), reason.clone()],
+        },
+        ValidationError::FeatureUndeclared { feature, model } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationFeatureUndeclared,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(feature.clone()),
+            fix: None,
+            key_fragments: vec![feature.clone(), model.clone().unwrap_or_default()],
+        },
+        ValidationError::FeatureGateUnsupported { element, reason: _ } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationFeatureGateUnsupported,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(element.clone()),
+            fix: None,
+            key_fragments: vec![element.clone()],
+        },
+        ValidationError::FeatureConditionRedundant {
+            element,
+            condition,
+            enclosing,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationFeatureConditionRedundant,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(condition.clone()),
+            fix: None,
+            key_fragments: vec![element.clone(), condition.clone(), enclosing.clone()],
+        },
+        // The witness is SCE's own reading of the model: the least
+        // configuration, in the model's order, so both producers derive it alike.
+        ValidationError::FeatureGateEscapes {
+            element,
+            attribute,
+            referent,
+            witness,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationFeatureGateEscapes,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(referent.clone()),
+            fix: None,
+            key_fragments: [element.clone(), attribute.clone(), referent.clone()]
+                .into_iter()
+                .chain(witness.iter().cloned())
                 .collect(),
         },
         ValidationError::EventSchemaOnBuiltinEvent { event_name } => DiagnosticPayload {
@@ -15072,6 +15196,73 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:9a4194ee6f8251ed","code":"validation/feature-model-cycle","stage":"validation","message":"feature model 'session_features': features a -> b -> a require each other in a cycle, so they are one feature — declare it once","actual":"a"}"#,
             ),
+            // ── ADR 0057: conditions on a statechart's elements ──
+            (
+                "validation/feature-model-imported-twice",
+                ValidationError::FeatureModelImportedTwice {
+                    src: "more_features.scxml".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:b26c89831ce5fa79","code":"validation/feature-model-imported-twice","stage":"validation","message":"<sce:import kind=\"feature-model\" src=\"more_features.scxml\"> is a second feature model: a statechart is written against one","actual":"more_features.scxml"}"#,
+            ),
+            (
+                "validation/feature-model-not-read",
+                ValidationError::FeatureModelNotRead {
+                    src: "session_features.scxml".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:d2f427f564a1b433","code":"validation/feature-model-not-read","stage":"validation","message":"the feature model 'session_features.scxml' this statechart imports is not read: the document was parsed with no directory to read its imports from — parse it from its file","actual":"session_features.scxml"}"#,
+            ),
+            (
+                "validation/feature-condition-malformed",
+                ValidationError::FeatureConditionMalformed {
+                    condition: "not(session-unicast-accept)".into(),
+                    reason: "a condition cannot negate".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:02982f4b8a1542c0","code":"validation/feature-condition-malformed","stage":"validation","message":"'not(session-unicast-accept)' is not a feature condition: a condition cannot negate","actual":"not(session-unicast-accept)"}"#,
+            ),
+            (
+                "validation/feature-undeclared",
+                ValidationError::FeatureUndeclared {
+                    feature: "session-unicst".into(),
+                    model: Some("session_features".into()),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:851a98388cf54137","code":"validation/feature-undeclared","stage":"validation","message":"the condition names feature 'session-unicst', which the feature model 'session_features' does not declare","actual":"session-unicst"}"#,
+            ),
+            (
+                "validation/feature-gate-unsupported",
+                ValidationError::FeatureGateUnsupported {
+                    element: "initial".into(),
+                    reason: "it is structure its parent requires; gate the parent, or the \
+                             transitions it holds"
+                        .into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:173ccf0ca253f451","code":"validation/feature-gate-unsupported","stage":"validation","message":"<initial> takes no feature condition: it is structure its parent requires; gate the parent, or the transitions it holds","actual":"initial"}"#,
+            ),
+            (
+                "validation/feature-condition-redundant",
+                ValidationError::FeatureConditionRedundant {
+                    element: "transition".into(),
+                    condition: "session-unicast".into(),
+                    enclosing: "session-unicast-accept".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:069ec67b0b21329f","code":"validation/feature-condition-redundant","stage":"validation","message":"<transition>'s condition 'session-unicast' holds wherever the condition 'session-unicast-accept' of the elements around it does, so it removes nothing — write a condition once, where the variation is","actual":"session-unicast"}"#,
+            ),
+            (
+                "validation/feature-gate-escapes",
+                ValidationError::FeatureGateEscapes {
+                    element: "transition".into(),
+                    attribute: "target".into(),
+                    referent: "accepting".into(),
+                    witness: vec!["session-unicast".into()],
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:8031c6bdc3faf5bf","code":"validation/feature-gate-escapes","stage":"validation","message":"<transition target> names 'accepting', which is absent while the <transition> is present when only the feature session-unicast is on","actual":"accepting"}"#,
+            ),
             // ── NL→IR Item C1 Path A: EventSchema kind ───
             //   `id` hashes are placeholders; the goldens test prints
             //   the actual FNV1a on first run, copy them back here.
@@ -18389,6 +18580,15 @@ mod tests {
             | ValidationFeatureDeclaredTwice
             | ValidationFeatureRequirementUndeclared
             | ValidationFeatureModelCycle
+            // ADR 0057: a condition's repair (rewrite it, move it, import the
+            // model) is the author's; no closed candidate set names it.
+            | ValidationFeatureModelImportedTwice
+            | ValidationFeatureModelNotRead
+            | ValidationFeatureConditionMalformed
+            | ValidationFeatureUndeclared
+            | ValidationFeatureGateUnsupported
+            | ValidationFeatureConditionRedundant
+            | ValidationFeatureGateEscapes
             // NL→IR Item C1 Path A: EventSchema built-in-
             // event schema rejection — repair is author-domain
             // (rename `sce:event-name` to a non-reserved value or
@@ -19029,6 +19229,14 @@ mod tests {
                 | ValidationFeatureDeclaredTwice
                 | ValidationFeatureRequirementUndeclared
                 | ValidationFeatureModelCycle
+                // ADR 0057: conditions on a statechart's elements
+                | ValidationFeatureModelImportedTwice
+                | ValidationFeatureModelNotRead
+                | ValidationFeatureConditionMalformed
+                | ValidationFeatureUndeclared
+                | ValidationFeatureGateUnsupported
+                | ValidationFeatureConditionRedundant
+                | ValidationFeatureGateEscapes
                 // NL→IR Item C1 Path A: EventSchema kind
                 | ValidationEventSchemaOnBuiltinEvent
                 | ValidationEventPayloadFieldUnknown
@@ -19045,9 +19253,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            464,
+            471,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 464 distinct variants to match the DiagnosticCode \
+             expected 471 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -20031,6 +20239,13 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | ValidationFeatureDeclaredTwice
             | ValidationFeatureRequirementUndeclared
             | ValidationFeatureModelCycle
+            | ValidationFeatureModelImportedTwice
+            | ValidationFeatureModelNotRead
+            | ValidationFeatureConditionMalformed
+            | ValidationFeatureUndeclared
+            | ValidationFeatureGateUnsupported
+            | ValidationFeatureConditionRedundant
+            | ValidationFeatureGateEscapes
             | ValidationEventSchemaOnBuiltinEvent
             | ValidationEventPayloadFieldUnknown
             | ValidationBytesComparisonNotEquality

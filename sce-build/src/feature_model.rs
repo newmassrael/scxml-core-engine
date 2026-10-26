@@ -297,30 +297,49 @@ impl FeatureModel {
     /// Each closed set is reached by exactly one sequence of decisions, so the walk
     /// costs the number of configurations, not `2^n`.
     pub fn configurations(&self) -> Vec<Configuration> {
+        self.configurations_over(&self.top())
+    }
+
+    /// Every configuration of the model that holds no feature outside `within`,
+    /// which must itself be a configuration, each once.
+    ///
+    /// These are exactly the sets `c ∩ within` for the configurations `c` of the
+    /// whole model, so a condition whose least configurations all lie inside
+    /// `within` takes every value over them that it takes over the whole model:
+    /// it holds in `c` iff one of its least configurations is inside `c`, that
+    /// is inside `c ∩ within`. The walk is [`Self::configurations`]'s over the
+    /// features of `within` alone, which costs the configurations of those
+    /// features, not of the model.
+    pub fn configurations_over(&self, within: &Configuration) -> Vec<Configuration> {
+        debug_assert!(
+            self.is_configuration(within),
+            "the features walked hold what they require"
+        );
+        let features: Vec<FeatureId> = within.iter().collect();
         let mut found = Vec::new();
         let mut current = Configuration::empty();
-        self.extend_configurations(0, &mut current, &mut found);
+        self.extend_over(&features, 0, &mut current, &mut found);
         found
     }
 
-    fn extend_configurations(
+    fn extend_over(
         &self,
+        features: &[FeatureId],
         index: usize,
         current: &mut Configuration,
         found: &mut Vec<Configuration>,
     ) {
-        if index == self.names.len() {
+        let Some(&feature) = features.get(index) else {
             found.push(current.clone());
             return;
-        }
-        let feature = FeatureId(index);
-        self.extend_configurations(index + 1, current, found);
+        };
+        self.extend_over(features, index + 1, current, found);
         if self
             .requires(feature)
             .all(|required| current.contains(required))
         {
             current.insert(feature);
-            self.extend_configurations(index + 1, current, found);
+            self.extend_over(features, index + 1, current, found);
             current.0.remove(&feature);
         }
     }
@@ -617,6 +636,29 @@ mod tests {
                 .replace('_', "-");
             assert_eq!(back, name);
         }
+    }
+
+    #[test]
+    fn the_configurations_over_some_features_are_the_whole_models_cut_to_them() {
+        let m = model(&[
+            ("a", &["b"]),
+            ("b", &[]),
+            ("c", &[]),
+            ("d", &["c"]),
+            ("e", &[]),
+        ]);
+        let within = m.select(["a", "b", "c"]).unwrap();
+        let mut over = m.configurations_over(&within);
+        over.sort();
+        let mut cut: Vec<Configuration> = m
+            .configurations()
+            .into_iter()
+            .map(|c| Configuration(c.0.intersection(&within.0).copied().collect()))
+            .collect();
+        cut.sort();
+        cut.dedup();
+        assert_eq!(over, cut);
+        assert!(over.iter().all(|c| m.is_configuration(c)));
     }
 
     #[test]

@@ -3688,6 +3688,14 @@ pub struct SCXMLModel {
     /// re-parsing the SCXML.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub forge_imports: Vec<crate::forge::model::ForgeImport>,
+    /// The document as a product line (ADR 0057): the feature model it is
+    /// written against and the conditions on its elements. `None` for a
+    /// document that imports no feature model. The model is the variant with
+    /// every feature on, which holds every element. Not serialized: the
+    /// conditions reach a template, the AST and the sourcemap through the
+    /// fields each of those surfaces declares for them.
+    #[serde(skip)]
+    pub product_line: Option<crate::product_line::ProductLine>,
     /// `<sce:kind-basis>` on the root — why the document is a statechart
     /// ([`crate::forge::kind_basis`]). `None` when it states none. Moved
     /// to [`crate::forge::model::ParsedForge::kind_basis`] on the AST

@@ -213,6 +213,10 @@ pub mod position_map;
 /// The condition under which an element is present, its canonical form and the
 /// exact check of one condition implying another (ADR 0057 §1, §5).
 pub mod presence_condition;
+/// A statechart written against a feature model: the conditions on its
+/// elements, the variant each configuration denotes, and the check that no
+/// variant keeps a reference it removed (ADR 0057).
+pub mod product_line;
 /// Spec-provenance + requirement-traceability + unresolved-placeholder
 /// types — shared by [`model`], [`forge::model`], and
 /// [`forge::diagnostic`]. Shared-type rationale: the requirement

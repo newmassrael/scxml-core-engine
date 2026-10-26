@@ -407,6 +407,25 @@ pub fn parse_forge_with_imports_and_plugin(
     )?;
 
     let imports = parse_imports(&root, diag)?;
+    // ADR 0057 §3: a feature condition is read in a statechart only. One on an
+    // import of another kind's document would be read by nothing.
+    if let Some(gated) = sce_children(&root, "import").find(|import| {
+        import
+            .attribute(crate::product_line::CONDITION_ATTRIBUTE)
+            .is_some()
+    }) {
+        return Err(located(
+            &gated,
+            diag,
+            ValidationError::FeatureGateUnsupported {
+                element: "sce:import".into(),
+                reason: format!(
+                    "a feature condition is read in a statechart only, and this is a {} document",
+                    kind.as_attr()
+                ),
+            },
+        ));
+    }
     let mut externs = parse_externs(&root, diag, plugin)?;
     // Read for every kind here rather than by each kind's parser: the
     // basis is about the document's kind, not about its content.

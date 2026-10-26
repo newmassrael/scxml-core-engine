@@ -487,6 +487,13 @@
         "validation/feature-declared-twice",
         "validation/feature-requirement-undeclared",
         "validation/feature-model-cycle",
+        "validation/feature-model-imported-twice",
+        "validation/feature-model-not-read",
+        "validation/feature-condition-malformed",
+        "validation/feature-undeclared",
+        "validation/feature-gate-unsupported",
+        "validation/feature-condition-redundant",
+        "validation/feature-gate-escapes",
         "validation/event-schema-on-builtin-event",
         "validation/event-payload-field-unknown",
         "validation/bytes-comparison-not-equality",
@@ -550,7 +557,7 @@
         "required": ["role", "location"],
         "additionalProperties": false,
         "properties": {
-          "role": { "type": "string", "enum": ["conflicting-use", "also-refused", "must-follow", "reached-from"] },
+          "role": { "type": "string", "enum": ["conflicting-use", "also-refused", "must-follow", "reached-from", "referent"] },
           "location": {
             "type": "object",
             "required": ["file"],

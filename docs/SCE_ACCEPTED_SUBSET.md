@@ -8361,9 +8361,38 @@ beside the machine — a module, a nested namespace, a package, a package
 directory, or for C a symbol prefix — so the two compile in one build unit;
 `docs/SCE_TRANSITION_FUNCTION.md` names each backend's file and accessors.
 
+### §2.22 Feature conditions — `sce:requires` (ADR 0057)
+
+A statechart written against a feature model imports it with `<sce:import
+kind="feature-model" src="…" as="…"/>` (at most one; a second is
+`validation/feature-model-imported-twice`) and gates its elements with a
+condition: `sce:requires="P"` on an SCXML element, `requires="P"` on an SCE
+element, `P ::= NAME | all(P, …) | any(P, …)`. The grammar has no negation; a
+condition that does not read is `validation/feature-condition-malformed`, and a
+name the model does not declare, or a condition in a document that imports no
+model, is `validation/feature-undeclared`. The model is read from the file
+beside the document; a parse with no directory refuses the import
+(`validation/feature-model-not-read`).
+
+An element is present in a configuration when its own condition and those of
+every element around it hold there. The elements that take a condition are
+`<state>`, `<parallel>`, `<final>`, `<transition>`, `<onentry>`, `<onexit>`,
+`<invoke>`, the executable content (`<raise>`, `<if>`, `<foreach>`, `<log>`,
+`<assign>`, `<script>`, `<send>`, `<cancel>`, `<sce:action>`), `<data>` under
+`datamodel="sce-static"`, and `<sce:import>` of any kind but `feature-model`.
+Any other element is `validation/feature-gate-unsupported`. A condition that
+holds wherever the conditions around it hold removes nothing and is
+`validation/feature-condition-redundant`.
+
+A `<transition target>`, `<state initial>` or `<scxml initial>` that names a
+state some configuration removes while it stays is
+`validation/feature-gate-escapes`. The record is placed on the attribute, carries
+the state as a `referent` related site, and names the least configuration that
+shows it.
+
 ---
 
-## Appendix — `DiagnosticCode` index (464 codes)
+## Appendix — `DiagnosticCode` index (471 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -8469,6 +8498,13 @@ Codes that the author can avoid by writing a better SCXML /
 | `validation/feature-declared-twice` | Validation |
 | `validation/feature-requirement-undeclared` | Validation |
 | `validation/feature-model-cycle` | Validation |
+| `validation/feature-model-imported-twice` | Validation |
+| `validation/feature-model-not-read` | Validation |
+| `validation/feature-condition-malformed` | Validation |
+| `validation/feature-undeclared` | Validation |
+| `validation/feature-gate-unsupported` | Validation |
+| `validation/feature-condition-redundant` | Validation |
+| `validation/feature-gate-escapes` | Validation |
 | `validation/event-schema-on-builtin-event` | Validation |
 | `validation/event-payload-field-unknown` | Validation |
 | `validation/bytes-comparison-not-equality` | Validation |

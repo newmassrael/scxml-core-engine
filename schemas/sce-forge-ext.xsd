@@ -479,6 +479,13 @@
        families so the two cannot drift. -->
   <xs:attribute name="req" type="xs:string"/>
 
+  <!-- ADR 0057 §3 — `sce:requires="P"` on an SCXML element: the feature
+       condition under which the element is present. A string here; the
+       grammar (`name | all(…) | any(…)`), the names and which elements take
+       one are the parser's rules (`product_line`), each with its own
+       diagnostic. -->
+  <xs:attribute name="requires" type="xs:string"/>
+
   <!-- W3C SCXML 6.4: on an `<invoke>` whose child is named by an
        expression, the finite set that expression may select from —
        space separated paths, matched by document STEM
@@ -718,6 +725,10 @@
       <xs:attribute name="src" type="xs:string" use="required"/>
       <xs:attribute name="kind" type="sce:kindType" use="required"/>
       <xs:attribute name="as" type="xs:NCName" use="required"/>
+      <!-- ADR 0057 §3: the feature condition under which the import is
+           present (refused on the feature-model import itself, by the
+           parser). -->
+      <xs:attribute name="requires" type="xs:string"/>
     </xs:complexType>
   </xs:element>
 
@@ -2110,6 +2121,9 @@
       <!-- The action of the same state's `<onexit>` that gives back what this
            duty took on `<onentry>`. -->
       <xs:attribute name="released-by" type="xs:string"/>
+      <!-- ADR 0057 §3: the feature condition under which the action is
+           present. Its grammar and names are the parser's rules. -->
+      <xs:attribute name="requires" type="xs:string"/>
     </xs:complexType>
   </xs:element>
 

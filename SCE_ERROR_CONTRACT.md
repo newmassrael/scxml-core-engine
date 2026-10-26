@@ -503,6 +503,7 @@ involves is an entry of `related`:
 | `also-refused` | another site the same rule refuses, reported with this record rather than as one of its own because one repair covers them all |
 | `must-follow` | a site that must come after the record's own in the document and does not — the field a flags carrier has to be declared before |
 | `reached-from` | a site in another document that names the record's document — an `<sce:import>`, or an entry of a hybrid `<invoke>`'s `sce:candidates` — through which `sce-codegen generate --with-imports` reached it. One entry per step, the document named on the command line first, so the entries read as the chain of documents that brought the refused one into the run. A document named on the command line carries none, and its records are the ones `generate` gives it alone |
+| `referent` | the element the record's site names — a transition's target state — when the relation between the two is what is refused: `validation/feature-gate-escapes` places the record on the element that names and this site on the state some configuration removes while the element stays (ADR 0057 §5) |
 
 `related` is not part of `id`: which other sites a relation reaches is
 a fact about the document around the error, not about the error.
@@ -942,10 +943,17 @@ references against a real document and drift silently.
 | `validation/event-payload-field-unknown` | `validation` | `replace_one_of` |  |
 | `validation/event-schema-on-builtin-event` | `validation` | no |  |
 | `validation/exactly-one-attribute` | `validation` | no |  |
+| `validation/feature-condition-malformed` | `validation` | no |  |
+| `validation/feature-condition-redundant` | `validation` | no |  |
 | `validation/feature-declared-twice` | `validation` | no |  |
+| `validation/feature-gate-escapes` | `validation` | no |  |
+| `validation/feature-gate-unsupported` | `validation` | no |  |
 | `validation/feature-model-cycle` | `validation` | no |  |
+| `validation/feature-model-imported-twice` | `validation` | no |  |
+| `validation/feature-model-not-read` | `validation` | no |  |
 | `validation/feature-name-invalid` | `validation` | no |  |
 | `validation/feature-requirement-undeclared` | `validation` | no |  |
+| `validation/feature-undeclared` | `validation` | no |  |
 | `validation/incompatible-attributes` | `validation` | no |  |
 | `validation/invalid-attribute` | `validation` | `replace_one_of` |  |
 | `validation/invalid-direction` | `validation` | `replace_one_of` | SCE Forge §3.3 |
