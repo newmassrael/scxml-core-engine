@@ -91,8 +91,9 @@
 # A file compiled into a BINARY THE TESTS SPAWN rather than link — the source
 # of a CLI a test drives as a subprocess — is a `mutation_targets` file too,
 # and needs no declaration beyond that: the cargo runner resolves the
-# binaries its own build produced and hashes them beside the test executables
-# (`MUTATION_COMPANIONS`). Calling such a file a runtime target was the
+# binaries its own build produced, the ctest runner the executables a test is
+# handed through its `ENVIRONMENT`, and both hash them beside the test
+# executables (`MUTATION_COMPANIONS`). Calling such a file a runtime target was the
 # nearest available answer before that existed, and it is the weaker one — a
 # compiled artifact is not read fresh on every run, so "the file on disk
 # differed" does not establish that the binary which ran was rebuilt from it.
@@ -101,9 +102,9 @@
 # template, whose output is a committed tree — is a `mutation_targets` file
 # like any other, and the step between it and the binaries is declared with
 # `mutation_regen`. The ctest runner needs no declaration, because its
-# `cmake --build` already runs that step — and, for a mutated Rust source of the
+# `cmake --build` already runs that step — and, for a mutated source of the
 # generator itself, it rebuilds `sce-codegen` first
-# (`mutation_ctest_targets_the_generator`); the cargo runner compiles the
+# (`mutation_ctest_generator_is_stale`); the cargo runner compiles the
 # committed tree and needs one, or the mutation reaches nothing.
 #
 # A suite that talks to a service outside this tree declares that service with
@@ -1436,6 +1437,48 @@ for test in json.load(sys.stdin).get("tests", []):
         exit 2
     fi
 
+    # The executables a selected test is handed through its `ENVIRONMENT` and
+    # spawns, hashed beside the artifacts and not run (`mutation_hash_artifacts`).
+    #
+    # Measured on run 40125467304 (2026-10-24): `static_datamodel_lowered` is
+    # given `SCE_CODEGEN_BIN` and runs `sce-codegen lower` on every document it
+    # replays, and the casefiles that hold it to the lowering mutate the
+    # generator. The test executable does not link the generator, so it was
+    # byte-identical for every mutant, and both casefiles judged that run came
+    # back INCONCLUSIVE on every case — "the mutation never reached the code
+    # under test" about the one binary the mutation did reach. Eleven casefiles
+    # select that test.
+    mapfile -t MUTATION_COMPANIONS < <(printf '%s\n' "$json" | python3 -c '
+import json, os, sys
+
+repo = os.path.realpath(sys.argv[1])
+artifacts = set(sys.argv[2:])
+seen = []
+for test in json.load(sys.stdin).get("tests", []):
+    properties = {
+        entry.get("name"): entry.get("value")
+        for entry in test.get("properties") or []
+    }
+    if properties.get("FIXTURES_SETUP") or properties.get("FIXTURES_CLEANUP"):
+        continue
+    environment = properties.get("ENVIRONMENT") or []
+    if isinstance(environment, str):
+        environment = environment.split(";")
+    for entry in environment:
+        _, sep, value = entry.partition("=")
+        if not sep or not value:
+            continue
+        path = os.path.realpath(value)
+        if not os.path.isfile(path) or not os.access(path, os.X_OK):
+            continue
+        if os.path.commonpath([repo, path]) != repo or path in artifacts:
+            continue
+        if path not in seen:
+            seen.append(path)
+for path in sorted(seen):
+    print(path)
+' "$SCE_REPO_ROOT" "${MUTATION_ARTIFACTS[@]}")
+
     mutation_ctest_scope "$json"
 }
 
@@ -1485,6 +1528,26 @@ for test in json.load(sys.stdin).get("tests", []):
     if not named:
         sys.exit(0)
     outputs.extend(n for n in named if n not in outputs)
+    # And what the test is handed through its environment, where the graph
+    # builds it: resolution reads those as companions, and one that does not
+    # exist yet would not be found (`mutation_ctest_resolve`).
+    environment = properties.get("ENVIRONMENT") or []
+    if isinstance(environment, str):
+        environment = environment.split(";")
+    for entry in environment:
+        _, sep, value = entry.partition("=")
+        if not sep or not value:
+            continue
+        path = os.path.realpath(value)
+        if os.path.commonpath([build, path]) != build or path == build:
+            continue
+        relative = os.path.relpath(path, build)
+        query = subprocess.run(
+            ["ninja", "-C", build, "-t", "query", relative],
+            capture_output=True, text=True,
+        )
+        if query.returncode == 0 and "\n  input:" in query.stdout and relative not in outputs:
+            outputs.append(relative)
 if outputs:
     print("\n".join(outputs))
 ' "$build_real" || true
@@ -1551,6 +1614,21 @@ mutation_ctest_scope() {
         fi
         MUTATION_CTEST_BUILD_TARGETS+=("$relative")
     done
+    # A companion the graph builds is rebuilt with the artifacts, or its hash
+    # would read the build before the mutation. One outside the build tree is
+    # not ninja's to build: the generator is rebuilt by cargo
+    # (`mutation_ctest_generator_is_stale`), and a script in the source tree is
+    # the file the case edits.
+    for artifact in ${MUTATION_COMPANIONS[@]+"${MUTATION_COMPANIONS[@]}"}; do
+        relative="${artifact#"$build_real"/}"
+        [[ "$relative" != "$artifact" ]] || continue
+        if [[ "$(ninja -C "$build_real" -t query "$relative" 2>/dev/null || true)" != *$'\n  input:'* ]]; then
+            MUTATION_CTEST_BUILD_TARGETS=()
+            dim "each case rebuilds the whole tree: $artifact is not a build output"
+            return 0
+        fi
+        MUTATION_CTEST_BUILD_TARGETS+=("$relative")
+    done
 
     fixtures="$(printf '%s\n' "$json" | python3 -c '
 import json, os, re, sys
@@ -1597,26 +1675,42 @@ print("|".join(re.escape(name) for name in names))
 # anywhere: measured 2026-08-22, one round of two cases took 3625s on a box
 # already carrying thirteen concurrent sessions.
 
-# Whether a file this casefile mutates is compiled into `sce-codegen`: the
-# generator's own Rust sources, the library and the binary and the build script.
+# The `sce-codegen` this tree generates with, as its configure step recorded
+# it; nothing for a tree that holds no generator.
+mutation_ctest_generator() {
+    sed -n 's/^SCE_CODEGEN:[A-Z]*=//p' "$MUTATION_BUILD_DIR/CMakeCache.txt" 2>/dev/null \
+        | head -n 1
+}
+
+# Whether the generator this tree holds disagrees with the sources it was
+# built from, as the generator itself answers it (`verify-generator`).
 #
 # A template is read by the binary CMake already holds, so `cmake --build`
-# carries a template mutation to the generated tree; a Rust source is not, and
-# the generator CMake holds was built from the sources the tree had BEFORE the
-# mutation. `sce_codegen_source_witness` refuses that binary ("built from
-# different sources"), which a round reads as a mutated tree that does not
-# compile — INCONCLUSIVE, for every case, and for a reason that is the harness's
-# and not the case's. Measured 2026-10-07 on `a_static_c11_byte_string_is_held_
-# within_its_bound_ctest.cases`, whose four mutants live in `static_lowering.rs`
-# and `expr.rs`: 0/2 caught, 2 inconclusive, on each of its two shards. Eighteen
-# ctest casefiles declare a generator source and none declared the rebuild, so
-# the rule is the runner's and not one more thing each author must remember.
-mutation_ctest_targets_the_generator() {
-    local f
-    for f in ${MUTATION_TARGET_FILES[@]+"${MUTATION_TARGET_FILES[@]}"}; do
-        [[ "$f" == sce-build/src/*.rs || "$f" == sce-build/build.rs ]] && return 0
-    done
-    return 1
+# carries a template mutation to the generated tree; a source compiled or
+# embedded into the binary is not, and the generator CMake holds was built from
+# the sources the tree had BEFORE the mutation. `sce_codegen_source_witness`
+# refuses that binary ("built from different sources"), which a round reads as a
+# mutated tree that does not compile — INCONCLUSIVE, for every case, and for a
+# reason that is the harness's and not the case's. Measured 2026-10-07 on
+# `a_static_c11_byte_string_is_held_within_its_bound_ctest.cases`, whose four
+# mutants live in `static_lowering.rs` and `expr.rs`: 0/2 caught, 2
+# inconclusive, on each of its two shards. So the rule is the runner's and not
+# one more thing each author must remember.
+#
+# Asked of the binary rather than spelled here. The rule this replaced named
+# `sce-build/src/*.rs` and `build.rs`, a second spelling of the witness set
+# (`sce_build::generator_witness`), and it had already drifted from it:
+# `sce_static.js` is embedded with `include_str!` and is in the witness, and a
+# casefile that mutates only that library left the generator unbuilt while its
+# tests spawned it (`a_static_interpreter_hybrid_invoke_starts_the_candidate_
+# its_value_names_ctest.cases`). The question is asked again before every
+# build, so the restore build after a case rebuilds what the mutant built.
+mutation_ctest_generator_is_stale() {
+    local codegen
+    codegen="$(mutation_ctest_generator)"
+    [[ -n "$codegen" ]] || return 1
+    [[ -x "$codegen" ]] || return 0
+    ! "$codegen" verify-generator --root "$SCE_REPO_ROOT" >/dev/null 2>&1
 }
 
 mutation_ctest_build_and_hash() {
@@ -1624,9 +1718,17 @@ mutation_ctest_build_and_hash() {
     # Before the tree is built, because every generation rule lists the binary in
     # its DEPENDS: a rebuilt generator regenerates what it produced, and a mutant
     # that does not compile stops here, where the compiler's own words are.
-    if mutation_ctest_targets_the_generator; then
+    if mutation_ctest_generator_is_stale; then
         (cd "$SCE_REPO_ROOT" && cargo build --bin sce-codegen --features cli -p sce-build) \
             >>"$MUTATION_BUILD_LOG" 2>&1 || return 1
+        # Cargo builds one path, and the tree may name another: a generator it
+        # does not rebuild would generate from the sources before the mutation.
+        if mutation_ctest_generator_is_stale; then
+            printf '%s\n' "the tree generates with $(mutation_ctest_generator)," \
+                "which cargo does not build and which disagrees with the sources" \
+                >>"$MUTATION_BUILD_LOG"
+            return 1
+        fi
     fi
     cmake --build "$MUTATION_BUILD_DIR" --parallel "$(sce_build_jobs_value)" \
         ${MUTATION_CTEST_BUILD_TARGETS[@]+--target "${MUTATION_CTEST_BUILD_TARGETS[@]}"} \
@@ -2514,10 +2616,13 @@ mutation_check_targets_exist() {
 # not touch, here it is not consulted at all — and both have one cause: an
 # answer about reach drawn from something other than the artifact that ran.
 #
-# Cargo only, deliberately. A ctest, go, pytest or gradle casefile reaches its
+# Cargo only, deliberately. A go, pytest or gradle casefile reaches its
 # artifacts through a regeneration step rather than through this build, so no
 # companion is resolved for it and the run-time declaration is still the
-# honest answer there.
+# honest answer there. A ctest casefile resolves companions only from what its
+# tests are handed through `ENVIRONMENT` (`mutation_ctest_resolve`), not from
+# a build of `src/bin`, so what this refusal reads is not what its runner
+# hashes.
 mutation_check_runtime_targets_are_read_not_compiled() {
     [[ "$MUTATION_RUNNER" == "cargo" ]] || return 0
     local bad=0 f

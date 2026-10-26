@@ -25,6 +25,11 @@
 // INCONCLUSIVE: the fallback is what keeps a build closure the harness cannot
 // name from being guessed.
 //
+// What a test runs is not only what its command names. A test handed an
+// executable through its `ENVIRONMENT` spawns it, and that executable is part
+// of what the round must build and hash, or a mutation that reaches only it is
+// read as reaching nothing.
+//
 // The real `scripts/mutate` is run, over a real CMake/CTest project, for the
 // reason `mutation_round_survives_a_moved_baseline` gives: the code under test is
 // the harness's own build step, and a copy of it here would be a second spelling.
@@ -85,19 +90,53 @@ int main(void) {
 }
 "#;
 
+/// The program spawned by `Shape::Spawned`'s test: the oracle's check, in an
+/// executable the test command does not name.
+const HELPER: &str = ORACLE;
+
+/// Runs the executable `G7_HELPER` names and passes its verdict on, as
+/// `static_datamodel_lowered` runs the generator `SCE_CODEGEN_BIN` names.
+const DRIVER: &str = r#"#include <stdlib.h>
+
+int main(void) {
+    const char *helper = getenv("G7_HELPER");
+    if (helper == NULL) {
+        return 2;
+    }
+    return system(helper) == 0 ? 0 : 1;
+}
+"#;
+
+/// How the test `g7_oracle` reaches the code under test.
+#[derive(Clone, Copy)]
+enum Shape {
+    /// It runs the executable that links the subject.
+    Direct,
+    /// It runs that executable through a script the configure step copies into
+    /// the build tree: an artifact under the build directory that no edge of
+    /// the graph produces, which is the shape the harness must not hand ninja.
+    Wrapped,
+    /// It runs a driver that links nothing under test and spawns, from its
+    /// environment, the executable that does.
+    Spawned,
+}
+
 /// Two executables over one source. Only the oracle is a test, and every test
 /// requires a fixture whose setup builds the whole tree, as this repository's
 /// tests require `sce_built`.
-///
-/// `wrapped` runs the oracle through a script the configure step copies into
-/// the build tree: an artifact under the build directory that no edge of the
-/// graph produces, which is the shape the harness must not hand ninja.
-fn cmakelists(wrapped: bool) -> String {
-    let test = if wrapped {
-        "configure_file(${CMAKE_CURRENT_SOURCE_DIR}/run.sh ${CMAKE_BINARY_DIR}/run.sh COPYONLY)\n\
-         add_test(NAME g7_oracle COMMAND sh ${CMAKE_BINARY_DIR}/run.sh $<TARGET_FILE:g7_oracle>)\n"
-    } else {
-        "add_test(NAME g7_oracle COMMAND g7_oracle)\n"
+fn cmakelists(shape: Shape) -> String {
+    let test = match shape {
+        Shape::Direct => "add_test(NAME g7_oracle COMMAND g7_oracle)\n",
+        Shape::Wrapped => {
+            "configure_file(${CMAKE_CURRENT_SOURCE_DIR}/run.sh ${CMAKE_BINARY_DIR}/run.sh COPYONLY)\n\
+             add_test(NAME g7_oracle COMMAND sh ${CMAKE_BINARY_DIR}/run.sh $<TARGET_FILE:g7_oracle>)\n"
+        }
+        Shape::Spawned => {
+            "add_executable(g7_helper helper.c subject.c)\n\
+             add_executable(g7_driver driver.c)\n\
+             add_test(NAME g7_oracle COMMAND g7_driver)\n\
+             set_tests_properties(g7_oracle PROPERTIES ENVIRONMENT \"G7_HELPER=$<TARGET_FILE:g7_helper>\")\n"
+        }
     };
     format!(
         r#"cmake_minimum_required(VERSION 3.16)
@@ -137,7 +176,7 @@ fn run(cmd: &mut Command, what: &str) -> String {
 
 /// `generator` is passed to CMake as is; `ninja` is put on the round's `PATH`
 /// either way, so a control differs from the subject in what it names alone.
-fn project(name: &str, generator: &str, wrapped: bool, ninja: &Path) -> Project {
+fn project(name: &str, generator: &str, shape: Shape, ninja: &Path) -> Project {
     let root = repo_root().join("tmp").join(format!("g7-{name}"));
     let _ = fs::remove_dir_all(&root);
     fs::create_dir_all(&root).expect("create the fixture directory");
@@ -146,7 +185,9 @@ fn project(name: &str, generator: &str, wrapped: bool, ninja: &Path) -> Project 
     fs::write(root.join("oracle.c"), ORACLE).expect("write oracle.c");
     fs::write(root.join("bystander.c"), BYSTANDER).expect("write bystander.c");
     fs::write(root.join("run.sh"), RUN).expect("write run.sh");
-    fs::write(root.join("CMakeLists.txt"), cmakelists(wrapped)).expect("write CMakeLists.txt");
+    fs::write(root.join("helper.c"), HELPER).expect("write helper.c");
+    fs::write(root.join("driver.c"), DRIVER).expect("write driver.c");
+    fs::write(root.join("CMakeLists.txt"), cmakelists(shape)).expect("write CMakeLists.txt");
 
     let ninja_dir = ninja.parent().expect("ninja lives in a directory");
     let path = match std::env::var_os("PATH") {
@@ -174,13 +215,18 @@ fn project(name: &str, generator: &str, wrapped: bool, ninja: &Path) -> Project 
             .arg("-DCMAKE_BUILD_TYPE=Release"),
         "cmake configure",
     );
-    run(
-        Command::new("cmake")
-            .env("PATH", &path)
-            .arg("--build")
-            .arg(&build),
-        "cmake build",
-    );
+    // A spawning tree is configured and not built, as the lane hands a round
+    // its tree: what the test spawns must then be built by the round itself
+    // before it can be found, let alone hashed.
+    if !matches!(shape, Shape::Spawned) {
+        run(
+            Command::new("cmake")
+                .env("PATH", &path)
+                .arg("--build")
+                .arg(&build),
+            "cmake build",
+        );
+    }
 
     let rel = |p: &str| format!("tmp/g7-{name}/{p}");
     let casefile = root.join("fixture.cases");
@@ -233,7 +279,7 @@ fn ninja() -> Option<PathBuf> {
 #[test]
 fn a_case_is_judged_by_its_tests_when_a_target_they_do_not_run_breaks() {
     let Some(ninja) = ninja() else { return };
-    let p = project("closure", "Ninja", false, &ninja);
+    let p = project("closure", "Ninja", Shape::Direct, &ninja);
     let output = p.round();
 
     assert!(
@@ -259,7 +305,7 @@ fn a_case_is_judged_by_its_tests_when_a_target_they_do_not_run_breaks() {
 #[test]
 fn a_tree_whose_graph_the_harness_does_not_read_is_built_whole() {
     let Some(ninja) = ninja() else { return };
-    let p = project("whole-tree", "Unix Makefiles", false, &ninja);
+    let p = project("whole-tree", "Unix Makefiles", Shape::Direct, &ninja);
     let output = p.round();
 
     assert!(
@@ -275,7 +321,7 @@ fn a_tree_whose_graph_the_harness_does_not_read_is_built_whole() {
 #[test]
 fn an_artifact_no_edge_builds_is_not_handed_to_ninja() {
     let Some(ninja) = ninja() else { return };
-    let p = project("wrapped", "Ninja", true, &ninja);
+    let p = project("wrapped", "Ninja", Shape::Wrapped, &ninja);
     let output = p.round();
 
     // A script may run any binary, so the closure of what it runs cannot be
@@ -289,5 +335,32 @@ fn an_artifact_no_edge_builds_is_not_handed_to_ninja() {
     assert!(
         output.contains(&format!("INCONCLUSIVE  {LABEL}")),
         "a whole-tree build of a mutant the bystander refuses was not INCONCLUSIVE:\n{output}"
+    );
+}
+
+/// The test command names a driver the mutation never reaches; the executable
+/// it spawns is the one the mutation changes. Read from the command alone, the
+/// round neither rebuilds that executable nor sees it change, and calls the case
+/// unreached: on run 40125467304 that was every case of the two casefiles that
+/// hold `static_datamodel_lowered` to the generator it spawns.
+#[test]
+fn an_executable_a_test_is_handed_to_spawn_is_rebuilt_and_hashed() {
+    let Some(ninja) = ninja() else { return };
+    let p = project("spawned", "Ninja", Shape::Spawned, &ninja);
+    let output = p.round();
+
+    assert!(
+        output.contains(&format!("CAUGHT        {LABEL}")),
+        "the executable the test spawns did not judge the case:\n{output}"
+    );
+    assert!(
+        output.contains("and 1 companion executable(s) the tests may spawn"),
+        "the round did not resolve what the test is handed to spawn:\n{output}"
+    );
+    // The driver and the helper, and not the bystander: the helper is built
+    // because the test spawns it, and nothing spawns the bystander.
+    assert!(
+        output.contains("each case rebuilds 2 build output(s) and their closure"),
+        "the round did not build the executable the test spawns:\n{output}"
     );
 }

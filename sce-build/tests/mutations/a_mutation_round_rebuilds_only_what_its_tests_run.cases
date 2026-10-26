@@ -40,3 +40,29 @@ edit("scripts/mutate",
             [[ "$(ninja -C "$build_real" -t query "$relative" 2>/dev/null || true)" != *$'\\n  input:'* ]]; then""",
      """        if [[ "$relative" == "$artifact" ]]; then""")
 PY
+
+# A test that spawns what its environment names: the companion must be built
+# before resolution looks for it, found, and rebuilt by every case.
+
+mutation_case "what a test is handed to spawn is not built before it is looked for" <<'PY'
+edit("scripts/mutate",
+     " and relative not in outputs:",
+     " and False:")
+PY
+
+mutation_case "what a test is handed to spawn is not hashed" <<'PY'
+edit("scripts/mutate",
+     """' "$SCE_REPO_ROOT" "${MUTATION_ARTIFACTS[@]}")""",
+     """' "$SCE_REPO_ROOT" "${MUTATION_ARTIFACTS[@]}" >/dev/null)""")
+PY
+
+mutation_case "what a test is handed to spawn is left out of the closure" <<'PY'
+edit("scripts/mutate",
+     """        MUTATION_CTEST_BUILD_TARGETS+=("$relative")
+    done
+
+    fixtures=""",
+     """    done
+
+    fixtures=""")
+PY
