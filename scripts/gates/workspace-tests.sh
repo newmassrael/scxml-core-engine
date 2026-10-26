@@ -52,3 +52,14 @@ esac
 # loopback, and they sit behind a non-default feature the sweep must ask for.
 cargo test --workspace --features cli,sce-rust-mesh/wss ${FAIL_FAST+"${FAIL_FAST[@]}"} \
     || sce_gate_fail "cargo test --workspace --features cli,sce-rust-mesh/wss"
+
+# The machine generated for every build of a product line is built under each
+# feature set of that product line and held to the machine the set's variant
+# generates alone (docs/adr/0057 §6, §9). The sweep above built the crate under
+# no feature, the first set; a test cannot choose its own features, so the other
+# two are built here. `session-unicast-accept` is named alone: the manifest
+# implies the feature it requires, which is the edge of the model.
+for features in session-unicast session-unicast-accept; do
+    cargo test -p sce-feature-conformance --features "$features" ${FAIL_FAST+"${FAIL_FAST[@]}"} \
+        || sce_gate_fail "cargo test -p sce-feature-conformance --features $features"
+done

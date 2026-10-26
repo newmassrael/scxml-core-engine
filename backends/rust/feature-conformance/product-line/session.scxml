@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A session machine written against `features.scxml` (docs/adr/0057), the
+  statechart `sce-feature-conformance` generates once for every build and once
+  for each variant alone.
+
+  What it holds that a lifted machine must keep per build:
+    - an element under a condition: a state, a transition, an `<sce:action>`;
+    - a value the document computes, not copies: the machine names no `initial`,
+      so its default state is the first child in document order, and `probe` is
+      the first child exactly when `session-unicast` is on;
+    - events only a gated transition or state names (`connect`, `done`).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" name="session" datamodel="null">
+  <sce:import kind="feature-model" src="features.scxml" as="features"/>
+  <state id="probe" sce:requires="session-unicast">
+    <transition event="ready" target="idle"/>
+  </state>
+  <state id="idle">
+    <onentry>
+      <sce:action name="on_idle" effect="notice"/>
+      <sce:action name="announce_unicast" effect="notice" requires="session-unicast"/>
+    </onentry>
+    <transition event="inbound.start" target="accepting" sce:requires="session-unicast-accept">
+      <sce:action name="begin_accept" effect="notice"/>
+    </transition>
+    <transition event="connect" target="open" sce:requires="session-unicast"/>
+    <transition event="close" target="done"/>
+  </state>
+  <state id="accepting" sce:requires="session-unicast-accept">
+    <onexit>
+      <sce:action name="end_accept" effect="notice"/>
+    </onexit>
+    <transition event="done" target="open"/>
+  </state>
+  <state id="open" sce:requires="session-unicast">
+    <transition event="close" target="done"/>
+  </state>
+  <final id="done"/>
+</scxml>

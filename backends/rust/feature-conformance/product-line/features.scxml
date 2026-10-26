@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The feature model of the product line `session.scxml` is written against
+  (docs/adr/0057 §2): two features, the second requiring the first. The
+  manifest of this crate spells the same two features and the same edge, and
+  `build.rs` refuses it when it does not.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="feature-model" name="features">
+  <sce:feature name="session-unicast"/>
+  <sce:feature name="session-unicast-accept" requires="session-unicast"/>
+</scxml>

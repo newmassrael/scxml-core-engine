@@ -3653,6 +3653,7 @@ dependencies = [
  "minijinja-contrib",
  "mlua",
  "object",
+ "proc-macro2",
  "quote",
  "regex",
  "roxmltree",
@@ -3686,6 +3687,14 @@ dependencies = [
  "sce-link-runtime",
  "serde_json",
  "tokio",
+]
+
+[[package]]
+name = "sce-feature-conformance"
+version = "0.1.0"
+dependencies = [
+ "sce-build",
+ "sce-rust-runtime",
 ]
 
 [[package]]

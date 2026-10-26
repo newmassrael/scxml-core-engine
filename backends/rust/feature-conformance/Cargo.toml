@@ -1,0 +1,39 @@
+# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+
+[package]
+name = "sce-feature-conformance"
+version.workspace = true
+edition.workspace = true
+rust-version = "1.87"
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "One Rust machine for every build of a product line (docs/adr/0057), compiled under each feature set and run against the machine each variant generates alone. Holds tests only."
+publish = false
+build = "build.rs"
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+# The features of `product-line/features.scxml`, spelled as that model spells
+# them. A feature a model says requires another implies it here, which is how
+# Cargo keeps the one thing the model asserts: a build holds what each of its
+# features requires (docs/adr/0057 §1). The edge is spelled by hand in both
+# places; the tests build `session-unicast-accept` on its own, and a manifest
+# without the edge builds a set that is no configuration of the model, which
+# no variant generates and the observations then refuse.
+session-unicast = []
+session-unicast-accept = ["session-unicast"]
+
+[dependencies]
+sce-rust-runtime = { path = "../runtime", default-features = false, features = ["std"] }
+
+# The generator runs here at build time, in-process, once for the machine of
+# every build and once for each variant alone. See build.rs.
+[build-dependencies]
+sce-build = { path = "../../../sce-build" }
+
+[lints]
+workspace = true
