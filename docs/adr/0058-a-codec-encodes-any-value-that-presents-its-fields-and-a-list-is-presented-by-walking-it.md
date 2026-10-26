@@ -1,8 +1,11 @@
 # ADR 0058 — A codec encodes any value that presents its fields, and a list is presented by walking it
 
-- Status: Proposed (2026-10-27), designed under the owner's rule of 2026-10-26 and 2026-10-27: the most long-term
-  correct structure, textbook in its foundations, cost ignored. Requested by watching-zenoh, which measured the cost
-  below; the decision is the owner's
+- Status: Accepted (2026-10-27), on the owner's instruction of that day to decide it under the rule of 2026-10-26
+  and 2026-10-27: the most long-term correct structure, textbook in its foundations, cost ignored. Requested by
+  watching-zenoh, which measured the cost below. Decided with three amendments to the proposal, each marked
+  "Amended" below: what a source presents is only what the value says and not what the encoding determines (§1),
+  one measuring fold checks the source and computes the lengths before anything is written (§3), and the laws are
+  stated for every admissible source (§5)
 - Date: 2026-10-27
 - Scope: `tools/codegen/templates/forge/rust/codec.rs.jinja2`, `tools/codegen/templates/_macros/forge_rust_codec_encode_body.jinja2`
   and the Rust half of `sce-build/src/forge/generator.rs` (the encode blocks of fields, lists, embedded bodies and
@@ -32,6 +35,13 @@ Today `encode` is one skeleton rendered three times per codec: for the builder, 
 mirror, each reading the fields off its own struct through flavour-specific blocks (`encode_view`, `owned_encode`).
 Three readings of one grammar, and none of them is the consumer's.
 
+Those readings share a contract that is written only in generator comments: the encoder writes **whatever the struct
+holds**. A count field is stored beside its list, a variant's tag beside its body, and "the author keeps them
+consistent" (`repeat_streaming_encode_block`; the variant prologue says the same of the tag). A builder can therefore
+hold a value that encodes to a frame no decoder accepts, and nothing says so. An interface that presents every stored
+field would carry the contract into the consumer's types, where it is harder to see than in a struct a consumer
+fills by hand. This ADR does not carry it over (§1).
+
 ## The textbook structure
 
 The separation this ADR makes is the oldest one in data encoding: an **abstract syntax** — what a value of the type
@@ -50,8 +60,18 @@ written against the interface.
 
 ### 1. Each codec has a source trait, its abstract syntax as an interface
 
-For each codec `X` the generator emits `trait XSource`, with one item per element of the grammar, in declaration
-order:
+*Amended: presented and derived.* An element of a codec is either **presented**, information the value carries that
+nothing else on the wire determines, or **derived**, determined by what is presented. A count field is the length of
+its list; a length field the encoded length of what it bounds; the tag of a known variant arm is that arm's; a carrier
+bit is what the parent-tag derivation makes of the arm; DMA padding is zero. A derived element is not an item of the
+trait: the encoder computes it, as the encoding rules of ASN.1 (X.690) compute a length and a tag and never take them
+from the value. The decoder already computes every one of them (it reads them to walk the frame), so the generator
+knows which is which. A tag the grammar does not determine (the default arm of a variant, which keeps the tag it
+could not name) is presented, by that arm. The consequence is the property the proposal lacked: every source that
+passes §3 encodes to a frame the decoder accepts.
+
+For each codec `X` the generator emits `trait XSource`, with one item per presented element of the grammar, in
+declaration order:
 
 - a scalar, a flag or an enum field: `fn field(&self) -> T`, by value;
 - a string or bytes field: `fn field(&self) -> &str` or `&[u8]`;
@@ -74,16 +94,34 @@ skeleton rendered once, its reads made through the trait. The builder, the view 
 implement `XSource`, and their `encode` methods become calls of `encode_source(self, w)`. The three flavour blocks of
 the skeleton collapse into one, so a wire rule written there reaches every representation by construction.
 
-The wire is unchanged: every golden byte stays where it is. That is the test of the refactor's correctness, and the
-reason the first step is the refactor alone.
+The wire is unchanged for every value a decode produces: every golden byte stays where it is. That is the test of the
+change's correctness (law 2 of §5), and the reason the generated tree is regenerated only once, by the step that lands
+it. The builders' own `encode` keeps its name and signature and calls `encode_source`; a consumer of the builder
+changes nothing.
 
-### 3. A walked list is held to its bound before anything is written
+### 3. One measuring fold checks the source and computes what the encoding determines, before anything is written
 
-A builder's list cannot exceed `N`, because `heapless::Vec` cannot. A walked list can, so `encode_source` counts each
-list through a clone of its iterator before the first byte of the value is written, and refuses an excess with the
-error a decode of the same frame would give (`TooManyElements`). An encode therefore writes the whole value or
-nothing of it, whatever the source. Where a length or count field precedes its content on the wire, the encode reads
-it from the source as it does today, so no second pass over content is introduced.
+*Amended.* A builder cannot hold a value that breaks a bound its types state: a `heapless::Vec` of `N` entries, a
+`heapless::String` of its maximum, a gated field present exactly when its flag says. A source can. And a derived
+element that precedes its content on the wire (a count, a length) needs what follows it before the first of it is
+written, which a streaming sink cannot be patched for. Both are answered by a second algebra over the same grammar,
+generated beside the encode: `measure_source`, a fold that visits the source once and returns what the encode needs of
+it.
+
+- It **checks** every bound the builder's types state by construction (`max-count`, the maximum size of a string or
+  bytes, a gated field's presence) and refuses a violation with the error a decode of that frame gives
+  (`TooManyElements` and its siblings), before the first byte.
+- It **computes** each derived length that precedes its content and each count, so that `encode_source` writes them
+  from the measure and never reads them from the source.
+
+The cost is time and not memory: a measure keeps a few integers and allocates nothing, which is what the no-alloc tier
+asks. A body whose length precedes it is measured once by its parent and again by its own encode, so the work is
+`O(d·n)` for `d` the nesting depth of length-prefixed bodies, a constant of the grammar fixed when the codec is
+generated; no second pass is made over a codec whose grammar has no such length.
+
+What is guaranteed is exactly this: **a source that fails the measure writes nothing**, and one that passes writes a
+frame the decoder accepts. A sink that runs out of room can still refuse partway, as it can today; that refusal is the
+sink's and is not a property of the source.
 
 ### 4. A ready-made source for borrowed slices
 
@@ -94,15 +132,27 @@ holds, not `N` slots per list.
 
 ### 5. Laws, and the tests that hold them
 
-For every source `s` of codec `X`:
+*Amended: stated for every admissible source, a source being admissible when `measure_source` accepts it.* For every
+admissible source `s` of codec `X`:
 
-1. `encode_source(s)` is byte-for-byte the encode of the builder filled from `s` — so a hand-written source cannot
-   reach a byte the builder could not.
-2. `decode(encode_source(s))`, read through the view, presents the same fields and entries as `s` — the round trip.
-3. On every backend that implements the interface, the bytes are those of every other (ADR 0010 decision 2).
+1. **Totality.** `encode_source(s)` is a frame the decoder accepts, and `decode(encode_source(s))`, read through the
+   view, presents the same elements and entries as `s`. This is the round trip, and it holds of every source, not of
+   those a careful author wrote.
+2. **Conservation.** For a value a decode produced, `encode_source` writes the bytes the encode of the builder wrote
+   before this ADR. Where a builder is filled by hand to hold what a decode would not (a count that is not its list's,
+   a tag that is not its arm's), the new encode writes what the value says and the old one wrote what the struct held;
+   that is the defect of §1 closing, and it is stated in the step that lands it.
+3. **Refusal.** A source that breaks a bound is refused before the first byte, with the error a decode of that frame
+   gives.
+4. **Parity.** On every backend that implements the interface, the bytes are those of every other (ADR 0010
+   decision 2).
 
-The conformance suite holds law 1 and 2 with sources of every shape the trait admits (a slice, an iterator that
-computes, a view re-encoded as a relay does), and law 3 in the existing cross-backend byte-parity matrix.
+The conformance suite holds them with sources of every shape the trait admits (a slice, an iterator that computes,
+a view re-encoded as a relay does, a source that breaks each kind of bound). Law 2 is held against the committed
+golden bytes, which must not move, and against the retained decode: over 40,000 frames from a fixed seed, in the
+manner of ADR 0049's `view_generated`, a decoded frame re-encoded through the builder, the view and the owned mirror
+must give one frame, and that frame decoded again must present what the first did. Law 4 is held in the existing
+cross-backend byte-parity matrix.
 
 ### 6. Other backends
 
@@ -117,9 +167,14 @@ their bytes equal.
   capacity of every list.
 - One encode skeleton instead of three; a fourth representation is an implementation, not a template branch.
 - A relay re-encodes a received view through the same interface it decoded into (ADR 0049), with no builder between.
-- Generated code grows by one trait and one parts struct per codec. The encode is generic, so a binary pays for the
-  instantiations it uses; the byte-exact `.text` gate sees the difference and the step that lands the interface
-  measures it before it is called done.
+- Generated code grows by one trait, one measure fold and one parts struct per codec. The encode is generic, so a
+  binary pays for the instantiations it uses; the byte-exact `.text` gate sees the difference and the step that lands
+  the interface measures it before it is called done.
+- A source is total over the grammar: a field added to a codec is a new required item of its trait, so a hand-written
+  source cannot silently omit it, which a builder with a default can. That is the price of the interface being the
+  grammar, and it is paid at compile time.
+- A builder filled by hand with a count, length or tag that disagrees with its content no longer encodes the
+  disagreement; it encodes what the content says (§1, §5 law 2).
 
 ## Considered alternatives
 
@@ -130,15 +185,24 @@ their bytes equal.
   output in order, its ordering enforced by typestate. It removes the intermediate value too, but it is a second encode
   with its own ordering rules, it cannot re-encode a view or an owned value, and a length that precedes its content
   needs back-patching, which a streaming sink cannot do.
+- **Presenting every stored field, derived ones included** (the proposal as first written). It keeps the trust contract
+  of §1: a source could describe a count that is not its list's, and the interface would be the place a consumer is
+  trusted to get it right. Refused: an interface is a grammar, and a grammar says what a value is, not what the
+  encoding of it must agree with.
+- **Back-patching a length after its content** instead of a measure: impossible on a streaming sink, which cannot seek,
+  and the sinks this tier uses do not.
 - **Lowering `sce:max-count`**: a protocol decision, not a generator one, and it moves the cost rather than removing it.
 - **The heap**: forbidden on the tier that measured the cost.
 
 ## Order of work
 
-1. The refactor: `XSource`, `encode_source`, and the three representations as implementations; no golden moves.
-2. `XParts`, the bound check of §3, and the conformance cases of §5 with every source shape.
-3. The interface on the other five backends, in their idioms, held to byte parity.
+1. The classification of §1 made explicit in the generator (which element of each codec is presented and which
+   derived), with a test that it agrees with what the decoder computes. No output changes.
+2. `XSource`, `measure_source`, `encode_source`, and the three representations as implementations; no golden moves;
+   the conformance cases of §5 laws 1 to 3 with a hand-written source of each shape.
+3. `XParts`, and the consumer's first use of it (watching-zenoh's send stack), measured against the 6,480-byte peak.
+4. The interface on the other five backends, in their idioms, held to byte parity (law 4).
 
 ## Questions left open
 
-None of the design. The decision is the owner's.
+None. Decided 2026-10-27; the first step is 1 above.
