@@ -43,6 +43,12 @@ pub enum KindClass {
     /// meaningful on `(rust, c11)`. Authoring against any other
     /// language is `codegen/mcu-class-kind-on-non-mcu-language`.
     McuClass,
+    /// A document read by the documents that import it, with nothing of its
+    /// own to emit on any backend: generating one writes no file, and that
+    /// is not a missing template. The feature model of ADR 0057 §2 is one:
+    /// its importers' conditions read it, and the code that relies on its
+    /// *requires* edges carries their check itself.
+    Declaration,
 }
 
 /// Outcome of `lookup` for a `(kind, language)` pair.
@@ -54,6 +60,8 @@ pub enum EmitOutcome {
     TemplateMissing,
     /// MCU-class kind targeting a non-MCU language.
     McuClassOnNonMcuLanguage,
+    /// A [`KindClass::Declaration`]: generation succeeds and writes nothing.
+    Declaration,
 }
 
 /// Classify a kind per the §synth-5-J-4 matrix.
@@ -111,6 +119,8 @@ pub const fn kind_class(kind: ForgeKind) -> KindClass {
         // only; cpp/kotlin/go/python rejected via the same diagnostic;
         // Worker dual-emits rust + c11 codegen.
         ForgeKind::Worker => KindClass::McuClass,
+        // ADR 0057 §2: the feature model is read by its importers' conditions.
+        ForgeKind::FeatureModel => KindClass::Declaration,
     }
 }
 
@@ -279,6 +289,16 @@ pub const fn template_ships(kind: ForgeKind, lang: Language) -> bool {
             | Language::C11 => true,
             Language::Swift => false,
         },
+        // A declaration has no template on any backend: there is nothing to render.
+        ForgeKind::FeatureModel => match lang {
+            Language::Rust
+            | Language::Cpp
+            | Language::Go
+            | Language::Kotlin
+            | Language::Python
+            | Language::C11
+            | Language::Swift => false,
+        },
     }
 }
 
@@ -336,6 +356,7 @@ pub const fn lookup(kind: ForgeKind, lang: Language) -> EmitOutcome {
                 EmitOutcome::TemplateMissing
             }
         }
+        KindClass::Declaration => EmitOutcome::Declaration,
     }
 }
 
@@ -387,7 +408,8 @@ pub fn writes_something(lang: Language) -> bool {
 /// before routing to the per-kind `render_*` helper.
 pub fn check(kind: ForgeKind, lang: Language) -> Result<(), GenerateError> {
     match lookup(kind, lang) {
-        EmitOutcome::Emit => Ok(()),
+        // A declaration passes: each dispatcher's arm for it writes no file.
+        EmitOutcome::Emit | EmitOutcome::Declaration => Ok(()),
         EmitOutcome::TemplateMissing => Err(emit_missing(kind, lang)),
         EmitOutcome::McuClassOnNonMcuLanguage => {
             Err(GenerateError::CodegenMcuClassKindOnNonMcuLanguage {

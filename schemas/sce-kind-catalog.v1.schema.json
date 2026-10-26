@@ -52,7 +52,7 @@
     "kindName": {
       "description": "An sce:kind value the parser accepts. The enumeration is ForgeKind::ALL_ATTR_NAMES, in its order, which a test holds this list to.",
       "type": "string",
-      "enum": ["statechart", "transform", "lookup", "condition", "codec", "procedure", "validator", "filter", "interpolation", "timer", "observer", "algorithm", "link", "buffer-pool", "worker", "bounded-collection", "enum", "event-schema", "queue"]
+      "enum": ["statechart", "transform", "lookup", "condition", "codec", "procedure", "validator", "filter", "interpolation", "timer", "observer", "algorithm", "link", "buffer-pool", "worker", "bounded-collection", "enum", "event-schema", "queue", "feature-model"]
     },
     "kind": {
       "type": "object",
@@ -61,8 +61,8 @@
       "properties": {
         "name": { "$ref": "#/definitions/kindName" },
         "role": {
-          "description": "What a document of the kind describes: behavior (reacts over time), computation (answers from its inputs when called), data-format (the shape of bytes, a value set, or a payload), or platform-resource (the platform the behaviour runs on).",
-          "enum": ["behavior", "computation", "data-format", "platform-resource"]
+          "description": "What a document of the kind describes: behavior (reacts over time), computation (answers from its inputs when called), data-format (the shape of bytes, a value set, or a payload), platform-resource (the platform the behaviour runs on), or variability (which parts of the other documents a build contains).",
+          "enum": ["behavior", "computation", "data-format", "platform-resource", "variability"]
         },
         "summary": { "type": "string", "minLength": 1 },
         "choose_when": {
@@ -95,9 +95,8 @@
           "type": "boolean"
         },
         "backends": {
-          "description": "The backends that emit the kind, by the wire spelling the manifest's languages use.",
+          "description": "The backends that emit the kind, by the wire spelling the manifest's languages use. Empty for a declaration (role variability), which emits nothing on any backend: the documents that import it read it.",
           "type": "array",
-          "minItems": 1,
           "uniqueItems": true,
           "items": { "enum": ["rust", "cpp", "kotlin", "go", "python", "c11", "swift"] }
         },

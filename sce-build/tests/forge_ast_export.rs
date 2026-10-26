@@ -350,6 +350,8 @@ const FIXTURE_PER_KIND: &[(&str, &str)] = &[
     // SCE Protocol-Synthesis RFC §synth-5-P: Queue kind. One producer, one
     // consumer, wait-free, bounded — the shape that needs no participants.
     ("queue", "queue_ast_export_min.scxml"),
+    // ADR 0057 §2: a feature model with one requires edge.
+    ("feature-model", "feature_model_ast_export_min.scxml"),
 ];
 
 #[test]

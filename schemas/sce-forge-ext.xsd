@@ -81,6 +81,10 @@
            (element type, producers, consumers, progress, one storage) and
            names no algorithm. -->
       <xs:enumeration value="queue"/>
+      <!-- ADR 0057 §2 — the features of a product line and the requires
+           order on them. A declaration: read by the statecharts that
+           import it, emits nothing of its own. -->
+      <xs:enumeration value="feature-model"/>
     </xs:restriction>
   </xs:simpleType>
 
@@ -714,6 +718,19 @@
       <xs:attribute name="src" type="xs:string" use="required"/>
       <xs:attribute name="kind" type="sce:kindType" use="required"/>
       <xs:attribute name="as" type="xs:NCName" use="required"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- ADR 0057 §2 — one feature of a `sce:kind="feature-model"` document.
+       `name` is a feature name and `requires` a space-separated list of
+       features of the same model. Both are typed as strings here: the
+       grammar of a name, the existence of each requirement and the absence
+       of a cycle are the parser's rules (`feature_model::FeatureModel::new`),
+       held once there so each refusal carries its own diagnostic. -->
+  <xs:element name="feature">
+    <xs:complexType>
+      <xs:attribute name="name" type="xs:string" use="required"/>
+      <xs:attribute name="requires" type="xs:string"/>
     </xs:complexType>
   </xs:element>
 

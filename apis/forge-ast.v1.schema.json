@@ -2195,6 +2195,25 @@
       ],
       "type": "object"
     },
+    "FeatureEntry": {
+      "description": "One `<sce:feature>` of a [`FeaturesModel`].",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "requires": {
+          "description": "The features this one requires, as written.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
     "FieldType": {
       "anyOf": [
         {
@@ -4074,6 +4093,44 @@
             "storage"
           ],
           "type": "object"
+        },
+        {
+          "description": "The features of a product line. See [`FeaturesModel`].",
+          "properties": {
+            "features": {
+              "description": "The `<sce:feature>` elements in document order.",
+              "items": {
+                "$ref": "#/definitions/FeatureEntry"
+              },
+              "type": "array"
+            },
+            "kind": {
+              "enum": [
+                "feature-model"
+              ],
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "source_location": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/SourceLocation"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Post-preprocessor source position of the `<scxml sce:kind=\"feature-model\">` root element (RFC §synth-5-O)."
+            }
+          },
+          "required": [
+            "features",
+            "kind",
+            "name"
+          ],
+          "type": "object"
         }
       ]
     },
@@ -4441,6 +4498,13 @@
           "description": "FIFO that hands elements from one execution context to another — SCE Protocol-Synthesis RFC §synth-5-P. The document states the contract (element type, how many producers and consumers, the progress guarantee, and one of three storage modes) and names no algorithm; the algorithms live once per language in `sce_forge_runtime::queue`. Distinct from [`Self::BoundedCollection`] (a table addressed by position, not a FIFO handed between contexts) and from [`Self::Worker`] (an execution context that owns one inbox). Emits on Rust only until the other five runtimes land.",
           "enum": [
             "queue"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "The features of a product line and the *requires* order on them — ADR 0057 §2. A declaration, read by the statecharts that import it to resolve their `sce:requires` conditions; it emits nothing of its own on any backend ([`crate::forge::codegen_matrix::KindClass::Declaration`]).",
+          "enum": [
+            "feature_model"
           ],
           "type": "string"
         }

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- feature-model: the features of a product line and what each requires. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="feature-model" name="session_features" version="1.0">
+  <sce:feature name="session-unicast"/>
+  <sce:feature name="session-unicast-accept" requires="session-unicast"/>
+  <sce:feature name="session-auth"/>
+</scxml>

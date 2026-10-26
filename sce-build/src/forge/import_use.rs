@@ -410,11 +410,13 @@ impl Names {
                 .fields
                 .iter()
                 .try_for_each(|f| self.typed_field(f, f.sce_type.present_type())),
-            // A timer names events, a buffer pool sizes storage and an enum
-            // lists values: none of them reads another document.
-            ForgeDocument::Timer(_) | ForgeDocument::BufferPool(_) | ForgeDocument::Enum(_) => {
-                Ok(())
-            }
+            // A timer names events, a buffer pool sizes storage, an enum
+            // lists values and a feature model lists features: none of them
+            // reads another document.
+            ForgeDocument::Timer(_)
+            | ForgeDocument::BufferPool(_)
+            | ForgeDocument::Enum(_)
+            | ForgeDocument::FeatureModel(_) => Ok(()),
             // The statechart pipeline owns a statechart's imports; forge
             // rendering never receives one (see `classify_document`).
             ForgeDocument::Statechart(_) => unreachable!(

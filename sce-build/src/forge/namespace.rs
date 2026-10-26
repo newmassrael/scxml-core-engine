@@ -209,7 +209,9 @@ fn declarations(parsed: &ParsedForge) -> Vec<(&str, Declared)> {
         // collection size storage, a queue names a storage mode and the
         // contexts around it, an enum lists values (their uniqueness is
         // the enum parser's), and a statechart's names are the ECMAScript
-        // datamodel's, resolved by `crate::ecmascript::scope`.
+        // datamodel's, resolved by `crate::ecmascript::scope`. A feature
+        // model's names are read by its importers' conditions, never by an
+        // expression, and their uniqueness is the feature-model parser's.
         ForgeDocument::Timer(_)
         | ForgeDocument::Link(_)
         | ForgeDocument::BufferPool(_)
@@ -217,6 +219,7 @@ fn declarations(parsed: &ParsedForge) -> Vec<(&str, Declared)> {
         | ForgeDocument::BoundedCollection(_)
         | ForgeDocument::Queue(_)
         | ForgeDocument::Enum(_)
+        | ForgeDocument::FeatureModel(_)
         | ForgeDocument::Statechart(_) => {}
     }
     out

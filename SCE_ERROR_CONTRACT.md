@@ -942,6 +942,10 @@ references against a real document and drift silently.
 | `validation/event-payload-field-unknown` | `validation` | `replace_one_of` |  |
 | `validation/event-schema-on-builtin-event` | `validation` | no |  |
 | `validation/exactly-one-attribute` | `validation` | no |  |
+| `validation/feature-declared-twice` | `validation` | no |  |
+| `validation/feature-model-cycle` | `validation` | no |  |
+| `validation/feature-name-invalid` | `validation` | no |  |
+| `validation/feature-requirement-undeclared` | `validation` | no |  |
 | `validation/incompatible-attributes` | `validation` | no |  |
 | `validation/invalid-attribute` | `validation` | `replace_one_of` |  |
 | `validation/invalid-direction` | `validation` | `replace_one_of` | SCE Forge §3.3 |

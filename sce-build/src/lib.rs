@@ -2123,9 +2123,7 @@ pub fn compile_forge_from_string(
         generator::Language::Go => forge::generator::generate_go(&doc, &template_base),
         generator::Language::Python => forge::generator::generate_python(&doc, &template_base),
         generator::Language::C11 => forge::generator::generate_c11(&doc, &template_base),
-        generator::Language::Swift => Err(forge::error::ForgeError::from(
-            forge::codegen_matrix::emit_missing(doc.kind(), language),
-        )),
+        generator::Language::Swift => forge::generator::generate_swift(&doc),
     }
     .map_err(|e| Located::in_file(e, label.diagnostic_label))?;
     Ok(output)
@@ -2673,6 +2671,12 @@ pub fn compile_forge_with_deploy(
     // arm for a backend that renders nothing.
     forge::codegen_matrix::check(doc.kind(), language)
         .map_err(|e| Located::in_file(forge::error::ForgeError::from(e), label.diagnostic_label))?;
+    // A declaration has nothing to resolve or render, and imports nothing.
+    if forge::codegen_matrix::lookup(doc.kind(), language)
+        == forge::codegen_matrix::EmitOutcome::Declaration
+    {
+        return Ok(generator::GeneratedOutput::default());
+    }
 
     let template_base = find_template_base();
 
@@ -2758,9 +2762,7 @@ pub fn compile_forge_with_deploy(
             &extern_decls,
             &options,
         ),
-        generator::Language::Swift => {
-            forge::codegen_matrix::no_swift_emitter("compile_forge_with_deploy")
-        }
+        generator::Language::Swift => forge::generator::generate_swift(&doc),
     }
     .map_err(|e| Located::in_file(e, label.diagnostic_label))?;
 
@@ -3347,6 +3349,12 @@ pub fn compile_forge_from_parsed(
     // per-backend and have no arm for a backend that renders nothing.
     forge::codegen_matrix::check(parsed.document.kind(), language)
         .map_err(|e| Located::in_file(forge::error::ForgeError::from(e), label.diagnostic_label))?;
+    // A declaration has nothing to resolve or render, and imports nothing.
+    if forge::codegen_matrix::lookup(parsed.document.kind(), language)
+        == forge::codegen_matrix::EmitOutcome::Declaration
+    {
+        return Ok(generator::GeneratedOutput::default());
+    }
 
     // ⚠ Every backend lowers `previous()` of a number, a bool or an enum.
     // The cells it does not lower are refused here, once, named — never left
@@ -3587,9 +3595,7 @@ pub fn compile_forge_from_parsed(
             &parsed.externs,
             options,
         ),
-        generator::Language::Swift => {
-            forge::codegen_matrix::no_swift_emitter("compile_forge_from_parsed")
-        }
+        generator::Language::Swift => forge::generator::generate_swift(document),
     }
     .map_err(|e| Located::in_file(e, label.diagnostic_label))?;
     // The forge backends render from the AST and know nothing about the
@@ -7022,7 +7028,9 @@ fn discover_stateful_member_methods(
         // EventSchema exposes no instance
         // methods — the schema is type-only metadata, addressed via
         // SCXML event names, not method calls on an alias.
-        | ForgeDocument::EventSchema(_) => Vec::new(),
+        | ForgeDocument::EventSchema(_)
+        // A feature model emits nothing, so nothing is called on it.
+        | ForgeDocument::FeatureModel(_) => Vec::new(),
     }
 }
 

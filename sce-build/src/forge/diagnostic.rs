@@ -3475,6 +3475,24 @@ pub enum DiagnosticCode {
     #[serde(rename = "validation/enum-unsupported-underlying-type")]
     ValidationEnumUnsupportedUnderlyingType,
 
+    // ── ADR 0057: feature-model kind ─────────────────────
+    /// A `<sce:feature name>` is not a feature name — see
+    /// [`ValidationError::FeatureNameInvalid`].
+    #[serde(rename = "validation/feature-name-invalid")]
+    ValidationFeatureNameInvalid,
+    /// Two features of one model share a name — see
+    /// [`ValidationError::FeatureDeclaredTwice`].
+    #[serde(rename = "validation/feature-declared-twice")]
+    ValidationFeatureDeclaredTwice,
+    /// A feature requires a name the model does not declare — see
+    /// [`ValidationError::FeatureRequirementUndeclared`].
+    #[serde(rename = "validation/feature-requirement-undeclared")]
+    ValidationFeatureRequirementUndeclared,
+    /// Features require each other in a cycle — see
+    /// [`ValidationError::FeatureModelCycle`].
+    #[serde(rename = "validation/feature-model-cycle")]
+    ValidationFeatureModelCycle,
+
     // ── NL→IR Item C1 Path A: EventSchema kind ───────
     //    Three new codes for the 18th Forge kind:
     //    `validation/event-schema-on-builtin-event` (DL-9'; rejects
@@ -4096,6 +4114,11 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ValidationEnumVariantDuplicateValue,
         ValidationEnumVariantValueOverflowsUnderlying,
         ValidationEnumUnsupportedUnderlyingType,
+        // ── ADR 0057: feature-model kind ──
+        ValidationFeatureNameInvalid,
+        ValidationFeatureDeclaredTwice,
+        ValidationFeatureRequirementUndeclared,
+        ValidationFeatureModelCycle,
         // ── NL→IR Item C1 Path A: EventSchema kind ────
         ValidationEventSchemaOnBuiltinEvent,
         ValidationEventPayloadFieldUnknown,
@@ -5052,7 +5075,13 @@ impl DiagnosticCode {
             | ValidationEventSchemaOnBuiltinEvent
             | ValidationEventPayloadFieldUnknown
             | ValidationBytesComparisonNotEquality
-            | MeshEventSchemaMismatch => None,
+            | MeshEventSchemaMismatch
+            // ADR 0057: the feature model's rules are SCE's (an SCE ADR,
+            // not an external specification section).
+            | ValidationFeatureNameInvalid
+            | ValidationFeatureDeclaredTwice
+            | ValidationFeatureRequirementUndeclared
+            | ValidationFeatureModelCycle => None,
         }
     }
 
@@ -5658,6 +5687,11 @@ impl DiagnosticCode {
             ValidationEnumUnsupportedUnderlyingType => {
                 "validation/enum-unsupported-underlying-type"
             }
+            // ── ADR 0057: feature-model kind ──
+            ValidationFeatureNameInvalid => "validation/feature-name-invalid",
+            ValidationFeatureDeclaredTwice => "validation/feature-declared-twice",
+            ValidationFeatureRequirementUndeclared => "validation/feature-requirement-undeclared",
+            ValidationFeatureModelCycle => "validation/feature-model-cycle",
             // ── NL→IR Item C1 Path A: EventSchema kind ──
             ValidationEventSchemaOnBuiltinEvent => "validation/event-schema-on-builtin-event",
             ValidationEventPayloadFieldUnknown => "validation/event-payload-field-unknown",
@@ -9637,6 +9671,47 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![name.clone(), declared.clone()],
         },
+        // ── ADR 0057: feature-model kind ──
+        ValidationError::FeatureNameInvalid { model, name } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationFeatureNameInvalid,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(name.clone()),
+            fix: None,
+            key_fragments: vec![model.clone(), name.clone()],
+        },
+        ValidationError::FeatureDeclaredTwice { model, name } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationFeatureDeclaredTwice,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(name.clone()),
+            fix: None,
+            key_fragments: vec![model.clone(), name.clone()],
+        },
+        ValidationError::FeatureRequirementUndeclared {
+            model,
+            feature,
+            missing,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationFeatureRequirementUndeclared,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(missing.clone()),
+            fix: None,
+            key_fragments: vec![model.clone(), feature.clone(), missing.clone()],
+        },
+        // The cycle is SCE's own reading of the model, rotated to its least
+        // name, so it is a fragment both producers derive alike.
+        ValidationError::FeatureModelCycle { model, cycle } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationFeatureModelCycle,
+            stage: Stage::Validation,
+            expected: None,
+            actual: cycle.first().cloned(),
+            fix: None,
+            key_fragments: std::iter::once(model.clone())
+                .chain(cycle.iter().cloned())
+                .collect(),
+        },
         ValidationError::EventSchemaOnBuiltinEvent { event_name } => DiagnosticPayload {
             // NL→IR Mapping Roadmap Item C1 Path A (DL-9'): EventSchema
             // declared against a W3C built-in event namespace
@@ -11833,7 +11908,7 @@ mod tests {
             (
                 "forge/unsupported-kind",
                 ValidationError::UnsupportedKind("bogus".into()).into(),
-                r#"{"v":1,"id":"fnv1a:812898e1a23fda4d","code":"validation/unsupported-kind","stage":"validation","spec":"SCE Forge §3.2","message":"unsupported sce:kind value: 'bogus'","actual":"bogus","fix":{"kind":"replace_one_of","candidates":["statechart","transform","lookup","condition","codec","procedure","validator","filter","interpolation","timer","observer","algorithm","link","buffer-pool","worker","bounded-collection","enum","event-schema","queue"]}}"#,
+                r#"{"v":1,"id":"fnv1a:812898e1a23fda4d","code":"validation/unsupported-kind","stage":"validation","spec":"SCE Forge §3.2","message":"unsupported sce:kind value: 'bogus'","actual":"bogus","fix":{"kind":"replace_one_of","candidates":["statechart","transform","lookup","condition","codec","procedure","validator","filter","interpolation","timer","observer","algorithm","link","buffer-pool","worker","bounded-collection","enum","event-schema","queue","feature-model"]}}"#,
             ),
             (
                 "forge/duplicate-id",
@@ -14958,6 +15033,44 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:1438d7bd57263c36","code":"validation/enum-unsupported-underlying-type","stage":"validation","message":"enum 'result': sce:underlying-type='float32' is not supported (supported: uint8 | uint16 | uint32 | uint64 | int8 | int16 | int32 | int64)","actual":"float32"}"#,
+            ),
+            // ── ADR 0057: feature-model kind ──
+            (
+                "validation/feature-name-invalid",
+                ValidationError::FeatureNameInvalid {
+                    model: "session_features".into(),
+                    name: "Session_Unicast".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:8109876c049beb38","code":"validation/feature-name-invalid","stage":"validation","message":"feature model 'session_features': 'Session_Unicast' is not a feature name — a feature name is lower-case letters and digits, starting with a letter, in words joined by single hyphens","actual":"Session_Unicast"}"#,
+            ),
+            (
+                "validation/feature-declared-twice",
+                ValidationError::FeatureDeclaredTwice {
+                    model: "session_features".into(),
+                    name: "session-unicast".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:8ac7279bedd18fbc","code":"validation/feature-declared-twice","stage":"validation","message":"feature model 'session_features': feature 'session-unicast' is declared twice","actual":"session-unicast"}"#,
+            ),
+            (
+                "validation/feature-requirement-undeclared",
+                ValidationError::FeatureRequirementUndeclared {
+                    model: "session_features".into(),
+                    feature: "session-unicast-accept".into(),
+                    missing: "session-unicst".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:105cbc83209fec63","code":"validation/feature-requirement-undeclared","stage":"validation","message":"feature model 'session_features': feature 'session-unicast-accept' requires 'session-unicst', which the model does not declare","actual":"session-unicst"}"#,
+            ),
+            (
+                "validation/feature-model-cycle",
+                ValidationError::FeatureModelCycle {
+                    model: "session_features".into(),
+                    cycle: vec!["a".into(), "b".into(), "a".into()],
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:9a4194ee6f8251ed","code":"validation/feature-model-cycle","stage":"validation","message":"feature model 'session_features': features a -> b -> a require each other in a cycle, so they are one feature — declare it once","actual":"a"}"#,
             ),
             // ── NL→IR Item C1 Path A: EventSchema kind ───
             //   `id` hashes are placeholders; the goldens test prints
@@ -18270,6 +18383,12 @@ mod tests {
             | ValidationEnumVariantDuplicateName
             | ValidationEnumVariantDuplicateValue
             | ValidationEnumUnsupportedUnderlyingType
+            // ADR 0057: a feature name, a requirement and a cycle are the
+            // author's to repair; no closed candidate set names the repair.
+            | ValidationFeatureNameInvalid
+            | ValidationFeatureDeclaredTwice
+            | ValidationFeatureRequirementUndeclared
+            | ValidationFeatureModelCycle
             // NL→IR Item C1 Path A: EventSchema built-in-
             // event schema rejection — repair is author-domain
             // (rename `sce:event-name` to a non-reserved value or
@@ -18905,6 +19024,11 @@ mod tests {
                 | ValidationEnumVariantDuplicateValue
                 | ValidationEnumVariantValueOverflowsUnderlying
                 | ValidationEnumUnsupportedUnderlyingType
+                // ADR 0057: feature-model kind
+                | ValidationFeatureNameInvalid
+                | ValidationFeatureDeclaredTwice
+                | ValidationFeatureRequirementUndeclared
+                | ValidationFeatureModelCycle
                 // NL→IR Item C1 Path A: EventSchema kind
                 | ValidationEventSchemaOnBuiltinEvent
                 | ValidationEventPayloadFieldUnknown
@@ -18921,9 +19045,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            460,
+            464,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 460 distinct variants to match the DiagnosticCode \
+             expected 464 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -19903,6 +20027,10 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | ValidationEnumVariantDuplicateValue
             | ValidationEnumVariantValueOverflowsUnderlying
             | ValidationEnumUnsupportedUnderlyingType
+            | ValidationFeatureNameInvalid
+            | ValidationFeatureDeclaredTwice
+            | ValidationFeatureRequirementUndeclared
+            | ValidationFeatureModelCycle
             | ValidationEventSchemaOnBuiltinEvent
             | ValidationEventPayloadFieldUnknown
             | ValidationBytesComparisonNotEquality

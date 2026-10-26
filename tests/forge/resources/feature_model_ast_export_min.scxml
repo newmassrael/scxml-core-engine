@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- ADR 0057 §2 — minimal feature model for the forge_ast_export
+     round-trip drift guard: two features and one requires edge, the
+     smallest shape that carries both fields of a feature. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="feature-model"
+       name="feature_model_ast_export_min">
+  <sce:feature name="base"/>
+  <sce:feature name="extra" requires="base"/>
+</scxml>

@@ -58,6 +58,9 @@ pub enum KindRole {
     /// Describes the platform the behaviour runs on rather than the
     /// behaviour: endpoints, memory, execution contexts, containers.
     PlatformResource,
+    /// Says which parts of the other documents a build contains: the
+    /// features they are written against (ADR 0057).
+    Variability,
 }
 
 /// The behaviour that separates a kind from one it is confused with.
@@ -568,6 +571,39 @@ pub const fn guide(kind: ForgeKind) -> KindGuide {
             ],
             example: Example::Document(include_str!("../../kind-examples/queue.scxml")),
         },
+        K::FeatureModel => KindGuide {
+            role: KindRole::Variability,
+            summary: "The features of a product line and what each requires: the names a \
+                      statechart's sce:requires conditions are written in, so that one \
+                      document is built with or without each feature.",
+            choose_when: &[
+                "the text says a part of the behaviour is present only in some builds (a \
+                 client-only build, an optional capability, a Cargo feature, a Kconfig option)",
+                "the text says one optional capability makes sense only when another is present",
+            ],
+            distinct_from: &[
+                apart!(
+                    K::Statechart,
+                    "the states, transitions and actions are a statechart; a feature model only \
+                     names the features that decide which of them a build keeps",
+                ),
+                apart!(
+                    K::Condition,
+                    "a condition is evaluated while the machine runs; a feature is decided when \
+                     the code is built, and a feature that is off leaves no code behind",
+                ),
+            ],
+            notes: &[
+                "a declaration: it emits nothing; a statechart imports it with \
+                 <sce:import kind=\"feature-model\"> and gates its elements with sce:requires",
+                "states requires and nothing else: a build's features are the union of the \
+                 features its dependents ask for, so an exclusion or a choice of one is not \
+                 modelled (ADR 0057 §1)",
+                "a feature name is lower-case letters and digits in words joined by single \
+                 hyphens, the spelling Cargo takes as written",
+            ],
+            example: Example::Document(include_str!("../../kind-examples/feature-model.scxml")),
+        },
         K::Enum => KindGuide {
             role: KindRole::DataFormat,
             summary: "A closed set of named values, each with its own fixed wire number.",
@@ -635,7 +671,9 @@ pub struct KindRecord {
     /// Whether the kind may be declared on a `<data>` inside a statechart
     /// — [`ForgeKind::is_inline_eligible`].
     pub inline_eligible: bool,
-    /// The backends that emit the kind — [`codegen_matrix::lookup`].
+    /// The backends that emit the kind — [`codegen_matrix::lookup`]. Empty for
+    /// a [`codegen_matrix::KindClass::Declaration`], which emits nothing on any
+    /// backend.
     pub backends: Vec<&'static str>,
     pub example: ExampleRecord,
 }

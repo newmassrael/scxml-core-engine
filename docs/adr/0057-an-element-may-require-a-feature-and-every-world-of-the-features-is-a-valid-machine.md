@@ -1,10 +1,10 @@
 # ADR 0057 — An element may require a feature, and every world of the features is a valid machine
 
-- Status: Accepted (2026-10-26, the owner: "승인, 진행해"); not yet implemented. Requested by watching-zenoh on the owner's instruction
-  ("kconfig와 sce code gen으로 기능을 껐다 켰다 자유롭게 조작할 수 있어야 해"), and designed under the owner's rule of
-  the same day: the most long-term correct structure, textbook in its foundations, cost ignored ("비용 무시하고 가장
-  장기적으로 올바르면서, 학술적으로 교과서적이고, 궁극적인 구조로 설계해"). The surface the consumer confirmed on
-  2026-10-26 (§3) is unchanged by that rule; the foundations under it are what the rule set
+- Status: Accepted (2026-10-26, by the owner: "approved, proceed"); being implemented in the order below. Requested
+  by watching-zenoh on the owner's instruction that features be switched on and off freely through Kconfig and SCE
+  code generation, and designed under the owner's rule of the same day: the most long-term correct structure,
+  textbook in its foundations, cost ignored. The surface the consumer confirmed on 2026-10-26 (§3) is unchanged by
+  that rule; the foundations under it are what the rule set
 - Date: 2026-10-26
 - Scope: a new forge kind `feature-model` and its schema; presence conditions on the parsed model
   (`sce-build/src/parser.rs`, `model.rs`, `sce_attr.rs`); one derivation function and the `sce-codegen project`
@@ -106,9 +106,22 @@ not authored.
 
 The product line's features are declared once, by the product, and every statechart of it reads the same model; a
 declaration inside each statechart would be one copy per document. A statechart imports at most one feature model.
-A consumer that keeps its own declaration (watching-zenoh's `deploy/wz-config.toml`) generates this document from it,
-so the product has one source and SCE reads its own format. Feature names are `[a-z][a-z0-9]*(-[a-z0-9]+)*`; each is
-also spelled for every backend (§6), and two names that spell the same in any backend are refused.
+A consumer that keeps its own declaration generates this document from it, so the product has one source and SCE
+reads its own format. watching-zenoh keeps one model per crate that compiles generated machines, generated from that
+crate's `Cargo.toml` `[features]`: a Rust `cfg` reads the features of the crate that compiles the module, so that
+crate's features are the product line's.
+
+Feature names are `[a-z][a-z0-9]*(-[a-z0-9]+)*`. Each is also spelled for every backend (§6): Cargo takes it as
+written, and the C, C++ and Swift macro `SCE_FEATURE_<NAME>` upper-cases it and writes each hyphen as an underscore.
+With no upper-case letter and no underscore in the grammar, that spelling loses nothing, so two names never spell
+alike in any backend and no refusal for it is needed. The document's own `name` is a document name, not a feature
+name: it identifies the model in a manifest and in diagnostics and is spelled into no generated code, so the feature
+grammar does not bind it.
+
+The model emits nothing on any backend. The check of its *requires* edges travels in each gated statechart's own
+output (§6), so the code that relies on an edge carries the check of it, and a build cannot include the code and
+leave the check out. Refusals: `validation/feature-name-invalid`, `validation/feature-declared-twice`,
+`validation/feature-requirement-undeclared`, `validation/feature-model-cycle`.
 
 ### 3. The solution space: annotations on whole elements
 
@@ -168,7 +181,7 @@ class in a registry, and a test refuses a rule (and a `DiagnosticCode`) that dec
    equal derivations are one variant, so the work is the number of distinct variants, not `|Conf|`. Moving a rule
    from this class to class 3 is an improvement, never a change of verdict.
 
-New diagnostic codes (names provisional): `validation/feature-model-cycle`, `validation/feature-name-collision`,
+New diagnostic codes of the statechart side (names provisional until each lands):
 `validation/feature-undeclared`, `validation/feature-gate-unsupported`, `validation/feature-condition-redundant`,
 `validation/feature-gate-escapes` (class 2, with the witness), `validation/feature-variant-ill-formed` (classes 3
 and 4, with the witness and the inner diagnostic it carries). Each lands in the acceptance-doc appendix.
@@ -201,10 +214,11 @@ requires (the rest are implied by *requires*), sorted. Equal conditions are spel
 the output.
 
 **The model guards itself.** Because the canonical form leaves implied features out, a build that broke *requires*
-would compile code the model never allowed. Every backend that keeps variability emits the model's edges as refusals:
-`#[cfg(all(feature = "a", not(feature = "b")))] compile_error!(...)` in Rust, `#error` in C and C++, and the
-Cargo `[features]` fragment that makes Cargo enforce the edges in the first place. The `not` there refuses a build;
-it selects no code.
+would compile code the model never allowed. Every backend that keeps variability writes, into each gated statechart's
+own output, the model's edges as refusals: `#[cfg(all(feature = "a", not(feature = "b")))] compile_error!(...)` in
+Rust, `#error` in C and C++. The `not` there refuses a build; it selects no code. Cargo enforces the edges in the
+first place when the crate's `[features]` declares each `a = ["b"]`; a consumer that generates the model from its
+`[features]` (§2) has that by construction, and the refusals catch a crate that does not.
 
 **One derivation.** `π` is implemented once, in `sce-build`. `sce-codegen project --features ...` writes `π_c(D)` as
 a plain document; the interpreter, the deriving backends and the conformance oracle all take that document, so no

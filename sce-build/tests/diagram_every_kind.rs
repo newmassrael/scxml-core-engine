@@ -37,6 +37,9 @@ const PICTURES: &[(&str, &[&str])] = &[
     ("condition", &["dataflow.svg"]),
     ("enum", &["mapping.svg"]),
     ("event-schema", &["mapping.svg"]),
+    // A feature model is a list of features and what each requires; its
+    // reading is the pseudocode page.
+    ("feature-model", &[]),
     ("filter", &["dataflow.svg"]),
     ("interpolation", &["curve.svg"]),
     ("link", &["structure.svg"]),

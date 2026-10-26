@@ -4509,6 +4509,68 @@ pub enum ValidationError {
         declared: String,
     },
 
+    /// A `<sce:feature name>` of a feature model is not a feature name:
+    /// lower-case letters and digits, starting with a letter, in words
+    /// joined by single hyphens (ADR 0057 §2). The grammar is what makes
+    /// every backend's spelling of a name lose nothing.
+    ///
+    /// Wire code: `validation/feature-name-invalid`.
+    #[error(
+        "feature model '{model}': '{name}' is not a feature name — a feature name is \
+         lower-case letters and digits, starting with a letter, in words joined by single hyphens"
+    )]
+    FeatureNameInvalid {
+        /// Document name of the feature model.
+        model: String,
+        /// The name as written.
+        name: String,
+    },
+
+    /// Two `<sce:feature>` elements of one model give the same name.
+    ///
+    /// Wire code: `validation/feature-declared-twice`.
+    #[error("feature model '{model}': feature '{name}' is declared twice")]
+    FeatureDeclaredTwice {
+        /// Document name of the feature model.
+        model: String,
+        /// The name both declarations give.
+        name: String,
+    },
+
+    /// A `requires` entry of a `<sce:feature>` names no feature of the
+    /// same model.
+    ///
+    /// Wire code: `validation/feature-requirement-undeclared`.
+    #[error(
+        "feature model '{model}': feature '{feature}' requires '{missing}', which the model \
+         does not declare"
+    )]
+    FeatureRequirementUndeclared {
+        /// Document name of the feature model.
+        model: String,
+        /// The feature whose `requires` names it.
+        feature: String,
+        /// The name it requires.
+        missing: String,
+    },
+
+    /// Features of one model require each other in a cycle. The features of
+    /// a cycle are on and off together in every configuration, so they are
+    /// one feature under several names (ADR 0057 §1).
+    ///
+    /// Wire code: `validation/feature-model-cycle`.
+    #[error(
+        "feature model '{model}': features {} require each other in a cycle, so they are one \
+         feature — declare it once",
+        cycle.join(" -> ")
+    )]
+    FeatureModelCycle {
+        /// Document name of the feature model.
+        model: String,
+        /// The cycle from its least name back to itself.
+        cycle: Vec<String>,
+    },
+
     /// An EventSchema
     /// document declares `sce:event-name="<X>"` against an event name
     /// that is reserved for the W3C SCXML platform (`error.*`,

@@ -102,6 +102,9 @@ fn derived_facts() -> Vec<Fact> {
         facts.push(fact(format!("forge kind `{name}`"), |l| {
             match lookup(kind, l) {
                 EmitOutcome::Emit => Holding::Holds,
+                // A declaration writes no file anywhere, so every backend
+                // serves it alike.
+                EmitOutcome::Declaration => Holding::Holds,
                 EmitOutcome::TemplateMissing => Holding::Lacks,
                 EmitOutcome::McuClassOnNonMcuLanguage => Holding::NotApplicable(
                     "an MCU-class kind on a backend that is not an MCU target (codegen_matrix)"

@@ -28,12 +28,12 @@ use std::fmt;
 /// requires, and features that the order does not separate come by name. Two models
 /// declared with the same features and edges in any order number them alike.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct FeatureId(u16);
+pub struct FeatureId(usize);
 
 impl FeatureId {
     /// The position of the feature in its model's order.
     pub fn index(self) -> usize {
-        usize::from(self.0)
+        self.0
     }
 }
 
@@ -60,9 +60,6 @@ pub enum FeatureModelError {
     /// cycle are on and off together, so they are one feature under several names.
     #[error("features {} require each other in a cycle, so they are one feature: declare it once", cycle.join(" -> "))]
     Cycle { cycle: Vec<String> },
-    /// More features than a [`FeatureId`] numbers.
-    #[error("the model declares {count} features; at most {max} are supported")]
-    TooManyFeatures { count: usize, max: usize },
 }
 
 /// The features of a product line and the *requires* order on them.
@@ -131,17 +128,8 @@ pub enum SelectionError {
 }
 
 impl FeatureModel {
-    /// The most features a model may declare.
-    pub const MAX_FEATURES: usize = u16::MAX as usize;
-
     /// Build the model of `declarations`, refusing a list that is not one.
     pub fn new(declarations: &[FeatureDeclaration]) -> Result<Self, FeatureModelError> {
-        if declarations.len() > Self::MAX_FEATURES {
-            return Err(FeatureModelError::TooManyFeatures {
-                count: declarations.len(),
-                max: Self::MAX_FEATURES,
-            });
-        }
         let mut declared: BTreeMap<&str, &FeatureDeclaration> = BTreeMap::new();
         for declaration in declarations {
             if !is_feature_name(&declaration.name) {
@@ -169,7 +157,7 @@ impl FeatureModel {
         let by_name: BTreeMap<String, FeatureId> = order
             .iter()
             .enumerate()
-            .map(|(index, name)| (name.to_string(), FeatureId(index as u16)))
+            .map(|(index, name)| (name.to_string(), FeatureId(index)))
             .collect();
         let direct: Vec<BTreeSet<FeatureId>> = order
             .iter()
@@ -186,7 +174,7 @@ impl FeatureModel {
         let mut closure: Vec<Configuration> = Vec::with_capacity(order.len());
         for (index, requirements) in direct.iter().enumerate() {
             let mut least = Configuration::empty();
-            least.insert(FeatureId(index as u16));
+            least.insert(FeatureId(index));
             for required in requirements {
                 least = least.union(&closure[required.index()]);
             }
@@ -211,7 +199,7 @@ impl FeatureModel {
 
     /// The features in the model's order.
     pub fn features(&self) -> impl Iterator<Item = FeatureId> + '_ {
-        (0..self.names.len()).map(|index| FeatureId(index as u16))
+        (0..self.names.len()).map(FeatureId)
     }
 
     pub fn name(&self, feature: FeatureId) -> &str {
@@ -325,7 +313,7 @@ impl FeatureModel {
             found.push(current.clone());
             return;
         }
-        let feature = FeatureId(index as u16);
+        let feature = FeatureId(index);
         self.extend_configurations(index + 1, current, found);
         if self
             .requires(feature)

@@ -54,9 +54,10 @@ fn forge_kind_enum_is_stateless_zero_runtime_dep() {
 }
 
 #[test]
-fn forge_kind_enum_count_is_nineteen() {
-    // Pre-existing 16 + Enum = 17; EventSchema is the 18th kind; Queue the 19th.
-    assert_eq!(ForgeKind::ALL_ATTR_NAMES.len(), 19);
+fn forge_kind_enum_count_is_twenty() {
+    // Pre-existing 16 + Enum = 17; EventSchema is the 18th kind; Queue the
+    // 19th; FeatureModel the 20th.
+    assert_eq!(ForgeKind::ALL_ATTR_NAMES.len(), 20);
 }
 
 // ── codegen_matrix gate (6-backend lockstep) ────────────────────

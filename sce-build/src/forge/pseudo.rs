@@ -328,12 +328,13 @@ use crate::forge::model::{
     BoundedCollectionModel, BufferPoolModel, BufferPoolVariant, CachePolicy, CapacitySource,
     CodecEncoding, CodecField, CodecModel, CodecTestVector, CodecVariant, CollectionOrdering,
     ConcurrencyMode, ConditionModel, CountRef, DecodedFieldValue, DecodedValue, Direction, Endian,
-    EnumModel, EventSchemaModel, FilterModel, FilterType, FlagDef, FoldBody, ForgeDocument,
-    ForgeField, InterpolationMethod, InterpolationModel, LinkClass, LinkModel, LookupModel,
-    MissPolicy, ObserverModel, OutOfBounds, OverflowPolicy, PresentIfPredicate, PresentIfScope,
-    ProcedureHelper, ProcedureModel, ProcedureState, ProcedureTransition, QueueCardinality,
-    QueueModel, QueueProgress, QueueStorage, SceType, TestVector, TestVectorValue, TimerModel,
-    TlvOverflowPolicy, TlvTerminateStrategy, TransformModel, ValidatorModel, WorkerModel,
+    EnumModel, EventSchemaModel, FeaturesModel, FilterModel, FilterType, FlagDef, FoldBody,
+    ForgeDocument, ForgeField, InterpolationMethod, InterpolationModel, LinkClass, LinkModel,
+    LookupModel, MissPolicy, ObserverModel, OutOfBounds, OverflowPolicy, PresentIfPredicate,
+    PresentIfScope, ProcedureHelper, ProcedureModel, ProcedureState, ProcedureTransition,
+    QueueCardinality, QueueModel, QueueProgress, QueueStorage, SceType, TestVector,
+    TestVectorValue, TimerModel, TlvOverflowPolicy, TlvTerminateStrategy, TransformModel,
+    ValidatorModel, WorkerModel,
 };
 use crate::forge::page::{Indent, Node, Part, Shape, Word, EN};
 use crate::model::BlockRole;
@@ -560,6 +561,7 @@ pub fn render_nodes(
         ForgeDocument::Interpolation(m) => Ok(render_interpolation(m)),
         ForgeDocument::BoundedCollection(m) => Ok(render_bounded_collection(m)),
         ForgeDocument::Queue(m) => Ok(render_queue(m)),
+        ForgeDocument::FeatureModel(m) => Ok(render_feature_model(m)),
         ForgeDocument::Worker(m) => Ok(render_worker(m)),
         ForgeDocument::BufferPool(m) => Ok(render_buffer_pool(m)),
         ForgeDocument::Link(m) => Ok(render_link(m)),
@@ -1975,6 +1977,27 @@ fn render_queue(m: &QueueModel) -> Vec<Node> {
         let _ = write!(head, " participants {}", source(participants));
     }
     out.line(&head);
+    out.nodes
+}
+
+// ── Feature model ──────────────────────────────────────────────
+
+/// A feature model: one line per feature, in document order, with what it
+/// requires. A feature name has no space (its grammar admits none), so each
+/// name is one word wherever it stands.
+fn render_feature_model(m: &FeaturesModel) -> Vec<Node> {
+    let mut out = Out::new();
+    out.line(&format!("feature-model {}", text(&m.name)));
+    out.nested(|out| {
+        for feature in &m.features {
+            let mut line = format!("feature {}", text(&feature.name));
+            if !feature.requires.is_empty() {
+                let required: Vec<_> = feature.requires.iter().map(|r| text(r)).collect();
+                let _ = write!(line, " requires {}", required.join(" "));
+            }
+            out.line(&line);
+        }
+    });
     out.nodes
 }
 

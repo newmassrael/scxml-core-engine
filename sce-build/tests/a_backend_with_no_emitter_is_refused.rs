@@ -61,7 +61,15 @@ fn a_backend_with_no_emitter_exists_so_that_this_measures_something() {
 #[test]
 fn every_kind_is_refused_for_it_by_the_matrix_and_named() {
     for language in backends_with_no_emitter() {
-        for kind in every_kind() {
+        // A declaration writes no file on any backend, so a backend with no
+        // emitter serves it as every other backend does.
+        let (declarations, renders): (Vec<ForgeKind>, Vec<ForgeKind>) = every_kind()
+            .into_iter()
+            .partition(|kind| lookup(*kind, language) == EmitOutcome::Declaration);
+        for kind in declarations {
+            assert!(check(kind, language).is_ok(), "{kind} on {language:?}");
+        }
+        for kind in renders {
             let refusal = check(kind, language)
                 .expect_err(&format!("{kind} was admitted for {language:?}"))
                 .to_string();

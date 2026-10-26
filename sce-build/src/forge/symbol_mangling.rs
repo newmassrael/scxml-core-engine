@@ -408,6 +408,7 @@ fn forge_doc_name(doc: &ForgeDocument) -> &str {
         // Pascal-cased struct identifier root.
         ForgeDocument::EventSchema(m) => &m.name,
         ForgeDocument::Queue(m) => &m.name,
+        ForgeDocument::FeatureModel(m) => &m.name,
     }
 }
 

@@ -472,7 +472,7 @@ producer side really holds is that it says when it did not validate.
 
 The `sce:kind` attribute on the root `<scxml>` element selects the
 forge kind the document compiles to. The closed value set is the
-nineteen variants of `ForgeKind`, written in the `sce:kind` attribute
+twenty variants of `ForgeKind`, written in the `sce:kind` attribute
 as the kebab-case tokens below (source of truth:
 `sce-build/src/forge/model.rs` `ForgeKind::from_attr`; see
 `forge_kinds_catalog.md` for the stateful/stateless/inline-eligible
@@ -483,8 +483,18 @@ statechart   procedure   transform   lookup       condition
 codec        validator   filter      interpolation
 timer        observer    algorithm   link         worker
 buffer-pool  bounded-collection      enum         event-schema
-queue
+queue        feature-model
 ```
+
+`feature-model` is a declaration (ADR 0057 §2): its `<sce:feature
+name="…" requires="…"/>` children name the features of a product line and
+what each requires, and it emits nothing on any backend. A statechart reads
+it through `<sce:import kind="feature-model">`. A model is refused when a
+name is not a feature name (`validation/feature-name-invalid`), when two
+features share a name (`validation/feature-declared-twice`), when a
+`requires` entry names no feature of the model
+(`validation/feature-requirement-undeclared`), and when features require
+each other in a cycle (`validation/feature-model-cycle`).
 
 Omitting `sce:kind` defaults to `Statechart`. Values outside this set
 are rejected as `validation/unsupported-kind`. The phase 2/3 runtime
@@ -8353,7 +8363,7 @@ directory, or for C a symbol prefix — so the two compile in one build unit;
 
 ---
 
-## Appendix — `DiagnosticCode` index (460 codes)
+## Appendix — `DiagnosticCode` index (464 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -8455,6 +8465,10 @@ Codes that the author can avoid by writing a better SCXML /
 | `validation/enum-variant-duplicate-value` | Validation |
 | `validation/enum-variant-value-overflows-underlying` | Validation |
 | `validation/enum-unsupported-underlying-type` | Validation |
+| `validation/feature-name-invalid` | Validation |
+| `validation/feature-declared-twice` | Validation |
+| `validation/feature-requirement-undeclared` | Validation |
+| `validation/feature-model-cycle` | Validation |
 | `validation/event-schema-on-builtin-event` | Validation |
 | `validation/event-payload-field-unknown` | Validation |
 | `validation/bytes-comparison-not-equality` | Validation |

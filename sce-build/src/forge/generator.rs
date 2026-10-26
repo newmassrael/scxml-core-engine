@@ -1425,6 +1425,8 @@ pub fn generate_cpp_with_imports_and_externs(
         // ring and SCQ (`sce/forge/queue.h`); the bounded storage mode is
         // lowered and the others are refused by name inside the render.
         ForgeDocument::Queue(m) => render_queue_cpp(&env, m, imports, options)?,
+        // A declaration writes no file (`KindClass::Declaration`).
+        ForgeDocument::FeatureModel(_) => return Ok(GeneratedOutput::default()),
     };
 
     let filename = format!("{}.h", filters::to_snake_case(doc.name().to_string()));
@@ -19307,6 +19309,8 @@ pub fn generate_kotlin_with_imports(
         }
         // Queue kind: see cpp dispatch.
         ForgeDocument::Queue(m) => render_queue_kotlin(&env, m, imports, options)?,
+        // Feature model: see cpp dispatch.
+        ForgeDocument::FeatureModel(_) => return Ok(GeneratedOutput::default()),
     };
 
     let filename = format!("{}.kt", filters::to_pascal_case(doc.name().to_string()));
@@ -19491,6 +19495,8 @@ pub fn generate_rust_with_imports_and_externs(
         // RFC §synth-5-P: the generated type names a queue of
         // `sce_forge_runtime::queue`, which has the bounded storage mode.
         ForgeDocument::Queue(m) => render_queue_rust(&env, m, imports, options)?,
+        // Feature model: see cpp dispatch.
+        ForgeDocument::FeatureModel(_) => return Ok(GeneratedOutput::default()),
     };
 
     let filename = format!("{}.rs", filters::to_snake_case(doc.name().to_string()));
@@ -22631,6 +22637,8 @@ pub fn generate_go_with_imports(
         // Queue kind: see cpp dispatch. Go's runtime has the same two rows
         // (`sce-forge-runtime/queue`).
         ForgeDocument::Queue(m) => render_queue_go(&env, m, imports, options)?,
+        // Feature model: see cpp dispatch.
+        ForgeDocument::FeatureModel(_) => return Ok(GeneratedOutput::default()),
     };
 
     let filename = format!("{}.go", filters::to_snake_case(doc.name().to_string()));
@@ -22848,6 +22856,8 @@ pub fn generate_python_with_imports(
         }
         // Queue kind: see cpp dispatch.
         ForgeDocument::Queue(m) => render_queue_python(&env, m, imports, options)?,
+        // Feature model: see cpp dispatch.
+        ForgeDocument::FeatureModel(_) => return Ok(GeneratedOutput::default()),
     };
     let code = import_the_single_rounding(code);
 
@@ -22942,6 +22952,28 @@ fn settle_python_source_encoding(source: String) -> String {
         format!("# -*- coding: utf-8 -*-\n{source}")
     } else {
         source
+    }
+}
+
+// ══════════════════════════════════════════════════════════════
+// ── Swift code generation ───────────────────────────────────
+// ══════════════════════════════════════════════════════════════
+
+/// Generate a ForgeDocument for Swift.
+///
+/// Swift has no emitter for a kind that renders anything yet
+/// ([`crate::forge::codegen_matrix::template_ships`] is `false` for every
+/// kind), so the one document it generates is a declaration, which writes no
+/// file; every other kind is `codegen/generic-kind-backend-emit-missing`.
+pub fn generate_swift(doc: &ForgeDocument) -> Result<GeneratedOutput, ForgeError> {
+    match crate::forge::codegen_matrix::lookup(doc.kind(), crate::generator::Language::Swift) {
+        crate::forge::codegen_matrix::EmitOutcome::Declaration => Ok(GeneratedOutput::default()),
+        _ => Err(ForgeError::from(
+            crate::forge::codegen_matrix::emit_missing(
+                doc.kind(),
+                crate::generator::Language::Swift,
+            ),
+        )),
     }
 }
 
@@ -23088,6 +23120,8 @@ pub fn generate_c11_with_imports_and_externs(
         }
         // Queue kind: see cpp dispatch.
         ForgeDocument::Queue(m) => render_queue_c(&env, m, imports, options)?,
+        // Feature model: see cpp dispatch.
+        ForgeDocument::FeatureModel(_) => return Ok(GeneratedOutput::default()),
     };
 
     let filename = format!("{}.h", filters::to_snake_case(doc.name().to_string()));
@@ -30692,7 +30726,9 @@ impl StatelessFunction {
             // emits a payload struct, not a free function, and the SCXML event
             // handler is dispatched implicitly by event-name match, not by alias
             // function call).
-            | ForgeDocument::EventSchema(_) => None,
+            | ForgeDocument::EventSchema(_)
+            // A feature model is read by name in its importer's conditions.
+            | ForgeDocument::FeatureModel(_) => None,
         }
     }
 

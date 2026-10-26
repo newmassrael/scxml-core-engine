@@ -916,6 +916,9 @@ fn parse_forge_from_node(
         ForgeKind::Enum => parse_enum(root, label).map(ForgeDocument::Enum),
         ForgeKind::EventSchema => parse_event_schema(root, label).map(ForgeDocument::EventSchema),
         ForgeKind::Queue => parse_queue(root, label).map(ForgeDocument::Queue),
+        ForgeKind::FeatureModel => {
+            parse_feature_model(root, label).map(ForgeDocument::FeatureModel)
+        }
         ForgeKind::Statechart => Err(located(
             root,
             label.diagnostic_label,
@@ -1242,6 +1245,84 @@ fn parse_lookup(
 /// and a malformed literal as `NumericParse`.
 pub(crate) fn parse_variant_value(text: &str) -> Option<i128> {
     crate::forge::model::parse_int_literal(text)
+}
+
+// ── Feature-model parsing ──────────────────────────────────────
+
+/// Read a `sce:kind="feature-model"` document (ADR 0057 §2): its
+/// `<sce:feature>` children, held to every rule of
+/// [`crate::feature_model::FeatureModel::new`]. A refusal is placed on the
+/// `<sce:feature>` that shows it.
+fn parse_feature_model(
+    root: &roxmltree::Node,
+    label: DocumentLabel<'_>,
+) -> Result<FeaturesModel, Located<ForgeError>> {
+    use crate::feature_model::{FeatureModel, FeatureModelError};
+
+    let elements: Vec<roxmltree::Node> = sce_children(root, "feature").collect();
+    let mut features = Vec::with_capacity(elements.len());
+    for element in &elements {
+        let name = element
+            .attribute("name")
+            .ok_or_else(|| {
+                located(
+                    element,
+                    label.diagnostic_label,
+                    ValidationError::MissingAttribute {
+                        element: "<sce:feature>".into(),
+                        attr: "name".into(),
+                    },
+                )
+            })?
+            .trim()
+            .to_string();
+        let requires = element
+            .attribute("requires")
+            .map(|list| list.split_ascii_whitespace().map(str::to_string).collect())
+            .unwrap_or_default();
+        features.push(FeatureEntry { name, requires });
+    }
+    let document = FeaturesModel {
+        name: label.identifier.to_string(),
+        features,
+        source_location: forge_source_location_of(root, label.diagnostic_label),
+    };
+    let Err(error) = FeatureModel::new(&document.declarations()) else {
+        return Ok(document);
+    };
+    let model = document.name.clone();
+    let named = |name: &str| document.features.iter().position(|f| f.name == name);
+    let (at, refusal) = match error {
+        FeatureModelError::InvalidName { name } => (
+            named(&name),
+            ValidationError::FeatureNameInvalid { model, name },
+        ),
+        // The second declaration is the one that repeats the name.
+        FeatureModelError::DuplicateName { name } => (
+            document
+                .features
+                .iter()
+                .enumerate()
+                .filter(|(_, f)| f.name == name)
+                .nth(1)
+                .map(|(index, _)| index),
+            ValidationError::FeatureDeclaredTwice { model, name },
+        ),
+        FeatureModelError::UndeclaredRequirement { feature, missing } => (
+            named(&feature),
+            ValidationError::FeatureRequirementUndeclared {
+                model,
+                feature,
+                missing,
+            },
+        ),
+        FeatureModelError::Cycle { cycle } => (
+            named(&cycle[0]),
+            ValidationError::FeatureModelCycle { model, cycle },
+        ),
+    };
+    let at = at.expect("each refusal names a feature the document declares");
+    Err(located(&elements[at], label.diagnostic_label, refusal))
 }
 
 /// Parse an `sce:kind="enum"` document into an [`EnumModel`].

@@ -179,6 +179,11 @@ pub enum ForgeKind {
     /// and from [`Self::Worker`] (an execution context that owns one inbox).
     /// Emits on Rust only until the other five runtimes land.
     Queue,
+    /// The features of a product line and the *requires* order on them —
+    /// ADR 0057 §2. A declaration, read by the statecharts that import it
+    /// to resolve their `sce:requires` conditions; it emits nothing of its
+    /// own on any backend ([`crate::forge::codegen_matrix::KindClass::Declaration`]).
+    FeatureModel,
 }
 
 impl ForgeKind {
@@ -206,6 +211,7 @@ impl ForgeKind {
         "enum",
         "event-schema",
         "queue",
+        "feature-model",
     ];
 
     /// This kind's `sce:kind` attribute value — the inverse of
@@ -240,6 +246,7 @@ impl ForgeKind {
             Self::Enum => "enum",
             Self::EventSchema => "event-schema",
             Self::Queue => "queue",
+            Self::FeatureModel => "feature-model",
         }
     }
 
@@ -265,6 +272,7 @@ impl ForgeKind {
             "enum" => Some(Self::Enum),
             "event-schema" => Some(Self::EventSchema),
             "queue" => Some(Self::Queue),
+            "feature-model" => Some(Self::FeatureModel),
             _ => None,
         }
     }
@@ -336,6 +344,8 @@ impl ForgeKind {
             // that reach it, owned by whoever constructs it, so it has
             // instance state.
             Self::Queue => true,
+            // A feature model emits nothing, so nothing of it is held.
+            Self::FeatureModel => false,
         }
     }
 
@@ -402,6 +412,8 @@ impl ForgeKind {
             // `sce_forge_runtime::queue` (SCE_FORGE.md §2.1), so the
             // generated type names a runtime type.
             Self::Queue => RuntimeDep::ForgeRuntime,
+            // A declaration emits nothing, so it depends on nothing.
+            Self::FeatureModel => RuntimeDep::None,
         }
     }
 
@@ -428,6 +440,7 @@ impl ForgeKind {
                 | Self::Enum
                 | Self::EventSchema
                 | Self::Queue
+                | Self::FeatureModel
         )
     }
 }
@@ -454,6 +467,7 @@ impl std::fmt::Display for ForgeKind {
             Self::Enum => write!(f, "enum"),
             Self::EventSchema => write!(f, "event-schema"),
             Self::Queue => write!(f, "queue"),
+            Self::FeatureModel => write!(f, "feature-model"),
         }
     }
 }
@@ -5652,6 +5666,56 @@ pub struct QueueModel {
     pub progress_line: Option<u32>,
 }
 
+/// Feature-model document — ADR 0057 §2: the features of a product line and
+/// what each requires.
+///
+/// Schema (per `<scxml sce:kind="feature-model">` body): `<sce:feature
+/// name="…" requires="…"/>` children only. `name` is a feature name
+/// ([`crate::feature_model::is_feature_name`]), `requires` a space-separated
+/// list of features of the same model. The parser holds the list to every
+/// rule of [`crate::feature_model::FeatureModel::new`], so a parsed document
+/// is a model.
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct FeaturesModel {
+    pub name: String,
+    /// The `<sce:feature>` elements in document order.
+    pub features: Vec<FeatureEntry>,
+    /// Post-preprocessor source position of the `<scxml
+    /// sce:kind="feature-model">` root element (RFC §synth-5-O).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_location: Option<SourceLocation>,
+}
+
+/// One `<sce:feature>` of a [`FeaturesModel`].
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct FeatureEntry {
+    pub name: String,
+    /// The features this one requires, as written.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub requires: Vec<String>,
+}
+
+impl FeaturesModel {
+    /// The model the document declares.
+    pub fn feature_model(&self) -> crate::feature_model::FeatureModel {
+        crate::feature_model::FeatureModel::new(&self.declarations())
+            .expect("the parser admits only a list that is a model")
+    }
+
+    /// The declarations in document order.
+    pub fn declarations(&self) -> Vec<crate::feature_model::FeatureDeclaration> {
+        self.features
+            .iter()
+            .map(|entry| crate::feature_model::FeatureDeclaration {
+                name: entry.name.clone(),
+                requires: entry.requires.clone(),
+            })
+            .collect()
+    }
+}
+
 /// The algorithm a queue document selects — one row of the RFC §synth-5-P
 /// selection table. The document names none; this is what the generator
 /// picks from the storage mode and the two cardinalities.
@@ -5873,6 +5937,9 @@ pub enum ForgeDocument {
     /// FIFO handed between execution contexts. See [`QueueModel`].
     #[serde(rename = "queue")]
     Queue(QueueModel),
+    /// The features of a product line. See [`FeaturesModel`].
+    #[serde(rename = "feature-model")]
+    FeatureModel(FeaturesModel),
 }
 
 impl ForgeDocument {
@@ -5897,6 +5964,7 @@ impl ForgeDocument {
             Self::Enum(m) => &m.name,
             Self::EventSchema(m) => &m.name,
             Self::Queue(m) => &m.name,
+            Self::FeatureModel(m) => &m.name,
         }
     }
 
@@ -5921,6 +5989,7 @@ impl ForgeDocument {
             Self::Enum(_) => ForgeKind::Enum,
             Self::EventSchema(_) => ForgeKind::EventSchema,
             Self::Queue(_) => ForgeKind::Queue,
+            Self::FeatureModel(_) => ForgeKind::FeatureModel,
         }
     }
 
@@ -5989,6 +6058,9 @@ impl ForgeDocument {
             // `_event.data.<field>` by event name — neither through the
             // alias as a record.
             Self::Enum(_) | Self::EventSchema(_) => return None,
+            // A feature model is read by its importer's conditions, by
+            // feature name, never through its alias.
+            Self::FeatureModel(_) => return None,
         })
     }
 
@@ -6065,6 +6137,8 @@ impl ForgeDocument {
             Self::EventSchema(_) => RuntimeDep::None,
             // The queue types live in `sce_forge_runtime::queue`.
             Self::Queue(_) => RuntimeDep::ForgeRuntime,
+            // A declaration emits nothing, so it depends on nothing.
+            Self::FeatureModel(_) => RuntimeDep::None,
         }
     }
 }
@@ -6157,7 +6231,7 @@ mod tests {
     fn forge_kind_attr_names_round_trip() {
         assert_eq!(
             ForgeKind::ALL_ATTR_NAMES.len(),
-            19,
+            20,
             "the kind vocabulary changed size — every arm below counts it"
         );
         let mut seen: BTreeSet<&'static str> = BTreeSet::new();

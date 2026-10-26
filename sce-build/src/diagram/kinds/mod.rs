@@ -89,6 +89,9 @@ pub fn pictures(
         // A queue has no picture of its own yet: the pseudocode page and the
         // field table carry it.
         ForgeDocument::Queue(_) => Ok(Vec::new()),
+        // A feature model is a list of features and what each requires; the
+        // pseudocode page carries it.
+        ForgeDocument::FeatureModel(_) => Ok(Vec::new()),
     }
 }
 
