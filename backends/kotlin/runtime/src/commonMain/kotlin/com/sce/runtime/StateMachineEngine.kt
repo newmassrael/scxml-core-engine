@@ -4995,9 +4995,14 @@ abstract class StateMachineEngine<S : State, E : Event>(
     /**
      * §scxml-6.4: Send event by name (string-based, for cross-SM routing).
      * Internal: only used by parent SM's [sendToChild] for type-erased communication.
+     *
+     * A send without a payload is [sendByNameWithData] with empty data, not a
+     * second door: one place resolves the name and records the name the event
+     * arrived under ([EventMetadata.name]), so the two deliveries cannot drift
+     * apart.
      */
     internal fun sendByName(name: String) {
-        resolveArrivingEvent(name)?.let { send(it, EventMetadata(name = arrivalNameOf(it, name))) }
+        sendByNameWithData(name, "")
     }
 
     /**
@@ -5029,8 +5034,8 @@ abstract class StateMachineEngine<S : State, E : Event>(
 
     /**
      * §scxml-6.4 / C.1: type-erased injection carrying the send's payload.
-     * [sendByName] drops event data because its callers have none; an addressed
-     * `<send>` does, and losing it would make the delivery arrive stripped.
+     * [sendByName] is this door with no payload; an addressed `<send>` may carry
+     * one, and losing it would make the delivery arrive stripped.
      */
     internal fun sendByNameWithData(name: String, data: String) {
         resolveArrivingEvent(name)?.let {
