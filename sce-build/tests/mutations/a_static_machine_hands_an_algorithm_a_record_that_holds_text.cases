@@ -32,7 +32,7 @@ PY
 mutation_case "a record with a byte string is handed to an algorithm" <<'PY'
 edit("sce-build/src/forge/static_lowering.rs",
      "        || (matches!(ty, SceType::String) && max_size.is_some())\n",
-     "        || matches!(ty, SceType::String | SceType::Bytes)\n")
+     "        || (matches!(ty, SceType::String | SceType::Bytes) && max_size.is_some())\n")
 PY
 
 mutation_case "the Interpreter writes an algorithm's text to a record without the bound" <<'PY'

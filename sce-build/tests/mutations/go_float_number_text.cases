@@ -21,10 +21,13 @@ edit("backends/go/runtime/number_text.go",
      'return "+Inf"')
 PY
 
+# Inside the zero arm, where the sign is spelled. Letting -0 past that arm is
+# no mutant: the layout below writes `math.Abs` of it and asks `value < 0`,
+# which is false for -0, so it still comes out as "0".
 mutation_case "negative zero keeps its sign" <<'PY'
 edit("backends/go/runtime/number_text.go",
-     "case value == 0:",
-     "case value == 0 && !math.Signbit(value):")
+     "case value == 0:\n\t\treturn \"0\"",
+     "case value == 0:\n\t\tif math.Signbit(value) {\n\t\t\treturn \"-0\"\n\t\t}\n\t\treturn \"0\"")
 PY
 
 mutation_case "decimal notation ends at 1e20" <<'PY'

@@ -34,7 +34,7 @@ mutation_oracles backends/rust/tests/tests/static_scenarios.rs
 mutation_case "the walk never leaves the whole name" <<'PY'
 edit("backends/rust/runtime/src/policy.rs",
      "                Some(at) => candidate = &candidate[..at],",
-     "                Some(_) => return Self::get_event_from_name(\"*\"),")
+     "                Some(_) => candidate = &candidate[..0],")
 PY
 
 mutation_case "the name is cut at any character, not at a token boundary" <<'PY'
