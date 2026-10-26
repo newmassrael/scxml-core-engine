@@ -1857,6 +1857,17 @@ struct GenerateArgs {
     /// sce-portable-emit-probe crate gates both directions.
     #[arg(long)]
     no_std: bool,
+    /// Generate the variant of the document these features denote (ADR 0057
+    /// §6): comma-separated, `--features` alone for the variant with no
+    /// feature on.
+    ///
+    /// The document must import a feature model, and the selection is held
+    /// to it: a name it does not declare and a feature without one it requires
+    /// are refused, never completed. A document that carries feature
+    /// conditions is refused without this flag, since generating it as written
+    /// would choose the variant with every feature on for the build.
+    #[arg(long, value_delimiter = ',', num_args = 0.., value_name = "FEATURE")]
+    features: Option<Vec<String>>,
     /// Declare an Event I/O Processor `type` this build's host serves
     /// (§scxml-6.2.5 makes the identifier extensible). Repeatable.
     ///
@@ -2462,6 +2473,21 @@ struct CheckArgs {
     /// to render, so the flag has no producer to agree with there.
     #[arg(long, conflicts_with_all = ["scxml_set", "forge", "document", "deploy"])]
     no_std: bool,
+    /// Check the variant of the document these features denote, mirroring
+    /// `generate --features` (ADR 0057 §6). Without it `check` judges the
+    /// document as written, with every variant held to its references.
+    ///
+    /// Single-document runs only, as `--no-std` is: the document-set route
+    /// compiles through the multi-document entry point, which reads each
+    /// document as written.
+    #[arg(
+        long,
+        value_delimiter = ',',
+        num_args = 0..,
+        value_name = "FEATURE",
+        conflicts_with_all = ["scxml_set", "forge", "document", "deploy"]
+    )]
+    features: Option<Vec<String>>,
     /// Declare an Event I/O Processor `type` this build's host serves,
     /// mirroring `generate --host-processor`. Repeatable.
     ///
@@ -3215,6 +3241,37 @@ enum Commands {
         /// semantics as `generate --include-dir`. Lets the parity
         /// harness drive include-dir resolution through both engines
         /// with a matching search path.
+        #[arg(short = 'I', long = "include-dir", value_name = "DIR")]
+        include_dir: Vec<String>,
+    },
+    /// Print the variant of a statechart that a selection of features
+    /// denotes, as a plain document (ADR 0057 §6).
+    ///
+    /// The variant is the document with every element whose condition the
+    /// selection does not satisfy removed, and with its condition attributes
+    /// and its feature-model import taken out. Removed text is blanked rather
+    /// than cut, so every line and column of the variant is the line and
+    /// column of the same text in the source (after preprocessor expansion).
+    ///
+    /// The derivation is the one `generate --features` and `check --features`
+    /// read, and the variant is printed only when its parse accepts it: what
+    /// this prints is a document SCE accepts, which an engine that reads plain
+    /// SCXML (the Interpreter) runs as the variant.
+    Project {
+        /// Input SCXML file path
+        scxml: String,
+        /// The features the variant is selected by, comma-separated;
+        /// `--features` alone selects the variant with no feature on.
+        #[arg(
+            long,
+            value_delimiter = ',',
+            num_args = 0..,
+            value_name = "FEATURE",
+            required = true
+        )]
+        features: Vec<String>,
+        /// Directories searched to resolve `<xi:include>` and `<sce:use>`
+        /// fragments by name — same semantics as `generate --include-dir`.
         #[arg(short = 'I', long = "include-dir", value_name = "DIR")]
         include_dir: Vec<String>,
     },
@@ -3980,6 +4037,11 @@ fn main() {
         Commands::ProvenanceRoster => cmd_provenance_roster(),
         Commands::Kinds { kind } => cmd_kinds(kind.as_deref()),
         Commands::Expand { scxml, include_dir } => cmd_expand(&scxml, &include_dir),
+        Commands::Project {
+            scxml,
+            features,
+            include_dir,
+        } => cmd_project(&scxml, features, &include_dir),
         Commands::Lower {
             scxml,
             include_dir,
@@ -4081,6 +4143,7 @@ fn assert_unchanged_refusal(command: &Commands) -> Option<String> {
         | Commands::ProvenanceRoster
         | Commands::Kinds { .. }
         | Commands::Expand { .. }
+        | Commands::Project { .. }
         | Commands::Lower { .. }
         | Commands::LowerAlgorithm { .. }
         | Commands::Verify { .. }
@@ -4457,6 +4520,51 @@ fn record_backend_outcome<E: ToDiagnostics>(
             }
             verdicts.push(LanguageVerdict::rejected(wire, first_diagnostic_code(&e)));
         }
+    }
+}
+
+/// The selection `--features` makes (ADR 0057 §6), or `None` when the flag is
+/// absent. `--features` alone and `--features=` select the variant with no
+/// feature on; an empty entry between commas names nothing and is dropped.
+fn selected_features(features: Option<Vec<String>>) -> Option<Vec<String>> {
+    features.map(|names| {
+        names
+            .into_iter()
+            .map(|name| name.trim().to_string())
+            .filter(|name| !name.is_empty())
+            .collect()
+    })
+}
+
+/// Refuse a selection for a forge document: only a statechart is written
+/// against a feature model, so a selection there is held to nothing.
+fn refuse_a_selection_of_a_forge_document(
+    features: &Option<Vec<String>>,
+    path: &str,
+    error_format: ErrorFormat,
+) {
+    if let Some(features) = features {
+        error_format.emit_and_exit(
+            &sce_build::forge::error::Located::new(
+                sce_build::forge::error::ForgeError::from(
+                    sce_build::forge::error::ValidationError::FeatureSelectionWithoutModel {
+                        features: features.clone(),
+                    },
+                ),
+                path,
+                None,
+                None,
+            ),
+            "",
+        );
+    }
+}
+
+/// `parser`, reading the variant `features` select when there is a selection.
+fn select_variant(parser: SCXMLParser, features: &Option<Vec<String>>) -> SCXMLParser {
+    match features {
+        Some(names) => parser.with_features(names.clone()),
+        None => parser,
     }
 }
 
@@ -5056,6 +5164,9 @@ fn cmd_check_document_set(args: CheckArgs, error_format: ErrorFormat) {
         go_module_prefix,
         const_fold_budget,
         no_std: _,
+        // Declared to conflict with every argument that reaches this route,
+        // as `--no-std` is: a set is compiled as written.
+        features: _,
         host_processor,
         host_invoker,
         // The flags this route cannot honour are declared to conflict
@@ -5240,9 +5351,11 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
         go_module_prefix,
         const_fold_budget,
         no_std,
+        features,
         host_processor,
         host_invoker,
     } = args;
+    let features = selected_features(features);
     let lexicon = check_lexicon(&lexicon);
     // The router above leaves only the single-document shape here, and
     // clap's `required_unless_present` guarantees the positional is the
@@ -5274,6 +5387,7 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
 
     match sce_build::classify_document(&scxml_content) {
         sce_build::Pipeline::Forge => {
+            refuse_a_selection_of_a_forge_document(&features, scxml_path, error_format);
             let doc_label = sce_build::DocumentLabel::for_input_path(scxml_path);
             let base_dir = Path::new(scxml_path)
                 .parent()
@@ -5374,8 +5488,11 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
             report.needs_event_scheduler = Some(false);
         }
         sce_build::Pipeline::Scxml => {
-            let mut parser = SCXMLParser::new()
-                .with_include_dirs(include_dir.iter().map(PathBuf::from).collect());
+            let mut parser = select_variant(
+                SCXMLParser::new()
+                    .with_include_dirs(include_dir.iter().map(PathBuf::from).collect()),
+                &features,
+            );
             let mut model = match parser.parse_file(scxml_path) {
                 Ok(m) => m,
                 Err(e) => error_format.emit_and_exit(&e, ""),
@@ -5836,6 +5953,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
         partition,
         const_fold_budget,
         no_std,
+        features,
         host_processor,
         host_invoker,
         input_root,
@@ -5870,6 +5988,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
     let cpp_namespace_prefix = cpp_namespace_prefix.as_deref();
     let c_symbol_prefix = c_symbol_prefix.as_deref();
     let include_dirs: &[String] = &include_dir;
+    let features = selected_features(features);
 
     let lang = parse_served_language(LanguageRoute::Generate, language);
 
@@ -5940,6 +6059,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
 
     match sce_build::classify_document(&scxml_content) {
         sce_build::Pipeline::Forge => {
+            refuse_a_selection_of_a_forge_document(&features, scxml_path, error_format);
             // ⚠ This was the BASENAME, on the written reasoning that a
             // filename with its extension is "enough for downstream tooling
             // to open the file without guessing the suffix". The suffix is
@@ -6163,9 +6283,12 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
     // §scxml-6.4: a hybrid invoke's candidates are found where
     // `copy_static_invoke_children` stages them from — the input root first
     // — so the arguments each one may keep are read from the real document.
-    let mut parser = SCXMLParser::new()
-        .with_include_dirs(include_dirs.iter().map(PathBuf::from).collect())
-        .with_candidate_roots(input_root_override.map(PathBuf::from).into_iter().collect());
+    let mut parser = select_variant(
+        SCXMLParser::new()
+            .with_include_dirs(include_dirs.iter().map(PathBuf::from).collect())
+            .with_candidate_roots(input_root_override.map(PathBuf::from).into_iter().collect()),
+        &features,
+    );
     // Typed parser failures (XML/XSD/validation) flow straight to the
     // unified diagnostic emitter — the old CliError::ScxmlParse
     // wrapper collapsed forge codes into cli/scxml-parse, losing the
@@ -12253,6 +12376,22 @@ fn cmd_expand(scxml_path: &str, include_dirs: &[String]) {
     // template parity harness can byte-compare against the C++
     // pugixml canonicalisation without newline handling quirks.
     out_bytes(expanded.as_bytes());
+}
+
+// ── Subcommand: project ────────────────────────────────────────
+//
+// The variant of a statechart a selection of features denotes (ADR 0057 §6),
+// through `SCXMLParser::project_file`: the derivation `generate --features`
+// reads, printed only when its parse accepts it.
+
+fn cmd_project(scxml_path: &str, features: Vec<String>, include_dirs: &[String]) {
+    let features = selected_features(Some(features)).unwrap_or_default();
+    let mut parser =
+        SCXMLParser::new().with_include_dirs(include_dirs.iter().map(PathBuf::from).collect());
+    let variant = parser
+        .project_file(scxml_path, features)
+        .unwrap_or_else(|err| current_error_format().emit_and_exit(&err, ""));
+    out_bytes(variant.as_bytes());
 }
 
 // ── Subcommand: lower ──────────────────────────────────────────

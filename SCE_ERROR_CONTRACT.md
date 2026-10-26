@@ -761,6 +761,7 @@ references against a real document and drift silently.
 | `codec/variant-dispatch-flag-not-resolved` | `validation` | `replace_one_of` | SCE Protocol-Synthesis RFC §5.B |
 | `codec/variant-duplicate-default-arm` | `validation` | no | SCE Protocol-Synthesis RFC §5.B |
 | `codec/variant-no-default-arm` | `validation` | no | SCE Protocol-Synthesis RFC §5.B |
+| `codegen/feature-selection-required` | `generate` | no |  |
 | `codegen/generic-kind-backend-emit-missing` | `generate` | no |  |
 | `codegen/mcu-class-kind-on-non-mcu-language` | `generate` | no |  |
 | `codegen/no-std-fs-load-not-supported` | `generate` | no | SCE Protocol-Synthesis RFC §5.J.2 |
@@ -953,6 +954,9 @@ references against a real document and drift silently.
 | `validation/feature-model-not-read` | `validation` | no |  |
 | `validation/feature-name-invalid` | `validation` | no |  |
 | `validation/feature-requirement-undeclared` | `validation` | no |  |
+| `validation/feature-selection-incomplete` | `validation` | no |  |
+| `validation/feature-selection-undeclared` | `validation` | no |  |
+| `validation/feature-selection-without-model` | `validation` | no |  |
 | `validation/feature-undeclared` | `validation` | no |  |
 | `validation/incompatible-attributes` | `validation` | no |  |
 | `validation/invalid-attribute` | `validation` | `replace_one_of` |  |

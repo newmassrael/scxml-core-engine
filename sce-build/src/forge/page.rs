@@ -246,6 +246,9 @@ pub enum Word {
     ClauseQueue,
     TypeInternal,
     Raise,
+    /// A feature model's heading (ADR 0057 §2). It opens the block of its
+    /// features, so its line names the word a shape closes it with.
+    FeatureModel,
 }
 
 impl Word {
@@ -389,6 +392,7 @@ impl Word {
         Word::ClauseQueue,
         Word::TypeInternal,
         Word::Raise,
+        Word::FeatureModel,
     ];
 }
 
@@ -562,6 +566,7 @@ fn en_word(w: Word) -> &'static str {
         Word::ClauseQueue => "queue:",
         Word::TypeInternal => "[internal]",
         Word::Raise => "raise",
+        Word::FeatureModel => "feature-model",
     }
 }
 
@@ -1088,6 +1093,7 @@ fn ko_word(w: Word) -> &'static str {
         Word::ClauseQueue => "큐:",
         Word::TypeInternal => "[내부]",
         Word::Raise => "발생",
+        Word::FeatureModel => "기능모델",
     }
 }
 

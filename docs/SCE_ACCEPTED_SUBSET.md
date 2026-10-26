@@ -8390,9 +8390,20 @@ state some configuration removes while it stays is
 the state as a `referent` related site, and names the least configuration that
 shows it.
 
+A document that carries conditions is generated one variant at a time:
+`generate --features a,b` reads the variant those features denote, and without
+`--features` the document is `codegen/feature-selection-required`.
+`check --features` judges the same variant, and `sce-codegen project --features`
+prints it as a plain document, each line and column where the source has it. A
+selection is held to the model: a name it does not declare is
+`validation/feature-selection-undeclared`, a feature selected without one it
+requires is `validation/feature-selection-incomplete` (refused, never
+completed), and a selection for a document that imports no model is
+`validation/feature-selection-without-model`.
+
 ---
 
-## Appendix — `DiagnosticCode` index (471 codes)
+## Appendix — `DiagnosticCode` index (475 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -8505,6 +8516,9 @@ Codes that the author can avoid by writing a better SCXML /
 | `validation/feature-gate-unsupported` | Validation |
 | `validation/feature-condition-redundant` | Validation |
 | `validation/feature-gate-escapes` | Validation |
+| `validation/feature-selection-without-model` | Validation |
+| `validation/feature-selection-undeclared` | Validation |
+| `validation/feature-selection-incomplete` | Validation |
 | `validation/event-schema-on-builtin-event` | Validation |
 | `validation/event-payload-field-unknown` | Validation |
 | `validation/bytes-comparison-not-equality` | Validation |
@@ -8862,6 +8876,7 @@ or SCE-internal issues.
 | `generate/unsupported-feature` | Generate | SCXML construct exists in the model but the requested target language has no codegen path for it (e.g. `<invoke type="sce:mesh-rpc">` with `--lang rust`) |
 | `codegen/mcu-class-kind-on-non-mcu-language` | Generate | Shell-only at PR-0; producer + matrix walker land with the algorithm kind in Phase A3. MCU-class kind authored against a non-MCU language target (SCE Protocol-Synthesis RFC §5.J.4) |
 | `codegen/generic-kind-backend-emit-missing` | Generate | Shell-only at PR-0; producer lands with the matrix walker. Generic-class kind expected to emit on a backend per the parity matrix but the per-kind template is absent (SCE bug, SCE Protocol-Synthesis RFC §5.J.5) |
+| `codegen/feature-selection-required` | Generate | A statechart carrying feature conditions generated with no `--features` for a backend that writes one variant at a time (ADR 0057 §6) |
 | `io/filesystem` | Io | Generic filesystem failure |
 | `cli/read-input` | Cli | Input file read error |
 | `cli/write-output` | Cli | Output file write error |

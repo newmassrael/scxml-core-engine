@@ -4684,6 +4684,49 @@ pub enum ValidationError {
         witness: Vec<String>,
     },
 
+    /// Features were selected (`--features`) for a document that imports no
+    /// feature model, so the selection is held to nothing (ADR 0057 §6).
+    ///
+    /// Wire code: `validation/feature-selection-without-model`.
+    #[error(
+        "the features {} were selected for a document that imports no feature model — a \
+         selection is held to the model the document is written against",
+        features.join(", ")
+    )]
+    FeatureSelectionWithoutModel {
+        /// The selection as given.
+        features: Vec<String>,
+    },
+
+    /// A selected feature the document's feature model does not declare.
+    ///
+    /// Wire code: `validation/feature-selection-undeclared`.
+    #[error("the selected feature '{feature}' is not a feature of the model '{model}'")]
+    FeatureSelectionUndeclared {
+        /// The name as selected.
+        feature: String,
+        /// The model's document name.
+        model: String,
+    },
+
+    /// A selection that holds a feature and not one it requires. A selection is
+    /// refused rather than completed, so that a build never runs a
+    /// configuration nobody wrote (ADR 0057 §6).
+    ///
+    /// Wire code: `validation/feature-selection-incomplete`.
+    #[error(
+        "the selection holds '{feature}' and not '{missing}', which '{feature}' requires in \
+         the model '{model}' — select both"
+    )]
+    FeatureSelectionIncomplete {
+        /// The selected feature.
+        feature: String,
+        /// The feature it requires that the selection leaves out.
+        missing: String,
+        /// The model's document name.
+        model: String,
+    },
+
     /// An EventSchema
     /// document declares `sce:event-name="<X>"` against an event name
     /// that is reserved for the W3C SCXML platform (`error.*`,
@@ -5746,6 +5789,18 @@ pub enum GenerateError {
          (SCE Protocol-Synthesis RFC §5.J.4 expects every backend that emits to ship one)"
     )]
     CodegenGenericKindBackendEmitMissing { kind: String, language: String },
+
+    /// A statechart that carries feature conditions, generated for a backend
+    /// that writes one variant at a time, with no variant named (ADR 0057 §6).
+    /// Generating it as written would choose the variant with every feature on
+    /// without anyone having chosen it; `--features` names the variant, and
+    /// `sce-codegen project` writes it as a plain document.
+    #[error(
+        "this statechart is written against the feature model '{model}' and carries feature \
+         conditions, and the {language} backend generates one variant of it at a time: name \
+         the variant with --features"
+    )]
+    CodegenFeatureSelectionRequired { model: String, language: String },
 
     /// SCE Protocol-Synthesis RFC §synth-5-P (`queue/storage-runtime-missing`)
     /// — a queue document whose storage mode the target language's forge

@@ -1987,7 +1987,10 @@ fn render_queue(m: &QueueModel) -> Vec<Node> {
 /// name is one word wherever it stands.
 fn render_feature_model(m: &FeaturesModel) -> Vec<Node> {
     let mut out = Out::new();
-    out.line(&format!("feature-model {}", text(&m.name)));
+    out.line_of(vec![
+        Part::Word(Word::FeatureModel),
+        Part::Text(text(&m.name).into_owned()),
+    ]);
     out.nested(|out| {
         for feature in &m.features {
             let mut line = format!("feature {}", text(&feature.name));

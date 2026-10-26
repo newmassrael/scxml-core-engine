@@ -130,6 +130,13 @@ pub struct SCXMLParser {
     /// `<sce:import>`s are read from when they are not beside it
     /// ([`SCXMLParser::import_dir`]).
     candidate_roots: Vec<PathBuf>,
+    /// The features a parse selects (ADR 0057 §6): set, the parse reads the
+    /// variant of the document those features denote rather than the
+    /// document. Set via [`SCXMLParser::with_features`].
+    features: Option<Vec<String>>,
+    /// The text of the variant the most recent parse read, when it read one
+    /// ([`SCXMLParser::project_file`]).
+    variant: Option<String>,
 }
 
 /// Run the XInclude + `sce:template` preprocessors on raw SCXML
@@ -2117,7 +2124,43 @@ impl SCXMLParser {
             preprocessor_deps: Vec::new(),
             include_dirs: Vec::new(),
             candidate_roots: Vec::new(),
+            features: None,
+            variant: None,
         }
+    }
+
+    /// The variant of the document at `scxml_path` that `features` denote, as
+    /// a plain document (ADR 0057 §6) — what `sce-codegen project` writes. It
+    /// is the text the parse of that selection reads, and it is returned only
+    /// when that parse accepts it, so a projection is always a document SCE
+    /// accepts. Positions are the source's, after preprocessor expansion.
+    pub fn project_file(
+        &mut self,
+        scxml_path: &str,
+        features: Vec<String>,
+    ) -> Result<String, crate::forge::error::Located<crate::forge::error::ForgeError>> {
+        self.features = Some(features);
+        self.variant = None;
+        let parsed = self.parse_file(scxml_path);
+        self.features = None;
+        parsed?;
+        Ok(self
+            .variant
+            .take()
+            .expect("a parse with a selection reads a variant"))
+    }
+
+    /// Read the variant of each document that `features` denote (ADR 0057
+    /// §6): the document with every element whose condition those features do
+    /// not satisfy removed, its condition attributes and its feature-model
+    /// import blanked, positions kept ([`crate::product_line::ProductLine::derive`]).
+    /// The selection is held to the document's feature model: a name it does
+    /// not declare, a feature without one it requires, and a selection for a
+    /// document that imports no model are refused. Chains off
+    /// [`SCXMLParser::new`].
+    pub fn with_features(mut self, features: Vec<String>) -> Self {
+        self.features = Some(features);
+        self
     }
 
     /// Configure where a hybrid invoke's `sce:candidates` documents are
@@ -2444,6 +2487,70 @@ impl SCXMLParser {
     /// parse each have a diagnostic of their own, anchored where the author can
     /// act on it: the `<sce:import>` line of this document, or the line of the
     /// sibling's own defect.
+    /// The text of the variant of `content` that `features` denote (ADR 0057
+    /// §6). A text that is not XML is answered as it came, for the parse of it
+    /// to refuse in its own words.
+    fn derive_variant(
+        &self,
+        content: &str,
+        features: &[String],
+        base_dir: Option<&Path>,
+        diag_label: &str,
+    ) -> Result<String, crate::forge::error::Located<crate::forge::error::ForgeError>> {
+        use crate::feature_model::SelectionError;
+        use crate::forge::error::{Located, ValidationError};
+        let Ok(doc) = roxmltree::Document::parse(content) else {
+            return Ok(content.to_string());
+        };
+        let root = doc.root_element();
+        let imports = SCXMLModel {
+            forge_imports: crate::forge::parser::parse_imports(&root, diag_label)?,
+            ..SCXMLModel::default()
+        };
+        let dir = base_dir.map(|dir| self.import_dir(&imports, dir));
+        let Some(line) = Self::read_product_line(&doc, &imports, dir.as_deref(), diag_label)?
+        else {
+            let pos = doc.text_pos_at(root.range().start);
+            return Err(Located::new(
+                ValidationError::FeatureSelectionWithoutModel {
+                    features: features.to_vec(),
+                }
+                .into(),
+                diag_label,
+                Some(pos.row),
+                Some(pos.col),
+            ));
+        };
+        let model_name = line.model_name().to_string();
+        let configuration = line
+            .model()
+            .select(features.iter().map(String::as_str))
+            .map_err(|error| {
+                let refusal = match error {
+                    SelectionError::Undeclared { name } => {
+                        ValidationError::FeatureSelectionUndeclared {
+                            feature: name,
+                            model: model_name.clone(),
+                        }
+                    }
+                    SelectionError::MissingRequirement { feature, missing } => {
+                        ValidationError::FeatureSelectionIncomplete {
+                            feature,
+                            missing,
+                            model: model_name.clone(),
+                        }
+                    }
+                };
+                let line_of_import = imports
+                    .forge_imports
+                    .iter()
+                    .find(|import| import.kind == crate::forge::model::ForgeKind::FeatureModel)
+                    .and_then(|import| import.line);
+                Located::new(refusal.into(), diag_label, line_of_import, None)
+            })?;
+        Ok(line.derive(content, &configuration))
+    }
+
     /// The document as a product line (ADR 0057): its feature model, read from
     /// `dir` through the document's `<sce:import kind="feature-model">`, and the
     /// conditions its elements carry. `None` for a document that imports no
@@ -2612,6 +2719,19 @@ impl SCXMLParser {
         base_dir: Option<&Path>,
     ) -> Result<SCXMLModel, crate::forge::error::Located<crate::forge::error::ForgeError>> {
         use crate::forge::error::{ForgeError, Located, XmlError};
+        // ADR 0057 §6: a selection reads the variant it denotes, and the parse
+        // of that variant is the parse of a plain document — no import, no
+        // condition — whose every position is the source's.
+        if let Some(features) = self.features.take() {
+            let variant = self.derive_variant(content, &features, base_dir, label.diagnostic_label);
+            let parsed = variant.and_then(|text| {
+                let parsed = self.parse_impl(&text, label, base_dir);
+                self.variant = Some(text);
+                parsed
+            });
+            self.features = Some(features);
+            return parsed;
+        }
         let DocumentLabel {
             identifier: name,
             diagnostic_label: diag_label,

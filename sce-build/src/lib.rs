@@ -1763,6 +1763,22 @@ pub fn emit_model_artifacts(
     language: generator::Language,
     options: &ModelEmitOptions<'_>,
 ) -> Result<generator::GeneratedOutput, CompileError> {
+    // ADR 0057 §6: a document that carries feature conditions is generated one
+    // variant at a time. The parse of a selection (`--features`) is a plain
+    // document and passes here; the document as written would be the variant
+    // with every feature on, which nobody chose.
+    if let Some(line) = model.product_line.as_ref().filter(|line| line.is_gated()) {
+        return Err(forge::error::Located::new(
+            forge::error::GenerateError::CodegenFeatureSelectionRequired {
+                model: line.model_name().to_string(),
+                language: forge::codegen_matrix::language_wire_name(language).to_string(),
+            }
+            .into(),
+            source_name,
+            None,
+            None,
+        ));
+    }
     let engine_for = |lang: generator::Language| {
         options
             .script_engine

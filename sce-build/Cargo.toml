@@ -1366,5 +1366,13 @@ name = "generate_with_imports"
 path = "tests/generate_with_imports.rs"
 required-features = ["cli"]
 
+# A selection of features (ADR 0057 §6): `generate --features`, `check
+# --features` and `project`. It runs `sce-codegen`, so it carries the `cli`
+# gate.
+[[test]]
+name = "feature_selection"
+path = "tests/feature_selection.rs"
+required-features = ["cli"]
+
 [lints]
 workspace = true

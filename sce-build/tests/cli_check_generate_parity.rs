@@ -259,6 +259,16 @@ const GENERATE_FLAGS: &[FlagFacts] = &[
          parses the other's",
     ),
     f(
+        "--features",
+        Reach::Verdict,
+        None,
+        "rust",
+        "selects the variant of a gated statechart the run reads (ADR 0057 \
+         §6): a selection the model does not admit is refused, and a gated \
+         document is refused without one, so the same document is accepted or \
+         not by it",
+    ),
+    f(
         "--format-style",
         Reach::Emission,
         Some(&["--format-style", ".clang-format"]),

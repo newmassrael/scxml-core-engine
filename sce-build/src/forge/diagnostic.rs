@@ -1311,6 +1311,10 @@ pub enum DiagnosticCode {
     CodegenMcuClassKindOnNonMcuLanguage,
     #[serde(rename = "codegen/generic-kind-backend-emit-missing")]
     CodegenGenericKindBackendEmitMissing,
+    /// A gated statechart generated with no variant named for a backend that
+    /// writes one at a time — see [`GenerateError::CodegenFeatureSelectionRequired`].
+    #[serde(rename = "codegen/feature-selection-required")]
+    CodegenFeatureSelectionRequired,
 
     // ── §synth-5-P Queue (the `queue` kind). Four document-level codes the
     //    selection table decides, and one codegen refusal for a storage mode a
@@ -3521,6 +3525,18 @@ pub enum DiagnosticCode {
     /// [`ValidationError::FeatureGateEscapes`].
     #[serde(rename = "validation/feature-gate-escapes")]
     ValidationFeatureGateEscapes,
+    /// Features selected for a document that imports no model — see
+    /// [`ValidationError::FeatureSelectionWithoutModel`].
+    #[serde(rename = "validation/feature-selection-without-model")]
+    ValidationFeatureSelectionWithoutModel,
+    /// A selected feature the model does not declare — see
+    /// [`ValidationError::FeatureSelectionUndeclared`].
+    #[serde(rename = "validation/feature-selection-undeclared")]
+    ValidationFeatureSelectionUndeclared,
+    /// A selection that leaves out a feature one of it requires — see
+    /// [`ValidationError::FeatureSelectionIncomplete`].
+    #[serde(rename = "validation/feature-selection-incomplete")]
+    ValidationFeatureSelectionIncomplete,
 
     // ── NL→IR Item C1 Path A: EventSchema kind ───────
     //    Three new codes for the 18th Forge kind:
@@ -3779,6 +3795,8 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         // Codegen matrix shells (SCE Protocol-Synthesis RFC §synth-5-J-4 / §synth-5-J-5)
         CodegenMcuClassKindOnNonMcuLanguage,
         CodegenGenericKindBackendEmitMissing,
+        // ADR 0057 §6: a gated statechart with no variant named
+        CodegenFeatureSelectionRequired,
         // Queue kind (SCE Protocol-Synthesis RFC §synth-5-P)
         QueueStorageNotExactlyOne,
         QueueAllocatorProgressMissing,
@@ -4156,6 +4174,9 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ValidationFeatureGateUnsupported,
         ValidationFeatureConditionRedundant,
         ValidationFeatureGateEscapes,
+        ValidationFeatureSelectionWithoutModel,
+        ValidationFeatureSelectionUndeclared,
+        ValidationFeatureSelectionIncomplete,
         // ── NL→IR Item C1 Path A: EventSchema kind ────
         ValidationEventSchemaOnBuiltinEvent,
         ValidationEventPayloadFieldUnknown,
@@ -4965,6 +4986,7 @@ impl DiagnosticCode {
             | GenerateSourceHashUnavailable
             | CodegenMcuClassKindOnNonMcuLanguage
             | CodegenGenericKindBackendEmitMissing
+            | CodegenFeatureSelectionRequired
             | IoFilesystem
             | CliUnknownLanguage
             | CliUnsupportedLanguage
@@ -5125,7 +5147,10 @@ impl DiagnosticCode {
             | ValidationFeatureUndeclared
             | ValidationFeatureGateUnsupported
             | ValidationFeatureConditionRedundant
-            | ValidationFeatureGateEscapes => None,
+            | ValidationFeatureGateEscapes
+            | ValidationFeatureSelectionWithoutModel
+            | ValidationFeatureSelectionUndeclared
+            | ValidationFeatureSelectionIncomplete => None,
         }
     }
 
@@ -5320,6 +5345,7 @@ impl DiagnosticCode {
             GenerateSourceHashUnavailable => "generate/source-hash-unavailable",
             CodegenMcuClassKindOnNonMcuLanguage => "codegen/mcu-class-kind-on-non-mcu-language",
             CodegenGenericKindBackendEmitMissing => "codegen/generic-kind-backend-emit-missing",
+            CodegenFeatureSelectionRequired => "codegen/feature-selection-required",
             CodegenNoStdScriptNotSupported => "codegen/no-std-script-not-supported",
             CodegenNoStdHttpNotSupported => "codegen/no-std-http-not-supported",
             CodegenNoStdFsLoadNotSupported => "codegen/no-std-fs-load-not-supported",
@@ -5744,6 +5770,9 @@ impl DiagnosticCode {
             ValidationFeatureGateUnsupported => "validation/feature-gate-unsupported",
             ValidationFeatureConditionRedundant => "validation/feature-condition-redundant",
             ValidationFeatureGateEscapes => "validation/feature-gate-escapes",
+            ValidationFeatureSelectionWithoutModel => "validation/feature-selection-without-model",
+            ValidationFeatureSelectionUndeclared => "validation/feature-selection-undeclared",
+            ValidationFeatureSelectionIncomplete => "validation/feature-selection-incomplete",
             // ── NL→IR Item C1 Path A: EventSchema kind ──
             ValidationEventSchemaOnBuiltinEvent => "validation/event-schema-on-builtin-event",
             ValidationEventPayloadFieldUnknown => "validation/event-payload-field-unknown",
@@ -9836,6 +9865,36 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
                 .chain(witness.iter().cloned())
                 .collect(),
         },
+        // A selection is an argument, not a token of the document, so no
+        // `actual` (§2.1): the message names it.
+        ValidationError::FeatureSelectionWithoutModel { features } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationFeatureSelectionWithoutModel,
+            stage: Stage::Validation,
+            expected: None,
+            actual: None,
+            fix: None,
+            key_fragments: features.clone(),
+        },
+        ValidationError::FeatureSelectionUndeclared { feature, model } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationFeatureSelectionUndeclared,
+            stage: Stage::Validation,
+            expected: None,
+            actual: None,
+            fix: None,
+            key_fragments: vec![feature.clone(), model.clone()],
+        },
+        ValidationError::FeatureSelectionIncomplete {
+            feature,
+            missing,
+            model,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationFeatureSelectionIncomplete,
+            stage: Stage::Validation,
+            expected: None,
+            actual: None,
+            fix: None,
+            key_fragments: vec![feature.clone(), missing.clone(), model.clone()],
+        },
         ValidationError::EventSchemaOnBuiltinEvent { event_name } => DiagnosticPayload {
             // NL→IR Mapping Roadmap Item C1 Path A (DL-9'): EventSchema
             // declared against a W3C built-in event namespace
@@ -10468,6 +10527,14 @@ fn generate_fields(e: &GenerateError) -> DiagnosticPayload {
                 key_fragments: vec![kind.clone(), language.clone()],
             }
         }
+        GenerateError::CodegenFeatureSelectionRequired { model, language } => DiagnosticPayload {
+            code: DiagnosticCode::CodegenFeatureSelectionRequired,
+            stage: Stage::Generate,
+            expected: None,
+            actual: None,
+            fix: None,
+            key_fragments: vec![model.clone(), language.clone()],
+        },
         GenerateError::QueueStorageRuntimeMissing {
             queue_name,
             storage,
@@ -14048,6 +14115,15 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:d54c90195c019259","code":"codegen/generic-kind-backend-emit-missing","stage":"generate","message":"generic-class kind 'algorithm': template missing for language 'python' (SCE Protocol-Synthesis RFC §5.J.4 expects every backend that emits to ship one)"}"#,
             ),
+            (
+                "codegen/feature-selection-required",
+                GenerateError::CodegenFeatureSelectionRequired {
+                    model: "session_features".into(),
+                    language: "go".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:8f99a86de464f6e5","code":"codegen/feature-selection-required","stage":"generate","message":"this statechart is written against the feature model 'session_features' and carries feature conditions, and the go backend generates one variant of it at a time: name the variant with --features"}"#,
+            ),
             // ── §synth-5-P Queue kind ──
             (
                 "forge/queue-storage-not-exactly-one",
@@ -15262,6 +15338,33 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:8031c6bdc3faf5bf","code":"validation/feature-gate-escapes","stage":"validation","message":"<transition target> names 'accepting', which is absent while the <transition> is present when only the feature session-unicast is on","actual":"accepting"}"#,
+            ),
+            (
+                "validation/feature-selection-without-model",
+                ValidationError::FeatureSelectionWithoutModel {
+                    features: vec!["session-unicast".into()],
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:6143bda0688b7af3","code":"validation/feature-selection-without-model","stage":"validation","message":"the features session-unicast were selected for a document that imports no feature model — a selection is held to the model the document is written against"}"#,
+            ),
+            (
+                "validation/feature-selection-undeclared",
+                ValidationError::FeatureSelectionUndeclared {
+                    feature: "session-unicst".into(),
+                    model: "session_features".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:ec5c81a296ddfe02","code":"validation/feature-selection-undeclared","stage":"validation","message":"the selected feature 'session-unicst' is not a feature of the model 'session_features'"}"#,
+            ),
+            (
+                "validation/feature-selection-incomplete",
+                ValidationError::FeatureSelectionIncomplete {
+                    feature: "session-unicast-accept".into(),
+                    missing: "session-unicast".into(),
+                    model: "session_features".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:673c1115973a3c3a","code":"validation/feature-selection-incomplete","stage":"validation","message":"the selection holds 'session-unicast-accept' and not 'session-unicast', which 'session-unicast-accept' requires in the model 'session_features' — select both"}"#,
             ),
             // ── NL→IR Item C1 Path A: EventSchema kind ───
             //   `id` hashes are placeholders; the goldens test prints
@@ -18139,6 +18242,9 @@ mod tests {
             | GenerateSourceHashUnavailable
             | CodegenMcuClassKindOnNonMcuLanguage
             | CodegenGenericKindBackendEmitMissing
+            // ADR 0057 §6: the repair names a variant, which is the build's
+            // choice, not a closed candidate set.
+            | CodegenFeatureSelectionRequired
             // Queue (RFC §synth-5-P) document-level checks: the repair is
             // the author's choice among documents the selection table
             // allows (a storage element, an allocator's progress, a
@@ -18589,6 +18695,9 @@ mod tests {
             | ValidationFeatureGateUnsupported
             | ValidationFeatureConditionRedundant
             | ValidationFeatureGateEscapes
+            | ValidationFeatureSelectionWithoutModel
+            | ValidationFeatureSelectionUndeclared
+            | ValidationFeatureSelectionIncomplete
             // NL→IR Item C1 Path A: EventSchema built-in-
             // event schema rejection — repair is author-domain
             // (rename `sce:event-name` to a non-reserved value or
@@ -18951,6 +19060,7 @@ mod tests {
                 | GenerateSourceHashUnavailable
                 | CodegenMcuClassKindOnNonMcuLanguage
                 | CodegenGenericKindBackendEmitMissing
+                | CodegenFeatureSelectionRequired
                 | CodegenNoStdScriptNotSupported
                 | CodegenNoStdHttpNotSupported
                 | CodegenNoStdFsLoadNotSupported
@@ -19237,6 +19347,9 @@ mod tests {
                 | ValidationFeatureGateUnsupported
                 | ValidationFeatureConditionRedundant
                 | ValidationFeatureGateEscapes
+                | ValidationFeatureSelectionWithoutModel
+                | ValidationFeatureSelectionUndeclared
+                | ValidationFeatureSelectionIncomplete
                 // NL→IR Item C1 Path A: EventSchema kind
                 | ValidationEventSchemaOnBuiltinEvent
                 | ValidationEventPayloadFieldUnknown
@@ -19253,9 +19366,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            471,
+            475,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 471 distinct variants to match the DiagnosticCode \
+             expected 475 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -19974,6 +20087,7 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | GenerateTemplateRender
             | CodegenMcuClassKindOnNonMcuLanguage
             | CodegenGenericKindBackendEmitMissing
+            | CodegenFeatureSelectionRequired
             | AlgorithmConstNotFoldable
             | AlgorithmConstFoldBudgetExceeded
             | AlgorithmConstYieldTypeMismatch
@@ -20246,6 +20360,9 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | ValidationFeatureGateUnsupported
             | ValidationFeatureConditionRedundant
             | ValidationFeatureGateEscapes
+            | ValidationFeatureSelectionWithoutModel
+            | ValidationFeatureSelectionUndeclared
+            | ValidationFeatureSelectionIncomplete
             | ValidationEventSchemaOnBuiltinEvent
             | ValidationEventPayloadFieldUnknown
             | ValidationBytesComparisonNotEquality
