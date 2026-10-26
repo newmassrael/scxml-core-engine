@@ -366,8 +366,14 @@ every variant (§1).
   that the document gives, so every variant spells a state alike.
 - **In-line children** must be the same in every variant: a run writes each as a file of its own, and a child a
   variant removes or changes is refused as `codegen/feature-lifting-mismatch`.
-- Still to do in this step: a conformance crate that compiles the output under every feature set and runs the
-  machine against each variant's, the Cargo-side guards for the requires edges of the model, and the matrix in CI.
+- **Conformance** (`backends/rust/feature-conformance`): `build.rs` generates the machine for every build and the
+  machine of each feature set alone; the tests build the crate under each set — rustc resolves the `#[cfg]` itself —
+  and drive both through every run of up to four events, asserting equal observations (configuration, host calls,
+  discarded events, end). The default set runs in the workspace sweep and the gate `workspace-tests` builds the
+  other two. The model's requires edge is the crate manifest's feature implication, kept by hand in both places;
+  a manifest without it builds a set no variant generates, which the observations refuse.
+- Still to do: the same for the C, C++ and Swift emissions (step 4), and a Cargo-facing statement of the edge
+  generated from the model rather than written twice.
 
 ## Questions left open
 
