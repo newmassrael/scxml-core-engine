@@ -202,7 +202,18 @@ jobs:
     # ThreadSanitizer (scripts/gate forge-rust), which build a sysroot and an
     # instrumented standard library on a cold cache. Measured on a warm
     # machine, 2026-10-09, those steps take about three minutes.
-    timeout-minutes: 20
+    #
+    # 30, from 20: the next day the LSCQ link race got its own loom model
+    # (`loom_queue_lscq_race`, c72a3f4c5b), an exhaustive search that alone
+    # took 437 s on run 39929067376, 537 s on 40054201670 and 711 s on
+    # 40144477639, and nothing re-measured the ceiling. The two jobs that
+    # finished took 15 and 19.7 minutes; six of the eight runs from
+    # 2026-10-23 to 2026-10-24 were cancelled at 20 with the queue models
+    # still running, a verdict lost rather than a red. The slowest race
+    # measured puts a job near 23 minutes, and 30 keeps that inside 85% of
+    # the ceiling, the share the mutation lane schedules into for the same
+    # reason (`scripts/lib/mutation_rounds_cost.sh`).
+    timeout-minutes: 30
 
     steps:
     - name: Checkout Repository
