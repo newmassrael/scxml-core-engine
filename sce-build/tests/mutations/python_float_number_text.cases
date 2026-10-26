@@ -23,10 +23,19 @@ edit("backends/python/runtime/sce_runtime/number_text.py",
      'return "inf"')
 PY
 
+# The zero guard is where the sign is lost, so the case writes the sign there,
+# as a platform that keys on the sign bit would. Letting -0.0 fall past the
+# guard instead is not observable: `abs` drops the sign before `repr`, a zero
+# normalizes to the one digit `0`, and `value < 0` is false for -0.0, so the
+# general layout spells it `0` as well.
 mutation_case "negative zero keeps its sign" <<'PY'
 edit("backends/python/runtime/sce_runtime/number_text.py",
-     "    if value == 0:",
-     "    if value == 0 and repr(value)[0] != '-':")
+     """    if value == 0:
+        return "0"
+""",
+     """    if value == 0:
+        return "-0" if repr(value)[0] == "-" else "0"
+""")
 PY
 
 mutation_case "decimal notation ends at 1e20" <<'PY'
