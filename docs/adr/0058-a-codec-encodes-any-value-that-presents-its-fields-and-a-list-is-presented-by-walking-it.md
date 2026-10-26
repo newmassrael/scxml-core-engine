@@ -66,8 +66,14 @@ its list; a length field the encoded length of what it bounds; the tag of a know
 bit is what the parent-tag derivation makes of the arm; DMA padding is zero. A derived element is not an item of the
 trait: the encoder computes it, as the encoding rules of ASN.1 (X.690) compute a length and a tag and never take them
 from the value. The decoder already computes every one of them (it reads them to walk the frame), so the generator
-knows which is which. A tag the grammar does not determine (the default arm of a variant, which keeps the tag it
-could not name) is presented, by that arm. The consequence is the property the proposal lacked: every source that
+knows which is which. The rule is by declaration and not by appearance: an element is derived only where the codec
+declares the derivation (a count or length reference, a variant's tag, a parent-tag carrier); every other element,
+a flag bit of a header byte among them, is presented, even where the values consumers choose for it usually follow
+from the content. A flag that says something the content does not (a header bit that marks an interest as a
+subscription to tokens or not) is presented, so that a value can say it. A tag the grammar does not determine (the
+default arm of a variant, which keeps the tag it could not name) is presented, by that arm. Step 1 writes the
+classification of every codec out as a table, element by element, so that a consumer can see which of its hand-set
+values would move before any output does. The consequence is the property the proposal lacked: every source that
 passes §3 encodes to a frame the decoder accepts.
 
 For each codec `X` the generator emits `trait XSource`, with one item per presented element of the grammar, in
