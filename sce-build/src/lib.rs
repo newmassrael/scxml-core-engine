@@ -88,6 +88,9 @@ pub mod event_descriptor;
 /// The features of a product line and the configurations Cargo can build of
 /// them (ADR 0057 §1).
 pub mod feature_model;
+/// The predicates a generator writes to select code by a build's features
+/// (ADR 0057 §9).
+pub mod feature_selector;
 /// The C-callable lowering surface, behind an off-by-default feature.
 /// `sce_scripting` links it beside `lua54` so `LuaEngine` can send an
 /// expression to the frontend's parser instead of to

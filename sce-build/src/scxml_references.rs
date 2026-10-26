@@ -482,6 +482,7 @@ mod tests {
             "h".to_string(),
             HistoryInfo {
                 parent: "b".to_string(),
+                presence: None,
                 history_type: "shallow".to_string(),
                 leaf_target: String::new(),
                 // A history default names descendants of the state it is
@@ -502,6 +503,7 @@ mod tests {
             "h".to_string(),
             HistoryInfo {
                 parent: "a".to_string(),
+                presence: None,
                 history_type: "deep".to_string(),
                 leaf_target: String::new(),
                 default_target: "ghost".to_string(),

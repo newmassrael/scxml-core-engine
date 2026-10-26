@@ -37,6 +37,7 @@ use std::collections::BTreeMap;
 use std::ops::Range;
 
 use crate::feature_model::{Configuration, FeatureModel};
+use crate::feature_selector::Selector;
 use crate::forge::error::{
     ForgeError, Located, RelatedRole, RelatedSite, SourceLocation, ValidationError,
 };
@@ -198,6 +199,45 @@ impl ProductLine {
     /// The elements that carry a condition, in document order.
     pub fn gates(&self) -> &[Gate] {
         &self.gates
+    }
+
+    /// The effective condition of the element at `range` of the source: that of
+    /// the innermost gated element enclosing it, `None` when no gate encloses it
+    /// (it is present in every variant). A gate's range holds the ranges of the
+    /// elements inside it, so containment is nesting.
+    pub fn condition_at(&self, range: &Range<usize>) -> Option<&PresenceCondition> {
+        self.gates
+            .iter()
+            .filter(|gate| gate.element.start <= range.start && range.end <= gate.element.end)
+            .min_by_key(|gate| gate.element.end - gate.element.start)
+            .map(|gate| &gate.effective)
+    }
+
+    /// The selector of the element at `range`, [`Selector::True`] where no gate
+    /// encloses it.
+    pub fn selector_at(&self, range: &Range<usize>) -> Selector {
+        self.condition_at(range)
+            .map_or(Selector::True, |condition| {
+                Selector::of_condition(condition, &self.model)
+            })
+    }
+
+    /// The distinct effective conditions of the document's gates, which every
+    /// variant answers and which its selector is written over.
+    pub fn distinct_conditions(&self) -> Vec<PresenceCondition> {
+        let mut conditions: Vec<PresenceCondition> = self
+            .gates
+            .iter()
+            .map(|gate| gate.effective.clone())
+            .collect();
+        conditions.sort();
+        conditions.dedup();
+        conditions
+    }
+
+    /// The selector of the variant `configuration` denotes (ADR 0057 §9).
+    pub fn variant_selector(&self, configuration: &Configuration) -> Selector {
+        Selector::of_variant(configuration, &self.distinct_conditions(), &self.model)
     }
 
     /// Whether any element carries a condition: a document that imports a model

@@ -159,6 +159,17 @@
           },
           "type": "array"
         },
+        "presence": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Selector"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The condition under which this action is present (ADR 0057 §9); see [`State::presence`]."
+        },
         "provenance": {
           "description": "`sce:provenance` spec-document anchors attached to this executable-content element.",
           "items": {
@@ -4536,6 +4547,17 @@
         "parent": {
           "type": "string"
         },
+        "presence": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Selector"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The condition under which this history is present (ADR 0057 §9): that of the state it is declared in, since a history takes none of its own."
+        },
         "source_location": {
           "anyOf": [
             {
@@ -4691,6 +4713,17 @@
               },
               "type": "array"
             },
+            "presence": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/Selector"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The condition under which this invoke is present (ADR 0057 §9); see [`State::presence`]."
+            },
             "provenance": {
               "description": "`sce:provenance` spec-document anchors attached to this `<invoke>`.",
               "items": {
@@ -4837,6 +4870,17 @@
               },
               "type": "array"
             },
+            "presence": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/Selector"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The condition under which this invoke is present (ADR 0057 §9); see [`State::presence`]."
+            },
             "provenance": {
               "description": "`sce:provenance` spec-document anchors attached to this `<invoke>`.",
               "items": {
@@ -4967,6 +5011,17 @@
               },
               "type": "array"
             },
+            "presence": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/Selector"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The condition under which this invoke is present (ADR 0057 §9); see [`State::presence`]."
+            },
             "provenance": {
               "description": "`sce:provenance` spec-document anchors attached to this `<invoke>`.",
               "items": {
@@ -5063,6 +5118,17 @@
                 "$ref": "#/definitions/Param"
               },
               "type": "array"
+            },
+            "presence": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/Selector"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The condition under which this invoke is present (ADR 0057 §9); see [`State::presence`]."
             },
             "provenance": {
               "description": "`sce:provenance` spec-document anchors attached to this `<invoke>`.",
@@ -6232,6 +6298,80 @@
       ],
       "type": "object"
     },
+    "Selector": {
+      "description": "A Boolean predicate over the features of a build.",
+      "oneOf": [
+        {
+          "description": "Holds in every build.",
+          "enum": [
+            "true"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Holds in no build.",
+          "enum": [
+            "false"
+          ],
+          "type": "string"
+        },
+        {
+          "additionalProperties": false,
+          "description": "The feature is on.",
+          "properties": {
+            "feature": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "feature"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "all": {
+              "items": {
+                "$ref": "#/definitions/Selector"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "all"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "any": {
+              "items": {
+                "$ref": "#/definitions/Selector"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "any"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "not": {
+              "$ref": "#/definitions/Selector"
+            }
+          },
+          "required": [
+            "not"
+          ],
+          "type": "object"
+        }
+      ]
+    },
     "SessionRoleKind": {
       "description": "Closed-set vocabulary for the cross-document session-FSM role that a SCXML document declares via the top-level `<sce:session-role kind=\"...\"/>` extension.\n\nv1 ships a single variant ([`AcceptSide`]) covering the canonical session-FSM accept-side state machine (`docs/session-fsm.md` §2.6 — `Accepting`, `Accepting.AwaitingInitSyn`, `Accepting.SentInitAck`, etc.). Future variants (initiator-side, broker-side, …) extend this enum in lockstep with their codegen- side semantics; declaring any unknown `kind` value at parse time fires [`crate::forge::error::ValidationError::ScxmlUnknownSessionRoleKind`] with the current vocabulary list embedded in the message.\n\nThe orchestrator (`crate::resolve_listener_links`) joins by named role only: a deploy.yaml link with `role: listener` pairs with the machine's source SCXML iff that SCXML declares `<sce:session-role kind=\"accept-side\"/>`. Partial-claim cases (either side declares the role but not the other) fire typed cross-doc diagnostics.\n\n`kind` values use the canonical session-FSM vocabulary (`accept-side`), NOT the wire-side deploy vocabulary (`listener`). The asymmetric pairing is hardcoded in the orchestrator — each domain uses its native term; the orchestrator knows the pairing table.\n\n[`AcceptSide`]: SessionRoleKind::AcceptSide",
       "oneOf": [
@@ -6423,6 +6563,17 @@
             "string",
             "null"
           ]
+        },
+        "presence": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Selector"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The condition under which this state is present (ADR 0057 §9): its own `sce:requires` and those of the elements around it. `None` in every variant, and in a document that carries no condition."
         },
         "provenance": {
           "description": "`sce:provenance` spec-document anchors attached to this state.",
@@ -6820,6 +6971,17 @@
           },
           "type": "array"
         },
+        "presence": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Selector"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The condition under which this transition is present (ADR 0057 §9); see [`State::presence`]."
+        },
         "provenance": {
           "description": "`sce:provenance` spec-document anchors attached to this transition. Multiple allowed; element form lets one node anchor at multiple documents.",
           "items": {
@@ -7007,6 +7169,17 @@
             "string",
             "null"
           ]
+        },
+        "presence": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Selector"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The condition under which this variable is present (ADR 0057 §9); see [`State::presence`]."
         },
         "provenance": {
           "description": "`sce:provenance` spec-document anchors attached to this `<data>`.",

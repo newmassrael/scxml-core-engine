@@ -401,3 +401,36 @@ fn a_variant_refused_by_a_rule_the_document_passes_is_named_by_its_least_configu
         "the inner refusal is the document rule the variant breaks: {code}"
     );
 }
+
+/// Each element of the model carries the selector its items are emitted under
+/// (ADR 0057 §9): its effective condition, and nothing where it is present in
+/// every variant.
+#[test]
+fn each_element_of_the_model_carries_the_condition_it_is_present_under() {
+    let model = parse(&machine(ACCEPT_PATH)).expect("the document parses");
+    let spelled = |p: &Option<sce_build::feature_selector::Selector>| p.as_ref().map(|s| s.rust());
+    let accept = Some(r#"feature = "session-unicast-accept""#.to_string());
+    let unicast = Some(r#"feature = "session-unicast""#.to_string());
+    assert_eq!(spelled(&model.states["idle"].presence), None);
+    assert_eq!(spelled(&model.states["accepting"].presence), accept);
+    assert_eq!(spelled(&model.states["open"].presence), unicast);
+    let idle = &model.states["idle"];
+    let by_event = |event: &str| {
+        idle.transitions
+            .iter()
+            .find(|t| t.event == event)
+            .unwrap_or_else(|| panic!("a transition on {event}"))
+    };
+    assert_eq!(spelled(&by_event("inbound.start").presence), accept);
+    assert_eq!(spelled(&by_event("connect").presence), unicast);
+    // A transition inside a gated state takes its state's condition.
+    assert_eq!(
+        spelled(&model.states["accepting"].transitions[0].presence),
+        accept
+    );
+    let announce = &idle.on_entry_blocks[0][0];
+    assert_eq!(
+        spelled(&announce.presence),
+        Some(r#"feature = "session-auth""#.to_string())
+    );
+}

@@ -376,6 +376,7 @@ mod tests {
                 id.to_string(),
                 HistoryInfo {
                     parent: parent.to_string(),
+                    presence: None,
                     history_type: "shallow".to_string(),
                     default_target: "a1".to_string(),
                     default_targets: vec!["a1".to_string()],
@@ -399,6 +400,7 @@ mod tests {
             "h".to_string(),
             HistoryInfo {
                 parent: "a1".to_string(),
+                presence: None,
                 history_type: "shallow".to_string(),
                 default_target: String::new(),
                 default_targets: vec![],
@@ -445,6 +447,7 @@ mod tests {
                 id.to_string(),
                 HistoryInfo {
                     parent: parent.to_string(),
+                    presence: None,
                     history_type: "shallow".to_string(),
                     default_target: String::new(),
                     default_targets: vec![],

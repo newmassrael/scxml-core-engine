@@ -247,6 +247,39 @@ The law of §6 is tested in every lane on fixtures that cover each class of §5:
   condition, plus `∅`, `F` and every principal down-set `↓{f}`. The bound and the arrays are written in the fixture
   and are part of its review.
 
+### 9. Lifting the generator (the design of step 3)
+
+A backend that keeps the variability must emit, for each configuration `c`, exactly what it emits for `π_c(D)`. What
+it emits splits into two kinds, and each is lifted by the rule that makes the law of §6 hold by construction.
+
+**Items of an element.** A state's enum variant and every match arm, slice entry and table row that names it; a
+transition's dispatch; a statement of executable content; a `<data>` field and its initialiser; an invoke. Each is
+present in `gen_B(π_c(D))` exactly when its element is in `π_c(D)`, so it carries the element's effective condition
+`pc*`. An item derived from uses (§4: an event variant, a trait method) carries the disjunction of its uses'.
+
+**Values that depend on the configuration.** Some of what a generator writes is computed from the document rather
+than copied from one element: the default initial state where `initial` is absent (the first child in document
+order, which a condition may remove), whether a state is compound (all its children may be removed), whether an
+event is externally drivable (its raises may be removed while its transitions stay). Re-deriving each such rule over
+presence conditions would be a second implementation of the W3C rules beside the generator's own, which this
+repository forbids. Instead the generator derives each distinct variant (§5's enumeration), reads the value from
+*that variant's own model* — the model the deriving backends generate from — and emits one alternative per group of
+variants that share the value, each under the disjunction of their variants' selectors. The value written for `c` is
+then by construction the value `gen_B(π_c(D))` writes.
+
+A variant's **selector** is the exact predicate over the build's features that picks it: the conjunction, over the
+document's gates, of each gate's condition or its negation as the variant has it. Selectors partition every
+configuration the model admits, so exactly one alternative of each value is compiled. A selector may negate: it is a
+choice the generator writes, not a condition an author does, and the monotone grammar of §1 binds only the latter.
+
+**Two differences that are not behaviour.** A variant's document order numbers its states densely, while the lifted
+output keeps the document's numbers: the two are order-isomorphic, and only the order is ever read. An anonymous
+state is named by its rank among all states of the document in the lifted output and among those of the variant in
+`gen_B(π_c(D))`; the conformance law compares observations by the ids authors write.
+
+Bounds read from the document (ADR 0056's microstep buffers, ADR 0050's send bounds) are those of `D`, which hold
+every variant (§1).
+
 ## Consequences
 
 - A consumer gates an element where it is written, and the build proves for every configuration, not a sample, that

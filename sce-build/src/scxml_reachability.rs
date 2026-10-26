@@ -484,6 +484,7 @@ mod tests {
             "h".to_string(),
             HistoryInfo {
                 parent: String::new(),
+                presence: None,
                 history_type: "shallow".to_string(),
                 default_target: "armed".to_string(),
                 default_targets: vec!["armed".to_string()],

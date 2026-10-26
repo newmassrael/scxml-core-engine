@@ -3071,6 +3071,8 @@ fn parse_variable(
 
     let mut v = crate::model::Variable {
         id: undo(id, line.number)?,
+        // A rendering is of a document as written; a condition is not rendered.
+        presence: None,
         expr: String::new(),
         // A rendering holds no attribute, so nothing places a refusal here.
         expr_spelling: None,
@@ -3314,6 +3316,7 @@ fn parse_history(
         undo(id, number)?,
         crate::model::HistoryInfo {
             parent: parent.to_string(),
+            presence: None,
             history_type: undo(history_type, number)?,
             default_targets: default_target
                 .split_whitespace()

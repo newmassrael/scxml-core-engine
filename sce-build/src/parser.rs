@@ -1895,13 +1895,26 @@ pub(crate) fn collect_sce_provenance(
 /// Keeping the three together here is what makes that shape impossible
 /// to repeat — a fourth stamp added below reaches every builder, where a
 /// fourth line added inline would have reached one.
+/// The condition `node` is present under (ADR 0057 §9), as the selector its
+/// items are emitted under; `None` when it is present in every variant, which
+/// is every element of a document that carries no condition.
+fn presence_of(
+    model: &SCXMLModel,
+    node: &roxmltree::Node,
+) -> Option<crate::feature_selector::Selector> {
+    let selector = model.product_line.as_ref()?.selector_at(&node.range());
+    (!selector.is_true()).then_some(selector)
+}
+
 fn stamped_action(
     tag: &str,
     node: &roxmltree::Node,
+    model: &SCXMLModel,
     source_name: &str,
 ) -> Result<Action, crate::forge::error::Located<crate::forge::error::ForgeError>> {
     let mut action = Action {
         action_type: tag.to_string(),
+        presence: presence_of(model, node),
         source_location: source_location_of(node, source_name),
         spellings: crate::attribute_spelling::AttributeSpellings::of(node),
         ..Default::default()
@@ -3060,6 +3073,22 @@ impl SCXMLParser {
             ..Default::default()
         };
 
+        // Every reader below takes the one directory `import_dir` chooses, so
+        // they cannot disagree about where a relative `src` points.
+        let import_dir = base_dir.map(|dir| self.import_dir(&model, dir));
+        // ADR 0057: the conditions on the document's elements, read against
+        // the feature model it imports, before any element is parsed, so each
+        // element's presence is stamped on it as it is built (§9), and the
+        // family check of its references. Read here, inside the parse's ledger,
+        // so a condition is a read attribute; every reader below sees the
+        // document as the variant with every feature on, which holds every
+        // element.
+        model.product_line =
+            Self::read_product_line(&doc, &model, import_dir.as_deref(), diag_label)?;
+        if let Some(product_line) = &model.product_line {
+            product_line.check_references(diag_label)?;
+        }
+
         // §scxml-B-1: refuse constructs the declared data model has no
         // language for, before anything downstream reads them. Placed
         // ahead of every other parse step because the alternative is to
@@ -3222,19 +3251,7 @@ impl SCXMLParser {
         // at the offending `cond`. Any future entry point that parses a
         // document is now validated by construction.
         //
-        // Every reader below takes the one directory `import_dir` chooses, so
-        // they cannot disagree about where a relative `src` points.
-        let import_dir = base_dir.map(|dir| self.import_dir(&model, dir));
-        // ADR 0057: the conditions on the document's elements, read against
-        // the feature model it imports, and the family check of its
-        // references. Read here, inside the parse's ledger, so a condition is a
-        // read attribute; every reader below sees the document as the variant
-        // with every feature on, which holds every element.
-        model.product_line =
-            Self::read_product_line(&doc, &model, import_dir.as_deref(), diag_label)?;
-        if let Some(product_line) = &model.product_line {
-            product_line.check_references(diag_label)?;
-        }
+        // Every reader below takes the one directory `import_dir` chose above.
         if let Some(dir) = import_dir.as_deref() {
             let (schemas_by_stem, enums_by_stem) =
                 Self::parse_imported_forge_siblings(&model, dir, diag_label)?;
@@ -3555,6 +3572,7 @@ impl SCXMLParser {
         // [`NeedsScriptEngineCause::DatamodelVariableInit`].
         Ok(Some(Variable {
             id,
+            presence: presence_of(model, data),
             expr: data.attribute("expr").unwrap_or("").to_string(),
             expr_spelling: AttributeSpelling::of(data, None, "expr"),
             src,
@@ -3719,7 +3737,7 @@ impl SCXMLParser {
             // `parse_executable_content_single`, so it takes its stamps
             // from `stamped_action`, the site that defines them, rather
             // than copying the one it happened to need.
-            let mut script = stamped_action("script", &child, source_name)?;
+            let mut script = stamped_action("script", &child, model, source_name)?;
             script.content = content.trim().to_string();
             // A `src` body was read from another file, and `content` holds
             // it rather than this element's text.
@@ -3863,6 +3881,7 @@ impl SCXMLParser {
 
             let mut state = State {
                 id: state_id.clone(),
+                presence: presence_of(model, &child),
                 initial: child.attribute("initial").unwrap_or("").to_string(),
                 parent: parent_id.map(|s| s.to_string()),
                 document_order: self.document_order_of(&child),
@@ -3939,9 +3958,12 @@ impl SCXMLParser {
             // are skipped silently; reserved-param violations on
             // `<invoke type="sce:mesh-rpc">` short-circuit via `?`.
             for invoke_elem in scxml_children(&child, "invoke") {
-                if let Some(invoke) =
+                if let Some(mut invoke) =
                     self.parse_invoke(&invoke_elem, model, &state_id, base_dir, source_name)?
                 {
+                    // ADR 0057 §9: stamped here, the one site every kind of
+                    // invoke passes, rather than in each of their builders.
+                    invoke.base_mut().presence = presence_of(model, &invoke_elem);
                     state.invokes.push(invoke);
                 }
             }
@@ -3997,6 +4019,7 @@ impl SCXMLParser {
 
             let mut state = State {
                 id: final_id.clone(),
+                presence: presence_of(model, &child),
                 is_final: true,
                 parent: parent_id.map(|s| s.to_string()),
                 document_order: self.document_order_of(&child),
@@ -4050,6 +4073,7 @@ impl SCXMLParser {
 
             let mut state = State {
                 id: parallel_id.clone(),
+                presence: presence_of(model, &child),
                 is_parallel: true,
                 parent: parent_id.map(|s| s.to_string()),
                 document_order: self.document_order_of(&child),
@@ -4162,10 +4186,12 @@ impl SCXMLParser {
             model
                 .history_default_targets
                 .insert(history_id.clone(), default_target.clone());
+            let presence = presence_of(model, &child);
             model.history_states.insert(
                 history_id,
                 HistoryInfo {
                     parent: parent_id.unwrap_or("").to_string(),
+                    presence,
                     history_type,
                     leaf_target: String::new(), // resolved later
                     default_targets: default_target
@@ -4205,6 +4231,7 @@ impl SCXMLParser {
         let target = elem.attribute("target").unwrap_or("");
         let mut transition = Transition {
             event: elem.attribute("event").unwrap_or("").to_string(),
+            presence: presence_of(model, elem),
             target: target.to_string(),
             // §scxml-3.13: the target set, one id per token, as written.
             targets: target.split_whitespace().map(str::to_string).collect(),
@@ -4732,7 +4759,7 @@ impl SCXMLParser {
             return Ok(None);
         }
         let tag = local_name(child);
-        let mut action = stamped_action(&tag, child, source_name)?;
+        let mut action = stamped_action(&tag, child, model, source_name)?;
         match (scxml, tag.as_str()) {
             (true, "raise") => {
                 action.event = child.attribute("event").unwrap_or("").to_string();
@@ -5183,6 +5210,8 @@ impl SCXMLParser {
             return Ok(Some(Invoke::Hybrid(HybridInvokeInfo {
                 common: InvokeSessionCommon {
                     base: InvokeBase {
+                        // Stamped by the caller (ADR 0057 §9).
+                        presence: None,
                         source_location: source_location_of(elem, source_name),
                         invoke_id,
                         id_generated,
@@ -5344,6 +5373,8 @@ impl SCXMLParser {
             let mut scxml_info = ScxmlInvokeInfo {
                 common: InvokeSessionCommon {
                     base: InvokeBase {
+                        // Stamped by the caller (ADR 0057 §9).
+                        presence: None,
                         source_location: source_location_of(elem, source_name),
                         invoke_id,
                         id_generated,
@@ -5435,6 +5466,8 @@ impl SCXMLParser {
             };
             return Ok(Some(Invoke::Unsupported(UnsupportedInvokeInfo {
                 base: InvokeBase {
+                    // Stamped by the caller (ADR 0057 §9).
+                    presence: None,
                     source_location: source_location_of(elem, source_name),
                     invoke_id,
                     id_generated,
@@ -5661,6 +5694,8 @@ impl SCXMLParser {
         } = read_traceability(elem, || format!("<invoke id=\"{invoke_id}\">"), source_name)?;
         Ok(MeshRpcInvokeInfo {
             base: InvokeBase {
+                // Stamped by the caller (ADR 0057 §9).
+                presence: None,
                 source_location: source_location_of(elem, source_name),
                 invoke_id,
                 id_generated,
