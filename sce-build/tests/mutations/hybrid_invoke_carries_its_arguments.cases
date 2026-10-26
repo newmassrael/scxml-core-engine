@@ -46,8 +46,8 @@ PY
 
 mutation_case "candidates are not looked for under the input root" <<'PY'
 edit("sce-build/src/bin/sce_codegen.rs",
-     "        .with_candidate_roots(input_root_override.map(PathBuf::from).into_iter().collect());",
-     "        .with_candidate_roots(Vec::new());")
+     "            .with_candidate_roots(input_root_override.map(PathBuf::from).into_iter().collect()),",
+     "            .with_candidate_roots(Vec::new()),")
 PY
 
 # ── C++ AOT: the candidate is seeded by the invoke's metadata ──────
