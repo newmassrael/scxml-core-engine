@@ -14,11 +14,18 @@
 # each:
 #
 #   an assignment to a byte string is not held to its bound;
-#   a literal that lands in a bytes slot stays a string, which no `Vec<u8>` takes;
 #   a byte string is saved as an array of numbers and not as its Latin-1 text;
 #   a saved byte string is read back by the generic list reader, which reads no text;
 #   a saved byte string past the bound is read back (the bound is not enforced);
 #   a character past U+00FF is cut to a byte and not refused.
+#
+# A literal that lands in a bytes slot is no longer defended here. Left a string, it
+# is written `"…".to_vec()`, which rustc refuses before any test of this selector
+# runs: CI's Mutation Rounds run 40125467304 reported that case INCONCLUSIVE, and it
+# could never be anything else. The lowering is where the decision is observable, so
+# the case moved to
+# `a_string_stands_for_bytes_only_as_a_printable_ascii_literal.cases`, judged by the
+# unit tests of `sce-build/src/forge/expr.rs`.
 #
 # Anchors are literal slices of the source; an edit that moves one is reported
 # INCONCLUSIVE with the anchor quoted, never as a pass.
@@ -26,7 +33,6 @@
 mutation_tests -p sce-rust-tests --test static_scenarios --test static_datamodel
 mutation_targets tools/codegen/templates/rust/state_machine.rs.jinja2
 mutation_targets sce-build/src/forge/static_lowering.rs
-mutation_targets sce-build/src/forge/expr.rs
 mutation_targets backends/rust/runtime/src/saved_state.rs
 mutation_targets backends/rust/tests/src/integration/static_datamodel/static_bytes_sm.rs
 mutation_regen scripts/regen_static_datamodel_rust.sh
@@ -36,12 +42,6 @@ mutation_case "an assignment to a byte string is not held to its bound" <<'PY'
 edit("sce-build/src/forge/static_lowering.rs",
      "            } else if let Some(capacity) = rewrites.bytes.get(location) {",
      "            } else if let Some(capacity) = rewrites.bytes.get(location).filter(|_| false) {")
-PY
-
-mutation_case "a literal that lands in a bytes slot stays a string" <<'PY'
-edit("sce-build/src/forge/expr.rs",
-     "    if position == Position::Owned && expected == InferredType::Bytes {\n        land_strings_in_bytes_slot(&mut ast, expr)?;",
-     "    if false && position == Position::Owned && expected == InferredType::Bytes {\n        land_strings_in_bytes_slot(&mut ast, expr)?;")
 PY
 
 mutation_case "a byte string is saved as an array of numbers" <<'PY'

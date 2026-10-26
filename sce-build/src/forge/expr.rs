@@ -11979,6 +11979,46 @@ mod tests {
         );
     }
 
+    /// A value that lands in a place that owns a byte string is bytes
+    /// ([`land_strings_in_bytes_slot`]): a literal of printable ASCII lands as the
+    /// constant of its bytes, the arms of a conditional one by one, and any other
+    /// string is refused there by name, on every backend. Through the generated
+    /// Rust machines a literal left a string is never a test's verdict, since
+    /// `"xy".to_vec()` is refused by rustc, so the landing is judged here.
+    #[test]
+    fn a_string_lands_where_a_byte_string_is_held_only_as_a_printable_ascii_literal() {
+        let mut ctx = bytes_ctx();
+        ctx.insert_var("title", InferredType::Str);
+        ctx.insert_var("flag", InferredType::Bool);
+        let owned = |expr: &str, target: ExprTarget| {
+            transpile_into_owned(expr, target, &ctx, &empty_renames(), InferredType::Bytes)
+        };
+        let rust = |expr: &str| match owned(expr, ExprTarget::Rust) {
+            Ok(lowered) => lowered.text,
+            Err(e) => panic!("{expr} lowers owned for Rust: {e:?}"),
+        };
+        assert_eq!(rust("'xy'"), "b\"xy\".to_vec()");
+        assert_eq!(
+            rust("flag ? 'xy' : 'zw'"),
+            "if flag { b\"xy\".to_vec() } else { b\"zw\".to_vec() }"
+        );
+        for target in ExprTarget::ALL {
+            for text in ["title", "'x' + 'y'", "'\u{e9}'", "flag ? 'xy' : title"] {
+                match owned(text, target) {
+                    Ok(lowered) => panic!(
+                        "{target:?}, `{text}` is a text, not bytes, yet lowered to {}",
+                        lowered.text
+                    ),
+                    Err(e) => assert!(
+                        e.to_string()
+                            .contains("a string where a byte string is held"),
+                        "{target:?}, `{text}`: expected the refusal naming the string: {e}"
+                    ),
+                }
+            }
+        }
+    }
+
     #[test]
     fn c_numeric_compare_unchanged() {
         // Sanity: numeric comparison is NOT routed through strcmp.

@@ -1,0 +1,51 @@
+# Mutation cases for "a value that lands where a byte string is held is bytes, and a
+# string stands for them only as a literal of printable ASCII"
+# (docs/SCE_ACCEPTED_SUBSET.md §2.15, "A byte string"; docs/adr/0005, decision 2).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_string_stands_for_bytes_only_as_a_printable_ascii_literal.cases`.
+#
+# `slot_admits` lets a string through where bytes are declared, which a payload field
+# relies on, so the lowering decides it where a variable, a field or an element owns
+# the value (`land_strings_in_bytes_slot` in `expr.rs`): a literal of printable ASCII
+# lands as the constant of its bytes, the arms of a conditional one by one, and any
+# other string is refused by name. The judge is the unit test
+# `a_string_lands_where_a_byte_string_is_held_only_as_a_printable_ascii_literal`, which
+# reads the Rust spelling of a landed literal and asks every backend to refuse a text.
+#
+# The landing was defended by the Rust casefile
+# `a_static_rust_byte_string_is_held_within_its_bound_rust`, through the generated
+# machines' own tests. There a literal left a string is written `"…".to_vec()`, which
+# rustc refuses before any test runs, so CI's Mutation Rounds run 40125467304 reported
+# the case INCONCLUSIVE: the decision is observable only where the lowering is read.
+# The mutants take one decision away each:
+#
+#   a literal that lands in a bytes slot stays a string (the whole decision skipped);
+#   a string that is no literal is let into a bytes slot (the refusal skipped, the
+#   landing kept);
+#   the alternate arm of a conditional is not landed.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --lib
+mutation_targets sce-build/src/forge/expr.rs
+mutation_oracles sce-build/src/forge/expr.rs
+
+mutation_case "a literal that lands in a bytes slot stays a string" <<'PY'
+edit("sce-build/src/forge/expr.rs",
+     "    if position == Position::Owned && expected == InferredType::Bytes {\n        land_strings_in_bytes_slot(&mut ast, expr)?;",
+     "    if false && position == Position::Owned && expected == InferredType::Bytes {\n        land_strings_in_bytes_slot(&mut ast, expr)?;")
+PY
+
+mutation_case "a string that is no literal is let into a bytes slot" <<'PY'
+edit("sce-build/src/forge/expr.rs",
+     "    if expr.ty != InferredType::Str || string_literal_as_bytes(expr) {\n        return Ok(());",
+     "    if expr.ty != InferredType::Str || (string_literal_as_bytes(expr) || true) {\n        return Ok(());")
+PY
+
+mutation_case "the alternate arm of a conditional is not landed" <<'PY'
+edit("sce-build/src/forge/expr.rs",
+     "        land_strings_in_bytes_slot(alternate, source)?;\n        expr.ty = InferredType::Bytes;",
+     "        let _ = alternate;\n        expr.ty = InferredType::Bytes;")
+PY
