@@ -98,6 +98,12 @@ A feature model is a forge document of the new kind `feature-model`, imported wh
 <sce:import kind="feature-model" src="session_features.scxml" as="Features"/>
 ```
 
+The document's root is `<scxml>` with `version="1.0"`, `sce:kind="feature-model"` and `name`, and its only children
+are `<sce:feature>` elements. `<sce:feature>` takes `name` (required, unique in the model) and `requires` (optional:
+a space-separated list of names declared in the same model, the list convention of `<transition target>`, each
+entry one edge `name ≤ entry`). Features are written in any order; the order of `F` used elsewhere (§5, §6) is derived,
+not authored.
+
 The product line's features are declared once, by the product, and every statechart of it reads the same model; a
 declaration inside each statechart would be one copy per document. A statechart imports at most one feature model.
 A consumer that keeps its own declaration (watching-zenoh's `deploy/wz-config.toml`) generates this document from it,
