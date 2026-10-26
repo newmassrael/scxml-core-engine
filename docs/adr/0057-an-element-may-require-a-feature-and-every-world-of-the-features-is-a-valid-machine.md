@@ -1,6 +1,6 @@
 # ADR 0057 — An element may require a feature, and every world of the features is a valid machine
 
-- Status: Proposed (2026-10-26); not yet implemented. Requested by watching-zenoh on the owner's instruction
+- Status: Accepted (2026-10-26, the owner: "승인, 진행해"); not yet implemented. Requested by watching-zenoh on the owner's instruction
   ("kconfig와 sce code gen으로 기능을 껐다 켰다 자유롭게 조작할 수 있어야 해"), and designed under the owner's rule of
   the same day: the most long-term correct structure, textbook in its foundations, cost ignored ("비용 무시하고 가장
   장기적으로 올바르면서, 학술적으로 교과서적이고, 궁극적인 구조로 설계해"). The surface the consumer confirmed on
