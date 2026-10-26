@@ -44,6 +44,14 @@ PY
 # A test that spawns what its environment names: the companion must be built
 # before resolution looks for it, found, and rebuilt by every case.
 
+# ctest names no command for a test whose executable is not built yet, so the
+# first build of a configured tree reads them from the configure step.
+mutation_case "an unbuilt tree's test commands are taken from ctest alone" <<'PY'
+edit("scripts/mutate",
+     'for token in test.get("command") or registered.get(test.get("name"), []):',
+     'for token in test.get("command") or []:')
+PY
+
 mutation_case "what a test is handed to spawn is not built before it is looked for" <<'PY'
 edit("scripts/mutate",
      " and relative not in outputs:",

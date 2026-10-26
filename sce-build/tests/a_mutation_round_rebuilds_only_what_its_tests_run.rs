@@ -363,4 +363,12 @@ fn an_executable_a_test_is_handed_to_spawn_is_rebuilt_and_hashed() {
         output.contains("each case rebuilds 2 build output(s) and their closure"),
         "the round did not build the executable the test spawns:\n{output}"
     );
+    // And the first build is that closure too, on a tree that holds no
+    // executable yet, where ctest names no test's command: a round that fell
+    // back to the whole tree here would find the helper only because it built
+    // the bystander along with it.
+    assert!(
+        output.contains("the first build covers 2 build output(s) and their closure"),
+        "the first build of an unbuilt tree was not the closure of what the test runs:\n{output}"
+    );
 }

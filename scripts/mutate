@@ -1366,6 +1366,14 @@ mutation_ctest_resolve() {
     # it starts, so the lane's job does not build the rest of the tree first.
     local selected=()
     mapfile -t selected < <(mutation_ctest_closure_of_selection)
+    # Said, because nothing else shows it: a closure that came back empty reads
+    # exactly like one that was never asked for, and the lane's first build was
+    # the whole tree for as long as nobody could see which one it ran.
+    if (( ${#selected[@]} > 0 )); then
+        dim "the first build covers ${#selected[@]} build output(s) and their closure"
+    else
+        dim "the first build is the whole tree"
+    fi
     cmake --build "$MUTATION_BUILD_DIR" --parallel "$(sce_build_jobs_value)" \
         ${selected[@]+--target "${selected[@]}"} >/dev/null 2>&1 || true
 
@@ -1487,24 +1495,32 @@ for path in sorted(seen):
 # that set cannot be named before anything is built.
 #
 # Asked before resolution, and so of a tree that may hold no executable yet:
-# ctest lists a test's command from the configure step, and ninja answers for
-# an output that does not exist. Every test the selector matched must name at
-# least one such output, fixtures aside — a test whose command names none (a
-# script in the source tree, say) runs something only it knows, and building
-# part of the tree would resolve it against binaries left over from an older
-# build. The narrower question, whether each case may build only the closure,
-# is `mutation_ctest_scope`'s, asked once the artifacts are known.
+# the commands come from the configure step (`mutation_ctest_registered_
+# commands`), and ninja answers for an output that does not exist. Every test
+# the selector matched must name at least one such output, fixtures aside — a
+# test whose command names none (a script in the source tree, say) runs
+# something only it knows, and building part of the tree would resolve it
+# against binaries left over from an older build. The narrower question,
+# whether each case may build only the closure, is `mutation_ctest_scope`'s,
+# asked once the artifacts are known.
 mutation_ctest_closure_of_selection() {
-    local generator build_real json
+    local generator build_real json registered="$WORK/ctest-commands.tsv"
     generator="$(sed -n 's/^CMAKE_GENERATOR:INTERNAL=//p' \
         "$MUTATION_BUILD_DIR/CMakeCache.txt" 2>/dev/null || true)"
     [[ "$generator" == "Ninja" ]] && command -v ninja >/dev/null 2>&1 || return 0
     build_real="$(realpath "$MUTATION_BUILD_DIR")"
     json="$(ctest "${MUTATION_RUNNER_ARGS[@]}" --show-only=json-v1 2>/dev/null)" || return 0
+    mutation_ctest_registered_commands "$build_real" >"$registered"
     printf '%s\n' "$json" | python3 -c '
 import json, os, subprocess, sys
 
 build = sys.argv[1]
+registered = {}
+with open(sys.argv[2], encoding="utf-8") as lines:
+    for line in lines:
+        fields = line.rstrip("\n").split("\t")
+        if len(fields) > 1 and fields[0] not in registered:
+            registered[fields[0]] = fields[1:]
 outputs = []
 for test in json.load(sys.stdin).get("tests", []):
     properties = {
@@ -1514,7 +1530,7 @@ for test in json.load(sys.stdin).get("tests", []):
     if properties.get("FIXTURES_SETUP") or properties.get("FIXTURES_CLEANUP"):
         continue
     named = []
-    for token in test.get("command") or []:
+    for token in test.get("command") or registered.get(test.get("name"), []):
         path = os.path.realpath(token)
         if os.path.commonpath([build, path]) != build or path == build:
             continue
@@ -1550,7 +1566,52 @@ for test in json.load(sys.stdin).get("tests", []):
             outputs.append(relative)
 if outputs:
     print("\n".join(outputs))
-' "$build_real" || true
+' "$build_real" "$registered" || true
+}
+
+# Every test the tree registers and the command it runs, one per line as
+# `name<TAB>argument<TAB>argument...`, as the configure step wrote them into the
+# tree's `CTestTestfile.cmake` files.
+#
+# Because ctest will not say it: `--show-only=json-v1` leaves `command` out of
+# a test whose executable does not exist yet, which in a tree that is
+# configured and not built is every test. Measured 2026-10-26 on run
+# 40257956731: the closure above came back empty for every such tree, the
+# first build of every round in the lane was the whole tree, and a casefile
+# case that took away a companion's build survived because that whole-tree
+# build made the companion anyway.
+#
+# CMake reads its own language here, with the three commands those files are
+# made of (`add_test`, `set_tests_properties`, `subdirs`) defined to report
+# instead of to register. A file that calls anything else stops the reading,
+# and this prints nothing, so the round builds the whole tree, as it does for a
+# tree whose graph it cannot read.
+mutation_ctest_registered_commands() {
+    local script="$WORK/ctest-commands.cmake" out
+    cat >"$script" <<'CMAKE'
+function(add_test name)
+  string(REPLACE ";" "\t" command "${ARGN}")
+  message("${name}\t${command}")
+endfunction()
+function(set_tests_properties)
+endfunction()
+function(subdirs)
+  foreach(dir IN LISTS ARGN)
+    if(IS_ABSOLUTE "${dir}")
+      set(file "${dir}/CTestTestfile.cmake")
+    else()
+      set(file "${CMAKE_CURRENT_LIST_DIR}/${dir}/CTestTestfile.cmake")
+    endif()
+    if(EXISTS "${file}")
+      include("${file}")
+    endif()
+  endforeach()
+endfunction()
+include("${SCE_CTEST_TREE}/CTestTestfile.cmake")
+CMAKE
+    # `message` writes to standard error, which is the channel read here.
+    out="$(cmake -DSCE_CTEST_TREE="$1" -P "$script" 2>&1 >/dev/null)" || return 0
+    printf '%s\n' "$out"
 }
 
 # What one case rebuilds: the files the selected tests run, as build outputs,
