@@ -34,5 +34,5 @@ PY
 mutation_case "a byte string is not bounded by the library at all" <<'PY'
 edit("sce-build/src/forge/static_js.rs",
      "        format!(\"{RUNTIME_GLOBAL}.boundedBytes({value}, {capacity})\")",
-     "        value.to_string()")
+     "        let _ = capacity;\n        value.to_string()")
 PY
