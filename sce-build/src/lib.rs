@@ -85,6 +85,9 @@ pub mod ecmascript_acceptance;
 /// §scxml-3.12.1 event descriptors — the one definition of which
 /// events a transition's `event` attribute matches.
 pub mod event_descriptor;
+/// The features of a product line and the configurations Cargo can build of
+/// them (ADR 0057 §1).
+pub mod feature_model;
 /// The C-callable lowering surface, behind an off-by-default feature.
 /// `sce_scripting` links it beside `lua54` so `LuaEngine` can send an
 /// expression to the frontend's parser instead of to
@@ -207,6 +210,9 @@ pub mod parser;
 /// roxmltree row/col, semantic validation) to author file/row/col.
 /// See [`position_map`] for the shape and lookup semantics.
 pub mod position_map;
+/// The condition under which an element is present, its canonical form and the
+/// exact check of one condition implying another (ADR 0057 §1, §5).
+pub mod presence_condition;
 /// Spec-provenance + requirement-traceability + unresolved-placeholder
 /// types — shared by [`model`], [`forge::model`], and
 /// [`forge::diagnostic`]. Shared-type rationale: the requirement
