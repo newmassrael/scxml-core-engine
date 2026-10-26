@@ -5828,6 +5828,25 @@ pub enum GenerateError {
     )]
     CodegenFeatureSelectionRequired { model: String, language: String },
 
+    /// A machine generated for every build of a product line that is not, for
+    /// the build `features`, the machine that build's variant generates on its
+    /// own, or a difference between variants that no selector can stand before
+    /// (ADR 0057 §9). The generator merged the variants' machines wrongly, or
+    /// wrote a construct the merge cannot select; either is the generator's
+    /// defect, and the variant generated with `--features` is correct for the
+    /// build.
+    #[error(
+        "the Rust machine generated for every build of the feature model '{model}' is not, \
+         with the features [{}] on, the machine that variant generates on its own ({difference}): \
+         this is a defect of the generator; generate the variant with --features",
+        features.join(", ")
+    )]
+    CodegenFeatureLiftingMismatch {
+        model: String,
+        features: Vec<String>,
+        difference: String,
+    },
+
     /// SCE Protocol-Synthesis RFC §synth-5-P (`queue/storage-runtime-missing`)
     /// — a queue document whose storage mode the target language's forge
     /// runtime does not implement yet. The kind is specified for three

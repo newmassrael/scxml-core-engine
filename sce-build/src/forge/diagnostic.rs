@@ -1338,6 +1338,11 @@ pub enum DiagnosticCode {
     /// writes one at a time — see [`GenerateError::CodegenFeatureSelectionRequired`].
     #[serde(rename = "codegen/feature-selection-required")]
     CodegenFeatureSelectionRequired,
+    /// A machine generated for every build of a product line that is not, for
+    /// some build, what that build's variant generates — see
+    /// [`GenerateError::CodegenFeatureLiftingMismatch`].
+    #[serde(rename = "codegen/feature-lifting-mismatch")]
+    CodegenFeatureLiftingMismatch,
 
     // ── §synth-5-P Queue (the `queue` kind). Four document-level codes the
     //    selection table decides, and one codegen refusal for a storage mode a
@@ -3824,6 +3829,8 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         CodegenGenericKindBackendEmitMissing,
         // ADR 0057 §6: a gated statechart with no variant named
         CodegenFeatureSelectionRequired,
+        // ADR 0057 §9: a lifted machine some build's variant is not
+        CodegenFeatureLiftingMismatch,
         // Queue kind (SCE Protocol-Synthesis RFC §synth-5-P)
         QueueStorageNotExactlyOne,
         QueueAllocatorProgressMissing,
@@ -5015,6 +5022,7 @@ impl DiagnosticCode {
             | CodegenMcuClassKindOnNonMcuLanguage
             | CodegenGenericKindBackendEmitMissing
             | CodegenFeatureSelectionRequired
+            | CodegenFeatureLiftingMismatch
             | IoFilesystem
             | CliUnknownLanguage
             | CliUnsupportedLanguage
@@ -5199,6 +5207,7 @@ impl DiagnosticCode {
             // references across variants and its selection, judged once on the
             // document as written.
             CodegenFeatureSelectionRequired
+            | CodegenFeatureLiftingMismatch
             | ValidationFeatureNameInvalid
             | ValidationFeatureDeclaredTwice
             | ValidationFeatureRequirementUndeclared
@@ -5869,6 +5878,7 @@ impl DiagnosticCode {
             CodegenMcuClassKindOnNonMcuLanguage => "codegen/mcu-class-kind-on-non-mcu-language",
             CodegenGenericKindBackendEmitMissing => "codegen/generic-kind-backend-emit-missing",
             CodegenFeatureSelectionRequired => "codegen/feature-selection-required",
+            CodegenFeatureLiftingMismatch => "codegen/feature-lifting-mismatch",
             CodegenNoStdScriptNotSupported => "codegen/no-std-script-not-supported",
             CodegenNoStdHttpNotSupported => "codegen/no-std-http-not-supported",
             CodegenNoStdFsLoadNotSupported => "codegen/no-std-fs-load-not-supported",
@@ -11080,6 +11090,18 @@ fn generate_fields(e: &GenerateError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![model.clone(), language.clone()],
         },
+        GenerateError::CodegenFeatureLiftingMismatch {
+            model,
+            features,
+            difference: _,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::CodegenFeatureLiftingMismatch,
+            stage: Stage::Generate,
+            expected: None,
+            actual: None,
+            fix: None,
+            key_fragments: vec![model.clone(), features.join(",")],
+        },
         GenerateError::QueueStorageRuntimeMissing {
             queue_name,
             storage,
@@ -14668,6 +14690,18 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:8f99a86de464f6e5","code":"codegen/feature-selection-required","stage":"generate","message":"this statechart is written against the feature model 'session_features' and carries feature conditions, and the go backend generates one variant of it at a time: name the variant with --features"}"#,
+            ),
+            (
+                "codegen/feature-lifting-mismatch",
+                GenerateError::CodegenFeatureLiftingMismatch {
+                    model: "session_features".into(),
+                    features: vec!["session-unicast".into()],
+                    difference: "in enum `MachineState`: the lifted machine has `Accepting , Idle` \
+                                 where the variant has `Idle`"
+                        .into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:9b762368b8c0494b","code":"codegen/feature-lifting-mismatch","stage":"generate","message":"the Rust machine generated for every build of the feature model 'session_features' is not, with the features [session-unicast] on, the machine that variant generates on its own (in enum `MachineState`: the lifted machine has `Accepting , Idle` where the variant has `Idle`): this is a defect of the generator; generate the variant with --features"}"#,
             ),
             // ── §synth-5-P Queue kind ──
             (
@@ -18802,6 +18836,8 @@ mod tests {
             // ADR 0057 §6: the repair names a variant, which is the build's
             // choice, not a closed candidate set.
             | CodegenFeatureSelectionRequired
+            // ADR 0057 §9: the repair is the generator's, not the author's.
+            | CodegenFeatureLiftingMismatch
             // Queue (RFC §synth-5-P) document-level checks: the repair is
             // the author's choice among documents the selection table
             // allows (a storage element, an allocator's progress, a
@@ -19619,6 +19655,7 @@ mod tests {
                 | CodegenMcuClassKindOnNonMcuLanguage
                 | CodegenGenericKindBackendEmitMissing
                 | CodegenFeatureSelectionRequired
+                | CodegenFeatureLiftingMismatch
                 | CodegenNoStdScriptNotSupported
                 | CodegenNoStdHttpNotSupported
                 | CodegenNoStdFsLoadNotSupported
@@ -19925,9 +19962,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            476,
+            477,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 476 distinct variants to match the DiagnosticCode \
+             expected 477 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -20647,6 +20684,7 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | CodegenMcuClassKindOnNonMcuLanguage
             | CodegenGenericKindBackendEmitMissing
             | CodegenFeatureSelectionRequired
+            | CodegenFeatureLiftingMismatch
             | AlgorithmConstNotFoldable
             | AlgorithmConstFoldBudgetExceeded
             | AlgorithmConstYieldTypeMismatch

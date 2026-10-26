@@ -4568,6 +4568,160 @@ fn select_variant(parser: SCXMLParser, features: &Option<Vec<String>>) -> SCXMLP
     }
 }
 
+/// The refusal of a product line whose in-line children are not the same in
+/// every variant, or `None` (ADR 0057 §9).
+///
+/// A run writes one machine per in-line child beside the document's, made from
+/// the child's name and text alone, and a lifted run writes the document's.
+/// Those are what each build's variant writes exactly when every variant
+/// carries the same children with the same text; a child that a variant
+/// removes or changes is a file that one output cannot be for every build, so
+/// it is refused like any construct the generator does not keep variable.
+fn children_not_in_every_variant(
+    document: &SCXMLModel,
+    variants: &sce_build::variant_lift::Variants,
+    scxml_path: &str,
+) -> Option<Located<ForgeError>> {
+    let children = |model: &SCXMLModel| -> BTreeMap<String, Option<String>> {
+        model
+            .inline_child_invokes()
+            .into_iter()
+            .map(|invoke| (invoke.child_name.clone(), invoke.inline_child_xml.clone()))
+            .collect()
+    };
+    let written = children(document);
+    let variant = variants
+        .variants()
+        .iter()
+        .find(|variant| children(&variant.model) != written)?;
+    let theirs = children(&variant.model);
+    let child = written
+        .keys()
+        .chain(theirs.keys())
+        .find(|name| written.get(*name) != theirs.get(*name))
+        .cloned()
+        .unwrap_or_default();
+    Some(Located::new(
+        ForgeError::from(
+            sce_build::forge::error::GenerateError::CodegenFeatureLiftingMismatch {
+                model: variants.product_line().model_name().to_string(),
+                features: variant.features.clone(),
+                difference: format!(
+                    "the in-line child `{child}` is not the same in every variant, and a run writes \
+                     its machine as a file of its own"
+                ),
+            },
+        ),
+        scxml_path,
+        None,
+        None,
+    ))
+}
+
+/// What `generate` makes of a parsed statechart before a backend renders it:
+/// three mutations of the model, each decided by the run's arguments.
+///
+/// The document's run takes them at three points, judging and reporting on
+/// the model between them. A variant of a product line that one output keeps
+/// variable (ADR 0057 §9) is judged by the family check instead
+/// ([`sce_build::check_every_variant`]) and takes them in a row
+/// ([`Self::variant`]), so that it is rendered from the model
+/// `generate --features` renders for it.
+struct StatechartPreparation<'a> {
+    scxml_path: &'a str,
+    /// Whether the machine is generated as a child templated on its parent
+    /// (`--as-child`, on a backend whose child takes the parent's type).
+    parent_template: bool,
+    host_processor: &'a [String],
+    host_invoker: &'a [String],
+    /// The digest of the run's sources, which a declared transition table or
+    /// function is bound to; `None` for a run that writes neither (`check`).
+    source_hex: Option<String>,
+    deploy_path: Option<&'a str>,
+    for_partition: Option<&'a str>,
+}
+
+/// Why a variant could not be prepared, in the type each step refuses with.
+enum PreparationRefusal {
+    Parse(Located<ForgeError>),
+    Host(sce_build::host_processor_analyzer::ReservedHostType),
+    Deploy(sce_build::DeployMutationError),
+}
+
+impl From<Located<ForgeError>> for PreparationRefusal {
+    fn from(refusal: Located<ForgeError>) -> Self {
+        PreparationRefusal::Parse(refusal)
+    }
+}
+
+impl PreparationRefusal {
+    fn exit(self, error_format: ErrorFormat) -> ! {
+        match self {
+            PreparationRefusal::Parse(refusal) => error_format.emit_and_exit(&refusal, ""),
+            PreparationRefusal::Host(refused) => cli_exit(refused.into()),
+            PreparationRefusal::Deploy(e) => {
+                error_format.emit_and_exit(&e.source, e.stage.error_prefix())
+            }
+        }
+    }
+}
+
+impl StatechartPreparation<'_> {
+    /// The analysis, with the role the run gives the machine and the host
+    /// surfaces it declares.
+    fn analyzed(
+        &self,
+        model: &mut SCXMLModel,
+    ) -> Result<(), sce_build::host_processor_analyzer::ReservedHostType> {
+        if self.parent_template {
+            model.has_parent_communication = true;
+        }
+        analyzer::analyze(model, self.scxml_path);
+        // §scxml-6.2.5: apply the host's declaration before any backend
+        // renders, so what the emitted code does, what the analyzer reports
+        // and what the manifest publishes are one decision.
+        sce_build::host_processor_analyzer::declare_host_surfaces(
+            model,
+            self.host_processor,
+            self.host_invoker,
+        )
+    }
+
+    /// What a backend reads beside the analysis: a declared transition table
+    /// or function bound to the run's digest, and the source path markers
+    /// name. Judged before, since a check reads neither.
+    fn bound(&self, model: &mut SCXMLModel) {
+        if let Some(source_hex) = &self.source_hex {
+            sce_build::bind_run_digest(model, source_hex);
+        }
+        resolve_source_path(model, Path::new(self.scxml_path));
+    }
+
+    /// The deploy's mutations, and the facts it states; `None` without one.
+    fn deployed(
+        &self,
+        model: &mut SCXMLModel,
+    ) -> Result<Option<sce_build::DeployFacts>, sce_build::DeployMutationError> {
+        self.deploy_path
+            .map(|deploy| {
+                sce_build::apply_deploy_model_mutations(
+                    model,
+                    Path::new(deploy),
+                    self.for_partition,
+                )
+            })
+            .transpose()
+    }
+
+    /// The three in a row, for a variant.
+    fn variant(&self, model: &mut SCXMLModel) -> Result<(), PreparationRefusal> {
+        self.analyzed(model).map_err(PreparationRefusal::Host)?;
+        self.bound(model);
+        self.deployed(model).map_err(PreparationRefusal::Deploy)?;
+        Ok(())
+    }
+}
+
 /// Resolve `--language` into the backends to check and whether the
 /// operator named them.
 ///
@@ -5488,11 +5642,9 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
             report.needs_event_scheduler = Some(false);
         }
         sce_build::Pipeline::Scxml => {
-            let mut parser = select_variant(
-                SCXMLParser::new()
-                    .with_include_dirs(include_dir.iter().map(PathBuf::from).collect()),
-                &features,
-            );
+            let include_dirs: Vec<PathBuf> = include_dir.iter().map(PathBuf::from).collect();
+            let document_parser = || SCXMLParser::new().with_include_dirs(include_dirs.clone());
+            let mut parser = select_variant(document_parser(), &features);
             let mut model = match parser.parse_file(scxml_path) {
                 Ok(m) => m,
                 Err(e) => error_format.emit_and_exit(&e, ""),
@@ -5501,13 +5653,23 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
             // denotes, so each is held to what the document is held to. A
             // selection asks about one variant, which the parse above read.
             if features.is_none() {
-                let include_dirs: Vec<PathBuf> = include_dir.iter().map(PathBuf::from).collect();
                 if let Err(e) =
                     sce_build::check_every_variant(&model, scxml_path, &include_dirs, lint)
                 {
                     error_format.emit_and_exit(&e, "");
                 }
             }
+            // What `generate` makes of the model before a backend renders it,
+            // for this run: no parent, no deploy, nothing bound to a digest.
+            let preparation = StatechartPreparation {
+                scxml_path,
+                parent_template: false,
+                host_processor: &host_processor,
+                host_invoker: &host_invoker,
+                source_hex: None,
+                deploy_path: None,
+                for_partition: None,
+            };
 
             if strict_unresolved {
                 if let Err(e) = sce_build::unresolved_check::check_strict_unresolved(&model) {
@@ -5528,8 +5690,6 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
                 )
             });
 
-            analyzer::analyze(&mut model, scxml_path);
-
             // §scxml-6.2.5: apply the host's declaration here, at the
             // point `generate` applies it, so the model every backend
             // below renders is the model the build would render. Before
@@ -5538,11 +5698,7 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
             // `<send type="x">` sites into dispatches and refused the
             // backends with no registry, while `check` had no way to be
             // told about `x` at all and reported every backend `ok`.
-            if let Err(refused) = sce_build::host_processor_analyzer::declare_host_surfaces(
-                &mut model,
-                &host_processor,
-                &host_invoker,
-            ) {
+            if let Err(refused) = preparation.analyzed(&mut model) {
                 cli_exit(refused.into());
             }
 
@@ -5635,7 +5791,34 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
                 }
             }
 
-            resolve_source_path(&mut model, Path::new(scxml_path));
+            preparation.bound(&mut model);
+
+            // ADR 0057 §9: the variants a backend that keeps the variability
+            // renders the document with, derived as `generate` derives them,
+            // so the verdict on that backend is the verdict `generate` reaches.
+            let variants = if features.is_none()
+                && langs.contains(&Language::Rust)
+                && model
+                    .product_line
+                    .as_ref()
+                    .is_some_and(|line| line.is_gated())
+            {
+                let variants = sce_build::variant_lift::Variants::derive(
+                    &model,
+                    scxml_path,
+                    &document_parser,
+                    &mut |variant| preparation.variant(variant),
+                )
+                .unwrap_or_else(|refused: PreparationRefusal| refused.exit(error_format));
+                if let Some(refused) = variants.as_ref().and_then(|variants| {
+                    children_not_in_every_variant(&model, variants, scxml_path)
+                }) {
+                    error_format.emit_forge_and_exit(&refused);
+                }
+                variants
+            } else {
+                None
+            };
 
             let input_stem = Path::new(scxml_path)
                 .file_stem()
@@ -5694,6 +5877,7 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
                     forge: Some(&forge_options),
                     codegen: Some(&codegen_options),
                     script_engine: selected_engine,
+                    variants: variants.as_ref(),
                     ..Default::default()
                 };
                 let render = |machine: &SCXMLModel, stem: &str| {
@@ -6294,12 +6478,16 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
     // §scxml-6.4: a hybrid invoke's candidates are found where
     // `copy_static_invoke_children` stages them from — the input root first
     // — so the arguments each one may keep are read from the real document.
-    let mut parser = select_variant(
+    //
+    // A variant of a product line is parsed by this parser too (ADR 0057 §9),
+    // so it is made by one function.
+    let document_include_dirs: Vec<PathBuf> = include_dirs.iter().map(PathBuf::from).collect();
+    let document_parser = || {
         SCXMLParser::new()
-            .with_include_dirs(include_dirs.iter().map(PathBuf::from).collect())
-            .with_candidate_roots(input_root_override.map(PathBuf::from).into_iter().collect()),
-        &features,
-    );
+            .with_include_dirs(document_include_dirs.clone())
+            .with_candidate_roots(input_root_override.map(PathBuf::from).into_iter().collect())
+    };
+    let mut parser = select_variant(document_parser(), &features);
     // Typed parser failures (XML/XSD/validation) flow straight to the
     // unified diagnostic emitter — the old CliError::ScxmlParse
     // wrapper collapsed forge codes into cli/scxml-parse, losing the
@@ -6356,20 +6544,16 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
     //     (test191/338) flip `has_parent_communication=true` on their
     //     own, and `<donedata>`-only children (donedata_local_invoke)
     //     compile cleanly under the parser-derived `false`.
-    if as_child && lang != Language::C11 {
-        model.has_parent_communication = true;
-    }
-
-    analyzer::analyze(&mut model, scxml_path);
-
-    // §scxml-6.2.5: apply the host's declaration before any backend
-    // renders, so what the emitted code does, what the analyzer reports
-    // and what the manifest publishes are one decision.
-    if let Err(refused) = sce_build::host_processor_analyzer::declare_host_surfaces(
-        &mut model,
-        &host_processor,
-        &host_invoker,
-    ) {
+    let preparation = StatechartPreparation {
+        scxml_path,
+        parent_template: as_child && lang != Language::C11,
+        host_processor: &host_processor,
+        host_invoker: &host_invoker,
+        source_hex: Some(drift_ctx.header.source_hex()),
+        deploy_path,
+        for_partition,
+    };
+    if let Err(refused) = preparation.analyzed(&mut model) {
         cli_exit(refused.into());
     }
 
@@ -6616,13 +6800,6 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
         &sce_build::transition_function_findings(&model, scxml_path),
         "",
     );
-    // What the document's declarations cannot hold is the digest of the
-    // source set this run read: the transition table and the transition
-    // function are built here, where that digest is known and after the AST
-    // export, which stays the analysed document. The hash is the one every
-    // file of this run embeds; every route that writes one binds it through
-    // the same call.
-    sce_build::bind_run_digest(&mut model, &drift_ctx.header.source_hex());
 
     // SCE Protocol-Synthesis RFC §synth-5-J-2: Rust no_std variant
     // rejection. Only fires when `--no-std` is paired with `-l rust`
@@ -6670,7 +6847,13 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
         "",
     );
 
-    resolve_source_path(&mut model, Path::new(scxml_path));
+    // What the document's declarations cannot hold is the digest of the
+    // source set this run read: the transition table and the transition
+    // function are built here, where that digest is known and after the AST
+    // export, which stays the analysed document. The hash is the one every
+    // file of this run embeds; every route that writes one binds it through
+    // the same call.
+    preparation.bound(&mut model);
 
     let input_stem = Path::new(scxml_path)
         .file_stem()
@@ -6779,21 +6962,50 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
     // inline in this function it was, in practice, unavailable to
     // everything else, and the value gate over author `<param>` literals
     // silently compiled a different shape of machine as a result.
-    if let Some(deploy_file) = deploy_path {
-        match sce_build::apply_deploy_model_mutations(
-            &mut model,
-            Path::new(deploy_file),
-            for_partition,
-        ) {
-            // The descriptive half of the deploy travels into the
-            // manifest. Without a reader a declaration is
-            // indistinguishable from a typo — the author believes they
-            // configured something and nothing in the build says
-            // otherwise.
-            Ok(facts) => report.deploy_facts = Some(facts),
-            Err(e) => error_format.emit_and_exit(&e.source, e.stage.error_prefix()),
-        }
+    match preparation.deployed(&mut model) {
+        // The descriptive half of the deploy travels into the
+        // manifest. Without a reader a declaration is
+        // indistinguishable from a typo — the author believes they
+        // configured something and nothing in the build says
+        // otherwise.
+        Ok(facts) => report.deploy_facts = facts,
+        Err(e) => error_format.emit_and_exit(&e.source, e.stage.error_prefix()),
     }
+
+    // ADR 0057 §9: a document that carries feature conditions, generated
+    // with no selection by a backend that keeps the variability, is
+    // generated once for every build. Each variant is held to what the
+    // document is held to (the family check `check` runs) and prepared as
+    // the document was, and the output is held to what each generates alone.
+    let variants = if features.is_none()
+        && lang == Language::Rust
+        && model
+            .product_line
+            .as_ref()
+            .is_some_and(|line| line.is_gated())
+    {
+        if let Err(refused) =
+            sce_build::check_every_variant(&model, scxml_path, &document_include_dirs, lint)
+        {
+            error_format.emit_forge_and_exit(&refused);
+        }
+        let variants = sce_build::variant_lift::Variants::derive(
+            &model,
+            scxml_path,
+            &document_parser,
+            &mut |variant| preparation.variant(variant),
+        )
+        .unwrap_or_else(|refused: PreparationRefusal| refused.exit(error_format));
+        if let Some(refused) = variants
+            .as_ref()
+            .and_then(|variants| children_not_in_every_variant(&model, variants, scxml_path))
+        {
+            error_format.emit_forge_and_exit(&refused);
+        }
+        variants
+    } else {
+        None
+    };
 
     // mesh_open_issues.md Issue 2: when --transport-only is set, skip
     // the state-machine backend emit + its side-product files
@@ -6877,6 +7089,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
                         cpp_namespace_prefix,
                         kotlin_package_prefix,
                         c_symbol_prefix,
+                        variants: variants.as_ref(),
                     },
                 )
                 .unwrap_or_else(|e| error_format.emit_forge_and_exit(&e));

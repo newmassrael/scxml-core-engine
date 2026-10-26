@@ -66,6 +66,7 @@ fn first_code(output: &Output) -> String {
     value["code"].as_str().unwrap_or_default().to_string()
 }
 
+/// A backend that writes one variant at a time needs the variant named.
 #[test]
 fn a_gated_document_is_not_generated_without_a_selection() {
     let (dir, machine) = product_line();
@@ -76,7 +77,7 @@ fn a_gated_document_is_not_generated_without_a_selection() {
         "generate",
         path(&machine),
         "-l",
-        "rust",
+        "go",
         "-o",
         path(&out),
     ]);
@@ -85,6 +86,37 @@ fn a_gated_document_is_not_generated_without_a_selection() {
         "a gated document was generated as written"
     );
     assert_eq!(first_code(&run), "codegen/feature-selection-required");
+}
+
+/// The Rust backend keeps the variability (ADR 0057 §9): with no selection it
+/// writes one machine for every build, each element under its presence, and
+/// the generation has held that machine, build by build, to what each
+/// variant generates alone. `check` reaches the same verdict.
+#[test]
+fn the_rust_backend_writes_one_machine_for_every_build() {
+    let (dir, machine) = product_line();
+    let out = dir.path().join("out");
+    let run = sce_codegen(&["generate", path(&machine), "-l", "rust", "-o", path(&out)]);
+    assert!(
+        run.status.success(),
+        "{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+    let code = std::fs::read_to_string(out.join("machine_sm.rs")).expect("the machine");
+    assert!(
+        code.contains(r#"#[cfg(feature = "session-unicast-accept")] Accepting,"#),
+        "the gated state is a variant under its presence"
+    );
+    assert!(
+        code.contains(r#"#[cfg(feature = "session-unicast")] Open,"#),
+        "the gated state is a variant under its presence"
+    );
+    let check = sce_codegen(&["check", path(&machine), "-l", "rust"]);
+    assert!(
+        check.status.success(),
+        "{}",
+        String::from_utf8_lossy(&check.stderr)
+    );
 }
 
 #[test]

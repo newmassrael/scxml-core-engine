@@ -71,6 +71,19 @@ object = { version = "0.36", default-features = false, features = [
     "elf",
     "std",
 ], optional = true }
+# The translation validation of a lifted Rust machine (ADR 0057 §9): the output
+# that keeps every configuration is read as Rust, each variant's `#[cfg]` is
+# resolved on it, and what is left is compared token for token with the
+# machine generated from that variant alone. Read as syntax rather than as
+# text, because a `#[cfg]` governs a syntax node, not a line. The tests use the
+# same `visit` to walk the generator's own sources for the `Language` sites a
+# new backend must be decided at (a_backend_is_decided_at_every_site_and_listed_once).
+syn = { version = "2", features = ["parsing", "full", "visit", "visit-mut", "printing"] }
+quote = "1"
+# Where each member of a generated source starts and ends, so the merge of the
+# variants' sources (`variant_merge`) cuts and joins their own text and leaves
+# every comment where the variant wrote it.
+proc-macro2 = { version = "1", features = ["span-locations"] }
 
 [build-dependencies]
 # The build script `include!`s `src/generator_witness.rs` to embed the
@@ -122,9 +135,6 @@ schemars = "0.8"
 # optional field, ref resolution failure). Dev-only — production
 # emit paths never validate, only produce.
 jsonschema = { version = "0.18", default-features = false }
-# `visit` walks the generator's own sources for the `Language` sites a new
-# backend must be decided at (a_backend_is_decided_at_every_site_and_listed_once).
-syn = { version = "2", features = ["parsing", "full", "visit"] }
 # Lua 5.4 — the very interpreter the Rust and Go backends emit for. Those
 # backends embed a Lua table constructor inside a host string literal, so
 # an author value crosses two literal boundaries and a host-only escape

@@ -3653,6 +3653,7 @@ dependencies = [
  "minijinja-contrib",
  "mlua",
  "object",
+ "quote",
  "regex",
  "roxmltree",
  "sce-rust-lua",

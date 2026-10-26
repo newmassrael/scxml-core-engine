@@ -2403,6 +2403,38 @@ pub fn generate_with_options(
     template_dir: &Path,
     options: &StatechartCodegenOptions,
 ) -> Result<String, GenerateError> {
+    generate_rust_within(model, template_dir, options, &RustBounds::of(model))
+}
+
+/// The sizes a Rust machine's buffers are given: what the microstep holds
+/// (ADR 0056) and the longest id a `<send>` is sent under (ADR 0050).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RustBounds {
+    microstep: crate::microstep_bounds::MicrostepBounds,
+    send_id: usize,
+}
+
+impl RustBounds {
+    /// The bounds of `model` as the Rust backend renders it, after the mesh
+    /// lowering every Rust render applies.
+    pub fn of(model: &SCXMLModel) -> Self {
+        let lowered = crate::host_processor_analyzer::lower_mesh(model, Language::Rust);
+        RustBounds {
+            microstep: crate::microstep_bounds::MicrostepBounds::of(&lowered),
+            send_id: crate::send_id_bound::send_id_max_bytes(&lowered),
+        }
+    }
+}
+
+/// [`generate_with_options`] with the buffers sized by `bounds` rather than by
+/// `model`'s own: a variant of a product line generated for the machine of
+/// every build is given the document's, which hold each variant (ADR 0057 §9).
+pub fn generate_rust_within(
+    model: &SCXMLModel,
+    template_dir: &Path,
+    options: &StatechartCodegenOptions,
+    bounds: &RustBounds,
+) -> Result<String, GenerateError> {
     let lowered = crate::host_processor_analyzer::lower_mesh(model, Language::Rust);
     let model = lowered.as_ref();
     reject_static_datamodel_in_unsupported_lang(model, Language::Rust)?;
@@ -2412,7 +2444,7 @@ pub fn generate_with_options(
     let mut env = new_env();
     load_templates(&mut env, template_dir, Language::Rust)?;
     filters::register_filters(&mut env, &document_scope(model));
-    render_rust(&mut env, model, options)
+    render_rust(&mut env, model, options, bounds)
 }
 
 /// Render the `mod.rs` module index for a generated Rust state-machine
@@ -2802,6 +2834,7 @@ pub fn generate_with_templates(
     templates: &[(&str, &str)],
     no_std: bool,
 ) -> Result<String, GenerateError> {
+    let bounds = RustBounds::of(model);
     let lowered = crate::host_processor_analyzer::lower_mesh(model, Language::Rust);
     let model = lowered.as_ref();
     reject_static_datamodel_in_unsupported_lang(model, Language::Rust)?;
@@ -2818,6 +2851,7 @@ pub fn generate_with_templates(
             no_std,
             ..Default::default()
         },
+        &bounds,
     )
 }
 
@@ -3003,6 +3037,7 @@ fn render_rust(
     env: &mut Environment,
     model: &SCXMLModel,
     options: &StatechartCodegenOptions,
+    bounds: &RustBounds,
 ) -> Result<String, GenerateError> {
     let machine_name = filters::to_pascal_case(model.name.clone());
 
@@ -3129,7 +3164,7 @@ fn render_rust(
 
     // What the state tree bounds: the sizes of the buffers the runtime's
     // microstep holds, written on the policy so each is this document's own.
-    let microstep_bounds = crate::microstep_bounds::MicrostepBounds::of(model);
+    let microstep_bounds = bounds.microstep;
 
     model_lowered.into_artifact_coordinates();
     let ctx = minijinja::context! {
@@ -3142,7 +3177,7 @@ fn render_rust(
         max_history_defaults => microstep_bounds.history_defaults,
         max_depth => microstep_bounds.depth,
         max_entry_walk => microstep_bounds.entry_walk,
-        max_send_id => crate::send_id_bound::send_id_max_bytes(model),
+        max_send_id => bounds.send_id,
         state_derives_attr => &state_derives_attr,
         event_derives_attr => &event_derives_attr,
         default_state_id => &default_state_id,

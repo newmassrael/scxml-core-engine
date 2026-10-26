@@ -174,6 +174,9 @@ pub mod host_processor_analyzer;
 /// (`sce-codegen generate --with-imports`).
 pub mod import_closure;
 pub mod kotlin;
+/// Translation validation of a lifted Rust machine against each variant's own
+/// (ADR 0057 §9).
+pub mod lift_validation;
 /// The bounds a deployment chooses: `sce:limit` names a bound, and the number a
 /// build gives the name replaces the one the document wrote.
 pub mod limits;
@@ -390,6 +393,13 @@ mod unreachable_statements;
 /// detection — strict-mode build gate + NDJSON report. Drives
 /// `--strict-unresolved` on `generate` and `sce-codegen unresolved`.
 pub mod unresolved_check;
+/// The variants of a product line as the output for every build reads them:
+/// the selector of a set of variants, and the check of the output against
+/// each (ADR 0057 §9).
+pub mod variant_lift;
+/// One Rust source for every build of a product line, merged from the source
+/// each distinct variant generates (ADR 0057 §9).
+pub mod variant_merge;
 pub mod w3c_dist_manifest;
 /// W3C SCXML statechart conformance registry — which upstream tests this
 /// repository runs and which harness each needs. Read by
@@ -453,7 +463,7 @@ pub const GENERATOR_COMMIT: &str = env!("SCE_GIT_COMMIT");
 pub const GENERATOR_SOURCE_DIGEST: &str = env!("SCE_GENERATOR_SOURCE_DIGEST");
 
 use model::SCXMLModel;
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 use std::path::{Path, PathBuf};
 
 /// Two-role document label for the forge pipeline.
@@ -1828,6 +1838,11 @@ pub struct ModelEmitOptions<'a> {
     pub kotlin_package_prefix: Option<&'a str>,
     /// Prefix for the emitted C11 symbol names (`--c-symbol-prefix`).
     pub c_symbol_prefix: Option<&'a str>,
+    /// The variants of a document that carries feature conditions, derived
+    /// and prepared as the document was ([`variant_lift::Variants::derive`]):
+    /// with them a backend that keeps the variability writes one output for
+    /// every build (ADR 0057 §9). `None` for any other document.
+    pub variants: Option<&'a variant_lift::Variants>,
 }
 
 /// Emit every artifact one analysed model produces for one language.
@@ -1854,21 +1869,168 @@ pub fn emit_model_artifacts(
     options: &ModelEmitOptions<'_>,
 ) -> Result<generator::GeneratedOutput, CompileError> {
     // ADR 0057 §6: a document that carries feature conditions is generated one
-    // variant at a time. The parse of a selection (`--features`) is a plain
-    // document and passes here; the document as written would be the variant
-    // with every feature on, which nobody chose.
+    // variant at a time, except by a backend that keeps the variability in
+    // its output (§9), given the variants. The parse of a selection
+    // (`--features`) is a plain document and passes here; the document as
+    // written would be the variant with every feature on, which nobody chose.
     if let Some(line) = model.product_line.as_ref().filter(|line| line.is_gated()) {
-        return Err(forge::error::Located::new(
-            forge::error::GenerateError::CodegenFeatureSelectionRequired {
-                model: line.model_name().to_string(),
-                language: forge::codegen_matrix::language_wire_name(language).to_string(),
+        return match (language, options.variants) {
+            (generator::Language::Rust, Some(variants)) => emit_lifted_rust_artifacts(
+                model,
+                template_dir,
+                input_stem,
+                source_name,
+                options,
+                variants,
+            ),
+            _ => Err(forge::error::Located::new(
+                forge::error::GenerateError::CodegenFeatureSelectionRequired {
+                    model: line.model_name().to_string(),
+                    language: forge::codegen_matrix::language_wire_name(language).to_string(),
+                }
+                .into(),
+                source_name,
+                None,
+                None,
+            )),
+        };
+    }
+    emit_artifacts_within(
+        model,
+        template_dir,
+        input_stem,
+        source_name,
+        language,
+        options,
+        &generator::RustBounds::of(model),
+    )
+}
+
+/// One output for every build of the product line `model` is written as
+/// (ADR 0057 §9): each distinct variant generated as any document is, with
+/// the document's bounds, which hold each of them, and the files merged
+/// ([`variant_merge::merge`]), each part the variants share written once and
+/// each part some write under the selector of those that write it.
+///
+/// The output is then held, for every build the product line tells apart, to
+/// what that build's variant generates alone, each Rust file resolved for the
+/// build ([`variant_lift::Variants::first_mismatch`]). A build for which they
+/// differ, or a difference no selector can stand before, refuses the
+/// generation (`codegen/feature-lifting-mismatch`): never an output wrong for
+/// some build.
+fn emit_lifted_rust_artifacts(
+    model: &SCXMLModel,
+    template_dir: &Path,
+    input_stem: &str,
+    source_name: &str,
+    options: &ModelEmitOptions<'_>,
+    variants: &variant_lift::Variants,
+) -> Result<generator::GeneratedOutput, CompileError> {
+    let bounds = generator::RustBounds::of(model);
+    let outputs = variants
+        .variants()
+        .iter()
+        .map(|variant| {
+            emit_artifacts_within(
+                &variant.model,
+                template_dir,
+                input_stem,
+                source_name,
+                generator::Language::Rust,
+                options,
+                &bounds,
+            )
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let refused = |difference: String, features: &[String]| {
+        forge::error::Located::new(
+            forge::error::GenerateError::CodegenFeatureLiftingMismatch {
+                model: variants.product_line().model_name().to_string(),
+                features: features.to_vec(),
+                difference,
             }
             .into(),
             source_name,
             None,
             None,
+        )
+    };
+    let names = |output: &generator::GeneratedOutput| -> Vec<String> {
+        output.files.iter().map(|(name, _)| name.clone()).collect()
+    };
+    let written = names(&outputs[0]);
+    if let Some((variant, output)) = variants
+        .variants()
+        .iter()
+        .zip(&outputs)
+        .find(|(_, output)| names(output) != written)
+    {
+        return Err(refused(
+            format!(
+                "the variant writes the files {:?} where another writes {written:?}",
+                names(output)
+            ),
+            &variant.features,
         ));
     }
+    let spell = |set: &variant_merge::VariantSet, within: &variant_merge::VariantSet| {
+        variants.selector_of(set, within).rust()
+    };
+    let mut files = Vec::with_capacity(written.len());
+    for (index, name) in written.iter().enumerate() {
+        let sources: Vec<(variant_merge::VariantSet, &str)> = outputs
+            .iter()
+            .enumerate()
+            .map(|(variant, output)| (BTreeSet::from([variant]), output.files[index].1.as_str()))
+            .collect();
+        let merged = if name.ends_with(".rs") {
+            variant_merge::merge(&sources, &spell).map_err(|variant_merge::Unmerged(why)| {
+                refused(format!("in `{name}`, {why}"), &[])
+            })?
+        } else {
+            match sources.iter().find(|(_, text)| *text != sources[0].1) {
+                Some(_) => {
+                    return Err(refused(
+                        format!("`{name}` is not the same text in every variant"),
+                        &[],
+                    ))
+                }
+                None => sources[0].1.to_string(),
+            }
+        };
+        files.push((name.clone(), merged));
+    }
+    let references: Vec<Vec<(String, String)>> =
+        outputs.iter().map(|output| output.files.clone()).collect();
+    let mismatch = variants.first_mismatch(&files, &references).map_err(|e| {
+        locate_codegen_error(
+            forge::error::GenerateError::TemplateRender(format!(
+                "the generated Rust does not parse: {e}"
+            )),
+            source_name,
+            model,
+        )
+    })?;
+    if let Some(mismatch) = mismatch {
+        return Err(refused(mismatch.difference, &mismatch.features));
+    }
+    let mut deps: Vec<PathBuf> = outputs.into_iter().flat_map(|output| output.deps).collect();
+    deps.sort();
+    deps.dedup();
+    Ok(generator::GeneratedOutput { files, deps })
+}
+
+/// [`emit_model_artifacts`] for a model generated as it stands, the Rust
+/// machine's buffers sized by `bounds`.
+fn emit_artifacts_within(
+    model: &SCXMLModel,
+    template_dir: &Path,
+    input_stem: &str,
+    source_name: &str,
+    language: generator::Language,
+    options: &ModelEmitOptions<'_>,
+    bounds: &generator::RustBounds,
+) -> Result<generator::GeneratedOutput, CompileError> {
     let engine_for = |lang: generator::Language| {
         options
             .script_engine
@@ -1876,12 +2038,13 @@ pub fn emit_model_artifacts(
     };
     let mut output = match language {
         generator::Language::Rust => {
-            let code = generator::generate_with_options(
+            let code = generator::generate_rust_within(
                 model,
                 template_dir,
                 options
                     .codegen
                     .unwrap_or(&generator::StatechartCodegenOptions::default()),
+                bounds,
             )
             .map_err(|e| locate_codegen_error(e, source_name, model))?;
             generator::GeneratedOutput {

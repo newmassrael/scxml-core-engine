@@ -249,28 +249,43 @@ The law of §6 is tested in every lane on fixtures that cover each class of §5:
 
 ### 9. Lifting the generator (the design of step 3)
 
-A backend that keeps the variability must emit, for each configuration `c`, exactly what it emits for `π_c(D)`. What
-it emits splits into two kinds, and each is lifted by the rule that makes the law of §6 hold by construction.
+A backend that keeps the variability must emit, for each configuration `c`, exactly what it emits for `π_c(D)`.
+Two designs were weighed for making the law of §6 hold, and the second is the one built.
 
-**Items of an element.** A state's enum variant and every match arm, slice entry and table row that names it; a
-transition's dispatch; a statement of executable content; a `<data>` field and its initialiser; an invoke. Each is
-present in `gen_B(π_c(D))` exactly when its element is in `π_c(D)`, so it carries the element's effective condition
-`pc*`. An item derived from uses (§4: an event variant, a trait method) carries the disjunction of its uses'.
+*Lifting each site of each template.* An item an element writes carries the element's presence; a value computed
+from the document (the default initial state, whether a state is compound, which events are externally drivable, a
+transition's index among those its state keeps) is read per variant and written once per distinct value under a
+selector. Correct, and the wrong cost: the Rust templates hold hundreds of sites that read the document, each
+would need deciding, every new site would need the same, and a site missed is silently wrong for some build.
 
-**Values that depend on the configuration.** Some of what a generator writes is computed from the document rather
-than copied from one element: the default initial state where `initial` is absent (the first child in document
-order, which a condition may remove), whether a state is compound (all its children may be removed), whether an
-event is externally drivable (its raises may be removed while its transitions stay). Re-deriving each such rule over
-presence conditions would be a second implementation of the W3C rules beside the generator's own, which this
-repository forbids. Instead the generator derives each distinct variant (§5's enumeration), reads the value from
-*that variant's own model* — the model the deriving backends generate from — and emits one alternative per group of
-variants that share the value, each under the disjunction of their variants' selectors. The value written for `c` is
-then by construction the value `gen_B(π_c(D))` writes.
+*Merging what the backend already writes.* The generator derives each distinct variant (§5's enumeration), prepares
+it as the document was prepared, and generates it as any document is generated — the rules that compute every value
+stay the generator's own, written once, and no template changes. The source for every build is the **choice** of
+those sources (Erwig and Walkingshaw, the choice calculus, TOSEM 2011) with everything the variants share factored
+out, which is a semistructured merge (Apel et al., ESEC/FSE 2011): each source is read as Rust, each list of the
+syntax — the items of a file, the members of an `impl`, the statements of a block, the arms of a `match`, the
+fields and variants of a type — is aligned member by member across the variants, a member all write alike is
+written once, a member some write is written under the selector of those that write it, and members that differ
+only inside a list they share are merged inside it. Where nothing is shared the members are alternatives, each
+under its own selector. The text written is the variants' own, cut and joined at the members' bounds, so comments
+and the `SCE-MAP` markers stay where the variant wrote them. A difference at a place no `#[cfg]` may stand — the
+value a block ends with — is refused (`codegen/feature-lifting-mismatch`), as is any output the check below does
+not accept.
+
+The merge is **checked, not argued**. For every build the product line tells apart (not one per variant: a
+predicate the output writes may tell apart builds that build one variant), the output's `#[cfg]` is resolved on its
+syntax tree and compared token for token with the source that build's variant generates alone (translation
+validation, Pnueli, Siegel and Singerman, TACAS 1998). A merge that is wrong for any build refuses the generation,
+naming the first build and the item that differs. The check is exhaustive over the builds, so the law of §6 is a
+property of every output this backend writes, whatever a future template does.
 
 A variant's **selector** is the exact predicate over the build's features that picks it: the conjunction, over the
 document's gates, of each gate's condition or its negation as the variant has it. Selectors partition every
-configuration the model admits, so exactly one alternative of each value is compiled. A selector may negate: it is a
-choice the generator writes, not a condition an author does, and the monotone grammar of §1 binds only the latter.
+configuration the model admits, so exactly one alternative of each value is compiled. The selector written before
+a member is a small one that holds in the variants that write it and in none of the others (Espresso's
+expand and irredundant moves over the variants' valuations of the document's distinct conditions, Brayton et al.
+1984; a heuristic, not a minimum), so a member written for one element reads as that element's own condition. A selector may negate: it is a choice
+the generator writes, not a condition an author does, and the monotone grammar of §1 binds only the latter.
 
 **A variant inherits its document's names.** A state's document-order rank and the id a state written without one
 is given are assigned over the document, and a variant parsed through a selection keeps the ones `D` gives its
@@ -339,6 +354,20 @@ every variant (§1).
   `Family`; every other rule is `ProductOnly` at landing, judged on each distinct variant, which is sound for any
   rule. No rule is yet argued into class 1, 2 or 3: each such move is its own change, it reduces the work, and it
   changes no verdict.
+
+### What step 3 landed (2026-10-27)
+
+- **One Rust machine for every build.** `sce-codegen generate` of a gated document with `-l rust` and no
+  `--features` derives and prepares each distinct variant as the document was prepared (`StatechartPreparation`, which
+  `check` shares), generates each with the document's bounds, merges the sources (`variant_merge`) and checks the
+  result build by build (`lift_validation`, `variant_lift`). `check` reaches the same verdict. The other backends
+  still refuse a gated document without `--features`.
+- **Names are the document's.** A variant keeps the document-order ranks and the ids generated for unnamed states
+  that the document gives, so every variant spells a state alike.
+- **In-line children** must be the same in every variant: a run writes each as a file of its own, and a child a
+  variant removes or changes is refused as `codegen/feature-lifting-mismatch`.
+- Still to do in this step: a conformance crate that compiles the output under every feature set and runs the
+  machine against each variant's, the Cargo-side guards for the requires edges of the model, and the matrix in CI.
 
 ## Questions left open
 

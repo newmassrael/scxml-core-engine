@@ -272,6 +272,14 @@ impl ProductLine {
         mentioned
     }
 
+    /// Every configuration of the features the conditions mention, which hold
+    /// what they require: what a build of the product line is as far as any
+    /// variant can tell, each once. Two builds alike on these features build
+    /// one variant.
+    pub fn configurations(&self) -> Vec<Configuration> {
+        self.model.configurations_over(&self.mentioned())
+    }
+
     /// One configuration for each distinct variant, each the least
     /// configuration that denotes it, in the order of their size and then the
     /// model's order.
@@ -284,7 +292,7 @@ impl ProductLine {
     /// signature is kept.
     pub fn variants(&self) -> Vec<Configuration> {
         let mut least: BTreeMap<Vec<bool>, Configuration> = BTreeMap::new();
-        for configuration in self.model.configurations_over(&self.mentioned()) {
+        for configuration in self.configurations() {
             let signature: Vec<bool> = self
                 .gates
                 .iter()

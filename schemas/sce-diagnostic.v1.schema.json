@@ -192,6 +192,7 @@
         "codegen/mcu-class-kind-on-non-mcu-language",
         "codegen/generic-kind-backend-emit-missing",
         "codegen/feature-selection-required",
+        "codegen/feature-lifting-mismatch",
         "queue/storage-not-exactly-one",
         "queue/allocator-progress-missing",
         "queue/progress-unreachable",

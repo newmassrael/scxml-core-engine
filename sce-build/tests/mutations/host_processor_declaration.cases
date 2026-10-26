@@ -259,22 +259,22 @@ edit("sce-build/src/bin/sce_codegen.rs",
     host_processor: Vec<String>,""")
 PY
 
-# Replaced by a binding of the two lists rather than deleted outright: with
-# the call gone they are unused and the tree stops compiling, which the
-# harness reports INCONCLUSIVE — a case that cannot run is worth less than
-# no case, since it reads as coverage and measures nothing. Measured: the
-# form below compiles and turns `check_and_generate_agree_about_a_host_declaration`
-# red, which the deleting form never got far enough to do.
+# The declaration is applied by `StatechartPreparation::analyzed`, which
+# `generate` shares, so this case empties the two lists in `check`'s own
+# preparation and leaves `generate` applying them: the two commands then read
+# the document through different declarations, which is what
+# `check_and_generate_agree_about_a_host_declaration` asserts they do not.
+# Re-aimed 2026-10-27 when the call moved into the shared preparation; the
+# earlier form deleted the call at `check`'s site and no longer has one to
+# delete.
 mutation_case "check accepts the declaration and never applies it" <<'PY'
 edit("sce-build/src/bin/sce_codegen.rs",
-     """            if let Err(refused) = sce_build::host_processor_analyzer::declare_host_surfaces(
-                &mut model,
-                &host_processor,
-                &host_invoker,
-            ) {
-                cli_exit(refused.into());
-            }""",
-     "            let _ = (&host_processor, &host_invoker);")
+     """                parent_template: false,
+                host_processor: &host_processor,
+                host_invoker: &host_invoker,""",
+     """                parent_template: false,
+                host_processor: &[],
+                host_invoker: &[],""")
 PY
 
 mutation_case "check does not publish what it was told" <<'PY'

@@ -8410,7 +8410,7 @@ completed), and a selection for a document that imports no model is
 
 ---
 
-## Appendix — `DiagnosticCode` index (476 codes)
+## Appendix — `DiagnosticCode` index (477 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -8885,6 +8885,7 @@ or SCE-internal issues.
 | `codegen/mcu-class-kind-on-non-mcu-language` | Generate | Shell-only at PR-0; producer + matrix walker land with the algorithm kind in Phase A3. MCU-class kind authored against a non-MCU language target (SCE Protocol-Synthesis RFC §5.J.4) |
 | `codegen/generic-kind-backend-emit-missing` | Generate | Shell-only at PR-0; producer lands with the matrix walker. Generic-class kind expected to emit on a backend per the parity matrix but the per-kind template is absent (SCE bug, SCE Protocol-Synthesis RFC §5.J.5) |
 | `codegen/feature-selection-required` | Generate | A statechart carrying feature conditions generated with no `--features` for a backend that writes one variant at a time (ADR 0057 §6) |
+| `codegen/feature-lifting-mismatch` | Generate | A machine generated for every build of a product line that is not, for some build, what that build's variant generates alone, or a difference between variants no selector can stand before: a defect of the generator's merge (ADR 0057 §9) |
 | `io/filesystem` | Io | Generic filesystem failure |
 | `cli/read-input` | Cli | Input file read error |
 | `cli/write-output` | Cli | Output file write error |
