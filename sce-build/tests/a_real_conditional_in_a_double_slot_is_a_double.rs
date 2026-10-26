@@ -12,6 +12,11 @@
 // `to_f32(..)` in Python), and its value reached the slot as -12.300000190734863 where the
 // double is -12.3. Measured 2026-10-06: four shipped cases of one component. The plain form
 // `a = v * 0.1` was right in every language, which is the control here.
+//
+// A conditional written in a branch of another lands where the outer one lands, so it is made
+// at the slot's precision too: `c ? 0.0 : d ? v * 0.1 : 0.0` and `c ? (d ? v * 0.1 : 0.0) : 0.0`
+// are doubles in a `float64` slot. An emitter that writes a branch at the type of the
+// conditional it belongs to would make the inner one a single if only the outer were landed.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -30,10 +35,13 @@ const PROBE: &str = r##"<?xml version="1.0"?>
   <datamodel>
     <data id="v" sce:type="int32" expr="0"/>
     <data id="c" sce:type="bool" expr="true"/>
+    <data id="d" sce:type="bool" expr="true"/>
     <data id="plain" sce:type="float64" expr="0.0"/>
     <data id="negated" sce:type="float64" expr="0.0"/>
     <data id="chosen" sce:type="float64" expr="0.0"/>
     <data id="chosenNegated" sce:type="float64" expr="0.0"/>
+    <data id="chosenInConsequent" sce:type="float64" expr="0.0"/>
+    <data id="chosenInAlternate" sce:type="float64" expr="0.0"/>
   </datamodel>
   <state id="s">
     <transition event="go" type="internal">
@@ -41,6 +49,8 @@ const PROBE: &str = r##"<?xml version="1.0"?>
       <assign location="negated" expr="0.0 - v * 0.1"/>
       <assign location="chosen" expr="c ? v * 0.1 : 0.0"/>
       <assign location="chosenNegated" expr="c ? 0.0 - v * 0.1 : 0.0"/>
+      <assign location="chosenInConsequent" expr="c ? (d ? v * 0.1 : 0.0) : 0.0"/>
+      <assign location="chosenInAlternate" expr="c ? 0.0 : d ? v * 0.1 : 0.0"/>
     </transition>
   </state>
 </scxml>
@@ -95,8 +105,8 @@ fn a_conditional_that_lands_in_a_double_is_made_as_a_double_in_every_language() 
     for language in emitting(ForgeKind::Statechart).map(|language| language.canonical_name()) {
         let lines = lines_with_the_literal(language);
         assert!(
-            lines.len() >= 4,
-            "{language}: the four assignments were not found among {lines:?}"
+            lines.len() >= 6,
+            "{language}: the six assignments were not found among {lines:?}"
         );
         for line in &lines {
             assert!(

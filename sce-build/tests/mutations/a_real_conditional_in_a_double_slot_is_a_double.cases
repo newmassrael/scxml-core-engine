@@ -13,7 +13,16 @@
 #   the conditional keeps the type of its branches, so every emitter reads a single;
 #   the branches of a conditional are rounded to a single where Python and the interpreter make
 #   it, whatever the slot;
+#   the consequent branch alone is left at its own type;
 #   the alternate branch alone is left at its own type.
+#
+# The last two take away the landing of a branch, which changes a type only where that branch
+# holds a conditional of its own (through any negation or arithmetic): a literal or a product
+# keeps its type and is made from the context its emitter pushes into it. So the probe writes
+# a conditional in each branch of another, `c ? (d ? v * 0.1 : 0.0) : 0.0` and
+# `c ? 0.0 : d ? v * 0.1 : 0.0`; left unlanded, the inner one stays a single, and C, C++, Rust
+# and Kotlin write its branches as one. Go spells the inner type from the slot and Python
+# rounds by the slot, so neither of those two sees these mutants.
 #
 # Anchors are literal slices of the source; an edit that moves one is reported INCONCLUSIVE
 # with the anchor quoted, never as a pass.
@@ -35,6 +44,15 @@ edit("sce-build/src/forge/expr.rs",
             round_singles_in(alternate, real(expected), callee);''',
      r'''            round_singles_in(consequent, InferredType::Unknown, callee);
             round_singles_in(alternate, InferredType::Unknown, callee);''')
+PY
+
+mutation_case "the consequent branch is left at its own type" <<'PY'
+edit("sce-build/src/forge/expr.rs",
+     r'''            land_reals_in_slot(consequent, expected);
+            land_reals_in_slot(alternate, expected);
+        }''',
+     r'''            land_reals_in_slot(alternate, expected);
+        }''')
 PY
 
 mutation_case "the alternate branch is left at its own type" <<'PY'
