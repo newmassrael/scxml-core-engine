@@ -137,6 +137,46 @@ pub struct SCXMLParser {
     /// The text of the variant the most recent parse read, when it read one
     /// ([`SCXMLParser::project_file`]).
     variant: Option<String>,
+    /// While a variant is parsed: the document-order rank and the generated id
+    /// each state element has in the document it was derived from, by the row
+    /// and column it starts at (which the derivation keeps). A variant's states
+    /// are ranked and named as the document's are, so a state has one name and
+    /// one place in the order whatever features are on (ADR 0057 §9).
+    inherited: Option<InheritedNames>,
+}
+
+/// The ranks and generated ids of a document's state elements, by where each
+/// starts — what a variant of it inherits ([`SCXMLParser::inherit_names`]).
+#[derive(Debug, Clone, Default)]
+struct InheritedNames {
+    order: BTreeMap<(u32, u32), u32>,
+    anonymous: BTreeMap<(u32, u32), String>,
+}
+
+impl InheritedNames {
+    /// The ranks and generated ids of `doc`'s state elements, assigned by the
+    /// passes a parse of it runs, read off by position.
+    fn of(doc: &roxmltree::Document) -> Self {
+        let root = doc.root_element();
+        let mut ranking = SCXMLParser::new();
+        ranking.assign_document_order(&root);
+        ranking.assign_anonymous_state_ids(&root);
+        let at = |node: &roxmltree::Node| {
+            let pos = doc.text_pos_at(node.range().start);
+            (pos.row, pos.col)
+        };
+        let mut names = InheritedNames::default();
+        for node in root.descendants().filter(roxmltree::Node::is_element) {
+            let id = node.id().get_usize();
+            if let Some(rank) = ranking.document_order_by_node.get(&id) {
+                names.order.insert(at(&node), *rank);
+            }
+            if let Some(anonymous) = ranking.anonymous_state_ids.get(&id) {
+                names.anonymous.insert(at(&node), anonymous.clone());
+            }
+        }
+        names
+    }
 }
 
 /// Run the XInclude + `sce:template` preprocessors on raw SCXML
@@ -2139,6 +2179,7 @@ impl SCXMLParser {
             candidate_roots: Vec::new(),
             features: None,
             variant: None,
+            inherited: None,
         }
     }
 
@@ -2509,11 +2550,14 @@ impl SCXMLParser {
         features: &[String],
         base_dir: Option<&Path>,
         diag_label: &str,
-    ) -> Result<String, crate::forge::error::Located<crate::forge::error::ForgeError>> {
+    ) -> Result<
+        (String, Option<InheritedNames>),
+        crate::forge::error::Located<crate::forge::error::ForgeError>,
+    > {
         use crate::feature_model::SelectionError;
         use crate::forge::error::{Located, ValidationError};
         let Ok(doc) = roxmltree::Document::parse(content) else {
-            return Ok(content.to_string());
+            return Ok((content.to_string(), None));
         };
         let root = doc.root_element();
         let imports = SCXMLModel {
@@ -2561,7 +2605,10 @@ impl SCXMLParser {
                     .and_then(|import| import.line);
                 Located::new(refusal.into(), diag_label, line_of_import, None)
             })?;
-        Ok(line.derive(content, &configuration))
+        Ok((
+            line.derive(content, &configuration),
+            Some(InheritedNames::of(&doc)),
+        ))
     }
 
     /// The document as a product line (ADR 0057): its feature model, read from
@@ -2737,8 +2784,10 @@ impl SCXMLParser {
         // condition — whose every position is the source's.
         if let Some(features) = self.features.take() {
             let variant = self.derive_variant(content, &features, base_dir, label.diagnostic_label);
-            let parsed = variant.and_then(|text| {
+            let parsed = variant.and_then(|(text, inherited)| {
+                self.inherited = inherited;
                 let parsed = self.parse_impl(&text, label, base_dir);
+                self.inherited = None;
                 self.variant = Some(text);
                 parsed
             });
@@ -3134,6 +3183,9 @@ impl SCXMLParser {
         // §scxml-3.14: a state element that names no id is given one, so the
         // states pass below finds every element the ranking above numbered.
         self.assign_anonymous_state_ids(&root);
+        // A variant's states keep the ranks and generated ids they have in
+        // the document it was derived from (ADR 0057 §9).
+        self.inherit_names(&doc);
         // Every invoke id the author wrote, read before the first invoke is
         // parsed, so an id generated for an earlier invoke steers clear of one
         // written after it.
@@ -3761,6 +3813,30 @@ impl SCXMLParser {
     /// what [`Self::parse_states`] later looks up: an element without an
     /// `id` is given one by [`Self::assign_anonymous_state_ids`], and is
     /// parsed and descended into like any other.
+    /// Replace the ranks and generated ids the passes above gave `doc`'s state
+    /// elements with those the document this variant was derived from gave
+    /// them, matched by the position each starts at; a parse of a document,
+    /// not of a variant, inherits nothing.
+    fn inherit_names(&mut self, doc: &roxmltree::Document) {
+        let Some(inherited) = self.inherited.take() else {
+            return;
+        };
+        for node in doc
+            .root_element()
+            .descendants()
+            .filter(roxmltree::Node::is_element)
+        {
+            let pos = doc.text_pos_at(node.range().start);
+            let id = node.id().get_usize();
+            if let Some(rank) = inherited.order.get(&(pos.row, pos.col)) {
+                self.document_order_by_node.insert(id, *rank);
+            }
+            if let Some(anonymous) = inherited.anonymous.get(&(pos.row, pos.col)) {
+                self.anonymous_state_ids.insert(id, anonymous.clone());
+            }
+        }
+    }
+
     fn assign_document_order(&mut self, elem: &roxmltree::Node) {
         // §scxml-3.2 and §scxml-3.3 both make "the first child state in
         // document order" the default initial state, and the rank is emitted

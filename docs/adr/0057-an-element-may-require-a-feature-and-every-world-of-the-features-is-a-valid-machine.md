@@ -272,10 +272,12 @@ document's gates, of each gate's condition or its negation as the variant has it
 configuration the model admits, so exactly one alternative of each value is compiled. A selector may negate: it is a
 choice the generator writes, not a condition an author does, and the monotone grammar of §1 binds only the latter.
 
-**Two differences that are not behaviour.** A variant's document order numbers its states densely, while the lifted
-output keeps the document's numbers: the two are order-isomorphic, and only the order is ever read. An anonymous
-state is named by its rank among all states of the document in the lifted output and among those of the variant in
-`gen_B(π_c(D))`; the conformance law compares observations by the ids authors write.
+**A variant inherits its document's names.** A state's document-order rank and the id a state written without one
+is given are assigned over the document, and a variant parsed through a selection keeps the ones `D` gives its
+states, matched by the position each starts at, which `π` keeps. Numbered over the variant instead, a state after a
+removed one would be ranked, and an unnamed one named, differently in each variant, and the lifted output would have
+no one spelling for it. Kept from `D`, the ranks of a variant are not dense; they are order-isomorphic to dense ones,
+and only their order is read.
 
 Bounds read from the document (ADR 0056's microstep buffers, ADR 0050's send bounds) are those of `D`, which hold
 every variant (§1).

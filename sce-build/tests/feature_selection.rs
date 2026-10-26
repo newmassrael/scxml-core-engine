@@ -204,6 +204,69 @@ fn a_selection_is_held_to_the_model() {
     ));
 }
 
+/// A variant's states keep the ranks and the generated ids the document gives
+/// them (ADR 0057 §9): removing a gated state before an unnamed one renames
+/// nothing and moves nothing, so every variant spells a state alike.
+#[test]
+fn a_variant_inherits_the_names_and_the_order_of_its_document() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("features.scxml"), FEATURES).unwrap();
+    let machine = dir.path().join("machine.scxml");
+    std::fs::write(
+        &machine,
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="idle" name="machine">
+  <sce:import kind="feature-model" src="features.scxml" as="features"/>
+  <state id="idle">
+    <transition event="go" target="last"/>
+  </state>
+  <state sce:requires="session-unicast"/>
+  <state>
+    <history>
+      <transition target="inner"/>
+    </history>
+    <state id="inner"/>
+  </state>
+  <state id="last"/>
+</scxml>
+"#,
+    )
+    .unwrap();
+    let document = SCXMLParser::new()
+        .parse_file(path(&machine))
+        .expect("the document parses");
+    let variant = SCXMLParser::new()
+        .with_features(Vec::new())
+        .parse_file(path(&machine))
+        .expect("the variant parses");
+    let removed: Vec<&String> = document
+        .states
+        .keys()
+        .filter(|id| !variant.states.contains_key(*id))
+        .collect();
+    let gated: Vec<&String> = document
+        .states
+        .iter()
+        .filter(|(_, state)| state.presence.is_some())
+        .map(|(id, _)| id)
+        .collect();
+    assert_eq!(removed, gated);
+    assert_eq!(gated.len(), 1);
+    for (id, state) in &variant.states {
+        let theirs = document
+            .states
+            .get(id)
+            .unwrap_or_else(|| panic!("the variant names `{id}`, which the document does not"));
+        assert_eq!(state.document_order, theirs.document_order, "{id}");
+    }
+    let histories = |model: &sce_build::model::SCXMLModel| {
+        model.history_states.keys().cloned().collect::<Vec<_>>()
+    };
+    assert_eq!(histories(&variant), histories(&document));
+    assert_eq!(histories(&variant).len(), 1);
+}
+
 #[test]
 fn a_selection_for_a_document_without_a_model_is_refused() {
     let dir = tempfile::tempdir().unwrap();
