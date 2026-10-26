@@ -569,20 +569,7 @@ pub(crate) struct ParsedSCXML {
 fn compile_model(scxml_path: &str) -> Result<ParsedSCXML, CompileError> {
     let mut parser = parser::SCXMLParser::new();
     let mut model = parser.parse_file(scxml_path)?;
-    analyzer::analyze(&mut model, scxml_path);
-    guard_static_generatable(&model, scxml_path)?;
-    refuse_impure_transition_function(&model, scxml_path)?;
-    lint_statechart(&model, scxml_path)?;
-    // SCE Protocol-Synthesis RFC §synth-5-O — IR provenance pre-emit
-    // guard. Runs *after* the analyzer (so synthesised IR additions
-    // are visible) and *before* `resolve_source_path` populates the
-    // template-visible source path (so a `None` cannot leak through
-    // to the marker-emitting templates). The walker fires
-    // `traceability/scxml-line-range-missing` when a node eligible
-    // for SCE-MAP marker emission carries `source_location: None`
-    // — codegen-internal invariant, no author repair. See
-    // `forge::provenance` for the eligibility scope.
-    forge::provenance::validate_emission_provenance(&model, scxml_path)?;
+    judge_statechart(&mut model, scxml_path, scxml_path, true)?;
     // No provenance root: the library entry points record the path their
     // caller named, which is the same default the CLI uses without
     // `--source-root`. A caller that wants a different spelling controls
@@ -605,16 +592,116 @@ fn compile_model_from_string(
 ) -> Result<SCXMLModel, CompileError> {
     let mut parser = parser::SCXMLParser::new();
     let mut model = parser.parse_string(scxml_content, scxml_name)?;
-    analyzer::analyze(&mut model, "");
-    guard_static_generatable(&model, scxml_name)?;
-    refuse_impure_transition_function(&model, scxml_name)?;
-    lint_statechart(&model, scxml_name)?;
-    // SCE Protocol-Synthesis RFC §synth-5-O — IR provenance pre-emit
-    // guard. WASM / parse_string callers share the same invariant
-    // as the file-based entry point above; both routes converge on
-    // `compile_model*` so the gate has a single placement.
-    forge::provenance::validate_emission_provenance(&model, scxml_name)?;
+    judge_statechart(&mut model, "", scxml_name, true)?;
     Ok(model)
+}
+
+/// The judgements a parsed statechart is held to before it is lowered, in the
+/// order their diagnostics outrank each other: the analyzer's pass, the
+/// static-generation preconditions, the transition function's purity, the
+/// design-time lints when `lint` asks for them, and the IR provenance
+/// guard.
+///
+/// One sequence for every route that holds a model to them — the library's
+/// `compile_model*` and the check of every variant of a product line
+/// ([`check_every_variant`]) — so a variant is judged by exactly what the
+/// document is. `analyzed_as` is the path the analyzer reads beside the
+/// document (empty for a model parsed from a string); `source` labels the
+/// diagnostics.
+///
+/// The provenance guard (SCE Protocol-Synthesis RFC §synth-5-O) runs after
+/// the analyzer, so synthesised IR additions are visible, and before a
+/// caller populates the template-visible source path, so a `None` cannot
+/// leak through to the marker-emitting templates: it fires
+/// `traceability/scxml-line-range-missing` when a node eligible for SCE-MAP
+/// marker emission carries `source_location: None` — a codegen-internal
+/// invariant, no author repair. See `forge::provenance` for the scope.
+pub fn judge_statechart(
+    model: &mut SCXMLModel,
+    analyzed_as: &str,
+    source: &str,
+    lint: bool,
+) -> Result<(), CompileError> {
+    analyzer::analyze(model, analyzed_as);
+    guard_static_generatable(model, source)?;
+    refuse_impure_transition_function(model, source)?;
+    if lint {
+        lint_statechart(model, source)?;
+    }
+    forge::provenance::validate_emission_provenance(model, source)?;
+    Ok(())
+}
+
+/// Hold every variant of a product line to what the document is held to
+/// (ADR 0057 §5, the product-only class): each distinct variant other than the
+/// document itself is parsed through its selection and judged by
+/// [`judge_statechart`]. `model` is the parsed document, whose own judgement
+/// is the caller's; a document that carries no condition has one variant and
+/// is answered at once.
+///
+/// The first variant refused is reported as
+/// `validation/feature-variant-ill-formed`, at the position the inner refusal
+/// names — the variant's positions are the source's — with the least
+/// configuration that denotes the variant and the inner record's code.
+/// Variants are tried smallest first, so the configuration named is the
+/// least one that shows a refusal.
+pub fn check_every_variant(
+    model: &SCXMLModel,
+    scxml_path: &str,
+    include_dirs: &[std::path::PathBuf],
+    lint: bool,
+) -> Result<(), CompileError> {
+    use forge::diagnostic::ToDiagnostics;
+    let Some(line) = model.product_line.as_ref().filter(|line| line.is_gated()) else {
+        return Ok(());
+    };
+    for configuration in line.variants() {
+        // The variant with every gate present is the document itself.
+        if line
+            .gates()
+            .iter()
+            .all(|gate| gate.effective.holds_in(&configuration))
+        {
+            continue;
+        }
+        let names: Vec<String> = line
+            .model()
+            .names_of(&configuration)
+            .map(str::to_string)
+            .collect();
+        let mut parser = parser::SCXMLParser::new()
+            .with_include_dirs(include_dirs.to_vec())
+            .with_features(names.clone());
+        let judged = parser
+            .parse_file(scxml_path)
+            .and_then(|mut variant| judge_statechart(&mut variant, scxml_path, scxml_path, lint));
+        let Err(inner) = judged else {
+            continue;
+        };
+        let record = inner
+            .to_diagnostics()
+            .into_iter()
+            .next()
+            .expect("a refusal is at least one record");
+        let mut refusal = forge::error::Located::new(
+            forge::error::ValidationError::FeatureVariantIllFormed {
+                witness: names,
+                code: record.code.as_str().to_string(),
+                message: record.message.clone(),
+                actual: record.actual.clone(),
+                inner_id: record.id.clone(),
+            }
+            .into(),
+            inner.location.file.clone(),
+            inner.location.line,
+            inner.location.col,
+        );
+        for site in inner.related() {
+            refusal = refusal.related_to(site.clone());
+        }
+        return Err(refusal);
+    }
+    Ok(())
 }
 
 /// Typed error channel for the two `compile_model*` helpers.

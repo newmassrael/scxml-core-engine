@@ -284,6 +284,27 @@ The law of §6 is tested in every lane on fixtures that cover each class of §5:
 4. The featured lifting of the class 3 analyses; the C, C++ and Swift emissions and their matrices; the wire
    surfaces of §7.
 
+### What step 2 landed (2026-10-26)
+
+- **The feature model** (`sce-build/src/feature_model.rs`) and **presence conditions**
+  (`sce-build/src/presence_condition.rs`): the requires order, configurations enumerated once each, the canonical
+  antichain form, and the exact implication with its least-configuration witness. The `feature-model` kind is a
+  [`KindClass::Declaration`](../../sce-build/src/forge/codegen_matrix.rs): generating one writes no file on any backend.
+  A forge document is named by its file, as every kind is, so a model's name in diagnostics is its file's stem.
+- **Conditions on a statechart** (`sce-build/src/product_line.rs`), read inside the parse's ledger; the class 2 check
+  of §5 for `target` and `initial`; and the derivation `π`, which blanks what it removes so every position of a
+  variant is the source's (after preprocessor expansion), and so needs no position map.
+- **Selection**: `SCXMLParser::with_features`, `generate --features`, `check --features` and `sce-codegen project`.
+  Every backend refuses a gated document without `--features` (`codegen/feature-selection-required`) until a
+  backend keeps the variability in its output, which is step 3 for Rust.
+- **The family check**: `check` of a gated document without `--features` holds each distinct variant to
+  [`judge_statechart`](../../sce-build/src/lib.rs), the sequence the document itself is held to
+  (`check_every_variant`, `validation/feature-variant-ill-formed`).
+- **The rule registry**: `DiagnosticCode::derivation_class`, exhaustive. The product line's own sixteen codes are
+  `Family`; every other rule is `ProductOnly` at landing, judged on each distinct variant, which is sound for any
+  rule. No rule is yet argued into class 1, 2 or 3: each such move is its own change, it reduces the work, and it
+  changes no verdict.
+
 ## Questions left open
 
-None of the design. The remaining choice is the owner's acceptance of it.
+None of the design.

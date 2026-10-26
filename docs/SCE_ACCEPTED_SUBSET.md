@@ -8390,6 +8390,13 @@ state some configuration removes while it stays is
 the state as a `referent` related site, and names the least configuration that
 shows it.
 
+`check` of a document that carries conditions, without `--features`, also holds
+each distinct variant to everything the document is held to: a variant refused
+by a rule the document passes is `validation/feature-variant-ill-formed`,
+placed where the variant's refusal is (a variant's positions are the source's),
+naming the least configuration that denotes the variant and the inner refusal's
+code.
+
 A document that carries conditions is generated one variant at a time:
 `generate --features a,b` reads the variant those features denote, and without
 `--features` the document is `codegen/feature-selection-required`.
@@ -8403,7 +8410,7 @@ completed), and a selection for a document that imports no model is
 
 ---
 
-## Appendix — `DiagnosticCode` index (475 codes)
+## Appendix — `DiagnosticCode` index (476 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -8516,6 +8523,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `validation/feature-gate-unsupported` | Validation |
 | `validation/feature-condition-redundant` | Validation |
 | `validation/feature-gate-escapes` | Validation |
+| `validation/feature-variant-ill-formed` | Validation |
 | `validation/feature-selection-without-model` | Validation |
 | `validation/feature-selection-undeclared` | Validation |
 | `validation/feature-selection-incomplete` | Validation |

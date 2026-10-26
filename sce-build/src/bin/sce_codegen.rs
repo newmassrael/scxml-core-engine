@@ -5497,6 +5497,17 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
                 Ok(m) => m,
                 Err(e) => error_format.emit_and_exit(&e, ""),
             };
+            // ADR 0057 §5: the document as written stands for every variant it
+            // denotes, so each is held to what the document is held to. A
+            // selection asks about one variant, which the parse above read.
+            if features.is_none() {
+                let include_dirs: Vec<PathBuf> = include_dir.iter().map(PathBuf::from).collect();
+                if let Err(e) =
+                    sce_build::check_every_variant(&model, scxml_path, &include_dirs, lint)
+                {
+                    error_format.emit_and_exit(&e, "");
+                }
+            }
 
             if strict_unresolved {
                 if let Err(e) = sce_build::unresolved_check::check_strict_unresolved(&model) {

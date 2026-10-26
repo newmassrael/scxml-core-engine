@@ -4684,6 +4684,32 @@ pub enum ValidationError {
         witness: Vec<String>,
     },
 
+    /// A variant of a product line is refused by a rule the document itself
+    /// passes (ADR 0057 §5): the document is accepted, and the configuration
+    /// `witness` derives a document that is not. The record stands where the
+    /// variant's refusal stands, which is the source's own position, and
+    /// carries that refusal's code.
+    ///
+    /// Wire code: `validation/feature-variant-ill-formed`.
+    #[error(
+        "the variant where {} is refused: [{code}] {message}",
+        witness_phrase(witness)
+    )]
+    FeatureVariantIllFormed {
+        /// The least configuration that denotes the variant, in the model's
+        /// order.
+        witness: Vec<String>,
+        /// The code of the variant's own refusal.
+        code: String,
+        /// That refusal's message.
+        message: String,
+        /// That refusal's `actual`, the token at the position both share.
+        actual: Option<String>,
+        /// That refusal's id, which SCE computed: what makes two such records
+        /// one.
+        inner_id: String,
+    },
+
     /// Features were selected (`--features`) for a document that imports no
     /// feature model, so the selection is held to nothing (ADR 0057 §6).
     ///

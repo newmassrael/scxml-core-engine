@@ -544,6 +544,29 @@ pub const ALL_QUESTION_KINDS: &[QuestionKind] = &[
     QuestionKind::Structural,
 ];
 
+/// How a rule's verdict over every variant of a product line is reached (ADR
+/// 0057 §5). Every [`DiagnosticCode`] declares one through
+/// [`DiagnosticCode::derivation_class`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DerivationClass {
+    /// The rule holds in every sub-document of a document it holds in, so the
+    /// document's own judgement carries it to every variant.
+    PreservedByRemoval,
+    /// The rule is that a referent is present: decided over the presence
+    /// conditions by the implication check, `validation/feature-gate-escapes`.
+    Reference,
+    /// The rule is lifted to presence conditions: its analysis runs once on the
+    /// featured structure and answers for every configuration.
+    Existence,
+    /// No lifting is argued for the rule: it is judged on each distinct
+    /// variant ([`crate::check_every_variant`]). Sound for any rule.
+    ProductOnly,
+    /// A rule of the product line itself — its model, its conditions, its
+    /// references across variants, its selection — judged once on the
+    /// document as written.
+    Family,
+}
+
 /// Pipeline stage taxonomy. Variant names mirror the stage comments
 /// in `forge::error` and `mesh::error` so those modules stay in
 /// lockstep with the wire format. `Cli` covers errors that originate
@@ -3525,6 +3548,10 @@ pub enum DiagnosticCode {
     /// [`ValidationError::FeatureGateEscapes`].
     #[serde(rename = "validation/feature-gate-escapes")]
     ValidationFeatureGateEscapes,
+    /// A variant refused by a rule the document passes — see
+    /// [`ValidationError::FeatureVariantIllFormed`].
+    #[serde(rename = "validation/feature-variant-ill-formed")]
+    ValidationFeatureVariantIllFormed,
     /// Features selected for a document that imports no model — see
     /// [`ValidationError::FeatureSelectionWithoutModel`].
     #[serde(rename = "validation/feature-selection-without-model")]
@@ -4174,6 +4201,7 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ValidationFeatureGateUnsupported,
         ValidationFeatureConditionRedundant,
         ValidationFeatureGateEscapes,
+        ValidationFeatureVariantIllFormed,
         ValidationFeatureSelectionWithoutModel,
         ValidationFeatureSelectionUndeclared,
         ValidationFeatureSelectionIncomplete,
@@ -5148,9 +5176,504 @@ impl DiagnosticCode {
             | ValidationFeatureGateUnsupported
             | ValidationFeatureConditionRedundant
             | ValidationFeatureGateEscapes
+            | ValidationFeatureVariantIllFormed
             | ValidationFeatureSelectionWithoutModel
             | ValidationFeatureSelectionUndeclared
             | ValidationFeatureSelectionIncomplete => None,
+        }
+    }
+
+    /// How this rule's verdict over a product line is reached (ADR 0057 §5).
+    ///
+    /// ⚠ Exhaustive with no `_` arm, so a code added later does not build
+    /// until it says how the variants of a gated statechart are held to it.
+    /// Every rule that is not the product line's own is
+    /// [`DerivationClass::ProductOnly`] today: judged on each distinct variant,
+    /// which is sound for any rule. A rule moves to a cheaper class only with
+    /// the argument that the class's check decides it; the move changes the
+    /// work, never a verdict.
+    pub fn derivation_class(&self) -> DerivationClass {
+        use DiagnosticCode::*;
+        match self {
+            // The product line's own rules: its model, its conditions, its
+            // references across variants and its selection, judged once on the
+            // document as written.
+            CodegenFeatureSelectionRequired
+            | ValidationFeatureNameInvalid
+            | ValidationFeatureDeclaredTwice
+            | ValidationFeatureRequirementUndeclared
+            | ValidationFeatureModelCycle
+            | ValidationFeatureModelImportedTwice
+            | ValidationFeatureModelNotRead
+            | ValidationFeatureConditionMalformed
+            | ValidationFeatureUndeclared
+            | ValidationFeatureGateUnsupported
+            | ValidationFeatureConditionRedundant
+            | ValidationFeatureGateEscapes
+            | ValidationFeatureVariantIllFormed
+            | ValidationFeatureSelectionWithoutModel
+            | ValidationFeatureSelectionUndeclared
+            | ValidationFeatureSelectionIncomplete => DerivationClass::Family,
+            XmlParse
+            | XmlSchemaValidation
+            | XmlFileNotFound
+            | XmlWrongRootElement
+            | XmlXIncludeMissingHref
+            | XmlXIncludeNotFound
+            | XmlXIncludeReadError
+            | XmlXIncludeCycle
+            | XmlXIncludeTooDeep
+            | XmlXIncludeMalformed
+            | XmlXIncludeUnsupported
+            | XmlTemplateNotFound
+            | XmlTemplateReadError
+            | XmlTemplateMalformed
+            | XmlTemplateMissingAttribute
+            | XmlTemplateMissingParam
+            | XmlTemplateUnknownParam
+            | XmlTemplateCycle
+            | XmlTemplateTooDeep
+            | XmlPreprocessorNotRun
+            | ValidationMissingElement
+            | ValidationMissingAttribute
+            | ValidationInvalidAttribute
+            | ValidationAttributeRuleViolated
+            | ValidationExactlyOneAttribute
+            | ValidationSendOperandType
+            | ValidationUnexpectedChildElement
+            | ValidationUnknownSceAttribute
+            | ValidationDefaultCoversUnknownVariant
+            | ValidationDefaultCoversTestedVariant
+            | ValidationDefaultCoversNotAValueSpace
+            | ValidationUnsupportedKind
+            | ValidationKindNotInlineEligible
+            | ValidationDuplicateId
+            | ValidationMalformedIdentifier
+            | ValidationEventNameGrammar
+            | ValidationMalformedCodeIdentifier
+            | ValidationReservedCodeIdentifier
+            | ValidationCollidingCodeIdentifier
+            | ValidationDuplicateContextObject
+            | ValidationReservedContextId
+            | ValidationEmptyCollection
+            | ValidationCountMismatch
+            | ValidationIncompatibleAttributes
+            | ValidationMissingContext
+            | ValidationInvalidReference
+            | ValidationInvalidDirection
+            | ValidationNumericParse
+            | ValidationEmptyValue
+            | ValidationSingletonViolation
+            | ValidationRequireEither
+            | ValidationWrongPipeline
+            | ValidationDynamicFeatures
+            | ValidationNativeActionPlacement
+            | ValidationTypedInvokeSchema
+            | ValidationTypedInvokeRequest
+            | ValidationNativeActionArgument
+            | ValidationNativeActionSignatureConflict
+            | ValidationNativeActionRelease
+            | ValidationMeshRpcReservedParam
+            | ValidationMeshRpcMissingTarget
+            | ValidationMeshRpcDuplicateTarget
+            | ValidationRemovedAttribute
+            | ValidationSceAttributeUnread
+            | ValidationUnknownScxmlAttribute
+            | ValidationBytesMaxSizeViolation
+            | ValidationDuplicateRequirementId
+            | ValidationProvenanceMalformed
+            | ValidationProvenanceDuplicate
+            | ValidationKindBasisMalformed
+            | ValidationUnresolvedPlaceholder
+            | ValidationCrossKindFieldNotFound
+            | ValidationCrossKindTypeMismatch
+            | ValidationCrossKindCircularDependency
+            | ValidationTransformOutputCycle
+            | AlgorithmLocalShadowsParam
+            | AlgorithmLvalueUnsupported
+            | AlgorithmReturnMissing
+            | AlgorithmForeachSourceNotIterable
+            | AlgorithmCallTargetUnknown
+            | AlgorithmCallTargetMethodUnknown
+            | AlgorithmBcMutationForbidden
+            | AlgorithmForeachSourceBcWithBytesItemType
+            | AlgorithmCallArgCountMismatch
+            | AlgorithmAppendTargetNotBuffer
+            | AlgorithmAppendTypeMismatch
+            | AlgorithmUndeclaredIntegerFailure
+            | AlgorithmRequireWithoutMayFail
+            | ScxmlTopLevelScriptUnloaded
+            | ScxmlUnsupportedDatamodel
+            | ScxmlNullDatamodelForbidsConstruct
+            | ScxmlStaticDatamodelRule
+            | ScxmlUnreachableState
+            | ScxmlDeadTransition
+            | ScxmlParentSendWithoutParent
+            | ScxmlGeneratedNameCollision
+            | ScxmlUndeclaredInterfaceEvent
+            | ScxmlTransitionFunctionRule
+            | ScxmlTransitionFunctionDeadEnd
+            | ScxmlTransitionFunctionUnmatchedDescriptor
+            | ProfileInterfaceNotClosed
+            | ProfileNameStyle
+            | ProfileNameLimit
+            | ProfileEventStructure
+            | ProfileEventPrefixOfAnother
+            | ProfileEvidenceUnanchored
+            | ProfileElementUntraced
+            | ScxmlNonExhaustiveEventHandling
+            | ScxmlContradictoryUnhandledDeclaration
+            | ScxmlStaleUnhandledDeclaration
+            | ScxmlAlwaysFalseGuard
+            | ScxmlShadowedTransition
+            | ScxmlRecordingIntercepted
+            | ScxmlSelfSendDiscarded
+            | ScxmlSendDelayInvalid
+            | ScxmlOnSampleInvalidParent
+            | ScxmlOnSampleLinkDuplicateInState
+            | ScxmlOnSampleEventNameConflict
+            | ScxmlOnSampleLinkNotDeclared
+            | ScxmlOnSampleLinkWrongKind
+            | ScxmlUnknownSessionRoleKind
+            | ScxmlDuplicateSessionRoleDeclaration
+            | LinkDeployRoleListenerWithoutScxmlAcceptSideRole
+            | ScxmlAcceptSideRoleWithoutListenerLink
+            | LinkRoleListenerWithNonSessionArmingTrustClass
+            | ScxmlAcceptSideStatesWithoutRoleDeclaration
+            | ReassemblyPerPeerQuotaBuildInvariantViolated
+            | ExpressionEmpty
+            | ExpressionLex
+            | ExpressionUnsupportedConstruct
+            | ExpressionUnsupportedBuiltin
+            | ExpressionUnknownIdentifier
+            | ExpressionUnknownEnumVariant
+            | ExpressionUnknownMember
+            | ExpressionMemberOfNonRecord
+            | ExpressionOptionalReadUnproven
+            | ExpressionPropertyNotCallable
+            | ExpressionNamespaceNotCallable
+            | ExpressionNamespaceNotAValue
+            | ExpressionLiteralNotCallable
+            | ExpressionStrictEquality
+            | ExpressionParseMismatch
+            | ExpressionUnexpectedToken
+            | ExpressionInvalidLvalue
+            | ExpressionTypeCoercion
+            | ExpressionTypeMismatch
+            | ExpressionArgumentCountMismatch
+            | ExpressionLiteralOutOfRange
+            | ExpressionGoTernaryUnsupported
+            | ImportFileNotFound
+            | ImportKindMismatch
+            | ImportNotForge
+            | ImportReadError
+            | ManifestCircularDependency
+            | ManifestIo
+            | ManifestDuplicateDocumentName
+            | ManifestArtifactPathCollision
+            | GenerateInvalidConfig
+            | GenerateTemplateLoad
+            | GenerateTemplateRender
+            | GenerateUnsupportedFeature
+            | GenerateSourceHashUnavailable
+            | CodegenMcuClassKindOnNonMcuLanguage
+            | CodegenGenericKindBackendEmitMissing
+            | QueueStorageNotExactlyOne
+            | QueueAllocatorProgressMissing
+            | QueueProgressUnreachable
+            | QueueParticipantsUnresolved
+            | QueueDeployLimitUnresolved
+            | QueueElementTypeNotAKind
+            | QueueIntrusiveLinkFieldMissing
+            | QueueIntrusiveLinkFieldNotU32
+            | QueueStorageRuntimeMissing
+            | QueueProgressUnreachableOnBackend
+            | QueueAtomicWidthUnstated
+            | QueueNoAtomicsAcrossCores
+            | QueueAtomicWidthContradictsTarget
+            | QueueTargetAtomicsUnknown
+            | QueueWrapBoundUnstated
+            | QueueWrapBoundBelowDeployMinimum
+            | QueueProgressInsufficientForIsr
+            | QueueAllocInIsr
+            | QueueSegmentedNeedsAlloc
+            | CodegenNoStdScriptNotSupported
+            | CodegenNoStdHttpNotSupported
+            | CodegenNoStdFsLoadNotSupported
+            | CodegenNoStdInvokeNotSupported
+            | AlgorithmConstNotFoldable
+            | AlgorithmConstFoldBudgetExceeded
+            | AlgorithmConstYieldTypeMismatch
+            | AlgorithmConstIntegerFailure
+            | CodecVariantArmUnreachable
+            | CodecVariantDuplicateDefaultArm
+            | CodecVariantArmMidMismatch
+            | CodecVariantArmInnerMidUndeclared
+            | CodecVariantArmBodyCallerTagUnsupported
+            | CodecVariantNoDefaultArm
+            | CodecVariantDefaultOverlayArmNotDeclared
+            | CodecVariantDispatchFlagNotResolved
+            | CodecVariantDispatchBitWidthMismatch
+            | CodecVariantDispatchArmsNotDistinguishableWithoutDefault
+            | CodecVariantDispatchFlagHasStaticValue
+            | CodecVariantDispatchCarrierAfterEmbed
+            | CodecFlagBindInputNotDeclared
+            | CodecFlagBindSourceNotResolved
+            | CodecFlagBindWidthMismatch
+            | CodecFlagInputUnbound
+            | CodecFlagBindDuplicateInput
+            | CodecFlagBindCarrierAfterEmbed
+            | CodecPresentIfRefsLaterField
+            | CodecRepeatCountRefsLaterField
+            | AlgorithmTestVectorUnsupportedKind
+            | CodecTlvChainDepthUnspecified
+            | CodecTlvChainTruncateUnderEntryFlag
+            | CodecDmaAlignmentUnsatisfiable
+            | CodecPeekByteFlagLayoutMismatch
+            | LinkFramerMissing
+            | LinkLinkClassUnknown
+            | LinkBackpressureUndeclared
+            | LinkClassUnsupportedOnTarget
+            | LinkPoolSlotSmallerThanFramerMax
+            | LinkPoolRefNotDeclared
+            | LinkFramerRefNotDeclared
+            | MemPoolSectionConflict
+            | MemPoolTooLarge
+            | MemInterPoolPaddingNotEmitted
+            | MemCacheLineAlignment
+            | MemDcacheLineSizeNotPowerOfTwo
+            | MemAlignmentNotPowerOfTwo
+            | MemSlotSizeNotAlignmentMultiple
+            | MemCachePolicyUnsupportedOnNoDcacheCore
+            | PoolCacheMaintenanceMisplaced
+            | PoolSpeculativePrefetchFlagMissing
+            | PoolCachePreArmInvalidateMissingOnSpeculativeCore
+            | PoolSampleTypestateAttributesDisabled
+            | PoolSampleTakeWithoutStagePool
+            | PoolSampleCallbackSignatureNonBorrow
+            | WorkerSharedMutableState
+            | WorkerLinkRxRefUnknown
+            | WorkerInboxInlineRemoved
+            | WorkerInboxRefUnknown
+            | WorkerInboxQueueNotSingleConsumer
+            | WorkerSchedulerUnsupported
+            | WorkerOutboxRefUnknown
+            | WorkerOutboxTargetWrongKind
+            | WorkerOutboxTargetSuffixInvalid
+            | MemReassemblyPoolVariantMissingMaxFragments
+            | MemReassemblyPoolVariantMissingTimeout
+            | MemReassemblySlotSizeBelowDeclaredMtu
+            | ReassemblyMaxFragmentsInsufficientForMtu
+            | ReassemblyExpectedFragmentationRateHigh
+            | ReassemblyUntrustedLinkBinding
+            | ReassemblyTrustClassMissingOnFragmentingLink
+            | ReassemblyStageCopyWcetExceedsSlotBudget
+            | ReassemblyPeerIdNotZidOnEstablishedSession
+            | LinkListenerLinkNotPairedWithEstablishedSibling
+            | MeshDeployReassemblyBindingOnUnpairedListener
+            | LinkConcurrentCountExceedsSchedulerSlots
+            | LinkPerLinkBudgetExceedsTickPeriod
+            | LinkInboundEventQueueUnsized
+            | CollectionOrderingSortedRequiresIndexBy
+            | CollectionOverflowPolicyOldestWinsRequiresOrderingInsertion
+            | CollectionElementTypeNotAKind
+            | CollectionIndexByFieldMissing
+            | CollectionMultiWriterWithoutAtomics
+            | CollectionCapacityUnresolved
+            | TimerPeriodBelowTickRate
+            | TimerSlotOverflow
+            | ExternSymbolNotInWhitelist
+            | ExternAbiMismatch
+            | ExternSignatureMismatch
+            | ExternOrderingUnspecified
+            | ExternTargetPluginSymbolConflict
+            | IoFilesystem
+            | CliUnknownLanguage
+            | CliUnsupportedLanguage
+            | CliUnknownScriptEngine
+            | CliUnsupportedScriptEngine
+            | CliReadInput
+            | CliWriteOutput
+            | CliCreateOutputDir
+            | CliScxmlGenerate
+            | CliMissingMetadataField
+            | CliNotADirectory
+            | CliInvalidFormatOption
+            | CliJsonSerialization
+            | CliProjectRootNotFound
+            | CliFormatStyleNotFound
+            | CliFormatterUnavailable
+            | CliFormatFailed
+            | CliNoScxmlTag
+            | CliInvalidSuitePackage
+            | CliGeneratorSourceDrift
+            | CliGeneratorSourceUnverifiable
+            | CliUsage
+            | CliQueryNoMatch
+            | CliClosureInputUnusable
+            | CliAcceptanceLapsed
+            | CliReservedHostType
+            | CliRequirementClosureBroken
+            | CliReviewTableUnavailable
+            | CliPseudoUnavailable
+            | CliDiagramUnavailable
+            | CliDiagramDoesNotFit
+            | CliProfileUnusable
+            | MeshDeployRead
+            | MeshDeployParse
+            | MeshDeployUnsupportedVersion
+            | MeshDeployDuplicateMachine
+            | MeshDeployChildEntryShape
+            | MeshDeployChildUnknownParent
+            | MeshDeployChildDuplicateSite
+            | MeshDeployChildPooledParent
+            | MeshDeployChildPartitioned
+            | MeshDeployChildUnknownInvoke
+            | MeshDeployChildGeneratedId
+            | MeshDeployChildUndeclared
+            | MeshDeployInvalidOrderingTimings
+            | MeshDeployInvalidDedupWindow
+            | MeshDeployInvalidCustomTcpSocket
+            | MeshDeployInvalidDdsQos
+            | MeshDeployInvalidLiveliness
+            | MeshDeployInvalidServerResponseDeadline
+            | MeshDeployInvalidOutboundBuffer
+            | MeshDeployInvalidRetryPolicy
+            | MeshDeployInvalidAuthPolicy
+            | MeshDeployDiscoveryNotSupported
+            | MeshDeployPoolNotSupportedByTransport
+            | MeshDeployPoolMissingMemberList
+            | MeshDeployPoolEmptyMemberList
+            | MeshDeployPoolBindingFieldNotSupported
+            | MeshDeployPoolDispatchWithoutMember
+            | MeshDeployPoolInvalidPlaceholder
+            | MeshDeployServerPoolNotSupported
+            | MeshDeployCrossTargetReplyNotSupported
+            | MeshDeployInvalidReplyFrom
+            | MeshDeployUnknownBindingField
+            | MeshDeployStagePoolNotDeclared
+            | MeshDeployStagePoolWrongKind
+            | MeshDeployStagePoolTransportMismatch
+            | MeshDeployScxmlInvokeTargetConflict
+            | MeshDeployPartitionDuplicateName
+            | MeshDeployPartitionMultiDevice
+            | MeshDeployPartitionUnitDuplicate
+            | MeshDeployPartitionMachineNotListed
+            | MeshDeployPartitionEmpty
+            | MeshDeployPartitionNameNotIdentifier
+            | MeshDeployPartitionSynthInfixCollision
+            | MeshDeployPartitionUncoveredUnit
+            | MeshDeployPartitionPartialCoverageRequiresDefault
+            | MeshDeployPartitionPoolMachine
+            | MeshDeployPartitionTransportBindingUnsupported
+            | MeshDeployScxmlInvokeCrossDeviceTransport
+            | MeshDeploySomeipScxmlInvokeServiceIdOverflow
+            | MeshDeploySomeipScxmlInvokeServiceIdPinOutOfRange
+            | MeshDeploySomeipScxmlInvokeServiceIdPinCollision
+            | MeshDeploySomeipLivenessServiceIdOverflow
+            | MeshDeploySomeipLivenessServiceIdPinOutOfRange
+            | MeshDeploySomeipLivenessServiceIdPinCollision
+            | MeshDeploySomeipMachineLivenessServiceIdOverflow
+            | MeshDeploySomeipMachineLivenessServiceIdPinOutOfRange
+            | MeshDeploySomeipMachineLivenessServiceIdPinCollision
+            | MeshDeployPartitionBarrierTimeoutInvalid
+            | MeshPartitionParallelRootUndesignated
+            | MeshPartitionParallelRootAmbiguous
+            | MeshPartitionParallelRootNotInMachines
+            | MeshPartitionParallelRootNonHost
+            | MeshPartitionBarrierTimeoutWithoutRoot
+            | MeshPartitionWire21CustomTcpUnimplemented
+            | MeshDistributabilityR1SharedWrite
+            | MeshDistributabilityR2CrossRegionTransition
+            | MeshDeployPlatformClassOsMismatch
+            | MeshDeploySchedulerCooperativeMissingStackBudget
+            | MeshDeploySchedulerCooperativeMissingSlotBudget
+            | MeshDeploySchedulerCooperativeMissingKeepaliveJitterBudget
+            | MeshDeploySchedulerIncompatibleWithWorkerCount
+            | MeshDeploySchedulerSessionRuntimeNotApplicable
+            | MeshDeploySchedulerWorkerThreadsInvalid
+            | MeshDeploySchedulerRxBusyPollInvalid
+            | MeshDeployQueryableKeyInvalid
+            | MeshDeployQueryableKeyDuplicate
+            | MeshDeployQueryableNameInvalid
+            | MeshDeployQueryableReplyInvalid
+            | MeshDeployQueryableDocumentInvalid
+            | MeshDeployLinkDriverUnknown
+            | MeshDeployLinkMtuMissingOnFragmentingLink
+            | MeshDeployLinkMtuBelowDriverFloor
+            | MeshDeployLinkDriverClassMismatch
+            | MeshDeployLinkExpectedP99ExceedsMtu
+            | MeshDeployLinkBurstPpsMissingOnIsrDispatch
+            | MeshDeployLinkNotDeclaredInDeploy
+            | MeshDeployLinkNotDeclaredInForge
+            | MeshDeployLinkBurstAbsorptionInsufficient
+            | MeshDeployLinkRxDispatchWorkerTickOnHighBurst
+            | PoolStageCopyPolicyError
+            | PoolStageCopyAcceptRejectedUnderForbid
+            | MeshDeployStageCopyPolicyUnknown
+            | MeshDeploySessionArmingQuotaMissing
+            | MeshDeployAcceptRateConfigMissing
+            | MeshDeploySessionArmingFieldsOnNonArmingLink
+            | MeshDeployStatelessAcceptRequiredOnUntrustedSource
+            | MeshDeployStatelessAcceptKeyRotationShorterThanLifetime
+            | MeshDeploySessionArmingQuotaVsPeerTableInvariantViolated
+            | MeshDeployStatelessAcceptExternNotWhitelisted
+            | MeshExternalRead
+            | MeshExternalParse
+            | MeshExternalUnresolvedNames
+            | MeshExternalAmbiguousEventGroup
+            | MeshExternalEmptyEventGroup
+            | MeshExternalNamedReferenceWithoutConfig
+            | MeshExternalReservedSomeipIdKeys
+            | MeshExternalSomeipFieldOnNonSomeipTransport
+            | MeshExternalConflictingEventSchema
+            | MeshExternalConflictingEventFieldKinds
+            | MeshExternalEmptyEventEntry
+            | MeshTopologyUnresolvedTargets
+            | MeshTopologyMachineNotFound
+            | MeshTopologyReceiverNotDeclared
+            | MeshTopologyAbsoluteSourcePath
+            | MeshTopologyReceiverSourceRead
+            | MeshTopologyReceiverSourceParse
+            | MeshTopologyUncoveredEvents
+            | MeshTopologyPatternCapabilityViolation
+            | MeshTopologyMissingBindingField
+            | MeshTopologyInvalidBindingField
+            | MeshTopologyEventBindingUnused
+            | MeshTopologyOrderingCannotBeGuaranteed
+            | MeshTopologyPoolParamNameMissing
+            | MeshTopologySubscriptionSourceUnbound
+            | MeshTopologyMachineLifetimeSubscriptionUnsupported
+            | MeshCodegenUnsupportedLanguage
+            | MeshCodegenUnsupportedTransport
+            | MeshCodegenTemplateRead
+            | MeshCodegenTemplateRender
+            | MeshCodegenEventNameCollision
+            | MeshCodegenPoolWithRpcClientUnsupported
+            | MeshCodegenHostCoreUnsupported
+            | MeshIo
+            | ForgeSourceHashMismatch
+            | ForgeSourceHashInputUncovered
+            | ForgeSourceHashWalkUnbounded
+            | ForgeGeneratedOutputChanged
+            | TraceabilityScxmlLineRangeMissing
+            | TraceabilityStateIdCollision
+            | TraceabilitySymbolNameExceedsCIdentifierLimit
+            | TraceabilitySourcemapSourceHashMismatch
+            | TraceabilitySceMapAttributeStripped
+            | TraceabilityMetaGeneratedSourceLineMarkerMissing
+            | McuDriverHeaderNotFound
+            | McuSectionAttributeOnNonMcuTarget
+            | McuSectionAttributeNameInvalid
+            | ValidationEnumNoVariants
+            | ValidationEnumVariantDuplicateName
+            | ValidationEnumVariantDuplicateValue
+            | ValidationEnumVariantValueOverflowsUnderlying
+            | ValidationEnumUnsupportedUnderlyingType
+            | ValidationEventSchemaOnBuiltinEvent
+            | ValidationEventPayloadFieldUnknown
+            | ValidationBytesComparisonNotEquality
+            | MeshEventSchemaMismatch => DerivationClass::ProductOnly,
         }
     }
 
@@ -5770,6 +6293,7 @@ impl DiagnosticCode {
             ValidationFeatureGateUnsupported => "validation/feature-gate-unsupported",
             ValidationFeatureConditionRedundant => "validation/feature-condition-redundant",
             ValidationFeatureGateEscapes => "validation/feature-gate-escapes",
+            ValidationFeatureVariantIllFormed => "validation/feature-variant-ill-formed",
             ValidationFeatureSelectionWithoutModel => "validation/feature-selection-without-model",
             ValidationFeatureSelectionUndeclared => "validation/feature-selection-undeclared",
             ValidationFeatureSelectionIncomplete => "validation/feature-selection-incomplete",
@@ -9863,6 +10387,27 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             key_fragments: [element.clone(), attribute.clone(), referent.clone()]
                 .into_iter()
                 .chain(witness.iter().cloned())
+                .collect(),
+        },
+        // The variant's own refusal stands at the source's position, so its
+        // `actual` is a token on this record's row too; its id, which SCE
+        // computed, keys the record with the witness.
+        ValidationError::FeatureVariantIllFormed {
+            witness,
+            code,
+            message: _,
+            actual,
+            inner_id,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationFeatureVariantIllFormed,
+            stage: Stage::Validation,
+            expected: None,
+            actual: actual.clone(),
+            fix: None,
+            key_fragments: witness
+                .iter()
+                .cloned()
+                .chain([code.clone(), inner_id.clone()])
                 .collect(),
         },
         // A selection is an argument, not a token of the document, so no
@@ -15340,6 +15885,18 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:8031c6bdc3faf5bf","code":"validation/feature-gate-escapes","stage":"validation","message":"<transition target> names 'accepting', which is absent while the <transition> is present when only the feature session-unicast is on","actual":"accepting"}"#,
             ),
             (
+                "validation/feature-variant-ill-formed",
+                ValidationError::FeatureVariantIllFormed {
+                    witness: vec![],
+                    code: "validation/missing-element".into(),
+                    message: "statechart kind requires a <state> element".into(),
+                    actual: None,
+                    inner_id: "fnv1a:0123456789abcdef".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:49e938781374f721","code":"validation/feature-variant-ill-formed","stage":"validation","message":"the variant where no feature is on is refused: [validation/missing-element] statechart kind requires a <state> element"}"#,
+            ),
+            (
                 "validation/feature-selection-without-model",
                 ValidationError::FeatureSelectionWithoutModel {
                     features: vec!["session-unicast".into()],
@@ -18695,6 +19252,7 @@ mod tests {
             | ValidationFeatureGateUnsupported
             | ValidationFeatureConditionRedundant
             | ValidationFeatureGateEscapes
+            | ValidationFeatureVariantIllFormed
             | ValidationFeatureSelectionWithoutModel
             | ValidationFeatureSelectionUndeclared
             | ValidationFeatureSelectionIncomplete
@@ -19347,6 +19905,7 @@ mod tests {
                 | ValidationFeatureGateUnsupported
                 | ValidationFeatureConditionRedundant
                 | ValidationFeatureGateEscapes
+                | ValidationFeatureVariantIllFormed
                 | ValidationFeatureSelectionWithoutModel
                 | ValidationFeatureSelectionUndeclared
                 | ValidationFeatureSelectionIncomplete
@@ -19366,9 +19925,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            475,
+            476,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 475 distinct variants to match the DiagnosticCode \
+             expected 476 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -20360,6 +20919,7 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | ValidationFeatureGateUnsupported
             | ValidationFeatureConditionRedundant
             | ValidationFeatureGateEscapes
+            | ValidationFeatureVariantIllFormed
             | ValidationFeatureSelectionWithoutModel
             | ValidationFeatureSelectionUndeclared
             | ValidationFeatureSelectionIncomplete
@@ -22444,6 +23004,24 @@ mod anchor_contract_tests {
              UPDATE_EXPECT=1 cargo test -p sce-build error_contract_catalog\n\
              and commit the regenerated section with the change that moved it.",
         );
+    }
+
+    /// The product line's own rules, and only they, are judged once on the
+    /// document as written (ADR 0057 §5): each is a `feature` code, and every
+    /// `feature` code is one. A rule that judged a variant's content there
+    /// would let a variant pass that its own parse refuses.
+    #[test]
+    fn the_rules_judged_once_for_a_product_line_are_its_own() {
+        for code in ALL_DIAGNOSTIC_CODES {
+            let named_for_features = code.as_str().contains("/feature-");
+            assert_eq!(
+                code.derivation_class() == DerivationClass::Family,
+                named_for_features,
+                "{} is {:?}",
+                code.as_str(),
+                code.derivation_class()
+            );
+        }
     }
 
     #[test]

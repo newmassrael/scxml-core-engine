@@ -5061,6 +5061,11 @@
           "file": "sce-build/src/forge/model.rs",
           "symbol": "QueueModel",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "judge_statechart",
+          "kind": "implements"
         }
       ]
     },

@@ -958,6 +958,7 @@ references against a real document and drift silently.
 | `validation/feature-selection-undeclared` | `validation` | no |  |
 | `validation/feature-selection-without-model` | `validation` | no |  |
 | `validation/feature-undeclared` | `validation` | no |  |
+| `validation/feature-variant-ill-formed` | `validation` | no |  |
 | `validation/incompatible-attributes` | `validation` | no |  |
 | `validation/invalid-attribute` | `validation` | `replace_one_of` |  |
 | `validation/invalid-direction` | `validation` | `replace_one_of` | SCE Forge §3.3 |

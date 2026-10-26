@@ -361,3 +361,43 @@ fn a_condition_on_an_import_of_a_forge_document_is_refused() {
         "{error:?}"
     );
 }
+
+/// The family check of every variant (ADR 0057 §5), on a document kept on
+/// disk for as long as the check reads it.
+fn check_every_variant(document: &str) -> Result<(), Located<ForgeError>> {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("features.scxml"), FEATURES).unwrap();
+    let path = dir.path().join("machine.scxml");
+    std::fs::write(&path, document).unwrap();
+    let path = path.to_str().unwrap();
+    let mut model = SCXMLParser::new()
+        .parse_file(path)
+        .expect("the document as written parses");
+    sce_build::judge_statechart(&mut model, path, path, true).expect("and is accepted");
+    sce_build::check_every_variant(&model, path, &[], true)
+}
+
+#[test]
+fn every_variant_of_a_sound_product_line_is_accepted() {
+    check_every_variant(&machine(ACCEPT_PATH)).expect("every variant is a document");
+}
+
+#[test]
+fn a_variant_refused_by_a_rule_the_document_passes_is_named_by_its_least_configuration() {
+    // Without session-unicast the document keeps no state at all, which no
+    // statechart may be; the document itself has one.
+    let document = machine(r#"  <state id="open" sce:requires="session-unicast"/>"#)
+        .replace(r#" initial="idle""#, "");
+    let err = check_every_variant(&document).expect_err("a variant is refused");
+    let ValidationError::FeatureVariantIllFormed { witness, code, .. } = validation(&err) else {
+        panic!("{:?}", err.error);
+    };
+    assert!(
+        witness.is_empty(),
+        "the least configuration is the empty one: {witness:?}"
+    );
+    assert!(
+        !code.contains("/feature-"),
+        "the inner refusal is the document rule the variant breaks: {code}"
+    );
+}
