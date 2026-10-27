@@ -160,6 +160,19 @@ pub struct ListIter<'a, W: ListWalk<K>, const K: usize> {
     walk: PhantomData<fn() -> W>,
 }
 
+/// A walk can be started again from where this one stands, which is how a
+/// source reads a list twice (once to count it, once to write it).
+impl<'a, W: ListWalk<K>, const K: usize> Clone for ListIter<'a, W, K> {
+    fn clone(&self) -> Self {
+        Self {
+            cursor: self.cursor,
+            left: self.left,
+            args: self.args,
+            walk: PhantomData,
+        }
+    }
+}
+
 impl<'a, W: ListWalk<K>, const K: usize> Iterator for ListIter<'a, W, K> {
     type Item = W::Entry<'a>;
 

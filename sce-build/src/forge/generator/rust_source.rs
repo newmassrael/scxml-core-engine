@@ -45,6 +45,11 @@ pub(super) struct Input<'a> {
     pub(super) struct_name: &'a str,
     /// `<'a>` when the builder carries a lifetime, otherwise nothing.
     pub(super) struct_lifetime: &'a str,
+    /// The lifetime of the codec's own view (`<'a>` or nothing), or `None` when
+    /// it has none: views were not asked for, or the view is the builder.
+    pub(super) view_lifetime: Option<&'a str>,
+    /// Whether the codec has an owned form: it holds a borrowed field.
+    pub(super) owned: bool,
 }
 
 /// The source interface of a codec, as the text a codec file holds, or why the
@@ -52,6 +57,27 @@ pub(super) struct Input<'a> {
 pub(super) fn render(input: &Input<'_>) -> Result<String, Unsupported> {
     let plan = Plan::of(input)?;
     Ok(plan.text())
+}
+
+/// A representation of a codec's value: the builder a sender fills, the view of
+/// a decoded frame, or the owned form that outlives it. Each says what it holds
+/// through the same trait.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Form {
+    Builder,
+    View,
+    Owned,
+}
+
+impl Form {
+    /// What follows the codec's name in the name of its variant enum.
+    fn variant_suffix(self) -> &'static str {
+        match self {
+            Form::Builder => "Variant",
+            Form::View => "ViewVariant",
+            Form::Owned => "OwnedVariant",
+        }
+    }
 }
 
 /// One arm of a codec's variant.
@@ -686,7 +712,7 @@ impl<'a> Plan<'a> {
         out.push_str(&self.overrides_definition());
         out.push_str(&self.trait_definition());
         out.push_str(&self.reference_impl());
-        out.push_str(&self.builder_impl());
+        out.push_str(&self.impls());
         out.push_str(&self.encode_impl());
         out
     }
@@ -747,8 +773,23 @@ impl<'a> Plan<'a> {
         )
     }
 
-    /// The builder says what it holds.
-    fn builder_impl(&self) -> String {
+    /// Every form of the codec that says what it holds: the builder, its view,
+    /// and its owned form. They are three representations of one value, and the
+    /// one `encode_source` writes them all.
+    fn impls(&self) -> String {
+        let mut out = self.impl_for(Form::Builder);
+        if self.input.view_lifetime.is_some() {
+            out.push_str(&self.impl_for(Form::View));
+        }
+        if self.input.owned {
+            out.push_str(&self.impl_for(Form::Owned));
+        }
+        out
+    }
+
+    /// The `impl` of the source trait for one form of the codec.
+    fn impl_for(&self, form: Form) -> String {
+        let storage = "::sce_forge_runtime::codec";
         let mut items = String::new();
         for field in &self.m().fields {
             if !self.presented(field) {
@@ -757,6 +798,8 @@ impl<'a> Plan<'a> {
             let accessor = self.accessor(field);
             let gated = field.present_if.is_some();
             // A list or an embedded body is lent, a scalar copied or reborrowed.
+            // An owned form holds its text, bytes and lists in the storage
+            // profile's containers, which it reads through their traits.
             let read = if field.is_embed() {
                 if gated {
                     format!("self.{accessor}.as_ref()")
@@ -764,10 +807,27 @@ impl<'a> Plan<'a> {
                     format!("&self.{accessor}")
                 }
             } else if self.child(field).is_some() {
+                match (form, gated) {
+                    (Form::Owned, true) => format!(
+                        "self.{accessor}.as_ref().map(|_l| {storage}::SceList::as_slice(_l).iter())"
+                    ),
+                    (Form::Owned, false) => {
+                        format!("{storage}::SceList::as_slice(&self.{accessor}).iter()")
+                    }
+                    (_, true) => format!("self.{accessor}.as_ref().map(|_l| _l.iter())"),
+                    (_, false) => format!("self.{accessor}.iter()"),
+                }
+            } else if form == Form::Owned && matches!(field.sce_type, SceType::Bytes) {
                 if gated {
-                    format!("self.{accessor}.as_ref().map(|_l| _l.iter())")
+                    format!("self.{accessor}.as_ref().map({storage}::SceByteBuf::as_slice)")
                 } else {
-                    format!("self.{accessor}.iter()")
+                    format!("{storage}::SceByteBuf::as_slice(&self.{accessor})")
+                }
+            } else if form == Form::Owned && matches!(field.sce_type, SceType::String) {
+                if gated {
+                    format!("self.{accessor}.as_ref().map({storage}::SceStr::as_str)")
+                } else {
+                    format!("{storage}::SceStr::as_str(&self.{accessor})")
                 }
             } else {
                 format!("self.{accessor}")
@@ -780,7 +840,7 @@ impl<'a> Plan<'a> {
         if self.m().variant.is_some() {
             // The arm the value holds, each body lent.
             let enum_name = self.body_enum();
-            let variant = format!("{}Variant", self.name());
+            let variant = format!("{}{}", self.name(), form.variant_suffix());
             let mut arms = String::new();
             for arm in self.arms() {
                 if arm.value.is_some() {
@@ -799,12 +859,24 @@ impl<'a> Plan<'a> {
                 ty = self.variant_type(),
             ));
         }
-        format!(
-            "impl{lt} {trait_name} for {name}{lt} {{\n{items}}}\n\n",
-            lt = self.lt(),
-            name = self.name(),
-            trait_name = self.trait_name,
-        )
+        let head = match form {
+            Form::Builder => format!(
+                "impl{lt} {} for {}{lt}",
+                self.trait_name,
+                self.name(),
+                lt = self.lt()
+            ),
+            Form::View => {
+                let lt = self.input.view_lifetime.unwrap_or_default();
+                format!("impl{lt} {} for {}View{lt}", self.trait_name, self.name())
+            }
+            Form::Owned => format!(
+                "impl<S: {storage}::CodecStorage> {} for {}Owned<S>",
+                self.trait_name,
+                self.name()
+            ),
+        };
+        format!("{head} {{\n{items}}}\n\n")
     }
 
     // ── the encode ───────────────────────────────────────────────────

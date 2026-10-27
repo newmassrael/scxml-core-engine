@@ -9007,6 +9007,10 @@ fn render_codec(
                 l: &l,
                 struct_name: &rust_struct_name,
                 struct_lifetime: if self_borrowed { "<'a>" } else { "" },
+                // A codec whose view is the codec itself has the one form.
+                view_lifetime: (emit_views && m.has_own_view())
+                    .then(|| rust_view::view_lifetime(codec_self_view_borrowed(m, imports))),
+                owned: self_borrowed,
             }) {
                 Ok(text) => {
                     ctx.insert("source_block".into(), text.into());

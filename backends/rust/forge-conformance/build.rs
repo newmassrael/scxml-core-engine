@@ -140,8 +140,9 @@ fn main() {
             .files
             .iter()
             .any(|(_, code)| code.contains(&source_trait));
-        if let Some(sweep) = codec_sweep(&fixture.name, loaded.text()) {
+        if let Some(mut sweep) = codec_sweep(&fixture.name, loaded.text()) {
             if has_source && sweep.plain {
+                (sweep.view, sweep.owned) = forms(&output.files, &fixture.name);
                 sweeps.push(sweep);
             }
         }
@@ -269,8 +270,9 @@ fn main() {
                 .filter(|stem| !stem.ends_with("_test"))
                 .map(str::to_string)
         }));
-        if let Some(sweep) = codec_sweep(&fixture.name, &fixture.text) {
+        if let Some(mut sweep) = codec_sweep(&fixture.name, &fixture.text) {
             if has_source && sweep.plain {
+                (sweep.view, sweep.owned) = forms(&fixture.files, &fixture.name);
                 sweeps.push(sweep);
             }
         }
@@ -414,6 +416,24 @@ struct SourceSweep {
     /// Whether its `decode` and `encode` can be driven plainly: a codec that
     /// takes a flag-input or a tag from its caller is driven by its parent.
     plain: bool,
+    /// Whether the codec has a view of its own (not the builder under another
+    /// name), and an owned form: each is swept as a source of the same value.
+    view: bool,
+    owned: bool,
+}
+
+/// Whether the generated `files` of the codec `name` hold a view type of its own
+/// and an owned type.
+fn forms(files: &[(String, String)], name: &str) -> (bool, bool) {
+    let ty = sce_build::filters::to_pascal_case(name.to_string());
+    let (view, owned) = (
+        format!("pub struct {ty}View"),
+        format!("pub struct {ty}Owned"),
+    );
+    (
+        files.iter().any(|(_, code)| code.contains(&view)),
+        files.iter().any(|(_, code)| code.contains(&owned)),
+    )
 }
 
 /// The sweep of the codec `name` read from `text`, or `None` when the document
@@ -440,6 +460,8 @@ fn codec_sweep(name: &str, text: &str) -> Option<SourceSweep> {
         name: name.to_string(),
         seeds,
         plain: m.flag_inputs.is_empty() && !caller_tag,
+        view: false,
+        owned: false,
     })
 }
 
@@ -467,8 +489,18 @@ fn write_source_sweeps(out_dir: &str, modules: &[String], sweeps: &[SourceSweep]
         }
         pool.sort_unstable();
         let seeds: Vec<String> = sweep.seeds.iter().map(|s| format!("vec!{s:?}")).collect();
+        let view = if sweep.view {
+            format!("codecs::{}::{ty}View", sweep.name)
+        } else {
+            String::new()
+        };
+        let owned = if sweep.owned {
+            format!("codecs::{}::{ty}Owned", sweep.name)
+        } else {
+            String::new()
+        };
         text.push_str(&format!(
-            "sweep_codec!({name}, codecs::{name}::{ty}, &{pool:?}, vec![{seeds}]);\n",
+            "sweep_codec!({name}, codecs::{name}::{ty}, &{pool:?}, vec![{seeds}], [{view}], [{owned}]);\n",
             name = sweep.name,
             seeds = seeds.join(", ")
         ));

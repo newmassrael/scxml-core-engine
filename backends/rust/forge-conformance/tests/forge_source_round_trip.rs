@@ -36,8 +36,13 @@ impl Rng {
 
 /// Decode `frame` and, when it decodes, encode the value both ways and assert
 /// that they agree. Returns whether the frame decoded.
+///
+/// `[$view]` and `[$owned]` are the codec's view and owned form when it has
+/// them: a form is another representation of the value, so the frame decodes to
+/// it exactly when it decodes to the builder, and `encode_source` writes the
+/// same bytes, or answers the same refusal, from each.
 macro_rules! agree {
-    ($ty:ty, $frame:expr) => {{
+    ($ty:ty, $frame:expr, [$($view:ty)?], [$($owned:ty)?]) => {{
         let frame: &[u8] = $frame;
         match <$ty>::decode(&mut SceCursor::new(frame)) {
             Ok(value) => {
@@ -73,9 +78,48 @@ macro_rules! agree {
                         "encode_source writes a form encode does not keep for frame {frame:02x?}"
                     );
                 }
+                $(
+                    let viewed = <$view>::decode(&mut SceCursor::new(frame)).unwrap_or_else(|e| {
+                        panic!("the view refuses frame {frame:02x?} that decode accepts: {e:?}")
+                    });
+                    let mut by_view = Vec::new();
+                    let from_view = <$ty>::encode_source(&viewed, &mut VecSink::new(&mut by_view));
+                    assert_eq!(
+                        from_view, new,
+                        "a view answers another verdict for frame {frame:02x?}"
+                    );
+                    assert_eq!(
+                        by_view, by_source,
+                        "a view writes other bytes for frame {frame:02x?}"
+                    );
+                )?
+                $(
+                    let owned: $owned = value.clone().try_into_owned().unwrap_or_else(|e| {
+                        panic!("the owned form refuses frame {frame:02x?}: {e:?}")
+                    });
+                    let mut by_owned = Vec::new();
+                    let from_owned =
+                        <$ty>::encode_source(&owned, &mut VecSink::new(&mut by_owned));
+                    assert_eq!(
+                        from_owned, new,
+                        "an owned form answers another verdict for frame {frame:02x?}"
+                    );
+                    assert_eq!(
+                        by_owned, by_source,
+                        "an owned form writes other bytes for frame {frame:02x?}"
+                    );
+                )?
                 true
             }
-            Err(_) => false,
+            Err(_) => {
+                $(
+                    assert!(
+                        <$view>::decode(&mut SceCursor::new(frame)).is_err(),
+                        "the view accepts frame {frame:02x?} that decode refuses"
+                    );
+                )?
+                false
+            }
         }
     }};
 }
@@ -84,7 +128,7 @@ macro_rules! agree {
 /// seeded random frames drawn from `pool`; for each the decode accepts, its
 /// prefixes and its one-byte changes. Returns how many frames were accepted.
 macro_rules! sweep {
-    ($ty:ty, $pool:expr, $seeds:expr) => {{
+    ($ty:ty, $pool:expr, $seeds:expr, [$($view:ty)?], [$($owned:ty)?]) => {{
         let pool: &[u8] = $pool;
         let mut seeds: Vec<Vec<u8>> = $seeds;
         // The frames the document gives are frames of it: each one decodes.
@@ -112,7 +156,7 @@ macro_rules! sweep {
         let frames: Vec<Vec<u8>> = seeds.into_iter().chain(random).collect();
         let mut accepted = 0usize;
         for (index, frame) in frames.iter().enumerate() {
-            let decoded = agree!($ty, frame);
+            let decoded = agree!($ty, frame, [$($view)?], [$($owned)?]);
             assert!(
                 decoded || index >= given,
                 "a seed frame is not a frame of the codec: {frame:02x?}"
@@ -120,13 +164,13 @@ macro_rules! sweep {
             if decoded {
                 accepted += 1;
                 for cut in 0..frame.len() {
-                    agree!($ty, &frame[..cut]);
+                    agree!($ty, &frame[..cut], [$($view)?], [$($owned)?]);
                 }
                 for at in 0..frame.len() {
                     for &b in pool {
                         let mut changed = frame.clone();
                         changed[at] = b;
-                        agree!($ty, &changed);
+                        agree!($ty, &changed, [$($view)?], [$($owned)?]);
                     }
                 }
             }
@@ -137,11 +181,11 @@ macro_rules! sweep {
 
 /// One generated test: the codec `$name` as the module `build.rs` included it.
 macro_rules! sweep_codec {
-    ($name:ident, $ty:ty, $pool:expr, $seeds:expr) => {
+    ($name:ident, $ty:ty, $pool:expr, $seeds:expr, [$($view:ty)?], [$($owned:ty)?]) => {
         #[test]
         #[allow(non_snake_case)]
         fn $name() {
-            let accepted = sweep!($ty, $pool, $seeds);
+            let accepted = sweep!($ty, $pool, $seeds, [$($view)?], [$($owned)?]);
             assert!(
                 accepted > 0,
                 "no frame of {} was accepted, so nothing was compared",
