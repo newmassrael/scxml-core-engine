@@ -8963,14 +8963,24 @@ fn render_codec(
         // option leaves it as it was.
         if sources {
             let rust_struct_name = filters::to_pascal_case(m.name.clone());
-            if let Ok(text) = rust_source::render(&rust_source::Input {
+            match rust_source::render(&rust_source::Input {
                 m,
                 imports,
                 l: &l,
                 struct_name: &rust_struct_name,
                 struct_lifetime: if self_borrowed { "<'a>" } else { "" },
             }) {
-                ctx.insert("source_block".into(), text.into());
+                Ok(text) => {
+                    ctx.insert("source_block".into(), text.into());
+                }
+                // The reason is in the file, so a codec without the interface
+                // says what it is waiting for.
+                Err(rust_source::Unsupported(why)) => {
+                    ctx.insert(
+                        "source_block".into(),
+                        format!("// No source interface (ADR 0058): {why}\n").into(),
+                    );
+                }
             }
         }
         ctx.insert(

@@ -53,6 +53,8 @@ pub(super) fn render(input: &Input<'_>) -> Result<String, Unsupported> {
 
 /// One arm of a codec's variant.
 struct Arm {
+    /// The import alias of the codec that is its body.
+    alias: String,
     /// The enum variant that holds it: the body codec's name, or `Default`.
     variant_name: String,
     /// The type parameter of `{Codec}Body` that is the source of its body.
@@ -111,9 +113,6 @@ fn check(
     if m.encoding != CodecEncoding::Positional {
         return no("a codec of another encoding writes its own encode");
     }
-    if !m.flag_inputs.is_empty() {
-        return no("a flag-input");
-    }
     for alias in child_aliases(m) {
         if !import_has_source(alias) {
             return no(format!(
@@ -134,32 +133,22 @@ fn check(
             }
         }
     }
-    if !roles.checks.is_empty() {
-        return no("a gate that is not of the one-flag form");
-    }
+    // A gate the codec cannot derive is checked against the source, except the
+    // membership of a chain, which is not read yet.
     for field in &m.fields {
-        if let Some(gate) = &field.present_if {
-            if gate.scope != PresentIfScope::Local || gate.or_with.is_some() {
+        let mut clause = field.present_if.as_ref();
+        while let Some(p) = clause {
+            if p.scope == PresentIfScope::Chain {
+                return no(format!("`{}`: a gate on the entries of a chain", field.id));
+            }
+            clause = p.or_with.as_deref();
+        }
+        if let BitSize::TlvChain { entry_binds, .. } = &field.bit_size {
+            if !entry_binds.is_empty() {
                 return no(format!(
-                    "`{}`: a gate that is not of the one-flag form",
+                    "`{}`: a flag-input supplied by the entry before",
                     field.id
                 ));
-            }
-        }
-        if let Some(carrier) = m.fields.iter().find(|c| {
-            field
-                .present_if
-                .as_ref()
-                .is_some_and(|g| g.field_id == c.id)
-        }) {
-            let flag = field.present_if.as_ref().map(|g| g.flag_name.as_str());
-            if let Some(def) = carrier.flags.iter().find(|d| Some(d.name.as_str()) == flag) {
-                if def.width != 1 {
-                    return no(format!(
-                        "`{}`: a gate on a flag wider than one bit",
-                        field.id
-                    ));
-                }
             }
         }
     }
@@ -321,6 +310,127 @@ impl<'a> Plan<'a> {
         !child_aliases(self.m()).is_empty()
     }
 
+    // ── flag-inputs ──────────────────────────────────────────────────
+
+    /// The parameter a flag-input is passed as.
+    fn input_name(input: &FlagInput) -> String {
+        filters::to_snake_case(input.name.clone())
+    }
+
+    /// `, n: u8` for each flag-input the codec takes from its parent: a bit of
+    /// the parent's own header that gates a field here, so it is a fact the
+    /// source cannot present.
+    fn input_params(&self) -> String {
+        self.m()
+            .flag_inputs
+            .iter()
+            .map(|input| format!(", {}: u8", Self::input_name(input)))
+            .collect()
+    }
+
+    /// `, n` for each flag-input, passed on.
+    fn input_args(&self) -> String {
+        self.m()
+            .flag_inputs
+            .iter()
+            .map(|input| format!(", {}", Self::input_name(input)))
+            .collect()
+    }
+
+    /// The arguments a parent passes the codec `alias`, one for each flag-input
+    /// it takes, in the order it declares them: the bits of the parent's own
+    /// carrier that the import binds, or the parent's own input passed on.
+    fn thread_args(&self, alias: &str, derived: &Derived) -> String {
+        let Some(import) = self.input.imports.iter().find(|i| i.alias == alias) else {
+            return String::new();
+        };
+        let mut out = String::new();
+        for input in &import.codec_flag_inputs {
+            let Some(bind) = import.flag_binds.iter().find(|b| b.input == input.name) else {
+                continue;
+            };
+            match &bind.source {
+                FlagBindSource::Carrier { carrier, flag } => {
+                    let Some(field) = self
+                        .m()
+                        .fields
+                        .iter()
+                        .find(|f| f.is_flags_carrier() && &f.id == carrier)
+                    else {
+                        continue;
+                    };
+                    let Some(def) = field.flags.iter().find(|d| &d.name == flag) else {
+                        continue;
+                    };
+                    let mask = (1u64 << def.width.max(1)) - 1;
+                    let read = self.read(field, derived);
+                    let bits = format!("({read} >> {}) & 0x{mask:X}", def.bit);
+                    if field.fixed_bits().is_some_and(|b| b <= 8) {
+                        out.push_str(&format!(", {bits}"));
+                    } else {
+                        out.push_str(&format!(", ({bits}) as u8"));
+                    }
+                }
+                FlagBindSource::Input { name } => {
+                    out.push_str(&format!(", {}", filters::to_snake_case(name.clone())));
+                }
+            }
+        }
+        out
+    }
+
+    // ── gates that are checked ───────────────────────────────────────
+
+    /// The test a gate states, over what the source presents and what the
+    /// codec is passed: each clause reads a bit, and the clauses are joined
+    /// as the author joined them.
+    fn gate_test(&self, gate: &PresentIfPredicate, derived: &Derived) -> String {
+        let mut clauses: Vec<String> = Vec::new();
+        let mut clause = Some(gate);
+        while let Some(p) = clause {
+            let (read, mask) = match p.scope {
+                PresentIfScope::Input => (filters::to_snake_case(p.flag_name.clone()), 1u64),
+                _ => {
+                    let carrier = self
+                        .m()
+                        .fields
+                        .iter()
+                        .find(|f| f.id == p.field_id)
+                        .expect("the parser found the carrier a gate reads");
+                    let def = carrier
+                        .flags
+                        .iter()
+                        .find(|d| d.name == p.flag_name)
+                        .expect("the parser found the flag a gate reads");
+                    (self.read(carrier, derived), 1u64 << def.bit)
+                }
+            };
+            let op = if p.negate { "==" } else { "!=" };
+            clauses.push(format!("({read} & 0x{mask:X}) {op} 0"));
+            clause = p.or_with.as_deref();
+        }
+        clauses.join(" || ")
+    }
+
+    /// Each gate the codec cannot derive the presence from, held to the source:
+    /// the field is present exactly when the gate says, or the value is not one
+    /// frame can carry. Made in the prologue, so nothing is written first.
+    fn gate_checks(&self, derived: &Derived, lines: &mut Vec<String>) {
+        for check in &self.roles.checks {
+            let Some(field) = self.m().fields.iter().find(|f| f.id == check.field) else {
+                continue;
+            };
+            let Some(gate) = &field.present_if else {
+                continue;
+            };
+            lines.push(format!(
+                "if ({}) != src.{}().is_some() {{\n    return Err(CodecError::PresentIfMismatch);\n}}",
+                self.gate_test(gate, derived),
+                self.accessor(field),
+            ));
+        }
+    }
+
     fn m(&self) -> &CodecModel {
         self.input.m
     }
@@ -417,6 +527,7 @@ impl<'a> Plan<'a> {
             .enumerate()
             .filter_map(|(i, arm)| {
                 Some(Arm {
+                    alias: arm.body_alias.clone(),
                     variant_name: filters::to_pascal_case(arm.body_alias.clone()),
                     generic: format!("A{i}"),
                     child: self.child_of(&arm.body_alias)?,
@@ -427,6 +538,7 @@ impl<'a> Plan<'a> {
         if let Some(default) = &variant.default_arm {
             if let Some(child) = self.child_of(&default.body_alias) {
                 arms.push(Arm {
+                    alias: default.body_alias.clone(),
                     variant_name: "Default".to_string(),
                     generic: "D".to_string(),
                     child,
@@ -646,10 +758,14 @@ impl<'a> Plan<'a> {
         // can refuse a value after this codec has written bytes. The same write
         // into a sink that only counts finds that refusal first, so the
         // caller's sink is untouched when the encode refuses.
+        let params = self.input_params();
+        let args = self.input_args();
         let guard = if self.has_children() {
-            "\x20       Self::write_source(src, &mut ::sce_forge_runtime::codec::CountSink::new())?;\n"
+            format!(
+                "\x20       Self::write_source(src, &mut ::sce_forge_runtime::codec::CountSink::new(){args})?;\n"
+            )
         } else {
-            ""
+            String::new()
         };
         format!(
             "#[allow(dead_code)]\n\
@@ -659,9 +775,9 @@ impl<'a> Plan<'a> {
              \x20   /// [`{trait_name}`]. A length, a count or a gate flag is computed from what\n\
              \x20   /// `src` presents, and a value the encoding cannot carry is refused\n\
              \x20   /// before the first byte is written.\n\
-             \x20   pub fn encode_source<S: {trait_name} + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {{\n\
+             \x20   pub fn encode_source<S: {trait_name} + ?Sized, K: SceSink>(src: &S, w: &mut K{params}) -> Result<(), CodecError> {{\n\
              {guard}\
-             \x20       Self::write_source(src, w)\n\
+             \x20       Self::write_source(src, w{args})\n\
              \x20   }}\n\n\
              {write}\
              }}\n",
@@ -676,11 +792,13 @@ impl<'a> Plan<'a> {
     /// takes them, and `write_source` is that with none set.
     fn write_functions(&self, body: &str) -> String {
         let trait_name = &self.trait_name;
+        let params = self.input_params();
+        let args = self.input_args();
         if self.overridable().is_empty() {
             return format!(
                 "\x20   /// [`Self::encode_source`] without the guard a parent has already made.\n\
                  \x20   #[doc(hidden)]\n\
-                 \x20   pub fn write_source<S: {trait_name} + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {{\n\
+                 \x20   pub fn write_source<S: {trait_name} + ?Sized, K: SceSink>(src: &S, w: &mut K{params}) -> Result<(), CodecError> {{\n\
                  {body}\
                  \x20   }}\n"
             );
@@ -689,13 +807,13 @@ impl<'a> Plan<'a> {
         format!(
             "\x20   /// [`Self::encode_source`] without the guard a parent has already made.\n\
              \x20   #[doc(hidden)]\n\
-             \x20   pub fn write_source<S: {trait_name} + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {{\n\
-             \x20       Self::write_source_in(src, w, &{overrides}::default())\n\
+             \x20   pub fn write_source<S: {trait_name} + ?Sized, K: SceSink>(src: &S, w: &mut K{params}) -> Result<(), CodecError> {{\n\
+             \x20       Self::write_source_in(src, w{args}, &{overrides}::default())\n\
              \x20   }}\n\n\
              \x20   /// [`Self::write_source`] with the flags a parent sets in place of the\n\
              \x20   /// ones `src` presents.\n\
              \x20   #[doc(hidden)]\n\
-             \x20   pub fn write_source_in<S: {trait_name} + ?Sized, K: SceSink>(src: &S, w: &mut K, over: &{overrides}) -> Result<(), CodecError> {{\n\
+             \x20   pub fn write_source_in<S: {trait_name} + ?Sized, K: SceSink>(src: &S, w: &mut K{params}, over: &{overrides}) -> Result<(), CodecError> {{\n\
              {body}\
              \x20   }}\n"
         )
@@ -705,6 +823,11 @@ impl<'a> Plan<'a> {
     fn write_body(&self) -> String {
         let mut lines: Vec<String> = Vec::new();
         let derived = self.derivations(&mut lines);
+        self.gate_checks(&derived, &mut lines);
+        for input in &self.m().flag_inputs {
+            // A codec that does not test its input still takes it.
+            lines.push(format!("let _ = {};", Self::input_name(input)));
+        }
         if self.m().fields.is_empty() && self.m().variant.is_none() {
             // An empty body: the surrounding wire-protocol header alone marks the
             // codec, and nothing is read or written.
@@ -719,13 +842,13 @@ impl<'a> Plan<'a> {
                 self.streamed(field, &derived, &mut lines);
             }
         }
-        self.write_variant(&mut lines);
+        self.write_variant(&derived, &mut lines);
         lines.push("Ok(())".to_string());
         indent(&lines, 8)
     }
 
     /// The suffix: the body of the arm the value holds.
-    fn write_variant(&self, lines: &mut Vec<String>) {
+    fn write_variant(&self, derived: &Derived, lines: &mut Vec<String>) {
         if self.m().variant.is_none() {
             return;
         }
@@ -738,8 +861,9 @@ impl<'a> Plan<'a> {
                 format!("{enum_name}::Default {{ body: _b, .. }}")
             };
             lines.push(format!(
-                "    {pattern} => {}::write_source(_b, w)?,",
-                arm.child.type_name
+                "    {pattern} => {}::write_source(_b, w{})?,",
+                arm.child.type_name,
+                self.thread_args(&arm.alias, derived)
             ));
         }
         lines.push("}".to_string());
@@ -951,7 +1075,10 @@ impl<'a> Plan<'a> {
                 .expect("`check` found the codec a body holds");
             let accessor = self.accessor(field);
             let size = format!("_s_{accessor}");
-            let write = format!("{}::write_source(_v, &mut _c)?;", child.type_name);
+            let args = child_alias(field)
+                .map(|alias| self.thread_args(alias, derived))
+                .unwrap_or_default();
+            let write = format!("{}::write_source(_v, &mut _c{args})?;", child.type_name);
             let body_write = if field.present_if.is_some() {
                 format!("if let Some(_v) = src.{accessor}() {{\n    {write}\n}}")
             } else {
@@ -1201,6 +1328,9 @@ impl<'a> Plan<'a> {
                 let child = self
                     .child(field)
                     .expect("`check` found the codec a list holds");
+                let args = child_alias(field)
+                    .map(|alias| self.thread_args(alias, derived))
+                    .unwrap_or_default();
                 match self.chain_end_flag(field) {
                     // Every entry but the last says another follows: the flag is
                     // derived from where the entry stands, and set as it is
@@ -1209,14 +1339,17 @@ impl<'a> Plan<'a> {
                         let count = self.count_local(field);
                         body.push(format!("for (_i, _e) in {value}.enumerate() {{"));
                         body.push(format!(
-                            "    {}::write_source_in(&_e, w, &{} {{ {member}: Some(_i + 1 < {count}), ..Default::default() }})?;",
+                            "    {}::write_source_in(&_e, w{args}, &{} {{ {member}: Some(_i + 1 < {count}), ..Default::default() }})?;",
                             child.type_name, child.overrides_path
                         ));
                         body.push("}".to_string());
                     }
                     None => {
                         body.push(format!("for _e in {value} {{"));
-                        body.push(format!("    {}::write_source(&_e, w)?;", child.type_name));
+                        body.push(format!(
+                            "    {}::write_source(&_e, w{args})?;",
+                            child.type_name
+                        ));
                         body.push("}".to_string());
                     }
                 }
@@ -1225,7 +1358,13 @@ impl<'a> Plan<'a> {
                 let child = self
                     .child(field)
                     .expect("`check` found the codec a body holds");
-                body.push(format!("{}::write_source({value}, w)?;", child.type_name));
+                let args = child_alias(field)
+                    .map(|alias| self.thread_args(alias, derived))
+                    .unwrap_or_default();
+                body.push(format!(
+                    "{}::write_source({value}, w{args})?;",
+                    child.type_name
+                ));
             }
         }
         if gated && self.presented(field) {
@@ -1252,25 +1391,7 @@ impl<'a> Plan<'a> {
         derived: &Derived,
     ) -> Vec<String> {
         let gate = field.present_if.as_ref().expect("a gated field has a gate");
-        let carrier = self
-            .m()
-            .fields
-            .iter()
-            .find(|f| f.id == gate.field_id)
-            .expect("a gate names a carrier of the codec");
-        let flag = carrier
-            .flags
-            .iter()
-            .find(|d| d.name == gate.flag_name)
-            .expect("a gate names a flag of its carrier");
-        let read = self.read(carrier, derived);
-        let test = format!("({read} & 0x{:X}) != 0", 1u64 << flag.bit);
-        let test = if gate.negate {
-            format!("!({test})")
-        } else {
-            test
-        };
-        let mut out = vec![format!("if {test} {{")];
+        let mut out = vec![format!("if {} {{", self.gate_test(gate, derived))];
         out.extend(body.into_iter().map(|line| format!("    {line}")));
         out.push("}".to_string());
         out

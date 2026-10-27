@@ -415,9 +415,16 @@ pub fn classify(model: &CodecModel, imports: &[ImportContext]) -> CodecRoles {
         // exactly when the flag is set: the flag is the presence announced.
         // Any other gate (a disjunction, a flag-input the caller supplies, a
         // chain's membership) names no one flag this codec could set, so it is
-        // a relation the measure checks.
+        // a relation the measure checks. So is a gate on a flag wider than one
+        // bit: presence says whether it is zero, not which value it holds.
         if let Some(gate) = &field.present_if {
-            if gate.scope == PresentIfScope::Local && gate.or_with.is_none() {
+            let one_bit = model
+                .fields
+                .iter()
+                .find(|c| c.id == gate.field_id)
+                .and_then(|c| c.flags.iter().find(|d| d.name == gate.flag_name))
+                .is_none_or(|d| d.width == 1);
+            if gate.scope == PresentIfScope::Local && gate.or_with.is_none() && one_bit {
                 derive(
                     ElementId::Flag {
                         field: gate.field_id.clone(),
