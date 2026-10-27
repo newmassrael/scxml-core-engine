@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
 #include "model/StateHierarchy.h"
-#include "core/LogMacros.h"
+#include "common/LogToLogger.h"
 #include "model/ITransitionNode.h"
 #include <algorithm>
 #include <iostream>

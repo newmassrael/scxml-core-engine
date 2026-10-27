@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
 #include "parsing/ParsingCommon.h"
-#include "core/LogMacros.h"
+#include "common/LogToLogger.h"
 #include "parsing/SemanticError.h"
 #include <algorithm>
 #include <cctype>

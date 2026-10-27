@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
 #include "runtime/HistoryStateAutoRegistrar.h"
-#include "core/LogMacros.h"
+#include "common/LogToLogger.h"
 #include "model/IStateNode.h"
 #include "model/ITransitionNode.h"
 #include "model/SCXMLModel.h"

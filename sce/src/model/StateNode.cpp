@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
 #include "model/StateNode.h"
-#include "core/LogMacros.h"
+#include "common/LogToLogger.h"
 
 SCE::StateNode::StateNode(const std::string &id, Type type) : id_(id), type_(type), parent_(nullptr) {
     SCE_LOG_DEBUG("Creating state node: {}, type: {}", id, static_cast<int>(type));

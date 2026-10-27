@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
 #include "common/DataModelInitHelper.h"
-#include "core/LogMacros.h"
+#include "common/LogToLogger.h"
 #include "quickjs.h"
 #include "scripting/DOMBinding.h"
 #include "scripting/JSEngine.h"

@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
 #include "GuardNode.h"
-#include "core/LogMacros.h"
+#include "common/LogToLogger.h"
 
 SCE::GuardNode::GuardNode(const std::string &id, const std::string &target)
     : id_(id), target_(target), condition_(""), targetState_("") {

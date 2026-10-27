@@ -17,86 +17,43 @@
 #pragma once
 
 /**
- * @brief Conditional logging macros for header-only code
+ * @brief The logging macros of SCE's code, header-only code included
  *
- * When SCE_ENABLE_RUNTIME_LOGGING is defined (by sce_runtime),
- * SCE_LOG_* macros delegate to the full Logger backend via Logger.h.
+ * Each macro has one definition, the same in every translation unit of a program
+ * (docs/adr/0060). It asks the program's installed sink whether its level is wanted
+ * and, only when it is, formats the message and hands it to the sink. The arguments
+ * are evaluated only then. With no sink installed a call costs one relaxed atomic
+ * load and a comparison, and nothing is formatted.
  *
- * When SCE_ENABLE_RUNTIME_LOGGING is NOT defined (sce_core standalone),
- * SCE_LOG_* macros are no-ops with zero overhead — no std::format evaluation,
- * no Logger.cpp linkage required.
+ * Which sink that is, is the program's choice (`common/LogSink.h`): `SCE::Logger`
+ * installs its own, so a program that links sce_base logs through the configured
+ * `ILoggerBackend`, and a program that uses only the header-only tier logs nothing
+ * until it installs one.
  *
- * Usage in header-only code:
+ * The message is `{}`-substituted by `SCE::detail::formatLog` (`common/LogFormat.h`):
+ * each `{}` takes the next argument through its `operator<<`, and `{{` / `}}` are a
+ * literal brace.
+ *
+ * Usage:
  * @code
  * #include "core/LogMacros.h"
  * SCE_LOG_DEBUG("Transition {} -> {}", static_cast<int>(src), static_cast<int>(tgt));
  * @endcode
  */
 
-#ifdef SCE_ENABLE_RUNTIME_LOGGING
-#include "common/Logger.h"
+#include "common/ILoggerBackend.h"
+#include "common/LogFormat.h"
+#include "common/LogSink.h"
 #include "common/SourceLocation.h"
 
-// Format string handling: prefer std::format (C++20), fall back to fmt (spdlog bundled)
-#if __cpp_lib_format >= 201907L
-#include <format>
-#define SCE_DETAIL_FORMAT(...) std::format(__VA_ARGS__)
-#elif defined(SCE_USE_SPDLOG)
-#include <spdlog/fmt/bundled/format.h>
-#define SCE_DETAIL_FORMAT(...) fmt::format(__VA_ARGS__)
-#else
-// No format library available — log format string only (parameter substitution lost)
-#include <string>
-
-namespace SCE::detail {
-inline std::string format_fallback(const char *fmt) {
-    return std::string(fmt);
-}
-
-template <typename... Args> inline std::string format_fallback(const char *fmt, Args &&...) {
-    return std::string(fmt);
-}
-}  // namespace SCE::detail
-
-#define SCE_DETAIL_FORMAT(...) SCE::detail::format_fallback(__VA_ARGS__)
-#endif
-
-#define SCE_LOG_TRACE(...)                                                                                             \
+#define SCE_DETAIL_LOG(level, ...)                                                                                     \
     do {                                                                                                               \
-        if (SCE::Logger::shouldLog(SCE::LogLevel::Trace))                                                              \
-            SCE::Logger::trace(SCE_DETAIL_FORMAT(__VA_ARGS__), SCE::source_location::current());                       \
+        if (::SCE::detail::logWanted(level))                                                                           \
+            ::SCE::detail::logEmit(level, ::SCE::detail::formatLog(__VA_ARGS__), ::SCE::source_location::current());   \
     } while (0)
-#define SCE_LOG_DEBUG(...)                                                                                             \
-    do {                                                                                                               \
-        if (SCE::Logger::shouldLog(SCE::LogLevel::Debug))                                                              \
-            SCE::Logger::debug(SCE_DETAIL_FORMAT(__VA_ARGS__), SCE::source_location::current());                       \
-    } while (0)
-#define SCE_LOG_INFO(...)                                                                                              \
-    do {                                                                                                               \
-        if (SCE::Logger::shouldLog(SCE::LogLevel::Info))                                                               \
-            SCE::Logger::info(SCE_DETAIL_FORMAT(__VA_ARGS__), SCE::source_location::current());                        \
-    } while (0)
-#define SCE_LOG_WARN(...)                                                                                              \
-    do {                                                                                                               \
-        if (SCE::Logger::shouldLog(SCE::LogLevel::Warn))                                                               \
-            SCE::Logger::warn(SCE_DETAIL_FORMAT(__VA_ARGS__), SCE::source_location::current());                        \
-    } while (0)
-#define SCE_LOG_ERROR(...)                                                                                             \
-    do {                                                                                                               \
-        if (SCE::Logger::shouldLog(SCE::LogLevel::Error))                                                              \
-            SCE::Logger::error(SCE_DETAIL_FORMAT(__VA_ARGS__), SCE::source_location::current());                       \
-    } while (0)
-#else
-// No-op branch. Arguments are forwarded to a variadic sink so callers do
-// not trip -Wunused-parameter when a logged variable would otherwise be
-// unreferenced. The compiler discards the call entirely at -O1+.
-namespace SCE::detail {
-template <typename... Args> inline void log_noop(Args &&...) noexcept {}
-}  // namespace SCE::detail
 
-#define SCE_LOG_TRACE(...) ::SCE::detail::log_noop(__VA_ARGS__)
-#define SCE_LOG_DEBUG(...) ::SCE::detail::log_noop(__VA_ARGS__)
-#define SCE_LOG_INFO(...) ::SCE::detail::log_noop(__VA_ARGS__)
-#define SCE_LOG_WARN(...) ::SCE::detail::log_noop(__VA_ARGS__)
-#define SCE_LOG_ERROR(...) ::SCE::detail::log_noop(__VA_ARGS__)
-#endif
+#define SCE_LOG_TRACE(...) SCE_DETAIL_LOG(::SCE::LogLevel::Trace, __VA_ARGS__)
+#define SCE_LOG_DEBUG(...) SCE_DETAIL_LOG(::SCE::LogLevel::Debug, __VA_ARGS__)
+#define SCE_LOG_INFO(...) SCE_DETAIL_LOG(::SCE::LogLevel::Info, __VA_ARGS__)
+#define SCE_LOG_WARN(...) SCE_DETAIL_LOG(::SCE::LogLevel::Warn, __VA_ARGS__)
+#define SCE_LOG_ERROR(...) SCE_DETAIL_LOG(::SCE::LogLevel::Error, __VA_ARGS__)

@@ -3,7 +3,7 @@
 
 #include "ReadySCXMLEngine.h"
 #include "SCXMLEngine.h"
-#include "core/LogMacros.h"
+#include "common/LogToLogger.h"
 #include <atomic>
 #include <cstdint>
 #include <filesystem>

@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
 #include "scripting/PlatformExecutionHelper.h"
-#include "core/LogMacros.h"
+#include "common/LogToLogger.h"
 #include "quickjs.h"
 #include <condition_variable>
 #include <mutex>

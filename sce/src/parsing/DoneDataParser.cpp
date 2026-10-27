@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
 #include "parsing/DoneDataParser.h"
-#include "core/LogMacros.h"
+#include "common/LogToLogger.h"
 #include "parsing/ParsingCommon.h"
 
 SCE::DoneDataParser::DoneDataParser(std::shared_ptr<NodeFactory> factory) : factory_(factory) {

@@ -5,7 +5,7 @@
 
 #include "common/DataModelInitHelper.h"
 #include "common/FileLoadingHelper.h"
-#include "core/LogMacros.h"
+#include "common/LogToLogger.h"
 #include "runtime/BindingHelper.h"
 #include "runtime/DataContentHelpers.h"
 #include "scripting/IScriptEngine.h"

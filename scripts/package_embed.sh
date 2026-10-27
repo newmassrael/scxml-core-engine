@@ -194,7 +194,6 @@ ${SRCS_FORMATTED}    ],
         "-include common/ExternTemplates.h",
         "-include common/DisableStdOut.h",
     ],
-    local_defines = ["SCE_ENABLE_RUNTIME_LOGGING"],
     deps = [":sce_core"],
     visibility = ["//visibility:public"],
 )

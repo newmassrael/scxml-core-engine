@@ -9,7 +9,7 @@
 #include "actions/RaiseAction.h"
 #include "actions/ScriptAction.h"
 #include "actions/SendAction.h"
-#include "core/LogMacros.h"
+#include "common/LogToLogger.h"
 
 std::shared_ptr<SCE::IStateNode> SCE::NodeFactory::createStateNode(const std::string &id, const Type type) {
     SCE_LOG_DEBUG("Creating state node: {}", id);

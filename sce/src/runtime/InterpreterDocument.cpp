@@ -3,7 +3,7 @@
 
 #include "runtime/InterpreterDocument.h"
 
-#include "core/LogMacros.h"
+#include "common/LogToLogger.h"
 #include "model/IStateNode.h"
 #include "model/ITransitionNode.h"
 #include "model/SCXMLModel.h"

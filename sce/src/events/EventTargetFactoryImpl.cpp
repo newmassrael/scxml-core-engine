@@ -3,8 +3,8 @@
 
 #include "events/EventTargetFactoryImpl.h"
 #include "common/IOProcessorHelper.h"
+#include "common/LogToLogger.h"
 #include "common/SendHelper.h"
-#include "core/LogMacros.h"
 #include "events/EventRaiserService.h"
 #include "events/InternalEventTarget.h"
 #include "events/InvokeEventTarget.h"

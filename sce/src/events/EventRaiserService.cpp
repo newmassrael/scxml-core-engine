@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
 #include "events/EventRaiserService.h"
-#include "core/LogMacros.h"
+#include "common/LogToLogger.h"
 #include "events/EventRaiserRegistry.h"
 #include "runtime/IEventRaiser.h"
 #include "scripting/ScriptEngineProvider.h"

@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
 #include "parsing/XIncludeProcessor.h"
-#include "core/LogMacros.h"
+#include "common/LogToLogger.h"
 
 // ============================================================================
 // Unified stub implementation: XInclude processing delegated to IXMLDocument

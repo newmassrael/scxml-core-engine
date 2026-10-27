@@ -3,9 +3,9 @@
 
 #include "events/HttpEventTarget.h"
 #include "common/JsonText.h"
+#include "common/LogToLogger.h"
 #include "common/SendHelper.h"
 #include "common/UrlEncodingHelper.h"
-#include "core/LogMacros.h"
 #include <algorithm>
 #include <chrono>
 #include <regex>

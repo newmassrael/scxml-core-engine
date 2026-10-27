@@ -2,8 +2,8 @@
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
 #include "scripting/JSEngine.h"
+#include "common/LogToLogger.h"
 #include "common/UniqueIdGenerator.h"
-#include "core/LogMacros.h"
 #include "events/EventRaiserRegistry.h"
 #include "events/EventRaiserService.h"
 #include "events/IEventDispatcher.h"

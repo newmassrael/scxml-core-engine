@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
 #include "events/EventRaiserRegistry.h"
-#include "core/LogMacros.h"
+#include "common/LogToLogger.h"
 #include <algorithm>
 
 namespace SCE {

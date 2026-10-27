@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
 #include "runtime/StateHierarchyManager.h"
-#include "core/LogMacros.h"
+#include "common/LogToLogger.h"
 #include "model/IStateNode.h"
 #include "model/SCXMLModel.h"
 #include <algorithm>

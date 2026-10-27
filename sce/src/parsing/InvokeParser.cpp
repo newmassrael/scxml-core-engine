@@ -3,7 +3,7 @@
 
 // InvokeParser.cpp
 #include "InvokeParser.h"
-#include "core/LogMacros.h"
+#include "common/LogToLogger.h"
 #include "parsing/ParsingCommon.h"
 #include "parsing/XmlSerializationHelper.h"
 

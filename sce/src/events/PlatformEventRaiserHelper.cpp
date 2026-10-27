@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
 #include "events/PlatformEventRaiserHelper.h"
-#include "core/LogMacros.h"
+#include "common/LogToLogger.h"
 #include "events/EventSchedulerImpl.h"
 #include "runtime/EventRaiserImpl.h"
 #include <atomic>

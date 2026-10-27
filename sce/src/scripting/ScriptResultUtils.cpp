@@ -3,7 +3,7 @@
 
 #include "scripting/ScriptResultUtils.h"
 #include "common/JsonText.h"
-#include "core/LogMacros.h"
+#include "common/LogToLogger.h"
 #include "scripting/IScriptEngine.h"
 #include "scripting/ScriptDialect.h"
 #include <cmath>

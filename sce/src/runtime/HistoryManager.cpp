@@ -2,8 +2,8 @@
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
 #include "runtime/HistoryManager.h"
+#include "common/LogToLogger.h"
 #include "core/HistoryHelper.h"
-#include "core/LogMacros.h"
 #include "model/IStateNode.h"
 #include "runtime/HistoryValidator.h"
 

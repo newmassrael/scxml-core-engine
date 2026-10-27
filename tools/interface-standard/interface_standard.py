@@ -27,7 +27,7 @@ them:
 ``guards``
     Refuse an ``#if``, ``#elif``, ``#ifdef`` or ``#ifndef`` that names
     ``__cplusplus`` or a ``__cpp_*`` feature-test macro, in the public headers
-    and in the C++ templates. Two guards are allowed, each with its reason in
+    and in the C++ templates. One guard is allowed, with its reason in
     ``GUARD_ALLOWLIST``; an allowlist entry that matches nothing is refused
     too, so an exception cannot outlive the code it excused.
 
@@ -223,11 +223,6 @@ NON_CXX_TEMPLATE_TREES = frozenset({"c", "rust", "go", "kotlin", "python", "swif
 # Keyed by file and macro, so the same file naming any OTHER standard macro is
 # still refused.
 GUARD_ALLOWLIST: Dict[Tuple[str, str], str] = {
-    ("sce/include/core/LogMacros.h", "__cpp_lib_format"): (
-        "sits inside the SCE_ENABLE_RUNTIME_LOGGING branch, which only SCE's own "
-        "translation units define. That is the one known exception ADR 0059 "
-        "section 3 names and leaves to be decided apart from the standard"
-    ),
     ("sce/include/common/JsonText.h", "__cpp_lib_to_chars"): (
         "names a C++17 library feature (201611), so it reports the library and "
         "not the standard: one library gives it the same value in a C++17 and a "

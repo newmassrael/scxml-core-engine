@@ -13,7 +13,7 @@
 #include "actions/SendAction.h"
 #include "backends/LogUtils.h"
 #include "common/FileLoadingHelper.h"
-#include "core/LogMacros.h"
+#include "common/LogToLogger.h"
 #include "parsing/ParsingCommon.h"
 #include "parsing/SemanticError.h"
 #include "parsing/XmlSerializationHelper.h"

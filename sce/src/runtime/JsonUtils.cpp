@@ -3,7 +3,7 @@
 
 #include "runtime/JsonUtils.h"
 #include "common/JsonText.h"
-#include "core/LogMacros.h"
+#include "common/LogToLogger.h"
 #include <chrono>
 #include <cmath>
 

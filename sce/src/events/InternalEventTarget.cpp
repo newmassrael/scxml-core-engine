@@ -3,8 +3,8 @@
 
 #include "events/InternalEventTarget.h"
 #include "common/EventDataHelper.h"
+#include "common/LogToLogger.h"
 #include "common/SCXMLConstants.h"
-#include "core/LogMacros.h"
 #include "runtime/EventRaiserImpl.h"
 #include "runtime/IEventRaiser.h"
 #include <cstdint>

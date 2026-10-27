@@ -3,8 +3,8 @@
 
 #define SCXML_ENGINE_EXPORTS
 #include "SCXMLEngineImpl.h"
+#include "common/LogToLogger.h"
 #include "common/UniqueIdGenerator.h"
-#include "core/LogMacros.h"
 #include "runtime/ExecutionContextImpl.h"
 #include "runtime/StateMachineFactory.h"
 #include "scripting/ScriptEngineProvider.h"  // For default constructor engine resolution

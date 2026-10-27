@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
 #include "runtime/StateMachineFactory.h"
-#include "core/LogMacros.h"
+#include "common/LogToLogger.h"
 #include "scripting/ScriptEngineProvider.h"
 #include <random>
 

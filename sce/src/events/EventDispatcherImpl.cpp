@@ -2,9 +2,9 @@
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
 #include "events/EventDispatcherImpl.h"
+#include "common/LogToLogger.h"
 #include "common/SendHelper.h"
 #include "common/StringUtils.h"
-#include "core/LogMacros.h"
 #include "events/EventRaiserService.h"
 #include "runtime/IEventRaiser.h"
 #include <sstream>

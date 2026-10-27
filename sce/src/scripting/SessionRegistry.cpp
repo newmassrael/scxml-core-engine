@@ -2,8 +2,8 @@
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
 #include "scripting/SessionRegistry.h"
+#include "common/LogToLogger.h"
 #include "common/UniqueIdGenerator.h"
-#include "core/LogMacros.h"
 #include "events/IEventDispatcher.h"
 #include <cstdint>
 

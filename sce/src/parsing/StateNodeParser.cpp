@@ -4,7 +4,7 @@
 #include "parsing/StateNodeParser.h"
 #include "actions/AssignAction.h"
 #include "actions/ScriptAction.h"
-#include "core/LogMacros.h"
+#include "common/LogToLogger.h"
 #include "parsing/ActionParser.h"
 #include "parsing/DataModelParser.h"
 #include "parsing/DoneDataParser.h"

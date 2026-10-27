@@ -4,7 +4,7 @@
 #ifndef __EMSCRIPTEN__
 
 #include "events/CppHttplibClient.h"
-#include "core/LogMacros.h"
+#include "common/LogToLogger.h"
 #include <algorithm>
 #include <httplib.h>
 

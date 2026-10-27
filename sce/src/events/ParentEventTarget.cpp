@@ -3,8 +3,8 @@
 
 #include "events/ParentEventTarget.h"
 #include "common/EventDataHelper.h"
+#include "common/LogToLogger.h"
 #include "common/SCXMLConstants.h"
-#include "core/LogMacros.h"
 #include "events/EventRaiserService.h"
 #include "events/IEventDispatcher.h"
 #include "runtime/EventRaiserImpl.h"

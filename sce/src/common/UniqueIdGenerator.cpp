@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
 #include "common/UniqueIdGenerator.h"
-#include "core/LogMacros.h"
+#include "common/LogToLogger.h"
 
 #include <cstdint>
 #include <iomanip>

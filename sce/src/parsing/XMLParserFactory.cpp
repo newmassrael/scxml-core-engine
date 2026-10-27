@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
-#include "core/LogMacros.h"
+#include "common/LogToLogger.h"
 #include "parsing/IXMLParser.h"
 #include "parsing/PugiXMLParser.h"
 

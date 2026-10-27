@@ -3,7 +3,7 @@
 
 // InvokeNode.cpp
 #include "InvokeNode.h"
-#include "core/LogMacros.h"
+#include "common/LogToLogger.h"
 
 SCE::InvokeNode::InvokeNode(const std::string &id) : id_(id), autoForward_(false) {
     SCE_LOG_DEBUG("Creating invoke node: {}", id);

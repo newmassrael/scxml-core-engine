@@ -933,6 +933,35 @@ apply_sce_test_policies(document_stem_test)
 add_test(NAME DocumentStem COMMAND document_stem_test)
 
 # ============================================================================
+# One definition of SCE_LOG_* (docs/adr/0060)
+#
+# A call formats nothing while no sink is installed, SCE::Logger installs its
+# sink when it is configured, and SCE::detail::formatLog keeps the `{}` grammar.
+# Linked against sce_base alone: the tier that defines the Logger is the whole
+# of what a program needs for header-only code to log through it.
+# ============================================================================
+add_executable(log_sink_test
+    common/LogSinkTest.cpp
+)
+
+target_include_directories(log_sink_test
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/sce/include
+        ${CMAKE_SOURCE_DIR}/tests
+)
+
+target_link_libraries(log_sink_test
+    PRIVATE
+        sce_base
+        GTest::gtest_main
+        pthread
+)
+
+apply_sce_test_policies(log_sink_test)
+
+add_test(NAME LogSink COMMAND log_sink_test)
+
+# ============================================================================
 # Which <send target> values name a Mesh peer: SendHelper::isMeshTarget held
 # to tests/mesh/mesh_target_cases.json, the table the build and the Rust and
 # Kotlin routers read too.

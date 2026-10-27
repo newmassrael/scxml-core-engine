@@ -210,14 +210,6 @@ if(SCE_USE_SPDLOG)
     target_compile_definitions(sce_base PUBLIC SCE_USE_SPDLOG)
 endif()
 
-# Runtime logging: PRIVATE so the #ifdef SCE_ENABLE_RUNTIME_LOGGING branch in
-# include/core/LogMacros.h is only taken when compiling SCE's own libraries.
-# External consumers (AOT-generated or embedding code) fall through to the
-# no-op branch, avoiding spdlog include requirements at install-tree compile
-# time — the spdlog headers are exposed only via BUILD_INTERFACE and are not
-# part of the installed tree.
-target_compile_definitions(sce_base PRIVATE SCE_ENABLE_RUNTIME_LOGGING)
-
 # Commit this build was made from, embedded so the C++ diagnostic
 # producer can stamp `generator` on every record it emits.
 #
@@ -488,10 +480,6 @@ if(SCE_HAS_SCRIPTING)
 
     # ADR 0059: a consumer compiles the interface at C++17; these sources are C++20.
     target_compile_features(sce_scripting PUBLIC cxx_std_17 PRIVATE cxx_std_20)
-
-    # sce_scripting .cpp files call SCE_LOG_* — add PRIVATE so the logging
-    # branch compiles here but does not propagate to external consumers.
-    target_compile_definitions(sce_scripting PRIVATE SCE_ENABLE_RUNTIME_LOGGING)
 endif()
 
 # ============================================================================
@@ -724,7 +712,3 @@ endif()
 
 # ADR 0059: a consumer compiles the interface at C++17; these sources are C++20.
 target_compile_features(sce_runtime PUBLIC cxx_std_17 PRIVATE cxx_std_20)
-
-# sce_runtime .cpp files call SCE_LOG_* — add PRIVATE so the logging branch
-# compiles here but does not propagate to external consumers.
-target_compile_definitions(sce_runtime PRIVATE SCE_ENABLE_RUNTIME_LOGGING)

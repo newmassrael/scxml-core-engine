@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
 #include "parsing/PugiXMLParser.h"
-#include "core/LogMacros.h"
+#include "common/LogToLogger.h"
 #include "parsing/IXMLElement.h"
 #include "parsing/ParseError.h"
 #include "parsing/TemplateConstants.h"

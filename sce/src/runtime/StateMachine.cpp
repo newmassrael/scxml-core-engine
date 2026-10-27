@@ -8,8 +8,8 @@
 #include "scripting/SessionRegistry.h"
 
 #include "common/DoneDataHelper.h"
+#include "common/LogToLogger.h"
 #include "core/EntryExitHelper.h"
-#include "core/LogMacros.h"
 #include "core/MicrostepAlgorithms.h"
 #include "core/ParallelCompletionHelper.h"
 #ifdef SCE_USE_SPDLOG

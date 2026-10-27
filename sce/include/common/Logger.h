@@ -16,6 +16,7 @@
 #pragma once
 
 #include "common/ILoggerBackend.h"
+#include "common/LogSink.h"
 #include "common/SourceLocation.h"
 #include <memory>
 #include <string>
@@ -30,6 +31,11 @@ namespace SCE {
  *
  * 1. Default mode: Uses built-in backend (spdlog if available, DefaultBackend otherwise)
  * 2. Custom mode: Users inject their own ILoggerBackend implementation
+ *
+ * SCE_LOG_* calls reach the Logger through the sink it installs (`sink()`,
+ * docs/adr/0060). `initialize`, `setBackend` and `setLevel` install it, and so does
+ * every SCE source file that logs, before any of its own code runs
+ * (`common/LogToLogger.h`).
  *
  * Thread-safe: All operations are thread-safe via backend implementation.
  *
@@ -50,7 +56,8 @@ public:
     /**
      * @brief Inject custom logger backend
      *
-     * Replaces the default backend with user-provided implementation.
+     * Replaces the default backend with user-provided implementation, and installs
+     * this Logger's sink.
      * Must be called before any logging operations.
      *
      * @param backend User's logger backend (ownership transferred)
@@ -60,12 +67,15 @@ public:
     /**
      * @brief Initialize default logger (stdout, no file)
      *
-     * Creates default backend if no custom backend was injected.
+     * Creates default backend if no custom backend was injected, and installs this
+     * Logger's sink.
      */
     static void initialize();
 
     /**
      * @brief Initialize default logger with file output
+     *
+     * Installs this Logger's sink, as `initialize()` does.
      *
      * @param logDir Directory for log files
      * @param logToFile Enable file logging
@@ -75,6 +85,8 @@ public:
     /**
      * @brief Set minimum log level
      *
+     * Installs this Logger's sink, as `initialize()` does.
+     *
      * @param level Minimum level to log
      */
     static void setLevel(LogLevel level);
@@ -82,11 +94,32 @@ public:
     /**
      * @brief Check if a given log level is enabled
      *
-     * Used by SCE_LOG_* macros to avoid std::format evaluation when the level is disabled.
+     * The `wanted` of this Logger's sink: SCE_LOG_* asks it before formatting.
      */
     static bool shouldLog(LogLevel level);
 
-    // Logging methods — called by SCE_LOG_* macros in LogMacros.h
+    /**
+     * @brief The sink through which SCE_LOG_* reaches this Logger
+     *
+     * `wanted` is `shouldLog`, and `emit` logs the message at its level as
+     * `trace` ... `error` do. A program that installed another sink gives this one
+     * back with `SCE::installLogSink(&Logger::sink())`.
+     */
+    static const LogSink &sink() noexcept;
+
+    /**
+     * @brief Installs this Logger's sink when no sink is installed yet
+     *
+     * The `std::ios_base::Init` pattern: `common/LogToLogger.h` defines one of these
+     * in every translation unit that includes it, so the sink is installed before
+     * any code of that unit runs. A sink the program installed first is kept.
+     */
+    class SinkInit {
+    public:
+        SinkInit() noexcept;
+    };
+
+    // Logging methods, at the level each names
     static void trace(const std::string &message, const SCE::source_location &loc = SCE::source_location::current());
     static void debug(const std::string &message, const SCE::source_location &loc = SCE::source_location::current());
     static void info(const std::string &message, const SCE::source_location &loc = SCE::source_location::current());
@@ -121,6 +154,9 @@ public:
 private:
     static std::unique_ptr<ILoggerBackend> backend_;
     static void ensureBackend();
+    static void logAt(LogLevel level, const std::string &message, const SCE::source_location &loc);
+    static bool sinkWanted(LogLevel level) noexcept;
+    static void sinkEmit(LogLevel level, std::string message, const SCE::source_location &where);
     static std::string extractCleanFunctionName(const SCE::source_location &loc);
 };
 

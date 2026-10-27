@@ -4,7 +4,7 @@
 #include "scripting/LuaEngine.h"
 #include "SCXMLTypes.h"
 #include "common/EventDataHelper.h"
-#include "core/LogMacros.h"
+#include "common/LogToLogger.h"
 #include "events/EventRaiserService.h"
 #include "runtime/DataContentHelpers.h"
 #include "scripting/LuaDOMBinding.h"

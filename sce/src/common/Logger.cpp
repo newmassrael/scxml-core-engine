@@ -22,7 +22,9 @@
 #endif
 
 #include <algorithm>
+#include <atomic>
 #include <mutex>
+#include <utility>
 
 namespace SCE {
 
@@ -32,37 +34,52 @@ std::unique_ptr<ILoggerBackend> Logger::backend_;
 // Mutex for thread-safe backend initialization
 static std::mutex backend_mutex;
 
+// The backend `initialize()` and a first use make: stdout, no file.
+static std::unique_ptr<ILoggerBackend> makeDefaultBackend() {
+#ifdef SCE_USE_SPDLOG
+    return std::make_unique<SpdlogBackend>();
+#else
+    return std::make_unique<DefaultBackend>();
+#endif
+}
+
 void Logger::setBackend(std::unique_ptr<ILoggerBackend> backend) {
-    std::lock_guard<std::mutex> lock(backend_mutex);
-    backend_ = std::move(backend);
+    {
+        std::lock_guard<std::mutex> lock(backend_mutex);
+        backend_ = std::move(backend);
+    }
+    installLogSink(&sink());
 }
 
 void Logger::initialize() {
-    std::lock_guard<std::mutex> lock(backend_mutex);
-    if (!backend_) {
-#ifdef SCE_USE_SPDLOG
-        backend_ = std::make_unique<SpdlogBackend>();
-#else
-        backend_ = std::make_unique<DefaultBackend>();
-#endif
+    {
+        std::lock_guard<std::mutex> lock(backend_mutex);
+        if (!backend_) {
+            backend_ = makeDefaultBackend();
+        }
     }
+    installLogSink(&sink());
 }
 
 void Logger::initialize([[maybe_unused]] const std::string &logDir, [[maybe_unused]] bool logToFile) {
-    std::lock_guard<std::mutex> lock(backend_mutex);
-    if (!backend_) {
+    {
+        std::lock_guard<std::mutex> lock(backend_mutex);
+        if (!backend_) {
 #ifdef SCE_USE_SPDLOG
-        backend_ = std::make_unique<SpdlogBackend>(logDir, logToFile);
+            backend_ = std::make_unique<SpdlogBackend>(logDir, logToFile);
 #else
-        // DefaultBackend doesn't support file logging
-        backend_ = std::make_unique<DefaultBackend>();
+            // DefaultBackend doesn't support file logging
+            backend_ = std::make_unique<DefaultBackend>();
 #endif
+        }
     }
+    installLogSink(&sink());
 }
 
 void Logger::setLevel(LogLevel level) {
     ensureBackend();
     backend_->setLevel(level);
+    installLogSink(&sink());
 }
 
 bool Logger::shouldLog(LogLevel level) {
@@ -70,34 +87,64 @@ bool Logger::shouldLog(LogLevel level) {
     return backend_->shouldLog(level);
 }
 
-void Logger::trace(const std::string &message, const SCE::source_location &loc) {
+const LogSink &Logger::sink() noexcept {
+    // Constant-initialized: two function addresses, no guard, ready before any code
+    // runs, which is what installLogSink asks of a sink.
+    static constexpr LogSink loggerSink{&Logger::sinkWanted, &Logger::sinkEmit};
+    return loggerSink;
+}
+
+// The sink is installed from every SCE source file that logs, by the SinkInit object
+// common/LogToLogger.h defines in it, and not from a static initializer of this file
+// alone: a static library links an object file only when something refers to it, and
+// once SCE_LOG_* stopped calling the Logger, nothing in a program that only logs
+// through the macros would. The object of a file that logs is linked exactly when its
+// code is used, and its SinkInit runs before any function of that file
+// ([basic.start.dynamic]). The compare-exchange keeps a sink the program installed
+// first: a SinkInit is not the program choosing a sink, only SCE making sure there is
+// one.
+Logger::SinkInit::SinkInit() noexcept {
+    const LogSink *none = nullptr;
+    detail::g_logSink.compare_exchange_strong(none, &Logger::sink(), std::memory_order_relaxed);
+}
+
+bool Logger::sinkWanted(LogLevel level) noexcept {
+    // A backend made on first use can fail to be made; then nothing is wanted.
+    try {
+        return shouldLog(level);
+    } catch (...) {
+        return false;
+    }
+}
+
+void Logger::sinkEmit(LogLevel level, std::string message, const SCE::source_location &where) {
+    logAt(level, message, where);
+}
+
+void Logger::logAt(LogLevel level, const std::string &message, const SCE::source_location &loc) {
     ensureBackend();
     std::string enhanced_message = extractCleanFunctionName(loc) + "() - " + message;
-    backend_->log(LogLevel::Trace, enhanced_message, loc);
+    backend_->log(level, enhanced_message, loc);
+}
+
+void Logger::trace(const std::string &message, const SCE::source_location &loc) {
+    logAt(LogLevel::Trace, message, loc);
 }
 
 void Logger::debug(const std::string &message, const SCE::source_location &loc) {
-    ensureBackend();
-    std::string enhanced_message = extractCleanFunctionName(loc) + "() - " + message;
-    backend_->log(LogLevel::Debug, enhanced_message, loc);
+    logAt(LogLevel::Debug, message, loc);
 }
 
 void Logger::info(const std::string &message, const SCE::source_location &loc) {
-    ensureBackend();
-    std::string enhanced_message = extractCleanFunctionName(loc) + "() - " + message;
-    backend_->log(LogLevel::Info, enhanced_message, loc);
+    logAt(LogLevel::Info, message, loc);
 }
 
 void Logger::warn(const std::string &message, const SCE::source_location &loc) {
-    ensureBackend();
-    std::string enhanced_message = extractCleanFunctionName(loc) + "() - " + message;
-    backend_->log(LogLevel::Warn, enhanced_message, loc);
+    logAt(LogLevel::Warn, message, loc);
 }
 
 void Logger::error(const std::string &message, const SCE::source_location &loc) {
-    ensureBackend();
-    std::string enhanced_message = extractCleanFunctionName(loc) + "() - " + message;
-    backend_->log(LogLevel::Error, enhanced_message, loc);
+    logAt(LogLevel::Error, message, loc);
 }
 
 void Logger::flush() {
@@ -122,7 +169,12 @@ std::string Logger::getCapturedLogs() {
 
 void Logger::ensureBackend() {
     if (!backend_) {
-        initialize();
+        // The default backend, made on first use. The sink is left as it is: a direct
+        // call such as `Logger::info` is not the program choosing where SCE_LOG_* goes.
+        std::lock_guard<std::mutex> lock(backend_mutex);
+        if (!backend_) {
+            backend_ = makeDefaultBackend();
+        }
     }
 }
 

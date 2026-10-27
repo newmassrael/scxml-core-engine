@@ -2,8 +2,8 @@
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
 #include "runtime/TypeRegistry.h"
+#include "common/LogToLogger.h"
 #include "common/SCXMLConstants.h"
-#include "core/LogMacros.h"
 #include <algorithm>
 #include <cctype>
 #include <mutex>

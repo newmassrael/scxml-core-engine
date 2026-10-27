@@ -93,9 +93,16 @@ class GuardsRefuseAStandardSelectingDirective(unittest.TestCase):
               "#endif\n"
               "#ifndef __cpp_lib_span\n"
               "#endif\n")
+        # The guard the logging macros once carried is refused like any other
+        # (docs/adr/0060), and the allowed one is still refused beside another
+        # macro in the same file.
         write(self.root / "sce/include/core/LogMacros.h",
               "#pragma once\n"
               "#if __cpp_lib_format >= 201907L\n"
+              "#endif\n")
+        write(self.root / "sce/include/common/JsonText.h",
+              "#pragma once\n"
+              "#if defined(__cpp_lib_to_chars) && __cpp_lib_to_chars >= 201611L\n"
               "#endif\n"
               "#if __cpp_concepts\n"
               "#endif\n")
@@ -118,22 +125,30 @@ class GuardsRefuseAStandardSelectingDirective(unittest.TestCase):
             ("sce/include/core/A.h", 2),
             ("sce/include/core/A.h", 4),
             ("sce/include/core/A.h", 10),
-            ("sce/include/core/LogMacros.h", 4),
+            ("sce/include/core/LogMacros.h", 2),
+            ("sce/include/common/JsonText.h", 4),
             ("tools/codegen/templates/state_machine.jinja2", 2),
             ("tools/codegen/templates/forge/cpp/span_user.h.jinja2", 1),
         })
         self.assertEqual([(g.path, g.line) for g in report.allowed],
-                         [("sce/include/core/LogMacros.h", 2)])
+                         [("sce/include/common/JsonText.h", 2)])
+
+    def test_the_allowlist_holds_the_one_library_feature_guard(self):
+        # The logging macros' format guard was the other entry, and it went with
+        # the logging split it sat in (docs/adr/0060).
+        self.assertEqual(list(tool.GUARD_ALLOWLIST),
+                         [("sce/include/common/JsonText.h", "__cpp_lib_to_chars")])
 
     def test_the_other_languages_template_subtrees_are_not_read(self):
         self.build_scopes()
         report = tool.check_guards(self.root)
-        # A.h, LogMacros.h, ok.h, state_machine.jinja2, span_user.h.jinja2.
-        self.assertEqual(report.files, 5)
+        # A.h, JsonText.h, LogMacros.h, ok.h, state_machine.jinja2, span_user.h.jinja2.
+        self.assertEqual(report.files, 6)
         self.assertEqual(report.missing_scopes, [])
 
     def test_an_allowance_that_matches_nothing_is_reported(self):
         self.build_scopes()
+        (self.root / "sce/include/common/JsonText.h").unlink()
         report = tool.check_guards(self.root)
         self.assertEqual(report.unused_allowances,
                          [("sce/include/common/JsonText.h", "__cpp_lib_to_chars")])
@@ -145,8 +160,6 @@ class GuardsRefuseAStandardSelectingDirective(unittest.TestCase):
         self.assertIn("sce/include/core/A.h:2: #if __cpp_concepts >= 202002L", out.splitlines())
 
     def test_a_tree_holding_only_the_allowed_guards_passes(self):
-        write(self.root / "sce/include/core/LogMacros.h",
-              "#if __cpp_lib_format >= 201907L\n#endif\n")
         write(self.root / "sce/include/common/JsonText.h",
               "#if defined(__cpp_lib_to_chars) && __cpp_lib_to_chars >= 201611L\n#endif\n")
         write(self.root / "backends/cpp/forge-runtime/include/sce/forge/ok.h", "#pragma once\n")
@@ -156,7 +169,7 @@ class GuardsRefuseAStandardSelectingDirective(unittest.TestCase):
         # The same tree read by a scan that expects the real tree's size is blind.
         status, _, err = run_main(["guards", "--root", str(self.root), "--min-files", "100"])
         self.assertEqual(status, 1)
-        self.assertIn("read only 4 file(s)", err)
+        self.assertIn("read only 3 file(s)", err)
 
     def test_a_missing_scope_is_reported_not_skipped(self):
         write(self.root / "sce/include/core/LogMacros.h", "#pragma once\n")

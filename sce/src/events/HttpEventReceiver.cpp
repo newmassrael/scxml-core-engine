@@ -2,8 +2,8 @@
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
 #include "events/HttpEventReceiver.h"
+#include "common/LogToLogger.h"
 #include "common/UniqueIdGenerator.h"
-#include "core/LogMacros.h"
 #include "events/HttpResponseUtils.h"
 #include "runtime/JsonUtils.h"
 #include "scripting/IScriptEngine.h"

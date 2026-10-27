@@ -40,7 +40,8 @@ set(SCE_PUGIXML_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/pugixml/src
 # sce_core: Header-only core library for AOT standalone usage
 # ============================================================================
 # Contains: StaticExecutionEngine, Helper classes, core algorithms
-# All SCE_LOG_* macros are no-ops when SCE_ENABLE_RUNTIME_LOGGING is not defined.
+# SCE_LOG_* calls log nothing until the program installs a sink; SCE::Logger
+# (sce_base) installs its own (docs/adr/0060).
 add_library(sce_core INTERFACE)
 
 target_include_directories(sce_core
@@ -107,11 +108,6 @@ if(SCE_USE_SPDLOG)
         message(WARNING "SCE: SCE_USE_SPDLOG=ON but bundled spdlog not found, using DefaultBackend")
     endif()
 endif()
-
-# Runtime logging: PRIVATE so only sce_base TUs take the
-# SCE_ENABLE_RUNTIME_LOGGING branch. External consumers fall through to
-# the no-op branch in LogMacros.h and don't need spdlog at compile time.
-target_compile_definitions(sce_base PRIVATE SCE_ENABLE_RUNTIME_LOGGING)
 
 # Force include DisableStdOut.h for sce_base source files only.
 # ExternTemplates.h suppresses implicit std::basic_string<char>

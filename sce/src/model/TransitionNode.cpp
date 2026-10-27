@@ -3,7 +3,7 @@
 
 // TransitionNode.cpp
 #include "TransitionNode.h"
-#include "core/LogMacros.h"
+#include "common/LogToLogger.h"
 #include <algorithm>
 #include <sstream>
 

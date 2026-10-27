@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
 #include "events/HttpResponseUtils.h"
-#include "core/LogMacros.h"
+#include "common/LogToLogger.h"
 #include "events/IEventBridge.h"  // For HttpResponse struct
 #include "runtime/JsonUtils.h"
 
