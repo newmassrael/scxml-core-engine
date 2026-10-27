@@ -90,6 +90,12 @@ jobs:
     env:
       CC: gcc
       CXX: g++
+      # The runner hands a container job HOME=/github/home, while the image's
+      # root account has /root. rustup-init refuses that disagreement ("$HOME
+      # differs from euid-obtained home directory"), measured on this lane's
+      # first run. One home for the job: rustup, the cargo cache paths (`~/`)
+      # and git's global config then all name the same directory.
+      HOME: /root
 
     steps:
       # The image is Debian with GCC 15 in /usr/local. What the configure needs
