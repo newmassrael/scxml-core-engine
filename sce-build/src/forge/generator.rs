@@ -27291,20 +27291,21 @@ fn sce_type_of_list_elem(elem: crate::forge::types::ListElem) -> SceType {
 /// Per-language parameter type for an algorithm signature.
 ///
 /// RFC §synth-5-A diverges from `cpp_param_type` for `bytes`: algorithms
-/// emit a non-owning view (`std::span<const uint8_t>`) rather than
+/// emit a non-owning view (`SCE::Forge::Span<const std::uint8_t>`, the
+/// runtime's `sce/forge/span.h`, docs/adr/0059) rather than
 /// `const std::vector<uint8_t>&`, because RFC §synth-5-J-5 forbids STL
 /// containers in the algorithm emit and span is the named
 /// alternative. C11 lowers `bytes` to the borrowed `sce_forge_bytes_view_t`
 /// (`{const uint8_t *data; size_t len}`) — its `.data[i]` / `.len` shape is
 /// what `lower_algorithm_stmt`'s foreach arm reads, and the zero-copy view
-/// matches the other five backends (all already borrow: Cpp `std::span`,
+/// matches the other five backends (all already borrow: Cpp `Span`,
 /// Rust `&[u8]`, Go `[]byte`, …). A pure function reads its input, so it
 /// takes the view, never the owned 256-byte `sce_forge_bytes_t` copy
 /// (borrowed-by-default). Other types and languages reuse `param_type`.
 fn algorithm_param_type(l: &LangCtx, ty: &SceType) -> String {
     use crate::generator::Language;
     match (l.lang, ty) {
-        (Language::Cpp, SceType::Bytes) => "std::span<const std::uint8_t>".to_string(),
+        (Language::Cpp, SceType::Bytes) => format!("{}<const std::uint8_t>", expr::CPP_SPAN),
         (Language::C11, SceType::Bytes) => "sce_forge_bytes_view_t".to_string(),
         (
             Language::Rust
@@ -28015,7 +28016,7 @@ impl<'a> ListSpelling<'a> {
 
     /// A read-only `list<T>` parameter: a borrowed view of the caller's
     /// elements on every backend, as a `bytes` parameter is — Rust a slice,
-    /// C++ a `std::span`, C11 the runtime's `{const T *data; size_t len}`
+    /// C++ the runtime's `SCE::Forge::Span`, C11 its `{const T *data; size_t len}`
     /// view for the element, Go a slice, Kotlin the element's primitive
     /// array (a record's read-only `List`), Python a list.
     fn param_type(&self) -> String {
@@ -28023,7 +28024,7 @@ impl<'a> ListSpelling<'a> {
         let t = &self.elem_name;
         match self.lang {
             Language::Rust => format!("&[{t}]"),
-            Language::Cpp => format!("std::span<const {t}>"),
+            Language::Cpp => format!("{}<const {t}>", expr::CPP_SPAN),
             Language::C11 if self.is_record() => c11_record_view_type(t),
             Language::C11 => format!("sce_forge_{}_view_t", t.trim_end_matches("_t")),
             Language::Go => format!("[]{t}"),

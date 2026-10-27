@@ -48,9 +48,9 @@ pub(crate) const GO_FORGE_OPTIONAL_PATH: &str = "github.com/newmassrael/sce-forg
 
 /// The C++ standard names generated expression code reaches for that are not
 /// already decided from the model, each with the header that declares it, in
-/// the order an include block lists them. `std::vector`, `std::span` and
-/// `std::array` stay with the templates that know their element types; this
-/// table is for what only the text can say.
+/// the order an include block lists them. `std::vector`, `std::array` and the
+/// runtime's `SCE::Forge::Span` stay with the templates that know their element
+/// types; this table is for what only the text can say.
 const CPP_NAMES: &[(&str, &str)] = &[("string", "string"), ("to_string", "string")];
 
 /// The headers of [`CPP_NAMES`], without repeats, in listing order.
@@ -491,7 +491,7 @@ mod tests {
 
     #[test]
     fn a_cpp_std_name_outside_the_table_is_left_to_its_template() {
-        // `std::vector` and `std::span` are included by the templates that
+        // `std::vector` and `SCE::Forge::Span` are included by the templates that
         // know their element types; this table is for what only text can say.
         assert!(cpp_used_in("std::vector<uint8_t> v;").is_empty());
     }

@@ -145,7 +145,7 @@ fn cpp_field_match_projects_string_field_to_span() {
     // against it.
     assert!(
         code.contains(
-            "BytesEqual::bytes_equal(std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(entry.pattern.data()), entry.pattern.size()), target)"
+            "BytesEqual::bytes_equal(SCE::Forge::Span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(entry.pattern.data()), entry.pattern.size()), target)"
         ),
         "Cpp string-field projection missing; got:\n{code}"
     );
@@ -320,8 +320,10 @@ fn c11_field_match_multi_file_compiles_werror() {
 // `algorithm_xdoc_compile` (`name="xdoc_eq_caller"`) importing
 // `algorithm_bytes_equal` (`name="bytes_equal"`). Both documents carry a
 // `name=` that diverges from their file stem, so a stem-keyed reference
-// would dangle. The program is std-only (free functions, no BC/codec), so
-// the gates need only g++ (C++20) / rustc.
+// would dangle. The program is free functions (no BC/codec), so the gates
+// need only g++ / rustc. C++ compiles it at C++17, the standard a consumer
+// builds the generated code at, against the runtime's `sce/forge/span.h`,
+// which a `bytes` parameter is viewed through (docs/adr/0059).
 
 #[test]
 fn cpp_cross_doc_algorithm_compiles_werror() {
@@ -359,8 +361,11 @@ fn cpp_cross_doc_algorithm_compiles_werror() {
     )
     .expect("write driver");
 
+    let runtime_inc = repo_root().join("backends/cpp/forge-runtime/include");
     let output = Command::new(&cxx)
-        .args(["-std=c++20", "-c", "-Wall", "-Wextra", "-Werror"])
+        .args(["-std=c++17", "-c", "-Wall", "-Wextra", "-Werror"])
+        .arg("-I")
+        .arg(&runtime_inc)
         .arg("-I")
         .arg(&out_dir)
         .arg("-o")

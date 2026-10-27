@@ -1101,6 +1101,12 @@ fn reject_buffers_as_values(expr: &TypedExpr, source: &str) -> Result<(), Refusa
 /// proven it present: `x.value` (docs/adr/0055).
 pub(crate) const OPTIONAL_VALUE: &str = "value";
 
+/// The C++ view a list or a byte string is borrowed through: the forge
+/// runtime's `sce/forge/span.h`, one type at C++17 and at C++20, never
+/// `std::span` (docs/adr/0059, section 4). Its element type follows it in
+/// angle brackets.
+pub(crate) const CPP_SPAN: &str = "SCE::Forge::Span";
+
 /// Refuse what an optional value (docs/adr/0055) is not for, and a read of one
 /// the build has not proven present:
 ///
@@ -2557,7 +2563,7 @@ pub(crate) enum ExprKind {
     /// bounded-string element field (`entry.pattern`) to each backend's
     /// borrowed byte-view idiom at the call site: Rust `.as_bytes()`, C11
     /// a `sce_forge_bytes_view_t` over `{src, src_len}`, Cpp a
-    /// `std::span<const std::uint8_t>` over the string's data/size, Go
+    /// `SCE::Forge::Span<const std::uint8_t>` over the string's data/size, Go
     /// `[]byte(src)`, Python `src.encode("utf-8")`, Kotlin
     /// `src.toByteArray(Charsets.UTF_8)`. The decode-once-here design
     /// keeps the "this Str is passed as bytes" decision in a single place
@@ -6741,11 +6747,11 @@ fn cpp_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
         }
         ExprKind::BytesView { source, .. } => {
             // RFC c7-wildcard W-project: a bounded-string field projected to
-            // the algorithm `bytes` param type — `std::span<const
+            // the algorithm `bytes` param type — `SCE::Forge::Span<const
             // std::uint8_t>` over the string's data()/size().
             let s = emit_cpp(source, InferredType::Unknown)?;
             format!(
-                "std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>({s}.data()), {s}.size())"
+                "{CPP_SPAN}<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>({s}.data()), {s}.size())"
             )
         }
         // SCE_FORGE.md §3.4.1: an index read that records an out-of-range

@@ -9,8 +9,8 @@
 // Do not edit — regenerate from the source SCXML file.
 //
 // RFC §synth-5-A: free function in `namespace SCE::Generated::<Name>`. No
-// STL containers, no exceptions. `bytes` lowers to `std::span<const
-// std::uint8_t>` (RFC §synth-5-J-5 emitter table).
+// STL containers, no exceptions. `bytes` lowers to `SCE::Forge::Span<const
+// std::uint8_t>` (RFC §synth-5-J-5 emitter table, docs/adr/0059).
 
 #pragma once
 #ifndef {{ guard }}
@@ -24,7 +24,7 @@
    `std_includes` is what the render door (`LangCtx::render`) read off it. #}
 {% for header in std_includes %}#include <{{ header }}>
 {% endfor %}{% if needs_vector %}#include <vector>
-{% endif %}{% if needs_span or needs_list_view %}#include <span>
+{% endif %}{% if needs_span or needs_list_view %}#include <sce/forge/span.h>
 {% endif %}{% if may_fail %}#include <sce/forge/algorithm.h>
 {% endif %}{% if needs_optional %}#include <optional>
 #include <sce/forge/optional.h>

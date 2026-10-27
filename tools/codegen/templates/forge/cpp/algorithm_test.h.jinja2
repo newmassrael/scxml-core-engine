@@ -10,7 +10,7 @@
    algorithm header so the function symbol resolves regardless of
    include order in the harness TU. Bytes literals lower to a
    C-style array (extent auto-deduced by the compiler) constructed
-   into `std::span<const std::uint8_t>` per RFC §synth-5-J-5 (cpp
+   into `SCE::Forge::Span<const std::uint8_t>` per RFC §synth-5-J-5 (cpp
    `algorithm_param_type` arm). #}
 
 /* SCE Forge: Auto-generated test-vector sidecar (RFC §synth-5-B B2) */
@@ -22,7 +22,7 @@
 
 #include <cstdint>
 #include <cstdio>
-#include <span>
+#include <sce/forge/span.h>
 #include "{{ name }}.h"
 
 static inline int test_vector_{{ name }}() {
@@ -31,9 +31,9 @@ static inline int test_vector_{{ name }}() {
     {
 {% if tv.hex_bytes %}
         static constexpr std::uint8_t row_bytes[] = { {{ tv.hex_bytes_literal }} };
-{% set call %}SCE::Generated::{{ name_pascal }}::{{ primary_symbol }}(std::span<const std::uint8_t>{row_bytes}){% endset %}
+{% set call %}SCE::Generated::{{ name_pascal }}::{{ primary_symbol }}(SCE::Forge::Span<const std::uint8_t>{row_bytes}){% endset %}
 {% else %}
-{% set call %}SCE::Generated::{{ name_pascal }}::{{ primary_symbol }}(std::span<const std::uint8_t>{}){% endset %}
+{% set call %}SCE::Generated::{{ name_pascal }}::{{ primary_symbol }}(SCE::Forge::Span<const std::uint8_t>{}){% endset %}
 {% endif %}
 {% if may_fail %}
         // SCE_FORGE.md §3.4.1: a row expects a value, so a failure fails it.

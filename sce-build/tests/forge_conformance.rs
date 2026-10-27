@@ -631,9 +631,10 @@ fn forge_rust_algorithm_cobs_encode_runtime() {
 /// changed — a golden records whatever the generator last emitted, so a
 /// lowering defect that survives `UPDATE_GOLDEN` is recorded as the expected
 /// answer rather than caught. C++ additionally had no compile coverage at all
-/// (its `bytes` params lower to `std::span`, C++20, while the shared codec
-/// compile gate is `-std=c++17`); `run_cobs_vectors_cpp` builds at C++20 and
-/// closes that hole as a side effect of running.
+/// (its `bytes` params lowered to `std::span`, C++20, while the shared codec
+/// compile gate is `-std=c++17`; they are the runtime's `SCE::Forge::Span`
+/// now, docs/adr/0059); `run_cobs_vectors_cpp` builds at C++17 and closes
+/// that hole as a side effect of running.
 #[test]
 fn forge_cpp_algorithm_cobs_encode_runtime() {
     run_cobs_vectors_cpp(&resource_dir(), "algorithm_cobs_encode_cpp_runtime")
@@ -667,7 +668,8 @@ fn forge_kotlin_algorithm_cobs_encode_runtime() {
 // Per-backend compile gates for the COBS byte-buffer-build fixture. The
 // generated source must actually compile, not merely byte-match a golden
 // (`feedback_byte_goldens_not_compile`). C++ has no entry here — the run gate
-// above is its compile coverage, at the C++20 its `std::span` params need.
+// above is its compile coverage, at the C++17 a consumer builds it at
+// (docs/adr/0059).
 
 #[test]
 fn forge_c11_algorithm_cobs_encode_compiles() {
@@ -17611,9 +17613,9 @@ fn backend_runtime_dir(rel: &str) -> Result<std::path::PathBuf, String> {
         .map_err(|e| format!("canonicalize {rel}: {e}"))
 }
 
-/// C++ COBS run gate. `-std=c++20` rather than the shared compile gate's
-/// `-std=c++17`: an algorithm's `bytes` parameter lowers to `std::span`, which
-/// is why C++ had no compile gate here at all before this.
+/// C++ COBS run gate, at the `-std=c++17` a consumer builds the generated code
+/// at (docs/adr/0059). An algorithm's `bytes` parameter is the runtime's
+/// `SCE::Forge::Span`, so the driver hands it the case's `std::vector`.
 fn run_cobs_vectors_cpp(dir: &std::path::Path, test_id: &str) -> Result<(), String> {
     if !toolchain_present("g++") {
         return require_all_or_warn(test_id, "g++");
@@ -17657,7 +17659,7 @@ fn run_cobs_vectors_cpp(dir: &std::path::Path, test_id: &str) -> Result<(), Stri
     let exe = proj_dir.join("driver");
     let mut build = std::process::Command::new("g++");
     build
-        .arg("-std=c++20")
+        .arg("-std=c++17")
         .arg("-Wall")
         .arg("-Wextra")
         .arg("-Werror")

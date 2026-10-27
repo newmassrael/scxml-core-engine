@@ -306,6 +306,16 @@ target_include_directories(content_line_runtime_test PRIVATE "${RUNTIME_INCLUDE_
 target_compile_options(content_line_runtime_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
 add_test(NAME content_line_runtime COMMAND content_line_runtime_test)
 
+# The runtime's span on its own (sce/forge/span.h, docs/adr/0059 section 4),
+# at C++17, the standard it is for, and under the same blanket -Werror: what
+# converts to a view is asserted at compile time, what a view reads at run
+# time. What a generated function does with one is judged by the harness above.
+add_executable(span_runtime_test "${CMAKE_CURRENT_SOURCE_DIR}/span_runtime_test.cpp")
+set_target_properties(span_runtime_test PROPERTIES CXX_STANDARD 17)
+target_include_directories(span_runtime_test PRIVATE "${RUNTIME_INCLUDE_DIR}")
+target_compile_options(span_runtime_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+add_test(NAME span_runtime COMMAND span_runtime_test)
+
 # The runtime's queues on their own (sce/forge/queue.h, RFC §synth-5-P), under
 # the same blanket -Werror: the contract scenarios the Rust arm runs
 # (tests/forge/conformance/queue_contract.json), the properties those do not
