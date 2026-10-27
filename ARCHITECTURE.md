@@ -86,7 +86,7 @@ sce_runtime       (STATIC, full interpreter — umbrella target)
 - `StaticExecutionEngine` — CRTP-based AOT execution engine
 - `core/` — W3C algorithm helpers (state entry/exit, event processing, conflict resolution, parallel orchestration)
 - `common/` — Header-only validators and shared computation (AssignHelper, SendHelper, ForeachValidator, etc.)
-- `core/LogMacros.h` — Conditional logging (no-ops when standalone)
+- `core/LogMacros.h` — Logging through the sink the program installs (`common/LogSink.h`); nothing is formatted until one is (ADR 0060)
 - Interface contracts (`StatePolicyConcepts.h`, `EventQueueConcept.h`) — C++17 `void_t` traits checked by `static_assert`, the same in every language standard (ADR 0059 §3)
 
 **Link target**: Pure static AOT generated code with no scripting needs.
@@ -179,18 +179,19 @@ Bare-metal / RTOS consumers opt out of `sce_c_runtime_posix` and supply their ow
 
 ### C++ Standard Compatibility
 
-`sce_core` and `sce_base` target C++17 minimum for cross-compilation to constrained toolchains (e.g., QNX GCC 8.3). A public header does not choose a definition by language standard, because a consumer's C++17 translation units and SCE's C++20 ones include it in one program (ADR 0059 §3); `LogMacros.h` is the named exception.
+`sce_core` and `sce_base` target C++17 minimum for cross-compilation to constrained toolchains (e.g., QNX GCC 8.3). A public header does not choose a definition by language standard, because a consumer's C++17 translation units and SCE's C++20 ones include it in one program (ADR 0059 §3). Logging is no exception: `SCE_LOG_*` has one definition, formats with SCE's own C++17 `{}` substitution, and reaches whatever sink the program installed (ADR 0060).
 
 | Tier | C++ Minimum | C++20 Behavior | Compatibility Mechanism |
 |------|-------------|----------------|------------------------|
 | `sce_core` | C++17 | Same as C++17 | Contracts are `void_t` type traits checked by `static_assert`, never concepts |
-| `sce_base` | C++17 | `std::format` | `SCE::source_location` is one SCE type (`SourceLocation.h`); `fmt::format` → plain string fallback (`LogMacros.h`) |
+| `sce_base` | C++17 | Same as C++17 | `SCE::source_location` is one SCE type (`SourceLocation.h`); log messages are formatted by `SCE::detail::formatLog` (`LogFormat.h`) |
 | `sce_scripting` | C++20 | Full C++20 features | QuickJS/Lua engines require modern standard library |
 | `sce_runtime` | C++20 | Full C++20 features | Interpreter infrastructure requires C++20 |
 
 **Key shims**:
 - `SCE::source_location` — one SCE struct in every standard, filled from `__builtin_FILE` / `__builtin_FUNCTION` / `__builtin_LINE`; `column()` is 0
-- `LogMacros.h` — `std::format` → `fmt::format` (spdlog bundled) → plain string fallback chain
+- `LogFormat.h` — `SCE::detail::formatLog`: each `{}` takes the next argument through `operator<<`, `{{` / `}}` are a literal brace; the one formatter in every standard (ADR 0060)
+- `LogSink.h` — the program's one log sink, an inline atomic pointer; `SCE::Logger` installs its own (`LogToLogger.h` in every SCE source file that logs)
 - `SendHelper.h` — `SCE::detail::starts_with()`, an `rfind` anchored at 0
 - `StatePolicyConcepts.h` — `void_t` type traits, asked through `::value`; the policy levels are checked by `static_assert`
 - `CompilerHints.h` — `SCE_EXPECT_TRUE` / `SCE_EXPECT_FALSE` wrap a condition in `__builtin_expect`, chosen by compiler, not by standard
@@ -1228,7 +1229,8 @@ on the queue it belongs to and taken in turn, never processed where it lands.
 | Shared computation | StringUtils, SCXMLConstants, EventTypeHelper, InPredicateHelper, EventMetadataHelper, SendHelper, SendSchedulingHelper, NamelistHelper, LogicalTimeScheduler | stdlib + LogMacros |
 | JSEngine-dependent | GuardHelper, DoneDataHelper, AssignmentExecutionHelper, FinalizeHelper, DataModelInitHelper, DataModelReadHelper | `scripting/IJSExecutionEngine` |
 | Runtime infrastructure | UniqueIdGenerator, UrlEncodingHelper, EventDataHelper, FileLoadingHelper | compiled (.cpp in sce_base/sce_runtime) |
-| Logging | Logger, ILoggerBackend, DisableStdOut | compiled (.cpp in sce_base) |
+| Logging | Logger, ILoggerBackend, LogToLogger, DisableStdOut | compiled (.cpp in sce_base) |
+| Log sink and format | LogSink, LogFormat (behind `core/LogMacros.h`) | stdlib only |
 
 ### Key Helper Patterns
 
