@@ -11403,6 +11403,97 @@ partitions:
         let _ = fs::remove_dir_all(&tmp);
     }
 
+    /// A machine another machine invokes remotely gets a
+    /// `WorkerSessionHost` in its transport header, which names the
+    /// machine's own SM class. The header includes the SM header that
+    /// declares it, so it compiles alone rather than only after an
+    /// includer happened to put `<stem>_sm.h` first. The stem is the
+    /// document's file stem (what the SM generator writes `_sm.h` under),
+    /// not the `<scxml name>` attribute; the invoking machine, which hosts
+    /// no worker session, does not include its own SM header.
+    #[test]
+    fn a_remotely_invoked_machines_transport_includes_its_own_sm_header() {
+        use std::fs;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        static TEST_COUNTER: AtomicUsize = AtomicUsize::new(0);
+        let tmp = std::env::temp_dir().join(format!(
+            "sce_worker_transport_includes_sm_{}_{}",
+            std::process::id(),
+            TEST_COUNTER.fetch_add(1, Ordering::Relaxed),
+        ));
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&tmp).unwrap();
+
+        let deploy = r##"version: "1.0"
+topology:
+  ecu1:
+    machines:
+      caller:
+        source: caller.scxml
+      worker:
+        source: worker.scxml
+"##;
+        let caller_scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="null" initial="waiting" name="caller">
+  <state id="waiting">
+    <invoke type="scxml" src="#worker" id="remote_inv"/>
+    <transition event="done.invoke.remote_inv" target="pass"/>
+  </state>
+  <final id="pass"/>
+</scxml>"##;
+        let worker_scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="null" initial="done" name="worker_by_attribute">
+  <final id="done"/>
+</scxml>"##;
+
+        let deploy_path = tmp.join("deploy.yaml");
+        fs::write(&deploy_path, deploy).unwrap();
+        fs::write(tmp.join("caller.scxml"), caller_scxml).unwrap();
+        fs::write(tmp.join("worker.scxml"), worker_scxml).unwrap();
+
+        let transport_of = |file: &str, transport: &str| -> String {
+            let mut model = parser::SCXMLParser::new()
+                .parse_file(tmp.join(file).to_str().unwrap())
+                .expect("parse");
+            inject_partition_context_for(&mut model, &deploy_path, None).expect("deploy context");
+            let result = compile_mesh_transport(&mut model, &deploy_path, generator::Language::Cpp)
+                .expect("compile_mesh_transport");
+            result
+                .output
+                .files
+                .iter()
+                .find(|(name, _)| name == transport)
+                .map(|(_, code)| code.clone())
+                .unwrap_or_else(|| panic!("{transport} was not emitted"))
+        };
+
+        let worker = transport_of("worker.scxml", "worker_transport.h");
+        assert!(
+            worker.contains("WorkerSessionHost"),
+            "the remotely invoked machine must host worker sessions"
+        );
+        assert!(
+            worker.contains("#include \"worker_sm.h\""),
+            "the worker's transport header must include the SM header that \
+             declares the class its WorkerSessionHost names"
+        );
+        assert!(
+            !worker.contains("worker_by_attribute_sm.h"),
+            "the SM header is named after the file stem, not <scxml name>"
+        );
+
+        let caller = transport_of("caller.scxml", "caller_transport.h");
+        assert!(
+            !caller.contains("#include \"caller_sm.h\""),
+            "a machine that hosts no worker session does not include its own SM header"
+        );
+
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
     /// WASM-style parse path (`parse_string`, no `base_dir`) captures
     /// inline `<invoke><content><scxml>` as a structured in-memory
     /// submodel — the historical disk-side-effect skip on `base_dir ==

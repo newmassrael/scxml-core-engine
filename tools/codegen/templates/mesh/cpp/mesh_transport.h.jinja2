@@ -630,6 +630,12 @@ dispatchToSession({{ env_name }}, {{ session_idx_expr }})
 #include "mesh/ShmChannel.h"
 {% endif %}
 {% if scxml_remote_inbound_peers %}
+{# `WorkerSessionHost` names this machine's own SM class (and, for a
+   partitioned machine, its `P_<partition>` namespace, which the same
+   header declares), so the header that declares it is included here
+   rather than left to whoever includes this one. The SM header does not
+   include the transport header, so there is no cycle. #}
+#include "{{ sm_header_stem }}_sm.h"
 #include "mesh/ChildSessionAdapter.h"
 #include "mesh/IChildSession.h"
 // W3C SCXML B.1: WorkerSessionHost::onWire14 forwards the build-configured

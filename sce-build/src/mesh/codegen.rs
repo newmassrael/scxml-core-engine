@@ -2064,8 +2064,18 @@ fn generate_cpp_mesh(inputs: MeshCodegenInputs<'_>) -> Result<GeneratedOutput, C
             .collect()
     };
 
+    // The stem of this machine's own `<stem>_sm.h`, which the header
+    // includes where it names the machine's SM class (the inbound
+    // `WorkerSessionHost`). The SM generator writes `{input_stem}_sm.h`,
+    // and the parser names the model after that same file stem, so the
+    // document's name is the stem; `deploy_machine_name` is the deploy.yaml
+    // key and is not. A partitioned machine's `P_<partition>` namespace
+    // lives in the same header.
+    let sm_header_stem = machine_name;
+
     let ctx = minijinja::context! {
         machine_name => machine_name,
+        sm_header_stem => sm_header_stem,
         machine_pascal => machine_pascal,
         targets => target_contexts,
         transport_types => transport_types,
