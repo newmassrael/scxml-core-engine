@@ -126,43 +126,120 @@ impl<'a> CodecExtEncodingInfo<'a> {
     /// destination has insufficient remaining capacity; growable
     /// sinks (e.g. `VecSink`) are effectively infallible.
     pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> {
-        // Streaming cursor encode (SSOT selection: `needs_streaming`).
-        // Mirrors the streaming decode: every field appends its own bytes
-        // in declaration order through the per-field encode blocks, so a
-        // gated field skips its append when absent, and a fixed field after
-        // a variable-length payload lands after the payload (the positional
-        // path appends variable fields last, placing it ahead on the wire).
-        // Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-        // dedicated helpers; everything else uses `present_if_encode_block`
-        // (its non-gated arm covers plain fixed / tail / length-ref / VLE).
-        w.write_vle_u32(self.combined_id)?;
-        w.write_u8(self.schema_size)?;
-        if let Some(_v) = &self.schema {
-            w.write_bytes(_v)?;
-        }
-        Ok(())
+        Self::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
     /// `MAX_ENCODED_BYTES` so the worst-case write path performs at
     /// most one allocation, then delegates to `encode` over a
-    /// `VecSink`. Returns the freshly-encoded byte vector. Callers
-    /// targeting zero-alloc hot paths should call `encode` directly
-    /// against a caller-owned sink.
+    /// `VecSink`. Returns the freshly-encoded byte vector, or the
+    /// `CodecError::PresentIfMismatch` `encode` refuses a message with
+    /// when a field's presence disagrees with the `sce:present-if`
+    /// that gates it. Callers targeting zero-alloc hot paths should
+    /// call `encode` directly against a caller-owned sink.
     ///
     /// Gated on the `alloc` feature — `VecSink` lives behind the
     /// same gate (see `backends/rust/forge-runtime/src/codec.rs`). MCU /
     /// `no_std` builds without `alloc` only see the sink-based
     /// primary `encode`.
     #[cfg(feature = "alloc")]
-    pub fn encode_to_vec(&self) -> Vec<u8> {
+    pub fn encode_to_vec(&self) -> Result<Vec<u8>, CodecError> {
         let mut _sce_v: Vec<u8> = Vec::with_capacity(Self::MAX_ENCODED_BYTES);
         let mut _sce_sink = VecSink::new(&mut _sce_v);
-        self.encode(&mut _sce_sink)
-            .expect("VecSink is infallible");
-        _sce_v
+        self.encode(&mut _sce_sink)?;
+        Ok(_sce_v)
     }
 }
+
+// ── Source (ADR 0058) ────────────────────────────────────────────────
+/// What a value of `CodecExtEncodingInfo` says: its presented fields. A length, a count
+/// or the flag a gated field is announced by is not among them; `CodecExtEncodingInfo`
+/// computes those from what is ([`CodecExtEncodingInfo::encode_source`]).
+pub trait CodecExtEncodingInfoSource {
+    /// The `combined_id` field.
+    fn combined_id(&self) -> u32;
+    /// The `schema_size` field.
+    fn schema_size(&self) -> Option<u8>;
+    /// The `schema` field.
+    fn schema(&self) -> Option<&[u8]>;
+}
+
+impl<T: CodecExtEncodingInfoSource + ?Sized> CodecExtEncodingInfoSource for &T {
+    fn combined_id(&self) -> u32 {
+        (**self).combined_id()
+    }
+    fn schema_size(&self) -> Option<u8> {
+        (**self).schema_size()
+    }
+    fn schema(&self) -> Option<&[u8]> {
+        (**self).schema()
+    }
+}
+
+impl<'a> CodecExtEncodingInfoSource for CodecExtEncodingInfo<'a> {
+    fn combined_id(&self) -> u32 {
+        self.combined_id
+    }
+    fn schema_size(&self) -> Option<u8> {
+        if self.schema.is_none() { Some(self.schema_size) } else { None }
+    }
+    fn schema(&self) -> Option<&[u8]> {
+        self.schema
+    }
+}
+
+impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecExtEncodingInfoSource for CodecExtEncodingInfoOwned<S> {
+    fn combined_id(&self) -> u32 {
+        self.combined_id
+    }
+    fn schema_size(&self) -> Option<u8> {
+        if self.schema.is_none() { Some(self.schema_size) } else { None }
+    }
+    fn schema(&self) -> Option<&[u8]> {
+        self.schema.as_ref().map(::sce_forge_runtime::codec::SceByteBuf::as_slice)
+    }
+}
+
+#[allow(dead_code)]
+impl<'a> CodecExtEncodingInfo<'a> {
+    /// Encode what `src` says into the caller-owned sink: the bytes
+    /// [`Self::encode`] writes for the value it holds, read through
+    /// [`CodecExtEncodingInfoSource`]. A length, a count or a gate flag is computed from what
+    /// `src` presents, and a value the encoding cannot carry is refused
+    /// before the first byte is written.
+    pub fn encode_source<S: CodecExtEncodingInfoSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {
+        Self::write_source(src, w)
+    }
+
+    /// [`Self::encode_source`] without the guard a parent has already made.
+    #[doc(hidden)]
+    pub fn write_source<S: CodecExtEncodingInfoSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {
+        let _p_combined_id_has_schema_0: bool = src.schema().is_some();
+        let _n_d_schema_size_0: usize = match src.schema() {
+            Some(_v) => _v.len(),
+            None => 0,
+        };
+        let _f_d_schema_size: Option<usize> = if src.schema().is_some() { Some(_n_d_schema_size_0) } else { None };
+        let _d_schema_size: u8 = match _f_d_schema_size {
+            Some(_n) => {
+                let _d = u8::try_from(_n).map_err(|_| CodecError::LengthOutOfRange)?;
+                if src.schema_size().is_some_and(|_s| _s != _d) {
+                    return Err(CodecError::InconsistentSource);
+                }
+                _d
+            }
+            None => src.schema_size().unwrap_or_default(),
+        };
+        let _c_combined_id: u32 = (src.combined_id() & !0x1) | u32::from(_p_combined_id_has_schema_0);
+        w.write_vle_u32(_c_combined_id)?;
+        w.write_u8(_d_schema_size)?;
+        if let Some(_v) = src.schema() {
+            w.write_bytes(_v)?;
+        }
+        Ok(())
+    }
+}
+
 
 // ── Owned projection (storage-parameterised native form) ─────────────
 // `CodecExtEncodingInfo<'a>` above is a zero-copy view borrowing the decode
@@ -304,30 +381,17 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecExtEncodingInfoOwned<S> {
     /// borrowed form could not carry is an error and never a frame its own
     /// decoder would reject.
     pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), CodecError> {
-        // Streaming cursor encode (SSOT selection: `needs_streaming`).
-        // Mirrors the streaming decode: every field appends its own bytes
-        // in declaration order through the per-field encode blocks, so a
-        // gated field skips its append when absent, and a fixed field after
-        // a variable-length payload lands after the payload (the positional
-        // path appends variable fields last, placing it ahead on the wire).
-        // Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-        // dedicated helpers; everything else uses `present_if_encode_block`
-        // (its non-gated arm covers plain fixed / tail / length-ref / VLE).
-        w.write_vle_u32(self.combined_id)?;
-        w.write_u8(self.schema_size)?;
-        if let Some(_v) = &self.schema {
-            w.write_bytes(::sce_forge_runtime::codec::SceByteBuf::as_slice(_v))?;
-        }
-        Ok(())
+        CodecExtEncodingInfo::encode_source(self, w)
     }
 
-    /// Heap-backed convenience facade over [`Self::encode`].
+    /// Heap-backed convenience facade over [`Self::encode`]. Fallible: a list
+    /// past the bound the borrowed view declares is refused, and so is a
+    /// presence the chain predicates disagree with.
     #[cfg(feature = "alloc")]
-    pub fn encode_to_vec(&self) -> Vec<u8> {
+    pub fn encode_to_vec(&self) -> Result<Vec<u8>, CodecError> {
         let mut _sce_v: Vec<u8> = Vec::with_capacity(CodecExtEncodingInfo::MAX_ENCODED_BYTES);
         let mut _sce_sink = VecSink::new(&mut _sce_v);
-        self.encode(&mut _sce_sink)
-            .expect("VecSink is infallible");
-        _sce_v
+        self.encode(&mut _sce_sink)?;
+        Ok(_sce_v)
     }
 }

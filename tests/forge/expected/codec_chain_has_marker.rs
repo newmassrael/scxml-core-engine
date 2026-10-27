@@ -191,65 +191,7 @@ impl<'a> CodecChainHasMarker<'a> {
     /// destination has insufficient remaining capacity; growable
     /// sinks (e.g. `VecSink`) are effectively infallible.
     pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> {
-        let _has_extensions_18 = self.extensions.as_ref().is_some_and(|_c| _c.iter().any(|_e| (u64::from(_e.header) & 127u64) == 18u64));
-        if !_has_extensions_18 {
-            if self.payload_len.is_none() {
-                return Err(CodecError::PresentIfMismatch);
-            }
-        } else if self.payload_len.is_some() {
-            return Err(CodecError::PresentIfMismatch);
-        }
-        if !_has_extensions_18 {
-            if self.payload.is_none() {
-                return Err(CodecError::PresentIfMismatch);
-            }
-        } else if self.payload.is_some() {
-            return Err(CodecError::PresentIfMismatch);
-        }
-        if _has_extensions_18 {
-            if self.slice_count.is_none() {
-                return Err(CodecError::PresentIfMismatch);
-            }
-        } else if self.slice_count.is_some() {
-            return Err(CodecError::PresentIfMismatch);
-        }
-        if _has_extensions_18 {
-            if self.slices.is_none() {
-                return Err(CodecError::PresentIfMismatch);
-            }
-        } else if self.slices.is_some() {
-            return Err(CodecError::PresentIfMismatch);
-        }
-        // Streaming cursor encode (SSOT selection: `needs_streaming`).
-        // Mirrors the streaming decode: every field appends its own bytes
-        // in declaration order through the per-field encode blocks, so a
-        // gated field skips its append when absent, and a fixed field after
-        // a variable-length payload lands after the payload (the positional
-        // path appends variable fields last, placing it ahead on the wire).
-        // Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-        // dedicated helpers; everything else uses `present_if_encode_block`
-        // (its non-gated arm covers plain fixed / tail / length-ref / VLE).
-        w.write_u8(self.header)?;
-        if let Some(_list) = &self.extensions {
-            for _e in _list {
-                _e.encode(w)?;
-            }
-        }
-        if let Some(_v) = self.payload_len {
-        w.write_vle_u64(_v)?;
-        }
-        if let Some(_v) = &self.payload {
-            w.write_bytes(_v)?;
-        }
-        if let Some(_v) = self.slice_count {
-        w.write_vle_u32(_v)?;
-        }
-        if let Some(_list) = &self.slices {
-            for _e in _list {
-                _e.encode(w)?;
-            }
-        }
-        Ok(())
+        Self::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
@@ -273,6 +215,130 @@ impl<'a> CodecChainHasMarker<'a> {
         Ok(_sce_v)
     }
 }
+
+// ── Source (ADR 0058) ────────────────────────────────────────────────
+/// What a value of `CodecChainHasMarker` says: its presented fields. A length, a count
+/// or the flag a gated field is announced by is not among them; `CodecChainHasMarker`
+/// computes those from what is ([`CodecChainHasMarker::encode_source`]).
+pub trait CodecChainHasMarkerSource {
+    /// The `header` field.
+    fn header(&self) -> u8;
+    /// The `extensions` field.
+    fn extensions(&self) -> Option<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone>;
+    /// The `payload` field.
+    fn payload(&self) -> Option<&[u8]>;
+    /// The `slices` field.
+    fn slices(&self) -> Option<impl Iterator<Item = impl super::codec_chain_has_marker_slice::CodecChainHasMarkerSliceSource> + Clone>;
+}
+
+impl<T: CodecChainHasMarkerSource + ?Sized> CodecChainHasMarkerSource for &T {
+    fn header(&self) -> u8 {
+        (**self).header()
+    }
+    fn extensions(&self) -> Option<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone> {
+        (**self).extensions()
+    }
+    fn payload(&self) -> Option<&[u8]> {
+        (**self).payload()
+    }
+    fn slices(&self) -> Option<impl Iterator<Item = impl super::codec_chain_has_marker_slice::CodecChainHasMarkerSliceSource> + Clone> {
+        (**self).slices()
+    }
+}
+
+impl<'a> CodecChainHasMarkerSource for CodecChainHasMarker<'a> {
+    fn header(&self) -> u8 {
+        self.header
+    }
+    fn extensions(&self) -> Option<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone> {
+        self.extensions.as_ref().map(|_l| _l.iter())
+    }
+    fn payload(&self) -> Option<&[u8]> {
+        self.payload
+    }
+    fn slices(&self) -> Option<impl Iterator<Item = impl super::codec_chain_has_marker_slice::CodecChainHasMarkerSliceSource> + Clone> {
+        self.slices.as_ref().map(|_l| _l.iter())
+    }
+}
+
+impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecChainHasMarkerSource for CodecChainHasMarkerOwned<S> {
+    fn header(&self) -> u8 {
+        self.header
+    }
+    fn extensions(&self) -> Option<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone> {
+        self.extensions.as_ref().map(|_l| ::sce_forge_runtime::codec::SceList::as_slice(_l).iter())
+    }
+    fn payload(&self) -> Option<&[u8]> {
+        self.payload.as_ref().map(::sce_forge_runtime::codec::SceByteBuf::as_slice)
+    }
+    fn slices(&self) -> Option<impl Iterator<Item = impl super::codec_chain_has_marker_slice::CodecChainHasMarkerSliceSource> + Clone> {
+        self.slices.as_ref().map(|_l| ::sce_forge_runtime::codec::SceList::as_slice(_l).iter())
+    }
+}
+
+#[allow(dead_code)]
+impl<'a> CodecChainHasMarker<'a> {
+    /// Encode what `src` says into the caller-owned sink: the bytes
+    /// [`Self::encode`] writes for the value it holds, read through
+    /// [`CodecChainHasMarkerSource`]. A length, a count or a gate flag is computed from what
+    /// `src` presents, and a value the encoding cannot carry is refused
+    /// before the first byte is written.
+    pub fn encode_source<S: CodecChainHasMarkerSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {
+        Self::write_source(src, &mut ::sce_forge_runtime::codec::CountSink::new())?;
+        Self::write_source(src, w)
+    }
+
+    /// [`Self::encode_source`] without the guard a parent has already made.
+    #[doc(hidden)]
+    pub fn write_source<S: CodecChainHasMarkerSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {
+        let _k_extensions: usize = src.extensions().map_or(0, |_l| _l.count());
+        if _k_extensions > 4 {
+            return Err(CodecError::TlvChainOverflow);
+        }
+        let _k_slices: usize = src.slices().map_or(0, |_l| _l.count());
+        if _k_slices > 4 {
+            return Err(CodecError::TooManyElements);
+        }
+        let _p_header_e_0: bool = src.extensions().is_some();
+        let _n_d_payload_len_0: usize = match src.payload() {
+            Some(_v) => _v.len(),
+            None => 0,
+        };
+        let _f_d_payload_len: Option<usize> = if src.payload().is_some() { Some(_n_d_payload_len_0) } else { None };
+        let _d_payload_len: u64 = u64::try_from(_f_d_payload_len.unwrap_or(0)).map_err(|_| CodecError::LengthOutOfRange)?;
+        let _f_d_slice_count: Option<usize> = if src.slices().is_some() { Some(_k_slices) } else { None };
+        let _d_slice_count: u32 = u32::try_from(_f_d_slice_count.unwrap_or(0)).map_err(|_| CodecError::LengthOutOfRange)?;
+        let _c_header: u8 = (src.header() & !0x80) | (u8::from(_p_header_e_0) << 7);
+        if (!src.extensions().is_some_and(|mut _l| _l.any(|_e| (u64::from(super::codec_zenoh_ext_entry::CodecZenohExtEntrySource::header(&_e)) & 0x7F) == 18u64))) != src.payload().is_some() {
+            return Err(CodecError::PresentIfMismatch);
+        }
+        if (src.extensions().is_some_and(|mut _l| _l.any(|_e| (u64::from(super::codec_zenoh_ext_entry::CodecZenohExtEntrySource::header(&_e)) & 0x7F) == 18u64))) != src.slices().is_some() {
+            return Err(CodecError::PresentIfMismatch);
+        }
+        w.write_u8(_c_header)?;
+        if let Some(_v) = src.extensions() {
+            for (_i, _e) in _v.enumerate() {
+                CodecZenohExtEntry::write_source_in(&_e, w, &super::codec_zenoh_ext_entry::CodecZenohExtEntryOverrides::header_z(_i + 1 < _k_extensions))?;
+            }
+        }
+        if !src.extensions().is_some_and(|mut _l| _l.any(|_e| (u64::from(super::codec_zenoh_ext_entry::CodecZenohExtEntrySource::header(&_e)) & 0x7F) == 18u64)) {
+            w.write_vle_u64(_d_payload_len)?;
+        }
+        if let Some(_v) = src.payload() {
+            w.write_bytes(_v)?;
+        }
+        if src.extensions().is_some_and(|mut _l| _l.any(|_e| (u64::from(super::codec_zenoh_ext_entry::CodecZenohExtEntrySource::header(&_e)) & 0x7F) == 18u64)) {
+            w.write_vle_u32(_d_slice_count)?;
+        }
+        if let Some(_v) = src.slices() {
+            for _e in _v {
+                CodecChainHasMarkerSlice::write_source(&_e, w)?;
+            }
+        }
+        Ok(())
+    }
+}
+
 
 // ── Owned projection (storage-parameterised native form) ─────────────
 // `CodecChainHasMarker<'a>` above is a zero-copy view borrowing the decode
@@ -439,65 +505,7 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecChainHasMarkerOwned<S> {
     /// borrowed form could not carry is an error and never a frame its own
     /// decoder would reject.
     pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), CodecError> {
-        let _has_extensions_18 = self.extensions.as_ref().is_some_and(|_c| ::sce_forge_runtime::codec::SceList::as_slice(_c).iter().any(|_e| (u64::from(_e.header) & 127u64) == 18u64));
-        if !_has_extensions_18 {
-            if self.payload_len.is_none() {
-                return Err(CodecError::PresentIfMismatch);
-            }
-        } else if self.payload_len.is_some() {
-            return Err(CodecError::PresentIfMismatch);
-        }
-        if !_has_extensions_18 {
-            if self.payload.is_none() {
-                return Err(CodecError::PresentIfMismatch);
-            }
-        } else if self.payload.is_some() {
-            return Err(CodecError::PresentIfMismatch);
-        }
-        if _has_extensions_18 {
-            if self.slice_count.is_none() {
-                return Err(CodecError::PresentIfMismatch);
-            }
-        } else if self.slice_count.is_some() {
-            return Err(CodecError::PresentIfMismatch);
-        }
-        if _has_extensions_18 {
-            if self.slices.is_none() {
-                return Err(CodecError::PresentIfMismatch);
-            }
-        } else if self.slices.is_some() {
-            return Err(CodecError::PresentIfMismatch);
-        }
-        // Streaming cursor encode (SSOT selection: `needs_streaming`).
-        // Mirrors the streaming decode: every field appends its own bytes
-        // in declaration order through the per-field encode blocks, so a
-        // gated field skips its append when absent, and a fixed field after
-        // a variable-length payload lands after the payload (the positional
-        // path appends variable fields last, placing it ahead on the wire).
-        // Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-        // dedicated helpers; everything else uses `present_if_encode_block`
-        // (its non-gated arm covers plain fixed / tail / length-ref / VLE).
-        w.write_u8(self.header)?;
-        if let Some(_list) = &self.extensions {
-            for _e in ::sce_forge_runtime::codec::bounded_entries::<_, _, 4>(_list)? {
-                _e.encode(w)?;
-            }
-        }
-        if let Some(_v) = self.payload_len {
-        w.write_vle_u64(_v)?;
-        }
-        if let Some(_v) = &self.payload {
-            w.write_bytes(::sce_forge_runtime::codec::SceByteBuf::as_slice(_v))?;
-        }
-        if let Some(_v) = self.slice_count {
-        w.write_vle_u32(_v)?;
-        }
-        if let Some(_list) = &self.slices {
-            for _e in ::sce_forge_runtime::codec::bounded_entries::<_, _, 4>(_list)? {
-                _e.encode(w)?;
-            }
-        }
-        Ok(())
+        CodecChainHasMarker::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade over [`Self::encode`]. Fallible: a list

@@ -74,13 +74,10 @@ fn main() {
     // code that compiles. The tests that read a view are
     // `forge_view_round_trip.rs`.
     //
-    // With `sources` (ADR 0058) too, for the same reason: the interface is
-    // additive, and compiling the catalog with it on shows that the interface of
-    // every codec shape it holds is code that compiles. `forge_source_round_trip`
-    // reads what Step 7 records here.
+    // Every codec has a source interface (ADR 0058), and its `encode` is the one
+    // that reads it. `forge_source_round_trip` reads what Step 7 records here.
     let options = ForgeCompileOptions {
         views: true,
-        sources: true,
         ..ForgeCompileOptions::default()
     };
     let mut sweeps: Vec<SourceSweep> = Vec::new();

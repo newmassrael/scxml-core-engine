@@ -2,20 +2,28 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
 // The source interface of a codec (docs/adr/0058): `{Codec}Source`, and
-// `{Codec}::encode_source`, the one encode that reads it.
+// `{Codec}::encode_source`, the one encode that reads it. A codec's `encode` is
+// that function, applied to itself.
 //
-// What is asserted is law 2 of the ADR, conservation: for every value a decode
-// produces, `encode_source` writes the bytes `encode` writes, or refuses as it
-// does. A decoded value is the case the two must agree on, because the count, the
-// length or the flag `encode` writes from what the struct holds is, in a decoded
-// value, what the content says, and `encode_source` computes it from the content.
+// What is asserted is what the encode owes, for every value a decode produces:
+//
+// 1. A refusal is made before the first byte: the sink an encode refused is
+//    empty.
+// 2. The bytes it writes are a frame: they decode, and the value they decode to
+//    encodes to the same bytes (a decoded frame that said a number or a flag
+//    the content does not is written as what the content says).
+// 3. Every form of the value says the same: the builder, its view and its owned
+//    form write the same bytes or answer the same refusal.
+// 4. A frame the document gives (a test vector, or the wire it describes) is
+//    reproduced byte for byte: what the encode derives from the content is what
+//    a conforming sender writes.
 //
 // The frames are not hand-picked and neither is the list of codecs. `build.rs`
-// generates one sweep for each codec of the catalog whose generated file holds a
-// source interface; each sweep decodes the frames its document holds as test
-// vectors, the frame its default value encodes to, and seeded random frames, and
-// for each frame the eager decode accepts, every prefix of it and every one-byte
-// change of it, so the values a damaged frame still decodes to are compared too.
+// generates one sweep for each codec of the catalog, from the frames its document
+// holds as test vectors, the frame its default value encodes to, and seeded random
+// frames; for each frame the eager decode accepts, every prefix of it and every
+// one-byte change of it, so the values a damaged frame still decodes to are
+// checked too.
 //
 // Gated on `alloc` like the other round-trip tests.
 #![cfg(feature = "alloc")]
@@ -34,48 +42,52 @@ impl Rng {
     }
 }
 
-/// Decode `frame` and, when it decodes, encode the value both ways and assert
-/// that they agree. Returns whether the frame decoded.
+/// Decode `frame` and, when it decodes, hold its encode to the laws above.
+/// Returns whether the frame decoded. `$canonical` is whether the frame is one a
+/// document gives, which the encode must reproduce.
 ///
 /// `[$view]` and `[$owned]` are the codec's view and owned form when it has
 /// them: a form is another representation of the value, so the frame decodes to
-/// it exactly when it decodes to the builder, and `encode_source` writes the
-/// same bytes, or answers the same refusal, from each.
+/// it exactly when it decodes to the builder, and the encode of it is the
+/// builder's.
 macro_rules! agree {
-    ($ty:ty, $frame:expr, [$($view:ty)?], [$($owned:ty)?]) => {{
+    ($ty:ty, $frame:expr, $canonical:expr, [$($view:ty)?], [$($owned:ty)?]) => {{
         let frame: &[u8] = $frame;
         match <$ty>::decode(&mut SceCursor::new(frame)) {
             Ok(value) => {
-                let mut by_encode = Vec::new();
-                let old = value.encode(&mut VecSink::new(&mut by_encode));
                 let mut by_source = Vec::new();
-                let new = <$ty>::encode_source(&value, &mut VecSink::new(&mut by_source));
+                let verdict = <$ty>::encode_source(&value, &mut VecSink::new(&mut by_source));
+                // The method is the function, applied to the value.
+                let mut by_method = Vec::new();
                 assert_eq!(
-                    new, old,
-                    "encode_source answers another verdict for frame {frame:02x?}"
+                    value.encode(&mut VecSink::new(&mut by_method)),
+                    verdict,
+                    "encode answers another verdict than encode_source, frame {frame:02x?}"
                 );
-                if by_source != by_encode {
-                    // The frame was not canonical: it says a number or a flag the
-                    // content does not (a length beside an absent field, a gate
-                    // flag against the field it gates). `encode_source` writes
-                    // what the content says, so its bytes must be a frame that
-                    // `encode` reproduces from the value they decode to.
-                    assert!(
-                        old.is_ok(),
-                        "encode_source writes bytes where encode refuses, frame {frame:02x?}"
-                    );
-                    let again = <$ty>::decode(&mut SceCursor::new(&by_source)).unwrap_or_else(
-                        |e| panic!("encode_source writes undecodable bytes for frame {frame:02x?}: {e:?}"),
-                    );
+                assert_eq!(by_method, by_source, "encode writes other bytes, frame {frame:02x?}");
+                if verdict.is_ok() {
+                    // The bytes are a frame, and a fixed point of the encode.
+                    let again = <$ty>::decode(&mut SceCursor::new(&by_source)).unwrap_or_else(|e| {
+                        panic!("the encode writes undecodable bytes for frame {frame:02x?}: {e:?}")
+                    });
                     let mut by_again = Vec::new();
-                    again
-                        .encode(&mut VecSink::new(&mut by_again))
-                        .unwrap_or_else(|e| {
-                            panic!("encode refuses the canonical form of frame {frame:02x?}: {e:?}")
-                        });
+                    <$ty>::encode_source(&again, &mut VecSink::new(&mut by_again)).unwrap_or_else(
+                        |e| panic!("the encode refuses its own frame, from frame {frame:02x?}: {e:?}"),
+                    );
                     assert_eq!(
                         by_again, by_source,
-                        "encode_source writes a form encode does not keep for frame {frame:02x?}"
+                        "the encode does not keep its own frame, from frame {frame:02x?}"
+                    );
+                    if $canonical {
+                        assert_eq!(
+                            by_source, frame,
+                            "the encode does not reproduce a frame its document gives"
+                        );
+                    }
+                } else {
+                    assert!(
+                        by_source.is_empty(),
+                        "a refused encode wrote {by_source:02x?} for frame {frame:02x?}"
                     );
                 }
                 $(
@@ -85,7 +97,7 @@ macro_rules! agree {
                     let mut by_view = Vec::new();
                     let from_view = <$ty>::encode_source(&viewed, &mut VecSink::new(&mut by_view));
                     assert_eq!(
-                        from_view, new,
+                        from_view, verdict,
                         "a view answers another verdict for frame {frame:02x?}"
                     );
                     assert_eq!(
@@ -101,7 +113,7 @@ macro_rules! agree {
                     let from_owned =
                         <$ty>::encode_source(&owned, &mut VecSink::new(&mut by_owned));
                     assert_eq!(
-                        from_owned, new,
+                        from_owned, verdict,
                         "an owned form answers another verdict for frame {frame:02x?}"
                     );
                     assert_eq!(
@@ -131,7 +143,8 @@ macro_rules! sweep {
     ($ty:ty, $pool:expr, $seeds:expr, [$($view:ty)?], [$($owned:ty)?]) => {{
         let pool: &[u8] = $pool;
         let mut seeds: Vec<Vec<u8>> = $seeds;
-        // The frames the document gives are frames of it: each one decodes.
+        // The frames the document gives are frames of it: each one decodes, and
+        // is the frame the encode writes for what it says.
         let given = seeds.len();
         let mut by_default = Vec::new();
         if <$ty>::default()
@@ -156,7 +169,7 @@ macro_rules! sweep {
         let frames: Vec<Vec<u8>> = seeds.into_iter().chain(random).collect();
         let mut accepted = 0usize;
         for (index, frame) in frames.iter().enumerate() {
-            let decoded = agree!($ty, frame, [$($view)?], [$($owned)?]);
+            let decoded = agree!($ty, frame, index < given, [$($view)?], [$($owned)?]);
             assert!(
                 decoded || index >= given,
                 "a seed frame is not a frame of the codec: {frame:02x?}"
@@ -164,13 +177,13 @@ macro_rules! sweep {
             if decoded {
                 accepted += 1;
                 for cut in 0..frame.len() {
-                    agree!($ty, &frame[..cut], [$($view)?], [$($owned)?]);
+                    agree!($ty, &frame[..cut], false, [$($view)?], [$($owned)?]);
                 }
                 for at in 0..frame.len() {
                     for &b in pool {
                         let mut changed = frame.clone();
                         changed[at] = b;
-                        agree!($ty, &changed, [$($view)?], [$($owned)?]);
+                        agree!($ty, &changed, false, [$($view)?], [$($owned)?]);
                     }
                 }
             }

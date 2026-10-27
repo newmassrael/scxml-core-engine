@@ -70,14 +70,11 @@
 {% endif %}
 {% endfor %}
         }
-{% if f.cbor %}
-        {# A CBOR encode refuses a value past its declared bound, so it
-           returns a Result (SCE_FORGE.md §4.6.1); every case is in bounds. #}
+        {# An encode can refuse a value it cannot carry (SCE_FORGE.md §4.6.1,
+           docs/adr/0058), so `encode_to_vec` may return a Result; every case
+           is a value the codec carries. #}
         .encode_to_vec()
-        .expect("{{ f.name }} encode must succeed");
-{% else %}
-        .encode_to_vec();
-{% endif %}
+        .encoded_bytes(&format!("{{ f.name }} case {i}"));
         assert_eq!(
             encoded, expected_bytes,
             "{{ f.name }} case {i} encode"

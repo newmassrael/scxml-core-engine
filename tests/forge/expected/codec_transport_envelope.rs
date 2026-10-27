@@ -231,62 +231,201 @@ impl<'a> CodecTransportEnvelope<'a> {
     /// destination has insufficient remaining capacity; growable
     /// sinks (e.g. `VecSink`) are effectively infallible.
     pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> {
-        // Encode fixed prefix (tag field is part of the prefix). The
-        // tag value is read from the struct field, NOT derived from
-        // the body discriminant — keeping author-set msg_id / body in
-        // sync is the caller's responsibility (v1 keeps the layout
-        // simple; future extensions may auto-sync via a typed setter).
-        w.write_u8(self.header)?;
-        // Append the active arm's encoded bytes.
-        match &self.body {
-            CodecTransportEnvelopeVariant::CodecZenohInitBody(b) => {
-                b.encode(w, (self.header >> 6) & 0x1, (self.header >> 5) & 0x1)?;
-            }
-            CodecTransportEnvelopeVariant::CodecZenohOpenBody(b) => {
-                b.encode(w, (self.header >> 5) & 0x1)?;
-            }
-            CodecTransportEnvelopeVariant::CodecZenohClose(b) => {
-                b.encode(w)?;
-            }
-            CodecTransportEnvelopeVariant::CodecZenohKeepAlive(b) => {
-                b.encode(w)?;
-            }
-            CodecTransportEnvelopeVariant::CodecZenohFrame(b) => {
-                b.encode(w)?;
-            }
-            CodecTransportEnvelopeVariant::CodecZenohFragment(b) => {
-                b.encode(w)?;
-            }
-            CodecTransportEnvelopeVariant::CodecZenohJoin(b) => {
-                b.encode(w, (self.header >> 6) & 0x1)?;
-            }
-            CodecTransportEnvelopeVariant::Default { body, .. } => {
-                body.encode(w)?;
-            }
-        }
-        Ok(())
+        Self::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
     /// `MAX_ENCODED_BYTES` so the worst-case write path performs at
     /// most one allocation, then delegates to `encode` over a
-    /// `VecSink`. Returns the freshly-encoded byte vector. Callers
-    /// targeting zero-alloc hot paths should call `encode` directly
-    /// against a caller-owned sink.
+    /// `VecSink`. Returns the freshly-encoded byte vector, or the
+    /// `CodecError::PresentIfMismatch` `encode` refuses a message with
+    /// when a field's presence disagrees with the `sce:present-if`
+    /// that gates it. Callers targeting zero-alloc hot paths should
+    /// call `encode` directly against a caller-owned sink.
     ///
     /// Gated on the `alloc` feature — `VecSink` lives behind the
     /// same gate (see `backends/rust/forge-runtime/src/codec.rs`). MCU /
     /// `no_std` builds without `alloc` only see the sink-based
     /// primary `encode`.
     #[cfg(feature = "alloc")]
-    pub fn encode_to_vec(&self) -> Vec<u8> {
+    pub fn encode_to_vec(&self) -> Result<Vec<u8>, CodecError> {
         let mut _sce_v: Vec<u8> = Vec::with_capacity(Self::MAX_ENCODED_BYTES);
         let mut _sce_sink = VecSink::new(&mut _sce_v);
-        self.encode(&mut _sce_sink)
-            .expect("VecSink is infallible");
-        _sce_v
+        self.encode(&mut _sce_sink)?;
+        Ok(_sce_v)
     }
 }
+
+/// The arm of `CodecTransportEnvelope`'s variant a value holds, each arm's body as the
+/// source it says. The tag is not among them: `CodecTransportEnvelope` derives it from
+/// the arm, as it derives a length, and a default arm presents the tag
+/// it could not name.
+// A default arm's tag is read by the codec that embeds this one and
+// derives its own carrier bits from the arm, which not every build uses.
+#[allow(dead_code)]
+pub enum CodecTransportEnvelopeVariantSource<'s, A0: ?Sized, A1: ?Sized, A2: ?Sized, A3: ?Sized, A4: ?Sized, A5: ?Sized, A6: ?Sized, D: ?Sized> {
+    CodecZenohInitBody(&'s A0),
+    CodecZenohOpenBody(&'s A1),
+    CodecZenohClose(&'s A2),
+    CodecZenohKeepAlive(&'s A3),
+    CodecZenohFrame(&'s A4),
+    CodecZenohFragment(&'s A5),
+    CodecZenohJoin(&'s A6),
+    Default { tag: u8, body: &'s D },
+}
+
+/// Flags of `CodecTransportEnvelope` a parent sets in place of the ones a value presents:
+/// the end flag of a chain whose entries are `CodecTransportEnvelope`, which the chain
+/// derives from where an entry stands.
+#[doc(hidden)]
+#[derive(Debug, Default, Clone, Copy)]
+pub struct CodecTransportEnvelopeOverrides {
+    /// The `A` flag of `header`, when a parent sets it.
+    pub header_a: Option<bool>,
+    /// The `S` flag of `header`, when a parent sets it.
+    pub header_s: Option<bool>,
+    /// The `Z` flag of `header`, when a parent sets it.
+    pub header_z: Option<bool>,
+}
+
+#[allow(dead_code)]
+impl CodecTransportEnvelopeOverrides {
+    /// Sets `A` of `header` and nothing else.
+    #[allow(clippy::needless_update)]
+    pub fn header_a(value: bool) -> Self {
+        Self { header_a: Some(value), ..Self::default() }
+    }
+
+    /// Sets `S` of `header` and nothing else.
+    #[allow(clippy::needless_update)]
+    pub fn header_s(value: bool) -> Self {
+        Self { header_s: Some(value), ..Self::default() }
+    }
+
+    /// Sets `Z` of `header` and nothing else.
+    #[allow(clippy::needless_update)]
+    pub fn header_z(value: bool) -> Self {
+        Self { header_z: Some(value), ..Self::default() }
+    }
+}
+
+// ── Source (ADR 0058) ────────────────────────────────────────────────
+/// What a value of `CodecTransportEnvelope` says: its presented fields. A length, a count
+/// or the flag a gated field is announced by is not among them; `CodecTransportEnvelope`
+/// computes those from what is ([`CodecTransportEnvelope::encode_source`]).
+pub trait CodecTransportEnvelopeSource {
+    /// The `header` field.
+    fn header(&self) -> u8;
+    /// The arm of the variant this value holds.
+    fn body(&self) -> CodecTransportEnvelopeVariantSource<'_, impl super::codec_zenoh_init_body::CodecZenohInitBodySource, impl super::codec_zenoh_open_body::CodecZenohOpenBodySource, impl super::codec_zenoh_close::CodecZenohCloseSource, impl super::codec_zenoh_keep_alive::CodecZenohKeepAliveSource, impl super::codec_zenoh_frame::CodecZenohFrameSource, impl super::codec_zenoh_fragment::CodecZenohFragmentSource, impl super::codec_zenoh_join::CodecZenohJoinSource, impl super::codec_zenoh_close::CodecZenohCloseSource>;
+}
+
+impl<T: CodecTransportEnvelopeSource + ?Sized> CodecTransportEnvelopeSource for &T {
+    fn header(&self) -> u8 {
+        (**self).header()
+    }
+    fn body(&self) -> CodecTransportEnvelopeVariantSource<'_, impl super::codec_zenoh_init_body::CodecZenohInitBodySource, impl super::codec_zenoh_open_body::CodecZenohOpenBodySource, impl super::codec_zenoh_close::CodecZenohCloseSource, impl super::codec_zenoh_keep_alive::CodecZenohKeepAliveSource, impl super::codec_zenoh_frame::CodecZenohFrameSource, impl super::codec_zenoh_fragment::CodecZenohFragmentSource, impl super::codec_zenoh_join::CodecZenohJoinSource, impl super::codec_zenoh_close::CodecZenohCloseSource> {
+        (**self).body()
+    }
+}
+
+impl<'a> CodecTransportEnvelopeSource for CodecTransportEnvelope<'a> {
+    fn header(&self) -> u8 {
+        self.header
+    }
+    fn body(&self) -> CodecTransportEnvelopeVariantSource<'_, impl super::codec_zenoh_init_body::CodecZenohInitBodySource, impl super::codec_zenoh_open_body::CodecZenohOpenBodySource, impl super::codec_zenoh_close::CodecZenohCloseSource, impl super::codec_zenoh_keep_alive::CodecZenohKeepAliveSource, impl super::codec_zenoh_frame::CodecZenohFrameSource, impl super::codec_zenoh_fragment::CodecZenohFragmentSource, impl super::codec_zenoh_join::CodecZenohJoinSource, impl super::codec_zenoh_close::CodecZenohCloseSource> {
+        match &self.body {
+            CodecTransportEnvelopeVariant::CodecZenohInitBody(_b) => CodecTransportEnvelopeVariantSource::CodecZenohInitBody(_b),
+            CodecTransportEnvelopeVariant::CodecZenohOpenBody(_b) => CodecTransportEnvelopeVariantSource::CodecZenohOpenBody(_b),
+            CodecTransportEnvelopeVariant::CodecZenohClose(_b) => CodecTransportEnvelopeVariantSource::CodecZenohClose(_b),
+            CodecTransportEnvelopeVariant::CodecZenohKeepAlive(_b) => CodecTransportEnvelopeVariantSource::CodecZenohKeepAlive(_b),
+            CodecTransportEnvelopeVariant::CodecZenohFrame(_b) => CodecTransportEnvelopeVariantSource::CodecZenohFrame(_b),
+            CodecTransportEnvelopeVariant::CodecZenohFragment(_b) => CodecTransportEnvelopeVariantSource::CodecZenohFragment(_b),
+            CodecTransportEnvelopeVariant::CodecZenohJoin(_b) => CodecTransportEnvelopeVariantSource::CodecZenohJoin(_b),
+            CodecTransportEnvelopeVariant::Default { tag, body } => CodecTransportEnvelopeVariantSource::Default { tag: *tag, body },
+        }
+    }
+}
+
+impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecTransportEnvelopeSource for CodecTransportEnvelopeOwned<S> {
+    fn header(&self) -> u8 {
+        self.header
+    }
+    fn body(&self) -> CodecTransportEnvelopeVariantSource<'_, impl super::codec_zenoh_init_body::CodecZenohInitBodySource, impl super::codec_zenoh_open_body::CodecZenohOpenBodySource, impl super::codec_zenoh_close::CodecZenohCloseSource, impl super::codec_zenoh_keep_alive::CodecZenohKeepAliveSource, impl super::codec_zenoh_frame::CodecZenohFrameSource, impl super::codec_zenoh_fragment::CodecZenohFragmentSource, impl super::codec_zenoh_join::CodecZenohJoinSource, impl super::codec_zenoh_close::CodecZenohCloseSource> {
+        match &self.body {
+            CodecTransportEnvelopeOwnedVariant::CodecZenohInitBody(_b) => CodecTransportEnvelopeVariantSource::CodecZenohInitBody(_b),
+            CodecTransportEnvelopeOwnedVariant::CodecZenohOpenBody(_b) => CodecTransportEnvelopeVariantSource::CodecZenohOpenBody(_b),
+            CodecTransportEnvelopeOwnedVariant::CodecZenohClose(_b) => CodecTransportEnvelopeVariantSource::CodecZenohClose(_b),
+            CodecTransportEnvelopeOwnedVariant::CodecZenohKeepAlive(_b) => CodecTransportEnvelopeVariantSource::CodecZenohKeepAlive(_b),
+            CodecTransportEnvelopeOwnedVariant::CodecZenohFrame(_b) => CodecTransportEnvelopeVariantSource::CodecZenohFrame(_b),
+            CodecTransportEnvelopeOwnedVariant::CodecZenohFragment(_b) => CodecTransportEnvelopeVariantSource::CodecZenohFragment(_b),
+            CodecTransportEnvelopeOwnedVariant::CodecZenohJoin(_b) => CodecTransportEnvelopeVariantSource::CodecZenohJoin(_b),
+            CodecTransportEnvelopeOwnedVariant::Default { tag, body } => CodecTransportEnvelopeVariantSource::Default { tag: *tag, body },
+        }
+    }
+}
+
+#[allow(dead_code)]
+impl<'a> CodecTransportEnvelope<'a> {
+    /// Encode what `src` says into the caller-owned sink: the bytes
+    /// [`Self::encode`] writes for the value it holds, read through
+    /// [`CodecTransportEnvelopeSource`]. A length, a count or a gate flag is computed from what
+    /// `src` presents, and a value the encoding cannot carry is refused
+    /// before the first byte is written.
+    pub fn encode_source<S: CodecTransportEnvelopeSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {
+        Self::write_source(src, &mut ::sce_forge_runtime::codec::CountSink::new())?;
+        Self::write_source(src, w)
+    }
+
+    /// [`Self::encode_source`] without the guard a parent has already made.
+    #[doc(hidden)]
+    pub fn write_source<S: CodecTransportEnvelopeSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {
+        Self::write_source_in(src, w, &CodecTransportEnvelopeOverrides::default())
+    }
+
+    /// [`Self::write_source`] with the flags a parent sets in place of the
+    /// ones `src` presents.
+    #[doc(hidden)]
+    pub fn write_source_in<S: CodecTransportEnvelopeSource + ?Sized, K: SceSink>(src: &S, w: &mut K, over: &CodecTransportEnvelopeOverrides) -> Result<(), CodecError> {
+        let _d_header_mid: u8 = match src.body() {
+            CodecTransportEnvelopeVariantSource::CodecZenohInitBody(_) => 1,
+            CodecTransportEnvelopeVariantSource::CodecZenohOpenBody(_) => 2,
+            CodecTransportEnvelopeVariantSource::CodecZenohClose(_) => 3,
+            CodecTransportEnvelopeVariantSource::CodecZenohKeepAlive(_) => 4,
+            CodecTransportEnvelopeVariantSource::CodecZenohFrame(_) => 5,
+            CodecTransportEnvelopeVariantSource::CodecZenohFragment(_) => 6,
+            CodecTransportEnvelopeVariantSource::CodecZenohJoin(_) => 7,
+            CodecTransportEnvelopeVariantSource::Default { tag, .. } => tag,
+        };
+        if _d_header_mid > 0x1F {
+            return Err(CodecError::LengthOutOfRange);
+        }
+        let _v_header_mid: u8 = u8::try_from(_d_header_mid).map_err(|_| CodecError::LengthOutOfRange)?;
+        let mut _c_header: u8 = (src.header() & !0x1F) | _v_header_mid;
+        if let Some(_o) = over.header_a {
+            _c_header = (_c_header & !0x20) | (u8::from(_o) << 5);
+        }
+        if let Some(_o) = over.header_s {
+            _c_header = (_c_header & !0x40) | (u8::from(_o) << 6);
+        }
+        if let Some(_o) = over.header_z {
+            _c_header = (_c_header & !0x80) | (u8::from(_o) << 7);
+        }
+        w.write_u8(_c_header)?;
+        match src.body() {
+            CodecTransportEnvelopeVariantSource::CodecZenohInitBody(_b) => CodecZenohInitBody::write_source(_b, w, (_c_header >> 6) & 0x1, (_c_header >> 5) & 0x1)?,
+            CodecTransportEnvelopeVariantSource::CodecZenohOpenBody(_b) => CodecZenohOpenBody::write_source(_b, w, (_c_header >> 5) & 0x1)?,
+            CodecTransportEnvelopeVariantSource::CodecZenohClose(_b) => CodecZenohClose::write_source(_b, w)?,
+            CodecTransportEnvelopeVariantSource::CodecZenohKeepAlive(_b) => CodecZenohKeepAlive::write_source(_b, w)?,
+            CodecTransportEnvelopeVariantSource::CodecZenohFrame(_b) => CodecZenohFrame::write_source(_b, w)?,
+            CodecTransportEnvelopeVariantSource::CodecZenohFragment(_b) => CodecZenohFragment::write_source(_b, w)?,
+            CodecTransportEnvelopeVariantSource::CodecZenohJoin(_b) => CodecZenohJoin::write_source(_b, w, (_c_header >> 6) & 0x1)?,
+            CodecTransportEnvelopeVariantSource::Default { body: _b, .. } => CodecZenohClose::write_source(_b, w)?,
+        }
+        Ok(())
+    }
+}
+
 
 // ── Owned projection (storage-parameterised native form) ─────────────
 // `CodecTransportEnvelope<'a>` above is a zero-copy view borrowing the decode
@@ -566,49 +705,17 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecTransportEnvelopeOwned<S>
     /// borrowed form could not carry is an error and never a frame its own
     /// decoder would reject.
     pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), CodecError> {
-        // Encode fixed prefix (tag field is part of the prefix). The
-        // tag value is read from the struct field, NOT derived from
-        // the body discriminant — keeping author-set msg_id / body in
-        // sync is the caller's responsibility (v1 keeps the layout
-        // simple; future extensions may auto-sync via a typed setter).
-        w.write_u8(self.header)?;
-        // Append the active arm's encoded bytes.
-        match &self.body {
-            CodecTransportEnvelopeOwnedVariant::CodecZenohInitBody(b) => {
-                b.encode(w, (self.header >> 6) & 0x1, (self.header >> 5) & 0x1)?;
-            }
-            CodecTransportEnvelopeOwnedVariant::CodecZenohOpenBody(b) => {
-                b.encode(w, (self.header >> 5) & 0x1)?;
-            }
-            CodecTransportEnvelopeOwnedVariant::CodecZenohClose(b) => {
-                b.encode(w)?;
-            }
-            CodecTransportEnvelopeOwnedVariant::CodecZenohKeepAlive(b) => {
-                b.encode(w)?;
-            }
-            CodecTransportEnvelopeOwnedVariant::CodecZenohFrame(b) => {
-                b.encode(w)?;
-            }
-            CodecTransportEnvelopeOwnedVariant::CodecZenohFragment(b) => {
-                b.encode(w)?;
-            }
-            CodecTransportEnvelopeOwnedVariant::CodecZenohJoin(b) => {
-                b.encode(w, (self.header >> 6) & 0x1)?;
-            }
-            CodecTransportEnvelopeOwnedVariant::Default { body, .. } => {
-                body.encode(w)?;
-            }
-        }
-        Ok(())
+        CodecTransportEnvelope::encode_source(self, w)
     }
 
-    /// Heap-backed convenience facade over [`Self::encode`].
+    /// Heap-backed convenience facade over [`Self::encode`]. Fallible: a list
+    /// past the bound the borrowed view declares is refused, and so is a
+    /// presence the chain predicates disagree with.
     #[cfg(feature = "alloc")]
-    pub fn encode_to_vec(&self) -> Vec<u8> {
+    pub fn encode_to_vec(&self) -> Result<Vec<u8>, CodecError> {
         let mut _sce_v: Vec<u8> = Vec::with_capacity(CodecTransportEnvelope::MAX_ENCODED_BYTES);
         let mut _sce_sink = VecSink::new(&mut _sce_v);
-        self.encode(&mut _sce_sink)
-            .expect("VecSink is infallible");
-        _sce_v
+        self.encode(&mut _sce_sink)?;
+        Ok(_sce_v)
     }
 }

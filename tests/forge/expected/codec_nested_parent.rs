@@ -145,47 +145,126 @@ impl<'a> CodecNestedParent<'a> {
     /// destination has insufficient remaining capacity; growable
     /// sinks (e.g. `VecSink`) are effectively infallible.
     pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> {
-        // Streaming cursor encode (SSOT selection: `needs_streaming`).
-        // Mirrors the streaming decode: every field appends its own bytes
-        // in declaration order through the per-field encode blocks, so a
-        // gated field skips its append when absent, and a fixed field after
-        // a variable-length payload lands after the payload (the positional
-        // path appends variable fields last, placing it ahead on the wire).
-        // Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-        // dedicated helpers; everything else uses `present_if_encode_block`
-        // (its non-gated arm covers plain fixed / tail / length-ref / VLE).
-        w.write_u8(self.hdr)?;
-        w.write_u8(self.m)?;
-        self.required_body.encode(w)?;
-        if let Some(_v) = &self.optional_body {
-            _v.encode(w)?;
-        }
-        for _e in &self.body_list {
-            _e.encode(w)?;
-        }
-        Ok(())
+        Self::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
     /// `MAX_ENCODED_BYTES` so the worst-case write path performs at
     /// most one allocation, then delegates to `encode` over a
-    /// `VecSink`. Returns the freshly-encoded byte vector. Callers
-    /// targeting zero-alloc hot paths should call `encode` directly
-    /// against a caller-owned sink.
+    /// `VecSink`. Returns the freshly-encoded byte vector, or the
+    /// `CodecError::PresentIfMismatch` `encode` refuses a message with
+    /// when a field's presence disagrees with the `sce:present-if`
+    /// that gates it. Callers targeting zero-alloc hot paths should
+    /// call `encode` directly against a caller-owned sink.
     ///
     /// Gated on the `alloc` feature — `VecSink` lives behind the
     /// same gate (see `backends/rust/forge-runtime/src/codec.rs`). MCU /
     /// `no_std` builds without `alloc` only see the sink-based
     /// primary `encode`.
     #[cfg(feature = "alloc")]
-    pub fn encode_to_vec(&self) -> Vec<u8> {
+    pub fn encode_to_vec(&self) -> Result<Vec<u8>, CodecError> {
         let mut _sce_v: Vec<u8> = Vec::with_capacity(Self::MAX_ENCODED_BYTES);
         let mut _sce_sink = VecSink::new(&mut _sce_v);
-        self.encode(&mut _sce_sink)
-            .expect("VecSink is infallible");
-        _sce_v
+        self.encode(&mut _sce_sink)?;
+        Ok(_sce_v)
     }
 }
+
+// ── Source (ADR 0058) ────────────────────────────────────────────────
+/// What a value of `CodecNestedParent` says: its presented fields. A length, a count
+/// or the flag a gated field is announced by is not among them; `CodecNestedParent`
+/// computes those from what is ([`CodecNestedParent::encode_source`]).
+pub trait CodecNestedParentSource {
+    /// The `hdr` field.
+    fn hdr(&self) -> u8;
+    /// The `required_body` field.
+    fn required_body(&self) -> &impl super::codec_nested_body::CodecNestedBodySource;
+    /// The `optional_body` field.
+    fn optional_body(&self) -> Option<&impl super::codec_nested_body::CodecNestedBodySource>;
+    /// The `body_list` field.
+    fn body_list(&self) -> impl Iterator<Item = impl super::codec_nested_body::CodecNestedBodySource> + Clone;
+}
+
+impl<T: CodecNestedParentSource + ?Sized> CodecNestedParentSource for &T {
+    fn hdr(&self) -> u8 {
+        (**self).hdr()
+    }
+    fn required_body(&self) -> &impl super::codec_nested_body::CodecNestedBodySource {
+        (**self).required_body()
+    }
+    fn optional_body(&self) -> Option<&impl super::codec_nested_body::CodecNestedBodySource> {
+        (**self).optional_body()
+    }
+    fn body_list(&self) -> impl Iterator<Item = impl super::codec_nested_body::CodecNestedBodySource> + Clone {
+        (**self).body_list()
+    }
+}
+
+impl<'a> CodecNestedParentSource for CodecNestedParent<'a> {
+    fn hdr(&self) -> u8 {
+        self.hdr
+    }
+    fn required_body(&self) -> &impl super::codec_nested_body::CodecNestedBodySource {
+        &self.required_body
+    }
+    fn optional_body(&self) -> Option<&impl super::codec_nested_body::CodecNestedBodySource> {
+        self.optional_body.as_ref()
+    }
+    fn body_list(&self) -> impl Iterator<Item = impl super::codec_nested_body::CodecNestedBodySource> + Clone {
+        self.body_list.iter()
+    }
+}
+
+impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecNestedParentSource for CodecNestedParentOwned<S> {
+    fn hdr(&self) -> u8 {
+        self.hdr
+    }
+    fn required_body(&self) -> &impl super::codec_nested_body::CodecNestedBodySource {
+        &self.required_body
+    }
+    fn optional_body(&self) -> Option<&impl super::codec_nested_body::CodecNestedBodySource> {
+        self.optional_body.as_ref()
+    }
+    fn body_list(&self) -> impl Iterator<Item = impl super::codec_nested_body::CodecNestedBodySource> + Clone {
+        ::sce_forge_runtime::codec::SceList::as_slice(&self.body_list).iter()
+    }
+}
+
+#[allow(dead_code)]
+impl<'a> CodecNestedParent<'a> {
+    /// Encode what `src` says into the caller-owned sink: the bytes
+    /// [`Self::encode`] writes for the value it holds, read through
+    /// [`CodecNestedParentSource`]. A length, a count or a gate flag is computed from what
+    /// `src` presents, and a value the encoding cannot carry is refused
+    /// before the first byte is written.
+    pub fn encode_source<S: CodecNestedParentSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {
+        Self::write_source(src, &mut ::sce_forge_runtime::codec::CountSink::new())?;
+        Self::write_source(src, w)
+    }
+
+    /// [`Self::encode_source`] without the guard a parent has already made.
+    #[doc(hidden)]
+    pub fn write_source<S: CodecNestedParentSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {
+        let _k_body_list: usize = src.body_list().count();
+        if _k_body_list > 4 {
+            return Err(CodecError::TooManyElements);
+        }
+        let _p_hdr_has_opt_0: bool = src.optional_body().is_some();
+        let _d_m: u8 = u8::try_from(_k_body_list).map_err(|_| CodecError::LengthOutOfRange)?;
+        let _c_hdr: u8 = (src.hdr() & !0x1) | u8::from(_p_hdr_has_opt_0);
+        w.write_u8(_c_hdr)?;
+        w.write_u8(_d_m)?;
+        CodecNestedBody::write_source(src.required_body(), w)?;
+        if let Some(_v) = src.optional_body() {
+            CodecNestedBody::write_source(_v, w)?;
+        }
+        for _e in src.body_list() {
+            CodecNestedBody::write_source(&_e, w)?;
+        }
+        Ok(())
+    }
+}
+
 
 // ── Owned projection (storage-parameterised native form) ─────────────
 // `CodecNestedParent<'a>` above is a zero-copy view borrowing the decode
@@ -341,25 +420,7 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecNestedParentOwned<S> {
     /// borrowed form could not carry is an error and never a frame its own
     /// decoder would reject.
     pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), CodecError> {
-        // Streaming cursor encode (SSOT selection: `needs_streaming`).
-        // Mirrors the streaming decode: every field appends its own bytes
-        // in declaration order through the per-field encode blocks, so a
-        // gated field skips its append when absent, and a fixed field after
-        // a variable-length payload lands after the payload (the positional
-        // path appends variable fields last, placing it ahead on the wire).
-        // Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-        // dedicated helpers; everything else uses `present_if_encode_block`
-        // (its non-gated arm covers plain fixed / tail / length-ref / VLE).
-        w.write_u8(self.hdr)?;
-        w.write_u8(self.m)?;
-        self.required_body.encode(w)?;
-        if let Some(_v) = &self.optional_body {
-            _v.encode(w)?;
-        }
-        for _e in ::sce_forge_runtime::codec::bounded_entries::<_, _, 4>(&self.body_list)? {
-            _e.encode(w)?;
-        }
-        Ok(())
+        CodecNestedParent::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade over [`Self::encode`]. Fallible: a list

@@ -3292,18 +3292,6 @@ pub struct ForgeCompileOptions {
     /// generator sees one document at a time and cannot check; a missed one
     /// surfaces as a compile error in the generated parent.
     pub views: bool,
-    /// Rust only: also generate each codec's source interface
-    /// (docs/adr/0058): `{Codec}Source`, the trait a value implements to say
-    /// what it presents, and `{Codec}::encode_source`, the one encode that reads
-    /// it. The builder implements the interface, so a value built the way it
-    /// always was can be encoded through it; so can a value that holds the
-    /// parts in its own types. `false` — the default — leaves every generated
-    /// byte as it was.
-    ///
-    /// ⚠ Like [`Self::views`] it is a property of a SET of documents: a codec's
-    /// `encode_source` calls the one of each codec it embeds, repeats or
-    /// dispatches to, so each of them has to be generated with this on.
-    pub sources: bool,
     /// RFC §synth-5-F build-time const-fold iteration budget. When set, caps
     /// the total iteration count across every `<sce:fold>` body in the
     /// document. `None` = use the SSoT default
@@ -5232,6 +5220,29 @@ fn codec_has_source_recursive(
     })
 }
 
+/// Whether the encode of a codec can refuse a value (ADR 0058): the codec's own
+/// reasons (`forge::generator::source_can_refuse_with`) or those of a codec it
+/// holds. A parent's `encode_to_vec` has an error to return exactly when this
+/// holds.
+fn codec_source_can_refuse_recursive(
+    cm: &forge::model::CodecModel,
+    imports: &[forge::model::ForgeImport],
+    base_dir: &Path,
+    visited: &mut HashSet<PathBuf>,
+) -> bool {
+    forge::generator::source_can_refuse_with(cm, |alias| {
+        with_resolved_import_codec(alias, imports, base_dir, visited, |inner| {
+            Some(codec_source_can_refuse_recursive(
+                inner.model,
+                inner.imports,
+                inner.base_dir,
+                inner.visited,
+            ))
+        })
+        .unwrap_or(false)
+    })
+}
+
 /// One import alias resolved to its parsed codec model, handed to a
 /// transitive-property walker.
 struct ResolvedImportCodec<'a> {
@@ -5506,6 +5517,14 @@ fn validate_and_enrich_imports(
                     &inner_base,
                     &mut source_visited,
                 );
+                let mut refuse_visited: HashSet<PathBuf> = HashSet::new();
+                refuse_visited.insert(source.path.clone());
+                ctx.codec_source_can_refuse = codec_source_can_refuse_recursive(
+                    cm,
+                    &parsed.imports,
+                    &inner_base,
+                    &mut refuse_visited,
+                );
                 // Owned→borrowed projection round: capture this import's
                 // *contribution* to a parent's `as_borrowed` fallibility —
                 // true only when it is borrowed (else cloned wholesale,
@@ -5586,33 +5605,6 @@ fn validate_and_enrich_imports(
                     // Parents importing this codec MUST supply a `tag: u8`
                     // arg at the leaf's decode call site.
                     ctx.codec_variant_is_caller_tag = v.tag_field.is_none();
-                    // Dispatcher self-generation note:
-                    // Rust requires explicit `use` for each item from a
-                    // module; the dispatcher emits both the `<Stem>` struct
-                    // AND the `<Stem>Variant` enum, and the parent's
-                    // `parent_tag_derivation_block` match references the Variant
-                    // enum. Brace-list emit fires when this parent declares
-                    // OR-inversion dispatch on the import — either via the
-                    // new `<sce:variant-dispatch>` (`embed_dispatch.is_some()`)
-                    // or the legacy `tag="parent.X"` form (carried through
-                    // `codec_parent_tag_flag`). Other variant imports
-                    // (own-field Local dispatch) do not need the Variant
-                    // enum at the parent — keep the bare-struct import to
-                    // preserve byte-stable goldens for consumers without
-                    // parent-tag dispatch.
-                    let _ = v; // variant existence already gated this branch
-                    let needs_variant_import = imp.embed_dispatch.is_some();
-                    if matches!(*language, generator::Language::Rust) && needs_variant_import {
-                        // Identity SSOT: the imported module is named from the
-                        // codec's `ForgeDocument::name()`, same source the
-                        // general recompute above uses — never the file stem.
-                        let snake = filters::to_snake_case(doc.name().to_string());
-                        ctx.include_stmt = format!(
-                            "use super::{snake}::{{{pascal}, {pascal}Variant}};",
-                            snake = snake,
-                            pascal = ctx.type_name,
-                        );
-                    }
                 }
             }
             // RFC §synth-5-C cross-resolution: the link kind's

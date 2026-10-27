@@ -24,6 +24,15 @@ use std::path::Path;
 mod rust_source;
 mod rust_view;
 
+/// Whether the encode of a codec can refuse a value (ADR 0058), given whether
+/// each codec it imports can. See [`rust_source::can_refuse_with`].
+pub(crate) fn source_can_refuse_with(
+    m: &CodecModel,
+    child_refuses: impl FnMut(&str) -> bool,
+) -> bool {
+    rust_source::can_refuse_with(m, child_refuses)
+}
+
 /// Whether a codec has a source interface (ADR 0058), given whether each codec
 /// it imports has one. See [`rust_source::supported_with`].
 pub(crate) fn supported_source_with(
@@ -230,9 +239,16 @@ pub struct ImportContext {
     /// ADR 0058: `true` when the imported codec has a source interface
     /// (`{Codec}Source`), which a parent that embeds or lists it reads its
     /// body through. A fact about the imported model and its own imports, so it
-    /// does not depend on the `sources` option. `false` for non-codec imports.
+    /// does not depend on the document that imports it. `false` for non-codec
+    /// imports.
     #[serde(skip)]
     pub codec_has_source: bool,
+
+    /// ADR 0058: `true` when the imported codec's encode can refuse a value, so
+    /// that a parent which writes it, and its `encode_to_vec`, can refuse one
+    /// too. `false` for non-codec imports.
+    #[serde(skip)]
+    pub codec_source_can_refuse: bool,
 
     /// Owned→borrowed projection round: this import's *contribution* to a
     /// parent codec's `as_borrowed` fallibility — `true` only when the
@@ -948,6 +964,7 @@ fn resolve_single_import(
         codec_is_borrowed: false,
         codec_view_is_borrowed: false,
         codec_has_source: false,
+        codec_source_can_refuse: false,
         codec_as_borrowed_fallible: false,
         buffer_pool_slot_size: None,
         queue_consumers_many: false,
@@ -1407,7 +1424,6 @@ pub fn generate_cpp_with_imports_and_externs(
             m,
             imports,
             crate::generator::Language::Cpp,
-            false,
             false,
             false,
         )?,
@@ -6308,15 +6324,13 @@ fn render_codec(
     owned_origin: bool,
     // Rust only: also render `{Codec}View` (ADR 0049).
     views: bool,
-    // Rust only: also render `{Codec}Source` and `encode_source` (ADR 0058).
-    sources: bool,
 ) -> Result<String, ForgeError> {
     // SCE_FORGE.md §4.6: a CBOR codec has no positional field for anything
     // below to read, so it is rendered by its own module before any of it runs.
     if m.encoding == CodecEncoding::Cbor {
         let mut text = crate::forge::cbor_codec::render(env, m, imports, lang)?;
         // ADR 0058: the map's entries are what a value says, whatever holds them.
-        if sources && matches!(lang, crate::generator::Language::Rust) {
+        if matches!(lang, crate::generator::Language::Rust) {
             let l = LangCtx::new(lang, imports);
             let borrows = m
                 .cbor_entries
@@ -6337,7 +6351,7 @@ fn render_codec(
     if m.encoding == CodecEncoding::ContentLine {
         let mut text = crate::forge::content_line_codec::render(env, m, imports, lang)?;
         // ADR 0058: the component's properties are what a value says.
-        if sources && matches!(lang, crate::generator::Language::Rust) {
+        if matches!(lang, crate::generator::Language::Rust) {
             let l = LangCtx::new(lang, imports);
             text.push('\n');
             text.push_str(&rust_source::content_line::render(
@@ -8177,6 +8191,18 @@ fn render_codec(
     // (`encode_to_vec` and kin) fallible for that codec alone.
     let (present_if_encode_prologue, encode_can_refuse) =
         present_if_chain_encode_prologue(&m.fields, &chain_masks, EncodeFlavor::Borrowed, lang);
+    // A Rust codec's `encode` is its source's (ADR 0058), which refuses a value
+    // it cannot carry — a length past its type, a list past its bound, a gate
+    // the source disagrees with — and so does the facade that wraps it.
+    let encode_can_refuse = if matches!(lang, crate::generator::Language::Rust) {
+        rust_source::can_refuse_with(m, |alias| {
+            imports
+                .iter()
+                .any(|i| i.alias == alias && i.codec_source_can_refuse)
+        })
+    } else {
+        encode_can_refuse
+    };
     ctx.insert(
         "present_if_encode_prologue".into(),
         present_if_encode_prologue.into(),
@@ -8996,12 +9022,13 @@ fn render_codec(
             "struct_lifetime".into(),
             if self_borrowed { "<'a>" } else { "" }.into(),
         );
-        // ADR 0058: the source interface of this codec, where it has one. A
-        // codec of a shape the interface does not cover yet has none, and the
-        // option leaves it as it was.
-        if sources {
+        // ADR 0058: the source interface of this codec, and the one `encode`
+        // every form of it delegates to. A codec of a shape the interface does
+        // not cover is refused by name, as any document a backend cannot
+        // generate is: its `encode` would have nothing to write it with.
+        {
             let rust_struct_name = filters::to_pascal_case(m.name.clone());
-            match rust_source::render(&rust_source::Input {
+            let text = rust_source::render(&rust_source::Input {
                 m,
                 imports,
                 l: &l,
@@ -9011,19 +9038,17 @@ fn render_codec(
                 view_lifetime: (emit_views && m.has_own_view())
                     .then(|| rust_view::view_lifetime(codec_self_view_borrowed(m, imports))),
                 owned: self_borrowed,
-            }) {
-                Ok(text) => {
-                    ctx.insert("source_block".into(), text.into());
-                }
-                // The reason is in the file, so a codec without the interface
-                // says what it is waiting for.
-                Err(rust_source::Unsupported(why)) => {
-                    ctx.insert(
-                        "source_block".into(),
-                        format!("// No source interface (ADR 0058): {why}\n").into(),
-                    );
-                }
-            }
+            })
+            .map_err(|rust_source::Unsupported(why)| {
+                ForgeError::from(GenerateError::unsupported_at(
+                    format!(
+                        "codec '{}' has no source interface (ADR 0058), which its encode is: {why}",
+                        m.name
+                    ),
+                    m.source_location.clone(),
+                ))
+            })?;
+            ctx.insert("source_block".into(), text.into());
         }
         ctx.insert(
             "cursor_lifetime".into(),
@@ -9043,28 +9068,10 @@ fn render_codec(
         // `try_into_owned_in()` deep-copy references; bring it into scope. A
         // non-borrowed codec imports no borrowed bodies (embedding one would
         // make it borrowed), so this is empty there.
-        // The owned `encode` derives a carrier's bits from the arm an embedded
-        // dispatcher holds (`parent_tag_derivation_block`), and names that
-        // codec's owned variant enum to match it; the borrowed form brings
-        // `{Type}Variant` into scope the same way (`include_stmt`). Only such
-        // an embed gets the second name, so no other import is left unused.
         let owned_imports: Vec<serde_json::Value> = imports
             .iter()
             .filter(|i| i.kind == "codec" && i.codec_is_borrowed)
-            .map(|i| {
-                let derives = parent_tag_derivations
-                    .iter()
-                    .any(|d| d.embed_alias == i.alias);
-                if derives {
-                    format!(
-                        "use super::{}::{{{}Owned, {}OwnedVariant}};",
-                        i.namespace, i.type_name, i.type_name
-                    )
-                    .into()
-                } else {
-                    format!("use super::{}::{}Owned;", i.namespace, i.type_name).into()
-                }
-            })
+            .map(|i| format!("use super::{}::{}Owned;", i.namespace, i.type_name).into())
             .collect();
         ctx.insert(
             "owned_imports".into(),
@@ -9105,23 +9112,7 @@ fn render_codec(
             let view_imports: Vec<serde_json::Value> = imports
                 .iter()
                 .filter(|i| i.kind == "codec")
-                .map(|i| {
-                    // The encode of a view names the view variant of an
-                    // embedded dispatcher to derive a carrier's bits from the
-                    // arm it holds, as the owned encode does.
-                    let derives = parent_tag_derivations
-                        .iter()
-                        .any(|d| d.embed_alias == i.alias);
-                    if derives {
-                        format!(
-                            "use super::{}::{{{}View, {}ViewVariant}};",
-                            i.namespace, i.type_name, i.type_name
-                        )
-                    } else {
-                        format!("use super::{}::{}View;", i.namespace, i.type_name)
-                    }
-                    .into()
-                })
+                .map(|i| format!("use super::{}::{}View;", i.namespace, i.type_name).into())
                 .collect();
             ctx.insert(
                 "view_imports".into(),
@@ -19372,7 +19363,6 @@ pub fn generate_kotlin_with_imports(
             crate::generator::Language::Kotlin,
             false,
             false,
-            false,
         )?,
         ForgeDocument::Validator(m) => {
             render_validator(&env, m, imports, crate::generator::Language::Kotlin)?
@@ -19558,7 +19548,6 @@ pub fn generate_rust_with_imports_and_externs(
             crate::generator::Language::Rust,
             options.owned_origin,
             options.views,
-            options.sources,
         )?,
         ForgeDocument::Validator(m) => {
             render_validator(&env, m, imports, crate::generator::Language::Rust)?
@@ -22714,7 +22703,6 @@ pub fn generate_go_with_imports(
             crate::generator::Language::Go,
             false,
             false,
-            false,
         )?,
         ForgeDocument::Validator(m) => {
             render_validator(&env, m, imports, crate::generator::Language::Go)?
@@ -22925,7 +22913,6 @@ pub fn generate_python_with_imports(
             m,
             imports,
             crate::generator::Language::Python,
-            false,
             false,
             false,
         )?,
@@ -23184,7 +23171,6 @@ pub fn generate_c11_with_imports_and_externs(
             m,
             imports,
             crate::generator::Language::C11,
-            false,
             false,
             false,
         )?,
@@ -33251,6 +33237,13 @@ fn render_codec_test_vector_sidecar(
         "codec_is_borrowed".into(),
         m.is_borrowed_with(|_alias| false).into(),
     );
+    // A plain codec holds no other, so whether its `encode_to_vec` returns a
+    // `Result` is its own: a length derived into a type that may not hold it is
+    // a value the encode refuses (ADR 0058).
+    ctx.insert(
+        "encode_can_refuse".into(),
+        (matches!(lang, Language::Rust) && rust_source::can_refuse_with(m, |_alias| false)).into(),
+    );
 
     if matches!(lang, Language::C11) {
         let upper = to_upper_snake(&m.name);
@@ -34074,6 +34067,7 @@ mod tests {
             codec_is_borrowed: false,
             codec_view_is_borrowed: false,
             codec_has_source: false,
+            codec_source_can_refuse: false,
             codec_as_borrowed_fallible: false,
             buffer_pool_slot_size: None,
             queue_consumers_many: false,
@@ -34949,6 +34943,7 @@ mod tests {
                 codec_is_borrowed: false,
                 codec_view_is_borrowed: false,
                 codec_has_source: false,
+                codec_source_can_refuse: false,
                 codec_as_borrowed_fallible: false,
                 buffer_pool_slot_size: None,
                 queue_consumers_many: false,
@@ -34999,6 +34994,7 @@ mod tests {
                 codec_is_borrowed: false,
                 codec_view_is_borrowed: false,
                 codec_has_source: false,
+                codec_source_can_refuse: false,
                 codec_as_borrowed_fallible: false,
                 buffer_pool_slot_size: None,
                 queue_consumers_many: false,

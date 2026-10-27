@@ -98,18 +98,7 @@ impl<'a> CodecZenohFrame<'a> {
     /// destination has insufficient remaining capacity; growable
     /// sinks (e.g. `VecSink`) are effectively infallible.
     pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> {
-        // Streaming cursor encode (SSOT selection: `needs_streaming`).
-        // Mirrors the streaming decode: every field appends its own bytes
-        // in declaration order through the per-field encode blocks, so a
-        // gated field skips its append when absent, and a fixed field after
-        // a variable-length payload lands after the payload (the positional
-        // path appends variable fields last, placing it ahead on the wire).
-        // Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-        // dedicated helpers; everything else uses `present_if_encode_block`
-        // (its non-gated arm covers plain fixed / tail / length-ref / VLE).
-        w.write_vle_u64(self.sn)?;
-        w.write_bytes(self.payload)?;
-        Ok(())
+        Self::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
@@ -132,6 +121,65 @@ impl<'a> CodecZenohFrame<'a> {
         _sce_v
     }
 }
+
+// ── Source (ADR 0058) ────────────────────────────────────────────────
+/// What a value of `CodecZenohFrame` says: its presented fields. A length, a count
+/// or the flag a gated field is announced by is not among them; `CodecZenohFrame`
+/// computes those from what is ([`CodecZenohFrame::encode_source`]).
+pub trait CodecZenohFrameSource {
+    /// The `sn` field.
+    fn sn(&self) -> u64;
+    /// The `payload` field.
+    fn payload(&self) -> &[u8];
+}
+
+impl<T: CodecZenohFrameSource + ?Sized> CodecZenohFrameSource for &T {
+    fn sn(&self) -> u64 {
+        (**self).sn()
+    }
+    fn payload(&self) -> &[u8] {
+        (**self).payload()
+    }
+}
+
+impl<'a> CodecZenohFrameSource for CodecZenohFrame<'a> {
+    fn sn(&self) -> u64 {
+        self.sn
+    }
+    fn payload(&self) -> &[u8] {
+        self.payload
+    }
+}
+
+impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohFrameSource for CodecZenohFrameOwned<S> {
+    fn sn(&self) -> u64 {
+        self.sn
+    }
+    fn payload(&self) -> &[u8] {
+        ::sce_forge_runtime::codec::SceByteBuf::as_slice(&self.payload)
+    }
+}
+
+#[allow(dead_code)]
+impl<'a> CodecZenohFrame<'a> {
+    /// Encode what `src` says into the caller-owned sink: the bytes
+    /// [`Self::encode`] writes for the value it holds, read through
+    /// [`CodecZenohFrameSource`]. A length, a count or a gate flag is computed from what
+    /// `src` presents, and a value the encoding cannot carry is refused
+    /// before the first byte is written.
+    pub fn encode_source<S: CodecZenohFrameSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {
+        Self::write_source(src, w)
+    }
+
+    /// [`Self::encode_source`] without the guard a parent has already made.
+    #[doc(hidden)]
+    pub fn write_source<S: CodecZenohFrameSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {
+        w.write_vle_u64(src.sn())?;
+        w.write_bytes(src.payload())?;
+        Ok(())
+    }
+}
+
 
 // ── Owned projection (storage-parameterised native form) ─────────────
 // `CodecZenohFrame<'a>` above is a zero-copy view borrowing the decode
@@ -257,18 +305,7 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohFrameOwned<S> {
     /// borrowed form could not carry is an error and never a frame its own
     /// decoder would reject.
     pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), CodecError> {
-        // Streaming cursor encode (SSOT selection: `needs_streaming`).
-        // Mirrors the streaming decode: every field appends its own bytes
-        // in declaration order through the per-field encode blocks, so a
-        // gated field skips its append when absent, and a fixed field after
-        // a variable-length payload lands after the payload (the positional
-        // path appends variable fields last, placing it ahead on the wire).
-        // Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-        // dedicated helpers; everything else uses `present_if_encode_block`
-        // (its non-gated arm covers plain fixed / tail / length-ref / VLE).
-        w.write_vle_u64(self.sn)?;
-        w.write_bytes(::sce_forge_runtime::codec::SceByteBuf::as_slice(&self.payload))?;
-        Ok(())
+        CodecZenohFrame::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade over [`Self::encode`].

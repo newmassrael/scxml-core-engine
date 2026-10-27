@@ -119,46 +119,108 @@ impl<'a> CodecFixedAfterLengthref<'a> {
     /// destination has insufficient remaining capacity; growable
     /// sinks (e.g. `VecSink`) are effectively infallible.
     pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> {
-        // Streaming cursor encode (SSOT selection: `needs_streaming`).
-        // Mirrors the streaming decode: every field appends its own bytes
-        // in declaration order through the per-field encode blocks, so a
-        // gated field skips its append when absent, and a fixed field after
-        // a variable-length payload lands after the payload (the positional
-        // path appends variable fields last, placing it ahead on the wire).
-        // Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-        // dedicated helpers; everything else uses `present_if_encode_block`
-        // (its non-gated arm covers plain fixed / tail / length-ref / VLE).
-        w.write_u8(self.header)?;
-        w.write_u8((self.payload_len & 0xFF) as u8)?;
-        w.write_u8((self.payload_len >> 8 & 0xFF) as u8)?;
-        w.write_bytes(self.payload)?;
-        w.write_u8((self.crc32 & 0xFF) as u8)?;
-        w.write_u8((self.crc32 >> 8 & 0xFF) as u8)?;
-        w.write_u8((self.crc32 >> 16 & 0xFF) as u8)?;
-        w.write_u8((self.crc32 >> 24 & 0xFF) as u8)?;
-        Ok(())
+        Self::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
     /// `MAX_ENCODED_BYTES` so the worst-case write path performs at
     /// most one allocation, then delegates to `encode` over a
-    /// `VecSink`. Returns the freshly-encoded byte vector. Callers
-    /// targeting zero-alloc hot paths should call `encode` directly
-    /// against a caller-owned sink.
+    /// `VecSink`. Returns the freshly-encoded byte vector, or the
+    /// `CodecError::PresentIfMismatch` `encode` refuses a message with
+    /// when a field's presence disagrees with the `sce:present-if`
+    /// that gates it. Callers targeting zero-alloc hot paths should
+    /// call `encode` directly against a caller-owned sink.
     ///
     /// Gated on the `alloc` feature — `VecSink` lives behind the
     /// same gate (see `backends/rust/forge-runtime/src/codec.rs`). MCU /
     /// `no_std` builds without `alloc` only see the sink-based
     /// primary `encode`.
     #[cfg(feature = "alloc")]
-    pub fn encode_to_vec(&self) -> Vec<u8> {
+    pub fn encode_to_vec(&self) -> Result<Vec<u8>, CodecError> {
         let mut _sce_v: Vec<u8> = Vec::with_capacity(Self::MAX_ENCODED_BYTES);
         let mut _sce_sink = VecSink::new(&mut _sce_v);
-        self.encode(&mut _sce_sink)
-            .expect("VecSink is infallible");
-        _sce_v
+        self.encode(&mut _sce_sink)?;
+        Ok(_sce_v)
     }
 }
+
+// ── Source (ADR 0058) ────────────────────────────────────────────────
+/// What a value of `CodecFixedAfterLengthref` says: its presented fields. A length, a count
+/// or the flag a gated field is announced by is not among them; `CodecFixedAfterLengthref`
+/// computes those from what is ([`CodecFixedAfterLengthref::encode_source`]).
+pub trait CodecFixedAfterLengthrefSource {
+    /// The `header` field.
+    fn header(&self) -> u8;
+    /// The `payload` field.
+    fn payload(&self) -> &[u8];
+    /// The `crc32` field.
+    fn crc32(&self) -> u32;
+}
+
+impl<T: CodecFixedAfterLengthrefSource + ?Sized> CodecFixedAfterLengthrefSource for &T {
+    fn header(&self) -> u8 {
+        (**self).header()
+    }
+    fn payload(&self) -> &[u8] {
+        (**self).payload()
+    }
+    fn crc32(&self) -> u32 {
+        (**self).crc32()
+    }
+}
+
+impl<'a> CodecFixedAfterLengthrefSource for CodecFixedAfterLengthref<'a> {
+    fn header(&self) -> u8 {
+        self.header
+    }
+    fn payload(&self) -> &[u8] {
+        self.payload
+    }
+    fn crc32(&self) -> u32 {
+        self.crc32
+    }
+}
+
+impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecFixedAfterLengthrefSource for CodecFixedAfterLengthrefOwned<S> {
+    fn header(&self) -> u8 {
+        self.header
+    }
+    fn payload(&self) -> &[u8] {
+        ::sce_forge_runtime::codec::SceByteBuf::as_slice(&self.payload)
+    }
+    fn crc32(&self) -> u32 {
+        self.crc32
+    }
+}
+
+#[allow(dead_code)]
+impl<'a> CodecFixedAfterLengthref<'a> {
+    /// Encode what `src` says into the caller-owned sink: the bytes
+    /// [`Self::encode`] writes for the value it holds, read through
+    /// [`CodecFixedAfterLengthrefSource`]. A length, a count or a gate flag is computed from what
+    /// `src` presents, and a value the encoding cannot carry is refused
+    /// before the first byte is written.
+    pub fn encode_source<S: CodecFixedAfterLengthrefSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {
+        Self::write_source(src, w)
+    }
+
+    /// [`Self::encode_source`] without the guard a parent has already made.
+    #[doc(hidden)]
+    pub fn write_source<S: CodecFixedAfterLengthrefSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {
+        let _n_d_payload_len_0: usize = src.payload().len();
+        let _d_payload_len: u16 = u16::try_from(_n_d_payload_len_0).map_err(|_| CodecError::LengthOutOfRange)?;
+        w.write_u8(src.header())?;
+        w.write_u8((_d_payload_len & 0xFF) as u8)?;
+        w.write_u8((_d_payload_len >> 8 & 0xFF) as u8)?;
+        w.write_bytes(src.payload())?;
+        w.write_u8((src.crc32() & 0xFF) as u8)?;
+        w.write_u8((src.crc32() >> 8 & 0xFF) as u8)?;
+        w.write_u8((src.crc32() >> 16 & 0xFF) as u8)?;
+        w.write_u8((src.crc32() >> 24 & 0xFF) as u8)?;
+        Ok(())
+    }
+}
+
 
 // ── Owned projection (storage-parameterised native form) ─────────────
 // `CodecFixedAfterLengthref<'a>` above is a zero-copy view borrowing the decode
@@ -290,33 +352,17 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecFixedAfterLengthrefOwned<
     /// borrowed form could not carry is an error and never a frame its own
     /// decoder would reject.
     pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), CodecError> {
-        // Streaming cursor encode (SSOT selection: `needs_streaming`).
-        // Mirrors the streaming decode: every field appends its own bytes
-        // in declaration order through the per-field encode blocks, so a
-        // gated field skips its append when absent, and a fixed field after
-        // a variable-length payload lands after the payload (the positional
-        // path appends variable fields last, placing it ahead on the wire).
-        // Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-        // dedicated helpers; everything else uses `present_if_encode_block`
-        // (its non-gated arm covers plain fixed / tail / length-ref / VLE).
-        w.write_u8(self.header)?;
-        w.write_u8((self.payload_len & 0xFF) as u8)?;
-        w.write_u8((self.payload_len >> 8 & 0xFF) as u8)?;
-        w.write_bytes(::sce_forge_runtime::codec::SceByteBuf::as_slice(&self.payload))?;
-        w.write_u8((self.crc32 & 0xFF) as u8)?;
-        w.write_u8((self.crc32 >> 8 & 0xFF) as u8)?;
-        w.write_u8((self.crc32 >> 16 & 0xFF) as u8)?;
-        w.write_u8((self.crc32 >> 24 & 0xFF) as u8)?;
-        Ok(())
+        CodecFixedAfterLengthref::encode_source(self, w)
     }
 
-    /// Heap-backed convenience facade over [`Self::encode`].
+    /// Heap-backed convenience facade over [`Self::encode`]. Fallible: a list
+    /// past the bound the borrowed view declares is refused, and so is a
+    /// presence the chain predicates disagree with.
     #[cfg(feature = "alloc")]
-    pub fn encode_to_vec(&self) -> Vec<u8> {
+    pub fn encode_to_vec(&self) -> Result<Vec<u8>, CodecError> {
         let mut _sce_v: Vec<u8> = Vec::with_capacity(CodecFixedAfterLengthref::MAX_ENCODED_BYTES);
         let mut _sce_sink = VecSink::new(&mut _sce_v);
-        self.encode(&mut _sce_sink)
-            .expect("VecSink is infallible");
-        _sce_v
+        self.encode(&mut _sce_sink)?;
+        Ok(_sce_v)
     }
 }

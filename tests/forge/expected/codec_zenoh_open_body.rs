@@ -116,49 +116,116 @@ impl<'a> CodecZenohOpenBody<'a> {
     /// destination has insufficient remaining capacity; growable
     /// sinks (e.g. `VecSink`) are effectively infallible.
     pub fn encode<S: SceSink>(&self, w: &mut S, a: u8) -> Result<(), CodecError> {
-        // Declared-but-unconsumed flag inputs: see `decode` — same suppress per
-        // declared `<sce:flag-input>`.
-        let _ = a;
-        // Streaming cursor encode (SSOT selection: `needs_streaming`).
-        // Mirrors the streaming decode: every field appends its own bytes
-        // in declaration order through the per-field encode blocks, so a
-        // gated field skips its append when absent, and a fixed field after
-        // a variable-length payload lands after the payload (the positional
-        // path appends variable fields last, placing it ahead on the wire).
-        // Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-        // dedicated helpers; everything else uses `present_if_encode_block`
-        // (its non-gated arm covers plain fixed / tail / length-ref / VLE).
-        w.write_vle_u64(self.lease)?;
-        w.write_vle_u64(self.initial_sn)?;
-        if let Some(_v) = self.cookie_len {
-        w.write_vle_u64(_v)?;
-        }
-        if let Some(_v) = &self.cookie {
-            w.write_bytes(_v)?;
-        }
-        Ok(())
+        Self::encode_source(self, w, a)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
     /// `MAX_ENCODED_BYTES` so the worst-case write path performs at
     /// most one allocation, then delegates to `encode` over a
-    /// `VecSink`. Returns the freshly-encoded byte vector. Callers
-    /// targeting zero-alloc hot paths should call `encode` directly
-    /// against a caller-owned sink.
+    /// `VecSink`. Returns the freshly-encoded byte vector, or the
+    /// `CodecError::PresentIfMismatch` `encode` refuses a message with
+    /// when a field's presence disagrees with the `sce:present-if`
+    /// that gates it. Callers targeting zero-alloc hot paths should
+    /// call `encode` directly against a caller-owned sink.
     ///
     /// Gated on the `alloc` feature — `VecSink` lives behind the
     /// same gate (see `backends/rust/forge-runtime/src/codec.rs`). MCU /
     /// `no_std` builds without `alloc` only see the sink-based
     /// primary `encode`.
     #[cfg(feature = "alloc")]
-    pub fn encode_to_vec(&self, a: u8) -> Vec<u8> {
+    pub fn encode_to_vec(&self, a: u8) -> Result<Vec<u8>, CodecError> {
         let mut _sce_v: Vec<u8> = Vec::with_capacity(Self::MAX_ENCODED_BYTES);
         let mut _sce_sink = VecSink::new(&mut _sce_v);
-        self.encode(&mut _sce_sink, a)
-            .expect("VecSink is infallible");
-        _sce_v
+        self.encode(&mut _sce_sink, a)?;
+        Ok(_sce_v)
     }
 }
+
+// ── Source (ADR 0058) ────────────────────────────────────────────────
+/// What a value of `CodecZenohOpenBody` says: its presented fields. A length, a count
+/// or the flag a gated field is announced by is not among them; `CodecZenohOpenBody`
+/// computes those from what is ([`CodecZenohOpenBody::encode_source`]).
+pub trait CodecZenohOpenBodySource {
+    /// The `lease` field.
+    fn lease(&self) -> u64;
+    /// The `initial_sn` field.
+    fn initial_sn(&self) -> u64;
+    /// The `cookie` field.
+    fn cookie(&self) -> Option<&[u8]>;
+}
+
+impl<T: CodecZenohOpenBodySource + ?Sized> CodecZenohOpenBodySource for &T {
+    fn lease(&self) -> u64 {
+        (**self).lease()
+    }
+    fn initial_sn(&self) -> u64 {
+        (**self).initial_sn()
+    }
+    fn cookie(&self) -> Option<&[u8]> {
+        (**self).cookie()
+    }
+}
+
+impl<'a> CodecZenohOpenBodySource for CodecZenohOpenBody<'a> {
+    fn lease(&self) -> u64 {
+        self.lease
+    }
+    fn initial_sn(&self) -> u64 {
+        self.initial_sn
+    }
+    fn cookie(&self) -> Option<&[u8]> {
+        self.cookie
+    }
+}
+
+impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohOpenBodySource for CodecZenohOpenBodyOwned<S> {
+    fn lease(&self) -> u64 {
+        self.lease
+    }
+    fn initial_sn(&self) -> u64 {
+        self.initial_sn
+    }
+    fn cookie(&self) -> Option<&[u8]> {
+        self.cookie.as_ref().map(::sce_forge_runtime::codec::SceByteBuf::as_slice)
+    }
+}
+
+#[allow(dead_code)]
+impl<'a> CodecZenohOpenBody<'a> {
+    /// Encode what `src` says into the caller-owned sink: the bytes
+    /// [`Self::encode`] writes for the value it holds, read through
+    /// [`CodecZenohOpenBodySource`]. A length, a count or a gate flag is computed from what
+    /// `src` presents, and a value the encoding cannot carry is refused
+    /// before the first byte is written.
+    pub fn encode_source<S: CodecZenohOpenBodySource + ?Sized, K: SceSink>(src: &S, w: &mut K, a: u8) -> Result<(), CodecError> {
+        Self::write_source(src, w, a)
+    }
+
+    /// [`Self::encode_source`] without the guard a parent has already made.
+    #[doc(hidden)]
+    pub fn write_source<S: CodecZenohOpenBodySource + ?Sized, K: SceSink>(src: &S, w: &mut K, a: u8) -> Result<(), CodecError> {
+        let _n_d_cookie_len_0: usize = match src.cookie() {
+            Some(_v) => _v.len(),
+            None => 0,
+        };
+        let _f_d_cookie_len: Option<usize> = if src.cookie().is_some() { Some(_n_d_cookie_len_0) } else { None };
+        let _d_cookie_len: u64 = u64::try_from(_f_d_cookie_len.unwrap_or(0)).map_err(|_| CodecError::LengthOutOfRange)?;
+        if ((a & 0x1) == 0) != src.cookie().is_some() {
+            return Err(CodecError::PresentIfMismatch);
+        }
+        let _ = a;
+        w.write_vle_u64(src.lease())?;
+        w.write_vle_u64(src.initial_sn())?;
+        if (a & 0x1) == 0 {
+            w.write_vle_u64(_d_cookie_len)?;
+        }
+        if let Some(_v) = src.cookie() {
+            w.write_bytes(_v)?;
+        }
+        Ok(())
+    }
+}
+
 
 // ── Owned projection (storage-parameterised native form) ─────────────
 // `CodecZenohOpenBody<'a>` above is a zero-copy view borrowing the decode
@@ -290,36 +357,17 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohOpenBodyOwned<S> {
     /// borrowed form could not carry is an error and never a frame its own
     /// decoder would reject.
     pub fn encode<K: SceSink>(&self, w: &mut K, a: u8) -> Result<(), CodecError> {
-        // Declared-but-unconsumed flag inputs: see `decode` — same suppress per
-        // declared `<sce:flag-input>`.
-        let _ = a;
-        // Streaming cursor encode (SSOT selection: `needs_streaming`).
-        // Mirrors the streaming decode: every field appends its own bytes
-        // in declaration order through the per-field encode blocks, so a
-        // gated field skips its append when absent, and a fixed field after
-        // a variable-length payload lands after the payload (the positional
-        // path appends variable fields last, placing it ahead on the wire).
-        // Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-        // dedicated helpers; everything else uses `present_if_encode_block`
-        // (its non-gated arm covers plain fixed / tail / length-ref / VLE).
-        w.write_vle_u64(self.lease)?;
-        w.write_vle_u64(self.initial_sn)?;
-        if let Some(_v) = self.cookie_len {
-        w.write_vle_u64(_v)?;
-        }
-        if let Some(_v) = &self.cookie {
-            w.write_bytes(::sce_forge_runtime::codec::SceByteBuf::as_slice(_v))?;
-        }
-        Ok(())
+        CodecZenohOpenBody::encode_source(self, w, a)
     }
 
-    /// Heap-backed convenience facade over [`Self::encode`].
+    /// Heap-backed convenience facade over [`Self::encode`]. Fallible: a list
+    /// past the bound the borrowed view declares is refused, and so is a
+    /// presence the chain predicates disagree with.
     #[cfg(feature = "alloc")]
-    pub fn encode_to_vec(&self, a: u8) -> Vec<u8> {
+    pub fn encode_to_vec(&self, a: u8) -> Result<Vec<u8>, CodecError> {
         let mut _sce_v: Vec<u8> = Vec::with_capacity(CodecZenohOpenBody::MAX_ENCODED_BYTES);
         let mut _sce_sink = VecSink::new(&mut _sce_v);
-        self.encode(&mut _sce_sink, a)
-            .expect("VecSink is infallible");
-        _sce_v
+        self.encode(&mut _sce_sink, a)?;
+        Ok(_sce_v)
     }
 }

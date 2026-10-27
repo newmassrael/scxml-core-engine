@@ -7,7 +7,7 @@ fn test_vector_codec_length_ref_uint16_be_l20() {
         payload_len: 0x0u16,
         payload: b"",
     };
-    let encoded = actual.encode_to_vec();
+    let encoded = actual.encode_to_vec().expect("<sce:test-vector> at SCXML L20: encode refused the value");
     let expected: &[u8] = &[0x00u8, 0x00u8];
     assert_eq!(
         encoded.as_slice(), expected,
@@ -56,7 +56,7 @@ fn test_vector_codec_length_ref_uint16_be_l20() {
     // eligible codec is scalar / bytes / string (no bounded list reaches
     // this gate), so the projection is infallible.
     assert_eq!(
-        owned.as_borrowed().encode_to_vec().as_slice(), expected,
+        owned.as_borrowed().encode_to_vec().expect("<sce:test-vector> at SCXML L20: as_borrowed encode refused the value").as_slice(), expected,
         "<sce:test-vector> at SCXML L20: as_borrowed re-encode mismatch"
     );
 }
@@ -66,7 +66,7 @@ fn test_vector_codec_length_ref_uint16_be_l24() {
         payload_len: 0x4u16,
         payload: b"\xaa\xbb\xcc\xdd",
     };
-    let encoded = actual.encode_to_vec();
+    let encoded = actual.encode_to_vec().expect("<sce:test-vector> at SCXML L24: encode refused the value");
     let expected: &[u8] = &[0x00u8, 0x04u8, 0xaau8, 0xbbu8, 0xccu8, 0xddu8];
     assert_eq!(
         encoded.as_slice(), expected,
@@ -115,7 +115,7 @@ fn test_vector_codec_length_ref_uint16_be_l24() {
     // eligible codec is scalar / bytes / string (no bounded list reaches
     // this gate), so the projection is infallible.
     assert_eq!(
-        owned.as_borrowed().encode_to_vec().as_slice(), expected,
+        owned.as_borrowed().encode_to_vec().expect("<sce:test-vector> at SCXML L24: as_borrowed encode refused the value").as_slice(), expected,
         "<sce:test-vector> at SCXML L24: as_borrowed re-encode mismatch"
     );
 }
@@ -125,7 +125,7 @@ fn test_vector_codec_length_ref_uint16_be_l28() {
         payload_len: 0x100u16,
         payload: b"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff",
     };
-    let encoded = actual.encode_to_vec();
+    let encoded = actual.encode_to_vec().expect("<sce:test-vector> at SCXML L28: encode refused the value");
     let expected: &[u8] = &[0x01u8, 0x00u8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8, 0xffu8];
     assert_eq!(
         encoded.as_slice(), expected,
@@ -174,7 +174,7 @@ fn test_vector_codec_length_ref_uint16_be_l28() {
     // eligible codec is scalar / bytes / string (no bounded list reaches
     // this gate), so the projection is infallible.
     assert_eq!(
-        owned.as_borrowed().encode_to_vec().as_slice(), expected,
+        owned.as_borrowed().encode_to_vec().expect("<sce:test-vector> at SCXML L28: as_borrowed encode refused the value").as_slice(), expected,
         "<sce:test-vector> at SCXML L28: as_borrowed re-encode mismatch"
     );
 }

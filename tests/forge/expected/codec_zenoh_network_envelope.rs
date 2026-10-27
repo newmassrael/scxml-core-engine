@@ -182,63 +182,123 @@ impl<'a> CodecZenohNetworkEnvelope<'a> {
     /// destination has insufficient remaining capacity; growable
     /// sinks (e.g. `VecSink`) are effectively infallible.
     pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> {
-        // RFC §synth-5-B peek-byte / streaming-prefix:
-        // streaming prefix encode (per-field present_if/tlv-chain/embed/
-        // repeat helpers). Peek-byte mode: the arm body's encode prepends
-        // its own header byte (which the decoder peeked); no separate
-        // tag byte is emitted here. Streaming-prefix mode (own-field
-        // variant): the carrier is part of the prefix fields and emits
-        // through the same per-field path.
-        // Append the active arm's encoded bytes.
-        match &self.body {
-            CodecZenohNetworkEnvelopeVariant::CodecZenohInterest(b) => {
-                b.encode(w)?;
-            }
-            CodecZenohNetworkEnvelopeVariant::CodecZenohResponseFinal(b) => {
-                b.encode(w)?;
-            }
-            CodecZenohNetworkEnvelopeVariant::CodecZenohResponse(b) => {
-                b.encode(w)?;
-            }
-            CodecZenohNetworkEnvelopeVariant::CodecZenohRequest(b) => {
-                b.encode(w)?;
-            }
-            CodecZenohNetworkEnvelopeVariant::CodecZenohPush(b) => {
-                b.encode(w)?;
-            }
-            CodecZenohNetworkEnvelopeVariant::CodecZenohDeclare(b) => {
-                b.encode(w)?;
-            }
-            CodecZenohNetworkEnvelopeVariant::CodecZenohOam(b) => {
-                b.encode(w)?;
-            }
-            CodecZenohNetworkEnvelopeVariant::Default { body, .. } => {
-                body.encode(w)?;
-            }
-        }
-        Ok(())
+        Self::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
     /// `MAX_ENCODED_BYTES` so the worst-case write path performs at
     /// most one allocation, then delegates to `encode` over a
-    /// `VecSink`. Returns the freshly-encoded byte vector. Callers
-    /// targeting zero-alloc hot paths should call `encode` directly
-    /// against a caller-owned sink.
+    /// `VecSink`. Returns the freshly-encoded byte vector, or the
+    /// `CodecError::PresentIfMismatch` `encode` refuses a message with
+    /// when a field's presence disagrees with the `sce:present-if`
+    /// that gates it. Callers targeting zero-alloc hot paths should
+    /// call `encode` directly against a caller-owned sink.
     ///
     /// Gated on the `alloc` feature — `VecSink` lives behind the
     /// same gate (see `backends/rust/forge-runtime/src/codec.rs`). MCU /
     /// `no_std` builds without `alloc` only see the sink-based
     /// primary `encode`.
     #[cfg(feature = "alloc")]
-    pub fn encode_to_vec(&self) -> Vec<u8> {
+    pub fn encode_to_vec(&self) -> Result<Vec<u8>, CodecError> {
         let mut _sce_v: Vec<u8> = Vec::with_capacity(Self::MAX_ENCODED_BYTES);
         let mut _sce_sink = VecSink::new(&mut _sce_v);
-        self.encode(&mut _sce_sink)
-            .expect("VecSink is infallible");
-        _sce_v
+        self.encode(&mut _sce_sink)?;
+        Ok(_sce_v)
     }
 }
+
+/// The arm of `CodecZenohNetworkEnvelope`'s variant a value holds, each arm's body as the
+/// source it says. The tag is not among them: `CodecZenohNetworkEnvelope` derives it from
+/// the arm, as it derives a length, and a default arm presents the tag
+/// it could not name.
+// A default arm's tag is read by the codec that embeds this one and
+// derives its own carrier bits from the arm, which not every build uses.
+#[allow(dead_code)]
+pub enum CodecZenohNetworkEnvelopeVariantSource<'s, A0: ?Sized, A1: ?Sized, A2: ?Sized, A3: ?Sized, A4: ?Sized, A5: ?Sized, A6: ?Sized, D: ?Sized> {
+    CodecZenohInterest(&'s A0),
+    CodecZenohResponseFinal(&'s A1),
+    CodecZenohResponse(&'s A2),
+    CodecZenohRequest(&'s A3),
+    CodecZenohPush(&'s A4),
+    CodecZenohDeclare(&'s A5),
+    CodecZenohOam(&'s A6),
+    Default { tag: u8, body: &'s D },
+}
+
+// ── Source (ADR 0058) ────────────────────────────────────────────────
+/// What a value of `CodecZenohNetworkEnvelope` says: its presented fields. A length, a count
+/// or the flag a gated field is announced by is not among them; `CodecZenohNetworkEnvelope`
+/// computes those from what is ([`CodecZenohNetworkEnvelope::encode_source`]).
+pub trait CodecZenohNetworkEnvelopeSource {
+    /// The arm of the variant this value holds.
+    fn body(&self) -> CodecZenohNetworkEnvelopeVariantSource<'_, impl super::codec_zenoh_interest::CodecZenohInterestSource, impl super::codec_zenoh_response_final::CodecZenohResponseFinalSource, impl super::codec_zenoh_response::CodecZenohResponseSource, impl super::codec_zenoh_request::CodecZenohRequestSource, impl super::codec_zenoh_push::CodecZenohPushSource, impl super::codec_zenoh_declare::CodecZenohDeclareSource, impl super::codec_zenoh_oam::CodecZenohOamSource, impl super::codec_zenoh_oam::CodecZenohOamSource>;
+}
+
+impl<T: CodecZenohNetworkEnvelopeSource + ?Sized> CodecZenohNetworkEnvelopeSource for &T {
+    fn body(&self) -> CodecZenohNetworkEnvelopeVariantSource<'_, impl super::codec_zenoh_interest::CodecZenohInterestSource, impl super::codec_zenoh_response_final::CodecZenohResponseFinalSource, impl super::codec_zenoh_response::CodecZenohResponseSource, impl super::codec_zenoh_request::CodecZenohRequestSource, impl super::codec_zenoh_push::CodecZenohPushSource, impl super::codec_zenoh_declare::CodecZenohDeclareSource, impl super::codec_zenoh_oam::CodecZenohOamSource, impl super::codec_zenoh_oam::CodecZenohOamSource> {
+        (**self).body()
+    }
+}
+
+impl<'a> CodecZenohNetworkEnvelopeSource for CodecZenohNetworkEnvelope<'a> {
+    fn body(&self) -> CodecZenohNetworkEnvelopeVariantSource<'_, impl super::codec_zenoh_interest::CodecZenohInterestSource, impl super::codec_zenoh_response_final::CodecZenohResponseFinalSource, impl super::codec_zenoh_response::CodecZenohResponseSource, impl super::codec_zenoh_request::CodecZenohRequestSource, impl super::codec_zenoh_push::CodecZenohPushSource, impl super::codec_zenoh_declare::CodecZenohDeclareSource, impl super::codec_zenoh_oam::CodecZenohOamSource, impl super::codec_zenoh_oam::CodecZenohOamSource> {
+        match &self.body {
+            CodecZenohNetworkEnvelopeVariant::CodecZenohInterest(_b) => CodecZenohNetworkEnvelopeVariantSource::CodecZenohInterest(_b),
+            CodecZenohNetworkEnvelopeVariant::CodecZenohResponseFinal(_b) => CodecZenohNetworkEnvelopeVariantSource::CodecZenohResponseFinal(_b),
+            CodecZenohNetworkEnvelopeVariant::CodecZenohResponse(_b) => CodecZenohNetworkEnvelopeVariantSource::CodecZenohResponse(_b),
+            CodecZenohNetworkEnvelopeVariant::CodecZenohRequest(_b) => CodecZenohNetworkEnvelopeVariantSource::CodecZenohRequest(_b),
+            CodecZenohNetworkEnvelopeVariant::CodecZenohPush(_b) => CodecZenohNetworkEnvelopeVariantSource::CodecZenohPush(_b),
+            CodecZenohNetworkEnvelopeVariant::CodecZenohDeclare(_b) => CodecZenohNetworkEnvelopeVariantSource::CodecZenohDeclare(_b),
+            CodecZenohNetworkEnvelopeVariant::CodecZenohOam(_b) => CodecZenohNetworkEnvelopeVariantSource::CodecZenohOam(_b),
+            CodecZenohNetworkEnvelopeVariant::Default { tag, body } => CodecZenohNetworkEnvelopeVariantSource::Default { tag: *tag, body },
+        }
+    }
+}
+
+impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohNetworkEnvelopeSource for CodecZenohNetworkEnvelopeOwned<S> {
+    fn body(&self) -> CodecZenohNetworkEnvelopeVariantSource<'_, impl super::codec_zenoh_interest::CodecZenohInterestSource, impl super::codec_zenoh_response_final::CodecZenohResponseFinalSource, impl super::codec_zenoh_response::CodecZenohResponseSource, impl super::codec_zenoh_request::CodecZenohRequestSource, impl super::codec_zenoh_push::CodecZenohPushSource, impl super::codec_zenoh_declare::CodecZenohDeclareSource, impl super::codec_zenoh_oam::CodecZenohOamSource, impl super::codec_zenoh_oam::CodecZenohOamSource> {
+        match &self.body {
+            CodecZenohNetworkEnvelopeOwnedVariant::CodecZenohInterest(_b) => CodecZenohNetworkEnvelopeVariantSource::CodecZenohInterest(_b),
+            CodecZenohNetworkEnvelopeOwnedVariant::CodecZenohResponseFinal(_b) => CodecZenohNetworkEnvelopeVariantSource::CodecZenohResponseFinal(_b),
+            CodecZenohNetworkEnvelopeOwnedVariant::CodecZenohResponse(_b) => CodecZenohNetworkEnvelopeVariantSource::CodecZenohResponse(_b),
+            CodecZenohNetworkEnvelopeOwnedVariant::CodecZenohRequest(_b) => CodecZenohNetworkEnvelopeVariantSource::CodecZenohRequest(_b),
+            CodecZenohNetworkEnvelopeOwnedVariant::CodecZenohPush(_b) => CodecZenohNetworkEnvelopeVariantSource::CodecZenohPush(_b),
+            CodecZenohNetworkEnvelopeOwnedVariant::CodecZenohDeclare(_b) => CodecZenohNetworkEnvelopeVariantSource::CodecZenohDeclare(_b),
+            CodecZenohNetworkEnvelopeOwnedVariant::CodecZenohOam(_b) => CodecZenohNetworkEnvelopeVariantSource::CodecZenohOam(_b),
+            CodecZenohNetworkEnvelopeOwnedVariant::Default { tag, body } => CodecZenohNetworkEnvelopeVariantSource::Default { tag: *tag, body },
+        }
+    }
+}
+
+#[allow(dead_code)]
+impl<'a> CodecZenohNetworkEnvelope<'a> {
+    /// Encode what `src` says into the caller-owned sink: the bytes
+    /// [`Self::encode`] writes for the value it holds, read through
+    /// [`CodecZenohNetworkEnvelopeSource`]. A length, a count or a gate flag is computed from what
+    /// `src` presents, and a value the encoding cannot carry is refused
+    /// before the first byte is written.
+    pub fn encode_source<S: CodecZenohNetworkEnvelopeSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {
+        Self::write_source(src, &mut ::sce_forge_runtime::codec::CountSink::new())?;
+        Self::write_source(src, w)
+    }
+
+    /// [`Self::encode_source`] without the guard a parent has already made.
+    #[doc(hidden)]
+    pub fn write_source<S: CodecZenohNetworkEnvelopeSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {
+        match src.body() {
+            CodecZenohNetworkEnvelopeVariantSource::CodecZenohInterest(_b) => CodecZenohInterest::write_source(_b, w)?,
+            CodecZenohNetworkEnvelopeVariantSource::CodecZenohResponseFinal(_b) => CodecZenohResponseFinal::write_source(_b, w)?,
+            CodecZenohNetworkEnvelopeVariantSource::CodecZenohResponse(_b) => CodecZenohResponse::write_source(_b, w)?,
+            CodecZenohNetworkEnvelopeVariantSource::CodecZenohRequest(_b) => CodecZenohRequest::write_source(_b, w)?,
+            CodecZenohNetworkEnvelopeVariantSource::CodecZenohPush(_b) => CodecZenohPush::write_source(_b, w)?,
+            CodecZenohNetworkEnvelopeVariantSource::CodecZenohDeclare(_b) => CodecZenohDeclare::write_source(_b, w)?,
+            CodecZenohNetworkEnvelopeVariantSource::CodecZenohOam(_b) => CodecZenohOam::write_source(_b, w)?,
+            CodecZenohNetworkEnvelopeVariantSource::Default { body: _b, .. } => CodecZenohOam::write_source(_b, w)?,
+        }
+        Ok(())
+    }
+}
+
 
 // ── Owned projection (storage-parameterised native form) ─────────────
 // `CodecZenohNetworkEnvelope<'a>` above is a zero-copy view borrowing the decode
@@ -495,41 +555,7 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohNetworkEnvelopeOwned
     /// borrowed form could not carry is an error and never a frame its own
     /// decoder would reject.
     pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), CodecError> {
-        // RFC §synth-5-B peek-byte / streaming-prefix:
-        // streaming prefix encode (per-field present_if/tlv-chain/embed/
-        // repeat helpers). Peek-byte mode: the arm body's encode prepends
-        // its own header byte (which the decoder peeked); no separate
-        // tag byte is emitted here. Streaming-prefix mode (own-field
-        // variant): the carrier is part of the prefix fields and emits
-        // through the same per-field path.
-        // Append the active arm's encoded bytes.
-        match &self.body {
-            CodecZenohNetworkEnvelopeOwnedVariant::CodecZenohInterest(b) => {
-                b.encode(w)?;
-            }
-            CodecZenohNetworkEnvelopeOwnedVariant::CodecZenohResponseFinal(b) => {
-                b.encode(w)?;
-            }
-            CodecZenohNetworkEnvelopeOwnedVariant::CodecZenohResponse(b) => {
-                b.encode(w)?;
-            }
-            CodecZenohNetworkEnvelopeOwnedVariant::CodecZenohRequest(b) => {
-                b.encode(w)?;
-            }
-            CodecZenohNetworkEnvelopeOwnedVariant::CodecZenohPush(b) => {
-                b.encode(w)?;
-            }
-            CodecZenohNetworkEnvelopeOwnedVariant::CodecZenohDeclare(b) => {
-                b.encode(w)?;
-            }
-            CodecZenohNetworkEnvelopeOwnedVariant::CodecZenohOam(b) => {
-                b.encode(w)?;
-            }
-            CodecZenohNetworkEnvelopeOwnedVariant::Default { body, .. } => {
-                body.encode(w)?;
-            }
-        }
-        Ok(())
+        CodecZenohNetworkEnvelope::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade over [`Self::encode`]. Fallible: a list

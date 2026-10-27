@@ -200,53 +200,171 @@ impl<'a> CodecZenohValueEntry<'a> {
     /// destination has insufficient remaining capacity; growable
     /// sinks (e.g. `VecSink`) are effectively infallible.
     pub fn encode<S: SceSink>(&self, w: &mut S, after_shm: u8) -> Result<(), CodecError> {
-        // Declared-but-unconsumed flag inputs: see `decode` — same suppress per
-        // declared `<sce:flag-input>`.
-        let _ = after_shm;
-        // Encode fixed prefix (tag field is part of the prefix). The
-        // tag value is read from the struct field, NOT derived from
-        // the body discriminant — keeping author-set msg_id / body in
-        // sync is the caller's responsibility (v1 keeps the layout
-        // simple; future extensions may auto-sync via a typed setter).
-        w.write_u8(self.header)?;
-        // Append the active arm's encoded bytes.
-        match &self.body {
-            CodecZenohValueEntryVariant::CodecZenohExtUnit(b) => {
-                b.encode(w)?;
-            }
-            CodecZenohValueEntryVariant::CodecZenohExtZint(b) => {
-                b.encode(w)?;
-            }
-            CodecZenohValueEntryVariant::CodecZenohValueZbuf(b) => {
-                b.encode(w, after_shm)?;
-            }
-            CodecZenohValueEntryVariant::Default { body, .. } => {
-                body.encode(w)?;
-            }
-        }
-        Ok(())
+        Self::encode_source(self, w, after_shm)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
     /// `MAX_ENCODED_BYTES` so the worst-case write path performs at
     /// most one allocation, then delegates to `encode` over a
-    /// `VecSink`. Returns the freshly-encoded byte vector. Callers
-    /// targeting zero-alloc hot paths should call `encode` directly
-    /// against a caller-owned sink.
+    /// `VecSink`. Returns the freshly-encoded byte vector, or the
+    /// `CodecError::PresentIfMismatch` `encode` refuses a message with
+    /// when a field's presence disagrees with the `sce:present-if`
+    /// that gates it. Callers targeting zero-alloc hot paths should
+    /// call `encode` directly against a caller-owned sink.
     ///
     /// Gated on the `alloc` feature — `VecSink` lives behind the
     /// same gate (see `backends/rust/forge-runtime/src/codec.rs`). MCU /
     /// `no_std` builds without `alloc` only see the sink-based
     /// primary `encode`.
     #[cfg(feature = "alloc")]
-    pub fn encode_to_vec(&self, after_shm: u8) -> Vec<u8> {
+    pub fn encode_to_vec(&self, after_shm: u8) -> Result<Vec<u8>, CodecError> {
         let mut _sce_v: Vec<u8> = Vec::with_capacity(Self::MAX_ENCODED_BYTES);
         let mut _sce_sink = VecSink::new(&mut _sce_v);
-        self.encode(&mut _sce_sink, after_shm)
-            .expect("VecSink is infallible");
-        _sce_v
+        self.encode(&mut _sce_sink, after_shm)?;
+        Ok(_sce_v)
     }
 }
+
+/// The arm of `CodecZenohValueEntry`'s variant a value holds, each arm's body as the
+/// source it says. The tag is not among them: `CodecZenohValueEntry` derives it from
+/// the arm, as it derives a length, and a default arm presents the tag
+/// it could not name.
+// A default arm's tag is read by the codec that embeds this one and
+// derives its own carrier bits from the arm, which not every build uses.
+#[allow(dead_code)]
+pub enum CodecZenohValueEntryVariantSource<'s, A0: ?Sized, A1: ?Sized, A2: ?Sized, D: ?Sized> {
+    CodecZenohExtUnit(&'s A0),
+    CodecZenohExtZint(&'s A1),
+    CodecZenohValueZbuf(&'s A2),
+    Default { tag: u8, body: &'s D },
+}
+
+/// Flags of `CodecZenohValueEntry` a parent sets in place of the ones a value presents:
+/// the end flag of a chain whose entries are `CodecZenohValueEntry`, which the chain
+/// derives from where an entry stands.
+#[doc(hidden)]
+#[derive(Debug, Default, Clone, Copy)]
+pub struct CodecZenohValueEntryOverrides {
+    /// The `M` flag of `header`, when a parent sets it.
+    pub header_m: Option<bool>,
+    /// The `Z` flag of `header`, when a parent sets it.
+    pub header_z: Option<bool>,
+}
+
+#[allow(dead_code)]
+impl CodecZenohValueEntryOverrides {
+    /// Sets `M` of `header` and nothing else.
+    #[allow(clippy::needless_update)]
+    pub fn header_m(value: bool) -> Self {
+        Self { header_m: Some(value), ..Self::default() }
+    }
+
+    /// Sets `Z` of `header` and nothing else.
+    #[allow(clippy::needless_update)]
+    pub fn header_z(value: bool) -> Self {
+        Self { header_z: Some(value), ..Self::default() }
+    }
+}
+
+// ── Source (ADR 0058) ────────────────────────────────────────────────
+/// What a value of `CodecZenohValueEntry` says: its presented fields. A length, a count
+/// or the flag a gated field is announced by is not among them; `CodecZenohValueEntry`
+/// computes those from what is ([`CodecZenohValueEntry::encode_source`]).
+pub trait CodecZenohValueEntrySource {
+    /// The `header` field.
+    fn header(&self) -> u8;
+    /// The arm of the variant this value holds.
+    fn body(&self) -> CodecZenohValueEntryVariantSource<'_, impl super::codec_zenoh_ext_unit::CodecZenohExtUnitSource, impl super::codec_zenoh_ext_zint::CodecZenohExtZintSource, impl super::codec_zenoh_value_zbuf::CodecZenohValueZbufSource, impl super::codec_zenoh_ext_unit::CodecZenohExtUnitSource>;
+}
+
+impl<T: CodecZenohValueEntrySource + ?Sized> CodecZenohValueEntrySource for &T {
+    fn header(&self) -> u8 {
+        (**self).header()
+    }
+    fn body(&self) -> CodecZenohValueEntryVariantSource<'_, impl super::codec_zenoh_ext_unit::CodecZenohExtUnitSource, impl super::codec_zenoh_ext_zint::CodecZenohExtZintSource, impl super::codec_zenoh_value_zbuf::CodecZenohValueZbufSource, impl super::codec_zenoh_ext_unit::CodecZenohExtUnitSource> {
+        (**self).body()
+    }
+}
+
+impl<'a> CodecZenohValueEntrySource for CodecZenohValueEntry<'a> {
+    fn header(&self) -> u8 {
+        self.header
+    }
+    fn body(&self) -> CodecZenohValueEntryVariantSource<'_, impl super::codec_zenoh_ext_unit::CodecZenohExtUnitSource, impl super::codec_zenoh_ext_zint::CodecZenohExtZintSource, impl super::codec_zenoh_value_zbuf::CodecZenohValueZbufSource, impl super::codec_zenoh_ext_unit::CodecZenohExtUnitSource> {
+        match &self.body {
+            CodecZenohValueEntryVariant::CodecZenohExtUnit(_b) => CodecZenohValueEntryVariantSource::CodecZenohExtUnit(_b),
+            CodecZenohValueEntryVariant::CodecZenohExtZint(_b) => CodecZenohValueEntryVariantSource::CodecZenohExtZint(_b),
+            CodecZenohValueEntryVariant::CodecZenohValueZbuf(_b) => CodecZenohValueEntryVariantSource::CodecZenohValueZbuf(_b),
+            CodecZenohValueEntryVariant::Default { tag, body } => CodecZenohValueEntryVariantSource::Default { tag: *tag, body },
+        }
+    }
+}
+
+impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohValueEntrySource for CodecZenohValueEntryOwned<S> {
+    fn header(&self) -> u8 {
+        self.header
+    }
+    fn body(&self) -> CodecZenohValueEntryVariantSource<'_, impl super::codec_zenoh_ext_unit::CodecZenohExtUnitSource, impl super::codec_zenoh_ext_zint::CodecZenohExtZintSource, impl super::codec_zenoh_value_zbuf::CodecZenohValueZbufSource, impl super::codec_zenoh_ext_unit::CodecZenohExtUnitSource> {
+        match &self.body {
+            CodecZenohValueEntryOwnedVariant::CodecZenohExtUnit(_b) => CodecZenohValueEntryVariantSource::CodecZenohExtUnit(_b),
+            CodecZenohValueEntryOwnedVariant::CodecZenohExtZint(_b) => CodecZenohValueEntryVariantSource::CodecZenohExtZint(_b),
+            CodecZenohValueEntryOwnedVariant::CodecZenohValueZbuf(_b) => CodecZenohValueEntryVariantSource::CodecZenohValueZbuf(_b),
+            CodecZenohValueEntryOwnedVariant::Default { tag, body } => CodecZenohValueEntryVariantSource::Default { tag: *tag, body },
+        }
+    }
+}
+
+#[allow(dead_code)]
+impl<'a> CodecZenohValueEntry<'a> {
+    /// Encode what `src` says into the caller-owned sink: the bytes
+    /// [`Self::encode`] writes for the value it holds, read through
+    /// [`CodecZenohValueEntrySource`]. A length, a count or a gate flag is computed from what
+    /// `src` presents, and a value the encoding cannot carry is refused
+    /// before the first byte is written.
+    pub fn encode_source<S: CodecZenohValueEntrySource + ?Sized, K: SceSink>(src: &S, w: &mut K, after_shm: u8) -> Result<(), CodecError> {
+        Self::write_source(src, &mut ::sce_forge_runtime::codec::CountSink::new(), after_shm)?;
+        Self::write_source(src, w, after_shm)
+    }
+
+    /// [`Self::encode_source`] without the guard a parent has already made.
+    #[doc(hidden)]
+    pub fn write_source<S: CodecZenohValueEntrySource + ?Sized, K: SceSink>(src: &S, w: &mut K, after_shm: u8) -> Result<(), CodecError> {
+        Self::write_source_in(src, w, after_shm, &CodecZenohValueEntryOverrides::default())
+    }
+
+    /// [`Self::write_source`] with the flags a parent sets in place of the
+    /// ones `src` presents.
+    #[doc(hidden)]
+    pub fn write_source_in<S: CodecZenohValueEntrySource + ?Sized, K: SceSink>(src: &S, w: &mut K, after_shm: u8, over: &CodecZenohValueEntryOverrides) -> Result<(), CodecError> {
+        let _d_header_enc: u8 = match src.body() {
+            CodecZenohValueEntryVariantSource::CodecZenohExtUnit(_) => 0,
+            CodecZenohValueEntryVariantSource::CodecZenohExtZint(_) => 1,
+            CodecZenohValueEntryVariantSource::CodecZenohValueZbuf(_) => 2,
+            CodecZenohValueEntryVariantSource::Default { tag, .. } => tag,
+        };
+        if _d_header_enc > 0x3 {
+            return Err(CodecError::LengthOutOfRange);
+        }
+        let _v_header_enc: u8 = u8::try_from(_d_header_enc).map_err(|_| CodecError::LengthOutOfRange)?;
+        let mut _c_header: u8 = (src.header() & !0x60) | (_v_header_enc << 5);
+        if let Some(_o) = over.header_m {
+            _c_header = (_c_header & !0x10) | (u8::from(_o) << 4);
+        }
+        if let Some(_o) = over.header_z {
+            _c_header = (_c_header & !0x80) | (u8::from(_o) << 7);
+        }
+        let _ = after_shm;
+        w.write_u8(_c_header)?;
+        match src.body() {
+            CodecZenohValueEntryVariantSource::CodecZenohExtUnit(_b) => CodecZenohExtUnit::write_source(_b, w)?,
+            CodecZenohValueEntryVariantSource::CodecZenohExtZint(_b) => CodecZenohExtZint::write_source(_b, w)?,
+            CodecZenohValueEntryVariantSource::CodecZenohValueZbuf(_b) => CodecZenohValueZbuf::write_source(_b, w, after_shm)?,
+            CodecZenohValueEntryVariantSource::Default { body: _b, .. } => CodecZenohExtUnit::write_source(_b, w)?,
+        }
+        Ok(())
+    }
+}
+
 
 // ── Owned projection (storage-parameterised native form) ─────────────
 // `CodecZenohValueEntry<'a>` above is a zero-copy view borrowing the decode
@@ -494,31 +612,7 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohValueEntryOwned<S> {
     /// borrowed form could not carry is an error and never a frame its own
     /// decoder would reject.
     pub fn encode<K: SceSink>(&self, w: &mut K, after_shm: u8) -> Result<(), CodecError> {
-        // Declared-but-unconsumed flag inputs: see `decode` — same suppress per
-        // declared `<sce:flag-input>`.
-        let _ = after_shm;
-        // Encode fixed prefix (tag field is part of the prefix). The
-        // tag value is read from the struct field, NOT derived from
-        // the body discriminant — keeping author-set msg_id / body in
-        // sync is the caller's responsibility (v1 keeps the layout
-        // simple; future extensions may auto-sync via a typed setter).
-        w.write_u8(self.header)?;
-        // Append the active arm's encoded bytes.
-        match &self.body {
-            CodecZenohValueEntryOwnedVariant::CodecZenohExtUnit(b) => {
-                b.encode(w)?;
-            }
-            CodecZenohValueEntryOwnedVariant::CodecZenohExtZint(b) => {
-                b.encode(w)?;
-            }
-            CodecZenohValueEntryOwnedVariant::CodecZenohValueZbuf(b) => {
-                b.encode(w, after_shm)?;
-            }
-            CodecZenohValueEntryOwnedVariant::Default { body, .. } => {
-                body.encode(w)?;
-            }
-        }
-        Ok(())
+        CodecZenohValueEntry::encode_source(self, w, after_shm)
     }
 
     /// Heap-backed convenience facade over [`Self::encode`]. Fallible: a list

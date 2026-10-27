@@ -141,47 +141,109 @@ impl<'a> CodecOriginChoice<'a> {
     /// destination has insufficient remaining capacity; growable
     /// sinks (e.g. `VecSink`) are effectively infallible.
     pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> {
-        // Encode fixed prefix (tag field is part of the prefix). The
-        // tag value is read from the struct field, NOT derived from
-        // the body discriminant — keeping author-set msg_id / body in
-        // sync is the caller's responsibility (v1 keeps the layout
-        // simple; future extensions may auto-sync via a typed setter).
-        w.write_u8(self.tag)?;
-        // Append the active arm's encoded bytes.
-        match &self.body {
-            CodecOriginChoiceVariant::CodecOriginLeaf(b) => {
-                b.encode(w)?;
-            }
-            CodecOriginChoiceVariant::CodecOriginScalar(b) => {
-                b.encode(w)?;
-            }
-            CodecOriginChoiceVariant::Default { body, .. } => {
-                body.encode(w)?;
-            }
-        }
-        Ok(())
+        Self::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
     /// `MAX_ENCODED_BYTES` so the worst-case write path performs at
     /// most one allocation, then delegates to `encode` over a
-    /// `VecSink`. Returns the freshly-encoded byte vector. Callers
-    /// targeting zero-alloc hot paths should call `encode` directly
-    /// against a caller-owned sink.
+    /// `VecSink`. Returns the freshly-encoded byte vector, or the
+    /// `CodecError::PresentIfMismatch` `encode` refuses a message with
+    /// when a field's presence disagrees with the `sce:present-if`
+    /// that gates it. Callers targeting zero-alloc hot paths should
+    /// call `encode` directly against a caller-owned sink.
     ///
     /// Gated on the `alloc` feature — `VecSink` lives behind the
     /// same gate (see `backends/rust/forge-runtime/src/codec.rs`). MCU /
     /// `no_std` builds without `alloc` only see the sink-based
     /// primary `encode`.
     #[cfg(feature = "alloc")]
-    pub fn encode_to_vec(&self) -> Vec<u8> {
+    pub fn encode_to_vec(&self) -> Result<Vec<u8>, CodecError> {
         let mut _sce_v: Vec<u8> = Vec::with_capacity(Self::MAX_ENCODED_BYTES);
         let mut _sce_sink = VecSink::new(&mut _sce_v);
-        self.encode(&mut _sce_sink)
-            .expect("VecSink is infallible");
-        _sce_v
+        self.encode(&mut _sce_sink)?;
+        Ok(_sce_v)
     }
 }
+
+/// The arm of `CodecOriginChoice`'s variant a value holds, each arm's body as the
+/// source it says. The tag is not among them: `CodecOriginChoice` derives it from
+/// the arm, as it derives a length, and a default arm presents the tag
+/// it could not name.
+// A default arm's tag is read by the codec that embeds this one and
+// derives its own carrier bits from the arm, which not every build uses.
+#[allow(dead_code)]
+pub enum CodecOriginChoiceVariantSource<'s, A0: ?Sized, A1: ?Sized, D: ?Sized> {
+    CodecOriginLeaf(&'s A0),
+    CodecOriginScalar(&'s A1),
+    Default { tag: u8, body: &'s D },
+}
+
+// ── Source (ADR 0058) ────────────────────────────────────────────────
+/// What a value of `CodecOriginChoice` says: its presented fields. A length, a count
+/// or the flag a gated field is announced by is not among them; `CodecOriginChoice`
+/// computes those from what is ([`CodecOriginChoice::encode_source`]).
+pub trait CodecOriginChoiceSource {
+    /// The arm of the variant this value holds.
+    fn body(&self) -> CodecOriginChoiceVariantSource<'_, impl super::codec_origin_leaf::CodecOriginLeafSource, impl super::codec_origin_scalar::CodecOriginScalarSource, impl super::codec_origin_scalar::CodecOriginScalarSource>;
+}
+
+impl<T: CodecOriginChoiceSource + ?Sized> CodecOriginChoiceSource for &T {
+    fn body(&self) -> CodecOriginChoiceVariantSource<'_, impl super::codec_origin_leaf::CodecOriginLeafSource, impl super::codec_origin_scalar::CodecOriginScalarSource, impl super::codec_origin_scalar::CodecOriginScalarSource> {
+        (**self).body()
+    }
+}
+
+impl<'a> CodecOriginChoiceSource for CodecOriginChoice<'a> {
+    fn body(&self) -> CodecOriginChoiceVariantSource<'_, impl super::codec_origin_leaf::CodecOriginLeafSource, impl super::codec_origin_scalar::CodecOriginScalarSource, impl super::codec_origin_scalar::CodecOriginScalarSource> {
+        match &self.body {
+            CodecOriginChoiceVariant::CodecOriginLeaf(_b) => CodecOriginChoiceVariantSource::CodecOriginLeaf(_b),
+            CodecOriginChoiceVariant::CodecOriginScalar(_b) => CodecOriginChoiceVariantSource::CodecOriginScalar(_b),
+            CodecOriginChoiceVariant::Default { tag, body } => CodecOriginChoiceVariantSource::Default { tag: *tag, body },
+        }
+    }
+}
+
+impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecOriginChoiceSource for CodecOriginChoiceOwned<S> {
+    fn body(&self) -> CodecOriginChoiceVariantSource<'_, impl super::codec_origin_leaf::CodecOriginLeafSource, impl super::codec_origin_scalar::CodecOriginScalarSource, impl super::codec_origin_scalar::CodecOriginScalarSource> {
+        match &self.body {
+            CodecOriginChoiceOwnedVariant::CodecOriginLeaf(_b) => CodecOriginChoiceVariantSource::CodecOriginLeaf(_b),
+            CodecOriginChoiceOwnedVariant::CodecOriginScalar(_b) => CodecOriginChoiceVariantSource::CodecOriginScalar(_b),
+            CodecOriginChoiceOwnedVariant::Default { tag, body } => CodecOriginChoiceVariantSource::Default { tag: *tag, body },
+        }
+    }
+}
+
+#[allow(dead_code)]
+impl<'a> CodecOriginChoice<'a> {
+    /// Encode what `src` says into the caller-owned sink: the bytes
+    /// [`Self::encode`] writes for the value it holds, read through
+    /// [`CodecOriginChoiceSource`]. A length, a count or a gate flag is computed from what
+    /// `src` presents, and a value the encoding cannot carry is refused
+    /// before the first byte is written.
+    pub fn encode_source<S: CodecOriginChoiceSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {
+        Self::write_source(src, &mut ::sce_forge_runtime::codec::CountSink::new())?;
+        Self::write_source(src, w)
+    }
+
+    /// [`Self::encode_source`] without the guard a parent has already made.
+    #[doc(hidden)]
+    pub fn write_source<S: CodecOriginChoiceSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {
+        let _d_tag: u8 = match src.body() {
+            CodecOriginChoiceVariantSource::CodecOriginLeaf(_) => 1,
+            CodecOriginChoiceVariantSource::CodecOriginScalar(_) => 2,
+            CodecOriginChoiceVariantSource::Default { tag, .. } => tag,
+        };
+        w.write_u8(_d_tag)?;
+        match src.body() {
+            CodecOriginChoiceVariantSource::CodecOriginLeaf(_b) => CodecOriginLeaf::write_source(_b, w)?,
+            CodecOriginChoiceVariantSource::CodecOriginScalar(_b) => CodecOriginScalar::write_source(_b, w)?,
+            CodecOriginChoiceVariantSource::Default { body: _b, .. } => CodecOriginScalar::write_source(_b, w)?,
+        }
+        Ok(())
+    }
+}
+
 
 // ── Owned projection (storage-parameterised native form) ─────────────
 // `CodecOriginChoice<'a>` above is a zero-copy view borrowing the decode
@@ -392,35 +454,18 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecOriginChoiceOwned<S> {
     /// borrowed form could not carry is an error and never a frame its own
     /// decoder would reject.
     pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), CodecError> {
-        // Encode fixed prefix (tag field is part of the prefix). The
-        // tag value is read from the struct field, NOT derived from
-        // the body discriminant — keeping author-set msg_id / body in
-        // sync is the caller's responsibility (v1 keeps the layout
-        // simple; future extensions may auto-sync via a typed setter).
-        w.write_u8(self.tag)?;
-        // Append the active arm's encoded bytes.
-        match &self.body {
-            CodecOriginChoiceOwnedVariant::CodecOriginLeaf(b) => {
-                b.encode(w)?;
-            }
-            CodecOriginChoiceOwnedVariant::CodecOriginScalar(b) => {
-                b.encode(w)?;
-            }
-            CodecOriginChoiceOwnedVariant::Default { body, .. } => {
-                body.encode(w)?;
-            }
-        }
-        Ok(())
+        CodecOriginChoice::encode_source(self, w)
     }
 
-    /// Heap-backed convenience facade over [`Self::encode`].
+    /// Heap-backed convenience facade over [`Self::encode`]. Fallible: a list
+    /// past the bound the borrowed view declares is refused, and so is a
+    /// presence the chain predicates disagree with.
     #[cfg(feature = "alloc")]
-    pub fn encode_to_vec(&self) -> Vec<u8> {
+    pub fn encode_to_vec(&self) -> Result<Vec<u8>, CodecError> {
         let mut _sce_v: Vec<u8> = Vec::with_capacity(CodecOriginChoice::MAX_ENCODED_BYTES);
         let mut _sce_sink = VecSink::new(&mut _sce_v);
-        self.encode(&mut _sce_sink)
-            .expect("VecSink is infallible");
-        _sce_v
+        self.encode(&mut _sce_sink)?;
+        Ok(_sce_v)
     }
 }
 

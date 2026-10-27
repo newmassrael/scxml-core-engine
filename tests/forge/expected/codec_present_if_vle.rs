@@ -120,20 +120,7 @@ impl CodecPresentIfVle {
     /// destination has insufficient remaining capacity; growable
     /// sinks (e.g. `VecSink`) are effectively infallible.
     pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> {
-        // Streaming cursor encode (SSOT selection: `needs_streaming`).
-        // Mirrors the streaming decode: every field appends its own bytes
-        // in declaration order through the per-field encode blocks, so a
-        // gated field skips its append when absent, and a fixed field after
-        // a variable-length payload lands after the payload (the positional
-        // path appends variable fields last, placing it ahead on the wire).
-        // Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-        // dedicated helpers; everything else uses `present_if_encode_block`
-        // (its non-gated arm covers plain fixed / tail / length-ref / VLE).
-        w.write_u8(self.flags)?;
-        if let Some(_v) = self.optional_id {
-        w.write_vle_u64(_v)?;
-        }
-        Ok(())
+        Self::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
@@ -154,5 +141,58 @@ impl CodecPresentIfVle {
         self.encode(&mut _sce_sink)
             .expect("VecSink is infallible");
         _sce_v
+    }
+}
+
+// ── Source (ADR 0058) ────────────────────────────────────────────────
+/// What a value of `CodecPresentIfVle` says: its presented fields. A length, a count
+/// or the flag a gated field is announced by is not among them; `CodecPresentIfVle`
+/// computes those from what is ([`CodecPresentIfVle::encode_source`]).
+pub trait CodecPresentIfVleSource {
+    /// The `flags` field.
+    fn flags(&self) -> u8;
+    /// The `optional_id` field.
+    fn optional_id(&self) -> Option<u64>;
+}
+
+impl<T: CodecPresentIfVleSource + ?Sized> CodecPresentIfVleSource for &T {
+    fn flags(&self) -> u8 {
+        (**self).flags()
+    }
+    fn optional_id(&self) -> Option<u64> {
+        (**self).optional_id()
+    }
+}
+
+impl CodecPresentIfVleSource for CodecPresentIfVle {
+    fn flags(&self) -> u8 {
+        self.flags
+    }
+    fn optional_id(&self) -> Option<u64> {
+        self.optional_id
+    }
+}
+
+#[allow(dead_code)]
+impl CodecPresentIfVle {
+    /// Encode what `src` says into the caller-owned sink: the bytes
+    /// [`Self::encode`] writes for the value it holds, read through
+    /// [`CodecPresentIfVleSource`]. A length, a count or a gate flag is computed from what
+    /// `src` presents, and a value the encoding cannot carry is refused
+    /// before the first byte is written.
+    pub fn encode_source<S: CodecPresentIfVleSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {
+        Self::write_source(src, w)
+    }
+
+    /// [`Self::encode_source`] without the guard a parent has already made.
+    #[doc(hidden)]
+    pub fn write_source<S: CodecPresentIfVleSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {
+        let _p_flags_has_id_0: bool = src.optional_id().is_some();
+        let _c_flags: u8 = (src.flags() & !0x1) | u8::from(_p_flags_has_id_0);
+        w.write_u8(_c_flags)?;
+        if let Some(_v) = src.optional_id() {
+            w.write_vle_u64(_v)?;
+        }
+        Ok(())
     }
 }

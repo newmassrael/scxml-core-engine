@@ -83,7 +83,7 @@ fn parent() -> CodecNestedParent<'static> {
 #[test]
 fn nested_fallible_projection_round_trips() {
     let parent = parent();
-    let wire = parent.encode_to_vec();
+    let wire = parent.encode_to_vec().expect("the parent encodes");
 
     // borrowed -> owned -> (fallible) borrowed -> re-encode == original wire.
     let owned = parent
@@ -93,7 +93,9 @@ fn nested_fallible_projection_round_trips() {
         .try_as_borrowed()
         .expect("every list is within max-count, so projection must succeed");
     assert_eq!(
-        reborrowed.encode_to_vec(),
+        reborrowed
+            .encode_to_vec()
+            .expect("the reborrowed parent encodes"),
         wire,
         "try_as_borrowed re-encode must reproduce the original wire bytes",
     );
@@ -132,7 +134,7 @@ fn default_profile_is_the_growable_one_under_alloc() {
 /// allocate has no type to name.
 #[test]
 fn both_storage_profiles_coexist_and_agree_on_the_wire() {
-    let wire = parent().encode_to_vec();
+    let wire = parent().encode_to_vec().expect("the parent encodes");
     let mut cursor = SceCursor::new(&wire);
     let view = CodecNestedParent::decode(&mut cursor).expect("self-produced wire decodes");
 
@@ -157,7 +159,8 @@ fn both_storage_profiles_coexist_and_agree_on_the_wire() {
         growable
             .try_as_borrowed()
             .expect("within max-count")
-            .encode_to_vec(),
+            .encode_to_vec()
+            .expect("within max-count"),
         wire,
         "the growable profile must re-encode to the original wire",
     );
@@ -165,7 +168,8 @@ fn both_storage_profiles_coexist_and_agree_on_the_wire() {
         inline
             .try_as_borrowed()
             .expect("within max-count")
-            .encode_to_vec(),
+            .encode_to_vec()
+            .expect("within max-count"),
         wire,
         "the non-allocating profile must re-encode to the identical wire",
     );
@@ -268,7 +272,7 @@ fn nested_projection_rejects_overflowing_list() {
 /// optional embed, a list of embeds, text) goes through it.
 #[test]
 fn owned_encode_writes_what_the_projection_writes() {
-    let wire = parent().encode_to_vec();
+    let wire = parent().encode_to_vec().expect("the parent encodes");
     let view = CodecNestedParent::decode(&mut SceCursor::new(&wire)).expect("decodes");
 
     let growable: CodecNestedParentOwned<Heap> = view
@@ -285,7 +289,8 @@ fn owned_encode_writes_what_the_projection_writes() {
             growable
                 .try_as_borrowed()
                 .expect("within max-count")
-                .encode_to_vec(),
+                .encode_to_vec()
+                .expect("within max-count"),
             growable.encode_to_vec().expect("within max-count"),
         ),
         (
@@ -293,7 +298,8 @@ fn owned_encode_writes_what_the_projection_writes() {
             inline
                 .try_as_borrowed()
                 .expect("within max-count")
-                .encode_to_vec(),
+                .encode_to_vec()
+                .expect("within max-count"),
             inline.encode_to_vec().expect("within max-count"),
         ),
     ] {
@@ -317,7 +323,8 @@ fn owned_encode_agrees_with_an_absent_optional_and_a_bounded_sink() {
     let projected = owned
         .try_as_borrowed()
         .expect("within max-count")
-        .encode_to_vec();
+        .encode_to_vec()
+        .expect("within max-count");
     assert_eq!(
         owned.encode_to_vec().expect("within max-count"),
         projected,

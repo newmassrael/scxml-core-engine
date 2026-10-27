@@ -134,40 +134,123 @@ impl CodecPresentIfDisjunction {
     /// destination has insufficient remaining capacity; growable
     /// sinks (e.g. `VecSink`) are effectively infallible.
     pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> {
-        // Streaming cursor encode (SSOT selection: `needs_streaming`).
-        // Mirrors the streaming decode: every field appends its own bytes
-        // in declaration order through the per-field encode blocks, so a
-        // gated field skips its append when absent, and a fixed field after
-        // a variable-length payload lands after the payload (the positional
-        // path appends variable fields last, placing it ahead on the wire).
-        // Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-        // dedicated helpers; everything else uses `present_if_encode_block`
-        // (its non-gated arm covers plain fixed / tail / length-ref / VLE).
-        w.write_u8(self.flags)?;
-        if let Some(_v) = self.seq {
-            w.write_u8((_v >> 8 & 0xFF) as u8)?;
-            w.write_u8((_v & 0xFF) as u8)?;
-        }
-        Ok(())
+        Self::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
     /// `MAX_ENCODED_BYTES` so the worst-case write path performs at
     /// most one allocation, then delegates to `encode` over a
-    /// `VecSink`. Returns the freshly-encoded byte vector. Callers
-    /// targeting zero-alloc hot paths should call `encode` directly
-    /// against a caller-owned sink.
+    /// `VecSink`. Returns the freshly-encoded byte vector, or the
+    /// `CodecError::PresentIfMismatch` `encode` refuses a message with
+    /// when a field's presence disagrees with the `sce:present-if`
+    /// that gates it. Callers targeting zero-alloc hot paths should
+    /// call `encode` directly against a caller-owned sink.
     ///
     /// Gated on the `alloc` feature — `VecSink` lives behind the
     /// same gate (see `backends/rust/forge-runtime/src/codec.rs`). MCU /
     /// `no_std` builds without `alloc` only see the sink-based
     /// primary `encode`.
     #[cfg(feature = "alloc")]
-    pub fn encode_to_vec(&self) -> Vec<u8> {
+    pub fn encode_to_vec(&self) -> Result<Vec<u8>, CodecError> {
         let mut _sce_v: Vec<u8> = Vec::with_capacity(Self::MAX_ENCODED_BYTES);
         let mut _sce_sink = VecSink::new(&mut _sce_v);
-        self.encode(&mut _sce_sink)
-            .expect("VecSink is infallible");
-        _sce_v
+        self.encode(&mut _sce_sink)?;
+        Ok(_sce_v)
+    }
+}
+
+/// Flags of `CodecPresentIfDisjunction` a parent sets in place of the ones a value presents:
+/// the end flag of a chain whose entries are `CodecPresentIfDisjunction`, which the chain
+/// derives from where an entry stands.
+#[doc(hidden)]
+#[derive(Debug, Default, Clone, Copy)]
+pub struct CodecPresentIfDisjunctionOverrides {
+    /// The `wants_a` flag of `flags`, when a parent sets it.
+    pub flags_wants_a: Option<bool>,
+    /// The `wants_b` flag of `flags`, when a parent sets it.
+    pub flags_wants_b: Option<bool>,
+}
+
+#[allow(dead_code)]
+impl CodecPresentIfDisjunctionOverrides {
+    /// Sets `wants_a` of `flags` and nothing else.
+    #[allow(clippy::needless_update)]
+    pub fn flags_wants_a(value: bool) -> Self {
+        Self { flags_wants_a: Some(value), ..Self::default() }
+    }
+
+    /// Sets `wants_b` of `flags` and nothing else.
+    #[allow(clippy::needless_update)]
+    pub fn flags_wants_b(value: bool) -> Self {
+        Self { flags_wants_b: Some(value), ..Self::default() }
+    }
+}
+
+// ── Source (ADR 0058) ────────────────────────────────────────────────
+/// What a value of `CodecPresentIfDisjunction` says: its presented fields. A length, a count
+/// or the flag a gated field is announced by is not among them; `CodecPresentIfDisjunction`
+/// computes those from what is ([`CodecPresentIfDisjunction::encode_source`]).
+pub trait CodecPresentIfDisjunctionSource {
+    /// The `flags` field.
+    fn flags(&self) -> u8;
+    /// The `seq` field.
+    fn seq(&self) -> Option<u16>;
+}
+
+impl<T: CodecPresentIfDisjunctionSource + ?Sized> CodecPresentIfDisjunctionSource for &T {
+    fn flags(&self) -> u8 {
+        (**self).flags()
+    }
+    fn seq(&self) -> Option<u16> {
+        (**self).seq()
+    }
+}
+
+impl CodecPresentIfDisjunctionSource for CodecPresentIfDisjunction {
+    fn flags(&self) -> u8 {
+        self.flags
+    }
+    fn seq(&self) -> Option<u16> {
+        self.seq
+    }
+}
+
+#[allow(dead_code)]
+impl CodecPresentIfDisjunction {
+    /// Encode what `src` says into the caller-owned sink: the bytes
+    /// [`Self::encode`] writes for the value it holds, read through
+    /// [`CodecPresentIfDisjunctionSource`]. A length, a count or a gate flag is computed from what
+    /// `src` presents, and a value the encoding cannot carry is refused
+    /// before the first byte is written.
+    pub fn encode_source<S: CodecPresentIfDisjunctionSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {
+        Self::write_source(src, w)
+    }
+
+    /// [`Self::encode_source`] without the guard a parent has already made.
+    #[doc(hidden)]
+    pub fn write_source<S: CodecPresentIfDisjunctionSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {
+        Self::write_source_in(src, w, &CodecPresentIfDisjunctionOverrides::default())
+    }
+
+    /// [`Self::write_source`] with the flags a parent sets in place of the
+    /// ones `src` presents.
+    #[doc(hidden)]
+    pub fn write_source_in<S: CodecPresentIfDisjunctionSource + ?Sized, K: SceSink>(src: &S, w: &mut K, over: &CodecPresentIfDisjunctionOverrides) -> Result<(), CodecError> {
+        let mut _c_flags: u8 = src.flags();
+        if let Some(_o) = over.flags_wants_a {
+            _c_flags = (_c_flags & !0x1) | u8::from(_o);
+        }
+        if let Some(_o) = over.flags_wants_b {
+            _c_flags = (_c_flags & !0x2) | (u8::from(_o) << 1);
+        }
+        if ((_c_flags & 0x1) != 0 || (_c_flags & 0x2) != 0) != src.seq().is_some() {
+            return Err(CodecError::PresentIfMismatch);
+        }
+        w.write_u8(_c_flags)?;
+        if let Some(_v) = src.seq() {
+            w.write_u8((_v >> 8 & 0xFF) as u8)?;
+            w.write_u8((_v & 0xFF) as u8)?;
+        }
+        Ok(())
     }
 }

@@ -72,12 +72,7 @@ impl CodecZenohExtUnit {
     /// destination has insufficient remaining capacity; growable
     /// sinks (e.g. `VecSink`) are effectively infallible.
     pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> {
-        // RFC §synth-5-B empty body — zero-byte payload (the surrounding
-        // wire-protocol header byte alone marks this codec on the wire).
-        // Suppress the unused-sink warning explicitly so empty codecs
-        // stay warning-clean under `warnings = "deny"`.
-        let _ = w;
-        Ok(())
+        Self::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
@@ -98,5 +93,37 @@ impl CodecZenohExtUnit {
         self.encode(&mut _sce_sink)
             .expect("VecSink is infallible");
         _sce_v
+    }
+}
+
+// ── Source (ADR 0058) ────────────────────────────────────────────────
+/// What a value of `CodecZenohExtUnit` says: its presented fields. A length, a count
+/// or the flag a gated field is announced by is not among them; `CodecZenohExtUnit`
+/// computes those from what is ([`CodecZenohExtUnit::encode_source`]).
+pub trait CodecZenohExtUnitSource {
+}
+
+impl<T: CodecZenohExtUnitSource + ?Sized> CodecZenohExtUnitSource for &T {
+}
+
+impl CodecZenohExtUnitSource for CodecZenohExtUnit {
+}
+
+#[allow(dead_code)]
+impl CodecZenohExtUnit {
+    /// Encode what `src` says into the caller-owned sink: the bytes
+    /// [`Self::encode`] writes for the value it holds, read through
+    /// [`CodecZenohExtUnitSource`]. A length, a count or a gate flag is computed from what
+    /// `src` presents, and a value the encoding cannot carry is refused
+    /// before the first byte is written.
+    pub fn encode_source<S: CodecZenohExtUnitSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {
+        Self::write_source(src, w)
+    }
+
+    /// [`Self::encode_source`] without the guard a parent has already made.
+    #[doc(hidden)]
+    pub fn write_source<S: CodecZenohExtUnitSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {
+        let _ = (src, w);
+        Ok(())
     }
 }

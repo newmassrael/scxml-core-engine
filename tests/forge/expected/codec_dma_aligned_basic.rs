@@ -110,20 +110,7 @@ impl<'a> CodecDmaAlignedBasic<'a> {
     /// destination has insufficient remaining capacity; growable
     /// sinks (e.g. `VecSink`) are effectively infallible.
     pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> {
-        w.write_u8(self.msg_id)?;
-        w.write_u8(self.reserved)?;
-        // RFC §synth-5-B B3 DMA padding: zero-fill any gap between the
-        // current write position and this field's authored byte
-        // offset (deterministic zeros on the wire so peers stay
-        // byte-compatible regardless of host allocator — RFC §synth-5-B
-        // "wire layout, not host allocator").
-        while w.position() < 32 {
-            w.write_u8(0)?;
-        }
-        // `self.<id>` is the borrowed `&'a [u8]` view — pass it directly;
-        // `&self.<id>` would be `&&[u8]` (clippy::needless_borrow).
-        w.write_bytes(self.aligned_payload)?;
-        Ok(())
+        Self::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
@@ -146,6 +133,80 @@ impl<'a> CodecDmaAlignedBasic<'a> {
         _sce_v
     }
 }
+
+// ── Source (ADR 0058) ────────────────────────────────────────────────
+/// What a value of `CodecDmaAlignedBasic` says: its presented fields. A length, a count
+/// or the flag a gated field is announced by is not among them; `CodecDmaAlignedBasic`
+/// computes those from what is ([`CodecDmaAlignedBasic::encode_source`]).
+pub trait CodecDmaAlignedBasicSource {
+    /// The `msg_id` field.
+    fn msg_id(&self) -> u8;
+    /// The `reserved` field.
+    fn reserved(&self) -> u8;
+    /// The `aligned_payload` field.
+    fn aligned_payload(&self) -> &[u8];
+}
+
+impl<T: CodecDmaAlignedBasicSource + ?Sized> CodecDmaAlignedBasicSource for &T {
+    fn msg_id(&self) -> u8 {
+        (**self).msg_id()
+    }
+    fn reserved(&self) -> u8 {
+        (**self).reserved()
+    }
+    fn aligned_payload(&self) -> &[u8] {
+        (**self).aligned_payload()
+    }
+}
+
+impl<'a> CodecDmaAlignedBasicSource for CodecDmaAlignedBasic<'a> {
+    fn msg_id(&self) -> u8 {
+        self.msg_id
+    }
+    fn reserved(&self) -> u8 {
+        self.reserved
+    }
+    fn aligned_payload(&self) -> &[u8] {
+        self.aligned_payload
+    }
+}
+
+impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecDmaAlignedBasicSource for CodecDmaAlignedBasicOwned<S> {
+    fn msg_id(&self) -> u8 {
+        self.msg_id
+    }
+    fn reserved(&self) -> u8 {
+        self.reserved
+    }
+    fn aligned_payload(&self) -> &[u8] {
+        ::sce_forge_runtime::codec::SceByteBuf::as_slice(&self.aligned_payload)
+    }
+}
+
+#[allow(dead_code)]
+impl<'a> CodecDmaAlignedBasic<'a> {
+    /// Encode what `src` says into the caller-owned sink: the bytes
+    /// [`Self::encode`] writes for the value it holds, read through
+    /// [`CodecDmaAlignedBasicSource`]. A length, a count or a gate flag is computed from what
+    /// `src` presents, and a value the encoding cannot carry is refused
+    /// before the first byte is written.
+    pub fn encode_source<S: CodecDmaAlignedBasicSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {
+        Self::write_source(src, w)
+    }
+
+    /// [`Self::encode_source`] without the guard a parent has already made.
+    #[doc(hidden)]
+    pub fn write_source<S: CodecDmaAlignedBasicSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {
+        w.write_u8(src.msg_id())?;
+        w.write_u8(src.reserved())?;
+        while w.position() < 32 {
+            w.write_u8(0)?;
+        }
+        w.write_bytes(src.aligned_payload())?;
+        Ok(())
+    }
+}
+
 
 // ── Owned projection (storage-parameterised native form) ─────────────
 // `CodecDmaAlignedBasic<'a>` above is a zero-copy view borrowing the decode
@@ -274,20 +335,7 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecDmaAlignedBasicOwned<S> {
     /// borrowed form could not carry is an error and never a frame its own
     /// decoder would reject.
     pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), CodecError> {
-        w.write_u8(self.msg_id)?;
-        w.write_u8(self.reserved)?;
-        // RFC §synth-5-B B3 DMA padding: zero-fill any gap between the
-        // current write position and this field's authored byte
-        // offset (deterministic zeros on the wire so peers stay
-        // byte-compatible regardless of host allocator — RFC §synth-5-B
-        // "wire layout, not host allocator").
-        while w.position() < 32 {
-            w.write_u8(0)?;
-        }
-        // The owned form holds the bytes in the profile's container; read them
-        // through the trait every profile implements.
-        w.write_bytes(::sce_forge_runtime::codec::SceByteBuf::as_slice(&self.aligned_payload))?;
-        Ok(())
+        CodecDmaAlignedBasic::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade over [`Self::encode`].

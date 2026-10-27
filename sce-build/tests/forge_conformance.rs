@@ -796,7 +796,7 @@ mod tests {
         let mut cursor = SceCursor::new(frame);
         let view = Ls::decode(&mut cursor).expect("decode linkstate frame");
         assert_eq!(
-            view.encode_to_vec().as_slice(),
+            view.encode_to_vec().expect("encode").as_slice(),
             frame,
             "re-encode must be byte-exact"
         );
@@ -2931,7 +2931,8 @@ mod tests {
             shared
                 .try_as_borrowed()
                 .expect("within every bound")
-                .encode_to_vec(),
+                .encode_to_vec()
+                .expect("encode"),
             ENVELOPE.to_vec()
         );
     }
@@ -4157,13 +4158,13 @@ mod tests {
         let mut v = decode_env(&SLICED);
         v.payload_len = Some(2);
         v.payload = Some(&[0xAA, 0xBB]);
-        assert_eq!(v.encode_to_vec(), Err(CodecError::PresentIfMismatch));
+        assert_eq!(v.encode_to_vec(),Err(CodecError::PresentIfMismatch));
 
         // Plain layout described by the chain, the sliced fields supplied.
         let mut v = decode_env(&PLAIN);
         v.payload_len = None;
         v.payload = None;
-        assert_eq!(v.encode_to_vec(), Err(CodecError::PresentIfMismatch));
+        assert_eq!(v.encode_to_vec(),Err(CodecError::PresentIfMismatch));
 
         // A refusal writes nothing: the sink-based encode leaves it empty.
         let mut out: Vec<u8> = Vec::new();
@@ -4196,7 +4197,7 @@ mod tests {
         // clear, yet `priority` supplied.
         let mut v = CodecChainHasTagged::decode(&mut SceCursor::new(&neither)).unwrap();
         v.priority = Some(1);
-        assert_eq!(v.encode_to_vec(), Err(CodecError::PresentIfMismatch));
+        assert_eq!(v.encode_to_vec(),Err(CodecError::PresentIfMismatch));
     }
 }
 "#;
@@ -4298,14 +4299,14 @@ mod tests {
         v.slices = None;
         v.payload_len = Some(2);
         v.payload = Some(&[0xAA, 0xBB]);
-        assert_eq!(v.encode_to_vec(), Err(CodecError::PresentIfMismatch));
+        assert_eq!(v.encode_to_vec(),Err(CodecError::PresentIfMismatch));
 
         // The converse: the chain has no marker, so the plain layout is owed,
         // and it is withheld.
         let mut v = decode_frame(&SAME_ID_NOT_MANDATORY_THEN_ENTRY);
         v.payload_len = None;
         v.payload = None;
-        assert_eq!(v.encode_to_vec(), Err(CodecError::PresentIfMismatch));
+        assert_eq!(v.encode_to_vec(),Err(CodecError::PresentIfMismatch));
     }
 }
 "#;
@@ -12199,19 +12200,19 @@ fn forge_parent_tag_round_trip_local_nonlocal_rust() {
         .map(|(_, body)| body.clone())
         .expect("parent codec emit");
     assert!(
-        parent_rust.contains("let _derived_header: u8 ="),
+        parent_rust.contains("let _d_header_m: u8 ="),
         "parent encode must declare `_derived_header: u8`\n{parent_rust}"
     );
     assert!(
-        parent_rust.contains("CodecB5nuKeyexprVariant::CodecB5nuLocal(_) => 0x40u8"),
+        parent_rust.contains("CodecB5nuKeyexprVariantSource::CodecB5nuLocal(_) => 1"),
         "match must shift Local arm value 0x01 into bit 6 (0x40)\n{parent_rust}"
     );
     assert!(
-        parent_rust.contains("CodecB5nuKeyexprVariant::CodecB5nuNonlocal(_) => 0x00u8"),
+        parent_rust.contains("CodecB5nuKeyexprVariantSource::CodecB5nuNonlocal(_) => 0"),
         "match must shift Nonlocal arm value 0x00 into bit 6 (0x00)\n{parent_rust}"
     );
     assert!(
-        parent_rust.contains("w.write_u8(self.header | _derived_header)?;"),
+        parent_rust.contains("w.write_u8(_c_header)?;"),
         "carrier emit must OR in _derived_header through the sink\n{parent_rust}"
     );
 
@@ -12283,10 +12284,10 @@ mod tests {
 
     fn check(frame: &[u8]) {
         let owned = owned_of(frame);
-        let projected = owned.as_borrowed().encode_to_vec();
+        let projected = owned.as_borrowed().encode_to_vec().expect("encode");
         assert_eq!(projected.as_slice(), frame, "projection re-encodes the frame");
         assert_eq!(
-            owned.encode_to_vec().as_slice(),
+            owned.encode_to_vec().expect("encode").as_slice(),
             projected.as_slice(),
             "owned encode must write what the projection writes"
         );
@@ -12296,8 +12297,8 @@ mod tests {
         let mut wrong = owned_of(frame);
         wrong.header ^= 0x40;
         assert_eq!(
-            wrong.encode_to_vec().as_slice(),
-            wrong.as_borrowed().encode_to_vec().as_slice(),
+            wrong.encode_to_vec().expect("encode").as_slice(),
+            wrong.as_borrowed().encode_to_vec().expect("encode").as_slice(),
             "the derivation runs on the owned form as it does on the projection"
         );
     }
@@ -12506,15 +12507,15 @@ fn forge_parent_tag_inversion_round_trip_emits_derive_block() {
     // Parent encode block sourced from parent.embed_dispatch produces
     // the same locals + match shape as the legacy leaf-side path.
     assert!(
-        parent_rust.contains("let _derived_header: u8 ="),
+        parent_rust.contains("let _d_header_m: u8 ="),
         "parent encode must declare `_derived_header: u8` from inversion source\n{parent_rust}"
     );
     assert!(
-        parent_rust.contains("CodecB5nuKeyexprVariant::CodecB5nuLocal(_) => 0x40u8"),
+        parent_rust.contains("CodecB5nuKeyexprVariantSource::CodecB5nuLocal(_) => 1"),
         "match must shift Local arm value 0x01 into bit 6 (0x40)\n{parent_rust}"
     );
     assert!(
-        parent_rust.contains("w.write_u8(self.header | _derived_header)?;"),
+        parent_rust.contains("w.write_u8(_c_header)?;"),
         "carrier emit must OR in _derived_header through the sink\n{parent_rust}"
     );
 
@@ -12796,7 +12797,7 @@ fn forge_parent_tag_inversion_beta_emits_caller_tag_signature() {
     // Encode side remains byte-identical — the `_derived_header`
     // derivation block still fires (data source: parent.embed_dispatch).
     assert!(
-        parent_rust.contains("let _derived_header: u8 ="),
+        parent_rust.contains("let _d_header_m: u8 ="),
         "parent encode still derives `_derived_header` via inversion source\n{parent_rust}"
     );
 
@@ -13070,12 +13071,12 @@ fn forge_parent_tag_consumer_parity_alias_neq_stem_rust() {
     // enum (`B5nuConsumerDispVariant`), NOT the consumer's alias
     // PascalCased (`RenamedAliasVariant`).
     assert!(
-        parent_rust.contains("B5nuConsumerDispVariant::B5nuConsumerLocal(_) => 0x40u8"),
+        parent_rust.contains("B5nuConsumerDispVariantSource::B5nuConsumerLocal(_) => 1"),
         "match must use dispatcher's stem-derived variant enum name; \
          got:\n{parent_rust}"
     );
     assert!(
-        parent_rust.contains("B5nuConsumerDispVariant::B5nuConsumerNonlocal(_) => 0x00u8"),
+        parent_rust.contains("B5nuConsumerDispVariantSource::B5nuConsumerNonlocal(_) => 0"),
         "match must reference Nonlocal arm via stem-derived enum; \
          got:\n{parent_rust}"
     );
@@ -13084,17 +13085,16 @@ fn forge_parent_tag_consumer_parity_alias_neq_stem_rust() {
         "emit must NOT contain alias-derived `RenamedAliasVariant` \
          (Gap 2 regression);\n{parent_rust}"
     );
-    // Dispatcher-self-gen Gap 6 — when the imported codec is
-    // a parent-tag dispatcher, the `use` statement must brace-list both the
-    // struct and the variant enum so the consumer's encode-match
-    // resolves at rustc-time. The original emitter emitted only
-    // the struct import.
+    // The parent reads the dispatcher's arm through the dispatcher's own source
+    // (ADR 0058), by path, so it imports the struct alone: a variant enum named
+    // for the derivation is one more name that nothing reads.
     assert!(
-        parent_rust.contains(
-            "use super::b5nu_consumer_disp::{B5nuConsumerDisp, B5nuConsumerDispVariant};"
-        ),
-        "use statement must brace-list both the struct and Variant enum; \
-         got:\n{parent_rust}"
+        parent_rust.contains("use super::b5nu_consumer_disp::B5nuConsumerDisp;"),
+        "use statement must import the struct alone; got:\n{parent_rust}"
+    );
+    assert!(
+        !parent_rust.contains("B5nuConsumerDispVariant}"),
+        "use statement must not name the variant enum; got:\n{parent_rust}"
     );
 
     // RFC §synth-5-B dispatcher self-gen — end-to-end rustc-compile
@@ -13205,16 +13205,16 @@ fn forge_parent_tag_consumer_parity_present_if_gated_rust() {
         .map(|(_, body)| body.clone())
         .expect("parent codec emit");
 
-    // The match must wrap in Option handling — `Some(x) => match
-    // &x.body { ... }, None => 0u8`. Without the wrap the emit
-    // accesses `.body` on an Option<T> and fails to compile.
+    // The match must wrap in Option handling — `Some(_x) => match
+    // body(_x) { ... }, None => 0`. Without the wrap the emit reads the
+    // dispatcher's arm of a body that may be absent and fails to compile.
     assert!(
-        parent_rust.contains("Some(x) => match &x.body"),
-        "match must wrap the present-if-gated embed in `Some(x) => match &x.body` \
+        parent_rust.contains("Some(_x) => match "),
+        "match must wrap the present-if-gated embed in `Some(_x) => match ` \
          pattern;\n{parent_rust}"
     );
     assert!(
-        parent_rust.contains("None => 0u8"),
+        parent_rust.contains("None => 0 }"),
         "absent branch must contribute 0 to derived carrier bits \
          (textbook absent → 0 rule);\n{parent_rust}"
     );
@@ -13338,7 +13338,7 @@ fn forge_parent_tag_consumer_parity_chain_forwarding_resolves() {
     // dispatcher's encode parameter, NOT `self.header` (no such field
     // on the chain-forwarder dispatcher).
     assert!(
-        disp_rust.contains("b.encode(w, n)?;"),
+        disp_rust.contains("B5nuChainArmA::write_source(_b, w, n)?"),
         "dispatcher encode must thread sink and pass `n` to arm body; got:\n{disp_rust}"
     );
     assert!(
@@ -16112,25 +16112,25 @@ mod tests {
     fn a_clear_bit_of_the_parent_carrier_gives_every_entry_the_short_layout() {
         let v = carrier(&NARROW);
         assert_eq!(shapes(&v.entries), NARROW_ENTRIES.to_vec());
-        assert_eq!(v.encode_to_vec(), NARROW.to_vec());
+        assert_eq!(v.encode_to_vec().expect("encode"),NARROW.to_vec());
     }
 
     #[test]
     fn a_set_bit_of_the_parent_carrier_gives_every_entry_the_wide_layout() {
         let v = carrier(&WIDE);
         assert_eq!(shapes(&v.entries), WIDE_ENTRIES.to_vec());
-        assert_eq!(v.encode_to_vec(), WIDE.to_vec());
+        assert_eq!(v.encode_to_vec().expect("encode"),WIDE.to_vec());
     }
 
     #[test]
     fn the_flag_a_parent_is_given_reaches_every_entry_of_a_gated_chain() {
         let v = forward(&FWD_NARROW, 0);
         assert_eq!(shapes(v.entries.as_ref().expect("chain")), NARROW_ENTRIES.to_vec());
-        assert_eq!(v.encode_to_vec(0), FWD_NARROW.to_vec());
+        assert_eq!(v.encode_to_vec(0).expect("encode"),FWD_NARROW.to_vec());
 
         let v = forward(&WIDE, 1);
         assert_eq!(shapes(v.entries.as_ref().expect("chain")), WIDE_ENTRIES.to_vec());
-        assert_eq!(v.encode_to_vec(1), WIDE.to_vec());
+        assert_eq!(v.encode_to_vec(1).expect("encode"),WIDE.to_vec());
     }
 
     #[test]
@@ -16148,7 +16148,7 @@ mod tests {
     fn a_gated_chain_without_its_gate_holds_no_entries() {
         let v = forward(&FWD_ABSENT, 1);
         assert!(v.entries.is_none());
-        assert_eq!(v.encode_to_vec(1), FWD_ABSENT.to_vec());
+        assert_eq!(v.encode_to_vec(1).expect("encode"),FWD_ABSENT.to_vec());
     }
 
     fn repeat(frame: &[u8]) -> CodecRepeatFlagCarrier {
@@ -16163,29 +16163,29 @@ mod tests {
     fn a_repeat_hands_every_element_the_flag_of_the_parent_carrier() {
         let v = repeat(&REP_NARROW);
         assert_eq!(shapes(&v.entries), NARROW_ENTRIES.to_vec());
-        assert_eq!(v.encode_to_vec(), REP_NARROW.to_vec());
+        assert_eq!(v.encode_to_vec().expect("encode"),REP_NARROW.to_vec());
 
         let v = repeat(&REP_WIDE);
         assert_eq!(shapes(&v.entries), WIDE_ENTRIES.to_vec());
-        assert_eq!(v.encode_to_vec(), REP_WIDE.to_vec());
+        assert_eq!(v.encode_to_vec().expect("encode"),REP_WIDE.to_vec());
     }
 
     #[test]
     fn a_gated_repeat_hands_every_element_the_flag_of_the_parent_carrier() {
         let v = gated(&GATED_NARROW);
         assert_eq!(shapes(v.entries.as_ref().expect("list")), NARROW_ENTRIES.to_vec());
-        assert_eq!(v.encode_to_vec(), GATED_NARROW.to_vec());
+        assert_eq!(v.encode_to_vec().expect("encode"),GATED_NARROW.to_vec());
 
         let v = gated(&GATED_WIDE);
         assert_eq!(shapes(v.entries.as_ref().expect("list")), WIDE_ENTRIES.to_vec());
-        assert_eq!(v.encode_to_vec(), GATED_WIDE.to_vec());
+        assert_eq!(v.encode_to_vec().expect("encode"),GATED_WIDE.to_vec());
     }
 
     #[test]
     fn a_gated_repeat_without_its_gate_holds_no_elements() {
         let v = gated(&GATED_ABSENT);
         assert!(v.entries.is_none());
-        assert_eq!(v.encode_to_vec(), GATED_ABSENT.to_vec());
+        assert_eq!(v.encode_to_vec().expect("encode"),GATED_ABSENT.to_vec());
     }
 }
 "#;
@@ -17032,7 +17032,7 @@ mod tests {
             shapes(&v.entries),
             vec![(0x84, Some(0x11), None, None), (0x03, None, Some(0x1234), None)]
         );
-        assert_eq!(v.encode_to_vec(), AFTER.to_vec());
+        assert_eq!(v.encode_to_vec().expect("encode"),AFTER.to_vec());
     }
 
     #[test]
@@ -17042,7 +17042,7 @@ mod tests {
             shapes(&v.entries),
             vec![(0x83, Some(0x11), None, None), (0x03, Some(0x22), None, None)]
         );
-        assert_eq!(v.encode_to_vec(), NONE.to_vec());
+        assert_eq!(v.encode_to_vec().expect("encode"),NONE.to_vec());
     }
 
     #[test]
@@ -17056,7 +17056,7 @@ mod tests {
                 (0x03, Some(0x77), None, None),
             ]
         );
-        assert_eq!(v.encode_to_vec(), ADJ.to_vec());
+        assert_eq!(v.encode_to_vec().expect("encode"),ADJ.to_vec());
     }
 
     #[test]
@@ -17066,14 +17066,14 @@ mod tests {
             shapes(&v.entries),
             vec![(0x84, Some(0x11), None, Some(0xA1)), (0x03, None, Some(0x1234), Some(0xA2))]
         );
-        assert_eq!(v.encode_to_vec(), TAGGED.to_vec());
+        assert_eq!(v.encode_to_vec().expect("encode"),TAGGED.to_vec());
     }
 
     #[test]
     fn the_first_entry_has_no_entry_before_it() {
         let v = carrier(&ONLY);
         assert_eq!(shapes(&v.entries), vec![(0x04, Some(0x11), None, None)]);
-        assert_eq!(v.encode_to_vec(), ONLY.to_vec());
+        assert_eq!(v.encode_to_vec().expect("encode"),ONLY.to_vec());
     }
 
     #[test]
@@ -17083,14 +17083,14 @@ mod tests {
             shapes(v.entries.as_ref().expect("chain")),
             vec![(0x84, Some(0x11), None, None), (0x03, None, Some(0x1234), None)]
         );
-        assert_eq!(v.encode_to_vec(), G_AFTER.to_vec());
+        assert_eq!(v.encode_to_vec().expect("encode"),G_AFTER.to_vec());
 
         let v = gated(&G_TAGGED);
         assert_eq!(
             shapes(v.entries.as_ref().expect("chain")),
             vec![(0x84, Some(0x11), None, Some(0xA1)), (0x03, None, Some(0x1234), Some(0xA2))]
         );
-        assert_eq!(v.encode_to_vec(), G_TAGGED.to_vec());
+        assert_eq!(v.encode_to_vec().expect("encode"),G_TAGGED.to_vec());
     }
 
     #[test]
@@ -17106,14 +17106,14 @@ mod tests {
                 (0x03, None, Some(0x1234), None),
             ]
         );
-        assert_eq!(v.encode_to_vec(), G_MIDDLE.to_vec());
+        assert_eq!(v.encode_to_vec().expect("encode"),G_MIDDLE.to_vec());
     }
 
     #[test]
     fn a_gated_chain_without_its_gate_holds_no_entries() {
         let v = gated(&G_ABSENT);
         assert!(v.entries.is_none());
-        assert_eq!(v.encode_to_vec(), G_ABSENT.to_vec());
+        assert_eq!(v.encode_to_vec().expect("encode"),G_ABSENT.to_vec());
     }
 
     fn tail(frame: &[u8]) -> CodecChainPrevTail {
@@ -17131,7 +17131,7 @@ mod tests {
             shapes(&v.entries),
             vec![(0x84, Some(0x11), None, None), (0x03, None, Some(0x1234), None)]
         );
-        assert_eq!(v.encode_to_vec(), AFTER.to_vec());
+        assert_eq!(v.encode_to_vec().expect("encode"),AFTER.to_vec());
 
         let v = tail(&ADJ);
         assert_eq!(
@@ -17142,14 +17142,14 @@ mod tests {
                 (0x03, Some(0x77), None, None),
             ]
         );
-        assert_eq!(v.encode_to_vec(), ADJ.to_vec());
+        assert_eq!(v.encode_to_vec().expect("encode"),ADJ.to_vec());
 
         let v = tail(&TAGGED);
         assert_eq!(
             shapes(&v.entries),
             vec![(0x84, Some(0x11), None, Some(0xA1)), (0x03, None, Some(0x1234), Some(0xA2))]
         );
-        assert_eq!(v.encode_to_vec(), TAGGED.to_vec());
+        assert_eq!(v.encode_to_vec().expect("encode"),TAGGED.to_vec());
     }
 
     #[test]
@@ -17159,7 +17159,7 @@ mod tests {
             shapes(v.entries.as_ref().expect("chain")),
             vec![(0x84, Some(0x11), None, None), (0x03, None, Some(0x1234), None)]
         );
-        assert_eq!(v.encode_to_vec(), G_AFTER.to_vec());
+        assert_eq!(v.encode_to_vec().expect("encode"),G_AFTER.to_vec());
 
         let v = tail_gated(&G_MIDDLE);
         assert_eq!(
@@ -17170,11 +17170,11 @@ mod tests {
                 (0x03, None, Some(0x1234), None),
             ]
         );
-        assert_eq!(v.encode_to_vec(), G_MIDDLE.to_vec());
+        assert_eq!(v.encode_to_vec().expect("encode"),G_MIDDLE.to_vec());
 
         let v = tail_gated(&G_ABSENT);
         assert!(v.entries.is_none());
-        assert_eq!(v.encode_to_vec(), G_ABSENT.to_vec());
+        assert_eq!(v.encode_to_vec().expect("encode"),G_ABSENT.to_vec());
     }
 }
 "#;
@@ -17320,7 +17320,7 @@ mod tests {
         assert_eq!(slices[0].kind, 1);
         assert_eq!(slices[0].len, 7);
         assert_eq!(slices[0].data, &[0x80, 0x08, 0xAE, 0xCF, 0x01, 0x00, 0x00]);
-        assert_eq!(v.encode_to_vec(), SHM.to_vec());
+        assert_eq!(v.encode_to_vec().expect("encode"),SHM.to_vec());
     }
 
     #[test]
@@ -17330,7 +17330,7 @@ mod tests {
         assert_eq!(z.value_len, 4);
         assert_eq!(z.value, Some(&[0xDE, 0xAD, 0xBE, 0xEF][..]));
         assert!(z.slices.is_none() && z.encoding.is_none());
-        assert_eq!(v.encode_to_vec(), PLAIN.to_vec());
+        assert_eq!(v.encode_to_vec().expect("encode"),PLAIN.to_vec());
     }
 
     #[test]
@@ -17340,7 +17340,7 @@ mod tests {
         let z = zbuf(&v, 2);
         assert_eq!(z.value, Some(&[0xDE, 0xAD, 0xBE, 0xEF][..]));
         assert!(z.slices.is_none());
-        assert_eq!(v.encode_to_vec(), NOT_ADJACENT.to_vec());
+        assert_eq!(v.encode_to_vec().expect("encode"),NOT_ADJACENT.to_vec());
     }
 }
 "#;
@@ -20346,8 +20346,8 @@ fn flag_inversion_emits_typed_param_and_predicate_consumption() {
         "parent decode embed-site must extract `(header >> 5) & 0x1`\n{parent_rust}"
     );
     assert!(
-        parent_rust.contains("(self.header >> 5) & 0x1"),
-        "parent encode embed-site must extract from self.header\n{parent_rust}"
+        parent_rust.contains("(_c_header >> 5) & 0x1"),
+        "parent encode embed-site must extract from the carrier it writes\n{parent_rust}"
     );
 
     let _ = std::fs::remove_dir_all(&dir);
@@ -20477,10 +20477,10 @@ fn flag_inversion_variant_arm_flag_bind_threading() {
         parent_rust.contains("CodecAxis1D1NoInput::decode_into(cursor, _b)?"),
         "no-input arm decode must remain arg-less:\n{parent_rust}"
     );
-    // Encode site reads through `self.header` and threads through the sink.
+    // Encode site reads the carrier it writes and threads through the sink.
     assert!(
-        parent_rust.contains("b.encode(w, (self.header >> 6) & 0x1)?;"),
-        "variant arm encode must thread sink and extract from self.header:\n{parent_rust}"
+        parent_rust.contains("CodecAxis1D1WithInput::write_source(_b, w, (_c_header >> 6) & 0x1)?"),
+        "variant arm encode must thread sink and extract from the carrier it writes:\n{parent_rust}"
     );
 
     // End-to-end rustc-compile gate — substring assertions check shape;
@@ -20950,7 +20950,7 @@ fn round_trip_arm_a_with_suffix() {
             }),
         },
     };
-    let bytes = p.encode_to_vec();
+    let bytes = p.encode_to_vec().expect("encode");
     assert_eq!(bytes, vec![0x20u8, 0xAAu8, 0x55u8], "encode wire bytes");
     let mut cursor = SceCursor::new(&bytes);
     let decoded = CodecAxis1EmbedDispParent::decode(&mut cursor)
@@ -21310,7 +21310,7 @@ fn multi_input_round_trip_n1_m0_p1() {
             }),
         },
     };
-    let bytes = p.encode_to_vec();
+    let bytes = p.encode_to_vec().expect("encode");
     // 5 bytes: header + disp_tag + x + optN + optP (optM gated off)
     assert_eq!(
         bytes,

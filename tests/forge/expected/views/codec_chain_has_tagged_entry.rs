@@ -99,10 +99,7 @@ impl CodecChainHasTaggedEntry {
     /// destination has insufficient remaining capacity; growable
     /// sinks (e.g. `VecSink`) are effectively infallible.
     pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> {
-        w.write_u8(self.entry_type)?;
-        w.write_u8(self.ctl)?;
-        w.write_u8(self.body)?;
-        Ok(())
+        Self::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
@@ -125,6 +122,95 @@ impl CodecChainHasTaggedEntry {
         _sce_v
     }
 }
+
+/// Flags of `CodecChainHasTaggedEntry` a parent sets in place of the ones a value presents:
+/// the end flag of a chain whose entries are `CodecChainHasTaggedEntry`, which the chain
+/// derives from where an entry stands.
+#[doc(hidden)]
+#[derive(Debug, Default, Clone, Copy)]
+pub struct CodecChainHasTaggedEntryOverrides {
+    /// The `more` flag of `ctl`, when a parent sets it.
+    pub ctl_more: Option<bool>,
+}
+
+#[allow(dead_code)]
+impl CodecChainHasTaggedEntryOverrides {
+    /// Sets `more` of `ctl` and nothing else.
+    #[allow(clippy::needless_update)]
+    pub fn ctl_more(value: bool) -> Self {
+        Self { ctl_more: Some(value), ..Self::default() }
+    }
+}
+
+// ── Source (ADR 0058) ────────────────────────────────────────────────
+/// What a value of `CodecChainHasTaggedEntry` says: its presented fields. A length, a count
+/// or the flag a gated field is announced by is not among them; `CodecChainHasTaggedEntry`
+/// computes those from what is ([`CodecChainHasTaggedEntry::encode_source`]).
+pub trait CodecChainHasTaggedEntrySource {
+    /// The `entry_type` field.
+    fn entry_type(&self) -> u8;
+    /// The `ctl` field.
+    fn ctl(&self) -> u8;
+    /// The `body` field.
+    fn body(&self) -> u8;
+}
+
+impl<T: CodecChainHasTaggedEntrySource + ?Sized> CodecChainHasTaggedEntrySource for &T {
+    fn entry_type(&self) -> u8 {
+        (**self).entry_type()
+    }
+    fn ctl(&self) -> u8 {
+        (**self).ctl()
+    }
+    fn body(&self) -> u8 {
+        (**self).body()
+    }
+}
+
+impl CodecChainHasTaggedEntrySource for CodecChainHasTaggedEntry {
+    fn entry_type(&self) -> u8 {
+        self.entry_type
+    }
+    fn ctl(&self) -> u8 {
+        self.ctl
+    }
+    fn body(&self) -> u8 {
+        self.body
+    }
+}
+
+#[allow(dead_code)]
+impl CodecChainHasTaggedEntry {
+    /// Encode what `src` says into the caller-owned sink: the bytes
+    /// [`Self::encode`] writes for the value it holds, read through
+    /// [`CodecChainHasTaggedEntrySource`]. A length, a count or a gate flag is computed from what
+    /// `src` presents, and a value the encoding cannot carry is refused
+    /// before the first byte is written.
+    pub fn encode_source<S: CodecChainHasTaggedEntrySource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {
+        Self::write_source(src, w)
+    }
+
+    /// [`Self::encode_source`] without the guard a parent has already made.
+    #[doc(hidden)]
+    pub fn write_source<S: CodecChainHasTaggedEntrySource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {
+        Self::write_source_in(src, w, &CodecChainHasTaggedEntryOverrides::default())
+    }
+
+    /// [`Self::write_source`] with the flags a parent sets in place of the
+    /// ones `src` presents.
+    #[doc(hidden)]
+    pub fn write_source_in<S: CodecChainHasTaggedEntrySource + ?Sized, K: SceSink>(src: &S, w: &mut K, over: &CodecChainHasTaggedEntryOverrides) -> Result<(), CodecError> {
+        let mut _c_ctl: u8 = src.ctl();
+        if let Some(_o) = over.ctl_more {
+            _c_ctl = (_c_ctl & !0x1) | u8::from(_o);
+        }
+        w.write_u8(src.entry_type())?;
+        w.write_u8(_c_ctl)?;
+        w.write_u8(src.body())?;
+        Ok(())
+    }
+}
+
 
 // ── View (ADR 0049) ──────────────────────────────────────────────────
 // `CodecChainHasTaggedEntry` holds no bounded list, embedded body or variant, so a

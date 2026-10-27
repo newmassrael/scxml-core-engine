@@ -75,9 +75,7 @@ impl CodecVariantSessionOpen {
     /// destination has insufficient remaining capacity; growable
     /// sinks (e.g. `VecSink`) are effectively infallible.
     pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> {
-        w.write_u8((self.version >> 8 & 0xFF) as u8)?;
-        w.write_u8((self.version & 0xFF) as u8)?;
-        Ok(())
+        Self::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
@@ -100,6 +98,48 @@ impl CodecVariantSessionOpen {
         _sce_v
     }
 }
+
+// ── Source (ADR 0058) ────────────────────────────────────────────────
+/// What a value of `CodecVariantSessionOpen` says: its presented fields. A length, a count
+/// or the flag a gated field is announced by is not among them; `CodecVariantSessionOpen`
+/// computes those from what is ([`CodecVariantSessionOpen::encode_source`]).
+pub trait CodecVariantSessionOpenSource {
+    /// The `version` field.
+    fn version(&self) -> u16;
+}
+
+impl<T: CodecVariantSessionOpenSource + ?Sized> CodecVariantSessionOpenSource for &T {
+    fn version(&self) -> u16 {
+        (**self).version()
+    }
+}
+
+impl CodecVariantSessionOpenSource for CodecVariantSessionOpen {
+    fn version(&self) -> u16 {
+        self.version
+    }
+}
+
+#[allow(dead_code)]
+impl CodecVariantSessionOpen {
+    /// Encode what `src` says into the caller-owned sink: the bytes
+    /// [`Self::encode`] writes for the value it holds, read through
+    /// [`CodecVariantSessionOpenSource`]. A length, a count or a gate flag is computed from what
+    /// `src` presents, and a value the encoding cannot carry is refused
+    /// before the first byte is written.
+    pub fn encode_source<S: CodecVariantSessionOpenSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {
+        Self::write_source(src, w)
+    }
+
+    /// [`Self::encode_source`] without the guard a parent has already made.
+    #[doc(hidden)]
+    pub fn write_source<S: CodecVariantSessionOpenSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {
+        w.write_u8((src.version() >> 8 & 0xFF) as u8)?;
+        w.write_u8((src.version() & 0xFF) as u8)?;
+        Ok(())
+    }
+}
+
 
 // ── View (ADR 0049) ──────────────────────────────────────────────────
 // `CodecVariantSessionOpen` holds no bounded list, embedded body or variant, so a

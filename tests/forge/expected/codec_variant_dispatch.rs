@@ -141,44 +141,95 @@ impl CodecVariantDispatch {
     /// destination has insufficient remaining capacity; growable
     /// sinks (e.g. `VecSink`) are effectively infallible.
     pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> {
-        // Encode fixed prefix (tag field is part of the prefix). The
-        // tag value is read from the struct field, NOT derived from
-        // the body discriminant — keeping author-set msg_id / body in
-        // sync is the caller's responsibility (v1 keeps the layout
-        // simple; future extensions may auto-sync via a typed setter).
-        w.write_u8(self.msg_id)?;
-        // Append the active arm's encoded bytes.
-        match &self.body {
-            CodecVariantDispatchVariant::CodecVariantSessionOpen(b) => {
-                b.encode(w)?;
-            }
-            CodecVariantDispatchVariant::CodecVariantSessionClose(b) => {
-                b.encode(w)?;
-            }
-            CodecVariantDispatchVariant::Default { body, .. } => {
-                body.encode(w)?;
-            }
-        }
-        Ok(())
+        Self::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
     /// `MAX_ENCODED_BYTES` so the worst-case write path performs at
     /// most one allocation, then delegates to `encode` over a
-    /// `VecSink`. Returns the freshly-encoded byte vector. Callers
-    /// targeting zero-alloc hot paths should call `encode` directly
-    /// against a caller-owned sink.
+    /// `VecSink`. Returns the freshly-encoded byte vector, or the
+    /// `CodecError::PresentIfMismatch` `encode` refuses a message with
+    /// when a field's presence disagrees with the `sce:present-if`
+    /// that gates it. Callers targeting zero-alloc hot paths should
+    /// call `encode` directly against a caller-owned sink.
     ///
     /// Gated on the `alloc` feature — `VecSink` lives behind the
     /// same gate (see `backends/rust/forge-runtime/src/codec.rs`). MCU /
     /// `no_std` builds without `alloc` only see the sink-based
     /// primary `encode`.
     #[cfg(feature = "alloc")]
-    pub fn encode_to_vec(&self) -> Vec<u8> {
+    pub fn encode_to_vec(&self) -> Result<Vec<u8>, CodecError> {
         let mut _sce_v: Vec<u8> = Vec::with_capacity(Self::MAX_ENCODED_BYTES);
         let mut _sce_sink = VecSink::new(&mut _sce_v);
-        self.encode(&mut _sce_sink)
-            .expect("VecSink is infallible");
-        _sce_v
+        self.encode(&mut _sce_sink)?;
+        Ok(_sce_v)
+    }
+}
+
+/// The arm of `CodecVariantDispatch`'s variant a value holds, each arm's body as the
+/// source it says. The tag is not among them: `CodecVariantDispatch` derives it from
+/// the arm, as it derives a length, and a default arm presents the tag
+/// it could not name.
+// A default arm's tag is read by the codec that embeds this one and
+// derives its own carrier bits from the arm, which not every build uses.
+#[allow(dead_code)]
+pub enum CodecVariantDispatchVariantSource<'s, A0: ?Sized, A1: ?Sized, D: ?Sized> {
+    CodecVariantSessionOpen(&'s A0),
+    CodecVariantSessionClose(&'s A1),
+    Default { tag: u8, body: &'s D },
+}
+
+// ── Source (ADR 0058) ────────────────────────────────────────────────
+/// What a value of `CodecVariantDispatch` says: its presented fields. A length, a count
+/// or the flag a gated field is announced by is not among them; `CodecVariantDispatch`
+/// computes those from what is ([`CodecVariantDispatch::encode_source`]).
+pub trait CodecVariantDispatchSource {
+    /// The arm of the variant this value holds.
+    fn body(&self) -> CodecVariantDispatchVariantSource<'_, impl super::codec_variant_session_open::CodecVariantSessionOpenSource, impl super::codec_variant_session_close::CodecVariantSessionCloseSource, impl super::codec_variant_session_close::CodecVariantSessionCloseSource>;
+}
+
+impl<T: CodecVariantDispatchSource + ?Sized> CodecVariantDispatchSource for &T {
+    fn body(&self) -> CodecVariantDispatchVariantSource<'_, impl super::codec_variant_session_open::CodecVariantSessionOpenSource, impl super::codec_variant_session_close::CodecVariantSessionCloseSource, impl super::codec_variant_session_close::CodecVariantSessionCloseSource> {
+        (**self).body()
+    }
+}
+
+impl CodecVariantDispatchSource for CodecVariantDispatch {
+    fn body(&self) -> CodecVariantDispatchVariantSource<'_, impl super::codec_variant_session_open::CodecVariantSessionOpenSource, impl super::codec_variant_session_close::CodecVariantSessionCloseSource, impl super::codec_variant_session_close::CodecVariantSessionCloseSource> {
+        match &self.body {
+            CodecVariantDispatchVariant::CodecVariantSessionOpen(_b) => CodecVariantDispatchVariantSource::CodecVariantSessionOpen(_b),
+            CodecVariantDispatchVariant::CodecVariantSessionClose(_b) => CodecVariantDispatchVariantSource::CodecVariantSessionClose(_b),
+            CodecVariantDispatchVariant::Default { tag, body } => CodecVariantDispatchVariantSource::Default { tag: *tag, body },
+        }
+    }
+}
+
+#[allow(dead_code)]
+impl CodecVariantDispatch {
+    /// Encode what `src` says into the caller-owned sink: the bytes
+    /// [`Self::encode`] writes for the value it holds, read through
+    /// [`CodecVariantDispatchSource`]. A length, a count or a gate flag is computed from what
+    /// `src` presents, and a value the encoding cannot carry is refused
+    /// before the first byte is written.
+    pub fn encode_source<S: CodecVariantDispatchSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {
+        Self::write_source(src, &mut ::sce_forge_runtime::codec::CountSink::new())?;
+        Self::write_source(src, w)
+    }
+
+    /// [`Self::encode_source`] without the guard a parent has already made.
+    #[doc(hidden)]
+    pub fn write_source<S: CodecVariantDispatchSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {
+        let _d_msg_id: u8 = match src.body() {
+            CodecVariantDispatchVariantSource::CodecVariantSessionOpen(_) => 1,
+            CodecVariantDispatchVariantSource::CodecVariantSessionClose(_) => 2,
+            CodecVariantDispatchVariantSource::Default { tag, .. } => tag,
+        };
+        w.write_u8(_d_msg_id)?;
+        match src.body() {
+            CodecVariantDispatchVariantSource::CodecVariantSessionOpen(_b) => CodecVariantSessionOpen::write_source(_b, w)?,
+            CodecVariantDispatchVariantSource::CodecVariantSessionClose(_b) => CodecVariantSessionClose::write_source(_b, w)?,
+            CodecVariantDispatchVariantSource::Default { body: _b, .. } => CodecVariantSessionClose::write_source(_b, w)?,
+        }
+        Ok(())
     }
 }

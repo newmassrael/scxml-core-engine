@@ -74,9 +74,7 @@ impl CodecRepeatElem {
     /// destination has insufficient remaining capacity; growable
     /// sinks (e.g. `VecSink`) are effectively infallible.
     pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> {
-        w.write_u8((self.seq >> 8 & 0xFF) as u8)?;
-        w.write_u8((self.seq & 0xFF) as u8)?;
-        Ok(())
+        Self::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
@@ -97,5 +95,46 @@ impl CodecRepeatElem {
         self.encode(&mut _sce_sink)
             .expect("VecSink is infallible");
         _sce_v
+    }
+}
+
+// ── Source (ADR 0058) ────────────────────────────────────────────────
+/// What a value of `CodecRepeatElem` says: its presented fields. A length, a count
+/// or the flag a gated field is announced by is not among them; `CodecRepeatElem`
+/// computes those from what is ([`CodecRepeatElem::encode_source`]).
+pub trait CodecRepeatElemSource {
+    /// The `seq` field.
+    fn seq(&self) -> u16;
+}
+
+impl<T: CodecRepeatElemSource + ?Sized> CodecRepeatElemSource for &T {
+    fn seq(&self) -> u16 {
+        (**self).seq()
+    }
+}
+
+impl CodecRepeatElemSource for CodecRepeatElem {
+    fn seq(&self) -> u16 {
+        self.seq
+    }
+}
+
+#[allow(dead_code)]
+impl CodecRepeatElem {
+    /// Encode what `src` says into the caller-owned sink: the bytes
+    /// [`Self::encode`] writes for the value it holds, read through
+    /// [`CodecRepeatElemSource`]. A length, a count or a gate flag is computed from what
+    /// `src` presents, and a value the encoding cannot carry is refused
+    /// before the first byte is written.
+    pub fn encode_source<S: CodecRepeatElemSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {
+        Self::write_source(src, w)
+    }
+
+    /// [`Self::encode_source`] without the guard a parent has already made.
+    #[doc(hidden)]
+    pub fn write_source<S: CodecRepeatElemSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {
+        w.write_u8((src.seq() >> 8 & 0xFF) as u8)?;
+        w.write_u8((src.seq() & 0xFF) as u8)?;
+        Ok(())
     }
 }

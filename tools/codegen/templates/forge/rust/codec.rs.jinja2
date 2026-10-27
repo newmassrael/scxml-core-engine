@@ -254,9 +254,7 @@ impl{{ struct_lifetime }} {{ struct_name }}{{ struct_lifetime }} {
     /// destination has insufficient remaining capacity; growable
     /// sinks (e.g. `VecSink`) are effectively infallible.
     pub fn encode<S: SceSink>(&self, w: &mut S{{ params_after_first_arg }}) -> Result<(), CodecError> {
-{% set owned_encode = false %}
-{% set encode_view = false %}
-{% include '_macros/forge_rust_codec_encode_body.jinja2' %}
+        Self::encode_source(self, w{{ params_first_arg_with_comma }})
     }
 
 {% if encode_can_refuse %}
@@ -302,10 +300,8 @@ impl{{ struct_lifetime }} {{ struct_name }}{{ struct_lifetime }} {
     }
 {% endif %}
 }
-{% if source_block %}
 
 {{ source_block }}
-{%- endif %}
 {% if emit_views %}
 
 // ── View (ADR 0049) ──────────────────────────────────────────────────
@@ -475,9 +471,7 @@ impl{{ view_lifetime }} {{ struct_name }}View{{ view_lifetime }} {
     /// from, so a frame `decode` accepted in a form that is not canonical is
     /// not passed on as it came.
     pub fn encode<S: SceSink>(&self, w: &mut S{{ params_after_first_arg }}) -> Result<(), CodecError> {
-{% set owned_encode = false %}
-{% set encode_view = true %}
-{% include '_macros/forge_rust_codec_encode_body.jinja2' %}
+        {{ struct_name }}::encode_source(self, w{{ params_first_arg_with_comma }})
     }
 {% if encode_can_refuse %}
 
@@ -761,9 +755,7 @@ impl{{ owned_generics_impl }} {{ struct_name }}Owned{{ owned_generics_args }} {
     /// borrowed form could not carry is an error and never a frame its own
     /// decoder would reject.
     pub fn encode<K: SceSink>(&self, w: &mut K{{ params_after_first_arg }}) -> Result<(), CodecError> {
-{% set owned_encode = true %}
-{% set encode_view = false %}
-{% include '_macros/forge_rust_codec_encode_body.jinja2' %}
+        {{ struct_name }}::encode_source(self, w{{ params_first_arg_with_comma }})
     }
 
 {% if owned_encode_can_refuse %}

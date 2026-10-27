@@ -132,8 +132,7 @@ impl CodecQosByte {
     /// destination has insufficient remaining capacity; growable
     /// sinks (e.g. `VecSink`) are effectively infallible.
     pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> {
-        w.write_u8(self.qos)?;
-        Ok(())
+        Self::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
@@ -154,5 +153,97 @@ impl CodecQosByte {
         self.encode(&mut _sce_sink)
             .expect("VecSink is infallible");
         _sce_v
+    }
+}
+
+/// Flags of `CodecQosByte` a parent sets in place of the ones a value presents:
+/// the end flag of a chain whose entries are `CodecQosByte`, which the chain
+/// derives from where an entry stands.
+#[doc(hidden)]
+#[derive(Debug, Default, Clone, Copy)]
+pub struct CodecQosByteOverrides {
+    /// The `reliable` flag of `qos`, when a parent sets it.
+    pub qos_reliable: Option<bool>,
+    /// The `express` flag of `qos`, when a parent sets it.
+    pub qos_express: Option<bool>,
+    /// The `reserved` flag of `qos`, when a parent sets it.
+    pub qos_reserved: Option<bool>,
+}
+
+#[allow(dead_code)]
+impl CodecQosByteOverrides {
+    /// Sets `reliable` of `qos` and nothing else.
+    #[allow(clippy::needless_update)]
+    pub fn qos_reliable(value: bool) -> Self {
+        Self { qos_reliable: Some(value), ..Self::default() }
+    }
+
+    /// Sets `express` of `qos` and nothing else.
+    #[allow(clippy::needless_update)]
+    pub fn qos_express(value: bool) -> Self {
+        Self { qos_express: Some(value), ..Self::default() }
+    }
+
+    /// Sets `reserved` of `qos` and nothing else.
+    #[allow(clippy::needless_update)]
+    pub fn qos_reserved(value: bool) -> Self {
+        Self { qos_reserved: Some(value), ..Self::default() }
+    }
+}
+
+// ── Source (ADR 0058) ────────────────────────────────────────────────
+/// What a value of `CodecQosByte` says: its presented fields. A length, a count
+/// or the flag a gated field is announced by is not among them; `CodecQosByte`
+/// computes those from what is ([`CodecQosByte::encode_source`]).
+pub trait CodecQosByteSource {
+    /// The `qos` field.
+    fn qos(&self) -> u8;
+}
+
+impl<T: CodecQosByteSource + ?Sized> CodecQosByteSource for &T {
+    fn qos(&self) -> u8 {
+        (**self).qos()
+    }
+}
+
+impl CodecQosByteSource for CodecQosByte {
+    fn qos(&self) -> u8 {
+        self.qos
+    }
+}
+
+#[allow(dead_code)]
+impl CodecQosByte {
+    /// Encode what `src` says into the caller-owned sink: the bytes
+    /// [`Self::encode`] writes for the value it holds, read through
+    /// [`CodecQosByteSource`]. A length, a count or a gate flag is computed from what
+    /// `src` presents, and a value the encoding cannot carry is refused
+    /// before the first byte is written.
+    pub fn encode_source<S: CodecQosByteSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {
+        Self::write_source(src, w)
+    }
+
+    /// [`Self::encode_source`] without the guard a parent has already made.
+    #[doc(hidden)]
+    pub fn write_source<S: CodecQosByteSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {
+        Self::write_source_in(src, w, &CodecQosByteOverrides::default())
+    }
+
+    /// [`Self::write_source`] with the flags a parent sets in place of the
+    /// ones `src` presents.
+    #[doc(hidden)]
+    pub fn write_source_in<S: CodecQosByteSource + ?Sized, K: SceSink>(src: &S, w: &mut K, over: &CodecQosByteOverrides) -> Result<(), CodecError> {
+        let mut _c_qos: u8 = src.qos();
+        if let Some(_o) = over.qos_reliable {
+            _c_qos = (_c_qos & !0x8) | (u8::from(_o) << 3);
+        }
+        if let Some(_o) = over.qos_express {
+            _c_qos = (_c_qos & !0x40) | (u8::from(_o) << 6);
+        }
+        if let Some(_o) = over.qos_reserved {
+            _c_qos = (_c_qos & !0x80) | (u8::from(_o) << 7);
+        }
+        w.write_u8(_c_qos)?;
+        Ok(())
     }
 }

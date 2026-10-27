@@ -289,150 +289,7 @@ impl<'a> Envelope<'a> {
     /// Encode this map into `w`. An entry whose value breaks its declared
     /// bound — an exact length, a maximum size — is refused, not written.
     pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> {
-        let mut count: u64 = 6;
-        if self.subject.is_some() {
-            count += 1;
-        }
-        if self.correlation_id.is_some() {
-            count += 1;
-        }
-        if self.reply_to.is_some() {
-            count += 1;
-        }
-        if self.invoke_id.is_some() {
-            count += 1;
-        }
-        if self.rpc_status.is_some() {
-            count += 1;
-        }
-        if self.rpc_error_message.is_some() {
-            count += 1;
-        }
-        if self.deadline_unix_ms.is_some() {
-            count += 1;
-        }
-        if self.sequence_no.is_some() {
-            count += 1;
-        }
-        if self.routing_id.is_some() {
-            count += 1;
-        }
-        if self.parallel_id.is_some() {
-            count += 1;
-        }
-        if self.region_id.is_some() {
-            count += 1;
-        }
-        if self.child_session_id.is_some() {
-            count += 1;
-        }
-        cbor::write_map_head(w, count)?;
-        let v = self.id;
-        cbor::write_uint(w, 0)?;
-        if v.len() != 16 {
-            return Err(CodecError::CborWrongLength);
-        }
-        cbor::write_bytes(w, v)?;
-        let v = self.source;
-        cbor::write_uint(w, 1)?;
-        if v.len() > 262144 {
-            return Err(CodecError::CborOutOfRange);
-        }
-        cbor::write_text(w, v)?;
-        let v = self.event_type;
-        cbor::write_uint(w, 2)?;
-        if v.len() > 262144 {
-            return Err(CodecError::CborOutOfRange);
-        }
-        cbor::write_text(w, v)?;
-        let v = self.pattern;
-        cbor::write_uint(w, 3)?;
-        cbor::write_uint(w, u64::from(v.to_underlying()))?;
-        let v = self.datacontenttype;
-        cbor::write_uint(w, 4)?;
-        cbor::write_uint(w, u64::from(v.to_underlying()))?;
-        let v = self.data;
-        cbor::write_uint(w, 5)?;
-        if v.len() > 16777216 {
-            return Err(CodecError::CborOutOfRange);
-        }
-        cbor::write_bytes(w, v)?;
-        if let Some(v) = self.subject {
-            cbor::write_uint(w, 6)?;
-            if v.len() > 262144 {
-                return Err(CodecError::CborOutOfRange);
-            }
-            cbor::write_text(w, v)?;
-        }
-        if let Some(v) = self.correlation_id {
-            cbor::write_uint(w, 7)?;
-            if v.len() != 16 {
-                return Err(CodecError::CborWrongLength);
-            }
-            cbor::write_bytes(w, v)?;
-        }
-        if let Some(v) = self.reply_to {
-            cbor::write_uint(w, 8)?;
-            if v.len() > 262144 {
-                return Err(CodecError::CborOutOfRange);
-            }
-            cbor::write_text(w, v)?;
-        }
-        if let Some(v) = self.invoke_id {
-            cbor::write_uint(w, 9)?;
-            if v.len() != 16 {
-                return Err(CodecError::CborWrongLength);
-            }
-            cbor::write_bytes(w, v)?;
-        }
-        if let Some(v) = self.rpc_status {
-            cbor::write_uint(w, 10)?;
-            cbor::write_uint(w, u64::from(v.to_underlying()))?;
-        }
-        if let Some(v) = self.rpc_error_message {
-            cbor::write_uint(w, 11)?;
-            if v.len() > 262144 {
-                return Err(CodecError::CborOutOfRange);
-            }
-            cbor::write_text(w, v)?;
-        }
-        if let Some(v) = self.deadline_unix_ms {
-            cbor::write_uint(w, 12)?;
-            cbor::write_uint(w, v)?;
-        }
-        if let Some(v) = self.sequence_no {
-            cbor::write_uint(w, 14)?;
-            cbor::write_uint(w, v)?;
-        }
-        if let Some(v) = self.routing_id {
-            cbor::write_uint(w, 15)?;
-            if v.len() != 16 {
-                return Err(CodecError::CborWrongLength);
-            }
-            cbor::write_bytes(w, v)?;
-        }
-        if let Some(v) = self.parallel_id {
-            cbor::write_uint(w, 16)?;
-            if v.len() > 262144 {
-                return Err(CodecError::CborOutOfRange);
-            }
-            cbor::write_text(w, v)?;
-        }
-        if let Some(v) = self.region_id {
-            cbor::write_uint(w, 17)?;
-            if v.len() > 262144 {
-                return Err(CodecError::CborOutOfRange);
-            }
-            cbor::write_text(w, v)?;
-        }
-        if let Some(v) = self.child_session_id {
-            cbor::write_uint(w, 18)?;
-            if v.len() > 262144 {
-                return Err(CodecError::CborOutOfRange);
-            }
-            cbor::write_text(w, v)?;
-        }
-        Ok(())
+        Self::encode_source(self, w)
     }
 
     /// [`encode`](Self::encode) into a new `Vec`.
@@ -441,5 +298,327 @@ impl<'a> Envelope<'a> {
         let mut out: Vec<u8> = Vec::new();
         self.encode(&mut VecSink::new(&mut out))?;
         Ok(out)
+    }
+}
+// ── Source (ADR 0058) ────────────────────────────────────────────────
+/// What a value of `Envelope` says: its entries. The count the map head holds
+/// is not among them; `Envelope` counts the entries present
+/// ([`Envelope::encode_source`]).
+pub trait EnvelopeSource {
+    /// The entry with key 0, required.
+    fn id(&self) -> &[u8];
+    /// The entry with key 1, required.
+    fn source(&self) -> &str;
+    /// The entry with key 2, required.
+    fn event_type(&self) -> &str;
+    /// The entry with key 3, required.
+    fn pattern(&self) -> pattern_kind::PatternKind;
+    /// The entry with key 4, required.
+    fn datacontenttype(&self) -> payload_codec::PayloadCodec;
+    /// The entry with key 5, required.
+    fn data(&self) -> &[u8];
+    /// The entry with key 6.
+    fn subject(&self) -> Option<&str>;
+    /// The entry with key 7.
+    fn correlation_id(&self) -> Option<&[u8]>;
+    /// The entry with key 8.
+    fn reply_to(&self) -> Option<&str>;
+    /// The entry with key 9.
+    fn invoke_id(&self) -> Option<&[u8]>;
+    /// The entry with key 10.
+    fn rpc_status(&self) -> Option<rpc_status::RpcStatus>;
+    /// The entry with key 11.
+    fn rpc_error_message(&self) -> Option<&str>;
+    /// The entry with key 12.
+    fn deadline_unix_ms(&self) -> Option<u64>;
+    /// The entry with key 14.
+    fn sequence_no(&self) -> Option<u64>;
+    /// The entry with key 15.
+    fn routing_id(&self) -> Option<&[u8]>;
+    /// The entry with key 16.
+    fn parallel_id(&self) -> Option<&str>;
+    /// The entry with key 17.
+    fn region_id(&self) -> Option<&str>;
+    /// The entry with key 18.
+    fn child_session_id(&self) -> Option<&str>;
+}
+
+impl<T: EnvelopeSource + ?Sized> EnvelopeSource for &T {
+    fn id(&self) -> &[u8] {
+        (**self).id()
+    }
+    fn source(&self) -> &str {
+        (**self).source()
+    }
+    fn event_type(&self) -> &str {
+        (**self).event_type()
+    }
+    fn pattern(&self) -> pattern_kind::PatternKind {
+        (**self).pattern()
+    }
+    fn datacontenttype(&self) -> payload_codec::PayloadCodec {
+        (**self).datacontenttype()
+    }
+    fn data(&self) -> &[u8] {
+        (**self).data()
+    }
+    fn subject(&self) -> Option<&str> {
+        (**self).subject()
+    }
+    fn correlation_id(&self) -> Option<&[u8]> {
+        (**self).correlation_id()
+    }
+    fn reply_to(&self) -> Option<&str> {
+        (**self).reply_to()
+    }
+    fn invoke_id(&self) -> Option<&[u8]> {
+        (**self).invoke_id()
+    }
+    fn rpc_status(&self) -> Option<rpc_status::RpcStatus> {
+        (**self).rpc_status()
+    }
+    fn rpc_error_message(&self) -> Option<&str> {
+        (**self).rpc_error_message()
+    }
+    fn deadline_unix_ms(&self) -> Option<u64> {
+        (**self).deadline_unix_ms()
+    }
+    fn sequence_no(&self) -> Option<u64> {
+        (**self).sequence_no()
+    }
+    fn routing_id(&self) -> Option<&[u8]> {
+        (**self).routing_id()
+    }
+    fn parallel_id(&self) -> Option<&str> {
+        (**self).parallel_id()
+    }
+    fn region_id(&self) -> Option<&str> {
+        (**self).region_id()
+    }
+    fn child_session_id(&self) -> Option<&str> {
+        (**self).child_session_id()
+    }
+}
+
+impl<'a> EnvelopeSource for Envelope<'a> {
+    fn id(&self) -> &[u8] {
+        self.id
+    }
+    fn source(&self) -> &str {
+        self.source
+    }
+    fn event_type(&self) -> &str {
+        self.event_type
+    }
+    fn pattern(&self) -> pattern_kind::PatternKind {
+        self.pattern
+    }
+    fn datacontenttype(&self) -> payload_codec::PayloadCodec {
+        self.datacontenttype
+    }
+    fn data(&self) -> &[u8] {
+        self.data
+    }
+    fn subject(&self) -> Option<&str> {
+        self.subject
+    }
+    fn correlation_id(&self) -> Option<&[u8]> {
+        self.correlation_id
+    }
+    fn reply_to(&self) -> Option<&str> {
+        self.reply_to
+    }
+    fn invoke_id(&self) -> Option<&[u8]> {
+        self.invoke_id
+    }
+    fn rpc_status(&self) -> Option<rpc_status::RpcStatus> {
+        self.rpc_status
+    }
+    fn rpc_error_message(&self) -> Option<&str> {
+        self.rpc_error_message
+    }
+    fn deadline_unix_ms(&self) -> Option<u64> {
+        self.deadline_unix_ms
+    }
+    fn sequence_no(&self) -> Option<u64> {
+        self.sequence_no
+    }
+    fn routing_id(&self) -> Option<&[u8]> {
+        self.routing_id
+    }
+    fn parallel_id(&self) -> Option<&str> {
+        self.parallel_id
+    }
+    fn region_id(&self) -> Option<&str> {
+        self.region_id
+    }
+    fn child_session_id(&self) -> Option<&str> {
+        self.child_session_id
+    }
+}
+
+#[allow(dead_code)]
+impl<'a> Envelope<'a> {
+    /// Encode what `src` says as one CBOR map into `w`: the entries present in
+    /// ascending key order, every head in its shortest form. An entry past its
+    /// declared bound is refused before the first byte is written.
+    pub fn encode_source<S: EnvelopeSource + ?Sized, K: SceSink>(
+        src: &S,
+        w: &mut K,
+    ) -> Result<(), CodecError> {
+        Self::write_source(src, &mut ::sce_forge_runtime::codec::CountSink::new())?;
+        Self::write_source(src, w)
+    }
+
+    /// [`Self::encode_source`] without the pre-pass a parent has already made.
+    #[doc(hidden)]
+    pub fn write_source<S: EnvelopeSource + ?Sized, K: SceSink>(
+        src: &S,
+        w: &mut K,
+    ) -> Result<(), CodecError> {
+        let mut count: u64 = 6;
+        if src.subject().is_some() {
+            count += 1;
+        }
+        if src.correlation_id().is_some() {
+            count += 1;
+        }
+        if src.reply_to().is_some() {
+            count += 1;
+        }
+        if src.invoke_id().is_some() {
+            count += 1;
+        }
+        if src.rpc_status().is_some() {
+            count += 1;
+        }
+        if src.rpc_error_message().is_some() {
+            count += 1;
+        }
+        if src.deadline_unix_ms().is_some() {
+            count += 1;
+        }
+        if src.sequence_no().is_some() {
+            count += 1;
+        }
+        if src.routing_id().is_some() {
+            count += 1;
+        }
+        if src.parallel_id().is_some() {
+            count += 1;
+        }
+        if src.region_id().is_some() {
+            count += 1;
+        }
+        if src.child_session_id().is_some() {
+            count += 1;
+        }
+        cbor::write_map_head(w, count)?;
+        let v = src.id();
+        cbor::write_uint(w, 0)?;
+        if v.len() != 16 {
+            return Err(CodecError::CborWrongLength);
+        }
+        cbor::write_bytes(w, v)?;
+        let v = src.source();
+        cbor::write_uint(w, 1)?;
+        if v.len() > 262144 {
+            return Err(CodecError::CborOutOfRange);
+        }
+        cbor::write_text(w, v)?;
+        let v = src.event_type();
+        cbor::write_uint(w, 2)?;
+        if v.len() > 262144 {
+            return Err(CodecError::CborOutOfRange);
+        }
+        cbor::write_text(w, v)?;
+        let v = src.pattern();
+        cbor::write_uint(w, 3)?;
+        cbor::write_uint(w, u64::from(v.to_underlying()))?;
+        let v = src.datacontenttype();
+        cbor::write_uint(w, 4)?;
+        cbor::write_uint(w, u64::from(v.to_underlying()))?;
+        let v = src.data();
+        cbor::write_uint(w, 5)?;
+        if v.len() > 16777216 {
+            return Err(CodecError::CborOutOfRange);
+        }
+        cbor::write_bytes(w, v)?;
+        if let Some(v) = src.subject() {
+            cbor::write_uint(w, 6)?;
+            if v.len() > 262144 {
+                return Err(CodecError::CborOutOfRange);
+            }
+            cbor::write_text(w, v)?;
+        }
+        if let Some(v) = src.correlation_id() {
+            cbor::write_uint(w, 7)?;
+            if v.len() != 16 {
+                return Err(CodecError::CborWrongLength);
+            }
+            cbor::write_bytes(w, v)?;
+        }
+        if let Some(v) = src.reply_to() {
+            cbor::write_uint(w, 8)?;
+            if v.len() > 262144 {
+                return Err(CodecError::CborOutOfRange);
+            }
+            cbor::write_text(w, v)?;
+        }
+        if let Some(v) = src.invoke_id() {
+            cbor::write_uint(w, 9)?;
+            if v.len() != 16 {
+                return Err(CodecError::CborWrongLength);
+            }
+            cbor::write_bytes(w, v)?;
+        }
+        if let Some(v) = src.rpc_status() {
+            cbor::write_uint(w, 10)?;
+            cbor::write_uint(w, u64::from(v.to_underlying()))?;
+        }
+        if let Some(v) = src.rpc_error_message() {
+            cbor::write_uint(w, 11)?;
+            if v.len() > 262144 {
+                return Err(CodecError::CborOutOfRange);
+            }
+            cbor::write_text(w, v)?;
+        }
+        if let Some(v) = src.deadline_unix_ms() {
+            cbor::write_uint(w, 12)?;
+            cbor::write_uint(w, v)?;
+        }
+        if let Some(v) = src.sequence_no() {
+            cbor::write_uint(w, 14)?;
+            cbor::write_uint(w, v)?;
+        }
+        if let Some(v) = src.routing_id() {
+            cbor::write_uint(w, 15)?;
+            if v.len() != 16 {
+                return Err(CodecError::CborWrongLength);
+            }
+            cbor::write_bytes(w, v)?;
+        }
+        if let Some(v) = src.parallel_id() {
+            cbor::write_uint(w, 16)?;
+            if v.len() > 262144 {
+                return Err(CodecError::CborOutOfRange);
+            }
+            cbor::write_text(w, v)?;
+        }
+        if let Some(v) = src.region_id() {
+            cbor::write_uint(w, 17)?;
+            if v.len() > 262144 {
+                return Err(CodecError::CborOutOfRange);
+            }
+            cbor::write_text(w, v)?;
+        }
+        if let Some(v) = src.child_session_id() {
+            cbor::write_uint(w, 18)?;
+            if v.len() > 262144 {
+                return Err(CodecError::CborOutOfRange);
+            }
+            cbor::write_text(w, v)?;
+        }
+        Ok(())
     }
 }

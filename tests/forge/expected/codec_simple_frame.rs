@@ -80,11 +80,7 @@ impl CodecSimpleFrame {
     /// destination has insufficient remaining capacity; growable
     /// sinks (e.g. `VecSink`) are effectively infallible.
     pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> {
-        w.write_u8(self.msg_id)?;
-        w.write_u8(self.length)?;
-        w.write_u8((self.payload >> 8 & 0xFF) as u8)?;
-        w.write_u8((self.payload & 0xFF) as u8)?;
-        Ok(())
+        Self::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
@@ -105,5 +101,64 @@ impl CodecSimpleFrame {
         self.encode(&mut _sce_sink)
             .expect("VecSink is infallible");
         _sce_v
+    }
+}
+
+// ── Source (ADR 0058) ────────────────────────────────────────────────
+/// What a value of `CodecSimpleFrame` says: its presented fields. A length, a count
+/// or the flag a gated field is announced by is not among them; `CodecSimpleFrame`
+/// computes those from what is ([`CodecSimpleFrame::encode_source`]).
+pub trait CodecSimpleFrameSource {
+    /// The `msgId` field.
+    fn msg_id(&self) -> u8;
+    /// The `length` field.
+    fn length(&self) -> u8;
+    /// The `payload` field.
+    fn payload(&self) -> u16;
+}
+
+impl<T: CodecSimpleFrameSource + ?Sized> CodecSimpleFrameSource for &T {
+    fn msg_id(&self) -> u8 {
+        (**self).msg_id()
+    }
+    fn length(&self) -> u8 {
+        (**self).length()
+    }
+    fn payload(&self) -> u16 {
+        (**self).payload()
+    }
+}
+
+impl CodecSimpleFrameSource for CodecSimpleFrame {
+    fn msg_id(&self) -> u8 {
+        self.msg_id
+    }
+    fn length(&self) -> u8 {
+        self.length
+    }
+    fn payload(&self) -> u16 {
+        self.payload
+    }
+}
+
+#[allow(dead_code)]
+impl CodecSimpleFrame {
+    /// Encode what `src` says into the caller-owned sink: the bytes
+    /// [`Self::encode`] writes for the value it holds, read through
+    /// [`CodecSimpleFrameSource`]. A length, a count or a gate flag is computed from what
+    /// `src` presents, and a value the encoding cannot carry is refused
+    /// before the first byte is written.
+    pub fn encode_source<S: CodecSimpleFrameSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {
+        Self::write_source(src, w)
+    }
+
+    /// [`Self::encode_source`] without the guard a parent has already made.
+    #[doc(hidden)]
+    pub fn write_source<S: CodecSimpleFrameSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {
+        w.write_u8(src.msg_id())?;
+        w.write_u8(src.length())?;
+        w.write_u8((src.payload() >> 8 & 0xFF) as u8)?;
+        w.write_u8((src.payload() & 0xFF) as u8)?;
+        Ok(())
     }
 }

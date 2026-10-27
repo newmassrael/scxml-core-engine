@@ -159,41 +159,133 @@ impl CodecInitSynEnvelope {
     /// destination has insufficient remaining capacity; growable
     /// sinks (e.g. `VecSink`) are effectively infallible.
     pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> {
-        // Encode fixed prefix (tag field is part of the prefix). The
-        // tag value is read from the struct field, NOT derived from
-        // the body discriminant — keeping author-set msg_id / body in
-        // sync is the caller's responsibility (v1 keeps the layout
-        // simple; future extensions may auto-sync via a typed setter).
-        w.write_u8(self.header)?;
-        // Append the active arm's encoded bytes.
-        match &self.body {
-            CodecInitSynEnvelopeVariant::CodecInitSynBody(b) => {
-                b.encode(w, (self.header >> 6) & 0x1)?;
-            }
-            CodecInitSynEnvelopeVariant::Default { body, .. } => {
-                body.encode(w, (self.header >> 6) & 0x1)?;
-            }
-        }
-        Ok(())
+        Self::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
     /// `MAX_ENCODED_BYTES` so the worst-case write path performs at
     /// most one allocation, then delegates to `encode` over a
-    /// `VecSink`. Returns the freshly-encoded byte vector. Callers
-    /// targeting zero-alloc hot paths should call `encode` directly
-    /// against a caller-owned sink.
+    /// `VecSink`. Returns the freshly-encoded byte vector, or the
+    /// `CodecError::PresentIfMismatch` `encode` refuses a message with
+    /// when a field's presence disagrees with the `sce:present-if`
+    /// that gates it. Callers targeting zero-alloc hot paths should
+    /// call `encode` directly against a caller-owned sink.
     ///
     /// Gated on the `alloc` feature — `VecSink` lives behind the
     /// same gate (see `backends/rust/forge-runtime/src/codec.rs`). MCU /
     /// `no_std` builds without `alloc` only see the sink-based
     /// primary `encode`.
     #[cfg(feature = "alloc")]
-    pub fn encode_to_vec(&self) -> Vec<u8> {
+    pub fn encode_to_vec(&self) -> Result<Vec<u8>, CodecError> {
         let mut _sce_v: Vec<u8> = Vec::with_capacity(Self::MAX_ENCODED_BYTES);
         let mut _sce_sink = VecSink::new(&mut _sce_v);
-        self.encode(&mut _sce_sink)
-            .expect("VecSink is infallible");
-        _sce_v
+        self.encode(&mut _sce_sink)?;
+        Ok(_sce_v)
+    }
+}
+
+/// The arm of `CodecInitSynEnvelope`'s variant a value holds, each arm's body as the
+/// source it says. The tag is not among them: `CodecInitSynEnvelope` derives it from
+/// the arm, as it derives a length, and a default arm presents the tag
+/// it could not name.
+// A default arm's tag is read by the codec that embeds this one and
+// derives its own carrier bits from the arm, which not every build uses.
+#[allow(dead_code)]
+pub enum CodecInitSynEnvelopeVariantSource<'s, A0: ?Sized, D: ?Sized> {
+    CodecInitSynBody(&'s A0),
+    Default { tag: u8, body: &'s D },
+}
+
+/// Flags of `CodecInitSynEnvelope` a parent sets in place of the ones a value presents:
+/// the end flag of a chain whose entries are `CodecInitSynEnvelope`, which the chain
+/// derives from where an entry stands.
+#[doc(hidden)]
+#[derive(Debug, Default, Clone, Copy)]
+pub struct CodecInitSynEnvelopeOverrides {
+    /// The `S` flag of `header`, when a parent sets it.
+    pub header_s: Option<bool>,
+}
+
+#[allow(dead_code)]
+impl CodecInitSynEnvelopeOverrides {
+    /// Sets `S` of `header` and nothing else.
+    #[allow(clippy::needless_update)]
+    pub fn header_s(value: bool) -> Self {
+        Self { header_s: Some(value), ..Self::default() }
+    }
+}
+
+// ── Source (ADR 0058) ────────────────────────────────────────────────
+/// What a value of `CodecInitSynEnvelope` says: its presented fields. A length, a count
+/// or the flag a gated field is announced by is not among them; `CodecInitSynEnvelope`
+/// computes those from what is ([`CodecInitSynEnvelope::encode_source`]).
+pub trait CodecInitSynEnvelopeSource {
+    /// The `header` field.
+    fn header(&self) -> u8;
+    /// The arm of the variant this value holds.
+    fn body(&self) -> CodecInitSynEnvelopeVariantSource<'_, impl super::codec_init_syn_body::CodecInitSynBodySource, impl super::codec_init_syn_body::CodecInitSynBodySource>;
+}
+
+impl<T: CodecInitSynEnvelopeSource + ?Sized> CodecInitSynEnvelopeSource for &T {
+    fn header(&self) -> u8 {
+        (**self).header()
+    }
+    fn body(&self) -> CodecInitSynEnvelopeVariantSource<'_, impl super::codec_init_syn_body::CodecInitSynBodySource, impl super::codec_init_syn_body::CodecInitSynBodySource> {
+        (**self).body()
+    }
+}
+
+impl CodecInitSynEnvelopeSource for CodecInitSynEnvelope {
+    fn header(&self) -> u8 {
+        self.header
+    }
+    fn body(&self) -> CodecInitSynEnvelopeVariantSource<'_, impl super::codec_init_syn_body::CodecInitSynBodySource, impl super::codec_init_syn_body::CodecInitSynBodySource> {
+        match &self.body {
+            CodecInitSynEnvelopeVariant::CodecInitSynBody(_b) => CodecInitSynEnvelopeVariantSource::CodecInitSynBody(_b),
+            CodecInitSynEnvelopeVariant::Default { tag, body } => CodecInitSynEnvelopeVariantSource::Default { tag: *tag, body },
+        }
+    }
+}
+
+#[allow(dead_code)]
+impl CodecInitSynEnvelope {
+    /// Encode what `src` says into the caller-owned sink: the bytes
+    /// [`Self::encode`] writes for the value it holds, read through
+    /// [`CodecInitSynEnvelopeSource`]. A length, a count or a gate flag is computed from what
+    /// `src` presents, and a value the encoding cannot carry is refused
+    /// before the first byte is written.
+    pub fn encode_source<S: CodecInitSynEnvelopeSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {
+        Self::write_source(src, &mut ::sce_forge_runtime::codec::CountSink::new())?;
+        Self::write_source(src, w)
+    }
+
+    /// [`Self::encode_source`] without the guard a parent has already made.
+    #[doc(hidden)]
+    pub fn write_source<S: CodecInitSynEnvelopeSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {
+        Self::write_source_in(src, w, &CodecInitSynEnvelopeOverrides::default())
+    }
+
+    /// [`Self::write_source`] with the flags a parent sets in place of the
+    /// ones `src` presents.
+    #[doc(hidden)]
+    pub fn write_source_in<S: CodecInitSynEnvelopeSource + ?Sized, K: SceSink>(src: &S, w: &mut K, over: &CodecInitSynEnvelopeOverrides) -> Result<(), CodecError> {
+        let _d_header_mid: u8 = match src.body() {
+            CodecInitSynEnvelopeVariantSource::CodecInitSynBody(_) => 1,
+            CodecInitSynEnvelopeVariantSource::Default { tag, .. } => tag,
+        };
+        if _d_header_mid > 0x1F {
+            return Err(CodecError::LengthOutOfRange);
+        }
+        let _v_header_mid: u8 = u8::try_from(_d_header_mid).map_err(|_| CodecError::LengthOutOfRange)?;
+        let mut _c_header: u8 = (src.header() & !0x1F) | _v_header_mid;
+        if let Some(_o) = over.header_s {
+            _c_header = (_c_header & !0x40) | (u8::from(_o) << 6);
+        }
+        w.write_u8(_c_header)?;
+        match src.body() {
+            CodecInitSynEnvelopeVariantSource::CodecInitSynBody(_b) => CodecInitSynBody::write_source(_b, w, (_c_header >> 6) & 0x1)?,
+            CodecInitSynEnvelopeVariantSource::Default { body: _b, .. } => CodecInitSynBody::write_source(_b, w, (_c_header >> 6) & 0x1)?,
+        }
+        Ok(())
     }
 }

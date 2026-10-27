@@ -138,21 +138,7 @@ impl<'a> CodecZenohDeclExtKeyexprInner<'a> {
     /// destination has insufficient remaining capacity; growable
     /// sinks (e.g. `VecSink`) are effectively infallible.
     pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> {
-        // Streaming cursor encode (SSOT selection: `needs_streaming`).
-        // Mirrors the streaming decode: every field appends its own bytes
-        // in declaration order through the per-field encode blocks, so a
-        // gated field skips its append when absent, and a fixed field after
-        // a variable-length payload lands after the payload (the positional
-        // path appends variable fields last, placing it ahead on the wire).
-        // Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-        // dedicated helpers; everything else uses `present_if_encode_block`
-        // (its non-gated arm covers plain fixed / tail / length-ref / VLE).
-        w.write_u8(self.inner_header)?;
-        w.write_vle_u64(self.id)?;
-        if let Some(_v) = &self.suffix {
-            w.write_bytes(_v)?;
-        }
-        Ok(())
+        Self::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
@@ -175,6 +161,110 @@ impl<'a> CodecZenohDeclExtKeyexprInner<'a> {
         _sce_v
     }
 }
+
+/// Flags of `CodecZenohDeclExtKeyexprInner` a parent sets in place of the ones a value presents:
+/// the end flag of a chain whose entries are `CodecZenohDeclExtKeyexprInner`, which the chain
+/// derives from where an entry stands.
+#[doc(hidden)]
+#[derive(Debug, Default, Clone, Copy)]
+pub struct CodecZenohDeclExtKeyexprInnerOverrides {
+    /// The `M` flag of `inner_header`, when a parent sets it.
+    pub inner_header_m: Option<bool>,
+}
+
+#[allow(dead_code)]
+impl CodecZenohDeclExtKeyexprInnerOverrides {
+    /// Sets `M` of `inner_header` and nothing else.
+    #[allow(clippy::needless_update)]
+    pub fn inner_header_m(value: bool) -> Self {
+        Self { inner_header_m: Some(value), ..Self::default() }
+    }
+}
+
+// ── Source (ADR 0058) ────────────────────────────────────────────────
+/// What a value of `CodecZenohDeclExtKeyexprInner` says: its presented fields. A length, a count
+/// or the flag a gated field is announced by is not among them; `CodecZenohDeclExtKeyexprInner`
+/// computes those from what is ([`CodecZenohDeclExtKeyexprInner::encode_source`]).
+pub trait CodecZenohDeclExtKeyexprInnerSource {
+    /// The `inner_header` field.
+    fn inner_header(&self) -> u8;
+    /// The `id` field.
+    fn id(&self) -> u64;
+    /// The `suffix` field.
+    fn suffix(&self) -> Option<&[u8]>;
+}
+
+impl<T: CodecZenohDeclExtKeyexprInnerSource + ?Sized> CodecZenohDeclExtKeyexprInnerSource for &T {
+    fn inner_header(&self) -> u8 {
+        (**self).inner_header()
+    }
+    fn id(&self) -> u64 {
+        (**self).id()
+    }
+    fn suffix(&self) -> Option<&[u8]> {
+        (**self).suffix()
+    }
+}
+
+impl<'a> CodecZenohDeclExtKeyexprInnerSource for CodecZenohDeclExtKeyexprInner<'a> {
+    fn inner_header(&self) -> u8 {
+        self.inner_header
+    }
+    fn id(&self) -> u64 {
+        self.id
+    }
+    fn suffix(&self) -> Option<&[u8]> {
+        self.suffix
+    }
+}
+
+impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohDeclExtKeyexprInnerSource for CodecZenohDeclExtKeyexprInnerOwned<S> {
+    fn inner_header(&self) -> u8 {
+        self.inner_header
+    }
+    fn id(&self) -> u64 {
+        self.id
+    }
+    fn suffix(&self) -> Option<&[u8]> {
+        self.suffix.as_ref().map(::sce_forge_runtime::codec::SceByteBuf::as_slice)
+    }
+}
+
+#[allow(dead_code)]
+impl<'a> CodecZenohDeclExtKeyexprInner<'a> {
+    /// Encode what `src` says into the caller-owned sink: the bytes
+    /// [`Self::encode`] writes for the value it holds, read through
+    /// [`CodecZenohDeclExtKeyexprInnerSource`]. A length, a count or a gate flag is computed from what
+    /// `src` presents, and a value the encoding cannot carry is refused
+    /// before the first byte is written.
+    pub fn encode_source<S: CodecZenohDeclExtKeyexprInnerSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {
+        Self::write_source(src, w)
+    }
+
+    /// [`Self::encode_source`] without the guard a parent has already made.
+    #[doc(hidden)]
+    pub fn write_source<S: CodecZenohDeclExtKeyexprInnerSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {
+        Self::write_source_in(src, w, &CodecZenohDeclExtKeyexprInnerOverrides::default())
+    }
+
+    /// [`Self::write_source`] with the flags a parent sets in place of the
+    /// ones `src` presents.
+    #[doc(hidden)]
+    pub fn write_source_in<S: CodecZenohDeclExtKeyexprInnerSource + ?Sized, K: SceSink>(src: &S, w: &mut K, over: &CodecZenohDeclExtKeyexprInnerOverrides) -> Result<(), CodecError> {
+        let _p_inner_header_n_0: bool = src.suffix().is_some();
+        let mut _c_inner_header: u8 = (src.inner_header() & !0x1) | u8::from(_p_inner_header_n_0);
+        if let Some(_o) = over.inner_header_m {
+            _c_inner_header = (_c_inner_header & !0x2) | (u8::from(_o) << 1);
+        }
+        w.write_u8(_c_inner_header)?;
+        w.write_vle_u64(src.id())?;
+        if let Some(_v) = src.suffix() {
+            w.write_bytes(_v)?;
+        }
+        Ok(())
+    }
+}
+
 
 // ── Owned projection (storage-parameterised native form) ─────────────
 // `CodecZenohDeclExtKeyexprInner<'a>` above is a zero-copy view borrowing the decode
@@ -320,21 +410,7 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohDeclExtKeyexprInnerO
     /// borrowed form could not carry is an error and never a frame its own
     /// decoder would reject.
     pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), CodecError> {
-        // Streaming cursor encode (SSOT selection: `needs_streaming`).
-        // Mirrors the streaming decode: every field appends its own bytes
-        // in declaration order through the per-field encode blocks, so a
-        // gated field skips its append when absent, and a fixed field after
-        // a variable-length payload lands after the payload (the positional
-        // path appends variable fields last, placing it ahead on the wire).
-        // Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-        // dedicated helpers; everything else uses `present_if_encode_block`
-        // (its non-gated arm covers plain fixed / tail / length-ref / VLE).
-        w.write_u8(self.inner_header)?;
-        w.write_vle_u64(self.id)?;
-        if let Some(_v) = &self.suffix {
-            w.write_bytes(::sce_forge_runtime::codec::SceByteBuf::as_slice(_v))?;
-        }
-        Ok(())
+        CodecZenohDeclExtKeyexprInner::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade over [`Self::encode`].

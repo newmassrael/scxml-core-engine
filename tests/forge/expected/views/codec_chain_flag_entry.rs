@@ -146,49 +146,131 @@ impl CodecChainFlagEntry {
     /// destination has insufficient remaining capacity; growable
     /// sinks (e.g. `VecSink`) are effectively infallible.
     pub fn encode<S: SceSink>(&self, w: &mut S, wide: u8) -> Result<(), CodecError> {
-        // Declared-but-unconsumed flag inputs: see `decode` — same suppress per
-        // declared `<sce:flag-input>`.
-        let _ = wide;
-        // Streaming cursor encode (SSOT selection: `needs_streaming`).
-        // Mirrors the streaming decode: every field appends its own bytes
-        // in declaration order through the per-field encode blocks, so a
-        // gated field skips its append when absent, and a fixed field after
-        // a variable-length payload lands after the payload (the positional
-        // path appends variable fields last, placing it ahead on the wire).
-        // Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-        // dedicated helpers; everything else uses `present_if_encode_block`
-        // (its non-gated arm covers plain fixed / tail / length-ref / VLE).
-        w.write_u8(self.header)?;
-        if let Some(_v) = self.short_value {
-            w.write_u8(_v)?;
-        }
-        if let Some(_v) = self.long_value {
-            w.write_u8((_v >> 8 & 0xFF) as u8)?;
-            w.write_u8((_v & 0xFF) as u8)?;
-        }
-        Ok(())
+        Self::encode_source(self, w, wide)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
     /// `MAX_ENCODED_BYTES` so the worst-case write path performs at
     /// most one allocation, then delegates to `encode` over a
-    /// `VecSink`. Returns the freshly-encoded byte vector. Callers
-    /// targeting zero-alloc hot paths should call `encode` directly
-    /// against a caller-owned sink.
+    /// `VecSink`. Returns the freshly-encoded byte vector, or the
+    /// `CodecError::PresentIfMismatch` `encode` refuses a message with
+    /// when a field's presence disagrees with the `sce:present-if`
+    /// that gates it. Callers targeting zero-alloc hot paths should
+    /// call `encode` directly against a caller-owned sink.
     ///
     /// Gated on the `alloc` feature — `VecSink` lives behind the
     /// same gate (see `backends/rust/forge-runtime/src/codec.rs`). MCU /
     /// `no_std` builds without `alloc` only see the sink-based
     /// primary `encode`.
     #[cfg(feature = "alloc")]
-    pub fn encode_to_vec(&self, wide: u8) -> Vec<u8> {
+    pub fn encode_to_vec(&self, wide: u8) -> Result<Vec<u8>, CodecError> {
         let mut _sce_v: Vec<u8> = Vec::with_capacity(Self::MAX_ENCODED_BYTES);
         let mut _sce_sink = VecSink::new(&mut _sce_v);
-        self.encode(&mut _sce_sink, wide)
-            .expect("VecSink is infallible");
-        _sce_v
+        self.encode(&mut _sce_sink, wide)?;
+        Ok(_sce_v)
     }
 }
+
+/// Flags of `CodecChainFlagEntry` a parent sets in place of the ones a value presents:
+/// the end flag of a chain whose entries are `CodecChainFlagEntry`, which the chain
+/// derives from where an entry stands.
+#[doc(hidden)]
+#[derive(Debug, Default, Clone, Copy)]
+pub struct CodecChainFlagEntryOverrides {
+    /// The `Z` flag of `header`, when a parent sets it.
+    pub header_z: Option<bool>,
+}
+
+#[allow(dead_code)]
+impl CodecChainFlagEntryOverrides {
+    /// Sets `Z` of `header` and nothing else.
+    #[allow(clippy::needless_update)]
+    pub fn header_z(value: bool) -> Self {
+        Self { header_z: Some(value), ..Self::default() }
+    }
+}
+
+// ── Source (ADR 0058) ────────────────────────────────────────────────
+/// What a value of `CodecChainFlagEntry` says: its presented fields. A length, a count
+/// or the flag a gated field is announced by is not among them; `CodecChainFlagEntry`
+/// computes those from what is ([`CodecChainFlagEntry::encode_source`]).
+pub trait CodecChainFlagEntrySource {
+    /// The `header` field.
+    fn header(&self) -> u8;
+    /// The `short_value` field.
+    fn short_value(&self) -> Option<u8>;
+    /// The `long_value` field.
+    fn long_value(&self) -> Option<u16>;
+}
+
+impl<T: CodecChainFlagEntrySource + ?Sized> CodecChainFlagEntrySource for &T {
+    fn header(&self) -> u8 {
+        (**self).header()
+    }
+    fn short_value(&self) -> Option<u8> {
+        (**self).short_value()
+    }
+    fn long_value(&self) -> Option<u16> {
+        (**self).long_value()
+    }
+}
+
+impl CodecChainFlagEntrySource for CodecChainFlagEntry {
+    fn header(&self) -> u8 {
+        self.header
+    }
+    fn short_value(&self) -> Option<u8> {
+        self.short_value
+    }
+    fn long_value(&self) -> Option<u16> {
+        self.long_value
+    }
+}
+
+#[allow(dead_code)]
+impl CodecChainFlagEntry {
+    /// Encode what `src` says into the caller-owned sink: the bytes
+    /// [`Self::encode`] writes for the value it holds, read through
+    /// [`CodecChainFlagEntrySource`]. A length, a count or a gate flag is computed from what
+    /// `src` presents, and a value the encoding cannot carry is refused
+    /// before the first byte is written.
+    pub fn encode_source<S: CodecChainFlagEntrySource + ?Sized, K: SceSink>(src: &S, w: &mut K, wide: u8) -> Result<(), CodecError> {
+        Self::write_source(src, w, wide)
+    }
+
+    /// [`Self::encode_source`] without the guard a parent has already made.
+    #[doc(hidden)]
+    pub fn write_source<S: CodecChainFlagEntrySource + ?Sized, K: SceSink>(src: &S, w: &mut K, wide: u8) -> Result<(), CodecError> {
+        Self::write_source_in(src, w, wide, &CodecChainFlagEntryOverrides::default())
+    }
+
+    /// [`Self::write_source`] with the flags a parent sets in place of the
+    /// ones `src` presents.
+    #[doc(hidden)]
+    pub fn write_source_in<S: CodecChainFlagEntrySource + ?Sized, K: SceSink>(src: &S, w: &mut K, wide: u8, over: &CodecChainFlagEntryOverrides) -> Result<(), CodecError> {
+        let mut _c_header: u8 = src.header();
+        if let Some(_o) = over.header_z {
+            _c_header = (_c_header & !0x80) | (u8::from(_o) << 7);
+        }
+        if ((wide & 0x1) == 0) != src.short_value().is_some() {
+            return Err(CodecError::PresentIfMismatch);
+        }
+        if ((wide & 0x1) != 0) != src.long_value().is_some() {
+            return Err(CodecError::PresentIfMismatch);
+        }
+        let _ = wide;
+        w.write_u8(_c_header)?;
+        if let Some(_v) = src.short_value() {
+            w.write_u8(_v)?;
+        }
+        if let Some(_v) = src.long_value() {
+            w.write_u8((_v >> 8 & 0xFF) as u8)?;
+            w.write_u8((_v & 0xFF) as u8)?;
+        }
+        Ok(())
+    }
+}
+
 
 // ── View (ADR 0049) ──────────────────────────────────────────────────
 // `CodecChainFlagEntry` holds no bounded list, embedded body or variant, so a

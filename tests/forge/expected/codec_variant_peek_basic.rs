@@ -132,42 +132,86 @@ impl CodecVariantPeekBasic {
     /// destination has insufficient remaining capacity; growable
     /// sinks (e.g. `VecSink`) are effectively infallible.
     pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> {
-        // RFC §synth-5-B peek-byte / streaming-prefix:
-        // streaming prefix encode (per-field present_if/tlv-chain/embed/
-        // repeat helpers). Peek-byte mode: the arm body's encode prepends
-        // its own header byte (which the decoder peeked); no separate
-        // tag byte is emitted here. Streaming-prefix mode (own-field
-        // variant): the carrier is part of the prefix fields and emits
-        // through the same per-field path.
-        // Append the active arm's encoded bytes.
-        match &self.body {
-            CodecVariantPeekBasicVariant::CodecPeekArmA(b) => {
-                b.encode(w)?;
-            }
-            CodecVariantPeekBasicVariant::CodecPeekArmB(b) => {
-                b.encode(w)?;
-            }
-        }
-        Ok(())
+        Self::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
     /// `MAX_ENCODED_BYTES` so the worst-case write path performs at
     /// most one allocation, then delegates to `encode` over a
-    /// `VecSink`. Returns the freshly-encoded byte vector. Callers
-    /// targeting zero-alloc hot paths should call `encode` directly
-    /// against a caller-owned sink.
+    /// `VecSink`. Returns the freshly-encoded byte vector, or the
+    /// `CodecError::PresentIfMismatch` `encode` refuses a message with
+    /// when a field's presence disagrees with the `sce:present-if`
+    /// that gates it. Callers targeting zero-alloc hot paths should
+    /// call `encode` directly against a caller-owned sink.
     ///
     /// Gated on the `alloc` feature — `VecSink` lives behind the
     /// same gate (see `backends/rust/forge-runtime/src/codec.rs`). MCU /
     /// `no_std` builds without `alloc` only see the sink-based
     /// primary `encode`.
     #[cfg(feature = "alloc")]
-    pub fn encode_to_vec(&self) -> Vec<u8> {
+    pub fn encode_to_vec(&self) -> Result<Vec<u8>, CodecError> {
         let mut _sce_v: Vec<u8> = Vec::with_capacity(Self::MAX_ENCODED_BYTES);
         let mut _sce_sink = VecSink::new(&mut _sce_v);
-        self.encode(&mut _sce_sink)
-            .expect("VecSink is infallible");
-        _sce_v
+        self.encode(&mut _sce_sink)?;
+        Ok(_sce_v)
+    }
+}
+
+/// The arm of `CodecVariantPeekBasic`'s variant a value holds, each arm's body as the
+/// source it says. The tag is not among them: `CodecVariantPeekBasic` derives it from
+/// the arm, as it derives a length, and a default arm presents the tag
+/// it could not name.
+// A default arm's tag is read by the codec that embeds this one and
+// derives its own carrier bits from the arm, which not every build uses.
+#[allow(dead_code)]
+pub enum CodecVariantPeekBasicVariantSource<'s, A0: ?Sized, A1: ?Sized> {
+    CodecPeekArmA(&'s A0),
+    CodecPeekArmB(&'s A1),
+}
+
+// ── Source (ADR 0058) ────────────────────────────────────────────────
+/// What a value of `CodecVariantPeekBasic` says: its presented fields. A length, a count
+/// or the flag a gated field is announced by is not among them; `CodecVariantPeekBasic`
+/// computes those from what is ([`CodecVariantPeekBasic::encode_source`]).
+pub trait CodecVariantPeekBasicSource {
+    /// The arm of the variant this value holds.
+    fn body(&self) -> CodecVariantPeekBasicVariantSource<'_, impl super::codec_peek_arm_a::CodecPeekArmASource, impl super::codec_peek_arm_b::CodecPeekArmBSource>;
+}
+
+impl<T: CodecVariantPeekBasicSource + ?Sized> CodecVariantPeekBasicSource for &T {
+    fn body(&self) -> CodecVariantPeekBasicVariantSource<'_, impl super::codec_peek_arm_a::CodecPeekArmASource, impl super::codec_peek_arm_b::CodecPeekArmBSource> {
+        (**self).body()
+    }
+}
+
+impl CodecVariantPeekBasicSource for CodecVariantPeekBasic {
+    fn body(&self) -> CodecVariantPeekBasicVariantSource<'_, impl super::codec_peek_arm_a::CodecPeekArmASource, impl super::codec_peek_arm_b::CodecPeekArmBSource> {
+        match &self.body {
+            CodecVariantPeekBasicVariant::CodecPeekArmA(_b) => CodecVariantPeekBasicVariantSource::CodecPeekArmA(_b),
+            CodecVariantPeekBasicVariant::CodecPeekArmB(_b) => CodecVariantPeekBasicVariantSource::CodecPeekArmB(_b),
+        }
+    }
+}
+
+#[allow(dead_code)]
+impl CodecVariantPeekBasic {
+    /// Encode what `src` says into the caller-owned sink: the bytes
+    /// [`Self::encode`] writes for the value it holds, read through
+    /// [`CodecVariantPeekBasicSource`]. A length, a count or a gate flag is computed from what
+    /// `src` presents, and a value the encoding cannot carry is refused
+    /// before the first byte is written.
+    pub fn encode_source<S: CodecVariantPeekBasicSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {
+        Self::write_source(src, &mut ::sce_forge_runtime::codec::CountSink::new())?;
+        Self::write_source(src, w)
+    }
+
+    /// [`Self::encode_source`] without the guard a parent has already made.
+    #[doc(hidden)]
+    pub fn write_source<S: CodecVariantPeekBasicSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {
+        match src.body() {
+            CodecVariantPeekBasicVariantSource::CodecPeekArmA(_b) => CodecPeekArmA::write_source(_b, w)?,
+            CodecVariantPeekBasicVariantSource::CodecPeekArmB(_b) => CodecPeekArmB::write_source(_b, w)?,
+        }
+        Ok(())
     }
 }

@@ -95,9 +95,7 @@ impl CodecPeekArmA {
     /// destination has insufficient remaining capacity; growable
     /// sinks (e.g. `VecSink`) are effectively infallible.
     pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> {
-        w.write_u8(self.header)?;
-        w.write_u8(self.payload)?;
-        Ok(())
+        Self::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
@@ -118,5 +116,84 @@ impl CodecPeekArmA {
         self.encode(&mut _sce_sink)
             .expect("VecSink is infallible");
         _sce_v
+    }
+}
+
+/// Flags of `CodecPeekArmA` a parent sets in place of the ones a value presents:
+/// the end flag of a chain whose entries are `CodecPeekArmA`, which the chain
+/// derives from where an entry stands.
+#[doc(hidden)]
+#[derive(Debug, Default, Clone, Copy)]
+pub struct CodecPeekArmAOverrides {
+    /// The `kind` flag of `header`, when a parent sets it.
+    pub header_kind: Option<bool>,
+}
+
+#[allow(dead_code)]
+impl CodecPeekArmAOverrides {
+    /// Sets `kind` of `header` and nothing else.
+    #[allow(clippy::needless_update)]
+    pub fn header_kind(value: bool) -> Self {
+        Self { header_kind: Some(value), ..Self::default() }
+    }
+}
+
+// ── Source (ADR 0058) ────────────────────────────────────────────────
+/// What a value of `CodecPeekArmA` says: its presented fields. A length, a count
+/// or the flag a gated field is announced by is not among them; `CodecPeekArmA`
+/// computes those from what is ([`CodecPeekArmA::encode_source`]).
+pub trait CodecPeekArmASource {
+    /// The `header` field.
+    fn header(&self) -> u8;
+    /// The `payload` field.
+    fn payload(&self) -> u8;
+}
+
+impl<T: CodecPeekArmASource + ?Sized> CodecPeekArmASource for &T {
+    fn header(&self) -> u8 {
+        (**self).header()
+    }
+    fn payload(&self) -> u8 {
+        (**self).payload()
+    }
+}
+
+impl CodecPeekArmASource for CodecPeekArmA {
+    fn header(&self) -> u8 {
+        self.header
+    }
+    fn payload(&self) -> u8 {
+        self.payload
+    }
+}
+
+#[allow(dead_code)]
+impl CodecPeekArmA {
+    /// Encode what `src` says into the caller-owned sink: the bytes
+    /// [`Self::encode`] writes for the value it holds, read through
+    /// [`CodecPeekArmASource`]. A length, a count or a gate flag is computed from what
+    /// `src` presents, and a value the encoding cannot carry is refused
+    /// before the first byte is written.
+    pub fn encode_source<S: CodecPeekArmASource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {
+        Self::write_source(src, w)
+    }
+
+    /// [`Self::encode_source`] without the guard a parent has already made.
+    #[doc(hidden)]
+    pub fn write_source<S: CodecPeekArmASource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {
+        Self::write_source_in(src, w, &CodecPeekArmAOverrides::default())
+    }
+
+    /// [`Self::write_source`] with the flags a parent sets in place of the
+    /// ones `src` presents.
+    #[doc(hidden)]
+    pub fn write_source_in<S: CodecPeekArmASource + ?Sized, K: SceSink>(src: &S, w: &mut K, over: &CodecPeekArmAOverrides) -> Result<(), CodecError> {
+        let mut _c_header: u8 = src.header();
+        if let Some(_o) = over.header_kind {
+            _c_header = (_c_header & !0x1) | u8::from(_o);
+        }
+        w.write_u8(_c_header)?;
+        w.write_u8(src.payload())?;
+        Ok(())
     }
 }

@@ -140,43 +140,128 @@ impl CodecRepeatFlagCarrier {
     /// destination has insufficient remaining capacity; growable
     /// sinks (e.g. `VecSink`) are effectively infallible.
     pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> {
-        // Streaming cursor encode (SSOT selection: `needs_streaming`).
-        // Mirrors the streaming decode: every field appends its own bytes
-        // in declaration order through the per-field encode blocks, so a
-        // gated field skips its append when absent, and a fixed field after
-        // a variable-length payload lands after the payload (the positional
-        // path appends variable fields last, placing it ahead on the wire).
-        // Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-        // dedicated helpers; everything else uses `present_if_encode_block`
-        // (its non-gated arm covers plain fixed / tail / length-ref / VLE).
-        w.write_u8(self.head)?;
-        w.write_u8(self.count)?;
-        for _e in &self.entries {
-            _e.encode(w, self.head & 0x1)?;
-        }
-        Ok(())
+        Self::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
     /// `MAX_ENCODED_BYTES` so the worst-case write path performs at
     /// most one allocation, then delegates to `encode` over a
-    /// `VecSink`. Returns the freshly-encoded byte vector. Callers
-    /// targeting zero-alloc hot paths should call `encode` directly
-    /// against a caller-owned sink.
+    /// `VecSink`. Returns the freshly-encoded byte vector, or the
+    /// `CodecError::PresentIfMismatch` `encode` refuses a message with
+    /// when a field's presence disagrees with the `sce:present-if`
+    /// that gates it. Callers targeting zero-alloc hot paths should
+    /// call `encode` directly against a caller-owned sink.
     ///
     /// Gated on the `alloc` feature — `VecSink` lives behind the
     /// same gate (see `backends/rust/forge-runtime/src/codec.rs`). MCU /
     /// `no_std` builds without `alloc` only see the sink-based
     /// primary `encode`.
     #[cfg(feature = "alloc")]
-    pub fn encode_to_vec(&self) -> Vec<u8> {
+    pub fn encode_to_vec(&self) -> Result<Vec<u8>, CodecError> {
         let mut _sce_v: Vec<u8> = Vec::with_capacity(Self::MAX_ENCODED_BYTES);
         let mut _sce_sink = VecSink::new(&mut _sce_v);
-        self.encode(&mut _sce_sink)
-            .expect("VecSink is infallible");
-        _sce_v
+        self.encode(&mut _sce_sink)?;
+        Ok(_sce_v)
     }
 }
+
+/// Flags of `CodecRepeatFlagCarrier` a parent sets in place of the ones a value presents:
+/// the end flag of a chain whose entries are `CodecRepeatFlagCarrier`, which the chain
+/// derives from where an entry stands.
+#[doc(hidden)]
+#[derive(Debug, Default, Clone, Copy)]
+pub struct CodecRepeatFlagCarrierOverrides {
+    /// The `W` flag of `head`, when a parent sets it.
+    pub head_w: Option<bool>,
+}
+
+#[allow(dead_code)]
+impl CodecRepeatFlagCarrierOverrides {
+    /// Sets `W` of `head` and nothing else.
+    #[allow(clippy::needless_update)]
+    pub fn head_w(value: bool) -> Self {
+        Self { head_w: Some(value), ..Self::default() }
+    }
+}
+
+// ── Source (ADR 0058) ────────────────────────────────────────────────
+/// What a value of `CodecRepeatFlagCarrier` says: its presented fields. A length, a count
+/// or the flag a gated field is announced by is not among them; `CodecRepeatFlagCarrier`
+/// computes those from what is ([`CodecRepeatFlagCarrier::encode_source`]).
+pub trait CodecRepeatFlagCarrierSource {
+    /// The `head` field.
+    fn head(&self) -> u8;
+    /// The `entries` field.
+    fn entries(&self) -> impl Iterator<Item = impl super::codec_chain_flag_entry::CodecChainFlagEntrySource> + Clone;
+}
+
+impl<T: CodecRepeatFlagCarrierSource + ?Sized> CodecRepeatFlagCarrierSource for &T {
+    fn head(&self) -> u8 {
+        (**self).head()
+    }
+    fn entries(&self) -> impl Iterator<Item = impl super::codec_chain_flag_entry::CodecChainFlagEntrySource> + Clone {
+        (**self).entries()
+    }
+}
+
+impl CodecRepeatFlagCarrierSource for CodecRepeatFlagCarrier {
+    fn head(&self) -> u8 {
+        self.head
+    }
+    fn entries(&self) -> impl Iterator<Item = impl super::codec_chain_flag_entry::CodecChainFlagEntrySource> + Clone {
+        self.entries.iter()
+    }
+}
+
+impl<'a> CodecRepeatFlagCarrierSource for CodecRepeatFlagCarrierView<'a> {
+    fn head(&self) -> u8 {
+        self.head
+    }
+    fn entries(&self) -> impl Iterator<Item = impl super::codec_chain_flag_entry::CodecChainFlagEntrySource> + Clone {
+        self.entries.iter()
+    }
+}
+
+#[allow(dead_code)]
+impl CodecRepeatFlagCarrier {
+    /// Encode what `src` says into the caller-owned sink: the bytes
+    /// [`Self::encode`] writes for the value it holds, read through
+    /// [`CodecRepeatFlagCarrierSource`]. A length, a count or a gate flag is computed from what
+    /// `src` presents, and a value the encoding cannot carry is refused
+    /// before the first byte is written.
+    pub fn encode_source<S: CodecRepeatFlagCarrierSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {
+        Self::write_source(src, &mut ::sce_forge_runtime::codec::CountSink::new())?;
+        Self::write_source(src, w)
+    }
+
+    /// [`Self::encode_source`] without the guard a parent has already made.
+    #[doc(hidden)]
+    pub fn write_source<S: CodecRepeatFlagCarrierSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {
+        Self::write_source_in(src, w, &CodecRepeatFlagCarrierOverrides::default())
+    }
+
+    /// [`Self::write_source`] with the flags a parent sets in place of the
+    /// ones `src` presents.
+    #[doc(hidden)]
+    pub fn write_source_in<S: CodecRepeatFlagCarrierSource + ?Sized, K: SceSink>(src: &S, w: &mut K, over: &CodecRepeatFlagCarrierOverrides) -> Result<(), CodecError> {
+        let _k_entries: usize = src.entries().count();
+        if _k_entries > 4 {
+            return Err(CodecError::TooManyElements);
+        }
+        let _d_count: u8 = u8::try_from(_k_entries).map_err(|_| CodecError::LengthOutOfRange)?;
+        let mut _c_head: u8 = src.head();
+        if let Some(_o) = over.head_w {
+            _c_head = (_c_head & !0x1) | u8::from(_o);
+        }
+        w.write_u8(_c_head)?;
+        w.write_u8(_d_count)?;
+        for _e in src.entries() {
+            CodecChainFlagEntry::write_source(&_e, w, _c_head & 0x1)?;
+        }
+        Ok(())
+    }
+}
+
 
 // ── View (ADR 0049) ──────────────────────────────────────────────────
 // `CodecRepeatFlagCarrierView` is what a decode of `CodecRepeatFlagCarrier` learned, not a
@@ -300,31 +385,17 @@ impl<'a> CodecRepeatFlagCarrierView<'a> {
     /// from, so a frame `decode` accepted in a form that is not canonical is
     /// not passed on as it came.
     pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> {
-        // Streaming cursor encode (SSOT selection: `needs_streaming`).
-        // Mirrors the streaming decode: every field appends its own bytes
-        // in declaration order through the per-field encode blocks, so a
-        // gated field skips its append when absent, and a fixed field after
-        // a variable-length payload lands after the payload (the positional
-        // path appends variable fields last, placing it ahead on the wire).
-        // Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-        // dedicated helpers; everything else uses `present_if_encode_block`
-        // (its non-gated arm covers plain fixed / tail / length-ref / VLE).
-        w.write_u8(self.head)?;
-        w.write_u8(self.count)?;
-        for _e in self.entries.iter() {
-            _e.encode(w, self.head & 0x1)?;
-        }
-        Ok(())
+        CodecRepeatFlagCarrier::encode_source(self, w)
     }
 
-    /// Heap-backed convenience facade over [`Self::encode`].
+    /// Heap-backed convenience facade over [`Self::encode`], fallible where
+    /// `encode` can refuse a message whose presence disagrees with a gate.
     #[cfg(feature = "alloc")]
-    pub fn encode_to_vec(&self) -> Vec<u8> {
+    pub fn encode_to_vec(&self) -> Result<Vec<u8>, CodecError> {
         let mut _sce_v: Vec<u8> = Vec::with_capacity(Self::MAX_ENCODED_BYTES);
         let mut _sce_sink = VecSink::new(&mut _sce_v);
-        self.encode(&mut _sce_sink)
-            .expect("VecSink is infallible");
-        _sce_v
+        self.encode(&mut _sce_sink)?;
+        Ok(_sce_v)
     }
 
     pub fn w(&self) -> bool {

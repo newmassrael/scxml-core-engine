@@ -477,7 +477,9 @@ fn the_zenoh_request_and_response_are_decoded_as_views() {
         CodecZenohRequest,
         CodecZenohRequestView,
         &pool,
-        vec![CodecZenohRequest::default().encode_to_vec()],
+        vec![CodecZenohRequest::default()
+            .encode_to_vec()
+            .expect("the default request encodes")],
         4000,
         24
     );
@@ -486,7 +488,9 @@ fn the_zenoh_request_and_response_are_decoded_as_views() {
         CodecZenohResponse,
         CodecZenohResponseView,
         &pool,
-        vec![CodecZenohResponse::default().encode_to_vec()],
+        vec![CodecZenohResponse::default()
+            .encode_to_vec()
+            .expect("the default response encodes")],
         4000,
         24
     );

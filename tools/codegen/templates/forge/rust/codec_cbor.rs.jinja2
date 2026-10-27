@@ -24,42 +24,6 @@ cbor::read_uint(&mut c)?
 cbor::read_uint_upto(&mut c, u64::from({{ e.value_type }}::MAX))? as {{ e.value_type }}
 {%- endif -%}
 {%- endmacro %}
-{#- The write of one entry's value `v`, key already written. #}
-{% macro encode_value(e) -%}
-{%- if e.kind == "bool" -%}
-cbor::write_bool(w, v)?;
-{%- elif e.kind == "text" -%}
-{% if e.max_size is not none %}if v.len() > {{ e.max_size }} {
-            return Err(CodecError::CborOutOfRange);
-        }
-        {% endif %}cbor::write_text(w, v)?;
-{%- elif e.kind == "bytes" -%}
-{% if e.max_size is not none %}if v.len() > {{ e.max_size }} {
-            return Err(CodecError::CborOutOfRange);
-        }
-        {% endif %}cbor::write_bytes(w, v)?;
-{%- elif e.kind == "bytes_exact" -%}
-if v.len() != {{ e.length }} {
-            return Err(CodecError::CborWrongLength);
-        }
-        cbor::write_bytes(w, v)?;
-{%- elif e.kind == "enum" -%}
-{#- A signed carrier can hold a value no CBOR unsigned integer carries, so
-    only it is converted with a check; an unsigned one widens, and a
-    fallible conversion that cannot fail is what clippy refuses. -#}
-{%- if e.carrier_signed -%}
-cbor::write_uint(w, u64::try_from({{ e.enum_to_underlying }}).map_err(|_| CodecError::CborOutOfRange)?)?;
-{%- elif e.carrier_type == "u64" -%}
-cbor::write_uint(w, {{ e.enum_to_underlying }})?;
-{%- else -%}
-cbor::write_uint(w, u64::from({{ e.enum_to_underlying }}))?;
-{%- endif -%}
-{%- elif e.value_type == "u64" -%}
-cbor::write_uint(w, v)?;
-{%- else -%}
-cbor::write_uint(w, u64::from(v))?;
-{%- endif -%}
-{%- endmacro %}
 {{ sce_map.source_marker(source_location, "rust", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec" sce:encoding="cbor")
@@ -154,30 +118,7 @@ impl{{ lifetime }} {{ struct_name }}{{ lifetime }} {
     /// Encode this map into `w`. An entry whose value breaks its declared
     /// bound — an exact length, a maximum size — is refused, not written.
     pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> {
-{% if optional_count %}
-        let mut count: u64 = {{ required_count }};
-{% for e in entries if not e.required %}
-        if self.{{ e.name }}.is_some() {
-            count += 1;
-        }
-{% endfor %}
-{% else %}
-        let count: u64 = {{ required_count }};
-{% endif %}
-        cbor::write_map_head(w, count)?;
-{% for e in entries_by_key %}
-{% if e.required %}
-        let v = self.{{ e.name }};
-        cbor::write_uint(w, {{ e.key }})?;
-        {{ encode_value(e) }}
-{% else %}
-        if let Some(v) = self.{{ e.name }} {
-            cbor::write_uint(w, {{ e.key }})?;
-            {{ encode_value(e) | indent(4) }}
-        }
-{% endif %}
-{% endfor %}
-        Ok(())
+        Self::encode_source(self, w)
     }
 
     /// [`encode`](Self::encode) into a new `Vec`.

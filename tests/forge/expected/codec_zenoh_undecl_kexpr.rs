@@ -89,17 +89,7 @@ impl CodecZenohUndeclKexpr {
     /// destination has insufficient remaining capacity; growable
     /// sinks (e.g. `VecSink`) are effectively infallible.
     pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> {
-        // Streaming cursor encode (SSOT selection: `needs_streaming`).
-        // Mirrors the streaming decode: every field appends its own bytes
-        // in declaration order through the per-field encode blocks, so a
-        // gated field skips its append when absent, and a fixed field after
-        // a variable-length payload lands after the payload (the positional
-        // path appends variable fields last, placing it ahead on the wire).
-        // Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-        // dedicated helpers; everything else uses `present_if_encode_block`
-        // (its non-gated arm covers plain fixed / tail / length-ref / VLE).
-        w.write_vle_u16(self.id)?;
-        Ok(())
+        Self::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
@@ -120,5 +110,45 @@ impl CodecZenohUndeclKexpr {
         self.encode(&mut _sce_sink)
             .expect("VecSink is infallible");
         _sce_v
+    }
+}
+
+// ── Source (ADR 0058) ────────────────────────────────────────────────
+/// What a value of `CodecZenohUndeclKexpr` says: its presented fields. A length, a count
+/// or the flag a gated field is announced by is not among them; `CodecZenohUndeclKexpr`
+/// computes those from what is ([`CodecZenohUndeclKexpr::encode_source`]).
+pub trait CodecZenohUndeclKexprSource {
+    /// The `id` field.
+    fn id(&self) -> u16;
+}
+
+impl<T: CodecZenohUndeclKexprSource + ?Sized> CodecZenohUndeclKexprSource for &T {
+    fn id(&self) -> u16 {
+        (**self).id()
+    }
+}
+
+impl CodecZenohUndeclKexprSource for CodecZenohUndeclKexpr {
+    fn id(&self) -> u16 {
+        self.id
+    }
+}
+
+#[allow(dead_code)]
+impl CodecZenohUndeclKexpr {
+    /// Encode what `src` says into the caller-owned sink: the bytes
+    /// [`Self::encode`] writes for the value it holds, read through
+    /// [`CodecZenohUndeclKexprSource`]. A length, a count or a gate flag is computed from what
+    /// `src` presents, and a value the encoding cannot carry is refused
+    /// before the first byte is written.
+    pub fn encode_source<S: CodecZenohUndeclKexprSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {
+        Self::write_source(src, w)
+    }
+
+    /// [`Self::encode_source`] without the guard a parent has already made.
+    #[doc(hidden)]
+    pub fn write_source<S: CodecZenohUndeclKexprSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {
+        w.write_vle_u16(src.id())?;
+        Ok(())
     }
 }

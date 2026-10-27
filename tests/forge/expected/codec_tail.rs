@@ -94,12 +94,7 @@ impl<'a> CodecTail<'a> {
     /// destination has insufficient remaining capacity; growable
     /// sinks (e.g. `VecSink`) are effectively infallible.
     pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> {
-        w.write_u8(self.msg_id)?;
-        w.write_u8(self.status)?;
-        // `self.<id>` is the borrowed `&'a [u8]` view — pass it directly;
-        // `&self.<id>` would be `&&[u8]` (clippy::needless_borrow).
-        w.write_bytes(self.payload)?;
-        Ok(())
+        Self::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
@@ -122,6 +117,77 @@ impl<'a> CodecTail<'a> {
         _sce_v
     }
 }
+
+// ── Source (ADR 0058) ────────────────────────────────────────────────
+/// What a value of `CodecTail` says: its presented fields. A length, a count
+/// or the flag a gated field is announced by is not among them; `CodecTail`
+/// computes those from what is ([`CodecTail::encode_source`]).
+pub trait CodecTailSource {
+    /// The `msgId` field.
+    fn msg_id(&self) -> u8;
+    /// The `status` field.
+    fn status(&self) -> u8;
+    /// The `payload` field.
+    fn payload(&self) -> &[u8];
+}
+
+impl<T: CodecTailSource + ?Sized> CodecTailSource for &T {
+    fn msg_id(&self) -> u8 {
+        (**self).msg_id()
+    }
+    fn status(&self) -> u8 {
+        (**self).status()
+    }
+    fn payload(&self) -> &[u8] {
+        (**self).payload()
+    }
+}
+
+impl<'a> CodecTailSource for CodecTail<'a> {
+    fn msg_id(&self) -> u8 {
+        self.msg_id
+    }
+    fn status(&self) -> u8 {
+        self.status
+    }
+    fn payload(&self) -> &[u8] {
+        self.payload
+    }
+}
+
+impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecTailSource for CodecTailOwned<S> {
+    fn msg_id(&self) -> u8 {
+        self.msg_id
+    }
+    fn status(&self) -> u8 {
+        self.status
+    }
+    fn payload(&self) -> &[u8] {
+        ::sce_forge_runtime::codec::SceByteBuf::as_slice(&self.payload)
+    }
+}
+
+#[allow(dead_code)]
+impl<'a> CodecTail<'a> {
+    /// Encode what `src` says into the caller-owned sink: the bytes
+    /// [`Self::encode`] writes for the value it holds, read through
+    /// [`CodecTailSource`]. A length, a count or a gate flag is computed from what
+    /// `src` presents, and a value the encoding cannot carry is refused
+    /// before the first byte is written.
+    pub fn encode_source<S: CodecTailSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {
+        Self::write_source(src, w)
+    }
+
+    /// [`Self::encode_source`] without the guard a parent has already made.
+    #[doc(hidden)]
+    pub fn write_source<S: CodecTailSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {
+        w.write_u8(src.msg_id())?;
+        w.write_u8(src.status())?;
+        w.write_bytes(src.payload())?;
+        Ok(())
+    }
+}
+
 
 // ── Owned projection (storage-parameterised native form) ─────────────
 // `CodecTail<'a>` above is a zero-copy view borrowing the decode
@@ -250,12 +316,7 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecTailOwned<S> {
     /// borrowed form could not carry is an error and never a frame its own
     /// decoder would reject.
     pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), CodecError> {
-        w.write_u8(self.msg_id)?;
-        w.write_u8(self.status)?;
-        // The owned form holds the bytes in the profile's container; read them
-        // through the trait every profile implements.
-        w.write_bytes(::sce_forge_runtime::codec::SceByteBuf::as_slice(&self.payload))?;
-        Ok(())
+        CodecTail::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade over [`Self::encode`].

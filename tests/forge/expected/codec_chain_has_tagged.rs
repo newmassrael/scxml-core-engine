@@ -164,43 +164,7 @@ impl CodecChainHasTagged {
     /// destination has insufficient remaining capacity; growable
     /// sinks (e.g. `VecSink`) are effectively infallible.
     pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> {
-        let _has_entries_7 = self.entries.iter().any(|_e| u64::from(_e.entry_type) == 7u64);
-        let _has_entries_9 = self.entries.iter().any(|_e| u64::from(_e.entry_type) == 9u64);
-        if _has_entries_7 || (self.header & 0x01u8) != 0 {
-            if self.priority.is_none() {
-                return Err(CodecError::PresentIfMismatch);
-            }
-        } else if self.priority.is_some() {
-            return Err(CodecError::PresentIfMismatch);
-        }
-        if !_has_entries_9 {
-            if self.checksum.is_none() {
-                return Err(CodecError::PresentIfMismatch);
-            }
-        } else if self.checksum.is_some() {
-            return Err(CodecError::PresentIfMismatch);
-        }
-        // Streaming cursor encode (SSOT selection: `needs_streaming`).
-        // Mirrors the streaming decode: every field appends its own bytes
-        // in declaration order through the per-field encode blocks, so a
-        // gated field skips its append when absent, and a fixed field after
-        // a variable-length payload lands after the payload (the positional
-        // path appends variable fields last, placing it ahead on the wire).
-        // Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-        // dedicated helpers; everything else uses `present_if_encode_block`
-        // (its non-gated arm covers plain fixed / tail / length-ref / VLE).
-        w.write_u8(self.header)?;
-        for _e in &self.entries {
-            _e.encode(w)?;
-        }
-        if let Some(_v) = self.priority {
-            w.write_u8(_v)?;
-        }
-        if let Some(_v) = self.checksum {
-            w.write_u8((_v >> 8 & 0xFF) as u8)?;
-            w.write_u8((_v & 0xFF) as u8)?;
-        }
-        Ok(())
+        Self::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
@@ -222,5 +186,120 @@ impl CodecChainHasTagged {
         let mut _sce_sink = VecSink::new(&mut _sce_v);
         self.encode(&mut _sce_sink)?;
         Ok(_sce_v)
+    }
+}
+
+/// Flags of `CodecChainHasTagged` a parent sets in place of the ones a value presents:
+/// the end flag of a chain whose entries are `CodecChainHasTagged`, which the chain
+/// derives from where an entry stands.
+#[doc(hidden)]
+#[derive(Debug, Default, Clone, Copy)]
+pub struct CodecChainHasTaggedOverrides {
+    /// The `wide` flag of `header`, when a parent sets it.
+    pub header_wide: Option<bool>,
+}
+
+#[allow(dead_code)]
+impl CodecChainHasTaggedOverrides {
+    /// Sets `wide` of `header` and nothing else.
+    #[allow(clippy::needless_update)]
+    pub fn header_wide(value: bool) -> Self {
+        Self { header_wide: Some(value), ..Self::default() }
+    }
+}
+
+// ── Source (ADR 0058) ────────────────────────────────────────────────
+/// What a value of `CodecChainHasTagged` says: its presented fields. A length, a count
+/// or the flag a gated field is announced by is not among them; `CodecChainHasTagged`
+/// computes those from what is ([`CodecChainHasTagged::encode_source`]).
+pub trait CodecChainHasTaggedSource {
+    /// The `header` field.
+    fn header(&self) -> u8;
+    /// The `entries` field.
+    fn entries(&self) -> impl Iterator<Item = impl super::codec_chain_has_tagged_entry::CodecChainHasTaggedEntrySource> + Clone;
+    /// The `priority` field.
+    fn priority(&self) -> Option<u8>;
+    /// The `checksum` field.
+    fn checksum(&self) -> Option<u16>;
+}
+
+impl<T: CodecChainHasTaggedSource + ?Sized> CodecChainHasTaggedSource for &T {
+    fn header(&self) -> u8 {
+        (**self).header()
+    }
+    fn entries(&self) -> impl Iterator<Item = impl super::codec_chain_has_tagged_entry::CodecChainHasTaggedEntrySource> + Clone {
+        (**self).entries()
+    }
+    fn priority(&self) -> Option<u8> {
+        (**self).priority()
+    }
+    fn checksum(&self) -> Option<u16> {
+        (**self).checksum()
+    }
+}
+
+impl CodecChainHasTaggedSource for CodecChainHasTagged {
+    fn header(&self) -> u8 {
+        self.header
+    }
+    fn entries(&self) -> impl Iterator<Item = impl super::codec_chain_has_tagged_entry::CodecChainHasTaggedEntrySource> + Clone {
+        self.entries.iter()
+    }
+    fn priority(&self) -> Option<u8> {
+        self.priority
+    }
+    fn checksum(&self) -> Option<u16> {
+        self.checksum
+    }
+}
+
+#[allow(dead_code)]
+impl CodecChainHasTagged {
+    /// Encode what `src` says into the caller-owned sink: the bytes
+    /// [`Self::encode`] writes for the value it holds, read through
+    /// [`CodecChainHasTaggedSource`]. A length, a count or a gate flag is computed from what
+    /// `src` presents, and a value the encoding cannot carry is refused
+    /// before the first byte is written.
+    pub fn encode_source<S: CodecChainHasTaggedSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {
+        Self::write_source(src, &mut ::sce_forge_runtime::codec::CountSink::new())?;
+        Self::write_source(src, w)
+    }
+
+    /// [`Self::encode_source`] without the guard a parent has already made.
+    #[doc(hidden)]
+    pub fn write_source<S: CodecChainHasTaggedSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {
+        Self::write_source_in(src, w, &CodecChainHasTaggedOverrides::default())
+    }
+
+    /// [`Self::write_source`] with the flags a parent sets in place of the
+    /// ones `src` presents.
+    #[doc(hidden)]
+    pub fn write_source_in<S: CodecChainHasTaggedSource + ?Sized, K: SceSink>(src: &S, w: &mut K, over: &CodecChainHasTaggedOverrides) -> Result<(), CodecError> {
+        let _k_entries: usize = src.entries().count();
+        if _k_entries > 3 {
+            return Err(CodecError::TlvChainOverflow);
+        }
+        let mut _c_header: u8 = src.header();
+        if let Some(_o) = over.header_wide {
+            _c_header = (_c_header & !0x1) | u8::from(_o);
+        }
+        if (src.entries().any(|_e| u64::from(super::codec_chain_has_tagged_entry::CodecChainHasTaggedEntrySource::entry_type(&_e)) == 7u64) || (_c_header & 0x1) != 0) != src.priority().is_some() {
+            return Err(CodecError::PresentIfMismatch);
+        }
+        if (!src.entries().any(|_e| u64::from(super::codec_chain_has_tagged_entry::CodecChainHasTaggedEntrySource::entry_type(&_e)) == 9u64)) != src.checksum().is_some() {
+            return Err(CodecError::PresentIfMismatch);
+        }
+        w.write_u8(_c_header)?;
+        for (_i, _e) in src.entries().enumerate() {
+            CodecChainHasTaggedEntry::write_source_in(&_e, w, &super::codec_chain_has_tagged_entry::CodecChainHasTaggedEntryOverrides::ctl_more(_i + 1 < _k_entries))?;
+        }
+        if let Some(_v) = src.priority() {
+            w.write_u8(_v)?;
+        }
+        if let Some(_v) = src.checksum() {
+            w.write_u8((_v >> 8 & 0xFF) as u8)?;
+            w.write_u8((_v & 0xFF) as u8)?;
+        }
+        Ok(())
     }
 }

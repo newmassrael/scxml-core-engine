@@ -148,45 +148,107 @@ impl CodecRepeatUnconditionalCount {
     /// destination has insufficient remaining capacity; growable
     /// sinks (e.g. `VecSink`) are effectively infallible.
     pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> {
-        // Streaming cursor encode (SSOT selection: `needs_streaming`).
-        // Mirrors the streaming decode: every field appends its own bytes
-        // in declaration order through the per-field encode blocks, so a
-        // gated field skips its append when absent, and a fixed field after
-        // a variable-length payload lands after the payload (the positional
-        // path appends variable fields last, placing it ahead on the wire).
-        // Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-        // dedicated helpers; everything else uses `present_if_encode_block`
-        // (its non-gated arm covers plain fixed / tail / length-ref / VLE).
-        w.write_u8(self.options)?;
-        w.write_u8(self.links_len)?;
-        for _e in &self.links {
-            _e.encode(w)?;
-        }
-        if let Some(_list) = &self.weights {
-            for _e in _list {
-                _e.encode(w)?;
-            }
-        }
-        Ok(())
+        Self::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
     /// `MAX_ENCODED_BYTES` so the worst-case write path performs at
     /// most one allocation, then delegates to `encode` over a
-    /// `VecSink`. Returns the freshly-encoded byte vector. Callers
-    /// targeting zero-alloc hot paths should call `encode` directly
-    /// against a caller-owned sink.
+    /// `VecSink`. Returns the freshly-encoded byte vector, or the
+    /// `CodecError::PresentIfMismatch` `encode` refuses a message with
+    /// when a field's presence disagrees with the `sce:present-if`
+    /// that gates it. Callers targeting zero-alloc hot paths should
+    /// call `encode` directly against a caller-owned sink.
     ///
     /// Gated on the `alloc` feature — `VecSink` lives behind the
     /// same gate (see `backends/rust/forge-runtime/src/codec.rs`). MCU /
     /// `no_std` builds without `alloc` only see the sink-based
     /// primary `encode`.
     #[cfg(feature = "alloc")]
-    pub fn encode_to_vec(&self) -> Vec<u8> {
+    pub fn encode_to_vec(&self) -> Result<Vec<u8>, CodecError> {
         let mut _sce_v: Vec<u8> = Vec::with_capacity(Self::MAX_ENCODED_BYTES);
         let mut _sce_sink = VecSink::new(&mut _sce_v);
-        self.encode(&mut _sce_sink)
-            .expect("VecSink is infallible");
-        _sce_v
+        self.encode(&mut _sce_sink)?;
+        Ok(_sce_v)
+    }
+}
+
+// ── Source (ADR 0058) ────────────────────────────────────────────────
+/// What a value of `CodecRepeatUnconditionalCount` says: its presented fields. A length, a count
+/// or the flag a gated field is announced by is not among them; `CodecRepeatUnconditionalCount`
+/// computes those from what is ([`CodecRepeatUnconditionalCount::encode_source`]).
+pub trait CodecRepeatUnconditionalCountSource {
+    /// The `options` field.
+    fn options(&self) -> u8;
+    /// The `links` field.
+    fn links(&self) -> impl Iterator<Item = impl super::codec_repeat_elem::CodecRepeatElemSource> + Clone;
+    /// The `weights` field.
+    fn weights(&self) -> Option<impl Iterator<Item = impl super::codec_repeat_elem::CodecRepeatElemSource> + Clone>;
+}
+
+impl<T: CodecRepeatUnconditionalCountSource + ?Sized> CodecRepeatUnconditionalCountSource for &T {
+    fn options(&self) -> u8 {
+        (**self).options()
+    }
+    fn links(&self) -> impl Iterator<Item = impl super::codec_repeat_elem::CodecRepeatElemSource> + Clone {
+        (**self).links()
+    }
+    fn weights(&self) -> Option<impl Iterator<Item = impl super::codec_repeat_elem::CodecRepeatElemSource> + Clone> {
+        (**self).weights()
+    }
+}
+
+impl CodecRepeatUnconditionalCountSource for CodecRepeatUnconditionalCount {
+    fn options(&self) -> u8 {
+        self.options
+    }
+    fn links(&self) -> impl Iterator<Item = impl super::codec_repeat_elem::CodecRepeatElemSource> + Clone {
+        self.links.iter()
+    }
+    fn weights(&self) -> Option<impl Iterator<Item = impl super::codec_repeat_elem::CodecRepeatElemSource> + Clone> {
+        self.weights.as_ref().map(|_l| _l.iter())
+    }
+}
+
+#[allow(dead_code)]
+impl CodecRepeatUnconditionalCount {
+    /// Encode what `src` says into the caller-owned sink: the bytes
+    /// [`Self::encode`] writes for the value it holds, read through
+    /// [`CodecRepeatUnconditionalCountSource`]. A length, a count or a gate flag is computed from what
+    /// `src` presents, and a value the encoding cannot carry is refused
+    /// before the first byte is written.
+    pub fn encode_source<S: CodecRepeatUnconditionalCountSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {
+        Self::write_source(src, &mut ::sce_forge_runtime::codec::CountSink::new())?;
+        Self::write_source(src, w)
+    }
+
+    /// [`Self::encode_source`] without the guard a parent has already made.
+    #[doc(hidden)]
+    pub fn write_source<S: CodecRepeatUnconditionalCountSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {
+        let _k_links: usize = src.links().count();
+        if _k_links > 64 {
+            return Err(CodecError::TooManyElements);
+        }
+        let _k_weights: usize = src.weights().map_or(0, |_l| _l.count());
+        if _k_weights > 64 {
+            return Err(CodecError::TooManyElements);
+        }
+        let _p_options_h_0: bool = src.weights().is_some();
+        if src.weights().is_some() && _k_weights != _k_links {
+            return Err(CodecError::InconsistentSource);
+        }
+        let _d_links_len: u8 = u8::try_from(_k_links).map_err(|_| CodecError::LengthOutOfRange)?;
+        let _c_options: u8 = (src.options() & !0x1) | u8::from(_p_options_h_0);
+        w.write_u8(_c_options)?;
+        w.write_u8(_d_links_len)?;
+        for _e in src.links() {
+            CodecRepeatElem::write_source(&_e, w)?;
+        }
+        if let Some(_v) = src.weights() {
+            for _e in _v {
+                CodecRepeatElem::write_source(&_e, w)?;
+            }
+        }
+        Ok(())
     }
 }

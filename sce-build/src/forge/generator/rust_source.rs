@@ -129,6 +129,35 @@ pub(crate) fn supported_with(
     check(m, &|alias| known.get(alias).copied().unwrap_or(false)).is_ok()
 }
 
+/// Whether the encode of a value of `m` can refuse it, given whether each codec
+/// it holds can. A conservative answer: a codec that cannot refuse writes every
+/// value it is given, so its `encode_to_vec` has no error to return, and one
+/// that is said to refuse and does not has an error it never returns.
+///
+/// A value is refused where an element is derived into a type that may not hold
+/// it (a length, a count, a tag), where a gate is checked against the source,
+/// where a list passes its bound, and where a codec it holds refuses. A CBOR or
+/// content-line codec refuses a value past its bounds.
+pub(crate) fn can_refuse_with(m: &CodecModel, mut child_refuses: impl FnMut(&str) -> bool) -> bool {
+    if m.encoding != CodecEncoding::Positional {
+        return true;
+    }
+    let roles = codec_roles::classify(m, &[]);
+    let derives = roles.derived().any(|(_, by)| {
+        by.iter().any(|d| {
+            !matches!(
+                d,
+                Derivation::PresenceOf { .. } | Derivation::ChainContinuation { .. }
+            )
+        })
+    });
+    derives
+        || !roles.checks.is_empty()
+        || m.variant.is_some()
+        || m.fields.iter().any(|f| f.is_repeat() || f.is_tlv_chain())
+        || child_aliases(m).into_iter().any(&mut child_refuses)
+}
+
 /// The shapes the interface covers.
 fn check(m: &CodecModel, import_has_source: &dyn Fn(&str) -> bool) -> Result<(), Unsupported> {
     if m.encoding != CodecEncoding::Positional {
@@ -280,13 +309,30 @@ impl<'a> Plan<'a> {
                 )
             })
             .collect();
+        // One constructor for each flag: the chain sets one and leaves the rest,
+        // which a struct literal says only with an update that clippy refuses
+        // for a struct of one member.
+        let setters: String = overridable
+            .iter()
+            .map(|(carrier, def)| {
+                let member = self.override_member(carrier, &def.name);
+                format!(
+                    "    /// Sets `{flag}` of `{carrier}` and nothing else.\n    #[allow(clippy::needless_update)]\n    pub fn {member}(value: bool) -> Self {{\n        Self {{ {member}: Some(value), ..Self::default() }}\n    }}\n",
+                    flag = def.name,
+                    carrier = carrier.id,
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
         format!(
             "/// Flags of `{name}` a parent sets in place of the ones a value presents:\n\
              /// the end flag of a chain whose entries are `{name}`, which the chain\n\
              /// derives from where an entry stands.\n\
              #[doc(hidden)]\n\
              #[derive(Debug, Default, Clone, Copy)]\n\
-             pub struct {overrides} {{\n{members}}}\n\n",
+             pub struct {overrides} {{\n{members}}}\n\n\
+             #[allow(dead_code)]\n\
+             impl {overrides} {{\n{setters}}}\n\n",
             name = self.name(),
             overrides = self.overrides_name(),
         )
@@ -369,7 +415,7 @@ impl<'a> Plan<'a> {
                     };
                     let mask = (1u64 << def.width.max(1)) - 1;
                     let read = self.read(field, derived);
-                    let bits = format!("({read} >> {}) & 0x{mask:X}", def.bit);
+                    let bits = format!("{} & 0x{mask:X}", shr(&read, def.bit));
                     if field.fixed_bits().is_some_and(|b| b <= 8) {
                         out.push_str(&format!(", {bits}"));
                     } else {
@@ -457,11 +503,11 @@ impl<'a> Plan<'a> {
                     .find(|d| d.name == identifier.name)
                     .expect("the parser found the flag the identifier names");
                 let mask = (1u64 << def.width) - 1;
-                format!(
-                    "((u64::from({entry_trait}::{}({entry})) >> {}) & 0x{mask:X})",
-                    self.l().codec_field_id(&carrier.id),
-                    def.bit
-                )
+                let whole = format!(
+                    "u64::from({entry_trait}::{}({entry}))",
+                    self.l().codec_field_id(&carrier.id)
+                );
+                format!("({} & 0x{mask:X})", shr(&whole, def.bit))
             }
             None => {
                 let whole = format!(
@@ -562,6 +608,61 @@ impl<'a> Plan<'a> {
         )
     }
 
+    /// The fields whose size the element `id` is derived from, when it is a
+    /// length or a count.
+    fn measured(&self, id: &ElementId) -> Vec<&CodecField> {
+        let Some(Role::Derived(by)) = self.roles.role_of(id) else {
+            return Vec::new();
+        };
+        let names: Vec<&str> = by
+            .iter()
+            .flat_map(|d| match d {
+                Derivation::LengthOf { contents } => contents
+                    .iter()
+                    .map(|c| c.field.as_str())
+                    .collect::<Vec<_>>(),
+                Derivation::CountOf { lists } => lists.iter().map(String::as_str).collect(),
+                _ => Vec::new(),
+            })
+            .collect();
+        self.m()
+            .fields
+            .iter()
+            .filter(|f| names.contains(&f.id.as_str()))
+            .collect()
+    }
+
+    /// Whether the element `id` is derived only while the fields it measures are
+    /// there. A length or a count of content that is gated has nothing to be
+    /// derived from when the gate is off, and the wire still holds a number:
+    /// one the codec does not tie to anything it models (a total that bounds
+    /// more than the field, a number a sender keeps for its peer). The source
+    /// states that number, and the encode derives the rest.
+    fn stated_when_absent(&self, id: &ElementId) -> bool {
+        let measured = self.measured(id);
+        !measured.is_empty() && measured.iter().all(|f| f.present_if.is_some())
+    }
+
+    /// Whether a source states `field` when its content is absent
+    /// ([`Self::stated_when_absent`]): an element of the wire that is a
+    /// length or a count, not gated itself, which the content determines only
+    /// while there is content.
+    fn stated(&self, field: &CodecField) -> bool {
+        !self.presented(field)
+            && field.present_if.is_none()
+            && self.stated_when_absent(&ElementId::Field(field.id.clone()))
+    }
+
+    /// The condition, in a form that holds its fields as members, under which all
+    /// the content `field` measures is absent.
+    fn absent_content(&self, field: &CodecField) -> String {
+        self.measured(&ElementId::Field(field.id.clone()))
+            .into_iter()
+            .map(|f| format!("self.{}.is_none()", self.accessor(f)))
+            .collect::<Vec<_>>()
+            .join(" && ")
+    }
+
     /// The type an accessor returns for the value of `field` when it is
     /// present: a scalar by value, bytes and text by reference.
     fn value_type(&self, field: &CodecField) -> String {
@@ -583,7 +684,9 @@ impl<'a> Plan<'a> {
 
     fn accessor_type(&self, field: &CodecField) -> String {
         let value = self.value_type(field);
-        if field.present_if.is_some() {
+        // A gated field may be absent; an element stated only while its content
+        // is absent is absent the rest of the time.
+        if field.present_if.is_some() || self.stated(field) {
             format!("Option<{value}>")
         } else {
             value
@@ -699,6 +802,9 @@ impl<'a> Plan<'a> {
              /// source it says. The tag is not among them: `{name}` derives it from\n\
              /// the arm, as it derives a length, and a default arm presents the tag\n\
              /// it could not name.\n\
+             // A default arm's tag is read by the codec that embeds this one and\n\
+             // derives its own carrier bits from the arm, which not every build uses.\n\
+             #[allow(dead_code)]\n\
              pub enum {enum_name}<'s, {generics}> {{\n{variants}}}\n\n",
             name = self.name(),
             enum_name = self.body_enum(),
@@ -720,7 +826,7 @@ impl<'a> Plan<'a> {
     fn trait_definition(&self) -> String {
         let mut items = String::new();
         for field in &self.m().fields {
-            if !self.presented(field) {
+            if !(self.presented(field) || self.stated(field)) {
                 continue;
             }
             items.push_str(&format!(
@@ -752,7 +858,7 @@ impl<'a> Plan<'a> {
     fn reference_impl(&self) -> String {
         let mut items = String::new();
         for field in &self.m().fields {
-            if !self.presented(field) {
+            if !(self.presented(field) || self.stated(field)) {
                 continue;
             }
             let accessor = self.accessor(field);
@@ -792,7 +898,7 @@ impl<'a> Plan<'a> {
         let storage = "::sce_forge_runtime::codec";
         let mut items = String::new();
         for field in &self.m().fields {
-            if !self.presented(field) {
+            if !(self.presented(field) || self.stated(field)) {
                 continue;
             }
             let accessor = self.accessor(field);
@@ -800,7 +906,13 @@ impl<'a> Plan<'a> {
             // A list or an embedded body is lent, a scalar copied or reborrowed.
             // An owned form holds its text, bytes and lists in the storage
             // profile's containers, which it reads through their traits.
-            let read = if field.is_embed() {
+            let read = if self.stated(field) {
+                // The number the wire holds beside content that is not there.
+                format!(
+                    "if {} {{ Some(self.{accessor}) }} else {{ None }}",
+                    self.absent_content(field)
+                )
+            } else if field.is_embed() {
                 if gated {
                     format!("self.{accessor}.as_ref()")
                 } else {
@@ -1172,7 +1284,7 @@ impl<'a> Plan<'a> {
         let local = self.local("_d_", id);
         // Every field that names this element says its number; they agree or
         // there is no frame that says both.
-        let mut numbers: Vec<String> = Vec::new();
+        let mut numbers: Vec<Measure> = Vec::new();
         for (index, content) in contents.iter().enumerate() {
             let Some(field) = self.m().fields.iter().find(|f| f.id == content.field) else {
                 continue;
@@ -1202,9 +1314,20 @@ impl<'a> Plan<'a> {
                 measure(&self.byte_count(field))
             };
             lines.push(format!("let {number}: usize = {value};"));
-            numbers.push(number);
+            numbers.push(Measure {
+                number,
+                present: self.presence_test(field),
+            });
         }
         self.derive_number(id, &local, numbers, lines, derived);
+    }
+
+    /// The test that `field` is there, for a field that may not be.
+    fn presence_test(&self, field: &CodecField) -> Option<String> {
+        field
+            .present_if
+            .is_some()
+            .then(|| format!("src.{}().is_some()", self.accessor(field)))
     }
 
     /// The local that holds how many entries the list `field` holds.
@@ -1249,10 +1372,13 @@ impl<'a> Plan<'a> {
     ) {
         let local = self.local("_d_", id);
         // The lists that name this element agree in size or no frame says both.
-        let numbers: Vec<String> = lists
+        let numbers: Vec<Measure> = lists
             .iter()
             .filter_map(|list| self.m().fields.iter().find(|f| &f.id == list))
-            .map(|field| self.count_local(field))
+            .map(|field| Measure {
+                number: self.count_local(field),
+                present: self.presence_test(field),
+            })
             .collect();
         self.derive_number(id, &local, numbers, lines, derived);
     }
@@ -1268,7 +1394,7 @@ impl<'a> Plan<'a> {
         derived: &mut Derived,
     ) {
         let local = self.local("_d_", id);
-        let mut numbers: Vec<String> = Vec::new();
+        let mut numbers: Vec<Measure> = Vec::new();
         for body in bodies {
             let Some(field) = self.m().fields.iter().find(|f| &f.id == body) else {
                 continue;
@@ -1291,30 +1417,73 @@ impl<'a> Plan<'a> {
                 "let {size}: usize = {{\n    let mut _c = ::sce_forge_runtime::codec::CountSink::new();\n{}\n    _c.len()\n}};",
                 indent(&[body_write], 4).trim_end_matches('\n')
             ));
-            numbers.push(size);
+            // The length of a body that is not there is the wire's zero.
+            numbers.push(Measure {
+                number: size,
+                present: None,
+            });
         }
         self.derive_number(id, &local, numbers, lines, derived);
     }
 
-    /// The element `id` holds the number the locals in `numbers` all say.
+    /// The element `id` holds the number the `measures` say.
+    ///
+    /// What is always there fixes the number, and anything that is there beside
+    /// it says the same or there is no frame that says both. When all that is
+    /// measured may be absent, the number is derived while some of it is there;
+    /// when none is, the wire still holds a number, and the source states it
+    /// ([`Self::stated_when_absent`]).
     fn derive_number(
         &self,
         id: &ElementId,
         local: &str,
-        numbers: Vec<String>,
+        measures: Vec<Measure>,
         lines: &mut Vec<String>,
         derived: &mut Derived,
     ) {
-        for pair in numbers.windows(2) {
-            lines.push(format!(
-                "if {} != {} {{\n    return Err(CodecError::InconsistentSource);\n}}",
-                pair[0], pair[1]
-            ));
+        let disagree = "{\n    return Err(CodecError::InconsistentSource);\n}";
+        let always: Vec<&Measure> = measures.iter().filter(|m| m.present.is_none()).collect();
+        let gated: Vec<&Measure> = measures.iter().filter(|m| m.present.is_some()).collect();
+        // The number, as an expression of a `usize`, or the local that holds an
+        // `Option<usize>` of it when there may be none to measure.
+        let mut free: Option<String> = None;
+        let mut number = "0usize".to_string();
+        if let Some(anchor) = always.first() {
+            for other in &always[1..] {
+                lines.push(format!(
+                    "if {} != {} {disagree}",
+                    other.number, anchor.number
+                ));
+            }
+            for g in &gated {
+                lines.push(format!(
+                    "if {} && {} != {} {disagree}",
+                    g.present.as_deref().unwrap_or("false"),
+                    g.number,
+                    anchor.number
+                ));
+            }
+            number = anchor.number.clone();
+        } else if !gated.is_empty() {
+            let one = format!("_f{local}");
+            let mut chain = String::new();
+            for g in &gated {
+                chain.push_str(&format!(
+                    "if {} {{ Some({}) }} else ",
+                    g.present.as_deref().unwrap_or("false"),
+                    g.number
+                ));
+            }
+            lines.push(format!("let {one}: Option<usize> = {chain}{{ None }};"));
+            for g in &gated[1..] {
+                lines.push(format!(
+                    "if {} && Some({}) != {one} {disagree}",
+                    g.present.as_deref().unwrap_or("false"),
+                    g.number
+                ));
+            }
+            free = Some(one);
         }
-        let number = numbers
-            .first()
-            .cloned()
-            .unwrap_or_else(|| "0usize".to_string());
         match id {
             ElementId::Field(name) => {
                 let field = self
@@ -1324,20 +1493,42 @@ impl<'a> Plan<'a> {
                     .find(|f| &f.id == name)
                     .expect("a derived field is a field of the codec");
                 let ty = self.l().type_name(&field.sce_type);
-                lines.push(format!(
-                    "let {local}: {ty} = {ty}::try_from({number}).map_err(|_| CodecError::LengthOutOfRange)?;"
-                ));
+                match &free {
+                    None => lines.push(format!(
+                        "let {local}: {ty} = {ty}::try_from({number}).map_err(|_| CodecError::LengthOutOfRange)?;"
+                    )),
+                    // Gated beside its content, it is written only where there
+                    // is content, and then the content says it.
+                    Some(one) if !self.stated(field) => lines.push(format!(
+                        "let {local}: {ty} = {ty}::try_from({one}.unwrap_or(0)).map_err(|_| CodecError::LengthOutOfRange)?;"
+                    )),
+                    // Derived while there is content, and what the source states
+                    // while there is not; a source that states a number beside
+                    // content says it twice and must say the same.
+                    Some(one) => {
+                        let accessor = self.accessor(field);
+                        lines.push(format!(
+                            "let {local}: {ty} = match {one} {{\n    Some(_n) => {{\n        let _d = {ty}::try_from(_n).map_err(|_| CodecError::LengthOutOfRange)?;\n        if src.{accessor}().is_some_and(|_s| _s != _d) {{\n            return Err(CodecError::InconsistentSource);\n        }}\n        _d\n    }}\n    None => src.{accessor}().unwrap_or_default(),\n}};"
+                        ));
+                    }
+                }
                 derived.fields.insert(name.clone(), local.to_string());
             }
             ElementId::Flag { field, flag } => {
+                // With none of it there, the carrier keeps the bits the source
+                // presents.
+                let (value, kind) = match free {
+                    Some(one) => (one, FlagValue::Optional),
+                    None => (number, FlagValue::Number),
+                };
                 derived
                     .flags
                     .entry(field.clone())
                     .or_default()
                     .push(DerivedFlag {
                         flag: flag.clone(),
-                        value: number,
-                        kind: FlagValue::Number,
+                        value,
+                        kind,
                     });
             }
             ElementId::Variant => unreachable!("a length or a count is not the variant"),
@@ -1576,7 +1767,7 @@ impl<'a> Plan<'a> {
                         let count = self.count_local(field);
                         body.push(format!("for (_i, _e) in {value}.enumerate() {{"));
                         body.push(format!(
-                            "    {}::write_source_in(&_e, w{args}, &{} {{ {member}: Some(_i + 1 < {count}), ..Default::default() }})?;",
+                            "    {}::write_source_in(&_e, w{args}, &{}::{member}(_i + 1 < {count}))?;",
                             child.type_name, child.overrides_path
                         ));
                     }
@@ -1668,6 +1859,17 @@ struct DerivedFlag {
 enum FlagValue {
     Number,
     Bool,
+    /// A number there may be none of: the carrier keeps the bits the source
+    /// presents when there is not.
+    Optional,
+}
+
+/// What a derived number is measured from: the local that holds the measure (0
+/// while the content is absent), and, for content that may be absent, the test
+/// that it is there.
+struct Measure {
+    number: String,
+    present: Option<String>,
 }
 
 impl Derived {
@@ -1688,6 +1890,8 @@ impl Derived {
             // to be the left operand of the next `&`.
             let mut value = format!("src.{}()", plan.accessor(carrier));
             let mut compound = false;
+            // Flags that are a number only while there is content to measure.
+            let mut optional: Vec<(&DerivedFlag, &FlagDef)> = Vec::new();
             for derived in flags {
                 let def = carrier
                     .flags
@@ -1701,6 +1905,10 @@ impl Derived {
                 };
                 let mask = width_mask << def.bit;
                 let bits = match derived.kind {
+                    FlagValue::Optional => {
+                        optional.push((derived, def));
+                        continue;
+                    }
                     FlagValue::Bool => format!("{ty}::from({})", derived.value),
                     FlagValue::Number => {
                         // A number the flag's bit-range cannot hold is not a frame.
@@ -1742,17 +1950,56 @@ impl Derived {
                 .map(|(_, def)| def)
                 .collect();
             let local = plan.carrier_local(carrier);
-            let binding = if sets.is_empty() { "let" } else { "let mut" };
+            let binding = if sets.is_empty() && optional.is_empty() {
+                "let"
+            } else {
+                "let mut"
+            };
             lines.push(format!("{binding} {local}: {ty} = {value};"));
+            for (derived, def) in optional {
+                let width_mask = if def.width >= 64 {
+                    u64::MAX
+                } else {
+                    (1u64 << def.width) - 1
+                };
+                let placed = shl(
+                    &format!("{ty}::try_from(_n).map_err(|_| CodecError::LengthOutOfRange)?"),
+                    def.bit,
+                );
+                lines.push(format!(
+                    "if let Some(_n) = {} {{\n    if _n > 0x{width_mask:X} {{\n        return Err(CodecError::LengthOutOfRange);\n    }}\n    {local} = ({local} & !0x{mask:X}) | {placed};\n}}",
+                    derived.value,
+                    mask = width_mask << def.bit,
+                ));
+            }
             for def in sets {
                 lines.push(format!(
-                    "if let Some(_o) = over.{member} {{\n    {local} = ({local} & !0x{mask:X}) | ({ty}::from(_o) << {bit});\n}}",
+                    "if let Some(_o) = over.{member} {{\n    {local} = ({local} & !0x{mask:X}) | {placed};\n}}",
                     member = plan.override_member(carrier, &def.name),
                     mask = 1u64 << def.bit,
-                    bit = def.bit,
+                    placed = shl(&format!("{ty}::from(_o)"), def.bit),
                 ));
             }
         }
+    }
+}
+
+/// `value` shifted right by `bit`, with no shift at bit 0 (a shift by nothing is
+/// an operation clippy refuses in generated code).
+fn shr(value: &str, bit: u32) -> String {
+    if bit == 0 {
+        value.to_string()
+    } else {
+        format!("({value} >> {bit})")
+    }
+}
+
+/// `value` shifted left by `bit`, with no shift at bit 0.
+fn shl(value: &str, bit: u32) -> String {
+    if bit == 0 {
+        value.to_string()
+    } else {
+        format!("({value} << {bit})")
     }
 }
 

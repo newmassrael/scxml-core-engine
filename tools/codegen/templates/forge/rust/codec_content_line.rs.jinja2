@@ -28,23 +28,6 @@ line.read_param_string::<{{ p.max_size }}>()?
 line.read_string::<{{ e.max_size }}>({{ "true" if e.text else "false" }})?
 {%- endif -%}
 {%- endmacro %}
-{#- The write of one parameter `p`, read from `holder`: a parameter that is an
-    enum is written as the text of its variant (docs/adr/0015). #}
-{% macro write_param(p, holder) -%}
-{%- if p.kind == "enum" and p.required -%}
-out.enum_param("{{ p.param }}", TEXTS_{{ p.enum_alias | upper }}, u64::from({{ holder }}.{{ p.name }}.to_underlying()))?;
-{%- elif p.kind == "enum" -%}
-if let Some(p) = &{{ holder }}.{{ p.name }} {
-                out.enum_param("{{ p.param }}", TEXTS_{{ p.enum_alias | upper }}, u64::from((*p).to_underlying()))?;
-            }
-{%- elif p.required -%}
-out.param("{{ p.param }}", &{{ holder }}.{{ p.name }}, {{ p.max_size }})?;
-{%- else -%}
-if let Some(p) = &{{ holder }}.{{ p.name }} {
-                out.param("{{ p.param }}", p, {{ p.max_size }})?;
-            }
-{%- endif -%}
-{%- endmacro %}
 {% macro store_value(e) -%}
 {%- if e.separator -%}
 {{ e.local }} = Some(line.read_strings::<{{ e.max_size }}, {{ e.max_values }}>(b'{{ e.separator }}', {{ "true" if e.text else "false" }})?);
@@ -70,27 +53,6 @@ if let Some(p) = &{{ holder }}.{{ p.name }} {
 {{ e.local }} = Some(line.read_int(i64::MIN, i64::MAX)?);
 {%- else -%}
 {{ e.local }} = Some(line.read_int(i64::from({{ e.value_type }}::MIN), i64::from({{ e.value_type }}::MAX))? as {{ e.value_type }});
-{%- endif -%}
-{%- endmacro %}
-{#- The write of one property's value `v`, its name and parameters already
-    written. #}
-{% macro write_value(e) -%}
-{%- if e.separator -%}
-out.strings(v.as_slice(), b'{{ e.separator }}', {{ "true" if e.text else "false" }}, {{ e.max_size }}, {{ e.max_values }})?;
-{%- elif e.kind == "string" -%}
-out.string(v, {{ "true" if e.text else "false" }}, {{ e.max_size }})?;
-{%- elif e.kind == "enum" -%}
-out.enum_value(TEXTS_{{ e.enum_alias | upper }}, u64::from((*v).to_underlying()))?;
-{%- elif e.kind == "bool" -%}
-out.boolean(*v)?;
-{%- elif e.kind == "uint" and e.value_type == "u64" -%}
-out.uint(*v)?;
-{%- elif e.kind == "uint" -%}
-out.uint(u64::from(*v))?;
-{%- elif e.kind == "int" and e.value_type == "i64" -%}
-out.int(*v)?;
-{%- else -%}
-out.int(i64::from(*v))?;
 {%- endif -%}
 {%- endmacro %}
 {{ sce_map.source_marker(source_location, "rust", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
@@ -294,69 +256,7 @@ impl {{ struct_name }} {
     /// Encode this component into `w`. A value past its declared bound, or one
     /// a line could not carry, is refused (SCE_FORGE.md §4.6.4).
     pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> {
-        let mut out = ContentLineWriter::begin(w, "{{ component }}")?;
-{% for e in entries %}
-{% if e.is_records %}
-{% if e.required %}
-        if self.{{ e.name }}.is_empty() {
-            return Err(CodecError::LineRequiredMissing);
-        }
-{% endif %}
-        for record in &self.{{ e.name }} {
-            let v = &record.{{ e.value_member }};
-            out.property("{{ e.property }}")?;
-{% for p in e.params %}
-            {{ write_param(p, "record") }}
-{% endfor %}
-            {{ write_value(e) }}
-        }
-{% elif e.is_list %}
-{% if e.required %}
-        if self.{{ e.name }}.is_empty() {
-            return Err(CodecError::LineRequiredMissing);
-        }
-{% endif %}
-        for v in &self.{{ e.name }} {
-            out.property("{{ e.property }}")?;
-            {{ write_value(e) }}
-        }
-{% elif e.required %}
-        {
-            let v = &self.{{ e.name }};
-            out.property("{{ e.property }}")?;
-{% for p in e.params %}
-            {{ write_param(p, "self") }}
-{% endfor %}
-            {{ write_value(e) }}
-        }
-{% elif e.is_values %}
-        if !self.{{ e.name }}.is_empty() {
-            let v = &self.{{ e.name }};
-            out.property("{{ e.property }}")?;
-{% for p in e.params %}
-            {{ write_param(p, "self") }}
-{% endfor %}
-            {{ write_value(e) }}
-        }{% if e.params %} else if {% for p in e.params %}{% if not loop.first %} || {% endif %}self.{{ p.name }}.is_some(){% endfor %} {
-            // A parameter with no value of its property has no line to stand on.
-            return Err(CodecError::LineRequiredMissing);
-        }{% endif %}
-
-{% else %}
-        if let Some(v) = &self.{{ e.name }} {
-            out.property("{{ e.property }}")?;
-{% for p in e.params %}
-            {{ write_param(p, "self") }}
-{% endfor %}
-            {{ write_value(e) }}
-        }{% if e.params %} else if {% for p in e.params %}{% if not loop.first %} || {% endif %}self.{{ p.name }}.is_some(){% endfor %} {
-            // A parameter with no value of its property has no line to stand on.
-            return Err(CodecError::LineRequiredMissing);
-        }{% endif %}
-
-{% endif %}
-{% endfor %}
-        out.finish()
+        Self::encode_source(self, w)
     }
 
     /// [`encode`](Self::encode) into a new `Vec`.

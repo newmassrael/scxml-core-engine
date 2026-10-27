@@ -7,7 +7,7 @@ fn test_vector_codec_length_ref_dotted_basic_l41() {
         carrier: 0x0u8,
         payload: b"",
     };
-    let encoded = actual.encode_to_vec();
+    let encoded = actual.encode_to_vec().expect("<sce:test-vector> at SCXML L41: encode refused the value");
     let expected: &[u8] = &[0x00u8];
     assert_eq!(
         encoded.as_slice(), expected,
@@ -56,7 +56,7 @@ fn test_vector_codec_length_ref_dotted_basic_l41() {
     // eligible codec is scalar / bytes / string (no bounded list reaches
     // this gate), so the projection is infallible.
     assert_eq!(
-        owned.as_borrowed().encode_to_vec().as_slice(), expected,
+        owned.as_borrowed().encode_to_vec().expect("<sce:test-vector> at SCXML L41: as_borrowed encode refused the value").as_slice(), expected,
         "<sce:test-vector> at SCXML L41: as_borrowed re-encode mismatch"
     );
 }
@@ -66,7 +66,7 @@ fn test_vector_codec_length_ref_dotted_basic_l45() {
         carrier: 0x21u8,
         payload: b"\xaa\xbb",
     };
-    let encoded = actual.encode_to_vec();
+    let encoded = actual.encode_to_vec().expect("<sce:test-vector> at SCXML L45: encode refused the value");
     let expected: &[u8] = &[0x21u8, 0xaau8, 0xbbu8];
     assert_eq!(
         encoded.as_slice(), expected,
@@ -115,7 +115,7 @@ fn test_vector_codec_length_ref_dotted_basic_l45() {
     // eligible codec is scalar / bytes / string (no bounded list reaches
     // this gate), so the projection is infallible.
     assert_eq!(
-        owned.as_borrowed().encode_to_vec().as_slice(), expected,
+        owned.as_borrowed().encode_to_vec().expect("<sce:test-vector> at SCXML L45: as_borrowed encode refused the value").as_slice(), expected,
         "<sce:test-vector> at SCXML L45: as_borrowed re-encode mismatch"
     );
 }
@@ -125,7 +125,7 @@ fn test_vector_codec_length_ref_dotted_basic_l49() {
         carrier: 0xf5u8,
         payload: b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e",
     };
-    let encoded = actual.encode_to_vec();
+    let encoded = actual.encode_to_vec().expect("<sce:test-vector> at SCXML L49: encode refused the value");
     let expected: &[u8] = &[0xf5u8, 0x00u8, 0x01u8, 0x02u8, 0x03u8, 0x04u8, 0x05u8, 0x06u8, 0x07u8, 0x08u8, 0x09u8, 0x0au8, 0x0bu8, 0x0cu8, 0x0du8, 0x0eu8];
     assert_eq!(
         encoded.as_slice(), expected,
@@ -174,7 +174,7 @@ fn test_vector_codec_length_ref_dotted_basic_l49() {
     // eligible codec is scalar / bytes / string (no bounded list reaches
     // this gate), so the projection is infallible.
     assert_eq!(
-        owned.as_borrowed().encode_to_vec().as_slice(), expected,
+        owned.as_borrowed().encode_to_vec().expect("<sce:test-vector> at SCXML L49: as_borrowed encode refused the value").as_slice(), expected,
         "<sce:test-vector> at SCXML L49: as_borrowed re-encode mismatch"
     );
 }

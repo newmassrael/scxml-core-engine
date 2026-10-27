@@ -74,8 +74,7 @@ impl CodecVariantSessionClose {
     /// destination has insufficient remaining capacity; growable
     /// sinks (e.g. `VecSink`) are effectively infallible.
     pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> {
-        w.write_u8(self.reason)?;
-        Ok(())
+        Self::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
@@ -96,5 +95,45 @@ impl CodecVariantSessionClose {
         self.encode(&mut _sce_sink)
             .expect("VecSink is infallible");
         _sce_v
+    }
+}
+
+// ── Source (ADR 0058) ────────────────────────────────────────────────
+/// What a value of `CodecVariantSessionClose` says: its presented fields. A length, a count
+/// or the flag a gated field is announced by is not among them; `CodecVariantSessionClose`
+/// computes those from what is ([`CodecVariantSessionClose::encode_source`]).
+pub trait CodecVariantSessionCloseSource {
+    /// The `reason` field.
+    fn reason(&self) -> u8;
+}
+
+impl<T: CodecVariantSessionCloseSource + ?Sized> CodecVariantSessionCloseSource for &T {
+    fn reason(&self) -> u8 {
+        (**self).reason()
+    }
+}
+
+impl CodecVariantSessionCloseSource for CodecVariantSessionClose {
+    fn reason(&self) -> u8 {
+        self.reason
+    }
+}
+
+#[allow(dead_code)]
+impl CodecVariantSessionClose {
+    /// Encode what `src` says into the caller-owned sink: the bytes
+    /// [`Self::encode`] writes for the value it holds, read through
+    /// [`CodecVariantSessionCloseSource`]. A length, a count or a gate flag is computed from what
+    /// `src` presents, and a value the encoding cannot carry is refused
+    /// before the first byte is written.
+    pub fn encode_source<S: CodecVariantSessionCloseSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {
+        Self::write_source(src, w)
+    }
+
+    /// [`Self::encode_source`] without the guard a parent has already made.
+    #[doc(hidden)]
+    pub fn write_source<S: CodecVariantSessionCloseSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {
+        w.write_u8(src.reason())?;
+        Ok(())
     }
 }

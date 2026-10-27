@@ -108,34 +108,92 @@ impl<'a> CodecTlvEntry<'a> {
     /// destination has insufficient remaining capacity; growable
     /// sinks (e.g. `VecSink`) are effectively infallible.
     pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> {
-        w.write_u8(self.entry_type)?;
-        w.write_u8(self.entry_len)?;
-        // `self.<id>` is the borrowed `&'a [u8]` view — pass it directly;
-        // `&self.<id>` would be `&&[u8]` (clippy::needless_borrow).
-        w.write_bytes(self.entry_body)?;
-        Ok(())
+        Self::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
     /// `MAX_ENCODED_BYTES` so the worst-case write path performs at
     /// most one allocation, then delegates to `encode` over a
-    /// `VecSink`. Returns the freshly-encoded byte vector. Callers
-    /// targeting zero-alloc hot paths should call `encode` directly
-    /// against a caller-owned sink.
+    /// `VecSink`. Returns the freshly-encoded byte vector, or the
+    /// `CodecError::PresentIfMismatch` `encode` refuses a message with
+    /// when a field's presence disagrees with the `sce:present-if`
+    /// that gates it. Callers targeting zero-alloc hot paths should
+    /// call `encode` directly against a caller-owned sink.
     ///
     /// Gated on the `alloc` feature — `VecSink` lives behind the
     /// same gate (see `backends/rust/forge-runtime/src/codec.rs`). MCU /
     /// `no_std` builds without `alloc` only see the sink-based
     /// primary `encode`.
     #[cfg(feature = "alloc")]
-    pub fn encode_to_vec(&self) -> Vec<u8> {
+    pub fn encode_to_vec(&self) -> Result<Vec<u8>, CodecError> {
         let mut _sce_v: Vec<u8> = Vec::with_capacity(Self::MAX_ENCODED_BYTES);
         let mut _sce_sink = VecSink::new(&mut _sce_v);
-        self.encode(&mut _sce_sink)
-            .expect("VecSink is infallible");
-        _sce_v
+        self.encode(&mut _sce_sink)?;
+        Ok(_sce_v)
     }
 }
+
+// ── Source (ADR 0058) ────────────────────────────────────────────────
+/// What a value of `CodecTlvEntry` says: its presented fields. A length, a count
+/// or the flag a gated field is announced by is not among them; `CodecTlvEntry`
+/// computes those from what is ([`CodecTlvEntry::encode_source`]).
+pub trait CodecTlvEntrySource {
+    /// The `entry_type` field.
+    fn entry_type(&self) -> u8;
+    /// The `entry_body` field.
+    fn entry_body(&self) -> &[u8];
+}
+
+impl<T: CodecTlvEntrySource + ?Sized> CodecTlvEntrySource for &T {
+    fn entry_type(&self) -> u8 {
+        (**self).entry_type()
+    }
+    fn entry_body(&self) -> &[u8] {
+        (**self).entry_body()
+    }
+}
+
+impl<'a> CodecTlvEntrySource for CodecTlvEntry<'a> {
+    fn entry_type(&self) -> u8 {
+        self.entry_type
+    }
+    fn entry_body(&self) -> &[u8] {
+        self.entry_body
+    }
+}
+
+impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecTlvEntrySource for CodecTlvEntryOwned<S> {
+    fn entry_type(&self) -> u8 {
+        self.entry_type
+    }
+    fn entry_body(&self) -> &[u8] {
+        ::sce_forge_runtime::codec::SceByteBuf::as_slice(&self.entry_body)
+    }
+}
+
+#[allow(dead_code)]
+impl<'a> CodecTlvEntry<'a> {
+    /// Encode what `src` says into the caller-owned sink: the bytes
+    /// [`Self::encode`] writes for the value it holds, read through
+    /// [`CodecTlvEntrySource`]. A length, a count or a gate flag is computed from what
+    /// `src` presents, and a value the encoding cannot carry is refused
+    /// before the first byte is written.
+    pub fn encode_source<S: CodecTlvEntrySource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {
+        Self::write_source(src, w)
+    }
+
+    /// [`Self::encode_source`] without the guard a parent has already made.
+    #[doc(hidden)]
+    pub fn write_source<S: CodecTlvEntrySource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {
+        let _n_d_entry_len_0: usize = src.entry_body().len();
+        let _d_entry_len: u8 = u8::try_from(_n_d_entry_len_0).map_err(|_| CodecError::LengthOutOfRange)?;
+        w.write_u8(src.entry_type())?;
+        w.write_u8(_d_entry_len)?;
+        w.write_bytes(src.entry_body())?;
+        Ok(())
+    }
+}
+
 
 // ── View (ADR 0049) ──────────────────────────────────────────────────
 // `CodecTlvEntry` holds no bounded list, embedded body or variant, so a
@@ -283,21 +341,17 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecTlvEntryOwned<S> {
     /// borrowed form could not carry is an error and never a frame its own
     /// decoder would reject.
     pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), CodecError> {
-        w.write_u8(self.entry_type)?;
-        w.write_u8(self.entry_len)?;
-        // The owned form holds the bytes in the profile's container; read them
-        // through the trait every profile implements.
-        w.write_bytes(::sce_forge_runtime::codec::SceByteBuf::as_slice(&self.entry_body))?;
-        Ok(())
+        CodecTlvEntry::encode_source(self, w)
     }
 
-    /// Heap-backed convenience facade over [`Self::encode`].
+    /// Heap-backed convenience facade over [`Self::encode`]. Fallible: a list
+    /// past the bound the borrowed view declares is refused, and so is a
+    /// presence the chain predicates disagree with.
     #[cfg(feature = "alloc")]
-    pub fn encode_to_vec(&self) -> Vec<u8> {
+    pub fn encode_to_vec(&self) -> Result<Vec<u8>, CodecError> {
         let mut _sce_v: Vec<u8> = Vec::with_capacity(CodecTlvEntry::MAX_ENCODED_BYTES);
         let mut _sce_sink = VecSink::new(&mut _sce_v);
-        self.encode(&mut _sce_sink)
-            .expect("VecSink is infallible");
-        _sce_v
+        self.encode(&mut _sce_sink)?;
+        Ok(_sce_v)
     }
 }

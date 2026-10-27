@@ -128,8 +128,7 @@ impl CodecFlagsBasic {
     /// destination has insufficient remaining capacity; growable
     /// sinks (e.g. `VecSink`) are effectively infallible.
     pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> {
-        w.write_u8(self.header)?;
-        Ok(())
+        Self::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
@@ -150,5 +149,108 @@ impl CodecFlagsBasic {
         self.encode(&mut _sce_sink)
             .expect("VecSink is infallible");
         _sce_v
+    }
+}
+
+/// Flags of `CodecFlagsBasic` a parent sets in place of the ones a value presents:
+/// the end flag of a chain whose entries are `CodecFlagsBasic`, which the chain
+/// derives from where an entry stands.
+#[doc(hidden)]
+#[derive(Debug, Default, Clone, Copy)]
+pub struct CodecFlagsBasicOverrides {
+    /// The `reliable` flag of `header`, when a parent sets it.
+    pub header_reliable: Option<bool>,
+    /// The `more` flag of `header`, when a parent sets it.
+    pub header_more: Option<bool>,
+    /// The `drop` flag of `header`, when a parent sets it.
+    pub header_drop: Option<bool>,
+    /// The `first` flag of `header`, when a parent sets it.
+    pub header_first: Option<bool>,
+}
+
+#[allow(dead_code)]
+impl CodecFlagsBasicOverrides {
+    /// Sets `reliable` of `header` and nothing else.
+    #[allow(clippy::needless_update)]
+    pub fn header_reliable(value: bool) -> Self {
+        Self { header_reliable: Some(value), ..Self::default() }
+    }
+
+    /// Sets `more` of `header` and nothing else.
+    #[allow(clippy::needless_update)]
+    pub fn header_more(value: bool) -> Self {
+        Self { header_more: Some(value), ..Self::default() }
+    }
+
+    /// Sets `drop` of `header` and nothing else.
+    #[allow(clippy::needless_update)]
+    pub fn header_drop(value: bool) -> Self {
+        Self { header_drop: Some(value), ..Self::default() }
+    }
+
+    /// Sets `first` of `header` and nothing else.
+    #[allow(clippy::needless_update)]
+    pub fn header_first(value: bool) -> Self {
+        Self { header_first: Some(value), ..Self::default() }
+    }
+}
+
+// ── Source (ADR 0058) ────────────────────────────────────────────────
+/// What a value of `CodecFlagsBasic` says: its presented fields. A length, a count
+/// or the flag a gated field is announced by is not among them; `CodecFlagsBasic`
+/// computes those from what is ([`CodecFlagsBasic::encode_source`]).
+pub trait CodecFlagsBasicSource {
+    /// The `header` field.
+    fn header(&self) -> u8;
+}
+
+impl<T: CodecFlagsBasicSource + ?Sized> CodecFlagsBasicSource for &T {
+    fn header(&self) -> u8 {
+        (**self).header()
+    }
+}
+
+impl CodecFlagsBasicSource for CodecFlagsBasic {
+    fn header(&self) -> u8 {
+        self.header
+    }
+}
+
+#[allow(dead_code)]
+impl CodecFlagsBasic {
+    /// Encode what `src` says into the caller-owned sink: the bytes
+    /// [`Self::encode`] writes for the value it holds, read through
+    /// [`CodecFlagsBasicSource`]. A length, a count or a gate flag is computed from what
+    /// `src` presents, and a value the encoding cannot carry is refused
+    /// before the first byte is written.
+    pub fn encode_source<S: CodecFlagsBasicSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {
+        Self::write_source(src, w)
+    }
+
+    /// [`Self::encode_source`] without the guard a parent has already made.
+    #[doc(hidden)]
+    pub fn write_source<S: CodecFlagsBasicSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {
+        Self::write_source_in(src, w, &CodecFlagsBasicOverrides::default())
+    }
+
+    /// [`Self::write_source`] with the flags a parent sets in place of the
+    /// ones `src` presents.
+    #[doc(hidden)]
+    pub fn write_source_in<S: CodecFlagsBasicSource + ?Sized, K: SceSink>(src: &S, w: &mut K, over: &CodecFlagsBasicOverrides) -> Result<(), CodecError> {
+        let mut _c_header: u8 = src.header();
+        if let Some(_o) = over.header_reliable {
+            _c_header = (_c_header & !0x80) | (u8::from(_o) << 7);
+        }
+        if let Some(_o) = over.header_more {
+            _c_header = (_c_header & !0x40) | (u8::from(_o) << 6);
+        }
+        if let Some(_o) = over.header_drop {
+            _c_header = (_c_header & !0x20) | (u8::from(_o) << 5);
+        }
+        if let Some(_o) = over.header_first {
+            _c_header = (_c_header & !0x10) | (u8::from(_o) << 4);
+        }
+        w.write_u8(_c_header)?;
+        Ok(())
     }
 }

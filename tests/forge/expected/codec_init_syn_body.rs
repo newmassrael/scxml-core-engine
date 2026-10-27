@@ -119,46 +119,97 @@ impl CodecInitSynBody {
     /// destination has insufficient remaining capacity; growable
     /// sinks (e.g. `VecSink`) are effectively infallible.
     pub fn encode<S: SceSink>(&self, w: &mut S, s: u8) -> Result<(), CodecError> {
-        // Declared-but-unconsumed flag inputs: see `decode` — same suppress per
-        // declared `<sce:flag-input>`.
-        let _ = s;
-        // Streaming cursor encode (SSOT selection: `needs_streaming`).
-        // Mirrors the streaming decode: every field appends its own bytes
-        // in declaration order through the per-field encode blocks, so a
-        // gated field skips its append when absent, and a fixed field after
-        // a variable-length payload lands after the payload (the positional
-        // path appends variable fields last, placing it ahead on the wire).
-        // Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-        // dedicated helpers; everything else uses `present_if_encode_block`
-        // (its non-gated arm covers plain fixed / tail / length-ref / VLE).
-        w.write_u8(self.version)?;
-        if let Some(_v) = self.sn_res {
-            w.write_u8(_v)?;
-        }
-        if let Some(_v) = self.batch_size {
-            w.write_u8((_v >> 8 & 0xFF) as u8)?;
-            w.write_u8((_v & 0xFF) as u8)?;
-        }
-        Ok(())
+        Self::encode_source(self, w, s)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
     /// `MAX_ENCODED_BYTES` so the worst-case write path performs at
     /// most one allocation, then delegates to `encode` over a
-    /// `VecSink`. Returns the freshly-encoded byte vector. Callers
-    /// targeting zero-alloc hot paths should call `encode` directly
-    /// against a caller-owned sink.
+    /// `VecSink`. Returns the freshly-encoded byte vector, or the
+    /// `CodecError::PresentIfMismatch` `encode` refuses a message with
+    /// when a field's presence disagrees with the `sce:present-if`
+    /// that gates it. Callers targeting zero-alloc hot paths should
+    /// call `encode` directly against a caller-owned sink.
     ///
     /// Gated on the `alloc` feature — `VecSink` lives behind the
     /// same gate (see `backends/rust/forge-runtime/src/codec.rs`). MCU /
     /// `no_std` builds without `alloc` only see the sink-based
     /// primary `encode`.
     #[cfg(feature = "alloc")]
-    pub fn encode_to_vec(&self, s: u8) -> Vec<u8> {
+    pub fn encode_to_vec(&self, s: u8) -> Result<Vec<u8>, CodecError> {
         let mut _sce_v: Vec<u8> = Vec::with_capacity(Self::MAX_ENCODED_BYTES);
         let mut _sce_sink = VecSink::new(&mut _sce_v);
-        self.encode(&mut _sce_sink, s)
-            .expect("VecSink is infallible");
-        _sce_v
+        self.encode(&mut _sce_sink, s)?;
+        Ok(_sce_v)
+    }
+}
+
+// ── Source (ADR 0058) ────────────────────────────────────────────────
+/// What a value of `CodecInitSynBody` says: its presented fields. A length, a count
+/// or the flag a gated field is announced by is not among them; `CodecInitSynBody`
+/// computes those from what is ([`CodecInitSynBody::encode_source`]).
+pub trait CodecInitSynBodySource {
+    /// The `version` field.
+    fn version(&self) -> u8;
+    /// The `sn_res` field.
+    fn sn_res(&self) -> Option<u8>;
+    /// The `batch_size` field.
+    fn batch_size(&self) -> Option<u16>;
+}
+
+impl<T: CodecInitSynBodySource + ?Sized> CodecInitSynBodySource for &T {
+    fn version(&self) -> u8 {
+        (**self).version()
+    }
+    fn sn_res(&self) -> Option<u8> {
+        (**self).sn_res()
+    }
+    fn batch_size(&self) -> Option<u16> {
+        (**self).batch_size()
+    }
+}
+
+impl CodecInitSynBodySource for CodecInitSynBody {
+    fn version(&self) -> u8 {
+        self.version
+    }
+    fn sn_res(&self) -> Option<u8> {
+        self.sn_res
+    }
+    fn batch_size(&self) -> Option<u16> {
+        self.batch_size
+    }
+}
+
+#[allow(dead_code)]
+impl CodecInitSynBody {
+    /// Encode what `src` says into the caller-owned sink: the bytes
+    /// [`Self::encode`] writes for the value it holds, read through
+    /// [`CodecInitSynBodySource`]. A length, a count or a gate flag is computed from what
+    /// `src` presents, and a value the encoding cannot carry is refused
+    /// before the first byte is written.
+    pub fn encode_source<S: CodecInitSynBodySource + ?Sized, K: SceSink>(src: &S, w: &mut K, s: u8) -> Result<(), CodecError> {
+        Self::write_source(src, w, s)
+    }
+
+    /// [`Self::encode_source`] without the guard a parent has already made.
+    #[doc(hidden)]
+    pub fn write_source<S: CodecInitSynBodySource + ?Sized, K: SceSink>(src: &S, w: &mut K, s: u8) -> Result<(), CodecError> {
+        if ((s & 0x1) != 0) != src.sn_res().is_some() {
+            return Err(CodecError::PresentIfMismatch);
+        }
+        if ((s & 0x1) != 0) != src.batch_size().is_some() {
+            return Err(CodecError::PresentIfMismatch);
+        }
+        let _ = s;
+        w.write_u8(src.version())?;
+        if let Some(_v) = src.sn_res() {
+            w.write_u8(_v)?;
+        }
+        if let Some(_v) = src.batch_size() {
+            w.write_u8((_v >> 8 & 0xFF) as u8)?;
+            w.write_u8((_v & 0xFF) as u8)?;
+        }
+        Ok(())
     }
 }

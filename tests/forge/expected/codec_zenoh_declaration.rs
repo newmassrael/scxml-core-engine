@@ -247,68 +247,211 @@ impl<'a> CodecZenohDeclaration<'a> {
     /// destination has insufficient remaining capacity; growable
     /// sinks (e.g. `VecSink`) are effectively infallible.
     pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> {
-        // Encode fixed prefix (tag field is part of the prefix). The
-        // tag value is read from the struct field, NOT derived from
-        // the body discriminant — keeping author-set msg_id / body in
-        // sync is the caller's responsibility (v1 keeps the layout
-        // simple; future extensions may auto-sync via a typed setter).
-        w.write_u8(self.header)?;
-        // Append the active arm's encoded bytes.
-        match &self.body {
-            CodecZenohDeclarationVariant::CodecZenohDeclKexpr(b) => {
-                b.encode(w, (self.header >> 5) & 0x1)?;
-            }
-            CodecZenohDeclarationVariant::CodecZenohUndeclKexpr(b) => {
-                b.encode(w)?;
-            }
-            CodecZenohDeclarationVariant::CodecZenohDeclSubscriber(b) => {
-                b.encode(w, (self.header >> 5) & 0x1)?;
-            }
-            CodecZenohDeclarationVariant::CodecZenohUndeclSubscriber(b) => {
-                b.encode(w, (self.header >> 7) & 0x1)?;
-            }
-            CodecZenohDeclarationVariant::CodecZenohDeclQueryable(b) => {
-                b.encode(w, (self.header >> 5) & 0x1, (self.header >> 7) & 0x1)?;
-            }
-            CodecZenohDeclarationVariant::CodecZenohUndeclQueryable(b) => {
-                b.encode(w, (self.header >> 7) & 0x1)?;
-            }
-            CodecZenohDeclarationVariant::CodecZenohDeclToken(b) => {
-                b.encode(w, (self.header >> 5) & 0x1)?;
-            }
-            CodecZenohDeclarationVariant::CodecZenohUndeclToken(b) => {
-                b.encode(w, (self.header >> 7) & 0x1)?;
-            }
-            CodecZenohDeclarationVariant::CodecZenohDeclFinal(b) => {
-                b.encode(w)?;
-            }
-            CodecZenohDeclarationVariant::Default { body, .. } => {
-                body.encode(w)?;
-            }
-        }
-        Ok(())
+        Self::encode_source(self, w)
     }
 
     /// Heap-backed convenience facade. Pre-reserves
     /// `MAX_ENCODED_BYTES` so the worst-case write path performs at
     /// most one allocation, then delegates to `encode` over a
-    /// `VecSink`. Returns the freshly-encoded byte vector. Callers
-    /// targeting zero-alloc hot paths should call `encode` directly
-    /// against a caller-owned sink.
+    /// `VecSink`. Returns the freshly-encoded byte vector, or the
+    /// `CodecError::PresentIfMismatch` `encode` refuses a message with
+    /// when a field's presence disagrees with the `sce:present-if`
+    /// that gates it. Callers targeting zero-alloc hot paths should
+    /// call `encode` directly against a caller-owned sink.
     ///
     /// Gated on the `alloc` feature — `VecSink` lives behind the
     /// same gate (see `backends/rust/forge-runtime/src/codec.rs`). MCU /
     /// `no_std` builds without `alloc` only see the sink-based
     /// primary `encode`.
     #[cfg(feature = "alloc")]
-    pub fn encode_to_vec(&self) -> Vec<u8> {
+    pub fn encode_to_vec(&self) -> Result<Vec<u8>, CodecError> {
         let mut _sce_v: Vec<u8> = Vec::with_capacity(Self::MAX_ENCODED_BYTES);
         let mut _sce_sink = VecSink::new(&mut _sce_v);
-        self.encode(&mut _sce_sink)
-            .expect("VecSink is infallible");
-        _sce_v
+        self.encode(&mut _sce_sink)?;
+        Ok(_sce_v)
     }
 }
+
+/// The arm of `CodecZenohDeclaration`'s variant a value holds, each arm's body as the
+/// source it says. The tag is not among them: `CodecZenohDeclaration` derives it from
+/// the arm, as it derives a length, and a default arm presents the tag
+/// it could not name.
+// A default arm's tag is read by the codec that embeds this one and
+// derives its own carrier bits from the arm, which not every build uses.
+#[allow(dead_code)]
+pub enum CodecZenohDeclarationVariantSource<'s, A0: ?Sized, A1: ?Sized, A2: ?Sized, A3: ?Sized, A4: ?Sized, A5: ?Sized, A6: ?Sized, A7: ?Sized, A8: ?Sized, D: ?Sized> {
+    CodecZenohDeclKexpr(&'s A0),
+    CodecZenohUndeclKexpr(&'s A1),
+    CodecZenohDeclSubscriber(&'s A2),
+    CodecZenohUndeclSubscriber(&'s A3),
+    CodecZenohDeclQueryable(&'s A4),
+    CodecZenohUndeclQueryable(&'s A5),
+    CodecZenohDeclToken(&'s A6),
+    CodecZenohUndeclToken(&'s A7),
+    CodecZenohDeclFinal(&'s A8),
+    Default { tag: u8, body: &'s D },
+}
+
+/// Flags of `CodecZenohDeclaration` a parent sets in place of the ones a value presents:
+/// the end flag of a chain whose entries are `CodecZenohDeclaration`, which the chain
+/// derives from where an entry stands.
+#[doc(hidden)]
+#[derive(Debug, Default, Clone, Copy)]
+pub struct CodecZenohDeclarationOverrides {
+    /// The `N` flag of `header`, when a parent sets it.
+    pub header_n: Option<bool>,
+    /// The `M` flag of `header`, when a parent sets it.
+    pub header_m: Option<bool>,
+    /// The `Z` flag of `header`, when a parent sets it.
+    pub header_z: Option<bool>,
+}
+
+#[allow(dead_code)]
+impl CodecZenohDeclarationOverrides {
+    /// Sets `N` of `header` and nothing else.
+    #[allow(clippy::needless_update)]
+    pub fn header_n(value: bool) -> Self {
+        Self { header_n: Some(value), ..Self::default() }
+    }
+
+    /// Sets `M` of `header` and nothing else.
+    #[allow(clippy::needless_update)]
+    pub fn header_m(value: bool) -> Self {
+        Self { header_m: Some(value), ..Self::default() }
+    }
+
+    /// Sets `Z` of `header` and nothing else.
+    #[allow(clippy::needless_update)]
+    pub fn header_z(value: bool) -> Self {
+        Self { header_z: Some(value), ..Self::default() }
+    }
+}
+
+// ── Source (ADR 0058) ────────────────────────────────────────────────
+/// What a value of `CodecZenohDeclaration` says: its presented fields. A length, a count
+/// or the flag a gated field is announced by is not among them; `CodecZenohDeclaration`
+/// computes those from what is ([`CodecZenohDeclaration::encode_source`]).
+pub trait CodecZenohDeclarationSource {
+    /// The `header` field.
+    fn header(&self) -> u8;
+    /// The arm of the variant this value holds.
+    fn body(&self) -> CodecZenohDeclarationVariantSource<'_, impl super::codec_zenoh_decl_kexpr::CodecZenohDeclKexprSource, impl super::codec_zenoh_undecl_kexpr::CodecZenohUndeclKexprSource, impl super::codec_zenoh_decl_subscriber::CodecZenohDeclSubscriberSource, impl super::codec_zenoh_undecl_subscriber::CodecZenohUndeclSubscriberSource, impl super::codec_zenoh_decl_queryable::CodecZenohDeclQueryableSource, impl super::codec_zenoh_undecl_queryable::CodecZenohUndeclQueryableSource, impl super::codec_zenoh_decl_token::CodecZenohDeclTokenSource, impl super::codec_zenoh_undecl_token::CodecZenohUndeclTokenSource, impl super::codec_zenoh_decl_final::CodecZenohDeclFinalSource, impl super::codec_zenoh_decl_final::CodecZenohDeclFinalSource>;
+}
+
+impl<T: CodecZenohDeclarationSource + ?Sized> CodecZenohDeclarationSource for &T {
+    fn header(&self) -> u8 {
+        (**self).header()
+    }
+    fn body(&self) -> CodecZenohDeclarationVariantSource<'_, impl super::codec_zenoh_decl_kexpr::CodecZenohDeclKexprSource, impl super::codec_zenoh_undecl_kexpr::CodecZenohUndeclKexprSource, impl super::codec_zenoh_decl_subscriber::CodecZenohDeclSubscriberSource, impl super::codec_zenoh_undecl_subscriber::CodecZenohUndeclSubscriberSource, impl super::codec_zenoh_decl_queryable::CodecZenohDeclQueryableSource, impl super::codec_zenoh_undecl_queryable::CodecZenohUndeclQueryableSource, impl super::codec_zenoh_decl_token::CodecZenohDeclTokenSource, impl super::codec_zenoh_undecl_token::CodecZenohUndeclTokenSource, impl super::codec_zenoh_decl_final::CodecZenohDeclFinalSource, impl super::codec_zenoh_decl_final::CodecZenohDeclFinalSource> {
+        (**self).body()
+    }
+}
+
+impl<'a> CodecZenohDeclarationSource for CodecZenohDeclaration<'a> {
+    fn header(&self) -> u8 {
+        self.header
+    }
+    fn body(&self) -> CodecZenohDeclarationVariantSource<'_, impl super::codec_zenoh_decl_kexpr::CodecZenohDeclKexprSource, impl super::codec_zenoh_undecl_kexpr::CodecZenohUndeclKexprSource, impl super::codec_zenoh_decl_subscriber::CodecZenohDeclSubscriberSource, impl super::codec_zenoh_undecl_subscriber::CodecZenohUndeclSubscriberSource, impl super::codec_zenoh_decl_queryable::CodecZenohDeclQueryableSource, impl super::codec_zenoh_undecl_queryable::CodecZenohUndeclQueryableSource, impl super::codec_zenoh_decl_token::CodecZenohDeclTokenSource, impl super::codec_zenoh_undecl_token::CodecZenohUndeclTokenSource, impl super::codec_zenoh_decl_final::CodecZenohDeclFinalSource, impl super::codec_zenoh_decl_final::CodecZenohDeclFinalSource> {
+        match &self.body {
+            CodecZenohDeclarationVariant::CodecZenohDeclKexpr(_b) => CodecZenohDeclarationVariantSource::CodecZenohDeclKexpr(_b),
+            CodecZenohDeclarationVariant::CodecZenohUndeclKexpr(_b) => CodecZenohDeclarationVariantSource::CodecZenohUndeclKexpr(_b),
+            CodecZenohDeclarationVariant::CodecZenohDeclSubscriber(_b) => CodecZenohDeclarationVariantSource::CodecZenohDeclSubscriber(_b),
+            CodecZenohDeclarationVariant::CodecZenohUndeclSubscriber(_b) => CodecZenohDeclarationVariantSource::CodecZenohUndeclSubscriber(_b),
+            CodecZenohDeclarationVariant::CodecZenohDeclQueryable(_b) => CodecZenohDeclarationVariantSource::CodecZenohDeclQueryable(_b),
+            CodecZenohDeclarationVariant::CodecZenohUndeclQueryable(_b) => CodecZenohDeclarationVariantSource::CodecZenohUndeclQueryable(_b),
+            CodecZenohDeclarationVariant::CodecZenohDeclToken(_b) => CodecZenohDeclarationVariantSource::CodecZenohDeclToken(_b),
+            CodecZenohDeclarationVariant::CodecZenohUndeclToken(_b) => CodecZenohDeclarationVariantSource::CodecZenohUndeclToken(_b),
+            CodecZenohDeclarationVariant::CodecZenohDeclFinal(_b) => CodecZenohDeclarationVariantSource::CodecZenohDeclFinal(_b),
+            CodecZenohDeclarationVariant::Default { tag, body } => CodecZenohDeclarationVariantSource::Default { tag: *tag, body },
+        }
+    }
+}
+
+impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohDeclarationSource for CodecZenohDeclarationOwned<S> {
+    fn header(&self) -> u8 {
+        self.header
+    }
+    fn body(&self) -> CodecZenohDeclarationVariantSource<'_, impl super::codec_zenoh_decl_kexpr::CodecZenohDeclKexprSource, impl super::codec_zenoh_undecl_kexpr::CodecZenohUndeclKexprSource, impl super::codec_zenoh_decl_subscriber::CodecZenohDeclSubscriberSource, impl super::codec_zenoh_undecl_subscriber::CodecZenohUndeclSubscriberSource, impl super::codec_zenoh_decl_queryable::CodecZenohDeclQueryableSource, impl super::codec_zenoh_undecl_queryable::CodecZenohUndeclQueryableSource, impl super::codec_zenoh_decl_token::CodecZenohDeclTokenSource, impl super::codec_zenoh_undecl_token::CodecZenohUndeclTokenSource, impl super::codec_zenoh_decl_final::CodecZenohDeclFinalSource, impl super::codec_zenoh_decl_final::CodecZenohDeclFinalSource> {
+        match &self.body {
+            CodecZenohDeclarationOwnedVariant::CodecZenohDeclKexpr(_b) => CodecZenohDeclarationVariantSource::CodecZenohDeclKexpr(_b),
+            CodecZenohDeclarationOwnedVariant::CodecZenohUndeclKexpr(_b) => CodecZenohDeclarationVariantSource::CodecZenohUndeclKexpr(_b),
+            CodecZenohDeclarationOwnedVariant::CodecZenohDeclSubscriber(_b) => CodecZenohDeclarationVariantSource::CodecZenohDeclSubscriber(_b),
+            CodecZenohDeclarationOwnedVariant::CodecZenohUndeclSubscriber(_b) => CodecZenohDeclarationVariantSource::CodecZenohUndeclSubscriber(_b),
+            CodecZenohDeclarationOwnedVariant::CodecZenohDeclQueryable(_b) => CodecZenohDeclarationVariantSource::CodecZenohDeclQueryable(_b),
+            CodecZenohDeclarationOwnedVariant::CodecZenohUndeclQueryable(_b) => CodecZenohDeclarationVariantSource::CodecZenohUndeclQueryable(_b),
+            CodecZenohDeclarationOwnedVariant::CodecZenohDeclToken(_b) => CodecZenohDeclarationVariantSource::CodecZenohDeclToken(_b),
+            CodecZenohDeclarationOwnedVariant::CodecZenohUndeclToken(_b) => CodecZenohDeclarationVariantSource::CodecZenohUndeclToken(_b),
+            CodecZenohDeclarationOwnedVariant::CodecZenohDeclFinal(_b) => CodecZenohDeclarationVariantSource::CodecZenohDeclFinal(_b),
+            CodecZenohDeclarationOwnedVariant::Default { tag, body } => CodecZenohDeclarationVariantSource::Default { tag: *tag, body },
+        }
+    }
+}
+
+#[allow(dead_code)]
+impl<'a> CodecZenohDeclaration<'a> {
+    /// Encode what `src` says into the caller-owned sink: the bytes
+    /// [`Self::encode`] writes for the value it holds, read through
+    /// [`CodecZenohDeclarationSource`]. A length, a count or a gate flag is computed from what
+    /// `src` presents, and a value the encoding cannot carry is refused
+    /// before the first byte is written.
+    pub fn encode_source<S: CodecZenohDeclarationSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {
+        Self::write_source(src, &mut ::sce_forge_runtime::codec::CountSink::new())?;
+        Self::write_source(src, w)
+    }
+
+    /// [`Self::encode_source`] without the guard a parent has already made.
+    #[doc(hidden)]
+    pub fn write_source<S: CodecZenohDeclarationSource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {
+        Self::write_source_in(src, w, &CodecZenohDeclarationOverrides::default())
+    }
+
+    /// [`Self::write_source`] with the flags a parent sets in place of the
+    /// ones `src` presents.
+    #[doc(hidden)]
+    pub fn write_source_in<S: CodecZenohDeclarationSource + ?Sized, K: SceSink>(src: &S, w: &mut K, over: &CodecZenohDeclarationOverrides) -> Result<(), CodecError> {
+        let _d_header_mid: u8 = match src.body() {
+            CodecZenohDeclarationVariantSource::CodecZenohDeclKexpr(_) => 0,
+            CodecZenohDeclarationVariantSource::CodecZenohUndeclKexpr(_) => 1,
+            CodecZenohDeclarationVariantSource::CodecZenohDeclSubscriber(_) => 2,
+            CodecZenohDeclarationVariantSource::CodecZenohUndeclSubscriber(_) => 3,
+            CodecZenohDeclarationVariantSource::CodecZenohDeclQueryable(_) => 4,
+            CodecZenohDeclarationVariantSource::CodecZenohUndeclQueryable(_) => 5,
+            CodecZenohDeclarationVariantSource::CodecZenohDeclToken(_) => 6,
+            CodecZenohDeclarationVariantSource::CodecZenohUndeclToken(_) => 7,
+            CodecZenohDeclarationVariantSource::CodecZenohDeclFinal(_) => 26,
+            CodecZenohDeclarationVariantSource::Default { tag, .. } => tag,
+        };
+        if _d_header_mid > 0x1F {
+            return Err(CodecError::LengthOutOfRange);
+        }
+        let _v_header_mid: u8 = u8::try_from(_d_header_mid).map_err(|_| CodecError::LengthOutOfRange)?;
+        let mut _c_header: u8 = (src.header() & !0x1F) | _v_header_mid;
+        if let Some(_o) = over.header_n {
+            _c_header = (_c_header & !0x20) | (u8::from(_o) << 5);
+        }
+        if let Some(_o) = over.header_m {
+            _c_header = (_c_header & !0x40) | (u8::from(_o) << 6);
+        }
+        if let Some(_o) = over.header_z {
+            _c_header = (_c_header & !0x80) | (u8::from(_o) << 7);
+        }
+        w.write_u8(_c_header)?;
+        match src.body() {
+            CodecZenohDeclarationVariantSource::CodecZenohDeclKexpr(_b) => CodecZenohDeclKexpr::write_source(_b, w, (_c_header >> 5) & 0x1)?,
+            CodecZenohDeclarationVariantSource::CodecZenohUndeclKexpr(_b) => CodecZenohUndeclKexpr::write_source(_b, w)?,
+            CodecZenohDeclarationVariantSource::CodecZenohDeclSubscriber(_b) => CodecZenohDeclSubscriber::write_source(_b, w, (_c_header >> 5) & 0x1)?,
+            CodecZenohDeclarationVariantSource::CodecZenohUndeclSubscriber(_b) => CodecZenohUndeclSubscriber::write_source(_b, w, (_c_header >> 7) & 0x1)?,
+            CodecZenohDeclarationVariantSource::CodecZenohDeclQueryable(_b) => CodecZenohDeclQueryable::write_source(_b, w, (_c_header >> 5) & 0x1, (_c_header >> 7) & 0x1)?,
+            CodecZenohDeclarationVariantSource::CodecZenohUndeclQueryable(_b) => CodecZenohUndeclQueryable::write_source(_b, w, (_c_header >> 7) & 0x1)?,
+            CodecZenohDeclarationVariantSource::CodecZenohDeclToken(_b) => CodecZenohDeclToken::write_source(_b, w, (_c_header >> 5) & 0x1)?,
+            CodecZenohDeclarationVariantSource::CodecZenohUndeclToken(_b) => CodecZenohUndeclToken::write_source(_b, w, (_c_header >> 7) & 0x1)?,
+            CodecZenohDeclarationVariantSource::CodecZenohDeclFinal(_b) => CodecZenohDeclFinal::write_source(_b, w)?,
+            CodecZenohDeclarationVariantSource::Default { body: _b, .. } => CodecZenohDeclFinal::write_source(_b, w)?,
+        }
+        Ok(())
+    }
+}
+
 
 // ── Owned projection (storage-parameterised native form) ─────────────
 // `CodecZenohDeclaration<'a>` above is a zero-copy view borrowing the decode
@@ -606,55 +749,17 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecZenohDeclarationOwned<S> 
     /// borrowed form could not carry is an error and never a frame its own
     /// decoder would reject.
     pub fn encode<K: SceSink>(&self, w: &mut K) -> Result<(), CodecError> {
-        // Encode fixed prefix (tag field is part of the prefix). The
-        // tag value is read from the struct field, NOT derived from
-        // the body discriminant — keeping author-set msg_id / body in
-        // sync is the caller's responsibility (v1 keeps the layout
-        // simple; future extensions may auto-sync via a typed setter).
-        w.write_u8(self.header)?;
-        // Append the active arm's encoded bytes.
-        match &self.body {
-            CodecZenohDeclarationOwnedVariant::CodecZenohDeclKexpr(b) => {
-                b.encode(w, (self.header >> 5) & 0x1)?;
-            }
-            CodecZenohDeclarationOwnedVariant::CodecZenohUndeclKexpr(b) => {
-                b.encode(w)?;
-            }
-            CodecZenohDeclarationOwnedVariant::CodecZenohDeclSubscriber(b) => {
-                b.encode(w, (self.header >> 5) & 0x1)?;
-            }
-            CodecZenohDeclarationOwnedVariant::CodecZenohUndeclSubscriber(b) => {
-                b.encode(w, (self.header >> 7) & 0x1)?;
-            }
-            CodecZenohDeclarationOwnedVariant::CodecZenohDeclQueryable(b) => {
-                b.encode(w, (self.header >> 5) & 0x1, (self.header >> 7) & 0x1)?;
-            }
-            CodecZenohDeclarationOwnedVariant::CodecZenohUndeclQueryable(b) => {
-                b.encode(w, (self.header >> 7) & 0x1)?;
-            }
-            CodecZenohDeclarationOwnedVariant::CodecZenohDeclToken(b) => {
-                b.encode(w, (self.header >> 5) & 0x1)?;
-            }
-            CodecZenohDeclarationOwnedVariant::CodecZenohUndeclToken(b) => {
-                b.encode(w, (self.header >> 7) & 0x1)?;
-            }
-            CodecZenohDeclarationOwnedVariant::CodecZenohDeclFinal(b) => {
-                b.encode(w)?;
-            }
-            CodecZenohDeclarationOwnedVariant::Default { body, .. } => {
-                body.encode(w)?;
-            }
-        }
-        Ok(())
+        CodecZenohDeclaration::encode_source(self, w)
     }
 
-    /// Heap-backed convenience facade over [`Self::encode`].
+    /// Heap-backed convenience facade over [`Self::encode`]. Fallible: a list
+    /// past the bound the borrowed view declares is refused, and so is a
+    /// presence the chain predicates disagree with.
     #[cfg(feature = "alloc")]
-    pub fn encode_to_vec(&self) -> Vec<u8> {
+    pub fn encode_to_vec(&self) -> Result<Vec<u8>, CodecError> {
         let mut _sce_v: Vec<u8> = Vec::with_capacity(CodecZenohDeclaration::MAX_ENCODED_BYTES);
         let mut _sce_sink = VecSink::new(&mut _sce_v);
-        self.encode(&mut _sce_sink)
-            .expect("VecSink is infallible");
-        _sce_v
+        self.encode(&mut _sce_sink)?;
+        Ok(_sce_v)
     }
 }
