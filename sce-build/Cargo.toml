@@ -1384,5 +1384,14 @@ name = "feature_selection"
 path = "tests/feature_selection.rs"
 required-features = ["cli"]
 
+# `sce-codegen codec-roles` prints the table of which elements of a codec a
+# value presents and which the encoding derives (docs/adr/0058 §1). It runs
+# `sce-codegen`, so it carries the `cli` gate; the classification it prints is
+# held against the documents by `codec_roles`, which needs no binary.
+[[test]]
+name = "codec_roles_cli"
+path = "tests/codec_roles_cli.rs"
+required-features = ["cli"]
+
 [lints]
 workspace = true

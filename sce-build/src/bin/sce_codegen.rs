@@ -3275,6 +3275,27 @@ enum Commands {
         #[arg(short = 'I', long = "include-dir", value_name = "DIR")]
         include_dir: Vec<String>,
     },
+    /// Print which element of each codec a value presents and which the
+    /// encoding derives (docs/adr/0058 §1).
+    ///
+    /// One table per codec document, a line per field and per named flag: a
+    /// value *presents* an element when nothing else on the wire determines
+    /// it, and the encoding *derives* one the codec declares determined by
+    /// what is presented (a length, a count, an embedded body's length, the
+    /// tag of a variant's active arm, the carrier bits a `variant-dispatch`
+    /// import fills, the flag a TLV chain ends on). Everything else, a header
+    /// flag bit among it, is presented. Read it to see which of the values a
+    /// consumer sets by hand the encoding will take over.
+    CodecRoles {
+        /// Codec documents. Imports are resolved from beside each, as
+        /// `generate` resolves them.
+        #[arg(required = true)]
+        scxml: Vec<String>,
+        /// Directories searched to resolve `<xi:include>` and `<sce:use>`
+        /// fragments by name — same semantics as `generate --include-dir`.
+        #[arg(short = 'I', long = "include-dir", value_name = "DIR")]
+        include_dir: Vec<String>,
+    },
     /// Print a `datamodel="sce-static"` statechart as the
     /// `datamodel="ecmascript"` document the Interpreter runs.
     ///
@@ -4042,6 +4063,9 @@ fn main() {
             features,
             include_dir,
         } => cmd_project(&scxml, features, &include_dir),
+        Commands::CodecRoles { scxml, include_dir } => {
+            cmd_codec_roles(&scxml, &include_dir, error_format)
+        }
         Commands::Lower {
             scxml,
             include_dir,
@@ -4144,6 +4168,7 @@ fn assert_unchanged_refusal(command: &Commands) -> Option<String> {
         | Commands::Kinds { .. }
         | Commands::Expand { .. }
         | Commands::Project { .. }
+        | Commands::CodecRoles { .. }
         | Commands::Lower { .. }
         | Commands::LowerAlgorithm { .. }
         | Commands::Verify { .. }
@@ -12616,6 +12641,34 @@ fn cmd_project(scxml_path: &str, features: Vec<String>, include_dirs: &[String])
         .project_file(scxml_path, features)
         .unwrap_or_else(|err| current_error_format().emit_and_exit(&err, ""));
     out_bytes(variant.as_bytes());
+}
+
+// ── Subcommand: codec-roles ────────────────────────────────────
+//
+// The table of which elements of a codec a value presents and which the encoding
+// derives (docs/adr/0058 §1). Reads each document as `generate` reads a codec,
+// imports resolved, so the carrier bits an import's `variant-dispatch` fills are
+// in it. A document that is not a codec is said so and refused, as every
+// document of a run is held to the verb.
+
+fn cmd_codec_roles(scxml_paths: &[String], include_dirs: &[String], error_format: ErrorFormat) {
+    let extra_dirs: Vec<PathBuf> = include_dirs.iter().map(PathBuf::from).collect();
+    let mut out = String::new();
+    for path in scxml_paths {
+        let roles = sce_build::codec_roles_file(
+            Path::new(path),
+            &extra_dirs,
+            &sce_build::ForgeCompileOptions::default(),
+        )
+        .unwrap_or_else(|err| error_format.emit_forge_and_exit(&err));
+        match roles {
+            Some(roles) => out.push_str(&roles.table()),
+            None => cli_exit(CliError::Usage {
+                detail: format!("codec-roles reads codecs, and {path} is not one"),
+            }),
+        }
+    }
+    out_bytes(out.as_bytes());
 }
 
 // ── Subcommand: lower ──────────────────────────────────────────

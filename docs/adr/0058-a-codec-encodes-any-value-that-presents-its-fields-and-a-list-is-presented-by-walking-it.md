@@ -63,18 +63,34 @@ written against the interface.
 *Amended: presented and derived.* An element of a codec is either **presented**, information the value carries that
 nothing else on the wire determines, or **derived**, determined by what is presented. A count field is the length of
 its list; a length field the encoded length of what it bounds; the tag of a known variant arm is that arm's; a carrier
-bit is what the parent-tag derivation makes of the arm; DMA padding is zero. A derived element is not an item of the
+bit is what the parent-tag derivation makes of the arm; the flag a field is gated on is set exactly when the field is
+present; the flag a TLV chain ends on is set on every entry but the last. A derived element is not an item of the
 trait: the encoder computes it, as the encoding rules of ASN.1 (X.690) compute a length and a tag and never take them
-from the value. The decoder already computes every one of them (it reads them to walk the frame), so the generator
-knows which is which. The rule is by declaration and not by appearance: an element is derived only where the codec
-declares the derivation (a count or length reference, a variant's tag, a parent-tag carrier); every other element,
-a flag bit of a header byte among them, is presented, even where the values consumers choose for it usually follow
-from the content. A flag that says something the content does not (a header bit that marks an interest as a
-subscription to tokens or not) is presented, so that a value can say it. A tag the grammar does not determine (the
-default arm of a variant, which keeps the tag it could not name) is presented, by that arm. Step 1 writes the
-classification of every codec out as a table, element by element, so that a consumer can see which of its hand-set
-values would move before any output does. The consequence is the property the proposal lacked: every source that
-passes §3 encodes to a frame the decoder accepts.
+from the value (and as the presence bitmap of an ASN.1 `OPTIONAL` is the encoder's, not a field of the value). The
+decoder already reads every one of them to walk the frame, so the generator knows which is which.
+
+The rule is by declaration and not by appearance. The declarations are the ones the decoder reads: `sce:length-field`,
+`<sce:repeat count=>`, `sce:length-from`, an own-field `<sce:variant>`'s tag, `<sce:variant-dispatch>` on an import,
+`terminate-on="entry-flag"`, and `sce:present-if` in its one-flag form (`carrier.flag` or `!carrier.flag`). Every other
+element is presented, a header flag bit among it, even where the values consumers choose for it usually follow from
+the content: a flag that says something the content does not (a header bit that marks an interest as a subscription
+to tokens or not) is a thing a value can say. A tag the grammar does not determine (the default arm of a variant,
+which keeps the tag it could not name) is presented, by that arm. Several declarations of one kind that name one
+element are one derivation with several sources, which must agree in size (zenoh's LinkState: one count for `links`
+and for the gated `weights`); declarations of different kinds that name one element are ambiguous, and no codec in
+the tree has one. A gate of any other form (a disjunction `a.X || b.Y`, a bare flag-input name, a chain's
+`ext.has(2)`) names no one flag this codec could set, so its relation of flag to presence is a *check* of §3 and the
+flags it names are presented.
+
+*Landed (step 1).* `sce-build/src/forge/codec_roles.rs` is the one place this is written, and
+`sce-codegen codec-roles <codec.scxml>...` prints it as a table, element by element, so that a consumer can see which
+of the values it sets by hand the encoding will take over before any output changes. Over every codec in
+`tests/forge/resources` the classification agrees with a second reader that sees only the document's XML and never the
+model (`sce-build/tests/codec_roles.rs`), and no element is derived by two kinds. Agreement with what the decoder
+*computes*, as opposed to what it declares, is law 1 of §5, which a round trip holds when step 2 lands.
+
+The consequence is the property the proposal lacked: every source that passes §3 encodes to a frame the decoder
+accepts.
 
 For each codec `X` the generator emits `trait XSource`, with one item per presented element of the grammar, in
 declaration order:
@@ -102,21 +118,25 @@ the skeleton collapse into one, so a wire rule written there reaches every repre
 
 The wire is unchanged for every value a decode produces: every golden byte stays where it is. That is the test of the
 change's correctness (law 2 of §5), and the reason the generated tree is regenerated only once, by the step that lands
-it. The builders' own `encode` keeps its name and signature and calls `encode_source`; a consumer of the builder
-changes nothing.
+it. The builders' own `encode` keeps its name and signature and calls `encode_source`. A consumer that fills a builder
+consistently changes nothing; one that fills it inconsistently is the case §1 closes, stated under law 2 of §5.
 
 ### 3. One measuring fold checks the source and computes what the encoding determines, before anything is written
 
 *Amended.* A builder cannot hold a value that breaks a bound its types state: a `heapless::Vec` of `N` entries, a
-`heapless::String` of its maximum, a gated field present exactly when its flag says. A source can. And a derived
-element that precedes its content on the wire (a count, a length) needs what follows it before the first of it is
-written, which a streaming sink cannot be patched for. Both are answered by a second algebra over the same grammar,
+`heapless::String` of its maximum. A source can. A builder can hold a flag that disagrees with the presence it
+announces (a flag byte stored as given beside an `Option` the encode writes only when it is `Some`), and today it
+encodes the frame that disagreement describes, which no decoder reads back as the value; §1 derives that flag, and
+the same disagreement between a source's gate and its presence, where the gate is not of the one-flag form, is a
+check below. And a derived element that precedes its content on the wire (a count, a length) needs what follows it
+before the first of it is written, which a streaming sink cannot be patched for. Both are answered by a second algebra over the same grammar,
 generated beside the encode: `measure_source`, a fold that visits the source once and returns what the encode needs of
 it.
 
 - It **checks** every bound the builder's types state by construction (`max-count`, the maximum size of a string or
-  bytes, a gated field's presence) and refuses a violation with the error a decode of that frame gives
-  (`TooManyElements` and its siblings), before the first byte.
+  bytes), every relation of §1 that has several sources (a count two lists share, a length two fields share) and every
+  gate that is not of the one-flag form (`codec-roles` lists them as `check` lines), and refuses a violation with the
+  error a decode of that frame gives (`TooManyElements` and its siblings), before the first byte.
 - It **computes** each derived length that precedes its content and each count, so that `encode_source` writes them
   from the measure and never reads them from the source.
 
@@ -146,7 +166,8 @@ admissible source `s` of codec `X`:
    those a careful author wrote.
 2. **Conservation.** For a value a decode produced, `encode_source` writes the bytes the encode of the builder wrote
    before this ADR. Where a builder is filled by hand to hold what a decode would not (a count that is not its list's,
-   a tag that is not its arm's), the new encode writes what the value says and the old one wrote what the struct held;
+   a tag that is not its arm's, a gate flag that disagrees with the presence it announces), the new encode writes what
+   the value says and the old one wrote what the struct held;
    that is the defect of §1 closing, and it is stated in the step that lands it.
 3. **Refusal.** A source that breaks a bound is refused before the first byte, with the error a decode of that frame
    gives.
@@ -203,7 +224,9 @@ their bytes equal.
 ## Order of work
 
 1. The classification of §1 made explicit in the generator (which element of each codec is presented and which
-   derived), with a test that it agrees with what the decoder computes. No output changes.
+   derived), the table of it for a consumer, and a test that it agrees with the declarations in the documents. No
+   output changes. **Landed 2026-10-27** (`codec_roles.rs`, `sce-codegen codec-roles`); its agreement with what the
+   decoder computes is held by step 2.
 2. `XSource`, `measure_source`, `encode_source`, and the three representations as implementations; no golden moves;
    the conformance cases of §5 laws 1 to 3 with a hand-written source of each shape.
 3. `XParts`, and the consumer's first use of it (watching-zenoh's send stack), measured against the 6,480-byte peak.

@@ -2352,6 +2352,47 @@ pub fn compile_forge_file(
     Ok(output)
 }
 
+/// The roles of the elements of the codec at `path` — which a value presents and
+/// which the encoding derives (docs/adr/0058 §1) — read as `compile_forge_file`
+/// reads it: expanded, parsed, its imports resolved and enriched, which is what
+/// the parent-tag carriers are read from. `None` for a document that is not a
+/// codec.
+pub fn codec_roles_file(
+    path: &Path,
+    include_dirs: &[PathBuf],
+    options: &ForgeCompileOptions,
+) -> Result<Option<forge::codec_roles::CodecRoles>, forge::error::Located<forge::error::ForgeError>>
+{
+    use forge::error::Located;
+
+    let loaded = load_forge_source(path, include_dirs)?;
+    let path_text = path.to_string_lossy();
+    let label = DocumentLabel::for_input_path(&path_text);
+    let base_dir = path.parent().unwrap_or_else(|| Path::new("."));
+    // A statechart is no forge document and no codec: it has no roles.
+    let Some(parsed) = forge::parser::parse_forge_with_imports(loaded.text(), label)
+        .map_err(|err| loaded.positions.authored(err))?
+    else {
+        return Ok(None);
+    };
+    let forge::model::ForgeDocument::Codec(model) = &parsed.document else {
+        return Ok(None);
+    };
+    let language = generator::Language::Rust;
+    let mut import_ctx = forge::generator::resolve_imports(&parsed.imports, &language, options)
+        .map_err(|e| Located::in_file(e, label.diagnostic_label))?;
+    validate_and_enrich_imports(
+        &mut import_ctx,
+        &parsed.imports,
+        base_dir,
+        &language,
+        options,
+        label.diagnostic_label,
+    )
+    .map_err(|err| loaded.positions.authored(err))?;
+    Ok(Some(forge::codec_roles::classify(model, &import_ctx)))
+}
+
 /// Compile a forge (non-statechart) SCXML from already-read content.
 ///
 /// Uses single-parse path: detects kind and parses model in one XML parse.

@@ -17986,7 +17986,7 @@ fn decode_multibyte_unified(
 /// Multiple embeds OR-ing onto the same parent carrier are grouped
 /// downstream by `parent_tag_derivation_block` and `parent_tag_carrier_or_suffix`
 /// so each carrier emits exactly one local + one OR injection site.
-fn collect_parent_tag_derivations(
+pub(crate) fn collect_parent_tag_derivations(
     m: &CodecModel,
     imports: &[ImportContext],
 ) -> Vec<ParentTagDerivation> {
@@ -18033,6 +18033,7 @@ fn collect_parent_tag_derivations(
                 embed_field_id: f.id.clone(),
                 embed_alias: alias.clone(),
                 carrier_field_id: carrier_name,
+                carrier_flag: flag_name,
                 bit: flag_def.bit,
                 width: flag_def.width.max(1),
                 present_if: f.present_if.clone(),
@@ -18066,10 +18067,12 @@ fn collect_parent_tag_derivations(
 /// through `present_if_test_literal_encode`. Absent embed → derived
 /// carrier bit = 0 (RFC §synth-5-B parent-tag-dispatch consumer-parity textbook rule).
 #[derive(Debug, Clone)]
-struct ParentTagDerivation {
-    embed_field_id: String,
+pub(crate) struct ParentTagDerivation {
+    pub(crate) embed_field_id: String,
     embed_alias: String,
-    carrier_field_id: String,
+    pub(crate) carrier_field_id: String,
+    /// The flag of the carrier whose bit-range the embed's active arm fills.
+    pub(crate) carrier_flag: String,
     bit: u32,
     width: u32,
     present_if: Option<PresentIfPredicate>,
