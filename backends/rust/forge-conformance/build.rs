@@ -168,10 +168,6 @@ fn main() {
         }
     }
 
-    // Step 7: the sweeps of `forge_source_round_trip`, one for each codec whose
-    // generated file holds a source interface (docs/adr/0058).
-    write_source_sweeps(&out_dir, &codec_modules, &sweeps);
-
     // Step 3: render the cross-language test harness from the shared template.
     let harness =
         conformance::render_harness(&manifest, Language::Rust, &template_base, &resource_dir)
@@ -245,6 +241,43 @@ fn main() {
         &out_dir,
         &options,
     );
+
+    // Step 7: the sweeps of `forge_source_round_trip`, one for each codec whose
+    // generated file holds a source interface (docs/adr/0058). The catalog's
+    // codecs are swept, and so are the codecs below, which are in no catalog:
+    // they hold a shape whose interface nothing else compiles (the bits of a
+    // carrier an embedded variant's arm fills).
+    let source_fixtures = Path::new(&manifest_dir).join("fixtures");
+    println!("cargo:rerun-if-changed={}", source_fixtures.display());
+    for fixture in generate_stripped_fixtures(
+        &["codec_source_leaf", "codec_source_parent_tag"],
+        &source_fixtures,
+        &out_dir,
+        &options,
+    ) {
+        let source_trait = format!(
+            "pub trait {}Source",
+            sce_build::filters::to_pascal_case(fixture.name.clone())
+        );
+        let has_source = fixture
+            .files
+            .iter()
+            .any(|(_, code)| code.contains(&source_trait));
+        codec_modules.extend(fixture.files.iter().filter_map(|(filename, _)| {
+            filename
+                .strip_suffix(".rs")
+                .filter(|stem| !stem.ends_with("_test"))
+                .map(str::to_string)
+        }));
+        if let Some(sweep) = codec_sweep(&fixture.name, &fixture.text) {
+            if has_source && sweep.plain {
+                sweeps.push(sweep);
+            }
+        }
+    }
+    codec_modules.sort();
+    codec_modules.dedup();
+    write_source_sweeps(&out_dir, &codec_modules, &sweeps);
 }
 
 /// Frames a codec's document gives as its wire oracle in a comment, for a codec
@@ -349,7 +382,8 @@ fn generate_stripped_fixtures(
     resource_dir: &Path,
     out_dir: &str,
     options: &ForgeCompileOptions,
-) {
+) -> Vec<StrippedFixture> {
+    let mut generated = Vec::new();
     for name in names {
         let scxml_path = resource_dir.join(format!("{name}.scxml"));
         let loaded = load_forge_source(&scxml_path, &[])
@@ -365,12 +399,26 @@ fn generate_stripped_fixtures(
             options,
         )
         .unwrap_or_else(|e| panic!("sce-build codegen failed for {name}: {e}"));
-        for (filename, code) in output.files {
-            let target = Path::new(out_dir).join(&filename);
-            std::fs::write(&target, strip_inner_attributes(&code))
+        for (filename, code) in &output.files {
+            let target = Path::new(out_dir).join(filename);
+            std::fs::write(&target, strip_inner_attributes(code))
                 .unwrap_or_else(|e| panic!("write {}: {e}", target.display()));
         }
+        generated.push(StrippedFixture {
+            name: (*name).to_string(),
+            text: loaded.text().to_string(),
+            files: output.files,
+        });
     }
+    generated
+}
+
+/// What `generate_stripped_fixtures` generated for one fixture: its document,
+/// and every file the fixture and the codecs it imports came to.
+struct StrippedFixture {
+    name: String,
+    text: String,
+    files: Vec<(String, String)>,
 }
 
 /// Drop every inner attribute line (`#![doc = ...]`, and the `#![allow(...)]`

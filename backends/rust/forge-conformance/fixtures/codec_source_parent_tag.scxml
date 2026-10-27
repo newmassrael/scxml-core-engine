@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance (ADR 0058): a codec whose header carries, in a flag,
+     the tag of the variant it embeds. A value of it presents the embedded
+     variant and not the tag, and the encode writes the tag the active arm
+     names. Wire shape: one header byte, then the embedded arm's body. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_source_parent_tag">
+  <sce:import src="codec_source_leaf.scxml" kind="codec" as="codec_source_leaf">
+    <sce:variant-dispatch flag="hdr.kind"/>
+  </sce:import>
+  <datamodel>
+    <sce:flags id="hdr" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="kind" bit="0" width="1"/>
+      <sce:flag name="more" bit="7"/>
+    </sce:flags>
+    <sce:embed id="body" type="codec_source_leaf" sce:byte="1"/>
+  </datamodel>
+</scxml>

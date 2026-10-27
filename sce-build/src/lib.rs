@@ -5580,6 +5580,7 @@ fn validate_and_enrich_imports(
                             .collect(),
                     );
                     ctx.codec_variant_has_default_arm = Some(v.arms.iter().any(|a| a.is_default));
+                    ctx.codec_variant_has_catch_all = v.default_arm.is_some();
                     // Caller-tag dispatch shape: tag-less `<sce:variant>`
                     // signals the imported codec uses caller-tag dispatch.
                     // Parents importing this codec MUST supply a `tag: u8`

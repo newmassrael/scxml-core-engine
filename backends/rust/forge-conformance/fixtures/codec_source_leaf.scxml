@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance (ADR 0058): a leaf variant whose tag the codec that
+     embeds it supplies (caller-tag shape). It has two arms, 0 and 1, which cover
+     a one-bit tag, and no catch-all, so every value it holds names the tag its
+     parent derives from it. Imported by
+     codec_source_parent_tag.scxml. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_source_leaf">
+  <sce:import src="../../../../tests/forge/resources/codec_variant_session_open.scxml"
+              kind="codec" as="codec_variant_session_open"/>
+  <sce:import src="../../../../tests/forge/resources/codec_variant_session_close.scxml"
+              kind="codec" as="codec_variant_session_close"/>
+  <datamodel>
+    <sce:variant>
+      <sce:arm value="0x00" type="codec_variant_session_open"/>
+      <sce:arm value="0x01" type="codec_variant_session_close" default="true"/>
+    </sce:variant>
+  </datamodel>
+</scxml>

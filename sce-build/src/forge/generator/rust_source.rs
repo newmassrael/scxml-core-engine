@@ -91,25 +91,17 @@ pub(crate) fn supported_with(
     m: &CodecModel,
     mut import_has_source: impl FnMut(&str) -> bool,
 ) -> bool {
-    let roles = codec_roles::classify(m, &[]);
     // The answer for each codec the model holds, asked once and before the
     // check, which cannot take a closure that borrows its caller's walk.
     let known: std::collections::BTreeMap<&str, bool> = child_aliases(m)
         .into_iter()
         .map(|alias| (alias, import_has_source(alias)))
         .collect();
-    check(m, &roles, &|alias| {
-        known.get(alias).copied().unwrap_or(false)
-    })
-    .is_ok()
+    check(m, &|alias| known.get(alias).copied().unwrap_or(false)).is_ok()
 }
 
 /// The shapes the interface covers.
-fn check(
-    m: &CodecModel,
-    roles: &CodecRoles,
-    import_has_source: &dyn Fn(&str) -> bool,
-) -> Result<(), Unsupported> {
+fn check(m: &CodecModel, import_has_source: &dyn Fn(&str) -> bool) -> Result<(), Unsupported> {
     if m.encoding != CodecEncoding::Positional {
         return no("a codec of another encoding writes its own encode");
     }
@@ -118,19 +110,6 @@ fn check(
             return no(format!(
                 "the codec `{alias}` it holds has no source interface"
             ));
-        }
-    }
-    for (id, by) in roles.derived() {
-        for derivation in by {
-            match derivation {
-                Derivation::LengthOf { .. }
-                | Derivation::PresenceOf { .. }
-                | Derivation::CountOf { .. }
-                | Derivation::EncodedLengthOf { .. }
-                | Derivation::VariantTag { .. }
-                | Derivation::ChainContinuation { .. } => {}
-                other => return no(format!("`{id}` is derived by {other}")),
-            }
         }
     }
     // A gate the codec cannot derive is checked against the source, except the
@@ -193,7 +172,7 @@ impl<'a> Plan<'a> {
                 .iter()
                 .any(|i| i.alias == alias && i.kind == "codec" && i.codec_has_source)
         };
-        check(input.m, &roles, &has_source)?;
+        check(input.m, &has_source)?;
         Ok(Plan {
             input,
             roles,
@@ -869,6 +848,80 @@ impl<'a> Plan<'a> {
         lines.push("}".to_string());
     }
 
+    /// The bits of a carrier that an embedded variant's active arm fills: the
+    /// arm's value, read from the embedded body's source. A gated body that is
+    /// absent fills none.
+    fn derive_parent_tag(&self, id: &ElementId, lines: &mut Vec<String>, derived: &mut Derived) {
+        let ElementId::Flag { field, flag } = id else {
+            unreachable!("a parent tag fills a flag of a carrier");
+        };
+        let Some(carrier) = self.m().fields.iter().find(|f| &f.id == field) else {
+            return;
+        };
+        let ty = self.l().type_name(&carrier.sce_type).to_string();
+        let local = self.local("_d_", id);
+        let mut terms: Vec<String> = Vec::new();
+        for d in collect_parent_tag_derivations(self.m(), self.input.imports) {
+            if &d.carrier_field_id != field || &d.carrier_flag != flag {
+                continue;
+            }
+            let Some(import) = self.input.imports.iter().find(|i| i.alias == d.embed_alias) else {
+                continue;
+            };
+            let Some(embed) = self.m().fields.iter().find(|f| f.id == d.embed_field_id) else {
+                continue;
+            };
+            let enum_path = format!(
+                "super::{}::{}VariantSource",
+                import.namespace, import.type_name
+            );
+            let mask: u64 = (1u64 << d.width) - 1;
+            let mut arms: Vec<String> = d
+                .arms
+                .iter()
+                .map(|(alias, value, _)| {
+                    format!(
+                        "{enum_path}::{}(_) => {}",
+                        filters::to_pascal_case(alias.clone()),
+                        value & mask
+                    )
+                })
+                .collect();
+            // A catch-all arm presents the tag it could not name, and that is
+            // what the carrier holds.
+            if import.codec_variant_has_catch_all {
+                arms.push(format!(
+                    "{enum_path}::Default {{ tag, .. }} => {ty}::from(tag) & 0x{mask:X}"
+                ));
+            }
+            let accessor = self.accessor(embed);
+            let arms = arms.join(", ");
+            // The embedded body's source is read through its trait by path: the
+            // trait is not imported here.
+            let body_of = format!(
+                "super::{}::{}Source::body",
+                import.namespace, import.type_name
+            );
+            terms.push(if embed.present_if.is_some() {
+                format!(
+                    "match src.{accessor}() {{ Some(_x) => match {body_of}(_x) {{ {arms} }}, None => 0 }}"
+                )
+            } else {
+                format!("match {body_of}(src.{accessor}()) {{ {arms} }}")
+            });
+        }
+        lines.push(format!("let {local}: {ty} = {};", terms.join(" | ")));
+        derived
+            .flags
+            .entry(field.clone())
+            .or_default()
+            .push(DerivedFlag {
+                flag: flag.clone(),
+                value: local,
+                kind: FlagValue::Number,
+            });
+    }
+
     /// The tag the active arm names, which the encode writes where the codec
     /// holds it. A default arm names none, so it presents the tag it holds.
     fn derive_variant_tag(&self, id: &ElementId, lines: &mut Vec<String>, derived: &mut Derived) {
@@ -934,13 +987,13 @@ impl<'a> Plan<'a> {
                     Derivation::VariantTag { .. } => {
                         self.derive_variant_tag(id, lines, &mut derived)
                     }
+                    Derivation::ParentTag { .. } => self.derive_parent_tag(id, lines, &mut derived),
                     Derivation::PresenceOf { gated } => {
                         self.derive_presence(id, gated, lines, &mut derived)
                     }
                     // The end flag of a chain is the entries' to set, as each is
                     // written (`streamed`), and no value of this codec's own.
                     Derivation::ChainContinuation { .. } => {}
-                    _ => unreachable!("`check` refused every other derivation"),
                 }
             }
         }

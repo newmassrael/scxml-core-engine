@@ -326,6 +326,13 @@ pub struct ImportContext {
     #[serde(skip)]
     pub codec_variant_has_default_arm: Option<bool>,
 
+    /// ADR 0058: `true` when the imported codec's variant has a catch-all
+    /// `<sce:default>` arm, whose tag the value presents. The arms a parent
+    /// derives its carrier bits from are the enumerated ones; a catch-all is
+    /// one more the parent has to name.
+    #[serde(skip)]
+    pub codec_variant_has_catch_all: bool,
+
     /// RFC caller-tag variant shape: `true` when the imported codec's
     /// `<sce:variant>` has no `tag=` attribute (caller-tag form).
     /// Parents importing such a leaf MUST supply a `tag: u8` value to
@@ -948,6 +955,7 @@ fn resolve_single_import(
         embed_dispatch: imp.embed_dispatch.clone(),
         codec_variant_arms_for_inversion: None,
         codec_variant_has_default_arm: None,
+        codec_variant_has_catch_all: false,
         codec_variant_is_caller_tag: false,
         codec_flag_inputs: Vec::new(),
         flag_binds: imp.flag_binds.clone(),
@@ -18299,11 +18307,13 @@ fn parent_tag_match_term_rust(
     let snake = filters::to_snake_case(d.embed_field_id.clone());
     let embed_pascal = parent_tag_embed_pascal(d, imports);
     // A body that is not borrowed has no owned mirror: the owned parent holds
-    // it as it is, and its variant enum is the one name there is.
-    let flavor = if import_codec_borrowed(imports, &d.embed_alias) {
-        flavor
-    } else {
+    // it as it is, and its variant enum is the one name there is. A view has a
+    // variant enum of its own whether or not the body is borrowed.
+    let flavor = if flavor == EncodeFlavor::Owned && !import_codec_borrowed(imports, &d.embed_alias)
+    {
         EncodeFlavor::Borrowed
+    } else {
+        flavor
     };
     let variant_enum = flavor.variant_enum(embed_pascal);
     let mut arms = Vec::with_capacity(d.arms.len());
@@ -34037,6 +34047,7 @@ mod tests {
             embed_dispatch: None,
             codec_variant_arms_for_inversion: None,
             codec_variant_has_default_arm: None,
+            codec_variant_has_catch_all: false,
             codec_variant_is_caller_tag: false,
             codec_flag_inputs: Vec::new(),
             flag_binds: Vec::new(),
@@ -34911,6 +34922,7 @@ mod tests {
                 embed_dispatch: None,
                 codec_variant_arms_for_inversion: None,
                 codec_variant_has_default_arm: None,
+                codec_variant_has_catch_all: false,
                 codec_variant_is_caller_tag: false,
                 codec_flag_inputs: Vec::new(),
                 flag_binds: Vec::new(),
@@ -34960,6 +34972,7 @@ mod tests {
                 embed_dispatch: None,
                 codec_variant_arms_for_inversion: None,
                 codec_variant_has_default_arm: None,
+                codec_variant_has_catch_all: false,
                 codec_variant_is_caller_tag: false,
                 codec_flag_inputs: Vec::new(),
                 flag_binds: Vec::new(),
