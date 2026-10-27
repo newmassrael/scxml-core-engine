@@ -147,6 +147,39 @@ bound of law 4.
 - The frame size of the encode is still a number to take on `thumbv7em-none-eabihf` at `opt-level = "s"`; this ADR
   states the gate (the encode's frame is no larger than `encode_source`'s) and does not claim the number.
 
+## First measurement (2026-10-28) and what it changed
+
+The consumer measured the plain Reply on a Cortex-M7 at 350 MHz (`opt-level = "s"`, fat LTO), from `recvfrom` to
+`sendto`: its hand-written window writer 42.15 us; `XParts` with `encode_source` 48.10 us (+5.95); `XParts` with
+`measure` and `write_into` 49.80 us (+7.65). Bytes equal in both generated arms over its matrix, and with a transmit
+buffer of one byte too small `encode_source` leaves a prefix and fails while `measure` refuses before writing, which
+the consumer needs. Layout noise of the kit is about 0.6 us. The consumer's reading was that neither the counting
+pass nor the per-write checks is what costs, since the second arm has neither.
+
+That reading rested on a premise that was false: `write_into` writes through `SliceSink`, whose every write was
+checked, and every write was a call. The disassembly of the Reply path built for `thumbv7em-none-eabihf` at the same
+settings shows where the cycles went:
+
+- `SceSink::write_u8` is provided as `write_bytes(&[b])`, and `SliceSink::write_bytes` ended in a call to
+  `compiler_builtins::mem::memcpy` (a general routine of some 660 bytes) whatever the length: a header byte, a
+  flag byte and each byte of a VLE each cost a call, a capacity test and a `memcpy`. About twenty such writes a
+  frame, in the pass that writes.
+- `write_vle_inner` recomputed `ceil((max_bits - 1) / 7)` with a multiply-high on every call, and wrote one byte
+  per iteration through the call above.
+- A slice copy of a length the compiler knows is still a call at this optimisation level; an array store is not.
+
+So the loss was in the sink and not in the structure: the double pass of `write_source` over a source is not shown
+to cost anything yet. `SliceSink` now stores a byte or a fixed-width integer as an array store behind one capacity
+test, writes a VLE as one capacity test and the bytes in place (a VLE that does not fit writes nothing), and calls
+`memcpy` only in `write_bytes`, for text and payload. The bytes are those of the provided methods (a test holds that
+at every bit boundary of the three widths). The change is in the runtime alone: no generated file moves.
+
+Not measured: the effect of that on the kit. The consumer measures again; the order of the remaining candidates, if a
+gap is left, is by what the disassembly shows each costs: `Measured::write_into` repeating the derivation the count
+pass made (the consumer's suggestion, a `Measured` that keeps the derived values), then `extensions()` being asked
+three times in one `write_source_in`, then the non-inlined call at each VLE. None is done before a number says it is
+worth its cost, since each trades a smaller `Measured` and a plainer skeleton for speed.
+
 ## Considered alternatives
 
 - **A hand-written `encoded_len` beside `write_source`.** Two statements of the grammar; refused (the same ground as

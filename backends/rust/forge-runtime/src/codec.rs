@@ -512,14 +512,101 @@ impl<'a> SliceSink<'a> {
     }
 }
 
+impl<'a> SliceSink<'a> {
+    /// Append `N` bytes whose count the compiler knows: one capacity test and
+    /// stores, with no call to a copy routine. A byte, a fixed-width integer or
+    /// a VLE is written this way; only a string or a payload is of a length the
+    /// program learns at run time, and that one is [`SceSink::write_bytes`].
+    #[inline(always)]
+    fn put<const N: usize>(&mut self, bytes: [u8; N]) -> Result<(), CodecError> {
+        // An array assignment, not `copy_from_slice`: at a small optimisation
+        // level the slice copy is a call whatever its length, and the array
+        // store is the stores themselves.
+        match self
+            .buf
+            .get_mut(self.pos..)
+            .and_then(<[u8]>::first_chunk_mut::<N>)
+        {
+            Some(dst) => {
+                *dst = bytes;
+                self.pos += N;
+                Ok(())
+            }
+            None => Err(CodecError::BufferOverflow),
+        }
+    }
+}
+
 impl<'a> SceSink for SliceSink<'a> {
     fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), CodecError> {
-        if self.remaining() < bytes.len() {
+        let Some(end) = self.pos.checked_add(bytes.len()) else {
             return Err(CodecError::BufferOverflow);
-        }
-        let end = self.pos + bytes.len();
-        self.buf[self.pos..end].copy_from_slice(bytes);
+        };
+        let Some(dst) = self.buf.get_mut(self.pos..end) else {
+            return Err(CodecError::BufferOverflow);
+        };
+        dst.copy_from_slice(bytes);
         self.pos = end;
+        Ok(())
+    }
+
+    #[inline]
+    fn write_u8(&mut self, b: u8) -> Result<(), CodecError> {
+        self.put([b])
+    }
+
+    #[inline]
+    fn write_u16_le(&mut self, v: u16) -> Result<(), CodecError> {
+        self.put(v.to_le_bytes())
+    }
+
+    #[inline]
+    fn write_u16_be(&mut self, v: u16) -> Result<(), CodecError> {
+        self.put(v.to_be_bytes())
+    }
+
+    #[inline]
+    fn write_u32_le(&mut self, v: u32) -> Result<(), CodecError> {
+        self.put(v.to_le_bytes())
+    }
+
+    #[inline]
+    fn write_u32_be(&mut self, v: u32) -> Result<(), CodecError> {
+        self.put(v.to_be_bytes())
+    }
+
+    #[inline]
+    fn write_u64_le(&mut self, v: u64) -> Result<(), CodecError> {
+        self.put(v.to_le_bytes())
+    }
+
+    #[inline]
+    fn write_u64_be(&mut self, v: u64) -> Result<(), CodecError> {
+        self.put(v.to_be_bytes())
+    }
+
+    /// The VLE as one capacity test and the bytes stored in place: its length
+    /// is known from the value ([`vle_len`]), so no byte is tested on its own and
+    /// a VLE that does not fit writes nothing. The bytes are those of the
+    /// provided method (seven bits each with the continuation bit set, the last
+    /// of a full-width value a full eight).
+    #[inline]
+    fn write_vle_inner(&mut self, value: u64, max_bits: u32) -> Result<(), CodecError> {
+        let n = vle_len(value, max_bits);
+        let Some(dst) = self.buf.get_mut(self.pos..self.pos + n) else {
+            return Err(CodecError::BufferOverflow);
+        };
+        // `vle_len` is at least 1, so a slice that was found has a last byte.
+        let Some((last, lead)) = dst.split_last_mut() else {
+            return Err(CodecError::BufferOverflow);
+        };
+        let mut v = value;
+        for slot in lead {
+            *slot = (v as u8 & 0x7F) | 0x80;
+            v >>= 7;
+        }
+        *last = v as u8;
+        self.pos += n;
         Ok(())
     }
 
@@ -982,6 +1069,83 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn the_slice_sink_writes_the_bytes_of_the_provided_methods() {
+        // A sink that implements only the two required methods, so every
+        // integer and VLE is written by the trait's own provided code: the
+        // reference the slice sink's direct stores must equal.
+        struct Reference {
+            bytes: [u8; 64],
+            len: usize,
+        }
+        impl SceSink for Reference {
+            fn write_bytes(&mut self, b: &[u8]) -> Result<(), CodecError> {
+                self.bytes[self.len..self.len + b.len()].copy_from_slice(b);
+                self.len += b.len();
+                Ok(())
+            }
+            fn position(&self) -> usize {
+                self.len
+            }
+        }
+        fn run<K: SceSink>(k: &mut K, vle: u64, bits: u32) {
+            k.write_u8(0xA5).unwrap();
+            k.write_u16_le(0x1234).unwrap();
+            k.write_u16_be(0x1234).unwrap();
+            k.write_u32_le(0x1234_5678).unwrap();
+            k.write_u32_be(0x1234_5678).unwrap();
+            k.write_u64_le(0x1234_5678_9ABC_DEF0).unwrap();
+            k.write_u64_be(0x1234_5678_9ABC_DEF0).unwrap();
+            k.write_vle_inner(vle, bits).unwrap();
+            k.write_vle_u16(vle as u16).unwrap();
+            k.write_vle_u32(vle as u32).unwrap();
+            k.write_vle_u64(vle).unwrap();
+            k.write_bytes(&[1, 2, 3]).unwrap();
+        }
+        for shift in 0..64u32 {
+            for v in [
+                (1u64 << shift) - 1,
+                1u64 << shift,
+                (1u64 << shift) + 1,
+                u64::MAX >> shift,
+            ] {
+                for bits in [16u32, 32, 64] {
+                    let masked = if bits == 64 {
+                        v
+                    } else {
+                        v & ((1u64 << bits) - 1)
+                    };
+                    let mut want = Reference {
+                        bytes: [0; 64],
+                        len: 0,
+                    };
+                    run(&mut want, masked, bits);
+                    let mut buf = [0u8; 64];
+                    let mut got = SliceSink::new(&mut buf);
+                    run(&mut got, masked, bits);
+                    assert_eq!(got.position(), want.len, "{masked:#x} at {bits} bits");
+                    assert_eq!(
+                        &buf[..want.len],
+                        &want.bytes[..want.len],
+                        "{masked:#x} at {bits} bits"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_vle_that_does_not_fit_writes_nothing() {
+        let mut buf = [0xEEu8; 3];
+        let mut s = SliceSink::new(&mut buf);
+        // 300 is two bytes; one byte of room holds neither of them.
+        s.write_u8(1).unwrap();
+        s.write_u8(2).unwrap();
+        assert_eq!(s.write_vle_u64(300), Err(CodecError::BufferOverflow));
+        assert_eq!(s.position(), 2, "a refused VLE moved the position");
+        assert_eq!(buf, [1, 2, 0xEE], "a refused VLE left a byte");
     }
 
     #[test]
