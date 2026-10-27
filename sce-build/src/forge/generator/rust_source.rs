@@ -68,6 +68,9 @@ struct Child {
     type_name: String,
     /// The path of its source trait.
     trait_path: String,
+    /// The path of its overrides (`{Codec}Overrides`), which a chain of the
+    /// codec's entries sets the end flag through.
+    overrides_path: String,
 }
 
 /// How one field is read and written.
@@ -125,7 +128,8 @@ fn check(
                 | Derivation::PresenceOf { .. }
                 | Derivation::CountOf { .. }
                 | Derivation::EncodedLengthOf { .. }
-                | Derivation::VariantTag { .. } => {}
+                | Derivation::VariantTag { .. }
+                | Derivation::ChainContinuation { .. } => {}
                 other => return no(format!("`{id}` is derived by {other}")),
             }
         }
@@ -220,7 +224,94 @@ impl<'a> Plan<'a> {
         Some(Child {
             type_name: import.type_name.clone(),
             trait_path: format!("super::{}::{}Source", import.namespace, import.type_name),
+            overrides_path: format!("super::{}::{}Overrides", import.namespace, import.type_name),
         })
+    }
+
+    /// The flags of this codec a parent may set in place of the ones a value
+    /// presents: a one-bit flag of a fixed carrier that the codec presents. A
+    /// chain derives the flag that says an entry is not the last, and the entry
+    /// it writes cannot present that flag, as it cannot know where it stands.
+    fn overridable(&self) -> Vec<(&CodecField, &FlagDef)> {
+        let mut out = Vec::new();
+        for carrier in &self.m().fields {
+            if carrier.fixed_bits().is_none() || !self.presented(carrier) {
+                continue;
+            }
+            for def in &carrier.flags {
+                let id = ElementId::Flag {
+                    field: carrier.id.clone(),
+                    flag: def.name.clone(),
+                };
+                if def.width == 1 && matches!(self.roles.role_of(&id), Some(Role::Presented)) {
+                    out.push((carrier, def));
+                }
+            }
+        }
+        out
+    }
+
+    /// The member of the entry codec's overrides that sets the flag a chain ends
+    /// on, for a chain that ends on its entries' flag.
+    fn chain_end_flag(&self, field: &CodecField) -> Option<String> {
+        let BitSize::TlvChain {
+            terminate_on: TlvTerminateStrategy::EntryFlag { flag_name },
+            ..
+        } = &field.bit_size
+        else {
+            return None;
+        };
+        let import = self
+            .input
+            .imports
+            .iter()
+            .find(|i| Some(i.alias.as_str()) == child_alias(field))?;
+        let carrier = import
+            .codec_fields
+            .iter()
+            .find(|f| f.flags.iter().any(|d| &d.name == flag_name))?;
+        Some(self.override_member(carrier, flag_name))
+    }
+
+    /// The name of the member of `{Codec}Overrides` that sets `flag` of `carrier`.
+    fn override_member(&self, carrier: &CodecField, flag: &str) -> String {
+        format!(
+            "{}_{}",
+            self.accessor(carrier),
+            filters::to_snake_case(flag.to_string())
+        )
+    }
+
+    fn overrides_name(&self) -> String {
+        format!("{}Overrides", self.name())
+    }
+
+    fn overrides_definition(&self) -> String {
+        let overridable = self.overridable();
+        if overridable.is_empty() {
+            return String::new();
+        }
+        let members: String = overridable
+            .iter()
+            .map(|(carrier, def)| {
+                format!(
+                    "    /// The `{flag}` flag of `{carrier}`, when a parent sets it.\n    pub {member}: Option<bool>,\n",
+                    flag = def.name,
+                    carrier = carrier.id,
+                    member = self.override_member(carrier, &def.name),
+                )
+            })
+            .collect();
+        format!(
+            "/// Flags of `{name}` a parent sets in place of the ones a value presents:\n\
+             /// the end flag of a chain whose entries are `{name}`, which the chain\n\
+             /// derives from where an entry stands.\n\
+             #[doc(hidden)]\n\
+             #[derive(Debug, Default, Clone, Copy)]\n\
+             pub struct {overrides} {{\n{members}}}\n\n",
+            name = self.name(),
+            overrides = self.overrides_name(),
+        )
     }
 
     /// Whether the codec holds a list, an embedded body or a variant: a refusal
@@ -423,6 +514,7 @@ impl<'a> Plan<'a> {
     fn text(&self) -> String {
         let mut out = String::new();
         out.push_str(&self.body_enum_definition());
+        out.push_str(&self.overrides_definition());
         out.push_str(&self.trait_definition());
         out.push_str(&self.reference_impl());
         out.push_str(&self.builder_impl());
@@ -549,7 +641,7 @@ impl<'a> Plan<'a> {
     // ── the encode ───────────────────────────────────────────────────
 
     fn encode_impl(&self) -> String {
-        let body = self.write_body();
+        let write = self.write_functions(&self.write_body());
         // A list or an embedded body is written by the codec it holds, which
         // can refuse a value after this codec has written bytes. The same write
         // into a sink that only counts finds that refusal first, so the
@@ -571,15 +663,41 @@ impl<'a> Plan<'a> {
              {guard}\
              \x20       Self::write_source(src, w)\n\
              \x20   }}\n\n\
-             \x20   /// [`Self::encode_source`] without the guard a parent has already made.\n\
-             \x20   #[doc(hidden)]\n\
-             \x20   pub fn write_source<S: {trait_name} + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {{\n\
-             {body}\
-             \x20   }}\n\
+             {write}\
              }}\n",
             lt = self.lt(),
             name = self.name(),
             trait_name = self.trait_name,
+        )
+    }
+
+    /// `write_source`: the wire without the guard a parent has already made. A
+    /// codec with flags a parent may set also has `write_source_in`, which
+    /// takes them, and `write_source` is that with none set.
+    fn write_functions(&self, body: &str) -> String {
+        let trait_name = &self.trait_name;
+        if self.overridable().is_empty() {
+            return format!(
+                "\x20   /// [`Self::encode_source`] without the guard a parent has already made.\n\
+                 \x20   #[doc(hidden)]\n\
+                 \x20   pub fn write_source<S: {trait_name} + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {{\n\
+                 {body}\
+                 \x20   }}\n"
+            );
+        }
+        let overrides = self.overrides_name();
+        format!(
+            "\x20   /// [`Self::encode_source`] without the guard a parent has already made.\n\
+             \x20   #[doc(hidden)]\n\
+             \x20   pub fn write_source<S: {trait_name} + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {{\n\
+             \x20       Self::write_source_in(src, w, &{overrides}::default())\n\
+             \x20   }}\n\n\
+             \x20   /// [`Self::write_source`] with the flags a parent sets in place of the\n\
+             \x20   /// ones `src` presents.\n\
+             \x20   #[doc(hidden)]\n\
+             \x20   pub fn write_source_in<S: {trait_name} + ?Sized, K: SceSink>(src: &S, w: &mut K, over: &{overrides}) -> Result<(), CodecError> {{\n\
+             {body}\
+             \x20   }}\n"
         )
     }
 
@@ -672,6 +790,10 @@ impl<'a> Plan<'a> {
     /// anything is written. Returns the expression each element is read as.
     fn derivations(&self, lines: &mut Vec<String>) -> Derived {
         let mut derived = Derived::default();
+        // A carrier a parent may set a flag of is read as a local, folded below.
+        for (carrier, _) in self.overridable() {
+            derived.flags.entry(carrier.id.clone()).or_default();
+        }
         self.bound_lists(lines);
         for (id, by) in self.roles.derived() {
             for derivation in by {
@@ -691,6 +813,9 @@ impl<'a> Plan<'a> {
                     Derivation::PresenceOf { gated } => {
                         self.derive_presence(id, gated, lines, &mut derived)
                     }
+                    // The end flag of a chain is the entries' to set, as each is
+                    // written (`streamed`), and no value of this codec's own.
+                    Derivation::ChainContinuation { .. } => {}
                     _ => unreachable!("`check` refused every other derivation"),
                 }
             }
@@ -1076,9 +1201,25 @@ impl<'a> Plan<'a> {
                 let child = self
                     .child(field)
                     .expect("`check` found the codec a list holds");
-                body.push(format!("for _e in {value} {{"));
-                body.push(format!("    {}::write_source(&_e, w)?;", child.type_name));
-                body.push("}".to_string());
+                match self.chain_end_flag(field) {
+                    // Every entry but the last says another follows: the flag is
+                    // derived from where the entry stands, and set as it is
+                    // written.
+                    Some(member) => {
+                        let count = self.count_local(field);
+                        body.push(format!("for (_i, _e) in {value}.enumerate() {{"));
+                        body.push(format!(
+                            "    {}::write_source_in(&_e, w, &{} {{ {member}: Some(_i + 1 < {count}), ..Default::default() }})?;",
+                            child.type_name, child.overrides_path
+                        ));
+                        body.push("}".to_string());
+                    }
+                    None => {
+                        body.push(format!("for _e in {value} {{"));
+                        body.push(format!("    {}::write_source(&_e, w)?;", child.type_name));
+                        body.push("}".to_string());
+                    }
+                }
             }
             BitSize::Embed => {
                 let child = self
@@ -1235,10 +1376,24 @@ impl Derived {
                 value = format!("({kept} & !0x{mask:X}) | {placed}");
                 compound = true;
             }
-            lines.push(format!(
-                "let {}: {ty} = {value};",
-                plan.carrier_local(carrier)
-            ));
+            // The flags a parent sets replace the bits the source presents.
+            let sets: Vec<&FlagDef> = plan
+                .overridable()
+                .into_iter()
+                .filter(|(c, _)| c.id == carrier.id)
+                .map(|(_, def)| def)
+                .collect();
+            let local = plan.carrier_local(carrier);
+            let binding = if sets.is_empty() { "let" } else { "let mut" };
+            lines.push(format!("{binding} {local}: {ty} = {value};"));
+            for def in sets {
+                lines.push(format!(
+                    "if let Some(_o) = over.{member} {{\n    {local} = ({local} & !0x{mask:X}) | ({ty}::from(_o) << {bit});\n}}",
+                    member = plan.override_member(carrier, &def.name),
+                    mask = 1u64 << def.bit,
+                    bit = def.bit,
+                ));
+            }
         }
     }
 }

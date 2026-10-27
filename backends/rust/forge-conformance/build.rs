@@ -261,6 +261,12 @@ const DOCUMENTED_FRAMES: &[(&str, &[&[u8]])] = &[
         &[&[0x01, 0x10, 0x03, 0x41, 0x42, 0x43, 0x20, 0x01, 0x58]],
     ),
     ("codec_repeat_basic", &[&[0x02, 0x00, 0x01, 0x00, 0x02]]),
+    // Two entries: the first says another follows, the second does not. The
+    // second frame gives the first entry a body.
+    (
+        "codec_zenoh_ext_envelope",
+        &[&[0x00, 0x80, 0x01], &[0x00, 0xA0, 0x05, 0x01]],
+    ),
 ];
 
 /// What `forge_source_round_trip` sweeps one codec with.
