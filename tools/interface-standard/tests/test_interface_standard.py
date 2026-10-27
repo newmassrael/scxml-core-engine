@@ -407,7 +407,7 @@ class TheRepositorySideIsWhatGitTracks(unittest.TestCase):
               "target_compile_features(sce_runtime PRIVATE cxx_std_20)\n")
         track(self.root)
         # Written after the index was filled: on disk, never committed.
-        write(self.root / "claudedocs/run/built/power_auto_cut.h", self.MARK)
+        write(self.root / "scratch/run/built/power_auto_cut.h", self.MARK)
         write(self.root / "examples/doom_wasm/build/generated/doom_sm.h", self.MARK)
         write(self.root / "sce/include/core/Scratch.h", "#pragma once\n")
         write(self.root / "tests/forge/expected/scratch.h", "#pragma once\n")

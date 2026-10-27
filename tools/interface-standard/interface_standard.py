@@ -782,7 +782,7 @@ def tracked_files(root: Path, *pathspecs: str) -> List[Path]:
     The repository side of every population is what is COMMITTED, so a local
     run and a CI checkout measure the same set. Walking the directory instead
     counted 1,711 untracked scratch headers in one checkout on 2026-10-27
-    (experiment outputs under ``claudedocs/``, a local ``examples/*/build/``),
+    (experiment outputs in an ignored directory, a local ``examples/*/build/``),
     each listed as not measured and each a failure waiting to happen. The
     build tree is not asked here: its generated headers are this configure's.
 
