@@ -4,6 +4,7 @@
 #ifndef SCE_FORGE_CODEC_LENGTH_REF_DOTTED_BASIC_TEST_H
 #define SCE_FORGE_CODEC_LENGTH_REF_DOTTED_BASIC_TEST_H
 
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 #include "codec_length_ref_dotted_basic.h"

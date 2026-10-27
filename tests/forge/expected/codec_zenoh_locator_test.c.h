@@ -4,6 +4,7 @@
 #ifndef SCE_FORGE_CODEC_ZENOH_LOCATOR_TEST_H
 #define SCE_FORGE_CODEC_ZENOH_LOCATOR_TEST_H
 
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 #include "codec_zenoh_locator.h"

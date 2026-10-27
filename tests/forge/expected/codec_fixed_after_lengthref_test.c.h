@@ -4,6 +4,7 @@
 #ifndef SCE_FORGE_CODEC_FIXED_AFTER_LENGTHREF_TEST_H
 #define SCE_FORGE_CODEC_FIXED_AFTER_LENGTHREF_TEST_H
 
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 #include "codec_fixed_after_lengthref.h"

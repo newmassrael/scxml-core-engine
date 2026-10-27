@@ -4,6 +4,7 @@
 #ifndef SCE_FORGE_ALGORITHM_CRC16_TEST_H
 #define SCE_FORGE_ALGORITHM_CRC16_TEST_H
 
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 #include "algorithm_crc16.h"
