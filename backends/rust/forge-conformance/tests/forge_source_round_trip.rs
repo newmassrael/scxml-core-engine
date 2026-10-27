@@ -87,6 +87,8 @@ macro_rules! sweep {
     ($ty:ty, $pool:expr, $seeds:expr) => {{
         let pool: &[u8] = $pool;
         let mut seeds: Vec<Vec<u8>> = $seeds;
+        // The frames the document gives are frames of it: each one decodes.
+        let given = seeds.len();
         let mut by_default = Vec::new();
         if <$ty>::default()
             .encode(&mut VecSink::new(&mut by_default))
@@ -109,8 +111,13 @@ macro_rules! sweep {
         });
         let frames: Vec<Vec<u8>> = seeds.into_iter().chain(random).collect();
         let mut accepted = 0usize;
-        for frame in &frames {
-            if agree!($ty, frame) {
+        for (index, frame) in frames.iter().enumerate() {
+            let decoded = agree!($ty, frame);
+            assert!(
+                decoded || index >= given,
+                "a seed frame is not a frame of the codec: {frame:02x?}"
+            );
+            if decoded {
                 accepted += 1;
                 for cut in 0..frame.len() {
                     agree!($ty, &frame[..cut]);

@@ -294,6 +294,31 @@ const DOCUMENTED_FRAMES: &[(&str, &[&[u8]])] = &[
         &[&[0x01, 0x10, 0x03, 0x41, 0x42, 0x43, 0x20, 0x01, 0x58]],
     ),
     ("codec_repeat_basic", &[&[0x02, 0x00, 0x01, 0x00, 0x02]]),
+    // A chain a later field is gated on. The first frame holds an entry of kind
+    // 7 and none of kind 9, so the priority and the checksum are on the wire;
+    // the second is wide and holds a 9, so the checksum is not.
+    (
+        "codec_chain_has_tagged",
+        &[
+            &[0x00, 0x07, 0x00, 0x55, 0x11, 0x12, 0x34],
+            &[0x01, 0x09, 0x01, 0xAA, 0x03, 0x00, 0xBB, 0x22],
+        ],
+    ),
+    // The marker extension (0x12) in the chain brings the slice count in place
+    // of the payload; without the chain the payload is on the wire.
+    (
+        "codec_chain_has_marker",
+        &[&[0x80, 0x12, 0x00], &[0x00, 0x01, 0xAA]],
+    ),
+    // An entry that follows the marker (0x4) has the long value; the others the
+    // short one. The second frame has the entry's tag too.
+    (
+        "codec_chain_prev_carrier",
+        &[
+            &[0x00, 0x84, 0x11, 0x01, 0x22, 0x33],
+            &[0x01, 0x84, 0x11, 0x77, 0x01, 0x22, 0x33, 0x77],
+        ],
+    ),
     // Two entries: the first says another follows, the second does not. The
     // second frame gives the first entry a body.
     (

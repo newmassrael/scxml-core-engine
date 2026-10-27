@@ -112,25 +112,6 @@ fn check(m: &CodecModel, import_has_source: &dyn Fn(&str) -> bool) -> Result<(),
             ));
         }
     }
-    // A gate the codec cannot derive is checked against the source, except the
-    // membership of a chain, which is not read yet.
-    for field in &m.fields {
-        let mut clause = field.present_if.as_ref();
-        while let Some(p) = clause {
-            if p.scope == PresentIfScope::Chain {
-                return no(format!("`{}`: a gate on the entries of a chain", field.id));
-            }
-            clause = p.or_with.as_deref();
-        }
-        if let BitSize::TlvChain { entry_binds, .. } = &field.bit_size {
-            if !entry_binds.is_empty() {
-                return no(format!(
-                    "`{}`: a flag-input supplied by the entry before",
-                    field.id
-                ));
-            }
-        }
-    }
     Ok(())
 }
 
@@ -320,11 +301,27 @@ impl<'a> Plan<'a> {
     /// it takes, in the order it declares them: the bits of the parent's own
     /// carrier that the import binds, or the parent's own input passed on.
     fn thread_args(&self, alias: &str, derived: &Derived) -> String {
+        self.thread_args_supplying(alias, derived, &|_| None)
+    }
+
+    /// [`Self::thread_args`] for a caller that supplies some inputs itself: a
+    /// chain passes the entry it writes an input of its own making, in place of
+    /// the one the import binds.
+    fn thread_args_supplying(
+        &self,
+        alias: &str,
+        derived: &Derived,
+        supplied: &dyn Fn(&str) -> Option<String>,
+    ) -> String {
         let Some(import) = self.input.imports.iter().find(|i| i.alias == alias) else {
             return String::new();
         };
         let mut out = String::new();
         for input in &import.codec_flag_inputs {
+            if let Some(arg) = supplied(&input.name) {
+                out.push_str(&format!(", {arg}"));
+                continue;
+            }
             let Some(bind) = import.flag_binds.iter().find(|b| b.input == input.name) else {
                 continue;
             };
@@ -367,6 +364,14 @@ impl<'a> Plan<'a> {
         let mut clauses: Vec<String> = Vec::new();
         let mut clause = Some(gate);
         while let Some(p) = clause {
+            if p.scope == PresentIfScope::Chain {
+                // The chain holds an entry of the identifier, as the entries
+                // the source lists say.
+                let has = self.chain_has(p);
+                clauses.push(if p.negate { format!("!{has}") } else { has });
+                clause = p.or_with.as_deref();
+                continue;
+            }
             let (read, mask) = match p.scope {
                 PresentIfScope::Input => (filters::to_snake_case(p.flag_name.clone()), 1u64),
                 _ => {
@@ -389,6 +394,76 @@ impl<'a> Plan<'a> {
             clause = p.or_with.as_deref();
         }
         clauses.join(" || ")
+    }
+
+    /// The identifier of the entry `entry` (an expression that is a reference
+    /// to the entry's source) of the chain `chain`, as a `u64`: the flag or
+    /// field the chain's `entry-id` names, read through the entry codec's trait,
+    /// less the flags it leaves out.
+    fn entry_identifier(&self, chain: &CodecField, entry: &str) -> String {
+        let BitSize::TlvChain {
+            entry_id: Some(identifier),
+            ..
+        } = &chain.bit_size
+        else {
+            panic!("a chain-membership clause names a chain that declares entry-id");
+        };
+        let import = self
+            .input
+            .imports
+            .iter()
+            .find(|i| Some(i.alias.as_str()) == child_alias(chain))
+            .expect("a chain imports its entry codec");
+        let entry_trait = format!("super::{}::{}Source", import.namespace, import.type_name);
+        match &identifier.carrier {
+            Some(carrier_id) => {
+                let carrier = import
+                    .codec_fields
+                    .iter()
+                    .find(|f| &f.id == carrier_id)
+                    .expect("the parser found the carrier the identifier names");
+                let def = carrier
+                    .flags
+                    .iter()
+                    .find(|d| d.name == identifier.name)
+                    .expect("the parser found the flag the identifier names");
+                let mask = (1u64 << def.width) - 1;
+                format!(
+                    "((u64::from({entry_trait}::{}({entry})) >> {}) & 0x{mask:X})",
+                    self.l().codec_field_id(&carrier.id),
+                    def.bit
+                )
+            }
+            None => {
+                let whole = format!(
+                    "u64::from({entry_trait}::{}({entry}))",
+                    self.l().codec_field_id(&identifier.name)
+                );
+                match chain_identifier_masks(self.m(), self.input.imports).get(&chain.id) {
+                    Some(mask) => format!("({whole} & 0x{mask:X})"),
+                    None => whole,
+                }
+            }
+        }
+    }
+
+    /// "The chain holds an entry whose identifier is the clause's".
+    fn chain_has(&self, clause: &PresentIfPredicate) -> String {
+        let chain = self
+            .m()
+            .fields
+            .iter()
+            .find(|f| f.id == clause.field_id)
+            .expect("the parser found the chain a gate reads");
+        let value = clause.entry_id.expect("a chain clause names an identifier");
+        let found = format!("{} == {value}u64", self.entry_identifier(chain, "&_e"));
+        let accessor = self.accessor(chain);
+        // A chain that is gated off holds no entry.
+        if chain.present_if.is_some() {
+            format!("src.{accessor}().is_some_and(|mut _l| _l.any(|_e| {found}))")
+        } else {
+            format!("src.{accessor}().any(|_e| {found})")
+        }
     }
 
     /// Each gate the codec cannot derive the presence from, held to the source:
@@ -1381,9 +1456,43 @@ impl<'a> Plan<'a> {
                 let child = self
                     .child(field)
                     .expect("`check` found the codec a list holds");
+                // The inputs of the entry codec that the chain supplies: one
+                // value for each entry, 1 when the entry just written has the
+                // identifier the bind waits for, and 0 for the first.
+                let binds: Vec<(String, String, u64)> = match &field.bit_size {
+                    BitSize::TlvChain { entry_binds, .. } => entry_binds
+                        .iter()
+                        .map(|bind| {
+                            (
+                                bind.input.clone(),
+                                format!("_prev_{}", filters::to_snake_case(bind.input.clone())),
+                                bind.previous_entry_id,
+                            )
+                        })
+                        .collect(),
+                    _ => Vec::new(),
+                };
+                for (_, local, _) in &binds {
+                    body.push(format!("let mut {local}: u8 = 0;"));
+                }
+                let supplied = |name: &str| {
+                    binds
+                        .iter()
+                        .find(|(input, _, _)| input == name)
+                        .map(|(_, local, _)| local.clone())
+                };
                 let args = child_alias(field)
-                    .map(|alias| self.thread_args(alias, derived))
+                    .map(|alias| self.thread_args_supplying(alias, derived, &supplied))
                     .unwrap_or_default();
+                let updates: Vec<String> = binds
+                    .iter()
+                    .map(|(_, local, previous)| {
+                        format!(
+                            "    {local} = u8::from({} == {previous}u64);",
+                            self.entry_identifier(field, "&_e")
+                        )
+                    })
+                    .collect();
                 match self.chain_end_flag(field) {
                     // Every entry but the last says another follows: the flag is
                     // derived from where the entry stands, and set as it is
@@ -1395,7 +1504,6 @@ impl<'a> Plan<'a> {
                             "    {}::write_source_in(&_e, w{args}, &{} {{ {member}: Some(_i + 1 < {count}), ..Default::default() }})?;",
                             child.type_name, child.overrides_path
                         ));
-                        body.push("}".to_string());
                     }
                     None => {
                         body.push(format!("for _e in {value} {{"));
@@ -1403,9 +1511,10 @@ impl<'a> Plan<'a> {
                             "    {}::write_source(&_e, w{args})?;",
                             child.type_name
                         ));
-                        body.push("}".to_string());
                     }
                 }
+                body.extend(updates);
+                body.push("}".to_string());
             }
             BitSize::Embed => {
                 let child = self
