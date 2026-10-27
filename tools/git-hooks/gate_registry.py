@@ -362,7 +362,11 @@ COST_MEASURED: dict[str, str] = {
 # named here so it is not mistaken for slack: `w3c-rust` arrived as the gate
 # form of a lane that had been running inline, with no timing of the script.
 # Timing it on a warm tree and dating it in COST_MEASURED brings this back.
-UNMEASURED_COST_CEILING = 26
+#
+# 26 -> 27 on 2026-10-27, the same direction for the same kind of reason:
+# `cpp-interface-standard` arrived with an estimated cost and no timing of its
+# script. Its entry says how to take one.
+UNMEASURED_COST_CEILING = 27
 
 # ── Costs that are deliberately NOT the raw stopwatch reading ─────
 #
@@ -1344,6 +1348,46 @@ GATES: dict[str, dict] = {
                    "problem rather than an occasional one.",
         "cost_s": 110,
         "summary": "C++ ctest suite (engine + mesh), the non-c11 half",
+    },
+    # ADR 0059, section 7: the C++ interface compiled at the standard a
+    # consumer compiles it at. Every public header, every Forge C++ golden and
+    # every C++ header the generators write for this configure, each compiled
+    # ALONE with -Werror at C++17 and at C++20, beside the scan that refuses a
+    # standard-selecting `#if` in the headers and the C++ templates.
+    #
+    # SCE's own build compiles every target at C++20, so the C++17 four
+    # targets declared had never been compiled, and a downstream C++17 build
+    # found the first defect under GCC 15. No other gate can see that class:
+    # each builds SCE the way SCE builds itself.
+    #
+    # ⚠ `cost_s` is an ESTIMATE, not a stopwatch reading, and the slug is
+    # absent from COST_MEASURED for that reason. Its parts: a cold scratch
+    # configure and the generation rules (about two minutes), then some 2,600
+    # syntax-only compiles that `scripts/lib/sce_build_jobs.sh` spreads over
+    # the machine (about three on a 32-core build host). Time
+    # `scripts/gate cpp-interface-standard` on such a host and date it here.
+    "cpp-interface-standard": {
+        "workflows": ["cpp-interface-standard.yml"],
+        "runner_workflow": True,
+        # What the gate compiles or reads to decide what to compile: the
+        # engine and its headers, the C++ runtime and the C backend it
+        # compiles, the C++ templates and the generator that fills them, the
+        # Forge goldens, the CMake that registers the corpora, and the tool.
+        # The workflow's `paths:` lists every one, which `ci-only-coverage`
+        # holds.
+        "extra": ["sce/**", "backends/cpp/**", "backends/c/**",
+                  "tools/codegen/templates/**", "sce-build/src/**",
+                  "tests/forge/expected/**", "tests/CMakeLists.txt",
+                  "CMakeLists.txt", "cmake/**", "tools/interface-standard/**"],
+        "deps": ["codegen-build"],
+        "ci_only": "minutes long, estimated rather than measured: a cold "
+                   "configure, every generation rule and about 2,600 "
+                   "compiles. cpp-interface-standard.yml runs it in a pinned "
+                   "GCC 15 container, because the newest libstdc++ is the one "
+                   "that drops a transitive include first and a push host's "
+                   "compiler is whatever that host carries.",
+        "cost_s": 300,
+        "summary": "C++ interface compiled alone at C++17 and C++20 (ADR 0059)",
     },
     # The only gate that configures the OTHER value of SCE_SCRIPT_ENGINE.
     #

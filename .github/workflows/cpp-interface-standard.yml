@@ -1,0 +1,159 @@
+name: C++ Interface Standard
+
+# ADR 0059, section 7: SCE's C++ interface compiles at C++17 and at C++20.
+#
+# The interface is what a consumer compiles -- every public header under
+# `sce/include/` and `backends/cpp/forge-runtime/include/`, and every C++ file
+# a generator writes. SCE's own targets compile it all at C++20, so the C++17
+# they declare is a claim until something compiles it at C++17. This lane is
+# that something. `scripts/gates/cpp-interface-standard.sh` says what it
+# compiles and why each header is compiled alone; this file says where.
+#
+# ## Why a pinned GCC 15 container
+#
+# The defect that started this was a transitive include: a public header named
+# `uint64_t` without `<cstdint>`, and GCC 15's libstdc++ stopped providing
+# `<cstdint>` through `<string>` at C++17 while still doing so at C++20. The
+# newest libstdc++ is the one that drops such includes first, so the lane runs
+# the newest GCC, pinned so that a new release moves the measurement only when
+# someone moves the pin. The hosted image's compiler is whatever the image
+# carries that month.
+#
+# ## What a runner without the mesh SDKs reports
+#
+# zenoh, vsomeip and CycloneDDS are not installed here. Their targets are then
+# not configured, and a header that needs one of them is reported by name as
+# NOT MEASURED, which is neither a pass nor a failure. The floors the gate
+# holds are set below what such a runner measures.
+#
+# ## Duration
+#
+# STAND-IN: the lane has no run of its own yet. `LANES` in
+# `sce-build/tests/ci_supersession_policy.rs` borrows `ecma262-lowered-cpp.yml`'s
+# 23.7 min median, the nearest lane: a cold scratch configure of the main CMake
+# project with a cached generator build ahead of it. This lane compiles more
+# (about 2,500 syntax-only compiles) and builds nothing, so the real figure may
+# sit on either side. That is above a 17.6 min median gap between pushes to
+# `main`, so `cancel-in-progress: false` keeps the run in flight, as on every
+# lane. Replace the borrowed figure after 25 runs of its own.
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'sce/**'
+      - 'backends/cpp/**'
+      - 'backends/c/**'
+      - 'tools/codegen/templates/**'
+      - 'sce-build/src/**'
+      - 'tests/forge/expected/**'
+      - 'tests/CMakeLists.txt'
+      - 'CMakeLists.txt'
+      - 'cmake/**'
+      - 'tools/interface-standard/**'
+      - 'scripts/gate'
+      - 'scripts/gates/lib.sh'
+      - 'scripts/gates/cpp-interface-standard.sh'
+      - '.github/workflows/cpp-interface-standard.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'sce/**'
+      - 'backends/cpp/**'
+      - 'backends/c/**'
+      - 'tools/codegen/templates/**'
+      - 'sce-build/src/**'
+      - 'tests/forge/expected/**'
+      - 'tests/CMakeLists.txt'
+      - 'CMakeLists.txt'
+      - 'cmake/**'
+      - 'tools/interface-standard/**'
+      - 'scripts/gate'
+      - 'scripts/gates/lib.sh'
+      - 'scripts/gates/cpp-interface-standard.sh'
+      - '.github/workflows/cpp-interface-standard.yml'
+  workflow_dispatch:
+
+# The run in flight is kept and one waiting run holds the newest commit, as on
+# every lane; see `cpp-suite.yml` for the reasoning and the cost.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  cpp-interface-standard:
+    name: C++ interface at C++17 and C++20 (GCC 15)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    container:
+      image: gcc:15.3.0
+    env:
+      CC: gcc
+      CXX: g++
+
+    steps:
+      # The image is Debian with GCC 15 in /usr/local. What the configure needs
+      # beside it: CMake and Ninja, Python for the tool and the tests' CMake,
+      # git for the submodules, and the development packages cpp-httplib (TLS,
+      # zlib, brotli) and the GLib dispatcher link against.
+      - name: Install Dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            cmake \
+            ninja-build \
+            python3 \
+            python3-venv \
+            pkg-config \
+            git \
+            ca-certificates \
+            libssl-dev \
+            zlib1g-dev \
+            libbrotli-dev \
+            libglib2.0-dev
+
+      # `sce-codegen` formats the C++ it writes with clang-format of major 19
+      # and refuses without it (docs/SCE_CODEGEN_DETERMINISM.md). The image's
+      # Debian release decides which clang-format its archive carries, so the
+      # pinned major comes from the wheel instead, which is the same on any
+      # base.
+      - name: Install clang-format 19
+        run: |
+          python3 -m venv /opt/clang-format-19
+          /opt/clang-format-19/bin/pip install --no-cache-dir clang-format==19.1.7
+          echo "/opt/clang-format-19/bin" >> "$GITHUB_PATH"
+
+      - name: Checkout Repository
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      # The checkout belongs to the runner's user and the container runs as
+      # root, so git refuses the directory as dubiously owned unless told
+      # otherwise; the gates start with `git rev-parse --show-toplevel`.
+      - name: Trust the checkout
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Install Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      # Keyed apart from the hosted lanes' caches: a generator linked inside
+      # this image is not one to hand to a runner on another libc, or back.
+      - name: Cache Cargo
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: gcc15-container-cargo-codegen-${{ hashFiles('sce-build/Cargo.toml') }}
+          restore-keys: |
+            gcc15-container-cargo-codegen-
+
+      # Guards, configure, generation, then every compile at both standards are
+      # one gate, so the check has one spelling here and for a developer. The
+      # runner builds `sce-codegen` first, through its `codegen-build` gate.
+      - name: Compile the interface at C++17 and C++20
+        run: scripts/gate cpp-interface-standard

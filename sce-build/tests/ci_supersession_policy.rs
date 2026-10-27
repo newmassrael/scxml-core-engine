@@ -268,6 +268,12 @@ const LANES: &[(&str, f64, u32, u32, u32)] = &[
     ("targets.yml", 8.5, 0, 0, 0),
     ("clang-format-check.yml", 0.8, 0, 25, 0),
     ("clippy-check.yml", 7.7, 0, 22, 1),
+    // ⚠ STAND-IN, borrowed 2026-10-27 for a lane of no history: it configures a scratch tree of the
+    // main CMake project from cold after a cached generator build, as `ecma262-lowered-cpp.yml` does
+    // (23.7). It then runs only the generation rules and some 2,600 syntax-only compiles in a GCC 15
+    // container, so the true median may sit on either side; the lane states the figure in its own
+    // workflow, as a long lane must. Replace it after 25 runs of its own and delete this paragraph.
+    ("cpp-interface-standard.yml", 23.7, 0, 0, 0),
     // 12 of its last 25 cancelled while declaring `false`, and that is the
     // setting WORKING: probed 2026-09-02, its eight newest cancellations
     // killed no job at all -- every one was still entirely pending. Its repair
