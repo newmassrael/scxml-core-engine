@@ -141,6 +141,21 @@ impl<T: CodecZenohTimestampExtSource + ?Sized> CodecZenohTimestampExtSource for 
     }
 }
 
+/// A value of `CodecZenohTimestampExt` held in the types a caller already has: a source
+/// ([`CodecZenohTimestampExtSource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecZenohTimestampExtParts<'a> {
+    /// The `ts` field.
+    pub ts: &'a super::codec_zenoh_timestamp::CodecZenohTimestampParts<'a>,
+}
+
+impl<'a> CodecZenohTimestampExtSource for CodecZenohTimestampExtParts<'a> {
+    fn ts(&self) -> &impl super::codec_zenoh_timestamp::CodecZenohTimestampSource {
+        self.ts
+    }
+}
+
 impl<'a> CodecZenohTimestampExtSource for CodecZenohTimestampExt<'a> {
     fn ts(&self) -> &impl super::codec_zenoh_timestamp::CodecZenohTimestampSource {
         &self.ts

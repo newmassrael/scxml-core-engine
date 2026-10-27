@@ -288,6 +288,42 @@ impl<T: CodecZenohValueEntrySource + ?Sized> CodecZenohValueEntrySource for &T {
     }
 }
 
+/// The arm of `CodecZenohValueEntry`'s variant that CodecZenohValueEntryParts holds.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub enum CodecZenohValueEntryPartsBody<'a> {
+    CodecZenohExtUnit(&'a super::codec_zenoh_ext_unit::CodecZenohExtUnitParts),
+    CodecZenohExtZint(&'a super::codec_zenoh_ext_zint::CodecZenohExtZintParts),
+    CodecZenohValueZbuf(&'a super::codec_zenoh_value_zbuf::CodecZenohValueZbufParts<'a>),
+    /// The tag the grammar could not name, and the body it holds.
+    Default { tag: u8, body: &'a super::codec_zenoh_ext_unit::CodecZenohExtUnitParts },
+}
+
+/// A value of `CodecZenohValueEntry` held in the types a caller already has: a source
+/// ([`CodecZenohValueEntrySource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecZenohValueEntryParts<'a> {
+    /// The `header` field.
+    pub header: u8,
+    /// The arm of the variant this value holds.
+    pub body: CodecZenohValueEntryPartsBody<'a>,
+}
+
+impl<'a> CodecZenohValueEntrySource for CodecZenohValueEntryParts<'a> {
+    fn header(&self) -> u8 {
+        self.header
+    }
+    fn body(&self) -> CodecZenohValueEntryVariantSource<'_, impl super::codec_zenoh_ext_unit::CodecZenohExtUnitSource, impl super::codec_zenoh_ext_zint::CodecZenohExtZintSource, impl super::codec_zenoh_value_zbuf::CodecZenohValueZbufSource, impl super::codec_zenoh_ext_unit::CodecZenohExtUnitSource> {
+        match &self.body {
+            CodecZenohValueEntryPartsBody::CodecZenohExtUnit(_b) => CodecZenohValueEntryVariantSource::CodecZenohExtUnit(*_b),
+            CodecZenohValueEntryPartsBody::CodecZenohExtZint(_b) => CodecZenohValueEntryVariantSource::CodecZenohExtZint(*_b),
+            CodecZenohValueEntryPartsBody::CodecZenohValueZbuf(_b) => CodecZenohValueEntryVariantSource::CodecZenohValueZbuf(*_b),
+            CodecZenohValueEntryPartsBody::Default { tag, body } => CodecZenohValueEntryVariantSource::Default { tag: *tag, body: *body },
+        }
+    }
+}
+
 impl<'a> CodecZenohValueEntrySource for CodecZenohValueEntry<'a> {
     fn header(&self) -> u8 {
         self.header

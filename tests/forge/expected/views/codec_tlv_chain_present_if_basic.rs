@@ -187,6 +187,26 @@ impl<T: CodecTlvChainPresentIfBasicSource + ?Sized> CodecTlvChainPresentIfBasicS
     }
 }
 
+/// A value of `CodecTlvChainPresentIfBasic` held in the types a caller already has: a source
+/// ([`CodecTlvChainPresentIfBasicSource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecTlvChainPresentIfBasicParts<'a> {
+    /// The `carrier` field.
+    pub carrier: u8,
+    /// The `entries` field.
+    pub entries: Option<&'a [super::codec_tlv_entry::CodecTlvEntryParts<'a>]>,
+}
+
+impl<'a> CodecTlvChainPresentIfBasicSource for CodecTlvChainPresentIfBasicParts<'a> {
+    fn carrier(&self) -> u8 {
+        self.carrier
+    }
+    fn entries(&self) -> Option<impl Iterator<Item = impl super::codec_tlv_entry::CodecTlvEntrySource> + Clone> {
+        self.entries.map(<[_]>::iter)
+    }
+}
+
 impl<'a> CodecTlvChainPresentIfBasicSource for CodecTlvChainPresentIfBasic<'a> {
     fn carrier(&self) -> u8 {
         self.carrier

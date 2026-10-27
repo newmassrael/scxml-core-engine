@@ -199,6 +199,31 @@ impl<T: CodecZenohScoutSource + ?Sized> CodecZenohScoutSource for &T {
     }
 }
 
+/// A value of `CodecZenohScout` held in the types a caller already has: a source
+/// ([`CodecZenohScoutSource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecZenohScoutParts<'a> {
+    /// The `version` field.
+    pub version: u8,
+    /// The `cbyte` field.
+    pub cbyte: u8,
+    /// The `zid` field.
+    pub zid: Option<&'a [u8]>,
+}
+
+impl<'a> CodecZenohScoutSource for CodecZenohScoutParts<'a> {
+    fn version(&self) -> u8 {
+        self.version
+    }
+    fn cbyte(&self) -> u8 {
+        self.cbyte
+    }
+    fn zid(&self) -> Option<&[u8]> {
+        self.zid
+    }
+}
+
 impl<'a> CodecZenohScoutSource for CodecZenohScout<'a> {
     fn version(&self) -> u8 {
         self.version

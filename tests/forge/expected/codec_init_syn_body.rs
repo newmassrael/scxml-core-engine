@@ -171,6 +171,31 @@ impl<T: CodecInitSynBodySource + ?Sized> CodecInitSynBodySource for &T {
     }
 }
 
+/// A value of `CodecInitSynBody` held in the types a caller already has: a source
+/// ([`CodecInitSynBodySource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecInitSynBodyParts {
+    /// The `version` field.
+    pub version: u8,
+    /// The `sn_res` field.
+    pub sn_res: Option<u8>,
+    /// The `batch_size` field.
+    pub batch_size: Option<u16>,
+}
+
+impl CodecInitSynBodySource for CodecInitSynBodyParts {
+    fn version(&self) -> u8 {
+        self.version
+    }
+    fn sn_res(&self) -> Option<u8> {
+        self.sn_res
+    }
+    fn batch_size(&self) -> Option<u16> {
+        self.batch_size
+    }
+}
+
 impl CodecInitSynBodySource for CodecInitSynBody {
     fn version(&self) -> u8 {
         self.version

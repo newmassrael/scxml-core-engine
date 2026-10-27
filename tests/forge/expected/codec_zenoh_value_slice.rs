@@ -153,6 +153,26 @@ impl<T: CodecZenohValueSliceSource + ?Sized> CodecZenohValueSliceSource for &T {
     }
 }
 
+/// A value of `CodecZenohValueSlice` held in the types a caller already has: a source
+/// ([`CodecZenohValueSliceSource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecZenohValueSliceParts<'a> {
+    /// The `kind` field.
+    pub kind: u8,
+    /// The `data` field.
+    pub data: &'a [u8],
+}
+
+impl<'a> CodecZenohValueSliceSource for CodecZenohValueSliceParts<'a> {
+    fn kind(&self) -> u8 {
+        self.kind
+    }
+    fn data(&self) -> &[u8] {
+        self.data
+    }
+}
+
 impl<'a> CodecZenohValueSliceSource for CodecZenohValueSlice<'a> {
     fn kind(&self) -> u8 {
         self.kind

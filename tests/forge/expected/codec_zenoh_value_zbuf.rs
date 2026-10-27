@@ -197,6 +197,36 @@ impl<T: CodecZenohValueZbufSource + ?Sized> CodecZenohValueZbufSource for &T {
     }
 }
 
+/// A value of `CodecZenohValueZbuf` held in the types a caller already has: a source
+/// ([`CodecZenohValueZbufSource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecZenohValueZbufParts<'a> {
+    /// The `value_len` field.
+    pub value_len: Option<u64>,
+    /// The `value` field.
+    pub value: Option<&'a [u8]>,
+    /// The `encoding` field.
+    pub encoding: Option<u64>,
+    /// The `slices` field.
+    pub slices: Option<&'a [super::codec_zenoh_value_slice::CodecZenohValueSliceParts<'a>]>,
+}
+
+impl<'a> CodecZenohValueZbufSource for CodecZenohValueZbufParts<'a> {
+    fn value_len(&self) -> Option<u64> {
+        self.value_len
+    }
+    fn value(&self) -> Option<&[u8]> {
+        self.value
+    }
+    fn encoding(&self) -> Option<u64> {
+        self.encoding
+    }
+    fn slices(&self) -> Option<impl Iterator<Item = impl super::codec_zenoh_value_slice::CodecZenohValueSliceSource> + Clone> {
+        self.slices.map(<[_]>::iter)
+    }
+}
+
 impl<'a> CodecZenohValueZbufSource for CodecZenohValueZbuf<'a> {
     fn value_len(&self) -> Option<u64> {
         if self.value.is_none() { Some(self.value_len) } else { None }

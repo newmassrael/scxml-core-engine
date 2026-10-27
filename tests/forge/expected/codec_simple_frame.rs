@@ -132,6 +132,31 @@ impl<T: CodecSimpleFrameSource + ?Sized> CodecSimpleFrameSource for &T {
     }
 }
 
+/// A value of `CodecSimpleFrame` held in the types a caller already has: a source
+/// ([`CodecSimpleFrameSource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecSimpleFrameParts {
+    /// The `msgId` field.
+    pub msg_id: u8,
+    /// The `length` field.
+    pub length: u8,
+    /// The `payload` field.
+    pub payload: u16,
+}
+
+impl CodecSimpleFrameSource for CodecSimpleFrameParts {
+    fn msg_id(&self) -> u8 {
+        self.msg_id
+    }
+    fn length(&self) -> u8 {
+        self.length
+    }
+    fn payload(&self) -> u16 {
+        self.payload
+    }
+}
+
 impl CodecSimpleFrameSource for CodecSimpleFrame {
     fn msg_id(&self) -> u8 {
         self.msg_id

@@ -154,6 +154,26 @@ impl<T: CodecLengthRefSource + ?Sized> CodecLengthRefSource for &T {
     }
 }
 
+/// A value of `CodecLengthRef` held in the types a caller already has: a source
+/// ([`CodecLengthRefSource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecLengthRefParts<'a> {
+    /// The `msgId` field.
+    pub msg_id: u8,
+    /// The `payload` field.
+    pub payload: &'a [u8],
+}
+
+impl<'a> CodecLengthRefSource for CodecLengthRefParts<'a> {
+    fn msg_id(&self) -> u8 {
+        self.msg_id
+    }
+    fn payload(&self) -> &[u8] {
+        self.payload
+    }
+}
+
 impl<'a> CodecLengthRefSource for CodecLengthRef<'a> {
     fn msg_id(&self) -> u8 {
         self.msg_id

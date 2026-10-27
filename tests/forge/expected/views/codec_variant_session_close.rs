@@ -117,6 +117,21 @@ impl<T: CodecVariantSessionCloseSource + ?Sized> CodecVariantSessionCloseSource 
     }
 }
 
+/// A value of `CodecVariantSessionClose` held in the types a caller already has: a source
+/// ([`CodecVariantSessionCloseSource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecVariantSessionCloseParts {
+    /// The `reason` field.
+    pub reason: u8,
+}
+
+impl CodecVariantSessionCloseSource for CodecVariantSessionCloseParts {
+    fn reason(&self) -> u8 {
+        self.reason
+    }
+}
+
 impl CodecVariantSessionCloseSource for CodecVariantSessionClose {
     fn reason(&self) -> u8 {
         self.reason

@@ -252,3 +252,98 @@ mod foreign {
         assert!(bytes.is_empty(), "the sink was written to: {bytes:02x?}");
     }
 }
+
+// The ready-made source (ADR 0058 §4): `{Codec}Parts` holds what a value says in
+// the types a caller already has, lists as slices and bodies as references, and
+// is encoded by the same function as every other source.
+mod parts {
+    use super::codecs::codec_embed_basic::{CodecEmbedBasic, CodecEmbedBasicParts};
+    use super::codecs::codec_repeat_basic::{CodecRepeatBasic, CodecRepeatBasicParts};
+    use super::codecs::codec_repeat_elem::CodecRepeatElemParts;
+    use super::codecs::codec_variant_dispatch::{
+        CodecVariantDispatch, CodecVariantDispatchParts, CodecVariantDispatchPartsBody,
+    };
+    use super::codecs::codec_variant_session_close::CodecVariantSessionCloseParts;
+    use super::codecs::codec_variant_session_open::CodecVariantSessionOpenParts;
+    use super::codecs::codec_zenoh_locator::CodecZenohLocatorParts;
+    use sce_forge_runtime::codec::{CodecError, SceCursor, VecSink};
+
+    #[test]
+    fn a_list_held_as_a_slice_is_written_with_its_count_derived() {
+        let entries = [
+            CodecRepeatElemParts { seq: 1 },
+            CodecRepeatElemParts { seq: 2 },
+            CodecRepeatElemParts { seq: 3 },
+        ];
+        let mut bytes = Vec::new();
+        CodecRepeatBasic::encode_source(
+            &CodecRepeatBasicParts { frags: &entries },
+            &mut VecSink::new(&mut bytes),
+        )
+        .unwrap();
+        assert_eq!(bytes, [3, 0, 1, 0, 2, 0, 3]);
+    }
+
+    #[test]
+    fn a_slice_past_the_bound_is_refused_before_the_first_byte() {
+        let entries = [CodecRepeatElemParts { seq: 0 }; 33];
+        let mut bytes = Vec::new();
+        let refused = CodecRepeatBasic::encode_source(
+            &CodecRepeatBasicParts { frags: &entries },
+            &mut VecSink::new(&mut bytes),
+        );
+        assert_eq!(refused, Err(CodecError::TooManyElements));
+        assert!(bytes.is_empty(), "the sink was written to: {bytes:02x?}");
+    }
+
+    #[test]
+    fn a_variant_arm_is_written_with_its_tag_derived() {
+        let open = CodecVariantSessionOpenParts { version: 7 };
+        let close = CodecVariantSessionCloseParts { reason: 4 };
+        let write = |body| {
+            let mut bytes = Vec::new();
+            CodecVariantDispatch::encode_source(
+                &CodecVariantDispatchParts { body },
+                &mut VecSink::new(&mut bytes),
+            )
+            .unwrap();
+            bytes
+        };
+        assert_eq!(
+            write(CodecVariantDispatchPartsBody::CodecVariantSessionOpen(
+                &open
+            )),
+            [1, 0, 7]
+        );
+        assert_eq!(
+            write(CodecVariantDispatchPartsBody::CodecVariantSessionClose(
+                &close
+            )),
+            [2, 4]
+        );
+        // The default arm keeps the tag the grammar could not name.
+        assert_eq!(
+            write(CodecVariantDispatchPartsBody::Default {
+                tag: 9,
+                body: &close
+            }),
+            [9, 4]
+        );
+    }
+
+    #[test]
+    fn an_embedded_body_is_written_and_read_back() {
+        let locator = CodecZenohLocatorParts { locator: "tcp/a:1" };
+        let source = CodecEmbedBasicParts {
+            tag: 5,
+            locator: &locator,
+        };
+        let mut bytes = Vec::new();
+        CodecEmbedBasic::encode_source(&source, &mut VecSink::new(&mut bytes)).unwrap();
+        let decoded = CodecEmbedBasic::decode(&mut SceCursor::new(&bytes)).unwrap();
+        assert_eq!(decoded.tag, 5);
+        let mut again = Vec::new();
+        decoded.encode(&mut VecSink::new(&mut again)).unwrap();
+        assert_eq!(again, bytes);
+    }
+}

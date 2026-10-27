@@ -189,6 +189,32 @@ impl<T: CodecVariantPeekBasicSource + ?Sized> CodecVariantPeekBasicSource for &T
     }
 }
 
+/// The arm of `CodecVariantPeekBasic`'s variant that CodecVariantPeekBasicParts holds.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub enum CodecVariantPeekBasicPartsBody<'a> {
+    CodecPeekArmA(&'a super::codec_peek_arm_a::CodecPeekArmAParts),
+    CodecPeekArmB(&'a super::codec_peek_arm_b::CodecPeekArmBParts),
+}
+
+/// A value of `CodecVariantPeekBasic` held in the types a caller already has: a source
+/// ([`CodecVariantPeekBasicSource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecVariantPeekBasicParts<'a> {
+    /// The arm of the variant this value holds.
+    pub body: CodecVariantPeekBasicPartsBody<'a>,
+}
+
+impl<'a> CodecVariantPeekBasicSource for CodecVariantPeekBasicParts<'a> {
+    fn body(&self) -> CodecVariantPeekBasicVariantSource<'_, impl super::codec_peek_arm_a::CodecPeekArmASource, impl super::codec_peek_arm_b::CodecPeekArmBSource> {
+        match &self.body {
+            CodecVariantPeekBasicPartsBody::CodecPeekArmA(_b) => CodecVariantPeekBasicVariantSource::CodecPeekArmA(*_b),
+            CodecVariantPeekBasicPartsBody::CodecPeekArmB(_b) => CodecVariantPeekBasicVariantSource::CodecPeekArmB(*_b),
+        }
+    }
+}
+
 impl CodecVariantPeekBasicSource for CodecVariantPeekBasic {
     fn body(&self) -> CodecVariantPeekBasicVariantSource<'_, impl super::codec_peek_arm_a::CodecPeekArmASource, impl super::codec_peek_arm_b::CodecPeekArmBSource> {
         match &self.body {

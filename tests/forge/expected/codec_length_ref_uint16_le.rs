@@ -146,6 +146,21 @@ impl<T: CodecLengthRefUint16LeSource + ?Sized> CodecLengthRefUint16LeSource for 
     }
 }
 
+/// A value of `CodecLengthRefUint16Le` held in the types a caller already has: a source
+/// ([`CodecLengthRefUint16LeSource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecLengthRefUint16LeParts<'a> {
+    /// The `payload` field.
+    pub payload: &'a [u8],
+}
+
+impl<'a> CodecLengthRefUint16LeSource for CodecLengthRefUint16LeParts<'a> {
+    fn payload(&self) -> &[u8] {
+        self.payload
+    }
+}
+
 impl<'a> CodecLengthRefUint16LeSource for CodecLengthRefUint16Le<'a> {
     fn payload(&self) -> &[u8] {
         self.payload

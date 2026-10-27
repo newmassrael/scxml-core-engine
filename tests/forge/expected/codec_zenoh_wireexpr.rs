@@ -161,6 +161,26 @@ impl<T: CodecZenohWireexprSource + ?Sized> CodecZenohWireexprSource for &T {
     }
 }
 
+/// A value of `CodecZenohWireexpr` held in the types a caller already has: a source
+/// ([`CodecZenohWireexprSource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecZenohWireexprParts<'a> {
+    /// The `id` field.
+    pub id: u64,
+    /// The `suffix` field.
+    pub suffix: Option<&'a str>,
+}
+
+impl<'a> CodecZenohWireexprSource for CodecZenohWireexprParts<'a> {
+    fn id(&self) -> u64 {
+        self.id
+    }
+    fn suffix(&self) -> Option<&str> {
+        self.suffix
+    }
+}
+
 impl<'a> CodecZenohWireexprSource for CodecZenohWireexpr<'a> {
     fn id(&self) -> u64 {
         self.id

@@ -109,6 +109,16 @@ pub trait CodecZenohDeclFinalSource {
 impl<T: CodecZenohDeclFinalSource + ?Sized> CodecZenohDeclFinalSource for &T {
 }
 
+/// A value of `CodecZenohDeclFinal` held in the types a caller already has: a source
+/// ([`CodecZenohDeclFinalSource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecZenohDeclFinalParts {
+}
+
+impl CodecZenohDeclFinalSource for CodecZenohDeclFinalParts {
+}
+
 impl CodecZenohDeclFinalSource for CodecZenohDeclFinal {
 }
 

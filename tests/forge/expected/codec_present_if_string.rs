@@ -181,6 +181,26 @@ impl<T: CodecPresentIfStringSource + ?Sized> CodecPresentIfStringSource for &T {
     }
 }
 
+/// A value of `CodecPresentIfString` held in the types a caller already has: a source
+/// ([`CodecPresentIfStringSource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecPresentIfStringParts<'a> {
+    /// The `carrier` field.
+    pub carrier: u8,
+    /// The `text` field.
+    pub text: Option<&'a str>,
+}
+
+impl<'a> CodecPresentIfStringSource for CodecPresentIfStringParts<'a> {
+    fn carrier(&self) -> u8 {
+        self.carrier
+    }
+    fn text(&self) -> Option<&str> {
+        self.text
+    }
+}
+
 impl<'a> CodecPresentIfStringSource for CodecPresentIfString<'a> {
     fn carrier(&self) -> u8 {
         self.carrier

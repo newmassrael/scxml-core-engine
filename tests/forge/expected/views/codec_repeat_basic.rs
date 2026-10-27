@@ -156,6 +156,21 @@ impl<T: CodecRepeatBasicSource + ?Sized> CodecRepeatBasicSource for &T {
     }
 }
 
+/// A value of `CodecRepeatBasic` held in the types a caller already has: a source
+/// ([`CodecRepeatBasicSource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecRepeatBasicParts<'a> {
+    /// The `frags` field.
+    pub frags: &'a [super::codec_repeat_elem::CodecRepeatElemParts],
+}
+
+impl<'a> CodecRepeatBasicSource for CodecRepeatBasicParts<'a> {
+    fn frags(&self) -> impl Iterator<Item = impl super::codec_repeat_elem::CodecRepeatElemSource> + Clone {
+        self.frags.iter()
+    }
+}
+
 impl CodecRepeatBasicSource for CodecRepeatBasic {
     fn frags(&self) -> impl Iterator<Item = impl super::codec_repeat_elem::CodecRepeatElemSource> + Clone {
         self.frags.iter()

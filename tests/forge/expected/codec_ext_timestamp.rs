@@ -153,6 +153,26 @@ impl<T: CodecExtTimestampSource + ?Sized> CodecExtTimestampSource for &T {
     }
 }
 
+/// A value of `CodecExtTimestamp` held in the types a caller already has: a source
+/// ([`CodecExtTimestampSource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecExtTimestampParts<'a> {
+    /// The `time` field.
+    pub time: u64,
+    /// The `zid` field.
+    pub zid: &'a [u8],
+}
+
+impl<'a> CodecExtTimestampSource for CodecExtTimestampParts<'a> {
+    fn time(&self) -> u64 {
+        self.time
+    }
+    fn zid(&self) -> &[u8] {
+        self.zid
+    }
+}
+
 impl<'a> CodecExtTimestampSource for CodecExtTimestamp<'a> {
     fn time(&self) -> u64 {
         self.time

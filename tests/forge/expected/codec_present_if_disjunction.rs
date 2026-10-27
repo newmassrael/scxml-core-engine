@@ -208,6 +208,26 @@ impl<T: CodecPresentIfDisjunctionSource + ?Sized> CodecPresentIfDisjunctionSourc
     }
 }
 
+/// A value of `CodecPresentIfDisjunction` held in the types a caller already has: a source
+/// ([`CodecPresentIfDisjunctionSource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecPresentIfDisjunctionParts {
+    /// The `flags` field.
+    pub flags: u8,
+    /// The `seq` field.
+    pub seq: Option<u16>,
+}
+
+impl CodecPresentIfDisjunctionSource for CodecPresentIfDisjunctionParts {
+    fn flags(&self) -> u8 {
+        self.flags
+    }
+    fn seq(&self) -> Option<u16> {
+        self.seq
+    }
+}
+
 impl CodecPresentIfDisjunctionSource for CodecPresentIfDisjunction {
     fn flags(&self) -> u8 {
         self.flags

@@ -146,6 +146,21 @@ impl<T: CodecOriginLeafSource + ?Sized> CodecOriginLeafSource for &T {
     }
 }
 
+/// A value of `CodecOriginLeaf` held in the types a caller already has: a source
+/// ([`CodecOriginLeafSource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecOriginLeafParts<'a> {
+    /// The `data` field.
+    pub data: &'a [u8],
+}
+
+impl<'a> CodecOriginLeafSource for CodecOriginLeafParts<'a> {
+    fn data(&self) -> &[u8] {
+        self.data
+    }
+}
+
 impl<'a> CodecOriginLeafSource for CodecOriginLeaf<'a> {
     fn data(&self) -> &[u8] {
         self.data

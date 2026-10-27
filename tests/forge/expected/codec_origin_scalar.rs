@@ -116,6 +116,21 @@ impl<T: CodecOriginScalarSource + ?Sized> CodecOriginScalarSource for &T {
     }
 }
 
+/// A value of `CodecOriginScalar` held in the types a caller already has: a source
+/// ([`CodecOriginScalarSource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecOriginScalarParts {
+    /// The `value` field.
+    pub value: u8,
+}
+
+impl CodecOriginScalarSource for CodecOriginScalarParts {
+    fn value(&self) -> u8 {
+        self.value
+    }
+}
+
 impl CodecOriginScalarSource for CodecOriginScalar {
     fn value(&self) -> u8 {
         self.value

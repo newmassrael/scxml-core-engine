@@ -178,6 +178,31 @@ impl<T: CodecExtEncodingInfoSource + ?Sized> CodecExtEncodingInfoSource for &T {
     }
 }
 
+/// A value of `CodecExtEncodingInfo` held in the types a caller already has: a source
+/// ([`CodecExtEncodingInfoSource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecExtEncodingInfoParts<'a> {
+    /// The `combined_id` field.
+    pub combined_id: u32,
+    /// The `schema_size` field.
+    pub schema_size: Option<u8>,
+    /// The `schema` field.
+    pub schema: Option<&'a [u8]>,
+}
+
+impl<'a> CodecExtEncodingInfoSource for CodecExtEncodingInfoParts<'a> {
+    fn combined_id(&self) -> u32 {
+        self.combined_id
+    }
+    fn schema_size(&self) -> Option<u8> {
+        self.schema_size
+    }
+    fn schema(&self) -> Option<&[u8]> {
+        self.schema
+    }
+}
+
 impl<'a> CodecExtEncodingInfoSource for CodecExtEncodingInfo<'a> {
     fn combined_id(&self) -> u32 {
         self.combined_id

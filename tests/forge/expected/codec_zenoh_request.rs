@@ -366,6 +366,57 @@ impl<T: CodecZenohRequestSource + ?Sized> CodecZenohRequestSource for &T {
     }
 }
 
+/// The arm of `CodecZenohRequest`'s variant that CodecZenohRequestParts holds.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub enum CodecZenohRequestPartsBody<'a> {
+    CodecZenohMsgPut(&'a super::codec_zenoh_msg_put::CodecZenohMsgPutParts<'a>),
+    CodecZenohMsgDel(&'a super::codec_zenoh_msg_del::CodecZenohMsgDelParts<'a>),
+    CodecZenohQuery(&'a super::codec_zenoh_query::CodecZenohQueryParts<'a>),
+    /// The tag the grammar could not name, and the body it holds.
+    Default { tag: u8, body: &'a super::codec_zenoh_query::CodecZenohQueryParts<'a> },
+}
+
+/// A value of `CodecZenohRequest` held in the types a caller already has: a source
+/// ([`CodecZenohRequestSource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecZenohRequestParts<'a> {
+    /// The `header` field.
+    pub header: u8,
+    /// The `rid` field.
+    pub rid: u64,
+    /// The `keyexpr` field.
+    pub keyexpr: &'a super::codec_zenoh_wireexpr::CodecZenohWireexprParts<'a>,
+    /// The `extensions` field.
+    pub extensions: Option<&'a [super::codec_zenoh_ext_entry::CodecZenohExtEntryParts<'a>]>,
+    /// The arm of the variant this value holds.
+    pub body: CodecZenohRequestPartsBody<'a>,
+}
+
+impl<'a> CodecZenohRequestSource for CodecZenohRequestParts<'a> {
+    fn header(&self) -> u8 {
+        self.header
+    }
+    fn rid(&self) -> u64 {
+        self.rid
+    }
+    fn keyexpr(&self) -> &impl super::codec_zenoh_wireexpr::CodecZenohWireexprSource {
+        self.keyexpr
+    }
+    fn extensions(&self) -> Option<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone> {
+        self.extensions.map(<[_]>::iter)
+    }
+    fn body(&self) -> CodecZenohRequestVariantSource<'_, impl super::codec_zenoh_msg_put::CodecZenohMsgPutSource, impl super::codec_zenoh_msg_del::CodecZenohMsgDelSource, impl super::codec_zenoh_query::CodecZenohQuerySource, impl super::codec_zenoh_query::CodecZenohQuerySource> {
+        match &self.body {
+            CodecZenohRequestPartsBody::CodecZenohMsgPut(_b) => CodecZenohRequestVariantSource::CodecZenohMsgPut(*_b),
+            CodecZenohRequestPartsBody::CodecZenohMsgDel(_b) => CodecZenohRequestVariantSource::CodecZenohMsgDel(*_b),
+            CodecZenohRequestPartsBody::CodecZenohQuery(_b) => CodecZenohRequestVariantSource::CodecZenohQuery(*_b),
+            CodecZenohRequestPartsBody::Default { tag, body } => CodecZenohRequestVariantSource::Default { tag: *tag, body: *body },
+        }
+    }
+}
+
 impl<'a> CodecZenohRequestSource for CodecZenohRequest<'a> {
     fn header(&self) -> u8 {
         self.header

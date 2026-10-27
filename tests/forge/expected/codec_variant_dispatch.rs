@@ -196,6 +196,35 @@ impl<T: CodecVariantDispatchSource + ?Sized> CodecVariantDispatchSource for &T {
     }
 }
 
+/// The arm of `CodecVariantDispatch`'s variant that CodecVariantDispatchParts holds.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub enum CodecVariantDispatchPartsBody<'a> {
+    CodecVariantSessionOpen(&'a super::codec_variant_session_open::CodecVariantSessionOpenParts),
+    CodecVariantSessionClose(&'a super::codec_variant_session_close::CodecVariantSessionCloseParts),
+    /// The tag the grammar could not name, and the body it holds.
+    Default { tag: u8, body: &'a super::codec_variant_session_close::CodecVariantSessionCloseParts },
+}
+
+/// A value of `CodecVariantDispatch` held in the types a caller already has: a source
+/// ([`CodecVariantDispatchSource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecVariantDispatchParts<'a> {
+    /// The arm of the variant this value holds.
+    pub body: CodecVariantDispatchPartsBody<'a>,
+}
+
+impl<'a> CodecVariantDispatchSource for CodecVariantDispatchParts<'a> {
+    fn body(&self) -> CodecVariantDispatchVariantSource<'_, impl super::codec_variant_session_open::CodecVariantSessionOpenSource, impl super::codec_variant_session_close::CodecVariantSessionCloseSource, impl super::codec_variant_session_close::CodecVariantSessionCloseSource> {
+        match &self.body {
+            CodecVariantDispatchPartsBody::CodecVariantSessionOpen(_b) => CodecVariantDispatchVariantSource::CodecVariantSessionOpen(*_b),
+            CodecVariantDispatchPartsBody::CodecVariantSessionClose(_b) => CodecVariantDispatchVariantSource::CodecVariantSessionClose(*_b),
+            CodecVariantDispatchPartsBody::Default { tag, body } => CodecVariantDispatchVariantSource::Default { tag: *tag, body: *body },
+        }
+    }
+}
+
 impl CodecVariantDispatchSource for CodecVariantDispatch {
     fn body(&self) -> CodecVariantDispatchVariantSource<'_, impl super::codec_variant_session_open::CodecVariantSessionOpenSource, impl super::codec_variant_session_close::CodecVariantSessionCloseSource, impl super::codec_variant_session_close::CodecVariantSessionCloseSource> {
         match &self.body {

@@ -132,6 +132,31 @@ impl<T: CodecLittleEndianSource + ?Sized> CodecLittleEndianSource for &T {
     }
 }
 
+/// A value of `CodecLittleEndian` held in the types a caller already has: a source
+/// ([`CodecLittleEndianSource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecLittleEndianParts {
+    /// The `sensorId` field.
+    pub sensor_id: u8,
+    /// The `value` field.
+    pub value: u16,
+    /// The `status` field.
+    pub status: u8,
+}
+
+impl CodecLittleEndianSource for CodecLittleEndianParts {
+    fn sensor_id(&self) -> u8 {
+        self.sensor_id
+    }
+    fn value(&self) -> u16 {
+        self.value
+    }
+    fn status(&self) -> u8 {
+        self.status
+    }
+}
+
 impl CodecLittleEndianSource for CodecLittleEndian {
     fn sensor_id(&self) -> u8 {
         self.sensor_id

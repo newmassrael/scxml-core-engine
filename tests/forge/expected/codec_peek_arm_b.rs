@@ -177,6 +177,26 @@ impl<T: CodecPeekArmBSource + ?Sized> CodecPeekArmBSource for &T {
     }
 }
 
+/// A value of `CodecPeekArmB` held in the types a caller already has: a source
+/// ([`CodecPeekArmBSource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecPeekArmBParts {
+    /// The `header` field.
+    pub header: u8,
+    /// The `payload` field.
+    pub payload: u16,
+}
+
+impl CodecPeekArmBSource for CodecPeekArmBParts {
+    fn header(&self) -> u8 {
+        self.header
+    }
+    fn payload(&self) -> u16 {
+        self.payload
+    }
+}
+
 impl CodecPeekArmBSource for CodecPeekArmB {
     fn header(&self) -> u8 {
         self.header

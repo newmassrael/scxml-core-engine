@@ -248,6 +248,36 @@ impl<T: CodecChainHasEnvelopeSource + ?Sized> CodecChainHasEnvelopeSource for &T
     }
 }
 
+/// A value of `CodecChainHasEnvelope` held in the types a caller already has: a source
+/// ([`CodecChainHasEnvelopeSource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecChainHasEnvelopeParts<'a> {
+    /// The `header` field.
+    pub header: u8,
+    /// The `extensions` field.
+    pub extensions: Option<&'a [super::codec_zenoh_ext_entry::CodecZenohExtEntryParts<'a>]>,
+    /// The `payload` field.
+    pub payload: Option<&'a [u8]>,
+    /// The `slices` field.
+    pub slices: Option<&'a [super::codec_chain_has_slice::CodecChainHasSliceParts<'a>]>,
+}
+
+impl<'a> CodecChainHasEnvelopeSource for CodecChainHasEnvelopeParts<'a> {
+    fn header(&self) -> u8 {
+        self.header
+    }
+    fn extensions(&self) -> Option<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone> {
+        self.extensions.map(<[_]>::iter)
+    }
+    fn payload(&self) -> Option<&[u8]> {
+        self.payload
+    }
+    fn slices(&self) -> Option<impl Iterator<Item = impl super::codec_chain_has_slice::CodecChainHasSliceSource> + Clone> {
+        self.slices.map(<[_]>::iter)
+    }
+}
+
 impl<'a> CodecChainHasEnvelopeSource for CodecChainHasEnvelope<'a> {
     fn header(&self) -> u8 {
         self.header

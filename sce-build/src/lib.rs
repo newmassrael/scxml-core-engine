@@ -5525,6 +5525,7 @@ fn validate_and_enrich_imports(
                     &inner_base,
                     &mut refuse_visited,
                 );
+                ctx.codec_parts_lifetime = forge::generator::source_parts_have_lifetime(cm);
                 // Owned→borrowed projection round: capture this import's
                 // *contribution* to a parent's `as_borrowed` fallibility —
                 // true only when it is borrowed (else cloned wholesale,

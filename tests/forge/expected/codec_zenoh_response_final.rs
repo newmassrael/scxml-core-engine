@@ -223,6 +223,31 @@ impl<T: CodecZenohResponseFinalSource + ?Sized> CodecZenohResponseFinalSource fo
     }
 }
 
+/// A value of `CodecZenohResponseFinal` held in the types a caller already has: a source
+/// ([`CodecZenohResponseFinalSource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecZenohResponseFinalParts<'a> {
+    /// The `header` field.
+    pub header: u8,
+    /// The `request_id` field.
+    pub request_id: u64,
+    /// The `extensions` field.
+    pub extensions: Option<&'a [super::codec_zenoh_ext_entry::CodecZenohExtEntryParts<'a>]>,
+}
+
+impl<'a> CodecZenohResponseFinalSource for CodecZenohResponseFinalParts<'a> {
+    fn header(&self) -> u8 {
+        self.header
+    }
+    fn request_id(&self) -> u64 {
+        self.request_id
+    }
+    fn extensions(&self) -> Option<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone> {
+        self.extensions.map(<[_]>::iter)
+    }
+}
+
 impl<'a> CodecZenohResponseFinalSource for CodecZenohResponseFinal<'a> {
     fn header(&self) -> u8 {
         self.header

@@ -116,6 +116,21 @@ impl<T: CodecRepeatElemSource + ?Sized> CodecRepeatElemSource for &T {
     }
 }
 
+/// A value of `CodecRepeatElem` held in the types a caller already has: a source
+/// ([`CodecRepeatElemSource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecRepeatElemParts {
+    /// The `seq` field.
+    pub seq: u16,
+}
+
+impl CodecRepeatElemSource for CodecRepeatElemParts {
+    fn seq(&self) -> u16 {
+        self.seq
+    }
+}
+
 impl CodecRepeatElemSource for CodecRepeatElem {
     fn seq(&self) -> u16 {
         self.seq

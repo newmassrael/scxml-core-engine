@@ -146,6 +146,31 @@ impl<T: CodecTailSource + ?Sized> CodecTailSource for &T {
     }
 }
 
+/// A value of `CodecTail` held in the types a caller already has: a source
+/// ([`CodecTailSource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecTailParts<'a> {
+    /// The `msgId` field.
+    pub msg_id: u8,
+    /// The `status` field.
+    pub status: u8,
+    /// The `payload` field.
+    pub payload: &'a [u8],
+}
+
+impl<'a> CodecTailSource for CodecTailParts<'a> {
+    fn msg_id(&self) -> u8 {
+        self.msg_id
+    }
+    fn status(&self) -> u8 {
+        self.status
+    }
+    fn payload(&self) -> &[u8] {
+        self.payload
+    }
+}
+
 impl<'a> CodecTailSource for CodecTail<'a> {
     fn msg_id(&self) -> u8 {
         self.msg_id

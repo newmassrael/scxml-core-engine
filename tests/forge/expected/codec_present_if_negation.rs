@@ -169,6 +169,26 @@ impl<T: CodecPresentIfNegationSource + ?Sized> CodecPresentIfNegationSource for 
     }
 }
 
+/// A value of `CodecPresentIfNegation` held in the types a caller already has: a source
+/// ([`CodecPresentIfNegationSource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecPresentIfNegationParts {
+    /// The `flags` field.
+    pub flags: u8,
+    /// The `seq` field.
+    pub seq: Option<u16>,
+}
+
+impl CodecPresentIfNegationSource for CodecPresentIfNegationParts {
+    fn flags(&self) -> u8 {
+        self.flags
+    }
+    fn seq(&self) -> Option<u16> {
+        self.seq
+    }
+}
+
 impl CodecPresentIfNegationSource for CodecPresentIfNegation {
     fn flags(&self) -> u8 {
         self.flags

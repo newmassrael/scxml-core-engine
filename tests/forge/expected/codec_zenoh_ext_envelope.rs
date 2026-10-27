@@ -171,6 +171,26 @@ impl<T: CodecZenohExtEnvelopeSource + ?Sized> CodecZenohExtEnvelopeSource for &T
     }
 }
 
+/// A value of `CodecZenohExtEnvelope` held in the types a caller already has: a source
+/// ([`CodecZenohExtEnvelopeSource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecZenohExtEnvelopeParts<'a> {
+    /// The `header_flags` field.
+    pub header_flags: u8,
+    /// The `extensions` field.
+    pub extensions: &'a [super::codec_zenoh_ext_entry::CodecZenohExtEntryParts<'a>],
+}
+
+impl<'a> CodecZenohExtEnvelopeSource for CodecZenohExtEnvelopeParts<'a> {
+    fn header_flags(&self) -> u8 {
+        self.header_flags
+    }
+    fn extensions(&self) -> impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone {
+        self.extensions.iter()
+    }
+}
+
 impl<'a> CodecZenohExtEnvelopeSource for CodecZenohExtEnvelope<'a> {
     fn header_flags(&self) -> u8 {
         self.header_flags

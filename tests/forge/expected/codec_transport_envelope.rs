@@ -331,6 +331,50 @@ impl<T: CodecTransportEnvelopeSource + ?Sized> CodecTransportEnvelopeSource for 
     }
 }
 
+/// The arm of `CodecTransportEnvelope`'s variant that CodecTransportEnvelopeParts holds.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub enum CodecTransportEnvelopePartsBody<'a> {
+    CodecZenohInitBody(&'a super::codec_zenoh_init_body::CodecZenohInitBodyParts<'a>),
+    CodecZenohOpenBody(&'a super::codec_zenoh_open_body::CodecZenohOpenBodyParts<'a>),
+    CodecZenohClose(&'a super::codec_zenoh_close::CodecZenohCloseParts),
+    CodecZenohKeepAlive(&'a super::codec_zenoh_keep_alive::CodecZenohKeepAliveParts),
+    CodecZenohFrame(&'a super::codec_zenoh_frame::CodecZenohFrameParts<'a>),
+    CodecZenohFragment(&'a super::codec_zenoh_fragment::CodecZenohFragmentParts<'a>),
+    CodecZenohJoin(&'a super::codec_zenoh_join::CodecZenohJoinParts<'a>),
+    /// The tag the grammar could not name, and the body it holds.
+    Default { tag: u8, body: &'a super::codec_zenoh_close::CodecZenohCloseParts },
+}
+
+/// A value of `CodecTransportEnvelope` held in the types a caller already has: a source
+/// ([`CodecTransportEnvelopeSource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecTransportEnvelopeParts<'a> {
+    /// The `header` field.
+    pub header: u8,
+    /// The arm of the variant this value holds.
+    pub body: CodecTransportEnvelopePartsBody<'a>,
+}
+
+impl<'a> CodecTransportEnvelopeSource for CodecTransportEnvelopeParts<'a> {
+    fn header(&self) -> u8 {
+        self.header
+    }
+    fn body(&self) -> CodecTransportEnvelopeVariantSource<'_, impl super::codec_zenoh_init_body::CodecZenohInitBodySource, impl super::codec_zenoh_open_body::CodecZenohOpenBodySource, impl super::codec_zenoh_close::CodecZenohCloseSource, impl super::codec_zenoh_keep_alive::CodecZenohKeepAliveSource, impl super::codec_zenoh_frame::CodecZenohFrameSource, impl super::codec_zenoh_fragment::CodecZenohFragmentSource, impl super::codec_zenoh_join::CodecZenohJoinSource, impl super::codec_zenoh_close::CodecZenohCloseSource> {
+        match &self.body {
+            CodecTransportEnvelopePartsBody::CodecZenohInitBody(_b) => CodecTransportEnvelopeVariantSource::CodecZenohInitBody(*_b),
+            CodecTransportEnvelopePartsBody::CodecZenohOpenBody(_b) => CodecTransportEnvelopeVariantSource::CodecZenohOpenBody(*_b),
+            CodecTransportEnvelopePartsBody::CodecZenohClose(_b) => CodecTransportEnvelopeVariantSource::CodecZenohClose(*_b),
+            CodecTransportEnvelopePartsBody::CodecZenohKeepAlive(_b) => CodecTransportEnvelopeVariantSource::CodecZenohKeepAlive(*_b),
+            CodecTransportEnvelopePartsBody::CodecZenohFrame(_b) => CodecTransportEnvelopeVariantSource::CodecZenohFrame(*_b),
+            CodecTransportEnvelopePartsBody::CodecZenohFragment(_b) => CodecTransportEnvelopeVariantSource::CodecZenohFragment(*_b),
+            CodecTransportEnvelopePartsBody::CodecZenohJoin(_b) => CodecTransportEnvelopeVariantSource::CodecZenohJoin(*_b),
+            CodecTransportEnvelopePartsBody::Default { tag, body } => CodecTransportEnvelopeVariantSource::Default { tag: *tag, body: *body },
+        }
+    }
+}
+
 impl<'a> CodecTransportEnvelopeSource for CodecTransportEnvelope<'a> {
     fn header(&self) -> u8 {
         self.header

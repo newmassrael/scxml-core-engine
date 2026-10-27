@@ -349,6 +349,54 @@ impl<T: CodecZenohDeclarationSource + ?Sized> CodecZenohDeclarationSource for &T
     }
 }
 
+/// The arm of `CodecZenohDeclaration`'s variant that CodecZenohDeclarationParts holds.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub enum CodecZenohDeclarationPartsBody<'a> {
+    CodecZenohDeclKexpr(&'a super::codec_zenoh_decl_kexpr::CodecZenohDeclKexprParts<'a>),
+    CodecZenohUndeclKexpr(&'a super::codec_zenoh_undecl_kexpr::CodecZenohUndeclKexprParts),
+    CodecZenohDeclSubscriber(&'a super::codec_zenoh_decl_subscriber::CodecZenohDeclSubscriberParts<'a>),
+    CodecZenohUndeclSubscriber(&'a super::codec_zenoh_undecl_subscriber::CodecZenohUndeclSubscriberParts<'a>),
+    CodecZenohDeclQueryable(&'a super::codec_zenoh_decl_queryable::CodecZenohDeclQueryableParts<'a>),
+    CodecZenohUndeclQueryable(&'a super::codec_zenoh_undecl_queryable::CodecZenohUndeclQueryableParts<'a>),
+    CodecZenohDeclToken(&'a super::codec_zenoh_decl_token::CodecZenohDeclTokenParts<'a>),
+    CodecZenohUndeclToken(&'a super::codec_zenoh_undecl_token::CodecZenohUndeclTokenParts<'a>),
+    CodecZenohDeclFinal(&'a super::codec_zenoh_decl_final::CodecZenohDeclFinalParts),
+    /// The tag the grammar could not name, and the body it holds.
+    Default { tag: u8, body: &'a super::codec_zenoh_decl_final::CodecZenohDeclFinalParts },
+}
+
+/// A value of `CodecZenohDeclaration` held in the types a caller already has: a source
+/// ([`CodecZenohDeclarationSource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecZenohDeclarationParts<'a> {
+    /// The `header` field.
+    pub header: u8,
+    /// The arm of the variant this value holds.
+    pub body: CodecZenohDeclarationPartsBody<'a>,
+}
+
+impl<'a> CodecZenohDeclarationSource for CodecZenohDeclarationParts<'a> {
+    fn header(&self) -> u8 {
+        self.header
+    }
+    fn body(&self) -> CodecZenohDeclarationVariantSource<'_, impl super::codec_zenoh_decl_kexpr::CodecZenohDeclKexprSource, impl super::codec_zenoh_undecl_kexpr::CodecZenohUndeclKexprSource, impl super::codec_zenoh_decl_subscriber::CodecZenohDeclSubscriberSource, impl super::codec_zenoh_undecl_subscriber::CodecZenohUndeclSubscriberSource, impl super::codec_zenoh_decl_queryable::CodecZenohDeclQueryableSource, impl super::codec_zenoh_undecl_queryable::CodecZenohUndeclQueryableSource, impl super::codec_zenoh_decl_token::CodecZenohDeclTokenSource, impl super::codec_zenoh_undecl_token::CodecZenohUndeclTokenSource, impl super::codec_zenoh_decl_final::CodecZenohDeclFinalSource, impl super::codec_zenoh_decl_final::CodecZenohDeclFinalSource> {
+        match &self.body {
+            CodecZenohDeclarationPartsBody::CodecZenohDeclKexpr(_b) => CodecZenohDeclarationVariantSource::CodecZenohDeclKexpr(*_b),
+            CodecZenohDeclarationPartsBody::CodecZenohUndeclKexpr(_b) => CodecZenohDeclarationVariantSource::CodecZenohUndeclKexpr(*_b),
+            CodecZenohDeclarationPartsBody::CodecZenohDeclSubscriber(_b) => CodecZenohDeclarationVariantSource::CodecZenohDeclSubscriber(*_b),
+            CodecZenohDeclarationPartsBody::CodecZenohUndeclSubscriber(_b) => CodecZenohDeclarationVariantSource::CodecZenohUndeclSubscriber(*_b),
+            CodecZenohDeclarationPartsBody::CodecZenohDeclQueryable(_b) => CodecZenohDeclarationVariantSource::CodecZenohDeclQueryable(*_b),
+            CodecZenohDeclarationPartsBody::CodecZenohUndeclQueryable(_b) => CodecZenohDeclarationVariantSource::CodecZenohUndeclQueryable(*_b),
+            CodecZenohDeclarationPartsBody::CodecZenohDeclToken(_b) => CodecZenohDeclarationVariantSource::CodecZenohDeclToken(*_b),
+            CodecZenohDeclarationPartsBody::CodecZenohUndeclToken(_b) => CodecZenohDeclarationVariantSource::CodecZenohUndeclToken(*_b),
+            CodecZenohDeclarationPartsBody::CodecZenohDeclFinal(_b) => CodecZenohDeclarationVariantSource::CodecZenohDeclFinal(*_b),
+            CodecZenohDeclarationPartsBody::Default { tag, body } => CodecZenohDeclarationVariantSource::Default { tag: *tag, body: *body },
+        }
+    }
+}
+
 impl<'a> CodecZenohDeclarationSource for CodecZenohDeclaration<'a> {
     fn header(&self) -> u8 {
         self.header

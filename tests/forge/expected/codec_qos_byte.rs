@@ -209,6 +209,21 @@ impl<T: CodecQosByteSource + ?Sized> CodecQosByteSource for &T {
     }
 }
 
+/// A value of `CodecQosByte` held in the types a caller already has: a source
+/// ([`CodecQosByteSource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecQosByteParts {
+    /// The `qos` field.
+    pub qos: u8,
+}
+
+impl CodecQosByteSource for CodecQosByteParts {
+    fn qos(&self) -> u8 {
+        self.qos
+    }
+}
+
 impl CodecQosByteSource for CodecQosByte {
     fn qos(&self) -> u8 {
         self.qos

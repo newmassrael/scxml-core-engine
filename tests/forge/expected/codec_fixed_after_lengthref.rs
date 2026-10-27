@@ -171,6 +171,31 @@ impl<T: CodecFixedAfterLengthrefSource + ?Sized> CodecFixedAfterLengthrefSource 
     }
 }
 
+/// A value of `CodecFixedAfterLengthref` held in the types a caller already has: a source
+/// ([`CodecFixedAfterLengthrefSource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecFixedAfterLengthrefParts<'a> {
+    /// The `header` field.
+    pub header: u8,
+    /// The `payload` field.
+    pub payload: &'a [u8],
+    /// The `crc32` field.
+    pub crc32: u32,
+}
+
+impl<'a> CodecFixedAfterLengthrefSource for CodecFixedAfterLengthrefParts<'a> {
+    fn header(&self) -> u8 {
+        self.header
+    }
+    fn payload(&self) -> &[u8] {
+        self.payload
+    }
+    fn crc32(&self) -> u32 {
+        self.crc32
+    }
+}
+
 impl<'a> CodecFixedAfterLengthrefSource for CodecFixedAfterLengthref<'a> {
     fn header(&self) -> u8 {
         self.header

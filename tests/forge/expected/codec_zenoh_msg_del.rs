@@ -270,6 +270,31 @@ impl<T: CodecZenohMsgDelSource + ?Sized> CodecZenohMsgDelSource for &T {
     }
 }
 
+/// A value of `CodecZenohMsgDel` held in the types a caller already has: a source
+/// ([`CodecZenohMsgDelSource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecZenohMsgDelParts<'a> {
+    /// The `header` field.
+    pub header: u8,
+    /// The `timestamp` field.
+    pub timestamp: Option<&'a super::codec_zenoh_timestamp::CodecZenohTimestampParts<'a>>,
+    /// The `extensions` field.
+    pub extensions: Option<&'a [super::codec_zenoh_ext_entry::CodecZenohExtEntryParts<'a>]>,
+}
+
+impl<'a> CodecZenohMsgDelSource for CodecZenohMsgDelParts<'a> {
+    fn header(&self) -> u8 {
+        self.header
+    }
+    fn timestamp(&self) -> Option<&impl super::codec_zenoh_timestamp::CodecZenohTimestampSource> {
+        self.timestamp
+    }
+    fn extensions(&self) -> Option<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone> {
+        self.extensions.map(<[_]>::iter)
+    }
+}
+
 impl<'a> CodecZenohMsgDelSource for CodecZenohMsgDel<'a> {
     fn header(&self) -> u8 {
         self.header

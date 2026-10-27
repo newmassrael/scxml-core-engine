@@ -313,6 +313,52 @@ impl<T: CodecZenohOamSource + ?Sized> CodecZenohOamSource for &T {
     }
 }
 
+/// The arm of `CodecZenohOam`'s variant that CodecZenohOamParts holds.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub enum CodecZenohOamPartsBody<'a> {
+    CodecZenohExtUnit(&'a super::codec_zenoh_ext_unit::CodecZenohExtUnitParts),
+    CodecZenohExtZint(&'a super::codec_zenoh_ext_zint::CodecZenohExtZintParts),
+    CodecZenohExtZbuf(&'a super::codec_zenoh_ext_zbuf::CodecZenohExtZbufParts<'a>),
+    /// The tag the grammar could not name, and the body it holds.
+    Default { tag: u8, body: &'a super::codec_zenoh_ext_unit::CodecZenohExtUnitParts },
+}
+
+/// A value of `CodecZenohOam` held in the types a caller already has: a source
+/// ([`CodecZenohOamSource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecZenohOamParts<'a> {
+    /// The `header` field.
+    pub header: u8,
+    /// The `id` field.
+    pub id: u16,
+    /// The `extensions` field.
+    pub extensions: Option<&'a [super::codec_zenoh_ext_entry::CodecZenohExtEntryParts<'a>]>,
+    /// The arm of the variant this value holds.
+    pub body: CodecZenohOamPartsBody<'a>,
+}
+
+impl<'a> CodecZenohOamSource for CodecZenohOamParts<'a> {
+    fn header(&self) -> u8 {
+        self.header
+    }
+    fn id(&self) -> u16 {
+        self.id
+    }
+    fn extensions(&self) -> Option<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone> {
+        self.extensions.map(<[_]>::iter)
+    }
+    fn body(&self) -> CodecZenohOamVariantSource<'_, impl super::codec_zenoh_ext_unit::CodecZenohExtUnitSource, impl super::codec_zenoh_ext_zint::CodecZenohExtZintSource, impl super::codec_zenoh_ext_zbuf::CodecZenohExtZbufSource, impl super::codec_zenoh_ext_unit::CodecZenohExtUnitSource> {
+        match &self.body {
+            CodecZenohOamPartsBody::CodecZenohExtUnit(_b) => CodecZenohOamVariantSource::CodecZenohExtUnit(*_b),
+            CodecZenohOamPartsBody::CodecZenohExtZint(_b) => CodecZenohOamVariantSource::CodecZenohExtZint(*_b),
+            CodecZenohOamPartsBody::CodecZenohExtZbuf(_b) => CodecZenohOamVariantSource::CodecZenohExtZbuf(*_b),
+            CodecZenohOamPartsBody::Default { tag, body } => CodecZenohOamVariantSource::Default { tag: *tag, body: *body },
+        }
+    }
+}
+
 impl<'a> CodecZenohOamSource for CodecZenohOam<'a> {
     fn header(&self) -> u8 {
         self.header

@@ -289,6 +289,36 @@ impl<T: CodecZenohErrSource + ?Sized> CodecZenohErrSource for &T {
     }
 }
 
+/// A value of `CodecZenohErr` held in the types a caller already has: a source
+/// ([`CodecZenohErrSource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecZenohErrParts<'a> {
+    /// The `header` field.
+    pub header: u8,
+    /// The `encoding` field.
+    pub encoding: Option<&'a super::codec_zenoh_encoding::CodecZenohEncodingParts<'a>>,
+    /// The `extensions` field.
+    pub extensions: Option<&'a [super::codec_zenoh_ext_entry::CodecZenohExtEntryParts<'a>]>,
+    /// The `payload` field.
+    pub payload: &'a [u8],
+}
+
+impl<'a> CodecZenohErrSource for CodecZenohErrParts<'a> {
+    fn header(&self) -> u8 {
+        self.header
+    }
+    fn encoding(&self) -> Option<&impl super::codec_zenoh_encoding::CodecZenohEncodingSource> {
+        self.encoding
+    }
+    fn extensions(&self) -> Option<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone> {
+        self.extensions.map(<[_]>::iter)
+    }
+    fn payload(&self) -> &[u8] {
+        self.payload
+    }
+}
+
 impl<'a> CodecZenohErrSource for CodecZenohErr<'a> {
     fn header(&self) -> u8 {
         self.header

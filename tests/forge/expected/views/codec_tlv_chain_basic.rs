@@ -168,6 +168,26 @@ impl<T: CodecTlvChainBasicSource + ?Sized> CodecTlvChainBasicSource for &T {
     }
 }
 
+/// A value of `CodecTlvChainBasic` held in the types a caller already has: a source
+/// ([`CodecTlvChainBasicSource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecTlvChainBasicParts<'a> {
+    /// The `header_flags` field.
+    pub header_flags: u8,
+    /// The `extensions` field.
+    pub extensions: &'a [super::codec_tlv_entry::CodecTlvEntryParts<'a>],
+}
+
+impl<'a> CodecTlvChainBasicSource for CodecTlvChainBasicParts<'a> {
+    fn header_flags(&self) -> u8 {
+        self.header_flags
+    }
+    fn extensions(&self) -> impl Iterator<Item = impl super::codec_tlv_entry::CodecTlvEntrySource> + Clone {
+        self.extensions.iter()
+    }
+}
+
 impl<'a> CodecTlvChainBasicSource for CodecTlvChainBasic<'a> {
     fn header_flags(&self) -> u8 {
         self.header_flags

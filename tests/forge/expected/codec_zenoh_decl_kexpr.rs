@@ -145,6 +145,26 @@ impl<T: CodecZenohDeclKexprSource + ?Sized> CodecZenohDeclKexprSource for &T {
     }
 }
 
+/// A value of `CodecZenohDeclKexpr` held in the types a caller already has: a source
+/// ([`CodecZenohDeclKexprSource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecZenohDeclKexprParts<'a> {
+    /// The `id` field.
+    pub id: u16,
+    /// The `wireexpr` field.
+    pub wireexpr: &'a super::codec_zenoh_wireexpr::CodecZenohWireexprParts<'a>,
+}
+
+impl<'a> CodecZenohDeclKexprSource for CodecZenohDeclKexprParts<'a> {
+    fn id(&self) -> u16 {
+        self.id
+    }
+    fn wireexpr(&self) -> &impl super::codec_zenoh_wireexpr::CodecZenohWireexprSource {
+        self.wireexpr
+    }
+}
+
 impl<'a> CodecZenohDeclKexprSource for CodecZenohDeclKexpr<'a> {
     fn id(&self) -> u16 {
         self.id

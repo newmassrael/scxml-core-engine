@@ -195,6 +195,26 @@ impl<T: CodecChainFlagForwardSource + ?Sized> CodecChainFlagForwardSource for &T
     }
 }
 
+/// A value of `CodecChainFlagForward` held in the types a caller already has: a source
+/// ([`CodecChainFlagForwardSource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecChainFlagForwardParts<'a> {
+    /// The `head` field.
+    pub head: u8,
+    /// The `entries` field.
+    pub entries: Option<&'a [super::codec_chain_flag_entry::CodecChainFlagEntryParts]>,
+}
+
+impl<'a> CodecChainFlagForwardSource for CodecChainFlagForwardParts<'a> {
+    fn head(&self) -> u8 {
+        self.head
+    }
+    fn entries(&self) -> Option<impl Iterator<Item = impl super::codec_chain_flag_entry::CodecChainFlagEntrySource> + Clone> {
+        self.entries.map(<[_]>::iter)
+    }
+}
+
 impl CodecChainFlagForwardSource for CodecChainFlagForward {
     fn head(&self) -> u8 {
         self.head

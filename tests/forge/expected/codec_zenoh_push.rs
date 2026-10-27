@@ -230,6 +230,38 @@ impl<T: CodecZenohPushSource + ?Sized> CodecZenohPushSource for &T {
     }
 }
 
+/// The arm of `CodecZenohPush`'s variant that CodecZenohPushParts holds.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub enum CodecZenohPushPartsBody<'a> {
+    CodecZenohPushBody(&'a super::codec_zenoh_push_body::CodecZenohPushBodyParts<'a>),
+    /// The tag the grammar could not name, and the body it holds.
+    Default { tag: u8, body: &'a super::codec_zenoh_push_body::CodecZenohPushBodyParts<'a> },
+}
+
+/// A value of `CodecZenohPush` held in the types a caller already has: a source
+/// ([`CodecZenohPushSource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecZenohPushParts<'a> {
+    /// The `header` field.
+    pub header: u8,
+    /// The arm of the variant this value holds.
+    pub body: CodecZenohPushPartsBody<'a>,
+}
+
+impl<'a> CodecZenohPushSource for CodecZenohPushParts<'a> {
+    fn header(&self) -> u8 {
+        self.header
+    }
+    fn body(&self) -> CodecZenohPushVariantSource<'_, impl super::codec_zenoh_push_body::CodecZenohPushBodySource, impl super::codec_zenoh_push_body::CodecZenohPushBodySource> {
+        match &self.body {
+            CodecZenohPushPartsBody::CodecZenohPushBody(_b) => CodecZenohPushVariantSource::CodecZenohPushBody(*_b),
+            CodecZenohPushPartsBody::Default { tag, body } => CodecZenohPushVariantSource::Default { tag: *tag, body: *body },
+        }
+    }
+}
+
 impl CodecZenohPushSource for CodecZenohPush {
     fn header(&self) -> u8 {
         self.header

@@ -154,6 +154,26 @@ impl<T: CodecTlvEntrySource + ?Sized> CodecTlvEntrySource for &T {
     }
 }
 
+/// A value of `CodecTlvEntry` held in the types a caller already has: a source
+/// ([`CodecTlvEntrySource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecTlvEntryParts<'a> {
+    /// The `entry_type` field.
+    pub entry_type: u8,
+    /// The `entry_body` field.
+    pub entry_body: &'a [u8],
+}
+
+impl<'a> CodecTlvEntrySource for CodecTlvEntryParts<'a> {
+    fn entry_type(&self) -> u8 {
+        self.entry_type
+    }
+    fn entry_body(&self) -> &[u8] {
+        self.entry_body
+    }
+}
+
 impl<'a> CodecTlvEntrySource for CodecTlvEntry<'a> {
     fn entry_type(&self) -> u8 {
         self.entry_type

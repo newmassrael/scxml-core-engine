@@ -287,6 +287,36 @@ impl<T: CodecZenohInterestSource + ?Sized> CodecZenohInterestSource for &T {
     }
 }
 
+/// A value of `CodecZenohInterest` held in the types a caller already has: a source
+/// ([`CodecZenohInterestSource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecZenohInterestParts<'a> {
+    /// The `header` field.
+    pub header: u8,
+    /// The `id` field.
+    pub id: u64,
+    /// The `body` field.
+    pub body: Option<&'a super::codec_zenoh_interest_body::CodecZenohInterestBodyParts<'a>>,
+    /// The `extensions` field.
+    pub extensions: Option<&'a [super::codec_zenoh_ext_entry::CodecZenohExtEntryParts<'a>]>,
+}
+
+impl<'a> CodecZenohInterestSource for CodecZenohInterestParts<'a> {
+    fn header(&self) -> u8 {
+        self.header
+    }
+    fn id(&self) -> u64 {
+        self.id
+    }
+    fn body(&self) -> Option<&impl super::codec_zenoh_interest_body::CodecZenohInterestBodySource> {
+        self.body
+    }
+    fn extensions(&self) -> Option<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone> {
+        self.extensions.map(<[_]>::iter)
+    }
+}
+
 impl<'a> CodecZenohInterestSource for CodecZenohInterest<'a> {
     fn header(&self) -> u8 {
         self.header

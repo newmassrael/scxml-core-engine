@@ -148,6 +148,26 @@ impl<T: CodecChainHasSliceSource + ?Sized> CodecChainHasSliceSource for &T {
     }
 }
 
+/// A value of `CodecChainHasSlice` held in the types a caller already has: a source
+/// ([`CodecChainHasSliceSource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecChainHasSliceParts<'a> {
+    /// The `kind` field.
+    pub kind: u16,
+    /// The `bytes` field.
+    pub bytes: &'a [u8],
+}
+
+impl<'a> CodecChainHasSliceSource for CodecChainHasSliceParts<'a> {
+    fn kind(&self) -> u16 {
+        self.kind
+    }
+    fn bytes(&self) -> &[u8] {
+        self.bytes
+    }
+}
+
 impl<'a> CodecChainHasSliceSource for CodecChainHasSlice<'a> {
     fn kind(&self) -> u16 {
         self.kind

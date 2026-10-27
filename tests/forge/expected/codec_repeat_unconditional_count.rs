@@ -200,6 +200,31 @@ impl<T: CodecRepeatUnconditionalCountSource + ?Sized> CodecRepeatUnconditionalCo
     }
 }
 
+/// A value of `CodecRepeatUnconditionalCount` held in the types a caller already has: a source
+/// ([`CodecRepeatUnconditionalCountSource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecRepeatUnconditionalCountParts<'a> {
+    /// The `options` field.
+    pub options: u8,
+    /// The `links` field.
+    pub links: &'a [super::codec_repeat_elem::CodecRepeatElemParts],
+    /// The `weights` field.
+    pub weights: Option<&'a [super::codec_repeat_elem::CodecRepeatElemParts]>,
+}
+
+impl<'a> CodecRepeatUnconditionalCountSource for CodecRepeatUnconditionalCountParts<'a> {
+    fn options(&self) -> u8 {
+        self.options
+    }
+    fn links(&self) -> impl Iterator<Item = impl super::codec_repeat_elem::CodecRepeatElemSource> + Clone {
+        self.links.iter()
+    }
+    fn weights(&self) -> Option<impl Iterator<Item = impl super::codec_repeat_elem::CodecRepeatElemSource> + Clone> {
+        self.weights.map(<[_]>::iter)
+    }
+}
+
 impl CodecRepeatUnconditionalCountSource for CodecRepeatUnconditionalCount {
     fn options(&self) -> u8 {
         self.options

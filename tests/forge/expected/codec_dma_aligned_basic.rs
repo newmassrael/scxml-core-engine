@@ -162,6 +162,31 @@ impl<T: CodecDmaAlignedBasicSource + ?Sized> CodecDmaAlignedBasicSource for &T {
     }
 }
 
+/// A value of `CodecDmaAlignedBasic` held in the types a caller already has: a source
+/// ([`CodecDmaAlignedBasicSource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecDmaAlignedBasicParts<'a> {
+    /// The `msg_id` field.
+    pub msg_id: u8,
+    /// The `reserved` field.
+    pub reserved: u8,
+    /// The `aligned_payload` field.
+    pub aligned_payload: &'a [u8],
+}
+
+impl<'a> CodecDmaAlignedBasicSource for CodecDmaAlignedBasicParts<'a> {
+    fn msg_id(&self) -> u8 {
+        self.msg_id
+    }
+    fn reserved(&self) -> u8 {
+        self.reserved
+    }
+    fn aligned_payload(&self) -> &[u8] {
+        self.aligned_payload
+    }
+}
+
 impl<'a> CodecDmaAlignedBasicSource for CodecDmaAlignedBasic<'a> {
     fn msg_id(&self) -> u8 {
         self.msg_id

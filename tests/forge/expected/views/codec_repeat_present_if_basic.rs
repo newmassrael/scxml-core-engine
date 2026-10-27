@@ -191,6 +191,26 @@ impl<T: CodecRepeatPresentIfBasicSource + ?Sized> CodecRepeatPresentIfBasicSourc
     }
 }
 
+/// A value of `CodecRepeatPresentIfBasic` held in the types a caller already has: a source
+/// ([`CodecRepeatPresentIfBasicSource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecRepeatPresentIfBasicParts<'a> {
+    /// The `carrier` field.
+    pub carrier: u8,
+    /// The `elems` field.
+    pub elems: Option<&'a [super::codec_repeat_elem::CodecRepeatElemParts]>,
+}
+
+impl<'a> CodecRepeatPresentIfBasicSource for CodecRepeatPresentIfBasicParts<'a> {
+    fn carrier(&self) -> u8 {
+        self.carrier
+    }
+    fn elems(&self) -> Option<impl Iterator<Item = impl super::codec_repeat_elem::CodecRepeatElemSource> + Clone> {
+        self.elems.map(<[_]>::iter)
+    }
+}
+
 impl CodecRepeatPresentIfBasicSource for CodecRepeatPresentIfBasic {
     fn carrier(&self) -> u8 {
         self.carrier

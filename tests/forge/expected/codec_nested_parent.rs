@@ -202,6 +202,36 @@ impl<T: CodecNestedParentSource + ?Sized> CodecNestedParentSource for &T {
     }
 }
 
+/// A value of `CodecNestedParent` held in the types a caller already has: a source
+/// ([`CodecNestedParentSource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecNestedParentParts<'a> {
+    /// The `hdr` field.
+    pub hdr: u8,
+    /// The `required_body` field.
+    pub required_body: &'a super::codec_nested_body::CodecNestedBodyParts<'a>,
+    /// The `optional_body` field.
+    pub optional_body: Option<&'a super::codec_nested_body::CodecNestedBodyParts<'a>>,
+    /// The `body_list` field.
+    pub body_list: &'a [super::codec_nested_body::CodecNestedBodyParts<'a>],
+}
+
+impl<'a> CodecNestedParentSource for CodecNestedParentParts<'a> {
+    fn hdr(&self) -> u8 {
+        self.hdr
+    }
+    fn required_body(&self) -> &impl super::codec_nested_body::CodecNestedBodySource {
+        self.required_body
+    }
+    fn optional_body(&self) -> Option<&impl super::codec_nested_body::CodecNestedBodySource> {
+        self.optional_body
+    }
+    fn body_list(&self) -> impl Iterator<Item = impl super::codec_nested_body::CodecNestedBodySource> + Clone {
+        self.body_list.iter()
+    }
+}
+
 impl<'a> CodecNestedParentSource for CodecNestedParent<'a> {
     fn hdr(&self) -> u8 {
         self.hdr

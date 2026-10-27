@@ -237,6 +237,38 @@ impl<T: CodecInitSynEnvelopeSource + ?Sized> CodecInitSynEnvelopeSource for &T {
     }
 }
 
+/// The arm of `CodecInitSynEnvelope`'s variant that CodecInitSynEnvelopeParts holds.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub enum CodecInitSynEnvelopePartsBody<'a> {
+    CodecInitSynBody(&'a super::codec_init_syn_body::CodecInitSynBodyParts),
+    /// The tag the grammar could not name, and the body it holds.
+    Default { tag: u8, body: &'a super::codec_init_syn_body::CodecInitSynBodyParts },
+}
+
+/// A value of `CodecInitSynEnvelope` held in the types a caller already has: a source
+/// ([`CodecInitSynEnvelopeSource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecInitSynEnvelopeParts<'a> {
+    /// The `header` field.
+    pub header: u8,
+    /// The arm of the variant this value holds.
+    pub body: CodecInitSynEnvelopePartsBody<'a>,
+}
+
+impl<'a> CodecInitSynEnvelopeSource for CodecInitSynEnvelopeParts<'a> {
+    fn header(&self) -> u8 {
+        self.header
+    }
+    fn body(&self) -> CodecInitSynEnvelopeVariantSource<'_, impl super::codec_init_syn_body::CodecInitSynBodySource, impl super::codec_init_syn_body::CodecInitSynBodySource> {
+        match &self.body {
+            CodecInitSynEnvelopePartsBody::CodecInitSynBody(_b) => CodecInitSynEnvelopeVariantSource::CodecInitSynBody(*_b),
+            CodecInitSynEnvelopePartsBody::Default { tag, body } => CodecInitSynEnvelopeVariantSource::Default { tag: *tag, body: *body },
+        }
+    }
+}
+
 impl CodecInitSynEnvelopeSource for CodecInitSynEnvelope {
     fn header(&self) -> u8 {
         self.header

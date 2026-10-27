@@ -185,8 +185,15 @@ sink's and is not a property of the source.
 For the common shape — parts already in hand, lists in slices — the generator also emits `struct XParts<'a>`, whose
 lists are `&'a [EParts<'a>]` and whose bodies are `&'a YParts<'a>`, implementing `XSource`. A consumer either fills
 `XParts` from what it has or implements `XSource` on its own type. Encoding needs the stack of the entries the caller
-holds, not `N` slots per list. Not landed with step 2: it follows the consumer's measurement of the send stack
-(step 3 of the order of work).
+holds, not `N` slots per list.
+
+*Landed (step 3, generator side).* Every Rust codec that has a source also has `XParts`, `Copy` and `Debug`, with one
+public member for each item of its trait, and a `XPartsBody` enum for a variant (one arm per known arm, and
+`Default { tag, body }`). It takes a lifetime `'a` exactly when it borrows (text, bytes, a list, an embedded body or a
+variant); a codec of scalars alone has none, and a parent names the child's parts with or without it as the child
+does (`ImportContext.codec_parts_lifetime`). A gated member is an `Option`, and a number the source states while
+its content is absent (§1) is an `Option` of the number. Hand-built parts are encoded and refused as any source is
+(`forge_source_round_trip`, module `parts`). The consumer's measurement of the send stack is still to come.
 
 ### 5. Laws, and the tests that hold them
 
@@ -270,6 +277,7 @@ their bytes equal.
    under `tests/forge/expected/` regenerated once, `backends/rust/mesh/src/generated/` regenerated and unchanged on a
    second pass). The measure fold of the proposal became the counting run of §3.
 3. `XParts`, and the consumer's first use of it (watching-zenoh's send stack), measured against the 6,480-byte peak.
+   `XParts` **landed 2026-10-27**; the consumer's use and its measurement are open.
 4. The interface on the other five backends, in their idioms, held to byte parity (law 4).
 
 ## Questions left open

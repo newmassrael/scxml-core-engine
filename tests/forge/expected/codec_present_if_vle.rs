@@ -167,6 +167,26 @@ impl<T: CodecPresentIfVleSource + ?Sized> CodecPresentIfVleSource for &T {
     }
 }
 
+/// A value of `CodecPresentIfVle` held in the types a caller already has: a source
+/// ([`CodecPresentIfVleSource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecPresentIfVleParts {
+    /// The `flags` field.
+    pub flags: u8,
+    /// The `optional_id` field.
+    pub optional_id: Option<u64>,
+}
+
+impl CodecPresentIfVleSource for CodecPresentIfVleParts {
+    fn flags(&self) -> u8 {
+        self.flags
+    }
+    fn optional_id(&self) -> Option<u64> {
+        self.optional_id
+    }
+}
+
 impl CodecPresentIfVleSource for CodecPresentIfVle {
     fn flags(&self) -> u8 {
         self.flags

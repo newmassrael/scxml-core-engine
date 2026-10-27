@@ -225,6 +225,41 @@ impl<T: CodecOriginEnvelopeSource + ?Sized> CodecOriginEnvelopeSource for &T {
     }
 }
 
+/// A value of `CodecOriginEnvelope` held in the types a caller already has: a source
+/// ([`CodecOriginEnvelopeSource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecOriginEnvelopeParts<'a> {
+    /// The `hdr` field.
+    pub hdr: u8,
+    /// The `note` field.
+    pub note: &'a str,
+    /// The `required` field.
+    pub required: &'a super::codec_origin_leaf::CodecOriginLeafParts<'a>,
+    /// The `optional` field.
+    pub optional: Option<&'a super::codec_origin_leaf::CodecOriginLeafParts<'a>>,
+    /// The `items` field.
+    pub items: &'a [super::codec_origin_leaf::CodecOriginLeafParts<'a>],
+}
+
+impl<'a> CodecOriginEnvelopeSource for CodecOriginEnvelopeParts<'a> {
+    fn hdr(&self) -> u8 {
+        self.hdr
+    }
+    fn note(&self) -> &str {
+        self.note
+    }
+    fn required(&self) -> &impl super::codec_origin_leaf::CodecOriginLeafSource {
+        self.required
+    }
+    fn optional(&self) -> Option<&impl super::codec_origin_leaf::CodecOriginLeafSource> {
+        self.optional
+    }
+    fn items(&self) -> impl Iterator<Item = impl super::codec_origin_leaf::CodecOriginLeafSource> + Clone {
+        self.items.iter()
+    }
+}
+
 impl<'a> CodecOriginEnvelopeSource for CodecOriginEnvelope<'a> {
     fn hdr(&self) -> u8 {
         self.hdr

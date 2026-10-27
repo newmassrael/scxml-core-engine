@@ -165,6 +165,26 @@ impl<T: CodecInitCookieBodySource + ?Sized> CodecInitCookieBodySource for &T {
     }
 }
 
+/// A value of `CodecInitCookieBody` held in the types a caller already has: a source
+/// ([`CodecInitCookieBodySource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecInitCookieBodyParts<'a> {
+    /// The `version` field.
+    pub version: u8,
+    /// The `cookie` field.
+    pub cookie: Option<&'a [u8]>,
+}
+
+impl<'a> CodecInitCookieBodySource for CodecInitCookieBodyParts<'a> {
+    fn version(&self) -> u8 {
+        self.version
+    }
+    fn cookie(&self) -> Option<&[u8]> {
+        self.cookie
+    }
+}
+
 impl<'a> CodecInitCookieBodySource for CodecInitCookieBody<'a> {
     fn version(&self) -> u8 {
         self.version

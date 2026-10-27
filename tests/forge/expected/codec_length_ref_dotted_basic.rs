@@ -173,6 +173,26 @@ impl<T: CodecLengthRefDottedBasicSource + ?Sized> CodecLengthRefDottedBasicSourc
     }
 }
 
+/// A value of `CodecLengthRefDottedBasic` held in the types a caller already has: a source
+/// ([`CodecLengthRefDottedBasicSource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecLengthRefDottedBasicParts<'a> {
+    /// The `carrier` field.
+    pub carrier: u8,
+    /// The `payload` field.
+    pub payload: &'a [u8],
+}
+
+impl<'a> CodecLengthRefDottedBasicSource for CodecLengthRefDottedBasicParts<'a> {
+    fn carrier(&self) -> u8 {
+        self.carrier
+    }
+    fn payload(&self) -> &[u8] {
+        self.payload
+    }
+}
+
 impl<'a> CodecLengthRefDottedBasicSource for CodecLengthRefDottedBasic<'a> {
     fn carrier(&self) -> u8 {
         self.carrier

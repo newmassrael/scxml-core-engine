@@ -243,6 +243,36 @@ impl<T: CodecChainHasTaggedSource + ?Sized> CodecChainHasTaggedSource for &T {
     }
 }
 
+/// A value of `CodecChainHasTagged` held in the types a caller already has: a source
+/// ([`CodecChainHasTaggedSource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecChainHasTaggedParts<'a> {
+    /// The `header` field.
+    pub header: u8,
+    /// The `entries` field.
+    pub entries: &'a [super::codec_chain_has_tagged_entry::CodecChainHasTaggedEntryParts],
+    /// The `priority` field.
+    pub priority: Option<u8>,
+    /// The `checksum` field.
+    pub checksum: Option<u16>,
+}
+
+impl<'a> CodecChainHasTaggedSource for CodecChainHasTaggedParts<'a> {
+    fn header(&self) -> u8 {
+        self.header
+    }
+    fn entries(&self) -> impl Iterator<Item = impl super::codec_chain_has_tagged_entry::CodecChainHasTaggedEntrySource> + Clone {
+        self.entries.iter()
+    }
+    fn priority(&self) -> Option<u8> {
+        self.priority
+    }
+    fn checksum(&self) -> Option<u16> {
+        self.checksum
+    }
+}
+
 impl CodecChainHasTaggedSource for CodecChainHasTagged {
     fn header(&self) -> u8 {
         self.header

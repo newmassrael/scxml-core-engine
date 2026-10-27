@@ -213,6 +213,21 @@ impl<T: CodecFlagsBasicSource + ?Sized> CodecFlagsBasicSource for &T {
     }
 }
 
+/// A value of `CodecFlagsBasic` held in the types a caller already has: a source
+/// ([`CodecFlagsBasicSource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecFlagsBasicParts {
+    /// The `header` field.
+    pub header: u8,
+}
+
+impl CodecFlagsBasicSource for CodecFlagsBasicParts {
+    fn header(&self) -> u8 {
+        self.header
+    }
+}
+
 impl CodecFlagsBasicSource for CodecFlagsBasic {
     fn header(&self) -> u8 {
         self.header

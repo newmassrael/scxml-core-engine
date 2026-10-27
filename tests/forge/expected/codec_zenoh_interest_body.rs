@@ -318,6 +318,26 @@ impl<T: CodecZenohInterestBodySource + ?Sized> CodecZenohInterestBodySource for 
     }
 }
 
+/// A value of `CodecZenohInterestBody` held in the types a caller already has: a source
+/// ([`CodecZenohInterestBodySource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecZenohInterestBodyParts<'a> {
+    /// The `header` field.
+    pub header: u8,
+    /// The `keyexpr` field.
+    pub keyexpr: Option<&'a super::codec_zenoh_wireexpr::CodecZenohWireexprParts<'a>>,
+}
+
+impl<'a> CodecZenohInterestBodySource for CodecZenohInterestBodyParts<'a> {
+    fn header(&self) -> u8 {
+        self.header
+    }
+    fn keyexpr(&self) -> Option<&impl super::codec_zenoh_wireexpr::CodecZenohWireexprSource> {
+        self.keyexpr
+    }
+}
+
 impl<'a> CodecZenohInterestBodySource for CodecZenohInterestBody<'a> {
     fn header(&self) -> u8 {
         self.header

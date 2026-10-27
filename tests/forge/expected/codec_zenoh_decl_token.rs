@@ -145,6 +145,26 @@ impl<T: CodecZenohDeclTokenSource + ?Sized> CodecZenohDeclTokenSource for &T {
     }
 }
 
+/// A value of `CodecZenohDeclToken` held in the types a caller already has: a source
+/// ([`CodecZenohDeclTokenSource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecZenohDeclTokenParts<'a> {
+    /// The `id` field.
+    pub id: u32,
+    /// The `wireexpr` field.
+    pub wireexpr: &'a super::codec_zenoh_wireexpr::CodecZenohWireexprParts<'a>,
+}
+
+impl<'a> CodecZenohDeclTokenSource for CodecZenohDeclTokenParts<'a> {
+    fn id(&self) -> u32 {
+        self.id
+    }
+    fn wireexpr(&self) -> &impl super::codec_zenoh_wireexpr::CodecZenohWireexprSource {
+        self.wireexpr
+    }
+}
+
 impl<'a> CodecZenohDeclTokenSource for CodecZenohDeclToken<'a> {
     fn id(&self) -> u32 {
         self.id

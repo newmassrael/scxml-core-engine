@@ -132,6 +132,31 @@ impl<T: CodecSubbyteSource + ?Sized> CodecSubbyteSource for &T {
     }
 }
 
+/// A value of `CodecSubbyte` held in the types a caller already has: a source
+/// ([`CodecSubbyteSource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecSubbyteParts {
+    /// The `priority` field.
+    pub priority: u8,
+    /// The `channel` field.
+    pub channel: u8,
+    /// The `direction` field.
+    pub direction: u8,
+}
+
+impl CodecSubbyteSource for CodecSubbyteParts {
+    fn priority(&self) -> u8 {
+        self.priority
+    }
+    fn channel(&self) -> u8 {
+        self.channel
+    }
+    fn direction(&self) -> u8 {
+        self.direction
+    }
+}
+
 impl CodecSubbyteSource for CodecSubbyte {
     fn priority(&self) -> u8 {
         self.priority

@@ -210,6 +210,26 @@ impl<T: CodecChainPrevCarrierSource + ?Sized> CodecChainPrevCarrierSource for &T
     }
 }
 
+/// A value of `CodecChainPrevCarrier` held in the types a caller already has: a source
+/// ([`CodecChainPrevCarrierSource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecChainPrevCarrierParts<'a> {
+    /// The `head` field.
+    pub head: u8,
+    /// The `entries` field.
+    pub entries: &'a [super::codec_chain_prev_entry::CodecChainPrevEntryParts],
+}
+
+impl<'a> CodecChainPrevCarrierSource for CodecChainPrevCarrierParts<'a> {
+    fn head(&self) -> u8 {
+        self.head
+    }
+    fn entries(&self) -> impl Iterator<Item = impl super::codec_chain_prev_entry::CodecChainPrevEntrySource> + Clone {
+        self.entries.iter()
+    }
+}
+
 impl CodecChainPrevCarrierSource for CodecChainPrevCarrier {
     fn head(&self) -> u8 {
         self.head

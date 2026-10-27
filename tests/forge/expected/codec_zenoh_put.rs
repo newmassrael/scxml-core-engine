@@ -116,6 +116,21 @@ impl<T: CodecZenohPutSource + ?Sized> CodecZenohPutSource for &T {
     }
 }
 
+/// A value of `CodecZenohPut` held in the types a caller already has: a source
+/// ([`CodecZenohPutSource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecZenohPutParts {
+    /// The `payload` field.
+    pub payload: u8,
+}
+
+impl CodecZenohPutSource for CodecZenohPutParts {
+    fn payload(&self) -> u8 {
+        self.payload
+    }
+}
+
 impl CodecZenohPutSource for CodecZenohPut {
     fn payload(&self) -> u8 {
         self.payload

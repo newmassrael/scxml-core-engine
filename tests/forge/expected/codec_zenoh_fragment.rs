@@ -145,6 +145,26 @@ impl<T: CodecZenohFragmentSource + ?Sized> CodecZenohFragmentSource for &T {
     }
 }
 
+/// A value of `CodecZenohFragment` held in the types a caller already has: a source
+/// ([`CodecZenohFragmentSource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecZenohFragmentParts<'a> {
+    /// The `sn` field.
+    pub sn: u64,
+    /// The `payload` field.
+    pub payload: &'a [u8],
+}
+
+impl<'a> CodecZenohFragmentSource for CodecZenohFragmentParts<'a> {
+    fn sn(&self) -> u64 {
+        self.sn
+    }
+    fn payload(&self) -> &[u8] {
+        self.payload
+    }
+}
+
 impl<'a> CodecZenohFragmentSource for CodecZenohFragment<'a> {
     fn sn(&self) -> u64 {
         self.sn

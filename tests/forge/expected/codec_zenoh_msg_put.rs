@@ -283,6 +283,41 @@ impl<T: CodecZenohMsgPutSource + ?Sized> CodecZenohMsgPutSource for &T {
     }
 }
 
+/// A value of `CodecZenohMsgPut` held in the types a caller already has: a source
+/// ([`CodecZenohMsgPutSource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecZenohMsgPutParts<'a> {
+    /// The `header` field.
+    pub header: u8,
+    /// The `timestamp` field.
+    pub timestamp: Option<&'a super::codec_zenoh_timestamp::CodecZenohTimestampParts<'a>>,
+    /// The `encoding` field.
+    pub encoding: Option<&'a super::codec_zenoh_encoding::CodecZenohEncodingParts<'a>>,
+    /// The `extensions` field.
+    pub extensions: Option<&'a [super::codec_zenoh_ext_entry::CodecZenohExtEntryParts<'a>]>,
+    /// The `payload` field.
+    pub payload: &'a [u8],
+}
+
+impl<'a> CodecZenohMsgPutSource for CodecZenohMsgPutParts<'a> {
+    fn header(&self) -> u8 {
+        self.header
+    }
+    fn timestamp(&self) -> Option<&impl super::codec_zenoh_timestamp::CodecZenohTimestampSource> {
+        self.timestamp
+    }
+    fn encoding(&self) -> Option<&impl super::codec_zenoh_encoding::CodecZenohEncodingSource> {
+        self.encoding
+    }
+    fn extensions(&self) -> Option<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone> {
+        self.extensions.map(<[_]>::iter)
+    }
+    fn payload(&self) -> &[u8] {
+        self.payload
+    }
+}
+
 impl<'a> CodecZenohMsgPutSource for CodecZenohMsgPut<'a> {
     fn header(&self) -> u8 {
         self.header

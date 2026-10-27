@@ -149,6 +149,26 @@ impl<T: CodecZenohUndeclTokenSource + ?Sized> CodecZenohUndeclTokenSource for &T
     }
 }
 
+/// A value of `CodecZenohUndeclToken` held in the types a caller already has: a source
+/// ([`CodecZenohUndeclTokenSource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecZenohUndeclTokenParts<'a> {
+    /// The `id` field.
+    pub id: u32,
+    /// The `ext_keyexpr` field.
+    pub ext_keyexpr: Option<&'a super::codec_zenoh_decl_ext_keyexpr::CodecZenohDeclExtKeyexprParts<'a>>,
+}
+
+impl<'a> CodecZenohUndeclTokenSource for CodecZenohUndeclTokenParts<'a> {
+    fn id(&self) -> u32 {
+        self.id
+    }
+    fn ext_keyexpr(&self) -> Option<&impl super::codec_zenoh_decl_ext_keyexpr::CodecZenohDeclExtKeyexprSource> {
+        self.ext_keyexpr
+    }
+}
+
 impl<'a> CodecZenohUndeclTokenSource for CodecZenohUndeclToken<'a> {
     fn id(&self) -> u32 {
         self.id

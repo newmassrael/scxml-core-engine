@@ -146,6 +146,21 @@ impl<T: CodecScoutZidBodySource + ?Sized> CodecScoutZidBodySource for &T {
     }
 }
 
+/// A value of `CodecScoutZidBody` held in the types a caller already has: a source
+/// ([`CodecScoutZidBodySource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecScoutZidBodyParts<'a> {
+    /// The `zid` field.
+    pub zid: &'a [u8],
+}
+
+impl<'a> CodecScoutZidBodySource for CodecScoutZidBodyParts<'a> {
+    fn zid(&self) -> &[u8] {
+        self.zid
+    }
+}
+
 impl<'a> CodecScoutZidBodySource for CodecScoutZidBody<'a> {
     fn zid(&self) -> &[u8] {
         self.zid

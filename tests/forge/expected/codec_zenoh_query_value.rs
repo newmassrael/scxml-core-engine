@@ -160,6 +160,21 @@ impl<T: CodecZenohQueryValueSource + ?Sized> CodecZenohQueryValueSource for &T {
     }
 }
 
+/// A value of `CodecZenohQueryValue` held in the types a caller already has: a source
+/// ([`CodecZenohQueryValueSource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecZenohQueryValueParts<'a> {
+    /// The `exts` field.
+    pub exts: &'a [super::codec_zenoh_value_entry::CodecZenohValueEntryParts<'a>],
+}
+
+impl<'a> CodecZenohQueryValueSource for CodecZenohQueryValueParts<'a> {
+    fn exts(&self) -> impl Iterator<Item = impl super::codec_zenoh_value_entry::CodecZenohValueEntrySource> + Clone {
+        self.exts.iter()
+    }
+}
+
 impl<'a> CodecZenohQueryValueSource for CodecZenohQueryValue<'a> {
     fn exts(&self) -> impl Iterator<Item = impl super::codec_zenoh_value_entry::CodecZenohValueEntrySource> + Clone {
         self.exts.iter()

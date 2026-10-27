@@ -109,6 +109,16 @@ pub trait CodecZenohKeepAliveSource {
 impl<T: CodecZenohKeepAliveSource + ?Sized> CodecZenohKeepAliveSource for &T {
 }
 
+/// A value of `CodecZenohKeepAlive` held in the types a caller already has: a source
+/// ([`CodecZenohKeepAliveSource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecZenohKeepAliveParts {
+}
+
+impl CodecZenohKeepAliveSource for CodecZenohKeepAliveParts {
+}
+
 impl CodecZenohKeepAliveSource for CodecZenohKeepAlive {
 }
 

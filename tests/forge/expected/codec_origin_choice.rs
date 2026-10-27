@@ -196,6 +196,35 @@ impl<T: CodecOriginChoiceSource + ?Sized> CodecOriginChoiceSource for &T {
     }
 }
 
+/// The arm of `CodecOriginChoice`'s variant that CodecOriginChoiceParts holds.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub enum CodecOriginChoicePartsBody<'a> {
+    CodecOriginLeaf(&'a super::codec_origin_leaf::CodecOriginLeafParts<'a>),
+    CodecOriginScalar(&'a super::codec_origin_scalar::CodecOriginScalarParts),
+    /// The tag the grammar could not name, and the body it holds.
+    Default { tag: u8, body: &'a super::codec_origin_scalar::CodecOriginScalarParts },
+}
+
+/// A value of `CodecOriginChoice` held in the types a caller already has: a source
+/// ([`CodecOriginChoiceSource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecOriginChoiceParts<'a> {
+    /// The arm of the variant this value holds.
+    pub body: CodecOriginChoicePartsBody<'a>,
+}
+
+impl<'a> CodecOriginChoiceSource for CodecOriginChoiceParts<'a> {
+    fn body(&self) -> CodecOriginChoiceVariantSource<'_, impl super::codec_origin_leaf::CodecOriginLeafSource, impl super::codec_origin_scalar::CodecOriginScalarSource, impl super::codec_origin_scalar::CodecOriginScalarSource> {
+        match &self.body {
+            CodecOriginChoicePartsBody::CodecOriginLeaf(_b) => CodecOriginChoiceVariantSource::CodecOriginLeaf(*_b),
+            CodecOriginChoicePartsBody::CodecOriginScalar(_b) => CodecOriginChoiceVariantSource::CodecOriginScalar(*_b),
+            CodecOriginChoicePartsBody::Default { tag, body } => CodecOriginChoiceVariantSource::Default { tag: *tag, body: *body },
+        }
+    }
+}
+
 impl<'a> CodecOriginChoiceSource for CodecOriginChoice<'a> {
     fn body(&self) -> CodecOriginChoiceVariantSource<'_, impl super::codec_origin_leaf::CodecOriginLeafSource, impl super::codec_origin_scalar::CodecOriginScalarSource, impl super::codec_origin_scalar::CodecOriginScalarSource> {
         match &self.body {

@@ -145,6 +145,26 @@ impl<T: CodecEmbedBasicSource + ?Sized> CodecEmbedBasicSource for &T {
     }
 }
 
+/// A value of `CodecEmbedBasic` held in the types a caller already has: a source
+/// ([`CodecEmbedBasicSource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecEmbedBasicParts<'a> {
+    /// The `tag` field.
+    pub tag: u8,
+    /// The `locator` field.
+    pub locator: &'a super::codec_zenoh_locator::CodecZenohLocatorParts<'a>,
+}
+
+impl<'a> CodecEmbedBasicSource for CodecEmbedBasicParts<'a> {
+    fn tag(&self) -> u8 {
+        self.tag
+    }
+    fn locator(&self) -> &impl super::codec_zenoh_locator::CodecZenohLocatorSource {
+        self.locator
+    }
+}
+
 impl<'a> CodecEmbedBasicSource for CodecEmbedBasic<'a> {
     fn tag(&self) -> u8 {
         self.tag

@@ -222,6 +222,36 @@ impl<T: CodecZenohHelloSource + ?Sized> CodecZenohHelloSource for &T {
     }
 }
 
+/// A value of `CodecZenohHello` held in the types a caller already has: a source
+/// ([`CodecZenohHelloSource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecZenohHelloParts<'a> {
+    /// The `version` field.
+    pub version: u8,
+    /// The `cbyte` field.
+    pub cbyte: u8,
+    /// The `zid` field.
+    pub zid: &'a [u8],
+    /// The `locators` field.
+    pub locators: Option<&'a [super::codec_zenoh_locator::CodecZenohLocatorParts<'a>]>,
+}
+
+impl<'a> CodecZenohHelloSource for CodecZenohHelloParts<'a> {
+    fn version(&self) -> u8 {
+        self.version
+    }
+    fn cbyte(&self) -> u8 {
+        self.cbyte
+    }
+    fn zid(&self) -> &[u8] {
+        self.zid
+    }
+    fn locators(&self) -> Option<impl Iterator<Item = impl super::codec_zenoh_locator::CodecZenohLocatorSource> + Clone> {
+        self.locators.map(<[_]>::iter)
+    }
+}
+
 impl<'a> CodecZenohHelloSource for CodecZenohHello<'a> {
     fn version(&self) -> u8 {
         self.version

@@ -174,6 +174,26 @@ impl<T: CodecZenohEncodingSource + ?Sized> CodecZenohEncodingSource for &T {
     }
 }
 
+/// A value of `CodecZenohEncoding` held in the types a caller already has: a source
+/// ([`CodecZenohEncodingSource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecZenohEncodingParts<'a> {
+    /// The `packed_id` field.
+    pub packed_id: u32,
+    /// The `schema` field.
+    pub schema: Option<&'a str>,
+}
+
+impl<'a> CodecZenohEncodingSource for CodecZenohEncodingParts<'a> {
+    fn packed_id(&self) -> u32 {
+        self.packed_id
+    }
+    fn schema(&self) -> Option<&str> {
+        self.schema
+    }
+}
+
 impl<'a> CodecZenohEncodingSource for CodecZenohEncoding<'a> {
     fn packed_id(&self) -> u32 {
         self.packed_id

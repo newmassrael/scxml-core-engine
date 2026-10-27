@@ -242,6 +242,45 @@ impl<T: CodecZenohNetworkEnvelopeSource + ?Sized> CodecZenohNetworkEnvelopeSourc
     }
 }
 
+/// The arm of `CodecZenohNetworkEnvelope`'s variant that CodecZenohNetworkEnvelopeParts holds.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub enum CodecZenohNetworkEnvelopePartsBody<'a> {
+    CodecZenohInterest(&'a super::codec_zenoh_interest::CodecZenohInterestParts<'a>),
+    CodecZenohResponseFinal(&'a super::codec_zenoh_response_final::CodecZenohResponseFinalParts<'a>),
+    CodecZenohResponse(&'a super::codec_zenoh_response::CodecZenohResponseParts<'a>),
+    CodecZenohRequest(&'a super::codec_zenoh_request::CodecZenohRequestParts<'a>),
+    CodecZenohPush(&'a super::codec_zenoh_push::CodecZenohPushParts<'a>),
+    CodecZenohDeclare(&'a super::codec_zenoh_declare::CodecZenohDeclareParts<'a>),
+    CodecZenohOam(&'a super::codec_zenoh_oam::CodecZenohOamParts<'a>),
+    /// The tag the grammar could not name, and the body it holds.
+    Default { tag: u8, body: &'a super::codec_zenoh_oam::CodecZenohOamParts<'a> },
+}
+
+/// A value of `CodecZenohNetworkEnvelope` held in the types a caller already has: a source
+/// ([`CodecZenohNetworkEnvelopeSource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecZenohNetworkEnvelopeParts<'a> {
+    /// The arm of the variant this value holds.
+    pub body: CodecZenohNetworkEnvelopePartsBody<'a>,
+}
+
+impl<'a> CodecZenohNetworkEnvelopeSource for CodecZenohNetworkEnvelopeParts<'a> {
+    fn body(&self) -> CodecZenohNetworkEnvelopeVariantSource<'_, impl super::codec_zenoh_interest::CodecZenohInterestSource, impl super::codec_zenoh_response_final::CodecZenohResponseFinalSource, impl super::codec_zenoh_response::CodecZenohResponseSource, impl super::codec_zenoh_request::CodecZenohRequestSource, impl super::codec_zenoh_push::CodecZenohPushSource, impl super::codec_zenoh_declare::CodecZenohDeclareSource, impl super::codec_zenoh_oam::CodecZenohOamSource, impl super::codec_zenoh_oam::CodecZenohOamSource> {
+        match &self.body {
+            CodecZenohNetworkEnvelopePartsBody::CodecZenohInterest(_b) => CodecZenohNetworkEnvelopeVariantSource::CodecZenohInterest(*_b),
+            CodecZenohNetworkEnvelopePartsBody::CodecZenohResponseFinal(_b) => CodecZenohNetworkEnvelopeVariantSource::CodecZenohResponseFinal(*_b),
+            CodecZenohNetworkEnvelopePartsBody::CodecZenohResponse(_b) => CodecZenohNetworkEnvelopeVariantSource::CodecZenohResponse(*_b),
+            CodecZenohNetworkEnvelopePartsBody::CodecZenohRequest(_b) => CodecZenohNetworkEnvelopeVariantSource::CodecZenohRequest(*_b),
+            CodecZenohNetworkEnvelopePartsBody::CodecZenohPush(_b) => CodecZenohNetworkEnvelopeVariantSource::CodecZenohPush(*_b),
+            CodecZenohNetworkEnvelopePartsBody::CodecZenohDeclare(_b) => CodecZenohNetworkEnvelopeVariantSource::CodecZenohDeclare(*_b),
+            CodecZenohNetworkEnvelopePartsBody::CodecZenohOam(_b) => CodecZenohNetworkEnvelopeVariantSource::CodecZenohOam(*_b),
+            CodecZenohNetworkEnvelopePartsBody::Default { tag, body } => CodecZenohNetworkEnvelopeVariantSource::Default { tag: *tag, body: *body },
+        }
+    }
+}
+
 impl<'a> CodecZenohNetworkEnvelopeSource for CodecZenohNetworkEnvelope<'a> {
     fn body(&self) -> CodecZenohNetworkEnvelopeVariantSource<'_, impl super::codec_zenoh_interest::CodecZenohInterestSource, impl super::codec_zenoh_response_final::CodecZenohResponseFinalSource, impl super::codec_zenoh_response::CodecZenohResponseSource, impl super::codec_zenoh_request::CodecZenohRequestSource, impl super::codec_zenoh_push::CodecZenohPushSource, impl super::codec_zenoh_declare::CodecZenohDeclareSource, impl super::codec_zenoh_oam::CodecZenohOamSource, impl super::codec_zenoh_oam::CodecZenohOamSource> {
         match &self.body {

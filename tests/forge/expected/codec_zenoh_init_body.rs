@@ -245,6 +245,46 @@ impl<T: CodecZenohInitBodySource + ?Sized> CodecZenohInitBodySource for &T {
     }
 }
 
+/// A value of `CodecZenohInitBody` held in the types a caller already has: a source
+/// ([`CodecZenohInitBodySource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecZenohInitBodyParts<'a> {
+    /// The `version` field.
+    pub version: u8,
+    /// The `cbyte` field.
+    pub cbyte: u8,
+    /// The `zid` field.
+    pub zid: &'a [u8],
+    /// The `sn_res` field.
+    pub sn_res: Option<u8>,
+    /// The `batch_size` field.
+    pub batch_size: Option<u16>,
+    /// The `cookie` field.
+    pub cookie: Option<&'a [u8]>,
+}
+
+impl<'a> CodecZenohInitBodySource for CodecZenohInitBodyParts<'a> {
+    fn version(&self) -> u8 {
+        self.version
+    }
+    fn cbyte(&self) -> u8 {
+        self.cbyte
+    }
+    fn zid(&self) -> &[u8] {
+        self.zid
+    }
+    fn sn_res(&self) -> Option<u8> {
+        self.sn_res
+    }
+    fn batch_size(&self) -> Option<u16> {
+        self.batch_size
+    }
+    fn cookie(&self) -> Option<&[u8]> {
+        self.cookie
+    }
+}
+
 impl<'a> CodecZenohInitBodySource for CodecZenohInitBody<'a> {
     fn version(&self) -> u8 {
         self.version

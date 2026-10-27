@@ -109,6 +109,16 @@ pub trait CodecZenohExtUnitSource {
 impl<T: CodecZenohExtUnitSource + ?Sized> CodecZenohExtUnitSource for &T {
 }
 
+/// A value of `CodecZenohExtUnit` held in the types a caller already has: a source
+/// ([`CodecZenohExtUnitSource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecZenohExtUnitParts {
+}
+
+impl CodecZenohExtUnitSource for CodecZenohExtUnitParts {
+}
+
 impl CodecZenohExtUnitSource for CodecZenohExtUnit {
 }
 

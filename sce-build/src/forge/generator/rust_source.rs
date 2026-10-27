@@ -102,6 +102,9 @@ struct Child {
     /// The path of its overrides (`{Codec}Overrides`), which a chain of the
     /// codec's entries sets the end flag through.
     overrides_path: String,
+    /// The path of its borrowed source (`{Codec}Parts`) with the lifetime it
+    /// takes, as a field of a parent's parts names it.
+    parts_type: String,
 }
 
 /// How one field is read and written.
@@ -156,6 +159,19 @@ pub(crate) fn can_refuse_with(m: &CodecModel, mut child_refuses: impl FnMut(&str
         || m.variant.is_some()
         || m.fields.iter().any(|f| f.is_repeat() || f.is_tlv_chain())
         || child_aliases(m).into_iter().any(&mut child_refuses)
+}
+
+/// Whether the borrowed source of a codec (`{Codec}Parts`) carries a lifetime:
+/// it holds text, bytes, a list, an embedded body or a variant, each of which it
+/// borrows from the caller. A codec of scalars alone holds everything by value.
+pub(crate) fn parts_has_lifetime(m: &CodecModel) -> bool {
+    m.variant.is_some()
+        || m.fields.iter().any(|f| {
+            f.is_repeat()
+                || f.is_tlv_chain()
+                || f.is_embed()
+                || matches!(f.sce_type, SceType::Bytes | SceType::String)
+        })
 }
 
 /// The shapes the interface covers.
@@ -232,6 +248,16 @@ impl<'a> Plan<'a> {
             type_name: import.type_name.clone(),
             trait_path: format!("super::{}::{}Source", import.namespace, import.type_name),
             overrides_path: format!("super::{}::{}Overrides", import.namespace, import.type_name),
+            parts_type: format!(
+                "super::{}::{}Parts{}",
+                import.namespace,
+                import.type_name,
+                if import.codec_parts_lifetime {
+                    "<'a>"
+                } else {
+                    ""
+                }
+            ),
         })
     }
 
@@ -820,12 +846,173 @@ impl<'a> Plan<'a> {
         )
     }
 
+    // ── the borrowed source ──────────────────────────────────────────
+
+    fn parts_name(&self) -> String {
+        format!("{}Parts", self.name())
+    }
+
+    fn parts_body_name(&self) -> String {
+        format!("{}PartsBody", self.name())
+    }
+
+    /// `<'a>` when the parts borrow from the caller, otherwise nothing.
+    fn parts_lt(&self) -> &'static str {
+        if parts_has_lifetime(self.m()) {
+            "<'a>"
+        } else {
+            ""
+        }
+    }
+
+    /// The type a field of the parts holds: what the caller already has in hand
+    /// for the value the accessor says, borrowed for the life of the parts.
+    fn parts_value_type(&self, field: &CodecField) -> String {
+        if let Some(child) = self.child(field) {
+            return if field.is_embed() {
+                format!("&'a {}", child.parts_type)
+            } else {
+                format!("&'a [{}]", child.parts_type)
+            };
+        }
+        match &field.sce_type {
+            SceType::Bytes => "&'a [u8]".to_string(),
+            SceType::String => "&'a str".to_string(),
+            other => self.l().type_name(other).to_string(),
+        }
+    }
+
+    fn parts_field_type(&self, field: &CodecField) -> String {
+        let value = self.parts_value_type(field);
+        if field.present_if.is_some() || self.stated(field) {
+            format!("Option<{value}>")
+        } else {
+            value
+        }
+    }
+
+    /// `{Codec}Parts`: a source that holds what a value says in the types a
+    /// caller already has, with its lists as slices of the entries' parts and its
+    /// bodies as references. Nothing is copied into it and it reserves no room
+    /// for a list's capacity, so the stack an encode needs is the entries the
+    /// caller holds (ADR 0058 §4).
+    fn parts_definition(&self) -> String {
+        let mut members = String::new();
+        for field in &self.m().fields {
+            if !(self.presented(field) || self.stated(field)) {
+                continue;
+            }
+            members.push_str(&format!(
+                "    /// The `{id}` field.\n    pub {accessor}: {ty},\n",
+                id = field.id,
+                accessor = self.accessor(field),
+                ty = self.parts_field_type(field),
+            ));
+        }
+        let mut out = String::new();
+        if self.m().variant.is_some() {
+            members.push_str(&format!(
+                "    /// The arm of the variant this value holds.\n    pub body: {}{},\n",
+                self.parts_body_name(),
+                self.parts_lt()
+            ));
+            let mut arms = String::new();
+            let tag = self.l().type_name(&self.tag_type()).to_string();
+            for arm in self.arms() {
+                if arm.value.is_some() {
+                    arms.push_str(&format!(
+                        "    {}(&'a {}),\n",
+                        arm.variant_name, arm.child.parts_type
+                    ));
+                } else {
+                    arms.push_str(&format!(
+                        "    /// The tag the grammar could not name, and the body it holds.\n    Default {{ tag: {tag}, body: &'a {} }},\n",
+                        arm.child.parts_type
+                    ));
+                }
+            }
+            out.push_str(&format!(
+                "/// The arm of `{name}`'s variant that {parts} holds.\n\
+                 #[allow(dead_code)]\n\
+                 #[derive(Debug, Clone, Copy)]\n\
+                 pub enum {body}<'a> {{\n{arms}}}\n\n",
+                name = self.name(),
+                parts = self.parts_name(),
+                body = self.parts_body_name(),
+            ));
+        }
+        out.push_str(&format!(
+            "/// A value of `{name}` held in the types a caller already has: a source\n\
+             /// ([`{trait_name}`]) whose lists are slices and whose bodies are references.\n\
+             #[allow(dead_code)]\n\
+             #[derive(Debug, Clone, Copy)]\n\
+             pub struct {parts}{lt} {{\n{members}}}\n\n",
+            name = self.name(),
+            trait_name = self.trait_name,
+            parts = self.parts_name(),
+            lt = self.parts_lt(),
+        ));
+        out
+    }
+
+    fn parts_impl(&self) -> String {
+        let mut items = String::new();
+        for field in &self.m().fields {
+            if !(self.presented(field) || self.stated(field)) {
+                continue;
+            }
+            let accessor = self.accessor(field);
+            let read = if self.child(field).is_some() && !field.is_embed() {
+                if field.present_if.is_some() {
+                    format!("self.{accessor}.map(<[_]>::iter)")
+                } else {
+                    format!("self.{accessor}.iter()")
+                }
+            } else {
+                format!("self.{accessor}")
+            };
+            items.push_str(&format!(
+                "    fn {accessor}(&self) -> {ty} {{\n        {read}\n    }}\n",
+                ty = self.accessor_type(field),
+            ));
+        }
+        if self.m().variant.is_some() {
+            let enum_name = self.body_enum();
+            let parts_body = self.parts_body_name();
+            let mut arms = String::new();
+            for arm in self.arms() {
+                if arm.value.is_some() {
+                    arms.push_str(&format!(
+                        "            {parts_body}::{name}(_b) => {enum_name}::{name}(*_b),\n",
+                        name = arm.variant_name,
+                    ));
+                } else {
+                    arms.push_str(&format!(
+                        "            {parts_body}::Default {{ tag, body }} => {enum_name}::Default {{ tag: *tag, body: *body }},\n",
+                    ));
+                }
+            }
+            items.push_str(&format!(
+                "    fn body(&self) -> {ty} {{\n        match &self.body {{\n{arms}        }}\n    }}\n",
+                ty = self.variant_type(),
+            ));
+        }
+        let lt = self.parts_lt();
+        format!(
+            "impl{lt} {trait_name} for {parts}{lt} {{\n{items}}}\n\n",
+            trait_name = self.trait_name,
+            parts = self.parts_name(),
+        )
+    }
+
     fn text(&self) -> String {
         let mut out = String::new();
         out.push_str(&self.body_enum_definition());
         out.push_str(&self.overrides_definition());
         out.push_str(&self.trait_definition());
         out.push_str(&self.reference_impl());
+        out.push_str(&self.parts_definition());
+        out.push_str(&self.parts_impl());
         out.push_str(&self.impls());
         out.push_str(&self.encode_impl());
         out

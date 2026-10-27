@@ -283,6 +283,42 @@ impl<T: CodecZenohExtEntrySource + ?Sized> CodecZenohExtEntrySource for &T {
     }
 }
 
+/// The arm of `CodecZenohExtEntry`'s variant that CodecZenohExtEntryParts holds.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub enum CodecZenohExtEntryPartsBody<'a> {
+    CodecZenohExtUnit(&'a super::codec_zenoh_ext_unit::CodecZenohExtUnitParts),
+    CodecZenohExtZint(&'a super::codec_zenoh_ext_zint::CodecZenohExtZintParts),
+    CodecZenohExtZbuf(&'a super::codec_zenoh_ext_zbuf::CodecZenohExtZbufParts<'a>),
+    /// The tag the grammar could not name, and the body it holds.
+    Default { tag: u8, body: &'a super::codec_zenoh_ext_unit::CodecZenohExtUnitParts },
+}
+
+/// A value of `CodecZenohExtEntry` held in the types a caller already has: a source
+/// ([`CodecZenohExtEntrySource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecZenohExtEntryParts<'a> {
+    /// The `header` field.
+    pub header: u8,
+    /// The arm of the variant this value holds.
+    pub body: CodecZenohExtEntryPartsBody<'a>,
+}
+
+impl<'a> CodecZenohExtEntrySource for CodecZenohExtEntryParts<'a> {
+    fn header(&self) -> u8 {
+        self.header
+    }
+    fn body(&self) -> CodecZenohExtEntryVariantSource<'_, impl super::codec_zenoh_ext_unit::CodecZenohExtUnitSource, impl super::codec_zenoh_ext_zint::CodecZenohExtZintSource, impl super::codec_zenoh_ext_zbuf::CodecZenohExtZbufSource, impl super::codec_zenoh_ext_unit::CodecZenohExtUnitSource> {
+        match &self.body {
+            CodecZenohExtEntryPartsBody::CodecZenohExtUnit(_b) => CodecZenohExtEntryVariantSource::CodecZenohExtUnit(*_b),
+            CodecZenohExtEntryPartsBody::CodecZenohExtZint(_b) => CodecZenohExtEntryVariantSource::CodecZenohExtZint(*_b),
+            CodecZenohExtEntryPartsBody::CodecZenohExtZbuf(_b) => CodecZenohExtEntryVariantSource::CodecZenohExtZbuf(*_b),
+            CodecZenohExtEntryPartsBody::Default { tag, body } => CodecZenohExtEntryVariantSource::Default { tag: *tag, body: *body },
+        }
+    }
+}
+
 impl<'a> CodecZenohExtEntrySource for CodecZenohExtEntry<'a> {
     fn header(&self) -> u8 {
         self.header

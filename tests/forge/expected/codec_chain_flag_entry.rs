@@ -216,6 +216,31 @@ impl<T: CodecChainFlagEntrySource + ?Sized> CodecChainFlagEntrySource for &T {
     }
 }
 
+/// A value of `CodecChainFlagEntry` held in the types a caller already has: a source
+/// ([`CodecChainFlagEntrySource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecChainFlagEntryParts {
+    /// The `header` field.
+    pub header: u8,
+    /// The `short_value` field.
+    pub short_value: Option<u8>,
+    /// The `long_value` field.
+    pub long_value: Option<u16>,
+}
+
+impl CodecChainFlagEntrySource for CodecChainFlagEntryParts {
+    fn header(&self) -> u8 {
+        self.header
+    }
+    fn short_value(&self) -> Option<u8> {
+        self.short_value
+    }
+    fn long_value(&self) -> Option<u16> {
+        self.long_value
+    }
+}
+
 impl CodecChainFlagEntrySource for CodecChainFlagEntry {
     fn header(&self) -> u8 {
         self.header

@@ -148,6 +148,26 @@ impl<T: CodecChainHasMarkerSliceSource + ?Sized> CodecChainHasMarkerSliceSource 
     }
 }
 
+/// A value of `CodecChainHasMarkerSlice` held in the types a caller already has: a source
+/// ([`CodecChainHasMarkerSliceSource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecChainHasMarkerSliceParts<'a> {
+    /// The `kind` field.
+    pub kind: u16,
+    /// The `data` field.
+    pub data: &'a [u8],
+}
+
+impl<'a> CodecChainHasMarkerSliceSource for CodecChainHasMarkerSliceParts<'a> {
+    fn kind(&self) -> u16 {
+        self.kind
+    }
+    fn data(&self) -> &[u8] {
+        self.data
+    }
+}
+
 impl<'a> CodecChainHasMarkerSliceSource for CodecChainHasMarkerSlice<'a> {
     fn kind(&self) -> u16 {
         self.kind

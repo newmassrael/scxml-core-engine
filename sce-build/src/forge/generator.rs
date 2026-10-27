@@ -42,6 +42,12 @@ pub(crate) fn supported_source_with(
     rust_source::supported_with(m, import_has_source)
 }
 
+/// Whether the borrowed source of a codec (`{Codec}Parts`, ADR 0058) carries a
+/// lifetime. See [`rust_source::parts_has_lifetime`].
+pub(crate) fn source_parts_have_lifetime(m: &CodecModel) -> bool {
+    rust_source::parts_has_lifetime(m)
+}
+
 // ── Cross-file import resolution ──────────────────────────────────
 
 /// One variant of an imported enum as a content line writes it
@@ -249,6 +255,12 @@ pub struct ImportContext {
     /// too. `false` for non-codec imports.
     #[serde(skip)]
     pub codec_source_can_refuse: bool,
+
+    /// ADR 0058: `true` when the borrowed source of the imported codec
+    /// (`{Codec}Parts`) carries a lifetime, which a parent that names it must
+    /// name too. `false` for non-codec imports.
+    #[serde(skip)]
+    pub codec_parts_lifetime: bool,
 
     /// Owned→borrowed projection round: this import's *contribution* to a
     /// parent codec's `as_borrowed` fallibility — `true` only when the
@@ -965,6 +977,7 @@ fn resolve_single_import(
         codec_view_is_borrowed: false,
         codec_has_source: false,
         codec_source_can_refuse: false,
+        codec_parts_lifetime: false,
         codec_as_borrowed_fallible: false,
         buffer_pool_slot_size: None,
         queue_consumers_many: false,
@@ -33615,6 +33628,7 @@ mod tests {
             codec_view_is_borrowed: false,
             codec_has_source: false,
             codec_source_can_refuse: false,
+            codec_parts_lifetime: false,
             codec_as_borrowed_fallible: false,
             buffer_pool_slot_size: None,
             queue_consumers_many: false,
@@ -34491,6 +34505,7 @@ mod tests {
                 codec_view_is_borrowed: false,
                 codec_has_source: false,
                 codec_source_can_refuse: false,
+                codec_parts_lifetime: false,
                 codec_as_borrowed_fallible: false,
                 buffer_pool_slot_size: None,
                 queue_consumers_many: false,
@@ -34542,6 +34557,7 @@ mod tests {
                 codec_view_is_borrowed: false,
                 codec_has_source: false,
                 codec_source_can_refuse: false,
+                codec_parts_lifetime: false,
                 codec_as_borrowed_fallible: false,
                 buffer_pool_slot_size: None,
                 queue_consumers_many: false,

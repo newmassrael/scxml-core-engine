@@ -168,6 +168,31 @@ impl<T: CodecZenohOpenBodySource + ?Sized> CodecZenohOpenBodySource for &T {
     }
 }
 
+/// A value of `CodecZenohOpenBody` held in the types a caller already has: a source
+/// ([`CodecZenohOpenBodySource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecZenohOpenBodyParts<'a> {
+    /// The `lease` field.
+    pub lease: u64,
+    /// The `initial_sn` field.
+    pub initial_sn: u64,
+    /// The `cookie` field.
+    pub cookie: Option<&'a [u8]>,
+}
+
+impl<'a> CodecZenohOpenBodySource for CodecZenohOpenBodyParts<'a> {
+    fn lease(&self) -> u64 {
+        self.lease
+    }
+    fn initial_sn(&self) -> u64 {
+        self.initial_sn
+    }
+    fn cookie(&self) -> Option<&[u8]> {
+        self.cookie
+    }
+}
+
 impl<'a> CodecZenohOpenBodySource for CodecZenohOpenBody<'a> {
     fn lease(&self) -> u64 {
         self.lease

@@ -141,6 +141,21 @@ impl<T: CodecZenohSourceInfoExtSource + ?Sized> CodecZenohSourceInfoExtSource fo
     }
 }
 
+/// A value of `CodecZenohSourceInfoExt` held in the types a caller already has: a source
+/// ([`CodecZenohSourceInfoExtSource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecZenohSourceInfoExtParts<'a> {
+    /// The `info` field.
+    pub info: &'a super::codec_zenoh_source_info::CodecZenohSourceInfoParts<'a>,
+}
+
+impl<'a> CodecZenohSourceInfoExtSource for CodecZenohSourceInfoExtParts<'a> {
+    fn info(&self) -> &impl super::codec_zenoh_source_info::CodecZenohSourceInfoSource {
+        self.info
+    }
+}
+
 impl<'a> CodecZenohSourceInfoExtSource for CodecZenohSourceInfoExt<'a> {
     fn info(&self) -> &impl super::codec_zenoh_source_info::CodecZenohSourceInfoSource {
         &self.info

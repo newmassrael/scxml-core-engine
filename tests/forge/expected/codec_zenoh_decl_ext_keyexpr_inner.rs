@@ -209,6 +209,31 @@ impl<T: CodecZenohDeclExtKeyexprInnerSource + ?Sized> CodecZenohDeclExtKeyexprIn
     }
 }
 
+/// A value of `CodecZenohDeclExtKeyexprInner` held in the types a caller already has: a source
+/// ([`CodecZenohDeclExtKeyexprInnerSource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecZenohDeclExtKeyexprInnerParts<'a> {
+    /// The `inner_header` field.
+    pub inner_header: u8,
+    /// The `id` field.
+    pub id: u64,
+    /// The `suffix` field.
+    pub suffix: Option<&'a [u8]>,
+}
+
+impl<'a> CodecZenohDeclExtKeyexprInnerSource for CodecZenohDeclExtKeyexprInnerParts<'a> {
+    fn inner_header(&self) -> u8 {
+        self.inner_header
+    }
+    fn id(&self) -> u64 {
+        self.id
+    }
+    fn suffix(&self) -> Option<&[u8]> {
+        self.suffix
+    }
+}
+
 impl<'a> CodecZenohDeclExtKeyexprInnerSource for CodecZenohDeclExtKeyexprInner<'a> {
     fn inner_header(&self) -> u8 {
         self.inner_header

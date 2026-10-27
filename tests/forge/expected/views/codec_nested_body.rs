@@ -156,6 +156,21 @@ impl<T: CodecNestedBodySource + ?Sized> CodecNestedBodySource for &T {
     }
 }
 
+/// A value of `CodecNestedBody` held in the types a caller already has: a source
+/// ([`CodecNestedBodySource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecNestedBodyParts<'a> {
+    /// The `locs` field.
+    pub locs: &'a [super::codec_zenoh_locator::CodecZenohLocatorParts<'a>],
+}
+
+impl<'a> CodecNestedBodySource for CodecNestedBodyParts<'a> {
+    fn locs(&self) -> impl Iterator<Item = impl super::codec_zenoh_locator::CodecZenohLocatorSource> + Clone {
+        self.locs.iter()
+    }
+}
+
 impl<'a> CodecNestedBodySource for CodecNestedBody<'a> {
     fn locs(&self) -> impl Iterator<Item = impl super::codec_zenoh_locator::CodecZenohLocatorSource> + Clone {
         self.locs.iter()

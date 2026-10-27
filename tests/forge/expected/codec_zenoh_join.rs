@@ -244,6 +244,56 @@ impl<T: CodecZenohJoinSource + ?Sized> CodecZenohJoinSource for &T {
     }
 }
 
+/// A value of `CodecZenohJoin` held in the types a caller already has: a source
+/// ([`CodecZenohJoinSource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecZenohJoinParts<'a> {
+    /// The `version` field.
+    pub version: u8,
+    /// The `cbyte` field.
+    pub cbyte: u8,
+    /// The `zid` field.
+    pub zid: &'a [u8],
+    /// The `sn_res` field.
+    pub sn_res: Option<u8>,
+    /// The `batch_size` field.
+    pub batch_size: Option<u16>,
+    /// The `lease` field.
+    pub lease: u64,
+    /// The `next_sn_reliable` field.
+    pub next_sn_reliable: u64,
+    /// The `next_sn_best_effort` field.
+    pub next_sn_best_effort: u64,
+}
+
+impl<'a> CodecZenohJoinSource for CodecZenohJoinParts<'a> {
+    fn version(&self) -> u8 {
+        self.version
+    }
+    fn cbyte(&self) -> u8 {
+        self.cbyte
+    }
+    fn zid(&self) -> &[u8] {
+        self.zid
+    }
+    fn sn_res(&self) -> Option<u8> {
+        self.sn_res
+    }
+    fn batch_size(&self) -> Option<u16> {
+        self.batch_size
+    }
+    fn lease(&self) -> u64 {
+        self.lease
+    }
+    fn next_sn_reliable(&self) -> u64 {
+        self.next_sn_reliable
+    }
+    fn next_sn_best_effort(&self) -> u64 {
+        self.next_sn_best_effort
+    }
+}
+
 impl<'a> CodecZenohJoinSource for CodecZenohJoin<'a> {
     fn version(&self) -> u8 {
         self.version

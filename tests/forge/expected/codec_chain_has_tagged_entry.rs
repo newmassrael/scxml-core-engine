@@ -169,6 +169,31 @@ impl<T: CodecChainHasTaggedEntrySource + ?Sized> CodecChainHasTaggedEntrySource 
     }
 }
 
+/// A value of `CodecChainHasTaggedEntry` held in the types a caller already has: a source
+/// ([`CodecChainHasTaggedEntrySource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecChainHasTaggedEntryParts {
+    /// The `entry_type` field.
+    pub entry_type: u8,
+    /// The `ctl` field.
+    pub ctl: u8,
+    /// The `body` field.
+    pub body: u8,
+}
+
+impl CodecChainHasTaggedEntrySource for CodecChainHasTaggedEntryParts {
+    fn entry_type(&self) -> u8 {
+        self.entry_type
+    }
+    fn ctl(&self) -> u8 {
+        self.ctl
+    }
+    fn body(&self) -> u8 {
+        self.body
+    }
+}
+
 impl CodecChainHasTaggedEntrySource for CodecChainHasTaggedEntry {
     fn entry_type(&self) -> u8 {
         self.entry_type

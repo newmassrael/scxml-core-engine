@@ -174,6 +174,36 @@ impl<T: CodecZenohDeclQueryableSource + ?Sized> CodecZenohDeclQueryableSource fo
     }
 }
 
+/// A value of `CodecZenohDeclQueryable` held in the types a caller already has: a source
+/// ([`CodecZenohDeclQueryableSource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecZenohDeclQueryableParts<'a> {
+    /// The `id` field.
+    pub id: u32,
+    /// The `wireexpr` field.
+    pub wireexpr: &'a super::codec_zenoh_wireexpr::CodecZenohWireexprParts<'a>,
+    /// The `ext_type` field.
+    pub ext_type: Option<u8>,
+    /// The `ext_value` field.
+    pub ext_value: Option<u64>,
+}
+
+impl<'a> CodecZenohDeclQueryableSource for CodecZenohDeclQueryableParts<'a> {
+    fn id(&self) -> u32 {
+        self.id
+    }
+    fn wireexpr(&self) -> &impl super::codec_zenoh_wireexpr::CodecZenohWireexprSource {
+        self.wireexpr
+    }
+    fn ext_type(&self) -> Option<u8> {
+        self.ext_type
+    }
+    fn ext_value(&self) -> Option<u64> {
+        self.ext_value
+    }
+}
+
 impl<'a> CodecZenohDeclQueryableSource for CodecZenohDeclQueryable<'a> {
     fn id(&self) -> u32 {
         self.id

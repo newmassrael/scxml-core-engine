@@ -274,6 +274,36 @@ impl<T: CodecZenohQuerySource + ?Sized> CodecZenohQuerySource for &T {
     }
 }
 
+/// A value of `CodecZenohQuery` held in the types a caller already has: a source
+/// ([`CodecZenohQuerySource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecZenohQueryParts<'a> {
+    /// The `header` field.
+    pub header: u8,
+    /// The `consolidation` field.
+    pub consolidation: Option<u8>,
+    /// The `parameters` field.
+    pub parameters: Option<&'a [u8]>,
+    /// The `extensions` field.
+    pub extensions: Option<&'a [super::codec_zenoh_ext_entry::CodecZenohExtEntryParts<'a>]>,
+}
+
+impl<'a> CodecZenohQuerySource for CodecZenohQueryParts<'a> {
+    fn header(&self) -> u8 {
+        self.header
+    }
+    fn consolidation(&self) -> Option<u8> {
+        self.consolidation
+    }
+    fn parameters(&self) -> Option<&[u8]> {
+        self.parameters
+    }
+    fn extensions(&self) -> Option<impl Iterator<Item = impl super::codec_zenoh_ext_entry::CodecZenohExtEntrySource> + Clone> {
+        self.extensions.map(<[_]>::iter)
+    }
+}
+
 impl<'a> CodecZenohQuerySource for CodecZenohQuery<'a> {
     fn header(&self) -> u8 {
         self.header

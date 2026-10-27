@@ -169,6 +169,26 @@ impl<T: CodecPresentIfBasicSource + ?Sized> CodecPresentIfBasicSource for &T {
     }
 }
 
+/// A value of `CodecPresentIfBasic` held in the types a caller already has: a source
+/// ([`CodecPresentIfBasicSource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecPresentIfBasicParts {
+    /// The `flags` field.
+    pub flags: u8,
+    /// The `seq` field.
+    pub seq: Option<u16>,
+}
+
+impl CodecPresentIfBasicSource for CodecPresentIfBasicParts {
+    fn flags(&self) -> u8 {
+        self.flags
+    }
+    fn seq(&self) -> Option<u16> {
+        self.seq
+    }
+}
+
 impl CodecPresentIfBasicSource for CodecPresentIfBasic {
     fn flags(&self) -> u8 {
         self.flags

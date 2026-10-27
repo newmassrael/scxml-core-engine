@@ -180,6 +180,36 @@ impl<T: CodecZenohSourceInfoSource + ?Sized> CodecZenohSourceInfoSource for &T {
     }
 }
 
+/// A value of `CodecZenohSourceInfo` held in the types a caller already has: a source
+/// ([`CodecZenohSourceInfoSource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecZenohSourceInfoParts<'a> {
+    /// The `header` field.
+    pub header: u8,
+    /// The `zid` field.
+    pub zid: &'a [u8],
+    /// The `eid` field.
+    pub eid: u32,
+    /// The `sn` field.
+    pub sn: u32,
+}
+
+impl<'a> CodecZenohSourceInfoSource for CodecZenohSourceInfoParts<'a> {
+    fn header(&self) -> u8 {
+        self.header
+    }
+    fn zid(&self) -> &[u8] {
+        self.zid
+    }
+    fn eid(&self) -> u32 {
+        self.eid
+    }
+    fn sn(&self) -> u32 {
+        self.sn
+    }
+}
+
 impl<'a> CodecZenohSourceInfoSource for CodecZenohSourceInfo<'a> {
     fn header(&self) -> u8 {
         self.header

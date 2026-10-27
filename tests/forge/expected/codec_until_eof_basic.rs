@@ -145,6 +145,21 @@ impl<T: CodecUntilEofBasicSource + ?Sized> CodecUntilEofBasicSource for &T {
     }
 }
 
+/// A value of `CodecUntilEofBasic` held in the types a caller already has: a source
+/// ([`CodecUntilEofBasicSource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecUntilEofBasicParts<'a> {
+    /// The `msgs` field.
+    pub msgs: &'a [super::codec_repeat_elem::CodecRepeatElemParts],
+}
+
+impl<'a> CodecUntilEofBasicSource for CodecUntilEofBasicParts<'a> {
+    fn msgs(&self) -> impl Iterator<Item = impl super::codec_repeat_elem::CodecRepeatElemSource> + Clone {
+        self.msgs.iter()
+    }
+}
+
 impl CodecUntilEofBasicSource for CodecUntilEofBasic {
     fn msgs(&self) -> impl Iterator<Item = impl super::codec_repeat_elem::CodecRepeatElemSource> + Clone {
         self.msgs.iter()

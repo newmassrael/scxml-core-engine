@@ -117,6 +117,21 @@ impl<T: CodecVariantSessionOpenSource + ?Sized> CodecVariantSessionOpenSource fo
     }
 }
 
+/// A value of `CodecVariantSessionOpen` held in the types a caller already has: a source
+/// ([`CodecVariantSessionOpenSource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecVariantSessionOpenParts {
+    /// The `version` field.
+    pub version: u16,
+}
+
+impl CodecVariantSessionOpenSource for CodecVariantSessionOpenParts {
+    fn version(&self) -> u16 {
+        self.version
+    }
+}
+
 impl CodecVariantSessionOpenSource for CodecVariantSessionOpen {
     fn version(&self) -> u16 {
         self.version

@@ -183,6 +183,31 @@ impl<T: CodecPresentIfLengthRefSource + ?Sized> CodecPresentIfLengthRefSource fo
     }
 }
 
+/// A value of `CodecPresentIfLengthRef` held in the types a caller already has: a source
+/// ([`CodecPresentIfLengthRefSource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecPresentIfLengthRefParts<'a> {
+    /// The `flags` field.
+    pub flags: u8,
+    /// The `payload_size` field.
+    pub payload_size: Option<u8>,
+    /// The `payload` field.
+    pub payload: Option<&'a [u8]>,
+}
+
+impl<'a> CodecPresentIfLengthRefSource for CodecPresentIfLengthRefParts<'a> {
+    fn flags(&self) -> u8 {
+        self.flags
+    }
+    fn payload_size(&self) -> Option<u8> {
+        self.payload_size
+    }
+    fn payload(&self) -> Option<&[u8]> {
+        self.payload
+    }
+}
+
 impl<'a> CodecPresentIfLengthRefSource for CodecPresentIfLengthRef<'a> {
     fn flags(&self) -> u8 {
         self.flags

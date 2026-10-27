@@ -233,6 +233,36 @@ impl<T: CodecChainPrevEntrySource + ?Sized> CodecChainPrevEntrySource for &T {
     }
 }
 
+/// A value of `CodecChainPrevEntry` held in the types a caller already has: a source
+/// ([`CodecChainPrevEntrySource`]) whose lists are slices and whose bodies are references.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+pub struct CodecChainPrevEntryParts {
+    /// The `header` field.
+    pub header: u8,
+    /// The `short_value` field.
+    pub short_value: Option<u8>,
+    /// The `long_value` field.
+    pub long_value: Option<u16>,
+    /// The `tag` field.
+    pub tag: Option<u8>,
+}
+
+impl CodecChainPrevEntrySource for CodecChainPrevEntryParts {
+    fn header(&self) -> u8 {
+        self.header
+    }
+    fn short_value(&self) -> Option<u8> {
+        self.short_value
+    }
+    fn long_value(&self) -> Option<u16> {
+        self.long_value
+    }
+    fn tag(&self) -> Option<u8> {
+        self.tag
+    }
+}
+
 impl CodecChainPrevEntrySource for CodecChainPrevEntry {
     fn header(&self) -> u8 {
         self.header
