@@ -129,10 +129,12 @@ void Logger::ensureBackend() {
 std::string Logger::extractCleanFunctionName(const SCE::source_location &loc) {
     std::string full_name = loc.function_name();
 
-    // Find the opening parenthesis
+    // `SCE::source_location` is filled from `__builtin_FUNCTION()`, which names
+    // the function alone, with no signature to strip. A signature (as a
+    // pretty-function spelling gives) is reduced to its qualified name below.
     size_t paren_pos = full_name.find('(');
     if (paren_pos == std::string::npos) {
-        return "UnknownFunction";
+        return full_name.empty() ? "UnknownFunction" : full_name;
     }
 
     // Work backwards from the opening parenthesis

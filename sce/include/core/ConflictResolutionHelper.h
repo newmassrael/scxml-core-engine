@@ -208,11 +208,10 @@ struct ConflictResolutionAlgorithms {
  * - Single Source of Truth: All conflict resolution logic in ConflictResolutionAlgorithms
  * - W3C SCXML Perfect Compliance: Full implementation of Appendix D.2 algorithm
  */
-#if __cpp_concepts >= 202002L
-template <HierarchyPolicy StatePolicy> class ConflictResolutionHelper {
-#else
 template <typename StatePolicy> class ConflictResolutionHelper {
-#endif
+    static_assert(HierarchyPolicyTrait<StatePolicy>::value,
+                  "StatePolicy must be a hierarchy policy: State, parents, child states in document order, "
+                  "compound and parallel states (HierarchyPolicyTrait)");
 
 public:
     using State = typename StatePolicy::State;

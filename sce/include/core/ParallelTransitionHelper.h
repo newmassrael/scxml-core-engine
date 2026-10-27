@@ -235,13 +235,12 @@ public:
      * @param configuration The currently active states
      * @return Set of states that will be exited
      */
-#if __cpp_concepts >= 202002L
-    template <typename StateType, HierarchyPolicy PolicyType>
-#else
     template <typename StateType, typename PolicyType>
-#endif
     static std::unordered_set<StateType> computeExitSet(const Transition<StateType> &transition,
                                                         const std::vector<StateType> &configuration) {
+        static_assert(HierarchyPolicyTrait<PolicyType>::value,
+                      "PolicyType must be a hierarchy policy: State, parents, child states in document order, "
+                      "compound and parallel states (HierarchyPolicyTrait)");
         using Hierarchy = SCE::Core::HierarchicalStateHelper<PolicyType>;
 
         // ARCHITECTURE.md Zero Duplication: one appendix procedure, bound here
@@ -276,13 +275,12 @@ public:
      * @param activeStates Current active states
      * @return States to exit in reverse document order
      */
-#if __cpp_concepts >= 202002L
-    template <typename StateType, HierarchyPolicy PolicyType>
-#else
     template <typename StateType, typename PolicyType>
-#endif
     static std::vector<StateType> computeStatesToExit(const std::vector<Transition<StateType>> &transitions,
                                                       const std::vector<StateType> &activeStates) {
+        static_assert(HierarchyPolicyTrait<PolicyType>::value,
+                      "PolicyType must be a hierarchy policy: State, parents, child states in document order, "
+                      "compound and parallel states (HierarchyPolicyTrait)");
         using Hierarchy = SCE::Core::HierarchicalStateHelper<PolicyType>;
 
         // §scxml-D-computeExitSet takes a LIST of transitions and unions their

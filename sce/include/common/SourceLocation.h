@@ -15,45 +15,60 @@
 
 #pragma once
 
-/**
- * @brief C++17/C++20 compatibility shim for std::source_location
- *
- * On C++20 compilers with library support, this aliases std::source_location.
- * On C++17 compilers, this provides a lightweight stub with the same API
- * that returns empty/zero values, allowing SCE to compile without requiring
- * C++20 standard library features.
- */
-
-#if __has_include(<source_location>) && __cplusplus >= 202002L
-#include <source_location>
-
-namespace SCE {
-using source_location = std::source_location;
-}
-#else
 #include <cstdint>
 
 namespace SCE {
+
+/**
+ * @brief The place in the source a log call was written
+ *
+ * One SCE type in every language standard, never an alias of
+ * `std::source_location`: `ILoggerBackend::log` takes it, so a consumer's
+ * C++17 override and SCE's C++20 caller must name the same type, or the
+ * virtual they share would mangle two ways (docs/adr/0059).
+ *
+ * `current()` is filled from the compiler builtins `std::source_location`
+ * itself is built on. As a default argument they are evaluated where the
+ * call that relies on the default is written, so `current()` named as a
+ * default argument reports its caller's location. GCC, Clang and MSVC
+ * (VS 2019 16.6 and later) provide these builtins at C++17.
+ *
+ * `column()` is always 0: GCC has no column builtin, and a value one compiler
+ * fills and another leaves out would make the field mean different things.
+ */
 struct source_location {
-    static constexpr source_location current() noexcept {
-        return {};
+    static constexpr source_location current(const char *file = __builtin_FILE(),
+                                             const char *function = __builtin_FUNCTION(),
+                                             std::uint_least32_t line = __builtin_LINE()) noexcept {
+        source_location location;
+        location.file_ = file;
+        location.function_ = function;
+        location.line_ = line;
+        return location;
     }
 
+    constexpr source_location() noexcept = default;
+
     constexpr const char *file_name() const noexcept {
-        return "";
+        return file_;
     }
 
     constexpr const char *function_name() const noexcept {
-        return "";
+        return function_;
     }
 
-    constexpr uint_least32_t line() const noexcept {
+    constexpr std::uint_least32_t line() const noexcept {
+        return line_;
+    }
+
+    constexpr std::uint_least32_t column() const noexcept {
         return 0;
     }
 
-    constexpr uint_least32_t column() const noexcept {
-        return 0;
-    }
+private:
+    const char *file_ = "";
+    const char *function_ = "";
+    std::uint_least32_t line_ = 0;
 };
+
 }  // namespace SCE
-#endif

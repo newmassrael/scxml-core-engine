@@ -30,13 +30,10 @@
 namespace SCE {
 
 namespace detail {
-// C++17/20 portable starts_with: uses std::string::starts_with on C++20, rfind on C++17
+// Whether `s` begins with `prefix`. One definition in every language standard
+// (docs/adr/0059): an `rfind` anchored at 0 is a prefix test in C++17 as in C++20.
 inline bool starts_with(const std::string &s, const char *prefix) {
-#if __cplusplus >= 202002L
-    return s.starts_with(prefix);
-#else
     return s.rfind(prefix, 0) == 0;
-#endif
 }
 }  // namespace detail
 

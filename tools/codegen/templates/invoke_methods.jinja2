@@ -92,7 +92,7 @@
                                 {% endif %}
                                 typename decltype(seed.v_{{ param.name | to_snake_case }})::value_type seedValue = {{ param.native_seed }};
                                 {% if param.native_fails %}
-                                if (sce_failure_.failed()) SCE_UNLIKELY {
+                                if (SCE_EXPECT_FALSE(sce_failure_.failed())) {
                                     SCE_LOG_ERROR("Invoke param '{{ param.name | escape_cpp }}' overflowed or failed");
                                     {% if 'error.execution' in model.events %}
                                     engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, "<invoke> <param name='{{ param.name | escape_cpp }}'> could not be read"));
@@ -118,7 +118,7 @@
                         {
                             SCE::Forge::AlgorithmFailure sce_failure_;
                             [[maybe_unused]] auto unkeptValue = {{ param.native_value }};
-                            if (sce_failure_.failed()) SCE_UNLIKELY {
+                            if (SCE_EXPECT_FALSE(sce_failure_.failed())) {
                                 SCE_LOG_ERROR("Invoke param '{{ param.name | escape_cpp }}' overflowed or failed");
                                 {% if 'error.execution' in model.events %}
                                 engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, "<invoke> <param name='{{ param.name | escape_cpp }}'> could not be read"));
@@ -476,7 +476,7 @@
 {% endif %}
                             std::string computedSrc = {{ invoke_info.native_src }};
 {% if invoke_info.native_src_fails %}
-                            if (sce_failure_.failed()) SCE_UNLIKELY {
+                            if (SCE_EXPECT_FALSE(sce_failure_.failed())) {
 {% if 'error.execution' in model.events %}
                                 engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, "<invoke srcexpr> could not be evaluated"));
 {% endif %}
@@ -634,7 +634,7 @@
 {% endif %}
                             std::string computedSrc = {{ invoke_info.native_src }};
 {% if invoke_info.native_src_fails %}
-                            if (sce_failure_.failed()) SCE_UNLIKELY {
+                            if (SCE_EXPECT_FALSE(sce_failure_.failed())) {
                                 engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, "<invoke srcexpr> could not be evaluated"));
                                 return;
                             }
@@ -654,7 +654,7 @@
 {% endif %}
                             std::string computedContent = {{ invoke_info.native_content }};
 {% if invoke_info.native_content_fails %}
-                            if (sce_failure_.failed()) SCE_UNLIKELY {
+                            if (SCE_EXPECT_FALSE(sce_failure_.failed())) {
                                 engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, "<invoke> content expr could not be evaluated"));
                                 return;
                             }
@@ -729,7 +729,7 @@
                             {% endif %}
                             ScriptValue paramValue = {{ param.native_value }};
                             {% if param.native_fails %}
-                            if (sce_failure_.failed()) SCE_UNLIKELY {
+                            if (SCE_EXPECT_FALSE(sce_failure_.failed())) {
                                 {% if request_checks and param.name in request_checks %}
                                 engine.raise(typename Engine::EventWithMetadata(
                                     Event::Error_execution,
@@ -1071,7 +1071,7 @@
     // enqueueing; a false return means the address names no live child of
     // ours and the event takes the normal external path.
     //
-    // Detected by `HasChildSessionDelivery` rather than required, because a
+    // Detected by `HasChildSessionDeliveryTrait` rather than required, because a
     // machine with no local scxml invoke owns no child to route to.
     bool deliverToChildSession(const std::string& childSessionId,
                                const ::SCE::Common::ForwardedEvent& addressed) {

@@ -965,7 +965,7 @@ pub struct Engine<P: StatePolicy> {
     ///
     /// The concrete (per-machine, no_std-sized) queue type is supplied by the
     /// policy via [`StatePolicy::EventQueue`]; the engine drives it through the
-    /// [`EventQueueLike`] abstraction (mirrors C++ `EventQueueAdapter`).
+    /// [`EventQueueLike`] abstraction (mirrors C++ `EventQueueAdapterTrait`).
     pub(crate) internal_queue: P::EventQueue,
     /// W3C SCXML Appendix D: External event queue (low priority, external sends).
     pub(crate) external_queue: P::EventQueue,

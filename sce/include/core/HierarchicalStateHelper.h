@@ -27,7 +27,8 @@
 namespace SCE::Core {
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// C++17-compatible trait for ParallelStatePolicy detection
+// Trait for parallel state policy detection (presence only; the typed
+// contract is ParallelStatePolicyTrait in core/StatePolicyConcepts.h)
 // Used in if constexpr to check if a policy supports parallel state operations.
 // ═══════════════════════════════════════════════════════════════════════════════
 template <typename P, typename = void> struct IsParallelStatePolicyTrait : std::false_type {};
@@ -156,11 +157,10 @@ struct HierarchicalAlgorithms {
  * - Static-First Principle: All hierarchy operations are Closed World
  *   (state structure known at compile-time from SCXML parse)
  */
-#if __cpp_concepts >= 202002L
-template <HierarchyPolicy StatePolicy> class HierarchicalStateHelper {
-#else
 template <typename StatePolicy> class HierarchicalStateHelper {
-#endif
+    static_assert(HierarchyPolicyTrait<StatePolicy>::value,
+                  "StatePolicy must be a hierarchy policy: State, parents, child states in document order, "
+                  "compound and parallel states (HierarchyPolicyTrait)");
 
 public:
     using State = typename StatePolicy::State;

@@ -112,7 +112,7 @@ typedParams["{{ param.name | escape_cpp }}"].push_back(ScriptValue(std::string("
 {% endif %}
     ScriptValue paramValue = {{ param.native_value }};
 {% if param.native_fails %}
-    if (sce_failure_.failed()) SCE_UNLIKELY {
+    if (SCE_EXPECT_FALSE(sce_failure_.failed())) {
 {{ param_eval_failed(param, '        ') }}
     } else {
         params["{{ param.name | escape_cpp }}"].push_back(
@@ -202,7 +202,7 @@ eventData = contentData;
 {% endif %}
     ScriptValue contentValue = {{ action.native_content_value }};
 {% if action.native_content_value_fails %}
-    if (sce_failure_.failed()) SCE_UNLIKELY {
+    if (SCE_EXPECT_FALSE(sce_failure_.failed())) {
         SCE_LOG_ERROR("<send> contentexpr failed to evaluate");
         engine.raise(typename Engine::EventWithMetadata(Event::Error_execution,
                                                         "<send> contentexpr failed to evaluate"));
@@ -410,7 +410,7 @@ std::string eventName;
 {% endif %}
     eventName = {{ action.native_event }};
 {% if action.native_event_fails %}
-    if (sce_failure_.failed()) SCE_UNLIKELY {
+    if (SCE_EXPECT_FALSE(sce_failure_.failed())) {
         eventName.clear();
     }
 {% endif %}
@@ -458,7 +458,7 @@ std::string dynamicTarget;
 {% endif %}
     std::string sceRoute = {{ action.native_target }};
 {% if action.native_target_fails %}
-    if (sce_failure_.failed()) SCE_UNLIKELY {
+    if (SCE_EXPECT_FALSE(sce_failure_.failed())) {
 {{ send_arg_error("<send> targetexpr could not be evaluated", block_end, '        ') }}
     }
 {% endif %}
@@ -519,7 +519,7 @@ if (::SCE::SendHelper::isUnreachableTarget(dynamicTarget)) {
 {% endif %}
     const std::string delayText = {{ action.native_delay }};
 {% if action.native_delay_fails %}
-    if (sce_failure_.failed()) SCE_UNLIKELY {
+    if (SCE_EXPECT_FALSE(sce_failure_.failed())) {
 {{ send_arg_error("<send> delayexpr could not be evaluated", block_end, '        ') }}
     }
 {% endif %}

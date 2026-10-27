@@ -48,21 +48,21 @@
 {% set if_chain %}
 {% if action.native_cond %}
 // SCE Accepted Subset 2.15: a sce-static cond, lowered to C++ at build time
-if ({{ action.native_cond }}) SCE_LIKELY {
+if (SCE_EXPECT_TRUE({{ action.native_cond }})) {
 {% elif action.is_cpp_condition %}
 // W3C SCXML 4.2: native guard (cpp: prefix) - direct C++ evaluation
-if ({{ action.cond_cpp_transformed }}) SCE_LIKELY {
+if (SCE_EXPECT_TRUE({{ action.cond_cpp_transformed }})) {
 {% elif action.is_pure_in_predicate %}
 // W3C SCXML 5.9.2: Pure In() predicate - direct C++ call (no JSEngine)
-if ({{ action.cond_cpp }}) SCE_LIKELY {
+if (SCE_EXPECT_TRUE({{ action.cond_cpp }})) {
 {% elif model.needs_script_engine %}
 // W3C SCXML 5.9: ECMAScript expression - JSEngine evaluation
 this->ensureScriptEngine();
 auto& scriptEngine = getScriptEngine();
-if (this->evaluateIfCond(scriptEngine, sessionId_.value(), {{ action.cond | to_script_source_guard }}, engine, condFailed)) SCE_LIKELY {
+if (SCE_EXPECT_TRUE(this->evaluateIfCond(scriptEngine, sessionId_.value(), {{ action.cond | to_script_source_guard }}, engine, condFailed))) {
 {% else %}
 // W3C SCXML 4.2: cond="{{ action.cond }}" decided at build time
-if ({{ 'true' if action.cond_constant else 'false' }}) SCE_LIKELY {
+if (SCE_EXPECT_TRUE({{ 'true' if action.cond_constant else 'false' }})) {
 {% endif %}
     {% with block_flow = namespace(ended=false) %}
     {% for then_action in action.then_actions %}

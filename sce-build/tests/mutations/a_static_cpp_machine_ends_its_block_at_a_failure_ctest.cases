@@ -61,8 +61,8 @@ PY
 
 mutation_case "a donedata param that failed is carried with its zero" <<'PY'
 edit("tools/codegen/templates/entry_exit_actions.jinja2",
-     "                        if (sce_failure_.failed()) SCE_UNLIKELY {\n                            SCE_LOG_WARN(\"Donedata param '",
-     "                        if (false) SCE_UNLIKELY {\n                            SCE_LOG_WARN(\"Donedata param '")
+     "                        if (SCE_EXPECT_FALSE(sce_failure_.failed())) {\n                            SCE_LOG_WARN(\"Donedata param '",
+     "                        if (SCE_EXPECT_FALSE(false)) {\n                            SCE_LOG_WARN(\"Donedata param '")
 PY
 
 mutation_case "the donedata pairs are not handed to the done event" <<'PY'
@@ -80,8 +80,8 @@ PY
 
 mutation_case "a send param that failed is carried with its zero" <<'PY'
 edit("tools/codegen/templates/actions/send.jinja2",
-     "    if (sce_failure_.failed()) SCE_UNLIKELY {\n{{ param_eval_failed(param, '        ') }}",
-     "    if (false) SCE_UNLIKELY {\n{{ param_eval_failed(param, '        ') }}")
+     "    if (SCE_EXPECT_FALSE(sce_failure_.failed())) {\n{{ param_eval_failed(param, '        ') }}",
+     "    if (SCE_EXPECT_FALSE(false)) {\n{{ param_eval_failed(param, '        ') }}")
 PY
 
 # ── A child is handed what its invoke names ────────────────────────
@@ -110,8 +110,8 @@ PY
 
 mutation_case "an invoke's param that failed is written into the request" <<'PY'
 edit("tools/codegen/templates/invoke_methods.jinja2",
-     "                            if (sce_failure_.failed()) SCE_UNLIKELY {\n                                {% if request_checks and param.name in request_checks %}",
-     "                            if (false) SCE_UNLIKELY {\n                                {% if request_checks and param.name in request_checks %}")
+     "                            if (SCE_EXPECT_FALSE(sce_failure_.failed())) {\n                                {% if request_checks and param.name in request_checks %}",
+     "                            if (SCE_EXPECT_FALSE(false)) {\n                                {% if request_checks and param.name in request_checks %}")
 PY
 
 mutation_case "a send's param reaches the host as the pairs' JSON alone" <<'PY'

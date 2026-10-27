@@ -261,7 +261,7 @@ using ChildMeshRouters =
  * - Event processing loop (§scxml-D-mainEventLoop)
  *
  * @tparam StatePolicy Policy class providing state-specific implementations.
- *         Must satisfy SCE::Core::EventNamingPolicy concept (C++20) or duck typing (C++17).
+ *         Must satisfy SCE::Core::EventNamingPolicyTrait, which the class body asserts.
  *         See core/StatePolicyConcepts.h for the full interface contract.
  */
 
@@ -286,11 +286,12 @@ struct EventOutcome {
     /// configuration alone after running its actions.
     bool configurationChanged = false;
 };
-#if __cpp_concepts >= 202002L
-template <SCE::Core::EventNamingPolicy StatePolicy> class StaticExecutionEngine {
-#else
+
 template <typename StatePolicy> class StaticExecutionEngine {
-#endif
+    static_assert(SCE::Core::EventNamingPolicyTrait<StatePolicy>::value,
+                  "StatePolicy must be an event naming policy: a base state policy (document tree, initial and "
+                  "history targets, final states) whose events convert to and from their names "
+                  "(EventNamingPolicyTrait)");
 
 public:
     /// The policy this engine runs: the document's tables and the datamodel it holds.
@@ -1238,7 +1239,7 @@ public:
         // parent answering `_event.origin` sent to itself, which no
         // assertion in the corpus notices because test336 and test350 both
         // send to the session they already are.
-        if constexpr (SCE::Core::HasChildSessionDelivery<StatePolicy>) {
+        if constexpr (SCE::Core::HasChildSessionDeliveryTrait<StatePolicy>::value) {
             const std::string childSession =
                 SCE::IOProcessorHelper::sessionIdFromScxmlLocation(eventWithMetadata.target);
             if (!childSession.empty()) {
@@ -1375,20 +1376,20 @@ public:
         SCE::Common::ForwardedEvent forwarded{
             route.eventName, eventData, origin, sendId, "external", SCE::Constants::SCXML_EVENT_PROCESSOR_TYPE, ""};
         if (route.kind == Kind::Invocation) {
-            if constexpr (SCE::Core::HasInvocationDelivery<StatePolicy>) {
+            if constexpr (SCE::Core::HasInvocationDeliveryTrait<StatePolicy>::value) {
                 return policy_.deliverToInvocation(route.address, forwarded);
             } else {
                 return false;
             }
         }
         if (route.kind == Kind::Session) {
-            if constexpr (SCE::Core::HasChildSessionDelivery<StatePolicy>) {
+            if constexpr (SCE::Core::HasChildSessionDeliveryTrait<StatePolicy>::value) {
                 return policy_.deliverToChildSession(route.address, forwarded);
             } else {
                 return false;
             }
         }
-        if constexpr (SCE::Core::HasParentDelivery<StatePolicy>) {
+        if constexpr (SCE::Core::HasParentDeliveryTrait<StatePolicy>::value) {
             return policy_.deliverToParent(forwarded);
         } else {
             return false;
@@ -1476,7 +1477,7 @@ public:
             // delayed or not.
             // `hasParentSession` is emitted beside `deliverToParent`, so the
             // concept that finds one finds both.
-            if constexpr (SCE::Core::HasParentDelivery<StatePolicy>) {
+            if constexpr (SCE::Core::HasParentDeliveryTrait<StatePolicy>::value) {
                 if (!policy_.hasParentSession()) {
                     return TargetSendOutcome::Unreachable;
                 }
@@ -1490,7 +1491,7 @@ public:
             // not there to address, delayed or not.
             // `isInvocationRunning` is emitted beside `deliverToInvocation`, so
             // the concept that finds one finds both.
-            if constexpr (SCE::Core::HasInvocationDelivery<StatePolicy>) {
+            if constexpr (SCE::Core::HasInvocationDeliveryTrait<StatePolicy>::value) {
                 if (!policy_.isInvocationRunning(resolved.id)) {
                     return TargetSendOutcome::Unreachable;
                 }
@@ -1504,7 +1505,7 @@ public:
             // send is made, delayed or not.
             // `isChildSessionRunning` is emitted beside `deliverToChildSession`,
             // so the concept that finds one finds both.
-            if constexpr (SCE::Core::HasChildSessionDelivery<StatePolicy>) {
+            if constexpr (SCE::Core::HasChildSessionDeliveryTrait<StatePolicy>::value) {
                 if (!policy_.isChildSessionRunning(resolved.id)) {
                     return TargetSendOutcome::Unreachable;
                 }
@@ -1582,7 +1583,7 @@ public:
             soonest = (*next <= now) ? std::chrono::milliseconds::zero()
                                      : std::chrono::milliseconds(static_cast<int64_t>(*next - now));
         }
-        if constexpr (SCE::Core::HasNextChildDeadline<StatePolicy>) {
+        if constexpr (SCE::Core::HasNextChildDeadlineTrait<StatePolicy>::value) {
             if (auto child = policy_.nextChildDeadline(); child.has_value() && (!soonest || *child < *soonest)) {
                 soonest = child;
             }
@@ -2235,7 +2236,7 @@ protected:
             }
 
             // §scxml-6.4: invokes for states entered during this macrostep.
-            if constexpr (SCE::Core::HasInvokeSupport<StatePolicy, StaticExecutionEngine>) {
+            if constexpr (SCE::Core::HasInvokeSupportTrait<StatePolicy, StaticExecutionEngine>::value) {
                 policy_.executePendingInvokes(*this);
             }
             // docs/adr/0045: the host-run invocations a restore re-armed start as the
@@ -2432,7 +2433,8 @@ protected:
         bindTypedPayload(eventWithMeta);
 
         // §scxml-6.5: Execute finalize BEFORE processing child events
-        if constexpr (SCE::Core::HasFinalize<StatePolicy, EventWithMetadata, StaticExecutionEngine<StatePolicy>>) {
+        if constexpr (SCE::Core::HasFinalizeTrait<StatePolicy, EventWithMetadata,
+                                                  StaticExecutionEngine<StatePolicy>>::value) {
             policy_.executeFinalizeForChildEvent(eventWithMeta, *this);
         }
 
@@ -2462,7 +2464,7 @@ protected:
         // `target` is withheld (a routing decision owned by the originating
         // `<send>`; inheriting it would bounce the copy back onto the mesh
         // instead of delivering it to the child) — see ForwardedEvent.h.
-        if constexpr (SCE::Core::HasAutoforward<StatePolicy, StaticExecutionEngine>) {
+        if constexpr (SCE::Core::HasAutoforwardTrait<StatePolicy, StaticExecutionEngine>::value) {
             ::SCE::Common::ForwardedEvent forwarded;
             // §scxml-6.4 + §scxml-5.10: the copy is exact, so it is forwarded under the
             // name the event arrived under, not the member it was matched through.
@@ -2500,7 +2502,7 @@ protected:
         // reply, which the processor ignores — so it is refused here, counted,
         // and never reaches transition selection. Returns true because an
         // event was taken.
-        if constexpr (SCE::Core::HasHostInvokeIds<StatePolicy>) {
+        if constexpr (SCE::Core::HasHostInvokeIdsTrait<StatePolicy>::value) {
             if (!eventWithMeta.hostInvokeToken.has_value() &&
                 ::SCE::isHostInvokeCompletion(policy_.getEventName(eventWithMeta.event), eventWithMeta.invokeId,
                                               StatePolicy::HOST_INVOKE_IDS, std::size(StatePolicy::HOST_INVOKE_IDS))) {
@@ -2634,7 +2636,7 @@ public:
      * `NEEDS_PARENT`, the manifest's `needs_parent`.
      */
     static std::optional<::SCE::Common::RootStartRefusal> rootStartRefusal() {
-        if constexpr (::SCE::Core::NeedsParent<StatePolicy>) {
+        if constexpr (::SCE::Core::NeedsParentTrait<StatePolicy>::value) {
             return ::SCE::Common::RootStartRefusal::NeedsParent;
         } else {
             return std::nullopt;
@@ -2679,7 +2681,7 @@ public:
 
         // §scxml-5.3: Initialize datamodel before any state entry
         // This ensures error.execution events are raised immediately if initialization fails
-        if constexpr (SCE::Core::HasDataModelInit<StatePolicy, StaticExecutionEngine>) {
+        if constexpr (SCE::Core::HasDataModelInitTrait<StatePolicy, StaticExecutionEngine>::value) {
             policy_.initializeDataModel(*this);
         }
 
@@ -2783,7 +2785,7 @@ public:
         // executable content — so it runs here for the same reason it runs in
         // `initialize()`: a `cond` or an `assign` evaluated after this call
         // would otherwise reference variables that were never declared.
-        if constexpr (SCE::Core::HasDataModelInit<StatePolicy, StaticExecutionEngine>) {
+        if constexpr (SCE::Core::HasDataModelInitTrait<StatePolicy, StaticExecutionEngine>::value) {
             policy_.initializeDataModel(*this);
         }
 
@@ -2805,7 +2807,7 @@ public:
         // back. The condition is the one the generator emits `setActiveStates`
         // under, so a policy reached here has the method.
         if constexpr (StatePolicy::HAS_PARALLEL_STATES) {
-            if constexpr (SCE::Core::HasActiveStates<StatePolicy>) {
+            if constexpr (SCE::Core::HasActiveStatesTrait<StatePolicy>::value) {
                 policy_.setActiveStates(configuration);
             }
         }
@@ -2833,7 +2835,7 @@ public:
         // `runMainEventLoop()` never consults the scheduler, so the event is
         // neither delivered nor refused. Say it once — the host is driving with
         // the wrong call, and every later macrostep would repeat the same word.
-        if constexpr (::SCE::Core::NeedsEventScheduler<StatePolicy>) {
+        if constexpr (::SCE::Core::NeedsEventSchedulerTrait<StatePolicy>::value) {
             if (!tickHasRun_) {
                 ++unattendedSchedulerSteps_;
                 if (unattendedSchedulerSteps_ == 1) {
@@ -2966,7 +2968,7 @@ public:
     std::vector<State> getActiveStates() const {
         // §scxml-3.4: For parallel state machines, use policy's activeStates_ tracking
         if constexpr (StatePolicy::HAS_PARALLEL_STATES) {
-            if constexpr (SCE::Core::HasActiveStates<StatePolicy>) {
+            if constexpr (SCE::Core::HasActiveStatesTrait<StatePolicy>::value) {
                 return policy_.getActiveStates();
             }
         }
@@ -3280,7 +3282,7 @@ public:
 
         // §scxml-6.4: Tick child state machines to process their events
         // Children need to run independently during parent's event loop
-        if constexpr (SCE::Core::HasChildTick<StatePolicy, StaticExecutionEngine>) {
+        if constexpr (SCE::Core::HasChildTickTrait<StatePolicy, StaticExecutionEngine>::value) {
             policy_.tickChildren(*this);
         }
 
@@ -3494,7 +3496,7 @@ public:
      */
     void adoptHostInvokers(std::shared_ptr<::SCE::TreeInvokers> invokers) {
         invokers_ = std::move(invokers);
-        if constexpr (SCE::Core::HasHostInvokerChildren<StatePolicy, ::SCE::HostInvokeEnding>) {
+        if constexpr (SCE::Core::HasHostInvokerChildrenTrait<StatePolicy, ::SCE::HostInvokeEnding>::value) {
             policy_.adoptHostInvokersInChildren(invokers_);
         }
     }
@@ -3513,7 +3515,7 @@ public:
             return {true, endHostInvoke(ending.processorType, ending.invokeId, ending.token, !ending.done, ending.data,
                                         "", "")};
         }
-        if constexpr (SCE::Core::HasHostInvokerChildren<StatePolicy, ::SCE::HostInvokeEnding>) {
+        if constexpr (SCE::Core::HasHostInvokerChildrenTrait<StatePolicy, ::SCE::HostInvokeEnding>::value) {
             return policy_.routeHostInvokeEnd(sessionId, ending);
         }
         return {};
@@ -3672,7 +3674,7 @@ private:
     /// This session's id as the policy states it, or none for a machine that holds no
     /// session id (docs/adr/0045).
     std::string ownSessionId() const {
-        if constexpr (SCE::Core::HasSessionIdText<StatePolicy>) {
+        if constexpr (SCE::Core::HasSessionIdTextTrait<StatePolicy>::value) {
             return policy_.sessionIdText();
         } else {
             return std::string();
@@ -4103,7 +4105,7 @@ public:
      * its parent. Does nothing for a session given no router, or told already.
      */
     void detachMesh() {
-        if constexpr (SCE::Core::HasChildMeshDetach<StatePolicy>) {
+        if constexpr (SCE::Core::HasChildMeshDetachTrait<StatePolicy>::value) {
             policy_.detachChildMeshSessions();
         }
         if (std::shared_ptr<IChildMeshRouter> router = std::exchange(installedMesh_, nullptr)) {

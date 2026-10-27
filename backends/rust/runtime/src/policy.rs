@@ -412,7 +412,7 @@ pub trait StatePolicy: Sized + 'static {
     /// consumers (trace recorders, post-mortem analyzers, the generated
     /// `In()` predicate callback) need it regardless of whether the SM uses
     /// parallel states. Mirrors `get_event_name` (also required) — see the
-    /// C++ `StateNamingPolicy` concept in `sce/include/core/StatePolicyConcepts.h`.
+    /// C++ `StateNamingPolicyTrait` in `sce/include/core/StatePolicyConcepts.h`.
     fn get_state_name(state: Self::State) -> &'static str;
 
     /// Reverse lookup: `Some(state)` if `name` matches a known state, else `None`.

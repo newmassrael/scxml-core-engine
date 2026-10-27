@@ -79,7 +79,7 @@
         }
     );
 
-    if (!success) SCE_UNLIKELY {
+    if (SCE_EXPECT_FALSE(!success)) {
         // Assignment failed, error.execution already raised by callback
         {% if action.content %}
         SCE_LOG_ERROR("AOT assign: Failed to assign {{ action.location | escape_cpp_format }} = content");

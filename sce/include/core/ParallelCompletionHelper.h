@@ -89,12 +89,11 @@ public:
      * @param parallelState The `<parallel>` to ask about
      * @param activeStates The current configuration
      */
-#if __cpp_concepts >= 202002L
-    template <typename StateType, ParallelStatePolicy PolicyType>
-#else
     template <typename StateType, typename PolicyType>
-#endif
     static bool areAllRegionsInFinal(StateType parallelState, const std::vector<StateType> &activeStates) {
+        static_assert(ParallelStatePolicyTrait<PolicyType>::value,
+                      "PolicyType must be a parallel state policy: a document tree with parallel regions, "
+                      "descendants, document order and final states (ParallelStatePolicyTrait)");
         if (!PolicyType::isParallelState(parallelState)) {
             return false;
         }

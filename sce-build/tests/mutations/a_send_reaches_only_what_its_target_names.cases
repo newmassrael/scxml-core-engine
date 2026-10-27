@@ -101,7 +101,7 @@ PY
 # ── C++ AOT: an orphan's `#_parent` from a targetexpr waits or is lost ──
 #
 # ⚠ This case lives HERE and not with the other `targetexpr` cases. The guard
-# sits in `Kind::Parent`, under `if constexpr (HasParentDelivery<StatePolicy>)`,
+# sits in `Kind::Parent`, under `if constexpr (HasParentDeliveryTrait<StatePolicy>::value)`,
 # and a machine has that delivery only when its document carries a literal
 # `#_parent` send (or was built `--as-child`); a `targetexpr` alone does not
 # give it. The `targetexpr` fixture's root has no such send, so its machine

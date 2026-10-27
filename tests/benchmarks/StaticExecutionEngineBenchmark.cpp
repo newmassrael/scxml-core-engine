@@ -62,7 +62,7 @@
 
 namespace {
 
-// Minimal Policy satisfying `EventNamingPolicy`. The Policy body is empty
+// Minimal Policy satisfying `EventNamingPolicyTrait`. The Policy body is empty
 // of state; engine-side `std::function` members live on the base and are
 // independent of the Policy's shape.
 struct MinimalPolicy {

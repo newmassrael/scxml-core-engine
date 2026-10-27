@@ -2184,6 +2184,21 @@
           "file": "backends/python/runtime/sce_runtime/engine.py",
           "symbol": "send_external_by_name",
           "kind": "references"
+        },
+        {
+          "file": "sce/include/core/HierarchicalStateHelper.h",
+          "symbol": "SCE::Core",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/core/ParallelTransitionHelper.h",
+          "symbol": "ParallelTransitionHelper",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "SCE::Static",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -3548,6 +3563,11 @@
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "enterStates",
           "kind": "implements"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "SCE::Static",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -6205,6 +6225,11 @@
         },
         {
           "file": "backends/go/runtime/invoke.go",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "SCE::Static",
           "kind": "references"
         }
       ],
@@ -11809,6 +11834,11 @@
         {
           "file": "backends/python/runtime/sce_runtime/saved_engine.py",
           "kind": "references"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "SCE::Static",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -12367,6 +12397,11 @@
         },
         {
           "file": "backends/python/runtime/sce_runtime/saved_engine.py",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "SCE::Static",
           "kind": "references"
         }
       ],
@@ -16416,6 +16451,11 @@
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/Microstep.kt",
           "symbol": "computeStatesToExit",
           "kind": "implements"
+        },
+        {
+          "file": "sce/include/core/ParallelTransitionHelper.h",
+          "symbol": "ParallelTransitionHelper",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -17365,6 +17405,11 @@
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/Microstep.kt",
           "symbol": "transitionDomain",
           "kind": "implements"
+        },
+        {
+          "file": "sce/include/core/ParallelTransitionHelper.h",
+          "symbol": "ParallelTransitionHelper",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -17660,6 +17705,11 @@
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "kind": "implements"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "SCE::Static",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -17806,6 +17856,11 @@
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/Microstep.kt",
           "symbol": "removeConflictingTransitions",
           "kind": "implements"
+        },
+        {
+          "file": "sce/include/core/ConflictResolutionHelper.h",
+          "symbol": "SCE::Core",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",

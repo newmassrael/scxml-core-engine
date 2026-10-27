@@ -16,17 +16,23 @@
 #pragma once
 
 /**
- * @brief C++17/C++20 compatibility shim for branch prediction hints
+ * @brief Branch prediction hints, written around a condition
  *
- * On C++20 compilers, SCE_LIKELY/SCE_UNLIKELY expand to [[likely]]/[[unlikely]].
- * On C++17 compilers, they expand to nothing, allowing SCE to compile without
- * requiring C++20 attribute support.
+ * `if (SCE_EXPECT_TRUE(cond)) {` marks the branch the condition usually takes,
+ * and `if (SCE_EXPECT_FALSE(cond)) {` the one it usually does not. Each wraps
+ * the condition in an expression, so it reads the same in a C++17 and a C++20
+ * translation unit (docs/adr/0059); the choice of expansion is by compiler,
+ * which is the same for every translation unit of one program. A compiler with
+ * no `__builtin_expect` gets the condition unchanged.
+ *
+ * Variadic so a condition with a comma outside parentheses (a template
+ * argument list, a braced initializer) is passed whole.
  */
 
-#if __cplusplus >= 202002L
-#define SCE_LIKELY [[likely]]
-#define SCE_UNLIKELY [[unlikely]]
+#if defined(__GNUC__) || defined(__clang__)
+#define SCE_EXPECT_TRUE(...) __builtin_expect(!!(__VA_ARGS__), 1)
+#define SCE_EXPECT_FALSE(...) __builtin_expect(!!(__VA_ARGS__), 0)
 #else
-#define SCE_LIKELY
-#define SCE_UNLIKELY
+#define SCE_EXPECT_TRUE(...) (__VA_ARGS__)
+#define SCE_EXPECT_FALSE(...) (__VA_ARGS__)
 #endif

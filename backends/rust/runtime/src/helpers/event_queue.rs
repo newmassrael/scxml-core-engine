@@ -129,14 +129,14 @@ impl<T, const N: usize> Default for EventQueueManager<T, N> {
 /// Queue abstraction the [`Engine`](crate::Engine) depends on (W3C SCXML
 /// Appendix D `internalQueue` / `externalQueue`).
 ///
-/// Mirrors the C++ `EventQueueAdapter` concept
+/// Mirrors the C++ `EventQueueAdapterTrait`
 /// (`sce/include/core/EventQueueConcept.h`): the engine drives the FIFO through
 /// this trait rather than a concrete sized type, so each machine's policy can
 /// supply a [`EventQueueManager<T, N>`] sized to its own resolved capacity
 /// (see [`crate::StatePolicy::EventQueue`]) without the engine hardcoding `N`.
 /// Surface restricted to what the engine's macrostep loop actually drives
 /// (Interface Segregation): `enqueue` / `dequeue` / `isEmpty`, mirroring the
-/// C++ `EventQueueAdapter` concept's `popNext()` + `hasEvents()`. The richer
+/// C++ `EventQueueAdapterTrait`'s `popNext()` + `hasEvents()`. The richer
 /// inspection methods (`len` / `is_empty` / `clear`) stay as inherent methods on
 /// [`EventQueueManager`] — they are not part of the engine's dependency.
 pub trait EventQueueLike<T> {

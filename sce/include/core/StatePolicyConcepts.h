@@ -16,38 +16,42 @@
 
 #pragma once
 
-#if __cpp_concepts >= 202002L
-#include <concepts>
-#endif
-
 #include "common/ForwardedEvent.h"
 
 #include <optional>
 #include <string>
 #include <type_traits>
+#include <utility>
 #include <vector>
+
+// A consumer compiles this header at C++17 and SCE compiles its own sources at
+// C++20, into one program (docs/adr/0059). Every contract here is therefore a
+// C++17 trait, which means the same thing in both: a definition that changed
+// with the language standard would break the One Definition Rule.
 
 namespace SCE::Core {
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// C++17-compatible feature detection traits
+// Optional feature detection traits
 //
-// These type traits work in both C++17 and C++20.
-// Used in if constexpr for optional policy feature detection.
+// Asked through `::value` in `if constexpr` for optional policy features.
 // ═══════════════════════════════════════════════════════════════════════════════
 
+/// Policy supports datamodel initialization (JSEngine-backed state machines)
 template <typename P, typename E, typename = void> struct HasDataModelInitTrait : std::false_type {};
 
 template <typename P, typename E>
 struct HasDataModelInitTrait<P, E, std::void_t<decltype(std::declval<P>().initializeDataModel(std::declval<E &>()))>>
     : std::true_type {};
 
+/// Policy supports invoke lifecycle (static or hybrid invokes)
 template <typename P, typename E, typename = void> struct HasInvokeSupportTrait : std::false_type {};
 
 template <typename P, typename E>
 struct HasInvokeSupportTrait<P, E, std::void_t<decltype(std::declval<P>().executePendingInvokes(std::declval<E &>()))>>
     : std::true_type {};
 
+/// Policy supports child state machine ticking
 template <typename P, typename E, typename = void> struct HasChildTickTrait : std::false_type {};
 
 template <typename P, typename E>
@@ -74,6 +78,7 @@ template <typename P>
 struct HasChildMeshDetachTrait<P, std::void_t<decltype(std::declval<P &>().detachChildMeshSessions())>>
     : std::true_type {};
 
+/// Policy supports autoforward to children (§scxml-6.4)
 template <typename P, typename E, typename = void> struct HasAutoforwardTrait : std::false_type {};
 
 template <typename P, typename E>
@@ -82,6 +87,7 @@ struct HasAutoforwardTrait<P, E,
                                std::declval<const ::SCE::Common::ForwardedEvent &>(), std::declval<E &>()))>>
     : std::true_type {};
 
+/// Policy supports finalize handler execution (§scxml-6.5)
 template <typename P, typename M, typename E, typename = void> struct HasFinalizeTrait : std::false_type {};
 
 template <typename P, typename M, typename E>
@@ -89,6 +95,7 @@ struct HasFinalizeTrait<P, M, E,
                         std::void_t<decltype(std::declval<P>().executeFinalizeForChildEvent(
                             std::declval<const M &>(), std::declval<E &>()))>> : std::true_type {};
 
+/// Policy tracks active states across parallel regions
 template <typename P, typename = void> struct HasActiveStatesTrait : std::false_type {};
 
 template <typename P>
@@ -189,39 +196,71 @@ struct HasHostInvokerChildrenTrait<P, Ending,
     : std::true_type {};
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// C++20 concepts + C++17 constexpr bool aliases
-//
-// When __cpp_concepts is available (C++20): full concept definitions for template
-// constraints and clear error messages, plus concept aliases for feature detection.
-// When C++17: constexpr bool aliases from traits for if constexpr usage.
-//
-// The if constexpr usage pattern works identically in both modes:
-//   if constexpr (HasDataModelInit<P, Engine>) { ... }
-// C++20 concept converts to bool; C++17 constexpr bool is already bool.
-// ═══════════════════════════════════════════════════════════════════════════════
-
-#if __cpp_concepts >= 202002L
-
-// ─────────────────────────────────────────────────────────────────────────────
-// StatePolicy Concept Hierarchy
+// StatePolicy contract traits
 //
 // Formalizes the implicit interface contract between StaticExecutionEngine,
-// helper classes, and generated StatePolicy structs.
+// helper classes, and generated StatePolicy structs. A template that needs a
+// level checks it with `static_assert(<Level>Trait<P>::value, ...)` as the first
+// line of its body.
 //
 // Layered design — each level adds requirements incrementally:
-//   HierarchyPolicy     → the document tree Appendix D walks (parents,
-//                         children in document order, compound / parallel)
-//   BaseStatePolicy     → engine essentials (initial and history targets,
-//                         isFinalState, enums)
-//   EventNamingPolicy   → event name ↔ enum conversion
-//   StateNamingPolicy   → state enum → SCXML id string
-//   ParallelStatePolicy → parallel state extensions (isParallelState, regions)
+//   HierarchyPolicyTrait     → the document tree Appendix D walks (parents,
+//                              children in document order, compound / parallel)
+//   BaseStatePolicyTrait     → engine essentials (initial and history targets,
+//                              isFinalState, enums)
+//   EventNamingPolicyTrait   → event name ↔ enum conversion
+//   StateNamingPolicyTrait   → state enum → SCXML id string
+//   ParallelStatePolicyTrait → parallel state extensions (isParallelState, regions)
+//
+// Each trait detects its expressions in `std::void_t` and then checks their
+// types: `std::is_same` where the result must be exactly that type, and
+// `std::is_convertible` where it must convert to it. An expression is asked of
+// an lvalue of its argument type, as a requires-expression parameter would be.
 //
 // NOTE: Engine-dependent checks (firstEnabledTransition, executeEntryActions,
-// etc.) are intentionally NOT in concepts due to circular dependency:
+// etc.) are intentionally NOT in these traits due to circular dependency:
 //   StaticExecutionEngine<P> requires P, but P's methods take Engine& parameter.
 // The engine's calls to them are what checks them.
-// ─────────────────────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+
+namespace detail {
+
+// The expressions the contract traits ask of a policy, each named once so a
+// trait's detection list and its type checks name the same expression.
+template <typename P> using PolicyStateLvalue = typename P::State &;
+template <typename P> using PolicyHistoryLvalue = typename P::History &;
+
+template <typename P> using GetParentResult = decltype(P::getParent(std::declval<PolicyStateLvalue<P>>()));
+template <typename P> using IsCompoundStateResult = decltype(P::isCompoundState(std::declval<PolicyStateLvalue<P>>()));
+template <typename P> using IsParallelStateResult = decltype(P::isParallelState(std::declval<PolicyStateLvalue<P>>()));
+template <typename P> using GetChildStatesResult = decltype(P::getChildStates(std::declval<PolicyStateLvalue<P>>()));
+template <typename P>
+using GetDocumentOrderResult = decltype(P::getDocumentOrder(std::declval<PolicyStateLvalue<P>>()));
+template <typename P> using IsFinalStateResult = decltype(P::isFinalState(std::declval<PolicyStateLvalue<P>>()));
+template <typename P>
+using GetParallelRegionsResult = decltype(P::getParallelRegions(std::declval<PolicyStateLvalue<P>>()));
+template <typename P>
+using IsDescendantOfResult =
+    decltype(P::isDescendantOf(std::declval<PolicyStateLvalue<P>>(), std::declval<PolicyStateLvalue<P>>()));
+
+template <typename P> using HasParallelStatesResult = decltype((P::HAS_PARALLEL_STATES));
+template <typename P> using GetDocumentInitialTargetsResult = decltype(P::getDocumentInitialTargets());
+template <typename P> using InitialStateResult = decltype(P::initialState());
+template <typename P>
+using GetInitialTargetsResult = decltype(P::getInitialTargets(std::declval<PolicyStateLvalue<P>>()));
+template <typename P>
+using GetHistoryParentResult = decltype(P::getHistoryParent(std::declval<PolicyHistoryLvalue<P>>()));
+template <typename P>
+using GetHistoryDefaultTargetsResult = decltype(P::getHistoryDefaultTargets(std::declval<PolicyHistoryLvalue<P>>()));
+
+template <typename P>
+using GetEventNameResult = decltype(std::declval<P &>().getEventName(std::declval<typename P::Event &>()));
+template <typename P>
+using GetEventFromNameResult = decltype(std::declval<P &>().getEventFromName(std::declval<const std::string &>()));
+
+template <typename P> using GetStateNameResult = decltype(P::getStateName(std::declval<PolicyStateLvalue<P>>()));
+
+}  // namespace detail
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Level 1: Hierarchy Policy — the document tree
@@ -234,37 +273,54 @@ struct HasHostInvokerChildrenTrait<P, Ending,
 /// `isCompoundState` answers true for a `<state>` with child states; what it
 /// answers for a `<parallel>` is not part of the contract — policies differ —
 /// so a caller that must tell the two apart asks `isParallelState` as well.
+///
+/// Requires `P::State`, and for a `State s`: `P::getParent(s)` returning
+/// exactly `std::optional<State>`; `P::isCompoundState(s)` and
+/// `P::isParallelState(s)` convertible to `bool`; `P::getChildStates(s)`
+/// convertible to `std::vector<State>`; `P::getDocumentOrder(s)` convertible
+/// to `int`.
+template <typename P, typename = void> struct HierarchyPolicyTrait : std::false_type {};
+
 template <typename P>
-concept HierarchyPolicy = requires { typename P::State; } && requires(typename P::State s) {
-    { P::getParent(s) } -> std::same_as<std::optional<typename P::State>>;
-    { P::isCompoundState(s) } -> std::convertible_to<bool>;
-    { P::isParallelState(s) } -> std::convertible_to<bool>;
-    { P::getChildStates(s) } -> std::convertible_to<std::vector<typename P::State>>;
-    { P::getDocumentOrder(s) } -> std::convertible_to<int>;
-};
+struct HierarchyPolicyTrait<P, std::void_t<typename P::State, detail::GetParentResult<P>,
+                                           detail::IsCompoundStateResult<P>, detail::IsParallelStateResult<P>,
+                                           detail::GetChildStatesResult<P>, detail::GetDocumentOrderResult<P>>>
+    : std::bool_constant<std::is_same_v<detail::GetParentResult<P>, std::optional<typename P::State>> &&
+                         std::is_convertible_v<detail::IsCompoundStateResult<P>, bool> &&
+                         std::is_convertible_v<detail::IsParallelStateResult<P>, bool> &&
+                         std::is_convertible_v<detail::GetChildStatesResult<P>, std::vector<typename P::State>> &&
+                         std::is_convertible_v<detail::GetDocumentOrderResult<P>, int>> {};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Level 2: Base State Policy — core engine requirements
-// Used by: StaticExecutionEngine (template constraint)
+// Used by: StaticExecutionEngine, through EventNamingPolicyTrait
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Core state identification and lifecycle capability, and the target lists
 /// the entry procedures dereference: every compound state's initial
 /// transition, the document's, and every `<history>`'s default.
 /// Every StatePolicy used with StaticExecutionEngine must satisfy this.
+///
+/// Requires `HierarchyPolicyTrait`; `P::Event` and `P::History`;
+/// `P::HAS_PARALLEL_STATES` convertible to `bool`; a valid
+/// `P::getDocumentInitialTargets()`; and for a `State s` and a `History h`:
+/// `P::initialState()` returning exactly `State`; `P::isFinalState(s)`
+/// convertible to `bool`; a valid `P::getInitialTargets(s)`;
+/// `P::getHistoryParent(h)` returning exactly `State`; a valid
+/// `P::getHistoryDefaultTargets(h)`.
+template <typename P, typename = void> struct BaseStatePolicyTrait : std::false_type {};
+
 template <typename P>
-concept BaseStatePolicy = HierarchyPolicy<P> && requires {
-    typename P::Event;
-    typename P::History;
-    { P::HAS_PARALLEL_STATES } -> std::convertible_to<bool>;
-    P::getDocumentInitialTargets();
-} && requires(typename P::State s, typename P::History h) {
-    { P::initialState() } -> std::same_as<typename P::State>;
-    { P::isFinalState(s) } -> std::convertible_to<bool>;
-    P::getInitialTargets(s);
-    { P::getHistoryParent(h) } -> std::same_as<typename P::State>;
-    P::getHistoryDefaultTargets(h);
-};
+struct BaseStatePolicyTrait<P,
+                            std::void_t<typename P::Event, typename P::History, detail::HasParallelStatesResult<P>,
+                                        detail::GetDocumentInitialTargetsResult<P>, detail::InitialStateResult<P>,
+                                        detail::IsFinalStateResult<P>, detail::GetInitialTargetsResult<P>,
+                                        detail::GetHistoryParentResult<P>, detail::GetHistoryDefaultTargetsResult<P>>>
+    : std::bool_constant<HierarchyPolicyTrait<P>::value &&
+                         std::is_convertible_v<detail::HasParallelStatesResult<P>, bool> &&
+                         std::is_same_v<detail::InitialStateResult<P>, typename P::State> &&
+                         std::is_convertible_v<detail::IsFinalStateResult<P>, bool> &&
+                         std::is_same_v<detail::GetHistoryParentResult<P>, typename P::State>> {};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Level 3: Event Naming Policy — event name ↔ enum conversion
@@ -273,11 +329,18 @@ concept BaseStatePolicy = HierarchyPolicy<P> && requires {
 
 /// Event name resolution capability.
 /// Required for any policy that handles external events or HTTP communication.
+///
+/// Requires `BaseStatePolicyTrait`, and for a `P p`, an `Event e` and a
+/// `const std::string &name`: `p.getEventName(e)` convertible to
+/// `std::string`; `p.getEventFromName(name)` returning exactly
+/// `std::optional<Event>`.
+template <typename P, typename = void> struct EventNamingPolicyTrait : std::false_type {};
+
 template <typename P>
-concept EventNamingPolicy = BaseStatePolicy<P> && requires(P p, typename P::Event e, const std::string &name) {
-    { p.getEventName(e) } -> std::convertible_to<std::string>;
-    { p.getEventFromName(name) } -> std::same_as<std::optional<typename P::Event>>;
-};
+struct EventNamingPolicyTrait<P, std::void_t<detail::GetEventNameResult<P>, detail::GetEventFromNameResult<P>>>
+    : std::bool_constant<BaseStatePolicyTrait<P>::value &&
+                         std::is_convertible_v<detail::GetEventNameResult<P>, std::string> &&
+                         std::is_same_v<detail::GetEventFromNameResult<P>, std::optional<typename P::Event>>> {};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Level 3.5: State Naming Policy — state enum → SCXML id string
@@ -286,13 +349,18 @@ concept EventNamingPolicy = BaseStatePolicy<P> && requires(P p, typename P::Even
 
 /// State id string resolution capability.
 /// The mapping is structural (independent of parallel states / In() predicate),
-/// so every generated policy must provide it. Mirrors EventNamingPolicy's
+/// so every generated policy must provide it. Mirrors EventNamingPolicyTrait's
 /// shape — the unconditional `getStateName` emit in utility_methods.jinja2
 /// satisfies this contract.
+///
+/// Requires `BaseStatePolicyTrait`, and for a `State s`: `P::getStateName(s)`
+/// convertible to `const char *`.
+template <typename P, typename = void> struct StateNamingPolicyTrait : std::false_type {};
+
 template <typename P>
-concept StateNamingPolicy = BaseStatePolicy<P> && requires(typename P::State s) {
-    { P::getStateName(s) } -> std::convertible_to<const char *>;
-};
+struct StateNamingPolicyTrait<P, std::void_t<detail::GetStateNameResult<P>>>
+    : std::bool_constant<BaseStatePolicyTrait<P>::value &&
+                         std::is_convertible_v<detail::GetStateNameResult<P>, const char *>> {};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Level 4: Parallel State Policy — parallel state extensions
@@ -301,128 +369,23 @@ concept StateNamingPolicy = BaseStatePolicy<P> && requires(typename P::State s) 
 
 /// Parallel state navigation and ordering capability.
 /// Required when HAS_PARALLEL_STATES is true.
+///
+/// Requires `HierarchyPolicyTrait`, and for `State s1, s2`:
+/// `P::isParallelState(s1)`, `P::isDescendantOf(s1, s2)` and
+/// `P::isFinalState(s1)` convertible to `bool`; `P::getParallelRegions(s1)`
+/// convertible to `std::vector<State>`; `P::getDocumentOrder(s1)` convertible
+/// to `int`.
+template <typename P, typename = void> struct ParallelStatePolicyTrait : std::false_type {};
+
 template <typename P>
-concept ParallelStatePolicy = HierarchyPolicy<P> && requires(typename P::State s1, typename P::State s2) {
-    { P::isParallelState(s1) } -> std::convertible_to<bool>;
-    { P::getParallelRegions(s1) } -> std::convertible_to<std::vector<typename P::State>>;
-    { P::isDescendantOf(s1, s2) } -> std::convertible_to<bool>;
-    { P::getDocumentOrder(s1) } -> std::convertible_to<int>;
-    { P::isFinalState(s1) } -> std::convertible_to<bool>;
-};
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Optional Feature Detection — C++20 concept aliases
-//
-// These replace anonymous `if constexpr (requires { ... })` blocks with
-// named concepts for readability. The if constexpr pattern is preserved —
-// these concepts are used as named conditions, not as template constraints.
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// Policy supports datamodel initialization (JSEngine-backed state machines)
-template <typename P, typename Engine>
-concept HasDataModelInit = HasDataModelInitTrait<P, Engine>::value;
-
-/// Policy supports invoke lifecycle (static or hybrid invokes)
-template <typename P, typename Engine>
-concept HasInvokeSupport = HasInvokeSupportTrait<P, Engine>::value;
-
-/// Policy supports child state machine ticking
-template <typename P, typename Engine>
-concept HasChildTick = HasChildTickTrait<P, Engine>::value;
-
-/// Policy names the nearest deadline of its running children (§scxml-6.4)
-template <typename P>
-concept HasNextChildDeadline = HasNextChildDeadlineTrait<P>::value;
-
-/// Policy tells its running children's Mesh routers their sessions ended
-template <typename P>
-concept HasChildMeshDetach = HasChildMeshDetachTrait<P>::value;
-
-/// Policy supports autoforward to children (§scxml-6.4)
-template <typename P, typename Engine>
-concept HasAutoforward = HasAutoforwardTrait<P, Engine>::value;
-
-/// Policy supports finalize handler execution (§scxml-6.5)
-template <typename P, typename EventMeta, typename Engine>
-concept HasFinalize = HasFinalizeTrait<P, EventMeta, Engine>::value;
-
-/// Policy tracks active states across parallel regions
-template <typename P>
-concept HasActiveStates = HasActiveStatesTrait<P>::value;
-
-/// Policy can deliver an event to a live invoke child by session id
-template <typename P>
-concept HasChildSessionDelivery = HasChildSessionDeliveryTrait<P>::value;
-
-/// Policy can deliver a delayed send to one of its invocations by invoke id
-template <typename P>
-concept HasInvocationDelivery = HasInvocationDeliveryTrait<P>::value;
-
-/// Policy can deliver a delayed send to the session that invoked it
-template <typename P>
-concept HasParentDelivery = HasParentDeliveryTrait<P>::value;
-
-/// Driving the policy's machine needs `tick()`, not `step()` alone
-template <typename P>
-concept NeedsEventScheduler = NeedsEventSchedulerTrait<P>::value;
-
-/// The policy's machine sends to its parent session
-template <typename P>
-concept NeedsParent = NeedsParentTrait<P>::value;
-
-/// Policy lists the invokes a host runs
-template <typename P>
-concept HasHostInvokeIds = HasHostInvokeIdsTrait<P>::value;
-
-/// Policy gives the text of its session id
-template <typename P>
-concept HasSessionIdText = HasSessionIdTextTrait<P>::value;
-
-/// Policy runs child sessions a host's invokers serve
-template <typename P, typename Ending>
-concept HasHostInvokerChildren = HasHostInvokerChildrenTrait<P, Ending>::value;
-
-#else  // C++17 fallback
-
-// ─────────────────────────────────────────────────────────────────────────────
-// C++17: constexpr bool aliases for if constexpr usage
-//
-// No concept definitions — template constraints use plain typename.
-// Feature detection works identically: if constexpr (HasDataModelInit<P, E>)
-// ─────────────────────────────────────────────────────────────────────────────
-
-template <typename P, typename Engine> inline constexpr bool HasDataModelInit = HasDataModelInitTrait<P, Engine>::value;
-
-template <typename P, typename Engine> inline constexpr bool HasInvokeSupport = HasInvokeSupportTrait<P, Engine>::value;
-
-template <typename P, typename Engine> inline constexpr bool HasChildTick = HasChildTickTrait<P, Engine>::value;
-
-template <typename P> inline constexpr bool HasNextChildDeadline = HasNextChildDeadlineTrait<P>::value;
-
-template <typename P> inline constexpr bool HasChildMeshDetach = HasChildMeshDetachTrait<P>::value;
-
-template <typename P, typename Engine> inline constexpr bool HasAutoforward = HasAutoforwardTrait<P, Engine>::value;
-
-template <typename P, typename M, typename Engine>
-inline constexpr bool HasFinalize = HasFinalizeTrait<P, M, Engine>::value;
-
-template <typename P> inline constexpr bool HasActiveStates = HasActiveStatesTrait<P>::value;
-
-template <typename P> inline constexpr bool HasChildSessionDelivery = HasChildSessionDeliveryTrait<P>::value;
-template <typename P> inline constexpr bool HasInvocationDelivery = HasInvocationDeliveryTrait<P>::value;
-template <typename P> inline constexpr bool HasParentDelivery = HasParentDeliveryTrait<P>::value;
-
-template <typename P> inline constexpr bool NeedsEventScheduler = NeedsEventSchedulerTrait<P>::value;
-
-template <typename P> inline constexpr bool NeedsParent = NeedsParentTrait<P>::value;
-
-template <typename P> inline constexpr bool HasHostInvokeIds = HasHostInvokeIdsTrait<P>::value;
-
-template <typename P> inline constexpr bool HasSessionIdText = HasSessionIdTextTrait<P>::value;
-
-template <typename P, typename Ending>
-inline constexpr bool HasHostInvokerChildren = HasHostInvokerChildrenTrait<P, Ending>::value;
-
-#endif  // __cpp_concepts >= 202002L
+struct ParallelStatePolicyTrait<
+    P, std::void_t<detail::IsParallelStateResult<P>, detail::GetParallelRegionsResult<P>,
+                   detail::IsDescendantOfResult<P>, detail::GetDocumentOrderResult<P>, detail::IsFinalStateResult<P>>>
+    : std::bool_constant<HierarchyPolicyTrait<P>::value &&
+                         std::is_convertible_v<detail::IsParallelStateResult<P>, bool> &&
+                         std::is_convertible_v<detail::GetParallelRegionsResult<P>, std::vector<typename P::State>> &&
+                         std::is_convertible_v<detail::IsDescendantOfResult<P>, bool> &&
+                         std::is_convertible_v<detail::GetDocumentOrderResult<P>, int> &&
+                         std::is_convertible_v<detail::IsFinalStateResult<P>, bool>> {};
 
 }  // namespace SCE::Core

@@ -171,7 +171,7 @@ inline constexpr std::int64_t kSavedAtMs = 1'700'000'000'000;
 /// no point at which it has settled, so a host runs rounds: a child takes an event the
 /// parent forwarded in one round and its end reaches the parent in the next.
 template <typename Machine> void settleRounds(Machine &machine) {
-    if constexpr (::SCE::Core::NeedsEventScheduler<typename Machine::PolicyType>) {
+    if constexpr (::SCE::Core::NeedsEventSchedulerTrait<typename Machine::PolicyType>::value) {
         for (int round = 0; round < kSettleTicks; ++round) {
             machine.tick();
         }
@@ -210,7 +210,7 @@ public:
         // A machine that starts a child session in its first state has that child
         // running, and maybe ended, before any event arrives; it is read as the events
         // leave it, after the rounds that take.
-        if constexpr (::SCE::Core::NeedsEventScheduler<typename Machine::PolicyType>) {
+        if constexpr (::SCE::Core::NeedsEventSchedulerTrait<typename Machine::PolicyType>::value) {
             settleRounds(*machine_);
         }
     }

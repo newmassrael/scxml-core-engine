@@ -276,7 +276,7 @@
 {% endif %}
                         ScriptValue paramValue = {{ param.native_value }};
 {% if param.native_fails %}
-                        if (sce_failure_.failed()) SCE_UNLIKELY {
+                        if (SCE_EXPECT_FALSE(sce_failure_.failed())) {
                             engine.raise(typename Engine::EventWithMetadata(Event::Error_execution,
                                 "<invoke type='sce:mesh-rpc'> <param name='{{ param.name | escape_cpp }}'> could not be read"));
                         } else
@@ -350,7 +350,7 @@
 {% endif %}
                             _resolved_src_{{ invoke_info.invoke_id }} = {{ invoke_info.native_src }};
 {% if invoke_info.native_src_fails %}
-                            if (sce_failure_.failed()) SCE_UNLIKELY {
+                            if (SCE_EXPECT_FALSE(sce_failure_.failed())) {
                                 _srcexpr_read_{{ invoke_info.invoke_id }} = false;
                             }
 {% endif %}
@@ -537,7 +537,7 @@
 {% endif %}
                         ScriptValue doneValue = {{ param.native_value }};
 {% if param.native_fails %}
-                        if (sce_failure_.failed()) SCE_UNLIKELY {
+                        if (SCE_EXPECT_FALSE(sce_failure_.failed())) {
                             SCE_LOG_WARN("Donedata param '{{ param.name | escape_cpp }}' overflowed or failed");
                             engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, "<donedata> <param name='{{ param.name | escape_cpp }}'> failed to evaluate"));
                         } else {
@@ -615,7 +615,7 @@
 {% endif %}
                         ScriptValue contentValue = {{ state.donedata.native_content_value }};
 {% if state.donedata.native_content_value_fails %}
-                        if (sce_failure_.failed()) SCE_UNLIKELY {
+                        if (SCE_EXPECT_FALSE(sce_failure_.failed())) {
                             SCE_LOG_WARN("Donedata content expr overflowed or failed");
                             engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, "<donedata> <content expr> failed to evaluate"));
                             contentValue = ScriptValue(std::string());

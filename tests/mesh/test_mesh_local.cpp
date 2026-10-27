@@ -27,7 +27,7 @@
 // Verify EventQueueBridge compiles with a concrete event type
 static_assert(sizeof(SCE::Mesh::EventQueueBridge<int, 64>) > 0, "EventQueueBridge must be instantiable with int");
 
-// SCE_MESH.md §3.1 publishes TickScheduling / EventDrivenScheduling as a
+// SCE_MESH.md §3.1 publishes TickSchedulingTrait / EventDrivenSchedulingTrait as a
 // contract for the integrator's own scheduler — SCE ships no scheduler and
 // calls none, so nothing else in the tree would notice a drift in either
 // predicate. Both directions are pinned: a conforming shape must satisfy
@@ -55,7 +55,7 @@ struct ModelEventScheduler {
     void onEvent(Event) {}
 };
 
-/// Conforming except for `deadline()` — must NOT satisfy TickScheduling.
+/// Conforming except for `deadline()` — must NOT satisfy TickSchedulingTrait.
 struct TickSchedulerMissingDeadline {
     using Duration = std::chrono::milliseconds;
 
@@ -64,25 +64,24 @@ struct TickSchedulerMissingDeadline {
 
 }  // namespace
 
-#if __cpp_concepts >= 202002L
-static_assert(SCE::Mesh::TickScheduling<ModelTickScheduler>,
-              "a tick+deadline+Duration shape must satisfy TickScheduling");
-static_assert(!SCE::Mesh::TickScheduling<TickSchedulerMissingDeadline>,
-              "TickScheduling must reject a scheduler with no deadline()");
-static_assert(SCE::Mesh::EventDrivenScheduling<ModelEventScheduler>,
-              "an onEvent+Event shape must satisfy EventDrivenScheduling");
-static_assert(!SCE::Mesh::EventDrivenScheduling<ModelTickScheduler>,
-              "EventDrivenScheduling must reject a tick-only scheduler");
-#endif
+static_assert(SCE::Mesh::TickSchedulingTrait<ModelTickScheduler>::value,
+              "a tick+deadline+Duration shape must satisfy TickSchedulingTrait");
+static_assert(!SCE::Mesh::TickSchedulingTrait<TickSchedulerMissingDeadline>::value,
+              "TickSchedulingTrait must reject a scheduler with no deadline()");
+static_assert(SCE::Mesh::EventDrivenSchedulingTrait<ModelEventScheduler>::value,
+              "an onEvent+Event shape must satisfy EventDrivenSchedulingTrait");
+static_assert(!SCE::Mesh::EventDrivenSchedulingTrait<ModelTickScheduler>::value,
+              "EventDrivenSchedulingTrait must reject a tick-only scheduler");
 
-// The C++17 fallback exposes the same three predicates as constexpr bool,
-// so `if constexpr` capability detection keeps working without concepts.
-static_assert(SCE::Mesh::HasTick<ModelTickScheduler>, "HasTick must detect tick()");
-static_assert(SCE::Mesh::HasDeadline<ModelTickScheduler>, "HasDeadline must detect deadline()");
-static_assert(!SCE::Mesh::HasOnEvent<ModelTickScheduler>, "HasOnEvent must not fire on a tick-only scheduler");
-static_assert(SCE::Mesh::HasOnEvent<ModelEventScheduler>, "HasOnEvent must detect onEvent()");
-static_assert(!SCE::Mesh::HasDeadline<TickSchedulerMissingDeadline>,
-              "HasDeadline must not fire when deadline() is absent");
+// The capability traits answer each member on its own, for `if constexpr`
+// detection of what a scheduler offers.
+static_assert(SCE::Mesh::HasTickTrait<ModelTickScheduler>::value, "HasTickTrait must detect tick()");
+static_assert(SCE::Mesh::HasDeadlineTrait<ModelTickScheduler>::value, "HasDeadlineTrait must detect deadline()");
+static_assert(!SCE::Mesh::HasOnEventTrait<ModelTickScheduler>::value,
+              "HasOnEventTrait must not fire on a tick-only scheduler");
+static_assert(SCE::Mesh::HasOnEventTrait<ModelEventScheduler>::value, "HasOnEventTrait must detect onEvent()");
+static_assert(!SCE::Mesh::HasDeadlineTrait<TickSchedulerMissingDeadline>::value,
+              "HasDeadlineTrait must not fire when deadline() is absent");
 
 // Verify TransportRouter template is well-formed by instantiating
 // with a minimal mock engine that provides the getPolicy() API
@@ -101,7 +100,7 @@ struct MockEngine {
         }
     };
 
-    // SCE::Core::AotSmMeshIntegration concept requires the engine type
+    // SCE::Core::AotSmMeshIntegrationTrait requires the engine type
     // to expose `PolicyType` as a nested typedef alias for the policy
     // class. The AOT-emitted SM class uses the same name; the mock
     // mirrors it so the static_assert in TransportRouter passes against

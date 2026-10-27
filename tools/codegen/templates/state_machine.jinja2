@@ -1500,20 +1500,19 @@ public:
 };
 
 // W3C SCXML: Compile-time StatePolicy interface verification
-// Ensures generated policy satisfies required concepts (see core/StatePolicyConcepts.h)
+// Ensures generated policy satisfies the contract traits (see core/StatePolicyConcepts.h)
 {% if _has_tpl %}
-// Template class — concept verified at instantiation (cannot static_assert uninstantiated templates)
+// Template class — StaticExecutionEngine's class body asserts the contract at instantiation
+// (cannot static_assert uninstantiated templates)
 {% else %}
-#if __cpp_concepts >= 202002L
-static_assert(::SCE::Core::EventNamingPolicy<{{ model.name }}Policy>,
-    "Generated {{ model.name }}Policy must satisfy EventNamingPolicy concept");
-static_assert(::SCE::Core::StateNamingPolicy<{{ model.name }}Policy>,
-    "Generated {{ model.name }}Policy must satisfy StateNamingPolicy concept");
+static_assert(::SCE::Core::EventNamingPolicyTrait<{{ model.name }}Policy>::value,
+    "Generated {{ model.name }}Policy must satisfy EventNamingPolicyTrait");
+static_assert(::SCE::Core::StateNamingPolicyTrait<{{ model.name }}Policy>::value,
+    "Generated {{ model.name }}Policy must satisfy StateNamingPolicyTrait");
 {% if model.has_parallel_states %}
-static_assert(::SCE::Core::ParallelStatePolicy<{{ model.name }}Policy>,
-    "Generated {{ model.name }}Policy must satisfy ParallelStatePolicy concept (HAS_PARALLEL_STATES=true)");
+static_assert(::SCE::Core::ParallelStatePolicyTrait<{{ model.name }}Policy>::value,
+    "Generated {{ model.name }}Policy must satisfy ParallelStatePolicyTrait (HAS_PARALLEL_STATES=true)");
 {% endif %}
-#endif
 
 // §scxml-3.3: `getStateName` and `getStateFromName` are a round trip, or they
 // are two independent maps that happen to agree today.

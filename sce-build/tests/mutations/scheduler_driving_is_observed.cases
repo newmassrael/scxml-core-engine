@@ -27,7 +27,7 @@ mutation_oracles tests/engine/SchedulerDrivingTest.cpp
 
 mutation_case "the engine stops counting the unattended macrosteps" <<'PY'
 edit("sce/include/static/StaticExecutionEngine.h",
-     "        if constexpr (::SCE::Core::NeedsEventScheduler<StatePolicy>) {\n            if (!tickHasRun_) {",
+     "        if constexpr (::SCE::Core::NeedsEventSchedulerTrait<StatePolicy>::value) {\n            if (!tickHasRun_) {",
      "        if constexpr (false) {\n            if (!tickHasRun_) {")
 PY
 
@@ -46,7 +46,7 @@ PY
 
 mutation_case "every machine is treated as scheduler-driven" <<'PY'
 edit("sce/include/static/StaticExecutionEngine.h",
-     "        if constexpr (::SCE::Core::NeedsEventScheduler<StatePolicy>) {\n            if (!tickHasRun_) {",
+     "        if constexpr (::SCE::Core::NeedsEventSchedulerTrait<StatePolicy>::value) {\n            if (!tickHasRun_) {",
      "        if constexpr (true) {\n            if (!tickHasRun_) {")
 PY
 

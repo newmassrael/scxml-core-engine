@@ -12,7 +12,7 @@ namespace SCE::Core {
  *
  * Wraps EventQueueManager<Event> with unified interface
  * usable by EventProcessingAlgorithms.
- * Satisfies EventQueueAdapter concept (core/EventQueueConcept.h).
+ * Satisfies EventQueueAdapterTrait (core/EventQueueConcept.h).
  *
  * @tparam EventType Event type (usually enum class Event)
  *

@@ -187,7 +187,7 @@ Key integration points:
 option(SCE_ENABLE_MESH "Build sce_mesh_common (scheduler + event bridge)" OFF)
 
 # sce_mesh_common is a thin library (~500-1000 LOC):
-#   - Scheduler concepts (TickScheduling, EventDrivenScheduling)
+#   - Scheduler contracts (TickSchedulingTrait, EventDrivenSchedulingTrait)
 #   - MPSC event queue bridge (thread-safe event injection)
 # Generated transport code links against:
 #   - sce_mesh_common (scheduler)
@@ -200,30 +200,35 @@ option(SCE_ENABLE_MESH "Build sce_mesh_common (scheduler + event bridge)" OFF)
 
 ### 3.1 Scheduler — When to Execute
 
-Controls how and when state machines process events. Two fundamentally different scheduling models exist — tick-based batch processing and event-driven immediate dispatch. These are separated into **two distinct C++20 concepts**, consistent with the existing `sce_core` patterns (CRTP + Concepts with C++17 fallback).
+Controls how and when state machines process events. Two fundamentally different scheduling models exist — tick-based batch processing and event-driven immediate dispatch. These are separated into **two distinct compile-time contracts**, consistent with the existing `sce_core` patterns (CRTP + C++17 traits checked by `static_assert`).
 
-#### Why Concepts, Not Virtual Interfaces
+#### Why Compile-Time Contracts, Not Virtual Interfaces
 
-The AOT engine's core principle is "zero runtime overhead." Using virtual interfaces for the scheduler would introduce vtable indirect calls on every event dispatch — contradicting this principle. The existing codebase already uses this pattern (`StaticExecutionEngine` via CRTP, `StatePolicyConcepts.h`, `EventQueueConcept.h`), so concept-based separation is the natural choice.
+The AOT engine's core principle is "zero runtime overhead." Using virtual interfaces for the scheduler would introduce vtable indirect calls on every event dispatch — contradicting this principle. The existing codebase already uses this pattern (`StaticExecutionEngine` via CRTP, `StatePolicyConcepts.h`, `EventQueueConcept.h`), so trait-based separation is the natural choice.
 
-#### Concept Definitions
+#### Trait Definitions
+
+The contracts are C++17 traits, so they mean the same thing in a consumer's C++17 translation unit and in SCE's C++20 ones (ADR 0059 §3); a template that takes a scheduler checks one with `static_assert(TickSchedulingTrait<S>::value, ...)`.
 
 ```cpp
-// Tick-based: batch processing at fixed intervals
-template<typename S>
-concept TickScheduling = requires { typename S::Duration; } && requires(S& s) {
-    { s.tick() };
-    { s.deadline() } -> std::convertible_to<typename S::Duration>;
-};
+// Tick-based: batch processing at fixed intervals.
+// S::Duration; on an S& s: s.tick(), and s.deadline() convertible to S::Duration
+template <typename S, typename = void> struct TickSchedulingTrait : std::false_type {};
+template <typename S>
+struct TickSchedulingTrait<S, std::void_t<typename S::Duration, decltype(std::declval<S &>().tick()),
+                                          decltype(std::declval<S &>().deadline())>>
+    : std::is_convertible<decltype(std::declval<S &>().deadline()), typename S::Duration> {};
 
-// Event-driven: immediate dispatch on arrival
-template<typename S>
-concept EventDrivenScheduling = requires { typename S::Event; } && requires(S& s, typename S::Event event) {
-    { s.onEvent(event) };
-};
+// Event-driven: immediate dispatch on arrival.
+// S::Event; on an S& s and an S::Event lvalue event: s.onEvent(event)
+template <typename S, typename = void> struct EventDrivenSchedulingTrait : std::false_type {};
+template <typename S>
+struct EventDrivenSchedulingTrait<
+    S, std::void_t<typename S::Event, decltype(std::declval<S &>().onEvent(std::declval<typename S::Event &>()))>>
+    : std::true_type {};
 ```
 
-The scheduler names its own associated types (`S::Duration`, `S::Event`) and reaches its own instances; neither operation takes an instance or event batch as a parameter. Passing batches in would make SCE the owner of the instance roster, and the roster is exactly the thing that differs between a game loop holding thousands of entities and an ECU holding one. A C++17 translation unit gets the same three predicates as `constexpr bool` traits (`HasTick`, `HasDeadline`, `HasOnEvent`) so `if constexpr` capability detection works without concepts.
+The scheduler names its own associated types (`S::Duration`, `S::Event`) and reaches its own instances; neither operation takes an instance or event batch as a parameter. Passing batches in would make SCE the owner of the instance roster, and the roster is exactly the thing that differs between a game loop holding thousands of entities and an ECU holding one. Each member is also detected on its own (`HasTickTrait`, `HasDeadlineTrait`, `HasOnEventTrait`), asked through `::value` for `if constexpr` capability detection.
 
 SCE ships the contract, not the scheduler. OS timing primitives (RTOS periodic tasks, epoll, game loop timers) cannot be resolved at build time, and they are also the point where an integrator's existing main loop already lives — so the loop stays in the application and SCE supplies the two halves it drives:
 
@@ -237,20 +242,20 @@ while (running_) {
 
 `TransportRouter` is emitted per machine by `mesh_transport.h.jinja2` and exposes the drain entry points; the generated state machine exposes `step()`. A tick scheduler calls both on its period; an event-driven scheduler calls the drain from the transport's own notification callback and `step()` after it. Because the application writes this loop, SCE never has to guess whether it may block, own a thread, or run to completion — the three things a shipped scheduler would have to assume.
 
-The concepts above are therefore a **published contract for the integrator's scheduler**, not an interface SCE calls. They exist so an integrator writing generic code over its own scheduler types gets a compile error rather than a runtime surprise when a type is wired into the wrong loop shape. `sce/include/mesh/SchedulerConcepts.h` is header-only and definition-only; no SCE translation unit instantiates it, and `sce_mesh_common` carries the envelope codec rather than any scheduler.
+The traits above are therefore a **published contract for the integrator's scheduler**, not an interface SCE calls. They exist so an integrator writing generic code over its own scheduler types gets a compile error rather than a runtime surprise when a type is wired into the wrong loop shape. `sce/include/mesh/SchedulerConcepts.h` is header-only and definition-only; no SCE translation unit instantiates it, and `sce_mesh_common` carries the envelope codec rather than any scheduler.
 
 #### Integrator scheduler shapes
 
-These are the shapes the two concepts are meant to admit. SCE does not ship any of them — each is written by the integrator against its own OS or engine, because each needs a primitive (an RTOS periodic task, an epoll set, a frame timer) that belongs to the host system rather than to a state machine library.
+These are the shapes the two traits are meant to admit. SCE does not ship any of them — each is written by the integrator against its own OS or engine, because each needs a primitive (an RTOS periodic task, an epoll set, a frame timer) that belongs to the host system rather than to a state machine library.
 
-| Shape | Concept | Behavior | Domain |
+| Shape | Trait | Behavior | Domain |
 |-----------|---------|----------|--------|
-| Game loop | `TickScheduling` | Fixed-rate tick (e.g. 60Hz), batch processing | MMORPG, simulation |
-| Real-time | `TickScheduling` | RTOS periodic task, WCET guarantee, priority inheritance | Automotive ECU |
-| Event-driven | `EventDrivenScheduling` | Process on event arrival (epoll/kqueue) | Cloud, microservices |
-| Cooperative | `TickScheduling` | Single-thread round-robin | Bare-metal MCU, AUTOSAR Runnable |
+| Game loop | `TickSchedulingTrait` | Fixed-rate tick (e.g. 60Hz), batch processing | MMORPG, simulation |
+| Real-time | `TickSchedulingTrait` | RTOS periodic task, WCET guarantee, priority inheritance | Automotive ECU |
+| Event-driven | `EventDrivenSchedulingTrait` | Process on event arrival (epoll/kqueue) | Cloud, microservices |
+| Cooperative | `TickSchedulingTrait` | Single-thread round-robin | Bare-metal MCU, AUTOSAR Runnable |
 
-Concept names take the `-ing` suffix so an integrator's own `GameLoopScheduler` or `EventDrivenScheduler` class name never collides with the predicate it satisfies.
+Trait names take the `-ing` suffix so an integrator's own `GameLoopScheduler` or `EventDrivenScheduler` class name never collides with the predicate it satisfies.
 
 ### 3.2 Transport Codegen — How to Deliver
 
@@ -1014,7 +1019,7 @@ Mesh receive flow:
 
 **Responsibilities**:
 - **Transport drain**: calls `raiseExternal` for each received event, then returns. No `step()`.
-- **Scheduler** (Section 3.1 `TickScheduling` / `EventDrivenScheduling`): decides when macrosteps run.
+- **Scheduler** (Section 3.1 `TickSchedulingTrait` / `EventDrivenSchedulingTrait`): decides when macrosteps run.
 - **Application**: owns the event loop if not using a scheduler.
 
 **Why this separation matters** (W3C SCXML 3.12):

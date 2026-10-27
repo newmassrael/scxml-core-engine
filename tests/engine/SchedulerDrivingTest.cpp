@@ -20,7 +20,7 @@
  *
  * The policies here are hand-written rather than generated, and that is the
  * point of two of these cases: the constant is *detected*
- * (`NeedsEventSchedulerTrait`) rather than required by `BaseStatePolicy`, so a
+ * (`NeedsEventSchedulerTrait`) rather than required by `BaseStatePolicyTrait`, so a
  * policy that predates it — the mesh worker harnesses, any consumer's own —
  * must keep compiling and must count nothing. A generated policy's spelling of
  * the same constant is measured on the codegen side, in

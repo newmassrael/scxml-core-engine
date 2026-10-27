@@ -101,8 +101,8 @@
     // mapping is purely structural — no runtime feature gates it — and
     // external consumers (trace recorders, post-mortem analyzers,
     // hierarchical visualisers) need it whether or not the SM uses
-    // parallel states or the In() predicate. Required by StateNamingPolicy
-    // concept (StatePolicyConcepts.h). W3C SCXML 5.9.2 / 3.3.
+    // parallel states or the In() predicate. Required by
+    // StateNamingPolicyTrait (StatePolicyConcepts.h). W3C SCXML 5.9.2 / 3.3.
     [[nodiscard]] static constexpr const char* getStateName(State state) noexcept {
         switch (state) {
 {% for state_id in model.states | list | sort %}

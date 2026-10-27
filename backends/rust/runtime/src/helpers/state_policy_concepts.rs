@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
-//! Rust equivalents for C++20 concepts in `sce/include/core/StatePolicyConcepts.h`.
+//! Rust equivalents for the C++ traits in `sce/include/core/StatePolicyConcepts.h`.
 //!
 //! ## Background
 //!
@@ -14,7 +14,7 @@
 //!     decltype(std::declval<P>().initializeDataModel(std::declval<Engine&>()))
 //! >> : std::true_type {};
 //! ```
-//! and then branches on them with `if constexpr (HasDataModelInit<P, Engine>) { ... }`.
+//! and then branches on them with `if constexpr (HasDataModelInitTrait<P, Engine>::value) { ... }`.
 //!
 //! Rust has no structural typing. Instead, optional capabilities are signaled via
 //! **associated `const bool` flags** on [`StatePolicy`]:
@@ -34,51 +34,51 @@
 //!
 //! ## Why this module exists
 //!
-//! This file documents the mapping from C++ concept names to Rust flag names so
+//! This file documents the mapping from C++ trait names to Rust flag names so
 //! that code reviewers can cross-reference with C++ `StatePolicyConcepts.h`. It
 //! also provides inline const helpers for readability at call sites.
 
 use crate::policy::StatePolicy;
 
-/// C++ `SCE::Core::HasDataModelInit<StatePolicy, Engine>` equivalent.
+/// C++ `SCE::Core::HasDataModelInitTrait<StatePolicy, Engine>` equivalent.
 pub const fn has_data_model_init<P: StatePolicy>() -> bool {
     P::NEEDS_DATA_MODEL_INIT
 }
 
 /// Whether driving the machine needs `Engine::tick` rather than `Engine::step`.
 ///
-/// It has no C++ concept twin: the C++ engine owns its own scheduler polling,
+/// It has no C++ trait twin: the C++ engine owns its own scheduler polling,
 /// while a Rust host writes the driving loop itself and so must be able to ask.
 pub const fn needs_event_scheduler<P: StatePolicy>() -> bool {
     P::NEEDS_EVENT_SCHEDULER
 }
 
-/// C++ `SCE::Core::HasInvokeSupport<StatePolicy, Engine>` equivalent.
+/// C++ `SCE::Core::HasInvokeSupportTrait<StatePolicy, Engine>` equivalent.
 pub const fn has_invoke_support<P: StatePolicy>() -> bool {
     P::HAS_INVOKE_SUPPORT
 }
 
-/// C++ `SCE::Core::HasFinalize<StatePolicy, EventWithMetadata, Engine>` equivalent.
+/// C++ `SCE::Core::HasFinalizeTrait<StatePolicy, EventWithMetadata, Engine>` equivalent.
 pub const fn has_finalize<P: StatePolicy>() -> bool {
     P::HAS_FINALIZE
 }
 
-/// C++ `SCE::Core::HasActiveStates<StatePolicy>` equivalent.
+/// C++ `SCE::Core::HasActiveStatesTrait<StatePolicy>` equivalent.
 pub const fn has_active_states<P: StatePolicy>() -> bool {
     P::HAS_ACTIVE_STATES
 }
 
-/// C++ `SCE::Core::HasAutoforward<StatePolicy, Engine>` equivalent.
+/// C++ `SCE::Core::HasAutoforwardTrait<StatePolicy, Engine>` equivalent.
 pub const fn has_autoforward<P: StatePolicy>() -> bool {
     P::HAS_AUTOFORWARD
 }
 
-/// C++ `SCE::Core::HasChildTick<StatePolicy, Engine>` equivalent.
+/// C++ `SCE::Core::HasChildTickTrait<StatePolicy, Engine>` equivalent.
 pub const fn has_child_tick<P: StatePolicy>() -> bool {
     P::HAS_CHILD_TICK
 }
 
-/// C++ `SCE::Core::ParallelStatePolicy<StatePolicy>` equivalent.
+/// C++ `SCE::Core::ParallelStatePolicyTrait<StatePolicy>` equivalent.
 pub const fn is_parallel_state_policy<P: StatePolicy>() -> bool {
     P::HAS_PARALLEL_STATES
 }

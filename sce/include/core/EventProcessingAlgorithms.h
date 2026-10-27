@@ -67,13 +67,12 @@ public:
      * });
      * @endcode
      */
-#if __cpp_concepts >= 202002L
-    template <EventQueueAdapter EventQueue, typename EventHandler, typename MicrostepBudget = AlwaysTakeMicrostep>
-#else
     template <typename EventQueue, typename EventHandler, typename MicrostepBudget = AlwaysTakeMicrostep>
-#endif
     static void processInternalEventQueue(EventQueue &queue, EventHandler &&handler,
                                           MicrostepBudget &&mayTakeMicrostep = MicrostepBudget{}) {
+        static_assert(EventQueueAdapterTrait<EventQueue>::value,
+                      "EventQueue must be an event queue adapter: hasEvents() convertible to bool, and popNext() "
+                      "(EventQueueAdapterTrait)");
         // §scxml-3.13: Process all internal events in FIFO order
         while (queue.hasEvents()) {
             if (!mayTakeMicrostep()) {

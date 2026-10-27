@@ -185,7 +185,7 @@ void replay(const std::string &name, std::map<std::string, std::function<json(co
     machine.setClock(std::make_shared<SCE::ManualClock>(0));
     machine.initialize();
     const auto settle = [&machine]() {
-        if constexpr (::SCE::Core::NeedsEventScheduler<typename Machine::PolicyType>) {
+        if constexpr (::SCE::Core::NeedsEventSchedulerTrait<typename Machine::PolicyType>::value) {
             for (int round = 0; round < kSettleTicks; ++round) {
                 machine.tick();
             }

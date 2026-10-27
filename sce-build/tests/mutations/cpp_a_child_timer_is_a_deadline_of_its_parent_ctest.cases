@@ -27,8 +27,8 @@ mutation_oracles tests/integration/AChildTimerIsADeadlineOfItsParentAotTest.cpp
 
 mutation_case "the cpp engine does not ask its policy for a child's deadline" <<'PY'
 edit("sce/include/static/StaticExecutionEngine.h",
-     """        if constexpr (SCE::Core::HasNextChildDeadline<StatePolicy>) {""",
-     """        if constexpr (false && SCE::Core::HasNextChildDeadline<StatePolicy>) {""")
+     """        if constexpr (SCE::Core::HasNextChildDeadlineTrait<StatePolicy>::value) {""",
+     """        if constexpr (false && SCE::Core::HasNextChildDeadlineTrait<StatePolicy>::value) {""")
 PY
 
 # ── The generated policy reports no child deadline ─────────────────

@@ -14,7 +14,7 @@
     that raised; `error.execution` was raised by the expression itself.
 #}
 {% if action.native_fails %}
-if ({{ action.native_code }}) SCE_UNLIKELY {
+if (SCE_EXPECT_FALSE({{ action.native_code }})) {
 {% if block_exit is defined and block_exit %}
     {{ block_exit }}
 {% endif %}

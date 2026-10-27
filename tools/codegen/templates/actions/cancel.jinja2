@@ -18,7 +18,7 @@
 {% endif %}
     std::string sendidToCancel = {{ action.native_sendid }};
 {% if action.native_sendid_fails %}
-    if (sce_failure_.failed()) SCE_UNLIKELY {
+    if (SCE_EXPECT_FALSE(sce_failure_.failed())) {
         engine.raise(typename Engine::EventWithMetadata(Event::Error_execution,
                                                         "<cancel> sendidexpr failed to evaluate"));
 {% if block_exit is defined and block_exit %}

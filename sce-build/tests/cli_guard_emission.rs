@@ -484,8 +484,15 @@ fn a_native_guard_lowers_the_same_on_both_doors() {
                  the native guard was folded away:\n{text}"
             );
         }
-        // The fold itself, in the shapes the two backends print it.
-        for folded in ["if (false)", "else if (false)", "if (false) {"] {
+        // The fold itself, in the shapes the two backends print it. The C++
+        // `<if>` wraps its condition in the branch hint, so its fold reads
+        // `if (SCE_EXPECT_TRUE(false))`.
+        for folded in [
+            "if (false)",
+            "else if (false)",
+            "if (false) {",
+            "SCE_EXPECT_TRUE(false)",
+        ] {
             assert!(
                 !text.contains(folded),
                 "{language}: emitted {folded:?}, so a native guard reached the \

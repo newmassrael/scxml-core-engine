@@ -27,11 +27,7 @@
 
 // Forward declaration to avoid circular dependency
 namespace SCE::Static {
-#if __cpp_concepts >= 202002L
-template <SCE::Core::EventNamingPolicy StatePolicy> class StaticExecutionEngine;
-#else
 template <typename StatePolicy> class StaticExecutionEngine;
-#endif
 }  // namespace SCE::Static
 
 namespace SCE::Common {

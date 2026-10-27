@@ -87,7 +87,7 @@ sce_runtime       (STATIC, full interpreter — umbrella target)
 - `core/` — W3C algorithm helpers (state entry/exit, event processing, conflict resolution, parallel orchestration)
 - `common/` — Header-only validators and shared computation (AssignHelper, SendHelper, ForeachValidator, etc.)
 - `core/LogMacros.h` — Conditional logging (no-ops when standalone)
-- C++20 concepts and interfaces (`StatePolicyConcepts.h`, `EventQueueConcept.h`) — guarded by `__cpp_concepts`, degrades to `void_t` traits on C++17
+- Interface contracts (`StatePolicyConcepts.h`, `EventQueueConcept.h`) — C++17 `void_t` traits checked by `static_assert`, the same in every language standard (ADR 0059 §3)
 
 **Link target**: Pure static AOT generated code with no scripting needs.
 
@@ -179,20 +179,21 @@ Bare-metal / RTOS consumers opt out of `sce_c_runtime_posix` and supply their ow
 
 ### C++ Standard Compatibility
 
-`sce_core` and `sce_base` target C++17 minimum for cross-compilation to constrained toolchains (e.g., QNX GCC 8.3). C++20 features are conditionally enabled at compile time.
+`sce_core` and `sce_base` target C++17 minimum for cross-compilation to constrained toolchains (e.g., QNX GCC 8.3). A public header does not choose a definition by language standard, because a consumer's C++17 translation units and SCE's C++20 ones include it in one program (ADR 0059 §3); `LogMacros.h` is the named exception.
 
 | Tier | C++ Minimum | C++20 Behavior | Compatibility Mechanism |
 |------|-------------|----------------|------------------------|
-| `sce_core` | C++17 | Concepts enabled, zero-cost constraints | `__cpp_concepts >= 202002L` guard; falls back to `void_t` type traits |
-| `sce_base` | C++17 | `std::source_location`, `std::format` | `SCE::source_location` shim (`SourceLocation.h`); `fmt::format` → plain string fallback (`LogMacros.h`) |
+| `sce_core` | C++17 | Same as C++17 | Contracts are `void_t` type traits checked by `static_assert`, never concepts |
+| `sce_base` | C++17 | `std::format` | `SCE::source_location` is one SCE type (`SourceLocation.h`); `fmt::format` → plain string fallback (`LogMacros.h`) |
 | `sce_scripting` | C++20 | Full C++20 features | QuickJS/Lua engines require modern standard library |
 | `sce_runtime` | C++20 | Full C++20 features | Interpreter infrastructure requires C++20 |
 
 **Key shims**:
-- `SCE::source_location` — aliases `std::source_location` on C++20, provides stub on C++17
+- `SCE::source_location` — one SCE struct in every standard, filled from `__builtin_FILE` / `__builtin_FUNCTION` / `__builtin_LINE`; `column()` is 0
 - `LogMacros.h` — `std::format` → `fmt::format` (spdlog bundled) → plain string fallback chain
-- `SendHelper.h` — `SCE::detail::starts_with()` dual-mode helper (C++20 `std::string::starts_with` or manual)
-- `StatePolicyConcepts.h` — `void_t` type traits always available; concepts aliased on C++20, `constexpr bool` on C++17
+- `SendHelper.h` — `SCE::detail::starts_with()`, an `rfind` anchored at 0
+- `StatePolicyConcepts.h` — `void_t` type traits, asked through `::value`; the policy levels are checked by `static_assert`
+- `CompilerHints.h` — `SCE_EXPECT_TRUE` / `SCE_EXPECT_FALSE` wrap a condition in `__builtin_expect`, chosen by compiler, not by standard
 
 ### Distribution Models
 

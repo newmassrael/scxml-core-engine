@@ -3,8 +3,8 @@
 
 #pragma once
 
-#if __cpp_concepts >= 202002L
-#include <concepts>
+#include <type_traits>
+#include <utility>
 
 namespace SCE::Core {
 
@@ -15,23 +15,18 @@ namespace SCE::Core {
  * the AOT engine's `AOTEventQueue` satisfies it. The Interpreter's main event
  * loop takes its events straight off the raiser instead.
  *
- * Required methods:
- * - bool hasEvents() const  : Check if queue has pending events
- * - auto popNext()          : Pop and return next event (return type varies per engine)
+ * Required methods, on a `Q &q`:
+ * - q.hasEvents()  : Check if queue has pending events, convertible to bool
+ * - q.popNext()    : Pop and return next event (return type varies per engine)
+ *
+ * A C++17 trait, so it means the same thing in a consumer's C++17 translation
+ * unit and in SCE's C++20 ones (docs/adr/0059).
  */
+template <typename Q, typename = void> struct EventQueueAdapterTrait : std::false_type {};
+
 template <typename Q>
-concept EventQueueAdapter = requires(Q q) {
-    { q.hasEvents() } -> std::convertible_to<bool>;
-    { q.popNext() };
-};
+struct EventQueueAdapterTrait<
+    Q, std::void_t<decltype(std::declval<Q &>().hasEvents()), decltype(std::declval<Q &>().popNext())>>
+    : std::is_convertible<decltype(std::declval<Q &>().hasEvents()), bool> {};
 
 }  // namespace SCE::Core
-
-#else  // C++17 fallback
-
-namespace SCE::Core {
-// C++17: No concept check — duck typing via templates.
-// EventProcessingAlgorithms will rely on implicit template requirements.
-}  // namespace SCE::Core
-
-#endif  // __cpp_concepts >= 202002L

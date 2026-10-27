@@ -4342,6 +4342,11 @@
         {
           "file": "backends/rust/runtime/src/host_processor.rs",
           "kind": "references"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "SCE::Static",
+          "kind": "references"
         }
       ]
     },
@@ -4539,6 +4544,11 @@
           "file": "sce-build/src/mesh/error.rs",
           "symbol": "HostCoreGap",
           "kind": "references"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "SCE::Static",
+          "kind": "references"
         }
       ]
     },
@@ -4692,6 +4702,11 @@
         {
           "file": "tests/mesh/test_mesh_session_f_eventful.cpp",
           "kind": "verifies"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "SCE::Static",
+          "kind": "references"
         }
       ]
     },

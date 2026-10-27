@@ -1918,11 +1918,13 @@ fn statechart_native_lowering_cpp_compiles_and_runs() {
         !inl.contains("safeEvaluateGuard"),
         "native lowering must not fall back to the script-engine guard"
     );
-    // The `// "…" lowered to …` comment echoes the raw cond, so use a precise
-    // sentinel: the raw cond would only reach emitted code via the `{% else %}`
-    // arm, i.e. `if (_event.data.elapsed_ms === 0) SCE_LIKELY {`.
+    // The `// "…" lowered to …` comment echoes the raw cond, so use precise
+    // sentinels: the raw cond would reach emitted code only in guard position,
+    // bare on a transition (`if (_event.data.elapsed_ms === 0)`) or wrapped in
+    // the branch hint on an `<if>` (`if (SCE_EXPECT_TRUE(_event.data...`).
     assert!(
-        !inl.contains("if (_event.data.elapsed_ms === 0)"),
+        !inl.contains("if (_event.data.elapsed_ms === 0)")
+            && !inl.contains("SCE_EXPECT_TRUE(_event.data.elapsed_ms === 0)"),
         "the raw ECMAScript guard must be fully lowered away"
     );
 
