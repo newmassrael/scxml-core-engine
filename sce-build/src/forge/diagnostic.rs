@@ -999,6 +999,14 @@ pub enum DiagnosticCode {
     //    model's code (SCE Accepted Subset §2.15).
     #[serde(rename = "scxml/static-datamodel-rule")]
     ScxmlStaticDatamodelRule,
+    //    `scxml/static-log-unloggable-value` refuses a `<log expr>` of
+    //    `sce-static` whose value is of a type some backend has no text for
+    //    (a byte string, a record): the document is compiled per target, so
+    //    a value one target cannot log is refused for every target. Its own
+    //    code because its repair is a different one: log what the value
+    //    holds, not change the construct (SCE Accepted Subset §2.15).
+    #[serde(rename = "scxml/static-log-unloggable-value")]
+    ScxmlStaticLogUnloggableValue,
     // ── NL→IR Mapping Roadmap Item 3 — Statechart graph
     //    reachability. BFS from the document `initial` (plus the
     //    parallel-all-children, compound-initial-cascade, and history
@@ -3737,6 +3745,7 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ScxmlUnsupportedDatamodel,
         ScxmlNullDatamodelForbidsConstruct,
         ScxmlStaticDatamodelRule,
+        ScxmlStaticLogUnloggableValue,
         // NL→IR Mapping Roadmap Item 3 — Statechart graph reachability
         ScxmlUnreachableState,
         ScxmlDeadTransition,
@@ -4449,7 +4458,9 @@ impl DiagnosticCode {
             ScxmlNullDatamodelForbidsConstruct => Some("W3C SCXML §B.1"),
             // SCE defines `sce-static` itself (a §3.2 platform-defined
             // value), so its rules anchor on the section that defines it.
-            ScxmlStaticDatamodelRule => Some("SCE Accepted Subset §2.15"),
+            ScxmlStaticDatamodelRule | ScxmlStaticLogUnloggableValue => {
+                Some("SCE Accepted Subset §2.15")
+            }
             // The name the author reached for is one Appendix B.2's
             // datamodel defines and SCE does not implement, so it
             // anchors on the ECMAScript data model.
@@ -5315,6 +5326,7 @@ impl DiagnosticCode {
             | ScxmlUnsupportedDatamodel
             | ScxmlNullDatamodelForbidsConstruct
             | ScxmlStaticDatamodelRule
+            | ScxmlStaticLogUnloggableValue
             | ScxmlUnreachableState
             | ScxmlDeadTransition
             | ScxmlParentSendWithoutParent
@@ -5793,6 +5805,7 @@ impl DiagnosticCode {
             ScxmlUnsupportedDatamodel => "scxml/unsupported-datamodel",
             ScxmlNullDatamodelForbidsConstruct => "scxml/null-datamodel-forbids-construct",
             ScxmlStaticDatamodelRule => "scxml/static-datamodel-rule",
+            ScxmlStaticLogUnloggableValue => "scxml/static-log-unloggable-value",
             ScxmlUnreachableState => "scxml/unreachable-state",
             ScxmlDeadTransition => "scxml/dead-transition",
             ScxmlParentSendWithoutParent => "scxml/parent-send-without-parent",
@@ -11657,6 +11670,32 @@ fn scxml_semantic_fields(e: &crate::scxml_semantic::ScxmlSemanticError) -> Diagn
                 k
             },
         },
+        ScxmlSemanticError::StaticLogUnloggableValue {
+            expr,
+            ty,
+            state,
+            observed,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::ScxmlStaticLogUnloggableValue,
+            stage: Stage::Validation,
+            // The values a `<log>` takes describe the position and propose
+            // no replacement: which of the value's fields, or its length, the
+            // author meant to see is theirs to say, so no fix.
+            expected: Some(vec![crate::scxml_semantic::STATIC_LOG_TAKES.to_string()]),
+            // The expression as the document writes it, on the row the
+            // record is placed at.
+            actual: observed.clone(),
+            fix: None,
+            // The type rides the id: the same expression is a different
+            // finding once the variable it reads is declared otherwise.
+            key_fragments: {
+                let mut k = vec!["static-log-value".to_string(), expr.clone(), ty.clone()];
+                if !state.is_empty() {
+                    k.push(state.clone());
+                }
+                k
+            },
+        },
         ScxmlSemanticError::TopLevelScriptUnloaded { index, src } => DiagnosticPayload {
             // NEW — §scxml-5.8 has no forge analog. The 1 NEW
             // wire code §wire-W5 D2 introduces.
@@ -13061,6 +13100,20 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:fc9d123751b758d5","code":"scxml/static-datamodel-rule","stage":"validation","spec":"SCE Accepted Subset §2.15","message":"<data id=\"count\"> is not accepted under datamodel=\"sce-static\": every <data> declares its type with sce:type","expected":["every <data> declares its type with sce:type"],"actual":"data"}"#,
+            ),
+            (
+                // SCE Accepted Subset §2.15 — a `<log expr>` under
+                // `sce-static` whose value is a byte string, which a C or
+                // C++ machine has no text for.
+                "forge/scxml-static-log-unloggable-value",
+                crate::scxml_semantic::ScxmlSemanticError::StaticLogUnloggableValue {
+                    expr: "frame".into(),
+                    ty: "bytes".into(),
+                    state: "idle".into(),
+                    observed: Some("frame".into()),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:ea66f58d2a41145b","code":"scxml/static-log-unloggable-value","stage":"validation","spec":"SCE Accepted Subset §2.15","message":"<log expr=\"frame\"> is not accepted under datamodel=\"sce-static\": its value is of type `bytes`, which a C or C++ machine has no text for and every other backend prints its own way, so the document would log differently, or not compile, by target. A <log> takes a bool, a string, an integer, a real, an enum value, or an optional value of one of those: log a field of a record, or the len() of a byte string","expected":["a bool, a string, an integer, a real, an enum value, or an optional value of one of those"],"actual":"frame"}"#,
             ),
             (
                 // NL→IR Mapping Roadmap Item 3 — Statechart
@@ -18486,6 +18539,9 @@ mod tests {
             | ValidationBytesComparisonNotEquality
             | ScxmlNullDatamodelForbidsConstruct
             | ScxmlStaticDatamodelRule
+            // The values a `<log>` takes ride `expected`; which field of the
+            // value, or its length, the author meant to log is theirs.
+            | ScxmlStaticLogUnloggableValue
             // The rule a declared transition function holds the construct to
             // rides `expected`; removing the construct or withdrawing the
             // declaration is the author's choice, so no fix.
@@ -19593,6 +19649,7 @@ mod tests {
                 | ScxmlUnsupportedDatamodel
                 | ScxmlNullDatamodelForbidsConstruct
                 | ScxmlStaticDatamodelRule
+                | ScxmlStaticLogUnloggableValue
                 | ScxmlUnreachableState
                 | ScxmlDeadTransition
                 | ScxmlParentSendWithoutParent
@@ -19962,9 +20019,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            477,
+            478,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 477 distinct variants to match the DiagnosticCode \
+             expected 478 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -20633,6 +20690,7 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | ScxmlUnsupportedDatamodel
             | ScxmlNullDatamodelForbidsConstruct
             | ScxmlStaticDatamodelRule
+            | ScxmlStaticLogUnloggableValue
             | ScxmlOnSampleInvalidParent
             | ScxmlOnSampleLinkDuplicateInState
             | ScxmlOnSampleEventNameConflict

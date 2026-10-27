@@ -602,6 +602,40 @@ pub enum ScxmlSemanticError {
         observed: Option<String>,
     },
 
+    /// A `<log expr>` of a `datamodel="sce-static"` document whose value is
+    /// of a type not every backend writes as text (docs/SCE_ACCEPTED_SUBSET.md
+    /// §2.15): a byte string, a record, an optional one of those, or a value
+    /// the data model gives no type.
+    ///
+    /// The document is compiled once per target (docs/adr/0003), and a C or
+    /// C++ machine has no text for such a value: the C++ log writes each
+    /// value through `operator<<`, which neither a byte vector nor a record
+    /// struct has, and the C one through a `printf` conversion, which takes
+    /// neither. The other backends print one, each its own way. So the value
+    /// is refused for every target where the expression is judged, rather
+    /// than refused by one compiler and logged differently by the rest.
+    #[error(
+        "<log expr=\"{expr}\"> is not accepted under datamodel=\"sce-static\": its value \
+         is of type `{ty}`, which a C or C++ machine has no text for and every other \
+         backend prints its own way, so the document would log differently, or not \
+         compile, by target. A <log> takes {}: log a field of a record, or the len() \
+         of a byte string",
+        STATIC_LOG_TAKES
+    )]
+    StaticLogUnloggableValue {
+        /// The expression, for the message.
+        expr: String,
+        /// The value's type, as a `sce:type` spells it where one can
+        /// (`bytes`, `record:Day`, `optional<bytes>`).
+        ty: String,
+        /// Owning state id, empty at document scope.
+        state: String,
+        /// The expression as the document's own text spells it, entities
+        /// still in place, reported as `actual` (SCE_ERROR_CONTRACT §3.1.1);
+        /// `None` where no spelling on one row was recorded.
+        observed: Option<String>,
+    },
+
     /// Top-level `<script>` element either (a) has empty content
     /// AND empty `src`, or (b) has `src` but the file failed to
     /// load. §scxml-5.8 mandates document rejection in either
@@ -1052,6 +1086,12 @@ pub enum ScxmlSemanticError {
     },
 }
 
+/// The values a `<log expr>` of a `sce-static` document takes, which every
+/// backend writes as text: [`ScxmlSemanticError::StaticLogUnloggableValue`]'s
+/// message names them, and its record carries them as `expected`.
+pub const STATIC_LOG_TAKES: &str =
+    "a bool, a string, an integer, a real, an enum value, or an optional value of one of those";
+
 /// The events of a transition function, for
 /// [`ScxmlSemanticError::TransitionFunctionUnmatchedDescriptor`]'s message.
 fn named_events(events: &[String]) -> String {
@@ -1246,6 +1286,12 @@ mod tests {
                 state: String::new(),
                 observed: Some("data".into()),
             },
+            ScxmlSemanticError::StaticLogUnloggableValue {
+                expr: "frame".into(),
+                ty: "bytes".into(),
+                state: "idle".into(),
+                observed: Some("frame".into()),
+            },
             ScxmlSemanticError::TopLevelScriptUnloaded {
                 index: None,
                 src: None,
@@ -1359,7 +1405,7 @@ mod tests {
 
     /// Number of arms in [`variant_name`]. Kept next to it so the two
     /// move together.
-    const VARIANT_COUNT: usize = 25;
+    const VARIANT_COUNT: usize = 26;
 
     /// Exhaustive discriminant projection — the compile-time half of
     /// `every_variant_routes_through_forge_error`'s coverage claim.
@@ -1377,6 +1423,7 @@ mod tests {
                 "NullDatamodelForbidsConstruct"
             }
             ScxmlSemanticError::StaticDatamodelRule { .. } => "StaticDatamodelRule",
+            ScxmlSemanticError::StaticLogUnloggableValue { .. } => "StaticLogUnloggableValue",
             ScxmlSemanticError::TopLevelScriptUnloaded { .. } => "TopLevelScriptUnloaded",
             ScxmlSemanticError::UnreachableState { .. } => "UnreachableState",
             ScxmlSemanticError::DeadTransition { .. } => "DeadTransition",

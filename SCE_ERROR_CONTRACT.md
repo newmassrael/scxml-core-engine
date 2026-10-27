@@ -904,6 +904,7 @@ references against a real document and drift silently.
 | `scxml/shadowed-transition` | `validation` | no |  |
 | `scxml/stale-unhandled-declaration` | `validation` | no |  |
 | `scxml/static-datamodel-rule` | `validation` | no | SCE Accepted Subset §2.15 |
+| `scxml/static-log-unloggable-value` | `validation` | no | SCE Accepted Subset §2.15 |
 | `scxml/top-level-script-unloaded` | `validation` | no | W3C SCXML §5.8 |
 | `scxml/transition-function-dead-end` | `validation` | no | SCE Accepted Subset §2.21 |
 | `scxml/transition-function-rule` | `validation` | no | SCE Accepted Subset §2.21 |

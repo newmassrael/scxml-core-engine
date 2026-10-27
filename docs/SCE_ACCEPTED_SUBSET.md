@@ -3273,12 +3273,37 @@ with the typed guard path. Each is judged against the
 place it lands in: a `<data expr>` and an `<assign expr>` against the
 variable's type (the `location` must name a declared variable), a
 transition's or `<if>`/`<elseif>`'s `cond` as `bool`, a `<log expr>` as
-whatever it is, a `<param expr>` as one of the values a param carries (below).
+whatever it is and then as one of the values a `<log>` shows (below), a
+`<param expr>` as one of the values a param carries (below).
 A name the scope does not carry, and a
 value of a kind the place does not admit, are refused at the expression's
 own range with the expression layer's codes (`expression/unknown-identifier`,
 `expression/type-mismatch`, …). The ECMAScript frontend is never asked to
 lower a `sce-static` document's expressions.
+
+**What a `<log>` shows.** A `<log expr>` takes a bool, a string, an integer, a
+real, a value of an enum, or an optional value of one of those, shown as `null`
+where it is absent. These are the values every backend has a text for. Any
+other value is
+refused at parse, for every target, as `scxml/static-log-unloggable-value`, at
+the `expr` on the `<log>`'s own row, naming the expression and its type as a
+`sce:type` spells it:
+
+| Value | Why it is refused |
+|---|---|
+| a byte string (`bytes`, a `bytes` field of a record or of the payload), and `optional<bytes>` | The C++ log writes each value through its `operator<<` (docs/adr/0060), and a `std::vector<uint8_t>` has none; the C11 log writes through a `printf` conversion, which takes no buffer. The other backends print it each their own way: Rust and Go as a list of byte numbers, Python as a `b'…'` literal, Kotlin as the array's identity |
+| a record (a record variable, a `<foreach>`'s record item, `_event.data` taken whole), and `optional<record:…>` | Neither C++ nor C11 has a text for a struct; Rust, Go, Kotlin and Python print each their own rendering of its fields |
+| a value the data model gives no type, and `null` | No backend has a type to write it by |
+
+The rule is the document's, not one backend's, because one portable
+document is compiled per target (docs/adr/0003): a value one backend cannot
+log would make the same document fail to compile there and print differently
+everywhere else. The repair is to log what the value holds — a field of the
+record, the `len()` of the byte string. A list variable is not a value at all
+and is refused before its type is asked, as it is anywhere an expression reads
+one (`expression/unsupported-construct`, see **List variables** below). The
+rule is the static data model's alone: under `ecmascript` a `<log expr>` is
+evaluated by the script engine, which shows any value at run time.
 
 **An enum field of a payload.** An event whose schema declares an enum field
 (`<data id="layout" sce:type="enum:ViewMode" sce:direction="in"/>`) is read as
@@ -8411,7 +8436,7 @@ completed), and a selection for a document that imports no model is
 
 ---
 
-## Appendix — `DiagnosticCode` index (477 codes)
+## Appendix — `DiagnosticCode` index (478 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -8654,6 +8679,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `scxml/unsupported-datamodel` | Validation |
 | `scxml/null-datamodel-forbids-construct` | Validation |
 | `scxml/static-datamodel-rule` | Validation |
+| `scxml/static-log-unloggable-value` | Validation |
 | `scxml/unreachable-state` | Validation |
 | `scxml/dead-transition` | Validation |
 | `scxml/parent-send-without-parent` | Validation |

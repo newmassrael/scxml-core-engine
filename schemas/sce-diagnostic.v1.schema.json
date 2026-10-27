@@ -119,6 +119,7 @@
         "scxml/unsupported-datamodel",
         "scxml/null-datamodel-forbids-construct",
         "scxml/static-datamodel-rule",
+        "scxml/static-log-unloggable-value",
         "scxml/unreachable-state",
         "scxml/dead-transition",
         "scxml/parent-send-without-parent",

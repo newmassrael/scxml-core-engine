@@ -491,6 +491,36 @@ fn variable_type(var: &Variable) -> InferredType {
         .map_or(InferredType::Unknown, InferredType::from_sce_type)
 }
 
+/// Whether every backend writes a value of `ty` as the text a `<log>` shows:
+/// a bool, a string, an integer, a real, a value of an enum (`enum_value`,
+/// which the lattice types `Unknown`), and an optional value of one of those,
+/// shown as `null` where it is absent. A byte string and a record have no
+/// text a C or C++ machine writes — the C++ log writes a value through its
+/// `operator<<` and the C one through a `printf` conversion — and the other
+/// backends print each its own way, so a value of either, a value of no
+/// type, and `null` itself are not among them. A list is refused before its
+/// type is asked ([`list_read_refusal`]).
+fn logged_alike(ty: InferredType, enum_value: bool) -> bool {
+    use crate::forge::types::OptionalElem;
+    match ty.strip_quantity() {
+        InferredType::Bool
+        | InferredType::Str
+        | InferredType::Int { .. }
+        | InferredType::Float { .. }
+        | InferredType::UntypedInt
+        | InferredType::UntypedFloat => true,
+        InferredType::Optional(elem) => !matches!(elem, OptionalElem::Bytes | OptionalElem::Record),
+        InferredType::Unknown => enum_value,
+        InferredType::Bytes
+        | InferredType::BytesBuffer
+        | InferredType::List(_)
+        | InferredType::ListBuffer(_)
+        | InferredType::Record(_)
+        | InferredType::Null
+        | InferredType::Quantity { .. } => false,
+    }
+}
+
 /// The top-level `<data>` of a hybrid `<invoke>`'s `candidate` named `name`,
 /// when the candidate is a `sce-static` document this build read and declares
 /// one.
@@ -1004,6 +1034,21 @@ impl<'a> Judge<'a> {
         spelling: Option<&crate::attribute_spelling::AttributeSpelling>,
         expected: Expected,
     ) -> Result<InferredType, Located<ForgeError>> {
+        self.expr_held(ctx, expr, spelling, expected)
+            .map(|(ty, _)| ty)
+    }
+
+    /// [`Self::expr`], with the enum `expr` is a present value of, when it is
+    /// one ([`Self::value_enum`]): the lattice types an enum value `Unknown`,
+    /// so a place that tells it from a value of no type reads it here, off the
+    /// expression as it was judged.
+    fn expr_held(
+        &self,
+        ctx: &TypeCtx<'_>,
+        expr: &str,
+        spelling: Option<&crate::attribute_spelling::AttributeSpelling>,
+        expected: Expected,
+    ) -> Result<(InferredType, Option<String>), Located<ForgeError>> {
         let place = |refusal: crate::forge::expr::Refusal| {
             Located::in_file(
                 ExpressionSite::new(expr, spelling).place(refusal),
@@ -1072,7 +1117,8 @@ impl<'a> Judge<'a> {
         let ty = judge_into(expr, ctx, expected).map_err(place)?;
         // An enum value is typed `Unknown`, so the slot cannot refuse it a
         // number's place: say here where it may stand and where it may not.
-        if let Some(alias) = self.value_enum(ctx, expr).map_err(place)? {
+        let held = self.value_enum(ctx, expr).map_err(place)?;
+        if let Some(alias) = &held {
             if let Expected::Slot(slot) = expected {
                 // A place of an optional enum takes a value of the enum, which
                 // [`Self::expr_of_optional_enum`] holds to the one it declares.
@@ -1094,7 +1140,7 @@ impl<'a> Judge<'a> {
                 }
             }
         }
-        Ok(ty)
+        Ok((ty, held))
     }
 
     /// The enum `expr` is a value of ([`crate::forge::static_enum`]), refused
@@ -1874,6 +1920,91 @@ impl<'a> Judge<'a> {
             ));
         }
         Ok(())
+    }
+
+    /// A `<log expr>`: its value is judged as whatever it is, since nothing is
+    /// declared where it lands, and is then held to the values every backend
+    /// writes as text ([`logged_alike`]). A value of any other type is refused
+    /// for every target, where the value is written: the document is compiled
+    /// once per target (docs/adr/0003), so a value one backend cannot log is
+    /// not accepted for the rest.
+    fn log_value(
+        &self,
+        ctx: &TypeCtx<'_>,
+        action: &Action,
+        state: &str,
+    ) -> Result<(), Located<ForgeError>> {
+        let spelling = action.spellings.get("expr");
+        let (ty, held_enum) = self.expr_held(
+            ctx,
+            &action.expr,
+            spelling,
+            Expected::Hint(InferredType::Unknown),
+        )?;
+        if logged_alike(ty, held_enum.is_some()) {
+            return Ok(());
+        }
+        let written = action.expr.trim();
+        // At the value as the document spells it, which stands on the
+        // `<log>`'s own row; at the element where no spelling was recorded.
+        let (line, col, observed) = match spelling.and_then(|s| s.value()) {
+            Some(value) => (
+                Some(value.row),
+                Some(value.col),
+                value.on_one_row().map(str::to_string),
+            ),
+            None => match action.source_location.as_ref() {
+                Some(at) => (at.line, at.col, None),
+                None => (None, None, None),
+            },
+        };
+        Err(Located::new(
+            ScxmlSemanticError::StaticLogUnloggableValue {
+                expr: written.to_string(),
+                ty: self.spelled_type(written, ty),
+                state: state.to_string(),
+                observed,
+            }
+            .into(),
+            self.diag_label,
+            line,
+            col,
+        ))
+    }
+
+    /// The type of the value `written` computes, as a `sce:type` spells it: the
+    /// type the variable it names declares, the record a loop's item or the
+    /// payload taken whole is of, and the type it was judged to otherwise.
+    fn spelled_type(&self, written: &str, ty: InferredType) -> String {
+        if let Some(value_type) = self
+            .scope
+            .variables
+            .iter()
+            .find(|v| v.id == written)
+            .and_then(|v| v.value_type.as_ref())
+        {
+            return value_type.as_attr();
+        }
+        let record = |alias: &str| {
+            format!(
+                "{}{alias}",
+                crate::forge::model::AlgorithmValueType::RECORD_PREFIX
+            )
+        };
+        if let Some((_, alias)) = self
+            .loop_records
+            .borrow()
+            .iter()
+            .find(|(item, _)| item == written)
+        {
+            return record(alias);
+        }
+        if written == crate::forge::event_schema_check::EVENT_DATA_PATH {
+            if let Some(alias) = self.payload_alias() {
+                return record(&alias);
+            }
+        }
+        ty.describe()
     }
 
     /// A refusal under the rule `rule`, placed at `line`/`col`: the one shape
@@ -3053,12 +3184,7 @@ impl<'a> Judge<'a> {
                 )?;
             }
             "log" if !action.expr.trim().is_empty() => {
-                self.expr(
-                    ctx,
-                    &action.expr,
-                    action.spellings.get("expr"),
-                    Expected::Hint(InferredType::Unknown),
-                )?;
+                self.log_value(ctx, action, state)?;
             }
             "send" => {
                 let carrier = Carrier::of_send(action);
