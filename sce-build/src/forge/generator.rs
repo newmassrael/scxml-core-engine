@@ -6314,7 +6314,24 @@ fn render_codec(
     // SCE_FORGE.md §4.6: a CBOR codec has no positional field for anything
     // below to read, so it is rendered by its own module before any of it runs.
     if m.encoding == CodecEncoding::Cbor {
-        return crate::forge::cbor_codec::render(env, m, imports, lang);
+        let mut text = crate::forge::cbor_codec::render(env, m, imports, lang)?;
+        // ADR 0058: the map's entries are what a value says, whatever holds them.
+        if sources && matches!(lang, crate::generator::Language::Rust) {
+            let l = LangCtx::new(lang, imports);
+            let borrows = m
+                .cbor_entries
+                .iter()
+                .any(|e| matches!(e.sce_type, SceType::String | SceType::Bytes));
+            text.push('\n');
+            text.push_str(&rust_source::cbor::render(&rust_source::cbor::Input {
+                m,
+                imports,
+                l: &l,
+                struct_name: &filters::to_pascal_case(m.name.clone()),
+                struct_lifetime: if borrows { "<'a>" } else { "" },
+            }));
+        }
+        return Ok(text);
     }
     // SCE_FORGE.md §4.6.4: so is a content-line codec, for the same reason.
     if m.encoding == CodecEncoding::ContentLine {

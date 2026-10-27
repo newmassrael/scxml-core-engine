@@ -99,7 +99,7 @@ pub fn render(
 }
 
 /// What an entry is on the wire, as the templates branch on it.
-fn kind(entry: &CborEntry) -> &'static str {
+pub(crate) fn kind(entry: &CborEntry) -> &'static str {
     match entry.sce_type {
         SceType::Bool => "bool",
         SceType::String => "text",
@@ -128,7 +128,7 @@ fn int_max(ty: &SceType) -> Option<u64> {
 }
 
 /// The carrier type of the enum `alias` names, as the import resolved it.
-fn enum_carrier(imports: &[ImportContext], alias: &str) -> Option<SceType> {
+pub(crate) fn enum_carrier(imports: &[ImportContext], alias: &str) -> Option<SceType> {
     imports
         .iter()
         .find(|i| i.kind == "enum" && i.alias == alias)
