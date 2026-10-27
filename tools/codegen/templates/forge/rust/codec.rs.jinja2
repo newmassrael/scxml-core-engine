@@ -302,6 +302,10 @@ impl{{ struct_lifetime }} {{ struct_name }}{{ struct_lifetime }} {
     }
 {% endif %}
 }
+{% if source_block %}
+
+{{ source_block }}
+{%- endif %}
 {% if emit_views %}
 
 // ── View (ADR 0049) ──────────────────────────────────────────────────

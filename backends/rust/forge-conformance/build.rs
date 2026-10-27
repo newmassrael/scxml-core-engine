@@ -73,10 +73,18 @@ fn main() {
     // option on is what shows that the view of every codec shape it holds is
     // code that compiles. The tests that read a view are
     // `forge_view_round_trip.rs`.
+    //
+    // With `sources` (ADR 0058) too, for the same reason: the interface is
+    // additive, and compiling the catalog with it on shows that the interface of
+    // every codec shape it holds is code that compiles. `forge_source_round_trip`
+    // reads what Step 7 records here.
     let options = ForgeCompileOptions {
         views: true,
+        sources: true,
         ..ForgeCompileOptions::default()
     };
+    let mut sweeps: Vec<SourceSweep> = Vec::new();
+    let mut codec_modules: Vec<String> = Vec::new();
     for fixture in &manifest.fixtures {
         // A fixture Rust refuses by name is not scheduled for it, and the harness
         // rendered in Step 3 does not ask for its code: the one answer the
@@ -122,6 +130,32 @@ fn main() {
         )
         .unwrap_or_else(|e| panic!("sce-build codegen failed for {}: {e}", fixture.name));
 
+        // Step 7 input: a codec with a source interface is swept against its own
+        // `encode`, from the frames its document holds as test vectors.
+        let source_trait = format!(
+            "pub trait {}Source",
+            sce_build::filters::to_pascal_case(fixture.name.clone())
+        );
+        let has_source = output
+            .files
+            .iter()
+            .any(|(_, code)| code.contains(&source_trait));
+        if let Some(sweep) = codec_sweep(&fixture.name, loaded.text()) {
+            if has_source && sweep.plain {
+                sweeps.push(sweep);
+            }
+        }
+        // Every file the catalog generates is a module of the sweep, whatever it
+        // is: a codec names the enums and the codecs it imports as siblings. A
+        // codec's test sidecar is the exception; it is a test of its own and
+        // names its codec by `use super::*`.
+        codec_modules.extend(output.files.iter().filter_map(|(filename, _)| {
+            filename
+                .strip_suffix(".rs")
+                .filter(|stem| !stem.ends_with("_test"))
+                .map(str::to_string)
+        }));
+
         for (filename, code) in output.files {
             let target = Path::new(&out_dir).join(&filename);
             // The numerical-conformance harness `include!()`s each fixture
@@ -133,6 +167,10 @@ fn main() {
                 .unwrap_or_else(|e| panic!("write {}: {e}", target.display()));
         }
     }
+
+    // Step 7: the sweeps of `forge_source_round_trip`, one for each codec whose
+    // generated file holds a source interface (docs/adr/0058).
+    write_source_sweeps(&out_dir, &codec_modules, &sweeps);
 
     // Step 3: render the cross-language test harness from the shared template.
     let harness =
@@ -207,6 +245,72 @@ fn main() {
         &out_dir,
         &options,
     );
+}
+
+/// What `forge_source_round_trip` sweeps one codec with.
+struct SourceSweep {
+    /// The fixture's name, which is the module the codec is included as.
+    name: String,
+    /// The frames the document holds as test vectors: the seeds of the sweep.
+    seeds: Vec<Vec<u8>>,
+    /// Whether its `decode` and `encode` can be driven plainly: a codec that
+    /// takes a flag-input or a tag from its caller is driven by its parent.
+    plain: bool,
+}
+
+/// The sweep of the codec `name` read from `text`, or `None` when the document
+/// is no codec.
+fn codec_sweep(name: &str, text: &str) -> Option<SourceSweep> {
+    use sce_build::forge::model::ForgeDocument;
+    let parsed =
+        sce_build::forge::parser::parse_forge_with_imports(text, DocumentLabel::symmetric(name))
+            .unwrap_or_else(|e| panic!("parse {name}: {e}"))?;
+    let ForgeDocument::Codec(m) = &parsed.document else {
+        return None;
+    };
+    let caller_tag = m
+        .variant
+        .as_ref()
+        .is_some_and(|v| v.tag_field.is_none() && v.peek_byte.is_none());
+    Some(SourceSweep {
+        name: name.to_string(),
+        seeds: m.test_vectors.iter().map(|v| v.hex.clone()).collect(),
+        plain: m.flag_inputs.is_empty() && !caller_tag,
+    })
+}
+
+/// Write the sweeps: the codecs as modules, then one `sweep_codec!` for each
+/// codec that has a source interface.
+fn write_source_sweeps(out_dir: &str, modules: &[String], sweeps: &[SourceSweep]) {
+    let mut text = String::from("// Written by build.rs (Step 7).\npub mod codecs {\n");
+    for name in modules {
+        text.push_str(&format!(
+            "    pub mod {name} {{\n        include!(concat!(env!(\"OUT_DIR\"), \"/{name}.rs\"));\n    }}\n"
+        ));
+    }
+    text.push_str("}\n\n");
+    for sweep in sweeps {
+        let ty = sce_build::filters::to_pascal_case(sweep.name.clone());
+        // The bytes a one-byte change of a seed is drawn from: the bytes the seeds
+        // hold, and the values a flag or a length takes at its edges.
+        let mut pool: Vec<u8> = vec![0x00, 0x01, 0x02, 0x03, 0x80, 0x81, 0xff];
+        for seed in &sweep.seeds {
+            for &b in seed {
+                if !pool.contains(&b) {
+                    pool.push(b);
+                }
+            }
+        }
+        pool.sort_unstable();
+        let seeds: Vec<String> = sweep.seeds.iter().map(|s| format!("vec!{s:?}")).collect();
+        text.push_str(&format!(
+            "sweep_codec!({name}, codecs::{name}::{ty}, &{pool:?}, vec![{seeds}]);\n",
+            name = sweep.name,
+            seeds = seeds.join(", ")
+        ));
+    }
+    let target = Path::new(out_dir).join("source_sweeps.rs");
+    std::fs::write(&target, text).unwrap_or_else(|e| panic!("write {}: {e}", target.display()));
 }
 
 /// Generate each named forge SCXML to Rust into `OUT_DIR`, stripping the

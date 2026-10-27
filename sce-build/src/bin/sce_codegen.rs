@@ -1769,6 +1769,17 @@ struct GenerateArgs {
     /// with it on too; ignored for other languages.
     #[arg(long)]
     views: bool,
+    /// Rust only: also generate each codec's source interface
+    /// (docs/adr/0058): `{Codec}Source`, the trait a value implements to say
+    /// what it presents, and `{Codec}::encode_source`, the one encode that
+    /// reads it. A count, a length, a variant's tag and the flag a gated field
+    /// is announced by are not presented: the encode derives them from what
+    /// is (`codec-roles` lists which). Off by default, and when off the output
+    /// is unchanged. Every codec an enabled codec embeds, repeats or
+    /// dispatches to has to be generated with it on too; ignored for other
+    /// languages.
+    #[arg(long)]
+    sources: bool,
     /// Path to a .clang-format file for C++ output formatting.
     /// When omitted, the built-in default style is used.
     #[arg(long)]
@@ -6165,6 +6176,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
         go_module_prefix,
         owned_origin,
         views,
+        sources,
         format_style,
         no_format,
         deploy,
@@ -6295,6 +6307,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
                 const_fold_budget,
                 owned_origin,
                 views,
+                sources,
                 ..Default::default()
             };
 
@@ -7104,6 +7117,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
                             const_fold_budget,
                             owned_origin,
                             views,
+                            sources,
                             ..Default::default()
                         }),
                         codegen: Some(&sce_build::generator::StatechartCodegenOptions {

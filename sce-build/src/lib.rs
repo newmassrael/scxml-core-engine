@@ -3292,6 +3292,18 @@ pub struct ForgeCompileOptions {
     /// generator sees one document at a time and cannot check; a missed one
     /// surfaces as a compile error in the generated parent.
     pub views: bool,
+    /// Rust only: also generate each codec's source interface
+    /// (docs/adr/0058): `{Codec}Source`, the trait a value implements to say
+    /// what it presents, and `{Codec}::encode_source`, the one encode that reads
+    /// it. The builder implements the interface, so a value built the way it
+    /// always was can be encoded through it; so can a value that holds the
+    /// parts in its own types. `false` — the default — leaves every generated
+    /// byte as it was.
+    ///
+    /// ⚠ Like [`Self::views`] it is a property of a SET of documents: a codec's
+    /// `encode_source` calls the one of each codec it embeds, repeats or
+    /// dispatches to, so each of them has to be generated with this on.
+    pub sources: bool,
     /// RFC §synth-5-F build-time const-fold iteration budget. When set, caps
     /// the total iteration count across every `<sce:fold>` body in the
     /// document. `None` = use the SSoT default

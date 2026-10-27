@@ -140,6 +140,18 @@ pub enum CodecError {
     /// invalid UTF-8, an integer or `bool` out of its type, a parameter of more
     /// values than one, a `"` in a parameter value.
     LineBadValue,
+    /// Encode-side (docs/adr/0058): a length or a count the encoding derives from
+    /// what a source presents — the bytes a `sce:length-field` counts, the
+    /// entries of a `<sce:repeat count=>` — does not fit the field that carries
+    /// it, or would be negative once the field's `sce:length-arith` is applied.
+    /// Refused before the first byte is written.
+    LengthOutOfRange,
+    /// Encode-side (docs/adr/0058): two fields of a source that the codec
+    /// derives one number from disagree in size — a count shared by two lists
+    /// (`links` and the gated `weights` of a link-state), a length shared by two
+    /// fields. The wire has room for one number, so no frame says both.
+    /// Refused before the first byte is written.
+    InconsistentSource,
 }
 
 /// Project an owned list into the bounded inline list
@@ -513,6 +525,53 @@ impl<'a> SceSink for SliceSink<'a> {
 
     fn position(&self) -> usize {
         self.pos
+    }
+}
+
+/// A sink that keeps nothing and counts what it is given: the size an encode
+/// would write, found by running it (docs/adr/0058 §3).
+///
+/// A codec whose length or count precedes its content needs the size of what
+/// follows before the first of it is written, and a streaming sink cannot be
+/// written back to. Running the encode against this sink gives that size with
+/// the encode's own rules and no second statement of them, and, run on a whole
+/// value first, shows whether the encode refuses it before any real sink is
+/// touched. Never raises `BufferOverflow`; available without `alloc`.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct CountSink {
+    written: usize,
+}
+
+impl CountSink {
+    /// A sink that has been given nothing.
+    pub const fn new() -> Self {
+        Self { written: 0 }
+    }
+
+    /// Bytes given so far.
+    pub const fn len(&self) -> usize {
+        self.written
+    }
+
+    /// Whether nothing has been given.
+    pub const fn is_empty(&self) -> bool {
+        self.written == 0
+    }
+}
+
+impl SceSink for CountSink {
+    fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), CodecError> {
+        self.written += bytes.len();
+        Ok(())
+    }
+
+    fn write_u8(&mut self, _b: u8) -> Result<(), CodecError> {
+        self.written += 1;
+        Ok(())
+    }
+
+    fn position(&self) -> usize {
+        self.written
     }
 }
 

@@ -21,6 +21,7 @@ use crate::forge::model::*;
 use crate::generator::{self, GeneratedOutput};
 use std::path::Path;
 
+mod rust_source;
 mod rust_view;
 
 // ── Cross-file import resolution ──────────────────────────────────
@@ -1381,6 +1382,7 @@ pub fn generate_cpp_with_imports_and_externs(
             m,
             imports,
             crate::generator::Language::Cpp,
+            false,
             false,
             false,
         )?,
@@ -6281,6 +6283,8 @@ fn render_codec(
     owned_origin: bool,
     // Rust only: also render `{Codec}View` (ADR 0049).
     views: bool,
+    // Rust only: also render `{Codec}Source` and `encode_source` (ADR 0058).
+    sources: bool,
 ) -> Result<String, ForgeError> {
     // SCE_FORGE.md §4.6: a CBOR codec has no positional field for anything
     // below to read, so it is rendered by its own module before any of it runs.
@@ -8937,6 +8941,21 @@ fn render_codec(
             "struct_lifetime".into(),
             if self_borrowed { "<'a>" } else { "" }.into(),
         );
+        // ADR 0058: the source interface of this codec, where it has one. A
+        // codec of a shape the interface does not cover yet has none, and the
+        // option leaves it as it was.
+        if sources {
+            let rust_struct_name = filters::to_pascal_case(m.name.clone());
+            if let Ok(text) = rust_source::render(&rust_source::Input {
+                m,
+                imports,
+                l: &l,
+                struct_name: &rust_struct_name,
+                struct_lifetime: if self_borrowed { "<'a>" } else { "" },
+            }) {
+                ctx.insert("source_block".into(), text.into());
+            }
+        }
         ctx.insert(
             "cursor_lifetime".into(),
             if self_borrowed { "'a" } else { "'_" }.into(),
@@ -19282,6 +19301,7 @@ pub fn generate_kotlin_with_imports(
             crate::generator::Language::Kotlin,
             false,
             false,
+            false,
         )?,
         ForgeDocument::Validator(m) => {
             render_validator(&env, m, imports, crate::generator::Language::Kotlin)?
@@ -19467,6 +19487,7 @@ pub fn generate_rust_with_imports_and_externs(
             crate::generator::Language::Rust,
             options.owned_origin,
             options.views,
+            options.sources,
         )?,
         ForgeDocument::Validator(m) => {
             render_validator(&env, m, imports, crate::generator::Language::Rust)?
@@ -22622,6 +22643,7 @@ pub fn generate_go_with_imports(
             crate::generator::Language::Go,
             false,
             false,
+            false,
         )?,
         ForgeDocument::Validator(m) => {
             render_validator(&env, m, imports, crate::generator::Language::Go)?
@@ -22832,6 +22854,7 @@ pub fn generate_python_with_imports(
             m,
             imports,
             crate::generator::Language::Python,
+            false,
             false,
             false,
         )?,
@@ -23090,6 +23113,7 @@ pub fn generate_c11_with_imports_and_externs(
             m,
             imports,
             crate::generator::Language::C11,
+            false,
             false,
             false,
         )?,

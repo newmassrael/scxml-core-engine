@@ -115,14 +115,54 @@ fn flag_of_simple_gate(gate: &str) -> Option<ElementId> {
     })
 }
 
+/// The fields the document derives whole: those a `sce:length-field`, a
+/// `sce:length-from`, a `count=` or the tag of a variant of its own names without
+/// a dot, read out of the XML. A field derived whole is gated by a flag and says
+/// nothing back to it.
+fn fields_derived_whole(doc: &roxmltree::Document) -> BTreeSet<String> {
+    let peeks: BTreeSet<String> = doc
+        .descendants()
+        .filter(|n| is_sce(n, "peek-byte"))
+        .filter_map(|n| n.attribute("id").map(str::to_string))
+        .collect();
+    let mut whole = BTreeSet::new();
+    let mut take = |value: &str| {
+        if !value.contains('.') {
+            whole.insert(value.trim().to_string());
+        }
+    };
+    for node in doc.descendants().filter(|n| n.is_element()) {
+        if let Some(value) = node.attribute((SCE_NS, "length-field")) {
+            take(value);
+        }
+        if let Some(value) = node.attribute((SCE_NS, "length-from")) {
+            take(value);
+        }
+        if is_sce(&node, "repeat") {
+            if let Some(value) = node.attribute("count") {
+                take(value);
+            }
+        }
+        if is_sce(&node, "variant") {
+            if let Some(tag) = node.attribute("tag") {
+                if !peeks.contains(tag.split('.').next().unwrap_or(tag)) {
+                    take(tag);
+                }
+            }
+        }
+    }
+    whole
+}
+
 /// The fields whose gate names no one flag, read out of the XML.
 fn fields_with_a_gate_that_is_checked(path: &Path) -> BTreeSet<String> {
     let text = std::fs::read_to_string(path).expect("the document");
     let doc = roxmltree::Document::parse(&text).expect("well-formed XML");
+    let whole = fields_derived_whole(&doc);
     doc.descendants()
         .filter(|n| n.is_element())
         .filter_map(|n| Some((n.attribute("id")?, n.attribute((SCE_NS, "present-if"))?)))
-        .filter(|(_, gate)| flag_of_simple_gate(gate).is_none())
+        .filter(|(id, gate)| flag_of_simple_gate(gate).is_none() && !whole.contains(*id))
         .map(|(id, _)| id.to_string())
         .collect()
 }
@@ -147,6 +187,7 @@ fn declared_in_xml(path: &Path) -> BTreeSet<ElementId> {
         },
         None => ElementId::Field(value.trim().to_string()),
     };
+    let whole = fields_derived_whole(&doc);
     let mut declared = BTreeSet::new();
     for node in doc.descendants().filter(|n| n.is_element()) {
         if let Some(length) = node.attribute((SCE_NS, "length-field")) {
@@ -155,9 +196,11 @@ fn declared_in_xml(path: &Path) -> BTreeSet<ElementId> {
         if let Some(length) = node.attribute((SCE_NS, "length-from")) {
             declared.insert(reference(length));
         }
+        // A flag is derived from the gated fields that are presented.
         if let Some(flag) = node
             .attribute((SCE_NS, "present-if"))
             .and_then(flag_of_simple_gate)
+            .filter(|_| !node.attribute("id").is_some_and(|id| whole.contains(id)))
         {
             declared.insert(flag);
         }

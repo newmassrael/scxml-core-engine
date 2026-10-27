@@ -24,9 +24,12 @@
 //! - the flag a `<sce:tlv-chain terminate-on="entry-flag">` ends on is set on
 //!   every entry but the last ([`Derivation::ChainContinuation`]);
 //! - the flag a field is gated on (`sce:present-if="carrier.flag"`) is set
-//!   exactly when the field is present ([`Derivation::PresenceOf`]). A gate of
-//!   any other form (a disjunction, a flag-input, a chain's membership) names no
-//!   one flag to set, so it is a [`Check`] the measure holds a source to.
+//!   exactly when the field is present ([`Derivation::PresenceOf`]), for the
+//!   gated fields a source presents: a gated field that is itself derived (the
+//!   length of a gated payload, gated by the same flag) follows the flag and says
+//!   nothing back. A gate of any other form (a disjunction, a flag-input, a
+//!   chain's membership) names no one flag to set, so it is a [`Check`] the
+//!   measure holds a source to.
 //!
 //! Everything else is presented, a header flag bit among it: a flag that says
 //! something the content does not (a header bit that marks an interest as a
@@ -38,7 +41,7 @@
 //! [`CodecRoles::table`] renders it as the table a consumer reads to see which
 //! of the values it sets by hand would move.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use crate::forge::generator::{collect_parent_tag_derivations, ImportContext};
@@ -529,6 +532,28 @@ pub fn classify(model: &CodecModel, imports: &[ImportContext]) -> CodecRoles {
             },
         );
     }
+
+    // A field derived whole is announced by the flag it is gated on, and says
+    // nothing back: its presence follows the flag, so it cannot be what the flag
+    // is derived from. The flag is derived from the gated fields that are
+    // presented; a flag that gates none is presented.
+    let derived_whole: BTreeSet<String> = derivations
+        .iter()
+        .filter_map(|(id, by)| match id {
+            ElementId::Field(field) if !by.is_empty() => Some(field.clone()),
+            _ => None,
+        })
+        .collect();
+    checks.retain(|check| !derived_whole.contains(&check.field));
+    derivations.retain(|_, by| {
+        for derivation in by.iter_mut() {
+            if let Derivation::PresenceOf { gated } = derivation {
+                gated.retain(|g| !derived_whole.contains(&g.field));
+            }
+        }
+        by.retain(|d| !matches!(d, Derivation::PresenceOf { gated } if gated.is_empty()));
+        !by.is_empty()
+    });
 
     let mut unresolved = Vec::new();
     for (id, by) in derivations {
