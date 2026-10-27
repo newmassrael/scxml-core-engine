@@ -24,6 +24,15 @@ use std::path::Path;
 mod rust_source;
 mod rust_view;
 
+/// Whether a codec has a source interface (ADR 0058), given whether each codec
+/// it imports has one. See [`rust_source::supported_with`].
+pub(crate) fn supported_source_with(
+    m: &CodecModel,
+    import_has_source: impl FnMut(&str) -> bool,
+) -> bool {
+    rust_source::supported_with(m, import_has_source)
+}
+
 // ── Cross-file import resolution ──────────────────────────────────
 
 /// One variant of an imported enum as a content line writes it
@@ -217,6 +226,13 @@ pub struct ImportContext {
     /// when this is set. `false` for non-codec imports.
     #[serde(skip)]
     pub codec_view_is_borrowed: bool,
+
+    /// ADR 0058: `true` when the imported codec has a source interface
+    /// (`{Codec}Source`), which a parent that embeds or lists it reads its
+    /// body through. A fact about the imported model and its own imports, so it
+    /// does not depend on the `sources` option. `false` for non-codec imports.
+    #[serde(skip)]
+    pub codec_has_source: bool,
 
     /// Owned→borrowed projection round: this import's *contribution* to a
     /// parent codec's `as_borrowed` fallibility — `true` only when the
@@ -924,6 +940,7 @@ fn resolve_single_import(
         codec_emits_default_ctor: false,
         codec_is_borrowed: false,
         codec_view_is_borrowed: false,
+        codec_has_source: false,
         codec_as_borrowed_fallible: false,
         buffer_pool_slot_size: None,
         queue_consumers_many: false,
@@ -34002,6 +34019,7 @@ mod tests {
             codec_emits_default_ctor: false,
             codec_is_borrowed: false,
             codec_view_is_borrowed: false,
+            codec_has_source: false,
             codec_as_borrowed_fallible: false,
             buffer_pool_slot_size: None,
             queue_consumers_many: false,
@@ -34875,6 +34893,7 @@ mod tests {
                 codec_emits_default_ctor: false,
                 codec_is_borrowed: false,
                 codec_view_is_borrowed: false,
+                codec_has_source: false,
                 codec_as_borrowed_fallible: false,
                 buffer_pool_slot_size: None,
                 queue_consumers_many: false,
@@ -34923,6 +34942,7 @@ mod tests {
                 codec_emits_default_ctor: false,
                 codec_is_borrowed: false,
                 codec_view_is_borrowed: false,
+                codec_has_source: false,
                 codec_as_borrowed_fallible: false,
                 buffer_pool_slot_size: None,
                 queue_consumers_many: false,

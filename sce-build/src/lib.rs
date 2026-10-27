@@ -5209,6 +5209,29 @@ fn codec_view_is_borrowed_recursive(
     })
 }
 
+/// Whether a codec has a source interface (ADR 0058): the shapes
+/// `forge::generator::rust_source::supported_with` covers, of the codec and of
+/// every codec it holds. The same predicate the codec's own generation asks, so
+/// a parent never names a source trait its child did not generate.
+fn codec_has_source_recursive(
+    cm: &forge::model::CodecModel,
+    imports: &[forge::model::ForgeImport],
+    base_dir: &Path,
+    visited: &mut HashSet<PathBuf>,
+) -> bool {
+    forge::generator::supported_source_with(cm, |alias| {
+        with_resolved_import_codec(alias, imports, base_dir, visited, |inner| {
+            Some(codec_has_source_recursive(
+                inner.model,
+                inner.imports,
+                inner.base_dir,
+                inner.visited,
+            ))
+        })
+        .unwrap_or(false)
+    })
+}
+
 /// One import alias resolved to its parsed codec model, handed to a
 /// transitive-property walker.
 struct ResolvedImportCodec<'a> {
@@ -5472,6 +5495,16 @@ fn validate_and_enrich_imports(
                     &parsed.imports,
                     &inner_base,
                     &mut view_visited,
+                );
+                // ADR 0058: whether the import has a source interface, which
+                // a parent that lists or embeds it is written through.
+                let mut source_visited: HashSet<PathBuf> = HashSet::new();
+                source_visited.insert(source.path.clone());
+                ctx.codec_has_source = codec_has_source_recursive(
+                    cm,
+                    &parsed.imports,
+                    &inner_base,
+                    &mut source_visited,
                 );
                 // Owned→borrowed projection round: capture this import's
                 // *contribution* to a parent's `as_borrowed` fallibility —

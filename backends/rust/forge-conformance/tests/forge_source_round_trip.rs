@@ -95,8 +95,14 @@ macro_rules! sweep {
             seeds.push(by_default);
         }
         let mut rng = Rng(0x9E37_79B9_7F4A_7C15);
-        let random = (0..300).map(|_| {
-            let len = rng.below(17);
+        // Short frames reach the small codecs; longer ones hold a list of
+        // several entries.
+        let random = (0..500).map(|n| {
+            let len = if n < 300 {
+                rng.below(17)
+            } else {
+                rng.below(41)
+            };
             (0..len)
                 .map(|_| pool[rng.below(pool.len())])
                 .collect::<Vec<u8>>()
@@ -139,3 +145,46 @@ macro_rules! sweep_codec {
 }
 
 include!(concat!(env!("OUT_DIR"), "/source_sweeps.rs"));
+
+// A value that is not the codec's builder says what it holds through the same
+// interface, and is encoded by the same function. This is the point of the
+// interface: the sender keeps its entries in its own type and no builder is
+// filled to send them.
+mod foreign {
+    use super::codecs::codec_repeat_basic::{CodecRepeatBasic, CodecRepeatBasicSource};
+    use super::codecs::codec_repeat_elem::CodecRepeatElemSource;
+    use sce_forge_runtime::codec::{CodecError, VecSink};
+
+    struct Seq(u16);
+
+    impl CodecRepeatElemSource for Seq {
+        fn seq(&self) -> u16 {
+            self.0
+        }
+    }
+
+    struct Fragments(Vec<u16>);
+
+    impl CodecRepeatBasicSource for Fragments {
+        fn frags(&self) -> impl Iterator<Item = impl CodecRepeatElemSource> + Clone {
+            self.0.iter().map(|&s| Seq(s))
+        }
+    }
+
+    #[test]
+    fn a_foreign_source_is_encoded_with_its_count_derived() {
+        let mut bytes = Vec::new();
+        CodecRepeatBasic::encode_source(&Fragments(vec![1, 2, 3]), &mut VecSink::new(&mut bytes))
+            .unwrap();
+        assert_eq!(bytes, [3, 0, 1, 0, 2, 0, 3]);
+    }
+
+    #[test]
+    fn a_list_past_its_bound_is_refused_before_the_first_byte() {
+        let mut bytes = Vec::new();
+        let refused =
+            CodecRepeatBasic::encode_source(&Fragments(vec![0; 33]), &mut VecSink::new(&mut bytes));
+        assert_eq!(refused, Err(CodecError::TooManyElements));
+        assert!(bytes.is_empty(), "the sink was written to: {bytes:02x?}");
+    }
+}

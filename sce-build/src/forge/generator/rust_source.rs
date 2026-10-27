@@ -51,6 +51,14 @@ pub(super) fn render(input: &Input<'_>) -> Result<String, Unsupported> {
     Ok(plan.text())
 }
 
+/// The imported codec a list or an embedded body holds.
+struct Child {
+    /// The codec's type, which the wire is written through (`Type::write_source`).
+    type_name: String,
+    /// The path of its source trait.
+    trait_path: String,
+}
+
 /// How one field is read and written.
 struct Plan<'a> {
     input: &'a Input<'a>,
@@ -59,68 +67,142 @@ struct Plan<'a> {
     trait_name: String,
 }
 
-impl<'a> Plan<'a> {
-    fn of(input: &'a Input<'a>) -> Result<Self, Unsupported> {
-        let m = input.m;
-        if m.encoding != CodecEncoding::Positional {
-            return no("a codec of another encoding writes its own encode");
+/// Whether `m` has a source interface, given whether each codec it imports has
+/// one. Shared by the codec's own generation and by the enrichment of a parent
+/// that imports it, so the two cannot disagree on which codecs the interface
+/// covers.
+pub(crate) fn supported_with(
+    m: &CodecModel,
+    mut import_has_source: impl FnMut(&str) -> bool,
+) -> bool {
+    let roles = codec_roles::classify(m, &[]);
+    // The answer for each codec the model holds, asked once and before the
+    // check, which cannot take a closure that borrows its caller's walk.
+    let known: std::collections::BTreeMap<&str, bool> = m
+        .fields
+        .iter()
+        .filter_map(child_alias)
+        .map(|alias| (alias, import_has_source(alias)))
+        .collect();
+    check(m, &roles, &|alias| {
+        known.get(alias).copied().unwrap_or(false)
+    })
+    .is_ok()
+}
+
+/// The shapes the interface covers.
+fn check(
+    m: &CodecModel,
+    roles: &CodecRoles,
+    import_has_source: &dyn Fn(&str) -> bool,
+) -> Result<(), Unsupported> {
+    if m.encoding != CodecEncoding::Positional {
+        return no("a codec of another encoding writes its own encode");
+    }
+    if m.variant.is_some() {
+        return no("a variant");
+    }
+    if !m.flag_inputs.is_empty() {
+        return no("a flag-input");
+    }
+    for field in &m.fields {
+        let Some(alias) = child_alias(field) else {
+            continue;
+        };
+        if !import_has_source(alias) {
+            return no(format!(
+                "`{}`: the codec `{alias}` it holds has no source interface",
+                field.id
+            ));
         }
-        if m.variant.is_some() {
-            return no("a variant");
-        }
-        if !m.flag_inputs.is_empty() {
-            return no("a flag-input");
-        }
-        if let Some(field) = m
-            .fields
-            .iter()
-            .find(|f| f.is_repeat() || f.is_tlv_chain() || f.is_embed())
-        {
-            return no(format!("`{}`: a list or an embedded body", field.id));
-        }
-        let roles = codec_roles::classify(m, input.imports);
-        for (id, by) in roles.derived() {
-            for derivation in by {
-                match derivation {
-                    Derivation::LengthOf { .. } | Derivation::PresenceOf { .. } => {}
-                    other => return no(format!("`{id}` is derived by {other}")),
-                }
+    }
+    for (id, by) in roles.derived() {
+        for derivation in by {
+            match derivation {
+                Derivation::LengthOf { .. }
+                | Derivation::PresenceOf { .. }
+                | Derivation::CountOf { .. } => {}
+                other => return no(format!("`{id}` is derived by {other}")),
             }
         }
-        if !roles.checks.is_empty() {
-            return no("a gate that is not of the one-flag form");
+    }
+    if !roles.checks.is_empty() {
+        return no("a gate that is not of the one-flag form");
+    }
+    for field in &m.fields {
+        if let Some(gate) = &field.present_if {
+            if gate.scope != PresentIfScope::Local || gate.or_with.is_some() {
+                return no(format!(
+                    "`{}`: a gate that is not of the one-flag form",
+                    field.id
+                ));
+            }
         }
-        for field in &m.fields {
-            if let Some(gate) = &field.present_if {
-                if gate.scope != PresentIfScope::Local || gate.or_with.is_some() {
+        if let Some(carrier) = m.fields.iter().find(|c| {
+            field
+                .present_if
+                .as_ref()
+                .is_some_and(|g| g.field_id == c.id)
+        }) {
+            let flag = field.present_if.as_ref().map(|g| g.flag_name.as_str());
+            if let Some(def) = carrier.flags.iter().find(|d| Some(d.name.as_str()) == flag) {
+                if def.width != 1 {
                     return no(format!(
-                        "`{}`: a gate that is not of the one-flag form",
+                        "`{}`: a gate on a flag wider than one bit",
                         field.id
                     ));
                 }
             }
-            if let Some(carrier) = m.fields.iter().find(|c| {
-                field
-                    .present_if
-                    .as_ref()
-                    .is_some_and(|g| g.field_id == c.id)
-            }) {
-                let flag = field.present_if.as_ref().map(|g| g.flag_name.as_str());
-                if let Some(def) = carrier.flags.iter().find(|d| Some(d.name.as_str()) == flag) {
-                    if def.width != 1 {
-                        return no(format!(
-                            "`{}`: a gate on a flag wider than one bit",
-                            field.id
-                        ));
-                    }
-                }
-            }
         }
+    }
+    Ok(())
+}
+
+/// The import alias of the codec a list or an embedded body holds.
+fn child_alias(field: &CodecField) -> Option<&str> {
+    if field.is_repeat() {
+        field.repeat_body_alias.as_deref()
+    } else if field.is_tlv_chain() {
+        field.tlv_chain_body_alias.as_deref()
+    } else if field.is_embed() {
+        field.embed_body_alias.as_deref()
+    } else {
+        None
+    }
+}
+
+impl<'a> Plan<'a> {
+    fn of(input: &'a Input<'a>) -> Result<Self, Unsupported> {
+        let roles = codec_roles::classify(input.m, input.imports);
+        let has_source = |alias: &str| {
+            input
+                .imports
+                .iter()
+                .any(|i| i.alias == alias && i.kind == "codec" && i.codec_has_source)
+        };
+        check(input.m, &roles, &has_source)?;
         Ok(Plan {
             input,
             roles,
             trait_name: format!("{}Source", input.struct_name),
         })
+    }
+
+    /// The imported codec a list or an embedded body holds, as the type it is
+    /// written through and the trait it is read through.
+    fn child(&self, field: &CodecField) -> Option<Child> {
+        let alias = child_alias(field)?;
+        let import = self.input.imports.iter().find(|i| i.alias == alias)?;
+        Some(Child {
+            type_name: import.type_name.clone(),
+            trait_path: format!("super::{}::{}Source", import.namespace, import.type_name),
+        })
+    }
+
+    /// Whether the codec holds a list or an embedded body: a refusal that comes
+    /// from inside one has to be found before the first byte is written.
+    fn has_children(&self) -> bool {
+        self.m().fields.iter().any(|f| child_alias(f).is_some())
     }
 
     fn m(&self) -> &CodecModel {
@@ -174,6 +256,15 @@ impl<'a> Plan<'a> {
     /// The type an accessor returns for the value of `field` when it is
     /// present: a scalar by value, bytes and text by reference.
     fn value_type(&self, field: &CodecField) -> String {
+        if let Some(child) = self.child(field) {
+            // An embedded body is read by reference, a list as the entries it
+            // holds in order: any iterator over values that say an entry.
+            return if field.is_embed() {
+                format!("&impl {}", child.trait_path)
+            } else {
+                format!("impl Iterator<Item = impl {}> + Clone", child.trait_path)
+            };
+        }
         match &field.sce_type {
             SceType::Bytes => "&[u8]".to_string(),
             SceType::String => "&str".to_string(),
@@ -253,8 +344,25 @@ impl<'a> Plan<'a> {
                 continue;
             }
             let accessor = self.accessor(field);
+            let gated = field.present_if.is_some();
+            // A list or an embedded body is lent, a scalar copied or reborrowed.
+            let read = if field.is_embed() {
+                if gated {
+                    format!("self.{accessor}.as_ref()")
+                } else {
+                    format!("&self.{accessor}")
+                }
+            } else if self.child(field).is_some() {
+                if gated {
+                    format!("self.{accessor}.as_ref().map(|_l| _l.iter())")
+                } else {
+                    format!("self.{accessor}.iter()")
+                }
+            } else {
+                format!("self.{accessor}")
+            };
             items.push_str(&format!(
-                "    fn {accessor}(&self) -> {ty} {{\n        self.{accessor}\n    }}\n",
+                "    fn {accessor}(&self) -> {ty} {{\n        {read}\n    }}\n",
                 ty = self.accessor_type(field),
             ));
         }
@@ -270,6 +378,15 @@ impl<'a> Plan<'a> {
 
     fn encode_impl(&self) -> String {
         let body = self.write_body();
+        // A list or an embedded body is written by the codec it holds, which
+        // can refuse a value after this codec has written bytes. The same write
+        // into a sink that only counts finds that refusal first, so the
+        // caller's sink is untouched when the encode refuses.
+        let guard = if self.has_children() {
+            "\x20       Self::write_source(src, &mut ::sce_forge_runtime::codec::CountSink::new())?;\n"
+        } else {
+            ""
+        };
         format!(
             "#[allow(dead_code)]\n\
              impl{lt} {name}{lt} {{\n\
@@ -279,6 +396,7 @@ impl<'a> Plan<'a> {
              \x20   /// `src` presents, and a value the encoding cannot carry is refused\n\
              \x20   /// before the first byte is written.\n\
              \x20   pub fn encode_source<S: {trait_name} + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {{\n\
+             {guard}\
              \x20       Self::write_source(src, w)\n\
              \x20   }}\n\n\
              \x20   /// [`Self::encode_source`] without the guard a parent has already made.\n\
@@ -321,16 +439,20 @@ impl<'a> Plan<'a> {
     /// anything is written. Returns the expression each element is read as.
     fn derivations(&self, lines: &mut Vec<String>) -> Derived {
         let mut derived = Derived::default();
+        self.bound_lists(lines);
         for (id, by) in self.roles.derived() {
             for derivation in by {
                 match derivation {
                     Derivation::LengthOf { contents } => {
                         self.derive_length(id, contents, lines, &mut derived)
                     }
+                    Derivation::CountOf { lists } => {
+                        self.derive_count(id, lists, lines, &mut derived)
+                    }
                     Derivation::PresenceOf { gated } => {
                         self.derive_presence(id, gated, lines, &mut derived)
                     }
-                    _ => unreachable!("`support` refused every other derivation"),
+                    _ => unreachable!("`check` refused every other derivation"),
                 }
             }
         }
@@ -391,6 +513,68 @@ impl<'a> Plan<'a> {
             lines.push(format!("let {number}: usize = {value};"));
             numbers.push(number);
         }
+        self.derive_number(id, &local, numbers, lines, derived);
+    }
+
+    /// The local that holds how many entries the list `field` holds.
+    fn count_local(&self, field: &CodecField) -> String {
+        format!("_k_{}", self.accessor(field))
+    }
+
+    /// Each list's entry count, checked against the bound the list declares: a
+    /// list the codec could not decode back is not a frame.
+    fn bound_lists(&self, lines: &mut Vec<String>) {
+        for field in &self.m().fields {
+            if !(field.is_repeat() || field.is_tlv_chain()) {
+                continue;
+            }
+            let accessor = self.accessor(field);
+            let count = if field.present_if.is_some() {
+                format!("src.{accessor}().map_or(0, |_l| _l.count())")
+            } else {
+                format!("src.{accessor}().count()")
+            };
+            let local = self.count_local(field);
+            lines.push(format!("let {local}: usize = {count};"));
+            let (bound, refusal) = match &field.bit_size {
+                BitSize::TlvChain { max_depth, .. } => (*max_depth, "TlvChainOverflow"),
+                _ => (
+                    crate::forge::limits::resolve_max_count(field.max_count),
+                    "TooManyElements",
+                ),
+            };
+            lines.push(format!(
+                "if {local} > {bound} {{\n    return Err(CodecError::{refusal});\n}}"
+            ));
+        }
+    }
+
+    fn derive_count(
+        &self,
+        id: &ElementId,
+        lists: &[String],
+        lines: &mut Vec<String>,
+        derived: &mut Derived,
+    ) {
+        let local = self.local("_d_", id);
+        // The lists that name this element agree in size or no frame says both.
+        let numbers: Vec<String> = lists
+            .iter()
+            .filter_map(|list| self.m().fields.iter().find(|f| &f.id == list))
+            .map(|field| self.count_local(field))
+            .collect();
+        self.derive_number(id, &local, numbers, lines, derived);
+    }
+
+    /// The element `id` holds the number the locals in `numbers` all say.
+    fn derive_number(
+        &self,
+        id: &ElementId,
+        local: &str,
+        numbers: Vec<String>,
+        lines: &mut Vec<String>,
+        derived: &mut Derived,
+    ) {
         for pair in numbers.windows(2) {
             lines.push(format!(
                 "if {} != {} {{\n    return Err(CodecError::InconsistentSource);\n}}",
@@ -413,7 +597,7 @@ impl<'a> Plan<'a> {
                 lines.push(format!(
                     "let {local}: {ty} = {ty}::try_from({number}).map_err(|_| CodecError::LengthOutOfRange)?;"
                 ));
-                derived.fields.insert(name.clone(), local);
+                derived.fields.insert(name.clone(), local.to_string());
             }
             ElementId::Flag { field, flag } => {
                 derived
@@ -426,7 +610,7 @@ impl<'a> Plan<'a> {
                         kind: FlagValue::Number,
                     });
             }
-            ElementId::Variant => unreachable!("a length is not the variant"),
+            ElementId::Variant => unreachable!("a length or a count is not the variant"),
         }
     }
 
@@ -613,8 +797,19 @@ impl<'a> Plan<'a> {
             BitSize::Vle { width_bits } => {
                 body.push(format!("w.write_vle_u{width_bits}({value})?;"));
             }
-            BitSize::Repeat { .. } | BitSize::TlvChain { .. } | BitSize::Embed => {
-                unreachable!("`support` refused every list and embedded body")
+            BitSize::Repeat { .. } | BitSize::TlvChain { .. } => {
+                let child = self
+                    .child(field)
+                    .expect("`check` found the codec a list holds");
+                body.push(format!("for _e in {value} {{"));
+                body.push(format!("    {}::write_source(&_e, w)?;", child.type_name));
+                body.push("}".to_string());
+            }
+            BitSize::Embed => {
+                let child = self
+                    .child(field)
+                    .expect("`check` found the codec a body holds");
+                body.push(format!("{}::write_source({value}, w)?;", child.type_name));
             }
         }
         if gated && self.presented(field) {
