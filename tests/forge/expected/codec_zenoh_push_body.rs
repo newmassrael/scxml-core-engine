@@ -169,11 +169,13 @@ impl CodecZenohPushBody {
     /// Heap-backed convenience facade. Pre-reserves
     /// `MAX_ENCODED_BYTES` so the worst-case write path performs at
     /// most one allocation, then delegates to `encode` over a
-    /// `VecSink`. Returns the freshly-encoded byte vector, or the
-    /// `CodecError::PresentIfMismatch` `encode` refuses a message with
-    /// when a field's presence disagrees with the `sce:present-if`
-    /// that gates it. Callers targeting zero-alloc hot paths should
-    /// call `encode` directly against a caller-owned sink.
+    /// `VecSink`. Returns the freshly-encoded byte vector, or the error
+    /// `encode` refuses a value with: one the encoding cannot carry (a
+    /// length past its type, a list past its bound) or one a gate
+    /// disagrees with. It is a `Result` for every codec, so that a codec
+    /// gaining a derived element, or a build that gates one in, does not
+    /// change what a caller writes. Callers targeting zero-alloc hot
+    /// paths should call `encode` directly against a caller-owned sink.
     ///
     /// Gated on the `alloc` feature — `VecSink` lives behind the
     /// same gate (see `backends/rust/forge-runtime/src/codec.rs`). MCU /
@@ -242,7 +244,6 @@ impl CodecZenohPushBody {
     /// `src` presents, and a value the encoding cannot carry is refused
     /// before the first byte is written.
     pub fn encode_source<S: CodecZenohPushBodySource + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {
-        Self::write_source(src, &mut ::sce_forge_runtime::codec::CountSink::new())?;
         Self::write_source(src, w)
     }
 

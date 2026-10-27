@@ -19631,7 +19631,7 @@ mod tests {
         // Re-borrow + encode round-trips through the borrowed view.
         let borrowed = owned.as_borrowed();
         assert_eq!(borrowed.payload.len(), 50);
-        assert_eq!(borrowed.encode_to_vec().len(), 52);
+        assert_eq!(borrowed.encode_to_vec().expect("encode").len(), 52);
     }
 }
 "#;
@@ -22326,7 +22326,7 @@ mod tests {
         assert_eq!(view.state, EnumSessionState::SafetySystem);
         assert_eq!(view.code, EnumUdsNrc::ResponsePending);
         assert_eq!(view.detail, 7);
-        assert_eq!(view.encode_to_vec().as_slice(), &frame);
+        assert_eq!(view.encode_to_vec().expect("encode").as_slice(), &frame);
     }
 
     #[test]
@@ -22338,7 +22338,7 @@ mod tests {
         assert_eq!(view.code.to_underlying(), 250);
         // And it survives the way back out: carrying the value is the
         // point, so re-encoding must not collapse it onto a declared one.
-        assert_eq!(view.encode_to_vec().as_slice(), &frame);
+        assert_eq!(view.encode_to_vec().expect("encode").as_slice(), &frame);
     }
 
     #[test]
@@ -22537,7 +22537,7 @@ mod tests {
         let view = CodecEnumGated::decode(&mut cursor).expect("decode without the gated field");
         assert_eq!(view.code, EnumUdsNrc::ConditionsNotCorrect);
         assert!(view.state.is_none());
-        assert_eq!(view.encode_to_vec().as_slice(), &frame);
+        assert_eq!(view.encode_to_vec().expect("encode").as_slice(), &frame);
     }
 
     #[test]
@@ -22546,7 +22546,7 @@ mod tests {
         let mut cursor = SceCursor::new(&frame);
         let view = CodecEnumGated::decode(&mut cursor).expect("decode with the gated field");
         assert_eq!(view.state, Some(EnumSessionState::ExtendedDiagnostic));
-        assert_eq!(view.encode_to_vec().as_slice(), &frame);
+        assert_eq!(view.encode_to_vec().expect("encode").as_slice(), &frame);
     }
 
     #[test]

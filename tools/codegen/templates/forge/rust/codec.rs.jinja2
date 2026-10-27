@@ -257,15 +257,16 @@ impl{{ struct_lifetime }} {{ struct_name }}{{ struct_lifetime }} {
         Self::encode_source(self, w{{ params_first_arg_with_comma }})
     }
 
-{% if encode_can_refuse %}
     /// Heap-backed convenience facade. Pre-reserves
     /// `MAX_ENCODED_BYTES` so the worst-case write path performs at
     /// most one allocation, then delegates to `encode` over a
-    /// `VecSink`. Returns the freshly-encoded byte vector, or the
-    /// `CodecError::PresentIfMismatch` `encode` refuses a message with
-    /// when a field's presence disagrees with the `sce:present-if`
-    /// that gates it. Callers targeting zero-alloc hot paths should
-    /// call `encode` directly against a caller-owned sink.
+    /// `VecSink`. Returns the freshly-encoded byte vector, or the error
+    /// `encode` refuses a value with: one the encoding cannot carry (a
+    /// length past its type, a list past its bound) or one a gate
+    /// disagrees with. It is a `Result` for every codec, so that a codec
+    /// gaining a derived element, or a build that gates one in, does not
+    /// change what a caller writes. Callers targeting zero-alloc hot
+    /// paths should call `encode` directly against a caller-owned sink.
     ///
     /// Gated on the `alloc` feature — `VecSink` lives behind the
     /// same gate (see `backends/rust/forge-runtime/src/codec.rs`). MCU /
@@ -278,27 +279,6 @@ impl{{ struct_lifetime }} {{ struct_name }}{{ struct_lifetime }} {
         self.encode(&mut _sce_sink{{ params_first_arg_with_comma }})?;
         Ok(_sce_v)
     }
-{% else %}
-    /// Heap-backed convenience facade. Pre-reserves
-    /// `MAX_ENCODED_BYTES` so the worst-case write path performs at
-    /// most one allocation, then delegates to `encode` over a
-    /// `VecSink`. Returns the freshly-encoded byte vector. Callers
-    /// targeting zero-alloc hot paths should call `encode` directly
-    /// against a caller-owned sink.
-    ///
-    /// Gated on the `alloc` feature — `VecSink` lives behind the
-    /// same gate (see `backends/rust/forge-runtime/src/codec.rs`). MCU /
-    /// `no_std` builds without `alloc` only see the sink-based
-    /// primary `encode`.
-    #[cfg(feature = "alloc")]
-    pub fn encode_to_vec(&self{{ params_after_first_arg }}) -> Vec<u8> {
-        let mut _sce_v: Vec<u8> = Vec::with_capacity(Self::MAX_ENCODED_BYTES);
-        let mut _sce_sink = VecSink::new(&mut _sce_v);
-        self.encode(&mut _sce_sink{{ params_first_arg_with_comma }})
-            .expect("VecSink is infallible");
-        _sce_v
-    }
-{% endif %}
 }
 
 {{ source_block }}
@@ -473,10 +453,9 @@ impl{{ view_lifetime }} {{ struct_name }}View{{ view_lifetime }} {
     pub fn encode<S: SceSink>(&self, w: &mut S{{ params_after_first_arg }}) -> Result<(), CodecError> {
         {{ struct_name }}::encode_source(self, w{{ params_first_arg_with_comma }})
     }
-{% if encode_can_refuse %}
 
-    /// Heap-backed convenience facade over [`Self::encode`], fallible where
-    /// `encode` can refuse a message whose presence disagrees with a gate.
+    /// Heap-backed convenience facade over [`Self::encode`], which refuses a
+    /// value it cannot carry.
     #[cfg(feature = "alloc")]
     pub fn encode_to_vec(&self{{ params_after_first_arg }}) -> Result<Vec<u8>, CodecError> {
         let mut _sce_v: Vec<u8> = Vec::with_capacity(Self::MAX_ENCODED_BYTES);
@@ -484,18 +463,6 @@ impl{{ view_lifetime }} {{ struct_name }}View{{ view_lifetime }} {
         self.encode(&mut _sce_sink{{ params_first_arg_with_comma }})?;
         Ok(_sce_v)
     }
-{% else %}
-
-    /// Heap-backed convenience facade over [`Self::encode`].
-    #[cfg(feature = "alloc")]
-    pub fn encode_to_vec(&self{{ params_after_first_arg }}) -> Vec<u8> {
-        let mut _sce_v: Vec<u8> = Vec::with_capacity(Self::MAX_ENCODED_BYTES);
-        let mut _sce_sink = VecSink::new(&mut _sce_v);
-        self.encode(&mut _sce_sink{{ params_first_arg_with_comma }})
-            .expect("VecSink is infallible");
-        _sce_v
-    }
-{% endif %}
 {% if has_flags %}
 
 {{ flags.accessors(fields, false) }}
@@ -758,10 +725,9 @@ impl{{ owned_generics_impl }} {{ struct_name }}Owned{{ owned_generics_args }} {
         {{ struct_name }}::encode_source(self, w{{ params_first_arg_with_comma }})
     }
 
-{% if owned_encode_can_refuse %}
     /// Heap-backed convenience facade over [`Self::encode`]. Fallible: a list
-    /// past the bound the borrowed view declares is refused, and so is a
-    /// presence the chain predicates disagree with.
+    /// past the bound the borrowed view declares is refused, as is any value
+    /// the encoding cannot carry.
     #[cfg(feature = "alloc")]
     pub fn encode_to_vec(&self{{ params_after_first_arg }}) -> Result<Vec<u8>, CodecError> {
         let mut _sce_v: Vec<u8> = Vec::with_capacity({{ struct_name }}::MAX_ENCODED_BYTES);
@@ -769,17 +735,6 @@ impl{{ owned_generics_impl }} {{ struct_name }}Owned{{ owned_generics_args }} {
         self.encode(&mut _sce_sink{{ params_first_arg_with_comma }})?;
         Ok(_sce_v)
     }
-{% else %}
-    /// Heap-backed convenience facade over [`Self::encode`].
-    #[cfg(feature = "alloc")]
-    pub fn encode_to_vec(&self{{ params_after_first_arg }}) -> Vec<u8> {
-        let mut _sce_v: Vec<u8> = Vec::with_capacity({{ struct_name }}::MAX_ENCODED_BYTES);
-        let mut _sce_sink = VecSink::new(&mut _sce_v);
-        self.encode(&mut _sce_sink{{ params_first_arg_with_comma }})
-            .expect("VecSink is infallible");
-        _sce_v
-    }
-{% endif %}
 }
 {% if owned_origin %}
 {% if has_variant and variant_owned_generics_args %}

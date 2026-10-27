@@ -8191,18 +8191,6 @@ fn render_codec(
     // (`encode_to_vec` and kin) fallible for that codec alone.
     let (present_if_encode_prologue, encode_can_refuse) =
         present_if_chain_encode_prologue(&m.fields, &chain_masks, EncodeFlavor::Borrowed, lang);
-    // A Rust codec's `encode` is its source's (ADR 0058), which refuses a value
-    // it cannot carry — a length past its type, a list past its bound, a gate
-    // the source disagrees with — and so does the facade that wraps it.
-    let encode_can_refuse = if matches!(lang, crate::generator::Language::Rust) {
-        rust_source::can_refuse_with(m, |alias| {
-            imports
-                .iter()
-                .any(|i| i.alias == alias && i.codec_source_can_refuse)
-        })
-    } else {
-        encode_can_refuse
-    };
     ctx.insert(
         "present_if_encode_prologue".into(),
         present_if_encode_prologue.into(),
@@ -9284,15 +9272,6 @@ fn render_codec(
                 ("as_borrowed_into", "", "")
             }
         };
-        // The owned form's `encode` fails exactly where the projection failed
-        // (a list past its bound, here or in a body it embeds or dispatches
-        // to) and where the borrowed form's does (a presence the chain
-        // predicates refuse), so its heap-backed facade is fallible for the
-        // union of the two.
-        ctx.insert(
-            "owned_encode_can_refuse".into(),
-            (encode_can_refuse || struct_fallible || variant_fallible).into(),
-        );
         let (struct_into_fn, struct_into_ret, struct_into_tail) = into_signature(struct_fallible);
         ctx.insert("as_borrowed_into_fn".into(), struct_into_fn.into());
         ctx.insert("as_borrowed_into_ret".into(), struct_into_ret.into());
@@ -24053,6 +24032,11 @@ fn render_procedure_c_l2(
                         "addr_expr": addr_expr.unwrap_or_default(),
                         "addr_form": addr_form.map(crate::forge::validate::AddressForm::as_str),
                         "payload": send.payload.is_some(),
+                        // A codec's encode refuses a value it cannot carry
+                        // (ADR 0058), so a payload that is one is a `Result`.
+                        "payload_fallible": payload_expr
+                            .as_deref()
+                            .is_some_and(|e| e.contains(".encode_to_vec()")),
                         "payload_expr": payload_expr.unwrap_or_default(),
                     }))
                 })
@@ -24769,6 +24753,11 @@ fn build_procedure_states_with_entry(
                         "addr_expr": addr_expr.unwrap_or_default(),
                         "addr_form": addr_form.map(crate::forge::validate::AddressForm::as_str),
                         "payload": send.payload.is_some(),
+                        // A codec's encode refuses a value it cannot carry
+                        // (ADR 0058), so a payload that is one is a `Result`.
+                        "payload_fallible": payload_expr
+                            .as_deref()
+                            .is_some_and(|e| e.contains(".encode_to_vec()")),
                         "payload_expr": payload_expr.unwrap_or_default(),
                     }))
                 })
@@ -33236,13 +33225,6 @@ fn render_codec_test_vector_sidecar(
     ctx.insert(
         "codec_is_borrowed".into(),
         m.is_borrowed_with(|_alias| false).into(),
-    );
-    // A plain codec holds no other, so whether its `encode_to_vec` returns a
-    // `Result` is its own: a length derived into a type that may not hold it is
-    // a value the encode refuses (ADR 0058).
-    ctx.insert(
-        "encode_can_refuse".into(),
-        (matches!(lang, Language::Rust) && rust_source::can_refuse_with(m, |_alias| false)).into(),
     );
 
     if matches!(lang, Language::C11) {

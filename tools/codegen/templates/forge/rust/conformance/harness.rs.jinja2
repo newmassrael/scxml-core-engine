@@ -47,27 +47,6 @@ use fixtures::{{ f.name }}::{{ f.name | to_pascal_case }};
 {% endif %}
 {% endfor %}
 
-/// The bytes an `encode_to_vec` returned. A codec's encode is its source's and
-/// refuses a value it cannot carry (ADR 0058), so its `encode_to_vec` returns a
-/// `Result` when it can and the bytes when it cannot; a conformance case is a
-/// value every codec carries, so either way it is the bytes.
-#[allow(dead_code)]
-trait EncodedBytes {
-    fn encoded_bytes(self, what: &str) -> Vec<u8>;
-}
-
-impl EncodedBytes for Vec<u8> {
-    fn encoded_bytes(self, _what: &str) -> Vec<u8> {
-        self
-    }
-}
-
-impl EncodedBytes for Result<Vec<u8>, ::sce_forge_runtime::codec::CodecError> {
-    fn encoded_bytes(self, what: &str) -> Vec<u8> {
-        self.unwrap_or_else(|e| panic!("{what}: encode must succeed, refused with {e:?}"))
-    }
-}
-
 fn load_reference() -> serde_json::Value {
     let path = concat!(
         env!("CARGO_MANIFEST_DIR"),

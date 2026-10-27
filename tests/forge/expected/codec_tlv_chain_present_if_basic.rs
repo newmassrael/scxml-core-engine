@@ -143,11 +143,13 @@ impl<'a> CodecTlvChainPresentIfBasic<'a> {
     /// Heap-backed convenience facade. Pre-reserves
     /// `MAX_ENCODED_BYTES` so the worst-case write path performs at
     /// most one allocation, then delegates to `encode` over a
-    /// `VecSink`. Returns the freshly-encoded byte vector, or the
-    /// `CodecError::PresentIfMismatch` `encode` refuses a message with
-    /// when a field's presence disagrees with the `sce:present-if`
-    /// that gates it. Callers targeting zero-alloc hot paths should
-    /// call `encode` directly against a caller-owned sink.
+    /// `VecSink`. Returns the freshly-encoded byte vector, or the error
+    /// `encode` refuses a value with: one the encoding cannot carry (a
+    /// length past its type, a list past its bound) or one a gate
+    /// disagrees with. It is a `Result` for every codec, so that a codec
+    /// gaining a derived element, or a build that gates one in, does not
+    /// change what a caller writes. Callers targeting zero-alloc hot
+    /// paths should call `encode` directly against a caller-owned sink.
     ///
     /// Gated on the `alloc` feature — `VecSink` lives behind the
     /// same gate (see `backends/rust/forge-runtime/src/codec.rs`). MCU /
@@ -381,8 +383,8 @@ impl<S: ::sce_forge_runtime::codec::CodecStorage> CodecTlvChainPresentIfBasicOwn
     }
 
     /// Heap-backed convenience facade over [`Self::encode`]. Fallible: a list
-    /// past the bound the borrowed view declares is refused, and so is a
-    /// presence the chain predicates disagree with.
+    /// past the bound the borrowed view declares is refused, as is any value
+    /// the encoding cannot carry.
     #[cfg(feature = "alloc")]
     pub fn encode_to_vec(&self) -> Result<Vec<u8>, CodecError> {
         let mut _sce_v: Vec<u8> = Vec::with_capacity(CodecTlvChainPresentIfBasic::MAX_ENCODED_BYTES);

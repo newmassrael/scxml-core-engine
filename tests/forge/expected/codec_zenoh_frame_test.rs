@@ -7,7 +7,8 @@ fn test_vector_codec_zenoh_frame_l38() {
         sn: 0x0u64,
         payload: b"",
     };
-    let encoded = actual.encode_to_vec();
+    let encoded = actual.encode_to_vec()
+        .expect("<sce:test-vector> at SCXML L38: encode refused the value");
     let expected: &[u8] = &[0x00u8];
     assert_eq!(
         encoded.as_slice(), expected,
@@ -56,7 +57,9 @@ fn test_vector_codec_zenoh_frame_l38() {
     // eligible codec is scalar / bytes / string (no bounded list reaches
     // this gate), so the projection is infallible.
     assert_eq!(
-        owned.as_borrowed().encode_to_vec().as_slice(), expected,
+        owned.as_borrowed().encode_to_vec()
+            .expect("<sce:test-vector> at SCXML L38: as_borrowed encode refused the value")
+            .as_slice(), expected,
         "<sce:test-vector> at SCXML L38: as_borrowed re-encode mismatch"
     );
 }
@@ -66,7 +69,8 @@ fn test_vector_codec_zenoh_frame_l42() {
         sn: 0x1u64,
         payload: b"\xca\xfe",
     };
-    let encoded = actual.encode_to_vec();
+    let encoded = actual.encode_to_vec()
+        .expect("<sce:test-vector> at SCXML L42: encode refused the value");
     let expected: &[u8] = &[0x01u8, 0xcau8, 0xfeu8];
     assert_eq!(
         encoded.as_slice(), expected,
@@ -115,7 +119,9 @@ fn test_vector_codec_zenoh_frame_l42() {
     // eligible codec is scalar / bytes / string (no bounded list reaches
     // this gate), so the projection is infallible.
     assert_eq!(
-        owned.as_borrowed().encode_to_vec().as_slice(), expected,
+        owned.as_borrowed().encode_to_vec()
+            .expect("<sce:test-vector> at SCXML L42: as_borrowed encode refused the value")
+            .as_slice(), expected,
         "<sce:test-vector> at SCXML L42: as_borrowed re-encode mismatch"
     );
 }
@@ -125,7 +131,8 @@ fn test_vector_codec_zenoh_frame_l46() {
         sn: 0x7fu64,
         payload: b"\xaa\xbb\xcc",
     };
-    let encoded = actual.encode_to_vec();
+    let encoded = actual.encode_to_vec()
+        .expect("<sce:test-vector> at SCXML L46: encode refused the value");
     let expected: &[u8] = &[0x7fu8, 0xaau8, 0xbbu8, 0xccu8];
     assert_eq!(
         encoded.as_slice(), expected,
@@ -174,7 +181,9 @@ fn test_vector_codec_zenoh_frame_l46() {
     // eligible codec is scalar / bytes / string (no bounded list reaches
     // this gate), so the projection is infallible.
     assert_eq!(
-        owned.as_borrowed().encode_to_vec().as_slice(), expected,
+        owned.as_borrowed().encode_to_vec()
+            .expect("<sce:test-vector> at SCXML L46: as_borrowed encode refused the value")
+            .as_slice(), expected,
         "<sce:test-vector> at SCXML L46: as_borrowed re-encode mismatch"
     );
 }
@@ -184,7 +193,8 @@ fn test_vector_codec_zenoh_frame_l50() {
         sn: 0x80u64,
         payload: b"\xde\xad",
     };
-    let encoded = actual.encode_to_vec();
+    let encoded = actual.encode_to_vec()
+        .expect("<sce:test-vector> at SCXML L50: encode refused the value");
     let expected: &[u8] = &[0x80u8, 0x01u8, 0xdeu8, 0xadu8];
     assert_eq!(
         encoded.as_slice(), expected,
@@ -233,7 +243,9 @@ fn test_vector_codec_zenoh_frame_l50() {
     // eligible codec is scalar / bytes / string (no bounded list reaches
     // this gate), so the projection is infallible.
     assert_eq!(
-        owned.as_borrowed().encode_to_vec().as_slice(), expected,
+        owned.as_borrowed().encode_to_vec()
+            .expect("<sce:test-vector> at SCXML L50: as_borrowed encode refused the value")
+            .as_slice(), expected,
         "<sce:test-vector> at SCXML L50: as_borrowed re-encode mismatch"
     );
 }

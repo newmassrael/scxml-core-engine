@@ -338,11 +338,19 @@ impl<'a> Plan<'a> {
         )
     }
 
-    /// Whether the codec holds a list, an embedded body or a variant: a refusal
-    /// that comes from inside one has to be found before the first byte is
-    /// written.
-    fn has_children(&self) -> bool {
-        !child_aliases(self.m()).is_empty()
+    /// Whether a codec the value holds (in a list, an embedded body or a
+    /// variant) can refuse it: a refusal that comes from inside one has to be
+    /// found before the first byte is written. A codec whose children cannot
+    /// refuse has nothing to find, and skips the pass that looks. That is all
+    /// the refusal analysis decides: what a caller sees is a `Result` for every
+    /// codec.
+    fn children_can_refuse(&self) -> bool {
+        child_aliases(self.m()).into_iter().any(|alias| {
+            self.input
+                .imports
+                .iter()
+                .any(|i| i.alias == alias && i.codec_source_can_refuse)
+        })
     }
 
     // ── flag-inputs ──────────────────────────────────────────────────
@@ -1001,7 +1009,7 @@ impl<'a> Plan<'a> {
         // caller's sink is untouched when the encode refuses.
         let params = self.input_params();
         let args = self.input_args();
-        let guard = if self.has_children() {
+        let guard = if self.children_can_refuse() {
             format!(
                 "\x20       Self::write_source(src, &mut ::sce_forge_runtime::codec::CountSink::new(){args})?;\n"
             )
