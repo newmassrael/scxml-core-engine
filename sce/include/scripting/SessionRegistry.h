@@ -4,6 +4,7 @@
 #pragma once
 
 #include "ISessionRegistry.h"
+#include <cstdint>
 #include <memory>
 #include <mutex>
 #include <string>

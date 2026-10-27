@@ -4,6 +4,7 @@
 #pragma once
 
 #include "core/EventMetadata.h"
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <optional>

@@ -4,6 +4,7 @@
 #pragma once
 
 #include "EventDispatcherBase.h"
+#include <algorithm>
 #include <thread>
 
 namespace SCE::Dispatchers {
