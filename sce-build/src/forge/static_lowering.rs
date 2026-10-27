@@ -14199,5 +14199,26 @@ mod tests {
         let def = CppTarget.record_def("MDueRecord", "Due", &schema, &Default::default());
         assert!(def.contains("    uint32_t id;\n"), "{def}");
         assert!(def.contains("    std::optional<int64_t> due;\n"), "{def}");
+        // The saved form is read back by position, in the order the struct
+        // declares its fields, each value beside its field's name: C++17 has
+        // no designated initializer (docs/adr/0059, section 5).
+        let id = def
+            .find("        /*id=*/")
+            .expect("the id is read by position");
+        let due = def
+            .find("        /*due=*/::SCE::Saved::savedReadOptional(")
+            .expect("the due is read by position");
+        assert!(id < due, "the fields are read in declaration order:\n{def}");
+        assert!(!def.contains(".id = "), "no designated initializer:\n{def}");
+        assert_eq!(
+            CppTarget.record_value(
+                "MDueRecord",
+                &[
+                    ("id".to_string(), "7u".to_string()),
+                    ("due".to_string(), "std::nullopt".to_string()),
+                ],
+            ),
+            "MDueRecord{/*id=*/7u, /*due=*/std::nullopt}"
+        );
     }
 }
