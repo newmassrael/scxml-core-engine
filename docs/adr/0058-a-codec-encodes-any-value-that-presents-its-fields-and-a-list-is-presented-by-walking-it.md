@@ -7,9 +7,10 @@
   one measuring fold checks the source and computes the lengths before anything is written (§3), and the laws are
   stated for every admissible source (§5)
 - Date: 2026-10-27
-- Scope: `tools/codegen/templates/forge/rust/codec.rs.jinja2`, `tools/codegen/templates/_macros/forge_rust_codec_encode_body.jinja2`
-  and the Rust half of `sce-build/src/forge/generator.rs` (the encode blocks of fields, lists, embedded bodies and
-  variants); `backends/rust/forge-runtime/src/codec.rs` (the bound check a walked list is held to); SCE_FORGE.md §4.6;
+- Scope: `tools/codegen/templates/forge/rust/codec.rs.jinja2` and the Rust half of `sce-build/src/forge/generator.rs`
+  (the encode blocks of fields, lists, embedded bodies and variants, now `sce-build/src/forge/generator/rust_source.rs`;
+  the encode-body macro `tools/codegen/templates/_macros/forge_rust_codec_encode_body.jinja2` is deleted);
+  `backends/rust/forge-runtime/src/codec.rs` (the counting sink and the errors a walked list is held to); SCE_FORGE.md §4.6;
   the golden trees under `tests/forge/expected/` and `backends/rust/mesh/src/generated/`, which must not move. The
   other five backends take the same interface in their own idiom in a later step (see "Order of work")
 - Related: ADR 0049 (a decoded value is a view; its §4, "writing stays on the builder form", is what this ADR
@@ -89,6 +90,15 @@ of the values it sets by hand the encoding will take over before any output chan
 model (`sce-build/tests/codec_roles.rs`), and no element is derived by two kinds. Agreement with what the decoder
 *computes*, as opposed to what it declares, is law 1 of §5, which a round trip holds when step 2 lands.
 
+*Amended in step 2: a length or count of gated content.* A length or count whose content is gated by `present-if` is
+derived while the content is present and **stated by the source while it is absent**: the accessor is an `Option<T>`,
+and the builder returns `Some(field)` only when every element the number measures is absent. The wire carries such a
+number even with nothing to measure (a SHM `zbuf` form carries `value_len` beside an absent `value`), and a decode
+reads it, so it is a thing a value says. For a flag element the carrier keeps the presented bits
+(`FlagValue::Optional`); an element gated beside its content takes the first present value; and a count shared by
+several lists compares only the lists that are present. This is the rule that makes law 2 of §5 hold for every frame a
+decode produces.
+
 The consequence is the property the proposal lacked: every source that passes §3 encodes to a frame the decoder
 accepts.
 
@@ -98,16 +108,23 @@ declaration order:
 - a scalar, a flag or an enum field: `fn field(&self) -> T`, by value;
 - a string or bytes field: `fn field(&self) -> &str` or `&[u8]`;
 - a field gated by `present_if`: `Option<…>` of the above;
-- an embedded body of codec `Y`: `type Field: YSource; fn field(&self) -> &Self::Field`;
+- an embedded body of codec `Y`: `fn field(&self) -> &impl YSource`;
 - a `<sce:repeat>` or `<sce:tlv-chain>` of entries of codec `E`:
-  `type FieldEntries<'s>: Iterator<Item = Self::FieldEntry<'s>> + Clone where Self: 's;`
-  `type FieldEntry<'s>: ESource where Self: 's;`
-  `fn field(&self) -> Self::FieldEntries<'_>`;
-- a variant: `fn body(&self) -> XSourceVariant<'_, Self>`, an enum whose arms carry the arms' sources through
-  associated types.
+  `fn field(&self) -> impl Iterator<Item = impl ESource> + Clone`;
+- a variant: `fn body(&self) -> XVariantSource<'_, A0, .., D>`, an enum with one arm per known arm of the grammar
+  (each carrying that arm's source) and, where the variant has a default arm, a `Default { tag, body }` arm that
+  carries the tag the grammar could not name.
+
+The associated items are return-position `impl Trait` in the trait, so an implementor names no associated type. Every
+`&T` where `T: XSource` is itself an `XSource`, so a source can be passed by reference without a wrapper.
 
 The interface reads; it never stores. A list is presented by an iterator the implementor makes fresh on each call,
-so its entries may come from a slice, from a ring, from another value's view, or be computed.
+so its entries may come from a slice, from a ring, from another value's view, or be computed. The iterator is `Clone`
+because the encode walks a list twice when a child can refuse (§3).
+
+A TLV chain's continuation flag is derived, and a chain written as a continuation of another chain (an extension
+chain whose last flag belongs to the outer one) is told so through `XOverrides`, a struct of the flags the caller
+supplies, built through one constructor per member, and not through the source.
 
 ### 2. There is one encode, and it reads the interface
 
@@ -121,31 +138,45 @@ change's correctness (law 2 of §5), and the reason the generated tree is regene
 it. The builders' own `encode` keeps its name and signature and calls `encode_source`. A consumer that fills a builder
 consistently changes nothing; one that fills it inconsistently is the case §1 closes, stated under law 2 of §5.
 
-### 3. One measuring fold checks the source and computes what the encoding determines, before anything is written
+*Landed in step 2: the facade is uniformly fallible.* Because a source can break a bound, the convenience
+`encode_to_vec` of **every** Rust codec returns `Result<Vec<u8>, CodecError>`, including the codecs that today cannot
+refuse. Whether a codec can refuse (`ImportContext.codec_source_can_refuse`) is an internal fact the generator uses to
+skip the counting pre-pass of §3; it is not part of the signature, so adding a refusing child to a codec never changes
+its consumers' types. A procedure whose `<send>` payload is such a call fails the send with `Event::Fail` and the
+error, as the service failing would.
 
-*Amended.* A builder cannot hold a value that breaks a bound its types state: a `heapless::Vec` of `N` entries, a
-`heapless::String` of its maximum. A source can. A builder can hold a flag that disagrees with the presence it
-announces (a flag byte stored as given beside an `Option` the encode writes only when it is `Some`), and today it
-encodes the frame that disagreement describes, which no decoder reads back as the value; §1 derives that flag, and
-the same disagreement between a source's gate and its presence, where the gate is not of the one-flag form, is a
-check below. And a derived element that precedes its content on the wire (a count, a length) needs what follows it
-before the first of it is written, which a streaming sink cannot be patched for. Both are answered by a second algebra over the same grammar,
-generated beside the encode: `measure_source`, a fold that visits the source once and returns what the encode needs of
-it.
+### 3. The encode checks the source and computes what the encoding determines before anything is written
 
-- It **checks** every bound the builder's types state by construction (`max-count`, the maximum size of a string or
-  bytes), every relation of §1 that has several sources (a count two lists share, a length two fields share) and every
-  gate that is not of the one-flag form (`codec-roles` lists them as `check` lines), and refuses a violation with the
-  error a decode of that frame gives (`TooManyElements` and its siblings), before the first byte.
-- It **computes** each derived length that precedes its content and each count, so that `encode_source` writes them
-  from the measure and never reads them from the source.
+*Amended; as landed in step 2.* A builder cannot hold a value that breaks a bound its types state: a
+`heapless::Vec` of `N` entries, a `heapless::String` of its maximum. A source can. A builder can hold a flag that
+disagrees with the presence it announces (a flag byte stored as given beside an `Option` the encode writes only when
+it is `Some`), and today it encodes the frame that disagreement describes, which no decoder reads back as the value;
+§1 derives that flag, and the same disagreement between a source's gate and its presence, where the gate is not of
+the one-flag form, is a check below. And a derived element that precedes its content on the wire (a count, a length)
+needs what follows it before the first of it is written, which a streaming sink cannot be patched for.
 
-The cost is time and not memory: a measure keeps a few integers and allocates nothing, which is what the no-alloc tier
-asks. A body whose length precedes it is measured once by its parent and again by its own encode, so the work is
-`O(d·n)` for `d` the nesting depth of length-prefixed bodies, a constant of the grammar fixed when the codec is
-generated; no second pass is made over a codec whose grammar has no such length.
+The proposal answered both with a second fold, `measure_source`. The landed design has no second fold to keep in step
+with the first: `encode_source` is the one skeleton, and it is run twice over a counting sink.
 
-What is guaranteed is exactly this: **a source that fails the measure writes nothing**, and one that passes writes a
+- `write_source` is the skeleton. A derived number that precedes its content is computed from the source by the same
+  expressions the decoder reads it with, counting the entries of a list and summing the encoded length of a body
+  (`EncodedLengthOf`, `CountOf`, `LengthOf`).
+- `encode_source` first runs `write_source` into `CountSink`, a sink that keeps one integer and allocates nothing,
+  and only then into the caller's sink. A violation found by the first run is returned with the caller's sink still
+  empty. The first run is skipped when no child of the codec can refuse (`codec_source_can_refuse`), so a codec with
+  no bound to break pays nothing.
+- The gate checks that cannot be derived (`gate_checks`) run before the first byte of either run and return
+  `PresentIfMismatch`. A relation with several sources that disagree returns `InconsistentSource`; a number that does
+  not fit its field returns `LengthOutOfRange`; a list over `max-count` returns `TooManyElements`, and a TLV chain
+  over its bound `TlvChainOverflow`. The last two are the errors a decode of that frame gives.
+
+The cost is time and not memory: a counting sink keeps an integer, which is what the no-alloc tier asks. A body whose
+length precedes it is counted once by its parent and written again by its own encode, so the work is `O(d·n)` for
+`d` the nesting depth of length-prefixed bodies, a constant of the grammar fixed when the codec is generated. Whether
+the double run is worth keeping against an attribute-grammar two-phase encode is a question for measurement, not for
+this ADR: it is kept until a consumer's measured stack or time says otherwise.
+
+What is guaranteed is exactly this: **a source that is refused writes nothing**, and one that is accepted writes a
 frame the decoder accepts. A sink that runs out of room can still refuse partway, as it can today; that refusal is the
 sink's and is not a property of the source.
 
@@ -154,11 +185,12 @@ sink's and is not a property of the source.
 For the common shape — parts already in hand, lists in slices — the generator also emits `struct XParts<'a>`, whose
 lists are `&'a [EParts<'a>]` and whose bodies are `&'a YParts<'a>`, implementing `XSource`. A consumer either fills
 `XParts` from what it has or implements `XSource` on its own type. Encoding needs the stack of the entries the caller
-holds, not `N` slots per list.
+holds, not `N` slots per list. Not landed with step 2: it follows the consumer's measurement of the send stack
+(step 3 of the order of work).
 
 ### 5. Laws, and the tests that hold them
 
-*Amended: stated for every admissible source, a source being admissible when `measure_source` accepts it.* For every
+*Amended: stated for every admissible source, a source being admissible when `encode_source` accepts it.* For every
 admissible source `s` of codec `X`:
 
 1. **Totality.** `encode_source(s)` is a frame the decoder accepts, and `decode(encode_source(s))`, read through the
@@ -173,6 +205,9 @@ admissible source `s` of codec `X`:
    gives.
 4. **Parity.** On every backend that implements the interface, the bytes are those of every other (ADR 0010
    decision 2).
+5. **Statement.** A length or count of gated content is derived while the content is present and stated by the
+   source while it is absent (§1, "a length or count of gated content"). A source that states it where the content is
+   present is not consulted: the encoder's number wins, and the round trip of law 1 holds.
 
 The conformance suite holds them with sources of every shape the trait admits (a slice, an iterator that computes,
 a view re-encoded as a relay does, a source that breaks each kind of bound). Law 2 is held against the committed
@@ -194,9 +229,11 @@ their bytes equal.
   capacity of every list.
 - One encode skeleton instead of three; a fourth representation is an implementation, not a template branch.
 - A relay re-encodes a received view through the same interface it decoded into (ADR 0049), with no builder between.
-- Generated code grows by one trait, one measure fold and one parts struct per codec. The encode is generic, so a
-  binary pays for the instantiations it uses; the byte-exact `.text` gate sees the difference and the step that lands
-  the interface measures it before it is called done.
+- Generated code grows by one trait and one parts struct per codec, and loses the three per-flavour encode bodies.
+  The encode is generic, so a binary pays for the instantiations it uses; the byte-exact `.text` gate sees the
+  difference and the step that lands the interface measures it before it is called done.
+- `encode_to_vec` of every Rust codec is a `Result` (§2). A consumer that called it as a `Vec` adds one `?` or
+  `.expect`, once, and never again when a codec later gains a bound.
 - A source is total over the grammar: a field added to a codec is a new required item of its trait, so a hand-written
   source cannot silently omit it, which a builder with a default can. That is the price of the interface being the
   grammar, and it is paid at compile time.
@@ -227,8 +264,11 @@ their bytes equal.
    derived), the table of it for a consumer, and a test that it agrees with the declarations in the documents. No
    output changes. **Landed 2026-10-27** (`codec_roles.rs`, `sce-codegen codec-roles`); its agreement with what the
    decoder computes is held by step 2.
-2. `XSource`, `measure_source`, `encode_source`, and the three representations as implementations; no golden moves;
-   the conformance cases of §5 laws 1 to 3 with a hand-written source of each shape.
+2. `XSource`, `encode_source`, and the three representations as implementations; the legacy three encode flavours
+   removed; the conformance cases of §5 laws 1 to 3 and 5 with a hand-written source of each shape, and a sweep over
+   every document-given seed. **Landed 2026-10-27** on the Rust backend (`rust_source.rs`, the generated goldens
+   under `tests/forge/expected/` regenerated once, `backends/rust/mesh/src/generated/` regenerated and unchanged on a
+   second pass). The measure fold of the proposal became the counting run of §3.
 3. `XParts`, and the consumer's first use of it (watching-zenoh's send stack), measured against the 6,480-byte peak.
 4. The interface on the other five backends, in their idioms, held to byte parity (law 4).
 
