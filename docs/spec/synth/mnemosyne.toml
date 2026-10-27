@@ -170,6 +170,9 @@ scan_exclusions = [
     # The reference host of the standard host features (`sce-rust-host-features`).
     # Measured 2026-10-16 over its 7 Rust sources: no citation of any ledger.
     "backends/rust/host-features/",
+    # The feature-set conformance crate (ADR 0057). Measured 2026-10-27 over its 3 Rust
+    # sources: no citation of any ledger.
+    "backends/rust/feature-conformance/",
     # What a host of a shared list keeps that its machines cannot (`sce-rust-trust`).
     # Measured 2026-10-17 over its 9 Rust sources: no citation of any ledger.
     "backends/rust/trust/",
