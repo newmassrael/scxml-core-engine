@@ -51,6 +51,17 @@ pub(super) fn render(input: &Input<'_>) -> Result<String, Unsupported> {
     Ok(plan.text())
 }
 
+/// One arm of a codec's variant.
+struct Arm {
+    /// The enum variant that holds it: the body codec's name, or `Default`.
+    variant_name: String,
+    /// The type parameter of `{Codec}Body` that is the source of its body.
+    generic: String,
+    child: Child,
+    /// The tag that names it; `None` for the default arm.
+    value: Option<u64>,
+}
+
 /// The imported codec a list or an embedded body holds.
 struct Child {
     /// The codec's type, which the wire is written through (`Type::write_source`).
@@ -78,10 +89,8 @@ pub(crate) fn supported_with(
     let roles = codec_roles::classify(m, &[]);
     // The answer for each codec the model holds, asked once and before the
     // check, which cannot take a closure that borrows its caller's walk.
-    let known: std::collections::BTreeMap<&str, bool> = m
-        .fields
-        .iter()
-        .filter_map(child_alias)
+    let known: std::collections::BTreeMap<&str, bool> = child_aliases(m)
+        .into_iter()
         .map(|alias| (alias, import_has_source(alias)))
         .collect();
     check(m, &roles, &|alias| {
@@ -99,20 +108,13 @@ fn check(
     if m.encoding != CodecEncoding::Positional {
         return no("a codec of another encoding writes its own encode");
     }
-    if m.variant.is_some() {
-        return no("a variant");
-    }
     if !m.flag_inputs.is_empty() {
         return no("a flag-input");
     }
-    for field in &m.fields {
-        let Some(alias) = child_alias(field) else {
-            continue;
-        };
+    for alias in child_aliases(m) {
         if !import_has_source(alias) {
             return no(format!(
-                "`{}`: the codec `{alias}` it holds has no source interface",
-                field.id
+                "the codec `{alias}` it holds has no source interface"
             ));
         }
     }
@@ -122,7 +124,8 @@ fn check(
                 Derivation::LengthOf { .. }
                 | Derivation::PresenceOf { .. }
                 | Derivation::CountOf { .. }
-                | Derivation::EncodedLengthOf { .. } => {}
+                | Derivation::EncodedLengthOf { .. }
+                | Derivation::VariantTag { .. } => {}
                 other => return no(format!("`{id}` is derived by {other}")),
             }
         }
@@ -159,6 +162,22 @@ fn check(
     Ok(())
 }
 
+/// Every import alias of a codec a model holds: in a list, an embedded body or
+/// an arm of its variant.
+fn child_aliases(m: &CodecModel) -> Vec<&str> {
+    let mut aliases: Vec<&str> = m.fields.iter().filter_map(child_alias).collect();
+    if let Some(variant) = &m.variant {
+        aliases.extend(
+            variant
+                .arms
+                .iter()
+                .chain(variant.default_arm.iter())
+                .map(|arm| arm.body_alias.as_str()),
+        );
+    }
+    aliases
+}
+
 /// The import alias of the codec a list or an embedded body holds.
 fn child_alias(field: &CodecField) -> Option<&str> {
     if field.is_repeat() {
@@ -192,7 +211,11 @@ impl<'a> Plan<'a> {
     /// The imported codec a list or an embedded body holds, as the type it is
     /// written through and the trait it is read through.
     fn child(&self, field: &CodecField) -> Option<Child> {
-        let alias = child_alias(field)?;
+        self.child_of(child_alias(field)?)
+    }
+
+    /// The imported codec named by `alias`.
+    fn child_of(&self, alias: &str) -> Option<Child> {
         let import = self.input.imports.iter().find(|i| i.alias == alias)?;
         Some(Child {
             type_name: import.type_name.clone(),
@@ -200,10 +223,11 @@ impl<'a> Plan<'a> {
         })
     }
 
-    /// Whether the codec holds a list or an embedded body: a refusal that comes
-    /// from inside one has to be found before the first byte is written.
+    /// Whether the codec holds a list, an embedded body or a variant: a refusal
+    /// that comes from inside one has to be found before the first byte is
+    /// written.
     fn has_children(&self) -> bool {
-        self.m().fields.iter().any(|f| child_alias(f).is_some())
+        !child_aliases(self.m()).is_empty()
     }
 
     fn m(&self) -> &CodecModel {
@@ -284,8 +308,121 @@ impl<'a> Plan<'a> {
 
     // ── the interface ────────────────────────────────────────────────
 
+    // ── the variant ──────────────────────────────────────────────────
+
+    /// `{Codec}VariantSource`: the arm a value holds, as the interface says it.
+    fn body_enum(&self) -> String {
+        format!("{}VariantSource", self.name())
+    }
+
+    /// The arms of the variant: those it enumerates, then the default.
+    fn arms(&self) -> Vec<Arm> {
+        let Some(variant) = &self.m().variant else {
+            return Vec::new();
+        };
+        let mut arms: Vec<Arm> = variant
+            .arms
+            .iter()
+            .enumerate()
+            .filter_map(|(i, arm)| {
+                Some(Arm {
+                    variant_name: filters::to_pascal_case(arm.body_alias.clone()),
+                    generic: format!("A{i}"),
+                    child: self.child_of(&arm.body_alias)?,
+                    value: Some(arm.value),
+                })
+            })
+            .collect();
+        if let Some(default) = &variant.default_arm {
+            if let Some(child) = self.child_of(&default.body_alias) {
+                arms.push(Arm {
+                    variant_name: "Default".to_string(),
+                    generic: "D".to_string(),
+                    child,
+                    value: None,
+                });
+            }
+        }
+        arms
+    }
+
+    /// The type a tag takes: its carrier's, or the narrowest unsigned type that
+    /// holds the bit-range it is read from.
+    fn tag_type(&self) -> SceType {
+        let Some(variant) = &self.m().variant else {
+            return SceType::Uint8;
+        };
+        let flag_def = match (&variant.peek_byte, &variant.tag_flag) {
+            (Some(peek), Some(flag)) => peek.flags.iter().find(|f| &f.name == flag),
+            (None, Some(flag)) => variant
+                .tag_field
+                .as_ref()
+                .and_then(|id| self.m().fields.iter().find(|f| &f.id == id))
+                .and_then(|carrier| carrier.flags.iter().find(|f| &f.name == flag)),
+            _ => None,
+        };
+        match flag_def {
+            Some(def) => match def.width.max(1) {
+                0..=8 => SceType::Uint8,
+                9..=16 => SceType::Uint16,
+                17..=32 => SceType::Uint32,
+                _ => SceType::Uint64,
+            },
+            None => variant
+                .tag_field
+                .as_ref()
+                .and_then(|id| self.m().fields.iter().find(|f| &f.id == id))
+                .map_or(SceType::Uint8, |carrier| carrier.sce_type.clone()),
+        }
+    }
+
+    /// What the accessor of the variant returns: the enum, with the source of
+    /// each arm's body as a type of its own.
+    fn variant_type(&self) -> String {
+        let args: Vec<String> = self
+            .arms()
+            .iter()
+            .map(|arm| format!("impl {}", arm.child.trait_path))
+            .collect();
+        format!("{}<'_, {}>", self.body_enum(), args.join(", "))
+    }
+
+    fn body_enum_definition(&self) -> String {
+        let arms = self.arms();
+        if arms.is_empty() {
+            return String::new();
+        }
+        let generics: Vec<String> = arms
+            .iter()
+            .map(|arm| format!("{}: ?Sized", arm.generic))
+            .collect();
+        let tag = self.l().type_name(&self.tag_type()).to_string();
+        let mut variants = String::new();
+        for arm in &arms {
+            if arm.value.is_some() {
+                variants.push_str(&format!("    {}(&'s {}),\n", arm.variant_name, arm.generic));
+            } else {
+                variants.push_str(&format!(
+                    "    Default {{ tag: {tag}, body: &'s {} }},\n",
+                    arm.generic
+                ));
+            }
+        }
+        format!(
+            "/// The arm of `{name}`'s variant a value holds, each arm's body as the\n\
+             /// source it says. The tag is not among them: `{name}` derives it from\n\
+             /// the arm, as it derives a length, and a default arm presents the tag\n\
+             /// it could not name.\n\
+             pub enum {enum_name}<'s, {generics}> {{\n{variants}}}\n\n",
+            name = self.name(),
+            enum_name = self.body_enum(),
+            generics = generics.join(", "),
+        )
+    }
+
     fn text(&self) -> String {
         let mut out = String::new();
+        out.push_str(&self.body_enum_definition());
         out.push_str(&self.trait_definition());
         out.push_str(&self.reference_impl());
         out.push_str(&self.builder_impl());
@@ -304,6 +441,12 @@ impl<'a> Plan<'a> {
                 id = field.id,
                 accessor = self.accessor(field),
                 ty = self.accessor_type(field),
+            ));
+        }
+        if self.m().variant.is_some() {
+            items.push_str(&format!(
+                "    /// The arm of the variant this value holds.\n    fn body(&self) -> {};\n",
+                self.variant_type()
             ));
         }
         format!(
@@ -329,6 +472,12 @@ impl<'a> Plan<'a> {
             items.push_str(&format!(
                 "    fn {accessor}(&self) -> {ty} {{\n        (**self).{accessor}()\n    }}\n",
                 ty = self.accessor_type(field),
+            ));
+        }
+        if self.m().variant.is_some() {
+            items.push_str(&format!(
+                "    fn body(&self) -> {} {{\n        (**self).body()\n    }}\n",
+                self.variant_type()
             ));
         }
         format!(
@@ -365,6 +514,28 @@ impl<'a> Plan<'a> {
             items.push_str(&format!(
                 "    fn {accessor}(&self) -> {ty} {{\n        {read}\n    }}\n",
                 ty = self.accessor_type(field),
+            ));
+        }
+        if self.m().variant.is_some() {
+            // The arm the value holds, each body lent.
+            let enum_name = self.body_enum();
+            let variant = format!("{}Variant", self.name());
+            let mut arms = String::new();
+            for arm in self.arms() {
+                if arm.value.is_some() {
+                    arms.push_str(&format!(
+                        "            {variant}::{name}(_b) => {enum_name}::{name}(_b),\n",
+                        name = arm.variant_name,
+                    ));
+                } else {
+                    arms.push_str(&format!(
+                        "            {variant}::Default {{ tag, body }} => {enum_name}::Default {{ tag: *tag, body }},\n",
+                    ));
+                }
+            }
+            items.push_str(&format!(
+                "    fn body(&self) -> {ty} {{\n        match &self.body {{\n{arms}        }}\n    }}\n",
+                ty = self.variant_type(),
             ));
         }
         format!(
@@ -416,7 +587,7 @@ impl<'a> Plan<'a> {
     fn write_body(&self) -> String {
         let mut lines: Vec<String> = Vec::new();
         let derived = self.derivations(&mut lines);
-        if self.m().fields.is_empty() {
+        if self.m().fields.is_empty() && self.m().variant.is_none() {
             // An empty body: the surrounding wire-protocol header alone marks the
             // codec, and nothing is read or written.
             lines.push("let _ = (src, w);".to_string());
@@ -430,8 +601,69 @@ impl<'a> Plan<'a> {
                 self.streamed(field, &derived, &mut lines);
             }
         }
+        self.write_variant(&mut lines);
         lines.push("Ok(())".to_string());
         indent(&lines, 8)
+    }
+
+    /// The suffix: the body of the arm the value holds.
+    fn write_variant(&self, lines: &mut Vec<String>) {
+        if self.m().variant.is_none() {
+            return;
+        }
+        let enum_name = self.body_enum();
+        lines.push("match src.body() {".to_string());
+        for arm in self.arms() {
+            let pattern = if arm.value.is_some() {
+                format!("{enum_name}::{}(_b)", arm.variant_name)
+            } else {
+                format!("{enum_name}::Default {{ body: _b, .. }}")
+            };
+            lines.push(format!(
+                "    {pattern} => {}::write_source(_b, w)?,",
+                arm.child.type_name
+            ));
+        }
+        lines.push("}".to_string());
+    }
+
+    /// The tag the active arm names, which the encode writes where the codec
+    /// holds it. A default arm names none, so it presents the tag it holds.
+    fn derive_variant_tag(&self, id: &ElementId, lines: &mut Vec<String>, derived: &mut Derived) {
+        let enum_name = self.body_enum();
+        let ty = self.l().type_name(&self.tag_type()).to_string();
+        let local = self.local("_d_", id);
+        let mut arms: Vec<String> = Vec::new();
+        for arm in self.arms() {
+            match arm.value {
+                Some(value) => arms.push(format!(
+                    "    {enum_name}::{}(_) => {value},",
+                    arm.variant_name
+                )),
+                None => arms.push(format!("    {enum_name}::Default {{ tag, .. }} => tag,")),
+            }
+        }
+        lines.push(format!(
+            "let {local}: {ty} = match src.body() {{\n{}\n}};",
+            arms.join("\n")
+        ));
+        match id {
+            ElementId::Field(name) => {
+                derived.fields.insert(name.clone(), local);
+            }
+            ElementId::Flag { field, flag } => {
+                derived
+                    .flags
+                    .entry(field.clone())
+                    .or_default()
+                    .push(DerivedFlag {
+                        flag: flag.clone(),
+                        value: local,
+                        kind: FlagValue::Number,
+                    });
+            }
+            ElementId::Variant => unreachable!("a tag is not the variant"),
+        }
     }
 
     // ── derived values ───────────────────────────────────────────────
@@ -452,6 +684,9 @@ impl<'a> Plan<'a> {
                     }
                     Derivation::EncodedLengthOf { bodies } => {
                         self.derive_encoded_length(id, bodies, lines, &mut derived)
+                    }
+                    Derivation::VariantTag { .. } => {
+                        self.derive_variant_tag(id, lines, &mut derived)
                     }
                     Derivation::PresenceOf { gated } => {
                         self.derive_presence(id, gated, lines, &mut derived)
