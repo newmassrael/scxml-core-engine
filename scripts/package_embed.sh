@@ -96,6 +96,15 @@ for dir in ${INCLUDE_DIRS}; do
     fi
 done
 
+# The Forge C++ runtime, which the C++ that sce-codegen writes includes
+# (<sce/forge/algorithm.h>, <sce/forge/optional.h>, <sce/forge/span.h>, ...).
+# The whole directory, as the top-level CMakeLists.txt installs it, so a
+# vendored tree compiles generated code as an installed one does. It lands
+# under include/, which sce_core already puts on the include path (the
+# embed CMakeLists.txt and the Bazel rules alike).
+mkdir -p "${OUTPUT_DIR}/include/sce/forge"
+cp "${SCE_ROOT}"/backends/cpp/forge-runtime/include/sce/forge/*.h "${OUTPUT_DIR}/include/sce/forge/"
+
 # ============================================================================
 # 3. Sources — files listed in SCE_BASE_SOURCES + SCE_BASE_SPDLOG_SOURCES (SSOT)
 # ============================================================================

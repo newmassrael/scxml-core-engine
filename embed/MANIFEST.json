@@ -1,9 +1,9 @@
 {
   "clang_version": "Ubuntu clang version 19.1.7 (++20250804090312+cd708029e0b2-1~exp1~20250804210325.79)",
-  "embed_version": "0d68028e0c",
+  "embed_version": "c96faefcd3",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 342,
+  "symbol_count": 455,
   "symbols": [
     {
       "header": "GuardUtils.h",
@@ -367,6 +367,57 @@
       "kind": "function",
       "name": "SCE::Latin1Bytes::textOf",
       "signature": "std::string SCE::Latin1Bytes::textOf(const std::vector<uint8_t> &)"
+    },
+    {
+      "header": "common/LogFormat.h",
+      "kind": "function",
+      "name": "SCE::detail::formatLog<T>",
+      "signature": "std::string SCE::detail::formatLog<T>(const char *, const Args &...)"
+    },
+    {
+      "header": "common/LogFormat.h",
+      "kind": "function",
+      "name": "SCE::detail::writeLogArgument<T>",
+      "signature": "void SCE::detail::writeLogArgument<T>(std::ostream &, const T &)"
+    },
+    {
+      "header": "common/LogFormat.h",
+      "kind": "function",
+      "name": "SCE::detail::writeLogField<T>",
+      "signature": "const char * SCE::detail::writeLogField<T>(std::ostream &, const char *, const T &)"
+    },
+    {
+      "header": "common/LogFormat.h",
+      "kind": "function",
+      "name": "SCE::detail::writeLogText",
+      "signature": "const char * SCE::detail::writeLogText(std::ostream &, const char *, bool)"
+    },
+    {
+      "header": "common/LogSink.h",
+      "kind": "function",
+      "name": "SCE::detail::logEmit",
+      "signature": "void SCE::detail::logEmit(LogLevel, std::string, const SCE::source_location &)"
+    },
+    {
+      "header": "common/LogSink.h",
+      "kind": "function",
+      "name": "SCE::detail::logWanted",
+      "signature": "bool SCE::detail::logWanted(LogLevel) noexcept"
+    },
+    {
+      "header": "common/LogSink.h",
+      "kind": "function",
+      "name": "SCE::installLogSink",
+      "signature": "void SCE::installLogSink(const LogSink *) noexcept"
+    },
+    {
+      "header": "common/LogSink.h",
+      "kind": "struct",
+      "members": [
+        "field bool (*)(LogLevel) noexcept wanted",
+        "field void (*)(LogLevel, std::string, const SCE::source_location &) emit"
+      ],
+      "name": "SCE::LogSink"
     },
     {
       "header": "common/Logger.h",
@@ -1200,12 +1251,6 @@
       "kind": "class",
       "members": [],
       "name": "SCE::Core::InvokeHelper"
-    },
-    {
-      "header": "core/LogMacros.h",
-      "kind": "function",
-      "name": "SCE::detail::log_noop<T>",
-      "signature": "void SCE::detail::log_noop<T>(Args &&...) noexcept"
     },
     {
       "header": "core/MicrostepAlgorithms.h",
@@ -2407,6 +2452,757 @@
       "kind": "class",
       "members": [],
       "name": "SCE::TypeRegistry"
+    },
+    {
+      "header": "sce/forge/ProcedureServiceTypes.h",
+      "kind": "struct",
+      "members": [
+        "field bool completed",
+        "field std::map<std::string, std::string> done_data",
+        "field std::string final_state",
+        "method ProcedureRunResult &(ProcedureRunResult &&) operator=",
+        "method ProcedureRunResult &(const ProcedureRunResult &) operator=",
+        "method void () noexcept ProcedureRunResult",
+        "method void () noexcept ~ProcedureRunResult",
+        "method void (ProcedureRunResult &&) noexcept ProcedureRunResult",
+        "method void (const ProcedureRunResult &) ProcedureRunResult"
+      ],
+      "name": "SCE::Forge::ProcedureRunResult"
+    },
+    {
+      "header": "sce/forge/ProcedureServiceTypes.h",
+      "kind": "struct",
+      "members": [
+        "field bool completed",
+        "field std::map<std::string, std::string> done_data",
+        "field std::string final_state",
+        "method ProcedureRunResult &(ProcedureRunResult &&) operator=",
+        "method ProcedureRunResult &(const ProcedureRunResult &) operator=",
+        "method void () ~ProcedureRunResult",
+        "method void (ProcedureRunResult &&) ProcedureRunResult",
+        "method void (const ProcedureRunResult &) ProcedureRunResult"
+      ],
+      "name": "SCE::Forge::ProcedureRunResult"
+    },
+    {
+      "header": "sce/forge/ProcedureServiceTypes.h",
+      "kind": "struct",
+      "members": [
+        "field bool success",
+        "field std::string data",
+        "method ProcedureServiceResponse &(ProcedureServiceResponse &&) operator=",
+        "method ProcedureServiceResponse &(const ProcedureServiceResponse &) operator=",
+        "method void () ~ProcedureServiceResponse",
+        "method void (ProcedureServiceResponse &&) ProcedureServiceResponse",
+        "method void (const ProcedureServiceResponse &) ProcedureServiceResponse"
+      ],
+      "name": "SCE::Forge::ProcedureServiceResponse"
+    },
+    {
+      "header": "sce/forge/ProcedureServiceTypes.h",
+      "kind": "struct",
+      "members": [
+        "field std::optional<std::string> addr",
+        "field std::optional<std::string> subfunc",
+        "field std::optional<std::vector<std::uint8_t>> payload",
+        "field std::string service",
+        "method ProcedureServiceRequest &(ProcedureServiceRequest &&) operator=",
+        "method ProcedureServiceRequest &(const ProcedureServiceRequest &) operator=",
+        "method void () ~ProcedureServiceRequest",
+        "method void (ProcedureServiceRequest &&) ProcedureServiceRequest",
+        "method void (const ProcedureServiceRequest &) ProcedureServiceRequest"
+      ],
+      "name": "SCE::Forge::ProcedureServiceRequest"
+    },
+    {
+      "header": "sce/forge/ProcedureServiceTypes.h",
+      "kind": "typedef",
+      "name": "SCE::Forge::ProcedureServiceHandler",
+      "type": "std::function<ProcedureServiceResponse (const ProcedureServiceRequest &)>"
+    },
+    {
+      "header": "sce/forge/ProcedureStateMachine.h",
+      "kind": "function",
+      "name": "SCE::Forge::doneDataValue",
+      "signature": "std::string SCE::Forge::doneDataValue(const char *)"
+    },
+    {
+      "header": "sce/forge/ProcedureStateMachine.h",
+      "kind": "function",
+      "name": "SCE::Forge::doneDataValue",
+      "signature": "std::string SCE::Forge::doneDataValue(std::string)"
+    },
+    {
+      "header": "sce/forge/ProcedureStateMachine.h",
+      "kind": "function",
+      "name": "SCE::Forge::doneDataValue<T>",
+      "signature": "std::string SCE::Forge::doneDataValue<T>(T)"
+    },
+    {
+      "header": "sce/forge/ProcedureStateMachine.h",
+      "kind": "function",
+      "name": "SCE::Forge::run_procedure<T>",
+      "signature": "ProcedureRunResult SCE::Forge::run_procedure<T>(Policy &)"
+    },
+    {
+      "header": "sce/forge/algorithm.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::Forge::AlgorithmFailure"
+    },
+    {
+      "header": "sce/forge/algorithm.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::Forge::AlgorithmResult<T>"
+    },
+    {
+      "header": "sce/forge/algorithm.h",
+      "kind": "enum",
+      "name": "SCE::Forge::AlgorithmError",
+      "values": [
+        "Overflow",
+        "DivideByZero",
+        "CapacityExceeded",
+        "Precondition",
+        "OutOfRange"
+      ]
+    },
+    {
+      "header": "sce/forge/algorithm.h",
+      "kind": "function",
+      "name": "SCE::Forge::Checked::Detail::fit<T>",
+      "signature": "T SCE::Forge::Checked::Detail::fit<T>(AlgorithmFailure &, std::int64_t) noexcept"
+    },
+    {
+      "header": "sce/forge/algorithm.h",
+      "kind": "function",
+      "name": "SCE::Forge::Checked::add<T>",
+      "signature": "T SCE::Forge::Checked::add<T>(AlgorithmFailure &, T, T) noexcept"
+    },
+    {
+      "header": "sce/forge/algorithm.h",
+      "kind": "function",
+      "name": "SCE::Forge::Checked::at<T>",
+      "signature": "auto SCE::Forge::Checked::at<T>(AlgorithmFailure &, const C &, I) noexcept -> std::remove_cv_t<std::remove_reference_t<decltype(c[0])>>"
+    },
+    {
+      "header": "sce/forge/algorithm.h",
+      "kind": "function",
+      "name": "SCE::Forge::Checked::bounded<T>",
+      "signature": "S SCE::Forge::Checked::bounded<T>(AlgorithmFailure &, S, std::uint32_t)"
+    },
+    {
+      "header": "sce/forge/algorithm.h",
+      "kind": "function",
+      "name": "SCE::Forge::Checked::div<T>",
+      "signature": "T SCE::Forge::Checked::div<T>(AlgorithmFailure &, T, T) noexcept"
+    },
+    {
+      "header": "sce/forge/algorithm.h",
+      "kind": "function",
+      "name": "SCE::Forge::Checked::found<T>",
+      "signature": "AlgorithmResult<T> SCE::Forge::Checked::found<T>(const std::optional<T> &)"
+    },
+    {
+      "header": "sce/forge/algorithm.h",
+      "kind": "function",
+      "name": "SCE::Forge::Checked::mul<T>",
+      "signature": "T SCE::Forge::Checked::mul<T>(AlgorithmFailure &, T, T) noexcept"
+    },
+    {
+      "header": "sce/forge/algorithm.h",
+      "kind": "function",
+      "name": "SCE::Forge::Checked::narrow<T>",
+      "signature": "T SCE::Forge::Checked::narrow<T>(AlgorithmFailure &, S) noexcept"
+    },
+    {
+      "header": "sce/forge/algorithm.h",
+      "kind": "function",
+      "name": "SCE::Forge::Checked::neg<T>",
+      "signature": "T SCE::Forge::Checked::neg<T>(AlgorithmFailure &, T) noexcept"
+    },
+    {
+      "header": "sce/forge/algorithm.h",
+      "kind": "function",
+      "name": "SCE::Forge::Checked::rem<T>",
+      "signature": "T SCE::Forge::Checked::rem<T>(AlgorithmFailure &, T, T) noexcept"
+    },
+    {
+      "header": "sce/forge/algorithm.h",
+      "kind": "function",
+      "name": "SCE::Forge::Checked::sub<T>",
+      "signature": "T SCE::Forge::Checked::sub<T>(AlgorithmFailure &, T, T) noexcept"
+    },
+    {
+      "header": "sce/forge/algorithm.h",
+      "kind": "function",
+      "name": "SCE::Forge::Checked::take<T>",
+      "signature": "T SCE::Forge::Checked::take<T>(AlgorithmFailure &, const AlgorithmResult<T> &) noexcept"
+    },
+    {
+      "header": "sce/forge/algorithm.h",
+      "kind": "function",
+      "name": "SCE::Forge::contractName",
+      "signature": "const char * SCE::Forge::contractName(AlgorithmError) noexcept"
+    },
+    {
+      "header": "sce/forge/cbor.h",
+      "kind": "function",
+      "name": "SCE::Forge::Cbor::detail::expect",
+      "signature": "std::optional<std::uint64_t> SCE::Forge::Cbor::detail::expect(SceCursor &, std::uint8_t) noexcept"
+    },
+    {
+      "header": "sce/forge/cbor.h",
+      "kind": "function",
+      "name": "SCE::Forge::Cbor::detail::read_be",
+      "signature": "std::optional<std::uint64_t> SCE::Forge::Cbor::detail::read_be(SceCursor &, std::size_t) noexcept"
+    },
+    {
+      "header": "sce/forge/cbor.h",
+      "kind": "function",
+      "name": "SCE::Forge::Cbor::detail::read_payload",
+      "signature": "const std::uint8_t * SCE::Forge::Cbor::detail::read_payload(SceCursor &, std::uint64_t) noexcept"
+    },
+    {
+      "header": "sce/forge/cbor.h",
+      "kind": "function",
+      "name": "SCE::Forge::Cbor::detail::skip_at",
+      "signature": "bool SCE::Forge::Cbor::detail::skip_at(SceCursor &, std::uint32_t) noexcept"
+    },
+    {
+      "header": "sce/forge/cbor.h",
+      "kind": "function",
+      "name": "SCE::Forge::Cbor::read_bool",
+      "signature": "std::optional<bool> SCE::Forge::Cbor::read_bool(SceCursor &) noexcept"
+    },
+    {
+      "header": "sce/forge/cbor.h",
+      "kind": "function",
+      "name": "SCE::Forge::Cbor::read_bytes",
+      "signature": "std::optional<std::vector<std::uint8_t>> SCE::Forge::Cbor::read_bytes(SceCursor &, std::optional<std::uint64_t>) noexcept"
+    },
+    {
+      "header": "sce/forge/cbor.h",
+      "kind": "function",
+      "name": "SCE::Forge::Cbor::read_bytes_exact",
+      "signature": "std::optional<std::vector<std::uint8_t>> SCE::Forge::Cbor::read_bytes_exact(SceCursor &, std::uint64_t) noexcept"
+    },
+    {
+      "header": "sce/forge/cbor.h",
+      "kind": "function",
+      "name": "SCE::Forge::Cbor::read_head",
+      "signature": "std::optional<Head> SCE::Forge::Cbor::read_head(SceCursor &) noexcept"
+    },
+    {
+      "header": "sce/forge/cbor.h",
+      "kind": "function",
+      "name": "SCE::Forge::Cbor::read_map_len",
+      "signature": "std::optional<std::uint64_t> SCE::Forge::Cbor::read_map_len(SceCursor &) noexcept"
+    },
+    {
+      "header": "sce/forge/cbor.h",
+      "kind": "function",
+      "name": "SCE::Forge::Cbor::read_text",
+      "signature": "std::optional<std::string> SCE::Forge::Cbor::read_text(SceCursor &, std::optional<std::uint64_t>) noexcept"
+    },
+    {
+      "header": "sce/forge/cbor.h",
+      "kind": "function",
+      "name": "SCE::Forge::Cbor::read_uint",
+      "signature": "std::optional<std::uint64_t> SCE::Forge::Cbor::read_uint(SceCursor &) noexcept"
+    },
+    {
+      "header": "sce/forge/cbor.h",
+      "kind": "function",
+      "name": "SCE::Forge::Cbor::read_uint_upto",
+      "signature": "std::optional<std::uint64_t> SCE::Forge::Cbor::read_uint_upto(SceCursor &, std::uint64_t) noexcept"
+    },
+    {
+      "header": "sce/forge/cbor.h",
+      "kind": "function",
+      "name": "SCE::Forge::Cbor::skip",
+      "signature": "bool SCE::Forge::Cbor::skip(SceCursor &) noexcept"
+    },
+    {
+      "header": "sce/forge/cbor.h",
+      "kind": "function",
+      "name": "SCE::Forge::Cbor::write_bool",
+      "signature": "std::optional<CodecError> SCE::Forge::Cbor::write_bool(SceSink &, bool) noexcept"
+    },
+    {
+      "header": "sce/forge/cbor.h",
+      "kind": "function",
+      "name": "SCE::Forge::Cbor::write_bytes",
+      "signature": "std::optional<CodecError> SCE::Forge::Cbor::write_bytes(SceSink &, const std::vector<std::uint8_t> &) noexcept"
+    },
+    {
+      "header": "sce/forge/cbor.h",
+      "kind": "function",
+      "name": "SCE::Forge::Cbor::write_head",
+      "signature": "std::optional<CodecError> SCE::Forge::Cbor::write_head(SceSink &, std::uint8_t, std::uint64_t) noexcept"
+    },
+    {
+      "header": "sce/forge/cbor.h",
+      "kind": "function",
+      "name": "SCE::Forge::Cbor::write_map_head",
+      "signature": "std::optional<CodecError> SCE::Forge::Cbor::write_map_head(SceSink &, std::uint64_t) noexcept"
+    },
+    {
+      "header": "sce/forge/cbor.h",
+      "kind": "function",
+      "name": "SCE::Forge::Cbor::write_text",
+      "signature": "std::optional<CodecError> SCE::Forge::Cbor::write_text(SceSink &, const std::string &) noexcept"
+    },
+    {
+      "header": "sce/forge/cbor.h",
+      "kind": "function",
+      "name": "SCE::Forge::Cbor::write_uint",
+      "signature": "std::optional<CodecError> SCE::Forge::Cbor::write_uint(SceSink &, std::uint64_t) noexcept"
+    },
+    {
+      "header": "sce/forge/cbor.h",
+      "kind": "struct",
+      "members": [
+        "field std::uint64_t value",
+        "field std::uint8_t major",
+        "method Head &(Head &&) noexcept operator=",
+        "method Head &(const Head &) noexcept operator=",
+        "method void () noexcept Head",
+        "method void () noexcept ~Head",
+        "method void (Head &&) noexcept Head",
+        "method void (const Head &) noexcept Head"
+      ],
+      "name": "SCE::Forge::Cbor::Head"
+    },
+    {
+      "header": "sce/forge/codec.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::Forge::SceCursor"
+    },
+    {
+      "header": "sce/forge/codec.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::Forge::SceSink"
+    },
+    {
+      "header": "sce/forge/codec.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::Forge::SpanSink"
+    },
+    {
+      "header": "sce/forge/codec.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::Forge::VectorSink"
+    },
+    {
+      "header": "sce/forge/codec.h",
+      "kind": "enum",
+      "name": "SCE::Forge::CodecError",
+      "values": [
+        "NeedMoreBytes",
+        "VleWidthOverflow",
+        "BufferOverflow",
+        "CborOutOfRange",
+        "CborWrongLength",
+        "PresentIfMismatch",
+        "LineMalformed",
+        "LineRequiredMissing",
+        "LineTooMany",
+        "LineTooLong",
+        "LineBadEscape",
+        "LineBadValue"
+      ]
+    },
+    {
+      "header": "sce/forge/codec.h",
+      "kind": "function",
+      "name": "SCE::Forge::is_valid_utf8",
+      "signature": "bool SCE::Forge::is_valid_utf8(const std::uint8_t *, std::size_t) noexcept"
+    },
+    {
+      "header": "sce/forge/content_line.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::Forge::ContentLine::Property"
+    },
+    {
+      "header": "sce/forge/content_line.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::Forge::ContentLine::Reader"
+    },
+    {
+      "header": "sce/forge/content_line.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::Forge::ContentLine::Writer"
+    },
+    {
+      "header": "sce/forge/content_line.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::Forge::ContentLine::detail::Scan"
+    },
+    {
+      "header": "sce/forge/content_line.h",
+      "kind": "function",
+      "name": "SCE::Forge::ContentLine::detail::carrier_of",
+      "signature": "std::optional<std::uint64_t> SCE::Forge::ContentLine::detail::carrier_of(std::string_view, const EnumTexts &) noexcept"
+    },
+    {
+      "header": "sce/forge/content_line.h",
+      "kind": "function",
+      "name": "SCE::Forge::ContentLine::detail::head_of",
+      "signature": "std::optional<Head> SCE::Forge::ContentLine::detail::head_of(const std::uint8_t *, std::size_t, std::size_t) noexcept"
+    },
+    {
+      "header": "sce/forge/content_line.h",
+      "kind": "function",
+      "name": "SCE::Forge::ContentLine::detail::is_control",
+      "signature": "bool SCE::Forge::ContentLine::detail::is_control(int) noexcept"
+    },
+    {
+      "header": "sce/forge/content_line.h",
+      "kind": "function",
+      "name": "SCE::Forge::ContentLine::detail::is_name_byte",
+      "signature": "bool SCE::Forge::ContentLine::detail::is_name_byte(int) noexcept"
+    },
+    {
+      "header": "sce/forge/content_line.h",
+      "kind": "function",
+      "name": "SCE::Forge::ContentLine::detail::longest_text",
+      "signature": "std::size_t SCE::Forge::ContentLine::detail::longest_text(const EnumTexts &) noexcept"
+    },
+    {
+      "header": "sce/forge/content_line.h",
+      "kind": "function",
+      "name": "SCE::Forge::ContentLine::detail::lower",
+      "signature": "int SCE::Forge::ContentLine::detail::lower(int) noexcept"
+    },
+    {
+      "header": "sce/forge/content_line.h",
+      "kind": "function",
+      "name": "SCE::Forge::ContentLine::detail::unfolded_eq",
+      "signature": "bool SCE::Forge::ContentLine::detail::unfolded_eq(const std::uint8_t *, std::size_t, std::size_t, std::string_view) noexcept"
+    },
+    {
+      "header": "sce/forge/content_line.h",
+      "kind": "struct",
+      "members": [
+        "field bool terminated",
+        "field std::size_t from",
+        "field std::size_t to",
+        "method RawLine &(RawLine &&) noexcept operator=",
+        "method RawLine &(const RawLine &) noexcept operator=",
+        "method void () noexcept RawLine",
+        "method void () noexcept ~RawLine",
+        "method void (RawLine &&) noexcept RawLine",
+        "method void (const RawLine &) noexcept RawLine"
+      ],
+      "name": "SCE::Forge::ContentLine::detail::RawLine"
+    },
+    {
+      "header": "sce/forge/content_line.h",
+      "kind": "struct",
+      "members": [
+        "field const EnumText * rows",
+        "field std::size_t count"
+      ],
+      "name": "SCE::Forge::ContentLine::EnumTexts"
+    },
+    {
+      "header": "sce/forge/content_line.h",
+      "kind": "struct",
+      "members": [
+        "field const char * text",
+        "field std::uint64_t value"
+      ],
+      "name": "SCE::Forge::ContentLine::EnumText"
+    },
+    {
+      "header": "sce/forge/content_line.h",
+      "kind": "struct",
+      "members": [
+        "field int separator",
+        "field std::size_t name_end",
+        "field std::size_t rest_start",
+        "method Head &(Head &&) noexcept operator=",
+        "method Head &(const Head &) noexcept operator=",
+        "method void () noexcept Head",
+        "method void () noexcept ~Head",
+        "method void (Head &&) noexcept Head",
+        "method void (const Head &) noexcept Head"
+      ],
+      "name": "SCE::Forge::ContentLine::detail::Head"
+    },
+    {
+      "header": "sce/forge/filter.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::Forge::Debounce<T>"
+    },
+    {
+      "header": "sce/forge/filter.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::Forge::LowPass<T>"
+    },
+    {
+      "header": "sce/forge/filter.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::Forge::MovingAverage<T>"
+    },
+    {
+      "header": "sce/forge/interpolation.h",
+      "kind": "function",
+      "name": "SCE::Forge::bilinear<T>",
+      "signature": "double SCE::Forge::bilinear<T>(const double (&)[Rows], const double (&)[Cols], const double (&)[Rows][Cols], double, double) noexcept"
+    },
+    {
+      "header": "sce/forge/interpolation.h",
+      "kind": "function",
+      "name": "SCE::Forge::linear<T>",
+      "signature": "double SCE::Forge::linear<T>(const double (&)[N], const double (&)[N], double) noexcept"
+    },
+    {
+      "header": "sce/forge/lookup.h",
+      "kind": "function",
+      "name": "SCE::Forge::lookup<T>",
+      "signature": "std::optional<V> SCE::Forge::lookup<T>(const K (&)[N], const V (&)[N], K) noexcept"
+    },
+    {
+      "header": "sce/forge/observer.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::Forge::EventQueue<T>"
+    },
+    {
+      "header": "sce/forge/observer.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::Forge::ThresholdState"
+    },
+    {
+      "header": "sce/forge/observer.h",
+      "kind": "struct",
+      "members": [
+        "field typename Domain::Tag tag",
+        "method void () noexcept Event<Domain>",
+        "method void (typename Domain::Tag) noexcept Event<Domain>"
+      ],
+      "name": "SCE::Forge::Event<T>"
+    },
+    {
+      "header": "sce/forge/optional.h",
+      "kind": "function",
+      "name": "SCE::Forge::mapPresent<T>",
+      "signature": "auto SCE::Forge::mapPresent<T>(const std::optional<T> &, F &&) -> std::optional<std::decay_t<std::invoke_result_t<F, const T &>>>"
+    },
+    {
+      "header": "sce/forge/optional.h",
+      "kind": "function",
+      "name": "SCE::Forge::otherwise<T>",
+      "signature": "auto SCE::Forge::otherwise<T>(const std::optional<T> &, F &&)"
+    },
+    {
+      "header": "sce/forge/optional.h",
+      "kind": "function",
+      "name": "SCE::Forge::presentText<T>",
+      "signature": "std::string SCE::Forge::presentText<T>(const V &)"
+    },
+    {
+      "header": "sce/forge/optional.h",
+      "kind": "struct",
+      "members": [],
+      "name": "SCE::Forge::Detail::IsOptional<T>"
+    },
+    {
+      "header": "sce/forge/queue.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::Forge::Queue::IntrusiveMpsc<T>"
+    },
+    {
+      "header": "sce/forge/queue.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::Forge::Queue::Scq<T>"
+    },
+    {
+      "header": "sce/forge/queue.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::Forge::Queue::Spsc<T>"
+    },
+    {
+      "header": "sce/forge/queue.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::Forge::Queue::detail::Ring<T>"
+    },
+    {
+      "header": "sce/forge/queue.h",
+      "kind": "enum",
+      "name": "SCE::Forge::Queue::Progress",
+      "values": [
+        "Blocking",
+        "LockFree",
+        "WaitFree"
+      ]
+    },
+    {
+      "header": "sce/forge/queue.h",
+      "kind": "enum",
+      "name": "SCE::Forge::Queue::PushStatus",
+      "values": [
+        "Ok",
+        "Full",
+        "OutOfMemory"
+      ]
+    },
+    {
+      "header": "sce/forge/queue.h",
+      "kind": "function",
+      "name": "SCE::Forge::Queue::detail::at_or_before",
+      "signature": "bool SCE::Forge::Queue::detail::at_or_before(std::uint64_t, std::uint64_t) noexcept"
+    },
+    {
+      "header": "sce/forge/queue.h",
+      "kind": "function",
+      "name": "SCE::Forge::Queue::detail::before",
+      "signature": "bool SCE::Forge::Queue::detail::before(std::uint64_t, std::uint64_t) noexcept"
+    },
+    {
+      "header": "sce/forge/queue.h",
+      "kind": "function",
+      "name": "SCE::Forge::Queue::detail::give_back<T>",
+      "signature": "void SCE::Forge::Queue::detail::give_back<T>(T &, T &&) noexcept"
+    },
+    {
+      "header": "sce/forge/queue.h",
+      "kind": "function",
+      "name": "SCE::Forge::Queue::detail::log2_exact",
+      "signature": "unsigned int SCE::Forge::Queue::detail::log2_exact(std::size_t) noexcept"
+    },
+    {
+      "header": "sce/forge/queue.h",
+      "kind": "function",
+      "name": "SCE::Forge::Queue::detail::take_place",
+      "signature": "bool SCE::Forge::Queue::detail::take_place(std::atomic<std::size_t> &, std::size_t) noexcept"
+    },
+    {
+      "header": "sce/forge/queue.h",
+      "kind": "struct",
+      "members": [
+        "field Atomic value",
+        "method void (typename Atomic::value_type) noexcept Padded<Atomic>"
+      ],
+      "name": "SCE::Forge::Queue::detail::Padded<T>"
+    },
+    {
+      "header": "sce/forge/queue.h",
+      "kind": "union",
+      "members": [],
+      "name": "SCE::Forge::Queue::detail::Slot<T>"
+    },
+    {
+      "header": "sce/forge/queue_segmented.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::Forge::Queue::HazardDomain<T>"
+    },
+    {
+      "header": "sce/forge/queue_segmented.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::Forge::Queue::LinkedLamport<T>"
+    },
+    {
+      "header": "sce/forge/queue_segmented.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::Forge::Queue::Lscq<T>"
+    },
+    {
+      "header": "sce/forge/queue_segmented.h",
+      "kind": "function",
+      "name": "SCE::Forge::Queue::detail::place<T>",
+      "signature": "S * SCE::Forge::Queue::detail::place<T>(A &, Args &&...) noexcept"
+    },
+    {
+      "header": "sce/forge/queue_segmented.h",
+      "kind": "function",
+      "name": "SCE::Forge::Queue::detail::release<T>",
+      "signature": "void SCE::Forge::Queue::detail::release<T>(A &, S *) noexcept"
+    },
+    {
+      "header": "sce/forge/queue_segmented.h",
+      "kind": "struct",
+      "members": [
+        "field std::atomic<Retired *> chain",
+        "field void (*)(Retired *, void *) noexcept reclaim",
+        "field void * context",
+        "method Retired &(Retired &&) operator=",
+        "method Retired &(const Retired &) operator=",
+        "method void () ~Retired",
+        "method void (Retired &&) Retired",
+        "method void (const Retired &) Retired"
+      ],
+      "name": "SCE::Forge::Queue::Retired"
+    },
+    {
+      "header": "sce/forge/span.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::Forge::Span<T>"
+    },
+    {
+      "header": "sce/forge/span.h",
+      "kind": "struct",
+      "members": [],
+      "name": "SCE::Forge::Detail::IsContiguousSourceOf<T>"
+    },
+    {
+      "header": "sce/forge/span.h",
+      "kind": "struct",
+      "members": [],
+      "name": "SCE::Forge::Detail::IsQualificationOf<T>"
+    },
+    {
+      "header": "sce/forge/span.h",
+      "kind": "struct",
+      "members": [],
+      "name": "SCE::Forge::Detail::IsSpan<T>"
+    },
+    {
+      "header": "sce/forge/span.h",
+      "kind": "typedef",
+      "name": "SCE::Forge::Detail::DataPointer",
+      "type": "decltype(std::declval<C>().data())"
+    },
+    {
+      "header": "sce/forge/span.h",
+      "kind": "typedef",
+      "name": "SCE::Forge::Detail::SizeType",
+      "type": "decltype(std::declval<C>().size())"
+    },
+    {
+      "header": "sce/forge/timer.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::Forge::ITimer"
+    },
+    {
+      "header": "sce/forge/timer.h",
+      "kind": "typedef",
+      "name": "SCE::Forge::TimerCallback",
+      "type": "void (*)(void *)"
     },
     {
       "header": "scripting/ClassBinding.h",
