@@ -35,9 +35,9 @@ struct CodecSubbyte {
         uint8_t channel = static_cast<uint8_t>((raw[0] >> 2) & 0x07);
         uint8_t direction = static_cast<uint8_t>((raw[0] >> 0) & 0x03);
         CodecSubbyte _decoded{
-            .priority = priority,
-            .channel = channel,
-            .direction = direction,
+            /*priority=*/priority,
+            /*channel=*/channel,
+            /*direction=*/direction,
         };
         if (!cursor.advance(1)) return std::nullopt;
         return _decoded;

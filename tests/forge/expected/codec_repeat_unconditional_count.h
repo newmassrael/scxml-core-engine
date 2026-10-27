@@ -76,10 +76,10 @@ struct CodecRepeatUnconditionalCount {
             weights = std::move(_list);
         }
         return CodecRepeatUnconditionalCount{
-            .options = options,
-            .links_len = links_len,
-            .links = links,
-            .weights = weights,
+            /*options=*/options,
+            /*links_len=*/links_len,
+            /*links=*/links,
+            /*weights=*/weights,
         };
     }
 

@@ -33,8 +33,8 @@ struct CodecPeekArmB {
         uint8_t header = raw[0];
         uint16_t payload = static_cast<uint16_t>((static_cast<uint16_t>(raw[1]) << 8) | raw[2]);
         CodecPeekArmB _decoded{
-            .header = header,
-            .payload = payload,
+            /*header=*/header,
+            /*payload=*/payload,
         };
         if (!cursor.advance(3)) return std::nullopt;
         return _decoded;

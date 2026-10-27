@@ -65,9 +65,9 @@ struct CodecZenohWireexpr {
             if (!cursor.advance(_n)) return std::nullopt;
         }
         return CodecZenohWireexpr{
-            .id = id,
-            .suffix_len = suffix_len,
-            .suffix = suffix,
+            /*id=*/id,
+            /*suffix_len=*/suffix_len,
+            /*suffix=*/suffix,
         };
     }
 

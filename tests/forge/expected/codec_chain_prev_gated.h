@@ -66,8 +66,8 @@ struct CodecChainPrevGated {
             entries = std::move(_list);
         }
         return CodecChainPrevGated{
-            .head = head,
-            .entries = entries,
+            /*head=*/head,
+            /*entries=*/entries,
         };
     }
 

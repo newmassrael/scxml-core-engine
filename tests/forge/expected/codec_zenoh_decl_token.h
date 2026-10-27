@@ -51,8 +51,8 @@ struct CodecZenohDeclToken {
         if (!_emb_wireexpr.has_value()) return std::nullopt;
         auto wireexpr = std::move(*_emb_wireexpr);
         return CodecZenohDeclToken{
-            .id = id,
-            .wireexpr = wireexpr,
+            /*id=*/id,
+            /*wireexpr=*/wireexpr,
         };
     }
 

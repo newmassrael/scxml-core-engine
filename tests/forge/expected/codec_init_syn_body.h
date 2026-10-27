@@ -66,9 +66,9 @@ struct CodecInitSynBody {
             if (!cursor.advance(2)) return std::nullopt;
         }
         return CodecInitSynBody{
-            .version = version,
-            .sn_res = sn_res,
-            .batch_size = batch_size,
+            /*version=*/version,
+            /*sn_res=*/sn_res,
+            /*batch_size=*/batch_size,
         };
     }
 

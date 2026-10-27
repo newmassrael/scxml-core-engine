@@ -31,7 +31,7 @@ struct CodecRepeatElem {
         if (raw == nullptr) return std::nullopt;
         uint16_t seq = static_cast<uint16_t>((static_cast<uint16_t>(raw[0]) << 8) | raw[1]);
         CodecRepeatElem _decoded{
-            .seq = seq,
+            /*seq=*/seq,
         };
         if (!cursor.advance(2)) return std::nullopt;
         return _decoded;

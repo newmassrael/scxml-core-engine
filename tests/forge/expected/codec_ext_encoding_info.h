@@ -59,9 +59,9 @@ struct CodecExtEncodingInfo {
             if (!cursor.advance(_n)) return std::nullopt;
         }
         return CodecExtEncodingInfo{
-            .combined_id = combined_id,
-            .schema_size = schema_size,
-            .schema = schema,
+            /*combined_id=*/combined_id,
+            /*schema_size=*/schema_size,
+            /*schema=*/schema,
         };
     }
 

@@ -35,9 +35,9 @@ struct CodecSimpleFrame {
         uint8_t length = raw[1];
         uint16_t payload = static_cast<uint16_t>((static_cast<uint16_t>(raw[2]) << 8) | raw[3]);
         CodecSimpleFrame _decoded{
-            .msgId = msgId,
-            .length = length,
-            .payload = payload,
+            /*msgId=*/msgId,
+            /*length=*/length,
+            /*payload=*/payload,
         };
         if (!cursor.advance(4)) return std::nullopt;
         return _decoded;

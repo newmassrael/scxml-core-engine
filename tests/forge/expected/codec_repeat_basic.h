@@ -55,8 +55,8 @@ struct CodecRepeatBasic {
             frags.push_back(*_elem);
         }
         return CodecRepeatBasic{
-            .num_frags = num_frags,
-            .frags = frags,
+            /*num_frags=*/num_frags,
+            /*frags=*/frags,
         };
     }
 

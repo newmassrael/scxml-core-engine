@@ -61,8 +61,8 @@ struct CodecTlvChainPresentIfBasic {
             entries = std::move(_list);
         }
         return CodecTlvChainPresentIfBasic{
-            .carrier = carrier,
-            .entries = entries,
+            /*carrier=*/carrier,
+            /*entries=*/entries,
         };
     }
 

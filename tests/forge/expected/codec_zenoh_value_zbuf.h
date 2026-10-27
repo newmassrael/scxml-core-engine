@@ -85,11 +85,11 @@ struct CodecZenohValueZbuf {
             slices = std::move(_list);
         }
         return CodecZenohValueZbuf{
-            .value_len = value_len,
-            .value = value,
-            .encoding = encoding,
-            .slice_count = slice_count,
-            .slices = slices,
+            /*value_len=*/value_len,
+            /*value=*/value,
+            /*encoding=*/encoding,
+            /*slice_count=*/slice_count,
+            /*slices=*/slices,
         };
     }
 

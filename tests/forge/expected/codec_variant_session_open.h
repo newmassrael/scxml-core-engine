@@ -31,7 +31,7 @@ struct CodecVariantSessionOpen {
         if (raw == nullptr) return std::nullopt;
         uint16_t version = static_cast<uint16_t>((static_cast<uint16_t>(raw[0]) << 8) | raw[1]);
         CodecVariantSessionOpen _decoded{
-            .version = version,
+            /*version=*/version,
         };
         if (!cursor.advance(2)) return std::nullopt;
         return _decoded;

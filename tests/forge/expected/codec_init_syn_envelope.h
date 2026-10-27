@@ -71,15 +71,15 @@ struct CodecInitSynEnvelope {
                 auto _arm = ::SCE::Generated::CodecInitSynBody::CodecInitSynBody::decode(cursor, static_cast<std::uint8_t>((header >> 6) & 0x1));
                 if (!_arm.has_value()) return std::nullopt;
                 body = CodecInitSynEnvelopeDefault{
-                    .tag = static_cast<uint8_t>((header >> 0) & static_cast<uint8_t>(0x1F)),
-                    .body = *_arm,
+                    /*tag=*/static_cast<uint8_t>((header >> 0) & static_cast<uint8_t>(0x1F)),
+                    /*body=*/*_arm,
                 };
                 break;
             }
         }
         return CodecInitSynEnvelope{
-            .header = header,
-            .body = body,
+            /*header=*/header,
+            /*body=*/body,
         };
     }
 

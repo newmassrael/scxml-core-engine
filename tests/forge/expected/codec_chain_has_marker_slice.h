@@ -55,9 +55,9 @@ struct CodecChainHasMarkerSlice {
             if (!cursor.advance(_n)) return std::nullopt;
         }
         return CodecChainHasMarkerSlice{
-            .kind = kind,
-            .size = size,
-            .data = data,
+            /*kind=*/kind,
+            /*size=*/size,
+            /*data=*/data,
         };
     }
 

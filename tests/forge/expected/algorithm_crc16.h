@@ -5,8 +5,8 @@
 // Do not edit — regenerate from the source SCXML file.
 //
 // RFC §synth-5-A: free function in `namespace SCE::Generated::<Name>`. No
-// STL containers, no exceptions. `bytes` lowers to `std::span<const
-// std::uint8_t>` (RFC §synth-5-J-5 emitter table).
+// STL containers, no exceptions. `bytes` lowers to `SCE::Forge::Span<const
+// std::uint8_t>` (RFC §synth-5-J-5 emitter table, docs/adr/0059).
 
 #pragma once
 #ifndef SCE_FORGE_ALGORITHM_CRC16_H
@@ -14,10 +14,10 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <span>
+#include <sce/forge/span.h>
 namespace SCE::Generated::AlgorithmCrc16 {
 
-inline uint16_t algorithm_crc16(std::span<const std::uint8_t> data) {
+inline uint16_t algorithm_crc16(SCE::Forge::Span<const std::uint8_t> data) {
     uint16_t crc = 0xFFFF;
     for (uint8_t b : data) {
         uint16_t hi = b;

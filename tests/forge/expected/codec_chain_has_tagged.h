@@ -90,10 +90,10 @@ struct CodecChainHasTagged {
             if (!cursor.advance(2)) return std::nullopt;
         }
         return CodecChainHasTagged{
-            .header = header,
-            .entries = entries,
-            .priority = priority,
-            .checksum = checksum,
+            /*header=*/header,
+            /*entries=*/entries,
+            /*priority=*/priority,
+            /*checksum=*/checksum,
         };
     }
 

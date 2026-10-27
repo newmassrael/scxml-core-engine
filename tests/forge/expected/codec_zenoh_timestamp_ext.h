@@ -55,8 +55,8 @@ struct CodecZenohTimestampExt {
             ts = std::move(*_emb);
         }
         return CodecZenohTimestampExt{
-            .ext_size = ext_size,
-            .ts = ts,
+            /*ext_size=*/ext_size,
+            /*ts=*/ts,
         };
     }
 

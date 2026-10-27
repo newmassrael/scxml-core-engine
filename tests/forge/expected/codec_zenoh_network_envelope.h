@@ -122,14 +122,14 @@ struct CodecZenohNetworkEnvelope {
                 auto _arm = ::SCE::Generated::CodecZenohOam::CodecZenohOam::decode(cursor);
                 if (!_arm.has_value()) return std::nullopt;
                 body = CodecZenohNetworkEnvelopeDefault{
-                    .tag = static_cast<uint8_t>((_peek >> 0) & static_cast<uint8_t>(0x1F)),
-                    .body = *_arm,
+                    /*tag=*/static_cast<uint8_t>((_peek >> 0) & static_cast<uint8_t>(0x1F)),
+                    /*body=*/*_arm,
                 };
                 break;
             }
         }
         return CodecZenohNetworkEnvelope{
-            .body = body,
+            /*body=*/body,
         };
     }
 

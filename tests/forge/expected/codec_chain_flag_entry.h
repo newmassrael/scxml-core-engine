@@ -66,9 +66,9 @@ struct CodecChainFlagEntry {
             if (!cursor.advance(2)) return std::nullopt;
         }
         return CodecChainFlagEntry{
-            .header = header,
-            .short_value = short_value,
-            .long_value = long_value,
+            /*header=*/header,
+            /*short_value=*/short_value,
+            /*long_value=*/long_value,
         };
     }
 

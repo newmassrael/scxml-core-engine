@@ -59,9 +59,9 @@ struct CodecZenohDeclExtKeyexprInner {
             if (!cursor.advance(_n)) return std::nullopt;
         }
         return CodecZenohDeclExtKeyexprInner{
-            .inner_header = inner_header,
-            .id = id,
-            .suffix = suffix,
+            /*inner_header=*/inner_header,
+            /*id=*/id,
+            /*suffix=*/suffix,
         };
     }
 

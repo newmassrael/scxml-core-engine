@@ -59,9 +59,9 @@ struct CodecZenohValueSlice {
             if (!cursor.advance(_n)) return std::nullopt;
         }
         return CodecZenohValueSlice{
-            .kind = kind,
-            .len = len,
-            .data = data,
+            /*kind=*/kind,
+            /*len=*/len,
+            /*data=*/data,
         };
     }
 

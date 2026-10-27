@@ -54,8 +54,8 @@ struct CodecZenohUndeclToken {
             ext_keyexpr = std::move(*_emb);
         }
         return CodecZenohUndeclToken{
-            .id = id,
-            .ext_keyexpr = ext_keyexpr,
+            /*id=*/id,
+            /*ext_keyexpr=*/ext_keyexpr,
         };
     }
 

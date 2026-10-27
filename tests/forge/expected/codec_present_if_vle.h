@@ -54,8 +54,8 @@ struct CodecPresentIfVle {
             optional_id = _v;
         }
         return CodecPresentIfVle{
-            .flags = flags,
-            .optional_id = optional_id,
+            /*flags=*/flags,
+            /*optional_id=*/optional_id,
         };
     }
 

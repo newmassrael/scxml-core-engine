@@ -51,8 +51,8 @@ struct CodecZenohExtZbuf {
             if (!cursor.advance(_n)) return std::nullopt;
         }
         return CodecZenohExtZbuf{
-            .value_len = value_len,
-            .value = value,
+            /*value_len=*/value_len,
+            /*value=*/value,
         };
     }
 

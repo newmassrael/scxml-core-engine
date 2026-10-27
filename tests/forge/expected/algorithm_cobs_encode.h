@@ -5,8 +5,8 @@
 // Do not edit — regenerate from the source SCXML file.
 //
 // RFC §synth-5-A: free function in `namespace SCE::Generated::<Name>`. No
-// STL containers, no exceptions. `bytes` lowers to `std::span<const
-// std::uint8_t>` (RFC §synth-5-J-5 emitter table).
+// STL containers, no exceptions. `bytes` lowers to `SCE::Forge::Span<const
+// std::uint8_t>` (RFC §synth-5-J-5 emitter table, docs/adr/0059).
 
 #pragma once
 #ifndef SCE_FORGE_ALGORITHM_COBS_ENCODE_H
@@ -15,10 +15,10 @@
 #include <cstddef>
 #include <cstdint>
 #include <vector>
-#include <span>
+#include <sce/forge/span.h>
 namespace SCE::Generated::AlgorithmCobsEncode {
 
-inline std::vector<std::uint8_t> algorithm_cobs_encode(std::span<const std::uint8_t> data) {
+inline std::vector<std::uint8_t> algorithm_cobs_encode(SCE::Forge::Span<const std::uint8_t> data) {
     uint32_t n = (data).size();
     std::vector<std::uint8_t> out;
     out.reserve(32);

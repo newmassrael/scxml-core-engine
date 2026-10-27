@@ -54,8 +54,8 @@ struct CodecZenohInterestBody {
             keyexpr = std::move(*_emb);
         }
         return CodecZenohInterestBody{
-            .header = header,
-            .keyexpr = keyexpr,
+            /*header=*/header,
+            /*keyexpr=*/keyexpr,
         };
     }
 

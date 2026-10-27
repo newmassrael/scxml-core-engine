@@ -59,8 +59,8 @@ struct CodecChainPrevTail {
         }
         if (cursor.remaining() > 0) return std::nullopt;
         return CodecChainPrevTail{
-            .head = head,
-            .entries = entries,
+            /*head=*/head,
+            /*entries=*/entries,
         };
     }
 

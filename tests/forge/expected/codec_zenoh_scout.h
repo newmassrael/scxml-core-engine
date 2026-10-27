@@ -63,9 +63,9 @@ struct CodecZenohScout {
             if (!cursor.advance(_n)) return std::nullopt;
         }
         return CodecZenohScout{
-            .version = version,
-            .cbyte = cbyte,
-            .zid = zid,
+            /*version=*/version,
+            /*cbyte=*/cbyte,
+            /*zid=*/zid,
         };
     }
 

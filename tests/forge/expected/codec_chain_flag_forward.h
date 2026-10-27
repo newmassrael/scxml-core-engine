@@ -68,8 +68,8 @@ struct CodecChainFlagForward {
             entries = std::move(_list);
         }
         return CodecChainFlagForward{
-            .head = head,
-            .entries = entries,
+            /*head=*/head,
+            /*entries=*/entries,
         };
     }
 

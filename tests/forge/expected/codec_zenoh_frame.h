@@ -51,8 +51,8 @@ struct CodecZenohFrame {
             if (!cursor.advance(_n)) return std::nullopt;
         }
         return CodecZenohFrame{
-            .sn = sn,
-            .payload = payload,
+            /*sn=*/sn,
+            /*payload=*/payload,
         };
     }
 

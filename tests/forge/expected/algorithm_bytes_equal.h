@@ -5,8 +5,8 @@
 // Do not edit — regenerate from the source SCXML file.
 //
 // RFC §synth-5-A: free function in `namespace SCE::Generated::<Name>`. No
-// STL containers, no exceptions. `bytes` lowers to `std::span<const
-// std::uint8_t>` (RFC §synth-5-J-5 emitter table).
+// STL containers, no exceptions. `bytes` lowers to `SCE::Forge::Span<const
+// std::uint8_t>` (RFC §synth-5-J-5 emitter table, docs/adr/0059).
 
 #pragma once
 #ifndef SCE_FORGE_BYTES_EQUAL_H
@@ -14,10 +14,10 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <span>
+#include <sce/forge/span.h>
 namespace SCE::Generated::BytesEqual {
 
-inline bool bytes_equal(std::span<const std::uint8_t> a, std::span<const std::uint8_t> b) {
+inline bool bytes_equal(SCE::Forge::Span<const std::uint8_t> a, SCE::Forge::Span<const std::uint8_t> b) {
     if ((a).size() != (b).size()) {
         return false;
     }

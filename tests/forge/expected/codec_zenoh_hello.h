@@ -89,11 +89,11 @@ struct CodecZenohHello {
             locators = std::move(_list);
         }
         return CodecZenohHello{
-            .version = version,
-            .cbyte = cbyte,
-            .zid = zid,
-            .num_locators = num_locators,
-            .locators = locators,
+            /*version=*/version,
+            /*cbyte=*/cbyte,
+            /*zid=*/zid,
+            /*num_locators=*/num_locators,
+            /*locators=*/locators,
         };
     }
 

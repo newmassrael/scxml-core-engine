@@ -42,7 +42,7 @@ struct CodecZenohUndeclKexpr {
         if (!id_opt.has_value()) return std::nullopt;
         auto id = static_cast<std::uint16_t>(*id_opt);
         return CodecZenohUndeclKexpr{
-            .id = id,
+            /*id=*/id,
         };
     }
 

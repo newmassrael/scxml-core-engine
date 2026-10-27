@@ -75,10 +75,10 @@ struct CodecChainPrevEntry {
             if (!cursor.advance(1)) return std::nullopt;
         }
         return CodecChainPrevEntry{
-            .header = header,
-            .short_value = short_value,
-            .long_value = long_value,
-            .tag = tag,
+            /*header=*/header,
+            /*short_value=*/short_value,
+            /*long_value=*/long_value,
+            /*tag=*/tag,
         };
     }
 

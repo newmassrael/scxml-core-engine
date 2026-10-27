@@ -55,9 +55,9 @@ struct CodecZenohTimestamp {
             if (!cursor.advance(_n)) return std::nullopt;
         }
         return CodecZenohTimestamp{
-            .time = time,
-            .zid_len = zid_len,
-            .zid = zid,
+            /*time=*/time,
+            /*zid_len=*/zid_len,
+            /*zid=*/zid,
         };
     }
 

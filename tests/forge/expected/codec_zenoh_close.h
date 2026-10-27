@@ -31,7 +31,7 @@ struct CodecZenohClose {
         if (raw == nullptr) return std::nullopt;
         uint8_t reason = raw[0];
         CodecZenohClose _decoded{
-            .reason = reason,
+            /*reason=*/reason,
         };
         if (!cursor.advance(1)) return std::nullopt;
         return _decoded;

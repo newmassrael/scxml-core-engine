@@ -71,10 +71,10 @@ struct CodecFixedAfterLengthref {
             if (!cursor.advance(4)) return std::nullopt;
         }
         return CodecFixedAfterLengthref{
-            .header = header,
-            .payload_len = payload_len,
-            .payload = payload,
-            .crc32 = crc32,
+            /*header=*/header,
+            /*payload_len=*/payload_len,
+            /*payload=*/payload,
+            /*crc32=*/crc32,
         };
     }
 

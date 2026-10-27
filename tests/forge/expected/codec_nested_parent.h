@@ -74,11 +74,11 @@ struct CodecNestedParent {
             body_list.push_back(*_elem);
         }
         return CodecNestedParent{
-            .hdr = hdr,
-            .m = m,
-            .required_body = required_body,
-            .optional_body = optional_body,
-            .body_list = body_list,
+            /*hdr=*/hdr,
+            /*m=*/m,
+            /*required_body=*/required_body,
+            /*optional_body=*/optional_body,
+            /*body_list=*/body_list,
         };
     }
 

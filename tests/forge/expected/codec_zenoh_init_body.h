@@ -101,13 +101,13 @@ struct CodecZenohInitBody {
             if (!cursor.advance(_n)) return std::nullopt;
         }
         return CodecZenohInitBody{
-            .version = version,
-            .cbyte = cbyte,
-            .zid = zid,
-            .sn_res = sn_res,
-            .batch_size = batch_size,
-            .cookie_len = cookie_len,
-            .cookie = cookie,
+            /*version=*/version,
+            /*cbyte=*/cbyte,
+            /*zid=*/zid,
+            /*sn_res=*/sn_res,
+            /*batch_size=*/batch_size,
+            /*cookie_len=*/cookie_len,
+            /*cookie=*/cookie,
         };
     }
 

@@ -63,9 +63,9 @@ struct CodecZenohDeclExtKeyexpr {
             inner = std::move(*_emb);
         }
         return CodecZenohDeclExtKeyexpr{
-            .outer_header = outer_header,
-            .total_length = total_length,
-            .inner = inner,
+            /*outer_header=*/outer_header,
+            /*total_length=*/total_length,
+            /*inner=*/inner,
         };
     }
 

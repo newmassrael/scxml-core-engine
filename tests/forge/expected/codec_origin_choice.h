@@ -79,15 +79,15 @@ struct CodecOriginChoice {
                 auto _arm = ::SCE::Generated::CodecOriginScalar::CodecOriginScalar::decode(cursor);
                 if (!_arm.has_value()) return std::nullopt;
                 body = CodecOriginChoiceDefault{
-                    .tag = tag,
-                    .body = *_arm,
+                    /*tag=*/tag,
+                    /*body=*/*_arm,
                 };
                 break;
             }
         }
         return CodecOriginChoice{
-            .tag = tag,
-            .body = body,
+            /*tag=*/tag,
+            /*body=*/body,
         };
     }
 

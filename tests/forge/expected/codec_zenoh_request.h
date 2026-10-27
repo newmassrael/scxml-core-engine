@@ -125,18 +125,18 @@ struct CodecZenohRequest {
                 auto _arm = ::SCE::Generated::CodecZenohQuery::CodecZenohQuery::decode(cursor);
                 if (!_arm.has_value()) return std::nullopt;
                 body = CodecZenohRequestDefault{
-                    .tag = static_cast<uint8_t>((_peek >> 0) & static_cast<uint8_t>(0x1F)),
-                    .body = *_arm,
+                    /*tag=*/static_cast<uint8_t>((_peek >> 0) & static_cast<uint8_t>(0x1F)),
+                    /*body=*/*_arm,
                 };
                 break;
             }
         }
         return CodecZenohRequest{
-            .header = header,
-            .rid = rid,
-            .keyexpr = keyexpr,
-            .extensions = extensions,
-            .body = body,
+            /*header=*/header,
+            /*rid=*/rid,
+            /*keyexpr=*/keyexpr,
+            /*extensions=*/extensions,
+            /*body=*/body,
         };
     }
 

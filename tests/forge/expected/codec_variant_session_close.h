@@ -31,7 +31,7 @@ struct CodecVariantSessionClose {
         if (raw == nullptr) return std::nullopt;
         uint8_t reason = raw[0];
         CodecVariantSessionClose _decoded{
-            .reason = reason,
+            /*reason=*/reason,
         };
         if (!cursor.advance(1)) return std::nullopt;
         return _decoded;

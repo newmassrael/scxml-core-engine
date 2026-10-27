@@ -54,8 +54,8 @@ struct CodecZenohUndeclQueryable {
             ext_keyexpr = std::move(*_emb);
         }
         return CodecZenohUndeclQueryable{
-            .id = id,
-            .ext_keyexpr = ext_keyexpr,
+            /*id=*/id,
+            /*ext_keyexpr=*/ext_keyexpr,
         };
     }
 

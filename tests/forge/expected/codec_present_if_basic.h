@@ -54,8 +54,8 @@ struct CodecPresentIfBasic {
             if (!cursor.advance(2)) return std::nullopt;
         }
         return CodecPresentIfBasic{
-            .flags = flags,
-            .seq = seq,
+            /*flags=*/flags,
+            /*seq=*/seq,
         };
     }
 

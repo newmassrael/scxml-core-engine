@@ -31,7 +31,7 @@ struct CodecOriginScalar {
         if (raw == nullptr) return std::nullopt;
         uint8_t value = raw[0];
         CodecOriginScalar _decoded{
-            .value = value,
+            /*value=*/value,
         };
         if (!cursor.advance(1)) return std::nullopt;
         return _decoded;

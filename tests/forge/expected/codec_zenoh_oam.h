@@ -117,17 +117,17 @@ struct CodecZenohOam {
                 auto _arm = ::SCE::Generated::CodecZenohExtUnit::CodecZenohExtUnit::decode(cursor);
                 if (!_arm.has_value()) return std::nullopt;
                 body = CodecZenohOamDefault{
-                    .tag = static_cast<uint8_t>((header >> 5) & static_cast<uint8_t>(0x03)),
-                    .body = *_arm,
+                    /*tag=*/static_cast<uint8_t>((header >> 5) & static_cast<uint8_t>(0x03)),
+                    /*body=*/*_arm,
                 };
                 break;
             }
         }
         return CodecZenohOam{
-            .header = header,
-            .id = id,
-            .extensions = extensions,
-            .body = body,
+            /*header=*/header,
+            /*id=*/id,
+            /*extensions=*/extensions,
+            /*body=*/body,
         };
     }
 

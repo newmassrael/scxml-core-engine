@@ -77,10 +77,10 @@ struct CodecZenohDeclare {
         if (!_emb_declaration.has_value()) return std::nullopt;
         auto declaration = std::move(*_emb_declaration);
         return CodecZenohDeclare{
-            .header = header,
-            .interest_id = interest_id,
-            .extensions = extensions,
-            .declaration = declaration,
+            /*header=*/header,
+            /*interest_id=*/interest_id,
+            /*extensions=*/extensions,
+            /*declaration=*/declaration,
         };
     }
 

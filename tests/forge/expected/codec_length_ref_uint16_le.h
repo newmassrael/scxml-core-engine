@@ -36,8 +36,8 @@ struct CodecLengthRefUint16Le {
         if (_frame_len < static_cast<std::size_t>(2 + payload_len)) return std::nullopt;
         std::vector<uint8_t> payload = std::vector<uint8_t>(raw + 2, raw + 2 + payload_len);
         CodecLengthRefUint16Le _decoded{
-            .payload_len = payload_len,
-            .payload = payload,
+            /*payload_len=*/payload_len,
+            /*payload=*/payload,
         };
         if (!cursor.advance(_frame_len)) return std::nullopt;
         return _decoded;

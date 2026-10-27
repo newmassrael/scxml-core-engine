@@ -62,8 +62,8 @@ struct CodecChainPrevCarrier {
         }
         if (_more) return std::nullopt;
         return CodecChainPrevCarrier{
-            .head = head,
-            .entries = entries,
+            /*head=*/head,
+            /*entries=*/entries,
         };
     }
 

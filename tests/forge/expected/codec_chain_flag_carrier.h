@@ -60,8 +60,8 @@ struct CodecChainFlagCarrier {
         }
         if (_more) return std::nullopt;
         return CodecChainFlagCarrier{
-            .head = head,
-            .entries = entries,
+            /*head=*/head,
+            /*entries=*/entries,
         };
     }
 

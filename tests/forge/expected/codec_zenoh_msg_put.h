@@ -93,12 +93,12 @@ struct CodecZenohMsgPut {
             if (!cursor.advance(_n)) return std::nullopt;
         }
         return CodecZenohMsgPut{
-            .header = header,
-            .timestamp = timestamp,
-            .encoding = encoding,
-            .extensions = extensions,
-            .payload_len = payload_len,
-            .payload = payload,
+            /*header=*/header,
+            /*timestamp=*/timestamp,
+            /*encoding=*/encoding,
+            /*extensions=*/extensions,
+            /*payload_len=*/payload_len,
+            /*payload=*/payload,
         };
     }
 

@@ -53,8 +53,8 @@ struct CodecZenohLocator {
             if (!cursor.advance(_n)) return std::nullopt;
         }
         return CodecZenohLocator{
-            .locator_len = locator_len,
-            .locator = locator,
+            /*locator_len=*/locator_len,
+            /*locator=*/locator,
         };
     }
 

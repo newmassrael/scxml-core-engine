@@ -60,8 +60,8 @@ struct CodecZenohExtEnvelope {
         }
         if (_more) return std::nullopt;
         return CodecZenohExtEnvelope{
-            .header_flags = header_flags,
-            .extensions = extensions,
+            /*header_flags=*/header_flags,
+            /*extensions=*/extensions,
         };
     }
 

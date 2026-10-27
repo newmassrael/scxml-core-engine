@@ -35,9 +35,9 @@ struct CodecChainHasTaggedEntry {
         uint8_t ctl = raw[1];
         uint8_t body = raw[2];
         CodecChainHasTaggedEntry _decoded{
-            .entry_type = entry_type,
-            .ctl = ctl,
-            .body = body,
+            /*entry_type=*/entry_type,
+            /*ctl=*/ctl,
+            /*body=*/body,
         };
         if (!cursor.advance(3)) return std::nullopt;
         return _decoded;

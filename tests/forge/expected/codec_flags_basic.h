@@ -31,7 +31,7 @@ struct CodecFlagsBasic {
         if (raw == nullptr) return std::nullopt;
         uint8_t header = raw[0];
         CodecFlagsBasic _decoded{
-            .header = header,
+            /*header=*/header,
         };
         if (!cursor.advance(1)) return std::nullopt;
         return _decoded;

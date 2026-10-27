@@ -135,20 +135,20 @@ struct CodecZenohResponse {
                 auto _arm = ::SCE::Generated::CodecZenohReply::CodecZenohReply::decode(cursor);
                 if (!_arm.has_value()) return std::nullopt;
                 body = CodecZenohResponseDefault{
-                    .tag = static_cast<uint8_t>((_peek >> 0) & static_cast<uint8_t>(0x1F)),
-                    .body = *_arm,
+                    /*tag=*/static_cast<uint8_t>((_peek >> 0) & static_cast<uint8_t>(0x1F)),
+                    /*body=*/*_arm,
                 };
                 break;
             }
         }
         return CodecZenohResponse{
-            .header = header,
-            .request_id = request_id,
-            .key_id = key_id,
-            .suffix_len = suffix_len,
-            .suffix = suffix,
-            .extensions = extensions,
-            .body = body,
+            /*header=*/header,
+            /*request_id=*/request_id,
+            /*key_id=*/key_id,
+            /*suffix_len=*/suffix_len,
+            /*suffix=*/suffix,
+            /*extensions=*/extensions,
+            /*body=*/body,
         };
     }
 

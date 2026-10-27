@@ -67,9 +67,9 @@ struct CodecInitCookieBody {
             if (!cursor.advance(_n)) return std::nullopt;
         }
         return CodecInitCookieBody{
-            .version = version,
-            .cookie_size = cookie_size,
-            .cookie = cookie,
+            /*version=*/version,
+            /*cookie_size=*/cookie_size,
+            /*cookie=*/cookie,
         };
     }
 

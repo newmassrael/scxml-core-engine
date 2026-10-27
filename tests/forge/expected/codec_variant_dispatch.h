@@ -79,15 +79,15 @@ struct CodecVariantDispatch {
                 auto _arm = ::SCE::Generated::CodecVariantSessionClose::CodecVariantSessionClose::decode(cursor);
                 if (!_arm.has_value()) return std::nullopt;
                 body = CodecVariantDispatchDefault{
-                    .tag = msg_id,
-                    .body = *_arm,
+                    /*tag=*/msg_id,
+                    /*body=*/*_arm,
                 };
                 break;
             }
         }
         return CodecVariantDispatch{
-            .msg_id = msg_id,
-            .body = body,
+            /*msg_id=*/msg_id,
+            /*body=*/body,
         };
     }
 

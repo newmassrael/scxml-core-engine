@@ -63,8 +63,8 @@ struct CodecChainPrevTailGated {
             entries = std::move(_list);
         }
         return CodecChainPrevTailGated{
-            .head = head,
-            .entries = entries,
+            /*head=*/head,
+            /*entries=*/entries,
         };
     }
 

@@ -54,7 +54,7 @@ struct CodecZenohQueryValue {
         }
         if (_more) return std::nullopt;
         return CodecZenohQueryValue{
-            .exts = exts,
+            /*exts=*/exts,
         };
     }
 

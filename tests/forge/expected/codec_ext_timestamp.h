@@ -59,9 +59,9 @@ struct CodecExtTimestamp {
             if (!cursor.advance(_n)) return std::nullopt;
         }
         return CodecExtTimestamp{
-            .time = time,
-            .zid_size = zid_size,
-            .zid = zid,
+            /*time=*/time,
+            /*zid_size=*/zid_size,
+            /*zid=*/zid,
         };
     }
 

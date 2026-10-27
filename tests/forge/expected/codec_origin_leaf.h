@@ -36,8 +36,8 @@ struct CodecOriginLeaf {
         if (_frame_len < static_cast<std::size_t>(1 + len)) return std::nullopt;
         std::vector<uint8_t> data = std::vector<uint8_t>(raw + 1, raw + 1 + len);
         CodecOriginLeaf _decoded{
-            .len = len,
-            .data = data,
+            /*len=*/len,
+            /*data=*/data,
         };
         if (!cursor.advance(_frame_len)) return std::nullopt;
         return _decoded;

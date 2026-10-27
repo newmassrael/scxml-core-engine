@@ -63,9 +63,9 @@ struct CodecRepeatFlagCarrier {
             entries.push_back(*_elem);
         }
         return CodecRepeatFlagCarrier{
-            .head = head,
-            .count = count,
-            .entries = entries,
+            /*head=*/head,
+            /*count=*/count,
+            /*entries=*/entries,
         };
     }
 

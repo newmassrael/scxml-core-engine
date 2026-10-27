@@ -72,9 +72,9 @@ struct CodecZenohMsgDel {
             extensions = std::move(_list);
         }
         return CodecZenohMsgDel{
-            .header = header,
-            .timestamp = timestamp,
-            .extensions = extensions,
+            /*header=*/header,
+            /*timestamp=*/timestamp,
+            /*extensions=*/extensions,
         };
     }
 

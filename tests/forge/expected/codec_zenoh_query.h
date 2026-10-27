@@ -86,11 +86,11 @@ struct CodecZenohQuery {
             extensions = std::move(_list);
         }
         return CodecZenohQuery{
-            .header = header,
-            .consolidation = consolidation,
-            .parameters_len = parameters_len,
-            .parameters = parameters,
-            .extensions = extensions,
+            /*header=*/header,
+            /*consolidation=*/consolidation,
+            /*parameters_len=*/parameters_len,
+            /*parameters=*/parameters,
+            /*extensions=*/extensions,
         };
     }
 

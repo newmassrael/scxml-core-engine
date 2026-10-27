@@ -93,13 +93,13 @@ struct CodecOriginEnvelope {
             items.push_back(*_elem);
         }
         return CodecOriginEnvelope{
-            .hdr = hdr,
-            .note_len = note_len,
-            .note = note,
-            .m = m,
-            .required = required,
-            .optional = optional,
-            .items = items,
+            /*hdr=*/hdr,
+            /*note_len=*/note_len,
+            /*note=*/note,
+            /*m=*/m,
+            /*required=*/required,
+            /*optional=*/optional,
+            /*items=*/items,
         };
     }
 

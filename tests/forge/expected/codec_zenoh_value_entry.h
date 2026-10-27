@@ -91,15 +91,15 @@ struct CodecZenohValueEntry {
                 auto _arm = ::SCE::Generated::CodecZenohExtUnit::CodecZenohExtUnit::decode(cursor);
                 if (!_arm.has_value()) return std::nullopt;
                 body = CodecZenohValueEntryDefault{
-                    .tag = static_cast<uint8_t>((header >> 5) & static_cast<uint8_t>(0x03)),
-                    .body = *_arm,
+                    /*tag=*/static_cast<uint8_t>((header >> 5) & static_cast<uint8_t>(0x03)),
+                    /*body=*/*_arm,
                 };
                 break;
             }
         }
         return CodecZenohValueEntry{
-            .header = header,
-            .body = body,
+            /*header=*/header,
+            /*body=*/body,
         };
     }
 

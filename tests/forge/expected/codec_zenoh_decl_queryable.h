@@ -68,10 +68,10 @@ struct CodecZenohDeclQueryable {
             ext_value = _v;
         }
         return CodecZenohDeclQueryable{
-            .id = id,
-            .wireexpr = wireexpr,
-            .ext_type = ext_type,
-            .ext_value = ext_value,
+            /*id=*/id,
+            /*wireexpr=*/wireexpr,
+            /*ext_type=*/ext_type,
+            /*ext_value=*/ext_value,
         };
     }
 

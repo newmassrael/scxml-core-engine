@@ -79,7 +79,7 @@ struct CodecVariantPeekBasic {
             }
         }
         return CodecVariantPeekBasic{
-            .body = body,
+            /*body=*/body,
         };
     }
 

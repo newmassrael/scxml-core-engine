@@ -71,15 +71,15 @@ struct CodecZenohPush {
                 auto _arm = ::SCE::Generated::CodecZenohPushBody::CodecZenohPushBody::decode(cursor);
                 if (!_arm.has_value()) return std::nullopt;
                 body = CodecZenohPushDefault{
-                    .tag = static_cast<uint8_t>((header >> 0) & static_cast<uint8_t>(0x1F)),
-                    .body = *_arm,
+                    /*tag=*/static_cast<uint8_t>((header >> 0) & static_cast<uint8_t>(0x1F)),
+                    /*body=*/*_arm,
                 };
                 break;
             }
         }
         return CodecZenohPush{
-            .header = header,
-            .body = body,
+            /*header=*/header,
+            /*body=*/body,
         };
     }
 

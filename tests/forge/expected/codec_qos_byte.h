@@ -31,7 +31,7 @@ struct CodecQosByte {
         if (raw == nullptr) return std::nullopt;
         uint8_t qos = raw[0];
         CodecQosByte _decoded{
-            .qos = qos,
+            /*qos=*/qos,
         };
         if (!cursor.advance(1)) return std::nullopt;
         return _decoded;

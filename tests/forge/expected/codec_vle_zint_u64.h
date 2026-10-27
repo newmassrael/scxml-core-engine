@@ -42,7 +42,7 @@ struct CodecVleZintU64 {
         if (!value_opt.has_value()) return std::nullopt;
         auto value = static_cast<std::uint64_t>(*value_opt);
         return CodecVleZintU64{
-            .value = value,
+            /*value=*/value,
         };
     }
 

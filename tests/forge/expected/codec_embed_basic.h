@@ -51,8 +51,8 @@ struct CodecEmbedBasic {
         if (!_emb_locator.has_value()) return std::nullopt;
         auto locator = std::move(*_emb_locator);
         return CodecEmbedBasic{
-            .tag = tag,
-            .locator = locator,
+            /*tag=*/tag,
+            /*locator=*/locator,
         };
     }
 

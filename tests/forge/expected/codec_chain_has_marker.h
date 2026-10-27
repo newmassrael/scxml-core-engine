@@ -112,12 +112,12 @@ struct CodecChainHasMarker {
             slices = std::move(_list);
         }
         return CodecChainHasMarker{
-            .header = header,
-            .extensions = extensions,
-            .payload_len = payload_len,
-            .payload = payload,
-            .slice_count = slice_count,
-            .slices = slices,
+            /*header=*/header,
+            /*extensions=*/extensions,
+            /*payload_len=*/payload_len,
+            /*payload=*/payload,
+            /*slice_count=*/slice_count,
+            /*slices=*/slices,
         };
     }
 

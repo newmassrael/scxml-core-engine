@@ -68,9 +68,9 @@ struct CodecZenohResponseFinal {
             extensions = std::move(_list);
         }
         return CodecZenohResponseFinal{
-            .header = header,
-            .request_id = request_id,
-            .extensions = extensions,
+            /*header=*/header,
+            /*request_id=*/request_id,
+            /*extensions=*/extensions,
         };
     }
 

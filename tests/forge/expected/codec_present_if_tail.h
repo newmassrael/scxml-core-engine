@@ -55,8 +55,8 @@ struct CodecPresentIfTail {
             if (!cursor.advance(_n)) return std::nullopt;
         }
         return CodecPresentIfTail{
-            .flags = flags,
-            .payload = payload,
+            /*flags=*/flags,
+            /*payload=*/payload,
         };
     }
 

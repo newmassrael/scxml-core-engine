@@ -55,9 +55,9 @@ struct CodecChainHasSlice {
             if (!cursor.advance(_n)) return std::nullopt;
         }
         return CodecChainHasSlice{
-            .kind = kind,
-            .len = len,
-            .bytes = bytes,
+            /*kind=*/kind,
+            /*len=*/len,
+            /*bytes=*/bytes,
         };
     }
 

@@ -63,9 +63,9 @@ struct CodecPresentIfLengthRef {
             if (!cursor.advance(_n)) return std::nullopt;
         }
         return CodecPresentIfLengthRef{
-            .flags = flags,
-            .payload_size = payload_size,
-            .payload = payload,
+            /*flags=*/flags,
+            /*payload_size=*/payload_size,
+            /*payload=*/payload,
         };
     }
 

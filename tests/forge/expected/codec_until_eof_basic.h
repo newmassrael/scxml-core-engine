@@ -46,7 +46,7 @@ struct CodecUntilEofBasic {
             msgs.push_back(*_elem);
         }
         return CodecUntilEofBasic{
-            .msgs = msgs,
+            /*msgs=*/msgs,
         };
     }
 

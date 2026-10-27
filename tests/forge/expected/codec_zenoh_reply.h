@@ -77,10 +77,10 @@ struct CodecZenohReply {
         if (!_emb_body.has_value()) return std::nullopt;
         auto body = std::move(*_emb_body);
         return CodecZenohReply{
-            .header = header,
-            .consolidation = consolidation,
-            .extensions = extensions,
-            .body = body,
+            /*header=*/header,
+            /*consolidation=*/consolidation,
+            /*extensions=*/extensions,
+            /*body=*/body,
         };
     }
 

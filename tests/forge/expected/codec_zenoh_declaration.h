@@ -135,15 +135,15 @@ struct CodecZenohDeclaration {
                 auto _arm = ::SCE::Generated::CodecZenohDeclFinal::CodecZenohDeclFinal::decode(cursor);
                 if (!_arm.has_value()) return std::nullopt;
                 body = CodecZenohDeclarationDefault{
-                    .tag = static_cast<uint8_t>((header >> 0) & static_cast<uint8_t>(0x1F)),
-                    .body = *_arm,
+                    /*tag=*/static_cast<uint8_t>((header >> 0) & static_cast<uint8_t>(0x1F)),
+                    /*body=*/*_arm,
                 };
                 break;
             }
         }
         return CodecZenohDeclaration{
-            .header = header,
-            .body = body,
+            /*header=*/header,
+            /*body=*/body,
         };
     }
 

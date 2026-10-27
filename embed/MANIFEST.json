@@ -1,9 +1,9 @@
 {
   "clang_version": "Ubuntu clang version 19.1.7 (++20250804090312+cd708029e0b2-1~exp1~20250804210325.79)",
-  "embed_version": "b3193e2ec3",
+  "embed_version": "0d68028e0c",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 316,
+  "symbol_count": 342,
   "symbols": [
     {
       "header": "GuardUtils.h",
@@ -496,12 +496,18 @@
       "header": "common/SourceLocation.h",
       "kind": "struct",
       "members": [
+        "field const char * file_",
+        "field const char * function_",
+        "field std::uint_least32_t line_",
         "method const char *() const noexcept file_name",
         "method const char *() const noexcept function_name",
-        "method source_location () noexcept current",
-        "method uint_least32_t () const noexcept column",
-        "method uint_least32_t () const noexcept line",
-        "method void () noexcept ~source_location"
+        "method source_location (const char *, const char *, std::uint_least32_t) noexcept current",
+        "method std::uint_least32_t () const noexcept column",
+        "method std::uint_least32_t () const noexcept line",
+        "method void () noexcept source_location",
+        "method void () noexcept ~source_location",
+        "method void (const source_location &) source_location",
+        "method void (source_location &&) noexcept source_location"
       ],
       "name": "SCE::source_location"
     },
@@ -509,11 +515,17 @@
       "header": "common/SourceLocation.h",
       "kind": "struct",
       "members": [
+        "field const char * file_",
+        "field const char * function_",
+        "field std::uint_least32_t line_",
         "method const char *() const noexcept file_name",
         "method const char *() const noexcept function_name",
-        "method source_location () noexcept current",
-        "method uint_least32_t () const noexcept column",
-        "method uint_least32_t () const noexcept line"
+        "method source_location (const char *, const char *, std::uint_least32_t) noexcept current",
+        "method std::uint_least32_t () const noexcept column",
+        "method std::uint_least32_t () const noexcept line",
+        "method void () noexcept source_location",
+        "method void (const source_location &) source_location",
+        "method void (source_location &&) noexcept source_location"
       ],
       "name": "SCE::source_location"
     },
@@ -582,6 +594,12 @@
       "kind": "class",
       "members": [],
       "name": "SCE::Core::AOTEventQueue<T>"
+    },
+    {
+      "header": "core/AotSmMeshConcept.h",
+      "kind": "struct",
+      "members": [],
+      "name": "SCE::Core::AotSmMeshIntegrationTrait<T>"
     },
     {
       "header": "core/ConfigurationHelper.h",
@@ -818,6 +836,12 @@
         "method bool () const operator()"
       ],
       "name": "SCE::Core::AlwaysTakeMicrostep"
+    },
+    {
+      "header": "core/EventQueueConcept.h",
+      "kind": "struct",
+      "members": [],
+      "name": "SCE::Core::EventQueueAdapterTrait<T>"
     },
     {
       "header": "core/EventQueueManager.h",
@@ -1264,6 +1288,18 @@
       "header": "core/StatePolicyConcepts.h",
       "kind": "struct",
       "members": [],
+      "name": "SCE::Core::BaseStatePolicyTrait<T>"
+    },
+    {
+      "header": "core/StatePolicyConcepts.h",
+      "kind": "struct",
+      "members": [],
+      "name": "SCE::Core::EventNamingPolicyTrait<T>"
+    },
+    {
+      "header": "core/StatePolicyConcepts.h",
+      "kind": "struct",
+      "members": [],
       "name": "SCE::Core::HasActiveStatesTrait<T>"
     },
     {
@@ -1348,6 +1384,12 @@
       "header": "core/StatePolicyConcepts.h",
       "kind": "struct",
       "members": [],
+      "name": "SCE::Core::HierarchyPolicyTrait<T>"
+    },
+    {
+      "header": "core/StatePolicyConcepts.h",
+      "kind": "struct",
+      "members": [],
       "name": "SCE::Core::NeedsEventSchedulerTrait<T>"
     },
     {
@@ -1355,6 +1397,132 @@
       "kind": "struct",
       "members": [],
       "name": "SCE::Core::NeedsParentTrait<T>"
+    },
+    {
+      "header": "core/StatePolicyConcepts.h",
+      "kind": "struct",
+      "members": [],
+      "name": "SCE::Core::ParallelStatePolicyTrait<T>"
+    },
+    {
+      "header": "core/StatePolicyConcepts.h",
+      "kind": "struct",
+      "members": [],
+      "name": "SCE::Core::StateNamingPolicyTrait<T>"
+    },
+    {
+      "header": "core/StatePolicyConcepts.h",
+      "kind": "typedef",
+      "name": "SCE::Core::detail::GetChildStatesResult",
+      "type": "decltype(P::getChildStates(std::declval<PolicyStateLvalue<P>>()))"
+    },
+    {
+      "header": "core/StatePolicyConcepts.h",
+      "kind": "typedef",
+      "name": "SCE::Core::detail::GetDocumentInitialTargetsResult",
+      "type": "decltype(P::getDocumentInitialTargets())"
+    },
+    {
+      "header": "core/StatePolicyConcepts.h",
+      "kind": "typedef",
+      "name": "SCE::Core::detail::GetDocumentOrderResult",
+      "type": "decltype(P::getDocumentOrder(std::declval<PolicyStateLvalue<P>>()))"
+    },
+    {
+      "header": "core/StatePolicyConcepts.h",
+      "kind": "typedef",
+      "name": "SCE::Core::detail::GetEventFromNameResult",
+      "type": "decltype(std::declval<P &>().getEventFromName(std::declval<const std::string &>()))"
+    },
+    {
+      "header": "core/StatePolicyConcepts.h",
+      "kind": "typedef",
+      "name": "SCE::Core::detail::GetEventNameResult",
+      "type": "decltype(std::declval<P &>().getEventName(std::declval<typename P::Event &>()))"
+    },
+    {
+      "header": "core/StatePolicyConcepts.h",
+      "kind": "typedef",
+      "name": "SCE::Core::detail::GetHistoryDefaultTargetsResult",
+      "type": "decltype(P::getHistoryDefaultTargets(std::declval<PolicyHistoryLvalue<P>>()))"
+    },
+    {
+      "header": "core/StatePolicyConcepts.h",
+      "kind": "typedef",
+      "name": "SCE::Core::detail::GetHistoryParentResult",
+      "type": "decltype(P::getHistoryParent(std::declval<PolicyHistoryLvalue<P>>()))"
+    },
+    {
+      "header": "core/StatePolicyConcepts.h",
+      "kind": "typedef",
+      "name": "SCE::Core::detail::GetInitialTargetsResult",
+      "type": "decltype(P::getInitialTargets(std::declval<PolicyStateLvalue<P>>()))"
+    },
+    {
+      "header": "core/StatePolicyConcepts.h",
+      "kind": "typedef",
+      "name": "SCE::Core::detail::GetParallelRegionsResult",
+      "type": "decltype(P::getParallelRegions(std::declval<PolicyStateLvalue<P>>()))"
+    },
+    {
+      "header": "core/StatePolicyConcepts.h",
+      "kind": "typedef",
+      "name": "SCE::Core::detail::GetParentResult",
+      "type": "decltype(P::getParent(std::declval<PolicyStateLvalue<P>>()))"
+    },
+    {
+      "header": "core/StatePolicyConcepts.h",
+      "kind": "typedef",
+      "name": "SCE::Core::detail::GetStateNameResult",
+      "type": "decltype(P::getStateName(std::declval<PolicyStateLvalue<P>>()))"
+    },
+    {
+      "header": "core/StatePolicyConcepts.h",
+      "kind": "typedef",
+      "name": "SCE::Core::detail::HasParallelStatesResult",
+      "type": "decltype((P::HAS_PARALLEL_STATES))"
+    },
+    {
+      "header": "core/StatePolicyConcepts.h",
+      "kind": "typedef",
+      "name": "SCE::Core::detail::InitialStateResult",
+      "type": "decltype(P::initialState())"
+    },
+    {
+      "header": "core/StatePolicyConcepts.h",
+      "kind": "typedef",
+      "name": "SCE::Core::detail::IsCompoundStateResult",
+      "type": "decltype(P::isCompoundState(std::declval<PolicyStateLvalue<P>>()))"
+    },
+    {
+      "header": "core/StatePolicyConcepts.h",
+      "kind": "typedef",
+      "name": "SCE::Core::detail::IsDescendantOfResult",
+      "type": "decltype(P::isDescendantOf(std::declval<PolicyStateLvalue<P>>(), std::declval<PolicyStateLvalue<P>>()))"
+    },
+    {
+      "header": "core/StatePolicyConcepts.h",
+      "kind": "typedef",
+      "name": "SCE::Core::detail::IsFinalStateResult",
+      "type": "decltype(P::isFinalState(std::declval<PolicyStateLvalue<P>>()))"
+    },
+    {
+      "header": "core/StatePolicyConcepts.h",
+      "kind": "typedef",
+      "name": "SCE::Core::detail::IsParallelStateResult",
+      "type": "decltype(P::isParallelState(std::declval<PolicyStateLvalue<P>>()))"
+    },
+    {
+      "header": "core/StatePolicyConcepts.h",
+      "kind": "typedef",
+      "name": "SCE::Core::detail::PolicyHistoryLvalue",
+      "type": "typename P::History &"
+    },
+    {
+      "header": "core/StatePolicyConcepts.h",
+      "kind": "typedef",
+      "name": "SCE::Core::detail::PolicyStateLvalue",
+      "type": "typename P::State &"
     },
     {
       "header": "core/TransitionHelper.h",

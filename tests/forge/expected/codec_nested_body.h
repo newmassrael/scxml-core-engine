@@ -55,8 +55,8 @@ struct CodecNestedBody {
             locs.push_back(*_elem);
         }
         return CodecNestedBody{
-            .n = n,
-            .locs = locs,
+            /*n=*/n,
+            /*locs=*/locs,
         };
     }
 

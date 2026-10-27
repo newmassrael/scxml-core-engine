@@ -55,8 +55,8 @@ struct CodecZenohSourceInfoExt {
             info = std::move(*_emb);
         }
         return CodecZenohSourceInfoExt{
-            .ext_size = ext_size,
-            .info = info,
+            /*ext_size=*/ext_size,
+            /*info=*/info,
         };
     }
 

@@ -31,7 +31,7 @@ struct CodecZenohPut {
         if (raw == nullptr) return std::nullopt;
         uint8_t payload = raw[0];
         CodecZenohPut _decoded{
-            .payload = payload,
+            /*payload=*/payload,
         };
         if (!cursor.advance(1)) return std::nullopt;
         return _decoded;

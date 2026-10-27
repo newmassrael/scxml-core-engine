@@ -57,8 +57,8 @@ struct CodecTlvChainBasic {
         }
         if (cursor.remaining() > 0) return std::nullopt;
         return CodecTlvChainBasic{
-            .header_flags = header_flags,
-            .extensions = extensions,
+            /*header_flags=*/header_flags,
+            /*extensions=*/extensions,
         };
     }
 

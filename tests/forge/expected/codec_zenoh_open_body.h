@@ -67,10 +67,10 @@ struct CodecZenohOpenBody {
             if (!cursor.advance(_n)) return std::nullopt;
         }
         return CodecZenohOpenBody{
-            .lease = lease,
-            .initial_sn = initial_sn,
-            .cookie_len = cookie_len,
-            .cookie = cookie,
+            /*lease=*/lease,
+            /*initial_sn=*/initial_sn,
+            /*cookie_len=*/cookie_len,
+            /*cookie=*/cookie,
         };
     }
 

@@ -33,8 +33,8 @@ struct CodecPeekArmA {
         uint8_t header = raw[0];
         uint8_t payload = raw[1];
         CodecPeekArmA _decoded{
-            .header = header,
-            .payload = payload,
+            /*header=*/header,
+            /*payload=*/payload,
         };
         if (!cursor.advance(2)) return std::nullopt;
         return _decoded;

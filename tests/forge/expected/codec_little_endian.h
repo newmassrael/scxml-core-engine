@@ -35,9 +35,9 @@ struct CodecLittleEndian {
         uint16_t value = static_cast<uint16_t>(raw[1] | (static_cast<uint16_t>(raw[2]) << 8));
         uint8_t status = raw[3];
         CodecLittleEndian _decoded{
-            .sensorId = sensorId,
-            .value = value,
-            .status = status,
+            /*sensorId=*/sensorId,
+            /*value=*/value,
+            /*status=*/status,
         };
         if (!cursor.advance(4)) return std::nullopt;
         return _decoded;

@@ -76,10 +76,10 @@ struct CodecZenohInterest {
             extensions = std::move(_list);
         }
         return CodecZenohInterest{
-            .header = header,
-            .id = id,
-            .body = body,
-            .extensions = extensions,
+            /*header=*/header,
+            /*id=*/id,
+            /*body=*/body,
+            /*extensions=*/extensions,
         };
     }
 

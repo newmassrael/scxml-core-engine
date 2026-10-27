@@ -61,9 +61,9 @@ struct CodecZenohEncoding {
             if (!cursor.advance(_n)) return std::nullopt;
         }
         return CodecZenohEncoding{
-            .packed_id = packed_id,
-            .schema_len = schema_len,
-            .schema = schema,
+            /*packed_id=*/packed_id,
+            /*schema_len=*/schema_len,
+            /*schema=*/schema,
         };
     }
 

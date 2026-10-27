@@ -85,11 +85,11 @@ struct CodecZenohErr {
             if (!cursor.advance(_n)) return std::nullopt;
         }
         return CodecZenohErr{
-            .header = header,
-            .encoding = encoding,
-            .extensions = extensions,
-            .payload_len = payload_len,
-            .payload = payload,
+            /*header=*/header,
+            /*encoding=*/encoding,
+            /*extensions=*/extensions,
+            /*payload_len=*/payload_len,
+            /*payload=*/payload,
         };
     }
 

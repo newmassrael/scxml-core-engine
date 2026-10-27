@@ -68,9 +68,9 @@ struct CodecRepeatPresentIfBasic {
             elems = std::move(_list);
         }
         return CodecRepeatPresentIfBasic{
-            .carrier = carrier,
-            .num_elems = num_elems,
-            .elems = elems,
+            /*carrier=*/carrier,
+            /*num_elems=*/num_elems,
+            /*elems=*/elems,
         };
     }
 

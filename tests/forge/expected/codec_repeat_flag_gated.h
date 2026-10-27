@@ -68,9 +68,9 @@ struct CodecRepeatFlagGated {
             entries = std::move(_list);
         }
         return CodecRepeatFlagGated{
-            .head = head,
-            .count = count,
-            .entries = entries,
+            /*head=*/head,
+            /*count=*/count,
+            /*entries=*/entries,
         };
     }
 

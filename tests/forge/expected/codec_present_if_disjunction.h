@@ -54,8 +54,8 @@ struct CodecPresentIfDisjunction {
             if (!cursor.advance(2)) return std::nullopt;
         }
         return CodecPresentIfDisjunction{
-            .flags = flags,
-            .seq = seq,
+            /*flags=*/flags,
+            /*seq=*/seq,
         };
     }
 

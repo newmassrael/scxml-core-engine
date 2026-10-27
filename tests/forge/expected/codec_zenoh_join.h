@@ -95,14 +95,14 @@ struct CodecZenohJoin {
         if (!next_sn_best_effort_opt.has_value()) return std::nullopt;
         auto next_sn_best_effort = static_cast<std::uint64_t>(*next_sn_best_effort_opt);
         return CodecZenohJoin{
-            .version = version,
-            .cbyte = cbyte,
-            .zid = zid,
-            .sn_res = sn_res,
-            .batch_size = batch_size,
-            .lease = lease,
-            .next_sn_reliable = next_sn_reliable,
-            .next_sn_best_effort = next_sn_best_effort,
+            /*version=*/version,
+            /*cbyte=*/cbyte,
+            /*zid=*/zid,
+            /*sn_res=*/sn_res,
+            /*batch_size=*/batch_size,
+            /*lease=*/lease,
+            /*next_sn_reliable=*/next_sn_reliable,
+            /*next_sn_best_effort=*/next_sn_best_effort,
         };
     }
 

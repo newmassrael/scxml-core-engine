@@ -63,10 +63,10 @@ struct CodecZenohSourceInfo {
         if (!sn_opt.has_value()) return std::nullopt;
         auto sn = static_cast<std::uint32_t>(*sn_opt);
         return CodecZenohSourceInfo{
-            .header = header,
-            .zid = zid,
-            .eid = eid,
-            .sn = sn,
+            /*header=*/header,
+            /*zid=*/zid,
+            /*eid=*/eid,
+            /*sn=*/sn,
         };
     }
 

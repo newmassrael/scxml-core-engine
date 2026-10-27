@@ -7,14 +7,14 @@
 
 #include <cstdint>
 #include <cstdio>
-#include <span>
+#include <sce/forge/span.h>
 #include "algorithm_crc16.h"
 
 static inline int test_vector_algorithm_crc16() {
     int failures = 0;
     {
         static constexpr std::uint8_t row_bytes[] = { 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39 };
-        const uint16_t actual = SCE::Generated::AlgorithmCrc16::algorithm_crc16(std::span<const std::uint8_t>{row_bytes});
+        const uint16_t actual = SCE::Generated::AlgorithmCrc16::algorithm_crc16(SCE::Forge::Span<const std::uint8_t>{row_bytes});
         const uint16_t expected = (uint16_t)0x29b1u;
         if (actual != expected) {
             std::fprintf(stderr,

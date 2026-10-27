@@ -54,8 +54,8 @@ struct CodecPresentIfNegation {
             if (!cursor.advance(2)) return std::nullopt;
         }
         return CodecPresentIfNegation{
-            .flags = flags,
-            .seq = seq,
+            /*flags=*/flags,
+            /*seq=*/seq,
         };
     }
 

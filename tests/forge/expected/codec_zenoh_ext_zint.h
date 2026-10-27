@@ -42,7 +42,7 @@ struct CodecZenohExtZint {
         if (!value_opt.has_value()) return std::nullopt;
         auto value = static_cast<std::uint64_t>(*value_opt);
         return CodecZenohExtZint{
-            .value = value,
+            /*value=*/value,
         };
     }
 

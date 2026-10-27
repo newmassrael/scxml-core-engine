@@ -65,9 +65,9 @@ struct CodecPresentIfString {
             if (!cursor.advance(_n)) return std::nullopt;
         }
         return CodecPresentIfString{
-            .carrier = carrier,
-            .text_len = text_len,
-            .text = text,
+            /*carrier=*/carrier,
+            /*text_len=*/text_len,
+            /*text=*/text,
         };
     }
 

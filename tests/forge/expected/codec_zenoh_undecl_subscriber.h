@@ -54,8 +54,8 @@ struct CodecZenohUndeclSubscriber {
             ext_keyexpr = std::move(*_emb);
         }
         return CodecZenohUndeclSubscriber{
-            .id = id,
-            .ext_keyexpr = ext_keyexpr,
+            /*id=*/id,
+            /*ext_keyexpr=*/ext_keyexpr,
         };
     }
 
