@@ -966,9 +966,13 @@ return ::SCE::Common::EventPayloadFields::wire({{{}}});\n    }}\n",
             } else {
                 String::new()
             };
+            let comparison = cpp_member_wise_equality(
+                &format!("{pascal}{what}"),
+                schema.fields.iter().map(|f| f.id.as_str()),
+            );
             defs.push_str(&format!(
                 "/// {role} `<invoke id=\"{id}\">` with (SCE Accepted Subset \u{a7}2.12).\n\
-struct {pascal}{what} {{\n{fields}{wire}\n    bool operator==(const {pascal}{what} &) const = default;\n}};\n\n",
+struct {pascal}{what} {{\n{fields}{wire}\n{comparison}}};\n\n",
                 id = invoke.invoke_id,
             ));
         }
@@ -1022,10 +1026,16 @@ virtual void cancel{pascal}(uint64_t token) = 0;\n"
                 None => (String::new(), ""),
             };
             let start = if invoke.result.is_some() {
+                // By position, in the order `core/HostProcessor.h` declares
+                // `HostInvokeResponse` (docs/adr/0059, section 5).
+                let response = crate::forge::generator::cpp_positional_init(&[
+                    ("doneData", "result->wire()"),
+                    ("refusal", "std::nullopt"),
+                ]);
                 format!(
                     "                    const auto result = invoker->start{pascal}({typed_arg}start.token);\n                    \
 if (!result) {{\n                        return std::nullopt;\n                    }}\n                    \
-return ::SCE::HostInvokeResponse{{.doneData = result->wire(), .refusal = std::nullopt}};\n"
+return ::SCE::HostInvokeResponse{{{response}}};\n"
                 )
             } else {
                 format!(
@@ -1085,6 +1095,28 @@ return std::nullopt;\n        }});\n    }}\n\n"
         ));
     }
     CppHostInvokerInterface { defs, members }
+}
+
+/// The comparison of a C++ record `ty` whose members are `members`, in the
+/// order it declares them (docs/adr/0059, section 6): an `operator==` that
+/// compares member by member and an `operator!=` that negates it, because C++17
+/// has no defaulted comparison. Each member is read as `this->` and `rhs.`, so a
+/// member of any name compares; a record of no member is equal to any other and
+/// names no parameter it would not read.
+fn cpp_member_wise_equality<'a>(ty: &str, members: impl IntoIterator<Item = &'a str>) -> String {
+    let compared: Vec<String> = members
+        .into_iter()
+        .map(|member| format!("this->{member} == rhs.{member}"))
+        .collect();
+    let (parameter, equal) = if compared.is_empty() {
+        ("", "true".to_string())
+    } else {
+        ("rhs", compared.join(" && "))
+    };
+    format!(
+        "    bool operator==(const {ty} &{parameter}) const {{\n        return {equal};\n    }}\n\n    \
+bool operator!=(const {ty} &rhs) const {{\n        return !(*this == rhs);\n    }}\n"
+    )
 }
 
 /// [`request_checks`] spelled as the C11 runtime's `sce_request_field_type_t`.
@@ -1366,5 +1398,44 @@ fn go_request_reader(f: &SchemaField) -> String {
         SceType::Enum(_) => {
             unreachable!("typed_invoke::validate refuses an enum-typed field in a host-run record")
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::cpp_member_wise_equality;
+
+    /// A C++ record compares member by member, in its declaration order, and
+    /// `!=` is that comparison negated: C++17 has no defaulted comparison
+    /// (docs/adr/0059, section 6).
+    #[test]
+    fn a_cpp_record_compares_member_by_member() {
+        let written = cpp_member_wise_equality("ScanResult", ["level", "label"]);
+        assert_eq!(
+            written,
+            "    bool operator==(const ScanResult &rhs) const {\n        \
+             return this->level == rhs.level && this->label == rhs.label;\n    }\n\n    \
+             bool operator!=(const ScanResult &rhs) const {\n        \
+             return !(*this == rhs);\n    }\n"
+        );
+        assert!(
+            !written.contains("= default"),
+            "no defaulted comparison:\n{written}"
+        );
+    }
+
+    /// A record of no member is equal to any other, and its `==` names no
+    /// parameter it would not read, which `-Wextra` would refuse as unused.
+    #[test]
+    fn a_cpp_record_of_no_member_is_equal_to_any_other() {
+        let written = cpp_member_wise_equality("Empty", Vec::<&str>::new());
+        assert!(
+            written.contains("bool operator==(const Empty &) const {\n        return true;\n    }"),
+            "{written}"
+        );
+        assert!(
+            written.contains("bool operator!=(const Empty &rhs) const {"),
+            "{written}"
+        );
     }
 }

@@ -177,8 +177,8 @@ struct {{ struct_name }} {
                 auto _arm = {{ variant.default_arm.body_type }}::decode(cursor{{ variant.default_arm.body_decode_args_after_cursor }});
                 if (!_arm.has_value()) return std::nullopt;
                 body = {{ struct_name }}{{ variant.default_arm.variant_name }}{
-                    .tag = {{ variant.tag_store_expr }},
-                    .body = *_arm,
+                    /*tag=*/{{ variant.tag_store_expr }},
+                    /*body=*/*_arm,
                 };
                 break;
 {% else %}
@@ -189,9 +189,9 @@ struct {{ struct_name }} {
         }
         return {{ struct_name }}{
 {% for field in fields %}
-            .{{ field.id }} = {{ field.id }},
+            /*{{ field.id }}=*/{{ field.id }},
 {% endfor %}
-            .body = body,
+            /*body=*/body,
         };
 {% elif needs_streaming %}
         // Streaming cursor decode (SSOT selection: `needs_streaming`).
@@ -218,7 +218,7 @@ struct {{ struct_name }} {
 {% endfor %}
         return {{ struct_name }}{
 {% for field in fields %}
-            .{{ field.id }} = {{ field.id }},
+            /*{{ field.id }}=*/{{ field.id }},
 {% endfor %}
         };
 {% elif has_variable_fields %}
@@ -233,7 +233,7 @@ struct {{ struct_name }} {
 {% endfor %}
         {{ struct_name }} _decoded{
 {% for field in fields %}
-            .{{ field.id }} = {{ field.id }},
+            /*{{ field.id }}=*/{{ field.id }},
 {% endfor %}
         };
         if (!cursor.advance(_frame_len)) return std::nullopt;
@@ -246,7 +246,7 @@ struct {{ struct_name }} {
 {% endfor %}
         {{ struct_name }} _decoded{
 {% for field in fields %}
-            .{{ field.id }} = {{ field.id }},
+            /*{{ field.id }}=*/{{ field.id }},
 {% endfor %}
         };
         if (!cursor.advance({{ min_bytes }})) return std::nullopt;

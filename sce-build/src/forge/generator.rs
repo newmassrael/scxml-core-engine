@@ -983,6 +983,26 @@ pub(crate) fn cpp_type(ty: &SceType) -> &'static str {
     }
 }
 
+/// One member of a C++ aggregate initialized by position (docs/adr/0059,
+/// section 5): `value`, with the member's name beside it as a comment the
+/// compiler does not read. C++17 has no designated initializer, so what places
+/// a value in its member is its position, which is the declaration's order.
+pub(crate) fn cpp_positional_member(member: &str, value: &str) -> String {
+    format!("/*{member}=*/{value}")
+}
+
+/// The inside of a C++ aggregate initializer by position: `members` holds every
+/// member of the aggregate, in the order it is declared, each with its value. A
+/// member cannot be left out, because a position cannot be skipped: one the
+/// initializer did not give would take the next one's value.
+pub(crate) fn cpp_positional_init<M: AsRef<str>, V: AsRef<str>>(members: &[(M, V)]) -> String {
+    members
+        .iter()
+        .map(|(member, value)| cpp_positional_member(member.as_ref(), value.as_ref()))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 /// C++ parameter type (const ref for large types).
 fn cpp_param_type(ty: &SceType) -> String {
     match ty {
@@ -4855,7 +4875,7 @@ pendingPayloadTag_ = {TAG}::None;\n",
 
         let mut field_lines = String::new();
         let mut params = String::new();
-        let mut struct_inits = String::new();
+        let mut struct_inits: Vec<(&str, &str)> = Vec::new();
         // What the lift reads back out of `data`, and what the inject seam
         // writes into it beside the typed carrier: the same fields, named once.
         let mut field_reads = String::new();
@@ -4876,7 +4896,9 @@ pendingPayloadTag_ = {TAG}::None;\n",
                 data_items.push_str(", ");
             }
             params.push_str(&format!("{ty} {}", f.id));
-            struct_inits.push_str(&format!(".{} = {}, ", f.id, f.id));
+            // By position, in the order `field_lines` declares the struct
+            // (docs/adr/0059, section 5).
+            struct_inits.push((f.id.as_str(), f.id.as_str()));
             field_reads.push_str(&cpp_payload_field_lift(f, &present, static_enums));
             // ⚠ The wire is built by the same header the lift reads it with,
             // and by nothing else: a generated C++ machine LINKS against
@@ -4925,6 +4947,7 @@ pendingPayloadTag_ = {tag_type}::{variant};\n            \
         // event name + payload field values in one call (the C++ twin of the
         // Rust `raise_<event>` extension trait and the Go
         // `<Machine>Raise<Event>` func).
+        let struct_inits = cpp_positional_init(&struct_inits);
         inject.push_str(&format!(
             "    /// Typed `_event.data` inject for `{event}` —\n    \
 /// binds the event name and the payload field values in one call so the\n    \
@@ -28662,9 +28685,11 @@ fn lower_algorithm_stmt(
         // SCE_FORGE.md §4.12: a record local, built whole in one statement.
         // Every schema field is given exactly once and nothing else; each
         // value is lowered into its field's slot the way a typed assignment
-        // is; the fields are written in the SCHEMA's order, which C and C++
-        // designated initializers require and which keeps every backend's
-        // statement in one order whatever order the author wrote.
+        // is; the fields are written in the SCHEMA's order, which C's
+        // designated initializers and C++'s positional ones (the order the
+        // schema's struct declares, docs/adr/0059) require, and which keeps
+        // every backend's statement in one order whatever order the author
+        // wrote.
         AlgorithmStmt::RecordVar {
             name,
             name_spelling,
@@ -28723,12 +28748,8 @@ fn lower_algorithm_stmt(
                     )
                 }
                 Language::Cpp => {
-                    let designated = inits
-                        .iter()
-                        .map(|(field, value)| format!(".{field} = {value}"))
-                        .collect::<Vec<_>>()
-                        .join(", ");
-                    format!("{pad}{ty} {local}{{{designated}}};\n")
+                    let positional = cpp_positional_init(&inits);
+                    format!("{pad}{ty} {local}{{{positional}}};\n")
                 }
                 Language::C11 => {
                     let designated = inits
@@ -33518,6 +33539,22 @@ mod tests {
         assert_eq!(spelled(Language::Python).as_deref(), Some("Optional[T]"));
         assert_eq!(spelled(Language::C11), None);
         assert_eq!(spelled(Language::Swift), None);
+    }
+
+    /// A C++ aggregate is initialized by position, in the order the members are
+    /// given, each value with its member's name beside it as a comment: C++17 has
+    /// no designated initializer (docs/adr/0059, section 5).
+    #[test]
+    fn a_cpp_aggregate_is_initialized_by_position_in_the_order_given() {
+        let members = [("value", "v"), ("fault", "f")];
+        assert_eq!(cpp_positional_init(&members), "/*value=*/v, /*fault=*/f");
+        let owned = [
+            ("fault".to_string(), "f".to_string()),
+            ("value".to_string(), "v".to_string()),
+        ];
+        assert_eq!(cpp_positional_init(&owned), "/*fault=*/f, /*value=*/v");
+        assert_eq!(cpp_positional_init::<&str, &str>(&[]), "");
+        assert!(!cpp_positional_init(&members).contains(".value ="));
     }
 
     /// The Python payload of a schema with optional fields (docs/adr/0055) holds

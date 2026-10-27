@@ -1100,7 +1100,8 @@ pub trait StaticTarget {
     ) -> String;
     /// The identifier of schema field `id` on the record type.
     fn record_field(&self, id: &str) -> String;
-    /// A record value built whole from `(field identifier, value)` pairs.
+    /// A record value built whole from `(field identifier, value)` pairs, one
+    /// for every schema field, in the schema's order.
     fn record_value(&self, ty: &str, fields: &[(String, String)]) -> String;
     /// The type a variable declared `enum:<alias>` is held in, declared in
     /// `machine`'s own file — or `None` for a target with no enum type of its
@@ -5823,7 +5824,7 @@ impl StaticTarget for CppTarget {
         )
     }
     // A conditional per declared variant, the last taken when every one before it is
-    // not: an expression, which a designated initializer and a return both take, and
+    // not: an expression, which an aggregate initializer and a return both take, and
     // one with no path that ends without a value, which a `switch` over a scoped
     // enumeration has where its type could hold a value no variant names.
     fn enum_crossing(
@@ -5885,7 +5886,9 @@ impl StaticTarget for CppTarget {
     // handed is a copy, and what it returns is copied, so nothing it does reaches the
     // machine's state.
     fn state_adapter(&self, spec: &AdapterSpec<'_>) -> Option<String> {
-        use crate::forge::generator::{event_schema_field_ident, event_schema_payload_type};
+        use crate::forge::generator::{
+            cpp_positional_init, event_schema_field_ident, event_schema_payload_type,
+        };
         let value = spec.callee.value.as_ref()?;
         let machine_record = |alias: &str| self.record_type(spec.machine, alias);
         let algorithm_record = |alias: &str| {
@@ -5893,7 +5896,10 @@ impl StaticTarget for CppTarget {
                 .map(|schema| event_schema_payload_type(&schema.name, Language::Cpp))
         };
         // A record of `ty` made field by field from `from`, an enum field as the
-        // variant of the same declared name the other side's type holds.
+        // variant of the same declared name the other side's type holds. Both
+        // sides declare one member per schema field in the schema's order (the
+        // payload struct and [`Self::record_def`]), so the record is made by
+        // position in that order (docs/adr/0059, section 5).
         let record_of =
             |alias: &str, ty: String, from: &str, crossing: Crossing| -> Option<String> {
                 let schema = plain_schema(spec, alias)?;
@@ -5909,10 +5915,10 @@ impl StaticTarget for CppTarget {
                             crossing,
                             str::to_string,
                         )
-                        .map(|value| format!(".{field} = {value}"))
+                        .map(|value| (field, value))
                     })
-                    .collect::<Option<Vec<String>>>()?;
-                Some(format!("{ty}{{{}}}", fields.join(", ")))
+                    .collect::<Option<Vec<(String, String)>>>()?;
+                Some(format!("{ty}{{{}}}", cpp_positional_init(&fields)))
             };
         let mut declarations = Vec::new();
         let mut prelude = String::new();
@@ -6110,7 +6116,8 @@ impl StaticTarget for CppTarget {
         )
     }
     // Plain data by the record rule: a struct of the schema's fields in the
-    // schema's order, which a value is built from by designated initializers.
+    // schema's order, which a value is built from by position in that order
+    // (docs/adr/0059, section 5).
     fn record_def(
         &self,
         ty: &str,
@@ -6138,7 +6145,7 @@ impl StaticTarget for CppTarget {
             })
             .collect();
         // Its saved form (`SCE::Saved`) is two functions beside the type, so the record
-        // stays the plain data a value is built from by designated initializers: an
+        // stays the plain data a value is built from by position: an
         // object of the schema's fields keyed by their ids, written by `{ty}ToSaved` and
         // read by `{ty}FromSaved`, the names the enum's own saved form has
         // ([`Self::enum_def`]). An optional field is written as null or as its present
@@ -6204,7 +6211,14 @@ impl StaticTarget for CppTarget {
                     }
                     FieldType::Scalar(_) => format!("({reader})({held}, {what})"),
                 };
-                format!("        .{} = {read},\n", self.record_field(&field.id))
+                // In the order `fields` declares the struct, one member each.
+                format!(
+                    "        {},\n",
+                    crate::forge::generator::cpp_positional_member(
+                        &self.record_field(&field.id),
+                        &read
+                    )
+                )
             })
             .collect();
         format!(
@@ -6223,9 +6237,13 @@ impl StaticTarget for CppTarget {
     fn record_field(&self, id: &str) -> String {
         crate::forge::generator::event_schema_field_ident(id, Language::Cpp)
     }
+    // Every caller hands every schema field, in the schema's order, which is the
+    // order [`Self::record_def`] declares the struct: so by position.
     fn record_value(&self, ty: &str, fields: &[(String, String)]) -> String {
-        let args: Vec<String> = fields.iter().map(|(f, v)| format!(".{f} = {v}")).collect();
-        format!("{ty}{{{}}}", args.join(", "))
+        format!(
+            "{ty}{{{}}}",
+            crate::forge::generator::cpp_positional_init(fields)
+        )
     }
     fn enum_type(&self, machine: &str, alias: &str) -> Option<String> {
         Some(format!(
