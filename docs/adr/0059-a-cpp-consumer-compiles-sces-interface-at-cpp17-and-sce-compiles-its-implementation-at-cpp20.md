@@ -86,8 +86,17 @@ a language or library feature-test macro (`__cpp_*`, `__cpp_lib_*`) may change a
 function, a template's parameter list or a macro the interface expands. A constraint that is a concept under C++20
 is written once, as a C++17 trait checked by `static_assert`, so it reads the same in both. `SCE::source_location`
 is one SCE type in both standards, filled from the compiler builtins that `std::source_location` itself is built on.
-A guard on something other than the standard (a platform, an optional dependency, `SCE_ENABLE_RUNTIME_LOGGING`) is
-not affected, as long as it is the same for every translation unit of one program.
+A guard on something other than the standard (a platform, a compiler, an optional dependency) is not affected, as
+long as it is the same for every translation unit of one program. A feature-test macro that names a C++17 feature
+(`__cpp_lib_to_chars` at 201611) is such a guard: it reports the library, and one library gives it the same value
+in a C++17 and a C++20 translation unit. A macro that names a C++20 feature reports the standard, and is refused.
+
+`SCE_ENABLE_RUNTIME_LOGGING` is the one known exception, and it is outside this ADR. SCE defines it `PRIVATE`, so
+the header-only code that logs (`core/LogMacros.h`, seventeen headers) expands differently in SCE's translation
+units than in a consumer's. That is the same kind of divergence as §3 describes, but it is not chosen by the
+language standard, it predates this ADR as a stated design, and changing it means deciding how header-only code
+reaches a log sink without the consumer linking one. It is recorded here so the gate's exception is named, and it
+is decided separately.
 
 ### 4. A list is viewed through an SCE span
 
