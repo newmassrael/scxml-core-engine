@@ -7863,6 +7863,15 @@ pub fn inject_partition_context_for(
                                 wire21_inbound.insert((*src).clone());
                             }
                         }
+                        // The Root tracker raises `done.state.<parallel>`
+                        // (`state_machine.jinja2`), so the enumerator must
+                        // exist whenever this role does. The parser registers
+                        // the event, before analysis, when some region holds a
+                        // `<final>`. When none does, no region can complete,
+                        // the tracker never fires, and the event is never
+                        // raised: registering it after analysis (and so after
+                        // prefix matching) only makes the reference compile.
+                        model.events.insert(format!("done.state.{parallel_id}"));
                     }
                     model::PartitionRole::SinglePartition => {}
                 }
@@ -15014,6 +15023,55 @@ void _start(void) {
         assert!(
             names.iter().any(|n| n.contains("udp_scout")),
             "link emit missing from cross-file output: {names:?}",
+        );
+    }
+
+    /// SCE_MESH.md §16.5: the partition that hosts a distributed
+    /// `<parallel>`'s root holds the completion tracker, and the tracker
+    /// raises `done.state.<parallel>`. The fixture's regions hold no
+    /// `<final>`, so the parser leaves that event out; the generated header
+    /// then named `Event::Done_state_root` without declaring it, which
+    /// GCC 15 rejects. The enumerator the tracker raises must be declared.
+    #[test]
+    fn a_root_partition_declares_the_done_state_event_its_tracker_raises() {
+        let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let mesh_dir = crate_dir.join("../tests/mesh");
+        let scxml = mesh_dir.join("brake_region_liveness.scxml");
+        let scxml = scxml.to_str().expect("utf-8 fixture path");
+        let mut model = parser::SCXMLParser::new()
+            .parse_file(scxml)
+            .expect("parse brake_region_liveness");
+        analyzer::analyze(&mut model, scxml);
+        assert!(
+            !model.events.contains("done.state.root"),
+            "the fixture must leave done.state.root to the partition, or this test proves nothing"
+        );
+
+        inject_partition_context_for(
+            &mut model,
+            &mesh_dir.join("deploy_zenoh_region_liveness.yaml"),
+            Some("brake_left_part"),
+        )
+        .expect("brake_left_part is a declared partition");
+        assert_eq!(
+            model.partition_parallel_roles.get("root"),
+            Some(&model::PartitionRole::Root),
+            "brake_left_part claims the root of <parallel id=\"root\">"
+        );
+
+        let template_dir = crate_dir.join("../tools/codegen/templates");
+        let out = generator::generate_cpp(&model, &template_dir, "brake_region_liveness", None)
+            .expect("render brake_left_part");
+        let body: String = out.files.into_iter().map(|(_, body)| body).collect();
+        assert!(
+            body.contains("Event::Done_state_root"),
+            "the Root tracker must raise done.state.root"
+        );
+        let enum_start = body.find("enum class Event").expect("Event enum");
+        let enum_body = &body[enum_start..enum_start + body[enum_start..].find("};").unwrap()];
+        assert!(
+            enum_body.contains("Done_state_root"),
+            "Event must declare the enumerator the tracker raises; enum was:\n{enum_body}"
         );
     }
 }
