@@ -19,6 +19,7 @@ import contextlib
 import io
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -33,6 +34,17 @@ def write(path: Path, text: str) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
     return path
+
+
+def track(root: Path) -> None:
+    """Make ``root`` a git repository whose index holds every file now in it.
+
+    The tool asks git which repository files exist, so a case that wants a file
+    to count has to stage it, and one that wants a file ignored leaves it out.
+    """
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    for argv in (["git", "init", "-q", str(root)], ["git", "-C", str(root), "add", "-A"]):
+        subprocess.run(argv, check=True, env=env, stdout=subprocess.DEVNULL)
 
 
 def run_main(argv):
@@ -285,6 +297,7 @@ class EachHeaderIsPairedWithTheFlagsItNeeds(unittest.TestCase):
         lib_src = write(self.root / "sce/src/x.cpp", '#include "core/A.h"\n#include <vector>\n')
         test_src = write(self.root / "tests/t.cpp", '#include "m_sm.h"\n#include "core/A.h"\n')
         c_src = write(self.root / "backends/c/tests/u.c", '#include "c_sm.h"\n')
+        track(self.root)
         self.lib = tool.Entry(str(self.build / "sce"), str(lib_src),
                               ["c++", f"-I{inc}", "-c", str(lib_src)],
                               "sce_runtime", "sce", "c++")
@@ -355,6 +368,59 @@ class EachHeaderIsPairedWithTheFlagsItNeeds(unittest.TestCase):
             "-x", "c++", "-include", str(self.a), os.devnull])
         self.assertEqual(a_job["via"], {"how": "included", "tu": "sce/src/x.cpp",
                                         "target": "sce_runtime"})
+
+
+class TheRepositorySideIsWhatGitTracks(unittest.TestCase):
+    """A file only this checkout has does not enter the measurement.
+
+    A CI checkout holds what is committed, so a local run that also read a
+    scratch header (an experiment's output, a local example build) would
+    measure a different set, and list it as not measured or fail on it. The
+    build tree is the exception: what this configure generated is the
+    population, committed or not.
+    """
+
+    MARK = "// SCE-GENERATED -- DO NOT EDIT\n// source-hash: 0\n"
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        base = Path(self._tmp.name).resolve()
+        self.root = base / "root"
+        self.build = base / "build"
+        self.committed = write(self.root / "sce/src/mesh/generated/envelope.h", self.MARK)
+        self.public = write(self.root / "sce/include/core/A.h", "#pragma once\n")
+        self.golden = write(self.root / "tests/forge/expected/algorithm.h", "#pragma once\n")
+        write(self.root / "sce/CMakeLists.txt",
+              "target_compile_features(sce_runtime PRIVATE cxx_std_20)\n")
+        track(self.root)
+        # Written after the index was filled: on disk, never committed.
+        write(self.root / "claudedocs/run/built/power_auto_cut.h", self.MARK)
+        write(self.root / "examples/doom_wasm/build/generated/doom_sm.h", self.MARK)
+        write(self.root / "sce/include/core/Scratch.h", "#pragma once\n")
+        write(self.root / "tests/forge/expected/scratch.h", "#pragma once\n")
+        write(self.root / "cmake/Scratch.cmake",
+              "target_compile_features(sce_base PRIVATE cxx_std_20)\n")
+        self.built = write(self.build / "tests/gen/m_sm.h", self.MARK)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_only_committed_generated_headers_join_the_build_trees_own(self):
+        self.assertEqual(tool.generated_headers(self.root, self.build),
+                         sorted([str(self.built), str(self.committed)]))
+
+    def test_an_untracked_public_header_or_golden_is_not_in_the_population(self):
+        self.assertEqual(tool.public_headers(self.root), [str(self.public)])
+        self.assertEqual(tool.forge_goldens(self.root), [str(self.golden)])
+
+    def test_an_untracked_cmake_file_declares_no_standard(self):
+        self.assertEqual(tool.implementation_floors(tool.cmake_sources(self.root)),
+                         {"sce_runtime": 2020})
+
+    def test_a_tree_git_cannot_read_is_an_error_not_an_empty_population(self):
+        with tempfile.TemporaryDirectory() as plain:
+            with self.assertRaises(RuntimeError):
+                tool.generated_headers(Path(plain).resolve(), self.build)
 
 
 class AMissingDependencyIsNotAFailure(unittest.TestCase):

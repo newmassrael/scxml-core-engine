@@ -127,10 +127,11 @@ LAUNCHERS = frozenset({"ccache", "sccache", "distcc", "icecc"})
 GENERATOR_MARK = "SCE-GENERATED"
 MARK_WINDOW = 400
 
-# Directories no walk of the source tree descends into: vendored code SCE does
-# not own, cargo's output, and node's. Hidden directories (`.git`, a checkout's
-# worktrees under `.claude/`) and top-level `build`/`build_*` trees are skipped
-# as well.
+# Top-level directories whose files are not SCE's interface even when tracked:
+# vendored code SCE does not own, cargo's output, and node's. The repository
+# side of a population is read from git (`tracked_files`); a walk of the source
+# tree (`FileIndex`) also skips hidden directories (`.git`, a checkout's
+# worktrees under `.claude/`) and top-level `build`/`build_*` trees.
 SKIPPED_SOURCE_DIRS = frozenset({"third_party", "target", "node_modules"})
 _BUILD_TREE_NAME = re.compile(r"^build(_.*)?$")
 
@@ -780,9 +781,37 @@ def implementation_floors(cmake_texts: Iterable[str]) -> Dict[str, int]:
     return floors
 
 
+def tracked_files(root: Path, *pathspecs: str) -> List[Path]:
+    """The files git tracks under ``root`` (matching ``pathspecs``), present on disk.
+
+    The repository side of every population is what is COMMITTED, so a local
+    run and a CI checkout measure the same set. Walking the directory instead
+    counted 1,711 untracked scratch headers in one checkout on 2026-10-27
+    (experiment outputs under ``claudedocs/``, a local ``examples/*/build/``),
+    each listed as not measured and each a failure waiting to happen. The
+    build tree is not asked here: its generated headers are this configure's.
+
+    ``-z`` so a path with an unusual byte is read whole. ``GIT_*`` variables
+    are dropped so a hook's ``GIT_DIR`` cannot point the question at another
+    repository. A git that fails is an error, not an empty tree: an empty
+    list would read as "nothing committed to measure".
+    """
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    proc = subprocess.run(["git", "-C", str(root), "ls-files", "-z", "--", *pathspecs],
+                          stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
+    if proc.returncode != 0:
+        raise RuntimeError(f"git could not list the tracked files under {root}: "
+                           f"{proc.stderr.decode('utf-8', 'replace').strip()}")
+    paths = (root / p.decode("utf-8", "surrogateescape")
+             for p in proc.stdout.split(b"\0") if p)
+    return [p for p in paths if p.is_file()]
+
+
 def cmake_sources(root: Path) -> Iterator[str]:
-    """The text of every CMake file SCE owns."""
-    for path in walk_files(root, skip_names=SKIPPED_SOURCE_DIRS, skip_build_trees=True):
+    """The text of every committed CMake file SCE owns."""
+    for path in tracked_files(root):
+        if path.relative_to(root).parts[0] in SKIPPED_SOURCE_DIRS:
+            continue
         if path.name == "CMakeLists.txt" or path.suffix == ".cmake":
             try:
                 yield path.read_text(encoding="utf-8", errors="replace")
@@ -791,31 +820,37 @@ def cmake_sources(root: Path) -> Iterator[str]:
 
 
 def public_headers(root: Path) -> List[str]:
-    return [os.path.realpath(p) for p in walk_files(root / PUBLIC_HEADER_ROOT)
+    return [os.path.realpath(p) for p in tracked_files(root, PUBLIC_HEADER_ROOT)
             if p.name.endswith(HEADER_SUFFIXES)]
 
 
 def forge_runtime_headers(root: Path) -> List[str]:
-    return [os.path.realpath(p) for p in walk_files(root / FORGE_RUNTIME_INCLUDE)
+    return [os.path.realpath(p) for p in tracked_files(root, FORGE_RUNTIME_INCLUDE)
             if p.name.endswith(HEADER_SUFFIXES)]
 
 
 def forge_goldens(root: Path) -> List[str]:
     """The C++ goldens: ``tests/forge/expected/*.h``, not the C ``*.c.h``."""
     base = root / FORGE_GOLDENS
-    if not base.is_dir():
-        return []
-    return sorted(os.path.realpath(p) for p in base.iterdir()
-                  if p.is_file() and p.name.endswith(".h") and not p.name.endswith(".c.h"))
+    return sorted(os.path.realpath(p) for p in tracked_files(root, FORGE_GOLDENS)
+                  if p.parent == base and p.name.endswith(".h")
+                  and not p.name.endswith(".c.h"))
 
 
 def generated_headers(root: Path, build_dir: Path) -> List[str]:
-    """Every header carrying the generator's mark, in the build tree and committed."""
+    """Every header carrying the generator's mark: in the build tree, and committed.
+
+    The build tree is walked, because what this configure generated is the
+    population. The repository is asked of git, because only what is
+    committed belongs to the interface (see `tracked_files`).
+    """
     found: Set[str] = set()
     for path in walk_files(build_dir, skip_names=("CMakeFiles", "_deps")):
         if path.name.endswith(HEADER_SUFFIXES) and carries_generator_mark(path):
             found.add(os.path.realpath(path))
-    for path in walk_files(root, skip_names=SKIPPED_SOURCE_DIRS, skip_build_trees=True):
+    for path in tracked_files(root):
+        if path.relative_to(root).parts[0] in SKIPPED_SOURCE_DIRS:
+            continue
         if path.name.endswith(HEADER_SUFFIXES) and carries_generator_mark(path):
             found.add(os.path.realpath(path))
     return sorted(found)
@@ -1009,10 +1044,14 @@ def cmd_jobs(args: argparse.Namespace) -> int:
     compile_commands = Path(args.compile_commands).resolve()
     build_dir = Path(args.build_dir).resolve() if args.build_dir else compile_commands.parent
     entries = load_entries(compile_commands, build_dir)
-    floors = implementation_floors(cmake_sources(root))
-    generated = generated_headers(root, build_dir)
-    doc = build_jobs(root, build_dir, entries, floors, generated,
-                     cxx_override=args.cxx, c_override=args.cc)
+    try:
+        floors = implementation_floors(cmake_sources(root))
+        generated = generated_headers(root, build_dir)
+        doc = build_jobs(root, build_dir, entries, floors, generated,
+                         cxx_override=args.cxx, c_override=args.cc)
+    except RuntimeError as exc:
+        print(f"jobs: {exc}", file=sys.stderr)
+        return 1
     Path(args.out).write_text(json.dumps(doc, indent=1) + "\n", encoding="utf-8")
     counts = collections.Counter(job["kind"] for job in doc["jobs"])
     unmeasured = collections.Counter(item["kind"] for item in doc["not_measured"])
