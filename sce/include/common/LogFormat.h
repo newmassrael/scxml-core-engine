@@ -18,12 +18,14 @@
 // otherwise than std::format's `{}` did when SCE formatted with it, the value is written
 // as `{}` wrote it: a `bool` as `true` or `false`, and a `signed char` or
 // `unsigned char` (`int8_t`, `uint8_t`) as a number. A null `const char *` is written
-// as `(null)`. A floating-point value is written as `<<` writes it, with six
-// significant digits; the shortest text that reads back would need `std::to_chars` for
-// floating point, which not every C++17 library a consumer may build with provides.
+// as `(null)`. A floating-point value is written as the shortest text that reads back
+// to it, by `JsonText::numberText`, the one number spelling SCE has: `{}` wrote the
+// shortest digits too, and `<<` would write six significant ones.
 // An argument with no `operator<<` does not compile, as it did not with std::format.
 
 #pragma once
+
+#include "common/JsonText.h"
 
 #include <locale>
 #include <ostream>
@@ -68,6 +70,8 @@ template <typename T> void writeLogArgument(std::ostream &out, const T &value) {
         out << static_cast<int>(value);
     } else if constexpr (std::is_same_v<T, const char *> || std::is_same_v<T, char *>) {
         out << (value != nullptr ? static_cast<const char *>(value) : "(null)");
+    } else if constexpr (std::is_floating_point_v<T>) {
+        out << ::SCE::JsonText::numberText(static_cast<double>(value));
     } else {
         out << value;
     }

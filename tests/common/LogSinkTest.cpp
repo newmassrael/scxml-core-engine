@@ -212,3 +212,9 @@ TEST(LogFormat, ValuesAreWrittenAsStdFormatWroteThem) {
     EXPECT_EQ(SCE::detail::formatLog("[{}]", absent), "[(null)]");
     EXPECT_EQ(SCE::detail::formatLog(nullptr, 1), "");
 }
+
+TEST(LogFormat, AFloatingPointValueIsItsShortestTextThatReadsBack) {
+    EXPECT_EQ(SCE::detail::formatLog("{}", 0.1), "0.1");
+    EXPECT_EQ(SCE::detail::formatLog("{}", 3.141592653589793), "3.141592653589793");
+    EXPECT_EQ(SCE::detail::formatLog("{}", 2.5f), "2.5");
+}
