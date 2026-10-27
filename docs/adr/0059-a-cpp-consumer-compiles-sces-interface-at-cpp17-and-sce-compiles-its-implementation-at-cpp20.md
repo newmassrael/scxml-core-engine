@@ -96,7 +96,8 @@ the header-only code that logs (`core/LogMacros.h`, seventeen headers) expands d
 units than in a consumer's. That is the same kind of divergence as §3 describes, but it is not chosen by the
 language standard, it predates this ADR as a stated design, and changing it means deciding how header-only code
 reaches a log sink without the consumer linking one. It is recorded here so the gate's exception is named, and it
-is decided separately.
+is decided separately. ADR 0060 decides it: header-only code logs through a sink the program installs, and the
+exception is closed.
 
 ### 4. A list is viewed through an SCE span
 
