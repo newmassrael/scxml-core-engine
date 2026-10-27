@@ -101,7 +101,11 @@ jobs:
       # The image is Debian with GCC 15 in /usr/local. What the configure needs
       # beside it: CMake and Ninja, Python for the tool and the tests' CMake,
       # git for the submodules, and the development packages cpp-httplib (TLS,
-      # zlib, brotli) and the GLib dispatcher link against.
+      # zlib, brotli) and the GLib dispatcher link against. `sce-codegen`'s own
+      # build needs libxml2 (the `libxml` crate behind its XSD validator) and
+      # libclang (that crate's bindgen), which the hosted image carries and
+      # this one does not: measured on this lane's second run, `Unable to find
+      # libclang`.
       - name: Install Dependencies
         run: |
           apt-get update
@@ -116,7 +120,9 @@ jobs:
             libssl-dev \
             zlib1g-dev \
             libbrotli-dev \
-            libglib2.0-dev
+            libglib2.0-dev \
+            libxml2-dev \
+            libclang-dev
 
       # `sce-codegen` formats the C++ it writes with clang-format of major 19
       # and refuses without it (docs/SCE_CODEGEN_DETERMINISM.md). The image's
