@@ -791,13 +791,31 @@ impl<'s, S: SceSink + ?Sized> ContentLineWriter<'s, S> {
         max_size: usize,
         max_values: usize,
     ) -> Result<(), CodecError> {
-        if values.is_empty() {
+        self.strings_of(values.iter(), separator, text, max_size, max_values)
+    }
+
+    /// [`Self::strings`] over the values an iterator yields, which is read twice
+    /// (every value is held before any of the line is written), so it is `Clone`.
+    pub fn strings_of<I>(
+        &mut self,
+        values: I,
+        separator: u8,
+        text: bool,
+        max_size: usize,
+        max_values: usize,
+    ) -> Result<(), CodecError>
+    where
+        I: Iterator + Clone,
+        I::Item: AsRef<str>,
+    {
+        let count = values.clone().count();
+        if count == 0 {
             return Err(CodecError::LineRequiredMissing);
         }
-        if values.len() > max_values {
+        if count > max_values {
             return Err(CodecError::LineTooMany);
         }
-        for value in values {
+        for value in values.clone() {
             let value = value.as_ref();
             if value.len() > max_size {
                 return Err(CodecError::LineTooLong);
@@ -813,7 +831,7 @@ impl<'s, S: SceSink + ?Sized> ContentLineWriter<'s, S> {
             }
         }
         self.unit(b":")?;
-        for (index, value) in values.iter().enumerate() {
+        for (index, value) in values.enumerate() {
             if index > 0 {
                 self.unit(core::slice::from_ref(&separator))?;
             }

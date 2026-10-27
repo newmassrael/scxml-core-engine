@@ -24,6 +24,7 @@ use super::*;
 use crate::forge::codec_roles::{self, CodecRoles, Derivation, ElementId, Role};
 
 pub(super) mod cbor;
+pub(super) mod content_line;
 
 /// Why a codec has no source interface (yet): the shape it holds is one the
 /// interface does not cover. Scaffolding for the order the shapes land in; the

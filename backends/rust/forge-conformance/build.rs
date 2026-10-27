@@ -329,6 +329,49 @@ const DOCUMENTED_FRAMES: &[(&str, &[&[u8]])] = &[
             ],
         ],
     ),
+    // Components of content lines. Enums by the text of a variant, a list of
+    // enum lines, lines that are records with a required and an optional
+    // parameter, a TEXT with an escape.
+    (
+        "codec_content_line_enums",
+        &[
+            b"BEGIN:VEVENT\r\nUID:u1\r\nSTATUS:COMPLETED\r\nCLASS:PRIVATE\r\n\
+              X-HISTORY:NEEDS-ACTION\r\nX-HISTORY:IN-PROCESS\r\n\
+              ATTENDEE;ROLE=CHAIR;PARTSTAT=COMPLETED:mailto:a@x\r\n\
+              ATTENDEE;ROLE=NON-PARTICIPANT:b\r\nX-STEP;NOTE=hi:IN-PROCESS\r\n\
+              COMMENT:a\\, b\r\nEND:VEVENT\r\n",
+        ],
+    ),
+    // Required and optional strings with parameters, a list of lines, numbers and
+    // a boolean, a TEXT with an escape.
+    (
+        "codec_content_line_event",
+        &[
+            b"BEGIN:VEVENT\r\nUID:e1\r\nDTSTART;TZID=Asia/Seoul:20261008T090000\r\n\
+              SUMMARY:Hello\\, world\r\nORGANIZER;CN=Kim:mailto:k@x\r\n\
+              EXDATE:20261009\r\nEXDATE:20261010\r\nSEQUENCE:3\r\nPRIORITY:-2\r\n\
+              X-ALL-DAY:TRUE\r\nEND:VEVENT\r\n",
+        ],
+    ),
+    // Records with parameters, a record whose line holds a list of values with a
+    // parameter, one line of a TEXT list with an escaped separator, and a list
+    // cut at a semicolon.
+    (
+        "codec_content_line_records",
+        &[
+            b"BEGIN:VEVENT\r\nUID:r1\r\nATTENDEE;CN=Lee;ROLE=CHAIR:mailto:l@x\r\n\
+              ATTENDEE;ROLE=OPT:m\r\nEXDATE;TZID=UTC:20261001,20261002\r\n\
+              EXDATE:20261003\r\nCATEGORIES:a\\,b,c\r\nGEO:37.5;127.0\r\nEND:VEVENT\r\n",
+        ],
+    ),
+    // Required lists: two lines, a list of values, and two records.
+    (
+        "codec_content_line_required_lists",
+        &[
+            b"BEGIN:VEVENT\r\nUID:u\r\nTAG:t1\r\nTAG:t2\r\nCATS:a,b\r\nREC;KIND=k:v1\r\n\
+              REC:v2\r\nEND:VEVENT\r\n",
+        ],
+    ),
     // A chain a later field is gated on. The first frame holds an entry of kind
     // 7 and none of kind 9, so the priority and the checksum are on the wire;
     // the second is wide and holds a 9, so the checksum is not.

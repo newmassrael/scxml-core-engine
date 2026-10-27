@@ -6335,7 +6335,20 @@ fn render_codec(
     }
     // SCE_FORGE.md §4.6.4: so is a content-line codec, for the same reason.
     if m.encoding == CodecEncoding::ContentLine {
-        return crate::forge::content_line_codec::render(env, m, imports, lang);
+        let mut text = crate::forge::content_line_codec::render(env, m, imports, lang)?;
+        // ADR 0058: the component's properties are what a value says.
+        if sources && matches!(lang, crate::generator::Language::Rust) {
+            let l = LangCtx::new(lang, imports);
+            text.push('\n');
+            text.push_str(&rust_source::content_line::render(
+                &rust_source::content_line::Input {
+                    m,
+                    l: &l,
+                    struct_name: &filters::to_pascal_case(m.name.clone()),
+                },
+            ));
+        }
+        return Ok(text);
     }
     // RFC §synth-5-B "MCU-only codec sub-features" — codec-content-level MCU
     // classification. After the all-backend closures only DMA alignment (item B3)
