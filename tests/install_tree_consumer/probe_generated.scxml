@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  The machine the install-tree consumer generates and runs (probe_generated.cpp).
+
+  A datamodel="sce-static" document, because that is the generated C++ that
+  includes the Forge C++ runtime: its integer operations are the checked ones
+  of <sce/forge/algorithm.h> (SCE Accepted Subset §2.15, SCE_FORGE.md §3.4.1),
+  and the header also includes <sce/forge/optional.h>. Built from an installed
+  SCE, it compiles only if the install ships those headers and the tier the
+  consumer links carries their include directory.
+
+  It also runs them. `level` is a uint8 from 250: the first `up` makes 253,
+  the second would make 256, which the checked addition refuses, so the
+  assignment is skipped and error.execution is raised and counted in
+  `refusals`. `check` reaches `done` only when both hold what that says; an
+  addition that wrapped would leave `level` at 0 and `refusals` at 0.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="counting" datamodel="sce-static" name="probe_generated">
+  <datamodel>
+    <data id="level" sce:type="uint8" expr="250"/>
+    <data id="refusals" sce:type="uint32" expr="0"/>
+  </datamodel>
+  <state id="counting">
+    <transition event="up" type="internal">
+      <assign location="level" expr="level + 3"/>
+    </transition>
+    <transition event="error.execution" type="internal">
+      <assign location="refusals" expr="refusals + 1"/>
+    </transition>
+    <transition event="check" cond="level == 253 &amp;&amp; refusals == 1" target="done"/>
+  </state>
+  <final id="done"/>
+</scxml>
