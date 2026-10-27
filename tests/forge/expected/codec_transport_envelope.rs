@@ -446,8 +446,7 @@ impl<'a> CodecTransportEnvelope<'a> {
         if _d_header_mid > 0x1F {
             return Err(CodecError::LengthOutOfRange);
         }
-        let _v_header_mid: u8 = u8::try_from(_d_header_mid).map_err(|_| CodecError::LengthOutOfRange)?;
-        let mut _c_header: u8 = (src.header() & !0x1F) | _v_header_mid;
+        let mut _c_header: u8 = (src.header() & !0x1F) | _d_header_mid;
         if let Some(_o) = over.header_a {
             _c_header = (_c_header & !0x20) | (u8::from(_o) << 5);
         }

@@ -383,8 +383,7 @@ impl<'a> CodecZenohValueEntry<'a> {
         if _d_header_enc > 0x3 {
             return Err(CodecError::LengthOutOfRange);
         }
-        let _v_header_enc: u8 = u8::try_from(_d_header_enc).map_err(|_| CodecError::LengthOutOfRange)?;
-        let mut _c_header: u8 = (src.header() & !0x60) | (_v_header_enc << 5);
+        let mut _c_header: u8 = (src.header() & !0x60) | (_d_header_enc << 5);
         if let Some(_o) = over.header_m {
             _c_header = (_c_header & !0x10) | (u8::from(_o) << 4);
         }

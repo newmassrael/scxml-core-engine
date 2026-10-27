@@ -428,8 +428,7 @@ impl<'a> CodecZenohOam<'a> {
         if _d_header_enc > 0x3 {
             return Err(CodecError::LengthOutOfRange);
         }
-        let _v_header_enc: u8 = u8::try_from(_d_header_enc).map_err(|_| CodecError::LengthOutOfRange)?;
-        let _c_header: u8 = (((src.header() & !0x60) | (_v_header_enc << 5)) & !0x80) | (u8::from(_p_header_z_0) << 7);
+        let _c_header: u8 = (((src.header() & !0x60) | (_d_header_enc << 5)) & !0x80) | (u8::from(_p_header_z_0) << 7);
         w.write_u8(_c_header)?;
         w.write_vle_u16(src.id())?;
         if let Some(_v) = src.extensions() {

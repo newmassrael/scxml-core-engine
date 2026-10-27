@@ -1413,6 +1413,7 @@ impl<'a> Plan<'a> {
             .push(DerivedFlag {
                 flag: flag.clone(),
                 value: local,
+                ty,
                 kind: FlagValue::Number,
             });
     }
@@ -1449,6 +1450,7 @@ impl<'a> Plan<'a> {
                     .push(DerivedFlag {
                         flag: flag.clone(),
                         value: local,
+                        ty,
                         kind: FlagValue::Number,
                     });
             }
@@ -1761,6 +1763,7 @@ impl<'a> Plan<'a> {
                     .push(DerivedFlag {
                         flag: flag.clone(),
                         value,
+                        ty: "usize".to_string(),
                         kind,
                     });
             }
@@ -1813,6 +1816,7 @@ impl<'a> Plan<'a> {
                     .first()
                     .cloned()
                     .unwrap_or_else(|| "false".to_string()),
+                ty: "bool".to_string(),
                 kind: FlagValue::Bool,
             });
     }
@@ -2086,6 +2090,9 @@ struct DerivedFlag {
     flag: String,
     /// A local that holds the number (`Number`) or the truth (`Bool`).
     value: String,
+    /// The Rust type of that local, so that a conversion to the carrier's type
+    /// is written only where the two differ.
+    ty: String,
     kind: FlagValue,
 }
 
@@ -2149,16 +2156,23 @@ impl Derived {
                             "if {} > 0x{width_mask:X} {{\n    return Err(CodecError::LengthOutOfRange);\n}}",
                             derived.value
                         ));
-                        let narrowed = format!(
-                            "_v_{}_{}",
-                            plan.l().codec_field_id(&carrier.id),
-                            filters::to_snake_case(derived.flag.clone())
-                        );
-                        lines.push(format!(
-                            "let {narrowed}: {ty} = {ty}::try_from({}).map_err(|_| CodecError::LengthOutOfRange)?;",
-                            derived.value
-                        ));
-                        narrowed
+                        if derived.ty == ty {
+                            // Already the carrier's type: a conversion to it
+                            // is the identity, and says nothing the range
+                            // check above has not.
+                            derived.value.clone()
+                        } else {
+                            let narrowed = format!(
+                                "_v_{}_{}",
+                                plan.l().codec_field_id(&carrier.id),
+                                filters::to_snake_case(derived.flag.clone())
+                            );
+                            lines.push(format!(
+                                "let {narrowed}: {ty} = {ty}::try_from({}).map_err(|_| CodecError::LengthOutOfRange)?;",
+                                derived.value
+                            ));
+                            narrowed
+                        }
                     }
                 };
                 // Drop the `<< 0` no-op for a flag at bit 0.

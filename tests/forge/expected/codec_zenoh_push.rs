@@ -296,8 +296,7 @@ impl CodecZenohPush {
         if _d_header_mid > 0x1F {
             return Err(CodecError::LengthOutOfRange);
         }
-        let _v_header_mid: u8 = u8::try_from(_d_header_mid).map_err(|_| CodecError::LengthOutOfRange)?;
-        let _c_header: u8 = (src.header() & !0x1F) | _v_header_mid;
+        let _c_header: u8 = (src.header() & !0x1F) | _d_header_mid;
         w.write_u8(_c_header)?;
         match src.body() {
             CodecZenohPushVariantSource::CodecZenohPushBody(_b) => CodecZenohPushBody::write_source(_b, w)?,
