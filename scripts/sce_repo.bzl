@@ -5,7 +5,24 @@ Provides @sce//:sce_core (header-only) and @sce//:sce_base (compiled).
 sce_base_sources.cmake is the single source of truth for the file list.
 This rule parses it and generates BUILD.bazel files automatically.
 
-Usage in consumer WORKSPACE:
+The generated BUILD files load the C++ rules from `@rules_cc`, which Bazel 9
+requires (it removed the native `cc_library`) and Bazel 7 and 8 accept, so the
+consumer's workspace must provide `rules_cc`.
+
+Usage with Bzlmod (Bazel 7 and later; the only mode Bazel 9 runs), in the
+consumer's MODULE.bazel:
+
+    bazel_dep(name = "rules_cc", version = "0.2.27")
+
+    sce_local_repository = use_repo_rule("//path/to:sce_repo.bzl", "sce_local_repository")
+
+    sce_local_repository(
+        name = "sce",
+        path = "/path/to/scxml-core-engine",
+    )
+
+Usage in a WORKSPACE (Bazel 7 and 8 with --enable_workspace), where
+`rules_cc` must be declared too:
 
     load("//path/to/sce_repo.bzl", "sce_local_repository")
 
@@ -14,13 +31,15 @@ Usage in consumer WORKSPACE:
         path = "/path/to/scxml-core-engine",
     )
 
-Or with environment variable:
+Either form also takes the checkout from an environment variable:
 
     sce_local_repository(
         name = "sce",
         environ = "MY_SCE_ROOT",
     )
 """
+
+_CC_LOAD = 'load("@rules_cc//cc:defs.bzl", "cc_library")\n'
 
 def _parse_cmake_sources(content, variable):
     """Extract file paths from a CMake set(<variable> ...) block."""
@@ -172,12 +191,12 @@ def _sce_local_repository_impl(ctx):
         root.get_child("backends").get_child("cpp").get_child("forge-runtime").get_child("include"),
         "forge_runtime/include",
     )
-    ctx.file("forge_runtime/BUILD.bazel", _FORGE_RUNTIME_BUILD)
+    ctx.file("forge_runtime/BUILD.bazel", _CC_LOAD + _FORGE_RUNTIME_BUILD)
     ctx.file("BUILD.bazel", _ROOT_BUILD)
-    ctx.file("sce/BUILD.bazel", _SCE_BUILD_TEMPLATE.format(srcs = srcs_str))
+    ctx.file("sce/BUILD.bazel", _CC_LOAD + _SCE_BUILD_TEMPLATE.format(srcs = srcs_str))
     ctx.file("third_party/BUILD.bazel", _THIRD_PARTY_BUILD)
-    ctx.file("third_party/nlohmann_json/BUILD.bazel", _NLOHMANN_BUILD)
-    ctx.file("third_party/pugixml/BUILD.bazel", _PUGIXML_BUILD)
+    ctx.file("third_party/nlohmann_json/BUILD.bazel", _CC_LOAD + _NLOHMANN_BUILD)
+    ctx.file("third_party/pugixml/BUILD.bazel", _CC_LOAD + _PUGIXML_BUILD)
     ctx.file("WORKSPACE", "workspace(name = \"sce\")\n")
 
 sce_local_repository = repository_rule(
