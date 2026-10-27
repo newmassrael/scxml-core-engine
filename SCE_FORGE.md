@@ -133,7 +133,7 @@ Within those constraints, the following **are explicitly permitted and preferred
 
 | Language | Form | Linking |
 |----------|------|---------|
-| C++ | header-only templates in `sce/forge/*.h` | CMake `INTERFACE` library |
+| C++ | header-only templates in `sce/forge/*.h` | CMake `INTERFACE` library `SCE::sce_forge_runtime`, exported and installed with the Core tier and linked by `sce_core`, so every SCE tier carries it |
 | Rust | `#[inline]` functions and traits in `sce-forge-runtime` crate | cargo dependency |
 | Kotlin | `commonMain` inline functions and interfaces | Gradle module |
 | Go | pure-Go package `github.com/sce/forge-runtime` | Go module |

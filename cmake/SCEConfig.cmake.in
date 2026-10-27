@@ -15,6 +15,10 @@
 #   SCE::sce_scripting  Static hybrid AOT with JSEngine (QuickJS/Lua for <cond>/<expr>).
 #   SCE::sce_runtime    Full interpreter. Parser + StateMachine + HTTP (optional).
 #
+# Every tier carries SCE::sce_forge_runtime, the header-only Forge C++ runtime
+# (<sce/forge/*.h>) the generated C++ includes, through SCE::sce_core. A
+# consumer compiling generated code links its tier and nothing else.
+#
 # Typical mappings:
 #   - Generated `sce_add_state_machine()` with needs_script_engine=false → sce_base
 #   - Generated `sce_add_state_machine()` with needs_script_engine=true  → sce_scripting
@@ -46,7 +50,7 @@
 # tiers to avoid their transitive find_dependency chain (httplib, OpenSSL,
 # ZLIB, Brotli, ...). Valid components, with nested inclusion:
 #
-#   base      → sce_core + sce_base
+#   base      → sce_core + sce_base + sce_forge_runtime
 #   scripting → base + sce_scripting (+ qjs / lua54)
 #   runtime   → scripting + sce_runtime (+ httplib when SCE_ENABLE_HTTP)
 #
@@ -121,7 +125,8 @@ else()
     set(_sce_load_runtime  TRUE)
 endif()
 
-# Core tier (sce_core + sce_base) — required foundation for every higher tier.
+# Core tier (sce_core + sce_base + sce_forge_runtime) — required foundation for
+# every higher tier.
 if(_sce_load_base)
     include("${CMAKE_CURRENT_LIST_DIR}/SCE_CoreTargets.cmake")
     set(SCE_base_FOUND TRUE)

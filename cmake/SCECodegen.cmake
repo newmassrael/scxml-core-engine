@@ -11,6 +11,19 @@
 # Usage:
 #   sce_add_state_machine(TARGET my_app SCXML_FILE state.scxml)
 #   sce_add_state_machines_from_dir(TARGET my_app SCXML_DIR scxml/)
+#   target_link_libraries(my_app PRIVATE SCE::sce_base)
+#
+# What the generated C++ compiles against: the target links one SCE tier,
+# SCE::sce_base for a machine that needs no script engine (`datamodel="sce-static"`
+# or no expressions), SCE::sce_scripting for one that does, SCE::sce_runtime for
+# the interpreter. Each tier carries everything the generated header includes:
+# SCE's headers through SCE::sce_core, and the Forge C++ runtime
+# (<sce/forge/algorithm.h>, <sce/forge/optional.h>, <sce/forge/span.h>) through
+# SCE::sce_forge_runtime, which SCE::sce_core links. Nothing else is linked or
+# added to the include path. The interface is C++17 (docs/adr/0059), so the
+# consumer's own standard may be C++17; a tier never raises it.
+# tests/install_tree_consumer builds a generated machine from an installed SCE
+# this way.
 
 # The functions below give their commands a DEPFILE. A consumer's own
 # cmake_minimum_required can be lower than this repository's, so the floor is
@@ -105,9 +118,12 @@ Example:
   add_executable(my_app main.cpp)
   sce_add_state_machine(TARGET my_app SCXML_FILE player.scxml)
   # Link the tier matching the SCXML feature set (ARCHITECTURE.md §4-Tier):
-  #   SCE::sce_base      — pure static (no <cond>/<expr>/<assign location>)
+  #   SCE::sce_base      — pure static (no <cond>/<expr>/<assign location>,
+  #                        or datamodel="sce-static")
   #   SCE::sce_scripting — static hybrid (needs_script_engine=true)
   #   SCE::sce_runtime   — full interpreter (dynamic SCXML loading)
+  # The tier is all the generated header needs: it carries the Forge C++
+  # runtime (SCE::sce_forge_runtime) the header includes.
   target_link_libraries(my_app PRIVATE SCE::sce_base)
 #]=============================================================================]
 function(sce_add_state_machine)

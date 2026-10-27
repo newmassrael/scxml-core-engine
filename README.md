@@ -269,6 +269,15 @@ sce_add_state_machine(
 target_link_libraries(my_app PRIVATE SCE::sce_scripting)
 ```
 
+**What the generated code compiles against**: the tier you link, and nothing else. Every tier carries
+`SCE::sce_core` (SCE's headers) and, through it, `SCE::sce_forge_runtime`: the header-only Forge C++ runtime
+installed under `include/sce/forge/`, which generated code includes (`<sce/forge/algorithm.h>` and
+`<sce/forge/optional.h>` for a `datamodel="sce-static"` machine, `<sce/forge/span.h>` for a list or byte
+parameter). A machine that needs no script engine links `SCE::sce_base` alone. The interface is C++17
+([ADR 0059](docs/adr/0059-a-cpp-consumer-compiles-sces-interface-at-cpp17-and-sce-compiles-its-implementation-at-cpp20.md)),
+so your project may build at C++17; linking a tier never raises it. `tests/install_tree_consumer/` builds and
+runs a generated machine against an installed tree this way, and `scripts/gate install-consumer` runs it.
+
 **Installation**:
 ```bash
 cd scxml-core-engine/build
