@@ -28,6 +28,7 @@
 #include "common/SceClock.h"
 
 #include <chrono>
+#include <cstdint>
 #include <gtest/gtest.h>
 #include <memory>
 #include <vector>

@@ -21,6 +21,7 @@
 #include "core/ParallelCompletionHelper.h"
 #include "gtest/gtest.h"
 
+#include <cstdint>
 #include <map>
 #include <optional>
 #include <string>

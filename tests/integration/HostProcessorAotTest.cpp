@@ -36,6 +36,7 @@
 
 #include "statechart_host_processor_sm.h"
 
+#include <cstdint>
 #include <fstream>
 #include <gtest/gtest.h>
 #include <memory>

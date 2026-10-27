@@ -9,6 +9,7 @@
 
 #include "common/SendSchedulingHelper.h"
 
+#include <cstdint>
 #include <fstream>
 #include <gtest/gtest.h>
 #include <nlohmann/json.hpp>

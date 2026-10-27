@@ -29,6 +29,7 @@
 #include "common/GuardHelper.h"
 #include "scripting/ScriptEngineProvider.h"
 #include <cmath>
+#include <cstdint>
 #include <fstream>
 #include <gtest/gtest.h>
 #include <memory>

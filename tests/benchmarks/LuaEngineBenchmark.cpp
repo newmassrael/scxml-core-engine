@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <atomic>
 #include <benchmark/benchmark.h>
+#include <cstdint>
 #include <memory>
 #include <random>
 #include <sstream>

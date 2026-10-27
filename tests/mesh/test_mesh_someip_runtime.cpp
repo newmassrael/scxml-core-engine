@@ -45,6 +45,7 @@
 
 #include <chrono>
 #include <condition_variable>
+#include <cstdint>
 #include <cstdio>
 #include <mutex>
 #include <string>

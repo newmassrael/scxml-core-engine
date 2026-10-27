@@ -5,6 +5,7 @@
 #include <cfloat>
 #include <climits>
 #include <cmath>
+#include <cstdint>
 #include <gtest/gtest.h>
 
 namespace SCE {

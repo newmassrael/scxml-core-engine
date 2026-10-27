@@ -14,6 +14,7 @@
 
 #include "mesh/OrderingBuffer.h"
 
+#include <cstdint>
 #include <gtest/gtest.h>
 
 #include <chrono>

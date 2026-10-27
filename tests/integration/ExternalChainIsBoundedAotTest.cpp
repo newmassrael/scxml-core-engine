@@ -34,6 +34,7 @@
 
 #include "common/SceClock.h"
 
+#include <cstdint>
 #include <gtest/gtest.h>
 #include <memory>
 

@@ -30,6 +30,7 @@
 #include "mesh/RetryingDispatcher.h"
 #include "mesh/OutboundBuffer.h"
 
+#include <cstdint>
 #include <gtest/gtest.h>
 
 #include <array>

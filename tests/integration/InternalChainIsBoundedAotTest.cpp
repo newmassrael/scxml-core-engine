@@ -23,6 +23,7 @@
 #include "internal_chain_is_bounded_sm.h"
 #include "scripting/ScriptEngineProvider.h"
 
+#include <cstdint>
 #include <gtest/gtest.h>
 #include <memory>
 

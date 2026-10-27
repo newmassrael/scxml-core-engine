@@ -7,6 +7,7 @@
 #include "common/TestScriptEngine.h"
 #include "timer_test_sm.h"
 #include <chrono>
+#include <cstdint>
 #include <gtest/gtest.h>
 #include <thread>
 

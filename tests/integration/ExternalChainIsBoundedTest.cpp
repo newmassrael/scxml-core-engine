@@ -44,6 +44,7 @@
 #include "runtime/StateMachine.h"
 #include "scripting/ScriptEngineProvider.h"
 
+#include <cstdint>
 #include <fstream>
 #include <gtest/gtest.h>
 #include <sstream>

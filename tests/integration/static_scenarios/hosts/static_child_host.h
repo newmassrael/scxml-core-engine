@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include <cstdint>
 #include <deque>
 
 #include "integration/static_scenarios/StaticScenarioReplay.h"

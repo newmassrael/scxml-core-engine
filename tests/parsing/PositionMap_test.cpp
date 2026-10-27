@@ -11,6 +11,7 @@
 
 #include "parsing/PositionMap.h"
 
+#include <cstdint>
 #include <gtest/gtest.h>
 
 #include <filesystem>

@@ -52,6 +52,7 @@
 #include "scripting/ScriptEngineProvider.h"
 
 #include <chrono>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <functional>

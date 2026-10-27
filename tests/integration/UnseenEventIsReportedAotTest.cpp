@@ -26,6 +26,7 @@
 #include "scripting/ScriptEngineProvider.h"
 #include "unseen_event_is_reported_sm.h"
 
+#include <cstdint>
 #include <gtest/gtest.h>
 #include <memory>
 

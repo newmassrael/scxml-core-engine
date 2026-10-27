@@ -49,6 +49,7 @@
 #include "mesh/MeshEnvelope.h"
 
 #include <chrono>
+#include <cstdint>
 #include <cstdio>
 #include <exception>
 #include <string>

@@ -18,6 +18,7 @@
 #include "scripting/ScriptEngineProvider.h"
 #include "typed_reader_names_sm.h"
 
+#include <cstdint>
 #include <gtest/gtest.h>
 #include <memory>
 #include <optional>

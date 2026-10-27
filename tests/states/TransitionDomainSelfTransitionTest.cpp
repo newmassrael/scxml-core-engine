@@ -29,6 +29,7 @@
 #include "gtest/gtest.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <map>
 #include <optional>
 #include <string>

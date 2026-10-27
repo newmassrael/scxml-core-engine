@@ -6,6 +6,7 @@
 #include "wrappers/GameLoopTimer.h"
 #include "common/LogicalTimeScheduler.h"
 #include <chrono>
+#include <cstdint>
 #include <gtest/gtest.h>
 
 using namespace std::chrono_literals;

@@ -19,6 +19,7 @@
 #include "static_host_kv_sm.h"
 #include "static_host_notify_sm.h"
 
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <functional>

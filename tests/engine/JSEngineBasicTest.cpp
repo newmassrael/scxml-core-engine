@@ -5,6 +5,7 @@
 #include "core/LogMacros.h"
 #include "runtime/StateMachine.h"
 #include "scripting/JSEngine.h"
+#include <cstdint>
 #include <fstream>
 #include <gtest/gtest.h>
 #include <iostream>

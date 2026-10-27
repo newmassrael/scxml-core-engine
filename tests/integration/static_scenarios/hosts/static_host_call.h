@@ -9,6 +9,7 @@
 
 #include "integration/static_scenarios/StaticScenarioReplay.h"
 #include "static_host_call_sm.h"
+#include <cstdint>
 
 namespace SCE::Tests::StaticScenario {
 

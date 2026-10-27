@@ -4,6 +4,7 @@
 #include "SnapshotComparator.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <sstream>
 
 namespace SCE::W3C {

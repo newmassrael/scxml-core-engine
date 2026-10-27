@@ -7,6 +7,7 @@
 #include "scripting/ScriptEngineProvider.h"
 #include <atomic>
 #include <benchmark/benchmark.h>
+#include <cstdint>
 #include <memory>
 #include <sstream>
 #include <string>

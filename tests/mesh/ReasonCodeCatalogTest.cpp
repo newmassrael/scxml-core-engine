@@ -35,6 +35,7 @@
 
 #include "mesh/CommunicationError.h"
 
+#include <cstdint>
 #include <gtest/gtest.h>
 
 #include <algorithm>

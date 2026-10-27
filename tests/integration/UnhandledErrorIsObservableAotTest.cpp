@@ -40,6 +40,7 @@
 #include "scripting/ScriptEngineProvider.h"
 #include "unhandled_error_is_observable_sm.h"
 
+#include <cstdint>
 #include <gtest/gtest.h>
 #include <memory>
 

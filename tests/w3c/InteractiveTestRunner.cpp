@@ -29,6 +29,7 @@
 // Splitting a transition's `event` attribute into its descriptors.
 #include <sstream>
 
+#include <cstdint>
 #include <set>
 #include <unordered_set>
 

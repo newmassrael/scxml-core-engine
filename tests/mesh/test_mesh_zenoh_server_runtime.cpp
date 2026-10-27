@@ -37,6 +37,7 @@
 #include "ZenohTestUtils.h"
 #include "mesh/MeshDispatch.h"
 
+#include <cstdint>
 #include <cstdio>
 #include <string>
 #include <thread>

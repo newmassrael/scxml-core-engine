@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
 #include "common/EventDataHelper.h"
+#include <cstdint>
 #include <gtest/gtest.h>
 #include <nlohmann/json.hpp>
 
