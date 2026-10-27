@@ -80,10 +80,12 @@ endif()
 # in a downstream tree honouring the contract `sce_mesh_common` publishes
 # (`cxx_std_17` PUBLIC, per SCE_MESH.md §10.4).
 #
-# This makes the declaration mean what it reads as. Use it on any target
-# whose job is to prove generated code compiles at the advertised
-# standard; `sce_verify_cxx17_ceilings` below fails configuration if a
-# compile-only mesh target is added without it.
+# This makes the declaration mean what it reads as: a target pinned here
+# compiles its own sources at C++17, so its declaration is a fact about
+# that target. Nothing requires a new target to be pinned, and pinning is
+# not what holds the generated code to C++17. The `cpp-interface-standard`
+# gate does that for every target at once: it compiles every generated C++
+# header alone at C++17 and at C++20, whatever standard its target builds at.
 function(sce_pin_cxx17 target_name)
     set_target_properties(${target_name} PROPERTIES
         CXX_STANDARD 17
