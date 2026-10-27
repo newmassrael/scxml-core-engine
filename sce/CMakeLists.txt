@@ -479,7 +479,8 @@ if(SCE_HAS_SCRIPTING)
         target_compile_definitions(sce_scripting PUBLIC SCE_ENABLE_QUICKJS)
     endif()
 
-    target_compile_features(sce_scripting PUBLIC cxx_std_20)
+    # ADR 0059: a consumer compiles the interface at C++17; these sources are C++20.
+    target_compile_features(sce_scripting PUBLIC cxx_std_17 PRIVATE cxx_std_20)
 
     # sce_scripting .cpp files call SCE_LOG_* — add PRIVATE so the logging
     # branch compiles here but does not propagate to external consumers.
@@ -714,7 +715,8 @@ if(SCE_ENABLE_HTTP)
     endif()
 endif()
 
-target_compile_features(sce_runtime PUBLIC cxx_std_20)
+# ADR 0059: a consumer compiles the interface at C++17; these sources are C++20.
+target_compile_features(sce_runtime PUBLIC cxx_std_17 PRIVATE cxx_std_20)
 
 # sce_runtime .cpp files call SCE_LOG_* — add PRIVATE so the logging branch
 # compiles here but does not propagate to external consumers.
