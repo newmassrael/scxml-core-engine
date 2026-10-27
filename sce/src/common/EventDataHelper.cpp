@@ -3,6 +3,7 @@
 
 #include "common/EventDataHelper.h"
 #include "runtime/JsonUtils.h"
+#include <cstdint>
 #include <nlohmann/json.hpp>
 
 using json = nlohmann::json;

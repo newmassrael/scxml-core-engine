@@ -5,6 +5,7 @@
 
 #include "IScriptEngine.h"
 #include "SCXMLTypes.h"
+#include <cstdint>
 #include <string>
 #include <type_traits>
 #include <utility>

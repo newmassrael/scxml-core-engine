@@ -11,6 +11,7 @@
 #include "quickjs.h"
 #include <atomic>
 #include <condition_variable>
+#include <cstdint>
 #include <future>
 #include <memory>
 #include <mutex>

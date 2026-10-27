@@ -7,6 +7,7 @@
 #include "scripting/IScriptEngine.h"
 #include "scripting/ScriptDialect.h"
 #include <cmath>
+#include <cstdint>
 #include <sstream>
 
 namespace SCE::ScriptResultUtils {

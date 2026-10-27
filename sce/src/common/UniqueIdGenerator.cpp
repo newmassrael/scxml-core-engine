@@ -4,6 +4,7 @@
 #include "common/UniqueIdGenerator.h"
 #include "core/LogMacros.h"
 
+#include <cstdint>
 #include <iomanip>
 #include <sstream>
 

@@ -5,6 +5,7 @@
 #include "common/UniqueIdGenerator.h"
 #include "core/LogMacros.h"
 #include "events/IEventDispatcher.h"
+#include <cstdint>
 
 namespace SCE {
 

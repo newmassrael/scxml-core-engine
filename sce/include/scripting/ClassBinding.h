@@ -4,6 +4,7 @@
 #pragma once
 
 #include "core/LogMacros.h"
+#include <cstdint>
 #include <functional>
 #include <mutex>
 #include <quickjs.h>

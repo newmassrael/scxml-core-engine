@@ -24,6 +24,7 @@ extern "C" {
 #include <lualib.h>
 }
 
+#include <cstdint>
 #include <cstring>
 #include <future>
 #include <sstream>

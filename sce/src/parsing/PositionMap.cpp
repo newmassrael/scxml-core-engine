@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <cstdint>
 
 // Byte-level source-origin map for expanded SCXML documents.
 // Mirrors `sce-build/src/position_map.rs` line-for-line where

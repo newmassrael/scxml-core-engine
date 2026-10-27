@@ -11,6 +11,7 @@
 #include "runtime/StateMachine.h"
 #include "scripting/IScriptEngine.h"
 #include "scripting/ISessionManager.h"
+#include <cstdint>
 #include <map>
 
 namespace SCE {

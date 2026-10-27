@@ -18,6 +18,7 @@
 #include "core/LogMacros.h"
 #include "scripting/ScriptDialect.h"
 #include "scripting/ScriptResultUtils.h"
+#include <cstdint>
 #include <optional>
 #include <stdexcept>
 #include <string>

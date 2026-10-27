@@ -12,6 +12,7 @@
 #include "parsing/ParsingCommon.h"
 #include "parsing/TransitionParser.h"
 #include <algorithm>
+#include <cstdint>
 
 SCE::StateNodeParser::StateNodeParser(std::shared_ptr<SCE::NodeFactory> nodeFactory) : nodeFactory_(nodeFactory) {
     SCE_LOG_DEBUG("Creating state node parser");

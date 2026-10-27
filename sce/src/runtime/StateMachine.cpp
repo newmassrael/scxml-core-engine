@@ -35,6 +35,7 @@
 #include "scripting/IScriptEngine.h"
 #include "scripting/ScriptEngineProvider.h"  // For backward-compat static factory methods
 #include <algorithm>
+#include <cstdint>
 #include <fstream>
 #include <set>
 #include <sstream>

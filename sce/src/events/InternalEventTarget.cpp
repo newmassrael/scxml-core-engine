@@ -7,6 +7,7 @@
 #include "core/LogMacros.h"
 #include "runtime/EventRaiserImpl.h"
 #include "runtime/IEventRaiser.h"
+#include <cstdint>
 #include <future>
 #include <sstream>
 

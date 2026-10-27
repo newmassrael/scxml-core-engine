@@ -3,6 +3,7 @@
 
 #include "scripting/DOMBinding.h"
 #include "core/LogMacros.h"
+#include <cstdint>
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>

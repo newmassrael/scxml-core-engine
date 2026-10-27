@@ -4,6 +4,7 @@
 #pragma once
 
 #include "common/IOProcessorHelper.h"
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>

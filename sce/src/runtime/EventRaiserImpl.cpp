@@ -11,6 +11,7 @@
 #include "events/IEventDispatcher.h"
 #include "events/PlatformEventRaiserHelper.h"
 #include "runtime/StateSnapshot.h"
+#include <cstdint>
 #include <mutex>
 
 namespace SCE {

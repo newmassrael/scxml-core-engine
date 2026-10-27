@@ -17,6 +17,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <cstdint>
 #include <queue>
 #include <string>
 #include <unordered_set>

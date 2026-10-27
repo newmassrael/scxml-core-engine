@@ -25,6 +25,7 @@
 #include "runtime/TransitionDescriptorString.h"
 #include "scripting/IScriptEngine.h"
 #include <atomic>
+#include <cstdint>
 #include <functional>
 #include <map>
 #include <memory>

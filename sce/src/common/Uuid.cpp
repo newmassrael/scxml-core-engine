@@ -4,6 +4,7 @@
 #include "common/Uuid.h"
 
 #include <chrono>
+#include <cstdint>
 #include <random>
 
 namespace SCE::uuid {

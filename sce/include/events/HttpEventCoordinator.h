@@ -8,6 +8,7 @@
 #include "HttpEventTarget.h"
 #include "runtime/TypeRegistry.h"
 #include <atomic>
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <string>

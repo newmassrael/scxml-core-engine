@@ -6,6 +6,7 @@
 #include "SCXMLTypes.h"
 #include <climits>
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <string>
 #include <typeinfo>

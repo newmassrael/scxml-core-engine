@@ -14,6 +14,7 @@
 #include "scripting/SessionRegistry.h"
 #include <chrono>
 #include <cmath>
+#include <cstdint>
 #include <cstring>
 #include <iostream>
 #include <sstream>

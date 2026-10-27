@@ -5,6 +5,7 @@
 #include "SCXMLEngine.h"
 #include "core/LogMacros.h"
 #include <atomic>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 

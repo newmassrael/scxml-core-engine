@@ -14,6 +14,7 @@
 #include "events/EventSchedulerImpl.h"
 #include "events/EventTargetFactoryImpl.h"
 #include "runtime/EventRaiserImpl.h"
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>

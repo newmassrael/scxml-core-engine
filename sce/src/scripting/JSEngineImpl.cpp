@@ -8,6 +8,7 @@
 #include "scripting/JSEngine.h"
 #include <climits>
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <iostream>
 

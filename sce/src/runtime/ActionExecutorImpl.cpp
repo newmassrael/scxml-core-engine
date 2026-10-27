@@ -41,6 +41,7 @@
 #include <atomic>
 #include <cassert>
 #include <chrono>
+#include <cstdint>
 #include <regex>
 #include <sstream>
 

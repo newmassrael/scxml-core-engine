@@ -4,6 +4,7 @@
 #pragma once
 
 #include "SCXMLTypes.h"
+#include <cstdint>
 #include <future>
 #include <memory>
 #include <string>

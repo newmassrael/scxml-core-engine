@@ -5,6 +5,7 @@
 
 #include "IEventBridge.h"
 #include <atomic>
+#include <cstdint>
 #include <regex>
 
 namespace SCE {

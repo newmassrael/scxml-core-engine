@@ -6,6 +6,7 @@
 #include "ScriptResult.h"
 #include "ScriptSource.h"
 #include "common/JsonText.h"
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <variant>
