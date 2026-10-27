@@ -247,6 +247,22 @@ fn main() {
     );
 }
 
+/// Frames a codec's document gives as its wire oracle in a comment, for a codec
+/// that cannot carry test vectors (the grammar holds only always-present
+/// fields), and whose frames a random draw does not reach: a length that must
+/// match the body that follows it.
+const DOCUMENTED_FRAMES: &[(&str, &[&[u8]])] = &[
+    (
+        "codec_zenoh_source_info_ext",
+        &[&[0x04, 0x00, 0xAB, 0x2A, 0x07]],
+    ),
+    (
+        "codec_tlv_chain_basic",
+        &[&[0x01, 0x10, 0x03, 0x41, 0x42, 0x43, 0x20, 0x01, 0x58]],
+    ),
+    ("codec_repeat_basic", &[&[0x02, 0x00, 0x01, 0x00, 0x02]]),
+];
+
 /// What `forge_source_round_trip` sweeps one codec with.
 struct SourceSweep {
     /// The fixture's name, which is the module the codec is included as.
@@ -272,9 +288,15 @@ fn codec_sweep(name: &str, text: &str) -> Option<SourceSweep> {
         .variant
         .as_ref()
         .is_some_and(|v| v.tag_field.is_none() && v.peek_byte.is_none());
+    let mut seeds: Vec<Vec<u8>> = m.test_vectors.iter().map(|v| v.hex.clone()).collect();
+    for (codec, frames) in DOCUMENTED_FRAMES {
+        if *codec == name {
+            seeds.extend(frames.iter().map(|frame| frame.to_vec()));
+        }
+    }
     Some(SourceSweep {
         name: name.to_string(),
-        seeds: m.test_vectors.iter().map(|v| v.hex.clone()).collect(),
+        seeds,
         plain: m.flag_inputs.is_empty() && !caller_tag,
     })
 }

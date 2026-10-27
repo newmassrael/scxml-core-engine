@@ -121,7 +121,8 @@ fn check(
             match derivation {
                 Derivation::LengthOf { .. }
                 | Derivation::PresenceOf { .. }
-                | Derivation::CountOf { .. } => {}
+                | Derivation::CountOf { .. }
+                | Derivation::EncodedLengthOf { .. } => {}
                 other => return no(format!("`{id}` is derived by {other}")),
             }
         }
@@ -449,6 +450,9 @@ impl<'a> Plan<'a> {
                     Derivation::CountOf { lists } => {
                         self.derive_count(id, lists, lines, &mut derived)
                     }
+                    Derivation::EncodedLengthOf { bodies } => {
+                        self.derive_encoded_length(id, bodies, lines, &mut derived)
+                    }
                     Derivation::PresenceOf { gated } => {
                         self.derive_presence(id, gated, lines, &mut derived)
                     }
@@ -563,6 +567,42 @@ impl<'a> Plan<'a> {
             .filter_map(|list| self.m().fields.iter().find(|f| &f.id == list))
             .map(|field| self.count_local(field))
             .collect();
+        self.derive_number(id, &local, numbers, lines, derived);
+    }
+
+    /// The element `id` holds how many bytes the embedded `bodies` encode to:
+    /// the body written into a sink that counts, which is the length the body's
+    /// own encode gives it and cannot differ from it.
+    fn derive_encoded_length(
+        &self,
+        id: &ElementId,
+        bodies: &[String],
+        lines: &mut Vec<String>,
+        derived: &mut Derived,
+    ) {
+        let local = self.local("_d_", id);
+        let mut numbers: Vec<String> = Vec::new();
+        for body in bodies {
+            let Some(field) = self.m().fields.iter().find(|f| &f.id == body) else {
+                continue;
+            };
+            let child = self
+                .child(field)
+                .expect("`check` found the codec a body holds");
+            let accessor = self.accessor(field);
+            let size = format!("_s_{accessor}");
+            let write = format!("{}::write_source(_v, &mut _c)?;", child.type_name);
+            let body_write = if field.present_if.is_some() {
+                format!("if let Some(_v) = src.{accessor}() {{\n    {write}\n}}")
+            } else {
+                format!("let _v = src.{accessor}();\n{write}")
+            };
+            lines.push(format!(
+                "let {size}: usize = {{\n    let mut _c = ::sce_forge_runtime::codec::CountSink::new();\n{}\n    _c.len()\n}};",
+                indent(&[body_write], 4).trim_end_matches('\n')
+            ));
+            numbers.push(size);
+        }
         self.derive_number(id, &local, numbers, lines, derived);
     }
 
