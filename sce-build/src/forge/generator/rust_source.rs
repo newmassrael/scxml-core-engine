@@ -59,6 +59,35 @@ pub(super) fn render(input: &Input<'_>) -> Result<String, Unsupported> {
     Ok(plan.text())
 }
 
+/// The link from a codec's `write_source` to the counted-source witness
+/// (docs/adr/0061): `{Codec}::measure`, and the impl of `SourceWrite` that lets
+/// `Measured::write_into` run the codec's own skeleton into a window. It states
+/// no wire rule; the one statement is `write_source`. `lt` is the codec's
+/// lifetime parameter (`<'a>` or nothing). A codec that takes a flag from its
+/// parent is written only through that parent and has no measure.
+pub(super) fn measure_impl(name: &str, lt: &str, trait_name: &str) -> String {
+    let generics = match lt.strip_prefix('<').and_then(|s| s.strip_suffix('>')) {
+        Some(lifetime) => format!("<{lifetime}, S: {trait_name} + ?Sized>"),
+        None => format!("<S: {trait_name} + ?Sized>"),
+    };
+    format!(
+        "impl{generics} ::sce_forge_runtime::codec::SourceWrite<S> for {name}{lt} {{\n\
+         \x20   fn write<K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {{\n\
+         \x20       Self::write_source(src, w)\n\
+         \x20   }}\n\
+         }}\n\n\
+         #[allow(dead_code)]\n\
+         impl{lt} {name}{lt} {{\n\
+         \x20   /// The size of the frame [`Self::encode_source`] writes for `src`, found\n\
+         \x20   /// with nothing written, or the refusal that encode would give. The result\n\
+         \x20   /// writes the frame into a window of exactly that size and cannot fail.\n\
+         \x20   pub fn measure<S: {trait_name} + ?Sized>(src: &S) -> Result<::sce_forge_runtime::codec::Measured<'_, Self, S>, CodecError> {{\n\
+         \x20       ::sce_forge_runtime::codec::measure(src)\n\
+         \x20   }}\n\
+         }}\n"
+    )
+}
+
 /// A representation of a codec's value: the builder a sender fills, the view of
 /// a decoded frame, or the owned form that outlives it. Each says what it holds
 /// through the same trait.
@@ -1203,6 +1232,14 @@ impl<'a> Plan<'a> {
         } else {
             String::new()
         };
+        let measure = if self.m().flag_inputs.is_empty() {
+            format!(
+                "\n{}",
+                measure_impl(self.name(), self.lt(), &self.trait_name)
+            )
+        } else {
+            String::new()
+        };
         format!(
             "#[allow(dead_code)]\n\
              impl{lt} {name}{lt} {{\n\
@@ -1216,7 +1253,8 @@ impl<'a> Plan<'a> {
              \x20       Self::write_source(src, w{args})\n\
              \x20   }}\n\n\
              {write}\
-             }}\n",
+             }}\n\
+             {measure}",
             lt = self.lt(),
             name = self.name(),
             trait_name = self.trait_name,

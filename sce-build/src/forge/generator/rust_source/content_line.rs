@@ -405,8 +405,10 @@ impl Plan<'_> {
              \x20   pub fn write_source<S: {trait_name} + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {{\n\
              {body}\
              \x20   }}\n\
-             }}\n",
+             }}\n\n\
+             {measure}",
             records = self.record_traits(),
+            measure = super::measure_impl(name, "", &trait_name),
         )
     }
 }

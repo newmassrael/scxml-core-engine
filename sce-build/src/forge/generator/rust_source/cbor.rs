@@ -191,6 +191,8 @@ pub(in super::super) fn render(input: &Input<'_>) -> String {
          \x20   pub fn write_source<S: {trait_name} + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {{\n\
          {body}\
          \x20   }}\n\
-         }}\n"
+         }}\n\n\
+         {measure}",
+        measure = super::measure_impl(name, lt, &trait_name),
     )
 }

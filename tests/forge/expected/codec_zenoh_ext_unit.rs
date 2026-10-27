@@ -140,3 +140,19 @@ impl CodecZenohExtUnit {
         Ok(())
     }
 }
+
+impl<S: CodecZenohExtUnitSource + ?Sized> ::sce_forge_runtime::codec::SourceWrite<S> for CodecZenohExtUnit {
+    fn write<K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {
+        Self::write_source(src, w)
+    }
+}
+
+#[allow(dead_code)]
+impl CodecZenohExtUnit {
+    /// The size of the frame [`Self::encode_source`] writes for `src`, found
+    /// with nothing written, or the refusal that encode would give. The result
+    /// writes the frame into a window of exactly that size and cannot fail.
+    pub fn measure<S: CodecZenohExtUnitSource + ?Sized>(src: &S) -> Result<::sce_forge_runtime::codec::Measured<'_, Self, S>, CodecError> {
+        ::sce_forge_runtime::codec::measure(src)
+    }
+}

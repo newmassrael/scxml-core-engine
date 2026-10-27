@@ -570,9 +570,108 @@ impl SceSink for CountSink {
         Ok(())
     }
 
+    /// The length of the VLE and not a loop of byte writes: one count of the
+    /// value's bits and a division by a constant (docs/adr/0061 §4).
+    fn write_vle_inner(&mut self, value: u64, max_bits: u32) -> Result<(), CodecError> {
+        self.written += vle_len(value, max_bits);
+        Ok(())
+    }
+
     fn position(&self) -> usize {
         self.written
     }
+}
+
+// ── Length without a buffer (docs/adr/0061) ──────────────────────
+
+/// The bytes [`SceSink::write_vle_inner`] writes for `value` at `max_bits`: seven
+/// data bits per byte, and at most `ceil((max_bits - 1) / 7)` bytes, the last of
+/// them carrying a full eight. No loop: the highest set bit says how many
+/// groups of seven the value has.
+pub const fn vle_len(value: u64, max_bits: u32) -> usize {
+    let groups = (64 - (value | 1).leading_zeros()).div_ceil(7);
+    let cap = (max_bits - 1).div_ceil(7);
+    (if groups < cap { groups } else { cap }) as usize
+}
+
+/// The bytes of a `vle_u16` field (1-3).
+pub const fn vle_len_u16(v: u16) -> usize {
+    vle_len(v as u64, 16)
+}
+
+/// The bytes of a `vle_u32` field (1-5).
+pub const fn vle_len_u32(v: u32) -> usize {
+    vle_len(v as u64, 32)
+}
+
+/// The bytes of a `vle_u64` field (1-9).
+pub const fn vle_len_u64(v: u64) -> usize {
+    vle_len(v, 64)
+}
+
+/// A codec that writes a source of type `S`: the link between a generated
+/// `{Codec}::write_source` and the witness [`Measured`]. Generated, one impl for
+/// each codec that has a source and takes no flag from a parent; it forwards to
+/// the codec's own skeleton and states no wire rule.
+pub trait SourceWrite<S: ?Sized> {
+    /// The skeleton of the codec, run into any sink.
+    fn write<K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError>;
+}
+
+/// A source that has been counted: it passed every refusal of the encode, and the
+/// frame it writes is [`Self::len`] bytes (docs/adr/0061 §1).
+///
+/// The only way to hold one is [`measure`], so the type says "this value is
+/// admissible and this long", and the step that needs that fact does not check
+/// it again and has nothing left to report. It borrows the source, so a safe
+/// caller cannot change the value between the count and the write.
+pub struct Measured<'s, C: SourceWrite<S>, S: ?Sized> {
+    src: &'s S,
+    len: usize,
+    codec: core::marker::PhantomData<fn() -> C>,
+}
+
+impl<'s, C: SourceWrite<S>, S: ?Sized> Measured<'s, C, S> {
+    /// The exact size of the frame, in bytes.
+    pub const fn len(&self) -> usize {
+        self.len
+    }
+
+    /// Whether the frame is empty (a codec with no field and no variant).
+    pub const fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
+    /// Write the frame into `window`, which is exactly [`Self::len`] bytes.
+    ///
+    /// Panics if the window is another length, or if the source does not say
+    /// the same thing the second time as the first (its accessors are reads of
+    /// a value, and a source that changes under the encode has broken that, see
+    /// docs/adr/0061 §3). It never writes outside the window.
+    pub fn write_into(self, window: &mut [u8]) {
+        assert!(
+            window.len() == self.len,
+            "the window is not the length Measured::len reported"
+        );
+        let mut sink = SliceSink::new(window);
+        let written = C::write(self.src, &mut sink);
+        assert!(
+            written.is_ok() && sink.position() == self.len,
+            "the source changed between measure and write_into"
+        );
+    }
+}
+
+/// Count `src` as codec `C` writes it: the size of the frame, or the refusal the
+/// encode would give, with nothing written anywhere.
+pub fn measure<C: SourceWrite<S>, S: ?Sized>(src: &S) -> Result<Measured<'_, C, S>, CodecError> {
+    let mut count = CountSink::new();
+    C::write(src, &mut count)?;
+    Ok(Measured {
+        src,
+        len: count.len(),
+        codec: core::marker::PhantomData,
+    })
 }
 
 // ── Heap-backed sink (alloc-only) ────────────────────────────────
@@ -844,6 +943,183 @@ mod tests {
         let mut s = VecSink::new(&mut v);
         s.write_u16_be(0xBEEF).unwrap();
         assert_eq!(v, [0xDE, 0xAD, 0xBE, 0xEF]);
+    }
+
+    // ── Length without a buffer (docs/adr/0061) ──────────────────
+
+    #[test]
+    fn vle_len_is_what_the_sink_writes_at_every_boundary() {
+        // Every bit position and its neighbours, the top of each width, and the
+        // ninth byte of a u64.
+        for shift in 0..64u32 {
+            for v in [
+                (1u64 << shift) - 1,
+                1u64 << shift,
+                (1u64 << shift) + 1,
+                u64::MAX >> shift,
+            ] {
+                for bits in [16u32, 32, 64] {
+                    let masked = if bits == 64 {
+                        v
+                    } else {
+                        v & ((1u64 << bits) - 1)
+                    };
+                    let mut buf = [0u8; 10];
+                    let mut s = SliceSink::new(&mut buf);
+                    s.write_vle_inner(masked, bits).unwrap();
+                    assert_eq!(
+                        vle_len(masked, bits),
+                        s.position(),
+                        "{masked:#x} at {bits} bits"
+                    );
+                    let mut c = CountSink::new();
+                    c.write_vle_inner(masked, bits).unwrap();
+                    assert_eq!(
+                        c.len(),
+                        s.position(),
+                        "count sink, {masked:#x} at {bits} bits"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn vle_len_helpers_name_the_width() {
+        assert_eq!(
+            (vle_len_u16(0), vle_len_u16(128), vle_len_u16(u16::MAX)),
+            (1, 2, 3)
+        );
+        assert_eq!(
+            (vle_len_u32(0), vle_len_u32(1 << 28), vle_len_u32(u32::MAX)),
+            (1, 5, 5)
+        );
+        assert_eq!(
+            (
+                vle_len_u64(127),
+                vle_len_u64(1 << 56),
+                vle_len_u64(u64::MAX)
+            ),
+            (1, 9, 9)
+        );
+    }
+
+    /// A codec by hand: a `vle_u32`, then a byte string with a `vle_u16` length
+    /// that is refused over 8 bytes.
+    trait PairSource {
+        fn number(&self) -> u32;
+        fn bytes(&self) -> &[u8];
+    }
+
+    struct Pair;
+
+    impl<S: PairSource + ?Sized> SourceWrite<S> for Pair {
+        fn write<K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {
+            if src.bytes().len() > 8 {
+                return Err(CodecError::LengthOutOfRange);
+            }
+            w.write_vle_u32(src.number())?;
+            w.write_vle_u16(src.bytes().len() as u16)?;
+            w.write_bytes(src.bytes())
+        }
+    }
+
+    struct Held(u32, &'static [u8]);
+
+    impl PairSource for Held {
+        fn number(&self) -> u32 {
+            self.0
+        }
+        fn bytes(&self) -> &[u8] {
+            self.1
+        }
+    }
+
+    #[test]
+    fn measured_len_is_the_bytes_the_window_receives() {
+        for (n, b) in [(0u32, &b""[..]), (300, b"abc"), (u32::MAX, b"12345678")] {
+            let held = Held(n, b);
+            let m = measure::<Pair, _>(&held).unwrap();
+            let mut expected = [0u8; 32];
+            let mut s = SliceSink::new(&mut expected);
+            Pair::write(&held, &mut s).unwrap();
+            let want = s.into_written().len();
+            assert_eq!(m.len(), want);
+            let mut window = [0xEEu8; 32];
+            m.write_into(&mut window[..want]);
+            assert_eq!(window[..want], expected[..want]);
+            assert!(
+                window[want..].iter().all(|&x| x == 0xEE),
+                "nothing past the window is written"
+            );
+        }
+    }
+
+    #[test]
+    fn a_refused_source_has_no_measure() {
+        let held = Held(1, b"123456789");
+        assert!(matches!(
+            measure::<Pair, _>(&held),
+            Err(CodecError::LengthOutOfRange)
+        ));
+    }
+
+    #[test]
+    #[should_panic(expected = "not the length")]
+    fn a_window_of_another_length_panics() {
+        let held = Held(1, b"ab");
+        let m = measure::<Pair, _>(&held).unwrap();
+        let mut window = [0u8; 16];
+        m.write_into(&mut window);
+    }
+
+    /// A source whose second answer differs from its first: it breaks the law
+    /// that a read of a value is a read of the same value.
+    struct Lying {
+        reads: core::cell::Cell<u32>,
+        first: u32,
+        later: u32,
+    }
+
+    impl PairSource for Lying {
+        fn number(&self) -> u32 {
+            let n = self.reads.get();
+            self.reads.set(n + 1);
+            if n == 0 {
+                self.first
+            } else {
+                self.later
+            }
+        }
+        fn bytes(&self) -> &[u8] {
+            b""
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "changed between")]
+    fn a_source_that_grows_under_the_write_panics_and_never_overruns() {
+        let lying = Lying {
+            reads: core::cell::Cell::new(0),
+            first: 1,
+            later: u32::MAX,
+        };
+        let m = measure::<Pair, _>(&lying).unwrap();
+        let mut window = [0u8; 2];
+        m.write_into(&mut window);
+    }
+
+    #[test]
+    #[should_panic(expected = "changed between")]
+    fn a_source_that_shrinks_under_the_write_panics() {
+        let lying = Lying {
+            reads: core::cell::Cell::new(0),
+            first: u32::MAX,
+            later: 1,
+        };
+        let m = measure::<Pair, _>(&lying).unwrap();
+        let mut window = [0u8; 6];
+        m.write_into(&mut window);
     }
 
     // ── Object-safe trait pin ────────────────────────────────────

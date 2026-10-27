@@ -198,6 +198,22 @@ impl<'a> CodecLengthRefUint32Le<'a> {
     }
 }
 
+impl<'a, S: CodecLengthRefUint32LeSource + ?Sized> ::sce_forge_runtime::codec::SourceWrite<S> for CodecLengthRefUint32Le<'a> {
+    fn write<K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {
+        Self::write_source(src, w)
+    }
+}
+
+#[allow(dead_code)]
+impl<'a> CodecLengthRefUint32Le<'a> {
+    /// The size of the frame [`Self::encode_source`] writes for `src`, found
+    /// with nothing written, or the refusal that encode would give. The result
+    /// writes the frame into a window of exactly that size and cannot fail.
+    pub fn measure<S: CodecLengthRefUint32LeSource + ?Sized>(src: &S) -> Result<::sce_forge_runtime::codec::Measured<'_, Self, S>, CodecError> {
+        ::sce_forge_runtime::codec::measure(src)
+    }
+}
+
 
 // ── Owned projection (storage-parameterised native form) ─────────────
 // `CodecLengthRefUint32Le<'a>` above is a zero-copy view borrowing the decode

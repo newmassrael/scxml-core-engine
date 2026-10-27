@@ -65,6 +65,27 @@ macro_rules! agree {
                     "encode answers another verdict than encode_source, frame {frame:02x?}"
                 );
                 assert_eq!(by_method, by_source, "encode writes other bytes, frame {frame:02x?}");
+                // The length found with nothing written is the length the encode
+                // writes, the window holds the bytes the encode writes, and a
+                // value the encode refuses has no length (docs/adr/0061). The
+                // window is filled twice with different bytes, so a byte left
+                // unwritten cannot pass for one that matched.
+                match <$ty>::measure(&value) {
+                    Ok(measured) => {
+                        assert!(verdict.is_ok(), "measure admits a value encode refuses, frame {frame:02x?}");
+                        assert_eq!(measured.len(), by_source.len(), "measure counts other bytes, frame {frame:02x?}");
+                        for fill in [0x00u8, 0xFF] {
+                            let mut window = vec![fill; by_source.len()];
+                            <$ty>::measure(&value).unwrap().write_into(&mut window);
+                            assert_eq!(window, by_source, "the window holds other bytes, frame {frame:02x?}");
+                        }
+                    }
+                    Err(refusal) => assert_eq!(
+                        Err(refusal),
+                        verdict,
+                        "measure answers another refusal than encode, frame {frame:02x?}"
+                    ),
+                }
                 if verdict.is_ok() {
                     // The bytes are a frame, and a fixed point of the encode.
                     let again = <$ty>::decode(&mut SceCursor::new(&by_source)).unwrap_or_else(|e| {
@@ -103,6 +124,11 @@ macro_rules! agree {
                     assert_eq!(
                         by_view, by_source,
                         "a view writes other bytes for frame {frame:02x?}"
+                    );
+                    assert_eq!(
+                        <$ty>::measure(&viewed).map(|m| m.len()),
+                        <$ty>::measure(&value).map(|m| m.len()),
+                        "a view is another length for frame {frame:02x?}"
                     );
                 )?
                 $(
@@ -294,6 +320,33 @@ mod parts {
         );
         assert_eq!(refused, Err(CodecError::TooManyElements));
         assert!(bytes.is_empty(), "the sink was written to: {bytes:02x?}");
+    }
+
+    // The window encoder (docs/adr/0061) on the types a caller already has and no
+    // heap: count, reserve exactly that, write.
+    #[test]
+    fn a_slice_is_counted_then_written_into_a_window_of_exactly_that_size() {
+        let entries = [
+            CodecRepeatElemParts { seq: 1 },
+            CodecRepeatElemParts { seq: 2 },
+            CodecRepeatElemParts { seq: 3 },
+        ];
+        let source = CodecRepeatBasicParts { frags: &entries };
+        let measured = CodecRepeatBasic::measure(&source).unwrap();
+        assert_eq!(measured.len(), 7);
+        let mut slot = [0xEEu8; 9];
+        measured.write_into(&mut slot[1..8]);
+        assert_eq!(slot, [0xEE, 3, 0, 1, 0, 2, 0, 3, 0xEE]);
+    }
+
+    #[test]
+    fn a_slice_past_the_bound_has_no_length() {
+        let entries = [CodecRepeatElemParts { seq: 0 }; 33];
+        let source = CodecRepeatBasicParts { frags: &entries };
+        assert_eq!(
+            CodecRepeatBasic::measure(&source).err(),
+            Some(CodecError::TooManyElements)
+        );
     }
 
     #[test]

@@ -315,6 +315,22 @@ impl<'a> CodecNestedParent<'a> {
     }
 }
 
+impl<'a, S: CodecNestedParentSource + ?Sized> ::sce_forge_runtime::codec::SourceWrite<S> for CodecNestedParent<'a> {
+    fn write<K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {
+        Self::write_source(src, w)
+    }
+}
+
+#[allow(dead_code)]
+impl<'a> CodecNestedParent<'a> {
+    /// The size of the frame [`Self::encode_source`] writes for `src`, found
+    /// with nothing written, or the refusal that encode would give. The result
+    /// writes the frame into a window of exactly that size and cannot fail.
+    pub fn measure<S: CodecNestedParentSource + ?Sized>(src: &S) -> Result<::sce_forge_runtime::codec::Measured<'_, Self, S>, CodecError> {
+        ::sce_forge_runtime::codec::measure(src)
+    }
+}
+
 
 // ── View (ADR 0049) ──────────────────────────────────────────────────
 // `CodecNestedParentView` is what a decode of `CodecNestedParent` learned, not a

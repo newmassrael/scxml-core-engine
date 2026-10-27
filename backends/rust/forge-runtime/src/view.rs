@@ -307,6 +307,56 @@ mod tests {
         assert_eq!(l.get(3), None);
     }
 
+    // A walk that counts the entries it decodes, to show what stopping early costs.
+    static DECODED: core::sync::atomic::AtomicUsize = core::sync::atomic::AtomicUsize::new(0);
+
+    struct CountingWalk;
+
+    impl ListWalk<0> for CountingWalk {
+        type Entry<'b> = u8;
+
+        fn decode<'b>(c: &mut SceCursor<'b>, _: &[u8; 0]) -> Result<u8, CodecError> {
+            DECODED.fetch_add(1, core::sync::atomic::Ordering::SeqCst);
+            let one = c.peek_slice(1)?[0];
+            c.advance(1)?;
+            Ok(one)
+        }
+
+        fn advance(_: &u8, _: &mut [u8; 0]) {}
+    }
+
+    // docs/adr/0061 §5: the iterator is the single-pass fold with early exit. A
+    // fold that stops decodes the entries it visited and not the next one.
+    #[test]
+    fn a_fold_that_stops_decodes_no_entry_past_the_one_it_stopped_at() {
+        use core::ops::ControlFlow;
+        use core::sync::atomic::Ordering;
+
+        let l: ListView<'static, CountingWalk, 0> = ListView::new(&[10, 20, 30, 40], 4, []);
+        DECODED.store(0, Ordering::SeqCst);
+        let stopped = l.iter().try_fold(0u32, |sum, e| {
+            if e == 30 {
+                ControlFlow::Break(sum)
+            } else {
+                ControlFlow::Continue(sum + u32::from(e))
+            }
+        });
+        assert_eq!(stopped, ControlFlow::Break(30));
+        assert_eq!(
+            DECODED.load(Ordering::SeqCst),
+            3,
+            "the entry after the one stopped at was decoded"
+        );
+
+        DECODED.store(0, Ordering::SeqCst);
+        assert_eq!(l.iter().count(), 4);
+        assert_eq!(
+            DECODED.load(Ordering::SeqCst),
+            4,
+            "a full walk decodes each entry once"
+        );
+    }
+
     #[test]
     fn the_default_list_is_empty() {
         let l: ListView<'static, Walk, 1> = ListView::default();
