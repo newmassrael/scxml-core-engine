@@ -149,7 +149,8 @@ bool write_history(const std::filesystem::path &dir, const std::string &name, st
 }
 
 /// One producer and one consumer on two threads through the Lamport ring.
-bool record_spsc_run(const std::filesystem::path &dir, const std::string &name, auto &queue_instance,
+template <typename Queue>
+bool record_spsc_run(const std::filesystem::path &dir, const std::string &name, Queue &queue_instance,
                      std::size_t capacity) {
     Clock clock;
     Deadline deadline;
