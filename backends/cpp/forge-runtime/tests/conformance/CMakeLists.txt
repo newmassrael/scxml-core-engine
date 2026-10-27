@@ -20,12 +20,14 @@
 cmake_minimum_required(VERSION 3.20)
 project(sce_forge_numerical_conformance CXX)
 
-# C++17: the standard a consumer compiles the generated C++ at (docs/adr/0059,
-# section 1), so the harness compiles every fixture there. A `bytes` or list
-# parameter is the runtime's `SCE::Forge::Span` (sce/forge/span.h, the same type
-# at C++17 and C++20), an aggregate is initialized by position and a record
-# compares member by member, so no fixture needs C++20. A test below whose own
-# source is C++20 says so on its target.
+# RFC §synth-7 A6: the §synth-5-A algorithm kind joins this harness beside the
+# baseline kinds. C++17 is the standard a consumer compiles the generated C++ at
+# (docs/adr/0059, section 1), so the harness compiles every fixture there. Per
+# RFC §synth-5-J-5 a `bytes` or list parameter is the runtime's
+# `SCE::Forge::Span` (sce/forge/span.h, the same type at C++17 and C++20), an
+# aggregate is initialized by position and a record compares member by member,
+# so no fixture needs C++20. A test below whose own source is C++20 says so on
+# its target.
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
