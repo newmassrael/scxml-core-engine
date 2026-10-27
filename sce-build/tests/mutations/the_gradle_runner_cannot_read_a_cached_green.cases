@@ -80,3 +80,21 @@ edit("scripts/mutate",
      'rm -rf "$MUTATION_GRADLE_REPORT_DIR" "$MUTATION_GRADLE_CLASSPATH_DIR"',
      'rm -rf "$MUTATION_GRADLE_REPORT_DIR"')
 PY
+
+# ── A build is held to the test clock ──────────────────────────────
+#
+# The test clock bounds how long the tests may run. Put on a build, it kills a
+# cold one before any test begins, and the round ends with no case judged:
+# five Kotlin casefiles on run 40283488368. Either way back: the compile is
+# timed, or the selection is resolved by a run that must build first.
+mutation_case "the compile step is held to the test clock" <<'PY'
+edit("scripts/mutate",
+     '    local -a clock=()\n    if [[ "$mode" == compile ]]; then',
+     '    local -a clock=(timeout "$MUTATION_ARTIFACT_TIMEOUT")\n    if [[ "$mode" == compile ]]; then')
+PY
+
+mutation_case "the selection is resolved by a run that builds under the clock" <<'PY'
+edit("scripts/mutate",
+     '    mutation_gradle_invoke compile "$MUTATION_BUILD_LOG" || true\n    mutation_gradle_invoke run "$MUTATION_BUILD_LOG" || rc=$?',
+     '    mutation_gradle_invoke run "$MUTATION_BUILD_LOG" || rc=$?')
+PY

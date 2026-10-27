@@ -2368,6 +2368,15 @@ mutation_gradle_project_dir() { printf '%s\n' "${MUTATION_RUNNER_ARGS[0]:-}"; }
 # and the daemon's warm JVM is most of what makes that affordable; what the
 # daemon could otherwise hide — a stale test result — is closed in the init
 # script instead, at the task rather than at the process.
+#
+# Only the run is held to `MUTATION_ARTIFACT_TIMEOUT`. That clock is how long
+# the TESTS may take, the bound a termination contract needs; no other runner
+# puts its build under it, and a compile here is a build. Measured on run
+# 40283488368 (2026-10-26): five Kotlin casefiles reported "the selector
+# started no Test task" with no case judged, because their first invocation
+# was a cold build — the code generator, the Lua JNI library, two hundred
+# generated machines — killed at exactly 300 seconds before any test began,
+# while a sixth on the same lane finished its build in 204 and was judged.
 mutation_gradle_invoke() {
     local mode="$1" log="$2" dir
     dir="$(mutation_gradle_project_dir)"
@@ -2375,11 +2384,14 @@ mutation_gradle_invoke() {
         "-Dsce.mutation.artifacts=$MUTATION_GRADLE_CLASSPATH_DIR"
         "-Dsce.mutation.reports=$MUTATION_GRADLE_REPORT_DIR"
     )
+    local -a clock=()
     if [[ "$mode" == compile ]]; then
         props+=("-Dsce.mutation.compileOnly=true")
+    else
+        clock=(timeout "$MUTATION_ARTIFACT_TIMEOUT")
     fi
     mkdir -p "$MUTATION_GRADLE_CLASSPATH_DIR" "$MUTATION_GRADLE_REPORT_DIR"
-    ( cd "$dir" && timeout "$MUTATION_ARTIFACT_TIMEOUT" ./gradlew \
+    ( cd "$dir" && ${clock[@]+"${clock[@]}"} ./gradlew \
         --init-script "$MUTATION_GRADLE_INIT" \
         "${props[@]}" "${MUTATION_RUNNER_ARGS[@]:1}" ) >"$log" 2>&1
 }
@@ -2409,10 +2421,14 @@ mutation_gradle_resolve() {
     fi
 
     rm -rf "$MUTATION_GRADLE_CLASSPATH_DIR" "$MUTATION_GRADLE_REPORT_DIR"
-    # A failure here is the baseline's verdict to give, with Gradle's own
+    # Built first, and then run over the built tree, as every case is: the run
+    # is under the test clock and the build is not (`mutation_gradle_invoke`).
+    # A failure in either is the baseline's verdict to give, with Gradle's own
     # words, rather than this function's — the same reading the Go runner's
     # resolve takes of a compile failure.
-    mutation_gradle_invoke run "$MUTATION_BUILD_LOG" || true
+    local rc=0
+    mutation_gradle_invoke compile "$MUTATION_BUILD_LOG" || true
+    mutation_gradle_invoke run "$MUTATION_BUILD_LOG" || rc=$?
 
     MUTATION_ARTIFACTS=()
     while IFS= read -r entry; do
@@ -2430,6 +2446,10 @@ mutation_gradle_resolve() {
     if [[ ${#MUTATION_ARTIFACTS[@]} -eq 0 ]]; then
         red "the selector started no Test task with a classpath inside this"
         red "repository: ${MUTATION_RUNNER_ARGS[*]}"
+        if [[ "$rc" == 124 ]]; then
+            red "the run was stopped at ${MUTATION_ARTIFACT_TIMEOUT}s (MUTATION_ARTIFACT_TIMEOUT, or the"
+            red "casefile's mutation_timeout) before a test task began"
+        fi
         red "the build log's tail:"
         mutation_build_diagnostics >&2
         exit 2

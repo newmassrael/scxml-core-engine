@@ -39,6 +39,11 @@
 //! defeating the same property — a Gradle release that stops running
 //! `doFirst` on an executed task, say — would pass all three. That residue is
 //! named here rather than left to be discovered.
+//!
+//! One property is held by behaviour instead, because no text predicate can
+//! see it: that the test clock bounds a test run and not the build before it.
+//! It is run against a stand-in `gradlew` whose build is slow, so it needs no
+//! JVM (`a_build_is_not_held_to_the_clock_a_test_run_is`).
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -198,5 +203,120 @@ fn the_runner_refuses_a_report_no_test_task_produced() {
          asked` are different facts, and only the first is about the mutation; \
          folding the second into a count of zero would blame the case for the \
          runner."
+    );
+}
+
+/// Stands in for Gradle with the two properties the round depends on and
+/// nothing else: a build that is slow whenever the subject moved (the first
+/// time, after a mutation, after the restore), and a test run that reads the
+/// built artifact and leaves the classpath listing and the JUnit XML the init
+/// script would.
+const SLOW_GRADLEW: &str = r#"#!/bin/sh
+here="$(cd "$(dirname "$0")" && pwd)"
+compile=0
+artifacts=
+reports=
+for arg in "$@"; do
+    case "$arg" in
+        -Dsce.mutation.compileOnly=true) compile=1 ;;
+        -Dsce.mutation.artifacts=*) artifacts="${arg#*=}" ;;
+        -Dsce.mutation.reports=*) reports="${arg#*=}" ;;
+    esac
+done
+mkdir -p "$here/build"
+if ! cmp -s "$here/subject.txt" "$here/build/artifact.bin"; then
+    sleep 4
+    cp "$here/subject.txt" "$here/build/artifact.bin"
+fi
+[ "$compile" = 1 ] && exit 0
+mkdir -p "$artifacts" "$reports"
+printf '%s\n' "$here/build/artifact.bin" > "$artifacts/g8.txt"
+if grep -q good "$here/build/artifact.bin"; then
+    failures=0
+    case_xml='<testcase classname="g8.Subject" name="isGood"/>'
+else
+    failures=1
+    case_xml='<testcase classname="g8.Subject" name="isGood"><failure message="the subject is bad"/></testcase>'
+fi
+printf '<testsuite name="g8.Subject" tests="1" skipped="0" failures="%s" errors="0">%s</testsuite>\n' \
+    "$failures" "$case_xml" > "$reports/TEST-g8.Subject.xml"
+[ "$failures" = 0 ]
+"#;
+
+/// A Gradle project inside the repository, under the gitignored `tmp/`, for
+/// the reason `a_mutation_round_rebuilds_only_what_its_tests_run` gives: the
+/// runner keeps only classpath entries inside the repository.
+struct GradleProject {
+    root: PathBuf,
+}
+
+impl Drop for GradleProject {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.root);
+    }
+}
+
+/// The test clock bounds a test run and not the build before it.
+///
+/// Measured on run 40283488368 (2026-10-26): five Kotlin casefiles came back
+/// with "the selector started no Test task" and no case judged, because the
+/// runner's first invocation built the tree cold under the 300-second test
+/// clock and was killed before any test began. Here the build takes four
+/// seconds and the clock allows two, so a runner that times its builds
+/// cannot resolve the selection, and one that times only its runs judges the
+/// case. The real `scripts/mutate` is run, for the reason
+/// `mutation_round_survives_a_moved_baseline` gives.
+#[test]
+fn a_build_is_not_held_to_the_clock_a_test_run_is() {
+    use std::os::unix::fs::PermissionsExt;
+    use std::process::Command;
+
+    let root = repo_root().join("tmp").join("g8-gradle-clock");
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).expect("create the fixture directory");
+    let project = GradleProject { root: root.clone() };
+
+    let gradlew = project.root.join("gradlew");
+    fs::write(&gradlew, SLOW_GRADLEW).expect("write gradlew");
+    fs::set_permissions(&gradlew, fs::Permissions::from_mode(0o755)).expect("chmod gradlew");
+    fs::write(
+        project.root.join("settings.gradle.kts"),
+        "include(\":g8\")\n",
+    )
+    .expect("write settings.gradle.kts");
+    fs::write(project.root.join("subject.txt"), "good\n").expect("write subject.txt");
+    let casefile = project.root.join("fixture.cases");
+    fs::write(
+        &casefile,
+        "mutation_gradle tmp/g8-gradle-clock :g8:test\n\
+         mutation_targets tmp/g8-gradle-clock/subject.txt\n\
+         mutation_oracles tmp/g8-gradle-clock/gradlew\n\
+         \n\
+         mutation_case \"the subject goes bad\" <<'PY'\n\
+         edit(\"tmp/g8-gradle-clock/subject.txt\", \"good\", \"bad\")\n\
+         PY\n",
+    )
+    .expect("write the casefile");
+
+    let ledger = tempfile::tempdir().expect("temp ledger");
+    let home = tempfile::tempdir().expect("temp home");
+    let out = Command::new(repo_root().join(HARNESS))
+        .arg(&casefile)
+        .current_dir(repo_root())
+        .env("HOME", home.path())
+        .env("SCE_MUTATION_LEDGER_DIR", ledger.path())
+        .env("MUTATION_ARTIFACT_TIMEOUT", "2")
+        .output()
+        .expect("run scripts/mutate");
+    let mut output = String::from_utf8_lossy(&out.stdout).into_owned();
+    output.push_str(&String::from_utf8_lossy(&out.stderr));
+
+    assert!(
+        !output.contains("started no Test task"),
+        "the round timed the build and never reached a test:\n{output}"
+    );
+    assert!(
+        output.contains("CAUGHT        the subject goes bad"),
+        "the case was not judged by the test it reaches:\n{output}"
     );
 }
