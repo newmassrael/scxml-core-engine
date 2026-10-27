@@ -19,8 +19,13 @@ on:
       - 'sce/**'
       - 'cmake/**'
       - 'tools/codegen/**'
+      - 'backends/cpp/forge-runtime/include/**'
       - 'scripts/package_embed.sh'
       - 'scripts/smoke_embed_consumer.sh'
+      - 'scripts/smoke_bazel_consumer.sh'
+      - 'scripts/sce_repo.bzl'
+      - 'scripts/lib/bazel_pins.sh'
+      - 'tests/bazel_consumer/**'
       - 'scripts/verify_embed_manifest.sh'
       - 'scripts/verify_embed_payload.sh'
       - 'scripts/embed_CMakeLists.txt'
@@ -37,8 +42,13 @@ on:
       - 'sce/**'
       - 'cmake/**'
       - 'tools/codegen/**'
+      - 'backends/cpp/forge-runtime/include/**'
       - 'scripts/package_embed.sh'
       - 'scripts/smoke_embed_consumer.sh'
+      - 'scripts/smoke_bazel_consumer.sh'
+      - 'scripts/sce_repo.bzl'
+      - 'scripts/lib/bazel_pins.sh'
+      - 'tests/bazel_consumer/**'
       - 'scripts/verify_embed_manifest.sh'
       - 'scripts/verify_embed_payload.sh'
       - 'scripts/embed_CMakeLists.txt'
@@ -138,6 +148,10 @@ jobs:
     #   smoke_embed_consumer.sh   — regenerates embed/ in a scratch dir,
     #     checks the SSOT-listed assets landed, then configures and
     #     builds a minimal consumer.
+    #   smoke_bazel_consumer.sh   — builds and runs a Bazel consumer
+    #     through both Bazel channels (the packaged module and the
+    #     checkout's sce_repo.bzl) with the pinned Bazel, through the
+    #     runner image's bazelisk.
     #
     # This job kept its own copy on the grounds that it also called a
     # sibling gate; it does not — `embed-manifest-failfast` runs in the

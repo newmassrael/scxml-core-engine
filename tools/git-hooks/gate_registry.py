@@ -688,7 +688,10 @@ GATES: dict[str, dict] = {
         # (`embed-manifest-failfast`) runs in a SEPARATE job of the same
         # workflow, and this job restated the three scripts verbatim.
         "runner_workflow": True,
-        "extra": ["sce/include/**", "embed/MANIFEST.json"],
+        "extra": ["sce/include/**", "embed/MANIFEST.json",
+                  "backends/cpp/forge-runtime/include/**",
+                  "scripts/smoke_bazel_consumer.sh", "scripts/sce_repo.bzl",
+                  "scripts/lib/bazel_pins.sh", "tests/bazel_consumer/**"],
         # The most expensive gate in the set: three scratch-directory builds,
         # one of which packages embed/ from scratch and builds a consumer
         # against it.

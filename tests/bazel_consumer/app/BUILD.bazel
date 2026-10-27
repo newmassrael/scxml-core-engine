@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+#
+# A Bazel consumer of SCE, built by scripts/smoke_bazel_consumer.sh against both
+# Bazel channels: the packaged embed/ module and a checkout through
+# scripts/sce_repo.bzl. It links what a consumer is told to link and compiles at
+# the interface standard (docs/adr/0059).
+
+load("@rules_cc//cc:defs.bzl", "cc_binary")
+
+cc_binary(
+    name = "probe",
+    srcs = ["probe.cpp"],
+    copts = [
+        "-std=c++17",
+        "-Wall",
+        "-Werror",
+    ],
+    deps = ["@sce//:sce_base"],
+)

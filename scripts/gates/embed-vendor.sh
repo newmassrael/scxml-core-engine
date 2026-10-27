@@ -40,3 +40,11 @@ bash scripts/verify_embed_payload.sh \
 sce_gate_step "consumer build over a freshly packaged tree"
 bash scripts/smoke_embed_consumer.sh \
     || sce_gate_fail "embed consumer smoke build"
+
+# The Bazel channels: the same freshly packaged tree as a Bzlmod module, and the
+# checkout through scripts/sce_repo.bzl, both at the pinned Bazel. Bazel 9
+# removed the native C++ rules, so a BUILD file that does not load them from
+# rules_cc fails here and not in a consumer's build.
+sce_gate_step "Bazel consumers through both channels"
+bash scripts/smoke_bazel_consumer.sh \
+    || sce_gate_fail "Bazel consumer smoke build"
