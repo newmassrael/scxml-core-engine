@@ -1697,10 +1697,6 @@
           "kind": "implements"
         },
         {
-          "file": "tools/codegen/templates/_macros/forge_rust_codec_encode_body.jinja2",
-          "kind": "references"
-        },
-        {
           "file": "tools/codegen/templates/_macros/forge_rust_codec_decode_body.jinja2",
           "kind": "references"
         },
@@ -6589,6 +6585,12 @@
       "target_kind": "section",
       "target_id": "synth-5-L",
       "reason": "folded into StatelessFunction::of in forge/generator.rs (ADR 0048)"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-B",
+      "reason": "the Rust codec encode is generated from the codec's source (ADR 0058), so the macro that wrote the encode statements is deleted"
     }
   ],
   "frames": {},

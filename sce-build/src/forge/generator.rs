@@ -6515,11 +6515,9 @@ fn render_codec(
     // closure) deletes the gate entirely.
 
     let has_vle_fields = m.fields.iter().any(|f| f.is_vle());
-    // A Rust codec that is borrowed has an owned mirror (`emit_owned`), and the
-    // mirror encodes: the blocks it needs where a field is read through the
-    // storage profile are rendered beside the borrowed ones under `*_owned`.
-    let owned_encode =
-        matches!(lang, crate::generator::Language::Rust) && codec_self_borrowed(m, imports);
+    // A Rust codec's `encode` is its source's (ADR 0058): the statements the
+    // other backends write for each field, one by one, are not written for it.
+    let field_encode_blocks = !matches!(lang, crate::generator::Language::Rust);
     // ADR 0049: a Rust codec is also rendered as `{Codec}View` when asked to.
     let emit_views = views && matches!(lang, crate::generator::Language::Rust);
     let has_present_if_fields = m.has_present_if_fields();
@@ -6860,50 +6858,14 @@ fn render_codec(
                             .into(),
                         );
                     }
-                    obj.insert(
-                        "repeat_encode_block".into(),
-                        repeat_streaming_encode_block(
-                            f,
-                            &m.fields,
-                            &body_encoder,
-                            &repeat_thread.encode_arg,
-                            ListEncode {
-                                bound: max_count,
-                                flavor: EncodeFlavor::Borrowed,
-                            },
-                            lang,
-                        )
-                        .into(),
-                    );
-                    if owned_encode {
+                    if field_encode_blocks {
                         obj.insert(
-                            "repeat_encode_block_owned".into(),
+                            "repeat_encode_block".into(),
                             repeat_streaming_encode_block(
                                 f,
                                 &m.fields,
                                 &body_encoder,
                                 &repeat_thread.encode_arg,
-                                ListEncode {
-                                    bound: max_count,
-                                    flavor: EncodeFlavor::Owned,
-                                },
-                                lang,
-                            )
-                            .into(),
-                        );
-                    }
-                    if emit_views {
-                        obj.insert(
-                            "repeat_encode_block_view".into(),
-                            repeat_streaming_encode_block(
-                                f,
-                                &m.fields,
-                                &body_encoder,
-                                &repeat_thread.encode_arg,
-                                ListEncode {
-                                    bound: max_count,
-                                    flavor: EncodeFlavor::View,
-                                },
                                 lang,
                             )
                             .into(),
@@ -7115,18 +7077,14 @@ fn render_codec(
                                 .into(),
                         );
                     }
-                    let encode_chain = |flavor: EncodeFlavor| {
-                        if f.present_if.is_some() {
+                    if field_encode_blocks {
+                        let block = if f.present_if.is_some() {
                             tlv_chain_streaming_encode_block_gated(
                                 f,
                                 &body_encoder,
                                 &entry_thread.encode_arg,
                                 &entry_binds,
                                 &m.fields,
-                                ListEncode {
-                                    bound: *max_depth,
-                                    flavor,
-                                },
                                 lang,
                             )
                         } else {
@@ -7135,29 +7093,10 @@ fn render_codec(
                                 &body_encoder,
                                 &entry_thread.encode_arg,
                                 &entry_binds,
-                                ListEncode {
-                                    bound: *max_depth,
-                                    flavor,
-                                },
                                 lang,
                             )
-                        }
-                    };
-                    obj.insert(
-                        "tlv_chain_encode_block".into(),
-                        encode_chain(EncodeFlavor::Borrowed).into(),
-                    );
-                    if owned_encode {
-                        obj.insert(
-                            "tlv_chain_encode_block_owned".into(),
-                            encode_chain(EncodeFlavor::Owned).into(),
-                        );
-                    }
-                    if emit_views {
-                        obj.insert(
-                            "tlv_chain_encode_block_view".into(),
-                            encode_chain(EncodeFlavor::View).into(),
-                        );
+                        };
+                        obj.insert("tlv_chain_encode_block".into(), block.into());
                     }
                     // Kotlin's data-class primary constructor needs a
                     // default value for every property. Plain chains
@@ -7290,18 +7229,20 @@ fn render_codec(
                             .into(),
                         );
                     }
-                    obj.insert(
-                        "embed_encode_block".into(),
-                        embed_streaming_encode_block(
-                            f,
-                            &body_type,
-                            &body_encoder,
-                            &embed_thread.encode_arg,
-                            &m.fields,
-                            lang,
-                        )
-                        .into(),
-                    );
+                    if field_encode_blocks {
+                        obj.insert(
+                            "embed_encode_block".into(),
+                            embed_streaming_encode_block(
+                                f,
+                                &body_type,
+                                &body_encoder,
+                                &embed_thread.encode_arg,
+                                &m.fields,
+                                lang,
+                            )
+                            .into(),
+                        );
+                    }
                     // Kotlin data-class primary-constructor default.
                     // Plain embed: emits `<Type>()` (bare struct
                     // member; trust contract — imported codec
@@ -7637,14 +7578,9 @@ fn render_codec(
                     "present_if_decode_stmt".into(),
                     present_if_streaming_decode_stmt(&l, f, &m.fields, m.default_endian).into(),
                 );
-                let render_encode_block = |flavor: EncodeFlavor| {
-                    let mut encode_block = present_if_streaming_encode_block(
-                        &l,
-                        f,
-                        &m.fields,
-                        m.default_endian,
-                        flavor,
-                    );
+                if field_encode_blocks {
+                    let mut encode_block =
+                        present_if_streaming_encode_block(&l, f, &m.fields, m.default_endian);
                     // RFC §synth-5-B parent-tag carriers — inject `| _derived_<carrier>`
                     // into the single-byte carrier emit so the derived bits
                     // land in the outgoing stream. Carrier is uint8 per v1
@@ -7654,17 +7590,7 @@ fn render_codec(
                         encode_block =
                             inject_parent_tag_carrier_suffix(&encode_block, &f.id, suffix, lang);
                     }
-                    encode_block
-                };
-                obj.insert(
-                    "present_if_encode_block".into(),
-                    render_encode_block(EncodeFlavor::Borrowed).into(),
-                );
-                if owned_encode {
-                    obj.insert(
-                        "present_if_encode_block_owned".into(),
-                        render_encode_block(EncodeFlavor::Owned).into(),
-                    );
+                    obj.insert("present_if_encode_block".into(), encode_block.into());
                 }
                 // RFC §synth-5-B — Repeat-with-present-if fields wrap
                 // their imported-codec list type in the dedicated
@@ -7814,7 +7740,11 @@ fn render_codec(
         })
         .collect::<Result<Vec<_>, _>>()?;
 
-    let encode_exprs = generate_encode_exprs(&m.fields, m.default_endian, &l);
+    let encode_exprs = if field_encode_blocks {
+        generate_encode_exprs(&m.fields, m.default_endian, &l)
+    } else {
+        Vec::new()
+    };
 
     // RFC §synth-5-B parent-tag carriers — locals block; `parent_tag_derivations` was
     // computed at the top of `compile_codec` so it could feed the
@@ -7823,13 +7753,11 @@ fn render_codec(
     // render `sce:present-if` predicates and every backend can look
     // up `imp.type_name` for the embed's variant enum (consumer-
     // parity Gap 2 + Gap 3 closure).
-    let parent_tag_derivation_block_str = parent_tag_derivation_block(
-        &parent_tag_derivations,
-        m,
-        imports,
-        EncodeFlavor::Borrowed,
-        lang,
-    );
+    let parent_tag_derivation_block_str = if field_encode_blocks {
+        parent_tag_derivation_block(&parent_tag_derivations, m, imports, lang)
+    } else {
+        String::new()
+    };
 
     // Apply the parent-tag OR suffix to the encode_exprs simple-path emit. The
     // simple path is selected when the codec has no streaming-prefix
@@ -8146,32 +8074,6 @@ fn render_codec(
         "parent_tag_derivation_block".into(),
         parent_tag_derivation_block_str.into(),
     );
-    if owned_encode {
-        ctx.insert(
-            "parent_tag_derivation_block_owned".into(),
-            parent_tag_derivation_block(
-                &parent_tag_derivations,
-                m,
-                imports,
-                EncodeFlavor::Owned,
-                lang,
-            )
-            .into(),
-        );
-    }
-    if emit_views {
-        ctx.insert(
-            "parent_tag_derivation_block_view".into(),
-            parent_tag_derivation_block(
-                &parent_tag_derivations,
-                m,
-                imports,
-                EncodeFlavor::View,
-                lang,
-            )
-            .into(),
-        );
-    }
     // RFC §synth-5-B parent-tag carriers — flag the codec as a parent-tag encode parent so
     // templates can branch (e.g., emit a deterministic blank line
     // after the locals block when present). Useful for templates that
@@ -8189,24 +8091,16 @@ fn render_codec(
     // codec no chain predicate gates, which keeps every existing golden
     // byte-stable. `encode_can_refuse` makes the infallible-looking facades
     // (`encode_to_vec` and kin) fallible for that codec alone.
-    let (present_if_encode_prologue, encode_can_refuse) =
-        present_if_chain_encode_prologue(&m.fields, &chain_masks, EncodeFlavor::Borrowed, lang);
+    let (present_if_encode_prologue, encode_can_refuse) = if field_encode_blocks {
+        present_if_chain_encode_prologue(&m.fields, &chain_masks, lang)
+    } else {
+        (String::new(), false)
+    };
     ctx.insert(
         "present_if_encode_prologue".into(),
         present_if_encode_prologue.into(),
     );
     ctx.insert("encode_can_refuse".into(), encode_can_refuse.into());
-    if owned_encode {
-        // The same refusal, read from the owned fields: the verdict
-        // (`encode_can_refuse`) is the borrowed one, since the facades of both
-        // forms are fallible together.
-        let (owned_prologue, _) =
-            present_if_chain_encode_prologue(&m.fields, &chain_masks, EncodeFlavor::Owned, lang);
-        ctx.insert(
-            "present_if_encode_prologue_owned".into(),
-            owned_prologue.into(),
-        );
-    }
 
     // RFC §synth-5-B variant primitive (item B1 trunk): build per-arm rendering
     // context. Each arm's `body_alias` resolves against the codec's
@@ -11108,8 +11002,6 @@ fn repeat_streaming_encode_block(
     fields: &[CodecField],
     body_encoder: &str,
     encode_arg: &str,
-    // The list's bound and the Rust type this is emitted for.
-    list: ListEncode,
     lang: crate::generator::Language,
 ) -> String {
     use crate::generator::Language;
@@ -11126,16 +11018,12 @@ fn repeat_streaming_encode_block(
             pred,
             body_encoder,
             encode_arg,
-            list,
             lang,
         );
     }
     match lang {
         Language::Swift => no_swift_emitter("repeat_streaming_encode_block"),
-        Language::Rust => {
-            let entries = list.flavor.list_entries(&format!("&self.{id}"), list.bound);
-            format!("        for _e in {entries} {{\n            _e.encode(w{encode_arg})?;\n        }}")
-        }
+        Language::Rust => unreachable!("a Rust codec's encode is its source's (ADR 0058)"),
         Language::Cpp => format!(
             "        for (const auto& _e : {id}) {{\n            \
                  if (auto _se = _e.encode(w{encode_arg}); _se) return _se;\n        \
@@ -12524,8 +12412,6 @@ fn repeat_streaming_encode_block_gated(
     pred: &PresentIfPredicate,
     body_encoder: &str,
     encode_arg: &str,
-    // See `repeat_streaming_encode_block`.
-    list: ListEncode,
     lang: crate::generator::Language,
 ) -> String {
     use crate::generator::Language;
@@ -12533,20 +12419,7 @@ fn repeat_streaming_encode_block_gated(
     let id = id_owned.as_str();
     match lang {
         Language::Swift => no_swift_emitter("repeat_streaming_encode_block_gated"),
-        // Rust: `if let Some(_list) = &self.<id>` mirrors item B2 tail
-        // present-if encode (line 5217). Carrier bit isn't tested —
-        // trust contract: author keeps Option::is_some() in sync with
-        // the carrier flag.
-        Language::Rust => {
-            let entries = list.flavor.list_entries("_list", list.bound);
-            format!(
-                "        if let Some(_list) = &self.{id} {{\n            \
-                     for _e in {entries} {{\n                \
-                         _e.encode(w{encode_arg})?;\n            \
-                     }}\n        \
-                 }}"
-            )
-        }
+        Language::Rust => unreachable!("a Rust codec's encode is its source's (ADR 0058)"),
         Language::Cpp => format!(
             "        if (this->{id}.has_value()) {{\n            \
                  for (const auto& _e : *this->{id}) {{\n                \
@@ -12681,101 +12554,6 @@ const RUST_CHAIN_PUSH_NOTE: &str =
 /// `_peek`), because an author's field is a local of the same body and may be
 /// called `out`.
 const RUST_DECODE_OUT: &str = "_out";
-
-/// Which Rust type an `encode` is emitted for.
-///
-/// A borrowed codec (`{Codec}<'a>`) holds its strings and bytes as slices and
-/// its lists as `heapless::Vec`; its owned mirror (`{Codec}Owned<S>`) holds
-/// them in the storage profile's containers. The two read the same wire, so
-/// one emission serves both and only the few reads that go through a
-/// container differ: a list is walked through `SceList::as_slice` and
-/// refused past the bound the borrowed view declares (what
-/// `try_as_borrowed` raised before the projection was skipped), bytes and
-/// text through `SceByteBuf` / `SceStr`, and a variant enum is the
-/// `...OwnedVariant`. A number, a flag or an embedded body is read the same
-/// on both, so those blocks are shared. Rust only.
-///
-/// A codec view (`{Codec}View`, ADR 0049) is the third: it holds its strings
-/// and bytes as the borrowed codec does and its lists as a `ListView`, which
-/// is walked by value (`iter()`) and holds no more than the bound it was
-/// scanned against, and its variant enum is the `...ViewVariant`.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum EncodeFlavor {
-    Borrowed,
-    Owned,
-    View,
-}
-
-/// How a list field's `encode` is emitted: for which Rust type, and the
-/// bound an owned list is refused past. Passed as one value, which keeps the
-/// list emitters' argument counts under the lint's bound.
-#[derive(Clone, Copy, Debug)]
-struct ListEncode {
-    /// The `sce:max-count` / `max-depth` of the list. Read by the owned form
-    /// alone.
-    bound: u32,
-    flavor: EncodeFlavor,
-}
-
-impl EncodeFlavor {
-    /// The entries of a list field, as an expression to iterate. `list` is a
-    /// reference to the field. The owned form is refused past `bound`, the
-    /// capacity of the borrowed list it stands for, so the bytes a codec
-    /// writes are the bytes the borrowed projection would have written, and
-    /// a list the borrowed view could not hold is an error and not a frame.
-    fn list_entries(self, list: &str, bound: u32) -> String {
-        match self {
-            Self::Borrowed => list.to_string(),
-            Self::Owned => format!("{RUNTIME_CODEC}::bounded_entries::<_, _, {bound}>({list})?"),
-            // `list` is a reference to the field (`&self.f`); the walk is made
-            // of the list itself.
-            Self::View => format!("{}.iter()", list.trim_start_matches('&')),
-        }
-    }
-
-    /// A bytes value held by `expr` (a place of the borrowed `&[u8]` / the
-    /// owned container), as the `&[u8]` the sink takes.
-    fn bytes(self, expr: &str) -> String {
-        match self {
-            Self::Borrowed | Self::View => expr.to_string(),
-            Self::Owned => format!("{RUNTIME_CODEC}::SceByteBuf::as_slice(&{expr})"),
-        }
-    }
-
-    /// Like [`Self::bytes`] for a reference already in hand (`_v` of a
-    /// gated field).
-    fn bytes_of_ref(self, reference: &str) -> String {
-        match self {
-            Self::Borrowed | Self::View => reference.to_string(),
-            Self::Owned => format!("{RUNTIME_CODEC}::SceByteBuf::as_slice({reference})"),
-        }
-    }
-
-    /// A text value held by `expr`, as the bytes the sink takes.
-    fn text_bytes(self, expr: &str) -> String {
-        match self {
-            Self::Borrowed | Self::View => format!("{expr}.as_bytes()"),
-            Self::Owned => format!("{RUNTIME_CODEC}::SceStr::as_str(&{expr}).as_bytes()"),
-        }
-    }
-
-    /// Like [`Self::text_bytes`] for a reference already in hand.
-    fn text_bytes_of_ref(self, reference: &str) -> String {
-        match self {
-            Self::Borrowed | Self::View => format!("{reference}.as_bytes()"),
-            Self::Owned => format!("{RUNTIME_CODEC}::SceStr::as_str({reference}).as_bytes()"),
-        }
-    }
-
-    /// The variant enum of the codec named `pascal`.
-    fn variant_enum(self, pascal: &str) -> String {
-        match self {
-            Self::Borrowed => format!("{pascal}Variant"),
-            Self::Owned => format!("{pascal}OwnedVariant"),
-            Self::View => format!("{pascal}ViewVariant"),
-        }
-    }
-}
 
 /// "The cursor has no bytes left", in each backend's runtime spelling.
 fn chain_cursor_empty(lang: crate::generator::Language) -> &'static str {
@@ -13287,8 +13065,6 @@ fn tlv_chain_streaming_encode_block(
     // their locals and rewrites them from each entry it has written, as the
     // decoder did from each it read.
     entry_binds: &ChainEntryBinds,
-    // The chain's `max-depth` and the Rust type this is emitted for.
-    list: ListEncode,
     lang: crate::generator::Language,
 ) -> String {
     use crate::generator::Language;
@@ -13296,14 +13072,7 @@ fn tlv_chain_streaming_encode_block(
     let id = id_owned.as_str();
     match lang {
         Language::Swift => no_swift_emitter("tlv_chain_streaming_encode_block"),
-        Language::Rust => {
-            let decls = entry_binds.decls(lang, "        ");
-            let updates = chain_encode_updates(entry_binds, field, "_e", lang, "            ");
-            let entries = list.flavor.list_entries(&format!("&self.{id}"), list.bound);
-            format!(
-                "        {decls}for _e in {entries} {{\n            _e.encode(w{encode_arg})?;{updates}\n        }}"
-            )
-        }
+        Language::Rust => unreachable!("a Rust codec's encode is its source's (ADR 0058)"),
         Language::C11 => {
             let id_snake = filters::to_snake_case(id.to_string());
             let decls = entry_binds.decls(lang, "    ");
@@ -13728,8 +13497,6 @@ fn tlv_chain_streaming_encode_block_gated(
     // See `tlv_chain_streaming_encode_block`.
     entry_binds: &ChainEntryBinds,
     fields: &[CodecField],
-    // See `tlv_chain_streaming_encode_block`.
-    list: ListEncode,
     lang: crate::generator::Language,
 ) -> String {
     use crate::generator::Language;
@@ -13742,18 +13509,7 @@ fn tlv_chain_streaming_encode_block_gated(
     let test = present_if_test_literal_encode(fields, pred, lang);
     match lang {
         Language::Swift => no_swift_emitter("tlv_chain_streaming_encode_block_gated"),
-        Language::Rust => {
-            let decls = entry_binds.decls(lang, "            ");
-            let updates = chain_encode_updates(entry_binds, field, "_e", lang, "                ");
-            let entries = list.flavor.list_entries("_list", list.bound);
-            format!(
-                "        if let Some(_list) = &self.{id} {{\n            \
-                     {decls}for _e in {entries} {{\n                \
-                         _e.encode(w{encode_arg})?;{updates}\n            \
-                     }}\n        \
-                 }}"
-            )
-        }
+        Language::Rust => unreachable!("a Rust codec's encode is its source's (ADR 0058)"),
         Language::Cpp => {
             let decls = entry_binds.decls(lang, "            ");
             let updates = chain_encode_updates(entry_binds, field, "_e", lang, "                ");
@@ -15551,13 +15307,12 @@ fn present_if_streaming_encode_block(
     field: &CodecField,
     fields: &[CodecField],
     default_endian: Endian,
-    flavor: EncodeFlavor,
 ) -> String {
     let lang = l.lang;
     match &field.bit_size {
         BitSize::Fixed { bits } => present_if_encode_fixed(l, field, fields, default_endian, *bits),
-        BitSize::Tail => present_if_encode_tail(field, fields, flavor, lang),
-        BitSize::LengthRef => present_if_encode_length_ref(field, fields, flavor, lang),
+        BitSize::Tail => present_if_encode_tail(field, fields, lang),
+        BitSize::LengthRef => present_if_encode_length_ref(field, fields, lang),
         BitSize::Vle { width_bits } => present_if_encode_vle(field, fields, lang, *width_bits),
         // Repeat / TLV-chain / Embed fields render via their dedicated
         // streaming encode helpers through the template's per-field
@@ -15587,15 +15342,7 @@ fn present_if_encode_fixed(
     let id = id_owned.as_str();
     match (lang, field.present_if.is_some()) {
         (Language::Swift, _) => no_swift_emitter("present_if_encode_fixed"),
-        (Language::Rust, false) => streaming_fixed_field_encode_rust(l, field, default_endian, n),
-        (Language::Rust, true) => {
-            let inner = streaming_fixed_field_encode_rust_from_local(l, field, default_endian, n);
-            format!(
-                "        if let Some(_v) = self.{id} {{\n\
-                 {inner}\
-                 \n        }}"
-            )
-        }
+        (Language::Rust, _) => unreachable!("a Rust codec's encode is its source's (ADR 0058)"),
         (Language::Cpp, false) => streaming_fixed_field_encode_cpp(l, field, default_endian, n),
         (Language::Cpp, true) => {
             let inner = streaming_fixed_field_encode_cpp_from_local(l, field, default_endian, n);
@@ -15687,7 +15434,6 @@ fn present_if_encode_fixed(
 fn present_if_encode_tail(
     field: &CodecField,
     fields: &[CodecField],
-    flavor: EncodeFlavor,
     lang: crate::generator::Language,
 ) -> String {
     use crate::generator::Language;
@@ -15695,20 +15441,7 @@ fn present_if_encode_tail(
     let id = id_owned.as_str();
     match (lang, field.present_if.is_some()) {
         (Language::Swift, _) => no_swift_emitter("present_if_encode_tail"),
-        // `self.<id>` is the borrowed `&'a [u8]` view — pass it directly;
-        // `&self.<id>` would be `&&[u8]` (clippy::needless_borrow).
-        (Language::Rust, false) => {
-            let bytes = flavor.bytes(&format!("self.{id}"));
-            format!("        w.write_bytes({bytes})?;")
-        }
-        (Language::Rust, true) => {
-            let bytes = flavor.bytes_of_ref("_v");
-            format!(
-                "        if let Some(_v) = &self.{id} {{\n            \
-                     w.write_bytes({bytes})?;\n        \
-                 }}"
-            )
-        }
+        (Language::Rust, _) => unreachable!("a Rust codec's encode is its source's (ADR 0058)"),
         (Language::Cpp, false) => {
             format!("        if (auto _e = w.write_bytes({id}.data(), {id}.size()); _e) return _e;")
         }
@@ -15797,7 +15530,6 @@ fn present_if_encode_tail(
 fn present_if_encode_string_length_ref(
     field: &CodecField,
     fields: &[CodecField],
-    flavor: EncodeFlavor,
     lang: crate::generator::Language,
 ) -> String {
     use crate::generator::Language;
@@ -15805,22 +15537,7 @@ fn present_if_encode_string_length_ref(
     let id = id_owned.as_str();
     match (lang, &field.present_if) {
         (Language::Swift, _) => no_swift_emitter("present_if_encode_string_length_ref"),
-        (Language::Rust, None) => {
-            let bytes = flavor.text_bytes(&format!("self.{id}"));
-            format!("        w.write_bytes({bytes})?;")
-        }
-        // Gated String encode on Rust:
-        // `Option<String>::as_ref()` borrows the inner String so
-        // `.as_bytes()` resolves; `if let Some(_v) = ...` mirrors the
-        // bytes shape exactly.
-        (Language::Rust, Some(_)) => {
-            let bytes = flavor.text_bytes_of_ref("_v");
-            format!(
-                "        if let Some(_v) = &self.{id} {{\n            \
-                     w.write_bytes({bytes})?;\n        \
-                 }}"
-            )
-        }
+        (Language::Rust, _) => unreachable!("a Rust codec's encode is its source's (ADR 0058)"),
         // Cpp `std::string::data()` returns `const char*`; reinterpret-
         // cast to `const std::uint8_t*` is the textbook byte-aliasing
         // pattern (allowed by [basic.lval]/11 — char and unsigned char
@@ -15942,7 +15659,6 @@ fn present_if_encode_string_length_ref(
 fn present_if_encode_length_ref(
     field: &CodecField,
     fields: &[CodecField],
-    flavor: EncodeFlavor,
     lang: crate::generator::Language,
 ) -> String {
     use crate::generator::Language;
@@ -15964,24 +15680,11 @@ fn present_if_encode_length_ref(
     // `Result<Vec<u8>, EncodeError>` surfacing on every String-bearing
     // codec).
     if field.is_string() {
-        return present_if_encode_string_length_ref(field, fields, flavor, lang);
+        return present_if_encode_string_length_ref(field, fields, lang);
     }
     match (lang, field.present_if.is_some()) {
         (Language::Swift, _) => no_swift_emitter("present_if_encode_length_ref"),
-        // `self.<id>` is the borrowed `&'a [u8]` view — pass it directly;
-        // `&self.<id>` would be `&&[u8]` (clippy::needless_borrow).
-        (Language::Rust, false) => {
-            let bytes = flavor.bytes(&format!("self.{id}"));
-            format!("        w.write_bytes({bytes})?;")
-        }
-        (Language::Rust, true) => {
-            let bytes = flavor.bytes_of_ref("_v");
-            format!(
-                "        if let Some(_v) = &self.{id} {{\n            \
-                     w.write_bytes({bytes})?;\n        \
-                 }}"
-            )
-        }
+        (Language::Rust, _) => unreachable!("a Rust codec's encode is its source's (ADR 0058)"),
         (Language::Cpp, false) => {
             format!("        if (auto _e = w.write_bytes({id}.data(), {id}.size()); _e) return _e;")
         }
@@ -16090,9 +15793,10 @@ fn present_if_encode_vle(
         // bare local-name read that doesn't resolve to the struct
         // member).
         let value_expr = match lang {
-            Language::Rust | Language::Python => {
+            Language::Python => {
                 format!("self.{}", filters::to_snake_case(id.to_string()))
             }
+            Language::Rust => unreachable!("a Rust codec's encode is its source's (ADR 0058)"),
             Language::Go => {
                 format!("s.{}", filters::to_pascal_case(id.to_string()))
             }
@@ -16109,23 +15813,7 @@ fn present_if_encode_vle(
     let p = field.present_if.as_ref().expect("guarded by branch above");
     match lang {
         Language::Swift => no_swift_emitter("present_if_encode_vle"),
-        // Rust: gated optional. `if let Some(_v) = self.<id> { ... }`
-        // wraps a per-byte VLE emit loop that operates on the
-        // unwrapped `_v` value. `vle_encode_block` reads `self.<id>`
-        // by name; for gated path we substitute through a temporary.
-        Language::Rust => {
-            let inner = vle_encode_block("_v", width_bits, lang);
-            // The vle_encode_block helper for non-self paths emits
-            // `let _x = <name>;` style — but for gated we already
-            // have `_v` in scope. Strip the prefix `self.` reads by
-            // generating the body with `_v` as the name. Done via
-            // the explicit name argument above.
-            format!(
-                "        if let Some(_v) = self.{id} {{\n\
-                 {inner}\n        \
-                 }}"
-            )
-        }
+        Language::Rust => unreachable!("a Rust codec's encode is its source's (ADR 0058)"),
         Language::Cpp => {
             let inner = vle_encode_block("_v", width_bits, lang);
             format!(
@@ -16323,57 +16011,6 @@ fn encode_multibyte_unified(
         Endian::Big | Endian::Native => make(false),
         Endian::Little => make(true),
     }
-}
-
-/// Encode block for a non-gated fixed field — Rust. Reads `self.<id>`
-/// and writes `n` bytes in the field's effective endianness via the shared
-/// byte-extraction SSOT ([`encode_multibyte_unified`]).
-fn streaming_fixed_field_encode_rust(
-    l: &LangCtx,
-    field: &CodecField,
-    default_endian: Endian,
-    n: u32,
-) -> String {
-    // Rust struct fields are snake_case (see `LangCtx::codec_field_id`),
-    // so `self.<id>` must read through the snake-cased name. A camelCase
-    // `<sce:field id>` declared by the author becomes `pub opt_n` at
-    // struct-decl time; the encode read here must use the same casing.
-    let id = filters::to_snake_case(field.id.clone());
-    let endian = field.effective_endian(default_endian);
-    // An enum-typed field goes onto the wire as the enum's carrier.
-    // Every other type is its own carrier, and `codec_carrier_expr`
-    // hands the read back unchanged.
-    let source = l.codec_carrier_expr(&field.sce_type, &format!("self.{id}"));
-    if n == 1 {
-        // Single-byte carrier writes directly — no shift/mask needed.
-        return format!("        w.write_u8({source})?;");
-    }
-    encode_multibyte_unified(&source, n, endian, crate::generator::Language::Rust)
-        .into_iter()
-        .map(|e| format!("        w.write_u8({e})?;"))
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
-/// Encode block for a gated fixed field — Rust. Reads from `_v` (the
-/// inner of the `Some` arm) instead of `self.<id>`. The caller wraps
-/// this in `if let Some(_v) = self.<id> { ... }`.
-fn streaming_fixed_field_encode_rust_from_local(
-    l: &LangCtx,
-    field: &CodecField,
-    default_endian: Endian,
-    n: u32,
-) -> String {
-    let endian = field.effective_endian(default_endian);
-    let source = l.codec_carrier_expr(&field.sce_type, "_v");
-    if n == 1 {
-        return format!("            w.write_u8({source})?;");
-    }
-    encode_multibyte_unified(&source, n, endian, crate::generator::Language::Rust)
-        .into_iter()
-        .map(|e| format!("            w.write_u8({e})?;"))
-        .collect::<Vec<_>>()
-        .join("\n")
 }
 
 /// Cpp encode counterpart — non-gated. Delegates the byte-extraction to the
@@ -17263,9 +16900,6 @@ fn chain_has_decl_lines(
     masks: &ChainIdentifierMasks,
     lang: crate::generator::Language,
     site: PresentIfSite,
-    // Which Rust type an encode site reads the chain from; a decode site has
-    // one list type and passes `Borrowed`.
-    flavor: EncodeFlavor,
 ) -> Vec<String> {
     use crate::generator::Language;
     let has = chain_has_local(&chain.id, value, lang);
@@ -17282,28 +16916,14 @@ fn chain_has_decl_lines(
     let encode = site == PresentIfSite::Encode;
     match lang {
         Language::Rust => {
+            assert!(!encode, "a Rust codec's encode is its source's (ADR 0058)");
             // The decode site reads the chain where `decode_into` built it,
             // in the destination (`RUST_DECODE_OUT`), not in a local.
-            let list = if encode {
-                format!("self.{id}")
-            } else {
-                format!("{RUST_DECODE_OUT}.{id}")
-            };
+            let list = format!("{RUST_DECODE_OUT}.{id}");
             let found = test("_e");
-            // The owned form reads the entries of its profile's list through
-            // the trait every profile implements.
-            let owned = flavor == EncodeFlavor::Owned;
-            vec![if gated && owned {
-                format!(
-                    "let {has} = {list}.as_ref().is_some_and(|_c| {RUNTIME_CODEC}::SceList::as_slice(_c).iter().any(|_e| {found}));"
-                )
-            } else if gated {
+            vec![if gated {
                 format!(
                     "let {has} = {list}.as_ref().is_some_and(|_c| _c.iter().any(|_e| {found}));"
-                )
-            } else if owned {
-                format!(
-                    "let {has} = {RUNTIME_CODEC}::SceList::as_slice(&{list}).iter().any(|_e| {found});"
                 )
             } else {
                 format!("let {has} = {list}.iter().any(|_e| {found});")
@@ -17531,7 +17151,6 @@ fn present_if_mismatch_stmt(field_id: &str, lang: crate::generator::Language) ->
 fn present_if_chain_encode_prologue(
     fields: &[CodecField],
     masks: &ChainIdentifierMasks,
-    flavor: EncodeFlavor,
     lang: crate::generator::Language,
 ) -> (String, bool) {
     let indent = encode_body_indent(lang);
@@ -17544,7 +17163,6 @@ fn present_if_chain_encode_prologue(
                 masks,
                 lang,
                 PresentIfSite::Encode,
-                flavor,
             ));
         }
     }
@@ -17587,14 +17205,7 @@ fn with_chain_has_decls(
     let indent = chain_decode_indent(lang);
     let mut stmt = decode_stmt;
     for value in chain_has_values(fields, &chain.id) {
-        for line in chain_has_decl_lines(
-            chain,
-            value,
-            masks,
-            lang,
-            PresentIfSite::Decode,
-            EncodeFlavor::Borrowed,
-        ) {
+        for line in chain_has_decl_lines(chain, value, masks, lang, PresentIfSite::Decode) {
             stmt.push('\n');
             stmt.push_str(indent);
             stmt.push_str(&line);
@@ -18176,7 +17787,6 @@ fn parent_tag_derivation_block(
     derivations: &[ParentTagDerivation],
     m: &CodecModel,
     imports: &[ImportContext],
-    flavor: EncodeFlavor,
     lang: crate::generator::Language,
 ) -> String {
     if derivations.is_empty() {
@@ -18196,7 +17806,7 @@ fn parent_tag_derivation_block(
     let mut out = String::new();
     for (carrier, items) in &by_carrier {
         out.push_str(&parent_tag_derivation_local_for_carrier(
-            carrier, items, m, imports, flavor, lang,
+            carrier, items, m, imports, lang,
         ));
     }
     out
@@ -18210,7 +17820,6 @@ fn parent_tag_derivation_local_for_carrier(
     items: &[&ParentTagDerivation],
     m: &CodecModel,
     imports: &[ImportContext],
-    flavor: EncodeFlavor,
     lang: crate::generator::Language,
 ) -> String {
     use crate::generator::Language;
@@ -18219,14 +17828,7 @@ fn parent_tag_derivation_local_for_carrier(
     let local_rust = format!("_derived_{carrier_snake}");
     let local_camel = format!("_derived{carrier_pascal}");
     match lang {
-        Language::Rust => {
-            let terms: Vec<String> = items
-                .iter()
-                .map(|d| parent_tag_match_term_rust(d, imports, flavor))
-                .collect();
-            let joined = terms.join(" | ");
-            format!("        let {local_rust}: u8 = {joined};\n")
-        }
+        Language::Rust => unreachable!("a Rust codec's encode is its source's (ADR 0058)"),
         Language::Cpp => {
             let terms: Vec<String> = items
                 .iter()
@@ -18296,43 +17898,6 @@ fn parent_tag_embed_pascal<'a>(d: &ParentTagDerivation, imports: &'a [ImportCont
         .find(|i| i.alias == d.embed_alias)
         .map(|i| i.type_name.as_str())
         .expect("parent-tag embed alias must resolve in parent imports (cross-doc validator guarantees)")
-}
-
-/// Single-embed match-expression term for Rust. Result is a `u8`
-/// value carrying the shifted+masked bit pattern for the active arm.
-/// When the parent field is `present-if`-gated, wraps the match in
-/// `Option` handling — the absent branch contributes 0 to the derived
-/// carrier bits.
-fn parent_tag_match_term_rust(
-    d: &ParentTagDerivation,
-    imports: &[ImportContext],
-    flavor: EncodeFlavor,
-) -> String {
-    let snake = filters::to_snake_case(d.embed_field_id.clone());
-    let embed_pascal = parent_tag_embed_pascal(d, imports);
-    // A body that is not borrowed has no owned mirror: the owned parent holds
-    // it as it is, and its variant enum is the one name there is. A view has a
-    // variant enum of its own whether or not the body is borrowed.
-    let flavor = if flavor == EncodeFlavor::Owned && !import_codec_borrowed(imports, &d.embed_alias)
-    {
-        EncodeFlavor::Borrowed
-    } else {
-        flavor
-    };
-    let variant_enum = flavor.variant_enum(embed_pascal);
-    let mut arms = Vec::with_capacity(d.arms.len());
-    let mask: u64 = (1u64 << d.width) - 1;
-    for (alias, val, _) in &d.arms {
-        let variant = filters::to_pascal_case(alias.clone());
-        let shifted = ((val & mask) << d.bit) & 0xFF;
-        arms.push(format!("{variant_enum}::{variant}(_) => 0x{shifted:02X}u8"));
-    }
-    let arms_str = arms.join(", ");
-    if d.present_if.is_some() {
-        format!("match &self.{snake} {{ Some(x) => match &x.body {{ {arms_str} }}, None => 0u8 }}")
-    } else {
-        format!("match &self.{snake}.body {{ {arms_str} }}")
-    }
 }
 
 /// Single-embed match-expression term for Cpp. Uses std::variant
