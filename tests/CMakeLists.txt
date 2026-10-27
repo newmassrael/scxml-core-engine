@@ -480,11 +480,12 @@ add_executable(static_datamodel_generated_cpp_test
     integration/ASavedChildSessionIsResumedAfterARestoreTest.cpp
 )
 
+# The Forge runtime the generated machines include (sce/forge/*.h) arrives with
+# sce_runtime, whose tiers all carry sce_forge_runtime through sce_core.
 target_include_directories(static_datamodel_generated_cpp_test
     PRIVATE
         ${CMAKE_SOURCE_DIR}
         ${CMAKE_SOURCE_DIR}/sce/include
-        ${CMAKE_SOURCE_DIR}/backends/cpp/forge-runtime/include
         ${CMAKE_SOURCE_DIR}/tests
 )
 
@@ -742,7 +743,6 @@ target_include_directories(standard_host_scenario_test
     PRIVATE
         ${CMAKE_SOURCE_DIR}
         ${CMAKE_SOURCE_DIR}/sce/include
-        ${CMAKE_SOURCE_DIR}/backends/cpp/forge-runtime/include
         ${CMAKE_SOURCE_DIR}/tests
 )
 
@@ -5182,11 +5182,10 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
     )
 
     # The checked arithmetic a static machine's params use (`sce/forge/algorithm.h`)
-    # sits beside the engine's headers, as it does for `static_datamodel_generated_cpp_test`.
+    # arrives with sce_base, which carries sce_forge_runtime through sce_core.
     target_include_directories(mesh_static_invoke_request_test
         PRIVATE
             ${CMAKE_SOURCE_DIR}/sce/include
-            ${CMAKE_SOURCE_DIR}/backends/cpp/forge-runtime/include
             ${MESH_STATIC_INVOKE_OUTPUT_DIR}
     )
 
@@ -5261,7 +5260,6 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
     target_include_directories(mesh_static_invoke_srcexpr_test
         PRIVATE
             ${CMAKE_SOURCE_DIR}/sce/include
-            ${CMAKE_SOURCE_DIR}/backends/cpp/forge-runtime/include
             ${MESH_STATIC_SRCEXPR_OUTPUT_DIR}
     )
 

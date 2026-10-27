@@ -286,6 +286,7 @@ endif()
 find_package(PkgConfig REQUIRED)
 
 # Modular Architecture - Add subdirectories
+add_subdirectory(backends/cpp/forge-runtime)  # sce_forge_runtime: headers generated C++ includes
 add_subdirectory(sce)                 # Unified SCE library with integrated parsing
 add_subdirectory(backends/c/runtime)       # C11 heapless runtime (RFC §5.J.1)
 
@@ -458,6 +459,7 @@ endif()
 # =============================================================================
 # Tier-scoped export sets (ARCHITECTURE.md §4-Tier):
 #   SCE_CoreTargets       — sce_core + sce_base        (pure static AOT)
+#                           + sce_forge_runtime        (headers generated C++ includes)
 #   SCE_ScriptingTargets  — sce_scripting + qjs/lua54  (static hybrid AOT)
 #   SCE_RuntimeTargets    — sce_runtime                (full interpreter)
 # Each set lands in its own SCE_XxxTargets.cmake. SCEConfig.cmake includes
@@ -472,7 +474,8 @@ set(SCE_INSTALL_CODEGENDIR "${CMAKE_INSTALL_DATADIR}/sce/codegen")
 
 # Install components mirror the 4-tier export sets so `cmake --install
 # --component <Tier>` ships exactly the artifacts for that tier:
-#   Core        — sce_core + sce_base + public headers + SCEConfig entry
+#   Core        — sce_core + sce_base + sce_forge_runtime + public headers
+#                 + SCEConfig entry
 #   Scripting   — sce_scripting + qjs + lua54 (+ lua headers)
 #   Runtime     — sce_runtime + txml-converter
 #   Codegen — SCECodegen/SCEClangFormat + sce-codegen binary + templates
@@ -481,12 +484,27 @@ set(SCE_INSTALL_CODEGENDIR "${CMAKE_INSTALL_DATADIR}/sce/codegen")
 # relies on the same codegen binary + Jinja2 templates.
 
 # Core tier: sce_core (header-only) + sce_base (pure static AOT utilities)
-install(TARGETS sce_core sce_base
+# + sce_forge_runtime (header-only), which sce_core links INTERFACE and so
+# must share its export set: the C++ the generator writes includes
+# <sce/forge/algorithm.h>, <sce/forge/optional.h> and <sce/forge/span.h>, and
+# a consumer reaches them by linking the tier it already links.
+install(TARGETS sce_core sce_base sce_forge_runtime
     EXPORT SCE_CoreTargets
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT Core
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT Core
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT Core
     INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+)
+
+# The Forge C++ runtime's headers, all of them and in every configuration:
+# generated statechart code names them without the mesh, and the mesh headers
+# (EventQueueBridge.h, ShmChannel.h) name its queue. They land under
+# include/sce/forge, below the `${CMAKE_INSTALL_INCLUDEDIR}` that
+# sce_forge_runtime's install interface exposes.
+install(DIRECTORY backends/cpp/forge-runtime/include/sce
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+    COMPONENT Core
+    FILES_MATCHING PATTERN "*.h"
 )
 
 # Mesh transport (opt-in via SCE_ENABLE_MESH). sce_mesh_common is a
@@ -502,17 +520,12 @@ if(SCE_ENABLE_MESH)
         ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT Core
         INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
     )
+    # The forge runtime's queue these headers name is installed with the rest
+    # of that runtime, above, for every configuration.
     install(DIRECTORY sce/include/mesh
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
         COMPONENT Core
         FILES_MATCHING PATTERN "*.h"
-    )
-    # EventQueueBridge.h is the forge runtime's SCQ queue, so a consumer of the
-    # installed mesh headers needs that one header beside them. It includes
-    # only the standard library.
-    install(FILES backends/cpp/forge-runtime/include/sce/forge/queue.h
-        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/sce/forge
-        COMPONENT Core
     )
 endif()
 

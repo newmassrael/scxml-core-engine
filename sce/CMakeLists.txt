@@ -109,6 +109,14 @@ target_include_directories(sce_core
 
 target_compile_features(sce_core INTERFACE cxx_std_17)
 
+# The Forge C++ runtime (backends/cpp/forge-runtime) is part of what the
+# generated C++ compiles against: a `datamodel="sce-static"` machine includes
+# <sce/forge/algorithm.h> and <sce/forge/optional.h>, and a list or byte
+# parameter is an SCE::Forge::Span (docs/adr/0059, section 4). Linked here,
+# every tier carries its include directory, in the build tree and installed,
+# so a consumer compiles generated code by linking the tier it already links.
+target_link_libraries(sce_core INTERFACE sce_forge_runtime)
+
 # ============================================================================
 # sce_mesh_common: Mesh transport abstractions + wire envelope (optional)
 # ============================================================================
@@ -127,20 +135,19 @@ if(SCE_ENABLE_MESH)
         src/mesh/MeshEnvelopeCodec.cpp
     )
 
-    # The forge runtime's include directory is PUBLIC because two public
-    # headers name it: EventQueueBridge.h is the forge runtime's SCQ queue, and
-    # ShmChannel.h places it in shared memory. An installed tree carries that one
-    # header (see the install rule in the top-level CMakeLists.txt), under
-    # include/sce/forge, which `sce_core`'s install interface already exposes.
     target_include_directories(sce_mesh_common
         PUBLIC
             $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-            $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../backends/cpp/forge-runtime/include>
     )
 
+    # The forge runtime is PUBLIC and named here although `sce_core` carries it
+    # too, because two of this target's own public headers name it:
+    # EventQueueBridge.h is the forge runtime's SCQ queue, and ShmChannel.h
+    # places it in shared memory.
     target_link_libraries(sce_mesh_common
         PUBLIC
             sce_core
+            sce_forge_runtime
     )
 
     # POSIX shared memory requires -lrt on Linux (shm_open, shm_unlink).
