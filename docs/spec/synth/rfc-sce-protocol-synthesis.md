@@ -501,9 +501,12 @@ table. Per-language cursor / error shapes:
 - C11: `cursor` is `sce_cursor_t*` (pointer + remaining length);
   `decode` returns `int` (`SCE_OK` / `SCE_NEED_MORE_BYTES` /
   `SCE_<error>`) and writes through a `T* out` parameter.
-- Cpp: `cursor` is `std::span<uint8_t>` + position; `decode` returns
-  `std::optional<T>` and signals `NeedMoreBytes` via a separate
-  `cursor.need_more_bytes()` flag (no exceptions).
+- Cpp: `cursor` is `SCE::Forge::SceCursor` (pointer, length and
+  position); `decode` returns `std::optional<T>` and signals
+  `NeedMoreBytes` via a separate `cursor.need_more_bytes()` flag (no
+  exceptions). The generated C++ is C++17 and names no C++20 type, so a
+  byte or list view it takes is `SCE::Forge::Span<const T>`
+  (`sce/forge/span.h`), never `std::span` (docs/adr/0059).
 - Kotlin: `cursor` is `java.nio.ByteBuffer`; `decode` returns `T?`
   (null when not enough bytes are available).
 - Go: `cursor` is `*Cursor` (slice + position); `decode` returns
@@ -4056,9 +4059,13 @@ Phase A — Foundation (weeks 1–6)
         the single matrix-aware filter for `render_harness` and
         `list-fixtures --language=<lang>` so kotlin/go/python (algorithm
         not yet shipped) silently drop the fixtures while rust/cpp/c11
-        run them. A6 also lifts the cpp conformance harness from
-        C++17 → C++20 because `std::span` (RFC §5.J.5 algorithm cpp
-        emitter shape) requires C++20.
+        run them. A6 lifted the cpp conformance harness from C++17 to
+        C++20 for the `std::span` the algorithm cpp emitter wrote (RFC
+        §5.J.5). docs/adr/0059 returned it to C++17: the generated C++
+        is what a consumer compiles, at C++17, so a `bytes` or list
+        parameter is `SCE::Forge::Span<const T>` (`sce/forge/span.h`),
+        one type at C++17 and C++20, and the harness compiles every
+        fixture at C++17.
       - Generator hardening: `lower_algorithm_body` now collects
         `<sce:assign target>` roots up-front and the Var arm emits
         `let` (not `let mut`) when the local is never reassigned;

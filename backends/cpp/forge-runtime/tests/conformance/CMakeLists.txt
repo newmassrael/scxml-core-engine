@@ -20,15 +20,13 @@
 cmake_minimum_required(VERSION 3.20)
 project(sce_forge_numerical_conformance CXX)
 
-# RFC §synth-7 A6: §synth-5-A algorithm kind joins the cpp conformance harness. The
-# A3 cpp algorithm template lowers `bytes` parameters to
-# `std::span<const std::uint8_t>` per RFC §synth-5-J-5 (non-owning view, the
-# C++ idiom that avoids the "no STL containers" rule's intent of
-# forbidding owning collections in MCU-targeted emit). `std::span` is
-# C++20, so the harness bumps from C++17 → C++20 to compile the
-# algorithm fixtures alongside the existing 11 baseline kinds. The
-# baseline kinds remain C++17-clean, so this is purely additive.
-set(CMAKE_CXX_STANDARD 20)
+# C++17: the standard a consumer compiles the generated C++ at (docs/adr/0059,
+# section 1), so the harness compiles every fixture there. A `bytes` or list
+# parameter is the runtime's `SCE::Forge::Span` (sce/forge/span.h, the same type
+# at C++17 and C++20), an aggregate is initialized by position and a record
+# compares member by member, so no fixture needs C++20. A test below whose own
+# source is C++20 says so on its target.
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
@@ -327,6 +325,10 @@ if(NOT EXISTS "${QUEUE_CONTRACT_JSON}")
     message(FATAL_ERROR "queue contract not found at ${QUEUE_CONTRACT_JSON}")
 endif()
 add_executable(queue_runtime_test "${CMAKE_CURRENT_SOURCE_DIR}/queue_runtime_test.cpp")
+# The test itself is C++20 (`constinit` is how it proves a queue is constant-
+# initialised); it is SCE's own source, which docs/adr/0059 section 2 lets use
+# C++20, while the runtime headers it includes are held to C++17 by the gate.
+target_compile_features(queue_runtime_test PRIVATE cxx_std_20)
 target_include_directories(queue_runtime_test PRIVATE
     "${RUNTIME_INCLUDE_DIR}"
     "${NLOHMANN_JSON_INCLUDE_DIR}"
@@ -375,6 +377,10 @@ add_custom_target(generate_queue_fixtures_cpp DEPENDS ${QUEUE_GENERATED_HEADERS}
 
 add_executable(queue_generated_test "${CMAKE_CURRENT_SOURCE_DIR}/queue_generated_test.cpp")
 add_dependencies(queue_generated_test generate_queue_fixtures_cpp)
+# The test itself is C++20 (`constinit`, and designated initializers for its
+# own elements), as `queue_runtime_test` is above; the generated queue headers
+# it includes are held to C++17 by the gate (docs/adr/0059, section 7).
+target_compile_features(queue_generated_test PRIVATE cxx_std_20)
 target_include_directories(queue_generated_test PRIVATE
     "${RUNTIME_INCLUDE_DIR}"
     "${GENERATED_DIR}"

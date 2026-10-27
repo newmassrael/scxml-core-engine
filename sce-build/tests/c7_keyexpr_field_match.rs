@@ -682,8 +682,9 @@ fn a_call_statement_reaches_the_symbol_the_expression_form_calls() {
 // real-compiler bar the C11 program already meets. It exercises the W2
 // emit fixes the matcher depends on: the BC `capacity()` static accessor,
 // the codec `decode` reading fields off `out` rather than free locals in
-// a designated initializer, and the `cursor`/writer parameters being used
-// (no `-Werror=unused-parameter`).
+// an aggregate initializer, and the `cursor`/writer parameters being used
+// (no `-Werror=unused-parameter`). It compiles at C++17, the standard a
+// consumer builds the generated code at (docs/adr/0059).
 #[test]
 fn cpp_field_match_multi_file_compiles_werror() {
     let dir = tempdir().expect("tempdir");
@@ -729,7 +730,7 @@ fn cpp_field_match_multi_file_compiles_werror() {
 
     let runtime_inc = repo_root().join("backends/cpp/forge-runtime/include");
     let output = Command::new(&cxx)
-        .args(["-std=c++20", "-c", "-Wall", "-Wextra", "-Werror"])
+        .args(["-std=c++17", "-c", "-Wall", "-Wextra", "-Werror"])
         .arg("-I")
         .arg(&runtime_inc)
         .arg("-I")

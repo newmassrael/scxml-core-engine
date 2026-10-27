@@ -20,11 +20,10 @@
 cmake_minimum_required(VERSION 3.20)
 project(sce_forge_round_trip_cpp CXX)
 
-# C++20 because the cpp codec emit uses designated initializers
-# (`.field = value`) in the decode path — matches the parent
-# conformance harness which already bumped from C++17 → C++20 to
-# absorb `std::span` in the algorithm A3 template.
-set(CMAKE_CXX_STANDARD 20)
+# C++17: the standard a consumer compiles the generated C++ at (docs/adr/0059,
+# section 1). The codec's decode path initializes its struct by position, in
+# declaration order, so it needs no C++20 designated initializer.
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 

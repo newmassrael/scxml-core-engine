@@ -2975,9 +2975,10 @@ C++ keeps most names apart by scope, since an imported function is called throug
 its namespace (`SCE::Generated::X::f`) and a class member is looked up in its
 class, so no name is left out as in C. `a_cpp_kind_keeps_an_authors_names_apart_from_its_own`
 compiles every renaming of the eight kinds as a translation unit
-(`-std=c++20 -Wall -Wextra -Werror -fsyntax-only`; C++20 because a `bytes`
-parameter is a `std::span`), and what it found is four causes, all of the same
-kind: a name the generator writes itself that an author could equally choose.
+(`-std=c++17 -Wall -Wextra -Werror -fsyntax-only`; C++17 because that is the
+standard a consumer builds the generated code at, docs/adr/0059), and what it
+found is four causes, all of the same kind: a name the generator writes itself
+that an author could equally choose.
 A parameter or datum called like a library type the body names after it
 (`int32_t`, `size_t`) or like the generated `ForgeDomain` was a declaration in
 the scope of that use. The generator's own locals were plain names (`events` in

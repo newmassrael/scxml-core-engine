@@ -1924,7 +1924,7 @@ Some algorithms produce a data-dependent number of *numbers* rather than bytes �
 
 **v1 scope — a list crosses only the host boundary.** A `list<T>` is something an algorithm builds and hands to its host, or takes from it:
 
-- a `list<T>` **parameter** is a read-only view of the caller's elements, never copied: Rust `&[T]`, C++ `std::span<const T>`, C11 the runtime's `sce_forge_<T>_view_t` (`{const T *data; size_t len}`, `sce/forge/list_view.h`, the byte view's shape), Go `[]T`, Kotlin the element's primitive array, Python `list[T]`. The body reads it by `xs[i]`, `len(xs)` and `<sce:foreach in="xs">` (the item typed as the element); it is never an assignment or append target, as no parameter is (`algorithm/lvalue-unsupported`). Conformance: `algorithm_list_param_sum`, whose cases include an empty list;
+- a `list<T>` **parameter** is a read-only view of the caller's elements, never copied: Rust `&[T]`, C++ `SCE::Forge::Span<const T>` (`sce/forge/span.h`, one type at C++17 and C++20, docs/adr/0059), C11 the runtime's `sce_forge_<T>_view_t` (`{const T *data; size_t len}`, `sce/forge/list_view.h`, the byte view's shape), Go `[]T`, Kotlin the element's primitive array, Python `list[T]`. The body reads it by `xs[i]`, `len(xs)` and `<sce:foreach in="xs">` (the item typed as the element); it is never an assignment or append target, as no parameter is (`algorithm/lvalue-unsupported`). Conformance: `algorithm_list_param_sum`, whose cases include an empty list;
 - an algorithm whose signature takes or returns a list cannot be **called from another algorithm**, in either the `<sce:call>` statement or an expression (`expression/unsupported-construct`, at the call target). Its signature is kept out of the caller's type table rather than entered with an unknown type, so the refusal comes from that fact and never from a call that went unjudged;
 - a `<sce:test-vector>` on a list-returning algorithm is refused — the vector's `value=` is a scalar.
 
@@ -1966,12 +1966,12 @@ A value that is several numbers at once — a clock stamp of wall time, counter 
 |---------|-------------|----------|
 | Rust | `<schema>::<Pascal>Payload` | struct literal, `let mut` when a field is updated |
 | C11 | `<Pascal>Payload_t` | designated initializer |
-| C++ | `SCE::Generated::<Pascal>::<Pascal>Payload` | designated initializer |
+| C++ | `SCE::Generated::<Pascal>::<Pascal>Payload` | aggregate initializer by position, each value beside its field's name as a comment (`T{/*value=*/v, /*fault=*/f}`, docs/adr/0059) |
 | Go | `<schema>.<Pascal>Payload` | composite literal |
 | Python | `<schema>.<Pascal>Payload` | keyword arguments |
 | Kotlin | `<Pascal>Payload` | named arguments; field updates through `copy` |
 
-The fields are written in the SCHEMA's order whatever order the author gave them — which C and C++ designated initializers require, and which keeps every backend's statement in one order.
+The fields are written in the SCHEMA's order whatever order the author gave them — which C's designated initializers and C++'s positional ones (the order the payload struct declares) require, and which keeps every backend's statement in one order.
 
 **How a record holds its text.** The bound is the schema's `sce:max-size` on every backend and the type the field is held in differs only where the language's own string cannot be a bounded buffer:
 
@@ -2007,7 +2007,7 @@ A list's element may be a record: `type="list&lt;record:Entry&gt;"`. It is the p
 |---------|-----------|-----------------|
 | Rust | `&[R]` | `SceOwnedList<R, N>` — a plain-data schema's payload is `Copy`; one that holds text is `Clone` only, so its `foreach` borrows each element and an append or a return of a borrowed element clones it |
 | C11 | `<Pascal>Payload_view_t` `{const R *data; size_t len}`, declared beside the algorithm under a guard (the record's header serves every kind, and a view is an algorithm's shape) | `<symbol>_result_t { R items[N]; … }` |
-| C++ | `std::span<const R>` | `std::vector<R>` |
+| C++ | `SCE::Forge::Span<const R>` (`sce/forge/span.h`) | `std::vector<R>` |
 | Go | `[]R` | `[]R` |
 | Python | `list[R]` | `list[R]` |
 | Kotlin | `List<R>` | `ArrayList<R>(N)`, returned as `List<R>` — `SceListBuf` holds 64-bit slots, not objects |

@@ -15,8 +15,9 @@
 //!
 //! Every document of the eight kinds is generated with each name it declares
 //! renamed to each candidate and each result is compiled as a translation unit
-//! (`-std=c++20 -Wall -Wextra -Werror -fsyntax-only`, the contract the generated
-//! headers are held to; C++20 because a `bytes` parameter is a `std::span`).
+//! (`-std=c++17 -Wall -Wextra -Werror -fsyntax-only`, the contract the generated
+//! headers are held to: C++17 is the standard a consumer builds them at,
+//! docs/adr/0059).
 //!
 //! The candidates are every identifier the committed C++ writes, so a template
 //! that begins to write one more library name is asked about it with no list to
@@ -68,8 +69,8 @@ fn an_authors_name_never_decides_whether_the_generated_cpp_of_a_kind_builds() {
         universe: UNIVERSE,
         probe_extension: "cpp",
         compilers: &["g++"],
-        // C++20: a `bytes` parameter is a `std::span`.
-        compile_flags: &["-std=c++20", "-Wall", "-Wextra", "-Werror", "-fsyntax-only"],
+        // C++17: the interface standard (docs/adr/0059, section 1).
+        compile_flags: &["-std=c++17", "-Wall", "-Wextra", "-Werror", "-fsyntax-only"],
         include_dirs: vec![
             Path::new(env!("CARGO_MANIFEST_DIR")).join("../backends/cpp/forge-runtime/include")
         ],
