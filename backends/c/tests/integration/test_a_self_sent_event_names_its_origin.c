@@ -14,6 +14,7 @@
 // `sce_generate_static_integration_c_test(a_self_sent_event_names_its_origin ...)`
 // in `backends/c/tests/CMakeLists.txt`.
 
+#include <stdint.h>
 #include <stdio.h>
 
 #include "a_self_sent_event_names_its_origin_sm.h"

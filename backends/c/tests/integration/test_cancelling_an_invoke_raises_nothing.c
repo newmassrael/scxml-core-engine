@@ -14,6 +14,7 @@
 // `sce_generate_static_integration_c_test(cancelling_an_invoke_raises_nothing ...)`
 // in `backends/c/tests/CMakeLists.txt`.
 
+#include <stdint.h>
 #include <stdio.h>
 
 #include "cancelling_an_invoke_raises_nothing_sm.h"

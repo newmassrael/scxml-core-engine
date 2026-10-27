@@ -14,6 +14,7 @@
 // `sce_generate_static_integration_c_test(a_delay_is_a_css2_time ...)`
 // in `backends/c/tests/CMakeLists.txt`.
 
+#include <stdint.h>
 #include <stdio.h>
 
 #include "a_delay_is_a_css2_time_sm.h"

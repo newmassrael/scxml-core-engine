@@ -16,6 +16,7 @@
 // `sce_generate_static_integration_c_test(late_data_binds_on_first_entry ...)`
 // in `backends/c/tests/CMakeLists.txt`.
 
+#include <stdint.h>
 #include <stdio.h>
 
 #include "late_data_binds_on_first_entry_sm.h"

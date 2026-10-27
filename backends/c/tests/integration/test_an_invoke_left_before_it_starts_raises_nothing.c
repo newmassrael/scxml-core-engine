@@ -17,6 +17,7 @@
 // `sce_generate_static_integration_c_test(an_invoke_left_before_it_starts_raises_nothing ...)`
 // in `backends/c/tests/CMakeLists.txt`.
 
+#include <stdint.h>
 #include <stdio.h>
 
 #include "an_invoke_left_before_it_starts_raises_nothing_sm.h"

@@ -17,6 +17,7 @@
 // `sce_generate_static_integration_c_test(a_payload_rides_on_its_own_event ...)`
 // in `backends/c/tests/CMakeLists.txt`.
 
+#include <stdint.h>
 #include <stdio.h>
 
 #include "a_payload_rides_on_its_own_event_sm.h"

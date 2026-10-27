@@ -26,6 +26,7 @@
 // `sce_generate_static_integration_c_test(ancestor_entry_is_not_default_entry ...)`
 // in `backends/c/tests/CMakeLists.txt`.
 
+#include <stdint.h>
 #include <stdio.h>
 
 #include "ancestor_entry_is_not_default_entry_sm.h"

@@ -12,6 +12,7 @@
 // `sce_generate_static_integration_c_test(a_bad_invoke_argument_is_reported_once ...)`
 // in `backends/c/tests/CMakeLists.txt`.
 
+#include <stdint.h>
 #include <stdio.h>
 
 #include "a_bad_invoke_argument_is_reported_once_sm.h"

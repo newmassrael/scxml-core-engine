@@ -16,6 +16,7 @@
 // `sce_generate_static_integration_c_test(a_child_may_send_many_events_in_one_tick ...)`
 // in `backends/c/tests/CMakeLists.txt`.
 
+#include <stdint.h>
 #include <stdio.h>
 
 #include "a_child_may_send_many_events_in_one_tick_sm.h"

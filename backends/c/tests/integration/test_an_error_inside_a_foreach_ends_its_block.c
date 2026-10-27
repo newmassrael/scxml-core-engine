@@ -13,6 +13,7 @@
 // `sce_generate_static_integration_c_test(an_error_inside_a_foreach_ends_its_block ...)`
 // in `backends/c/tests/CMakeLists.txt`.
 
+#include <stdint.h>
 #include <stdio.h>
 
 #include "an_error_inside_a_foreach_ends_its_block_sm.h"

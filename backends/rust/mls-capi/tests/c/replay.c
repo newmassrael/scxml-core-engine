@@ -15,6 +15,7 @@
  * where LOG is: <epoch> <n> (<node> <key>)xn <m> (<epoch> <hash>)xm.
  */
 
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

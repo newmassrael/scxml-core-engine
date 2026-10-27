@@ -31,6 +31,7 @@
 
 #include "statechart_static_delayed_host_send_sm.h"
 
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

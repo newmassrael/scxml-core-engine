@@ -25,6 +25,7 @@
 
 #include "statechart_static_mesh_request_sm.h"
 
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

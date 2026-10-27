@@ -5,6 +5,7 @@
 #include "timer_example_sm.h"
 #include "wrappers/TimerManager.h"
 #include <chrono>
+#include <cstdint>
 #include <iostream>
 #include <thread>
 

@@ -18,6 +18,7 @@
 // `sce_generate_static_integration_c_test(onexit_runs_before_the_state_leaves ...)`
 // in `backends/c/tests/CMakeLists.txt`.
 
+#include <stdint.h>
 #include <stdio.h>
 
 #include "onexit_runs_before_the_state_leaves_sm.h"

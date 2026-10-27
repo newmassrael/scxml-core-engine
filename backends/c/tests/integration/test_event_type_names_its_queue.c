@@ -15,6 +15,7 @@
 // `sce_generate_static_integration_c_test(event_type_names_its_queue ...)`
 // in `backends/c/tests/CMakeLists.txt`.
 
+#include <stdint.h>
 #include <stdio.h>
 
 #include "event_type_names_its_queue_sm.h"

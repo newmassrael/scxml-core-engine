@@ -12,6 +12,7 @@
 // `sce_generate_static_integration_c_test(an_error_ends_the_block_it_was_raised_in ...)`
 // in `backends/c/tests/CMakeLists.txt`.
 
+#include <stdint.h>
 #include <stdio.h>
 
 #include "an_error_ends_the_block_it_was_raised_in_sm.h"

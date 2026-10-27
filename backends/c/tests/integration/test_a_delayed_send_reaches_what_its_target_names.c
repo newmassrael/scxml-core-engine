@@ -13,6 +13,7 @@
 // `sce_generate_static_integration_c_test(a_delayed_send_reaches_what_its_target_names ...)`
 // in `backends/c/tests/CMakeLists.txt`.
 
+#include <stdint.h>
 #include <stdio.h>
 
 #include "a_delayed_send_reaches_what_its_target_names_sm.h"

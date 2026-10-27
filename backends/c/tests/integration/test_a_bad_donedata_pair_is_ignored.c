@@ -17,6 +17,7 @@
 // `sce_generate_static_integration_c_test(a_bad_donedata_pair_is_ignored ...)`
 // in `backends/c/tests/CMakeLists.txt`.
 
+#include <stdint.h>
 #include <stdio.h>
 
 #include "a_bad_donedata_pair_is_ignored_sm.h"

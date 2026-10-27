@@ -12,6 +12,7 @@
 // `sce_generate_static_integration_c_test(a_target_expression_is_routed_as_its_literal_is ...)`
 // in `backends/c/tests/CMakeLists.txt`.
 
+#include <stdint.h>
 #include <stdio.h>
 
 #include "a_target_expression_is_routed_as_its_literal_is_sm.h"

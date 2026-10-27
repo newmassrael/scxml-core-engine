@@ -27,6 +27,7 @@
  *   7. Undersized buffer surfaces SCE_FORGE_CODEC_BUFFER_OVERFLOW.
  */
 
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

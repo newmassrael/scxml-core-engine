@@ -33,6 +33,7 @@
 // Fixture: tests/forge/resources/buffer_pool_ast_export_min.scxml
 // (8 slots x 256 bytes, section `sram1`, alignment 32).
 
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 

@@ -13,6 +13,7 @@
 // `sce_generate_static_integration_c_test(a_child_reply_arrives_without_a_tick ...)`
 // in `backends/c/tests/CMakeLists.txt`.
 
+#include <stdint.h>
 #include <stdio.h>
 
 #include "a_child_reply_arrives_without_a_tick_sm.h"

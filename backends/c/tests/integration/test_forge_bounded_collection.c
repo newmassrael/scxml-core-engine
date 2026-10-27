@@ -22,6 +22,7 @@
 // Fixtures: tests/forge/resources/{subscription_entry,local_sub_table}.scxml
 // (capacity 8, `<sce:on-overflow>reject</sce:on-overflow>`).
 
+#include <stdint.h>
 #include <stdio.h>
 
 #include "local_sub_table.h"

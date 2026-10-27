@@ -24,6 +24,7 @@
 // concurrent regions. This file explains how a host talks to it.
 
 #include <algorithm>
+#include <cstdint>
 #include <cstdlib>
 #include <functional>
 #include <iostream>

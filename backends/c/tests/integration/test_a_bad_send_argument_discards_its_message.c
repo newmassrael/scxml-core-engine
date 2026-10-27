@@ -16,6 +16,7 @@
 // `sce_generate_static_integration_c_test(a_bad_send_argument_discards_its_message ...)`
 // in `backends/c/tests/CMakeLists.txt`.
 
+#include <stdint.h>
 #include <stdio.h>
 
 #include "a_bad_send_argument_discards_its_message_sm.h"

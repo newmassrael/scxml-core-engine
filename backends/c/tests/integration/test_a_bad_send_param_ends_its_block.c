@@ -17,6 +17,7 @@
 // `sce_generate_static_integration_c_test(a_bad_send_param_ends_its_block ...)`
 // in `backends/c/tests/CMakeLists.txt`.
 
+#include <stdint.h>
 #include <stdio.h>
 
 #include "a_bad_send_param_ends_its_block_sm.h"

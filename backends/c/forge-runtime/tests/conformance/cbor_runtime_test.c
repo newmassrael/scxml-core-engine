@@ -14,6 +14,7 @@
 
 #include "sce/forge/cbor.h"
 
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 

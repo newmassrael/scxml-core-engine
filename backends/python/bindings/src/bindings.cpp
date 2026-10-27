@@ -4,6 +4,7 @@
 /// SCE Python Bindings - pybind11 wrapper for ReadySCXMLEngine
 /// Exposes the W3C SCXML 1.0 compliant C++ interpreter to Python
 
+#include <cstdint>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 

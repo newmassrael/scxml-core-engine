@@ -15,6 +15,7 @@
 // `sce_generate_static_integration_c_test(a_hybrid_invoke_carries_its_arguments ...)`
 // in `backends/c/tests/CMakeLists.txt`.
 
+#include <stdint.h>
 #include <stdio.h>
 
 #include "a_hybrid_invoke_carries_its_arguments_sm.h"

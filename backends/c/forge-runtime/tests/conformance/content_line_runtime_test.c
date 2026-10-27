@@ -15,6 +15,7 @@
 
 #include "sce/forge/content_line.h"
 
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 

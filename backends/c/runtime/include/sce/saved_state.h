@@ -28,6 +28,7 @@
 
 #include "sce/saved_json.h"
 #include "sce/saved_values.h"
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {

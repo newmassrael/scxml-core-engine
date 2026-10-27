@@ -18,6 +18,7 @@
 // `sce_generate_static_integration_c_test(the_run_ends_by_exiting_every_state ...)`
 // in `backends/c/tests/CMakeLists.txt`.
 
+#include <stdint.h>
 #include <stdio.h>
 
 #include "the_run_ends_by_exiting_every_state_sm.h"
