@@ -174,11 +174,36 @@ test, writes a VLE as one capacity test and the bytes in place (a VLE that does 
 `memcpy` only in `write_bytes`, for text and payload. The bytes are those of the provided methods (a test holds that
 at every bit boundary of the three widths). The change is in the runtime alone: no generated file moves.
 
-Not measured: the effect of that on the kit. The consumer measures again; the order of the remaining candidates, if a
-gap is left, is by what the disassembly shows each costs: `Measured::write_into` repeating the derivation the count
-pass made (the consumer's suggestion, a `Measured` that keeps the derived values), then `extensions()` being asked
-three times in one `write_source_in`, then the non-inlined call at each VLE. None is done before a number says it is
-worth its cost, since each trades a smaller `Measured` and a plainer skeleton for speed.
+The consumer measured again against that fix: `encode_source` 47.65 us (-0.45), `measure` and `write_into` 47.83 us
+(-1.97), the hand-written writer 42.00 us. The fix helped, less than the disassembly alone suggested, and the two
+generated arms are level within the kit's noise at about 5.7 us over the hand writer (about 2,000 cycles). So the
+hypothesis that the sink was the main cost was incomplete, and `measure` plus `write_into` buys nothing over the
+double run here: both walk the skeleton twice.
+
+To find the rest without a second guess, the Reply path was run under an emulated Cortex-M7 (QEMU `mps2-an500`,
+one translated instruction per step) and the executed instructions were counted by function, on the consumer's own
+generated codec at the pinned revision and its plain Reply (a 57-byte frame: local key with a suffix, Put with an
+encoding and a 32-byte payload). An executed-instruction count is a proxy: it has no pipeline, no flash wait states
+and no cache, and the kit's time is not a linear function of it. It does rank where work is done, and it is exact and
+repeatable, which the kit's layout noise is not.
+
+| step | instructions per arm | what moved |
+|---|---|---|
+| after the sink's copy-call fix | 1,362 | `memcpy` 319; counting pass about 520, of which the VLE count 315; `SliceSink` VLE 158 |
+| a VLE of one byte stored or counted in line, the width as a constant | 986 (-28%) | the VLE count 315 -> 0 in the pass that only counts; `write_vle_long` 62 remains |
+
+`vle_len` is now always inlined with a one-byte fast path, `CountSink` states each width's cap as a constant, and
+`SliceSink` stores a one-byte VLE in line and calls out for a longer one. Linked text for the probe grew 504 bytes for
+it (5.7 to 6.3 KB, the whole probe image), which is the price of inlining at this optimisation level.
+
+What the count shows is left, for 986 instructions: `memcpy` 319 (a third; the copy of the 16-byte key and 32-byte
+payload, which the hand-written writer also makes), and about 650 across the two passes of the skeleton, the pass that
+counts being about 200 of them. The consumer's two arms are level because each runs the skeleton twice; the
+candidates left, in the order the count ranks them, are: the counting pass being cheaper than a run of the skeleton
+(the count of a frame is arithmetic over the same derived numbers), `Measured` keeping the derived values so
+`write_into` does not derive them again, and `extensions()` being asked three times in one `write_source_in`. They are
+not done yet, since each makes `Measured` larger or the skeleton less plain, and the kit has not yet said what the
+step above bought.
 
 ## Considered alternatives
 

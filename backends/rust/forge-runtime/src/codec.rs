@@ -592,6 +592,39 @@ impl<'a> SceSink for SliceSink<'a> {
     /// of a full-width value a full eight).
     #[inline]
     fn write_vle_inner(&mut self, value: u64, max_bits: u32) -> Result<(), CodecError> {
+        // A value of seven bits or fewer is one byte of itself, which is most
+        // of the fields a frame holds: stored in line, with the general case a
+        // call.
+        if value < 0x80 {
+            return self.put([value as u8]);
+        }
+        self.write_vle_long(value, max_bits)
+    }
+
+    #[inline]
+    fn write_vle_u16(&mut self, v: u16) -> Result<(), CodecError> {
+        self.write_vle_inner(u64::from(v), 16)
+    }
+
+    #[inline]
+    fn write_vle_u32(&mut self, v: u32) -> Result<(), CodecError> {
+        self.write_vle_inner(u64::from(v), 32)
+    }
+
+    #[inline]
+    fn write_vle_u64(&mut self, v: u64) -> Result<(), CodecError> {
+        self.write_vle_inner(v, 64)
+    }
+
+    fn position(&self) -> usize {
+        self.pos
+    }
+}
+
+impl<'a> SliceSink<'a> {
+    /// A VLE of two bytes or more: one capacity test and the bytes in place.
+    #[inline(never)]
+    fn write_vle_long(&mut self, value: u64, max_bits: u32) -> Result<(), CodecError> {
         let n = vle_len(value, max_bits);
         let Some(dst) = self.buf.get_mut(self.pos..self.pos + n) else {
             return Err(CodecError::BufferOverflow);
@@ -608,10 +641,6 @@ impl<'a> SceSink for SliceSink<'a> {
         *last = v as u8;
         self.pos += n;
         Ok(())
-    }
-
-    fn position(&self) -> usize {
-        self.pos
     }
 }
 
@@ -647,11 +676,13 @@ impl CountSink {
 }
 
 impl SceSink for CountSink {
+    #[inline]
     fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), CodecError> {
         self.written += bytes.len();
         Ok(())
     }
 
+    #[inline]
     fn write_u8(&mut self, _b: u8) -> Result<(), CodecError> {
         self.written += 1;
         Ok(())
@@ -659,8 +690,29 @@ impl SceSink for CountSink {
 
     /// The length of the VLE and not a loop of byte writes: one count of the
     /// value's bits and a division by a constant (docs/adr/0061 §4).
+    #[inline]
     fn write_vle_inner(&mut self, value: u64, max_bits: u32) -> Result<(), CodecError> {
         self.written += vle_len(value, max_bits);
+        Ok(())
+    }
+
+    // The three widths state their cap as a constant, so the length of a VLE is
+    // computed with nothing left to find out at run time.
+    #[inline]
+    fn write_vle_u16(&mut self, v: u16) -> Result<(), CodecError> {
+        self.written += vle_len_u16(v);
+        Ok(())
+    }
+
+    #[inline]
+    fn write_vle_u32(&mut self, v: u32) -> Result<(), CodecError> {
+        self.written += vle_len_u32(v);
+        Ok(())
+    }
+
+    #[inline]
+    fn write_vle_u64(&mut self, v: u64) -> Result<(), CodecError> {
+        self.written += vle_len_u64(v);
         Ok(())
     }
 
@@ -675,23 +727,35 @@ impl SceSink for CountSink {
 /// data bits per byte, and at most `ceil((max_bits - 1) / 7)` bytes, the last of
 /// them carrying a full eight. No loop: the highest set bit says how many
 /// groups of seven the value has.
+///
+/// Always inlined: with a width the caller states as a constant the cap is a
+/// constant too, and a field that is a single byte (the common case) is a
+/// compare and an add. As a call it was a division and a count of leading zeros
+/// per field, on every pass.
+#[inline(always)]
 pub const fn vle_len(value: u64, max_bits: u32) -> usize {
-    let groups = (64 - (value | 1).leading_zeros()).div_ceil(7);
+    if value < 0x80 {
+        return 1;
+    }
+    let groups = (64 - value.leading_zeros()).div_ceil(7);
     let cap = (max_bits - 1).div_ceil(7);
     (if groups < cap { groups } else { cap }) as usize
 }
 
 /// The bytes of a `vle_u16` field (1-3).
+#[inline(always)]
 pub const fn vle_len_u16(v: u16) -> usize {
     vle_len(v as u64, 16)
 }
 
 /// The bytes of a `vle_u32` field (1-5).
+#[inline(always)]
 pub const fn vle_len_u32(v: u32) -> usize {
     vle_len(v as u64, 32)
 }
 
 /// The bytes of a `vle_u64` field (1-9).
+#[inline(always)]
 pub const fn vle_len_u64(v: u64) -> usize {
     vle_len(v, 64)
 }
