@@ -1476,7 +1476,7 @@ public:
             // §scxml-C-1: a session nothing invoked has no parent to address,
             // delayed or not.
             // `hasParentSession` is emitted beside `deliverToParent`, so the
-            // concept that finds one finds both.
+            // trait that finds one finds both.
             if constexpr (SCE::Core::HasParentDeliveryTrait<StatePolicy>::value) {
                 if (!policy_.hasParentSession()) {
                     return TargetSendOutcome::Unreachable;
@@ -1490,7 +1490,7 @@ public:
             // §scxml-6.4 + §scxml-C-1: an invocation that is not running now is
             // not there to address, delayed or not.
             // `isInvocationRunning` is emitted beside `deliverToInvocation`, so
-            // the concept that finds one finds both.
+            // the trait that finds one finds both.
             if constexpr (SCE::Core::HasInvocationDeliveryTrait<StatePolicy>::value) {
                 if (!policy_.isInvocationRunning(resolved.id)) {
                     return TargetSendOutcome::Unreachable;
@@ -1504,7 +1504,7 @@ public:
             // §scxml-C-1: a session that does not exist is reported when the
             // send is made, delayed or not.
             // `isChildSessionRunning` is emitted beside `deliverToChildSession`,
-            // so the concept that finds one finds both.
+            // so the trait that finds one finds both.
             if constexpr (SCE::Core::HasChildSessionDeliveryTrait<StatePolicy>::value) {
                 if (!policy_.isChildSessionRunning(resolved.id)) {
                     return TargetSendOutcome::Unreachable;

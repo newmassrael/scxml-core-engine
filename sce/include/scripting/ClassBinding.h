@@ -128,13 +128,12 @@ private:
         // Thread-safe class registration using std::call_once
         std::call_once(getInitFlag(), [this, &classID]() {
             JS_NewClassID(JS_GetRuntime(ctx_), &classID);
-            JSClassDef classDef = {
-                .class_name = className_.c_str(),
-                .finalizer = nullptr,
-                .gc_mark = nullptr,
-                .call = nullptr,
-                .exotic = nullptr,
-            };
+            // Value-initialized, then the one member that is set is named: the
+            // other hooks stay null, and the code does not depend on the order
+            // QuickJS declares them in (a designated initializer would, and is
+            // C++20 only; docs/adr/0059).
+            JSClassDef classDef{};
+            classDef.class_name = className_.c_str();
             JS_NewClass(JS_GetRuntime(ctx_), classID, &classDef);
         });
     }
