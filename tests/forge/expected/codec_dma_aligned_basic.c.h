@@ -15,8 +15,8 @@
 #include <sce/portability.h>
 #include "sce/forge/codec.h"
 
-#define CODEC_DMA_ALIGNED_BASIC_MIN_BYTES 2
-#define CODEC_DMA_ALIGNED_BASIC_MAX_BYTES 66
+#define CODEC_DMA_ALIGNED_BASIC_MIN_BYTES 32
+#define CODEC_DMA_ALIGNED_BASIC_MAX_BYTES 96
 /* RFC §synth-5-B B3 DMA alignment primitive: structural drift detection.
  * Build-time validation already guaranteed `byte_offset % burst_align
  * == 0` and that all preceding fields are Fixed bit-size. These

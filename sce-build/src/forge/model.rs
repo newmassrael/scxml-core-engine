@@ -3082,13 +3082,16 @@ impl ContentLineModel {
 }
 
 impl CodecModel {
-    /// Minimum required frame bytes for decode (from fixed fields).
+    /// Minimum required frame bytes for decode (from fixed fields, and from the
+    /// start of a burst-aligned field: the padding before it is on the wire).
     pub fn min_frame_bytes(&self) -> u32 {
         let mut max_end = 0u32;
         for field in &self.fields {
             if let Some(bits) = field.fixed_bits() {
                 let end = field.byte_offset + bits.div_ceil(8);
                 max_end = max_end.max(end);
+            } else if field.dma_burst_align.is_some() && field.present_if.is_none() {
+                max_end = max_end.max(field.byte_offset);
             }
         }
         max_end

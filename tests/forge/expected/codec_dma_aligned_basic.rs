@@ -74,7 +74,7 @@ impl<'a> CodecDmaAlignedBasic<'a> {
         // shared cursor without each entry eating the next entry's
         // bytes.
         let _frame_len = cursor.remaining();
-        if _frame_len < 2 {
+        if _frame_len < 32 {
             return Err(CodecError::NeedMoreBytes);
         }
         let raw = cursor.peek_slice(_frame_len)?;
@@ -103,7 +103,7 @@ impl<'a> CodecDmaAlignedBasic<'a> {
     /// against which `VecSink::new` reserves capacity in the
     /// `encode_to_vec` facade, and the natural reserve hint for
     /// caller-owned `SliceSink` allocations.
-    pub const MAX_ENCODED_BYTES: usize = 66;
+    pub const MAX_ENCODED_BYTES: usize = 96;
 
     /// Encode `self` into the caller-owned sink. Returns
     /// `CodecError::BufferOverflow` from a bounded sink when the
