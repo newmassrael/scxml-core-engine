@@ -10259,11 +10259,14 @@ endif()
 # Install-tree consumer smoke test (opt-in).
 #
 # Not part of the regular ctest run — it performs an `install` to a scratch
-# prefix and then configures/builds three standalone probe projects against
-# that prefix via find_package(SCE COMPONENTS base|scripting|runtime). Opt
-# in with `-DSCE_BUILD_INSTALL_CONSUMER_TEST=ON`, then
+# prefix and then configures/builds four standalone probe projects against
+# that prefix via find_package(SCE COMPONENTS base|scripting|runtime), the
+# fourth generating a statechart with the installed generator and running
+# it. Opt in with `-DSCE_BUILD_INSTALL_CONSUMER_TEST=ON`, then
 # `ctest -L install-consumer` runs the end-to-end flow. Keeping it gated
-# avoids running the heavy install pipeline on every developer ctest.
+# avoids running the heavy install pipeline on every developer ctest. The
+# lane that runs it is `scripts/gate install-consumer` (install-consumer.yml),
+# which builds a tree of its own and calls run.sh without ctest.
 # ----------------------------------------------------------------------------
 option(SCE_BUILD_INSTALL_CONSUMER_TEST
     "Add tests/install_tree_consumer smoke test (ctest label install-consumer)"

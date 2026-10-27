@@ -1,0 +1,126 @@
+name: Install-tree consumer
+
+# An installed SCE builds what its own generator writes.
+#
+# The install exports `sce-codegen`, its templates and `SCECodegen.cmake`, so a
+# consumer of an installed tree generates C++ with it, and that C++ includes the
+# Forge C++ runtime. `scripts/gates/install-consumer.sh` builds a scratch tree,
+# installs it to a scratch prefix and builds four probe projects against the
+# prefix (tests/install_tree_consumer): three include each tier's headers, and
+# the fourth generates a statechart with the installed generator, links
+# SCE::sce_base alone, compiles at C++17 with warnings as errors, and runs. That
+# test was opt-in and run by no lane while the install could not compile the
+# generated C++ at all; this file is the lane.
+#
+# ## Duration
+#
+# STAND-IN: the lane has no run of its own yet. `LANES` in
+# `sce-build/tests/ci_supersession_policy.rs` borrows `ecma262-lowered-cpp.yml`'s
+# 23.7 min median, the nearest lane: a cold scratch configure and build of the
+# SCE libraries with a cached generator build ahead of it. This lane builds no
+# test and adds an install and four small probe builds, so the real figure may
+# sit on either side. That is above a 17.6 min median gap between pushes to
+# `main`, so `cancel-in-progress: false` keeps the run in flight, as on every
+# lane. Replace the borrowed figure after 25 runs of its own.
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'CMakeLists.txt'
+      - 'cmake/**'
+      - 'sce/**'
+      - 'backends/cpp/forge-runtime/**'
+      - 'tools/codegen/**'
+      - 'sce-build/src/**'
+      - 'tests/install_tree_consumer/**'
+      - 'scripts/gate'
+      - 'scripts/gates/lib.sh'
+      - 'scripts/gates/install-consumer.sh'
+      - '.github/workflows/install-consumer.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'CMakeLists.txt'
+      - 'cmake/**'
+      - 'sce/**'
+      - 'backends/cpp/forge-runtime/**'
+      - 'tools/codegen/**'
+      - 'sce-build/src/**'
+      - 'tests/install_tree_consumer/**'
+      - 'scripts/gate'
+      - 'scripts/gates/lib.sh'
+      - 'scripts/gates/install-consumer.sh'
+      - '.github/workflows/install-consumer.yml'
+  workflow_dispatch:
+
+# The run in flight is kept and one waiting run holds the newest commit, as on
+# every lane; see `cpp-suite.yml` for the reasoning and the cost.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  install-consumer:
+    name: Generated C++ builds against an installed SCE
+    runs-on: ubuntu-latest
+    timeout-minutes: 80
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      # What the configure and the install's package config need: CMake and
+      # Ninja, pkg-config, the development packages cpp-httplib links when it
+      # finds them (TLS, zlib, brotli), which the installed package config then
+      # asks for again, and libxml2 for the generator's XSD validator.
+      # clang-format-19: `sce-codegen` formats the C++ it writes with
+      # clang-format pinned to major 19 and refuses without it
+      # (docs/SCE_CODEGEN_DETERMINISM.md section 9), the installed one included.
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            g++ \
+            ninja-build \
+            ccache \
+            pkg-config \
+            libxml2-dev \
+            libssl-dev \
+            zlib1g-dev \
+            libbrotli-dev \
+            clang-format-19
+
+      - name: Install Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      - name: Cache Cargo
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-codegen-${{ hashFiles('sce-build/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-codegen-
+
+      - name: Setup ccache
+        uses: actions/cache@v5
+        with:
+          path: ~/.ccache
+          key: ${{ runner.os }}-ccache-install-consumer-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-ccache-install-consumer-
+
+      # Configure, build, install and the four probes are one gate, so the check
+      # has one spelling here and for a developer. The runner builds
+      # `sce-codegen` first, through its `codegen-build` gate.
+      - name: Build generated C++ against an installed SCE
+        run: scripts/gate install-consumer

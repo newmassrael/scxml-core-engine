@@ -340,6 +340,12 @@ const LANES: &[(&str, f64, u32, u32, u32)] = &[
     // it is.
     ("genmc-queue.yml", 3.6, 0, 1, 0),
     ("http-endpoint-ssot.yml", 6.0, 7, 17, 1),
+    // ⚠ STAND-IN, borrowed 2026-10-27 for a lane of no history: it configures and builds a scratch tree
+    // of the main CMake project from cold after a cached generator build, as `ecma262-lowered-cpp.yml`
+    // does (23.7), with no tests, then installs it and builds four small probe projects against the
+    // prefix, so the true median may sit on either side; the lane states the figure in its own
+    // workflow, as a long lane must. Replace it after 25 runs of its own and delete this paragraph.
+    ("install-consumer.yml", 23.7, 0, 0, 0),
     ("license-verify.yml", 0.3, 0, 3, 0),
     // ⚠⚠⚠ This row is why the fifth column exists, and it was taken under a
     // group that no longer exists. Measured 2026-09-02 its concurrency group
