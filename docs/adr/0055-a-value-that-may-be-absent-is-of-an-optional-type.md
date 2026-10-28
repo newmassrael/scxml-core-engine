@@ -837,8 +837,9 @@ documents, not observed from a backend.
      string, an enum its declared name, a record the plain object it is, written again with a field
      changed (`SceStatic.set`). A statechart's call crosses an optional text and an optional record
      (`StaticSlot::OptionalRecord`, handed by the name of the variable that holds it, a record variable or
-     a loop's item or the payload lifted, or `null`, state code `n`); an optional value of an enum or a
-     byte string in a slot is refused by name where the import is read (`value_signature`), and a
+     a loop's item or the payload lifted, or `null`, state code `n`) and an optional value of an enum, which
+     the Interpreter's call hands as the declared name it holds; an optional byte string in a slot is
+     refused by name where the import is read (`value_signature`), and a
      record's optional text or enum field copies across a call as it is, the enum field by the declared
      name of its variant as an enum field does.
    - *The hooks.* `StaticTarget::lowers_optional_record` (by default `ExprTarget::lowers_optional_record`,
@@ -885,9 +886,10 @@ documents, not observed from a backend.
      a field of the present record is written in place (`held.f = e`, a text by `lower_text_write` to the bound
      its field declares), where a test proves the record present. An optional enum field of a record crosses an
      adapter by the declared name of its variant where it is present and stays `None` where it is not. Still
-     refused by name, for reasons that are not Python's: a statechart's call of an algorithm whose own slot is
-     an optional value of an enum or a byte string (refused where the import is read, since no engine reads an
-     enum through an optional value in a call yet and the Interpreter's byte string is another value). Tests:
+     refused by name, for a reason that is not Python's: a statechart's call of an algorithm whose own slot is
+     an optional byte string (refused where the import is read, since the Interpreter's byte string is another
+     value). A call whose slot is an optional value of an enum maps it by the declared name of its variant,
+     in the parameter and the answer (`AdapterSpec::optional_enum_crossing`). Tests:
      `an_optional_record_is_spelled_by_generated_python`, `static_optional_record` in
      `backends/python/tests/integration/static_datamodel/test_static_scenarios.py` and its saved instance in
      `test_a_state_another_backend_saved_is_restored.py`.
@@ -917,9 +919,9 @@ documents, not observed from a backend.
      optional byte string in an algorithm's slot, local and record field: an algorithm holds a
      byte string as a borrowed view in a parameter, as an append buffer in a local and as an
      owned vector in a return, three types no one `std::optional` holds as it is, and a record
-     with a byte string field is no record of an algorithm (`resolve_record`); and the
-     optional enum as a slot a statechart's call crosses, which `value_signature` refuses for
-     every backend until a statechart reads one through its enum document. Tests:
+     with a byte string field is no record of an algorithm (`resolve_record`). A statechart's call
+     whose slot is an optional value of an enum crosses it by the declared name of its variant
+     (`optional_enum_crossing` through `mapPresent`), in the parameter and the answer. Tests:
      `an_optional_record_is_spelled_by_the_cpp_backend`, the scenario `static_optional_record.json`
      replayed by the C++ scenario suite, and `saved/static_optional_record.json` restored and saved
      again by `AStateAnotherBackendSavedIsRestoredTest`.
@@ -996,9 +998,10 @@ documents, not observed from a backend.
      present; a value of an enum is an `Option` of its own type, and a record's optional enum field crosses
      an adapter by the declared name of its variant. A byte string stays refused by name in a slot, since a
      slot declares no bound for it (an algorithm's bytes carry theirs beside the buffer they build). A call
-     whose slot is an optional value of an enum is refused where the import is read (`value_signature`, one
-     reading for every backend: the enum judge holds an argument to the enum of its slot and has no
-     optional one yet). Tests: `sce-build/tests/an_optional_record_is_held_read_and_written_where_proven.rs`
+     whose slot is an optional value of an enum is named where the import is read (`value_signature`, one
+     reading for every backend: the enum judge holds an argument to the enum of its slot), and its adapter is
+     the machine's `Option` over its own enum, mapped by the declared name of the variant where it is present,
+     in the parameter and the answer. Tests: `sce-build/tests/an_optional_record_is_held_read_and_written_where_proven.rs`
      (the `rust_…` cases), the runtime's `optional` and `saved_state` tests, `static_scenarios`'s
      `static_optional_record_holds_reads_and_writes_a_record_that_may_be_absent` and the saved-state tests of
      `static_datamodel.rs`.
@@ -1028,9 +1031,10 @@ documents, not observed from a backend.
      as it is in a statechart. A field of the present value of an optional record an algorithm holds
      is written through the same block (`<sce:assign target="x.value.f">`), a text from a literal or
      a record's text field held to the bound the schema declares, and an optional text field lifted.
-     Still refused, on every backend: an imported algorithm's slot of an optional value of an enum or
-     a byte string in a statechart's call (the enum judge does not read an optional value through a
-     call, and the byte string an algorithm holds is not every backend's statechart one), at the
+     A statechart's call whose slot is an optional value of an enum converts it by the package's `Convert`
+     (`optional.Convert`), in the parameter and the answer. Still refused, on every backend: an imported
+     algorithm's slot of an optional byte string in a statechart's call (the byte string an algorithm
+     holds is not every backend's statechart one), at the
      import, `x ?? d` of an optional enum where the lattice names no type for `d`, and a record
      whose optional field is a byte string, which no algorithm's record carries. Tests:
      `go_lowers_the_optional_record_scenario_machine`, `go_lowers_an_algorithm_that_answers_an_optional_record`,

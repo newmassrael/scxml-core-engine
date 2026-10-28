@@ -4136,7 +4136,11 @@ parameter is optional, and an optional variable assigned what an optional return
 answers; a record's optional field crosses the adapter as it is. An optional value
 where a parameter of `T` is declared is `expression/type-mismatch`, naming `??`
 and a test. Another algorithm's body calls one with optional slots through the
-same signature. `sce-build/tests/an_algorithm_holds_an_optional_value.rs` and
+same signature, and hands an optional enum or an optional record only of the enum
+document or the schema the slot is of.
+`sce-build/tests/an_algorithm_holds_an_optional_value.rs`,
+`sce-build/tests/an_algorithm_calls_another_with_an_optional_enum_or_record.rs`,
+`sce-build/tests/a_statechart_crosses_an_optional_enum_slot_of_a_call.rs` and
 `scenarios/static_state_algorithm_optional.json` hold this. `null` stands only where an optional value is declared:
 `<data sce:type="int64" expr="null"/>` and an `<assign>` of `null` to an `int64` are
 `expression/type-mismatch`, where until 2026-10-21 they were judged fit.

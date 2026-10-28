@@ -2922,14 +2922,24 @@ impl StaticTarget for RustTarget {
                 // algorithm's own type (docs/adr/0055). A text is handed as the
                 // borrow the algorithm's parameter takes, which the expression of
                 // the argument reads an optional text as already; a value of an
-                // enum crosses by the declared name of its variant and a byte
-                // string is no value of an algorithm's slot, and both are refused
-                // where the import is read.
+                // enum is the machine's `Option` over its own enum, and crosses where
+                // it is present by the declared name of its variant; a byte string
+                // is no value of an algorithm's slot, and is refused where the
+                // import is read.
                 AdapterParam::Optional(SceType::String) => {
                     declarations.push(format!("{name}: Option<&str>"));
                     arguments.push(name);
                 }
-                AdapterParam::Optional(SceType::Enum(_) | SceType::Bytes) => return None,
+                AdapterParam::Optional(ty) if matches!(ty, SceType::Enum(_)) => {
+                    declarations.push(format!("{name}: {}", spec.optional_type(self, ty)?));
+                    arguments.push(spec.optional_enum_crossing(
+                        self,
+                        ty,
+                        &name,
+                        Crossing::ToAlgorithm,
+                    )?);
+                }
+                AdapterParam::Optional(SceType::Bytes) => return None,
                 AdapterParam::Optional(ty) => {
                     declarations.push(format!("{name}: {}", spec.optional_type(self, ty)?));
                     arguments.push(name);
@@ -3007,7 +3017,13 @@ impl StaticTarget for RustTarget {
             ),
             StaticSlot::Scalar(ty) if scalar_ok(ty) => (self.scalar_type(ty), "r".to_string()),
             StaticSlot::Scalar(_) => return None,
-            StaticSlot::Optional(SceType::Enum(_) | SceType::Bytes) => return None,
+            // An optional value of an enum the algorithm answers is the machine's
+            // `Option` over its own enum, mapped where it is present.
+            StaticSlot::Optional(ty) if matches!(ty, SceType::Enum(_)) => (
+                spec.optional_type(self, ty)?,
+                spec.optional_enum_crossing(self, ty, "r", Crossing::FromAlgorithm)?,
+            ),
+            StaticSlot::Optional(SceType::Bytes) => return None,
             StaticSlot::Optional(ty) => (spec.optional_type(self, ty)?, "r".to_string()),
             // The optional record the algorithm answers, its record copied into the
             // machine's where it is present (docs/adr/0055, step 9).
@@ -6637,6 +6653,18 @@ impl StaticTarget for CppTarget {
                     declarations.push(format!("{} {name}", self.scalar_type(ty)));
                     arguments.push(name);
                 }
+                // A value of an enum that may be absent is the machine's
+                // `std::optional` over its own enum, and crosses where it is present
+                // by the declared name of its variant (docs/adr/0055).
+                AdapterParam::Optional(ty) if matches!(ty, SceType::Enum(_)) => {
+                    declarations.push(format!("{} {name}", spec.optional_type(self, ty)?));
+                    arguments.push(spec.optional_enum_crossing(
+                        self,
+                        ty,
+                        &name,
+                        Crossing::ToAlgorithm,
+                    )?);
+                }
                 // `std::optional<T>` on both sides, by value (docs/adr/0055).
                 AdapterParam::Optional(ty) => {
                     declarations.push(format!("{} {name}", spec.optional_type(self, ty)?));
@@ -6745,6 +6773,11 @@ impl StaticTarget for CppTarget {
             Some(match value.ret.as_ref()? {
                 StaticSlot::Scalar(SceType::Enum(reference)) => {
                     spec.enum_crossing(self, &reference.alias, from, Crossing::FromAlgorithm)?
+                }
+                // The machine's `std::optional` over its own enum, mapped where the
+                // algorithm's answer is present (docs/adr/0055).
+                StaticSlot::Optional(ty) if matches!(ty, SceType::Enum(_)) => {
+                    spec.optional_enum_crossing(self, ty, from, Crossing::FromAlgorithm)?
                 }
                 StaticSlot::Scalar(_) | StaticSlot::ScalarList(_) | StaticSlot::Optional(_) => {
                     from.to_string()
@@ -7750,6 +7783,18 @@ impl StaticTarget for GoTarget<'_> {
                     declarations.push(format!("{name} {}", self.scalar_type(ty)));
                     arguments.push(name);
                 }
+                // A value of an enum that may be absent is the machine's
+                // `optional.Of` over its own enum, and crosses where it is present
+                // by the declared name of its variant (docs/adr/0055).
+                AdapterParam::Optional(ty) if matches!(ty, SceType::Enum(_)) => {
+                    declarations.push(format!("{name} {}", spec.optional_type(self, ty)?));
+                    arguments.push(spec.optional_enum_crossing(
+                        self,
+                        ty,
+                        &name,
+                        Crossing::ToAlgorithm,
+                    )?);
+                }
                 // `optional.Of[T]` on both sides, a value (docs/adr/0055).
                 AdapterParam::Optional(ty) => {
                     declarations.push(format!("{name} {}", spec.optional_type(self, ty)?));
@@ -7870,6 +7915,15 @@ impl StaticTarget for GoTarget<'_> {
                 ),
             ),
             StaticSlot::Scalar(ty) if plain_scalar(ty) => (self.scalar_type(ty), String::new()),
+            // The machine's `optional.Of` over its own enum, converted where the
+            // algorithm's answer is present (docs/adr/0055).
+            StaticSlot::Optional(ty) if matches!(ty, SceType::Enum(_)) => (
+                spec.optional_type(self, ty)?,
+                format!(
+                    "\tout := {}\n",
+                    spec.optional_enum_crossing(self, ty, "r", Crossing::FromAlgorithm)?
+                ),
+            ),
             StaticSlot::Optional(ty) => (spec.optional_type(self, ty)?, String::new()),
             // The algorithm's optional record is read for its present record
             // without naming its type, so the schema's package is no import the
@@ -8829,6 +8883,11 @@ impl StaticTarget for PythonTarget {
                     }
                     arguments.push(name.clone());
                 }
+                // A value of an enum that may be absent is `None` or the machine's
+                // enum, and crosses where it is present by the declared name of its
+                // variant (docs/adr/0055).
+                AdapterParam::Optional(ty) if matches!(ty, SceType::Enum(_)) => arguments
+                    .push(spec.optional_enum_crossing(self, ty, &name, Crossing::ToAlgorithm)?),
                 // `None` or the value itself on both sides (docs/adr/0055).
                 AdapterParam::Optional(_) => arguments.push(name.clone()),
                 AdapterParam::State {
@@ -8865,6 +8924,10 @@ impl StaticTarget for PythonTarget {
                 spec.enum_crossing(self, &reference.alias, "r", Crossing::FromAlgorithm)?
             }
             StaticSlot::Scalar(ty) if plain_scalar(ty) => "r".to_string(),
+            // `None`, or the machine's enum where the algorithm's answer is present.
+            StaticSlot::Optional(ty) if matches!(ty, SceType::Enum(_)) => {
+                spec.optional_enum_crossing(self, ty, "r", Crossing::FromAlgorithm)?
+            }
             StaticSlot::Optional(_) => "r".to_string(),
             StaticSlot::Record(alias) => from_algorithm(alias, "r")?,
             // `None`, or the machine's own record built from what the algorithm
