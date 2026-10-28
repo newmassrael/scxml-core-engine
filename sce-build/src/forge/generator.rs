@@ -31550,6 +31550,10 @@ pub(crate) struct AlgorithmTypes<'a> {
     /// element it holds when present: read by `x !== null`, `x.value` where a
     /// test proves it present and `x ?? d`, and written whole.
     optionals: Vec<(String, crate::forge::types::OptionalElem)>,
+    /// The enum a parameter or local that is `optional<enum:…>` holds when it is
+    /// present, by the path its present value is read at (`given.value`): the
+    /// path, and not the optional value, is a value of the enum (docs/adr/0055).
+    optional_enums: Vec<(String, String)>,
     /// Every `list<T>` parameter and its element type: read by `xs[i]`,
     /// `len(xs)` and `<sce:foreach in="xs">`, never written.
     list_params: Vec<(String, ListElemType)>,
@@ -31674,6 +31678,20 @@ impl<'a> AlgorithmTypes<'a> {
                 })
             })
             .collect();
+        let mut optional_enums: Vec<(String, String)> = m
+            .signature
+            .params
+            .iter()
+            .filter_map(|p| {
+                let SceType::Enum(reference) = p.sce_type.optional_elem()?.scalar()? else {
+                    return None;
+                };
+                Some((
+                    crate::forge::static_enum::present_value_path(&p.name),
+                    reference.alias.clone(),
+                ))
+            })
+            .collect();
         // An item over a list of records is a record, named by the item and
         // typed by its schema below, as a record parameter is.
         let mut record_list_items: Vec<(&str, &str, String)> = Vec::new();
@@ -31718,6 +31736,12 @@ impl<'a> AlgorithmTypes<'a> {
                                     name.to_string(),
                                     crate::forge::types::OptionalElem::of_value(elem),
                                 ));
+                                if let Some(SceType::Enum(reference)) = elem.scalar() {
+                                    optional_enums.push((
+                                        crate::forge::static_enum::present_value_path(name),
+                                        reference.alias.clone(),
+                                    ));
+                                }
                             }
                             continue;
                         }
@@ -31899,6 +31923,7 @@ impl<'a> AlgorithmTypes<'a> {
         Ok(Self {
             env,
             optionals,
+            optional_enums,
             list_params,
             list_buffers,
             bytes_buffers,
@@ -31934,9 +31959,14 @@ impl<'a> AlgorithmTypes<'a> {
                     .then_some(elem),
             })
         };
-        match scalar.or_else(field)? {
-            SceType::Enum(reference) => Some(reference.alias.as_str()),
-            _ => None,
+        match scalar.or_else(field) {
+            Some(SceType::Enum(reference)) => Some(reference.alias.as_str()),
+            Some(_) => None,
+            None => self
+                .optional_enums
+                .iter()
+                .find(|(present, _)| present == path)
+                .map(|(_, alias)| alias.as_str()),
         }
     }
 
