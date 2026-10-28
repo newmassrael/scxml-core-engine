@@ -418,6 +418,44 @@ Each step is green on its own, and the last two are the ones that need the consu
     or added (§1).
   - `apis/forge-ast.v1.schema.json` is regenerated from the types, not edited by hand.
 
+### What step 5 landed: the other five runtime rows (2026-10-28)
+
+Each row is the Rust protocol ported access for access, written by an agent that could not build and then built and run
+once on the build machine. Every recorded run was judged by `sce-codegen check-broadcast-history`.
+
+| Row | Where | Built and run | Histories judged |
+|---|---|---|---|
+| C11 | `backends/c/forge-runtime/include/sce/forge/broadcast_log.h`, four new `sce_atomic_*` externs | ctest 22 of 22 (4 new) | 100, linearizable |
+| C++ | `backends/cpp/forge-runtime/include/sce/forge/broadcast_log.h` | ctest 13 of 13 (4 new) | 100, linearizable |
+| Go | `backends/go/forge-runtime/broadcastlog/` | `gofmt`, `go vet`, 18 tests under `-race` | 100, linearizable |
+| Kotlin | `backends/kotlin/forge-runtime/.../broadcastlog/` | Gradle build, contract, stress and Lincheck tests | 100, linearizable |
+| Python | `backends/python/forge-runtime/sce_forge_runtime/broadcast_log.py` | 27 tests | 50, linearizable |
+
+- **Go and Kotlin are sequentially consistent, and say so.** Their atomics are at least as strong as every Rust order, so
+  the two fences have no counterpart there and the faults of "Orders the memory model adds" cannot occur. A weakened
+  order is therefore not a mutation those rows can show, and none was written for them: the mutation cases are the Rust
+  row's. Python is one ring under one lock and gives `blocking`, the ceiling the codegen matrix already gives it.
+- **Where a row differs from Rust, on purpose.** C11 returns `SCE_BLOG_NO_SEQUENCE` from `publish` past the horizon
+  instead of panicking, as a no-allocation, no-abort header must. Kotlin's horizon is the signed `Long`'s, half of the
+  other rows', and a Kotlin `read` allocates one small result object. Neither changes what a reader observes below the
+  horizon.
+- **Not run.** The GenMC scenarios of C11 and C++ (four harnesses, two new fence mutants over every harness) are a gate
+  whose cost the owner has sent to CI; the lists of mutants a scenario requires to be killed were chosen by reasoning and
+  may need trimming when the first run is read. No ThreadSanitizer or Miri run.
+- **Not asserted by any row's stress.** That a recorded run contained a `Lagged` answer. The deterministic tests reach
+  it on one thread and the loom models reach the late branch for certain.
+
+### What is still undone
+
+- **The generated code.** The kind parses and every language refuses a valid document with `broadcast-log/runtime-missing`,
+  because no codegen template emits it yet. The templates, and generated tests that regenerate and build them, are the next
+  step, one language at a time starting with Rust. `element-size-unbounded` and the deploy resolution of a retention and of
+  the wrap bound belong with the first template that stores bytes.
+- **The specialised checker** of section 5 and its differential test.
+- **The narrow-stamp row and the load/store-only row** of section 4.
+- **The differential run against the downstream consumer's own ring** (section 6, layer 5), which needs that ring's cases.
+- **The new RFC section** beside §synth-5-P, and the mutation round of CI over the eleven Rust cases.
+
 ## Consequences
 
 - `queue` keeps its definition. A reader of it is not asked to understand a policy it does not have.
