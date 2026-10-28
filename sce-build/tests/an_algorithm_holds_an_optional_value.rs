@@ -228,11 +228,14 @@ const SPELLING_EVERY_OPTIONAL_ELEMENT: &[&str] = &["python", "kotlin", "go"];
 
 /// Whether the backend `lang` (a name [`every_backend`] gives) spells an optional
 /// value of the element `written` in an algorithm's slots beyond a number and a
-/// `bool` (docs/adr/0055, step 9): the backends that spell every element, and Rust,
-/// which spells every one but a byte string, since a slot declares no bound for it.
+/// `bool` (docs/adr/0055, step 9): the backends that spell every element, Rust,
+/// which spells every one but a byte string, since a slot declares no bound for it,
+/// and C11, which spells a value of an enum and a record: the struct over a text or a
+/// byte string is a buffer of the bound its value declares, and a slot declares none.
 fn spells_in_a_slot(lang: &str, written: &str) -> bool {
     SPELLING_EVERY_OPTIONAL_ELEMENT.contains(&lang)
         || (lang == "rust" && !written.contains("bytes"))
+        || (lang == "c11" && (written.contains("enum:") || written.contains("record:")))
 }
 
 /// Each generated backend refuses an algorithm that holds an optional value it
@@ -293,11 +296,12 @@ fn every_backend_refuses_an_algorithms_optional_slot_it_does_not_spell_by_name()
                         "{lang} spells `{written}` on an algorithm's slot:\n{out}"
                     );
                     // Python's `Optional[T]`, Kotlin's `T?`, Rust's `Option<T>`, Go's
-                    // `optional.Of[T]`.
+                    // `optional.Of[T]`, C11's `sce_optional_<element>_t`.
                     let optional = match lang {
                         "kotlin" => "?",
                         "rust" => "Option<",
                         "go" => "optional.Of[",
+                        "c11" => "sce_optional_",
                         _ => "Optional[",
                     };
                     assert!(
