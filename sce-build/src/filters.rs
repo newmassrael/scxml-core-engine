@@ -1159,7 +1159,7 @@ pub fn register_go_filters(env: &mut minijinja::Environment, scope: &Arc<Documen
 /// registered: a document id that spells a Swift keyword is refused at parse for
 /// every backend at once (`validation/reserved-code-identifier`,
 /// [`crate::reader_names`]), so no id reaches a template as one.
-pub fn register_swift_filters(env: &mut minijinja::Environment, _scope: &Arc<DocumentScope>) {
+pub fn register_swift_filters(env: &mut minijinja::Environment, scope: &Arc<DocumentScope>) {
     env.add_filter("w3c_session_name", w3c_session_name);
     register_invoke_filters(env);
     register_event_wire_filters(env);
@@ -1171,6 +1171,14 @@ pub fn register_swift_filters(env: &mut minijinja::Environment, _scope: &Arc<Doc
     env.add_filter("to_in_predicate_swift", to_in_predicate_swift);
     env.add_filter("normalize_ws", normalize_ws);
     env.add_filter("to_machine_name", to_pascal_case);
+    // Whether an inline `<content>` is XML, which travels as the document text
+    // (§scxml-B-2-8-1) and not as a JSON string.
+    let for_xml = Arc::clone(scope);
+    env.add_filter("data_content_is_xml", move |content: String| {
+        data_content_is_xml(content, &for_xml)
+    });
+    env.add_filter("split", filter_split);
+    env.add_filter("slice_from", filter_slice_from);
 }
 
 /// A state id or an event name as the case of a Swift enum: lowerCamel, the

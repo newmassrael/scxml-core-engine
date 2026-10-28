@@ -188,6 +188,80 @@
 {% if send_prologue and not in_block %}
                     if sendArgError.isEmpty {
 {% endif %}
+{# ── The event's data, from <param>s, a namelist (folded into the params), or
+   <content> ──
+   W3C SCXML 6.2: a name may repeat and every value must be delivered, so the pairs are
+   an ordered list rather than a map, and the typed value is kept rather than its text:
+   a receiver reading `_event.data.value === 42` finds the string "42" unequal. #}
+{% set sends_params = action.params and action.params | length > 0 %}
+{% if sends_params %}
+                    // W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
+                    // pair left out, and the message still goes; the error ends the block once
+                    // it has. Read at the end of this element.
+                    var paramFailed = false
+                    var sendParts: [PayloadPair] = []
+{% for param in action.params %}
+{% if param.is_static_literal %}
+                    sendParts.append(PayloadPair("{{ param.name | escape_swift }}", .text("{{ param.static_value | escape_swift }}")))
+{% elif param.native_value %}
+{# The value is the `WireValue` the pair's JSON is written from. A checked operation that
+   overflows records its failure and answers a zero: the evaluation that failed, reported,
+   and the pair left out (§scxml-5.7.1) while the message still goes. #}
+                    do {
+{% if param.native_fails %}
+                        let sceFailure = Failure()
+{% endif %}
+                        let sceValue: WireValue = {{ param.native_value }}
+{% if param.native_fails %}
+                        if !sceFailure.failed {
+                            sendParts.append(PayloadPair("{{ param.name | escape_swift }}", sceValue))
+                        } else {
+{% if 'error.execution' in model.events %}
+                            engine.raise(EventWithMetadata.platformError({{ machine_name }}Event.{{ 'error.execution' | to_event_variant }}, message: "<send> <param name={{ param.name | escape_swift }}> failed to evaluate"))
+{% endif %}
+                            paramFailed = true
+                        }
+{% else %}
+                        sendParts.append(PayloadPair("{{ param.name | escape_swift }}", sceValue))
+{% endif %}
+                    }
+{% endif %}
+{% endfor %}
+                    let sendEventData = payloadJSON(sendParts)
+{% elif action.content %}
+{% if action.content | data_content_is_xml %}
+                    // XML travels as the document text: §scxml-B-2-8-1 has the RECEIVER build the DOM.
+                    let sendEventData = "{{ action.content | escape_swift }}"
+{% else %}
+                    // W3C SCXML B.2: no data model, so the text is the value — the last rung of
+                    // §scxml-B-2-8-1, taken at codegen time.
+                    let sendEventData = "\"{{ action.content | normalize_ws | escape_json_string | escape_swift }}\""
+{% endif %}
+{% elif action.native_content_value %}
+                    // W3C SCXML 5.6.2: the value of <content expr> is the output of <content>, the
+                    // event's data. Under `datamodel="sce-static"` it is one value lowered to
+                    // native code (`Action::native_content_value`), read from the machine's own
+                    // fields now and kept. "If the evaluation of 'expr' produces an error, the
+                    // Processor MUST place error.execution in the internal event queue and use
+                    // the empty string as the value of the <content> element."
+{% if action.native_content_value_fails %}
+                    var paramFailed = false
+                    let sceFailure = Failure()
+                    var contentValue: WireValue = {{ action.native_content_value }}
+                    if sceFailure.failed {
+{% if 'error.execution' in model.events %}
+                        engine.raise(EventWithMetadata.platformError({{ machine_name }}Event.{{ 'error.execution' | to_event_variant }}, message: "<send> contentexpr failed to evaluate"))
+{% endif %}
+                        paramFailed = true
+                        contentValue = .text("")
+                    }
+{% else %}
+                    let contentValue: WireValue = {{ action.native_content_value }}
+{% endif %}
+                    let sendEventData = contentValue.json
+{% else %}
+                    let sendEventData = ""
+{% endif %}
 {% if action.native_target %}
                     // W3C SCXML 6.2.4 + C.1: a targetexpr is a target — the value is routed as
                     // the same value written in `target` is, at once or after the delay, by
@@ -199,7 +273,7 @@
                         ownSessionID: self.sessionID,
                         delay: {{ delay_swift if delay_swift else '.zero' }},
                         sendID: {{ send_id_swift }},
-                        eventData: "",
+                        eventData: sendEventData,
                         origin: self.sessionID
                     )
                     if sendRouted == .notSupported {
@@ -223,12 +297,14 @@
                         {{ machine_name }}Event.{{ action.event | to_event_variant }},
                         delay: {{ delay_swift }},
                         sendID: {{ send_id_swift }},
-                        eventData: "",
+                        eventData: sendEventData,
                         origin: self.sessionID,
                         route: ScheduledRoute(kind: .internalQueue, eventName: "")
                     )
 {% else %}
-                    engine.raise(EventWithMetadata({{ machine_name }}Event.{{ action.event | to_event_variant }}))
+                    var sendMetadata = EventMetadata.internalRaise()
+                    sendMetadata.data = sendEventData
+                    engine.raise(EventWithMetadata({{ machine_name }}Event.{{ action.event | to_event_variant }}, metadata: sendMetadata))
 {% endif %}
 {% elif computed_event %}
                     // W3C SCXML 3.12.1 + 5.10: a computed name is delivered as the event the
@@ -237,7 +313,7 @@
                         sendEventName,
                         delay: {{ delay_swift if delay_swift else '.zero' }},
                         sendID: {{ send_id_swift }},
-                        eventData: "",
+                        eventData: sendEventData,
                         origin: self.sessionID
                     )
 {% endif %}
@@ -250,12 +326,12 @@
                         nil,
                         delay: {{ delay_swift }},
                         sendID: {{ send_id_swift }},
-                        eventData: "",
+                        eventData: sendEventData,
                         origin: self.sessionID,
                         route: ScheduledRoute(kind: .parent, eventName: {{ event_name_swift }})
                     )
 {% else %}
-                    if !self.deliverToParent(eventName: {{ event_name_swift }}, eventData: "") {
+                    if !self.deliverToParent(eventName: {{ event_name_swift }}, eventData: sendEventData) {
                         // W3C SCXML C.1: this session was started by its host, not by an
                         // `<invoke>`, so `#_parent` reaches nobody — error.communication,
                         // nothing delivered, and the block ends (4.9).
@@ -293,7 +369,7 @@
                             sendEventName,
                             delay: {{ delay_swift if delay_swift else '.zero' }},
                             sendID: {{ send_id_swift }},
-                            eventData: "",
+                            eventData: sendEventData,
                             origin: self.sessionID
                         )
 {% elif delay_swift %}
@@ -302,18 +378,28 @@
                             {{ machine_name }}Event.{{ action.event | to_event_variant }},
                             delay: {{ delay_swift }},
                             sendID: {{ send_id_swift }},
-                            eventData: "",
+                            eventData: sendEventData,
                             origin: self.sessionID
                         )
 {% elif action.event %}
+                        var sendMetadata = EventMetadata.external(sendID: {{ send_id_swift }}, origin: self.sessionID)
+                        sendMetadata.data = sendEventData
                         engine.raiseExternalWithMeta(
-                            EventWithMetadata(
-                                {{ machine_name }}Event.{{ action.event | to_event_variant }},
-                                metadata: .external(sendID: {{ send_id_swift }}, origin: self.sessionID)
-                            )
+                            EventWithMetadata({{ machine_name }}Event.{{ action.event | to_event_variant }}, metadata: sendMetadata)
                         )
 {% endif %}
                     }
+{% endif %}
+{% if sends_params or (action.native_content_value and action.native_content_value_fails) %}
+{% if in_block %}
+                    // W3C SCXML 4.9: the <param> error ends the block, from however deep a
+                    // <foreach> it came.
+                    if paramFailed {
+                        break sceBlock
+                    }
+{% else %}
+                    _ = paramFailed  // no enclosing block to leave
+{% endif %}
 {% endif %}
 {% if send_prologue and not in_block %}
                     }

@@ -488,6 +488,7 @@ public final class StaticCancelExprPolicy: StatePolicy {
 
                 // W3C SCXML 6.2: send id="a"
                 do {
+                    let sendEventData = ""
                     do {
                     // W3C SCXML 6.2 / C.1: deliver the event to this session's own external
                     // queue, carrying this session as its origin.
@@ -496,7 +497,7 @@ public final class StaticCancelExprPolicy: StatePolicy {
                             StaticCancelExprEvent.aDue,
                             delay: Duration.milliseconds(200),
                             sendID: "a",
-                            eventData: "",
+                            eventData: sendEventData,
                             origin: self.sessionID
                         )
                     }
@@ -504,6 +505,7 @@ public final class StaticCancelExprPolicy: StatePolicy {
 
                 // W3C SCXML 6.2: send id="b"
                 do {
+                    let sendEventData = ""
                     do {
                     // W3C SCXML 6.2 / C.1: deliver the event to this session's own external
                     // queue, carrying this session as its origin.
@@ -512,7 +514,7 @@ public final class StaticCancelExprPolicy: StatePolicy {
                             StaticCancelExprEvent.bDue,
                             delay: Duration.milliseconds(200),
                             sendID: "b",
-                            eventData: "",
+                            eventData: sendEventData,
                             origin: self.sessionID
                         )
                     }

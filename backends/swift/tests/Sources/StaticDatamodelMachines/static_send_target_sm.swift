@@ -506,6 +506,7 @@ public final class StaticSendTargetPolicy: StatePolicy {
 
                         break sceBlock
                     }
+                    let sendEventData = ""
                     // W3C SCXML 6.2.4 + C.1: a targetexpr is a target — the value is routed as
                     // the same value written in `target` is, at once or after the delay, by
                     // the table `classifyTarget` holds.
@@ -516,7 +517,7 @@ public final class StaticSendTargetPolicy: StatePolicy {
                         ownSessionID: self.sessionID,
                         delay: .zero,
                         sendID: "__send_0",
-                        eventData: "",
+                        eventData: sendEventData,
                         origin: self.sessionID
                     )
                     if sendRouted == .notSupported {
@@ -578,6 +579,7 @@ public final class StaticSendTargetPolicy: StatePolicy {
 
                         break sceBlock
                     }
+                    let sendEventData = ""
                     // W3C SCXML 6.2.4 + C.1: a targetexpr is a target — the value is routed as
                     // the same value written in `target` is, at once or after the delay, by
                     // the table `classifyTarget` holds.
@@ -588,7 +590,7 @@ public final class StaticSendTargetPolicy: StatePolicy {
                         ownSessionID: self.sessionID,
                         delay: .zero,
                         sendID: "__send_1",
-                        eventData: "",
+                        eventData: sendEventData,
                         origin: self.sessionID
                     )
                     if sendRouted == .notSupported {

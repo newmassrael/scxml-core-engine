@@ -479,6 +479,7 @@ public final class StaticSendIdlocationPolicy: StatePolicy {
                     // variable is then the id the send is known by (`Action::native_sendid`).
                     self.vFirst = engine.nextAutoSendID()
                     let sendID = self.vFirst
+                    let sendEventData = ""
                     do {
                     // W3C SCXML 6.2 / C.1: deliver the event to this session's own external
                     // queue, carrying this session as its origin.
@@ -487,7 +488,7 @@ public final class StaticSendIdlocationPolicy: StatePolicy {
                             StaticSendIdlocationEvent.firstDue,
                             delay: Duration.milliseconds(200),
                             sendID: sendID,
-                            eventData: "",
+                            eventData: sendEventData,
                             origin: self.sessionID
                         )
                     }
@@ -500,6 +501,7 @@ public final class StaticSendIdlocationPolicy: StatePolicy {
                     // variable is then the id the send is known by (`Action::native_sendid`).
                     self.vSecond = engine.nextAutoSendID()
                     let sendID = self.vSecond
+                    let sendEventData = ""
                     do {
                     // W3C SCXML 6.2 / C.1: deliver the event to this session's own external
                     // queue, carrying this session as its origin.
@@ -508,7 +510,7 @@ public final class StaticSendIdlocationPolicy: StatePolicy {
                             StaticSendIdlocationEvent.secondDue,
                             delay: Duration.milliseconds(200),
                             sendID: sendID,
-                            eventData: "",
+                            eventData: sendEventData,
                             origin: self.sessionID
                         )
                     }
@@ -549,6 +551,7 @@ public final class StaticSendIdlocationPolicy: StatePolicy {
 
                         break sceBlock  // W3C SCXML 4.9: the error ends the block
                     }
+                    let sendEventData = ""
                     do {
                     // W3C SCXML 6.2 / C.1: deliver the event to this session's own external
                     // queue, carrying this session as its origin.
@@ -557,7 +560,7 @@ public final class StaticSendIdlocationPolicy: StatePolicy {
                             StaticSendIdlocationEvent.firstDue,
                             delay: Duration.milliseconds(Int64(sendDelayMs)),
                             sendID: sendID,
-                            eventData: "",
+                            eventData: sendEventData,
                             origin: self.sessionID
                         )
                     }

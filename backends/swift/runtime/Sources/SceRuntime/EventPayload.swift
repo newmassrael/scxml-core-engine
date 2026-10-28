@@ -376,6 +376,53 @@ public struct PayloadPair {
     }
 }
 
+/// One value a `<send>`'s `<param>` or `<content expr>` crosses as, of the type the
+/// document's expression has: the generated machine computes it from its own fields
+/// and hands it to the send, which writes it as JSON the way every engine writes the
+/// same value (`sce.ScriptValueToJSON` in Go, `SceWire` in Kotlin).
+public enum WireValue {
+    /// A text.
+    case text(String)
+
+    /// A whole number up to 32 bits wide, written as a JSON number.
+    case integer(Int64)
+
+    /// A 64-bit signed number, written as the text of its digits.
+    case signed64(Int64)
+
+    /// A 64-bit unsigned number, written as the text of its digits.
+    case unsigned64(UInt64)
+
+    /// A real number; a value that is not finite is `null`.
+    case real(Double)
+
+    /// A truth value.
+    case truth(Bool)
+
+    /// A byte string, written as its Latin-1 text.
+    case bytes([UInt8])
+
+    /// The value as JSON text.
+    public var json: String {
+        switch self {
+        case .text(let value): return quoteJSON(value)
+        case .integer(let value): return String(value)
+        case .signed64(let value): return quoteJSON(int64PayloadText(value))
+        case .unsigned64(let value): return quoteJSON(uint64PayloadText(value))
+        case .real(let value): return value.isFinite ? numberText(value) : "null"
+        case .truth(let value): return value ? "true" : "false"
+        case .bytes(let value): return quoteJSON(bytesAsPayloadText(value))
+        }
+    }
+}
+
+extension PayloadPair {
+    /// A pair of `name` and a value of the type the expression computed it as.
+    public init(_ name: String, _ value: WireValue) {
+        self.init(name: name, json: value.json)
+    }
+}
+
 /// The wire spelling of the fields an inject seam was given, so that the script
 /// engine binds `_event.data` to the same values the typed carrier holds.
 ///

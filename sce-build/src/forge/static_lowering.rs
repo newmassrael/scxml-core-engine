@@ -11354,18 +11354,12 @@ impl SwiftTarget {
 
 impl SwiftTarget {
     /// What of `send` this target has no lowering for yet, described for a refusal:
-    /// the data a send carries, a processor but the SCXML one, and a target but the
-    /// machine's own queues and its parent.
+    /// a processor but the SCXML one, and a target but the machine's own queues and
+    /// its parent.
     fn unlowered_send(send: &Action) -> Option<String> {
         let scxml_processor = |name: &str| {
             name == crate::host_processor_analyzer::SCXML_EVENT_PROCESSOR_TYPE || name == "scxml"
         };
-        if !send.params.is_empty() || !send.namelist.trim().is_empty() {
-            return Some("a <send> carrying a <param> or a namelist".to_string());
-        }
-        if !send.content.is_empty() || !send.contentexpr.is_empty() {
-            return Some("a <send> carrying <content>".to_string());
-        }
         if !send.send_type.is_empty() && !scxml_processor(&send.send_type) {
             return Some(format!("a <send type=\"{}\">", send.send_type));
         }
@@ -11845,8 +11839,35 @@ impl StaticTarget for SwiftTarget {
             filters::to_swift_variant(event.to_string())
         )
     }
-    fn wire_value(&self, _ty: InferredType, _value: &str) -> String {
-        unreachable!("refused by SwiftTarget::unsupported")
+    // The send template reads the string a `delayexpr`/`<content expr>` computes as a
+    // value the runtime writes as JSON (`WireValue`).
+    fn lowers_scalar_content(&self) -> bool {
+        true
+    }
+    // The `WireValue` the pair's JSON value is written from, as the runtime's own
+    // `PayloadPair` writes the same value: a bool and a string as they are, a narrow
+    // integer as a number and a real as a double, both exactly; a 64-bit integer is the
+    // text of its digits.
+    fn wire_value(&self, ty: InferredType, value: &str) -> String {
+        match ty {
+            InferredType::Bool => format!(".truth({value})"),
+            InferredType::Str => format!(".text({value})"),
+            InferredType::Int {
+                signed: true,
+                bits: 64,
+            } => format!(".signed64({value})"),
+            InferredType::Int { bits: 64, .. } => format!(".unsigned64({value})"),
+            InferredType::Int { .. } => format!(".integer(Int64({value}))"),
+            _ => format!(".real(Double({value}))"),
+        }
+    }
+    // The enum's `declaredName` answers the name the enum document declares.
+    fn enum_wire_name(&self, _alias: &str, value: &str) -> Option<String> {
+        Some(format!("({value}).declaredName"))
+    }
+    // The byte string the runtime writes as its Latin-1 text.
+    fn wire_bytes(&self, value: &str) -> Option<String> {
+        Some(format!(".bytes({value})"))
     }
 }
 

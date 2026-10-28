@@ -128,3 +128,22 @@ private let revisedDefaults = #"{"layout":"week","count":"7","urgent":true}"#
     #expect(payloadJSON() == "{}")
     #expect(payloadJSON(.real("x", 5.0), .real("y", .nan), .signed64("z", -3)) == #"{"x":5,"y":null,"z":"-3"}"#)
 }
+
+// A value a `<param>` computes crosses as the JSON the pair of the same type writes:
+// a 64-bit integer as the text of its digits, a number as a number.
+@Test func aWireValueIsWrittenAsItsPairIs() {
+    let pairs = [
+        PayloadPair("n", .integer(-4)),
+        PayloadPair("big", .unsigned64(UInt64.max)),
+        PayloadPair("wide", .signed64(Int64.min)),
+        PayloadPair("r", .real(2.5)),
+        PayloadPair("t", .truth(false)),
+        PayloadPair("s", .text("a\"b")),
+        PayloadPair("b", .bytes([0x61, 0xFF])),
+    ]
+    #expect(
+        payloadJSON(pairs)
+            == #"{"n":-4,"big":"18446744073709551615","wide":"-9223372036854775808","r":2.5,"t":false,"s":"a\"b","b":"aÿ"}"#
+    )
+    #expect(WireValue.text("x").json == "\"x\"")
+}

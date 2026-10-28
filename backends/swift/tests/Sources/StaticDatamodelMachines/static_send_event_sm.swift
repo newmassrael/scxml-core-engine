@@ -506,6 +506,7 @@ public final class StaticSendEventPolicy: StatePolicy {
 
                         break sceBlock  // W3C SCXML 4.9: the error ends the block
                     }
+                    let sendEventData = ""
                     do {
                     // W3C SCXML 6.2 / C.1: deliver the event to this session's own external
                     // queue, carrying this session as its origin.
@@ -515,7 +516,7 @@ public final class StaticSendEventPolicy: StatePolicy {
                             sendEventName,
                             delay: .zero,
                             sendID: "__send_0",
-                            eventData: "",
+                            eventData: sendEventData,
                             origin: self.sessionID
                         )
                     }
@@ -549,6 +550,7 @@ public final class StaticSendEventPolicy: StatePolicy {
 
                         break sceBlock  // W3C SCXML 4.9: the error ends the block
                     }
+                    let sendEventData = ""
                     do {
                     // W3C SCXML 6.2 / C.1: deliver the event to this session's own external
                     // queue, carrying this session as its origin.
@@ -558,7 +560,7 @@ public final class StaticSendEventPolicy: StatePolicy {
                             sendEventName,
                             delay: .zero,
                             sendID: "__send_1",
-                            eventData: "",
+                            eventData: sendEventData,
                             origin: self.sessionID
                         )
                     }

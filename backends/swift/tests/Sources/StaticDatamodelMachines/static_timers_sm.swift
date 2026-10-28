@@ -332,6 +332,7 @@ public final class StaticTimersPolicy: StatePolicy {
 
                 // W3C SCXML 6.2: send id="timer"
                 do {
+                    let sendEventData = ""
                     do {
                     // W3C SCXML 6.2 / C.1: deliver the event to this session's own external
                     // queue, carrying this session as its origin.
@@ -340,7 +341,7 @@ public final class StaticTimersPolicy: StatePolicy {
                             StaticTimersEvent.timeout,
                             delay: Duration.milliseconds(5000),
                             sendID: "timer",
-                            eventData: "",
+                            eventData: sendEventData,
                             origin: self.sessionID
                         )
                     }
@@ -348,6 +349,7 @@ public final class StaticTimersPolicy: StatePolicy {
 
                 // W3C SCXML 6.2: send id="__send_0"
                 do {
+                    let sendEventData = ""
                     do {
                     // W3C SCXML 6.2 / C.1: deliver the event to this session's own external
                     // queue, carrying this session as its origin.
@@ -356,7 +358,7 @@ public final class StaticTimersPolicy: StatePolicy {
                             StaticTimersEvent.beat,
                             delay: Duration.milliseconds(2000),
                             sendID: "__send_0",
-                            eventData: "",
+                            eventData: sendEventData,
                             origin: self.sessionID
                         )
                     }
@@ -364,6 +366,7 @@ public final class StaticTimersPolicy: StatePolicy {
 
                 // W3C SCXML 6.2: send id="__send_1"
                 do {
+                    let sendEventData = ""
                     do {
                     // W3C SCXML 6.2 / C.1: deliver the event to this session's own external
                     // queue, carrying this session as its origin.
@@ -372,7 +375,7 @@ public final class StaticTimersPolicy: StatePolicy {
                             StaticTimersEvent.echo,
                             delay: Duration.milliseconds(2000),
                             sendID: "__send_1",
-                            eventData: "",
+                            eventData: sendEventData,
                             origin: self.sessionID
                         )
                     }
@@ -380,13 +383,14 @@ public final class StaticTimersPolicy: StatePolicy {
 
                 // W3C SCXML 6.2: send id="__send_2"
                 do {
+                    let sendEventData = ""
                     // W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
                     // and does not change the queue.
                     engine.scheduleRoutedEvent(
                         StaticTimersEvent.inner,
                         delay: Duration.milliseconds(1000),
                         sendID: "__send_2",
-                        eventData: "",
+                        eventData: sendEventData,
                         origin: self.sessionID,
                         route: ScheduledRoute(kind: .internalQueue, eventName: "")
                     )

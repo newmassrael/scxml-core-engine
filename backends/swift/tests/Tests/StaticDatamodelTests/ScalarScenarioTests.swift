@@ -410,6 +410,88 @@ private func schemaRevision() -> Machine {
     )
 }
 
+private func payloadRelay() -> Machine {
+    let policy = StaticPayloadRelayPolicy()
+    return drive(
+        policy,
+        variables: [
+            "layout": { .text(policy.layout.declaredName) },
+            "zoom": { integer(policy.zoom) },
+            "relays": { integer(policy.relays) },
+            "refusals": { integer(policy.refusals) },
+        ]
+    )
+}
+
+private func sendContent() -> Machine {
+    let policy = StaticSendContentPolicy()
+    return drive(
+        policy,
+        variables: [
+            "shown": { view(policy.shown.layout.declaredName, policy.shown.zoom) },
+            "received": { .text(policy.received.declaredName) },
+            "level": { integer(policy.level) },
+            "relays": { integer(policy.relays) },
+        ]
+    )
+}
+
+private func sendNamelist() -> Machine {
+    let policy = StaticSendNamelistPolicy()
+    return drive(
+        policy,
+        variables: [
+            "layout": { .text(policy.layout.declaredName) },
+            "zoom": { integer(policy.zoom) },
+            "received": { .text(policy.received.declaredName) },
+            "level": { integer(policy.level) },
+            "deliveries": { integer(policy.deliveries) },
+        ]
+    )
+}
+
+private func sendParams() -> Machine {
+    let policy = StaticSendParamsPolicy()
+    return drive(
+        policy,
+        variables: [
+            "total": { integer(policy.total) },
+            "ok": { .bool(policy.ok) },
+            "tag": { .text(policy.tag) },
+            "partialTotal": { integer(policy.partialTotal) },
+            "refusals": { integer(policy.refusals) },
+        ]
+    )
+}
+
+private func wireEnum() -> Machine {
+    let policy = StaticWireEnumPolicy()
+    return drive(
+        policy,
+        variables: [
+            "layout": { .text(policy.layout.declaredName) },
+            "shown": { view(policy.shown.layout.declaredName, policy.shown.zoom) },
+            "received": { .text(policy.received.declaredName) },
+            "deliveries": { integer(policy.deliveries) },
+        ]
+    )
+}
+
+private func wireWide() -> Machine {
+    let policy = StaticWireWidePolicy()
+    return drive(
+        policy,
+        variables: [
+            "low": { integer(policy.low) },
+            "smallLow": { integer(policy.smallLow) },
+            "large": { .bool(policy.large) },
+            "negative": { .bool(policy.negative) },
+            "relays": { integer(policy.relays) },
+            "refusals": { integer(policy.refusals) },
+        ]
+    )
+}
+
 // MARK: - The scenarios
 
 // A counter counts to its flag and lets go: guards, `<assign>`, `<if>` and `<elseif>`
@@ -549,6 +631,41 @@ private func schemaRevision() -> Machine {
 // where the delivery lacks them.
 @Test func aSchemaThatGrewIsReadWithTheDefaultsOfItsLaterFields() {
     replay("static_schema_revision", schemaRevision())
+}
+
+// MARK: - What a send carries
+
+// A `<param>` is the typed value of the data model crossed to the event's JSON: the pair
+// a failed evaluation would have written is left out, the message still goes, and the
+// block ends.
+@Test func aSendCarriesItsParamsAsTypedValues() {
+    replay("static_send_params", sendParams())
+}
+
+// A `namelist` names variables, and each is a pair like a `<param>`.
+@Test func aSendCarriesTheVariablesItsNamelistNames() {
+    replay("static_send_namelist", sendNamelist())
+}
+
+// A `<content expr>` is the one value the event carries as its data.
+@Test func aSendCarriesTheValueItsContentComputes() {
+    replay("static_send_content", sendContent())
+}
+
+// An enum crosses a `<param>` as the name its document declares and arrives as the
+// machine's own enum.
+@Test func anEnumCrossesASendAsItsDeclaredName() {
+    replay("static_wire_enum", wireEnum())
+}
+
+// A 64-bit integer crosses as the text of its digits, exactly.
+@Test func a64BitIntegerCrossesASendAsItsDigits() {
+    replay("static_wire_wide", wireWide())
+}
+
+// A payload received is relayed on as the params of another send.
+@Test func aPayloadIsCarriedOnAsParams() {
+    replay("static_payload_relay", payloadRelay())
 }
 
 // MARK: - Event payloads

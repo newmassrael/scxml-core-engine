@@ -450,14 +450,14 @@ public final class StaticSendTypePolicy: StatePolicy {
 
                 // W3C SCXML 6.2: send id="__send_0"
                 do {
+                    let sendEventData = ""
                     do {
                     // W3C SCXML 6.2 / C.1: deliver the event to this session's own external
                     // queue, carrying this session as its origin.
+                        var sendMetadata = EventMetadata.external(sendID: "__send_0", origin: self.sessionID)
+                        sendMetadata.data = sendEventData
                         engine.raiseExternalWithMeta(
-                            EventWithMetadata(
-                                StaticSendTypeEvent.landed,
-                                metadata: .external(sendID: "__send_0", origin: self.sessionID)
-                            )
+                            EventWithMetadata(StaticSendTypeEvent.landed, metadata: sendMetadata)
                         )
                     }
                 }
