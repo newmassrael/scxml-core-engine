@@ -5,7 +5,8 @@
   ignored; never a sentinel number and never a companion flag that admits impossible states. Steps
   1 to 6 are implemented, and step 7 but for the restore's refusal of a `null` saved before a
   widening (its "as built" note), and step 8, and the shared part of step 9 (the generated
-  backends' spellings of an optional record are their own steps), and step 12; the others follow
+  backends' spellings of an optional record are their own steps), and step 12, and step 14 (the
+  C11 codecs); the others follow
   in the order section 9 gives. Section 8 and step 12 amended the same day by that rule: a codec
   document declares its format, and format 1 is refused for good (step 12 is implemented).
 - Date: 2026-10-21
@@ -1099,8 +1100,39 @@ documents, not observed from a backend.
 13. **Go codecs on `optional.Of[T]`**: the CBOR and content-line codecs' pointer fields, and the
     gated positional fields, move to the Go optional type, through `LangCtx::optional_of`. Tests:
     the Go conformance cases, regenerated, unchanged in their bytes.
-14. **C11 codecs on `sce_optional_<elem>_t`**: the same for C11's `<name>_present` members. Tests:
+14. **C11 codecs on `sce_optional_<elem>_t`** (implemented): the same for C11's `<name>_present` members. Tests:
     the C11 conformance cases, unchanged in their bytes.
+    As built, an entry that may be absent is the struct `sce/forge/optional.h` declares for its
+    element, in a CBOR codec and, in a content-line codec, in an entry that holds one value on one
+    line and in a parameter, whether of the codec or a member of a line record. The type and the
+    declaration its header makes first are one answer, `LangCtx::c11_codec_optional`, which asks the
+    functions the C11 lowering of a statechart asks (`static_lowering::c11_optional_type`,
+    `StaticTarget::optional_def`), so a codec's entry and a variable of the same type are spelled and
+    declared by one text under one guard, and a program that includes a machine and a codec declares
+    each once. A text is `sce_static_string_<N>_t`, the buffer of its bound ended by its
+    terminator, with no length beside it; a byte string is `sce_static_bytes_<N>_t`, that buffer and
+    its length; an enum is `sce_optional_enum_<document>_t` over the machine's name for the
+    document's type, of which the codec declares the alias the machine would
+    (`typedef <Pascal>_t <document>_enum_t;`, a repeated typedef of one type being C11's own). A
+    bare type keeps what it was, a fixed array beside its length for a text or a byte string, so the
+    struct of an entry that is required is unchanged. A C string cannot hold the byte it ends at, so
+    decoding an optional CBOR text that carries a U+0000 is refused as a value that does not fit its
+    entry (`SCE_FORGE_CODEC_CBOR_OUT_OF_RANGE`) instead of being cut short; a content-line value
+    cannot carry one (a control character is refused on every backend). A list, a list of values and
+    a line record keep their counts. The generators hand each template the member each entry is
+    reached by (`value_ref`, `data_ref`, `len_ref`, `present_ref`), so a template names none by
+    spelling `<name>_present`; the conformance harness reads `present` and `value` of what it
+    decodes and builds. A positional codec's gated field is not a `<name>_present` member: C11 holds
+    it as the plain type, its presence the carrier flag bit the codec's own contract names, and that
+    contract is unchanged here; whether an array, a repeat or an embed a flag gates is held as an optional value
+    is not decided by this step. Tests: `sce-build/tests/a_c11_codec_holds_what_may_be_absent_in_the_optional_type.rs`,
+    `a_c11_codec_entry_is_held_in_the_type_a_statechart_variable_of_its_type_is` in
+    `forge::generator`, the C11 conformance harness over `codec_cbor_map` and the content-line
+    fixtures, which builds the headers and replays the vectors, and
+    `backends/c/forge-runtime/tests/conformance/codec_optional_test.c` (ctest `codec_optional_c`),
+    which decodes a map and a component and takes each optional member whole into a variable of the
+    runtime's own type, so a codec's entry and a statechart's variable are one type or it does not
+    compile.
 
 There is no step 15. The step the first accepted text listed there, "the end of the codec
 transition", which removed two temporary refusals, is withdrawn: the refusal of format 1 is
@@ -1182,7 +1214,7 @@ after 12 and the C11 step.
   (if any does) finds out at build time.
 - Every committed tree of a machine that holds an optional value is new; the trees of the codecs
   whose optional wrap is folded into `LangCtx::optional_of` regenerate unchanged on Rust, Kotlin,
-  C++ and Python, and change on Go and C11 with steps 13 and 14.
+  C++ and Python, and change on Go and C11 with steps 13 and 14 (C11's is implemented).
 - Every CBOR and content-line codec document of the repository is rewritten once, to format 2; a
   format-1 document anywhere, built at any time, is refused with its rewrite and never read as
   format 2.

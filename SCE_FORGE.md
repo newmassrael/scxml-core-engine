@@ -1120,10 +1120,18 @@ also held to the hand-written C++ Mesh codec's golden envelope
 (`forge_cbor_codec`, `CborCodecTest`); the generated C++ codec's own hold to
 it arrives with the commit that replaces the hand-written one.
 
-C11 generates a struct with no allocation: a text or byte string is a fixed
-array the size of its `sce:max-size` (or `sce:length`) beside a `<name>_len`,
-and an optional entry a `<name>_present` flag beside its value;
-`<name>_decode(cursor, out)` returns the status and moves the cursor only when
+C11 generates a struct with no allocation: a text or byte string of a bare type
+is a fixed array the size of its `sce:max-size` (or `sce:length`) beside a
+`<name>_len`, and an `optional<T>` entry is the `sce_optional_<elem>_t` of its
+element (`sce/forge/optional.h`, docs/adr/0055), present when its `present`
+member is true and holding its value in `value` — the one struct a statechart's
+variable of the same type is held in, so a value read from a codec is taken
+whole by one. An optional text is the buffer of its bound ended by its
+terminator, with no length beside it (`sce_static_string_<N>_t`), and an
+optional byte string that buffer and its length (`sce_static_bytes_<N>_t`);
+as a C string cannot hold the byte it ends at, a decode of an optional text that
+carries a U+0000 refuses with `SCE_FORGE_CODEC_CBOR_OUT_OF_RANGE`, as a value
+that does not fit its entry. `<name>_decode(cursor, out)` returns the status and moves the cursor only when
 the whole map decoded, writing through `out` — never into a local copy, since
 a struct whose strings are declared large does not fit a stack — so `*out`
 holds no value to read after any status but `SCE_FORGE_CODEC_OK`, as a
@@ -1486,8 +1494,10 @@ integer to its declared width, which a Python `int` does not carry itself.
 
 C11 generates it over `sce/forge/content_line.h`, with no allocation: a string is
 a `char` array of its `sce:max-size` beside its length, a list an array of them
-beside a count (`<name>_count`), and an optional entry or parameter a
-`<name>_present` flag beside its value. Decode answers the status of the rule that
+beside a count (`<name>_count`), and an optional entry or parameter the
+`sce_optional_<elem>_t` of its element (`sce/forge/optional.h`, docs/adr/0055),
+present when its `present` member is true and holding its value in `value`, a
+text as the buffer of its bound ended by its terminator. Decode answers the status of the rule that
 refused (`SCE_FORGE_CODEC_LINE_MALFORMED`, `_REQUIRED_MISSING`, `_TOO_MANY`,
 `_TOO_LONG`, `_BAD_ESCAPE`, `_BAD_VALUE`, or `_NEED_MORE_BYTES`) and leaves the
 cursor where it was. `<NAME>_MAX_BYTES` is the most a component encodes to, folds
