@@ -281,11 +281,11 @@ fn an_optional_byte_string_slot_stays_refused_where_the_import_is_read() {
     for lang in ["rust", "kotlin", "python", "c11", "cpp", "go"] {
         let (ok, out, _) = run(&["check", "-l", lang], algorithm, machine);
         assert!(!ok, "{lang} refuses the call:\n{out}");
+        // The expression layer refuses the argument first, naming the type: an
+        // optional byte string is no value of a slot an algorithm holds.
         assert!(
-            out.contains(
-                "a byte string an algorithm holds is not the one a statechart's variable holds"
-            ),
-            "{lang} refuses it by the wording of the import:\n{out}"
+            out.contains("optional<bytes>"),
+            "{lang} refuses it naming the type:\n{out}"
         );
     }
 }
