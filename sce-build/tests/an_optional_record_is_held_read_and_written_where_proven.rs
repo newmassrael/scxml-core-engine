@@ -334,6 +334,72 @@ fn go_reads_and_writes_a_field_of_an_algorithms_optional_record() {
     }
 }
 
+/// An event schema whose record holds a field that may be absent, a count of days, and
+/// one that may be absent and is a bounded text.
+const SCHEMA_TASK: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="event-schema" name="schema_task" sce:event-name="task.set">
+  <datamodel>
+    <data id="id" sce:type="uint32" sce:direction="in"/>
+    <data id="due" sce:type="optional&lt;int64&gt;" sce:direction="in"/>
+    <data id="note" sce:type="optional&lt;string&gt;" sce:max-size="8" sce:direction="in"/>
+  </datamodel>
+</scxml>
+"#;
+
+/// An algorithm that puts a parameter that may be absent into a local, writes the two
+/// optional fields of the present record where a test proves it present, and gives
+/// `null` whole to the local.
+const ALGORITHM_TASK_TOUCH: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="task_touch" version="1.0">
+  <sce:import kind="event-schema" src="schema_task.scxml" as="Task"/>
+  <sce:signature>
+    <sce:param name="x" type="optional&lt;record:Task&gt;"/>
+    <sce:return type="int32"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="held" type="optional&lt;record:Task&gt;" init="null"/>
+    <sce:assign target="held" expr="x"/>
+    <sce:if cond="held !== null">
+      <sce:assign target="held.value.due" expr="3"/>
+      <sce:assign target="held.value.note" expr="'ok'"/>
+      <sce:assign target="held.value.due" expr="null"/>
+    </sce:if>
+    <sce:assign target="held" expr="null"/>
+    <sce:return expr="-1"/>
+  </sce:body>
+</scxml>
+"#;
+
+/// A field of the present record that may be absent is written as the optional value
+/// it is — lifted from a value of its type, a text held to the bound the schema
+/// declares, or `null` — and `null` given whole to a local of an optional record is
+/// the absent value of the record's type, which an expression cannot name.
+#[test]
+fn go_writes_the_optional_fields_of_an_algorithms_optional_record() {
+    let (ok, out, written) = run(
+        &go_args(),
+        &[
+            ("schema_task.scxml", SCHEMA_TASK),
+            ("algorithm_task_touch.scxml", ALGORITHM_TASK_TOUCH),
+        ],
+        "algorithm_task_touch.scxml",
+    );
+    assert!(ok, "Go lowers the algorithm:\n{out}");
+    for needle in [
+        "sceRecord.Due = optional.Some[int64](3)",
+        "sceRecord.Note = optional.Some(\"ok\")",
+        "sceRecord.Due = optional.None[int64]()",
+        "held = optional.None[",
+    ] {
+        assert!(
+            written.contains(needle),
+            "the Go algorithm holds `{needle}`:\n{written}"
+        );
+    }
+}
+
 /// Each generated backend that does not lower it yet refuses the machine by name,
 /// as a feature it does not lower yet, until its own step of docs/adr/0055.
 #[test]
