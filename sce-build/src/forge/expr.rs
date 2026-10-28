@@ -193,6 +193,8 @@ impl ExprTarget {
             // `.value` is the struct, and over which `.f` reads a field
             // ([`c_present_read`]).
             ExprTarget::C => true,
+            // Swift: not yet; its step of the optional value writes `T?`.
+            ExprTarget::Swift => false,
         }
     }
 
