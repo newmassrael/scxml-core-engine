@@ -3999,21 +3999,23 @@ field's type is the value type restricted to a scalar or an optional scalar, so 
 record of the schema holds the field as optional and the payload carries it as one.
 An optional field declares no `sce:quantity` (`validation/attribute-rule-violated`),
 and what may stand inside is refused as a variable's is, naming the set. An
-algorithm's parameter, return and local may be optional over a fixed-width number
-or a `bool` ("An algorithm's optional value", below), and refuse an optional text,
-byte string, value of an enum or record by name as `validation/attribute-rule-violated`;
-a CBOR or content-line codec's entry is optional by it ("A codec's entries and the
-format of its document", below); every other position — a transform's, condition's,
+algorithm's parameter, return and local may be optional over any element a
+statechart's variable holds one of ("An algorithm's optional value", below); a CBOR
+or content-line codec's entry is optional by it ("A codec's entries and the format
+of its document", below); every other position — a transform's, condition's,
 lookup's, interpolation's or validator's slot, a positional codec's field — refuses
 `optional<…>` by name as `validation/attribute-rule-violated`. The model carries
 the type (`{"optional":
 "int64"}` in the forge AST, on a variable, a schema's field and an algorithm's slot
 alike). Each of the six generated backends and the Interpreter's lowering lowers a
-statechart that declares one or imports a schema that does; the unit of a schema
-with an optional text or enum field, and an algorithm whose record holds one, are
-refused by name as `generate/unsupported-feature` ("an optional value has no
-<language> lowering yet"), and a host-run `<invoke>` whose `sce:request` or
-`sce:result` names such a schema is refused where it is checked.
+statechart that declares one over a scalar or an enum, or imports a schema that does;
+an optional record is lowered by the Interpreter, and refused by name by each
+generated backend until its own step ("An optional record", below). The unit of a
+schema with an optional text or enum field, an algorithm whose record holds one and an
+algorithm slot of an element a backend does not spell yet are refused by name as
+`generate/unsupported-feature` ("an optional value has no <language> lowering
+yet"), and a host-run `<invoke>` whose `sce:request` or `sce:result` names such a
+schema is refused where it is checked.
 
 **A codec's entries and the format of its document** (docs/adr/0055, section 8;
 SCE_FORGE.md §4.6.1 and §4.6.4). An entry of a CBOR (`sce:encoding="cbor"`) or
@@ -4051,10 +4053,14 @@ fields is absent by a declaration of its own (`sce:present-if` leaves one out an
 no format changes it); written there, the attribute is
 `validation/sce-attribute-unread`.
 
-**An algorithm's optional value** (docs/adr/0055, step 8). An algorithm's
-`<sce:param>`, `<sce:return>` and `<sce:var>` take `optional<T>` over a
-fixed-width number or a `bool`, and a record it reads or returns may have a field
-of one. A local declares its initial value, `null` for absent. The body reads one
+**An algorithm's optional value** (docs/adr/0055, steps 8 and 9). An algorithm's
+`<sce:param>`, `<sce:return>` and `<sce:var>` take `optional<T>` over a number, a
+`bool`, a text, a byte string, a value of an enum or a record, and a record it reads
+or returns may have a field of one. Each generated backend spells a number and a
+`bool` and refuses the others by name where it renders the slot, the local or the
+record's field, until its own step; the Interpreter spells all but a byte string. A
+local declares its initial value, `null` for absent (an optional record local starts
+absent, and a record is put into it by its name). The body reads one
 as a statechart does ("Reading an optional value", below): a test, `??`, and
 `.value` where the narrowing proves it present, the statements after an early
 return and an `<sce:require>` among them; an optional value is assigned whole, so
@@ -4116,6 +4122,42 @@ read and naming the optional value and the two repairs, a test around the read o
 algorithm's body is judged by the same analysis before any backend renders it.
 `sce-build/tests/an_optional_value_is_tested_read_and_compared.rs` and
 `sce-build/tests/a_value_is_proven_present_only_where_tested.rs` hold this.
+
+**An optional record** (docs/adr/0055, step 9). `sce:type="optional<record:Item>"`
+declares a variable that is absent or holds a record of the event schema the
+document imports as `Item`. It starts at `null`, and only there (`expr="null"`: a
+record is built whole from `<sce:set>` children, which a variable that may hold none
+has no use for, so any other `expr` is `scxml/static-datamodel-rule`). A whole record
+is put into it by the rule a record variable takes one by: `<assign location="pick"
+expr="…"/>` with a record variable, a `<foreach>`'s record item, `_event.data` when
+the event's schema is the record's, the element of a list of its schema at an index
+(`items[1]`), what an imported algorithm returns as a record or as an optional
+record, or another optional record of the same schema; a record of another schema,
+and any other value, is refused naming what is taken, and `null` makes it absent. A
+field of the record is read as `pick.value.<field>`, typed by the schema, only where
+a test proves `pick` present (`pick !== null` around the read, under the constructs
+above): elsewhere it is `expression/optional-read-unproven`, and a field the schema
+does not declare is `expression/unknown-member`. A field is written as `<assign
+location="pick.value.<field>" expr="…"/>` (in an algorithm `<sce:assign
+target="pick.value.<field>"/>`), where a test proves `pick` present and nowhere else
+(`expression/unsupported-construct`, "where no test proves `pick` present"); a write
+of a field changes the record and not whether it is present, so a second field may be
+written after the first, while an assignment to `pick` itself ends the proof. The
+record is read through its fields: `pick.value` taken whole, `pick ?? d`, `pick === other`
+of two optional records and an ordering are refused by name, since a record is no
+operand; `pick === null` and `pick !== null` are its comparisons, and a `<log>`, a
+`<param>` and a `<donedata>` carry no optional record. An algorithm's parameter,
+return and local may be one, a call hands it by the name of the variable that holds it
+(an optional record variable, a record lifted, or `null`) and takes one back into an
+optional record variable. The Interpreter's lowering spells all of this (a record is a
+plain object, absent is `null`, a field written is the object written again with the
+field changed); each generated backend refuses a document that declares one, or calls
+an algorithm that takes or returns one, by name as `generate/unsupported-feature`
+("an optional record has no <language> lowering yet") until its own step of the ADR.
+A saved state holds one as `null` or as the record, and a variable widened from
+`record:Item` to `optional<record:Item>` keeps its saved shape.
+`sce-build/tests/an_optional_record_is_held_read_and_written_where_proven.rs` and
+`scenarios/static_optional_record.json` hold this.
 
 **Record variables.** `sce:type="record:<alias>"` holds a variable in the
 event-schema the document imports as `<alias>` — the record an algorithm's
@@ -6177,13 +6219,16 @@ it. `scenarios/static_optional.json` is the shared scenario of an optional value
 variables, a record, a list of records and two payloads holding an optional
 `int64`, `string` and value of an enum, set, cleared, tested, read where a test
 proves them present under each construct that proves one, read with a default
-whose evaluation would fail, compared, sent and carried by a `<donedata>`. No engine
-lowers an optional value yet, so each lists it as not yet lowered with why — the
+whose evaluation would fail, compared, sent and carried by a `<donedata>`.
+`scenarios/static_optional_record.json` is the shared scenario of an optional record: one
+taken whole from a payload, a record variable, a list's element and an algorithm's
+answer, read and written field by field under a test, and made absent again. Until
+an engine lowers a construct it lists the scenario as not yet lowered with why — the
 table of `sce-build/tests/a_static_datamodel_holds_every_variable_to_a_type.rs`
 (`NOT_YET_LOWERED`, an engine to a line), the Rust scenario table
 (`backends/rust/scenarios/src/machines.rs`) and the Interpreter's scan — and the
-step of the ADR that lowers the type on an engine takes its line off and replays the
-scenario. A machine that publishes no
+step of the ADR that lowers the construct on an engine takes its line off and replays
+the scenario: the six generated backends list the optional record's. A machine that publishes no
 variable, such as `static_host_call`, is read from what it told its host, which is
 why `host_calls` exists; a driver whose machine records no host refuses a step
 that states it rather than pass it.

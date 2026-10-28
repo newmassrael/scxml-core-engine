@@ -4,9 +4,10 @@
   owner's answers", below), under the standing rule: the most long-term correct structure, cost
   ignored; never a sentinel number and never a companion flag that admits impossible states. Steps
   1 to 6 are implemented, and step 7 but for the restore's refusal of a `null` saved before a
-  widening (its "as built" note); the others follow in the order section 9 gives. Section 8 and step 12 amended the
-  same day by that rule: a codec document declares its format, and format 1 is refused for good (step 12 is
-  implemented).
+  widening (its "as built" note), and step 8, and the shared part of step 9 (the generated
+  backends' spellings of an optional record are their own steps), and step 12; the others follow
+  in the order section 9 gives. Section 8 and step 12 amended the same day by that rule: a codec
+  document declares its format, and format 1 is refused for good (step 12 is implemented).
 - Date: 2026-10-21
 - Amends: ADR 0044 decisions 1 and 3 (a revision may widen a field from `T` to `optional<T>`);
   ADR 0045 section 2 (a saved shape spells an optional value by the type its present value is, so
@@ -738,11 +739,12 @@ documents, not observed from a backend.
    3 in a body. Tests: `scenarios/static_state_algorithm_optional.json` (an algorithm that answers
    the earliest due day of a list of records, absent for an empty list or one with none due, using
    a guard and an early return) on every engine.
-   As built, an algorithm holds an optional value of a fixed-width number or a `bool`
-   (`AlgorithmValueType::algorithm_optional_admitted`, the one reading the reader, the renderers,
-   a call's crossing and the event schema's unit share): its slots, its locals and a field of a
-   record it reads or returns. An optional text, byte string, value of an enum or record in an
-   algorithm's slot is refused by name where the type is read, and an algorithm whose record has an
+   As built, an algorithm holds an optional value of a fixed-width number or a `bool` on every
+   generated backend: its slots, its locals and a field of a record it reads or returns (step 9
+   widens what the reader admits, below, and `generator::algorithm_optional_spelled` is the one
+   answer, a language and an element, which the renderers, a call's crossing and the event schema's
+   unit share). An optional text, byte string, value of an enum or record in an
+   algorithm's slot, and an algorithm whose record has an
    optional text or enum field, and the unit of such a schema, are refused by name where each
    backend renders them; the optional enum crossing an adapter would map is left to the step that
    holds those elements in an algorithm. Each backend spells the value in its statechart's type
@@ -755,10 +757,73 @@ documents, not observed from a backend.
    `CalleeSlot::Optional`. Tests: `sce-build/tests/an_algorithm_holds_an_optional_value.rs`, and the
    algorithm cases of `sce-build/tests/a_value_is_proven_present_only_where_tested.rs`, now
    generated.
-9. **`optional<record:X>`.** A variable and an algorithm slot of an optional record: started at
-   `null`, taken whole from a record, a payload, a list's element; `r.value.f` where proven; a field
-   write to `r.value.f` where proven, and refused elsewhere. Tests:
-   `scenarios/static_optional_record.json` on every engine, and its saved instance.
+9. **`optional<record:X>`** (implemented, shared part). A variable and an algorithm slot of an
+   optional record: started at `null`, taken whole from a record, a payload, a list's element;
+   `r.value.f` where proven; a field write to `r.value.f` where proven, and refused elsewhere.
+   Tests: `scenarios/static_optional_record.json` on every engine, and its saved instance.
+   As built, the shared part lands on the Interpreter, and each generated backend refuses an
+   optional record by name until its own step, which spells it in the hooks the shared walk gives it:
+   - *What the language says.* A variable starts at `null` and only there (`expr="null"`; a record
+     is built from `<sce:set>` children, which a variable that may hold none has no use for). A
+     whole record is put into it by the rule a record variable takes one by (`Judge::optional_record_assign`):
+     a record variable, a loop's record item, `_event.data` when the event's schema is the record's,
+     the element of a list of its schema at an index, what an imported algorithm returns as a record or
+     as an optional record, and another optional record of the same schema; `null` makes it absent.
+     The lattice's `OptionalElem::Record` carries no schema, as `ListElem::Record` carries none, so the
+     schema is held where the record is named: a record of another schema is refused at the statement
+     that puts it, in a statechart and in an algorithm's body (`AlgorithmWalk::record_fits`).
+     `x.value.f` reads a field of the present record: the present value is a closed record of the
+     schema's fields at the path `<x>.value` (`TypeCtx::insert_record`, `static_record_paths`), so a field
+     the schema does not declare is `expression/unknown-member`, and the read stands only where `x` is
+     proven present (`expression/optional-read-unproven`, the same message as every unproven read, which
+     for a record names the test and a default that a record has none of; the refusal of `??`
+     says what to write instead). `x.value` taken whole is no expression (a record is no operand), `x ?? d`
+     on an optional record and `===` of two of them are refused by name; `x === null` and `x !== null`
+     are its one comparison. A field write, `<assign location="x.value.f">` or `<sce:assign
+     target="x.value.f">`, is judged where it is written: refused as `expression/unsupported-construct`
+     ("a write to ... where no test proves ... present") unless `x` is proven, and a write below
+     the present value ends no fact about `x` itself (`narrowing::ends`): a second field may be written
+     after the first. An optional record local of an algorithm is written the same way, and takes a
+     record by its name (`<sce:assign target="held" expr="it"/>`).
+   - *Algorithm slots.* `algorithm_optional_admitted` is gone: the reader admits every element a
+     statechart's variable holds one of (a number, a `bool`, a text, a byte string, a value of an enum, a
+     record), and the decision of what a backend spells is one function, a language and an element
+     (`generator::algorithm_optional_spelled`), whose arm for a language each backend's step edits and no
+     other's. Every generated backend still answers a number or a `bool` alone, and refuses the others by
+     name where it renders the slot, the local or the record field (`algorithm_optional_type`,
+     `AlgorithmTypes::refuse_optional`, the event schema's unit), `generate/unsupported-feature`, "an
+     optional value has no <language> lowering yet". The Interpreter spells all but a byte string, an
+     algorithm's own array of numbers, which a statechart's variable is not: an optional text is a
+     string, an enum its declared name, a record the plain object it is, written again with a field
+     changed (`SceStatic.set`). A statechart's call crosses an optional text and an optional record
+     (`StaticSlot::OptionalRecord`, handed by the name of the variable that holds it, a record variable or
+     a loop's item or the payload lifted, or `null`, state code `n`); an optional value of an enum or a
+     byte string in a slot is refused by name where the import is read (`value_signature`), and a
+     record's optional text or enum field copies across a call as it is, the enum field by the declared
+     name of its variant as an enum field does.
+   - *The hooks.* `StaticTarget::lowers_optional_record` (by default `ExprTarget::lowers_optional_record`,
+     true for the Interpreter alone) gates the document that holds one, a call that takes or returns one
+     and an expression that reads one (`reject_unlowered_optional`); a target that answers `true` spells
+     `optional_type`, `optional_none` and `optional_some` over the record's own type (the walk hands
+     them `record_type` as the present type), `optional_record_def` where the optional type is declared
+     beside the record, `assign_present_field` (with its string and bytes forms) for the write of a
+     field, `record_at` for an element of a list taken whole, and, in its expression emitter, the proven
+     read `x.value` over which the member `.f` is read. A target that answers `true` and spells no
+     `assign_present_field` is refused by name where a document declares one.
+   - *The saved state.* The shape type of `optional<record:X>` is the shape type of `record:X`, by the
+     one rule step 6 used for scalars: a variable widened from `record:X` to `optional<record:X>` keeps its
+     line and its fields', and an optional record variable is a holder of its schema's lineage as a
+     record variable is. A saved state holds `null` or the record as an object whose members are its
+     fields, which the saved-state schemas already admit; `saved/static_optional_record.json` and its
+     format-1 twin hold one absent (`found`) and one present (`pick`) beside the machine's other values.
+     Rust and Kotlin, the two backends that save, restore it in their own steps.
+   - *The scenario.* `static_optional_record.json` drives `static_optional_record.scxml` over
+     `schema_item_pick.scxml` and `algorithm_item_pick_first.scxml`: an optional record taken from a payload,
+     a record variable and a list's element, read and written under a test, made absent, and answered by an
+     algorithm; `every_replay_scenario_keeps_to_its_vocabulary` holds its `null`s to the machine's optional
+     records. It is listed as not yet lowered for the six generated backends in the three places step 4
+     named, and the Interpreter replays it. Tests: `an_optional_record_is_held_read_and_written_where_proven`
+     and the algorithm cases of `an_algorithm_holds_an_optional_value`.
 10. **The edges left refused by name**: a child session's optional variable as a `<param>` (with
     the shape of `InvokeParams` it needs), a host action's optional argument, a host-run
     `<invoke>`'s typed request and result with optional fields. Each with the scenario or test of
