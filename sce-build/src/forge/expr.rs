@@ -186,9 +186,11 @@ impl ExprTarget {
             // C++: `std::optional<Record>`, whose present record `x.value` reads as
             // `(*x)` and over which the member is read ([`cpp_optional`]).
             ExprTarget::Cpp => true,
-            // Not yet: each of the other generated backends refuses an optional
-            // record by name until its step of docs/adr/0055 spells one.
-            ExprTarget::Go => false,
+            // Go: `optional.Of[R]` over the record's own struct, and `x.value.f`
+            // is the member `f` of what `x.Proven()` answers ([`go_optional`]).
+            ExprTarget::Go => true,
+            // Not yet: C11 refuses an optional record by name until its step of
+            // docs/adr/0055 spells one.
             ExprTarget::C => false,
         }
     }
@@ -9245,12 +9247,13 @@ fn go_optional(form: OptionalForm<'_>, whole: &TypedExpr) -> Result<String, Refu
 /// ([`crate::forge::static_lowering::StaticTarget::optional_none`]).
 fn go_absent(elem: OptionalElem) -> Result<String, ExprError> {
     match go_nameable_type(elem.present()) {
-        Some(ty) => Ok(format!("optional.None[{ty}]()")),
+        Some(ty) => Ok(crate::forge::generator::go_optional_none(&ty)),
         None => Err(ExprError::UnsupportedConstruct {
             construct: "`null` of an optional value of an enum or a record inside an \
                         expression, whose type Go cannot name here: write it as the whole \
-                        value of the variable or the field that takes it"
-                .to_string(),
+                        value of the variable, the field, the local or the return that takes \
+                        it"
+            .to_string(),
             observed: None,
         }),
     }

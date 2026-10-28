@@ -651,20 +651,20 @@ impl AdapterSpec<'_> {
         };
         let model = self.enums.get(&reference.alias)?;
         let machine_type = target.enum_type(self.machine, &reference.alias)?;
-        // The type of the value on the side it leaves, which the map is bound to: the
-        // machine's own for the enum going to the algorithm, and the enum document's
-        // coming back (a target that spells a map without naming the type ignores it).
-        let leaving = match (crossing, self.lang) {
-            (Crossing::FromAlgorithm, Some(lang)) => {
-                crate::forge::generator::enum_qualified_type(&model.name, lang)
-            }
-            _ => machine_type.clone(),
+        // The two types the enum is held in: the machine's own, and the one the enum
+        // document's generation declares, which the algorithm holds. The map is bound
+        // to the one it leaves, and a target that names both (Go's
+        // `optional.Convert`) takes the one it arrives at.
+        let algorithm_type = crate::forge::generator::enum_qualified_type(&model.name, self.lang?);
+        let (from, to) = match crossing {
+            Crossing::ToAlgorithm => (machine_type.clone(), algorithm_type),
+            Crossing::FromAlgorithm => (algorithm_type, machine_type.clone()),
         };
         // The variant mapping is asked once for its spelling before it is bound, so a
         // target with no spelling of the crossing refuses the adapter rather than
         // write an empty one.
         target.enum_crossing(&machine_type, model, "v", crossing)?;
-        target.optional_map(value, &leaving, &|present| {
+        target.optional_convert(value, &from, &to, &|present| {
             target
                 .enum_crossing(&machine_type, model, present, crossing)
                 .unwrap_or_default()
@@ -903,6 +903,24 @@ pub trait StaticTarget {
         _map: &dyn Fn(&str) -> String,
     ) -> Option<String> {
         None
+    }
+    /// `value`, an optional value whose present value is of the type `from`, as the
+    /// optional value of the type `to`, with `convert` applied to its present value
+    /// — `convert(v)` spells it for a present value named `v`, a name the target
+    /// binds — and absent where it is absent: how an optional value of an enum
+    /// crosses an adapter, the machine and the algorithm holding the enum in two
+    /// types (docs/adr/0055, step 9). A target whose optional type is generic over
+    /// the type of its present value maps it with [`Self::optional_map`] and needs
+    /// only the type it leaves; one whose conversion must name both types (Go's
+    /// `optional.Convert[T, U]`) overrides this.
+    fn optional_convert(
+        &self,
+        value: &str,
+        from: &str,
+        _to: &str,
+        convert: &dyn Fn(&str) -> String,
+    ) -> Option<String> {
+        self.optional_map(value, from, convert)
     }
     /// `value`, an optional value whose present value is held in `present`, as
     /// the typed value this backend's wire helpers take
@@ -4087,10 +4105,12 @@ pub fn lower(
     // algorithm and takes one back (an adapter's slot, a `null` argument).
     let calls_with_an_optional_slot = scope.callees.iter().any(|c| {
         c.value.as_ref().is_some_and(|v| {
-            v.params
-                .iter()
-                .chain(v.ret.iter())
-                .any(|slot| matches!(slot, StaticSlot::Optional(_)))
+            v.params.iter().chain(v.ret.iter()).any(|slot| {
+                matches!(
+                    slot,
+                    StaticSlot::Optional(_) | StaticSlot::OptionalRecord(_)
+                )
+            })
         })
     });
     let optional_import = (holds_an_optional_value(model) || calls_with_an_optional_slot)
@@ -7380,7 +7400,7 @@ impl StaticTarget for GoTarget<'_> {
     // type is the default spelling ([`crate::forge::generator::optional_of`]),
     // each value one of the package's constructors, which name `T`.
     fn optional_none(&self, present: &str) -> Option<String> {
-        Some(format!("optional.None[{present}]()"))
+        Some(crate::forge::generator::go_optional_none(present))
     }
     fn optional_some(&self, present: &str, value: &str) -> Option<String> {
         Some(format!("optional.Some[{present}]({value})"))
@@ -7397,6 +7417,19 @@ impl StaticTarget for GoTarget<'_> {
         Some(format!(
             "optional.Map({value}, func({GO_PRESENT} {present}) {present} {{ return {} }})",
             map(GO_PRESENT)
+        ))
+    }
+    // The package's `Convert`, over a function literal that names both types.
+    fn optional_convert(
+        &self,
+        value: &str,
+        from: &str,
+        to: &str,
+        convert: &dyn Fn(&str) -> String,
+    ) -> Option<String> {
+        Some(format!(
+            "optional.Convert({value}, func({GO_PRESENT} {from}) {to} {{ return {} }})",
+            convert(GO_PRESENT)
         ))
     }
     // `nil`, which `ScriptValueToJSON` and `PayloadJSON` write as `null`, where
@@ -7420,8 +7453,36 @@ impl StaticTarget for GoTarget<'_> {
             crate::std_imports::GO_FORGE_OPTIONAL_PATH
         ))
     }
-    fn state_argument(&self, _machine: &str, _arg: &StateArg, held: &str) -> String {
-        held.to_string()
+    // An optional record is `optional.Of[R]` over the record's own struct
+    // (docs/adr/0055, step 9), built by the same two constructors as any other;
+    // the present record is a value `Proven` answers, so a field of it is written
+    // into a copy of the record and the copy is put back as the present value.
+    // `target` is read before the field is, and the value beside it is evaluated
+    // inside the block, so a value that reads the record reads what it held.
+    fn assign_present_field(&self, target: &str, field: &str, value: &str) -> Option<String> {
+        Some(format!(
+            "{{ sceRecord := {target}.Proven(); sceRecord.{field} = {value}; \
+             {target} = optional.Some(sceRecord) }}"
+        ))
+    }
+    // The element is read through the runtime's `At`, which records an
+    // out-of-range failure in the statement's `sceFailure` and answers the zero
+    // value, as every read of an element does; a list of records is a slice of the
+    // machine's own struct, so the element is the record whole.
+    fn record_at(&self, list: &str, index: &str) -> Option<String> {
+        Some(format!(
+            "scealgorithm.At(&sceFailure, {list}[:], int64({index}))"
+        ))
+    }
+    // `null` handed to an optional record slot is the absent value of the machine's
+    // own record type; any other argument is the value the walk holds.
+    fn state_argument(&self, machine: &str, arg: &StateArg, held: &str) -> String {
+        match (&arg.slot, arg.code) {
+            (StaticSlot::OptionalRecord(alias), 'n') => {
+                format!("optional.None[{}]()", self.record_type(machine, alias))
+            }
+            _ => held.to_string(),
+        }
     }
     // The prefix tells the expression layer the adapter answers an `Outcome`. The
     // machine follows it because a package holds a parent and every child it
@@ -7589,6 +7650,46 @@ impl StaticTarget for GoTarget<'_> {
                     declarations.push(format!("{name} {}", spec.optional_type(self, ty)?));
                     arguments.push(name);
                 }
+                // An optional record the machine holds as one (a variable of the
+                // type, or the literal `null`, which the call hands as the absent
+                // value of it) is the algorithm's own optional record where it is
+                // present: its fields are copied as a record's are, and no type of
+                // the algorithm's is named but the one the argument is declared as
+                // (docs/adr/0055, step 9).
+                AdapterParam::State {
+                    slot: StaticSlot::OptionalRecord(alias),
+                    code: 'o' | 'n',
+                } => {
+                    declarations.push(format!(
+                        "{name} {}",
+                        self.optional_type(&machine_record(alias))?
+                    ));
+                    prelude.push_str(&format!(
+                        "\tvar a{index} {}\n\tif v, ok := {name}.Get(); ok {{\n\t\ta{index} = optional.Some({})\n\t}}\n",
+                        self.optional_type(&algorithm_record(alias)?)?,
+                        to_algorithm(alias, "v")?
+                    ));
+                    arguments.push(format!("a{index}"));
+                }
+                // A record the optional slot takes as a present value, held as a
+                // record slot's argument is.
+                AdapterParam::State {
+                    slot: StaticSlot::OptionalRecord(alias),
+                    code,
+                } => {
+                    let held = if *code == 'p' {
+                        let event = spec.payload_events.get(alias)?;
+                        format!(
+                            "{}{}Payload",
+                            spec.machine,
+                            filters::to_event_variant(event.to_string())
+                        )
+                    } else {
+                        machine_record(alias)
+                    };
+                    declarations.push(format!("{name} {held}"));
+                    arguments.push(format!("optional.Some({})", to_algorithm(alias, &name)?));
+                }
                 AdapterParam::State {
                     slot: StaticSlot::Record(alias),
                     code,
@@ -7665,6 +7766,19 @@ impl StaticTarget for GoTarget<'_> {
             ),
             StaticSlot::Scalar(ty) if plain_scalar(ty) => (self.scalar_type(ty), String::new()),
             StaticSlot::Optional(ty) => (spec.optional_type(self, ty)?, String::new()),
+            // The algorithm's optional record is read for its present record
+            // without naming its type, so the schema's package is no import the
+            // adapter needs for a return alone ([`Self::adapter_names_returned_schema`]).
+            StaticSlot::OptionalRecord(alias) => {
+                let held = self.optional_type(&machine_record(alias))?;
+                (
+                    held.clone(),
+                    format!(
+                        "\tvar out {held}\n\tif v, ok := r.Get(); ok {{\n\t\tout = optional.Some({})\n\t}}\n",
+                        from_algorithm(alias, "v")?
+                    ),
+                )
+            }
             StaticSlot::Record(alias) => (
                 machine_record(alias),
                 format!("\tout := {}\n", from_algorithm(alias, "r")?),
