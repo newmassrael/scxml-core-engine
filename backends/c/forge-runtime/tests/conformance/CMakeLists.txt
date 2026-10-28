@@ -242,6 +242,22 @@ target_link_libraries(numerical_conformance_test_c PRIVATE m)
 enable_testing()
 add_test(NAME numerical_conformance_c COMMAND numerical_conformance_test_c)
 
+# A value a generated codec holds that may be absent is the struct
+# sce/forge/optional.h declares for its element, the one a statechart's variable
+# of the same type is held in (docs/adr/0055, section 8): decoded from the
+# codec_cbor_map and codec_content_line_event codecs this directory generates, it is
+# taken whole by a variable of the runtime's own type, which compiles only where the
+# two are one type. The bytes are the harness above's.
+add_executable(codec_optional_test_c "${CMAKE_CURRENT_SOURCE_DIR}/codec_optional_test.c")
+add_dependencies(codec_optional_test_c generate_forge_fixtures_c)
+target_include_directories(codec_optional_test_c PRIVATE
+    "${RUNTIME_INCLUDE_DIR}"
+    "${CORE_RUNTIME_INCLUDE_DIR}"
+    "${GENERATED_DIR}"
+)
+target_compile_options(codec_optional_test_c PRIVATE -Wall -Wextra -Wpedantic -Werror)
+add_test(NAME codec_optional_c COMMAND codec_optional_test_c)
+
 # The runtime's CBOR items on their own (sce/forge/cbor.h), under the same
 # -Werror bar; what a generated CBOR codec does with them is judged by the
 # harness above (codec_cbor_map).
