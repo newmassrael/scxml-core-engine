@@ -19,6 +19,8 @@
 
 use std::path::{Path, PathBuf};
 
+use sce_build::forge::codegen_matrix::emitting;
+use sce_build::forge::model::ForgeKind;
 use sce_build::generator::Language;
 use sce_build::{compile_forge_with_imports, DocumentLabel, ForgeCompileOptions};
 use tempfile::tempdir;
@@ -73,21 +75,18 @@ fn refusal(text: &str, lang: Language) -> Option<String> {
     .map(|e| e.error.to_string())
 }
 
-const EVERY_CODEC_BACKEND: [Language; 6] = [
-    Language::Rust,
-    Language::Cpp,
-    Language::Kotlin,
-    Language::Go,
-    Language::Python,
-    Language::C11,
-];
+/// The backends that emit a codec, from the registry: a backend that gains an emitter
+/// joins the run by itself.
+fn every_codec_backend() -> Vec<Language> {
+    emitting(ForgeKind::Codec).collect()
+}
 
 /// A sibling that every frame carries bounds the embed, on every backend.
 #[test]
 fn an_embed_is_bounded_by_a_sibling_every_frame_carries() {
     let document =
         codec(r#"<sce:field id="ext_size" sce:type="uint64" sce:byte="1" sce:bit-size="vle"/>"#);
-    for lang in EVERY_CODEC_BACKEND {
+    for lang in every_codec_backend() {
         assert_eq!(
             refusal(&document, lang),
             None,
@@ -104,7 +103,7 @@ fn an_embed_is_not_bounded_by_a_gated_sibling() {
         r#"<sce:field id="ext_size" sce:type="uint64" sce:byte="1" sce:bit-size="vle"
                sce:present-if="header.L"/>"#,
     );
-    for lang in EVERY_CODEC_BACKEND {
+    for lang in every_codec_backend() {
         let refused = refusal(&document, lang)
             .unwrap_or_else(|| panic!("{lang:?} compiles an embed bounded by a gated sibling"));
         for fragment in [

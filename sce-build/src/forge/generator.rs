@@ -3071,7 +3071,16 @@ fn render_event_schema(
                         {
                             l.optional_of(&rs_type).unwrap_or(held)
                         }
-                        _ => held,
+                        (
+                            crate::generator::Language::Rust
+                            | crate::generator::Language::Cpp
+                            | crate::generator::Language::Kotlin
+                            | crate::generator::Language::Go
+                            | crate::generator::Language::Python
+                            | crate::generator::Language::C11
+                            | crate::generator::Language::Swift,
+                            _,
+                        ) => held,
                     })
                 }
                 FieldType::Scalar(_) => None,
@@ -28445,10 +28454,15 @@ fn optional_record_lift(
 ) -> Result<String, ForgeError> {
     match lang {
         crate::generator::Language::Rust => Ok(crate::forge::rust_optional::present(value)),
-        other => Err(GenerateError::InvalidConfig(format!(
+        crate::generator::Language::Cpp
+        | crate::generator::Language::Kotlin
+        | crate::generator::Language::Go
+        | crate::generator::Language::Python
+        | crate::generator::Language::C11
+        | crate::generator::Language::Swift => Err(GenerateError::InvalidConfig(format!(
             "an algorithm's optional record reached the renderer of {}, which spells none \
              (docs/adr/0055, step 9)",
-            other.canonical_name()
+            lang.canonical_name()
         ))
         .into()),
     }
@@ -28664,7 +28678,11 @@ fn lower_field_text_write(
             Ok(match ctx.lang {
                 crate::generator::Language::Rust => crate::forge::rust_optional::present(&text),
                 crate::generator::Language::Go => format!("optional.Some({text})"),
-                _ => text,
+                crate::generator::Language::Kotlin
+                | crate::generator::Language::Python
+                | crate::generator::Language::Cpp
+                | crate::generator::Language::C11
+                | crate::generator::Language::Swift => text,
             })
         }
     }
@@ -33786,7 +33804,11 @@ fn render_algorithm(
                     )
                 }
                 Language::C11 => continue,
-                _ => match optional_record_member(lang, &local, &field.id) {
+                Language::Cpp
+                | Language::Kotlin
+                | Language::Go
+                | Language::Python
+                | Language::Swift => match optional_record_member(lang, &local, &field.id) {
                     Some(member) => member,
                     None => continue,
                 },

@@ -22,6 +22,8 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use sce_build::forge::codegen_matrix::{emitting, language_wire_name};
+use sce_build::forge::model::ForgeKind;
 use tempfile::tempdir;
 
 fn sce_codegen_bin() -> PathBuf {
@@ -278,7 +280,9 @@ fn an_optional_byte_string_slot_stays_refused_where_the_import_is_read() {
   </state>
 </scxml>
 "#;
-    for lang in ["rust", "kotlin", "python", "c11", "cpp", "go"] {
+    // Every backend that emits a statechart, from the registry: one that gains an
+    // emitter is held to this refusal by itself.
+    for lang in emitting(ForgeKind::Statechart).map(language_wire_name) {
         let (ok, out, _) = run(&["check", "-l", lang], algorithm, machine);
         assert!(!ok, "{lang} refuses the call:\n{out}");
         // The expression layer refuses the argument first, naming the type: an
