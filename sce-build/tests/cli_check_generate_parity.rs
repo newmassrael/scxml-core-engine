@@ -318,6 +318,15 @@ const GENERATE_FLAGS: &[FlagFacts] = &[
          resolves nowhere is a parse refusal",
     ),
     f(
+        "--inline-encode",
+        Reach::Emission,
+        Some(&["--inline-encode"]),
+        "rust",
+        "marks the functions that write each Rust codec inline (docs/adr/0061); \
+         what is written changes and what is accepted does not, and it is \
+         ignored for other languages, so `check` needs no counterpart",
+    ),
+    f(
         "--limit",
         Reach::Verdict,
         None,
