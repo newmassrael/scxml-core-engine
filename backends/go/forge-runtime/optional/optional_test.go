@@ -4,6 +4,7 @@
 package optional
 
 import (
+	"encoding/json"
 	"errors"
 	"testing"
 )
@@ -139,5 +140,44 @@ func TestAFieldIsReadAbsentPresentOrRefused(t *testing.T) {
 	}
 	if _, err := Lift(fields, "status", read("status")); err == nil || reads != 1 {
 		t.Fatalf("a missing key was not refused before it was read (%d reads)", reads)
+	}
+}
+
+// On a JSON wire an absent value is null and a present one is the JSON of its
+// value, in both directions; a key the object lacks leaves the field absent, and
+// a value that is not a T is refused.
+func TestAnAbsentValueIsJSONNullAndAPresentOneIsItsValue(t *testing.T) {
+	type shape struct {
+		Day   Of[int64]  `json:"day"`
+		Title Of[string] `json:"title"`
+		Blob  Of[[]byte] `json:"blob"`
+		Left  Of[int64]  `json:"left"`
+	}
+	var got shape
+	if err := json.Unmarshal([]byte(`{"day": 7, "title": null, "blob": [1, 2]}`), &got); err != nil {
+		t.Fatalf("a well-formed object was refused: %v", err)
+	}
+	if !got.Day.Equal(Some[int64](7)) {
+		t.Errorf("a number reads %v", got.Day)
+	}
+	if got.Title.IsPresent() {
+		t.Errorf("null reads %v", got.Title)
+	}
+	if !got.Blob.Equal(Some([]byte{1, 2})) {
+		t.Errorf("a byte string reads %v", got.Blob)
+	}
+	if got.Left.IsPresent() {
+		t.Errorf("a key the object lacks reads %v", got.Left)
+	}
+	if err := json.Unmarshal([]byte(`{"day": "soon"}`), &got); err == nil {
+		t.Errorf("a text where an int64 stands was read as %v", got.Day)
+	}
+
+	written, err := json.Marshal(shape{Day: Some[int64](7), Title: None[string](), Blob: Some([]byte{1, 2})})
+	if err != nil {
+		t.Fatalf("a value was not written: %v", err)
+	}
+	if want := `{"day":7,"title":null,"blob":"AQI=","left":null}`; string(written) != want {
+		t.Errorf("the value is written as %s, want %s", written, want)
 	}
 }

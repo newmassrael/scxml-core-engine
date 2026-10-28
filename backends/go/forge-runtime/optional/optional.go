@@ -15,10 +15,15 @@
 // (Otherwise); it tests presence with IsPresent and compares with Equal, which
 // is total: two absent values are equal, and an absent value equals no present
 // one. A host reads one with Get.
+//
+// On a JSON wire an absent value is `null` and a present one is the JSON of its
+// value (docs/adr/0055, section 4): MarshalJSON and UnmarshalJSON say so, which
+// is how the conformance oracle's decoded cases name an absent entry of a codec.
 package optional
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 )
 
@@ -81,6 +86,32 @@ func (o Of[T]) String() string {
 		return "null"
 	}
 	return fmt.Sprint(o.value)
+}
+
+// MarshalJSON writes `null` where the value is absent, and the JSON of the value
+// where it is present.
+func (o Of[T]) MarshalJSON() ([]byte, error) {
+	if !o.present {
+		return []byte("null"), nil
+	}
+	return json.Marshal(o.value)
+}
+
+// UnmarshalJSON reads `null` as the absent value, and any other JSON as a
+// present value of T, which is refused when it is not one. A key a JSON object
+// lacks never reaches it, so a field of an object that lacks its key stays at
+// the value it held: absent, for a field that was not given one.
+func (o *Of[T]) UnmarshalJSON(data []byte) error {
+	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+		*o = Of[T]{}
+		return nil
+	}
+	var v T
+	if err := json.Unmarshal(data, &v); err != nil {
+		return err
+	}
+	*o = Of[T]{present: true, value: v}
+	return nil
 }
 
 // Otherwise is the value of o where it is present, and what fallback answers
