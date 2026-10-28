@@ -5089,9 +5089,8 @@ pub fn build_swift_event_payload(
         policy_fields,
         populate,
         lift,
-        clear: format!(
-            "    public func clearEventMetadata() {{\n        pendingPayloadTag = .none\n    }}\n"
-        ),
+        clear: "    public func clearEventMetadata() {\n        pendingPayloadTag = .none\n    }\n"
+            .to_string(),
         raise_seams,
     }
 }
@@ -11688,7 +11687,7 @@ fn embed_streaming_decode_stmt(
                          }}\n\t\t\
                          {go_id} = optional.Some(*_emb)\n\t\
                      }}",
-                    held = go_optional(&body_type),
+                    held = go_optional(body_type),
                 ),
                 (None, Some(sibling)) => format!(
                     "var {go_id} {body_type}\n\t\
@@ -11727,7 +11726,7 @@ fn embed_streaming_decode_stmt(
                          }}\n\t\t\
                          {go_id} = optional.Some(*_emb)\n\t\
                      }}",
-                    held = go_optional(&body_type),
+                    held = go_optional(body_type),
                 ),
             }
         }
