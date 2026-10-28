@@ -112,6 +112,18 @@ func Map[T any](o Of[T], f func(T) T) Of[T] {
 	return Some(f(o.value))
 }
 
+// Convert is o with f applied to its value where it is present, as an optional
+// value of another type, and absent where it is absent: how an optional value
+// crosses between two types that hold the same value (an enum the machine holds
+// in its own type and the algorithm in the enum document's). f is called only
+// when o is present.
+func Convert[T, U any](o Of[T], f func(T) U) Of[U] {
+	if !o.present {
+		return Of[U]{}
+	}
+	return Some(f(o.value))
+}
+
 // Wire is the value o carries as a JSON value (docs/adr/0055, section 4): nil,
 // which the runtime writes as `null`, where it is absent, and what present
 // answers for the value where it is present.

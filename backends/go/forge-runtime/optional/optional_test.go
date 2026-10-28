@@ -77,6 +77,19 @@ func TestADefaultIsEvaluatedOnlyWhereTheValueIsAbsent(t *testing.T) {
 	}
 }
 
+// Convert changes the type of a present value, calls its function only where
+// the value is present, and leaves an absent value absent in the new type.
+func TestConvertChangesTheTypeOfAPresentValueOnly(t *testing.T) {
+	calls := 0
+	name := func(v int64) string { calls++; return "day" + string(rune('0'+v)) }
+	if got := Convert(Some[int64](4), name); !got.Equal(Some("day4")) || calls != 1 {
+		t.Fatalf("Convert of 4 is %v after %d calls", got, calls)
+	}
+	if got := Convert(None[int64](), name); got.IsPresent() || calls != 1 {
+		t.Fatalf("Convert of an absent value is %v after %d calls", got, calls)
+	}
+}
+
 // Map applies to a present value only, and Wire writes an absent value as nil.
 func TestMapAndWireLeaveAnAbsentValueAbsent(t *testing.T) {
 	calls := 0
