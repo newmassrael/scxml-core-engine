@@ -424,3 +424,46 @@ add_test(NAME queue_history_check_refuses
             -P "${REPO_ROOT}/tests/forge/conformance/check_queue_histories.cmake")
 set_tests_properties(queue_history_check_refuses PROPERTIES
     PASS_REGULAR_EXPRESSION "queue histories refused")
+
+# The broadcast-log kind (ADR 0062). The runtime's log on its own
+# (sce/forge/broadcast_log.h), under the same blanket -Werror: the unit tests of
+# the Rust row, the properties the C++ row adds, and real threads. The test is
+# C++20 for `constinit`, which is how it proves a log is constant-initialised; the
+# header it includes is held to C++17 by the gate.
+add_executable(broadcast_log_runtime_test "${CMAKE_CURRENT_SOURCE_DIR}/broadcast_log_runtime_test.cpp")
+target_compile_features(broadcast_log_runtime_test PRIVATE cxx_std_20)
+target_include_directories(broadcast_log_runtime_test PRIVATE "${RUNTIME_INCLUDE_DIR}")
+target_compile_options(broadcast_log_runtime_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+target_link_libraries(broadcast_log_runtime_test PRIVATE Threads::Threads)
+add_test(NAME broadcast_log_runtime COMMAND broadcast_log_runtime_test)
+
+# The log on real threads, written as histories and judged by the command every
+# backend's broadcast-log histories are judged by (verification layer 3). The
+# recorder writes one history per run; the second test hands the files to
+# `sce-codegen check-broadcast-history`, so this arm carries no linearizability
+# checker of its own. 5 shapes recorded 20 times: 100 histories.
+add_executable(broadcast_log_history_recorder "${CMAKE_CURRENT_SOURCE_DIR}/broadcast_log_history_recorder.cpp")
+target_include_directories(broadcast_log_history_recorder PRIVATE "${RUNTIME_INCLUDE_DIR}")
+target_compile_options(broadcast_log_history_recorder PRIVATE -Wall -Wextra -Wpedantic -Werror)
+target_link_libraries(broadcast_log_history_recorder PRIVATE Threads::Threads)
+set(BROADCAST_HISTORIES_DIR "${CMAKE_CURRENT_BINARY_DIR}/broadcast_histories")
+add_test(NAME broadcast_history_record COMMAND broadcast_log_history_recorder "${BROADCAST_HISTORIES_DIR}")
+set_tests_properties(broadcast_history_record PROPERTIES FIXTURES_SETUP broadcast_histories)
+add_test(NAME broadcast_history_check
+    COMMAND "${CMAKE_COMMAND}"
+            "-DCODEGEN=${SCE_CODEGEN}"
+            "-DDIR=${BROADCAST_HISTORIES_DIR}"
+            -DMINIMUM=100
+            -P "${REPO_ROOT}/tests/forge/conformance/check_broadcast_histories.cmake")
+set_tests_properties(broadcast_history_check PROPERTIES FIXTURES_REQUIRED broadcast_histories)
+
+# The same script over the corpus of histories sce-build keeps, which holds
+# histories that are not linearizable: it must refuse them, saying so.
+add_test(NAME broadcast_history_check_refuses
+    COMMAND "${CMAKE_COMMAND}"
+            "-DCODEGEN=${SCE_CODEGEN}"
+            "-DDIR=${REPO_ROOT}/sce-build/tests/fixtures/broadcast_histories"
+            -DMINIMUM=1
+            -P "${REPO_ROOT}/tests/forge/conformance/check_broadcast_histories.cmake")
+set_tests_properties(broadcast_history_check_refuses PROPERTIES
+    PASS_REGULAR_EXPRESSION "broadcast-log histories refused")
