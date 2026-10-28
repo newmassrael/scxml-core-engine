@@ -30,8 +30,18 @@ edit("tools/codegen/templates/kotlin/actions/send.kt.jinja2",
      ") _computed else _computed")
 PY
 
+# A value in none of the routes leaves `_rt` empty, and an empty target is refused
+# twice over: by the guard before the payload is built, and by `sendToTarget`, whose
+# `classifyTarget` reads it as `Unreachable` and whose `UNREACHABLE` arm raises the
+# same `error.communication` with the same send id and ends the block the same way.
+# Taking away the guard alone changes only the text of the error's data, which the
+# scenario does not read, so this case SURVIVED with the contract intact. The
+# decision is taken away at both places.
 mutation_case "a value that names no route raises nothing" <<'PY'
 edit("tools/codegen/templates/kotlin/actions/send.kt.jinja2",
      "            if (com.sce.runtime.SendHelper.isUnreachableTarget(_rt)) {",
      "            if (false && com.sce.runtime.SendHelper.isUnreachableTarget(_rt)) {")
+edit("tools/codegen/templates/kotlin/actions/send.kt.jinja2",
+     "                    raisePlatformError({{ machine_name }}Event.Error.Communication, \"<send> targetexpr names a session this processor cannot reach\", {{ send_id_kt }})\n",
+     "")
 PY
