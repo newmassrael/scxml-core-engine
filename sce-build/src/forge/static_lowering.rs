@@ -2059,7 +2059,7 @@ impl StaticTarget for KotlinTarget {
                 // An optional record (docs/adr/0055, step 9) is held by the name of
                 // the variable that holds it, which is an optional record variable,
                 // a record variable (a present value, lifted) or the literal `null`
-                // (`v` and `n`: one adapter serves the three, its parameter the
+                // (`o`, `v` and `n`: one adapter serves the three, its parameter the
                 // machine's `T?`, which a `T` and `null` stand in as they are), or
                 // by the payload or the loop's item (`p`, `i`: a record, lifted).
                 // The algorithm's record is built where the value is present.
@@ -6567,11 +6567,11 @@ impl StaticTarget for CppTarget {
                     )?);
                 }
                 // An optional record (docs/adr/0055, step 9): the algorithm takes a
-                // `std::optional` of its own record type. An optional record variable,
-                // a record variable and `null` are held as the machine's own
-                // `std::optional` (a record converts to one), and the present record
-                // is mapped where there is one; a payload and a loop's item are
-                // records, lifted into the present value.
+                // `std::optional` of its own record type. An optional record variable
+                // and `null` are held as the machine's own `std::optional`, and the
+                // present record is mapped where there is one; a record variable, a
+                // payload and a loop's item are records, lifted into the present
+                // value.
                 AdapterParam::State {
                     slot: StaticSlot::OptionalRecord(alias),
                     code,
@@ -6581,7 +6581,7 @@ impl StaticTarget for CppTarget {
                     let present = |value: &str| {
                         record_of(alias, algorithm.clone(), value, Crossing::ToAlgorithm)
                     };
-                    if matches!(*code, 'v' | 'n') {
+                    if matches!(*code, 'o' | 'n') {
                         // Asked once before it is bound, so a record this target
                         // cannot cross refuses the adapter.
                         present(CPP_PRESENT)?;
@@ -9520,13 +9520,6 @@ pub struct CTarget {
     /// holding one enum — whatever they call it — share one declaration in a
     /// program that includes both.
     enums: std::collections::BTreeMap<String, String>,
-    /// The ids of the machine's optional record variables (docs/adr/0055, step 9).
-    /// A call hands one of them by the name of the variable that holds it, as it
-    /// hands a record variable, and the call's code names both `v`
-    /// ([`crate::forge::type_ctx::OPTIONAL_RECORD_CODES`]): the type of what
-    /// the name holds is what tells the optional one, passed as it is, from the
-    /// record, which is lifted ([`Self::state_argument`]).
-    optional_records: std::collections::BTreeSet<String>,
 }
 
 /// What lowers the arguments of a host action ([`target_for`]): the one thing a
@@ -9536,11 +9529,7 @@ pub struct CTarget {
 static C_ARGUMENTS: CTarget = CTarget::arguments();
 
 impl CTarget {
-    fn new(
-        stem: &str,
-        held_enums: &std::collections::BTreeMap<String, EnumModel>,
-        optional_records: std::collections::BTreeSet<String>,
-    ) -> Self {
+    fn new(stem: &str, held_enums: &std::collections::BTreeMap<String, EnumModel>) -> Self {
         Self {
             stem: stem.to_string(),
             conditions: std::sync::atomic::AtomicU32::new(0),
@@ -9549,7 +9538,6 @@ impl CTarget {
                 .iter()
                 .map(|(alias, model)| (alias.clone(), model.name.clone()))
                 .collect(),
-            optional_records,
         }
     }
 
@@ -9559,7 +9547,6 @@ impl CTarget {
             conditions: std::sync::atomic::AtomicU32::new(0),
             loops: std::sync::atomic::AtomicU32::new(0),
             enums: std::collections::BTreeMap::new(),
-            optional_records: std::collections::BTreeSet::new(),
         }
     }
 
@@ -9745,11 +9732,10 @@ impl StaticTarget for CTarget {
     // algorithm's own list parameter is; a record or a payload as the struct it is.
     //
     // An optional record is handed as the optional value of the machine's record
-    // type, whatever holds it (docs/adr/0055, step 9): `null` as the absent value,
-    // an optional record variable as it is, and a record variable, which the call's
-    // code names as an optional one is named, lifted into the present value. A
-    // loop's record item and the payload are handed as the struct each is, which
-    // the adapter lifts as it does for a record slot.
+    // type where the machine holds one (docs/adr/0055, step 9): `null` (code `n`) as
+    // the absent value and an optional record variable (`o`) as it is. A record
+    // variable, a loop's record item and the payload are handed as the struct each
+    // is, which the adapter lifts as it does for a record slot.
     fn state_argument(&self, machine: &str, arg: &StateArg, held: &str) -> String {
         match &arg.slot {
             StaticSlot::ScalarList(ty) => format!(
@@ -9766,8 +9752,6 @@ impl StaticTarget for CTarget {
                     .expect("a record type is the element of an optional record");
                 match arg.code {
                     'n' => format!("sce_optional_{elem}_none()"),
-                    'v' if self.optional_records.contains(arg.written.as_str()) => held.to_string(),
-                    'v' => format!("sce_optional_{elem}_some({held})"),
                     _ => held.to_string(),
                 }
             }
@@ -9875,17 +9859,17 @@ impl StaticTarget for CTarget {
                 }
                 // An optional record the algorithm takes is the optional value of its
                 // own record, built from what the call hands over (docs/adr/0055, step
-                // 9): the optional value of the machine's record, for `null` and for a
-                // variable ([`Self::state_argument`] made both one), whose record is
-                // copied field by field when it is present; and a record the machine
-                // holds, a loop's item or the payload, copied the same way and lifted.
+                // 9): the optional value of the machine's record, for `null` and for an
+                // optional record variable, whose record is copied field by field when
+                // it is present; and a record the machine holds, a record variable, a
+                // loop's item or the payload, copied the same way and lifted.
                 AdapterParam::State {
                     slot: StaticSlot::OptionalRecord(alias),
                     code,
                 } => {
                     let algorithm = algorithm_record(alias)?;
                     let elem = c11_optional_elem(&algorithm)?;
-                    if matches!(*code, 'n' | 'v') {
+                    if matches!(*code, 'n' | 'o') {
                         declarations.push(format!(
                             "{} {p}",
                             self.optional_record_type(spec.machine, alias)?
@@ -11310,21 +11294,7 @@ pub fn lower_c11(
     csym_prefix: &str,
 ) -> Result<StaticLowering, GenerateError> {
     let stem = model.name.clone();
-    // The optional record variables, the document's and each state's
-    // (docs/adr/0055, step 9): what a call that hands one over is told apart by.
-    let optional_records = model
-        .variables
-        .iter()
-        .chain(model.states.values().flat_map(|s| s.datamodel.iter()))
-        .filter(|v| {
-            v.value_type
-                .as_ref()
-                .and_then(crate::forge::model::AlgorithmValueType::optional_elem)
-                .is_some_and(|elem| elem.record_alias().is_some())
-        })
-        .map(|v| v.id.clone())
-        .collect();
-    let target = CTarget::new(&stem, &model.held_enums(), optional_records);
+    let target = CTarget::new(&stem, &model.held_enums());
     lower(model, &format!("{csym_prefix}{stem}"), &target)
 }
 

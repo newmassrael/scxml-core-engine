@@ -412,13 +412,14 @@ fn a_call_hands_an_optional_record_slot_none_or_a_record_built_for_the_algorithm
     holds_every(
         &written,
         &[
-            // The optional variable and the record variable are one adapter, which
-            // tests the argument; `null` is the absent value itself.
+            // The optional variable (`o`) and the record variable (`v`) each have an
+            // adapter, which tests the argument; `null` is the absent value itself.
+            "def _call_PickCount__ov(p0, p1):",
             "def _call_PickCount__vv(p0, p1):",
             "def _call_PickCount__nv(p0, p1):",
             "(None if p0 is None else ",
             "_call_PickCount__nv(None, self.v_items)",
-            "_call_PickCount__vv(self.v_pick, self.v_items)",
+            "_call_PickCount__ov(self.v_pick, self.v_items)",
             "_call_PickCount__vv(self.v_draft, self.v_items)",
         ],
     );

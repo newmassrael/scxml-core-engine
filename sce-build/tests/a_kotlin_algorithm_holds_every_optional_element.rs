@@ -390,6 +390,7 @@ const MACHINE: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0" initial="idle" datamodel="sce-static" name="optional_text_call">
   <sce:import kind="event-schema" src="schema_due.scxml" as="Due"/>
+  <sce:import kind="enum" src="enum_item_status.scxml" as="Status"/>
   <sce:import kind="algorithm" src="algorithm_due_label.scxml" as="Label"/>
   <datamodel>
     <data id="item" sce:type="record:Due">

@@ -212,9 +212,13 @@ fn kotlin_hands_an_optional_record_to_an_algorithm_by_the_name_that_holds_it() {
         "probe.scxml",
     );
     assert!(ok, "Kotlin generates the machine:\n{out}");
-    // The variable and the record variable are held by `v`, `null` by `n`: an
-    // adapter each, whose first parameter is the machine's `T?`.
-    for adapter in ["call_PickCount__vv", "call_PickCount__nv"] {
+    // The optional variable is held by `o`, the record variable by `v` and `null`
+    // by `n`: an adapter each, whose first parameter is the machine's `T?`.
+    for adapter in [
+        "call_PickCount__ov",
+        "call_PickCount__vv",
+        "call_PickCount__nv",
+    ] {
         let signature = format!(
             "private fun {adapter}(p0: OptionalRecordCallItemRecord?, p1: \
              List<OptionalRecordCallItemRecord>): Int {{"
@@ -228,7 +232,7 @@ fn kotlin_hands_an_optional_record_to_an_algorithm_by_the_name_that_holds_it() {
             "p0?.let { SchemaItemPickPayload(id = it.id, title = it.title, count = it.count) }",
             // The three calls: the variable, `null` as the absent value, and the
             // record variable, lifted by the adapter.
-            "call_PickCount__vv(vPick, vItems)",
+            "call_PickCount__ov(vPick, vItems)",
             "call_PickCount__nv(null, vItems)",
             "call_PickCount__vv(vDraft, vItems)",
         ],

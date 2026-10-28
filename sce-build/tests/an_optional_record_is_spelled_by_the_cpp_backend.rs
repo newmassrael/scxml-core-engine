@@ -153,7 +153,7 @@ fn an_algorithm_holds_an_optional_record_in_a_local_and_a_return() {
     holds_each(
         &written,
         &[
-            "inline std::optional<SCE::Generated::SchemaItemPick::SchemaItemPickPayload> ",
+            "inline std::optional<SCE::Generated::SchemaItemPick::SchemaItemPickPayload>\n",
             "std::optional<SCE::Generated::SchemaItemPick::SchemaItemPickPayload> found = std::nullopt;",
             "!found.has_value()",
             "found = it;",
@@ -287,7 +287,7 @@ fn an_algorithm_holds_an_optional_text_enum_and_record_in_every_slot() {
         let needles = [
             format!("{spelled} given"),
             format!("{spelled} held = std::nullopt;"),
-            format!("inline {spelled} "),
+            format!("inline {spelled}\n"),
         ];
         let needles: Vec<&str> = needles.iter().map(String::as_str).collect();
         holds_each(&out, &needles);
@@ -353,8 +353,8 @@ fn due_machine() -> String {
     .to_string()
 }
 
-/// An algorithm that takes a record whose text and enum fields may be absent, writes
-/// its text (a literal, which the validator bounds, and `null`), and answers it.
+/// An algorithm that takes a record whose text and enum fields may be absent (a
+/// parameter is read-only), tests its enum field, and answers its text.
 fn due_retitle() -> String {
     r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
@@ -366,9 +366,8 @@ fn due_retitle() -> String {
     <sce:return type="optional&lt;string&gt;"/>
   </sce:signature>
   <sce:body>
-    <sce:assign target="d.title" expr="'soon'"/>
     <sce:if cond="d.status !== null">
-      <sce:assign target="d.title" expr="null"/>
+      <sce:return expr="null"/>
     </sce:if>
     <sce:return expr="d.title"/>
   </sce:body>
@@ -378,10 +377,9 @@ fn due_retitle() -> String {
 }
 
 /// A record with an optional text and an optional enum field is held by an algorithm
-/// whole: its text is written from a bounded literal or made absent, the enum field is
-/// tested, and the answer is an optional text.
+/// whole: the enum field is tested, and the answer is the optional text, or `null`.
 #[test]
-fn an_algorithm_writes_the_optional_text_field_of_a_record_it_holds() {
+fn an_algorithm_reads_the_optional_fields_of_a_record_it_holds() {
     let written = generated(
         &[("algorithm_due_retitle.scxml", &due_retitle())],
         "algorithm_due_retitle.scxml",
@@ -389,9 +387,8 @@ fn an_algorithm_writes_the_optional_text_field_of_a_record_it_holds() {
     holds_each(
         &written,
         &[
-            "d.title = \"soon\";",
-            "d.title = std::nullopt;",
             "d.status.has_value()",
+            "return std::nullopt;",
             "return d.title;",
         ],
     );
@@ -498,7 +495,7 @@ fn each_way_an_optional_record_is_handed_to_an_algorithm_has_its_adapter() {
         &written,
         &[
             // The variable, the record variable and `null`.
-            "call_YearOf__v(v_maybe)",
+            "call_YearOf__o(v_maybe)",
             "call_YearOf__v(v_day)",
             "call_YearOf__n(std::nullopt)",
             "SCE::Forge::mapPresent(p0, [&](const ",

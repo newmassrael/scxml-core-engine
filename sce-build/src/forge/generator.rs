@@ -28531,9 +28531,8 @@ fn lower_text_write(
 /// Kotlin's record is an immutable data class, replaced by itself with the field
 /// changed, the present value read by the one function a proven read is spelled
 /// with. A text field is written as every record's is, from a text the build can
-/// bound ([`lower_text_write`]). A backend that does not spell an optional record
-/// in an algorithm yet refuses it by name before the body is lowered
-/// ([`AlgorithmTypes::refuse_optional`]); one that does adds its spelling here.
+/// bound ([`lower_text_write`]). This is Kotlin's statement only: every other
+/// backend writes the field in its own block of the `<sce:assign>` arm.
 fn lower_optional_record_field_write(
     ctx: &AlgorithmLowerCtx<'_>,
     type_ctx: &crate::forge::types::TypeCtx<'_>,
@@ -28542,20 +28541,9 @@ fn lower_optional_record_field_write(
     target: (&str, Option<&crate::attribute_spelling::AttributeSpelling>),
     rhs: (&str, Option<&crate::attribute_spelling::AttributeSpelling>),
 ) -> Result<String, ForgeError> {
-    use crate::generator::Language;
     let lang = ctx.lang;
     let (target, target_spelling) = target;
     let (rhs, rhs_spelling) = rhs;
-    if lang != Language::Kotlin {
-        return Err(crate::forge::static_lowering::optional_not_lowered(
-            &format!(
-                "`{}`, a field written through an optional record of an algorithm",
-                target.trim()
-            ),
-            lang.canonical_name(),
-        )
-        .into());
-    }
     let field_id = target
         .trim()
         .rsplit_once('.')
@@ -29920,6 +29908,7 @@ fn lower_algorithm_stmt(
                         .get(root)
                         .map(|alias| (root, alias.as_str()))
                 })
+                .filter(|_| lang == Language::Kotlin)
             {
                 let statement = lower_optional_record_field_write(
                     ctx,
