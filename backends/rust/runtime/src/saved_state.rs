@@ -1521,15 +1521,20 @@ pub fn record_bounded_bytes(
 
 /// The field `name` of the saved record `value`, which a record that lacks it is
 /// refused for naming — what a generated record reads a field held to a bound
-/// with when the field is optional ([`optional`]).
+/// with when the field is optional ([`optional`]). A `null` where a record is
+/// held is no record that lacks a field but a value absent where the restoring
+/// build's type is not optional, and is refused as every `null` is
+/// ([`not_a`]): a state saved after a record was widened to `optional<record:X>`
+/// is refused by a build from before it, naming the variable.
 pub fn record_member<'v>(
     value: &'v Value,
     record: &str,
     name: &str,
 ) -> Result<&'v Value, StateRefusal> {
-    value
-        .member(name)
-        .ok_or_else(|| StateRefusal::new(format!("'{record}' has no field '{name}'")))
+    value.member(name).ok_or_else(|| match value {
+        Value::Null => not_a(value, record, "a record"),
+        _ => StateRefusal::new(format!("'{record}' has no field '{name}'")),
+    })
 }
 
 /// A saved list or byte string `value`, read back only if it holds no more
@@ -3456,6 +3461,86 @@ mod tests {
         // A value of another kind keeps its own refusal.
         let text = i64::from_saved(&Value::Bool(true), "due").expect_err("a bool");
         assert!(text.reason().contains("is not a 64-bit"), "{text}");
+    }
+
+    /// A record as a machine holds one, which writes and reads itself as the
+    /// generated `SavedValue` of a record does: an object of its fields, each read
+    /// by the reader of its type, a text held to its bound.
+    #[derive(Debug, Clone, PartialEq)]
+    struct Item {
+        id: u32,
+        title: String,
+    }
+
+    impl SavedValue for Item {
+        fn to_saved(&self) -> Value {
+            Value::Object(vec![
+                ("id".to_string(), self.id.to_saved()),
+                ("title".to_string(), self.title.to_saved()),
+            ])
+        }
+        fn from_saved(value: &Value, what: &str) -> Result<Self, StateRefusal> {
+            Ok(Self {
+                id: record_field(value, what, "id")?,
+                title: record_bounded_string(value, what, "title", 8)?,
+            })
+        }
+    }
+
+    /// docs/adr/0055, step 9: an `optional<record:X>` is saved as `null` or as the
+    /// record, an object of its fields, and read back absent from `null` and
+    /// otherwise as the record is, held to the bounds of its fields.
+    #[test]
+    fn an_optional_record_is_saved_as_null_or_as_the_record_it_holds() {
+        let item = Item {
+            id: 2,
+            title: "beta".to_string(),
+        };
+        assert_eq!(None::<Item>.to_saved(), Value::Null);
+        assert_eq!(Some(item.clone()).to_saved(), item.to_saved());
+        assert_eq!(Option::<Item>::from_saved(&Value::Null, "pick"), Ok(None));
+        assert_eq!(
+            Option::<Item>::from_saved(&item.to_saved(), "pick"),
+            Ok(Some(item))
+        );
+        // A present record is held to its fields' bounds as a record is.
+        let past = Option::<Item>::from_saved(&json_of(r#"{"id":3,"title":"too long!"}"#), "pick")
+            .expect_err("past the bound");
+        assert!(past.reason().contains("'pick.title'"), "{past}");
+        assert!(past.reason().contains("past the 8"), "{past}");
+    }
+
+    /// A `null` where the restoring build holds a record that is never absent is
+    /// refused naming the variable, as every `null` is; a record that lacks a field
+    /// keeps its own refusal.
+    #[test]
+    fn a_saved_null_is_refused_where_a_record_is_not_optional() {
+        let absent = Item::from_saved(&Value::Null, "draft").expect_err("a record");
+        assert!(
+            absent
+                .reason()
+                .contains("'draft' is absent (null), and its type is not optional"),
+            "{absent}"
+        );
+        let lacking = Item::from_saved(&json_of(r#"{"id":2}"#), "draft").expect_err("no title");
+        assert!(
+            lacking.reason().contains("'draft' has no field 'title'"),
+            "{lacking}"
+        );
+    }
+
+    /// A variable that holds a record of a schema that grew may hold none: a
+    /// `null` is left for the variable's own read, which is optional, to take, and
+    /// the list beside it grows as it does.
+    #[test]
+    fn a_holder_that_holds_no_record_is_left_as_it_is_by_a_later_revision() {
+        let saved = reading_state(FIRST_SHAPE, "null", r#"[{"level":1}]"#, "");
+        let grown = upgrade(&saved, &READING_SHAPE).expect("an absent record restores");
+        assert_eq!(grown.variable("last"), Ok(&Value::Null));
+        assert_eq!(
+            grown.variable("seen"),
+            Ok(&json_of(r#"[{"level":1,"urgent":true,"note":7}]"#))
+        );
     }
 
     #[test]
