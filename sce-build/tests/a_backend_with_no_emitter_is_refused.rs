@@ -4,7 +4,7 @@
 // A backend that is in `Language::ALL` before it has an emitter must say so,
 // by name, at every door a document comes in by. Swift was the first: it is
 // decided at every site that decides per backend, and renders every kind but a
-// statechart not at all, which it renders in part.
+// statechart and an algorithm not at all, which it renders in part.
 //
 // The alternative is worse than a refusal. A backend with no arm in a
 // dispatch either panics in a helper the document reached by chance, or falls
@@ -65,13 +65,16 @@ fn every_kind_is_refused_for_it_by_the_matrix_and_named() {
         // emitter serves it as every other backend does. A kind that awaits
         // its runtime (ADR 0062) passes the matrix too, since the refusal is
         // the dispatch's, which holds the document and names it
-        // (`broadcast-log/runtime-missing`); the test below holds that.
+        // (`broadcast-log/runtime-missing`); the test below holds that. A kind
+        // the backend writes in part passes as well: its renderer refuses by the
+        // construct, which the tests below hold.
         let (declarations, renders): (Vec<ForgeKind>, Vec<ForgeKind>) =
             every_kind().into_iter().partition(|kind| {
-                matches!(
-                    lookup(*kind, language),
-                    EmitOutcome::Declaration | EmitOutcome::RuntimeMissing
-                )
+                ships_in_part(*kind, language)
+                    || matches!(
+                        lookup(*kind, language),
+                        EmitOutcome::Declaration | EmitOutcome::RuntimeMissing
+                    )
             });
         for kind in declarations {
             assert!(check(kind, language).is_ok(), "{kind} on {language:?}");
@@ -172,6 +175,55 @@ fn a_statechart_a_backend_writes_in_part_is_generated_and_the_rest_is_refused_by
         let text = format!("{error:?}");
         assert!(
             text.contains(&format!("{language:?}")) && text.contains("datamodel"),
+            "{language:?}: the refusal names neither the backend nor the construct: {text}"
+        );
+    }
+}
+
+#[test]
+fn an_algorithm_a_backend_writes_in_part_is_generated_and_the_rest_is_refused_by_name() {
+    let in_part: Vec<Language> = emitting_in_part(ForgeKind::Algorithm)
+        .filter(|language| emitting(ForgeKind::Algorithm).all(|emits| emits != *language))
+        .collect();
+    assert!(
+        !in_part.is_empty(),
+        "no backend writes an algorithm in part, so this measures nothing; delete it \
+         when the last one moves to `template_ships`"
+    );
+    let label = DocumentLabel {
+        identifier: "clamp",
+        diagnostic_label: "clamp.scxml",
+    };
+    for language in in_part {
+        // A body of scalars is generated.
+        let lowered = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+          version="1.0" sce:kind="algorithm" name="clamp">
+  <sce:signature>
+    <sce:param name="value" type="uint8"/>
+    <sce:return type="uint8"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="out" type="uint8" init="value"/>
+    <sce:if cond="out > 9"><sce:assign target="out" expr="9"/></sce:if>
+    <sce:return expr="out"/>
+  </sce:body>
+</scxml>"#;
+        let output = compile_forge_from_string(lowered, label, language)
+            .unwrap_or_else(|e| panic!("{language:?} refused an algorithm it lowers: {e:?}"));
+        assert!(!output.files.is_empty(), "{language:?} wrote nothing");
+
+        // A construct it does not lower is refused by the construct, naming the backend.
+        let unlowered = lowered.replace(
+            r#"<sce:if cond="out > 9"><sce:assign target="out" expr="9"/></sce:if>"#,
+            r#"<sce:while cond="out > 9" max-iter="10"><sce:assign target="out" expr="out - 1"/></sce:while>"#,
+        );
+        assert_ne!(unlowered, lowered, "the replacement did not apply");
+        let error = compile_forge_from_string(&unlowered, label, language)
+            .err()
+            .unwrap_or_else(|| panic!("{language:?} generated an algorithm it does not lower"));
+        let text = format!("{error:?}");
+        assert!(
+            text.contains(&format!("{language:?}")) && text.contains("<sce:while>"),
             "{language:?}: the refusal names neither the backend nor the construct: {text}"
         );
     }

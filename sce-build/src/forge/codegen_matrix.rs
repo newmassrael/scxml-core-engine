@@ -358,9 +358,14 @@ pub const fn awaits_runtime(kind: ForgeKind) -> bool {
 ///
 /// Swift's statechart lowers `datamodel="null"` documents so far
 /// (`generator::reject_swift_unsupported_features` names each construct it does
-/// not yet).
+/// not yet), and its algorithm a body of scalars
+/// (`forge::generator::swift_algorithm_unlowered` names each construct past
+/// those).
 pub const fn ships_in_part(kind: ForgeKind, lang: Language) -> bool {
-    matches!((kind, lang), (ForgeKind::Statechart, Language::Swift))
+    matches!(
+        (kind, lang),
+        (ForgeKind::Statechart, Language::Swift) | (ForgeKind::Algorithm, Language::Swift)
+    )
 }
 
 /// The backends that write `kind` in whole or in part, in [`Language::ALL`] order:
@@ -449,7 +454,13 @@ pub fn writes_something(lang: Language) -> bool {
 /// matrix walker says the pair is unreachable; return `Ok(())` when
 /// emit-eligible. Dispatch sites in `forge/generator.rs` call this
 /// before routing to the per-kind `render_*` helper.
+///
+/// A kind a backend writes in part ([`ships_in_part`]) passes: its renderer
+/// refuses by name, with the document in hand, what it does not lower yet.
 pub fn check(kind: ForgeKind, lang: Language) -> Result<(), GenerateError> {
+    if ships_in_part(kind, lang) {
+        return Ok(());
+    }
     match lookup(kind, lang) {
         // A declaration passes: each dispatcher's arm for it writes no file.
         // A kind that awaits its runtime passes too: each dispatcher's arm for
@@ -483,20 +494,21 @@ pub fn emit_missing(kind: ForgeKind, lang: Language) -> GenerateError {
 
 /// What an arm for Swift inside a renderer's helper answers.
 ///
-/// Swift has no emitter for any kind yet ([`template_ships`] is `false` for
-/// every kind), and [`check`] refuses each of them at the dispatch site before
-/// a renderer, a type mapping or a name rule that matches on [`Language`] is
-/// reached. Those helpers are therefore never handed Swift, but each is a
-/// `match` the compiler makes name the backend, so the arm exists and says
-/// why it is not a route. A helper that is handed Swift is a dispatch site that
-/// skipped [`check`], and the panic names it.
+/// Swift emits no kind whole yet ([`template_ships`] is `false` for every
+/// kind). [`check`] refuses each kind it does not write at all at the dispatch
+/// site, and a kind it writes in part ([`ships_in_part`]) is refused by name,
+/// construct by construct, before its renderer reaches a helper for one it does
+/// not lower. Those helpers are therefore never handed Swift, but each is a
+/// `match` the compiler makes name the backend, so the arm exists and says why
+/// it is not a route. A helper that is handed Swift is a dispatch site, or an
+/// in-part refusal, that let a construct through, and the panic names it.
 ///
-/// The arms are replaced by real ones as the Swift emitters land, one kind at a
-/// time; [`template_ships`] turning `true` for a kind is the cue.
+/// The arms are replaced by real ones as the Swift emitters land, one construct
+/// at a time.
 pub(crate) fn no_swift_emitter(site: &str) -> ! {
     unreachable!(
-        "{site}: swift has no emitter for any forge kind, and codegen_matrix::check refuses \
-         every kind for it before a renderer runs"
+        "{site}: swift has no lowering here, and codegen_matrix::check or the kind's \
+         in-part refusal names what reaches it before a renderer runs"
     )
 }
 
@@ -770,7 +782,9 @@ mod tests {
                 "{l:?} emits only some of the baseline kinds: {emits:?}"
             );
             for &k in BASELINE_KINDS {
-                if emits[0] {
+                // A kind the backend writes in part is refused by its renderer,
+                // construct by construct, and not by the matrix.
+                if emits[0] || ships_in_part(k, l) {
                     assert!(check(k, l).is_ok(), "check({k:?}, {l:?})");
                 } else {
                     assert!(check(k, l).is_err(), "check({k:?}, {l:?}) admitted");

@@ -163,6 +163,12 @@ pub struct StaticCallee {
     /// Set instead of `host_only`; the list of numbers a statechart already takes
     /// whole (`list_return`) is not this.
     pub value: Option<StaticValueSignature>,
+    /// Each backend that writes the callee's kind in part
+    /// ([`crate::forge::codegen_matrix::ships_in_part`]) and does not lower this
+    /// document, with what of it the backend refuses. A statechart that calls the
+    /// callee is refused for that backend by the same reason, rather than
+    /// generated beside a callee whose own generation is refused.
+    pub unlowered_by: Vec<(crate::generator::Language, String)>,
 }
 
 /// What a `sce-static` statechart's imported callee is, as a target spells a call

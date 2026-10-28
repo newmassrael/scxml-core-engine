@@ -387,6 +387,10 @@
           "file": "sce-build/src/forge/generator.rs",
           "symbol": "of",
           "kind": "implements"
+        },
+        {
+          "file": "tools/codegen/templates/forge/swift/algorithm.swift.jinja2",
+          "kind": "references"
         }
       ]
     },

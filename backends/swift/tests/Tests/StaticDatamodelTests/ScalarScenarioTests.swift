@@ -306,6 +306,19 @@ private func recordFields() -> Machine {
     )
 }
 
+private func record() -> Machine {
+    let policy = StaticRecordPolicy()
+    return drive(
+        policy,
+        variables: [
+            "shown": {
+                day(policy.shown.year, policy.shown.month, policy.shown.dayOfMonth)
+            },
+            "refusals": { integer(policy.refusals) },
+        ]
+    )
+}
+
 private func recordList() -> Machine {
     let policy = StaticRecordListPolicy()
     return drive(
@@ -680,6 +693,13 @@ private func recordBytes() -> Machine {
 // assignment, and written a field at a time.
 @Test func aRecordIsBuiltWholeAndReadAndWrittenAFieldAtATime() {
     replay("static_record_fields", recordFields())
+}
+
+// A guard calls an imported algorithm with a record's fields, and the bound it answers
+// is computed from them on every step: the algorithm is a unit of the machine's own
+// module, generated from the same document.
+@Test func aGuardCallsAnImportedAlgorithmWithTheRecordsFields() {
+    replay("static_record", record())
 }
 
 // A record is taken into a list by name, and the list holds a copy of it: a record

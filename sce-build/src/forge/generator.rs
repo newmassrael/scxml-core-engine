@@ -807,7 +807,18 @@ pub(crate) fn forge_import_identity(
     let pascal = filters::to_pascal_case(canonical.to_string());
     let snake = filters::to_snake_case(canonical.to_string());
     match lang {
-        Language::Swift => no_swift_emitter("forge_import_identity"),
+        // A Swift unit is a file of the module that calls it, and a module's files
+        // see one another's declarations, so there is no line to write. A
+        // stateless unit's functions are static members of the caseless enum its
+        // `<Pascal>` names (`forge/swift/algorithm.swift.jinja2`): a call is
+        // qualified by the enum, which a member of the calling type cannot hide as
+        // it would hide a free function of the same name.
+        Language::Swift => ImportIdentity {
+            include_stmt: String::new(),
+            type_name: pascal.clone(),
+            namespace: pascal.clone(),
+            member_type: pascal,
+        },
         // RFC §synth-5-A: free function / struct in `namespace SCE::Generated::<Pascal>`.
         Language::Cpp => ImportIdentity {
             include_stmt: format!("#include \"{snake}.h\""),
@@ -23268,27 +23279,206 @@ fn settle_python_source_encoding(source: String) -> String {
 // ── Swift code generation ───────────────────────────────────
 // ══════════════════════════════════════════════════════════════
 
-/// Generate a ForgeDocument for Swift.
+/// Generate a ForgeDocument for Swift using Jinja2 templates.
+pub fn generate_swift(
+    doc: &ForgeDocument,
+    template_dir: &Path,
+) -> Result<GeneratedOutput, ForgeError> {
+    generate_swift_with_imports(
+        doc,
+        template_dir,
+        &[],
+        &crate::ForgeCompileOptions::default(),
+    )
+}
+
+/// Generate Swift code with cross-file import support.
 ///
-/// Swift has no emitter for a kind that renders anything yet
-/// ([`crate::forge::codegen_matrix::template_ships`] is `false` for every
-/// kind), so the one document it generates is a declaration, which writes no
-/// file; every other kind is `codegen/generic-kind-backend-emit-missing`, except
-/// a kind that is parsed and checked before any runtime has its row, which is
-/// refused by its own code (`refuse_broadcast_log`).
-pub fn generate_swift(doc: &ForgeDocument) -> Result<GeneratedOutput, ForgeError> {
+/// Swift emits no kind whole yet ([`crate::forge::codegen_matrix::template_ships`]
+/// is `false` for every kind). It writes an algorithm in part
+/// ([`crate::forge::codegen_matrix::ships_in_part`]), refusing by name what the
+/// algorithm holds past a body of scalars ([`swift_algorithm_unlowered`]), and a
+/// declaration, which writes no file; every other kind is
+/// `codegen/generic-kind-backend-emit-missing`, except a kind that is parsed and
+/// checked before any runtime has its row, which is refused by its own code
+/// (`refuse_broadcast_log`).
+pub fn generate_swift_with_imports(
+    doc: &ForgeDocument,
+    template_dir: &Path,
+    imports: &[ImportContext],
+    options: &crate::ForgeCompileOptions,
+) -> Result<GeneratedOutput, ForgeError> {
+    use crate::generator::Language;
     if let ForgeDocument::BroadcastLog(m) = doc {
-        return Err(refuse_broadcast_log(m, crate::generator::Language::Swift));
+        return Err(refuse_broadcast_log(m, Language::Swift));
     }
-    match crate::forge::codegen_matrix::lookup(doc.kind(), crate::generator::Language::Swift) {
-        crate::forge::codegen_matrix::EmitOutcome::Declaration => Ok(GeneratedOutput::default()),
-        _ => Err(ForgeError::from(
-            crate::forge::codegen_matrix::emit_missing(
-                doc.kind(),
-                crate::generator::Language::Swift,
+    crate::forge::codegen_matrix::check(doc.kind(), Language::Swift)?;
+    let ForgeDocument::Algorithm(m) = doc else {
+        return match crate::forge::codegen_matrix::lookup(doc.kind(), Language::Swift) {
+            crate::forge::codegen_matrix::EmitOutcome::Declaration => {
+                Ok(GeneratedOutput::default())
+            }
+            _ => Err(ForgeError::from(
+                crate::forge::codegen_matrix::emit_missing(doc.kind(), Language::Swift),
+            )),
+        };
+    };
+    if let Some(construct) = swift_algorithm_unlowered(m, imports.first().map(|i| i.alias.as_str()))
+    {
+        return Err(GenerateError::unsupported(swift_algorithm_refusal(m, &construct)).into());
+    }
+    let forge_dir = template_dir.join("forge/swift");
+    let mut env = generator::new_env();
+    load_forge_templates(&mut env, &forge_dir, Language::Swift, options)?;
+    inject_runtime_dep_global(&mut env, doc);
+    inject_source_location_global(&mut env, doc);
+    let code = render_algorithm(&env, m, imports, Language::Swift, options)?;
+    Ok(GeneratedOutput {
+        files: vec![(
+            format!("{}.swift", filters::to_pascal_case(doc.name().to_string())),
+            code,
+        )],
+        ..Default::default()
+    })
+}
+
+/// What each backend that writes `doc`'s kind in part
+/// ([`crate::forge::codegen_matrix::ships_in_part`]) refuses of `doc`, whose own
+/// imports are `imports`: the refusal its generation would answer, so a document
+/// that calls `doc` is refused for that backend by the same reason
+/// ([`crate::forge::type_ctx::StaticCallee::unlowered_by`]).
+pub(crate) fn unlowered_in_part(
+    doc: &ForgeDocument,
+    imports: &[ForgeImport],
+) -> Vec<(crate::generator::Language, String)> {
+    use crate::generator::Language;
+    Language::ALL
+        .iter()
+        .copied()
+        .filter(|lang| crate::forge::codegen_matrix::ships_in_part(doc.kind(), *lang))
+        .filter_map(|lang| {
+            let construct = match lang {
+                // A statechart, the other kind Swift writes in part, is never a
+                // callee.
+                Language::Swift => match doc {
+                    ForgeDocument::Algorithm(m) => {
+                        swift_algorithm_unlowered(m, imports.first().map(|i| i.alias.as_str()))
+                            .map(|construct| swift_algorithm_refusal(m, &construct))
+                    }
+                    _ => None,
+                },
+                // No kind is written in part on these.
+                Language::Rust
+                | Language::Cpp
+                | Language::Kotlin
+                | Language::Go
+                | Language::Python
+                | Language::C11 => None,
+            };
+            construct.map(|why| (lang, why))
+        })
+        .collect()
+}
+
+/// The refusal of the algorithm `m` for the Swift construct `construct` it holds
+/// ([`swift_algorithm_unlowered`]).
+fn swift_algorithm_refusal(m: &AlgorithmModel, construct: &str) -> String {
+    format!(
+        "algorithm '{}': {construct} has no Swift lowering yet",
+        m.name
+    )
+}
+
+/// What of the algorithm `m` the Swift backend does not lower yet, described for a
+/// refusal by name (`generate/unsupported-feature`) before [`render_algorithm`]
+/// reaches a helper that has no Swift spelling; `first_import` is the alias of the
+/// first document `m` imports, if it imports any.
+///
+/// Swift lowers a body of scalars: parameters and a return of a number, a `bool` or
+/// a string, and locals of the same, written by `<sce:var>`, `<sce:assign>`,
+/// `<sce:if>` and `<sce:return>`. Each construct past those is named here until its
+/// spelling is written, which is what [`crate::forge::codegen_matrix::ships_in_part`]
+/// promises of an in-part backend: what it does not write is refused, never
+/// emitted wrong. A `may-fail` signature is refused by the list every backend that
+/// lowers one is on (`reject_may_fail_in_unsupported_lang`), and a statechart calls
+/// no `may-fail` algorithm at all.
+fn swift_algorithm_unlowered(m: &AlgorithmModel, first_import: Option<&str>) -> Option<String> {
+    // A number, a `bool` or a string; a byte string is held in `[UInt8]`, whose
+    // view, buffer and owned forms are not spelled yet.
+    fn lowered(ty: Option<&SceType>) -> bool {
+        ty.is_some_and(|ty| !matches!(ty, SceType::Bytes | SceType::Enum(_)))
+    }
+    // A parameter and a local are named as the author wrote them, so one Swift
+    // reserves cannot be either.
+    let reserved = |name: &str| {
+        crate::reader_names::is_reserved_word(
+            crate::generator::Language::Swift,
+            &swift_local_spelling(name),
+        )
+    };
+    fn unlowered(stmts: &[AlgorithmStmt], reserved: &dyn Fn(&str) -> bool) -> Option<String> {
+        stmts.iter().find_map(|s| match s {
+            AlgorithmStmt::Var { name, sce_type, .. } if !lowered(sce_type.scalar()) => Some(
+                format!("the <sce:var name=\"{name}\"> of {}", sce_type.as_attr()),
             ),
-        )),
+            AlgorithmStmt::Var { name, .. } if reserved(name) => Some(format!(
+                "the <sce:var name=\"{name}\">, a name Swift reserves,"
+            )),
+            AlgorithmStmt::Var { .. }
+            | AlgorithmStmt::Assign { .. }
+            | AlgorithmStmt::Return { .. } => None,
+            AlgorithmStmt::If {
+                then_body,
+                else_body,
+                ..
+            } => unlowered(then_body, reserved)
+                .or_else(|| else_body.as_deref().and_then(|b| unlowered(b, reserved))),
+            AlgorithmStmt::RecordVar { name, .. } | AlgorithmStmt::RecordFromCall { name, .. } => {
+                Some(format!("the record <sce:var name=\"{name}\">"))
+            }
+            AlgorithmStmt::Append { .. } => Some("an <sce:append>".to_string()),
+            AlgorithmStmt::While { .. } => Some("an <sce:while>".to_string()),
+            AlgorithmStmt::Foreach { .. } => Some("an <sce:foreach>".to_string()),
+            AlgorithmStmt::Call { .. } => Some("an <sce:call>".to_string()),
+            AlgorithmStmt::Require { .. } => Some("an <sce:require>".to_string()),
+        })
     }
+    if let Some(alias) = first_import {
+        return Some(format!("the <sce:import as=\"{alias}\">"));
+    }
+    if let Some(c) = m.consts.first() {
+        return Some(format!("the <sce:const name=\"{}\">", c.name));
+    }
+    if !m.test_vectors.is_empty() {
+        return Some("a <sce:test-vector>".to_string());
+    }
+    if let Some(p) = m
+        .signature
+        .params
+        .iter()
+        .find(|p| !lowered(p.sce_type.scalar()))
+    {
+        return Some(format!(
+            "the <sce:param name=\"{}\"> of {}",
+            p.name,
+            p.sce_type.as_attr()
+        ));
+    }
+    if let Some(p) = m.signature.params.iter().find(|p| reserved(&p.name)) {
+        return Some(format!(
+            "the <sce:param name=\"{}\">, a name Swift reserves,",
+            p.name
+        ));
+    }
+    if let Some(ret) = m
+        .signature
+        .return_type
+        .as_ref()
+        .filter(|t| !lowered(t.scalar()))
+    {
+        return Some(format!("a <sce:return> of {}", ret.as_attr()));
+    }
+    unlowered(&m.body, &reserved)
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -26590,7 +26780,7 @@ impl LangCtx {
             crate::generator::Language::Go => go_type(ty),
             crate::generator::Language::Python => python_type(ty),
             crate::generator::Language::C11 => c_type(ty),
-            crate::generator::Language::Swift => no_swift_emitter("LangCtx::type_name"),
+            crate::generator::Language::Swift => swift_type(ty),
         })
     }
 
@@ -26676,10 +26866,11 @@ impl LangCtx {
             crate::generator::Language::Cpp => cpp_param_type(ty),
             crate::generator::Language::Rust => rust_param_type(ty),
             crate::generator::Language::C11 => c_param_type(ty).to_string(),
+            // A Swift parameter is a constant of its value type, a string's included.
             crate::generator::Language::Kotlin
             | crate::generator::Language::Go
-            | crate::generator::Language::Python => self.type_name(ty).into_owned(),
-            crate::generator::Language::Swift => no_swift_emitter("LangCtx::param_type"),
+            | crate::generator::Language::Python
+            | crate::generator::Language::Swift => self.type_name(ty).into_owned(),
         }
     }
 
@@ -26715,10 +26906,11 @@ impl LangCtx {
             crate::generator::Language::Rust => "#[allow(unused_variables)] ",
             crate::generator::Language::Cpp => "[[maybe_unused]] ",
             crate::generator::Language::Kotlin => "@Suppress(\"UNUSED_PARAMETER\") ",
+            // Swift does not warn about a parameter a function never reads.
             crate::generator::Language::Go
             | crate::generator::Language::Python
-            | crate::generator::Language::C11 => "",
-            crate::generator::Language::Swift => no_swift_emitter("LangCtx::unread_param_prefix"),
+            | crate::generator::Language::C11
+            | crate::generator::Language::Swift => "",
         }
     }
 
@@ -26754,7 +26946,9 @@ impl LangCtx {
             crate::generator::Language::Python => {
                 format!("{}: {ty}", python_local_spelling(id))
             }
-            crate::generator::Language::Swift => no_swift_emitter("LangCtx::place_param"),
+            // Unlabelled, so a caller passes the arguments in order, as on every
+            // other backend: `DaysInMonth.daysInMonth(year, month)`.
+            crate::generator::Language::Swift => format!("_ {}: {ty}", swift_local_spelling(id)),
         }
     }
 
@@ -26777,7 +26971,7 @@ impl LangCtx {
             // the `.c` half. Until then this arm is unreachable because
             // generate_c11(...) does not exist.
             crate::generator::Language::C11 => "h",
-            crate::generator::Language::Swift => no_swift_emitter("LangCtx::template_ext"),
+            crate::generator::Language::Swift => "swift",
         }
     }
 
@@ -26789,8 +26983,7 @@ impl LangCtx {
             crate::generator::Language::Go => ExprTarget::Go,
             crate::generator::Language::Python => ExprTarget::Python,
             crate::generator::Language::C11 => ExprTarget::C,
-            // `ExprTarget` has no Swift until its expression emitter exists.
-            crate::generator::Language::Swift => no_swift_emitter("LangCtx::expr_target"),
+            crate::generator::Language::Swift => ExprTarget::Swift,
         }
     }
 
@@ -26828,8 +27021,10 @@ impl LangCtx {
                     format!("SCE_FORGE_{}_H", to_upper_snake(name)).into(),
                 );
             }
-            crate::generator::Language::Rust | crate::generator::Language::Python => {}
-            crate::generator::Language::Swift => no_swift_emitter("LangCtx::base_context"),
+            // A Swift unit's caseless enum is `struct_name`, which every unit has.
+            crate::generator::Language::Rust
+            | crate::generator::Language::Python
+            | crate::generator::Language::Swift => {}
         }
         m
     }
@@ -26974,14 +27169,17 @@ impl LangCtx {
                 |header| format!("#include <{header}>"),
                 "header",
             ),
+            // Swift imports modules, and a module a file does not use costs it
+            // nothing: what a renderer imports is decided by its own context
+            // (`swift_uses_forge_runtime`).
             crate::generator::Language::Rust
             | crate::generator::Language::Kotlin
             | crate::generator::Language::Python
-            | crate::generator::Language::C11 => {
+            | crate::generator::Language::C11
+            | crate::generator::Language::Swift => {
                 let value = minijinja::Value::from_serialize(&ctx);
                 return Ok(tmpl.render(value).map_err(generator::render_error)?);
             }
-            crate::generator::Language::Swift => no_swift_emitter("forge render"),
         };
         // Go refuses a file that names a package it does not import and a
         // file that imports one it never names; a C++ file that names
@@ -27723,16 +27921,18 @@ fn algorithm_param_type(l: &LangCtx, ty: &SceType) -> String {
     match (l.lang, ty) {
         (Language::Cpp, SceType::Bytes) => format!("{}<const std::uint8_t>", expr::CPP_SPAN),
         (Language::C11, SceType::Bytes) => "sce_forge_bytes_view_t".to_string(),
+        // Swift takes no byte string yet (`swift_algorithm_unlowered`), and every
+        // other parameter by value.
         (
             Language::Rust
             | Language::Cpp
             | Language::Kotlin
             | Language::Go
             | Language::Python
-            | Language::C11,
+            | Language::C11
+            | Language::Swift,
             _,
         ) => l.param_type(ty),
-        (Language::Swift, _) => no_swift_emitter("algorithm_param_type"),
     }
 }
 
@@ -29837,7 +30037,16 @@ fn lower_algorithm_stmt(
                 Language::Kotlin => format!("{pad}var {local}: {ty} = {init_lowered}\n"),
                 Language::Go => format!("{pad}var {local} {ty} = {init_lowered}\n"),
                 Language::Python => format!("{pad}{local}: {ty} = {init_lowered}\n"),
-                Language::Swift => no_swift_emitter("lower_algorithm_stmt"),
+                // Swift warns about a `var` never written again, as Rust does
+                // about an unused `mut`.
+                Language::Swift => {
+                    let keyword = if assigned.contains(name.as_str()) {
+                        "var"
+                    } else {
+                        "let"
+                    };
+                    format!("{pad}{keyword} {local}: {ty} = {init_lowered}\n")
+                }
             };
             out.push_str(&line);
         }
@@ -30283,7 +30492,7 @@ fn lower_algorithm_stmt(
                     }
                 },
             };
-            let semi = if matches!(lang, Language::Kotlin | Language::Python) {
+            let semi = if matches!(lang, Language::Kotlin | Language::Python | Language::Swift) {
                 ""
             } else {
                 ";"
@@ -30519,7 +30728,8 @@ fn lower_algorithm_stmt(
                 | Language::Cpp
                 | Language::Kotlin
                 | Language::Go
-                | Language::C11 => {
+                | Language::C11
+                | Language::Swift => {
                     let (header_open, block_close, if_indent) =
                         channel.braced_if_header(pad, &cond_lowered, indent);
                     let if_pad = "    ".repeat(if_indent);
@@ -30547,7 +30757,6 @@ fn lower_algorithm_stmt(
                     out.push_str(&format!("{if_pad}}}\n"));
                     out.push_str(&block_close);
                 }
-                Language::Swift => no_swift_emitter("lower_algorithm_stmt"),
             }
         }
         // SCE_FORGE.md §3.4.1: an `if` on the negated condition whose one
@@ -31170,11 +31379,12 @@ fn lower_algorithm_stmt(
                     channel.value(pad, &lowered, false)
                 }
                 None => match lang {
-                    Language::Python | Language::Kotlin => format!("{pad}return\n"),
+                    Language::Python | Language::Kotlin | Language::Swift => {
+                        format!("{pad}return\n")
+                    }
                     Language::Rust | Language::Cpp | Language::Go | Language::C11 => {
                         format!("{pad}return;\n")
                     }
-                    Language::Swift => no_swift_emitter("lower_algorithm_stmt"),
                 },
             };
             out.push_str(&line);
@@ -31511,9 +31721,10 @@ pub(crate) fn forge_algorithm_symbol(name: &str, language: crate::generator::Lan
         Language::Rust | Language::Python | Language::C11 | Language::Cpp => {
             filters::to_snake_case(name.to_string())
         }
-        Language::Kotlin => filters::to_camel_case(name.to_string()),
+        // Swift's is a static function of the caseless enum the document's
+        // `<Pascal>` names (`algorithm.swift.jinja2`), lowerCamelCase as Kotlin's.
+        Language::Kotlin | Language::Swift => filters::to_camel_case(name.to_string()),
         Language::Go => filters::to_pascal_case(name.to_string()),
-        Language::Swift => no_swift_emitter("forge_algorithm_symbol"),
     }
 }
 
@@ -32490,9 +32701,10 @@ impl ReturnChannel<'_> {
                 ty = self.value_type,
                 check = self.check(&format!("{pad}    ")),
             ),
-            Language::Python | Language::Kotlin | Language::Go => format!("{pad}return {value}\n"),
+            Language::Python | Language::Kotlin | Language::Go | Language::Swift => {
+                format!("{pad}return {value}\n")
+            }
             Language::Rust | Language::Cpp | Language::C11 => format!("{pad}return {value};\n"),
-            Language::Swift => no_swift_emitter("ReturnChannel::value"),
         }
     }
 
@@ -32516,13 +32728,14 @@ impl ReturnChannel<'_> {
                  {pad}    return sceValue, sceFailure.Err()\n\
                  {pad}}}\n"
             ),
+            // Swift is not on `MAY_FAIL_BACKENDS`: its body records no failure.
             Language::Rust
             | Language::Cpp
             | Language::Kotlin
             | Language::Go
             | Language::Python
-            | Language::C11 => String::new(),
-            Language::Swift => no_swift_emitter("ReturnChannel::check"),
+            | Language::C11
+            | Language::Swift => String::new(),
         }
     }
 
@@ -32625,7 +32838,8 @@ impl ReturnChannel<'_> {
             Language::Cpp | Language::Kotlin | Language::Go | Language::Python | Language::C11 => {
                 (format!("{pad}if ({cond}) {{\n"), String::new(), indent)
             }
-            Language::Swift => no_swift_emitter("ReturnChannel::braced_if_header"),
+            // Swift's condition takes no parentheses, as Rust's.
+            Language::Swift => (format!("{pad}if {cond} {{\n"), String::new(), indent),
         }
     }
 
@@ -33783,6 +33997,9 @@ fn render_algorithm(
                 Language::Swift => no_swift_emitter("render_algorithm"),
             }
         }
+        // Swift: a list, a record, an optional value and a byte string are refused
+        // before this ([`swift_algorithm_unlowered`]), so a value it returns is a
+        // number, a `bool` or a string.
         (
             Some(t),
             Language::Rust
@@ -33790,14 +34007,15 @@ fn render_algorithm(
             | Language::Kotlin
             | Language::Go
             | Language::Python
-            | Language::C11,
+            | Language::C11
+            | Language::Swift,
         ) => l.type_name(t).to_string(),
         (None, Language::Cpp) | (None, Language::C11) => "void".to_string(),
         (None, Language::Rust) => "()".to_string(),
         (None, Language::Go) => String::new(),
         (None, Language::Kotlin) => "Unit".to_string(),
         (None, Language::Python) => "None".to_string(),
-        (_, Language::Swift) => no_swift_emitter("render_algorithm"),
+        (None, Language::Swift) => "Void".to_string(),
     };
     // SCE_FORGE.md §3.4.1: a `may-fail` Rust algorithm's value rides in a
     // `Result` — a buffer return's already does, with the error widened
@@ -33826,13 +34044,14 @@ fn render_algorithm(
         Language::C11 if may_fail && !returns_buffer => c11_result_name.clone(),
         // Named, so a failure returns the value's zero (`ReturnChannel::check`).
         Language::Go if may_fail => format!("(sceValue {return_type}, sceErr error)"),
+        // Swift is not on `MAY_FAIL_BACKENDS`, so its return is never wrapped.
         Language::Rust
         | Language::Cpp
         | Language::Kotlin
         | Language::Go
         | Language::Python
-        | Language::C11 => return_type,
-        Language::Swift => no_swift_emitter("render_algorithm"),
+        | Language::C11
+        | Language::Swift => return_type,
     };
 
     // SCE byte-buffer-build (§4.12): per-buffer capacity table (for the C11
@@ -33849,8 +34068,8 @@ fn render_algorithm(
         | Language::Kotlin
         | Language::Go
         | Language::Python
-        | Language::C11 => None,
-        Language::Swift => no_swift_emitter("render_algorithm"),
+        | Language::C11
+        | Language::Swift => None,
     };
     // SCE byte-buffer-build (§4.12): the C++ buffer/return lower to
     // `std::vector`, which needs `<vector>`. Gate the include so algorithms
@@ -33944,6 +34163,7 @@ fn render_algorithm(
                 c11_take(&value_type, &primary_symbol)
             }
         ),
+        // Swift returns no buffer and no list ([`swift_algorithm_unlowered`]).
         (
             _,
             Language::Rust
@@ -33951,9 +34171,9 @@ fn render_algorithm(
             | Language::Kotlin
             | Language::Go
             | Language::Python
-            | Language::C11,
+            | Language::C11
+            | Language::Swift,
         ) => String::new(),
-        (_, Language::Swift) => no_swift_emitter("render_algorithm"),
     };
     // C11 views of the read-only lists of records the algorithm takes, one
     // per record type ([`c11_record_view_typedef`]).
@@ -34066,8 +34286,9 @@ fn render_algorithm(
             channel,
         },
         // A `may-fail` Kotlin body sits inside the `try` that turns a failure
-        // into `AlgorithmResult.Failed` (`algorithm.kt.jinja2`).
-        if may_fail && lang == Language::Kotlin {
+        // into `AlgorithmResult.Failed` (`algorithm.kt.jinja2`), and a Swift one
+        // inside the function its caseless enum declares (`algorithm.swift.jinja2`).
+        if (may_fail && lang == Language::Kotlin) || lang == Language::Swift {
             2
         } else {
             1
@@ -34115,6 +34336,12 @@ fn render_algorithm(
     // that does not declare `may-fail` reaches too (docs/adr/0055): whether the
     // module is imported is read off the body that names it.
     let python_uses_runtime = lang == Language::Python && body.contains("sce_algorithm.");
+    // Swift's forge runtime is named the same way: a real turned into an integer
+    // is `Real.round`/`Real.floor` of `SceForgeRuntime`, which saturates.
+    ctx.insert(
+        "swift_uses_forge_runtime".into(),
+        (lang == Language::Swift && body.contains("Real.")).into(),
+    );
     ctx.insert("body".into(), body.into());
     ctx.insert("may_fail".into(), may_fail.into());
     ctx.insert("needs_span".into(), needs_span.into());

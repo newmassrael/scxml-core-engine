@@ -112,7 +112,9 @@ use crate::forge::model::{
     EnumModel, ForgeDocument, ForgeImport, ForgeKind, ParsedForge, SceType, SchemaField,
 };
 use crate::forge::static_js_algorithm;
-use crate::forge::static_lowering::{lower, Callee, LoweredElement, LoweredSite, StaticTarget};
+use crate::forge::static_lowering::{
+    lower, Callee, CalleeImport, LoweredElement, LoweredSite, StaticTarget,
+};
 use crate::forge::type_ctx::{StateArg, StaticCallee, StaticScope};
 use crate::forge::types::InferredType;
 use crate::model::{Action, Datamodel, SCXMLModel, Variable};
@@ -437,7 +439,7 @@ impl StaticTarget for JsTarget {
             call: format!("{RUNTIME_GLOBAL}.algorithms.{symbol}"),
             // The function travels in the document, so there is nothing to
             // import.
-            import: Some(String::new()),
+            import: CalleeImport::InScope,
         })
     }
     // The Interpreter's records are plain objects of their schema's fields and its

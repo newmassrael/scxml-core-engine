@@ -437,13 +437,26 @@ pub struct StringStorage {
 pub struct Callee {
     /// The callee, qualified as the generated unit that holds it requires.
     pub call: String,
-    /// The import line a forge kind importing the same document writes, so
-    /// the machine reaches the function where the document's own generation
-    /// put it. `None` when the target was built without what the line needs —
-    /// a Go target without the module path its packages live under — and a
-    /// call is all it can then spell: [`lower`] refuses a document that calls
-    /// the callee rather than leave the name unimported.
-    pub import: Option<String>,
+    /// How the machine reaches the unit the callee is in ([`CalleeImport`]).
+    pub import: CalleeImport,
+}
+
+/// What makes an imported callee's name visible where the machine is.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CalleeImport {
+    /// The import line a forge kind importing the same document writes, so the
+    /// machine reaches the function where the document's own generation put it.
+    Line(String),
+    /// No line: the callee is where the machine is already. A Swift unit is a
+    /// file of the module the machine is a file of, and a module's files see one
+    /// another's declarations; the Interpreter's ecmascript carries the function
+    /// in the document.
+    InScope,
+    /// The target was built without what the line needs — a Go target without
+    /// the module path its packages live under — and a call is all it can then
+    /// spell: [`lower`] refuses a document that calls the callee rather than
+    /// leave the name unimported.
+    Unwritable,
 }
 
 /// [`Callee`] for a generated-code backend: the identity and symbol every
@@ -482,7 +495,7 @@ fn generated_callee(
         let package = filters::to_snake_case(callee.document_name.clone());
         return Callee {
             call: call(&package),
-            import: None,
+            import: CalleeImport::Unwritable,
         };
     }
     let identity = crate::forge::generator::forge_import_identity(
@@ -493,7 +506,15 @@ fn generated_callee(
     );
     Callee {
         call: call(&identity.namespace),
-        import: Some(identity.include_stmt),
+        import: match lang {
+            Language::Swift => CalleeImport::InScope,
+            Language::Rust
+            | Language::Cpp
+            | Language::Kotlin
+            | Language::Go
+            | Language::Python
+            | Language::C11 => CalleeImport::Line(identity.include_stmt),
+        },
     }
 }
 
@@ -4126,6 +4147,18 @@ pub fn lower(
     // machine runs; it is refused here, where the document is read.
     for callee in &scope.callees {
         let kind = callee.kind.forge_kind();
+        // A callee this backend writes in part and does not lower is refused for
+        // the reason its own generation is.
+        if let Some((_, why)) = callee
+            .unlowered_by
+            .iter()
+            .find(|(lang, _)| target.expr_target().language() == Some(*lang))
+        {
+            return Err(GenerateError::unsupported(format!(
+                "`{}(…)` calls an imported {kind} the {lang} backend does not generate: {why}",
+                callee.alias
+            )));
+        }
         match target.callee(callee) {
             None => {
                 return Err(GenerateError::unsupported(format!(
@@ -4133,7 +4166,10 @@ pub fn lower(
                     callee.alias
                 )))
             }
-            Some(Callee { import: None, .. }) => {
+            Some(Callee {
+                import: CalleeImport::Unwritable,
+                ..
+            }) => {
                 return Err(GenerateError::unsupported(format!(
                     "`{}(…)`: the import of the {kind} it calls cannot be written for \
                      {lang} without the module its packages live under",
@@ -4182,7 +4218,10 @@ pub fn lower(
     let imports: Vec<String> = scope
         .callees
         .iter()
-        .filter_map(|c| target.callee(c).and_then(|callee| callee.import))
+        .filter_map(|c| match target.callee(c)?.import {
+            CalleeImport::Line(line) => Some(line),
+            CalleeImport::InScope | CalleeImport::Unwritable => None,
+        })
         .chain(optional_import)
         .collect::<BTreeSet<_>>()
         .into_iter()
@@ -11507,8 +11546,9 @@ pub fn lower_c11(
 /// which the dispatcher acts on by leaving the labelled block it stands in
 /// (§scxml-4.9).
 ///
-/// Lowers scalar variables, guards, `<assign>`, `<if>`, `<log>`, `<raise>` and
-/// `In()`; every construct past those is refused by name
+/// Lowers scalar variables, guards, `<assign>`, `<if>`, `<log>`, `<raise>`, `In()`
+/// and a call of an imported algorithm of scalars; every construct past those is
+/// refused by name
 /// ([`StaticTarget::unsupported`]) until its spelling is written, rather than left
 /// as an undefined name in generated code.
 pub struct SwiftTarget;
@@ -11600,9 +11640,16 @@ impl StaticTarget for SwiftTarget {
     fn lowers_cancel_expr(&self) -> bool {
         true
     }
-    // No call of an imported algorithm is spelled yet.
-    fn callee(&self, _callee: &StaticCallee) -> Option<Callee> {
-        None
+    // An algorithm is the one kind the Swift backend generates (in part, the rest
+    // refused where it is imported, `StaticCallee::unlowered_by`): a static member
+    // of the caseless enum its unit declares, in the machine's own module. A
+    // transform, a condition, a lookup, an interpolation and a validator have no
+    // Swift unit yet.
+    fn callee(&self, callee: &StaticCallee) -> Option<Callee> {
+        callee
+            .kind
+            .is_algorithm()
+            .then(|| generated_callee(Language::Swift, callee, None))
     }
     fn unsupported(&self, model: &SCXMLModel, scope: &StaticScope) -> Option<String> {
         // A scalar of a number, a bool or a string; an enum, a record, a list, a

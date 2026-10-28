@@ -4,7 +4,7 @@
 #
 # Regenerate backends/swift/tests/Sources/StaticDatamodelMachines/ from
 # sce-build/tests/fixtures/static_datamodel/<machine>.scxml, for every machine
-# the Swift backend lowers.
+# the Swift backend lowers, and every algorithm those machines call.
 #
 # The Swift compile+run gate for datamodel="sce-static"
 # (docs/SCE_ACCEPTED_SUBSET.md §2.15), the twin of
@@ -90,11 +90,54 @@ if [ "${#MACHINES[@]}" -lt 1 ]; then
     exit 1
 fi
 
+# Derived from what the lowered machines import, for the reason the machines are:
+# a list here is one more place a new algorithm has to be remembered, and one left
+# out is a machine that calls an enum nothing declared. Each algorithm a machine
+# calls is generated beside the machines, a file of the same SwiftPM target, as
+# scripts/regen_static_datamodel_go.sh generates each as a package of its own. An
+# algorithm is the one kind a Swift machine calls, and one that imports a document
+# is refused where the machine imports it (`StaticCallee::unlowered_by`), so the
+# algorithms the machines name directly are all there is to generate.
+
+# The file a document named as the generator takes it is read from.
+document_file() {
+    case "$1" in
+        sce:std/*) printf '%s\n' "stdlib/${1#sce:std/}" ;;
+        *) printf '%s\n' "$1" ;;
+    esac
+}
+
+# The algorithms document $1 imports, each named as the generator takes it: a
+# standard one as it is written, any other beside the document that imports it.
+algorithms_of() {
+    local import
+    while IFS= read -r import; do
+        case "$import" in
+            sce:*) printf '%s\n' "$import" ;;
+            *) printf '%s\n' "$(dirname "$1")/$import" ;;
+        esac
+    done < <(grep '<sce:import kind="algorithm"' "$(document_file "$1")" | grep -o 'src="[^"]*"' | cut -d'"' -f2)
+}
+
+ALGORITHMS=()
+for source in "${SOURCES[@]}"; do
+    while IFS= read -r algorithm; do
+        ALGORITHMS+=("$algorithm")
+    done < <(algorithms_of "$source")
+done
+if [ "${#ALGORITHMS[@]}" -gt 0 ]; then
+    mapfile -t ALGORITHMS < <(printf '%s\n' "${ALGORITHMS[@]}" | LC_ALL=C sort -u)
+fi
+
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
 for i in "${!MACHINES[@]}"; do
     "$CODEGEN" generate "${SOURCES[$i]}" -l swift -o "$TMP/${MACHINES[$i]}/"
+done
+# A file is named for the document's own name, not for the path it was read from.
+for i in "${!ALGORITHMS[@]}"; do
+    "$CODEGEN" generate "${ALGORITHMS[$i]}" -l swift -o "$TMP/algorithm_$i/"
 done
 
 mkdir -p "$GENERATED_DIR"
@@ -105,8 +148,15 @@ sce_generated_tree_clear --recursive "$GENERATED_DIR"
 for machine in "${MACHINES[@]}"; do
     cp "$TMP/$machine"/*_sm.swift "$GENERATED_DIR/"
 done
+UNITS=()
+for i in "${!ALGORITHMS[@]}"; do
+    for generated in "$TMP/algorithm_$i"/*.swift; do
+        cp "$generated" "$GENERATED_DIR/"
+        UNITS+=("$(basename "$generated" .swift)")
+    done
+done
 
-echo "Regenerated: ${MACHINES[*]} under $GENERATED_DIR/"
+echo "Regenerated: ${MACHINES[*]} and the algorithms ${UNITS[*]:-none} under $GENERATED_DIR/"
 if [ "${#REFUSED[@]}" -gt 0 ]; then
     echo "Not lowered yet (${#REFUSED[@]}), refused by name:"
     printf '  %s\n' "${REFUSED[@]}"

@@ -548,6 +548,10 @@ pub(crate) fn resolve(
             },
             value,
             line: import.line,
+            unlowered_by: crate::forge::generator::unlowered_in_part(
+                &parsed.document,
+                &parsed.imports,
+            ),
         });
     }
     Ok(callees)
@@ -737,5 +741,6 @@ fn function_callee(
         list_return: None,
         list_refusal: None,
         value: None,
+        unlowered_by: crate::forge::generator::unlowered_in_part(document, &parsed.imports),
     })
 }
