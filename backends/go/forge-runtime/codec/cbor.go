@@ -28,8 +28,8 @@ import (
 // type.
 var ErrCborMalformed = errors.New("sce/codec: cbor malformed")
 
-// ErrCborRequiredKeyMissing: the map lacks an entry declared
-// `sce:required="true"`.
+// ErrCborRequiredKeyMissing: the map lacks an entry of a bare type, one that
+// is not `optional<T>`.
 var ErrCborRequiredKeyMissing = errors.New("sce/codec: cbor required key missing")
 
 // ErrCborWrongLength: a byte string is not its entry's exact `sce:length`.

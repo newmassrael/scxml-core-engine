@@ -56,7 +56,7 @@ pub fn refusal(lang: Language, m: &CodecModel) -> Option<String> {
     }
     if lang == Language::C11 {
         if let Some(e) = m.cbor_entries.iter().find(|e| {
-            matches!(e.sce_type, SceType::String | SceType::Bytes)
+            matches!(e.present_type(), SceType::String | SceType::Bytes)
                 && e.max_size.is_none()
                 && e.length.is_none()
         }) {
@@ -100,7 +100,7 @@ pub fn render(
 
 /// What an entry is on the wire, as the templates branch on it.
 pub(crate) fn kind(entry: &CborEntry) -> &'static str {
-    match entry.sce_type {
+    match entry.present_type() {
         SceType::Bool => "bool",
         SceType::String => "text",
         SceType::Bytes if entry.length.is_some() => "bytes_exact",
@@ -152,14 +152,16 @@ fn common_context(
         let mut entry = serde_json::json!({
             "name": l.codec_field_id(&e.id),
             "key": e.key,
-            "required": e.required,
+            // What a template branches on is whether the map must hold the key:
+            // the entry is of a bare type (docs/adr/0055, section 8).
+            "required": e.is_required(),
             "kind": kind(e),
             "value_type": value_type(e),
             "length": e.length,
             "max_size": e.max_size,
-            "max": int_max(&e.sce_type),
+            "max": int_max(e.present_type()),
         });
-        if let SceType::Enum(r) = &e.sce_type {
+        if let SceType::Enum(r) = e.present_type() {
             let carrier = enum_carrier(imports, &r.alias).ok_or_else(|| {
                 ForgeError::from(GenerateError::unsupported_at(
                     format!(
@@ -170,7 +172,7 @@ fn common_context(
                 ))
             })?;
             entry["enum_from_underlying"] = l.enum_from_underlying(&r.alias).into();
-            entry["enum_to_underlying"] = l.codec_carrier_expr(&e.sce_type, "v").into();
+            entry["enum_to_underlying"] = l.codec_carrier_expr(e.present_type(), "v").into();
             entry["enum_is_open"] = l.enum_is_open(&r.alias).into();
             entry["carrier_type"] = l.type_name(&carrier).into_owned().into();
             // A signed carrier can hold a number no CBOR unsigned integer
@@ -186,7 +188,7 @@ fn common_context(
         }
         entries.push(entry);
     }
-    let required = m.cbor_entries.iter().filter(|e| e.required).count();
+    let required = m.cbor_entries.iter().filter(|e| e.is_required()).count();
     ctx.insert("required_count".into(), required.into());
     ctx.insert(
         "optional_count".into(),
@@ -221,14 +223,16 @@ fn render_kotlin(
     imports: &[ImportContext],
 ) -> Result<String, ForgeError> {
     let l = LangCtx::new(Language::Kotlin, imports);
-    let mut ctx = common_context(&l, m, imports, |e| l.type_name(&e.sce_type).into_owned())?;
+    let mut ctx = common_context(&l, m, imports, |e| {
+        l.type_name(e.present_type()).into_owned()
+    })?;
     // A required entry starts at its type's own default — for an enum the
     // first declared variant — and is filled in by decode; an optional one
     // starts absent.
     if let Some(serde_json::Value::Array(entries)) = ctx.get_mut("entries") {
         for (entry, e) in entries.iter_mut().zip(&m.cbor_entries) {
-            entry["default"] = if e.required {
-                l.default_expr(&e.sce_type)
+            entry["default"] = if e.is_required() {
+                l.default_expr(e.present_type())
             } else {
                 "null".to_string()
             }
@@ -246,7 +250,9 @@ fn render_cpp(
     let l = LangCtx::new(Language::Cpp, imports);
     // Owned values, as every C++ codec holds them: a text string is a
     // `std::string` and a byte string a `std::vector<uint8_t>`.
-    let mut ctx = common_context(&l, m, imports, |e| l.type_name(&e.sce_type).into_owned())?;
+    let mut ctx = common_context(&l, m, imports, |e| {
+        l.type_name(e.present_type()).into_owned()
+    })?;
     // A value-initialized member holds its type's zero, which is the right
     // start for every entry but an enum's: a closed set need not declare the
     // carrier's zero, so an enum starts at its first declared variant — the
@@ -255,14 +261,14 @@ fn render_cpp(
     if let Some(serde_json::Value::Array(entries)) = ctx.get_mut("entries") {
         for (entry, e) in entries.iter_mut().zip(&m.cbor_entries) {
             let value_type = entry["value_type"].as_str().unwrap_or_default().to_string();
-            entry["field_type"] = if e.required {
+            entry["field_type"] = if e.is_required() {
                 value_type
             } else {
-                format!("std::optional<{value_type}>")
+                l.codec_optional_of(&value_type)
             }
             .into();
-            entry["init"] = match &e.sce_type {
-                SceType::Enum(r) if e.required => l.enum_default_expr(&r.alias),
+            entry["init"] = match e.present_type() {
+                SceType::Enum(r) if e.is_required() => l.enum_default_expr(&r.alias),
                 _ => String::new(),
             }
             .into();
@@ -280,11 +286,15 @@ fn render_go(
     // Owned values, as every Go codec holds them. An optional entry is a
     // pointer, so an absent byte string (`nil`) and a present empty one stay
     // two values; a required one is the value itself.
-    let mut ctx = common_context(&l, m, imports, |e| l.type_name(&e.sce_type).into_owned())?;
+    let mut ctx = common_context(&l, m, imports, |e| {
+        l.type_name(e.present_type()).into_owned()
+    })?;
     if let Some(serde_json::Value::Array(entries)) = ctx.get_mut("entries") {
         for (entry, e) in entries.iter_mut().zip(&m.cbor_entries) {
             let value_type = entry["value_type"].as_str().unwrap_or_default().to_string();
-            entry["field_type"] = if e.required {
+            // Go keeps its pointer here until `optional.Of[T]` replaces it
+            // (docs/adr/0055, step 13).
+            entry["field_type"] = if e.is_required() {
                 value_type
             } else {
                 format!("*{value_type}")
@@ -293,8 +303,8 @@ fn render_go(
             // A required enum starts at its first declared variant, as the
             // other backends' do: a closed set need not declare the zero Go
             // would otherwise start it at.
-            entry["init"] = match &e.sce_type {
-                SceType::Enum(r) if e.required => l.enum_default_expr(&r.alias),
+            entry["init"] = match e.present_type() {
+                SceType::Enum(r) if e.is_required() => l.enum_default_expr(&r.alias),
                 _ => String::new(),
             }
             .into();
@@ -309,20 +319,24 @@ fn render_c(
     imports: &[ImportContext],
 ) -> Result<String, ForgeError> {
     let l = LangCtx::new(Language::C11, imports);
-    let mut ctx = common_context(&l, m, imports, |e| l.type_name(&e.sce_type).into_owned())?;
+    let mut ctx = common_context(&l, m, imports, |e| {
+        l.type_name(e.present_type()).into_owned()
+    })?;
     crate::forge::generator::insert_c_codec_symbols(&mut ctx, &m.name);
     // A text or byte string is a fixed array the size of its bound beside
     // its length (the bound is present: `refusal` saw to it), an exact-length
     // one an array of that length alone; an optional entry carries a
-    // `<name>_present` flag beside its value.
+    // `<name>_present` flag beside its value, until `sce_optional_<elem>_t`
+    // replaces it (docs/adr/0055, step 14).
     if let Some(serde_json::Value::Array(entries)) = ctx.get_mut("entries") {
         for (entry, e) in entries.iter_mut().zip(&m.cbor_entries) {
             entry["capacity"] = e.length.or(e.max_size).into();
             // C11's encode reads the value in place rather than binding it,
             // so the conversion is spelled over the struct member.
-            if matches!(e.sce_type, SceType::Enum(_)) {
+            if matches!(e.present_type(), SceType::Enum(_)) {
                 let member = format!("self->{}", entry["name"].as_str().unwrap_or_default());
-                entry["enum_to_underlying"] = l.codec_carrier_expr(&e.sce_type, &member).into();
+                entry["enum_to_underlying"] =
+                    l.codec_carrier_expr(e.present_type(), &member).into();
             }
         }
     }
@@ -350,7 +364,7 @@ fn max_encoded_bytes(m: &CodecModel) -> u64 {
             .iter()
             .map(|e| {
                 let key = head(u64::from(e.key));
-                let value = match e.sce_type {
+                let value = match e.present_type() {
                     SceType::Bool => 1,
                     SceType::String | SceType::Bytes => {
                         let n = u64::from(e.length.or(e.max_size).unwrap_or(0));
@@ -369,20 +383,22 @@ fn render_python(
     imports: &[ImportContext],
 ) -> Result<String, ForgeError> {
     let l = LangCtx::new(Language::Python, imports);
-    let mut ctx = common_context(&l, m, imports, |e| l.type_name(&e.sce_type).into_owned())?;
+    let mut ctx = common_context(&l, m, imports, |e| {
+        l.type_name(e.present_type()).into_owned()
+    })?;
     // A required entry starts at its type's own default — an enum at its
     // first declared variant — and an optional one absent (`None`).
     if let Some(serde_json::Value::Array(entries)) = ctx.get_mut("entries") {
         for (entry, e) in entries.iter_mut().zip(&m.cbor_entries) {
             let value_type = entry["value_type"].as_str().unwrap_or_default().to_string();
-            entry["field_type"] = if e.required {
+            entry["field_type"] = if e.is_required() {
                 value_type
             } else {
-                format!("Optional[{value_type}]")
+                l.codec_optional_of(&value_type)
             }
             .into();
-            entry["default"] = if e.required {
-                l.default_expr(&e.sce_type)
+            entry["default"] = if e.is_required() {
+                l.default_expr(e.present_type())
             } else {
                 "None".to_string()
             }
@@ -393,7 +409,7 @@ fn render_python(
         "has_closed_enum".into(),
         m.cbor_entries
             .iter()
-            .any(|e| matches!(&e.sce_type, SceType::Enum(r) if !l.enum_is_open(&r.alias)))
+            .any(|e| matches!(e.present_type(), SceType::Enum(r) if !l.enum_is_open(&r.alias)))
             .into(),
     );
     render_in_key_order(&l, env, ctx)
@@ -410,8 +426,8 @@ fn render_rust(
     let borrows = m
         .cbor_entries
         .iter()
-        .any(|e| matches!(e.sce_type, SceType::String | SceType::Bytes));
-    let mut ctx = common_context(&l, m, imports, |e| match &e.sce_type {
+        .any(|e| matches!(e.present_type(), SceType::String | SceType::Bytes));
+    let mut ctx = common_context(&l, m, imports, |e| match e.present_type() {
         SceType::String => "&'a str".to_string(),
         SceType::Bytes => "&'a [u8]".to_string(),
         other => l.type_name(other).into_owned(),
@@ -422,7 +438,7 @@ fn render_rust(
             entry["field_type"] = if entry["required"].as_bool() == Some(true) {
                 value_type
             } else {
-                format!("Option<{value_type}>")
+                l.codec_optional_of(&value_type)
             }
             .into();
         }

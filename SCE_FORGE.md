@@ -1013,24 +1013,48 @@ A codec whose root carries `sce:encoding="cbor"` writes one CBOR map
 element of its `<datamodel>` keyed by `sce:key`:
 
 ```xml
-<scxml sce:kind="codec" sce:encoding="cbor" name="envelope">
+<scxml sce:kind="codec" sce:encoding="cbor" sce:codec-format="2" name="envelope">
   <datamodel>
     <data id="raw"     sce:type="bytes"  sce:direction="in"/>
-    <data id="id"      sce:type="bytes"  sce:key="0" sce:required="true" sce:length="16" sce:direction="out"/>
-    <data id="source"  sce:type="string" sce:key="1" sce:required="true" sce:max-size="262144" sce:direction="out"/>
-    <data id="pattern" sce:type="enum:PatternKind" sce:key="3" sce:required="true" sce:direction="out"/>
-    <data id="deadline" sce:type="uint64" sce:key="12" sce:direction="out"/>
+    <data id="id"      sce:type="bytes"  sce:key="0" sce:length="16" sce:direction="out"/>
+    <data id="source"  sce:type="string" sce:key="1" sce:max-size="262144" sce:direction="out"/>
+    <data id="pattern" sce:type="enum:PatternKind" sce:key="3" sce:direction="out"/>
+    <data id="deadline" sce:type="optional&lt;uint64&gt;" sce:key="12" sce:direction="out"/>
   </datamodel>
 </scxml>
 ```
 
 | Attribute | Meaning |
 |---|---|
+| `sce:codec-format` | The format the document is written in, on its root: `2`, the only one read (below). |
 | `sce:key` | The entry's map key, `0`–`23` — a key whose CBOR head is one byte. Unique within the codec. |
-| `sce:type` | An unsigned integer (`uint8`–`uint64`), `bool`, `string` (a CBOR text string), `bytes` (a byte string) or `enum:<alias>` (an unsigned integer checked against the enum's declared values). |
-| `sce:required="true"` | A decode of a map without this key is refused. An entry that is not required is optional in every language. |
+| `sce:type` | An unsigned integer (`uint8`–`uint64`), `bool`, `string` (a CBOR text string), `bytes` (a byte string) or `enum:<alias>` (an unsigned integer checked against the enum's declared values), or `optional<T>` over one of them. A bare type is an entry a decode of a map without this key refuses; `optional<T>` is an entry that may be absent, in every language (docs/adr/0055, section 8). |
 | `sce:length` | On `bytes` only: the exact length; any other length is refused on decode and on encode. |
 | `sce:max-size` | On `string` or `bytes`: the most bytes the entry holds. Not with `sce:length`. |
+
+**Codec format.** A CBOR or content-line codec document says on its root which
+spelling of absence it is written in, `sce:codec-format="2"` (docs/adr/0055,
+section 8). Format 2 is the only one read and generated: a bare `sce:type` is an
+entry that must be present and `optional<T>` one that may be absent, and
+`sce:required` is no part of it (written there, it is
+`validation/attribute-rule-violated`, which names the two spellings of what it
+meant). Format 1, the spelling the codecs had before, left `sce:required="true"`
+on an entry that must be present and nothing on one that may be absent, the
+reverse of every other place a type is written; a codec of bare types only was a
+codec of optional entries there and of required entries here, so no document can
+be told from one in the other spelling by its entries. A document that declares no
+`sce:codec-format`, or `="1"`, is therefore refused, never read, as
+`validation/codec-format-superseded` on its root: the record's fix is the
+document's own rewrite, the `sce:type` of every entry (`sce:required="true"`
+becomes the bare type, and no `sce:required`, or `="false"`, becomes
+`optional<T>`). `sce-codegen codec-format <document>` prints the document so
+rewritten and leaves every other byte as written. Any other value is
+`validation/invalid-attribute`, naming `2`. The refusal of format 1 is part of the
+grammar and has no end: a document written years ago and built for the first time
+today is refused and told its rewrite, as one built the day after. A positional
+codec declares no format, since none of its fields is absent by a declaration of
+its own (a field is left out by `sce:present-if`); written there, the attribute is
+`validation/sce-attribute-unread`.
 
 **Wire rules.** Encode writes a definite-length map of the entries present,
 in ascending key order, every head in its shortest form (RFC 8949 §4.2.1,
@@ -1278,27 +1302,27 @@ component of RFC 5545 content lines instead of fields at byte positions
 of its `<datamodel>` that names a property:
 
 ```xml
-<scxml sce:kind="codec" sce:encoding="content-line" sce:component="VEVENT" name="event">
+<scxml sce:kind="codec" sce:encoding="content-line" sce:codec-format="2" sce:component="VEVENT" name="event">
   <datamodel>
     <data id="raw"         sce:type="bytes"  sce:direction="in"/>
-    <data id="uid"         sce:type="string" sce:property="UID"     sce:required="true" sce:max-size="256"/>
-    <data id="summary"     sce:type="string" sce:property="SUMMARY" sce:value="text"    sce:max-size="512"/>
-    <data id="dtstart"     sce:type="string" sce:property="DTSTART" sce:required="true" sce:max-size="32"/>
-    <data id="dtstartTzid" sce:type="string" sce:property="DTSTART" sce:param="TZID"    sce:max-size="64"/>
-    <data id="rrule"       sce:type="string" sce:property="RRULE"   sce:max-size="256"/>
-    <data id="exdate"      sce:type="string" sce:property="EXDATE"  sce:max-count="64"  sce:max-size="32"/>
+    <data id="uid"         sce:type="string" sce:property="UID"     sce:max-size="256"/>
+    <data id="summary"     sce:type="optional&lt;string&gt;" sce:property="SUMMARY" sce:value="text" sce:max-size="512"/>
+    <data id="dtstart"     sce:type="string" sce:property="DTSTART" sce:max-size="32"/>
+    <data id="dtstartTzid" sce:type="optional&lt;string&gt;" sce:property="DTSTART" sce:param="TZID" sce:max-size="64"/>
+    <data id="rrule"       sce:type="optional&lt;string&gt;" sce:property="RRULE" sce:max-size="256"/>
+    <data id="exdate"      sce:type="optional&lt;string&gt;" sce:property="EXDATE" sce:max-count="64" sce:max-size="32"/>
   </datamodel>
 </scxml>
 ```
 
 | Attribute | Meaning |
 |---|---|
+| `sce:codec-format` (root) | The format the document is written in: `2`, the only one read (below). |
 | `sce:component` (root) | The name between `BEGIN:` and `END:`. Letters, digits and hyphens. |
 | `sce:property` | The property the entry reads and writes. Matched case-insensitively on decode, written as declared. Letters, digits and hyphens. |
-| `sce:type` | `string`, an integer (`uint8`–`uint64`, `int8`–`int64`), `bool` (`TRUE`/`FALSE`) or `enum:<alias>`. A parameter is a `string` or an `enum:<alias>`. An enum entry is written and read by the text its variant declares (`docs/adr/0015`; below), and takes none of a string's `sce:max-size`, `sce:value="text"`, `sce:separator` and `sce:max-values`. |
+| `sce:type` | `string`, an integer (`uint8`–`uint64`, `int8`–`int64`), `bool` (`TRUE`/`FALSE`) or `enum:<alias>`, or `optional<T>` over one of them. A parameter is a `string` or an `enum:<alias>`, or `optional<T>` of one. A bare type is an entry a decode of a component without the property, or whose property lacks the parameter, refuses; `optional<T>` is an entry that may be absent, in every language, and for a parameter of a repeated property, absent from each line that exists (docs/adr/0055, section 8). A parameter of a bare type belongs to a property of a bare type, except on a repeated property, where it is required of each line that exists. An enum entry is written and read by the text its variant declares (`docs/adr/0015`; below), and takes none of a string's `sce:max-size`, `sce:value="text"`, `sce:separator` and `sce:max-values`. |
 | `sce:value="text"` | On a `string` value: an RFC 5545 TEXT, so `\\`, `\;`, `\,` and `\n` are escapes on both sides. Without it the value is carried as written — a date-time, an `RRULE` and a URI are not TEXT. |
 | `sce:param` | The entry is the named parameter of the property `sce:property` names, not its value. It follows the entry of that property. On a property with `sce:max-count` it is a field of the record each line becomes, optional or required per line (`docs/adr/0014`). |
-| `sce:required="true"` | A decode of a component without the property, or whose property lacks the parameter, is refused. A required parameter belongs to a required property — except on a repeated property, where it is required of each line that exists. An entry that is not required is optional in every language. |
 | `sce:max-size` | Required on every `string`: the most bytes it holds, after unescaping. |
 | `sce:max-count` | On a `string` value, at least 2: the most lines of the property a component holds. The entry is then a bounded list of values in line order, or of line records when the property declares a parameter (`docs/adr/0014`). |
 | `sce:separator` | On a `string` value: `,` or `;`, the character that cuts the value of one line into a list of values. Requires `sce:max-values`. Not on a parameter, an integer or a `bool`. (`docs/adr/0014`) |

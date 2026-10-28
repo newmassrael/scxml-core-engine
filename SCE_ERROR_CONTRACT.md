@@ -532,6 +532,7 @@ There is no fallback from `fix` to `expected`.
 | `replace_with` | `to` | Replace the value carried in the record's `actual` field with `to`. Emitted when exactly one legal replacement exists — e.g. `==` → `===` under strict equality, or a `<sce:import kind>` declaration corrected to the imported file's real kind. Deterministic. |
 | `replace_one_of` | `candidates[]` | Replace `actual` with one of `candidates`. Emitted when the producer knows the closed set of legal values (attribute-value enums, cross-reference resolution, supported language list) but cannot pick a single answer — the consumer or human chooses from the list. |
 | `add_one_of` | `element`, `attrs[]` | Add one of the listed `attrs` to `element`. Used for "require either X or Y" constraints (e.g. `<send>` needs `event` or `eventexpr`). Choice-based. |
+| `rewrite_codec_format` | `format`, `entries[]` (each `id`, `type`) | Rewrite the CBOR or content-line codec document into codec format `format` (ADR 0055 section 8): declare `sce:codec-format="<format>"` on the root, set the `sce:type` of the entry named `id` to `type` for each of `entries`, and remove every `sce:required`. Emitted by `validation/codec-format-superseded` only, where the rewrite is the one format 1 says of each entry: several edits, none of them a choice. `sce-codegen codec-format <document>` prints the document so rewritten. Deterministic. |
 
 The variant name encodes the *shape* of the repair: deterministic
 variants can be applied without further judgment; choice variants
@@ -932,6 +933,7 @@ references against a real document and drift silently.
 | `validation/attribute-rule-violated` | `validation` | no |  |
 | `validation/bytes-comparison-not-equality` | `validation` | no |  |
 | `validation/bytes-max-size-violation` | `validation` | no |  |
+| `validation/codec-format-superseded` | `validation` | `rewrite_codec_format` | SCE Forge §4.6 |
 | `validation/colliding-code-identifier` | `validation` | no | SCE Accepted Subset §2.14 |
 | `validation/count-mismatch` | `validation` | no |  |
 | `validation/cross-kind-circular-dependency` | `validation` | no |  |

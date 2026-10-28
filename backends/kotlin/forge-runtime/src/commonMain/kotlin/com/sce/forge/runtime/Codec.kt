@@ -41,7 +41,7 @@ sealed class CodecError {
     /// are not the CBOR it expects. Decode-side; Kotlin's `decode()`
     /// collapses it to `null` as it does every decode failure.
     object CborMalformed : CodecError()
-    /// A CBOR codec's map lacked an entry declared `sce:required="true"`.
+    /// A CBOR codec's map lacked an entry of a bare type, one that is not `optional<T>`.
     object CborRequiredKeyMissing : CodecError()
     /// A CBOR codec's `bytes` entry declared `sce:length` held another number
     /// of bytes — raised by `encode()`; decode collapses it to `null`.
@@ -60,8 +60,8 @@ sealed class CodecError {
     /// a parameter or an `END:` the grammar does not admit. Decode collapses it
     /// to `null`; [ContentLine.lastError] says which rule refused.
     object LineMalformed : CodecError()
-    /// A content-line component lacked a property or parameter declared
-    /// `sce:required="true"`; on encode, a parameter was given without the
+    /// A content-line component lacked a property or parameter of a bare type,
+    /// one that is not `optional<T>`; on encode, a parameter was given without the
     /// property it belongs to.
     object LineRequiredMissing : CodecError()
     /// A content-line property that holds one value occurred twice, a parameter

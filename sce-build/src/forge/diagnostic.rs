@@ -700,6 +700,14 @@ pub enum DiagnosticCode {
     /// rides `fix`: here the rule rides `expected` and there is no fix.
     #[serde(rename = "validation/attribute-rule-violated")]
     ValidationAttributeRuleViolated,
+    /// A CBOR or content-line codec document written in codec format 1: it
+    /// declares no `sce:codec-format`, or `="1"` (docs/adr/0055, section 8).
+    /// Refused and never read, since a bare entry means an optional one in
+    /// format 1 and a required one in format 2. Placed on the root; `actual` is
+    /// the declaration as written, absent when there is none; the fix is the
+    /// document's own rewrite, [`Fix::RewriteCodecFormat`].
+    #[serde(rename = "validation/codec-format-superseded")]
+    ValidationCodecFormatSuperseded,
     /// An element that takes exactly one of several attributes carries none
     /// of them, or more than one. The attributes it takes ride `expected`;
     /// the one written beyond the first is `actual`, absent when none is
@@ -3710,6 +3718,7 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ValidationMissingAttribute,
         ValidationInvalidAttribute,
         ValidationAttributeRuleViolated,
+        ValidationCodecFormatSuperseded,
         ValidationExactlyOneAttribute,
         ValidationSendOperandType,
         ValidationUnexpectedChildElement,
@@ -4431,6 +4440,10 @@ impl DiagnosticCode {
             // The procedure kind's section states what a `<send>`'s
             // payload and address are.
             ValidationSendOperandType => Some("SCE Forge §4.5"),
+            // The codec kind's section states what its documents declare, and
+            // the format a CBOR or content-line codec is written in is one
+            // of the things.
+            ValidationCodecFormatSuperseded => Some("SCE Forge §4.6"),
             ValidationWrongPipeline => Some("SCE Forge §4"),
 
             // ── Forge expression language (SCE_FORGE.md §3.4) ────
@@ -5323,6 +5336,7 @@ impl DiagnosticCode {
             | ValidationMissingAttribute
             | ValidationInvalidAttribute
             | ValidationAttributeRuleViolated
+            | ValidationCodecFormatSuperseded
             | ValidationExactlyOneAttribute
             | ValidationSendOperandType
             | ValidationUnexpectedChildElement
@@ -5807,6 +5821,7 @@ impl DiagnosticCode {
             ValidationMissingAttribute => "validation/missing-attribute",
             ValidationInvalidAttribute => "validation/invalid-attribute",
             ValidationAttributeRuleViolated => "validation/attribute-rule-violated",
+            ValidationCodecFormatSuperseded => "validation/codec-format-superseded",
             ValidationExactlyOneAttribute => "validation/exactly-one-attribute",
             ValidationSendOperandType => "validation/send-operand-type",
             ValidationUnexpectedChildElement => "validation/unexpected-child-element",
@@ -6487,7 +6502,7 @@ impl From<&crate::forge::error::RelatedSite> for Related {
 /// The variant encodes the *shape* of the repair:
 ///
 /// * Deterministic: `AddAttribute`, `RenameDuplicate`, `RemoveFields`,
-///   `ReplaceWith` — applicable without further judgment.
+///   `ReplaceWith`, `RewriteCodecFormat` — applicable without further judgment.
 /// * Choice-based: `ReplaceOneOf`, `AddOneOf` — the producer lists the
 ///   closed candidate set and the consumer (or the human) picks.
 ///
@@ -6538,6 +6553,20 @@ pub enum Fix {
     /// `event` or `eventexpr`). The consumer must choose which of `attrs`
     /// to emit based on surrounding context.
     AddOneOf { element: String, attrs: Vec<String> },
+
+    /// Rewrite a CBOR or content-line codec document into codec format
+    /// `format` (docs/adr/0055, section 8), the one rewrite the format it is
+    /// written in says: the root declares `sce:codec-format="<format>"`, the
+    /// `sce:type` of each entry named by its `id` in `entries` is the type
+    /// given, and every `sce:required` is removed. Deterministic, as the edit is
+    /// not the consumer's to choose; it is several edits, one per entry and one
+    /// of the root, which no single-value variant names, so its payload is the
+    /// whole rewrite. `sce-codegen codec-format <document>` prints the document
+    /// so rewritten.
+    RewriteCodecFormat {
+        format: String,
+        entries: Vec<crate::forge::codec_format::EntryRewrite>,
+    },
 }
 
 impl Fix {
@@ -7247,6 +7276,31 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             actual: Some(value.clone()),
             fix: None,
             key_fragments: vec![element.clone(), attr.clone(), value.clone()],
+        },
+        // A codec document in format 1 (docs/adr/0055, section 8). The
+        // declaration as written is `actual` when there is one, and it locates
+        // the record; with none, the record stands at the root and reports
+        // nothing. The repair is the document's own rewrite, one deterministic
+        // edit, so it rides `fix` and `expected` stays absent. The id is the
+        // declaration alone: which entries the rewrite holds is a fact about
+        // the document around the error, not about the error.
+        ValidationError::CodecFormatSuperseded {
+            declared,
+            attribute,
+            entries,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationCodecFormatSuperseded,
+            stage: Stage::Validation,
+            expected: None,
+            actual: declared.as_ref().map(|_| attribute.clone()),
+            fix: Some(Fix::RewriteCodecFormat {
+                format: crate::forge::codec_format::CURRENT.to_string(),
+                entries: entries.clone(),
+            }),
+            key_fragments: vec![
+                crate::forge::codec_format::ATTRIBUTE.to_string(),
+                declared.clone().unwrap_or_default(),
+            ],
         },
         // The attributes the element takes one of are what the position
         // accepts; which one the author meant is not the producer's to say,
@@ -12662,6 +12716,44 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:2ec9170bf68dc459","code":"validation/attribute-rule-violated","stage":"validation","message":"Filter output: invalid sce:window value '0' (expected: positive integer)","expected":["positive integer"],"actual":"0"}"#,
+            ),
+            (
+                // A codec document that declares `sce:codec-format="1"`
+                // (docs/adr/0055, section 8): refused, with the document's own
+                // rewrite as the fix. The declaration is `actual`, which is
+                // where the record stands.
+                "forge/codec-format-superseded-declared",
+                ValidationError::CodecFormatSuperseded {
+                    declared: Some("1".into()),
+                    attribute: "sce:codec-format".into(),
+                    entries: vec![
+                        crate::forge::codec_format::EntryRewrite {
+                            id: "kind".into(),
+                            sce_type: "uint8".into(),
+                        },
+                        crate::forge::codec_format::EntryRewrite {
+                            id: "label".into(),
+                            sce_type: "optional<string>".into(),
+                        },
+                    ],
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:6bda3811e312fa28","code":"validation/codec-format-superseded","stage":"validation","spec":"SCE Forge §4.6","message":"this codec document is written in codec format 1 (it declares sce:codec-format=\"1\"), which is refused and never read: format 2 writes an entry that must be present as its bare type and one that may be absent as optional<T>, and has no sce:required. Rewrite it: declare sce:codec-format=\"2\" on the root, and write the entries' types as kind: uint8, label: optional<string>, and remove every sce:required; `sce-codegen codec-format <document>` prints the document so rewritten","actual":"sce:codec-format","fix":{"kind":"rewrite_codec_format","format":"2","entries":[{"id":"kind","type":"uint8"},{"id":"label","type":"optional<string>"}]}}"#,
+            ),
+            (
+                // The same document with no declaration: nothing on the root's
+                // row is the value refused, so the record reports none.
+                "forge/codec-format-superseded-undeclared",
+                ValidationError::CodecFormatSuperseded {
+                    declared: None,
+                    attribute: "sce:codec-format".into(),
+                    entries: vec![crate::forge::codec_format::EntryRewrite {
+                        id: "kind".into(),
+                        sce_type: "uint8".into(),
+                    }],
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:ccf50a97e0277909","code":"validation/codec-format-superseded","stage":"validation","spec":"SCE Forge §4.6","message":"this codec document is written in codec format 1 (it declares no sce:codec-format), which is refused and never read: format 2 writes an entry that must be present as its bare type and one that may be absent as optional<T>, and has no sce:required. Rewrite it: declare sce:codec-format=\"2\" on the root, and write the entries' types as kind: uint8, and remove every sce:required; `sce-codegen codec-format <document>` prints the document so rewritten","fix":{"kind":"rewrite_codec_format","format":"2","entries":[{"id":"kind","type":"uint8"}]}}"#,
             ),
             (
                 // Exactly one of several attributes, and none written: the
@@ -18990,6 +19082,9 @@ mod tests {
             | ValidationMeshRpcDuplicateTarget
             | ValidationRemovedAttribute
             | ValidationSceAttributeUnread
+            // The rewrite is one deterministic edit of the document
+            // (`Fix::RewriteCodecFormat`), so `expected` is absent.
+            | ValidationCodecFormatSuperseded
             | ValidationUnknownScxmlAttribute
             | ValidationBytesMaxSizeViolation
             | MemPoolTooLarge
@@ -19936,6 +20031,7 @@ mod tests {
                 | ValidationMissingElement
                 | ValidationMissingAttribute | ValidationInvalidAttribute
                 | ValidationAttributeRuleViolated
+                | ValidationCodecFormatSuperseded
                 | ValidationExactlyOneAttribute
                 | ValidationSendOperandType
                 | ValidationUnexpectedChildElement
@@ -20371,9 +20467,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            487,
+            488,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 487 distinct variants to match the DiagnosticCode \
+             expected 488 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -20964,6 +21060,7 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | ValidationMissingAttribute
             | ValidationInvalidAttribute
             | ValidationAttributeRuleViolated
+            | ValidationCodecFormatSuperseded
             | ValidationExactlyOneAttribute
             | ValidationSendOperandType
             | ValidationUnexpectedChildElement

@@ -3303,7 +3303,9 @@ fn render_codec(m: &CodecModel) -> Vec<Node> {
 }
 
 /// `codec <name> encoding cbor`, then one line per map entry:
-/// `entry <id>: <type> key <n> [required] [length <n>] [max-size <n>]`.
+/// `entry <id>: <type> key <n> [length <n>] [max-size <n>]`, where `<type>` is
+/// the bare type of an entry that must be present and `optional<T>` that of one
+/// that may be absent (docs/adr/0055, section 8).
 fn render_cbor_codec(m: &CodecModel) -> Vec<Node> {
     let mut out = Out::new();
     out.line_of(vec![
@@ -3320,9 +3322,6 @@ fn render_cbor_codec(m: &CodecModel) -> Vec<Node> {
                 e.sce_type.as_attr(),
                 e.key
             );
-            if e.required {
-                line.push_str(" required");
-            }
             if let Some(n) = e.length {
                 let _ = write!(line, " length {n}");
             }
@@ -3336,8 +3335,10 @@ fn render_cbor_codec(m: &CodecModel) -> Vec<Node> {
 }
 
 /// `codec <name> encoding content-line component <C>`, then one line per entry:
-/// `entry <id>: <type> property <P> [param <Q>] [text] [required] [max-size <n>]
-/// [max-count <n>]` (docs/adr/0010).
+/// `entry <id>: <type> property <P> [param <Q>] [text] [max-size <n>]
+/// [max-count <n>]` (docs/adr/0010), where `<type>` is the bare type of an entry
+/// that must be present and `optional<T>` that of one that may be absent
+/// (docs/adr/0055, section 8).
 fn render_content_line_codec(m: &CodecModel) -> Vec<Node> {
     let mut out = Out::new();
     let Some(content) = &m.content_line else {
@@ -3364,9 +3365,6 @@ fn render_content_line_codec(m: &CodecModel) -> Vec<Node> {
             }
             if e.text {
                 line.push_str(" text");
-            }
-            if e.required {
-                line.push_str(" required");
             }
             if let Some(n) = e.max_size {
                 let _ = write!(line, " max-size {n}");

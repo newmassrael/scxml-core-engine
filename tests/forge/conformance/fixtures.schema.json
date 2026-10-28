@@ -482,11 +482,11 @@
           ],
           "properties": {
             "cbor": {
-              "description": "The document is `sce:encoding=\"cbor\"` (SCE_FORGE.md §4.6.1): its encode can refuse a value, so a fragment unwraps the encode's result, and its non-required entries are `optional` fields. Derived from the same parse the generator reads, like `has_test_vectors`; fixtures.json never states it.",
+              "description": "The document is `sce:encoding=\"cbor\"` (SCE_FORGE.md §4.6.1): its encode can refuse a value, so a fragment unwraps the encode's result, and its `optional<T>` entries are `optional` fields. Derived from the same parse the generator reads, like `has_test_vectors`; fixtures.json never states it.",
               "type": "boolean"
             },
             "content_line": {
-              "description": "The document is `sce:encoding=\"content-line\"` (SCE_FORGE.md §4.6.4): its encode and decode can refuse a value, a case may be `decode_only` (an input the codec reads and does not write), and its non-required entries are `optional` and its `sce:max-count` ones `list` fields. Derived from the same parse the generator reads; fixtures.json never states it.",
+              "description": "The document is `sce:encoding=\"content-line\"` (SCE_FORGE.md §4.6.4): its encode and decode can refuse a value, a case may be `decode_only` (an input the codec reads and does not write), and its `optional<T>` entries are `optional` and its `sce:max-count` ones `list` fields. Derived from the same parse the generator reads; fixtures.json never states it.",
               "type": "boolean"
             },
             "fields": {
@@ -862,7 +862,7 @@
           "type": "boolean"
         },
         "members": {
-          "description": "The members of one record of a list of line records — a repeated property that declares a parameter or a separator (docs/adr/0014), which each language carries as a record type. The parameters come in declaration order, optional unless `sce:required`, and then the line's value as `value`, or as the list `values` when the entry has a separator. A round-trip case writes each record as a JSON object keyed by these names. Empty for every field that is not a list of records. Derived from the document, like `optional`.",
+          "description": "The members of one record of a list of line records — a repeated property that declares a parameter or a separator (docs/adr/0014), which each language carries as a record type. The parameters come in declaration order, optional when typed `optional<T>`, and then the line's value as `value`, or as the list `values` when the entry has a separator. A round-trip case writes each record as a JSON object keyed by these names. Empty for every field that is not a list of records. Derived from the document, like `optional`.",
           "type": "array",
           "items": {
             "$ref": "#/definitions/StructField"
@@ -872,7 +872,7 @@
           "type": "string"
         },
         "optional": {
-          "description": "The field may be absent — an entry of an `sce:encoding=\"cbor\"` codec not declared `sce:required=\"true\"` (SCE_FORGE.md §4.6.1), which each language carries as its optional type. A round-trip case writes an absent value as JSON `null`. Derived from the document at render time, like `has_test_vectors`; fixtures.json never states it.",
+          "description": "The field may be absent — an entry of an `sce:encoding=\"cbor\"` codec typed `optional<T>` (SCE_FORGE.md §4.6.1), which each language carries as its optional type. A round-trip case writes an absent value as JSON `null`. Derived from the document at render time, like `has_test_vectors`; fixtures.json never states it.",
           "type": "boolean"
         },
         "type": {

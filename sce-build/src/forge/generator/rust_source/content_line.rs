@@ -60,7 +60,7 @@ impl Plan<'_> {
 
     /// The type one value of `e` has when it is read through the interface.
     fn value_type(&self, e: &ContentLineEntry) -> String {
-        match &e.sce_type {
+        match e.present_type() {
             SceType::String => "&str".to_string(),
             other => self.l().type_name(other).into_owned(),
         }
@@ -68,7 +68,7 @@ impl Plan<'_> {
 
     /// Where a value of `e` is held in the builder, as the reading of it.
     fn read_scalar(&self, e: &ContentLineEntry, field: &str, optional: bool) -> String {
-        match (&e.sce_type, optional) {
+        match (e.present_type(), optional) {
             (SceType::String, false) => format!("self.{field}.as_str()"),
             (SceType::String, true) => format!("self.{field}.as_deref()"),
             _ => format!("self.{field}"),
@@ -77,7 +77,7 @@ impl Plan<'_> {
 
     /// The items of a list of values of `e`, read from the builder.
     fn read_items(&self, e: &ContentLineEntry, field: &str) -> String {
-        match &e.sce_type {
+        match e.present_type() {
             SceType::String => format!("self.{field}.iter().map(|s| s.as_str())"),
             _ => format!("self.{field}.iter().copied()"),
         }
@@ -93,12 +93,12 @@ impl Plan<'_> {
                 "out.strings_of(v, b'{separator}', {text}, {max_size}, {max_values})?;"
             );
         }
-        match &e.sce_type {
+        match e.present_type() {
             SceType::String => format!("out.string(v, {text}, {max_size})?;"),
             SceType::Enum(r) => format!(
                 "out.enum_value(TEXTS_{}, u64::from({}))?;",
                 r.alias.to_uppercase(),
-                self.l().codec_carrier_expr(&e.sce_type, "v")
+                self.l().codec_carrier_expr(e.present_type(), "v")
             ),
             SceType::Bool => "out.boolean(v)?;".to_string(),
             SceType::Uint64 => "out.uint(v)?;".to_string(),
@@ -113,15 +113,15 @@ impl Plan<'_> {
         let accessor = self.member(&p.id);
         let param = p.param.as_deref().unwrap_or_default();
         let max_size = p.max_size.unwrap_or(0);
-        let call = |value: &str| match &p.sce_type {
+        let call = |value: &str| match p.present_type() {
             SceType::Enum(r) => format!(
                 "out.enum_param(\"{param}\", TEXTS_{}, u64::from({}))?;",
                 r.alias.to_uppercase(),
-                self.l().codec_carrier_expr(&p.sce_type, value)
+                self.l().codec_carrier_expr(p.present_type(), value)
             ),
             _ => format!("out.param(\"{param}\", {value}, {max_size})?;"),
         };
-        if p.required {
+        if p.is_required() {
             vec![call(&format!("{holder}.{accessor}()"))]
         } else {
             vec![
@@ -135,10 +135,10 @@ impl Plan<'_> {
     /// The accessor type of a parameter.
     fn param_type(&self, p: &ContentLineEntry) -> String {
         let value = self.value_type(p);
-        if p.required {
+        if p.is_required() {
             value
         } else {
-            format!("Option<{value}>")
+            self.l().codec_optional_of(&value)
         }
     }
 
@@ -157,10 +157,10 @@ impl Plan<'_> {
             self.items_type("&str")
         } else if e.max_count.is_some() {
             self.items_type(&self.value_type(e))
-        } else if e.required {
+        } else if e.is_required() {
             self.value_type(e)
         } else {
-            format!("Option<{}>", self.value_type(e))
+            self.l().codec_optional_of(&self.value_type(e))
         }
     }
 
@@ -202,7 +202,7 @@ impl Plan<'_> {
                 ));
                 builder_items.push_str(&format!(
                     "    fn {acc}(&self) -> {ty} {{\n        {}\n    }}\n",
-                    self.read_scalar(p, &acc, !p.required)
+                    self.read_scalar(p, &acc, !p.is_required())
                 ));
             }
             items.push_str(&format!(
@@ -235,7 +235,7 @@ impl Plan<'_> {
         let property = &e.property;
         let params: Vec<&ContentLineEntry> = self.model.parameters_of(e).collect();
         if self.model.reads_records(e) {
-            if e.required {
+            if e.is_required() {
                 body.push(format!(
                     "if src.{accessor}().next().is_none() {{\n    return Err(CodecError::LineRequiredMissing);\n}}"
                 ));
@@ -258,7 +258,7 @@ impl Plan<'_> {
             body.push(format!("    {}", self.write_value(e)));
             body.push("}".to_string());
         } else if e.max_count.is_some() {
-            if e.required {
+            if e.is_required() {
                 body.push(format!(
                     "if src.{accessor}().next().is_none() {{\n    return Err(CodecError::LineRequiredMissing);\n}}"
                 ));
@@ -267,7 +267,7 @@ impl Plan<'_> {
             body.push(format!("    out.property(\"{property}\")?;"));
             body.push(format!("    {}", self.write_value(e)));
             body.push("}".to_string());
-        } else if e.required {
+        } else if e.is_required() {
             body.push("{".to_string());
             body.push(format!("    let v = src.{accessor}();"));
             body.push(format!("    out.property(\"{property}\")?;"));
@@ -354,7 +354,7 @@ impl Plan<'_> {
             } else if self.model.reads_values(e) || e.max_count.is_some() {
                 self.read_items(e, &acc)
             } else {
-                self.read_scalar(e, &acc, !e.required)
+                self.read_scalar(e, &acc, !e.is_required())
             };
             builder_items.push_str(&format!(
                 "    fn {acc}(&self) -> {ty} {{\n        {read}\n    }}\n"
@@ -372,7 +372,7 @@ impl Plan<'_> {
                     ));
                     builder_items.push_str(&format!(
                         "    fn {pacc}(&self) -> {pty} {{\n        {}\n    }}\n",
-                        self.read_scalar(p, &pacc, !p.required)
+                        self.read_scalar(p, &pacc, !p.is_required())
                     ));
                 }
             }

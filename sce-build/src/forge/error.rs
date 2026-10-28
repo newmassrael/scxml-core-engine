@@ -670,6 +670,28 @@ pub enum ValidationError {
         rule: String,
     },
 
+    /// A CBOR or content-line codec document written in codec format 1
+    /// (docs/adr/0055, section 8): it declares no `sce:codec-format`, or
+    /// `sce:codec-format="1"`. Format 1 spelt an entry that may be absent by
+    /// leaving `sce:required="true"` off it, the reverse of format 2, where a
+    /// bare type is required and `optional<T>` is optional, so a document
+    /// cannot be told from one in the other spelling by its entries alone: it is
+    /// refused, never read, and told its rewrite.
+    ///
+    /// `declared` is the value written (`None` when the root declares none);
+    /// `attribute` is the attribute as the document spells it, prefix included,
+    /// which is the record's `actual` when one is written. `entries` is the
+    /// rewrite of every entry, in document order: the type format 2 spells what
+    /// format 1 said. The refusal is part of the grammar and has no end: a
+    /// document built for the first time years after this was decided is
+    /// refused and told its rewrite exactly as one built the day after.
+    #[error("{}", codec_format_superseded_message(.declared.as_deref(), .entries))]
+    CodecFormatSuperseded {
+        declared: Option<String>,
+        attribute: String,
+        entries: Vec<crate::forge::codec_format::EntryRewrite>,
+    },
+
     /// An element that takes exactly one of several attributes, carrying
     /// none of them or more than one — `<sce:repeat>` with both `count` and
     /// `until-eof`. `alternatives` names every attribute that may stand, as
@@ -5733,6 +5755,35 @@ fn exactly_one_attribute_message(
             format!("{element}: takes exactly one of {one_of}, and '{extra}' is one too many")
         }
     }
+}
+
+/// The sentence of [`ValidationError::CodecFormatSuperseded`]: what the document
+/// declares, what format 2 is, and the rewrite — the types format 2 spells for
+/// each entry — with the command that prints the document so rewritten.
+fn codec_format_superseded_message(
+    declared: Option<&str>,
+    entries: &[crate::forge::codec_format::EntryRewrite],
+) -> String {
+    let written = match declared {
+        Some(value) => format!("it declares sce:codec-format=\"{value}\""),
+        None => "it declares no sce:codec-format".to_string(),
+    };
+    let types = if entries.is_empty() {
+        String::new()
+    } else {
+        let rows: Vec<String> = entries
+            .iter()
+            .map(|e| format!("{}: {}", e.id, e.sce_type))
+            .collect();
+        format!(", and write the entries' types as {}", rows.join(", "))
+    };
+    format!(
+        "this codec document is written in codec format 1 ({written}), which is refused and \
+         never read: format 2 writes an entry that must be present as its bare type and one \
+         that may be absent as optional<T>, and has no sce:required. Rewrite it: declare \
+         sce:codec-format=\"2\" on the root{types}, and remove every sce:required; \
+         `sce-codegen codec-format <document>` prints the document so rewritten"
+    )
 }
 
 // ── Stage 5: Cross-file import resolution ──────────────────────

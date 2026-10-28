@@ -630,13 +630,7 @@ fn parse_field(line: &Line<'_>) -> Result<ForgeField, ParseError> {
 /// `optional<T>` (docs/adr/0055), written as one word as the renderer writes
 /// it.
 fn parse_schema_field(line: &Line<'_>) -> Result<SchemaField, ParseError> {
-    parse_typed_field(
-        line,
-        |word| match crate::forge::model::AlgorithmValueType::optional_inner(word) {
-            Some(inner) => SceType::from_attr(inner).map(|elem| FieldType::Optional { elem }),
-            None => SceType::from_attr(word).map(FieldType::Scalar),
-        },
-    )
+    parse_typed_field(line, FieldType::from_attr)
 }
 
 /// A field line, its type read by `read_type`.
@@ -2308,7 +2302,8 @@ fn parse_bit_size(w: &[&str], line: usize) -> Result<BitSize, ParseError> {
 }
 
 /// `codec <name> encoding cbor`, then `entry <id>: <type> key <n>
-/// [required] [length <n>] [max-size <n>]` lines.
+/// [length <n>] [max-size <n>]` lines, `<type>` being a bare type or
+/// `optional<T>` (docs/adr/0055, section 8).
 fn parse_cbor_codec(head: &Line<'_>, body: &[&Line<'_>]) -> Result<CodecModel, ParseError> {
     let w: Vec<&str> = head.text.split_whitespace().collect();
     let mut entries = Vec::new();
@@ -2329,7 +2324,7 @@ fn parse_cbor_codec(head: &Line<'_>, body: &[&Line<'_>]) -> Result<CodecModel, P
             .and_then(|v| v.strip_suffix(':'))
             .ok_or_else(|| fail("a cbor entry needs `<id>:`".to_string()))?;
         let type_word = lw.get(2).copied().unwrap_or("");
-        let sce_type = SceType::from_attr(type_word)
+        let sce_type = FieldType::from_attr(type_word)
             .ok_or_else(|| fail(format!("`{type_word}` is not an sce:type")))?;
         if lw.get(3).copied() != Some("key") {
             return Err(fail(
@@ -2345,7 +2340,6 @@ fn parse_cbor_codec(head: &Line<'_>, body: &[&Line<'_>]) -> Result<CodecModel, P
             line: None,
             key,
             sce_type,
-            required: false,
             length: None,
             max_size: None,
         };
@@ -2357,7 +2351,6 @@ fn parse_cbor_codec(head: &Line<'_>, body: &[&Line<'_>]) -> Result<CodecModel, P
                     .ok_or_else(|| fail(format!("`{what}` needs a number")))
             };
             match *word {
-                "required" => entry.required = true,
                 "length" => entry.length = Some(number("length")?),
                 "max-size" => entry.max_size = Some(number("max-size")?),
                 other => return Err(fail(format!("`{other}` is not a cbor entry clause"))),
@@ -2381,8 +2374,9 @@ fn parse_cbor_codec(head: &Line<'_>, body: &[&Line<'_>]) -> Result<CodecModel, P
 }
 
 /// `codec <name> encoding content-line component <C>`, then `entry <id>:
-/// <type> property <P> [param <Q>] [text] [required] [max-size <n>]
-/// [max-count <n>]` lines (docs/adr/0010).
+/// <type> property <P> [param <Q>] [text] [max-size <n>] [max-count <n>]`
+/// lines (docs/adr/0010), `<type>` being a bare type or `optional<T>`
+/// (docs/adr/0055, section 8).
 fn parse_content_line_codec(head: &Line<'_>, body: &[&Line<'_>]) -> Result<CodecModel, ParseError> {
     let w: Vec<&str> = head.text.split_whitespace().collect();
     if w.get(4).copied() != Some("component") {
@@ -2418,7 +2412,7 @@ fn parse_content_line_codec(head: &Line<'_>, body: &[&Line<'_>]) -> Result<Codec
             .and_then(|v| v.strip_suffix(':'))
             .ok_or_else(|| fail("a content-line entry needs `<id>:`".to_string()))?;
         let type_word = lw.get(2).copied().unwrap_or("");
-        let sce_type = SceType::from_attr(type_word)
+        let sce_type = FieldType::from_attr(type_word)
             .ok_or_else(|| fail(format!("`{type_word}` is not an sce:type")))?;
         if lw.get(3).copied() != Some("property") {
             return Err(fail(
@@ -2437,7 +2431,6 @@ fn parse_content_line_codec(head: &Line<'_>, body: &[&Line<'_>]) -> Result<Codec
             param: None,
             sce_type,
             text: false,
-            required: false,
             max_size: None,
             max_count: None,
             separator: None,
@@ -2452,7 +2445,6 @@ fn parse_content_line_codec(head: &Line<'_>, body: &[&Line<'_>]) -> Result<Codec
             };
             match *word {
                 "text" => entry.text = true,
-                "required" => entry.required = true,
                 "max-size" => entry.max_size = Some(number("max-size")?),
                 "max-count" => entry.max_count = Some(number("max-count")?),
                 "max-values" => entry.max_values = Some(number("max-values")?),

@@ -10,6 +10,7 @@ pub mod ast_export;
 pub mod buffer_pool_fsm;
 pub mod cbor_codec;
 pub mod codec_failure;
+pub mod codec_format;
 pub mod codec_roles;
 pub mod codegen_markers;
 pub mod codegen_matrix;

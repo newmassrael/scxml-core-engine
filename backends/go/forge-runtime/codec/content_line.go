@@ -23,8 +23,8 @@ import (
 // admit.
 var ErrLineMalformed = errors.New("sce/codec: content line malformed")
 
-// ErrLineRequiredMissing: a property or parameter declared
-// `sce:required="true"` is absent; on encode, a parameter was given without the
+// ErrLineRequiredMissing: a property or parameter of a bare type, one that is
+// not `optional<T>`, is absent; on encode, a parameter was given without the
 // property it belongs to.
 var ErrLineRequiredMissing = errors.New("sce/codec: content line required missing")
 

@@ -245,7 +245,7 @@ fn the_cases_reach_every_entry_and_every_bound_of_the_fixture() {
                     e.id
                 );
             }
-            if let (SceType::String, Some(size)) = (&e.sce_type, e.max_size) {
+            if let (SceType::String, Some(size)) = (e.present_type(), e.max_size) {
                 // The widest value a case carries is the bound, or the bound is
                 // unreached; a long text reaches it through escapes, so measure
                 // the unescaped value.
@@ -352,7 +352,7 @@ fn every_variant_of_every_enum_is_written_by_a_case_as_its_text_is_declared() {
     for (alias, variants) in vocabularies {
         let using: Vec<&ContentLineEntry> = entries
             .iter()
-            .filter(|e| matches!(&e.sce_type, SceType::Enum(r) if r.alias == alias))
+            .filter(|e| matches!(e.present_type(), SceType::Enum(r) if r.alias == alias))
             .collect();
         assert!(!using.is_empty(), "no entry reads the enum `{alias}`");
         for (carrier, text) in variants {
@@ -389,7 +389,7 @@ fn an_enum_value_is_a_number_in_a_vector_and_never_a_text() {
     let f = fixture(name);
     for e in entries
         .iter()
-        .filter(|e| matches!(e.sce_type, SceType::Enum(_)))
+        .filter(|e| matches!(e.present_type(), SceType::Enum(_)))
     {
         for (i, c) in array(&f, "cases").iter().enumerate() {
             for v in occurrences(&entries, e, &c["decoded"]) {

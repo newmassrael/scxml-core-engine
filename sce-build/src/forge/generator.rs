@@ -6642,7 +6642,7 @@ fn render_codec(
             let borrows = m
                 .cbor_entries
                 .iter()
-                .any(|e| matches!(e.sce_type, SceType::String | SceType::Bytes));
+                .any(|e| matches!(e.present_type(), SceType::String | SceType::Bytes));
             text.push('\n');
             text.push_str(&rust_source::cbor::render(&rust_source::cbor::Input {
                 m,
@@ -26352,6 +26352,24 @@ impl LangCtx {
     /// `present` spells in this language ([`optional_of`]).
     pub(crate) fn optional_of(&self, present: &str) -> Option<String> {
         optional_of(self.lang, present)
+    }
+
+    /// The type a CBOR or content-line codec holds an entry that may be absent
+    /// in (an `optional<T>` entry, docs/adr/0055, section 8), over `present`, the
+    /// type its present value is: [`Self::optional_of`], so a codec's entry is
+    /// spelled as a statechart's variable of the same type is.
+    ///
+    /// A codec on Go keeps its pointer and one on C11 its `<name>_present` flag
+    /// until the steps of the ADR that move them (13 and 14), so neither asks
+    /// for it.
+    pub(crate) fn codec_optional_of(&self, present: &str) -> String {
+        self.optional_of(present).unwrap_or_else(|| {
+            panic!(
+                "a {:?} codec spells an entry that may be absent by its own convention, so it \
+                 asks for no wrap of the type of the present value",
+                self.lang
+            )
+        })
     }
 
     /// Parameter type for function signatures (uses references/borrows for

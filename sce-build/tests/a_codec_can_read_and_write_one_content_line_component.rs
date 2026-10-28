@@ -9,7 +9,7 @@
 use sce_build::forge::codegen_matrix::emitting;
 use sce_build::forge::content_line_codec;
 use sce_build::forge::model::{
-    CodecEncoding, CodecModel, ContentLineEntry, ForgeDocument, ForgeKind, SceType,
+    CodecEncoding, CodecModel, ContentLineEntry, FieldType, ForgeDocument, ForgeKind, SceType,
 };
 use sce_build::forge::parser::parse_forge;
 use sce_build::forge::{pseudo, unpseudo};
@@ -18,12 +18,13 @@ use sce_build::DocumentLabel;
 use std::process::Command;
 use tempfile::tempdir;
 
-/// A content-line codec of component `VEVENT` whose `<datamodel>` holds `entries`.
+/// A content-line codec of component `VEVENT`, in codec format 2, whose
+/// `<datamodel>` holds `entries`.
 fn document(root_attrs: &str, entries: &str) -> String {
     format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:encoding="content-line" sce:component="VEVENT"{root_attrs} name="probe_event" version="1.0">
+       sce:kind="codec" sce:encoding="content-line" sce:codec-format="2" sce:component="VEVENT"{root_attrs} name="probe_event" version="1.0">
   <datamodel>
     <data id="raw" sce:type="bytes" sce:direction="in"/>
 {entries}
@@ -35,15 +36,16 @@ fn document(root_attrs: &str, entries: &str) -> String {
 
 /// The shape of the component the calendar reads: required text, a TEXT, a
 /// property with a parameter, a rule carried as written, a repeated property and
-/// a bool and an integer.
-const EVENT: &str = r#"    <data id="uid" sce:type="string" sce:property="UID" sce:required="true" sce:max-size="256"/>
-    <data id="summary" sce:type="string" sce:property="SUMMARY" sce:value="text" sce:max-size="512"/>
-    <data id="dtstart" sce:type="string" sce:property="DTSTART" sce:required="true" sce:max-size="32"/>
-    <data id="dtstartTzid" sce:type="string" sce:property="DTSTART" sce:param="TZID" sce:max-size="64"/>
-    <data id="rrule" sce:type="string" sce:property="RRULE" sce:max-size="256"/>
-    <data id="exdate" sce:type="string" sce:property="EXDATE" sce:max-count="64" sce:max-size="32"/>
-    <data id="sequence" sce:type="uint32" sce:property="SEQUENCE"/>
-    <data id="allDay" sce:type="bool" sce:property="X-ALL-DAY"/>"#;
+/// a bool and an integer. An entry of a bare type is required and one of
+/// `optional<T>` may be absent (docs/adr/0055, section 8).
+const EVENT: &str = r#"    <data id="uid" sce:type="string" sce:property="UID" sce:max-size="256"/>
+    <data id="summary" sce:type="optional&lt;string&gt;" sce:property="SUMMARY" sce:value="text" sce:max-size="512"/>
+    <data id="dtstart" sce:type="string" sce:property="DTSTART" sce:max-size="32"/>
+    <data id="dtstartTzid" sce:type="optional&lt;string&gt;" sce:property="DTSTART" sce:param="TZID" sce:max-size="64"/>
+    <data id="rrule" sce:type="optional&lt;string&gt;" sce:property="RRULE" sce:max-size="256"/>
+    <data id="exdate" sce:type="optional&lt;string&gt;" sce:property="EXDATE" sce:max-count="64" sce:max-size="32"/>
+    <data id="sequence" sce:type="optional&lt;uint32&gt;" sce:property="SEQUENCE"/>
+    <data id="allDay" sce:type="optional&lt;bool&gt;" sce:property="X-ALL-DAY"/>"#;
 
 fn label() -> DocumentLabel<'static> {
     DocumentLabel {
@@ -90,11 +92,12 @@ fn every_entry_is_read_with_its_property_its_parameter_and_its_bounds() {
     assert_eq!(
         (
             entry("uid").property.as_str(),
-            entry("uid").required,
+            entry("uid").is_required(),
             entry("uid").max_size
         ),
         ("UID", true, Some(256))
     );
+    assert!(!entry("summary").is_required() && !entry("dtstartTzid").is_required());
     assert!(entry("summary").text && !entry("rrule").text);
     assert_eq!(
         (
@@ -104,8 +107,19 @@ fn every_entry_is_read_with_its_property_its_parameter_and_its_bounds() {
         ("DTSTART", Some("TZID"))
     );
     assert_eq!(entry("exdate").max_count, Some(64));
-    assert_eq!(entry("sequence").sce_type, SceType::Uint32);
-    assert_eq!(entry("allDay").sce_type, SceType::Bool);
+    assert_eq!(
+        entry("sequence").sce_type,
+        FieldType::Optional {
+            elem: SceType::Uint32
+        }
+    );
+    assert_eq!(
+        entry("allDay").sce_type,
+        FieldType::Optional {
+            elem: SceType::Bool
+        }
+    );
+    assert_eq!(entry("uid").sce_type, FieldType::Scalar(SceType::String));
 }
 
 #[test]
@@ -117,15 +131,17 @@ fn the_page_shows_a_content_line_codec_and_reads_it_back() {
         "{page}"
     );
     assert!(
-        page.contains("entry uid: string property UID required max-size 256"),
+        page.contains("entry uid: string property UID max-size 256"),
         "{page}"
     );
     assert!(
-        page.contains("entry dtstartTzid: string property DTSTART param TZID max-size 64"),
+        page.contains(
+            "entry dtstartTzid: optional<string> property DTSTART param TZID max-size 64"
+        ),
         "{page}"
     );
     assert!(
-        page.contains("entry exdate: string property EXDATE max-size 32 max-count 64"),
+        page.contains("entry exdate: optional<string> property EXDATE max-size 32 max-count 64"),
         "{page}"
     );
     let back = unpseudo::parse(&page).expect("the page reads back");
@@ -168,7 +184,7 @@ fn a_position_a_key_or_an_exact_length_is_refused_rather_than_ignored() {
 fn the_component_and_every_property_are_named_with_a_name_of_the_format() {
     let no_component = r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:encoding="content-line" name="probe_event" version="1.0">
+       sce:kind="codec" sce:encoding="content-line" sce:codec-format="2" name="probe_event" version="1.0">
   <datamodel>
     <data id="uid" sce:type="string" sce:property="UID" sce:max-size="8"/>
   </datamodel>
@@ -270,26 +286,39 @@ fn an_enum_entry_names_an_enum_the_codec_imports() {
     assert!(why.contains("nope"), "{why}");
 }
 
-/// A parameter is missing only from a property that is there to be missing it from.
+/// A parameter is missing only from a property that is there to be missing it from:
+/// a parameter of a bare type is required of its property, so the property is of a
+/// bare type too, and `optional<T>` is the type of one that may be absent.
 #[test]
 fn a_required_parameter_needs_a_required_property() {
     let why = refusal(&document(
         "",
-        r#"    <data id="v" sce:type="string" sce:property="DTSTART" sce:max-size="8"/>
-    <data id="p" sce:type="string" sce:property="DTSTART" sce:param="TZID" sce:required="true" sce:max-size="8"/>"#,
+        r#"    <data id="v" sce:type="optional&lt;string&gt;" sce:property="DTSTART" sce:max-size="8"/>
+    <data id="p" sce:type="string" sce:property="DTSTART" sce:param="TZID" sce:max-size="8"/>"#,
     ));
     assert!(
-        why.contains("sce:required") && why.contains("DTSTART"),
+        why.contains("a required parameter needs a required property")
+            && why.contains("DTSTART")
+            && why.contains("optional<T>"),
         "{why}"
     );
 
     let model = codec(&document(
         "",
-        r#"    <data id="v" sce:type="string" sce:property="DTSTART" sce:required="true" sce:max-size="8"/>
-    <data id="p" sce:type="string" sce:property="DTSTART" sce:param="TZID" sce:required="true" sce:max-size="8"/>"#,
+        r#"    <data id="v" sce:type="string" sce:property="DTSTART" sce:max-size="8"/>
+    <data id="p" sce:type="string" sce:property="DTSTART" sce:param="TZID" sce:max-size="8"/>"#,
     ));
     let entries = &model.content_line.expect("a content-line codec").entries;
-    assert!(entries.iter().all(|e| e.required));
+    assert!(entries.iter().all(|e| e.is_required()));
+
+    // An optional parameter of an optional property says what it always did.
+    let model = codec(&document(
+        "",
+        r#"    <data id="v" sce:type="optional&lt;string&gt;" sce:property="DTSTART" sce:max-size="8"/>
+    <data id="p" sce:type="optional&lt;string&gt;" sce:property="DTSTART" sce:param="TZID" sce:max-size="8"/>"#,
+    ));
+    let entries = &model.content_line.expect("a content-line codec").entries;
+    assert!(entries.iter().all(|e| !e.is_required()));
 }
 
 #[test]
@@ -343,11 +372,11 @@ fn a_codec_with_no_property_is_refused() {
 
 /// A repeated property declares the parameters its lines carry, and `sce:separator`
 /// with `sce:max-values` makes the value of a line a list (docs/adr/0014).
-const RECORDS: &str = r#"    <data id="exdate" sce:type="string" sce:property="EXDATE" sce:max-count="64" sce:max-size="32" sce:separator="," sce:max-values="8"/>
-    <data id="exdateTzid" sce:type="string" sce:property="EXDATE" sce:param="TZID" sce:max-size="64"/>
-    <data id="attendee" sce:type="string" sce:property="ATTENDEE" sce:max-count="100" sce:max-size="256"/>
-    <data id="attendeeCn" sce:type="string" sce:property="ATTENDEE" sce:param="CN" sce:max-size="64"/>
-    <data id="categories" sce:type="string" sce:property="CATEGORIES" sce:value="text" sce:max-size="32" sce:separator="," sce:max-values="4"/>"#;
+const RECORDS: &str = r#"    <data id="exdate" sce:type="optional&lt;string&gt;" sce:property="EXDATE" sce:max-count="64" sce:max-size="32" sce:separator="," sce:max-values="8"/>
+    <data id="exdateTzid" sce:type="optional&lt;string&gt;" sce:property="EXDATE" sce:param="TZID" sce:max-size="64"/>
+    <data id="attendee" sce:type="optional&lt;string&gt;" sce:property="ATTENDEE" sce:max-count="100" sce:max-size="256"/>
+    <data id="attendeeCn" sce:type="optional&lt;string&gt;" sce:property="ATTENDEE" sce:param="CN" sce:max-size="64"/>
+    <data id="categories" sce:type="optional&lt;string&gt;" sce:property="CATEGORIES" sce:value="text" sce:max-size="32" sce:separator="," sce:max-values="4"/>"#;
 
 #[test]
 fn a_repeated_property_takes_parameters_and_a_line_may_hold_a_list_of_values() {
@@ -401,25 +430,20 @@ fn a_repeated_property_takes_parameters_and_a_line_may_hold_a_list_of_values() {
 /// single-valued property it still does (docs/adr/0014).
 #[test]
 fn a_required_parameter_of_a_repeated_property_is_required_of_each_line() {
-    let repeated = |required: &str| {
-        document(
-            "",
-            &format!(
-                r#"    <data id="a" sce:type="string" sce:property="A" sce:max-count="3" sce:max-size="8"{required}/>
-    <data id="aRole" sce:type="string" sce:property="A" sce:param="ROLE" sce:max-size="8" sce:required="true"/>"#
-            ),
-        )
-    };
-    let m = codec(&repeated(""));
+    let m = codec(&document(
+        "",
+        r#"    <data id="a" sce:type="optional&lt;string&gt;" sce:property="A" sce:max-count="3" sce:max-size="8"/>
+    <data id="aRole" sce:type="string" sce:property="A" sce:param="ROLE" sce:max-size="8"/>"#,
+    ));
     let content = m.content_line.as_ref().expect("a content-line codec");
     let role = content.entries.iter().find(|e| e.id == "aRole").unwrap();
-    assert!(role.required);
+    assert!(role.is_required());
     assert!(content.uses_line_records());
 
     let single = refusal(&document(
         "",
-        r#"    <data id="a" sce:type="string" sce:property="A" sce:max-size="8"/>
-    <data id="aRole" sce:type="string" sce:property="A" sce:param="ROLE" sce:max-size="8" sce:required="true"/>"#,
+        r#"    <data id="a" sce:type="optional&lt;string&gt;" sce:property="A" sce:max-size="8"/>
+    <data id="aRole" sce:type="string" sce:property="A" sce:param="ROLE" sce:max-size="8"/>"#,
     ));
     assert!(single.contains("required"), "{single}");
 }
@@ -573,7 +597,7 @@ fn enum_document(entries: &str) -> String {
     format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:encoding="content-line" sce:component="VEVENT" name="probe_event" version="1.0">
+       sce:kind="codec" sce:encoding="content-line" sce:codec-format="2" sce:component="VEVENT" name="probe_event" version="1.0">
   <sce:import kind="enum" src="probe_status.scxml" as="Status"/>
   <datamodel>
     <data id="raw" sce:type="bytes" sce:direction="in"/>
@@ -584,11 +608,11 @@ fn enum_document(entries: &str) -> String {
     )
 }
 
-const ENUM_ENTRIES: &str = r#"    <data id="uid" sce:type="string" sce:property="UID" sce:required="true" sce:max-size="16"/>
-    <data id="status" sce:type="enum:Status" sce:property="STATUS"/>
-    <data id="attendee" sce:type="string" sce:property="ATTENDEE" sce:max-count="3" sce:max-size="40"/>
-    <data id="attendeePartstat" sce:type="enum:Status" sce:property="ATTENDEE" sce:param="PARTSTAT" sce:required="true"/>
-    <data id="phase" sce:type="enum:Status" sce:property="PHASE" sce:max-count="2"/>"#;
+const ENUM_ENTRIES: &str = r#"    <data id="uid" sce:type="string" sce:property="UID" sce:max-size="16"/>
+    <data id="status" sce:type="optional&lt;enum:Status&gt;" sce:property="STATUS"/>
+    <data id="attendee" sce:type="optional&lt;string&gt;" sce:property="ATTENDEE" sce:max-count="3" sce:max-size="40"/>
+    <data id="attendeePartstat" sce:type="enum:Status" sce:property="ATTENDEE" sce:param="PARTSTAT"/>
+    <data id="phase" sce:type="optional&lt;enum:Status&gt;" sce:property="PHASE" sce:max-count="2"/>"#;
 
 #[test]
 fn an_enum_entry_is_a_value_a_repeated_value_or_a_parameter() {
@@ -603,13 +627,13 @@ fn an_enum_entry_is_a_value_a_repeated_value_or_a_parameter() {
     };
     for id in ["status", "attendeePartstat", "phase"] {
         assert!(
-            matches!(&kind(id).sce_type, SceType::Enum(r) if r.alias == "Status"),
+            matches!(kind(id).present_type(), SceType::Enum(r) if r.alias == "Status"),
             "{id}: {:?}",
             kind(id).sce_type
         );
     }
     assert_eq!(kind("phase").max_count, Some(2));
-    assert!(kind("attendeePartstat").required);
+    assert!(kind("attendeePartstat").is_required() && !kind("status").is_required());
     assert!(content.uses_enums());
     // A codec without one has none to generate.
     assert!(!codec(&document("", EVENT))
@@ -778,7 +802,8 @@ fn generated_against(language: &str, status: &str, entries: &str) -> String {
 
 #[test]
 fn the_enum_a_codec_reads_gives_each_variant_a_text_a_line_can_carry() {
-    let entry = r#"    <data id="status" sce:type="enum:Status" sce:property="STATUS"/>"#;
+    let entry =
+        r#"    <data id="status" sce:type="optional&lt;enum:Status&gt;" sce:property="STATUS"/>"#;
     // A variant with no text is called by its name, which must be a token.
     let said = generated_against(
         "python",
@@ -807,7 +832,8 @@ fn the_enum_a_codec_reads_gives_each_variant_a_text_a_line_can_carry() {
 
 #[test]
 fn python_reads_and_writes_an_enum_entry_by_the_text_of_its_variants() {
-    let entry = r#"    <data id="status" sce:type="enum:Status" sce:property="STATUS"/>"#;
+    let entry =
+        r#"    <data id="status" sce:type="optional&lt;enum:Status&gt;" sce:property="STATUS"/>"#;
     let sound = status_document(&[("needsAction", 0, Some("NEEDS-ACTION")), ("done", 1, None)]);
     let said = generated_against("python", &sound, entry);
     assert!(!said.contains("docs/adr/0015"), "{said}");

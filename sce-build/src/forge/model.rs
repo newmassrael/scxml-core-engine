@@ -2985,12 +2985,8 @@ pub struct CborEntry {
     pub line: Option<u32>,
     /// The map key, `0..=23` — a key whose CBOR head is one byte.
     pub key: u8,
-    /// An unsigned integer, `bool`, `string`, `bytes` or `enum:<alias>`.
-    pub sce_type: SceType,
-    /// `sce:required="true"`: a decode of a map without this key is refused.
-    /// An entry that is not required is optional in every language.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub required: bool,
+    /// An unsigned integer, `bool`, `string`, `bytes` or `enum:<alias>`, or `optional<T>` of one of them (docs/adr/0055, section 8): a bare type is an entry a decode of a map without this key refuses, and `optional<T>` one that may be absent.
+    pub sce_type: FieldType,
     /// `sce:length`: the exact byte length of a `bytes` entry; any other
     /// length is refused on decode and on encode.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2998,6 +2994,23 @@ pub struct CborEntry {
     /// `sce:max-size`: the most bytes a `string` or `bytes` entry holds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_size: Option<u32>,
+}
+
+impl CborEntry {
+    /// Whether a decode of a map without this entry's key is refused: the entry
+    /// is of a bare type (docs/adr/0055, section 8). An `optional<T>` entry may
+    /// be absent, in every language.
+    pub fn is_required(&self) -> bool {
+        self.sce_type.optional_elem().is_none()
+    }
+
+    /// The type a present value of the entry is: the bare type itself, or the
+    /// element of an `optional<T>` one. What a reader that spells a bound or the
+    /// wire kind of the value asks; one that holds the value matches
+    /// [`Self::sce_type`] instead.
+    pub fn present_type(&self) -> &SceType {
+        self.sce_type.present_type()
+    }
 }
 
 /// A `sce:encoding="content-line"` codec's wire shape (SCE_FORGE.md §4.6.4).
@@ -3027,16 +3040,12 @@ pub struct ContentLineEntry {
     /// [`Self::property`] and not its value.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub param: Option<String>,
-    /// `string`, an integer, `bool` or `enum:<alias>`; a parameter is a
-    /// `string` or an `enum:<alias>`.
-    pub sce_type: SceType,
+    /// `string`, an integer, `bool` or `enum:<alias>`, or `optional<T>` of one of them (docs/adr/0055, section 8); a parameter is a `string` or an `enum:<alias>`, or `optional<T>` of one. A bare type is an entry a decode of a component without it refuses, and `optional<T>` one that may be absent; of each line that exists, for a parameter of a repeated property.
+    pub sce_type: FieldType,
     /// `sce:value="text"` on a `string` value: an RFC 5545 TEXT, so `\\`,
     /// `\;`, `\,` and `\n` are escapes on both sides.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub text: bool,
-    /// `sce:required="true"`: a decode of a component without it is refused.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub required: bool,
     /// `sce:max-size`: the most bytes a `string` entry holds, after unescaping.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_size: Option<u32>,
@@ -3054,6 +3063,24 @@ pub struct ContentLineEntry {
     pub max_values: Option<u32>,
 }
 
+impl ContentLineEntry {
+    /// Whether a decode of a component without this entry is refused: the entry
+    /// is of a bare type (docs/adr/0055, section 8). An `optional<T>` entry may
+    /// be absent, in every language; for a parameter of a repeated property, of
+    /// each line that exists.
+    pub fn is_required(&self) -> bool {
+        self.sce_type.optional_elem().is_none()
+    }
+
+    /// The type a present value of the entry is: the bare type itself, or the
+    /// element of an `optional<T>` one. What a reader that spells a bound or the
+    /// wire kind of the value asks; one that holds the value matches
+    /// [`Self::sce_type`] instead.
+    pub fn present_type(&self) -> &SceType {
+        self.sce_type.present_type()
+    }
+}
+
 impl ContentLineModel {
     /// Whether the codec has an entry that is an enum — a property's value or a
     /// parameter written and read by the text of a variant (docs/adr/0015), the
@@ -3062,7 +3089,7 @@ impl ContentLineModel {
     pub fn uses_enums(&self) -> bool {
         self.entries
             .iter()
-            .any(|entry| matches!(entry.sce_type, SceType::Enum(_)))
+            .any(|entry| matches!(entry.present_type(), SceType::Enum(_)))
     }
 
     /// Whether the codec has an entry whose lines are records — a repeated
@@ -4183,13 +4210,14 @@ impl OptionalElemType {
     }
 }
 
-/// The type of a field of an event schema (docs/adr/0055): the value type
-/// restricted to a scalar or an optional scalar. A schema has no record or
-/// list fields, so neither is a case here for a reader to refuse.
+/// The type of a field of an event schema and of an entry of a CBOR or
+/// content-line codec (docs/adr/0055): the value type restricted to a scalar or
+/// an optional scalar. Neither has record or list members, so neither is a case
+/// here for a reader to refuse.
 ///
 /// A constructor, never a flag beside the scalar: every reader of a schema's
-/// field matches it, so the compiler names each one that has not said what it
-/// does with a field that may be absent.
+/// field or a codec's entry matches it, so the compiler names each one that has
+/// not said what it does with a value that may be absent.
 ///
 /// Serialized untagged, as [`AlgorithmValueType`] is: a scalar field keeps the
 /// bare string it always was (`"int64"`), so the forge-AST of a schema that
@@ -4246,6 +4274,18 @@ impl FieldType {
             Self::Optional { elem } => {
                 format!("{}{}>", AlgorithmValueType::OPTIONAL_PREFIX, elem.as_attr())
             }
+        }
+    }
+
+    /// Read the spelling [`Self::as_attr`] writes: a scalar keyword or
+    /// `enum:<alias>`, or `optional<T>` over one. `None` for anything else, a
+    /// list, a record and a nested optional among them. The plain inverse for
+    /// text SCE wrote itself; a document's `sce:type` is read by
+    /// `parser::read_schema_field_type`, which adds the refusals a document needs.
+    pub fn from_attr(s: &str) -> Option<Self> {
+        match AlgorithmValueType::optional_inner(s) {
+            Some(inner) => SceType::from_attr(inner.trim()).map(|elem| Self::Optional { elem }),
+            None => SceType::from_attr(s.trim()).map(Self::Scalar),
         }
     }
 

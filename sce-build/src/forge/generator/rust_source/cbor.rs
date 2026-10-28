@@ -34,7 +34,7 @@ pub(in super::super) struct Input<'a> {
 
 /// The type an accessor returns for the value of `e` when it is present.
 fn value_type(input: &Input<'_>, e: &CborEntry) -> String {
-    match &e.sce_type {
+    match e.present_type() {
         SceType::String => "&str".to_string(),
         SceType::Bytes => "&[u8]".to_string(),
         other => input.l.type_name(other).into_owned(),
@@ -43,10 +43,10 @@ fn value_type(input: &Input<'_>, e: &CborEntry) -> String {
 
 fn accessor_type(input: &Input<'_>, e: &CborEntry) -> String {
     let value = value_type(input, e);
-    if e.required {
+    if e.is_required() {
         value
     } else {
-        format!("Option<{value}>")
+        input.l.codec_optional_of(&value)
     }
 }
 
@@ -78,12 +78,12 @@ fn write_value(input: &Input<'_>, e: &CborEntry) -> Vec<String> {
             out.push("cbor::write_bytes(w, v)?;".to_string());
         }
         "enum" => {
-            let SceType::Enum(r) = &e.sce_type else {
+            let SceType::Enum(r) = e.present_type() else {
                 unreachable!("`kind` is enum for an enum type");
             };
             let carrier = cbor_codec::enum_carrier(input.imports, &r.alias)
                 .expect("the import resolved the enum's carrier");
-            let underlying = input.l.codec_carrier_expr(&e.sce_type, "v");
+            let underlying = input.l.codec_carrier_expr(e.present_type(), "v");
             // A signed carrier can hold a value no unsigned integer carries.
             out.push(if matches!(
                 carrier,
@@ -99,7 +99,7 @@ fn write_value(input: &Input<'_>, e: &CborEntry) -> Vec<String> {
             });
         }
         _ => {
-            if e.sce_type == SceType::Uint64 {
+            if *e.present_type() == SceType::Uint64 {
                 out.push("cbor::write_uint(w, v)?;".to_string());
             } else {
                 out.push("cbor::write_uint(w, u64::from(v))?;".to_string());
@@ -125,7 +125,7 @@ pub(in super::super) fn render(input: &Input<'_>) -> String {
         trait_items.push_str(&format!(
             "    /// The entry with key {key}{required}.\n    fn {acc}(&self) -> {ty};\n",
             key = e.key,
-            required = if e.required { ", required" } else { "" },
+            required = if e.is_required() { ", required" } else { "" },
         ));
         ref_items.push_str(&format!(
             "    fn {acc}(&self) -> {ty} {{\n        (**self).{acc}()\n    }}\n"
@@ -137,9 +137,9 @@ pub(in super::super) fn render(input: &Input<'_>) -> String {
 
     // The entries as written: the map head counts the present ones, then each
     // follows in ascending key order.
-    let required = m.cbor_entries.iter().filter(|e| e.required).count();
+    let required = m.cbor_entries.iter().filter(|e| e.is_required()).count();
     let mut body: Vec<String> = Vec::new();
-    let optional: Vec<&CborEntry> = m.cbor_entries.iter().filter(|e| !e.required).collect();
+    let optional: Vec<&CborEntry> = m.cbor_entries.iter().filter(|e| !e.is_required()).collect();
     if optional.is_empty() {
         body.push(format!("let count: u64 = {required};"));
     } else {
@@ -157,7 +157,7 @@ pub(in super::super) fn render(input: &Input<'_>) -> String {
     for e in by_key {
         let acc = accessor(e);
         let write = write_value(input, e);
-        if e.required {
+        if e.is_required() {
             body.push(format!("let v = src.{acc}();"));
             body.push(format!("cbor::write_uint(w, {})?;", e.key));
             body.extend(write);

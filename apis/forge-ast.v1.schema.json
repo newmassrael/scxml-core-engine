@@ -1150,17 +1150,13 @@
             "null"
           ]
         },
-        "required": {
-          "description": "`sce:required=\"true\"`: a decode of a map without this key is refused. An entry that is not required is optional in every language.",
-          "type": "boolean"
-        },
         "sce_type": {
           "allOf": [
             {
-              "$ref": "#/definitions/SceType"
+              "$ref": "#/definitions/FieldType"
             }
           ],
-          "description": "An unsigned integer, `bool`, `string`, `bytes` or `enum:<alias>`."
+          "description": "An unsigned integer, `bool`, `string`, `bytes` or `enum:<alias>`, or `optional<T>` of one of them (docs/adr/0055, section 8): a bare type is an entry a decode of a map without this key refuses, and `optional<T>` one that may be absent."
         }
       },
       "required": [
@@ -1515,17 +1511,13 @@
           "description": "`sce:property`: the property name, matched case-insensitively on decode and written as declared.",
           "type": "string"
         },
-        "required": {
-          "description": "`sce:required=\"true\"`: a decode of a component without it is refused.",
-          "type": "boolean"
-        },
         "sce_type": {
           "allOf": [
             {
-              "$ref": "#/definitions/SceType"
+              "$ref": "#/definitions/FieldType"
             }
           ],
-          "description": "`string`, an integer, `bool` or `enum:<alias>`; a parameter is a `string` or an `enum:<alias>`."
+          "description": "`string`, an integer, `bool` or `enum:<alias>`, or `optional<T>` of one of them (docs/adr/0055, section 8); a parameter is a `string` or an `enum:<alias>`, or `optional<T>` of one. A bare type is an entry a decode of a component without it refuses, and `optional<T>` one that may be absent; of each line that exists, for a parameter of a repeated property."
         },
         "separator": {
           "description": "`sce:separator` (`,` or `;`): the value of one line is a list of values cut at it (docs/adr/0014). Requires [`Self::max_values`].",
@@ -2248,7 +2240,7 @@
           "type": "object"
         }
       ],
-      "description": "The type of a field of an event schema (docs/adr/0055): the value type restricted to a scalar or an optional scalar. A schema has no record or list fields, so neither is a case here for a reader to refuse.\n\nA constructor, never a flag beside the scalar: every reader of a schema's field matches it, so the compiler names each one that has not said what it does with a field that may be absent.\n\nSerialized untagged, as [`AlgorithmValueType`] is: a scalar field keeps the bare string it always was (`\"int64\"`), so the forge-AST of a schema that declares no optional field is byte-identical, and an optional one is `{\"optional\": \"int64\"}`, the spelling a variable of the same type has."
+      "description": "The type of a field of an event schema and of an entry of a CBOR or content-line codec (docs/adr/0055): the value type restricted to a scalar or an optional scalar. Neither has record or list members, so neither is a case here for a reader to refuse.\n\nA constructor, never a flag beside the scalar: every reader of a schema's field or a codec's entry matches it, so the compiler names each one that has not said what it does with a value that may be absent.\n\nSerialized untagged, as [`AlgorithmValueType`] is: a scalar field keeps the bare string it always was (`\"int64\"`), so the forge-AST of a schema that declares no optional field is byte-identical, and an optional one is `{\"optional\": \"int64\"}`, the spelling a variable of the same type has."
     },
     "FilterType": {
       "description": "Filter type: algorithm used for signal filtering.",

@@ -4002,9 +4002,11 @@ and what may stand inside is refused as a variable's is, naming the set. An
 algorithm's parameter, return and local may be optional over a fixed-width number
 or a `bool` ("An algorithm's optional value", below), and refuse an optional text,
 byte string, value of an enum or record by name as `validation/attribute-rule-violated`;
-every other position — a transform's, condition's, lookup's, interpolation's or
-validator's slot, a codec's entry — refuses `optional<…>` by name as
-`validation/attribute-rule-violated`. The model carries the type (`{"optional":
+a CBOR or content-line codec's entry is optional by it ("A codec's entries and the
+format of its document", below); every other position — a transform's, condition's,
+lookup's, interpolation's or validator's slot, a positional codec's field — refuses
+`optional<…>` by name as `validation/attribute-rule-violated`. The model carries
+the type (`{"optional":
 "int64"}` in the forge AST, on a variable, a schema's field and an algorithm's slot
 alike). Each of the six generated backends and the Interpreter's lowering lowers a
 statechart that declares one or imports a schema that does; the unit of a schema
@@ -4012,6 +4014,42 @@ with an optional text or enum field, and an algorithm whose record holds one, ar
 refused by name as `generate/unsupported-feature` ("an optional value has no
 <language> lowering yet"), and a host-run `<invoke>` whose `sce:request` or
 `sce:result` names such a schema is refused where it is checked.
+
+**A codec's entries and the format of its document** (docs/adr/0055, section 8;
+SCE_FORGE.md §4.6.1 and §4.6.4). An entry of a CBOR (`sce:encoding="cbor"`) or
+content-line (`sce:encoding="content-line"`) codec is typed as an event schema's
+field is, by a scalar or an optional scalar: a bare `sce:type` is an entry a
+decode refuses a map or component without, and `optional<T>` an entry that may be
+absent (a content-line parameter of a repeated property is absent from each line
+that exists). The model carries the type (`sce_type`, a scalar or `{"optional":
+…}`) and no flag beside it. A parameter of a bare type belongs to a property of a
+bare type, except on a repeated property, and an optional property takes
+optional parameters (`validation/attribute-rule-violated` on the parameter's
+`sce:type` otherwise). `sce:required` is no part of the grammar a document is
+read in, and a document written in format 2 that carries one is refused as
+`validation/attribute-rule-violated`, whose rule names the bare type and
+`optional<T>` as the two spellings of what it meant. The root of such a codec
+declares the format it is written in, `sce:codec-format="2"`, the only one read
+and generated: a bare entry was an optional one in format 1 (`sce:required="true"`
+marked a required one) and is a required one in format 2, so no document can be
+told from one in the other spelling by its entries. A document with no
+`sce:codec-format`, or `="1"`, is refused, never read, as
+`validation/codec-format-superseded`, placed on the root (at the declaration, when
+one is written, which is then the record's `actual`), whose fix, `rewrite_codec_format`,
+lists the type format 2 writes for every entry: `sce:required="true"` is the bare
+type, and no `sce:required`, or `="false"`, is `optional<T>`. A document that
+writes `optional<T>` without declaring format 2 is refused on that entry's type,
+naming the declaration; any other value of the attribute is
+`validation/invalid-attribute`, naming `2`. `sce-codegen codec-format <document>`
+prints the whole document in format 2, every other byte as written, so the author
+replaces the document with it; a document that `check` accepts after it
+generates the bytes the document in format 1 did. The refusal of format 1 is part
+of the grammar and has no end: no switch, no migration flag, and a document built
+for the first time years after this was decided is refused and told its rewrite as
+one built the day after. A positional codec declares no format, since none of its
+fields is absent by a declaration of its own (`sce:present-if` leaves one out and
+no format changes it); written there, the attribute is
+`validation/sce-attribute-unread`.
 
 **An algorithm's optional value** (docs/adr/0055, step 8). An algorithm's
 `<sce:param>`, `<sce:return>` and `<sce:var>` take `optional<T>` over a
@@ -8461,7 +8499,7 @@ completed), and a selection for a document that imports no model is
 
 ---
 
-## Appendix — `DiagnosticCode` index (487 codes)
+## Appendix — `DiagnosticCode` index (488 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -8507,6 +8545,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `validation/missing-attribute` | Validation |
 | `validation/invalid-attribute` | Validation |
 | `validation/attribute-rule-violated` | Validation |
+| `validation/codec-format-superseded` | Validation |
 | `validation/exactly-one-attribute` | Validation |
 | `validation/send-operand-type` | Validation |
 | `validation/unexpected-child-element` | Validation |

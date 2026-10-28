@@ -309,10 +309,10 @@ pub struct StructField {
     pub ty: CanonicalType,
     pub compare: CompareMode,
     /// The field may be absent — an entry of an `sce:encoding="cbor"` codec
-    /// not declared `sce:required="true"` (SCE_FORGE.md §4.6.1), which each
-    /// language carries as its optional type. A round-trip case writes an
-    /// absent value as JSON `null`. Derived from the document at render
-    /// time, like `has_test_vectors`; fixtures.json never states it.
+    /// typed `optional<T>` (SCE_FORGE.md §4.6.1), which each language carries
+    /// as its optional type. A round-trip case writes an absent value as JSON
+    /// `null`. Derived from the document at render time, like
+    /// `has_test_vectors`; fixtures.json never states it.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub optional: bool,
     /// The field is a list — a property of an `sce:encoding="content-line"`
@@ -342,7 +342,7 @@ pub struct StructField {
     /// The members of one record of a list of line records — a repeated
     /// property that declares a parameter or a separator (docs/adr/0014),
     /// which each language carries as a record type. The parameters come in
-    /// declaration order, optional unless `sce:required`, and then the line's
+    /// declaration order, optional when typed `optional<T>`, and then the line's
     /// value as `value`, or as the list `values` when the entry has a
     /// separator. A round-trip case writes each record as a JSON object keyed
     /// by these names. Empty for every field that is not a list of records.
@@ -693,14 +693,14 @@ pub enum FixtureSpec {
         has_test_vectors: bool,
         /// The document is `sce:encoding="cbor"` (SCE_FORGE.md §4.6.1): its
         /// encode can refuse a value, so a fragment unwraps the encode's
-        /// result, and its non-required entries are `optional` fields.
+        /// result, and its `optional<T>` entries are `optional` fields.
         /// Derived from the same parse the generator reads, like
         /// `has_test_vectors`; fixtures.json never states it.
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         cbor: bool,
         /// The document is `sce:encoding="content-line"` (SCE_FORGE.md §4.6.4):
         /// its encode and decode can refuse a value, a case may be `decode_only`
-        /// (an input the codec reads and does not write), and its non-required
+        /// (an input the codec reads and does not write), and its `optional<T>`
         /// entries are `optional` and its `sce:max-count` ones `list` fields.
         /// Derived from the same parse the generator reads; fixtures.json never
         /// states it.
@@ -1382,7 +1382,7 @@ impl Manifest {
                     if let Some(field) = fields.iter().find(|field| field.optional) {
                         return Err(format!(
                             "fixture {}: field `{}` states `optional`, which is \
-                             derived from the SCXML (sce:required on a CBOR or \
+                             derived from the SCXML (an optional<T> CBOR or \
                              content-line entry); remove it from fixtures.json",
                             f.name, field.name
                         ));
@@ -2363,7 +2363,7 @@ fn derive_codec_shape(
                 .iter()
                 .find(|e| e.id == field.name)
                 .ok_or_else(|| missing(field, "CBOR"))?;
-            field.optional = !entry.required;
+            field.optional = !entry.is_required();
         }
     }
     if let Some(lines) = model.content_line.as_ref().filter(|_| *content_line) {
@@ -2382,7 +2382,7 @@ fn derive_codec_shape(
         // What a member of a record is in `decoded`: a string, or the carrier of
         // the enum it reads by text (docs/adr/0015).
         let carriers = read_enum_carriers(scxml_path, fixture_name)?;
-        let enum_of = |entry: &crate::forge::model::ContentLineEntry| match &entry.sce_type {
+        let enum_of = |entry: &crate::forge::model::ContentLineEntry| match entry.present_type() {
             crate::forge::model::SceType::Enum(eref) => {
                 carriers.get(&eref.alias).map(Some).ok_or_else(|| {
                     format!(
@@ -2417,7 +2417,7 @@ fn derive_codec_shape(
             }
             // An enum entry is its carrier in `decoded`, so the manifest states the
             // carrier the enum document declares and no other width.
-            if matches!(entry.sce_type, crate::forge::model::SceType::Enum(_))
+            if matches!(entry.present_type(), crate::forge::model::SceType::Enum(_))
                 && field.ty != entry_type(entry)?
             {
                 return Err(format!(
@@ -2431,7 +2431,7 @@ fn derive_codec_shape(
             field.enum_document = entry_document(entry)?;
             field.enum_open = entry_open(entry)?;
             field.list = entry.max_count.is_some() || entry.separator.is_some();
-            field.optional = !entry.required && !field.list;
+            field.optional = !entry.is_required() && !field.list;
             field.members = if entry.max_count.is_some()
                 && (entry.separator.is_some()
                     || entries
@@ -2446,7 +2446,7 @@ fn derive_codec_shape(
                             name: p.id.clone(),
                             ty: entry_type(p)?,
                             compare: CompareMode::Equality,
-                            optional: !p.required,
+                            optional: !p.is_required(),
                             list: false,
                             enum_document: entry_document(p)?,
                             enum_open: entry_open(p)?,

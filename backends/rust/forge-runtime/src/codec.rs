@@ -98,7 +98,8 @@ pub enum CodecError {
     /// major type than the entry declares, a key that is not an unsigned
     /// integer, or a key given twice.
     CborMalformed,
-    /// A CBOR codec's map lacked an entry declared `sce:required="true"`.
+    /// A CBOR codec's map lacked an entry of a bare type, one that is not
+    /// `optional<T>`.
     CborRequiredKeyMissing,
     /// A CBOR codec's `bytes` entry declared `sce:length` held another
     /// number of bytes — on decode, or on encode.
@@ -123,9 +124,9 @@ pub enum CodecError {
     /// A `sce:encoding="content-line"` codec (SCE_FORGE.md §4.6.4) read a
     /// line, a parameter or an `END:` the grammar does not admit.
     LineMalformed,
-    /// A content-line component lacked a property or parameter declared
-    /// `sce:required="true"`; on encode, a parameter was given without the
-    /// property it belongs to.
+    /// A content-line component lacked a property or parameter of a bare type,
+    /// one that is not `optional<T>`; on encode, a parameter was given without
+    /// the property it belongs to.
     LineRequiredMissing,
     /// A content-line property that holds one value occurred twice, a
     /// parameter was given twice in one line, or a list passed its

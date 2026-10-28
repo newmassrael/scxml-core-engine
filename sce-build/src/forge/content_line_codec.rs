@@ -82,7 +82,7 @@ pub fn render(
 
 /// What an entry's value is, as the templates branch on it.
 fn kind(entry: &ContentLineEntry) -> &'static str {
-    match &entry.sce_type {
+    match entry.present_type() {
         SceType::String => "string",
         SceType::Bool => "bool",
         SceType::Enum(_) => "enum",
@@ -146,7 +146,7 @@ fn insert_enum_tables(
     let mut tables: Vec<serde_json::Value> = Vec::new();
     let mut seen: Vec<&str> = Vec::new();
     for entry in &model.entries {
-        let SceType::Enum(r) = &entry.sce_type else {
+        let SceType::Enum(r) = entry.present_type() else {
             continue;
         };
         if seen.contains(&r.alias.as_str()) {
@@ -207,7 +207,7 @@ fn entries_context(
         .content_line
         .as_ref()
         .expect("a content-line codec carries its entries");
-    let value_type = |e: &ContentLineEntry| match &e.sce_type {
+    let value_type = |e: &ContentLineEntry| match e.present_type() {
         SceType::String => string_type(e.max_size.unwrap_or(0)),
         other => l.type_name(other).into_owned(),
     };
@@ -232,17 +232,20 @@ fn entries_context(
                         "local": format!("field_{name}"),
                         "param": p.param,
                         "kind": kind(p),
-                        "required": p.required,
+                        // What a template branches on is whether a line without
+                        // the parameter is refused: it is of a bare type
+                        // (docs/adr/0055, section 8).
+                        "required": p.is_required(),
                         "max_size": p.max_size,
                         "value_type": value_type(p),
-                        "default": default_of(&p.sce_type),
+                        "default": default_of(p.present_type()),
                     });
                     // A parameter's carrier is taken from a local of the line
                     // that holds the parameter, `pv`.
                     param
                         .as_object_mut()
                         .expect("a json object")
-                        .extend(enum_keys(l, &p.sce_type, "pv"));
+                        .extend(enum_keys(l, p.present_type(), "pv"));
                     param
                 })
                 .collect();
@@ -253,7 +256,7 @@ fn entries_context(
                 "property": e.property,
                 "kind": kind(e),
                 "text": e.text,
-                "required": e.required,
+                "required": e.is_required(),
                 "max_size": e.max_size,
                 "max_count": e.max_count,
                 // One value a line, on several lines.
@@ -272,20 +275,20 @@ fn entries_context(
                 )),
                 "value_member": l.codec_field_id(if e.separator.is_some() { "values" } else { "value" }),
                 "value_type": value_type(e),
-                "bits": int_bits(&e.sce_type),
-                "min": int_range(&e.sce_type).map(|r| r.0),
-                "max": int_range(&e.sce_type).map(|r| r.1),
-                "default": default_of(&e.sce_type),
+                "bits": int_bits(e.present_type()),
+                "min": int_range(e.present_type()).map(|r| r.0),
+                "max": int_range(e.present_type()).map(|r| r.1),
+                "default": default_of(e.present_type()),
                 // What a line record or a list starts its value at, kept apart from
                 // `default`, which a template reads for the field that holds the
                 // record or the list.
-                "value_default": default_of(&e.sce_type),
+                "value_default": default_of(e.present_type()),
                 "params": params,
             });
             entry
                 .as_object_mut()
                 .expect("a json object")
-                .extend(enum_keys(l, &e.sce_type, "v"));
+                .extend(enum_keys(l, e.present_type(), "v"));
             entry
         })
         .collect()
@@ -327,7 +330,7 @@ fn render_kotlin(
         &FieldShapes {
             list_of: &|t| format!("MutableList<{t}>"),
             list_default: Some("mutableListOf()"),
-            optional_type: &|t| format!("{t}?"),
+            optional_type: &|t| l.codec_optional_of(t),
             optional_default: Some("null"),
         },
     );
@@ -355,7 +358,7 @@ fn render_cpp(
         &FieldShapes {
             list_of: &|t| format!("std::vector<{t}>"),
             list_default: None,
-            optional_type: &|t| format!("std::optional<{t}>"),
+            optional_type: &|t| l.codec_optional_of(t),
             optional_default: None,
         },
     );
@@ -384,7 +387,7 @@ fn render_python(
         &FieldShapes {
             list_of: &|t| format!("List[{t}]"),
             list_default: Some("field(default_factory=list)"),
-            optional_type: &|t| format!("Optional[{t}]"),
+            optional_type: &|t| l.codec_optional_of(t),
             optional_default: Some("None"),
         },
     );
@@ -412,6 +415,8 @@ fn render_go(
         &FieldShapes {
             list_of: &|t| format!("[]{t}"),
             list_default: None,
+            // A pointer, until `optional.Of[T]` replaces it (docs/adr/0055,
+            // step 13).
             optional_type: &|t| format!("*{t}"),
             optional_default: None,
         },
@@ -509,7 +514,8 @@ fn render_c(
     crate::forge::generator::insert_c_codec_symbols(&mut ctx, &m.name);
     // A string is a fixed array the size of its bound beside its length, a list
     // an array of them beside a count, and an optional entry or parameter a
-    // `<name>_present` flag beside its value: no allocation, as the rest of the
+    // `<name>_present` flag beside its value (until `sce_optional_<elem>_t`
+    // replaces it, docs/adr/0055, step 14): no allocation, as the rest of the
     // C11 runtime. Every string has its bound (`sce:max-size` is required of
     // one), so C11 refuses nothing the other backends admit.
     let mut entries = entries_context(&l, m, |_| "char".to_string(), |_| None);
@@ -552,7 +558,7 @@ fn render_c(
         .as_ref()
         .into_iter()
         .flat_map(|c| c.entries.iter())
-        .filter_map(|e| match &e.sce_type {
+        .filter_map(|e| match e.present_type() {
             SceType::Enum(r) => l
                 .enum_texts(&r.alias)
                 .iter()
@@ -574,7 +580,7 @@ fn render_c(
 /// without it a codec whose enum has a long text would be handed a buffer too
 /// small for it, which `…_MAX_BYTES` promises never happens.
 fn value_width(l: &LangCtx, entry: &ContentLineEntry) -> u64 {
-    match &entry.sce_type {
+    match entry.present_type() {
         SceType::Enum(r) => l
             .enum_texts(&r.alias)
             .iter()
@@ -608,7 +614,7 @@ fn max_encoded_bytes(l: &LangCtx, m: &CodecModel) -> u64 {
             let name = param.param.as_deref().map_or(0, str::len) as u64;
             logical += 1 + name + 1 + 2 + value_width(l, param);
         }
-        let value = match &entry.sce_type {
+        let value = match entry.present_type() {
             // An enum's text is letters, digits and hyphens: nothing is escaped.
             SceType::Enum(_) => value_width(l, entry),
             SceType::String => {
@@ -669,7 +675,7 @@ fn render_rust(
             // option, so a second line of the property is told from the first.
             (
                 values_type.clone(),
-                format!("Option<{values_type}>"),
+                l.codec_optional_of(&values_type),
                 "None".to_string(),
             )
         } else if entry["is_list"].as_bool() == Some(true) {
@@ -678,11 +684,11 @@ fn render_rust(
         } else if required {
             (
                 value_type.clone(),
-                format!("Option<{value_type}>"),
+                l.codec_optional_of(&value_type),
                 "None".to_string(),
             )
         } else {
-            let optional = format!("Option<{value_type}>");
+            let optional = l.codec_optional_of(&value_type);
             (optional.clone(), optional, "None".to_string())
         };
         entry["field_type"] = field_type.into();
@@ -694,7 +700,7 @@ fn render_rust(
                 param["field_type"] = if param["required"].as_bool() == Some(true) {
                     value_type
                 } else {
-                    format!("Option<{value_type}>")
+                    l.codec_optional_of(&value_type)
                 }
                 .into();
             }

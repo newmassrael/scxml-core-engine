@@ -35,7 +35,7 @@ pub enum CodecFailure {
     /// (SCE_FORGE.md §4.6.1): not a definite-length map, a key given twice,
     /// or an entry of the wrong major type.
     CborMalformed,
-    /// A CBOR map lacks an entry declared `sce:required="true"`.
+    /// A CBOR map lacks an entry of a bare type, one that is not `optional<T>`.
     CborRequiredKeyMissing,
     /// A CBOR byte string is not its declared `sce:length`.
     CborWrongLength,
@@ -44,9 +44,9 @@ pub enum CodecFailure {
     /// A `sce:encoding="content-line"` component has a line, a parameter or
     /// an `END:` the grammar does not admit (SCE_FORGE.md §4.6.4).
     LineMalformed,
-    /// A content-line component lacks a property or parameter declared
-    /// `sce:required="true"`; on encode, a parameter was given without the
-    /// property it belongs to.
+    /// A content-line component lacks a property or parameter of a bare type,
+    /// one that is not `optional<T>`; on encode, a parameter was given without
+    /// the property it belongs to.
     LineRequiredMissing,
     /// A content-line property that holds one value occurs twice, a
     /// parameter is given twice in one line, or a list passes its

@@ -74,8 +74,8 @@ enum class CodecError : std::uint8_t {
     /// `std::nullopt`, the C++ decode convention; a `ContentLine::Reader` keeps
     /// the rule in `error()`.
     LineMalformed = 7,
-    /// A content-line component lacked a property or parameter declared
-    /// `sce:required="true"`; on encode, a parameter was given without the
+    /// A content-line component lacked a property or parameter of a bare type,
+    /// one that is not `optional<T>`; on encode, a parameter was given without the
     /// property it belongs to.
     LineRequiredMissing = 8,
     /// A content-line property that holds one value occurred twice, a parameter

@@ -7,17 +7,19 @@
 //! file holds the declaration — what the parser reads, what it refuses, and
 //! that the page shows a CBOR codec and reads it back.
 
-use sce_build::forge::model::{CborEntry, CodecEncoding, CodecModel, ForgeDocument, SceType};
+use sce_build::forge::model::{
+    CborEntry, CodecEncoding, CodecModel, FieldType, ForgeDocument, SceType,
+};
 use sce_build::forge::parser::parse_forge;
 use sce_build::forge::{pseudo, unpseudo};
 use sce_build::DocumentLabel;
 
-/// A CBOR codec whose `<datamodel>` holds `entries` verbatim.
+/// A CBOR codec in codec format 2 whose `<datamodel>` holds `entries` verbatim.
 fn document(root_attrs: &str, entries: &str) -> String {
     format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:encoding="cbor"{root_attrs} name="probe_cbor" version="1.0">
+       sce:kind="codec" sce:encoding="cbor" sce:codec-format="2"{root_attrs} name="probe_cbor" version="1.0">
   <datamodel>
     <data id="raw" sce:type="bytes" sce:direction="in"/>
 {entries}
@@ -28,12 +30,13 @@ fn document(root_attrs: &str, entries: &str) -> String {
 }
 
 /// The shape of the Mesh envelope's head: required keys, an optional one,
-/// an exact-length byte string and a bounded text.
-const ENVELOPE_HEAD: &str = r#"    <data id="id" sce:type="bytes" sce:key="0" sce:required="true" sce:length="16" sce:direction="out"/>
-    <data id="source" sce:type="string" sce:key="1" sce:required="true" sce:max-size="256" sce:direction="out"/>
-    <data id="pattern" sce:type="uint8" sce:key="3" sce:required="true" sce:direction="out"/>
-    <data id="deadline" sce:type="uint64" sce:key="12" sce:direction="out"/>
-    <data id="urgent" sce:type="bool" sce:key="7" sce:direction="out"/>"#;
+/// an exact-length byte string and a bounded text. An entry of a bare type is
+/// required and one of `optional<T>` may be absent (docs/adr/0055, section 8).
+const ENVELOPE_HEAD: &str = r#"    <data id="id" sce:type="bytes" sce:key="0" sce:length="16" sce:direction="out"/>
+    <data id="source" sce:type="string" sce:key="1" sce:max-size="256" sce:direction="out"/>
+    <data id="pattern" sce:type="uint8" sce:key="3" sce:direction="out"/>
+    <data id="deadline" sce:type="optional&lt;uint64&gt;" sce:key="12" sce:direction="out"/>
+    <data id="urgent" sce:type="optional&lt;bool&gt;" sce:key="7" sce:direction="out"/>"#;
 
 fn label() -> DocumentLabel<'static> {
     DocumentLabel {
@@ -72,18 +75,33 @@ fn every_entry_is_read_with_its_key_and_its_bounds() {
     };
     assert_eq!(m.cbor_entries.len(), 5, "the input frame is not an entry");
     assert_eq!(
-        (entry("id").key, entry("id").required, entry("id").length),
+        (
+            entry("id").key,
+            entry("id").is_required(),
+            entry("id").length
+        ),
         (0, true, Some(16))
     );
     assert_eq!(entry("source").max_size, Some(256));
     assert_eq!(
         (
             entry("deadline").sce_type.clone(),
-            entry("deadline").required
+            entry("deadline").is_required()
         ),
-        (SceType::Uint64, false)
+        (
+            FieldType::Optional {
+                elem: SceType::Uint64
+            },
+            false
+        )
     );
-    assert_eq!(entry("urgent").sce_type, SceType::Bool);
+    assert_eq!(
+        entry("urgent").sce_type,
+        FieldType::Optional {
+            elem: SceType::Bool
+        }
+    );
+    assert_eq!(entry("pattern").sce_type, FieldType::Scalar(SceType::Uint8));
 }
 
 #[test]
@@ -91,8 +109,9 @@ fn the_page_shows_a_cbor_codec_and_reads_it_back() {
     let doc = ForgeDocument::Codec(codec(&document("", ENVELOPE_HEAD)));
     let page = pseudo::render(&doc).expect("a CBOR codec renders");
     assert!(page.contains("encoding cbor"), "{page}");
+    assert!(page.contains("entry id: bytes key 0 length 16"), "{page}");
     assert!(
-        page.contains("entry id: bytes key 0 required length 16"),
+        page.contains("entry deadline: optional<uint64> key 12"),
         "{page}"
     );
     let back = unpseudo::parse(&page).expect("the page reads back");

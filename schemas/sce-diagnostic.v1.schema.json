@@ -51,6 +51,7 @@
         "validation/missing-attribute",
         "validation/invalid-attribute",
         "validation/attribute-rule-violated",
+        "validation/codec-format-superseded",
         "validation/exactly-one-attribute",
         "validation/send-operand-type",
         "validation/unexpected-child-element",
@@ -670,6 +671,27 @@
               "type": "array",
               "items": { "type": "string" },
               "minItems": 1
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["kind", "format", "entries"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "const": "rewrite_codec_format" },
+            "format": { "type": "string" },
+            "entries": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["id", "type"],
+                "additionalProperties": false,
+                "properties": {
+                  "id": { "type": "string" },
+                  "type": { "type": "string" }
+                }
+              }
             }
           }
         }

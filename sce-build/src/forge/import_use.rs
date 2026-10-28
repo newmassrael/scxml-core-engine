@@ -326,12 +326,12 @@ impl Names {
                 // A CBOR codec's entries are its fields (SCE_FORGE.md §4.6.1);
                 // an enum one names its import like any positional field.
                 for entry in &m.cbor_entries {
-                    self.ty(&entry.sce_type);
+                    self.ty(entry.present_type());
                 }
                 // A content-line codec's entries likewise (SCE_FORGE.md §4.6.4).
                 if let Some(content) = &m.content_line {
                     for entry in &content.entries {
-                        self.ty(&entry.sce_type);
+                        self.ty(entry.present_type());
                     }
                 }
                 Ok(())

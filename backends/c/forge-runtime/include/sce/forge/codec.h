@@ -80,7 +80,7 @@ typedef enum {
      * or an entry of the wrong major type. The five CBOR statuses mirror
      * the typed `CodecError::Cbor*` of Rust and `codec.ErrCbor*` of Go. */
     SCE_FORGE_CODEC_CBOR_MALFORMED = 7,
-    /* A CBOR map lacks an entry declared `sce:required="true"`. */
+    /* A CBOR map lacks an entry of a bare type, one that is not `optional<T>`. */
     SCE_FORGE_CODEC_CBOR_REQUIRED_KEY_MISSING = 8,
     /* A CBOR byte string is not its entry's exact `sce:length`. */
     SCE_FORGE_CODEC_CBOR_WRONG_LENGTH = 9,
@@ -93,9 +93,9 @@ typedef enum {
      * statuses mirror the typed `CodecError::Line*` of Rust and
      * `codec.ErrLine*` of Go. */
     SCE_FORGE_CODEC_LINE_MALFORMED = 12,
-    /* A content-line component lacks a property or parameter declared
-     * `sce:required="true"`; on encode, a parameter was given without the
-     * property it belongs to. */
+    /* A content-line component lacks a property or parameter of a bare type,
+     * one that is not `optional<T>`; on encode, a parameter was given without
+     * the property it belongs to. */
     SCE_FORGE_CODEC_LINE_REQUIRED_MISSING = 13,
     /* A content-line property that holds one value occurred twice, a
      * parameter was given twice in one line, or a list passed its

@@ -42,7 +42,7 @@ pub fn check(
     // once, at the first entry that names it.
     let mut judged: Vec<&str> = Vec::new();
     for entry in &lines.entries {
-        let SceType::Enum(eref) = &entry.sce_type else {
+        let SceType::Enum(eref) = entry.present_type() else {
             continue;
         };
         if judged.contains(&eref.alias.as_str()) {

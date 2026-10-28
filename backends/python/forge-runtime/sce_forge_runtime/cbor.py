@@ -29,7 +29,7 @@ class CborMalformed(CodecError):
 
 
 class CborRequiredKeyMissing(CodecError):
-    """The map lacks an entry declared ``sce:required="true"``."""
+    """The map lacks an entry of a bare type, one that is not ``optional<T>``."""
 
 
 class CborWrongLength(CodecError):

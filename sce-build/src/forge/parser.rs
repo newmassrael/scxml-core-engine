@@ -1854,6 +1854,10 @@ fn parse_cbor_codec(
     label: DocumentLabel<'_>,
 ) -> Result<CodecModel, Located<ForgeError>> {
     let doc = label.diagnostic_label;
+    // A document says which spelling of absence it is written in before any of
+    // its entries is read (docs/adr/0055, section 8): format 1 is refused, never
+    // read.
+    crate::forge::codec_format::judge(root, doc)?;
     let datamodel = find_child(root, "datamodel").ok_or_else(|| {
         located(
             root,
@@ -2011,14 +2015,12 @@ fn parse_cbor_entry(
             attr: "sce:type".into(),
         })
     })?;
-    let sce_type = read_type_attr(
-        node,
-        doc,
-        TypeGrammar::ScalarOrEnumRef,
-        format!("entry '{id}'"),
-        "sce:type",
-        &type_text,
-    )?;
+    // A bare type is an entry that must be present and `optional<T>` one that may
+    // be absent (docs/adr/0055, section 8); `sce_type` is the type a present value
+    // is, which every rule below is held to.
+    let field_type =
+        read_schema_field_type(node, doc, format!("entry '{id}'"), "sce:type", &type_text)?;
+    let sce_type = field_type.present_type().clone();
     let admitted = sce_type.is_unsigned()
         || matches!(
             sce_type,
@@ -2028,25 +2030,13 @@ fn parse_cbor_entry(
         return Err(refuse(ValidationError::AttributeRuleViolated {
             element,
             attr: "sce:type".into(),
-            value: type_text,
-            rule: "an unsigned integer, bool, string, bytes or enum:<alias> — the kinds a \
-                   sce:encoding=\"cbor\" codec writes"
+            value: value_as_written(node, "sce:type", &type_text),
+            rule: "an unsigned integer, bool, string, bytes or enum:<alias>, or optional<T> \
+                   of one — the kinds a sce:encoding=\"cbor\" codec writes"
                 .into(),
         }));
     }
-
-    let required = match sce_attr(node, "required").as_deref() {
-        None | Some("false") => false,
-        Some("true") => true,
-        Some(other) => {
-            return Err(refuse(ValidationError::InvalidAttribute {
-                element,
-                attr: "sce:required".into(),
-                value: other.to_string(),
-                allowed: vec!["true".into(), "false".into()],
-            }))
-        }
-    };
+    refuse_required_attribute(node, doc, &element, &type_text)?;
     let positive = |attr: &str| -> Result<Option<u32>, Located<ForgeError>> {
         let Some(text) = sce_attr(node, attr) else {
             return Ok(None);
@@ -2094,11 +2084,47 @@ fn parse_cbor_entry(
         id,
         line: Some(row_of(node)),
         key,
-        sce_type,
-        required,
+        sce_type: field_type,
         length,
         max_size,
     })
+}
+
+/// The refusal of `sce:required` on an entry of a codec in format 2
+/// (docs/adr/0055, section 8): the language has one way to say a value may be
+/// absent, its type. The rule names the two spellings of what the attribute
+/// meant, over the entry's own type: the bare type is required and `optional<T>`
+/// is optional.
+///
+/// `type_text` is the entry's `sce:type` as written; an optional one is
+/// unwrapped, so the two spellings are over its element.
+fn refuse_required_attribute(
+    node: &roxmltree::Node,
+    doc: &str,
+    element: &str,
+    type_text: &str,
+) -> Result<(), Located<ForgeError>> {
+    let Some(written) = sce_attr(node, "required") else {
+        return Ok(());
+    };
+    let bare = AlgorithmValueType::optional_inner(type_text)
+        .unwrap_or(type_text)
+        .trim();
+    Err(located(
+        node,
+        doc,
+        ValidationError::AttributeRuleViolated {
+            element: element.to_string(),
+            attr: "sce:required".into(),
+            value: written,
+            rule: format!(
+                "no sce:required in a codec of sce:codec-format=\"2\": the type says it. \
+                 `{bare}` is an entry that must be present (what sce:required=\"true\" \
+                 meant) and `optional<{bare}>` one that may be absent (what \
+                 sce:required=\"false\", or none, meant)"
+            ),
+        },
+    ))
 }
 
 /// An RFC 5545 name: `iana-token` and `x-name` are letters, digits and hyphens.
@@ -2118,6 +2144,9 @@ fn parse_content_line_codec(
     label: DocumentLabel<'_>,
 ) -> Result<CodecModel, Located<ForgeError>> {
     let doc = label.diagnostic_label;
+    // The format first, for the reason a CBOR codec's is (docs/adr/0055,
+    // section 8).
+    crate::forge::codec_format::judge(root, doc)?;
     let datamodel = find_child(root, "datamodel").ok_or_else(|| {
         located(
             root,
@@ -2302,14 +2331,12 @@ fn parse_content_line_entry(
             attr: "sce:type".into(),
         })
     })?;
-    let sce_type = read_type_attr(
-        node,
-        doc,
-        TypeGrammar::ScalarOrEnumRef,
-        format!("entry '{id}'"),
-        "sce:type",
-        &type_text,
-    )?;
+    // A bare type is an entry that must be present and `optional<T>` one that may
+    // be absent (docs/adr/0055, section 8); `sce_type` is the type a present value
+    // is, which every rule below is held to.
+    let field_type =
+        read_schema_field_type(node, doc, format!("entry '{id}'"), "sce:type", &type_text)?;
+    let sce_type = field_type.present_type().clone();
     // An `enum:<alias>` entry is read by the grammar above, so an alias that names
     // no enum import is reported as that. It is written and read by the text its
     // variant declares (docs/adr/0015), as a property's value or as a parameter.
@@ -2326,16 +2353,18 @@ fn parse_content_line_entry(
         return Err(refuse(ValidationError::AttributeRuleViolated {
             element,
             attr: "sce:type".into(),
-            value: type_text,
+            value: value_as_written(node, "sce:type", &type_text),
             rule: if param.is_some() {
-                "string or enum:<alias> — what a parameter of a content line holds"
+                "string or enum:<alias>, or optional<T> of one — what a parameter of a \
+                 content line holds"
             } else {
-                "string, an integer, bool or enum:<alias> — the kinds a \
-                 sce:encoding=\"content-line\" codec writes"
+                "string, an integer, bool or enum:<alias>, or optional<T> of one — the \
+                 kinds a sce:encoding=\"content-line\" codec writes"
             }
             .into(),
         }));
     }
+    refuse_required_attribute(node, doc, &element, &type_text)?;
 
     let text = match sce_attr(node, "value").as_deref() {
         None => false,
@@ -2357,18 +2386,6 @@ fn parse_content_line_entry(
             rule: "a TEXT value (backslash escapes) on a string property entry only".into(),
         }));
     }
-    let required = match sce_attr(node, "required").as_deref() {
-        None | Some("false") => false,
-        Some("true") => true,
-        Some(other) => {
-            return Err(refuse(ValidationError::InvalidAttribute {
-                element,
-                attr: "sce:required".into(),
-                value: other.to_string(),
-                allowed: vec!["true".into(), "false".into()],
-            }))
-        }
-    };
     let positive = |attr: &str| -> Result<Option<u32>, Located<ForgeError>> {
         let Some(text) = sce_attr(node, attr) else {
             return Ok(None);
@@ -2502,14 +2519,18 @@ fn parse_content_line_entry(
             // A required parameter of a repeated property is required of each line
             // that exists, whether or not the property is (docs/adr/0014), so it needs
             // no required property to be missing from.
-            if required && !owner.required && owner.max_count.is_none() {
+            if field_type.optional_elem().is_none()
+                && !owner.is_required()
+                && owner.max_count.is_none()
+            {
                 return Err(refuse(ValidationError::AttributeRuleViolated {
                     element,
-                    attr: "sce:required".into(),
-                    value: "true".into(),
+                    attr: "sce:type".into(),
+                    value: value_as_written(node, "sce:type", &type_text),
                     rule: format!(
                         "a required parameter needs a required property: `{property}` is \
-                         optional, so a component without it has no parameter to be missing"
+                         optional, so a component without it has no parameter to be missing; \
+                         write the parameter as an optional<T> too"
                     ),
                 }));
             }
@@ -2534,9 +2555,8 @@ fn parse_content_line_entry(
         line: Some(row_of(node)),
         property,
         param,
-        sce_type,
+        sce_type: field_type,
         text,
-        required,
         max_size,
         max_count,
         separator,
@@ -12245,6 +12265,10 @@ const KNOWN_SCE_ATTRS: &[&str] = &[
     "bit-size",
     "byte",
     "capacity",
+    // The format a CBOR or content-line codec document is written in, on its
+    // root: the only one read is `2`, and a document in format 1 is refused with
+    // its rewrite (docs/adr/0055, section 8; `forge::codec_format`).
+    "codec-format",
     // A content-line codec names its component on the root (SCE_FORGE.md §4.6.4).
     "component",
     // ⚠ `codec-id` left this roster on 2026-09-28. It was read by NOTHING
@@ -12322,7 +12346,11 @@ const KNOWN_SCE_ATTRS: &[&str] = &[
     "range-max",
     "range-min",
     "req",
-    // A CBOR codec entry the decode refuses a map without (SCE_FORGE.md §4.6).
+    // A codec entry the decode refuses a map or component without, in format 1
+    // of a CBOR or content-line codec (SCE_FORGE.md §4.6). Not part of format 2,
+    // where the type says it; it stays on the roster so that a document in
+    // format 2 that writes one is refused by the rule that names the two
+    // spellings of what it meant, and not as an unknown name.
     "required",
     "response-max-size",
     // `retain` names the store a field's value outlives the program in.

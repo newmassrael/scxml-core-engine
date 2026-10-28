@@ -26,8 +26,9 @@ class LineMalformed(CodecError):
 
 
 class LineRequiredMissing(CodecError):
-    """A property or parameter declared ``sce:required="true"`` is absent; on
-    encode, a parameter was given without the property it belongs to."""
+    """A property or parameter of a bare type, one that is not ``optional<T>``,
+    is absent; on encode, a parameter was given without the property it belongs
+    to."""
 
 
 class LineTooMany(CodecError):

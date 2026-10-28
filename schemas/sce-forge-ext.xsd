@@ -176,8 +176,9 @@
        name, as `list<string>` is, and only a misspelled keyword is the
        schema's to refuse. A `sce-static` statechart's variable holds one, and
        an event schema's field holds one over a scalar or an imported enum
-       (`read_schema_field_type`); every other position's parser refuses it
-       by name. -->
+       (`read_schema_field_type`), as does an entry of a `cbor` or
+       `content-line` codec (section 8 of the ADR: the type says an entry may
+       be absent); every other position's parser refuses it by name. -->
   <xs:simpleType name="optionalValueType">
     <xs:restriction base="xs:string">
       <xs:pattern value="optional&lt;\s*(uint8|uint16|uint32|uint64|int8|int16|int32|int64|float32|float64|bool|string|bytes|enum:[A-Za-z_][A-Za-z0-9_]*|record:[A-Za-z_][A-Za-z0-9_]*|(optional|list)&lt;\s*(uint8|uint16|uint32|uint64|int8|int16|int32|int64|float32|float64|bool|string|bytes|enum:[A-Za-z_][A-Za-z0-9_]*|record:[A-Za-z_][A-Za-z0-9_]*)\s*&gt;)\s*&gt;"/>
@@ -530,6 +531,17 @@
       </xs:restriction>
     </xs:simpleType>
   </xs:attribute>
+  <!-- Section 4.6, docs/adr/0055 section 8: the format a `cbor` or `content-line`
+       codec document is written in, on its root. Format 2 is the only one read
+       and generated: a bare `sce:type` is an entry that must be present and
+       `optional<T>` one that may be absent, and `sce:required` is not part of it.
+       A document that declares none, or `1`, is format 1, refused with its
+       rewrite as `validation/codec-format-superseded`, and any other value is
+       `validation/invalid-attribute`. `xs:string` and not an enumeration, so that
+       those values reach the parser's refusal that names `2` rather than a schema
+       violation that does not. A positional codec declares none: written there,
+       it is `validation/sce-attribute-unread`. -->
+  <xs:attribute name="codec-format" type="xs:string"/>
   <!-- Section 4.6.4: a `content-line` codec writes one RFC 5545 component
        (sce:component, the name between BEGIN: and END:) whose entries are the
        <data sce:property> elements: a property's value, or with sce:param one
@@ -554,7 +566,13 @@
       </xs:restriction>
     </xs:simpleType>
   </xs:attribute>
-  <!-- Section 4.6: a CBOR codec entry whose absence a decode refuses. -->
+  <!-- Section 4.6: a codec entry whose absence a decode refuses, in format 1 of
+       a `cbor` or `content-line` codec document. Not part of format 2
+       (`sce:codec-format="2"`), where a bare `sce:type` is required and
+       `optional<T>` is optional; written there, it is
+       `validation/attribute-rule-violated`, which names the two spellings of
+       what it meant. Declared so that the parser's refusal, and not a schema
+       violation, is what the author reads. -->
   <xs:attribute name="required" type="xs:boolean"/>
 
   <!-- Section 4.6: Codec field layout — on <data> or <sce:field> -->
