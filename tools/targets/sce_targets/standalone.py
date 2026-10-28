@@ -58,7 +58,18 @@ from sce_author import check as core_check
 
 from sce_targets import split as splitting
 
-RUNTIME_SOURCES = ("UniqueIdGenerator.cpp", "EventDataHelper.cpp", "JsonUtils.cpp")
+# What a statechart library links of the runtime beyond the machine, by where each source is in a
+# checkout of SCE; the library carries each by its file name, copied from SCE_RUNTIME_SOURCE_DIR.
+# JsonUtils.cpp and UniqueIdGenerator.cpp log, and a source of sce_base that logs installs the
+# Logger's sink (docs/adr/0060), so the Logger and the backend it forwards to without spdlog come
+# with them.
+RUNTIME_SOURCES = (
+    "sce/src/common/UniqueIdGenerator.cpp",
+    "sce/src/common/EventDataHelper.cpp",
+    "sce/src/runtime/JsonUtils.cpp",
+    "sce/src/common/Logger.cpp",
+    "sce/src/backends/DefaultBackend.cpp",
+)
 ANNOTATIONS = {"assumed", "note"}
 SC_INPUT_KEYS = {"signal", "becomes", "event", "carries", "logical", *ANNOTATIONS}
 SC_OUTPUT_KEYS = {"sent", "values", "when_nothing_sent", "attributes", "holds_last", *ANNOTATIONS}
@@ -1105,7 +1116,8 @@ def main(argv: list) -> int:
         runtime_dir = os.environ.get("SCE_RUNTIME_SOURCE_DIR")
         if not runtime_dir:
             raise Refused("SCE_RUNTIME_SOURCE_DIR is not set: the runtime/ directory of the generator")
-        for name in RUNTIME_SOURCES:
+        for source in RUNTIME_SOURCES:
+            name = pathlib.PurePosixPath(source).name
             shutil.copy2(pathlib.Path(runtime_dir) / name, out / f"Sce{name}")
         api = emit_statechart_api(interface_path, target_path, interface, target, headers[0].name,
                                   sorted(made.declared), header_text)

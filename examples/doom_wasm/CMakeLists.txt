@@ -20,8 +20,11 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_C_STANDARD 99)
 
-# SCE Engine (parent project)
+# SCE Engine (parent project). The Forge C++ runtime comes first, as the repository's own
+# CMakeLists.txt adds it: sce_core links it by name, and without the target that name is
+# taken for a library to find on the linker's path.
 set(SCE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../..")
+add_subdirectory(${SCE_ROOT}/backends/cpp/forge-runtime ${CMAKE_CURRENT_BINARY_DIR}/forge-runtime)
 add_subdirectory(${SCE_ROOT}/sce ${CMAKE_CURRENT_BINARY_DIR}/sce)
 
 # Include SCE CMake functions

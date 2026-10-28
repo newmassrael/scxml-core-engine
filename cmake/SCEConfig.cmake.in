@@ -134,6 +134,19 @@ endif()
 
 # Scripting tier — loaded if installed. Includes qjs / lua54 as members.
 if(_sce_load_scripting)
+    # sce_scripting's link interface names SCE::Lowering, sce-build's lowering staticlib. It is a
+    # build product, so it is not in the Targets file: this names it, where the tree put it.
+    set(_sce_lowering_lib "@PACKAGE_LOWERING_LIB_PATH@")
+    if(_sce_lowering_lib AND NOT TARGET SCE::Lowering)
+        set_and_check(_sce_lowering_lib "${_sce_lowering_lib}")
+        add_library(SCE::Lowering STATIC IMPORTED)
+        set_target_properties(SCE::Lowering PROPERTIES
+            IMPORTED_LOCATION "${_sce_lowering_lib}"
+            INTERFACE_INCLUDE_DIRECTORIES "${SCE_INCLUDE_DIR}"
+            # What a Rust staticlib needs from the platform.
+            INTERFACE_LINK_LIBRARIES "pthread;dl;m")
+    endif()
+    unset(_sce_lowering_lib)
     if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/SCE_ScriptingTargets.cmake")
         include("${CMAKE_CURRENT_LIST_DIR}/SCE_ScriptingTargets.cmake")
         set(SCE_scripting_FOUND TRUE)

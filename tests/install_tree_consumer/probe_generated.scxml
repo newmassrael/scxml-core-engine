@@ -30,7 +30,7 @@
     <transition event="error.execution" type="internal">
       <assign location="refusals" expr="refusals + 1"/>
     </transition>
-    <transition event="check" cond="level == 253 &amp;&amp; refusals == 1" target="done"/>
+    <transition event="check" cond="level === 253 &amp;&amp; refusals === 1" target="done"/>
   </state>
   <final id="done"/>
 </scxml>

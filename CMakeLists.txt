@@ -785,11 +785,18 @@ set(CODEGEN_INSTALL_DIR  "${CMAKE_CURRENT_SOURCE_DIR}/tools/codegen")
 # path that does not exist.
 get_filename_component(CODEGEN_BIN_DIR "${SCE_CODEGEN}" DIRECTORY)
 set(SCE_HTTPLIB_FIND_MODULES_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/cpp-httplib/cmake")
+# The lowering staticlib sce_scripting links (cmake/SCEBuildLowering.cmake): where cargo put it
+# in this build; empty when sce_scripting does not link it (no scripting tier, or wasm).
+if(TARGET SCE::Lowering)
+    get_target_property(LOWERING_LIB_PATH SCE::Lowering IMPORTED_LOCATION)
+else()
+    set(LOWERING_LIB_PATH "")
+endif()
 configure_package_config_file(
     "${CMAKE_CURRENT_SOURCE_DIR}/cmake/SCEConfig.cmake.in"
     "${CMAKE_CURRENT_BINARY_DIR}/SCEConfig.cmake"
     INSTALL_DESTINATION "${CMAKE_CURRENT_BINARY_DIR}"
-    PATH_VARS INCLUDE_INSTALL_DIR CODEGEN_INSTALL_DIR CODEGEN_BIN_DIR
+    PATH_VARS INCLUDE_INSTALL_DIR CODEGEN_INSTALL_DIR CODEGEN_BIN_DIR LOWERING_LIB_PATH
 )
 
 # Build-tree target exports (one file per tier, mirrors install(EXPORT) below).
@@ -840,11 +847,25 @@ set(CODEGEN_BIN_DIR      "${CMAKE_INSTALL_BINDIR}")
 # Install-tree takes the find_dependency(httplib) branch, which handles
 # transitive module paths itself — no build-tree FindBrotli fallback needed.
 set(SCE_HTTPLIB_FIND_MODULES_DIR "")
+# The lowering staticlib is a build product, not a target install(TARGETS) can export: it is
+# installed as a file with the Scripting tier, and the installed config names it as the
+# imported target SCE::Lowering that sce_scripting's exported link interface asks for.
+if(TARGET SCE::Lowering)
+    get_target_property(_sce_lowering_built SCE::Lowering IMPORTED_LOCATION)
+    get_filename_component(_sce_lowering_file "${_sce_lowering_built}" NAME)
+    set(LOWERING_LIB_PATH "${CMAKE_INSTALL_LIBDIR}/${_sce_lowering_file}")
+    install(FILES "${_sce_lowering_built}"
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        COMPONENT Scripting
+    )
+else()
+    set(LOWERING_LIB_PATH "")
+endif()
 configure_package_config_file(
     "${CMAKE_CURRENT_SOURCE_DIR}/cmake/SCEConfig.cmake.in"
     "${CMAKE_CURRENT_BINARY_DIR}/_install/SCEConfig.cmake"
     INSTALL_DESTINATION ${SCE_INSTALL_CMAKEDIR}
-    PATH_VARS INCLUDE_INSTALL_DIR CODEGEN_INSTALL_DIR CODEGEN_BIN_DIR
+    PATH_VARS INCLUDE_INSTALL_DIR CODEGEN_INSTALL_DIR CODEGEN_BIN_DIR LOWERING_LIB_PATH
 )
 
 install(EXPORT SCE_CoreTargets

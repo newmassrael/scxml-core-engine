@@ -18,7 +18,9 @@ import unittest
 
 import yaml
 
-HERE = pathlib.Path(__file__).resolve().parent
+from sce_targets import standalone
+
+HERE =pathlib.Path(__file__).resolve().parent
 TARGETS = HERE.parent
 FIXTURE = HERE / "fixtures" / "pump"
 STATECHART_FIXTURE = HERE / "fixtures" / "lamp"
@@ -40,11 +42,10 @@ def compiler() -> str | None:
 
 
 REPO = TARGETS.parent.parent
-# What a statechart library links beyond the machine the generator writes: three runtime sources
-# the generator copies from one flat directory, and the headers they and the machine include.
-RUNTIME_SOURCES = (REPO / "sce" / "src" / "common" / "UniqueIdGenerator.cpp",
-                   REPO / "sce" / "src" / "common" / "EventDataHelper.cpp",
-                   REPO / "sce" / "src" / "runtime" / "JsonUtils.cpp")
+# What a statechart library links beyond the machine the generator writes: the runtime sources the
+# standalone target names (one list, its own), staged here into the flat directory it copies from,
+# and the headers they and the machine include.
+RUNTIME_SOURCES = tuple(REPO / source for source in standalone.RUNTIME_SOURCES)
 # The last is where a machine told a typed event payload finds the algorithm header it includes.
 RUNTIME_INCLUDES = (REPO / "sce" / "include", REPO / "third_party" / "nlohmann_json" / "include",
                     REPO / "backends" / "cpp" / "forge-runtime" / "include")
@@ -60,7 +61,7 @@ _runtime_objects: dict = {}
 def runtime_to_link(lib: pathlib.Path, includes: list) -> list:
     """What a statechart library links of the runtime: the sources the generator copied beside it.
 
-    They are the same three files for every library, and compiling them is most of what building
+    They are the same files for every library, and compiling them is most of what building
     one costs, so a copy that is byte for byte the repository's is compiled once for the whole run
     and linked as an object. A copy that differs (the generator changed it) is compiled in place."""
     linked = []
