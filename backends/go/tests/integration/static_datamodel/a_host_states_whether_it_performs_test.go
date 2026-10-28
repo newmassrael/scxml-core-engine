@@ -22,6 +22,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/newmassrael/sce-forge-runtime/optional"
 	sce "github.com/newmassrael/sce-go-runtime"
 
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_host_call"
@@ -106,6 +107,11 @@ type noRealizationHost struct{ heard []string }
 func (h *noRealizationHost) ShowAttempts(count uint32, exhausted bool) {
 	h.heard = append(h.heard, fmt.Sprintf("%d,%t", count, exhausted))
 }
+
+// ShowDue takes arguments that may be absent (docs/adr/0055, step 10); this host
+// hears none of them, since `static_host_call` calls it only from events the test
+// does not send.
+func (h *noRealizationHost) ShowDue(day optional.Of[int32], urgent optional.Of[bool]) {}
 
 func TestAMachineWithNoDutyTakesAHostThatDeclaresNoRealization(t *testing.T) {
 	host := &noRealizationHost{}

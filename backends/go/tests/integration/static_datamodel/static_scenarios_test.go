@@ -2547,6 +2547,13 @@ func (h *scenarioHost) ShowAttempts(count uint32, exhausted bool) {
 	h.calls = append(h.calls, map[string]any{"action": "showAttempts", "args": []any{count, exhausted}})
 }
 
+// ShowDue takes arguments that may be absent as `optional.Of[T]` (docs/adr/0055,
+// step 10), which a scenario states as `null` when absent and as the value
+// when present.
+func (h *scenarioHost) ShowDue(day optional.Of[int32], urgent optional.Of[bool]) {
+	h.calls = append(h.calls, map[string]any{"action": "showDue", "args": []any{optionalJSON(day), optionalJSON(urgent)}})
+}
+
 // take is the calls made since it was last called, oldest first, and forgets them.
 func (h *scenarioHost) take() []any {
 	taken := h.calls
@@ -2618,6 +2625,20 @@ func (h *recordingHost) ShowAttempts(count uint32, exhausted bool) {
 	h.calls = append(h.calls, fmt.Sprintf("%d,%t", count, exhausted))
 }
 
+// ShowDue records an argument that may be absent as `none` and a present one as
+// its value, so a present `false` is told from an absent one.
+func (h *recordingHost) ShowDue(day optional.Of[int32], urgent optional.Of[bool]) {
+	text := func(present string, ok bool) string {
+		if !ok {
+			return "none"
+		}
+		return present
+	}
+	d, dayPresent := day.Get()
+	u, urgentPresent := urgent.Get()
+	h.calls = append(h.calls, text(fmt.Sprintf("%d", d), dayPresent)+","+text(fmt.Sprintf("%t", u), urgentPresent))
+}
+
 func (h *recordingHost) Report(next uint8) {
 	h.calls = append(h.calls, fmt.Sprintf("%d", next))
 }
@@ -2637,6 +2658,27 @@ func TestAHostActionTakesTypedDatamodelArguments(t *testing.T) {
 	}
 	// The fourth retry finds `attempts < 3` false and re-enters nothing.
 	want := []string{"0,false", "1,false", "2,false", "3,true"}
+	if !reflect.DeepEqual(host.calls, want) {
+		t.Errorf("the host heard %v, want %v", host.calls, want)
+	}
+}
+
+// A host action takes an argument that may be absent as `optional.Of[T]`
+// (docs/adr/0055, step 10), so the host tells a day from no day, and a present
+// `false` from an absent flag: `plan` gives `due` a day and leaves `urgent`
+// absent, `escalate` gives `urgent` a value, and `unplan` makes `due` absent and
+// `urgent` false.
+func TestAHostActionTakesAnArgumentThatMayBeAbsent(t *testing.T) {
+	host := &recordingHost{}
+	policy := static_host_call.NewStaticHostCallPolicy(host)
+	policy.SessionID = sce.GenerateSessionID()
+	engine := sce.NewEngine[static_host_call.StaticHostCallState, static_host_call.StaticHostCallEvent](&policy)
+	engine.Initialize()
+	for _, event := range []string{"plan", "escalate", "unplan"} {
+		engine.RaiseExternalByName(event, "")
+		engine.Step()
+	}
+	want := []string{"0,false", "7,none", "7,true", "none,false"}
 	if !reflect.DeepEqual(host.calls, want) {
 		t.Errorf("the host heard %v, want %v", host.calls, want)
 	}

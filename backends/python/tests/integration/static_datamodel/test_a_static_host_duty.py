@@ -74,6 +74,10 @@ class _NoRealizationHost:
     def show_attempts(self, count: int, exhausted: bool) -> None:
         self.calls.append(f"{count},{str(exhausted).lower()}")
 
+    def show_due(self, day, urgent) -> None:
+        # Called only from events this test does not send.
+        pass
+
 
 def _module(machine: str):
     return importlib.import_module(f"integration.static_datamodel.{machine}_sm")

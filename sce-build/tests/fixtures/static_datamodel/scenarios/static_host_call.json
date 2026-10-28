@@ -1,6 +1,6 @@
 {
   "machine": "static_host_call",
-  "about": "A native host action whose arguments are typed datamodel expressions, called from <onentry>, where no triggering event is in scope: `idle` calls `showAttempts` with `attempts` and `attempts >= 3` each time it is entered, and `retry` re-enters it, adding one, while `attempts < 3`. `attempts` is the machine's own, not published, so what the machine holds is read from what it told its host: a step's `host_calls` are the calls made in that step, in order, each by the name the document gives the action and its arguments in the order the document gives them. The fourth `retry` finds the guard false and re-enters nothing, so the host hears nothing. Expected values are derived from the document, not observed from a backend.",
+  "about": "A native host action whose arguments are typed datamodel expressions, called from <onentry>, where no triggering event is in scope: `idle` calls `showAttempts` with `attempts` and `attempts >= 3` each time it is entered, and `retry` re-enters it, adding one, while `attempts < 3`. `attempts` is the machine's own, not published, so what the machine holds is read from what it told its host: a step's `host_calls` are the calls made in that step, in order, each by the name the document gives the action and its arguments in the order the document gives them. The fourth `retry` finds the guard false and re-enters nothing, so the host hears nothing. The same machine holds `due`, an `optional<int32>`, and `urgent`, an `optional<bool>`, and calls `showDue` with both from `plan`, `escalate` and `unplan` (docs/adr/0055, step 10): a host method takes an argument that may be absent in its backend's own optional type, and the host is told one that is absent as `null`, a present one as the value it is. Neither is set when the machine starts, so the first `plan` hears `urgent` absent. Expected values are derived from the document, not observed from a backend.",
   "steps": [
     { "note": "started: `idle` was entered once, with nothing tried yet",
       "expect": { "state": "idle",
@@ -23,6 +23,21 @@
 
     { "note": "the fourth finds `attempts < 3` false: no transition, no entry, no call",
       "event": "retry",
-      "expect": { "state": "idle", "host_calls": [] } }
+      "expect": { "state": "idle", "host_calls": [] } },
+
+    { "note": "`plan` gives `due` the day 7 and leaves `urgent` absent: the host hears a value, then an absent argument as `null`",
+      "event": "plan",
+      "expect": { "state": "idle",
+                  "host_calls": [ { "action": "showDue", "args": [7, null] } ] } },
+
+    { "note": "`escalate` gives `urgent` a value: both arguments are present, and `due` is the day it kept",
+      "event": "escalate",
+      "expect": { "state": "idle",
+                  "host_calls": [ { "action": "showDue", "args": [7, true] } ] } },
+
+    { "note": "`unplan` makes `due` absent and `urgent` false: a present `false` is told from an absent one, and the absent argument leads this time",
+      "event": "unplan",
+      "expect": { "state": "idle",
+                  "host_calls": [ { "action": "showDue", "args": [null, false] } ] } }
   ]
 }

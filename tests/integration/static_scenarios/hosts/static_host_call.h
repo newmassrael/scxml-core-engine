@@ -10,6 +10,7 @@
 #include "integration/static_scenarios/StaticScenarioReplay.h"
 #include "static_host_call_sm.h"
 #include <cstdint>
+#include <optional>
 
 namespace SCE::Tests::StaticScenario {
 
@@ -21,6 +22,14 @@ template <> struct ScenarioHosts<::SCE::Generated::static_host_call::static_host
 
         void showAttempts(uint32_t count, bool exhausted) override {
             calls.push_back({{"action", "showAttempts"}, {"args", json::array({count, exhausted})}});
+        }
+
+        // An argument that may be absent is a `std::optional`, which a scenario states as `null` when it is
+        // absent (docs/adr/0055, step 10).
+        void showDue(std::optional<int32_t> day, std::optional<bool> urgent) override {
+            const json dayValue = day.has_value() ? json(*day) : json(nullptr);
+            const json urgentValue = urgent.has_value() ? json(*urgent) : json(nullptr);
+            calls.push_back({{"action", "showDue"}, {"args", json::array({dayValue, urgentValue})}});
         }
     };
 

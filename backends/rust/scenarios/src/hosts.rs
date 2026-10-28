@@ -45,6 +45,11 @@ pub fn static_host_call(
             StaticHostCallActionsCall::ShowAttempts { count, exhausted } => {
                 json!({"action": "showAttempts", "args": [count, exhausted]})
             }
+            // An argument that may be absent is an `Option`, which is `null` in the
+            // call a scenario states when it is (docs/adr/0055, step 10).
+            StaticHostCallActionsCall::ShowDue { day, urgent } => {
+                json!({"action": "showDue", "args": [day, urgent]})
+            }
         })
         .collect();
     *seen = calls.len();

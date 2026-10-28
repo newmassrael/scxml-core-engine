@@ -7,6 +7,7 @@
 // published byte string is lent, not copied.
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <type_traits>
 #include <utility>
@@ -37,6 +38,8 @@ TEST(AStaticHostIsHandedTypedValuesTest, AHostActionTakesTypedDatamodelArguments
         void showAttempts(uint32_t count, bool exhausted) override {
             calls.push_back(std::to_string(count) + (exhausted ? ",true" : ",false"));
         }
+
+        void showDue(std::optional<int32_t>, std::optional<bool>) override {}
     } host;
 
     Hc::static_host_call machine(host);
@@ -47,6 +50,35 @@ TEST(AStaticHostIsHandedTypedValuesTest, AHostActionTakesTypedDatamodelArguments
     }
     // The fourth retry finds `attempts < 3` false and re-enters nothing.
     EXPECT_EQ(host.calls, (Calls{"0,false", "1,false", "2,false", "3,true"}));
+}
+
+// A host action takes an argument that may be absent as a `std::optional` (docs/adr/0055,
+// step 10): `showDue(day, urgent)` takes `due`, an `optional<int32>`, and `urgent`, an
+// `optional<bool>`. `plan` gives `due` a day and leaves `urgent` absent, `escalate` gives
+// `urgent` a value, and `unplan` makes `due` absent and `urgent` false, which is a value and
+// not an absent flag.
+TEST(AStaticHostIsHandedTypedValuesTest, AHostActionTakesAnArgumentThatMayBeAbsentAsAnOptional) {
+    namespace Hc = G::static_host_call;
+
+    struct Host : Hc::StaticHostCallActions {
+        Calls calls;
+
+        void showAttempts(uint32_t, bool) override {}
+
+        void showDue(std::optional<int32_t> day, std::optional<bool> urgent) override {
+            const std::string dayText = day.has_value() ? std::to_string(*day) : std::string("none");
+            const std::string urgentText = urgent.has_value() ? (*urgent ? "true" : "false") : "none";
+            calls.push_back(dayText + "," + urgentText);
+        }
+    } host;
+
+    Hc::static_host_call machine(host);
+    machine.initialize();
+    for (const char *event : {"plan", "escalate", "unplan"}) {
+        machine.raiseExternal(event);
+        machine.step();
+    }
+    EXPECT_EQ(host.calls, (Calls{"7,none", "7,true", "none,false"}));
 }
 
 // An argument that cannot be computed is a failure, not a wrapped value: the host is not

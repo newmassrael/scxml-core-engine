@@ -31,6 +31,7 @@ import json
 import re
 import sys
 from pathlib import Path
+from typing import Optional
 
 import pytest
 
@@ -128,6 +129,11 @@ class _ScenarioHost:
 
     def show_attempts(self, count: int, exhausted: bool) -> None:
         self._calls.append({"action": "showAttempts", "args": [count, exhausted]})
+
+    def show_due(self, day: Optional[int], urgent: Optional[bool]) -> None:
+        # An argument that may be absent is ``None``, which a scenario states as
+        # ``null`` (docs/adr/0055, step 10).
+        self._calls.append({"action": "showDue", "args": [day, urgent]})
 
     def start_keepalive(self) -> None:
         self._calls.append({"action": "start_keepalive", "args": []})

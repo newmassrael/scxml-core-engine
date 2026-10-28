@@ -231,6 +231,36 @@ class StaticDatamodelTest {
     }
 
     @Test
+    fun aHostActionTakesAnArgumentThatMayBeAbsentAsANullable() {
+        // `showDue(day, urgent)` takes `due`, an `optional<int32>`, and `urgent`, an
+        // `optional<bool>` (docs/adr/0055, step 10): the interface's parameters are
+        // `Int?` and `Boolean?`, so the recording host holds a value as itself and an
+        // absent one as `null`, and a present `false` is not `null`.
+        val host = RecordingStaticHostCallActions()
+        val sm = StaticHostCallStateMachine(host)
+        sm.initialize()
+        try {
+            for (event in listOf(StaticHostCallEvent.Plan, StaticHostCallEvent.Escalate, StaticHostCallEvent.Unplan)) {
+                sm.send(event)
+                sm.tick()
+            }
+            assertEquals(
+                listOf(
+                    RecordingStaticHostCallActions.Call.ShowDue(7, null),
+                    RecordingStaticHostCallActions.Call.ShowDue(7, true),
+                    RecordingStaticHostCallActions.Call.ShowDue(null, false),
+                ),
+                host.calls.drop(1),
+                "after the call `idle`'s entry made: `plan` gives `due` a day and leaves `urgent` " +
+                    "absent, `escalate` gives `urgent` a value, and `unplan` makes `due` absent and " +
+                    "`urgent` false"
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    @Test
     fun aMachineThatPublishesNoVariableSnapshotsItsConfigurationAlone() {
         // `attempts` is not declared sce:direction="out", so it is the
         // machine's own: the snapshot carries no `Data`, only where the
@@ -349,6 +379,8 @@ class StaticDatamodelTest {
                 override fun showAttempts(count: UInt, exhausted: Boolean) {
                     seen += count to exhausted
                 }
+
+                override fun showDue(day: Int?, urgent: Boolean?) = Unit
             }
         val sm = StaticHostCallStateMachine(host)
         sm.initialize()

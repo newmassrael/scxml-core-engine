@@ -47,6 +47,22 @@ static void on_show_attempts(void *user_data, uint32_t count, bool exhausted) {
     record((recorder_t *)user_data, text);
 }
 
+// An argument that may be absent is the struct `sce/forge/optional.h` declares for its
+// element (docs/adr/0055, step 10): recorded as `none` when it is not present and as its
+// value when it is, so a present `false` is told from an absent flag.
+static void on_show_due(void *user_data, sce_optional_int32_t day, sce_optional_bool_t urgent) {
+    char text[32];
+    char day_text[16];
+    if (day.present) {
+        (void)snprintf(day_text, sizeof(day_text), "%d", (int)day.value);
+    } else {
+        (void)snprintf(day_text, sizeof(day_text), "none");
+    }
+    const char *urgent_text = !urgent.present ? "none" : (urgent.value ? "true" : "false");
+    (void)snprintf(text, sizeof(text), "%s,%s", day_text, urgent_text);
+    record((recorder_t *)user_data, text);
+}
+
 static void on_report(void *user_data, uint8_t next) {
     char text[32];
     (void)snprintf(text, sizeof(text), "%u", (unsigned)next);
@@ -79,6 +95,7 @@ static int a_host_action_takes_typed_datamodel_arguments(void) {
     static_host_call_actions_t host;
     memset(&host, 0, sizeof(host));
     host.show_attempts = on_show_attempts;
+    host.show_due = on_show_due;
     host.user_data = &r;
 
     static_host_call_t sm;
@@ -95,6 +112,40 @@ static int a_host_action_takes_typed_datamodel_arguments(void) {
     }
     const char *const want[] = {"0,false", "1,false", "2,false", "3,true"};
     return calls_are("typed arguments", &r, want, 4);
+}
+
+// A host action takes an argument that may be absent in the struct of its element:
+// `plan` gives `due` a day and leaves `urgent` absent, `escalate` gives `urgent` a
+// value, and `unplan` makes `due` absent and `urgent` false, which is a value and not
+// an absent flag.
+static int a_host_action_takes_an_argument_that_may_be_absent(void) {
+    recorder_t r;
+    memset(&r, 0, sizeof(r));
+    static_host_call_actions_t host;
+    memset(&host, 0, sizeof(host));
+    host.show_attempts = on_show_attempts;
+    host.show_due = on_show_due;
+    host.user_data = &r;
+
+    static_host_call_t sm;
+    if (!static_host_call_init_with_actions(&sm, &host)) {
+        (void)fprintf(stderr, "static_host_call: FAIL - a complete vtable was refused\n");
+        return 1;
+    }
+    static const static_host_call_event_t events[] = {
+        STATIC_HOST_CALL_EVENT_PLAN,
+        STATIC_HOST_CALL_EVENT_ESCALATE,
+        STATIC_HOST_CALL_EVENT_UNPLAN,
+    };
+    for (size_t i = 0; i < sizeof(events) / sizeof(events[0]); ++i) {
+        static_host_call_event_with_meta_t meta;
+        memset(&meta, 0, sizeof(meta));
+        meta.event = events[i];
+        static_host_call_raise_external(&sm, &meta);
+        static_host_call_step(&sm);
+    }
+    const char *const want[] = {"0,false", "7,none", "7,true", "none,false"};
+    return calls_are("an argument that may be absent", &r, want, 4);
 }
 
 // An argument that cannot be computed is a failure, not a wrapped value: the
@@ -142,6 +193,7 @@ static int an_argument_that_overflows_stops_the_call_and_raises_an_error(void) {
 int main(void) {
     int bad = 0;
     bad |= a_host_action_takes_typed_datamodel_arguments();
+    bad |= a_host_action_takes_an_argument_that_may_be_absent();
     bad |= an_argument_that_overflows_stops_the_call_and_raises_an_error();
     if (bad != 0) {
         return 1;

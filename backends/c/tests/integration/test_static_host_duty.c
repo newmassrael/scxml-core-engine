@@ -233,6 +233,14 @@ static void on_show_attempts(void *user_data, uint32_t count, bool exhausted) {
     record((recorder_t *)user_data, "show_attempts");
 }
 
+// `show_due` takes arguments that may be absent (docs/adr/0055, step 10), and is called only
+// from events this test does not send; the table is complete only with a member for it.
+static void on_show_due(void *user_data, sce_optional_int32_t day, sce_optional_bool_t urgent) {
+    (void)day;
+    (void)urgent;
+    record((recorder_t *)user_data, "show_due");
+}
+
 // A machine of notices has no realization member: a table written without ever
 // naming one is complete, and is accepted.
 static int a_machine_that_states_no_duty_takes_a_table_with_no_realization(void) {
@@ -241,6 +249,7 @@ static int a_machine_that_states_no_duty_takes_a_table_with_no_realization(void)
     memset(&r, 0, sizeof(r));
     static_host_call_actions_t host = {
         .show_attempts = on_show_attempts,
+        .show_due = on_show_due,
         .user_data = &r,
     };
     if (!static_host_call_init_with_actions(&sm, &host)) {

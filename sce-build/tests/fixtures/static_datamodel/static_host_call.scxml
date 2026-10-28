@@ -6,6 +6,12 @@
   is in scope. Under any other data model an argument must be a bare
   `_event.data.<field>` and an eventless action must take none.
 
+  `showDue` takes two arguments that may be absent (docs/adr/0055, step 10):
+  `due`, an `optional<int32>`, and `urgent`, an `optional<bool>`. A host method
+  takes each in its backend's own optional type, and the host is told an absent
+  one is absent: `plan` gives `due` a value and leaves `urgent` absent,
+  `escalate` gives `urgent` one, and `unplan` makes `due` absent again.
+
   Kotlin compile+run gate: scripts/regen_static_datamodel_kotlin.sh commits
   the generated machine, and StaticDatamodelTest.kt drives it with a
   recording host.
@@ -14,6 +20,8 @@
        version="1.0" initial="idle" datamodel="sce-static" name="static_host_call">
   <datamodel>
     <data id="attempts" sce:type="uint32" expr="0"/>
+    <data id="due" sce:type="optional&lt;int32&gt;" expr="null"/>
+    <data id="urgent" sce:type="optional&lt;bool&gt;" expr="null"/>
   </datamodel>
   <state id="idle">
     <onentry>
@@ -24,6 +32,28 @@
     </onentry>
     <transition event="retry" cond="attempts &lt; 3" target="idle">
       <assign location="attempts" expr="attempts + 1"/>
+    </transition>
+    <transition event="plan">
+      <assign location="due" expr="7"/>
+      <sce:action name="showDue" effect="notice">
+        <sce:arg name="day" expr="due"/>
+        <sce:arg name="urgent" expr="urgent"/>
+      </sce:action>
+    </transition>
+    <transition event="escalate">
+      <assign location="urgent" expr="true"/>
+      <sce:action name="showDue" effect="notice">
+        <sce:arg name="day" expr="due"/>
+        <sce:arg name="urgent" expr="urgent"/>
+      </sce:action>
+    </transition>
+    <transition event="unplan">
+      <assign location="due" expr="null"/>
+      <assign location="urgent" expr="false"/>
+      <sce:action name="showDue" effect="notice">
+        <sce:arg name="day" expr="due"/>
+        <sce:arg name="urgent" expr="urgent"/>
+      </sce:action>
     </transition>
   </state>
 </scxml>

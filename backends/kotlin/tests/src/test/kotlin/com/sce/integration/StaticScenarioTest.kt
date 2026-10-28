@@ -142,6 +142,11 @@ class StaticScenarioTest {
                 when (call) {
                     is RecordingStaticHostCallActions.Call.ShowAttempts ->
                         hostCall("showAttempts", JsonPrimitive(call.count.toLong()), JsonPrimitive(call.exhausted))
+                    // An argument that may be absent is a nullable, which is `null` in the call a
+                    // scenario states when it is (docs/adr/0055, step 10): the overloads of
+                    // `JsonPrimitive` that take a nullable answer `JsonNull` for it.
+                    is RecordingStaticHostCallActions.Call.ShowDue ->
+                        hostCall("showDue", JsonPrimitive(call.day?.toLong()), JsonPrimitive(call.urgent))
                 }
             }
         host.clear()

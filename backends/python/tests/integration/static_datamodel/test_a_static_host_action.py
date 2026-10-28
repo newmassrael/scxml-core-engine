@@ -25,6 +25,7 @@ from __future__ import annotations
 import importlib
 import sys
 from pathlib import Path
+from typing import Optional
 
 _HERE = Path(__file__).resolve().parent
 # The tests directory, so this package is importable by the name it has there.
@@ -41,6 +42,14 @@ class _RecordingHost:
 
     def show_attempts(self, count: int, exhausted: bool) -> None:
         self.calls.append(f"{count},{str(exhausted).lower()}")
+
+    def show_due(self, day: Optional[int], urgent: Optional[bool]) -> None:
+        # An argument that may be absent is ``None``: told from a present ``False``
+        # by ``is None``, so it is recorded as ``none`` (docs/adr/0055, step 10).
+        shown = [
+            "none" if value is None else str(value).lower() for value in (day, urgent)
+        ]
+        self.calls.append(",".join(shown))
 
     def report(self, next: int) -> None:  # noqa: A002 -- the host method's own name
         self.calls.append(str(next))
@@ -64,6 +73,18 @@ def test_a_host_action_takes_typed_datamodel_arguments() -> None:
         _raise_external(engine, "retry")
     # The fourth retry finds `attempts < 3` false and re-enters nothing.
     assert host.calls == ["0,false", "1,false", "2,false", "3,true"], host.calls
+
+
+def test_a_host_action_takes_an_argument_that_may_be_absent_as_none() -> None:
+    # `showDue(day, urgent)` takes `due`, an `optional<int32>`, and `urgent`, an
+    # `optional<bool>` (docs/adr/0055, step 10): `plan` gives `due` a day and leaves
+    # `urgent` absent, `escalate` gives `urgent` a value, and `unplan` makes `due`
+    # absent and `urgent` false, which is a value and not `None`.
+    host = _RecordingHost()
+    engine = _engine("static_host_call", host)
+    for event in ("plan", "escalate", "unplan"):
+        _raise_external(engine, event)
+    assert host.calls == ["0,false", "7,none", "7,true", "none,false"], host.calls
 
 
 def test_an_argument_that_overflows_stops_the_call_and_raises_an_error() -> None:

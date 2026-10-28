@@ -847,6 +847,12 @@ pub struct MachineFacts {
     /// carries: what a step's `donedata` states, from whichever final the
     /// machine ended in.
     pub donedata: Vec<Holds>,
+    /// What each argument of each host operation the document declares holds, by
+    /// the action's name and in the document's order: `optional<T>` for an
+    /// argument that may be absent, which a call of the host records as `null`
+    /// when it is (docs/adr/0055, step 10), and a value that is never absent for
+    /// every other.
+    pub host_arguments: BTreeMap<String, Vec<Holds>>,
 }
 
 impl MachineFacts {
@@ -887,6 +893,22 @@ impl MachineFacts {
                 .map(|(event, schema)| (event.clone(), Holds::of_schema(schema)))
                 .collect(),
             donedata,
+            host_arguments: crate::forge::native_action::arguments_that_may_be_absent(model)
+                .into_iter()
+                .map(|(action, absent)| {
+                    let held = absent
+                        .into_iter()
+                        .map(|may_be_absent| {
+                            if may_be_absent {
+                                Holds::optional()
+                            } else {
+                                Holds::Present
+                            }
+                        })
+                        .collect();
+                    (action, held)
+                })
+                .collect(),
         }
     }
 
@@ -1013,11 +1035,12 @@ pub fn machine_problems(scenario: &Value, machine: &MachineFacts) -> Vec<Problem
 /// event's `data` to the schema the machine imports for the event, a variable to
 /// its `sce:type` (a record's field and a list's record's field to the schema of
 /// the record), the `donedata` to what a top-level `<final>` carries, and the
-/// `data` of a send to the schema of the event sent. Anywhere else a step states a
-/// value — a host call's arguments, what a child asked of its host, the data of an
-/// event handed to a child, whose schema is not this machine's to read — nothing
-/// is optional. A variable the machine does not declare is `unknown-variable`
-/// already, and is not judged twice.
+/// `data` of a send to the schema of the event sent, and an argument of a call of
+/// the machine's own host to what its action declares at that place
+/// ([`MachineFacts::host_arguments`]). Anywhere else a step states a value — what a
+/// child asked of its host, the data of an event handed to a child, whose schema is
+/// not this machine's to read — nothing is optional. A variable the machine does
+/// not declare is `unknown-variable` already, and is not judged twice.
 fn absent_values(found: &mut Found, step: &Value, path: &str, machine: &MachineFacts) {
     let unread = |event: &str| {
         format!(
@@ -1100,17 +1123,47 @@ fn absent_values(found: &mut Found, step: &Value, path: &str, machine: &MachineF
             }
         }
     }
-    for (member, place) in [
-        ("host_calls", "a call of its host"),
-        ("child_hosts", "what a child asked of its host"),
-    ] {
-        if let Some(value) = expect.get(member) {
+    if let Some(calls) = expect.get("host_calls") {
+        host_call_nulls(found, calls, &format!("{path}/expect/host_calls"), machine);
+    }
+    if let Some(value) = expect.get("child_hosts") {
+        hold_nulls(
+            found,
+            value,
+            &[],
+            &format!("{path}/expect/child_hosts"),
+            "what a child asked of its host",
+            machine,
+        );
+    }
+}
+
+/// A problem for each `null` among the arguments of the calls `calls` states, at
+/// `at`, that the host operation does not declare an optional argument for
+/// (docs/adr/0055, step 10): an argument that may be absent is written `null` when
+/// it is, and every other argument is a value. A call whose action the machine does
+/// not declare holds nothing, so a `null` in it is admitted by none; the shape of a
+/// call is [`host_call_problems`]'s.
+fn host_call_nulls(found: &mut Found, calls: &Value, at: &str, machine: &MachineFacts) {
+    let Some(calls) = calls.as_array() else {
+        return;
+    };
+    for (n, call) in calls.iter().enumerate() {
+        let Some(args) = call.get("args").and_then(Value::as_array) else {
+            continue;
+        };
+        let declared = call
+            .get("action")
+            .and_then(Value::as_str)
+            .and_then(|action| machine.host_arguments.get(action));
+        for (i, arg) in args.iter().enumerate() {
+            let held: Vec<&Holds> = declared.and_then(|held| held.get(i)).into_iter().collect();
             hold_nulls(
                 found,
-                value,
-                &[],
-                &format!("{path}/expect/{member}"),
-                place,
+                arg,
+                &held,
+                &format!("{at}/{n}/args/{i}"),
+                "an argument of a call of its host",
                 machine,
             );
         }

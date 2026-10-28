@@ -2664,6 +2664,23 @@ static void host_hears_show_attempts(void *user_data, uint32_t count, bool exhau
     host_hears(call);
 }
 
+/* An argument that may be absent is the struct `sce/forge/optional.h` declares for its
+ * element (docs/adr/0055, step 10), which a scenario states as `null` when it is not
+ * present and as its value when it is. */
+static void host_hears_show_due(void *user_data, sce_optional_int32_t day, sce_optional_bool_t urgent) {
+    (void)user_data;
+    char day_text[16];
+    if (day.present) {
+        (void)snprintf(day_text, sizeof(day_text), "%d", (int)day.value);
+    } else {
+        (void)snprintf(day_text, sizeof(day_text), "null");
+    }
+    const char *urgent_text = !urgent.present ? "null" : (urgent.value ? "true" : "false");
+    char call[96];
+    (void)snprintf(call, sizeof(call), "{\"action\":\"showDue\",\"args\":[%s,%s]}", day_text, urgent_text);
+    host_hears(call);
+}
+
 static const char *host_call_heard(void *sm) {
     static char taken[sizeof(host_heard.text) + 2u];
     (void)sm;
@@ -2678,6 +2695,7 @@ static void host_call_start(static_host_call_t *sm) {
     static_host_call_actions_t host;
     memset(&host, 0, sizeof(host));
     host.show_attempts = host_hears_show_attempts;
+    host.show_due = host_hears_show_due;
     host_heard.len = 0u;
     host_heard.text[0] = '\0';
     if (!static_host_call_init_with_actions(sm, &host)) {

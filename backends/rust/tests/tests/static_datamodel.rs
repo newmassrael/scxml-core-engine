@@ -223,6 +223,34 @@ fn a_host_action_takes_typed_datamodel_arguments_with_no_event_in_scope() {
 }
 
 #[test]
+fn a_host_action_takes_an_argument_that_may_be_absent_as_an_option() {
+    // `showDue(day, urgent)` takes `due`, an `optional<int32>`, and `urgent`, an
+    // `optional<bool>` (docs/adr/0055, step 10): the trait method's parameters are
+    // `Option<i32>` and `Option<bool>`, so the recording host holds a value as
+    // `Some` and an absent one as `None`, and a present `false` is not `None`.
+    let mut engine = Engine::new(StaticHostCallPolicy::new(
+        RecordingStaticHostCallActions::default(),
+    ));
+    engine.initialize();
+    for event in ["plan", "escalate", "unplan"] {
+        engine.raise_external_by_name(event, "");
+        engine.step();
+    }
+    let due = |day, urgent| StaticHostCallActionsCall::ShowDue { day, urgent };
+    assert_eq!(
+        &engine.policy().actions().calls()[1..],
+        &[
+            due(Some(7), None),
+            due(Some(7), Some(true)),
+            due(None, Some(false))
+        ],
+        "after the call `idle`'s entry made: `plan` gives `due` a day and leaves \
+         `urgent` absent, `escalate` gives `urgent` a value, and `unplan` makes `due` \
+         absent and `urgent` false"
+    );
+}
+
+#[test]
 fn a_machine_that_publishes_no_variable_snapshots_its_configuration_alone() {
     // `attempts` is not declared sce:direction="out", so it is the machine's
     // own: the snapshot carries no data, only where the machine is.
