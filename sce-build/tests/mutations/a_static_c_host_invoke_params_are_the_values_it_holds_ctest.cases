@@ -46,10 +46,13 @@ PY
 
 # ── A value that cannot be computed is left out ────────────────────
 
+# The generated C builds with -Werror: a mutant must keep every binding it leaves
+# without a use. The failure flag stays read, as `|| true`, where a document's
+# params never write to it.
 mutation_case "a value that failed is written into the request anyway" <<'PY'
 edit("tools/codegen/templates/c/invoke_methods.jinja2",
      "                if (!sce_failure_.failed\n                    && sce_forge_wire_text(",
-     "                if (true\n                    && sce_forge_wire_text(")
+     "                if ((sce_failure_.failed || true)\n                    && sce_forge_wire_text(")
 PY
 
 # ── ... and reported ───────────────────────────────────────────────
@@ -84,8 +87,10 @@ PY
 
 # ── A send the host serves carries its pairs as text too ───────────
 
+# The text buffer stays passed to the writer, whose result is then discarded: with the
+# block dropped whole, `_host_param_texts` would be declared and unused.
 mutation_case "a send's param reaches the host as the event data alone" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
-     "{% if host_texts %}\n                            if (sce_forge_wire_text(",
-     "{% if false %}\n                            if (sce_forge_wire_text(")
+     "                                                    sizeof(_host_param_texts[{{ loop.index0 }}]))) {",
+     "                                                    sizeof(_host_param_texts[{{ loop.index0 }}])) && false) {")
 PY
