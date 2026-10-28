@@ -11549,7 +11549,10 @@ fn generate_fields(e: &GenerateError) -> DiagnosticPayload {
             code: DiagnosticCode::BroadcastLogRuntimeMissing,
             stage: Stage::Generate,
             expected: None,
-            actual: Some(language.clone()),
+            // The language is the generation target, not a token of the
+            // document, so there is no site for it to name: it is in the
+            // message and the key, and the document is valid as written.
+            actual: None,
             fix: None,
             key_fragments: vec![log_name.clone(), language.clone()],
         },
@@ -15373,7 +15376,7 @@ mod tests {
                     language: "rust".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:91bd428e1a9720f1","code":"broadcast-log/runtime-missing","stage":"generate","message":"broadcast-log 'event_ring': the rust forge runtime has no broadcast-log row yet. ADR 0062 §3: the kind is specified for the backends in the ADR's order, and this document is valid; it is refused rather than lowered to a log that gives less. Repair: generate for a backend whose runtime has the row, or wait for the rust row.","actual":"rust"}"#,
+                r#"{"v":1,"id":"fnv1a:91bd428e1a9720f1","code":"broadcast-log/runtime-missing","stage":"generate","message":"broadcast-log 'event_ring': the rust forge runtime has no broadcast-log row yet. ADR 0062 §3: the kind is specified for the backends in the ADR's order, and this document is valid; it is refused rather than lowered to a log that gives less. Repair: generate for a backend whose runtime has the row, or wait for the rust row."}"#,
             ),
             (
                 "forge/queue-segmented-needs-alloc",
