@@ -643,7 +643,21 @@ pub(crate) fn algorithm_optional_spelled(
         // payload class), `None` absent: a number, a `bool`, a text, a byte string,
         // a value of an enum and a record alike.
         Language::Python => true,
-        Language::C11 => number_or_bool,
+        // C11 spells the struct `sce/forge/optional.h` declares over the element
+        // (docs/adr/0055, step 9): a number or a `bool`, a value of an enum, a
+        // record, and a text as the field of a record, over the buffer of its
+        // `sce:max-size`. A text in an algorithm's own slot, local or return
+        // declares no bound, which the buffer needs, and refuses by name where it
+        // is rendered ([`algorithm_optional_type`]); a byte string is held by no
+        // algorithm's record or slot.
+        Language::C11 => {
+            number_or_bool
+                || matches!(
+                    elem,
+                    OptionalElemType::Scalar(SceType::Enum(_) | SceType::String)
+                        | OptionalElemType::Record { .. }
+                )
+        }
         Language::Swift => number_or_bool,
     }
 }
@@ -2948,6 +2962,11 @@ fn render_event_schema(
             // which every key below names, since one language's template is
             // rendered at a time.
             let held = match &f.sce_type {
+                // C11 holds a text over the buffer of the field's own bound
+                // (docs/adr/0055, step 9), which no algorithm slot has.
+                FieldType::Optional { elem } if _lang == crate::generator::Language::C11 => {
+                    Some(c11_schema_field_optional(&l, imports, elem, f)?.ty)
+                }
                 FieldType::Optional { elem } => {
                     let held = algorithm_optional_type(
                         &l,
@@ -3112,6 +3131,24 @@ fn render_event_schema(
         .map(|&bound| crate::forge::static_lowering::c_string_storage_def(bound))
         .collect();
     ctx.insert("c_text_defs".into(), serde_json::json!(c_text_defs));
+    // The declaration of the optional value of each element an optional field of
+    // the struct holds that the runtime does not declare — a text over its buffer,
+    // a value of an enum — once each, under the guard every unit that holds one
+    // shares (docs/adr/0055, step 9), after the buffers and the enums they wrap.
+    let mut optional_defs = std::collections::BTreeSet::new();
+    if _lang == crate::generator::Language::C11 {
+        for f in &m.fields {
+            if let FieldType::Optional { elem } = &f.sce_type {
+                if let Some(def) = c11_schema_field_optional(&l, imports, elem, f)?.declaration {
+                    optional_defs.insert(def);
+                }
+            }
+        }
+    }
+    ctx.insert(
+        "optional_defs".into(),
+        serde_json::json!(optional_defs.into_iter().collect::<Vec<_>>()),
+    );
     ctx.insert("enum_includes".into(), serde_json::json!(enum_includes));
     ctx.insert(
         "rust_enum_imports".into(),
@@ -27613,6 +27650,9 @@ fn algorithm_optional_type(
     imports: &[ImportContext],
     elem: &OptionalElemType,
 ) -> Result<String, ForgeError> {
+    if l.lang == crate::generator::Language::C11 {
+        return c11_algorithm_optional(l, imports, elem).map(|held| held.ty);
+    }
     algorithm_optional_parts(l, imports, elem).map(|(_, optional)| optional)
 }
 
@@ -27659,6 +27699,9 @@ fn algorithm_optional_slot_type(
     spelling: Option<&crate::attribute_spelling::AttributeSpelling>,
     element: &str,
 ) -> Result<String, ForgeError> {
+    if l.lang == crate::generator::Language::C11 {
+        return c11_algorithm_optional(l, imports, elem).map(|held| held.ty);
+    }
     algorithm_optional_slot_parts(l, imports, elem, kind, spelling, element)
         .map(|(_, optional)| optional)
 }
@@ -27721,6 +27764,130 @@ fn algorithm_optional_slot_parts(
         })
         .ok_or_else(refused)?;
     Ok((present, optional))
+}
+
+/// The optional value of one element as C11 holds it (docs/adr/0055, section 5):
+/// the struct `sce/forge/optional.h` declares for it, and the declaration the unit
+/// that holds one makes of it where the runtime declares none.
+struct C11OptionalElem {
+    /// `sce_optional_<elem>_t`, the one name a statechart's variable of the same
+    /// element is held in ([`crate::forge::static_lowering::c11_optional_type`]).
+    ty: String,
+    /// The declaration of `ty` beside the type it wraps, under a guard the units
+    /// that hold it share so a program that includes two declares it once. `None`
+    /// for a number or a `bool`, which the runtime declares.
+    declaration: Option<String>,
+}
+
+/// The optional value of `elem` in an algorithm's slot, local or return, or in a
+/// record the algorithm reads, on C11 (docs/adr/0055, steps 8 and 9): over the
+/// number or `bool` the runtime declares one of, over the value of an enum by the
+/// type the enum document declares, and over the struct type the schema of a
+/// record declares. A text is no slot's: the struct the runtime declares over one
+/// is a buffer of the bound its value declares (`sce:capacity` or `sce:max-size`),
+/// and an algorithm's parameter, return and local declare none, so the slot is
+/// refused by name, as is a byte string, which no algorithm's slot holds.
+fn c11_algorithm_optional(
+    l: &LangCtx,
+    imports: &[ImportContext],
+    elem: &OptionalElemType,
+) -> Result<C11OptionalElem, ForgeError> {
+    use crate::forge::static_lowering::{
+        c11_optional_elem, c11_optional_enum_declaration, c11_optional_record_declaration,
+        c11_optional_type, optional_not_lowered,
+    };
+    let refused = |reason: &str| -> ForgeError {
+        optional_not_lowered(
+            &format!(
+                "an algorithm's slot or local of type optional<{}>{reason}",
+                elem.as_attr()
+            ),
+            l.lang.canonical_name(),
+        )
+        .into()
+    };
+    let held =
+        |present: &str, declaration: Option<String>| -> Result<C11OptionalElem, ForgeError> {
+            c11_optional_type(present)
+                .map(|ty| C11OptionalElem { ty, declaration })
+                .ok_or_else(|| {
+                    GenerateError::InvalidConfig(format!(
+                    "an algorithm's optional<{}> reached the renderer of {}, which spells it in \
+                     no type (docs/adr/0055)",
+                    elem.as_attr(),
+                    l.lang.canonical_name()
+                ))
+                    .into()
+                })
+        };
+    match elem {
+        OptionalElemType::Scalar(SceType::String) => Err(refused(
+            " (it declares no bound for the buffer the optional text is held in)",
+        )),
+        OptionalElemType::Scalar(SceType::Bytes) => Err(refused("")),
+        OptionalElemType::Scalar(SceType::Enum(reference)) => {
+            // Named by the document, as the machine that holds one of the enum
+            // names it, so that one declaration serves both
+            // ([`crate::forge::static_lowering::c11_optional_elem`]).
+            let imported = l.enum_import(&reference.alias);
+            let name = format!("enum_{}", imported.snake);
+            Ok(C11OptionalElem {
+                ty: format!("sce_optional_{name}_t"),
+                declaration: Some(c11_optional_enum_declaration(&name, &imported.qualified)),
+            })
+        }
+        OptionalElemType::Scalar(ty) => held(&l.type_name(ty), None),
+        OptionalElemType::Record { alias } => {
+            let record =
+                resolve_record(imports, alias, None, &format!("optional<record:{alias}>"))?;
+            let present = record.qualified_type.clone();
+            let declaration = c11_optional_elem(&present)
+                .map(|name| c11_optional_record_declaration(&name, &present));
+            held(&present, declaration)
+        }
+    }
+}
+
+/// The optional value of the field `field`, of the element `elem`, of an event
+/// schema's struct on C11 (docs/adr/0055, step 9): what [`c11_algorithm_optional`]
+/// holds, and a text over the buffer of the field's `sce:max-size`, as a record a
+/// machine holds has it. A text the schema bounds by nothing has no buffer to be
+/// held in, and is refused by name.
+fn c11_schema_field_optional(
+    l: &LangCtx,
+    imports: &[ImportContext],
+    elem: &SceType,
+    field: &SchemaField,
+) -> Result<C11OptionalElem, ForgeError> {
+    match (elem, field.max_size) {
+        (SceType::String, Some(bound)) => {
+            let present = crate::forge::static_lowering::c_string_storage_type(bound);
+            let name = format!("string_{bound}");
+            Ok(C11OptionalElem {
+                ty: format!("sce_optional_{name}_t"),
+                // The buffer is declared above, by the unit's `c_text_defs`.
+                declaration: Some(
+                    crate::forge::static_lowering::c11_optional_buffer_declaration(
+                        &name,
+                        &present,
+                        "",
+                        &format!("SCE_OPTIONAL_DECLARE_STRING({bound})"),
+                    ),
+                ),
+            })
+        }
+        (SceType::String, None) => Err(crate::forge::static_lowering::optional_not_lowered(
+            &format!(
+                "<data id=\"{}\" sce:type=\"{}\">, a text with no sce:max-size, which the buffer \
+                 it is held in is declared over",
+                field.id,
+                field.sce_type.as_attr()
+            ),
+            l.lang.canonical_name(),
+        )
+        .into()),
+        _ => c11_algorithm_optional(l, imports, &OptionalElemType::Scalar(elem.clone())),
+    }
 }
 
 /// A record built whole from `fields`, one `<sce:set>` per field of
@@ -28988,7 +29155,6 @@ struct AlgorithmBodyCfg<'a> {
     records: &'a std::collections::HashMap<String, String>,
     optional_records: &'a std::collections::HashMap<String, String>,
     borrowed_records: &'a std::collections::HashSet<String>,
-    optional_records: &'a std::collections::HashMap<String, String>,
     absences: &'a TypedAbsences,
     channel: ReturnChannel<'a>,
 }
@@ -29031,7 +29197,6 @@ fn lower_algorithm_body(
         records: cfg.records,
         optional_records: cfg.optional_records,
         borrowed_records: cfg.borrowed_records,
-        optional_records: cfg.optional_records,
         absences: cfg.absences,
         channel: cfg.channel,
     };
@@ -29157,10 +29322,6 @@ struct AlgorithmLowerCtx<'a> {
     /// The foreach items among [`Self::records`]: records the body reads
     /// through a borrow of the caller's element ([`AlgorithmTypes::borrowed_records`]).
     borrowed_records: &'a std::collections::HashSet<String>,
-    /// Every optional record parameter and local (docs/adr/0055, step 9), keyed by
-    /// the SCXML name, to the event-schema alias that types it: what a write to
-    /// `<name>.value.<field>` is judged against.
-    optional_records: &'a std::collections::HashMap<String, String>,
     /// The absent value of each place whose element an expression cannot name
     /// ([`TypedAbsences`]).
     absences: &'a TypedAbsences,
@@ -29203,6 +29364,85 @@ fn lower_algorithm_stmt_and_check(
     Ok(())
 }
 
+/// The place a statement writes an optional value of an enum or of a record to on
+/// C11 ([`c11_whole_optional`]).
+enum C11Place<'p> {
+    /// A place whose optional type is spelled out where it is written — a local's
+    /// declaration, the return: `sce_optional_<elem>_t`.
+    Named(&'p str),
+    /// A place the statement names, whose type is the type of it: the local or the
+    /// field of a record an `<sce:assign>` writes.
+    Typed(&'p str),
+}
+
+/// What an initial value, an assignment or a return writes, whole, into a place that
+/// holds an optional value of an enum or of a record on C11 (docs/adr/0055, step 9):
+/// `None` where the expression layer writes it, which is every other element and any
+/// value that is an optional value already.
+///
+/// C names no type in an expression, and the struct that holds an optional enum or
+/// record is named by the document of the enum or the type of the record, which the
+/// expression does not know: `null` and a value lifted into one are spelled where the
+/// place says the type, as the walk of a `sce-static` statechart spells them where a
+/// variable takes them whole. A lift or a `null` nested in an expression (the branch
+/// of a conditional) is refused by name, as it is for a text.
+fn c11_whole_optional(
+    ctx: &AlgorithmLowerCtx<'_>,
+    type_ctx: &crate::forge::types::TypeCtx<'_>,
+    place: C11Place<'_>,
+    slot: crate::forge::types::InferredType,
+    rhs: &str,
+    site: &ExpressionSite<'_>,
+) -> Result<Option<String>, ForgeError> {
+    use crate::forge::types::{InferredType, OptionalElem};
+    if ctx.lang != crate::generator::Language::C11
+        || !matches!(
+            slot,
+            InferredType::Optional(OptionalElem::Enum | OptionalElem::Record)
+        )
+    {
+        return Ok(None);
+    }
+    if rhs.trim() == "null" {
+        return Ok(Some(match place {
+            C11Place::Named(ty) => format!("{}_none()", ty.trim_end_matches("_t")),
+            C11Place::Typed(lhs) => format!("SCE_OPTIONAL_ABSENT_OF(__typeof__({lhs}))"),
+        }));
+    }
+    // A record put in by its name — a record parameter, local or loop item — is the
+    // local itself, which C copies by value: the expression layer refuses a bare
+    // record name as a value, so the name is not lowered as an expression.
+    let name = rhs.trim();
+    if ctx.records.contains_key(name) {
+        let local = ctx.l.local_id(name);
+        return Ok(Some(match place {
+            C11Place::Named(ty) => format!("{}_some({local})", ty.trim_end_matches("_t")),
+            C11Place::Typed(lhs) => {
+                format!("SCE_OPTIONAL_PRESENT_OF(__typeof__({lhs}), {local})")
+            }
+        }));
+    }
+    // An optional value, a parameter, a local or a field, is written as it is.
+    let held = expr::infer_expr_type(rhs, type_ctx).map_err(|refusal| site.place(refusal))?;
+    if held.is_optional() {
+        return Ok(None);
+    }
+    let value = expr::transpile_typed(
+        rhs,
+        ctx.l.expr_target(),
+        type_ctx,
+        ctx.renames,
+        InferredType::Unknown,
+    )
+    .map_err(|refusal| site.place(refusal))?;
+    Ok(Some(match place {
+        C11Place::Named(ty) => format!("{}_some({value})", ty.trim_end_matches("_t")),
+        C11Place::Typed(lhs) => {
+            format!("SCE_OPTIONAL_PRESENT_OF(__typeof__({lhs}), {value})")
+        }
+    }))
+}
+
 /// Lower one statement, without the failure check that follows it
 /// ([`lower_algorithm_stmt_and_check`]). Every refusal is placed at the
 /// attribute it names, from the statement's spellings
@@ -29242,7 +29482,6 @@ fn lower_algorithm_stmt(
         records,
         optional_records,
         borrowed_records,
-        optional_records,
         absences,
         channel,
     } = ctx;
@@ -29397,15 +29636,26 @@ fn lower_algorithm_stmt(
             // A record put whole into an optional record by its name is the local
             // itself (Python), and the literal `null` given whole to a local of an
             // element whose type an expression cannot name is the local's own
-            // absent value ([`TypedAbsences`], Go).
-            let init_lowered = match record_copied_into_optional_record(ctx, slot, init)
-                .or_else(|| absences.place(name, init).map(|absent| absent.to_string()))
-            {
-                Some(spelled) => spelled,
-                None => expr::transpile_into_owned(init, l.expr_target(), type_ctx, renames, slot)
-                    .map(|lowered| lowered.text)
-                    .map_err(|refusal| site.place(refusal))?,
-            };
+            // absent value ([`TypedAbsences`], Go). C11 holds the whole value in
+            // the struct its runtime declares ([`c11_whole_optional`]).
+            let init_lowered =
+                match c11_whole_optional(ctx, type_ctx, C11Place::Named(&ty), slot, init, &site)? {
+                    Some(whole) => whole,
+                    None => match record_copied_into_optional_record(ctx, slot, init)
+                        .or_else(|| absences.place(name, init).map(|absent| absent.to_string()))
+                    {
+                        Some(spelled) => spelled,
+                        None => expr::transpile_into_owned(
+                            init,
+                            l.expr_target(),
+                            type_ctx,
+                            renames,
+                            slot,
+                        )
+                        .map(|lowered| lowered.text)
+                        .map_err(|refusal| site.place(refusal))?,
+                    },
+                };
             let local = l.local_id(name);
             // Rust: emit `let mut` only when the local is reassigned
             // somewhere in the body (workspace `warnings = "deny"` makes
@@ -29594,16 +29844,10 @@ fn lower_algorithm_stmt(
             // A record put whole into an optional record local, by its name: a bare
             // record name is no expression ("a record used as a value"), so it is
             // the local itself, which Kotlin holds as the immutable data class it is.
-            if optional_records.contains_key(target.trim())
+            if lang == Language::Kotlin
+                && optional_records.contains_key(target.trim())
                 && (records.contains_key(rhs.trim()) || optional_records.contains_key(rhs.trim()))
             {
-                if lang != Language::Kotlin {
-                    return Err(crate::forge::static_lowering::optional_not_lowered(
-                        &format!("`{}`, an optional record of an algorithm", target.trim()),
-                        lang.canonical_name(),
-                    )
-                    .into());
-                }
                 out.push_str(&format!(
                     "{pad}{} = {}\n",
                     l.local_id(target.trim()),
@@ -29745,6 +29989,27 @@ fn lower_algorithm_stmt(
                 ));
                 return Ok(());
             }
+            // A text field of the present value of an optional record local is
+            // written into its buffer as a record's is, `<name>.value.<field>`
+            // (docs/adr/0055, step 9): the narrowing judged the record present.
+            if lang == Language::C11 {
+                let present_text = trimmed_target.split_once('.').and_then(|(root, rest)| {
+                    let alias = optional_records.get(root.trim())?;
+                    let record = resolve_record(imports, alias, None, "<sce:assign>").ok()?;
+                    let field = record.field(rest.trim().strip_prefix("value.")?)?;
+                    matches!(field.ty, FieldType::Scalar(SceType::String))
+                        .then(|| (root.trim(), field))
+                });
+                if let Some((root, field)) = present_text {
+                    let value = lower_text_write(rhs, expr_spelling.as_ref(), field, ctx)?;
+                    out.push_str(&format!(
+                        "{pad}{}.value.{} = {value};\n",
+                        l.local_id(root),
+                        event_schema_field_ident(&field.id, lang)
+                    ));
+                    return Ok(());
+                }
+            }
             // A record's string field is written from a text the validator can
             // bound (`lower_text_write`), into the buffer its backend holds the
             // field in, not through an expression of the language's own string.
@@ -29752,7 +30017,11 @@ fn lower_algorithm_stmt(
                 let alias = records.get(root.trim())?;
                 let record = resolve_record(imports, alias, None, "<sce:assign>").ok()?;
                 let field = record.field(field.trim())?;
-                field.holds_text().then(|| (root.trim(), field))
+                // C11 holds an optional text in the struct its runtime declares over
+                // the buffer, which is no text to bound ([`c11_whole_optional`]).
+                (field.holds_text()
+                    && !(lang == Language::C11 && matches!(field.ty, FieldType::Optional { .. })))
+                .then(|| (root.trim(), field))
             });
             // The field of the present value of an optional record, `x.value.f`
             // (docs/adr/0055, step 9), is a member of the payload object `x` holds,
@@ -29844,13 +30113,25 @@ fn lower_algorithm_stmt(
             // The place assigned to owns the value, as a local's initial value
             // is lowered (see `AlgorithmStmt::Var`): `r = 'x'` must be a
             // `String` in Rust, not the `&str` the literal is.
-            let rhs_lowered = match absences.place(trimmed_target, rhs) {
-                // `null` given whole to a place of an element whose type an
-                // expression cannot name ([`TypedAbsences`]).
-                Some(absent) => absent.to_string(),
-                None => expr::transpile_into_owned(rhs, l.expr_target(), type_ctx, renames, lhs_ty)
-                    .map(|lowered| lowered.text)
-                    .map_err(|refusal| rhs_site.place(refusal))?,
+            let rhs_lowered = match c11_whole_optional(
+                ctx,
+                type_ctx,
+                C11Place::Typed(&lhs),
+                lhs_ty,
+                rhs,
+                &rhs_site,
+            )? {
+                Some(whole) => whole,
+                None => match absences.place(trimmed_target, rhs) {
+                    // `null` given whole to a place of an element whose type an
+                    // expression cannot name ([`TypedAbsences`]).
+                    Some(absent) => absent.to_string(),
+                    None => {
+                        expr::transpile_into_owned(rhs, l.expr_target(), type_ctx, renames, lhs_ty)
+                            .map(|lowered| lowered.text)
+                            .map_err(|refusal| rhs_site.place(refusal))?
+                    }
+                },
             };
             let semi = if matches!(lang, Language::Kotlin | Language::Python) {
                 ""
@@ -30688,9 +30969,32 @@ fn lower_algorithm_stmt(
                     // assignability — passing the explicit type lets
                     // every emitter route through its own coerce path.
                     let site = ExpressionSite::new(rhs, expr_spelling.as_ref());
-                    let lowered =
-                        expr::transpile_into(rhs, l.expr_target(), type_ctx, renames, return_ty)
-                            .map_err(|refusal| site.place(refusal))?;
+                    // An optional enum or record is returned whole, in the type the
+                    // signature declares (docs/adr/0055, step 9).
+                    let returned_optional = match return_value.and_then(|t| t.optional_elem()) {
+                        Some(elem) if lang == Language::C11 => {
+                            Some(algorithm_optional_type(l, imports, elem)?)
+                        }
+                        _ => None,
+                    };
+                    let whole = match &returned_optional {
+                        Some(ty) => c11_whole_optional(
+                            ctx,
+                            type_ctx,
+                            C11Place::Named(ty),
+                            return_ty,
+                            rhs,
+                            &site,
+                        )?,
+                        None => None,
+                    };
+                    let lowered = match whole {
+                        Some(whole) => whole,
+                        None => {
+                            expr::transpile_into(rhs, l.expr_target(), type_ctx, renames, return_ty)
+                                .map_err(|refusal| site.place(refusal))?
+                        }
+                    };
                     channel.value(pad, &lowered, false)
                 }
                 None => match lang {
@@ -33076,7 +33380,9 @@ fn render_algorithm(
     // the record's own place (Rust through a borrow, Go through the proven read of
     // the local). A write of one is the statement's own
     // ([`optional_record_field_place`]), which no rename reaches. The other backends
-    // read the field through their expression emitter's own proven form.
+    // read the field through their expression emitter's own proven form. C11 holds
+    // the record in the struct's `value`, and its text field in a buffer, which a
+    // comparison reads as the text of: `held.value.title` is the buffer's text.
     for &(name, _, record) in &types.optional_records {
         let local = l.local_id(name);
         for field in &record.fields {
@@ -33087,6 +33393,13 @@ fn render_algorithm(
                     &event_schema_field_ident(&field.id, lang),
                     false,
                 )?,
+                Language::C11 if matches!(field.ty, FieldType::Scalar(SceType::String)) => {
+                    format!(
+                        "{local}.value.{}",
+                        event_schema_field_ident(&field.id, lang)
+                    )
+                }
+                Language::C11 => continue,
                 _ => match optional_record_member(lang, &local, &field.id) {
                     Some(member) => member,
                     None => continue,
@@ -33577,7 +33890,6 @@ fn render_algorithm(
             records: &records,
             optional_records: &optional_records,
             borrowed_records: &types.borrowed_records,
-            optional_records: &optional_records,
             absences: &absences,
             channel,
         },
@@ -33651,6 +33963,38 @@ fn render_algorithm(
     ctx.insert(
         "needs_optional".into(),
         (types.holds_optional() || return_optional.is_some()).into(),
+    );
+    // C11 declares, beside the type each wraps and once under a guard every unit
+    // that holds one shares, the optional value of each enum and record the
+    // algorithm holds in a parameter, a local or the return, which the runtime
+    // does not (docs/adr/0055, step 9).
+    let mut optional_defs = std::collections::BTreeSet::new();
+    if lang == Language::C11 {
+        let slots = m
+            .signature
+            .params
+            .iter()
+            .filter_map(|p| p.sce_type.optional_elem())
+            .chain(declared_return.and_then(|t| t.optional_elem()))
+            .chain(
+                m.body_bindings()
+                    .into_iter()
+                    .filter_map(|binding| match binding {
+                        crate::forge::model::AlgorithmBinding::Local { sce_type, .. } => {
+                            sce_type.optional_elem()
+                        }
+                        _ => None,
+                    }),
+            );
+        for elem in slots {
+            if let Some(def) = c11_algorithm_optional(&l, imports, elem)?.declaration {
+                optional_defs.insert(def);
+            }
+        }
+    }
+    ctx.insert(
+        "optional_defs".into(),
+        serde_json::json!(optional_defs.into_iter().collect::<Vec<_>>()),
     );
     // Python annotates a parameter, the return and a local of `optional<T>` as
     // `Optional[T]`, which `typing` declares; a record's optional field is

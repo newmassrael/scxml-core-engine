@@ -31,6 +31,13 @@
 
 {% endfor %}
 {% endif %}
+{# The optional value of each text and each value of an enum a field of this
+   struct may leave absent (docs/adr/0055), declared once, under the guard every
+   unit that holds one shares, after the buffer and the enum it wraps. #}
+{% for def in optional_defs %}
+{{ def }}
+
+{% endfor %}
 
 /* The event this schema types (`sce:event-name`), as a host names it. */
 #define {{ c_const_prefix }}_EVENT_NAME {{ event_name_literal }}

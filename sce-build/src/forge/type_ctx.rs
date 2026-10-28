@@ -874,6 +874,13 @@ impl LoopVariables {
     pub fn string_fields(&self) -> impl Iterator<Item = &str> {
         self.string_bounds
             .iter()
+            // A field that may be absent is read as the optional value it is, not
+            // as the text of the buffer (docs/adr/0055).
+            .filter(|(path, _)| {
+                self.paths
+                    .iter()
+                    .any(|(held, ty)| held == path && *ty == InferredType::Str)
+            })
             .filter_map(|(path, _)| path.split_once('.').map(|(_, field)| field))
     }
 }
@@ -1432,17 +1439,25 @@ impl StaticScope {
         Ok(rewrite)
     }
 
-    /// The `(variable, field)` of each string field of a record variable: the
-    /// places a target that holds a string in a buffer of its own reads through it.
+    /// The `(owner, field)` of each string field of a record variable: the places a
+    /// target that holds a string in a buffer of its own reads through it. `owner`
+    /// is the path of the record the field is a member of — `<id>` for a record
+    /// variable, and `<id>.value` for the present value of an optional record
+    /// (docs/adr/0055, step 9) — so that `<owner>.<field>` is the path an expression
+    /// reads it by.
+    ///
+    /// A field that may be absent is none of these: it is read as the optional value
+    /// it is, and its text, once proven present, as `<owner>.<field>.value`.
     pub fn record_string_fields(&self) -> impl Iterator<Item = (&str, &str)> {
         self.record_string_bounds
             .iter()
             .filter(|(path, _)| !path.contains(INDEXED_ELEMENT))
-            // The field of an optional record's present value is read through a
-            // path of three names, `<id>.value.<field>`, which no target holds in
-            // a buffer of its own yet (docs/adr/0055, step 9).
-            .filter(|(path, _)| path.matches('.').count() == 1)
-            .filter_map(|(path, _)| path.split_once('.'))
+            .filter(|(path, _)| {
+                self.record_paths
+                    .iter()
+                    .any(|(held, ty)| held == path && *ty == InferredType::Str)
+            })
+            .filter_map(|(path, _)| path.rsplit_once('.'))
     }
 
     /// Whether the field at `path`, as [`Self::indexed_record_fields`] gives it, is a

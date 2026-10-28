@@ -25,6 +25,10 @@
 {% endif %}{% if needs_optional %}#include "sce/forge/optional.h"  /* a value that may be absent, docs/adr/0055 */
 {% endif %}{% if all_imports %}{% for imp in all_imports %}{{ imp.include_stmt }}
 {% endfor %}{% endif %}
+{% for def in optional_defs %}
+{{ def }}
+
+{% endfor %}
 {{ consts_prelude }}static inline {{ return_type }} {{ primary_symbol }}({{ params_str }}) {
 {% if may_fail %}
     /* SCE_FORGE.md §3.4.1: each checked operation records a failure here,

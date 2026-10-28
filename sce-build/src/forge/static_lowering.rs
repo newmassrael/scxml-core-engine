@@ -3577,12 +3577,19 @@ fn names(scope: &StaticScope, target: &dyn StaticTarget) -> Vec<(String, String)
             )
         })
         // A string field of a record variable, for a target that reads it through
-        // the buffer that holds it: `last.label` is the buffer's text.
-        .chain(scope.record_string_fields().filter_map(|(var, field)| {
-            let record = target.field_ref(&target.field_name(var));
+        // the buffer that holds it: `last.label` is the buffer's text. The field of
+        // the present value of an optional record variable is one too, read as
+        // `pick.value.label` (docs/adr/0055, step 9): its owner is the record
+        // variable and the member `value` that holds the record.
+        .chain(scope.record_string_fields().filter_map(|(owner, field)| {
+            let (var, member) = owner.split_once('.').unwrap_or((owner, ""));
+            let mut record = target.field_ref(&target.field_name(var));
+            if !member.is_empty() {
+                record = format!("{record}.{member}");
+            }
             target
                 .record_string_read(&record, field)
-                .map(|read| (format!("{var}.{field}"), read))
+                .map(|read| (format!("{owner}.{field}"), read))
         }))
         // A field of the element a list of records is indexed at: spelled as the
         // target spells a record's field.
@@ -9513,6 +9520,13 @@ pub struct CTarget {
     /// holding one enum — whatever they call it — share one declaration in a
     /// program that includes both.
     enums: std::collections::BTreeMap<String, String>,
+    /// The ids of the machine's optional record variables (docs/adr/0055, step 9).
+    /// A call hands one of them by the name of the variable that holds it, as it
+    /// hands a record variable, and the call's code names both `v`
+    /// ([`crate::forge::type_ctx::OPTIONAL_RECORD_CODES`]): the type of what
+    /// the name holds is what tells the optional one, passed as it is, from the
+    /// record, which is lifted ([`Self::state_argument`]).
+    optional_records: std::collections::BTreeSet<String>,
 }
 
 /// What lowers the arguments of a host action ([`target_for`]): the one thing a
@@ -9522,7 +9536,11 @@ pub struct CTarget {
 static C_ARGUMENTS: CTarget = CTarget::arguments();
 
 impl CTarget {
-    fn new(stem: &str, held_enums: &std::collections::BTreeMap<String, EnumModel>) -> Self {
+    fn new(
+        stem: &str,
+        held_enums: &std::collections::BTreeMap<String, EnumModel>,
+        optional_records: std::collections::BTreeSet<String>,
+    ) -> Self {
         Self {
             stem: stem.to_string(),
             conditions: std::sync::atomic::AtomicU32::new(0),
@@ -9531,6 +9549,7 @@ impl CTarget {
                 .iter()
                 .map(|(alias, model)| (alias.clone(), model.name.clone()))
                 .collect(),
+            optional_records,
         }
     }
 
@@ -9540,7 +9559,14 @@ impl CTarget {
             conditions: std::sync::atomic::AtomicU32::new(0),
             loops: std::sync::atomic::AtomicU32::new(0),
             enums: std::collections::BTreeMap::new(),
+            optional_records: std::collections::BTreeSet::new(),
         }
+    }
+
+    /// The type of the optional value of a record of the schema `alias` that the
+    /// machine `machine` holds ([`Self::record_type`]).
+    fn optional_record_type(&self, machine: &str, alias: &str) -> Option<String> {
+        c11_optional_type(&self.record_type(machine, alias))
     }
 
     /// The name the document of the enum imported as `alias` declares — the
@@ -9705,8 +9731,25 @@ impl StaticTarget for CTarget {
     fn lowers_state_calls(&self) -> bool {
         true
     }
+    // The elements the algorithm's unit spells in a slot
+    // ([`crate::forge::generator::algorithm_optional_spelled`]): a text is held
+    // only as the field of a record, over the buffer of its `sce:max-size`, and
+    // the slot of an algorithm declares no bound to hold one in.
+    fn holds_algorithm_optional(&self, elem: &crate::forge::model::OptionalElemType) -> bool {
+        !matches!(
+            elem,
+            crate::forge::model::OptionalElemType::Scalar(SceType::String)
+        ) && crate::forge::generator::algorithm_optional_spelled(Language::C11, elem)
+    }
     // A list is handed as the borrowed view of its elements, `{data, len}`, as the
     // algorithm's own list parameter is; a record or a payload as the struct it is.
+    //
+    // An optional record is handed as the optional value of the machine's record
+    // type, whatever holds it (docs/adr/0055, step 9): `null` as the absent value,
+    // an optional record variable as it is, and a record variable, which the call's
+    // code names as an optional one is named, lifted into the present value. A
+    // loop's record item and the payload are handed as the struct each is, which
+    // the adapter lifts as it does for a record slot.
     fn state_argument(&self, machine: &str, arg: &StateArg, held: &str) -> String {
         match &arg.slot {
             StaticSlot::ScalarList(ty) => format!(
@@ -9718,6 +9761,16 @@ impl StaticTarget for CTarget {
                 self.record_list_view(&self.record_type(machine, alias))
                     .unwrap_or_default()
             ),
+            StaticSlot::OptionalRecord(alias) => {
+                let elem = c11_optional_elem(&self.record_type(machine, alias))
+                    .expect("a record type is the element of an optional record");
+                match arg.code {
+                    'n' => format!("sce_optional_{elem}_none()"),
+                    'v' if self.optional_records.contains(arg.written.as_str()) => held.to_string(),
+                    'v' => format!("sce_optional_{elem}_some({held})"),
+                    _ => held.to_string(),
+                }
+            }
             _ => held.to_string(),
         }
     }
@@ -9820,6 +9873,51 @@ impl StaticTarget for CTarget {
                         Crossing::ToAlgorithm,
                     )?);
                 }
+                // An optional record the algorithm takes is the optional value of its
+                // own record, built from what the call hands over (docs/adr/0055, step
+                // 9): the optional value of the machine's record, for `null` and for a
+                // variable ([`Self::state_argument`] made both one), whose record is
+                // copied field by field when it is present; and a record the machine
+                // holds, a loop's item or the payload, copied the same way and lifted.
+                AdapterParam::State {
+                    slot: StaticSlot::OptionalRecord(alias),
+                    code,
+                } => {
+                    let algorithm = algorithm_record(alias)?;
+                    let elem = c11_optional_elem(&algorithm)?;
+                    if matches!(*code, 'n' | 'v') {
+                        declarations.push(format!(
+                            "{} {p}",
+                            self.optional_record_type(spec.machine, alias)?
+                        ));
+                        let record = record_of(
+                            alias,
+                            algorithm,
+                            &format!("{p}.value"),
+                            Crossing::ToAlgorithm,
+                        )?;
+                        arguments.push(format!(
+                            "({p}.present ? sce_optional_{elem}_some({record}) : \
+                             sce_optional_{elem}_none())"
+                        ));
+                    } else {
+                        let held = if *code == 'p' {
+                            let event = spec.payload_events.get(alias)?;
+                            format!(
+                                "{}_{}_payload_t",
+                                spec.machine,
+                                filters::to_c11_lower_ident(std::borrow::Cow::Borrowed(
+                                    event.as_str()
+                                ))
+                            )
+                        } else {
+                            machine_record(alias)
+                        };
+                        declarations.push(format!("{held} {p}"));
+                        let record = record_of(alias, algorithm, &p, Crossing::ToAlgorithm)?;
+                        arguments.push(format!("sce_optional_{elem}_some({record})"));
+                    }
+                }
                 AdapterParam::State {
                     slot: StaticSlot::ScalarList(ty),
                     ..
@@ -9874,6 +9972,9 @@ impl StaticTarget for CTarget {
             }
             StaticSlot::Scalar(ty) if plain_scalar(ty) => Shape::Value(self.scalar_type(ty)),
             StaticSlot::Optional(ty) => Shape::Value(spec.optional_type(self, ty)?),
+            StaticSlot::OptionalRecord(alias) => {
+                Shape::Value(self.optional_record_type(spec.machine, alias)?)
+            }
             StaticSlot::Record(alias) => Shape::Value(machine_record(alias)),
             StaticSlot::ScalarList(ty) if plain_scalar(ty) => {
                 Shape::List(self.scalar_type(ty), value.max_size?)
@@ -9889,6 +9990,22 @@ impl StaticTarget for CTarget {
                     spec.enum_crossing(self, &reference.alias, from, Crossing::FromAlgorithm)?
                 }
                 StaticSlot::Scalar(_) | StaticSlot::Optional(_) => from.to_string(),
+                // The optional value of the algorithm's record is the optional value
+                // of the machine's, its record copied field by field where it is
+                // present (docs/adr/0055, step 9).
+                StaticSlot::OptionalRecord(alias) => {
+                    let elem = c11_optional_elem(&machine_record(alias))?;
+                    let record = record_of(
+                        alias,
+                        machine_record(alias),
+                        &format!("{from}.value"),
+                        Crossing::FromAlgorithm,
+                    )?;
+                    format!(
+                        "({from}.present ? sce_optional_{elem}_some({record}) : \
+                         sce_optional_{elem}_none())"
+                    )
+                }
                 StaticSlot::Record(alias) => {
                     record_of(alias, machine_record(alias), from, Crossing::FromAlgorithm)?
                 }
@@ -9930,6 +10047,9 @@ impl StaticTarget for CTarget {
                 // What the algorithm returns, in the algorithm's own type.
                 let returned = match value.ret.as_ref()? {
                     StaticSlot::Record(alias) => algorithm_record(alias)?,
+                    StaticSlot::OptionalRecord(alias) => {
+                        c11_optional_type(&algorithm_record(alias)?)?
+                    }
                     _ => ty.clone(),
                 };
                 format!(
@@ -9978,9 +10098,17 @@ impl StaticTarget for CTarget {
             if value_type.record_alias().is_some() {
                 return false;
             }
+            // An optional record is the struct `sce/forge/optional.h` declares over
+            // the machine's record type, whose schema is judged below
+            // (docs/adr/0055, step 9).
+            if value_type
+                .optional_elem()
+                .is_some_and(|elem| elem.record_alias().is_some())
+            {
+                return false;
+            }
             // An optional value of what a variable holds is held as the struct
-            // `sce/forge/optional.h` declares over it (docs/adr/0055); an optional
-            // record is refused for every target before this is asked.
+            // `sce/forge/optional.h` declares over it (docs/adr/0055).
             if let Some(elem) = value_type.optional_elem().and_then(|e| e.scalar()) {
                 return !(held_scalar(elem)
                     || matches!(elem, SceType::Enum(_) | SceType::Float32 | SceType::Float64)
@@ -10026,6 +10154,7 @@ impl StaticTarget for CTarget {
             let Some(alias) = var.value_type.as_ref().and_then(|t| {
                 t.record_alias()
                     .or_else(|| t.list_elem().and_then(|e| e.record_alias()))
+                    .or_else(|| t.optional_elem().and_then(|e| e.record_alias()))
             }) else {
                 continue;
             };
@@ -10931,7 +11060,6 @@ impl StaticTarget for CTarget {
     // that hold the same one declare it once.
     fn optional_def(&self, present: &str, elem: &SceType) -> Option<String> {
         let name = c11_optional_elem(present)?;
-        let guard = format!("SCE_OPTIONAL_{}", name.to_uppercase());
         let bound = |prefix: &str| -> Option<u32> {
             present
                 .strip_prefix(prefix)?
@@ -10954,25 +11082,54 @@ impl StaticTarget for CTarget {
                     format!("SCE_OPTIONAL_DECLARE_BYTES({bound})"),
                 )
             }
-            SceType::Enum(_) => (
-                String::new(),
-                format!("SCE_OPTIONAL_DECLARE({name}, {present}, SCE_OPTIONAL_SAME_VALUE)"),
-            ),
+            SceType::Enum(_) => return Some(c11_optional_enum_declaration(&name, present)),
             _ => return None,
         };
-        let storage = if storage.is_empty() {
-            storage
-        } else {
-            format!("{storage}\n")
-        };
-        Some(format!(
-            "#ifndef {guard}\n#define {guard}\n{storage}\
-             /* docs/adr/0055: a value of `{present}` that may be absent. */\n\
-             {declaration}\n#endif"
+        Some(c11_optional_buffer_declaration(
+            &name,
+            present,
+            &storage,
+            &declaration,
         ))
     }
     fn optional_import(&self) -> Option<String> {
         Some(C11_OPTIONAL_INCLUDE.to_string())
+    }
+    // A record's own: the machine declares the type of the record in its header, so
+    // the optional value of it is declared beside it, once however many variables
+    // hold one (docs/adr/0055, step 9).
+    fn optional_record_def(&self, present: &str) -> Option<String> {
+        Some(c11_optional_record_declaration(
+            &c11_optional_elem(present)?,
+            present,
+        ))
+    }
+    // The record is the struct `value` holds, so a field is written through it, as a
+    // record variable's is: the flag is not touched, and the build proved it set.
+    fn assign_present_field(&self, target: &str, field: &str, value: &str) -> Option<String> {
+        Some(self.assign_field(&format!("{target}.value"), field, value))
+    }
+    fn assign_present_string_field(
+        &self,
+        target: &str,
+        field: &str,
+        value: &str,
+    ) -> Option<String> {
+        Some(self.assign_string_field(&format!("{target}.value"), field, value))
+    }
+    fn assign_present_bytes_field(&self, target: &str, field: &str, value: &str) -> Option<String> {
+        Some(self.assign_bytes_field(&format!("{target}.value"), field, value))
+    }
+    // The element of a list of records, whole, as a checked index read: the
+    // failure is recorded and the read gives a zero record when the index is
+    // outside the list, which the statement around it never uses
+    // ([`StaticTarget::receiving_write_of`]). The index is read for its range and
+    // for the element, which an expression writes nothing between.
+    fn record_at(&self, list: &str, index: &str) -> Option<String> {
+        Some(format!(
+            "(sce_forge_checked_index_from_i(&sce_failure_, (int64_t)({index}), ({list}).len) \
+             ? ({list}).data[{index}] : (__typeof__(({list}).data[0])){{0}})"
+        ))
     }
     // C has no closure: the present value is mapped under a test of the flag,
     // which reads the value twice, as `??` does (`sce/forge/optional.h`).
@@ -11016,10 +11173,12 @@ pub(crate) const C11_OPTIONAL_INCLUDE: &str = "#include <sce/forge/optional.h>";
 /// value is held in the C type `present` under (`sce_optional_<name>_t`,
 /// docs/adr/0055): the type the document writes for a number or a `bool`
 /// (`int64`, `float64`, `bool`), `string_<N>` and `bytes_<N>` over the buffer of
-/// a bound, and `enum_<document>` over the machine's type for an enum
-/// ([`StaticTarget::enum_type`]). `None` for a type no optional value is held
-/// over: a text or a byte string with no bound, whose present value has no
-/// buffer.
+/// a bound, `enum_<document>` over the machine's type for an enum
+/// ([`StaticTarget::enum_type`]), and `record_<type>` over the struct type of a
+/// record, the machine's own ([`StaticTarget::record_type`]) or the algorithm's
+/// ([`crate::forge::generator::event_schema_payload_type`]), in the one name its
+/// type gives it (step 9). `None` for a type no optional value is held over: a
+/// text or a byte string with no bound, whose present value has no buffer.
 pub(crate) fn c11_optional_elem(present: &str) -> Option<String> {
     if let Some(bound) = present
         .strip_prefix("sce_static_string_")
@@ -11048,9 +11207,75 @@ pub(crate) fn c11_optional_elem(present: &str) -> Option<String> {
         "uint64_t" => "uint64",
         "float" => "float32",
         "double" => "float64",
-        _ => return None,
+        // A struct type of a record: the name its own type gives it, whose `_t` is
+        // the one the optional value's ends in.
+        other => {
+            return other
+                .strip_suffix("_t")
+                .filter(|record| {
+                    !record.is_empty()
+                        && record
+                            .chars()
+                            .all(|c| c.is_ascii_alphanumeric() || c == '_')
+                })
+                .map(|record| format!("record_{record}"));
+        }
     };
     Some(scalar.to_string())
+}
+
+/// The declaration of the optional value of a text or a byte string held in the
+/// buffer type `present`, named `name` ([`c11_optional_elem`]: `string_<N>`,
+/// `bytes_<N>`), under a guard of its own: `declaration` is the runtime's macro
+/// for it (`SCE_OPTIONAL_DECLARE_STRING(N)`), and `storage` the declaration of the
+/// buffer, written first inside the guard by the unit that declares it nowhere
+/// else — empty where the unit declared the buffer before, as a schema does.
+pub(crate) fn c11_optional_buffer_declaration(
+    name: &str,
+    present: &str,
+    storage: &str,
+    declaration: &str,
+) -> String {
+    let guard = format!("SCE_OPTIONAL_{}", name.to_uppercase());
+    let storage = if storage.is_empty() {
+        String::new()
+    } else {
+        format!("{storage}\n")
+    };
+    format!(
+        "#ifndef {guard}\n#define {guard}\n{storage}\
+         /* docs/adr/0055: a value of `{present}` that may be absent. */\n\
+         {declaration}\n#endif"
+    )
+}
+
+/// The declaration of the optional value of the enum whose type is `present`, named
+/// `name` ([`c11_optional_elem`]: `enum_<document>`), under the guard of the enum
+/// document, after the enum itself: the one text a machine that holds a value of
+/// the enum and an algorithm or a schema that holds one both write, so that a
+/// program that includes them declares it once.
+pub(crate) fn c11_optional_enum_declaration(name: &str, present: &str) -> String {
+    let guard = format!("SCE_OPTIONAL_{}", name.to_uppercase());
+    format!(
+        "#ifndef {guard}\n#define {guard}\n\
+         /* docs/adr/0055: a value of `{present}` that may be absent. */\n\
+         SCE_OPTIONAL_DECLARE({name}, {present}, SCE_OPTIONAL_SAME_VALUE)\n#endif"
+    )
+}
+
+/// The declaration of the optional value of the record whose struct type is
+/// `present`, named `name` ([`c11_optional_elem`]), under the guard that makes a
+/// program that includes two units holding it declare it once (docs/adr/0055,
+/// step 9): the machine writes it beside its own record type, and an algorithm
+/// that holds an optional record beside the schema's type it includes. A record
+/// has no `_eq`: two of them are no operand of `===`.
+pub(crate) fn c11_optional_record_declaration(name: &str, present: &str) -> String {
+    let guard = format!("SCE_OPTIONAL_{}", name.to_uppercase());
+    format!(
+        "#ifndef {guard}\n#define {guard}\n\
+         /* docs/adr/0055: a record of `{present}` that may be absent. */\n\
+         SCE_OPTIONAL_DECLARE_RECORD({name}, {present})\n#endif"
+    )
 }
 
 /// The C11 type of an optional value whose present value is held in `present`
@@ -11085,7 +11310,21 @@ pub fn lower_c11(
     csym_prefix: &str,
 ) -> Result<StaticLowering, GenerateError> {
     let stem = model.name.clone();
-    let target = CTarget::new(&stem, &model.held_enums());
+    // The optional record variables, the document's and each state's
+    // (docs/adr/0055, step 9): what a call that hands one over is told apart by.
+    let optional_records = model
+        .variables
+        .iter()
+        .chain(model.states.values().flat_map(|s| s.datamodel.iter()))
+        .filter(|v| {
+            v.value_type
+                .as_ref()
+                .and_then(crate::forge::model::AlgorithmValueType::optional_elem)
+                .is_some_and(|elem| elem.record_alias().is_some())
+        })
+        .map(|v| v.id.clone())
+        .collect();
+    let target = CTarget::new(&stem, &model.held_enums(), optional_records);
     lower(model, &format!("{csym_prefix}{stem}"), &target)
 }
 
@@ -13671,6 +13910,83 @@ mod tests {
                 && logged.contains("(long long)((due).value)")
                 && logged.contains("\"%s: null\\n\", \"due\""),
             "{logged}"
+        );
+    }
+
+    /// An optional record is the struct `sce/forge/optional.h` declares over the
+    /// record's own struct type, named by that type, whichever side holds the type —
+    /// the machine's own or the algorithm's — and a field of its present value is
+    /// written through `.value` (docs/adr/0055, step 9).
+    #[test]
+    fn c11_spells_an_optional_record_over_its_struct_type() {
+        let c = CTarget::arguments();
+        let machine = "static_optional_record_record_item_t";
+        let algorithm = "ItemPickPayload_t";
+        assert_eq!(
+            c.optional_type(machine).as_deref(),
+            Some("sce_optional_record_static_optional_record_record_item_t")
+        );
+        assert_eq!(
+            c.optional_type(algorithm).as_deref(),
+            Some("sce_optional_record_ItemPickPayload_t")
+        );
+        assert_eq!(
+            c.optional_none(algorithm).as_deref(),
+            Some("sce_optional_record_ItemPickPayload_none()")
+        );
+        assert_eq!(
+            c.optional_some(algorithm, "it").as_deref(),
+            Some("sce_optional_record_ItemPickPayload_some(it)")
+        );
+        // A type with no struct name is no record; the families of an element
+        // keep the names they had.
+        assert_eq!(c11_optional_elem("const char *"), None);
+        assert_eq!(c11_optional_elem("int64_t").as_deref(), Some("int64"));
+        assert_eq!(
+            c11_optional_elem("enum_item_status_enum_t").as_deref(),
+            Some("enum_enum_item_status")
+        );
+
+        let def = c
+            .optional_record_def(machine)
+            .expect("a record declares its optional type");
+        assert!(
+            def.starts_with("#ifndef SCE_OPTIONAL_RECORD_STATIC_OPTIONAL_RECORD_RECORD_ITEM\n")
+                && def.contains(
+                    "SCE_OPTIONAL_DECLARE_RECORD(record_static_optional_record_record_item, \
+                     static_optional_record_record_item_t)"
+                )
+                && def.ends_with("\n#endif"),
+            "{def}"
+        );
+
+        // A field of the present value is written through `.value`, the flag untouched.
+        assert_eq!(
+            c.assign_present_field("sm->policy.v_pick", "count", "3")
+                .as_deref(),
+            Some("sm->policy.v_pick.value.count = 3;")
+        );
+        assert_eq!(
+            c.assign_present_string_field("sm->policy.v_pick", "title", "text")
+                .as_deref(),
+            Some("memmove(sm->policy.v_pick.value.title.data, text, strlen(text) + 1u);")
+        );
+        assert_eq!(
+            c.assign_present_bytes_field("sm->policy.v_pick", "frame", "v")
+                .as_deref(),
+            Some(
+                "memmove((sm->policy.v_pick.value.frame).data, (v).data, (v).len); \
+                 (sm->policy.v_pick.value.frame).len = (v).len;"
+            )
+        );
+        // An element of a list, whole, is a checked index read of a zero record.
+        assert_eq!(
+            c.record_at("sm->policy.v_items", "1").as_deref(),
+            Some(
+                "(sce_forge_checked_index_from_i(&sce_failure_, (int64_t)(1), \
+                 (sm->policy.v_items).len) ? (sm->policy.v_items).data[1] : \
+                 (__typeof__((sm->policy.v_items).data[0])){0})"
+            )
         );
     }
 

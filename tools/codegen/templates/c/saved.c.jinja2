@@ -68,7 +68,11 @@ sce_jw_begin_array(w);
     sce_jw_end_array(w);
 {%- elif field.saved_kind == "optional" -%}
 if (({{ expr }}).present) {
+{% if field.saved_elem == "record" %}
+        {{ field.saved_type }}_saved_write(w, &({{ expr }}).value);
+{% else %}
         {{ put_scalar(field.saved_elem == "enum", field.saved_type, expr ~ ".value") }}
+{% endif %}
     } else {
         sce_jw_null(w);
     }
@@ -253,6 +257,13 @@ SCE_SM_FN static bool {{ _t }}_saved_read_{{ field.name }}(sce_jv_t v, const cha
 {% endif %}
         }
         value.len = count;
+    }
+{% elif field.saved_kind == "optional" and field.saved_elem == "record" %}
+    if (!sce_jv_is_null(v)) {
+        value.present = true;
+        if (!{{ field.saved_type }}_saved_read(v, what, at, &value.value, err)) {
+            return false;
+        }
     }
 {% elif field.saved_kind == "optional" %}
     if (!sce_jv_is_null(v)) {

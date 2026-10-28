@@ -189,9 +189,10 @@ impl ExprTarget {
             // Go: `optional.Of[R]` over the record's own struct, and `x.value.f`
             // is the member `f` of what `x.Proven()` answers ([`go_optional`]).
             ExprTarget::Go => true,
-            // Not yet: C11 refuses an optional record by name until its step of
-            // docs/adr/0055 spells one.
-            ExprTarget::C => false,
+            // C11: `sce_optional_record_<type>_t` of `sce/forge/optional.h`, whose
+            // `.value` is the struct, and over which `.f` reads a field
+            // ([`c_present_read`]).
+            ExprTarget::C => true,
         }
     }
 
