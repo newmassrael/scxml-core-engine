@@ -89,9 +89,16 @@ public enum StaticRecordRealEvent: Int, Hashable, Sendable {
 // ======================================================================
 
 /// SCE Accepted Subset §2.15: a `record:Reading` datamodel value.
-public struct StaticRecordRealReadingRecord: Equatable, Sendable {
-    public var sensor: UInt8
-    public var value: Double
+public struct StaticRecordRealReadingRecord: Equatable, Sendable, SceDefault {
+    public var sensor: UInt8 = 0
+    public var value: Double = 0.0
+
+    public init() {}
+
+    public init(sensor: UInt8, value: Double) {
+        self.sensor = sensor
+        self.value = value
+    }
 }
 
 // NL-to-IR Item C1 Path A: the typed `_event.data` payload channel for the

@@ -363,17 +363,27 @@ fn emit_node(expr: &TypedExpr) -> Result<String, Refusal> {
             left,
             right: Some(index),
         } => {
-            let Some(zero) = zero_of(expr.ty) else {
-                return Err(unsupported(
-                    format!("a checked index read of {}", expr.ty.describe()),
-                    expr,
-                ));
-            };
-            format!(
-                "Checked.at(sceFailure, {}, {}, fallback: {zero})",
-                emit(left, InferredType::Unknown)?,
-                emit(index, InferredType::Unknown)?,
-            )
+            match zero_of(expr.ty) {
+                Some(zero) => format!(
+                    "Checked.at(sceFailure, {}, {}, fallback: {zero})",
+                    emit(left, InferredType::Unknown)?,
+                    emit(index, InferredType::Unknown)?,
+                ),
+                // An element the lattice does not type is a record, which a machine
+                // declares with a value of every field (`SceDefault`): that value stands
+                // where the read failed.
+                None if expr.ty == InferredType::Unknown => format!(
+                    "Checked.atDefault(sceFailure, {}, {})",
+                    emit(left, InferredType::Unknown)?,
+                    emit(index, InferredType::Unknown)?,
+                ),
+                None => {
+                    return Err(unsupported(
+                        format!("a checked index read of {}", expr.ty.describe()),
+                        expr,
+                    ))
+                }
+            }
         }
         ExprKind::Checked {
             op: CheckedOp::Narrow,

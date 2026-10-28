@@ -183,6 +183,26 @@ private func aStringIsHeldToItsBytes(c: BoundCase) {
     #expect(f.error == .divideByZero)
 }
 
+private struct Row: SceDefault, Equatable {
+    var id: UInt32 = 0
+    init() {}
+    init(id: UInt32) { self.id = id }
+}
+
+// An element of a list that is not there is an out-of-range failure and the element
+// type's default, for a type no literal can name.
+@Test func atDefaultAnswersTheDefaultAndFailsForAnIndexOutsideTheList() {
+    let f = Failure()
+    let rows = [Row(id: 4), Row(id: 9)]
+    #expect(Checked.atDefault(f, rows, UInt8(1)) == Row(id: 9))
+    #expect(!f.failed)
+    #expect(Checked.atDefault(f, rows, Int32(2)) == Row())
+    #expect(f.error == .outOfRange)
+    let g = Failure()
+    #expect(Checked.atDefault(g, rows, Int64(-1)) == Row())
+    #expect(g.error == .outOfRange)
+}
+
 private enum Level: UInt8, CaseIterable {
     case low = 0
     case high = 7

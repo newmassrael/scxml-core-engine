@@ -11544,20 +11544,57 @@ impl StaticTarget for SwiftTarget {
         schema: &EventSchemaModel,
         enum_types: &std::collections::BTreeMap<String, String>,
     ) -> String {
+        // Every field has a value at its zero, so the record is `SceDefault`: the value
+        // that stands where a checked read of a list element that is not there has none
+        // to answer, and the one `init()` a record is built whole from.
         let fields: String = schema
             .fields
             .iter()
             .map(|field| {
-                let held = match field.sce_type.present_type() {
-                    SceType::Enum(reference) => enum_types[&reference.alias].clone(),
-                    other => crate::forge::generator::swift_type(other).to_string(),
+                let (held, zero) = match field.sce_type.present_type() {
+                    SceType::Enum(reference) => {
+                        let held = enum_types[&reference.alias].clone();
+                        let zero = format!("{held}.allCases[0]");
+                        (held, zero)
+                    }
+                    SceType::Bool => ("Bool".to_string(), "false".to_string()),
+                    SceType::String => ("String".to_string(), "\"\"".to_string()),
+                    SceType::Bytes => ("[UInt8]".to_string(), "[]".to_string()),
+                    SceType::Float32 => ("Float".to_string(), "0.0".to_string()),
+                    SceType::Float64 => ("Double".to_string(), "0.0".to_string()),
+                    other => (
+                        crate::forge::generator::swift_type(other).to_string(),
+                        "0".to_string(),
+                    ),
                 };
-                format!("    public var {}: {held}\n", self.record_field(&field.id))
+                format!(
+                    "    public var {}: {held} = {zero}\n",
+                    self.record_field(&field.id)
+                )
             })
             .collect();
         format!(
             "/// SCE Accepted Subset §2.15: a `record:{alias}` datamodel value.\n\
-             public struct {ty}: Equatable, Sendable {{\n{fields}}}"
+             public struct {ty}: Equatable, Sendable, SceDefault {{\n{fields}\n\
+             \x20   public init() {{}}\n\n\
+             \x20   public init({params}) {{\n{assigns}\x20   }}\n}}",
+            params = schema
+                .fields
+                .iter()
+                .map(|f| {
+                    let held = match f.sce_type.present_type() {
+                        SceType::Enum(reference) => enum_types[&reference.alias].clone(),
+                        other => crate::forge::generator::swift_type(other).to_string(),
+                    };
+                    format!("{}: {held}", self.record_field(&f.id))
+                })
+                .collect::<Vec<_>>()
+                .join(", "),
+            assigns = schema
+                .fields
+                .iter()
+                .map(|f| format!("        self.{0} = {0}\n", self.record_field(&f.id)))
+                .collect::<String>(),
         )
     }
     // The author's spelling, which is what an expression's member access writes;

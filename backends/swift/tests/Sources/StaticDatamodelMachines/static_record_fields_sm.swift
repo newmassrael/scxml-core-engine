@@ -91,10 +91,18 @@ public enum StaticRecordFieldsEvent: Int, Hashable, Sendable {
 // ======================================================================
 
 /// SCE Accepted Subset §2.15: a `record:Day` datamodel value.
-public struct StaticRecordFieldsDayRecord: Equatable, Sendable {
-    public var year: UInt16
-    public var month: UInt8
-    public var dayOfMonth: UInt8
+public struct StaticRecordFieldsDayRecord: Equatable, Sendable, SceDefault {
+    public var year: UInt16 = 0
+    public var month: UInt8 = 0
+    public var dayOfMonth: UInt8 = 0
+
+    public init() {}
+
+    public init(year: UInt16, month: UInt8, dayOfMonth: UInt8) {
+        self.year = year
+        self.month = month
+        self.dayOfMonth = dayOfMonth
+    }
 }
 
 // NL-to-IR Item C1 Path A: the typed `_event.data` payload channel for the

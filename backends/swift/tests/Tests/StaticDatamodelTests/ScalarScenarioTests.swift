@@ -492,6 +492,53 @@ private func wireWide() -> Machine {
     )
 }
 
+private func recordEnum() -> Machine {
+    let policy = StaticRecordEnumPolicy()
+    return drive(
+        policy,
+        variables: [
+            "shown": { view(policy.shown.layout.declaredName, policy.shown.zoom) },
+            "seen": { .array(policy.seen.map { view($0.layout.declaredName, $0.zoom) }) },
+            "weeks": { integer(policy.weeks) },
+            "flips": { integer(policy.flips) },
+            "leads": { integer(policy.leads) },
+        ]
+    )
+}
+
+private func recordListIndex() -> Machine {
+    let policy = StaticRecordListIndexPolicy()
+    return drive(
+        policy,
+        variables: [
+            "picked": { day(policy.picked.year, policy.picked.month, policy.picked.dayOfMonth) },
+            "cursor": { integer(policy.cursor) },
+            "day": { integer(policy.day) },
+            "year": { integer(policy.year) },
+            "sum": { integer(policy.sum) },
+            "ordered": { .bool(policy.ordered) },
+            "refusals": { integer(policy.refusals) },
+        ]
+    )
+}
+
+private func labelled(_ sensor: UInt8, _ label: String) -> JSONValue {
+    .object([(key: "sensor", value: integer(sensor)), (key: "label", value: .text(label))])
+}
+
+private func recordString() -> Machine {
+    let policy = StaticRecordStringPolicy()
+    return drive(
+        policy,
+        variables: [
+            "last": { labelled(policy.last.sensor, policy.last.label) },
+            "note": { .text(policy.note) },
+            "labels": { .array(policy.labels.map { labelled($0.sensor, $0.label) }) },
+            "errors": { integer(policy.errors) },
+        ]
+    )
+}
+
 // MARK: - The scenarios
 
 // A counter counts to its flag and lets go: guards, `<assign>`, `<if>` and `<elseif>`
@@ -559,6 +606,24 @@ private func wireWide() -> Machine {
 
 @Test func aRecordWithA32BitRealFieldIsHeldToBinary32() {
     replay("static_record_real32", recordReal32())
+}
+
+// A record that holds an enum is built, compared and copied whole, and a list of them
+// is walked and read.
+@Test func aRecordHoldsAnEnumField() {
+    replay("static_record_enum", recordEnum())
+}
+
+// An element of a list of records is read by its index and then by its field, and an
+// index outside the list is refused rather than read: the read fails as a whole.
+@Test func aListElementOfRecordsIsReadByItsIndexAndItsField() {
+    replay("static_record_list_index", recordListIndex())
+}
+
+// A record holds bounded text, which a list copies with the record and which an
+// assignment that does not fit refuses.
+@Test func aRecordHoldsBoundedText() {
+    replay("static_record_string", recordString())
 }
 
 // MARK: - Reals

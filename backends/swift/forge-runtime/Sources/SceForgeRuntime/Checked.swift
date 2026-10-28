@@ -93,6 +93,12 @@ public final class Failure {
     }
 }
 
+/// A type that has a value of every field at its zero: what stands where a checked read
+/// of an element that does not exist (`Checked.atDefault`) has no value to answer.
+public protocol SceDefault {
+    init()
+}
+
 /// The checked integer operations, by the width of the type they are called at.
 public enum Checked {
     /// `a + b` at the width of `T`, or 0 and an overflow.
@@ -229,6 +235,21 @@ public enum Checked {
         guard let index = Int(exactly: i), index >= 0, index < xs.count else {
             f.fail(.outOfRange)
             return fallback()
+        }
+        return xs[index]
+    }
+
+    /// The element of `xs` at `i`, or the element type's default and an out-of-range
+    /// failure when `i` is below 0 or not below the length: `at` for an element no
+    /// literal can name, a record a machine declares with a value of every field.
+    public static func atDefault<T: SceDefault, I: BinaryInteger>(
+        _ f: Failure,
+        _ xs: [T],
+        _ i: I
+    ) -> T {
+        guard let index = Int(exactly: i), index >= 0, index < xs.count else {
+            f.fail(.outOfRange)
+            return T()
         }
         return xs[index]
     }
