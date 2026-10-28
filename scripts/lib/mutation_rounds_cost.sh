@@ -35,31 +35,38 @@
 
 # `setup per-case`, in minutes, by runner; the worst measured, rounded UP:
 #
-#   ctest   90  60   The round builds only the closure of the executables its
-#                    tests run (`scripts/mutate`, 2026-10-24). Measured on run
-#                    40054201618, the first lane jobs to run that way:
-#                    `a_static_cpp_donedata_content_value_is_the_whole_event_
-#                    data_ctest`, one case a job, setup 84 and 69 minutes
-#                    (job start to baseline: configure and the cold closure of
-#                    `static_datamodel_generated_cpp_test`), a case 55 and 47
-#                    end to end (mutant build and run 38 and 31, restore build
-#                    17 and 16). That target is the heaviest a ctest casefile
-#                    selects: on a build machine its rebuild after a template
-#                    edit took 1571 CPU-seconds against 1166 for
-#                    `integration_tests` and 258 for `static_datamodel_lowered`.
-#                    The whole-tree path this replaced measured 98 setup and
-#                    246 for one case, which no slice fits: under a generator
-#                    whose graph the harness cannot read, a ctest casefile
-#                    cannot be scheduled into this lane.
-#   *       15  13   `mutation_rounds_selection`, 21 cargo cases in 4h16m:
-#                    about 12.2 each, because its cases drive whole gate
-#                    scripts. `go`, `pytest` and `gradle` are carried by this
-#                    row; the honest cost of an unmeasured runner is the
+#   ctest   35  45   The round builds only the closure of the executables its
+#                    tests run (`scripts/mutate`, 2026-10-24). The first
+#                    measurement of that, on run 40054201618, read 84 and 69
+#                    minutes of setup and 55 and 47 a case: but the closure was
+#                    then empty on a configured-only tree (ctest leaves a test's
+#                    command out until its executable exists), so the first
+#                    build was the whole tree and this row priced that.
+#                    `7b9b4b5b5b` reads the registered commands from
+#                    CTestTestfile.cmake instead, and the job log now says
+#                    "the first build covers N build output(s) and their
+#                    closure". Measured on the sweep of 2026-10-26 (run
+#                    40406006492, 25 ctest jobs): setup (job start to baseline)
+#                    between 6 and 32 minutes, a case (mutant build and run,
+#                    then the restore build) between 3 and 44. Both worst
+#                    figures are one job, `a_static_cpp_record_bytes_field_is_
+#                    held_within_its_bound_ctest`: setup 32, two cases in
+#                    88 minutes. That is the heaviest target a ctest casefile
+#                    selects, `static_datamodel_generated_cpp_test`.
+#   *       15  17   The setup is unchanged. A case is 17: two cargo jobs of the
+#                    sweep of 2026-10-25/26 overran the 13 this row held, both
+#                    on `cargo test` of a 87- and a 163-test oracle, setup 9 and
+#                    8 minutes, a case 16.1 (2 cases in 32) and 16.4 (3 in 49).
+#                    The 13 came from `mutation_rounds_selection`, 21 cargo
+#                    cases in 4h16m, about 12.2 each, because its cases drive
+#                    whole gate scripts; an oracle that links the workspace
+#                    costs more. `go`, `pytest` and `gradle` are carried by
+#                    this row; the honest cost of an unmeasured runner is the
 #                    worst measured one.
 mutation_rounds_cost() {
     case "$1" in
-        ctest) printf '90 60\n' ;;
-        *) printf '15 13\n' ;;
+        ctest) printf '35 45\n' ;;
+        *) printf '15 17\n' ;;
     esac
 }
 
