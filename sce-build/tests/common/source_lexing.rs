@@ -75,6 +75,7 @@ const TEMPLATE_DIRS: &[(&str, Syntax)] = &[
     ("/forge/kotlin/", Syntax::Kotlin),
     ("/forge/python/", Syntax::Python),
     ("/forge/rust/", Syntax::Rust),
+    ("/forge/swift/", Syntax::Swift),
     ("/mesh/cpp/", Syntax::CFamily),
     ("/mesh_router/kotlin/", Syntax::Kotlin),
     ("/mesh_router/rust/", Syntax::Rust),
