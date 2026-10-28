@@ -6416,8 +6416,11 @@ the retire told as the field coming back, and each change the list refused told 
 `record_list.refused`, the command at fault, a value of the standard enum `record_command`
 (an edit, a clear or a retire), and the reason, a value of the standard enum
 `record_refusal` (its member may only read, the room, a text too long, a register named
-twice), whose variant `none` the list never tells and a parent holds before the first
-refusal (docs/adr/0052). The model the
+twice), which has no variant for no refusal: the parent keeps the last refusal in an
+`optional<record:Refused>` that starts absent and takes the payload whole, so before the
+first refusal it holds none (docs/adr/0055; the enum starts at `notWriter` = 1, and its
+first revision is the one the saved shape of every machine that holds it is bound to).
+The model the
 expected values come from was first held to every step `todo_peer` took in the world's
 to-do afternoon. The world test replays that afternoon on the standard part's Rust
 machine in its own process, the sends by their routes and an edit that wrote over what

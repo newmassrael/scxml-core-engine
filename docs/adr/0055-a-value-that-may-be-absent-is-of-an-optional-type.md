@@ -4,8 +4,8 @@
   owner's answers", below), under the standing rule: the most long-term correct structure, cost
   ignored; never a sentinel number and never a companion flag that admits impossible states. Steps
   1 to 6 are implemented, and step 7 but for the restore's refusal of a `null` saved before a
-  widening (its "as built" note), and steps 8, 9, 12, 13 and 14; the others follow in the order
-  section 9 gives. Section 8 and step 12 amended the same day by that
+  widening (its "as built" note), and steps 8, 9, 11, 12, 13 and 14; the others follow in the
+  order section 9 gives. Section 8 and step 12 amended the same day by that
   rule: a codec
   document declares its format, and format 1 is refused for good (step 12 is implemented).
 - Date: 2026-10-21
@@ -1038,11 +1038,30 @@ documents, not observed from a backend.
     the shape of `InvokeParams` it needs), a host action's optional argument, a host-run
     `<invoke>`'s typed request and result with optional fields. Each with the scenario or test of
     its edge.
-11. **`record_refusal.none` retired** (section 7): the enum, `record_list.scxml`,
+11. **`record_refusal.none` retired** (implemented) (section 7): the enum, `record_list.scxml`,
     `record_list_parent.scxml` holding `optional<record:Refused>`, `scenarios/record_list_parent.json`
     and the Go, C and C++ drivers that read the refusal by hand, the pin in
     `standard_saved_shapes.json`, docs/SCE_ACCEPTED_SUBSET.md "The standard shared record list".
     Test: the scenario's first step expecting `refused` to be `null`.
+    As built, `record_refusal` declares eight variants, `notWriter` = 1 to `clockExhausted` = 8, and
+    no variant of 0: an enum's variants are the author's numbers (`enum_item_status` starts at 2), so
+    nothing asked for a first variant of 0. `record_list.scxml` is not edited: it never named `none`
+    (its `probe` and `spoiledFor` are each written, before a refusal is told, by the statement that
+    raises it, and start at `changeTooLarge` because every variable declares a start; the list's own
+    logic asks for no "no reason yet"), so what moves in it is the enum's saved shape alone. `record_list_parent.scxml` holds `refused` as an `optional<record:Refused>` of `expr="null"`
+    and takes the payload whole in the handler of `record_list.refused` (`<assign location="refused"
+    expr="_event.data"/>`, the form of `item.picked` in `static_optional_record`), so the record is the
+    four fields of one refusal and is present only after the first. The document names no variant of
+    either enum, so it no longer imports `record_command` or `record_refusal`: the record holds each in
+    the machine's type for the enum document the schema imports (ADR 0054). `static_payload_enum_unimported`,
+    which started `last` at `Why.none`, holds it as an `optional<enum:Why>` that starts `null`, so it still
+    names the enum it imports. The Go and C drivers read `refused` as an optional record, as they read
+    `pick` of `static_optional_record` (`optional.Of[R].Get()`, and the C presence reader over
+    `sce_optional_record_record_list_parent_record_refused_t`); the Rust, Kotlin and Python drivers replay
+    the scenario through the saved state and need no change; the Interpreter does not lower the parent (a
+    child invoked by `src`). The pin of `stdlib/shared/record_list.scxml` in `standard_saved_shapes.json`
+    is the digest the enum's change moves, and is written from the value `a_standard_statechart_that_saves_keeps_its_shape`
+    reports.
 12. **Codec format 2** (implemented) (section 8): `sce:codec-format` in the grammar (`schemas/sce-forge-ext.xsd`)
     and the roster of known names; `CborEntry` and the content-line entry typed by the value type;
     `sce:required` out of the format-2 grammar; the refusal of format 1,
