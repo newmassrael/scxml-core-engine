@@ -376,6 +376,11 @@ SavedValues.{{ type }}({{ value }}, {{ what }})
                     AddedField("{{ field.id | escape_kotlin }}", {{ field.since }}, "{{ field.default | escape_kotlin }}"),
 {% endfor %}
                 ),
+                widened = listOf(
+{% for field in record.widened %}
+                    WidenedField("{{ field.id | escape_kotlin }}", {{ field.since }}, {{ field.optional_since }}),
+{% endfor %}
+                ),
                 holders = listOf(
 {% for holder in record.holders %}
                     RecordHolder("{{ holder.variable | escape_kotlin }}", {{ "true" if holder.list else "false" }}),

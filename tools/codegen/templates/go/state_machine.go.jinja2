@@ -377,6 +377,11 @@ var {{ machine_name }}SavedShape = sce.SavedShape{
 				{ID: "{{ field.id | escape_go }}", Since: {{ field.since }}, Default: "{{ field.default | escape_go }}"},
 {% endfor %}
 			},
+			Widened: []sce.WidenedField{
+{% for field in record.widened %}
+				{ID: "{{ field.id | escape_go }}", Since: {{ field.since }}, OptionalSince: {{ field.optional_since }}},
+{% endfor %}
+			},
 			Holders: []sce.RecordHolder{
 {% for holder in record.holders %}
 				{Variable: "{{ holder.variable | escape_go }}", List: {{ "true" if holder.list else "false" }}},

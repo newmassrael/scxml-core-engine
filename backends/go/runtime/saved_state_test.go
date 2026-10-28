@@ -380,6 +380,85 @@ func TestAnUpgradeGivesARecordTheDefaultsOfTheFieldsALaterRevisionAdded(t *testi
 	}
 }
 
+// docs/adr/0055, section 6: the third revision of `shown` widened `year`, a field
+// of the first, and `weekday`, which the second added, to optional. A record saved
+// before the widening holds the field as a value, so a null in it is refused,
+// naming the field and the revision; saved at the widening, null is absent.
+func TestANullSavedBeforeAFieldWasWidenedIsRefused(t *testing.T) {
+	second, third := strings.Repeat("2", 64), strings.Repeat("3", 64)
+	shape := &SavedShape{
+		First: "first", Revised: "revised", Format2First: "first2", Format2Revised: "revised2",
+		Records: []RecordLineage{{
+			Event: "shown", Revision: 3, Revisions: []string{second, third},
+			Added:   []AddedField{{ID: "weekday", Since: 2, Default: "0"}},
+			Widened: []WidenedField{{ID: "year", Since: 1, OptionalSince: 3}, {ID: "weekday", Since: 2, OptionalSince: 3}},
+			Holders: []RecordHolder{{Variable: "one", List: false}, {Variable: "many", List: true}},
+		}},
+	}
+	savedAt := func(revision int, one, many string) *SavedState {
+		t.Helper()
+		variables, err := ParseJSON(`{"one":` + one + `,"many":` + many + `}`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		state := &SavedState{Shape: "first2", Variables: variables.(*JSONObject), Invokes: SavedInvokes{Resumed: true}}
+		if revision > 1 {
+			state.Shape = "revised2"
+			digest := second
+			if revision == 3 {
+				digest = third
+			}
+			state.Revisions = []SavedRevision{{Key: "shown", Revision: revision, Fields: digest}}
+		}
+		return state
+	}
+	refused := func(saved *SavedState, want string) {
+		t.Helper()
+		if _, err := UpgradeSavedState(saved, shape); err == nil || !strings.Contains(err.Error(), want) {
+			t.Fatalf("refused as %v, want %q", err, want)
+		}
+	}
+
+	// A record variable, a field of the first revision, saved at the first.
+	refused(savedAt(1, `{"year":null}`, `[]`),
+		"'one.year' is null, which revision 1 of 'shown' holds as a value: revision 3 widened it")
+	// An element of a list of records.
+	refused(savedAt(1, `{"year":4}`, `[{"year":1},{"year":null}]`), "'many[1].year' is null")
+	// A field the second revision added, saved at the second.
+	refused(savedAt(2, `{"year":4,"weekday":null}`, `[]`),
+		"'one.weekday' is null, which revision 2 of 'shown' holds as a value: revision 3 widened it")
+	// The field the second added, held by a record saved at the first, is refused as
+	// a field that revision does not declare, which is the truer reason.
+	refused(savedAt(1, `{"year":4,"weekday":null}`, `[]`), "'one' holds 'weekday'")
+
+	// Saved at the revision that widened both, null is absent.
+	kept := savedAt(3, `{"year":null,"weekday":null}`, `[{"year":null,"weekday":2}]`)
+	upgraded, err := UpgradeSavedState(kept, shape)
+	if err != nil {
+		t.Fatalf("saved at the widening: %v", err)
+	}
+	if WriteJSON(upgraded.Variables) != WriteJSON(kept.Variables) {
+		t.Fatalf("grown to %s, want %s", WriteJSON(upgraded.Variables), WriteJSON(kept.Variables))
+	}
+	// A record saved before the widening, each field present, restores as it was.
+	upgraded, err = UpgradeSavedState(savedAt(1, `{"year":4}`, `[{"year":1}]`), shape)
+	if err != nil {
+		t.Fatalf("saved before the widening: %v", err)
+	}
+	if got, want := WriteJSON(upgraded.Variables),
+		`{"one":{"year":4,"weekday":0},"many":[{"year":1,"weekday":0}]}`; got != want {
+		t.Fatalf("grown to %s, want %s", got, want)
+	}
+	// What is no record where one is held is left to the variable's own read.
+	upgraded, err = UpgradeSavedState(savedAt(1, `null`, `[{}]`), shape)
+	if err != nil {
+		t.Fatalf("a variable that holds no record: %v", err)
+	}
+	if got, want := WriteJSON(upgraded.Variables), `{"one":null,"many":[{"weekday":0}]}`; got != want {
+		t.Fatalf("grown to %s, want %s", got, want)
+	}
+}
+
 func TestAnEnumVariantALaterRevisionAddedIsRefusedInAStateSavedBeforeIt(t *testing.T) {
 	digest := strings.Repeat("b", 64)
 	field := "status"

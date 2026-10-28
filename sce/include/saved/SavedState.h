@@ -293,6 +293,18 @@ struct AddedField {
     std::string defaultText;
 };
 
+/// A field a revision widened from `T` to `optional<T>` (`sce:optional-since`). A record saved
+/// before that revision holds it as a value of `T`, so a `null` there is no absence and
+/// upgradeSavedState refuses it (docs/adr/0055, section 6). `id` is the field's id, the member a
+/// saved record holds it under; `since` the revision that added the field (1 for a field of the
+/// first revision), before which a record holds no member for it; `optionalSince` the revision
+/// that widened it.
+struct WidenedField {
+    std::string id;
+    int since = 1;
+    int optionalSince = 0;
+};
+
 /// A variable that holds a record of a RecordLineage.
 struct RecordHolder {
     std::string variable;
@@ -309,6 +321,8 @@ struct RecordLineage {
     std::vector<std::string> revisions;
     /// Each field a revision past the first added, in the schema's order.
     std::vector<AddedField> added;
+    /// Each field a revision widened from `T` to `optional<T>`, in the schema's order.
+    std::vector<WidenedField> widened;
     /// The variables that hold a record of it, or a list of them.
     std::vector<RecordHolder> holders;
 };
@@ -1126,6 +1140,47 @@ inline void checkEnumHolder(const SavedState &saved, const EnumLineage &lineage,
     }
 }
 
+/// Refuses the saved record `value`, of `record` saved at revision `at`, if it holds `null` in a
+/// field of `widened`; `what` names it in the refusal. What is not an object is left for the
+/// record's own read to refuse.
+inline void checkWidenedRecord(const JsonValue &value, const std::string &what, const RecordLineage &record, int at,
+                               const std::vector<const WidenedField *> &widened) {
+    if (!value.isObject()) {
+        return;
+    }
+    for (const WidenedField *field : widened) {
+        const JsonValue *member = value.asObject().get(field->id);
+        if (member != nullptr && member->isNull()) {
+            refuse("'" + what + "." + field->id + "' is null, which revision " + std::to_string(at) + " of '" +
+                   record.event + "' holds as a value: revision " + std::to_string(field->optionalSince) +
+                   " widened it");
+        }
+    }
+}
+
+/// Refuses a `null` the record, or each record of the list, `holder` holds in `saved` has in a
+/// field of `widened`, the fields of `record` that a revision after `at`, the one it was saved
+/// at, widened to optional: at `at` each was a value of `T`. What is not a record where one is
+/// held, and a member the record lacks, is left for the variable's own read to refuse.
+inline void checkWidenedHolder(const SavedState &saved, const RecordLineage &record, const RecordHolder &holder, int at,
+                               const std::vector<const WidenedField *> &widened) {
+    const JsonValue *value = saved.variables.get(holder.variable);
+    if (value == nullptr) {
+        return;
+    }
+    if (!holder.list) {
+        checkWidenedRecord(*value, holder.variable, record, at, widened);
+        return;
+    }
+    if (!value->isArray()) {
+        return;
+    }
+    const JsonArray &items = value->asArray();
+    for (std::size_t index = 0; index < items.size(); ++index) {
+        checkWidenedRecord(items[index], holder.variable + "[" + std::to_string(index) + "]", record, at, widened);
+    }
+}
+
 }  // namespace detail
 
 /// `saved` as a state of the machine whose saved state is bound to `shape`, or the refusal
@@ -1138,7 +1193,9 @@ inline void checkEnumHolder(const SavedState &saved, const EnumLineage &lineage,
 /// that number declares. Such a state is then read as one of this machine: each record of a
 /// schema saved at an earlier revision takes the default of every field a later revision
 /// added. A record that already holds such a field is refused, since the revision it was
-/// saved at does not declare it.
+/// saved at does not declare it, and so is one that holds `null` in a field a later revision
+/// widened to optional, since at the revision it was saved at the field was a value of its
+/// present type and no build wrote it absent (docs/adr/0055, section 6).
 inline SavedState upgradeSavedState(const SavedState &saved, const SavedShape &shape) {
     // A format-2 state names an enum by its document and a format-1 state by the alias it is
     // imported under, so each is judged against its own shape (docs/adr/0045, section 2).
@@ -1212,6 +1269,25 @@ inline SavedState upgradeSavedState(const SavedState &saved, const SavedShape &s
         }
         for (const EnumHolder &holder : lineage.holders) {
             detail::checkEnumHolder(saved, lineage, holder, at, later);
+        }
+    }
+    // A record's field saved before the revision that widened it holds a value of `T`, so a
+    // `null` there is no absence and the state is not one any build wrote. Judged on the values
+    // as saved, before a record is grown by defaults, which are this machine's and may be `null`
+    // for a field added absent.
+    for (const RecordLineage &record : shape.records) {
+        const int at = revisionOf(record.event);
+        std::vector<const WidenedField *> held;
+        for (const WidenedField &field : record.widened) {
+            if (field.since <= at && at < field.optionalSince) {
+                held.push_back(&field);
+            }
+        }
+        if (held.empty()) {
+            continue;
+        }
+        for (const RecordHolder &holder : record.holders) {
+            detail::checkWidenedHolder(saved, record, holder, at, held);
         }
     }
     SavedState upgraded = saved;

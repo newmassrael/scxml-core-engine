@@ -29,6 +29,7 @@ from sce_runtime.saved_state import (
     SavedShape,
     SavedState,
     StateRefusal,
+    WidenedField,
     refusal_within,
     saved_state_from_json,
     upgrade_saved_state,
@@ -320,6 +321,74 @@ def test_an_upgrade_gives_a_record_the_defaults_of_the_fields_a_later_revision_a
     assert str(later.value) == (
         "the saved state was saved at revision 3 of 'shown', later than this machine's 2: "
         "a machine does not restore what it does not know"
+    )
+
+
+def test_a_null_saved_before_the_field_was_widened_is_refused() -> None:
+    # docs/adr/0055, section 6: the third revision of `shown` widened `year`, a
+    # field of the first, and `weekday`, which the second added, to optional.
+    second, third = "2" * 64, "3" * 64
+    shape = SavedShape(
+        first="first",
+        revised="revised",
+        format2_first="first2",
+        format2_revised="revised2",
+        records=[
+            RecordLineage(
+                event="shown",
+                revision=3,
+                revisions=[second, third],
+                added=[AddedField(id="weekday", since=2, default="0")],
+                widened=[
+                    WidenedField(id="year", since=1, optional_since=3),
+                    WidenedField(id="weekday", since=2, optional_since=3),
+                ],
+                holders=[RecordHolder("one", False), RecordHolder("many", True)],
+            )
+        ],
+    )
+
+    def saved_at(revision: int, one: str, many: str) -> SavedState:
+        saved = SavedState(
+            shape="first2" if revision == 1 else "revised2",
+            variables=parse_json(f'{{"one":{one},"many":{many}}}'),
+            invokes=SavedInvokes(resumed=True),
+        )
+        if revision > 1:
+            saved.revisions = [SavedRevision(key="shown", revision=revision, fields=second if revision == 2 else third)]
+        return saved
+
+    # A record variable, a field of the first revision, saved at the first.
+    with pytest.raises(StateRefusal) as variable:
+        upgrade_saved_state(saved_at(1, '{"year":null}', "[]"), shape)
+    assert str(variable.value) == (
+        "'one.year' is null, which revision 1 of 'shown' holds as a value: revision 3 widened it"
+    )
+    # An element of a list of records.
+    with pytest.raises(StateRefusal) as element:
+        upgrade_saved_state(saved_at(1, '{"year":4}', '[{"year":1},{"year":null}]'), shape)
+    assert "'many[1].year' is null" in str(element.value)
+    # A field the second revision added, saved at the second.
+    with pytest.raises(StateRefusal) as added:
+        upgrade_saved_state(saved_at(2, '{"year":4,"weekday":null}', "[]"), shape)
+    assert str(added.value) == (
+        "'one.weekday' is null, which revision 2 of 'shown' holds as a value: revision 3 widened it"
+    )
+    # The field the second added, held by a record saved at the first, is refused as
+    # a field that revision does not declare, which is the truer reason.
+    with pytest.raises(StateRefusal) as undeclared:
+        upgrade_saved_state(saved_at(1, '{"year":4,"weekday":null}', "[]"), shape)
+    assert "'one' holds 'weekday'" in str(undeclared.value)
+
+    # Saved at the revision that widened both, `null` is absent.
+    kept = saved_at(3, '{"year":null,"weekday":null}', '[{"year":null,"weekday":2}]')
+    assert write_json(upgrade_saved_state(kept, shape).variables) == write_json(kept.variables)
+    # A record saved before the widening, each field present, restores as it was.
+    earlier = upgrade_saved_state(saved_at(1, '{"year":4}', '[{"year":1}]'), shape)
+    assert write_json(earlier.variables) == '{"one":{"year":4,"weekday":0},"many":[{"year":1,"weekday":0}]}'
+    # What is no record where one is held is left to the variable's own read.
+    assert write_json(upgrade_saved_state(saved_at(1, "null", "[{}]"), shape).variables) == (
+        '{"one":null,"many":[{"weekday":0}]}'
     )
 
 

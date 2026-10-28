@@ -434,6 +434,9 @@ inline const ::SCE::Saved::SavedShape &savedShape() {
 {% for field in record.added %}
             record.added.push_back(::SCE::Saved::AddedField{"{{ field.id | escape_cpp }}", {{ field.since }}, "{{ field.default | escape_cpp }}"});
 {% endfor %}
+{% for field in record.widened %}
+            record.widened.push_back(::SCE::Saved::WidenedField{"{{ field.id | escape_cpp }}", {{ field.since }}, {{ field.optional_since }}});
+{% endfor %}
 {% for holder in record.holders %}
             record.holders.push_back(::SCE::Saved::RecordHolder{"{{ holder.variable | escape_cpp }}", {{ "true" if holder.list else "false" }}});
 {% endfor %}

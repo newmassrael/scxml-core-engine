@@ -308,9 +308,27 @@ pub struct SavedRecordLineage {
     pub revisions: Vec<String>,
     /// Each field a revision past the first added, in the schema's order.
     pub added: Vec<SavedAddedField>,
+    /// Each field a revision widened from `T` to `optional<T>`
+    /// (`sce:optional-since`), in the schema's order: a saved record written
+    /// before the widening holds it as a value, so a `null` there is refused
+    /// (docs/adr/0055, section 6).
+    pub widened: Vec<SavedWidenedField>,
     /// The variables that hold a record of it, or a list of them, in
     /// declaration order.
     pub holders: Vec<SavedRecordHolder>,
+}
+
+/// A field a revision widened from `T` to `optional<T>`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SavedWidenedField {
+    /// The field's id, the member a saved record holds it under.
+    pub id: String,
+    /// The revision that added the field (1 for a field of the first revision):
+    /// a record saved before it holds no member for the field.
+    pub since: u32,
+    /// The revision that widened it (`sce:optional-since`): a record saved at
+    /// an earlier revision, from `since` on, holds the field as a value of `T`.
+    pub optional_since: u32,
 }
 
 /// A field a revision past the first added to a record schema.
@@ -5679,6 +5697,17 @@ fn record_lineage(model: &SCXMLModel, schema: &EventSchemaModel) -> SavedRecordL
                 })
             })
             .collect(),
+        widened: schema
+            .fields
+            .iter()
+            .filter_map(|field| {
+                Some(SavedWidenedField {
+                    id: field.id.clone(),
+                    since: crate::forge::schema_revision::added_at(field),
+                    optional_since: field.optional_since?,
+                })
+            })
+            .collect(),
         holders: Vec::new(),
     }
 }
@@ -9523,8 +9552,25 @@ fn c_record_saved_members(
         };
         let what = "member_what";
         let read = if optional {
+            // A record saved before the revision that widened the field holds
+            // it as a value, so a `null` there is no absence (docs/adr/0055,
+            // section 6). A member the record lacks, taken at its default, was
+            // not saved at all and is not judged.
+            let held_as_value = match field.optional_since {
+                Some(widened) => {
+                    let declared = field
+                        .since
+                        .map_or_else(String::new, |since| format!("at >= {since}u && "));
+                    let event = filters::escape_c(schema.event_name.clone());
+                    format!(
+                        "    if ({declared}at < {widened}u && sce_jv_is_null(member)) {{\n        \
+                         return sce_saved_refuse(err, \"'%s' is null, which revision %u of '{event}' holds as a value: revision {widened} widened it\", {what}, at);\n    }}\n"
+                    )
+                }
+                None => String::new(),
+            };
             format!(
-                "    if (sce_jv_is_null(member)) {{\n        memset(&{dest}, 0, sizeof({dest}));\n    }} else {{\n        \
+                "{held_as_value}    if (sce_jv_is_null(member)) {{\n        memset(&{dest}, 0, sizeof({dest}));\n    }} else {{\n        \
                  {dest}.present = true;\n        if (!{}) {{\n            return false;\n        }}\n    }}\n",
                 c_saved_read(ty, bound, enum_ty, "member", what, &format!("{dest}.value"))
             )
@@ -15100,6 +15146,83 @@ mod tests {
             .map(|f| (f.id.as_str(), f.since))
             .collect();
         assert_eq!(added, [("urgent", 2)]);
+        // What a restore refuses a `null` of: the widened field with the
+        // revision that added it and the one that widened it, and none for a
+        // schema that widened nothing.
+        let widened_fields: Vec<(&str, u32, u32)> = widened.records[0]
+            .widened
+            .iter()
+            .map(|f| (f.id.as_str(), f.since, f.optional_since))
+            .collect();
+        assert_eq!(widened_fields, [("level", 1, 3)]);
+        assert!(unwidened.records[0].widened.is_empty());
+        assert!(second.records[0].widened.is_empty());
+    }
+
+    /// The record reader a C machine writes refuses a `null` in a field saved
+    /// before the revision that widened it (docs/adr/0055, section 6): the check
+    /// names the field's path and both revisions, is made only for the field
+    /// that was widened, and only for a record that held the field as a value
+    /// (saved at or after the revision that added it, before the one that
+    /// widened it).
+    #[test]
+    fn a_c_record_reader_refuses_a_null_saved_before_the_field_was_widened() {
+        const LEVEL_WIDENED_AT_3: &str = r#"<data id="level" sce:type="optional&lt;uint8&gt;" sce:direction="in" sce:optional-since="3"/>"#;
+        const NOTE_ADDED_AT_2_WIDENED_AT_3: &str = r#"<data id="note" sce:type="optional&lt;uint8&gt;" sce:direction="in" sce:since="2" sce:default="7" sce:optional-since="3"/>"#;
+        let dir = tempfile::tempdir().expect("a temporary directory");
+        std::fs::write(
+            dir.path().join("schema_reading.scxml"),
+            reading_schema(
+                3,
+                &[LEVEL_WIDENED_AT_3, URGENT, NOTE_ADDED_AT_2_WIDENED_AT_3],
+            ),
+        )
+        .expect("the schema");
+        let path = dir.path().join("m.scxml");
+        std::fs::write(
+            &path,
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="reading" datamodel="sce-static" name="m">
+  <sce:import kind="event-schema" src="schema_reading.scxml" as="Reading"/>
+  <datamodel>
+    <data id="last" sce:type="record:Reading">
+      <sce:set name="level" expr="0"/>
+      <sce:set name="urgent" expr="false"/>
+      <sce:set name="note" expr="0"/>
+    </data>
+  </datamodel>
+  <state id="reading"/>
+</scxml>"#,
+        )
+        .expect("the statechart");
+        let mut model = SCXMLParser::new()
+            .parse_file(path.to_str().expect("a UTF-8 path"))
+            .expect("parses");
+        crate::analyzer::analyze(&mut model, "m.scxml");
+        let schema = model
+            .imported_records
+            .get("Reading")
+            .expect("the schema Reading imports");
+        let (_, reads) = c_record_saved_members(
+            schema,
+            &std::collections::BTreeMap::new(),
+            &CTarget::arguments(),
+        );
+        // `level` is of the first revision: judged for a record saved before 3.
+        assert!(
+            reads.contains("if (at < 3u && sce_jv_is_null(member))"),
+            "{reads}"
+        );
+        // `note` was added at 2: a record saved before it holds no member to judge.
+        assert!(
+            reads.contains("if (at >= 2u && at < 3u && sce_jv_is_null(member))"),
+            "{reads}"
+        );
+        assert!(reads.contains("is null, which revision %u of 'reading.taken'"));
+        assert!(reads.contains("revision 3 widened it"));
+        // `urgent` is a value of a bool in every revision: nothing is judged of it.
+        assert_eq!(reads.matches("widened it").count(), 2, "{reads}");
     }
 
     /// An optional field a later revision added with no default (docs/adr/0055,

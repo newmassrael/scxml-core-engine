@@ -362,8 +362,25 @@ pub struct RecordLineage {
     pub revisions: &'static [&'static str],
     /// Each field a revision past the first added, in the schema's order.
     pub added: &'static [AddedField],
+    /// Each field a revision widened from `T` to `optional<T>`, in the schema's
+    /// order (docs/adr/0055, section 6).
+    pub widened: &'static [WidenedField],
     /// The variables that hold a record of it, or a list of them.
     pub holders: &'static [RecordHolder],
+}
+
+/// A field a revision widened from `T` to `optional<T>` (`sce:optional-since`).
+/// A record saved before that revision holds it as a value of `T`, so a `null`
+/// there is no absence: [`upgrade`] refuses it.
+#[derive(Clone, Copy, Debug)]
+pub struct WidenedField {
+    /// The field's id, the member a saved record holds it under.
+    pub id: &'static str,
+    /// The revision that added the field (1 for a field of the first revision):
+    /// a record saved before it holds no member for it.
+    pub since: u32,
+    /// The revision that widened it.
+    pub optional_since: u32,
 }
 
 /// A field a revision past the first added to a record schema.
@@ -2086,8 +2103,11 @@ pub fn check_shape(saved: &SavedState, shape: &str) -> Result<(), StateRefusal> 
 /// of a schema saved at an earlier revision — a record variable, or each element
 /// of a list of records — takes the default of every field a later revision
 /// added. A record that already holds such a field is refused, since the
-/// revision it was saved at does not declare it. What is not a record where a
-/// record is held is left for the variable's own read to refuse.
+/// revision it was saved at does not declare it, and so is one that holds
+/// `null` in a field a later revision widened to optional, since at the
+/// revision it was saved at the field was a value of its present type and no
+/// build wrote it absent (docs/adr/0055, section 6). What is not a record where
+/// a record is held is left for the variable's own read to refuse.
 ///
 /// The events of the external queue and of the waiting sends hold their data as
 /// the wire carried it, and the lift reads it with the defaults when each is
@@ -2166,6 +2186,28 @@ pub fn upgrade(saved: &SavedState, shape: &SavedShape) -> Result<SavedState, Sta
         }
         for holder in lineage.holders {
             check_enum_holder(saved, lineage, holder, at, &later)?;
+        }
+    }
+    // A record's field saved before the revision that widened it holds a value
+    // of `T`, so a `null` there is no absence and the state is not one any build
+    // wrote. Judged on the values as saved, before a record is grown by defaults,
+    // which are this machine's and may be `null` for a field added absent.
+    for record in shape.records {
+        let at = saved
+            .revisions
+            .iter()
+            .find(|(event, _)| event.as_str() == record.event)
+            .map_or(1, |(_, named)| named.revision);
+        let held: Vec<&WidenedField> = record
+            .widened
+            .iter()
+            .filter(|f| f.since <= at && at < f.optional_since)
+            .collect();
+        if held.is_empty() {
+            continue;
+        }
+        for holder in record.holders {
+            check_widened_holder(saved, record, holder, at, &held)?;
         }
     }
     let mut grown = saved.clone();
@@ -2248,6 +2290,60 @@ fn check_enum_holder(
                 "'{what}' holds '{name}', which revision {at} of '{}' does not declare: \
                  revision {} added it",
                 lineage.key, variant.since
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// Refuse a `null` the record, or each record of the list, `holder` holds in
+/// `saved` has in a field of `widened`, the fields of `record` that a revision
+/// after `at`, the one it was saved at, widened to optional: at `at` each was a
+/// value of `T`. What is not a record where one is held, and a member the record
+/// lacks, is left for the variable's own read to refuse.
+fn check_widened_holder(
+    saved: &SavedState,
+    record: &RecordLineage,
+    holder: &RecordHolder,
+    at: u32,
+    widened: &[&WidenedField],
+) -> Result<(), StateRefusal> {
+    let Ok(value) = saved.variable(holder.variable) else {
+        return Ok(());
+    };
+    match value {
+        Value::Array(items) if holder.list => {
+            for (i, item) in items.iter().enumerate() {
+                check_widened_record(
+                    item,
+                    &format!("{}[{i}]", holder.variable),
+                    record,
+                    at,
+                    widened,
+                )?;
+            }
+            Ok(())
+        }
+        _ if holder.list => Ok(()),
+        _ => check_widened_record(value, holder.variable, record, at, widened),
+    }
+}
+
+/// Refuse the saved record `value`, of `record` saved at revision `at`, if it
+/// holds `null` in a field of `widened`; `what` names it in the refusal.
+fn check_widened_record(
+    value: &Value,
+    what: &str,
+    record: &RecordLineage,
+    at: u32,
+    widened: &[&WidenedField],
+) -> Result<(), StateRefusal> {
+    for field in widened {
+        if matches!(value.member(field.id), Some(Value::Null)) {
+            return Err(StateRefusal::new(format!(
+                "'{what}.{}' is null, which revision {at} of '{}' holds as a value: revision {} \
+                 widened it",
+                field.id, record.event, field.optional_since
             )));
         }
     }
@@ -3145,6 +3241,50 @@ mod tests {
                     default: "7",
                 },
             ],
+            widened: &[],
+            holders: &[
+                RecordHolder {
+                    variable: "last",
+                    list: false,
+                },
+                RecordHolder {
+                    variable: "seen",
+                    list: true,
+                },
+            ],
+        }],
+        enums: &[],
+    };
+
+    /// The same machine whose third revision widened two fields to optional:
+    /// `level`, a field of the first revision, and `urgent`, which the second
+    /// revision added as a value of its present type.
+    const WIDENED_SHAPE: SavedShape = SavedShape {
+        first: FIRST_SHAPE,
+        revised: REVISED_SHAPE,
+        format2_first: FIRST_SHAPE,
+        format2_revised: REVISED_SHAPE,
+        records: &[RecordLineage {
+            event: "reading.taken",
+            revision: 3,
+            revisions: &[SECOND, THIRD],
+            added: &[AddedField {
+                id: "urgent",
+                since: 2,
+                default: "true",
+            }],
+            widened: &[
+                WidenedField {
+                    id: "level",
+                    since: 1,
+                    optional_since: 3,
+                },
+                WidenedField {
+                    id: "urgent",
+                    since: 2,
+                    optional_since: 3,
+                },
+            ],
             holders: &[
                 RecordHolder {
                     variable: "last",
@@ -3349,6 +3489,83 @@ mod tests {
             &format!(r#","revisions":{{"other.event":{{"revision":2,"fields":"{SECOND}"}}}}"#),
         );
         assert!(reason(stranger).contains("no record"));
+    }
+
+    /// docs/adr/0055, section 6: a record saved before the revision that widened
+    /// a field holds it as a value of its present type, so a `null` there is a
+    /// state no build wrote and is refused, naming the field and the revision.
+    #[test]
+    fn a_null_saved_before_the_field_was_widened_is_refused() {
+        let reason = |saved: SavedState| {
+            upgrade(&saved, &WIDENED_SHAPE)
+                .expect_err("refused")
+                .reason()
+                .to_string()
+        };
+        // A record variable, a field of the first revision, saved at the first.
+        let variable = reason(reading_state(FIRST_SHAPE, r#"{"level":null}"#, "[]", ""));
+        assert_eq!(
+            variable,
+            "'last.level' is null, which revision 1 of 'reading.taken' holds as a value: \
+             revision 3 widened it"
+        );
+        // An element of a list of records.
+        let element = reason(reading_state(
+            FIRST_SHAPE,
+            r#"{"level":4}"#,
+            r#"[{"level":1},{"level":null}]"#,
+            "",
+        ));
+        assert!(element.contains("'seen[1].level' is null"), "{element}");
+        // A field the second revision added, saved at the second.
+        let added = reason(reading_state(
+            REVISED_SHAPE,
+            r#"{"level":4,"urgent":null}"#,
+            "[]",
+            &named(2, SECOND),
+        ));
+        assert_eq!(
+            added,
+            "'last.urgent' is null, which revision 2 of 'reading.taken' holds as a value: \
+             revision 3 widened it"
+        );
+        // The same field in a record saved at the first revision is refused for
+        // being a field that revision does not declare, which is the truer reason.
+        let undeclared = reason(reading_state(
+            FIRST_SHAPE,
+            r#"{"level":4,"urgent":null}"#,
+            "[]",
+            "",
+        ));
+        assert!(undeclared.contains("'last' holds 'urgent'"), "{undeclared}");
+    }
+
+    #[test]
+    fn a_null_is_read_as_absent_from_the_revision_that_widened_the_field() {
+        // Saved at the revision that widened both fields: absent is a value.
+        let saved = reading_state(
+            REVISED_SHAPE,
+            r#"{"level":null,"urgent":null}"#,
+            r#"[{"level":null,"urgent":false}]"#,
+            &named(3, THIRD),
+        );
+        assert_eq!(upgrade(&saved, &WIDENED_SHAPE), Ok(saved));
+        // A record saved before it, each field present, restores as it was, the
+        // field the second revision added at its default.
+        let saved = reading_state(FIRST_SHAPE, r#"{"level":4}"#, r#"[{"level":1}]"#, "");
+        let grown = upgrade(&saved, &WIDENED_SHAPE).expect("an earlier revision restores");
+        assert_eq!(
+            grown.variable("last"),
+            Ok(&json_of(r#"{"level":4,"urgent":true}"#))
+        );
+        // What is no record where one is held, and a record that lacks the
+        // field, are left to the variable's own read.
+        let saved = reading_state(FIRST_SHAPE, "null", r#"[{}]"#, "");
+        let grown = upgrade(&saved, &WIDENED_SHAPE).expect("left for the read");
+        assert_eq!(grown.variable("last"), Ok(&Value::Null));
+        // A schema that widened nothing judges no `null`.
+        let saved = reading_state(FIRST_SHAPE, r#"{"level":null}"#, "[]", "");
+        assert!(upgrade(&saved, &READING_SHAPE).is_ok());
     }
 
     #[test]

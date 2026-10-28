@@ -1216,8 +1216,24 @@ type RecordLineage struct {
 	Revisions []string
 	// Added is each field a revision past the first added, in the schema's order.
 	Added []AddedField
+	// Widened is each field a revision widened from T to optional<T>, in the
+	// schema's order (docs/adr/0055, section 6).
+	Widened []WidenedField
 	// Holders is the variables that hold a record of it, or a list of them.
 	Holders []RecordHolder
+}
+
+// WidenedField is a field a revision widened from T to optional<T>
+// (`sce:optional-since`). A record saved before that revision holds it as a value
+// of T, so a null there is no absence: UpgradeSavedState refuses it.
+type WidenedField struct {
+	// ID is the field's id, the member a saved record holds it under.
+	ID string
+	// Since is the revision that added the field (1 for a field of the first
+	// revision): a record saved before it holds no member for it.
+	Since int
+	// OptionalSince is the revision that widened it.
+	OptionalSince int
 }
 
 // AddedField is a field a revision past the first added to a record schema.
@@ -1257,7 +1273,9 @@ func CheckSavedShape(saved *SavedState, shape string) error {
 // as one of this machine: each record of a schema saved at an earlier revision
 // takes the default of every field a later revision added. A record that already
 // holds such a field is refused, since the revision it was saved at does not
-// declare it.
+// declare it, and so is one that holds null in a field a later revision widened
+// to optional, since at the revision it was saved at the field was a value of its
+// present type and no build wrote it absent (docs/adr/0055, section 6).
 func UpgradeSavedState(saved *SavedState, shape *SavedShape) (*SavedState, error) {
 	// A format-2 state names an enum by its document and a format-1 state by the
 	// alias it is imported under, so each is judged against its own shape
@@ -1336,6 +1354,27 @@ func UpgradeSavedState(saved *SavedState, shape *SavedShape) (*SavedState, error
 		}
 		for _, holder := range lineage.Holders {
 			if err := checkEnumHolder(saved, lineage, holder, at, later); err != nil {
+				return nil, err
+			}
+		}
+	}
+	// A record's field saved before the revision that widened it holds a value of
+	// T, so a null there is no absence and the state is not one any build wrote.
+	// Judged on the values as saved, before a record is grown by defaults, which
+	// are this machine's and may be null for a field added absent.
+	for _, record := range shape.Records {
+		at := revisionOf(record.Event)
+		var held []WidenedField
+		for _, field := range record.Widened {
+			if field.Since <= at && at < field.OptionalSince {
+				held = append(held, field)
+			}
+		}
+		if len(held) == 0 {
+			continue
+		}
+		for _, holder := range record.Holders {
+			if err := checkWidenedHolder(saved, record, holder, at, held); err != nil {
 				return nil, err
 			}
 		}
@@ -1433,6 +1472,46 @@ func checkEnumHolder(
 				return refuse("'%s' holds '%s', which revision %d of '%s' does not declare: revision %d added it",
 					held.what, name, at, lineage.Key, variant.Since)
 			}
+		}
+	}
+	return nil
+}
+
+// checkWidenedHolder refuses a null the record, or each record of the list,
+// holder holds in saved has in a field of widened, the fields of record that a
+// revision after at, the one it was saved at, widened to optional: at at each
+// was a value of T. What is not a record where one is held, and a member the
+// record lacks, is left for the variable's own read to refuse.
+func checkWidenedHolder(
+	saved *SavedState, record RecordLineage, holder RecordHolder, at int, widened []WidenedField,
+) error {
+	value, held := saved.Variables.Get(holder.Variable)
+	if !held {
+		return nil
+	}
+	if !holder.List {
+		return checkWidenedRecord(value, holder.Variable, record, at, widened)
+	}
+	items, _ := value.([]any)
+	for index, item := range items {
+		if err := checkWidenedRecord(item, fmt.Sprintf("%s[%d]", holder.Variable, index), record, at, widened); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// checkWidenedRecord refuses the saved record value, of record saved at revision
+// at, if it holds null in a field of widened; what names it in the refusal.
+func checkWidenedRecord(value any, what string, record RecordLineage, at int, widened []WidenedField) error {
+	members, ok := value.(*JSONObject)
+	if !ok {
+		return nil
+	}
+	for _, field := range widened {
+		if member, present := members.Get(field.ID); present && member == nil {
+			return refuse("'%s.%s' is null, which revision %d of '%s' holds as a value: revision %d widened it",
+				what, field.ID, at, record.Event, field.OptionalSince)
 		}
 	}
 	return nil

@@ -384,7 +384,10 @@ class SavedState(
          * variable, or each element of a list of records — takes the default of
          * every field a later revision added. A record that already holds such a
          * field is refused, since the revision it was saved at does not declare
-         * it. What is not a record where a record is held is left for the
+         * it, and so is one that holds `null` in a field a later revision widened
+         * to optional, since at the revision it was saved at the field was a value
+         * of its present type and no build wrote it absent (docs/adr/0055, section
+         * 6). What is not a record where a record is held is left for the
          * variable's own read to refuse.
          *
          * The events of the external queue and of the waiting sends hold their
@@ -432,6 +435,17 @@ class SavedState(
                 val later = lineage.added.filter { it.since > at }
                 if (later.isEmpty()) continue
                 for (holder in lineage.holders) checkEnumHolder(saved, lineage, holder, at, later)
+            }
+            // A record's field saved before the revision that widened it holds a
+            // value of `T`, so a `null` there is no absence and the state is not
+            // one any build wrote. Judged on the values as saved, before a record
+            // is grown by defaults, which are this machine's and may be `null` for
+            // a field added absent.
+            for (record in shape.records) {
+                val at = saved.revisions[record.event]?.revision ?: 1
+                val held = record.widened.filter { it.since <= at && at < it.optionalSince }
+                if (held.isEmpty()) continue
+                for (holder in record.holders) checkWidenedHolder(saved, record, holder, at, held)
             }
             val variables = LinkedHashMap(saved.variables)
             for (record in shape.records) {
@@ -501,6 +515,52 @@ class SavedState(
                 throw StateRefusal(
                     "'$what' holds '$name', which revision $at of '${lineage.key}' does not declare: " +
                         "revision ${variant.since} added it")
+            }
+        }
+
+        /**
+         * Refuse a `null` the record, or each record of the list, [holder] holds in
+         * [saved] has in a field of [widened], the fields of [record] that a revision
+         * after [at], the one it was saved at, widened to optional: at [at] each was
+         * a value of `T`. What is not a record where one is held, and a member the
+         * record lacks, is left for the variable's own read to refuse.
+         */
+        private fun checkWidenedHolder(
+            saved: SavedState,
+            record: RecordLineage,
+            holder: RecordHolder,
+            at: Int,
+            widened: List<WidenedField>,
+        ) {
+            if (!saved.variables.containsKey(holder.variable)) return
+            val value = saved.variables[holder.variable]
+            if (holder.list) {
+                (value as? List<*>)?.forEachIndexed { i, item ->
+                    checkWidenedRecord(item, "${holder.variable}[$i]", record, at, widened)
+                }
+            } else {
+                checkWidenedRecord(value, holder.variable, record, at, widened)
+            }
+        }
+
+        /**
+         * Refuse the saved record [value], of [record] saved at revision [at], if it
+         * holds `null` in a field of [widened]; [what] names it in the refusal.
+         */
+        private fun checkWidenedRecord(
+            value: Any?,
+            what: String,
+            record: RecordLineage,
+            at: Int,
+            widened: List<WidenedField>,
+        ) {
+            val members = value as? Map<*, *> ?: return
+            for (field in widened) {
+                if (members.containsKey(field.id) && members[field.id] == null) {
+                    throw StateRefusal(
+                        "'$what.${field.id}' is null, which revision $at of '${record.event}' holds as a " +
+                            "value: revision ${field.optionalSince} widened it")
+                }
             }
         }
 
@@ -753,6 +813,8 @@ class EnumHolder(val variable: String, val field: String?, val list: Boolean)
  *   [revision] declares, in order ([SavedRevision.fields]).
  * @property added each field a revision past the first added, in the schema's
  *   order.
+ * @property widened each field a revision widened from `T` to `optional<T>`, in
+ *   the schema's order (docs/adr/0055, section 6).
  * @property holders the variables that hold a record of it, or a list of them.
  */
 class RecordLineage(
@@ -760,8 +822,21 @@ class RecordLineage(
     val revision: Int,
     val revisions: List<String>,
     val added: List<AddedField>,
+    val widened: List<WidenedField>,
     val holders: List<RecordHolder>,
 )
+
+/**
+ * A field a revision widened from `T` to `optional<T>` (`sce:optional-since`).
+ * A record saved before that revision holds it as a value of `T`, so a `null`
+ * there is no absence: [SavedState.upgrade] refuses it.
+ *
+ * @property id the field's id, the member a saved record holds it under.
+ * @property since the revision that added the field (1 for a field of the first
+ *   revision): a record saved before it holds no member for it.
+ * @property optionalSince the revision that widened it.
+ */
+class WidenedField(val id: String, val since: Int, val optionalSince: Int)
 
 /**
  * A field a revision past the first added to a record schema.

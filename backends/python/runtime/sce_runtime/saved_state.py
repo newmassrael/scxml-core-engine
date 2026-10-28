@@ -62,6 +62,7 @@ __all__ = [
     "SavedShape",
     "SavedState",
     "StateRefusal",
+    "WidenedField",
     "check_saved_shape",
     "refusal_within",
     "saved_state_from_json",
@@ -852,6 +853,21 @@ class AddedField:
 
 
 @dataclass
+class WidenedField:
+    """A field a revision widened from ``T`` to ``optional<T>``
+    (``sce:optional-since``): ``id`` is the field's id, the member a saved record
+    holds it under; ``since`` the revision that added the field (1 for a field of
+    the first revision), before which a record holds no member for it;
+    ``optional_since`` the revision that widened it. A record saved before that
+    revision holds the field as a value of ``T``, so a ``null`` there is no
+    absence and :func:`upgrade_saved_state` refuses it (docs/adr/0055, section 6)."""
+
+    id: str
+    since: int
+    optional_since: int
+
+
+@dataclass
 class RecordHolder:
     """A variable that holds a record of a :class:`RecordLineage`."""
 
@@ -866,12 +882,14 @@ class RecordLineage:
     ``revision`` the schema's revision in this machine; ``revisions`` the digest of
     what each revision from the second to ``revision`` declares, in order;
     ``added`` each field a revision past the first added, in the schema's order;
+    ``widened`` each field a revision widened to optional, in the schema's order;
     ``holders`` the variables that hold a record of it, or a list of them."""
 
     event: str
     revision: int
     revisions: List[str] = field(default_factory=list)
     added: List[AddedField] = field(default_factory=list)
+    widened: List[WidenedField] = field(default_factory=list)
     holders: List[RecordHolder] = field(default_factory=list)
 
 
@@ -920,7 +938,10 @@ def upgrade_saved_state(saved: SavedState, shape: SavedShape) -> SavedState:
     as one of this machine: each record of a schema saved at an earlier revision
     takes the default of every field a later revision added. A record that already
     holds such a field is refused, since the revision it was saved at does not
-    declare it."""
+    declare it, and so is one that holds ``null`` in a field a later revision
+    widened to optional, since at the revision it was saved at the field was a
+    value of its present type and no build wrote it absent (docs/adr/0055,
+    section 6)."""
     # A format-2 state names an enum by its document and a format-1 state by the
     # alias it is imported under, so each is judged against its own shape
     # (docs/adr/0045, section 2).
@@ -979,6 +1000,17 @@ def upgrade_saved_state(saved: SavedState, shape: SavedShape) -> SavedState:
             continue
         for holder in lineage.holders:
             _check_enum_holder(saved, lineage, holder, at, later)
+    # A record's field saved before the revision that widened it holds a value of
+    # ``T``, so a ``null`` there is no absence and the state is not one any build
+    # wrote. Judged on the values as saved, before a record is grown by defaults,
+    # which are this machine's and may be ``null`` for a field added absent.
+    for record in shape.records:
+        at = revision_of(record.event)
+        held = [widened for widened in record.widened if widened.since <= at < widened.optional_since]
+        if not held:
+            continue
+        for holder in record.holders:
+            _check_widened_holder(saved, record, holder, at, held)
     variables: Dict[str, Any] = dict(saved.variables)
     for record in shape.records:
         at = revision_of(record.event)
@@ -1032,6 +1064,38 @@ def _check_enum_holder(
                     f"'{what}' holds '{held}', which revision {at} of '{lineage.key}' does not declare: "
                     f"revision {variant.since} added it"
                 )
+
+
+def _check_widened_holder(
+    saved: SavedState, record: RecordLineage, holder: RecordHolder, at: int, widened: List[WidenedField]
+) -> None:
+    """Refuses a ``null`` the record, or each record of the list, ``holder`` holds
+    in ``saved`` has in a field of ``widened``, the fields of ``record`` that a
+    revision after ``at``, the one it was saved at, widened to optional: at ``at``
+    each was a value of ``T``. What is not a record where one is held, and a member
+    the record lacks, is left for the variable's own read to refuse."""
+    if holder.variable not in saved.variables:
+        return
+    value = saved.variables[holder.variable]
+    if holder.list:
+        items = value if isinstance(value, list) else []
+        for index, item in enumerate(items):
+            _check_widened_record(item, f"{holder.variable}[{index}]", record, at, widened)
+    else:
+        _check_widened_record(value, holder.variable, record, at, widened)
+
+
+def _check_widened_record(value: Any, what: str, record: RecordLineage, at: int, widened: List[WidenedField]) -> None:
+    """Refuses the saved record ``value``, of ``record`` saved at revision ``at``, if
+    it holds ``null`` in a field of ``widened``; ``what`` names it in the refusal."""
+    if not isinstance(value, dict):
+        return
+    for widened_field in widened:
+        if widened_field.id in value and value[widened_field.id] is None:
+            raise StateRefusal(
+                f"'{what}.{widened_field.id}' is null, which revision {at} of '{record.event}' holds as a "
+                f"value: revision {widened_field.optional_since} widened it"
+            )
 
 
 def _grown_record(value: Any, what: str, record: RecordLineage, at: int, added: List[AddedField]) -> Any:

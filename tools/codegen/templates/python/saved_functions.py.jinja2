@@ -74,6 +74,11 @@ SAVED_SHAPE = sce_saved_state.SavedShape(
                 sce_saved_state.AddedField(id={{ field.id | py_string_literal }}, since={{ field.since }}, default={{ field.default | py_string_literal }}),
 {% endfor %}
             ],
+            widened=[
+{% for field in record.widened %}
+                sce_saved_state.WidenedField(id={{ field.id | py_string_literal }}, since={{ field.since }}, optional_since={{ field.optional_since }}),
+{% endfor %}
+            ],
             holders=[
 {% for holder in record.holders %}
                 sce_saved_state.RecordHolder(variable={{ holder.variable | py_string_literal }}, list={{ "True" if holder.list else "False" }}),

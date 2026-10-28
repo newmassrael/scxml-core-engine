@@ -518,6 +518,15 @@ impl{{ policy_generics_decl }} {{ machine_name }}Persist for Engine<{{ machine_n
                     },
 {% endfor %}
                 ],
+                widened: &[
+{% for field in record.widened %}
+                    ::sce_rust_runtime::saved_state::WidenedField {
+                        id: "{{ field.id | escape_rust }}",
+                        since: {{ field.since }},
+                        optional_since: {{ field.optional_since }},
+                    },
+{% endfor %}
+                ],
                 holders: &[
 {% for holder in record.holders %}
                     ::sce_rust_runtime::saved_state::RecordHolder {

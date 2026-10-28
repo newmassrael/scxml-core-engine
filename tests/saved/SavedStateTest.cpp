@@ -325,6 +325,71 @@ TEST(SavedState, AnUpgradeGivesARecordTheDefaultsOfTheFieldsALaterRevisionAdded)
     }
 }
 
+// docs/adr/0055, section 6: the third revision of `shown` widened `year`, a field of the first,
+// and `weekday`, which the second added, to optional. A record saved before the widening holds
+// the field as a value, so a null in it is refused, naming the field and the revision; saved at
+// the widening, null is absent.
+TEST(SavedState, ANullSavedBeforeAFieldWasWidenedIsRefused) {
+    const std::string second(64, '2');
+    const std::string third(64, '3');
+    SavedShape shape;
+    shape.first = "first";
+    shape.revised = "revised";
+    shape.format2First = "first2";
+    shape.format2Revised = "revised2";
+    RecordLineage record;
+    record.event = "shown";
+    record.revision = 3;
+    record.revisions = {second, third};
+    record.added = {AddedField{"weekday", 2, "0"}};
+    record.widened = {WidenedField{"year", 1, 3}, WidenedField{"weekday", 2, 3}};
+    record.holders = {RecordHolder{"one", false}, RecordHolder{"many", true}};
+    shape.records = {record};
+
+    const auto savedAt = [&](int revision, const std::string &one, const std::string &many) {
+        SavedState saved;
+        saved.shape = revision == 1 ? "first2" : "revised2";
+        saved.variables = parseJson(R"({"one":)" + one + R"(,"many":)" + many + "}").asObject();
+        saved.invokes.resumed = true;
+        if (revision > 1) {
+            saved.revisions = {SavedRevision{"shown", revision, revision == 2 ? second : third}};
+        }
+        return saved;
+    };
+    const auto refusal = [&](const SavedState &saved) {
+        try {
+            static_cast<void>(upgradeSavedState(saved, shape));
+        } catch (const StateRefusal &err) {
+            return std::string(err.what());
+        }
+        return std::string();
+    };
+
+    // A record variable, a field of the first revision, saved at the first.
+    EXPECT_EQ(refusal(savedAt(1, R"({"year":null})", "[]")),
+              "'one.year' is null, which revision 1 of 'shown' holds as a value: revision 3 widened it");
+    // An element of a list of records.
+    EXPECT_NE(refusal(savedAt(1, R"({"year":4})", R"([{"year":1},{"year":null}])")).find("'many[1].year' is null"),
+              std::string::npos);
+    // A field the second revision added, saved at the second.
+    EXPECT_EQ(refusal(savedAt(2, R"({"year":4,"weekday":null})", "[]")),
+              "'one.weekday' is null, which revision 2 of 'shown' holds as a value: revision 3 widened it");
+    // The field the second added, held by a record saved at the first, is refused as a field that
+    // revision does not declare, which is the truer reason.
+    EXPECT_NE(refusal(savedAt(1, R"({"year":4,"weekday":null})", "[]")).find("'one' holds 'weekday'"),
+              std::string::npos);
+
+    // Saved at the revision that widened both, null is absent.
+    const SavedState kept = savedAt(3, R"({"year":null,"weekday":null})", R"([{"year":null,"weekday":2}])");
+    EXPECT_EQ(writeJson(JsonValue(upgradeSavedState(kept, shape).variables)), writeJson(JsonValue(kept.variables)));
+    // A record saved before the widening, each field present, restores as it was.
+    EXPECT_EQ(writeJson(JsonValue(upgradeSavedState(savedAt(1, R"({"year":4})", R"([{"year":1}])"), shape).variables)),
+              R"({"one":{"year":4,"weekday":0},"many":[{"year":1,"weekday":0}]})");
+    // What is no record where one is held is left to the variable's own read.
+    EXPECT_EQ(writeJson(JsonValue(upgradeSavedState(savedAt(1, "null", "[{}]"), shape).variables)),
+              R"({"one":null,"many":[{"weekday":0}]})");
+}
+
 TEST(SavedState, AnEnumVariantALaterRevisionAddedIsRefusedInAStateSavedBeforeIt) {
     SavedShape shape;
     shape.format2First = "first2";
