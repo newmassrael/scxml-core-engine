@@ -9,12 +9,12 @@
 {% if not f.oracle_eligible %}
 	// Compile-only probe: oracle_eligible=false because the fixture's
 	// field shape isn't expressible in the current StructField /
-	// CanonicalType schema (typed nested codec, *T pointer, or
-	// parent-flag-bearing carrier). The package import resolved at
-	// build time, so a silently-broken kotlinc/go-build-class
-	// regression of commit 91ae355a's variety (Go pointer/value
-	// mismatch in struct literals) is already caught upstream by
-	// `go build`. This zero-value declaration additionally exercises
+	// CanonicalType schema (typed nested codec, a field gated by
+	// sce:present-if, or parent-flag-bearing carrier). The package
+	// import resolved at build time, so a silently-broken
+	// kotlinc/go-build-class regression of commit 91ae355a's variety
+	// (a Go field type mismatch in struct literals) is already caught
+	// upstream by `go build`. This zero-value declaration additionally exercises
 	// the type's identity so the unused-import linter stays quiet.
 	_ = ref
 	var _codecVal {{ f.name }}.{{ f.name | to_pascal_case }}
@@ -23,9 +23,10 @@
 	cases := ref.codecCases(t, "{{ f.ref_section }}", "{{ f.name }}")
 	type decodedShape struct {
 {% for field in f.fields %}
-		{# An absent entry is JSON `null`, which unmarshals to a nil pointer —
-		   the generated struct's own spelling of an absent optional entry. #}
-		{{ field.name | to_pascal_case }} {% if field.optional %}*{% endif %}{{ field.type | go_type }} `json:"{{ field.name }}"`
+		{# An absent entry is JSON `null`, which the runtime's optional type reads
+		   as absent — the generated struct's own type for an optional entry, so
+		   the decoded case is handed to the struct as it is. #}
+		{{ field.name | to_pascal_case }} {% if field.optional %}optional.Of[{{ field.type | go_type }}]{% else %}{{ field.type | go_type }}{% endif %} `json:"{{ field.name }}"`
 {% endfor %}
 	}
 	for i, c := range cases {
@@ -82,11 +83,10 @@
 {% for field in f.fields %}
 {% set fp = field.name | to_pascal_case %}
 {% if field.optional %}
-		{# Present on both sides with one value, or absent on both. A byte
-		   string compares as its bytes (`string(...)`), a scalar directly. #}
-		if (roundTripped.{{ fp }} == nil) != (d.{{ fp }} == nil) ||
-			(roundTripped.{{ fp }} != nil && {% if field.type == "bytes" %}string(*roundTripped.{{ fp }}) != string(*d.{{ fp }}){% else %}*roundTripped.{{ fp }} != *d.{{ fp }}{% endif %}) {
-			t.Errorf("{{ f.name }} case %d decode {{ field.name }}: present actual=%v expected=%v, or the values differ", i, roundTripped.{{ fp }} != nil, d.{{ fp }} != nil)
+		{# Present on both sides with one value, or absent on both: the optional
+		   type's own equality, which compares a byte string as its bytes. #}
+		if !roundTripped.{{ fp }}.Equal(d.{{ fp }}) {
+			t.Errorf("{{ f.name }} case %d decode {{ field.name }}: actual=%v expected=%v", i, roundTripped.{{ fp }}, d.{{ fp }})
 		}
 {% elif field.type == "bytes" %}
 		if len(roundTripped.{{ field.name | to_pascal_case }}) != len(d.{{ field.name | to_pascal_case }}) {

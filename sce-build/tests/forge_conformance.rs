@@ -1813,7 +1813,7 @@ fn forge_codec_until_eof_basic_cpp() {
 // Co-gating contract: the count field `num_elems` MUST carry the
 // IDENTICAL `sce:present-if="carrier.has_list"` predicate.
 // Wrap shape per language: Option<Vec> / std::optional<vector> /
-// MutableList? / Optional[List]; Go uses bare slice nilness; C11
+// MutableList? / Optional[List] / optional.Of[[]T] (Go); C11
 // keeps carrier-bit-as-truth.
 
 #[test]
@@ -2113,8 +2113,8 @@ fn forge_codec_tlv_chain_basic_python() {
 // present_if_basic). Single-bit local carrier gates the
 // chain; entries decode via the existing codec_tlv_entry. Locks the
 // gated-list host wrap shape across all 6 backends (Option<Vec<T>> /
-// std::optional<vector> / MutableList<T>? / bare []T (Go slice
-// nilness) / Optional[List[T]] / C11 carrier-bit-as-truth +
+// std::optional<vector> / MutableList<T>? / optional.Of[[]T] (Go)
+// / Optional[List[T]] / C11 carrier-bit-as-truth +
 // `_len = 0`).
 
 #[test]
@@ -11778,9 +11778,9 @@ fn forge_kotlin_codec_scout_zid_body() {
 }
 
 /// RFC §synth-5-B gated VLE length-sibling (Go): Init body cookie codec.
-/// `CookieSize *uint16` (pointer = presence wrapper for VLE u16);
-/// `Cookie []byte` (slice nilness encodes presence). Helper deref
-/// emits `int(*CookieSize)` inside the gated branch.
+/// `CookieSize optional.Of[uint16]` (the optional type wraps the gated VLE u16);
+/// `Cookie optional.Of[[]byte]`. The helper reads the sibling as
+/// `int(CookieSize.Proven())` inside the gated branch.
 #[test]
 fn forge_go_codec_init_cookie_body() {
     assert_standalone_forge_go("codec_init_cookie_body", "codec_init_cookie_body.go");
@@ -14969,6 +14969,7 @@ import (
 	"testing"
 
 	"github.com/newmassrael/sce-forge-runtime/codec"
+	"github.com/newmassrael/sce-forge-runtime/optional"
 	marker "{GOLDEN_GO_MODULE_PREFIX}/codec_chain_has_marker"
 )
 
@@ -14995,17 +14996,18 @@ func TestMarkerLayout(t *testing.T) {{
 	for _, f := range frames {{
 		v := decode(t, f)
 		if f.sliced {{
-			if v.PayloadLen != nil || v.Payload != nil {{
+			if v.PayloadLen.IsPresent() || v.Payload.IsPresent() {{
 				t.Errorf("%s: plain fields on a marker", f.name)
 			}}
-			if v.SliceCount == nil || *v.SliceCount != 1 || len(v.Slices) != 1 {{
+			slices, _ := v.Slices.Get()
+			if count, ok := v.SliceCount.Get(); !ok || count != 1 || len(slices) != 1 {{
 				t.Errorf("%s: slices missing", f.name)
 			}}
 		}} else {{
-			if v.SliceCount != nil || v.Slices != nil {{
+			if v.SliceCount.IsPresent() || v.Slices.IsPresent() {{
 				t.Errorf("%s: slices without a marker", f.name)
 			}}
-			if v.PayloadLen == nil {{
+			if !v.PayloadLen.IsPresent() {{
 				t.Errorf("%s: plain layout missing", f.name)
 			}}
 		}}
@@ -15018,11 +15020,11 @@ func TestMarkerLayout(t *testing.T) {{
 
 func TestEncoderReadsTheMarkerThroughTheSameMask(t *testing.T) {{
 	v := decode(t, frames[{flagged}])
-	plain := uint64(2)
-	v.SliceCount = nil
-	v.Slices = nil
-	v.PayloadLen = &plain
-	v.Payload = []byte{{0xAA, 0xBB}}
+	var absent marker.CodecChainHasMarker
+	v.SliceCount = absent.SliceCount
+	v.Slices = absent.Slices
+	v.PayloadLen = optional.Some(uint64(2))
+	v.Payload = optional.Some([]byte{{0xAA, 0xBB}})
 	if _, err := v.EncodeToBytes(); !errors.Is(err, codec.ErrPresentIfMismatch) {{
 		t.Errorf("a plain layout under a marker must be refused, got %v", err)
 	}}
@@ -15481,6 +15483,7 @@ import (
 	"testing"
 
 	"github.com/newmassrael/sce-forge-runtime/codec"
+	"github.com/newmassrael/sce-forge-runtime/optional"
 	carrier "{GOLDEN_GO_MODULE_PREFIX}/codec_chain_flag_carrier"
 	forward "{GOLDEN_GO_MODULE_PREFIX}/codec_chain_flag_forward"
 	repcarrier "{GOLDEN_GO_MODULE_PREFIX}/codec_repeat_flag_carrier"
@@ -15500,18 +15503,18 @@ var (
 )
 
 // u8 and u16 read an optional value as -1 when it is absent.
-func u8(p *uint8) int {{
-	if p == nil {{
-		return -1
+func u8(p optional.Of[uint8]) int {{
+	if v, ok := p.Get(); ok {{
+		return int(v)
 	}}
-	return int(*p)
+	return -1
 }}
 
-func u16(p *uint16) int {{
-	if p == nil {{
-		return -1
+func u16(p optional.Of[uint16]) int {{
+	if v, ok := p.Get(); ok {{
+		return int(v)
 	}}
-	return int(*p)
+	return -1
 }}
 
 type entry struct {{
@@ -15550,7 +15553,8 @@ func carrierEntries(v *carrier.CodecChainFlagCarrier) []entry {{
 
 func forwardEntries(v *forward.CodecChainFlagForward) []entry {{
 	var out []entry
-	for _, e := range v.Entries {{
+	list, _ := v.Entries.Get()
+	for _, e := range list {{
 		out = append(out, entry{{e.Header, u8(e.ShortValue), u16(e.LongValue)}})
 	}}
 	return out
@@ -15607,12 +15611,13 @@ func TestChainEntriesAreHandedTheFlagTheirImportBinds(t *testing.T) {{
 	// The same bytes under the other answer: the caller's value reached the
 	// entries, and they are not read as wide.
 	f = decodeForward(t, wide, 0)
-	if u16(f.Entries[0].LongValue) != -1 || u8(f.Entries[0].ShortValue) != 0x12 {{
+	forwarded, _ := f.Entries.Get()
+	if u16(forwarded[0].LongValue) != -1 || u8(forwarded[0].ShortValue) != 0x12 {{
 		t.Errorf("forward flag ignored: %v", forwardEntries(f))
 	}}
 
 	f = decodeForward(t, fwdAbsent, 1)
-	if f.Entries != nil {{
+	if f.Entries.IsPresent() {{
 		t.Errorf("forward chain without its gate: %v", forwardEntries(f))
 	}}
 	if !bytes.Equal(f.EncodeToBytes(1), fwdAbsent) {{
@@ -15650,7 +15655,8 @@ func repeatEntries(v *repcarrier.CodecRepeatFlagCarrier) []entry {{
 
 func gatedEntries(v *repgated.CodecRepeatFlagGated) []entry {{
 	var out []entry
-	for _, e := range v.Entries {{
+	list, _ := v.Entries.Get()
+	for _, e := range list {{
 		out = append(out, entry{{e.Header, u8(e.ShortValue), u16(e.LongValue)}})
 	}}
 	return out
@@ -15693,7 +15699,7 @@ func TestRepeatElementsAreHandedTheFlagTheirImportBinds(t *testing.T) {{
 	}}
 
 	g = decodeGated(t, gatedAbsent)
-	if g.Entries != nil {{
+	if g.Entries.IsPresent() {{
 		t.Errorf("gated repeat without its gate: %v", gatedEntries(g))
 	}}
 	if !bytes.Equal(g.EncodeToBytes(), gatedAbsent) {{
@@ -16385,6 +16391,7 @@ import (
 	"testing"
 
 	"github.com/newmassrael/sce-forge-runtime/codec"
+	"github.com/newmassrael/sce-forge-runtime/optional"
 	carrier "{GOLDEN_GO_MODULE_PREFIX}/codec_chain_prev_carrier"
 	gated "{GOLDEN_GO_MODULE_PREFIX}/codec_chain_prev_gated"
 	entrypkg "{GOLDEN_GO_MODULE_PREFIX}/codec_chain_prev_entry"
@@ -16405,18 +16412,18 @@ var (
 )
 
 // u8 and u16 read an optional value as -1 when it is absent.
-func u8(p *uint8) int {{
-	if p == nil {{
-		return -1
+func u8(p optional.Of[uint8]) int {{
+	if v, ok := p.Get(); ok {{
+		return int(v)
 	}}
-	return int(*p)
+	return -1
 }}
 
-func u16(p *uint16) int {{
-	if p == nil {{
-		return -1
+func u16(p optional.Of[uint16]) int {{
+	if v, ok := p.Get(); ok {{
+		return int(v)
 	}}
-	return int(*p)
+	return -1
 }}
 
 type entry struct {{
@@ -16468,8 +16475,9 @@ func checkGated(t *testing.T, frame []byte, expected []entry, label string) {{
 	if err != nil {{
 		t.Fatalf("%s decode: %v", label, err)
 	}}
-	if !same(shapes(v.Entries), expected) {{
-		t.Errorf("%s: %v", label, shapes(v.Entries))
+	entries, _ := v.Entries.Get()
+	if !same(shapes(entries), expected) {{
+		t.Errorf("%s: %v", label, shapes(entries))
 	}}
 	if !bytes.Equal(v.EncodeToBytes(), frame) {{
 		t.Errorf("%s round trip", label)
@@ -16498,12 +16506,13 @@ func checkTailGated(t *testing.T, frame []byte, expected []entry, label string) 
 	if err != nil {{
 		t.Fatalf("%s decode: %v", label, err)
 	}}
+	entries, _ := v.Entries.Get()
 	if expected == nil {{
-		if v.Entries != nil {{
-			t.Errorf("%s: a chain without its gate holds %v", label, shapes(v.Entries))
+		if v.Entries.IsPresent() {{
+			t.Errorf("%s: a chain without its gate holds %v", label, shapes(entries))
 		}}
-	}} else if !same(shapes(v.Entries), expected) {{
-		t.Errorf("%s: %v", label, shapes(v.Entries))
+	}} else if !same(shapes(entries), expected) {{
+		t.Errorf("%s: %v", label, shapes(entries))
 	}}
 	if !bytes.Equal(v.EncodeToBytes(), frame) {{
 		t.Errorf("%s round trip", label)
@@ -16528,8 +16537,8 @@ func TestAChainTellsItsEntriesWhatCameBeforeThem(t *testing.T) {{
 	if err != nil {{
 		t.Fatalf("gated absent decode: %v", err)
 	}}
-	if v.Entries != nil {{
-		t.Errorf("gated chain without its gate: %v", shapes(v.Entries))
+	if v.Entries.IsPresent() {{
+		t.Errorf("gated chain without its gate: %v", v.Entries)
 	}}
 	if !bytes.Equal(v.EncodeToBytes(), gAbsent) {{
 		t.Errorf("gated absent round trip")

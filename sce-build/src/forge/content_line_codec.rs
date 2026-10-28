@@ -406,18 +406,16 @@ fn render_go(
     let mut ctx = l.base_context(&m.name);
     l.insert_imports(&mut ctx, imports);
     // Owned values, as every Go codec holds them: a string is a `string`, a list a
-    // slice, and an optional entry or parameter a pointer, nil when absent. A
-    // field starts at its zero value, which is the right start for every kind
-    // this codec holds.
+    // slice, and an optional entry or parameter an `optional.Of[T]`, absent at its
+    // zero value. A field starts at its zero value, which is the right start for
+    // every kind this codec holds.
     let mut entries = entries_context(&l, m, |_| "string".to_string(), |_| None);
     shape_fields(
         &mut entries,
         &FieldShapes {
             list_of: &|t| format!("[]{t}"),
             list_default: None,
-            // A pointer, until `optional.Of[T]` replaces it (docs/adr/0055,
-            // step 13).
-            optional_type: &|t| format!("*{t}"),
+            optional_type: &|t| l.codec_optional_of(t),
             optional_default: None,
         },
     );

@@ -57,7 +57,8 @@
 {% endif %}
 {% endmacro %}
 {#- Where a read value goes: a list takes one more value, an optional entry is
-    a pointer, a required one is the value itself. #}
+    handed over as a present `optional.Of[T]`, a required one is the value
+    itself. #}
 {% macro store(e) %}
 {% if e.is_records %}
 			rec.{{ e.value_member }} = v
@@ -71,7 +72,7 @@
 			out.{{ e.name }} = v
 			{{ e.name | lower }}Seen = true
 {% else %}
-			out.{{ e.name }} = &v
+			out.{{ e.name }} = optional.Some(v)
 			{{ e.name | lower }}Seen = true
 {% endif %}
 {% endmacro %}
@@ -119,8 +120,8 @@
 			}
 		}
 {% else %}
-		if {{ holder }}.{{ p.name }} != nil {
-			pv := *{{ holder }}.{{ p.name }}
+		if {{ holder }}.{{ p.name }}.IsPresent() {
+			pv := {{ holder }}.{{ p.name }}.Proven()
 			if err := out.EnumParam("{{ p.param }}", texts{{ p.enum_alias }}, uint64({{ p.enum_to }})); err != nil {
 				return err
 			}
@@ -131,8 +132,8 @@
 			return err
 		}
 {% else %}
-		if {{ holder }}.{{ p.name }} != nil {
-			if err := out.Param("{{ p.param }}", *{{ holder }}.{{ p.name }}, {{ p.max_size }}); err != nil {
+		if {{ holder }}.{{ p.name }}.IsPresent() {
+			if err := out.Param("{{ p.param }}", {{ holder }}.{{ p.name }}.Proven(), {{ p.max_size }}); err != nil {
 				return err
 			}
 		}
@@ -153,6 +154,12 @@ import (
 
 {% endif %}
 	"github.com/newmassrael/sce-forge-runtime/codec"
+{# `uses_optional` is read off the text by the render door: an entry or a
+   parameter that may be absent is the runtime's `optional.Of[T]`
+   (docs/adr/0055, section 5). #}
+{% if uses_optional %}
+	"github.com/newmassrael/sce-forge-runtime/optional"
+{% endif %}
 {% for imp in all_imports %}
 {% if imp.include_stmt %}
 {{ imp.include_stmt }}
@@ -174,7 +181,7 @@ var texts{{ t.alias }} = codec.EnumTexts{
 {% for e in entries if e.is_records %}
 // {{ e.record_type }} is one line of `{{ e.property }}` (docs/adr/0014): the
 // parameters it carries and its {% if e.separator %}list of values, cut at `{{ e.separator }}`{% else %}value{% endif %}. A parameter that
-// may be absent is a pointer, nil when absent.
+// may be absent is an `optional.Of[T]`, absent at its zero value.
 type {{ e.record_type }} struct {
 {% for p in e.params %}
 	// {{ p.name }} is parameter `{{ p.param }}`{% if p.required %}, required{% endif %}.
@@ -193,8 +200,8 @@ type {{ e.record_type }} struct {
 // {{ struct_name }} is one `{{ component }}` component of content lines
 // (SCE_FORGE.md §4.6.4). Decode reads the properties this codec declares in any
 // order and skips the rest; encode writes the entries present in declaration
-// order, folded at 75 octets. An optional entry is a pointer, nil when absent. A
-// repeated property that declares a parameter, or whose line holds a list of
+// order, folded at 75 octets. An optional entry is an `optional.Of[T]`, absent at
+// its zero value. A repeated property that declares a parameter, or whose line holds a list of
 // values, is a list of line records.
 type {{ struct_name }} struct {
 {% for e in entries %}
@@ -319,7 +326,7 @@ func decode{{ struct_name }}At(c *codec.SceCursor) (*{{ struct_name }}, error) {
 {% if p.required %}
 					{{ "rec" if e.is_records else "out" }}.{{ p.name }} = pv
 {% else %}
-					{{ "rec" if e.is_records else "out" }}.{{ p.name }} = &pv
+					{{ "rec" if e.is_records else "out" }}.{{ p.name }} = optional.Some(pv)
 {% endif %}
 					{{ p.name | lower }}Seen = true
 {% endfor %}
@@ -407,12 +414,12 @@ func (s *{{ struct_name }}) Encode(w codec.SceSink) error {
 		}
 {{ write_params(e, "s") }}{{ write_value(e) }}	}
 {% else %}
-	if {{ ("len(s." ~ e.name ~ ") > 0") if e.is_values else ("s." ~ e.name ~ " != nil") }} {
-		v := {{ "s." ~ e.name if e.is_values else "*s." ~ e.name }}
+	if {{ ("len(s." ~ e.name ~ ") > 0") if e.is_values else ("s." ~ e.name ~ ".IsPresent()") }} {
+		v := {{ "s." ~ e.name if e.is_values else "s." ~ e.name ~ ".Proven()" }}
 		if err := out.Property("{{ e.property }}"); err != nil {
 			return err
 		}
-{{ write_params(e, "s") }}{{ write_value(e) }}	}{% if e.optional_params %} else if {% for p in e.optional_params %}{% if not loop.first %} || {% endif %}s.{{ p.name }} != nil{% endfor %} {
+{{ write_params(e, "s") }}{{ write_value(e) }}	}{% if e.optional_params %} else if {% for p in e.optional_params %}{% if not loop.first %} || {% endif %}s.{{ p.name }}.IsPresent(){% endfor %} {
 		// A parameter with no value of its property has no line to stand on.
 		return codec.ErrLineRequiredMissing
 	}{% endif %}

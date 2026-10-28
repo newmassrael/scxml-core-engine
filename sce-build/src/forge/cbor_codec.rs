@@ -283,21 +283,24 @@ fn render_go(
     imports: &[ImportContext],
 ) -> Result<String, ForgeError> {
     let l = LangCtx::new(Language::Go, imports);
-    // Owned values, as every Go codec holds them. An optional entry is a
-    // pointer, so an absent byte string (`nil`) and a present empty one stay
-    // two values; a required one is the value itself.
+    // Owned values, as every Go codec holds them. An optional entry is the one
+    // optional type (docs/adr/0055, section 5), so an absent byte string and a
+    // present empty one stay two values; a required one is the value itself.
     let mut ctx = common_context(&l, m, imports, |e| {
         l.type_name(e.present_type()).into_owned()
     })?;
     if let Some(serde_json::Value::Array(entries)) = ctx.get_mut("entries") {
         for (entry, e) in entries.iter_mut().zip(&m.cbor_entries) {
             let value_type = entry["value_type"].as_str().unwrap_or_default().to_string();
-            // Go keeps its pointer here until `optional.Of[T]` replaces it
-            // (docs/adr/0055, step 13).
+            let optional = l.codec_optional_of(&value_type);
+            // A decode holds every entry it reads as an optional value until
+            // the map has been read to its end: a key given twice, and a
+            // required key that was never given, are told from the value.
+            entry["held_type"] = optional.clone().into();
             entry["field_type"] = if e.is_required() {
                 value_type
             } else {
-                format!("*{value_type}")
+                optional
             }
             .into();
             // A required enum starts at its first declared variant, as the

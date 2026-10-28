@@ -3401,6 +3401,12 @@ pub fn render_harness(
     let has_codec = fixtures
         .iter()
         .any(|f| matches!(f.spec, FixtureSpec::Codec { .. }));
+    // A codec with an entry that may be absent: the Go harness holds its decoded
+    // cases in the runtime's optional type, the one its generated codec holds the
+    // entry in (docs/adr/0055, section 5), and imports it only then.
+    let has_optional_codec_field = fixtures.iter().any(|f| {
+        matches!(&f.spec, FixtureSpec::Codec { fields, .. } if fields.iter().any(|field| field.optional))
+    });
 
     // The oracle is an input to every backend's render.
     //
@@ -3522,6 +3528,7 @@ pub fn render_harness(
         has_procedure => has_procedure,
         has_timer => has_timer,
         has_codec => has_codec,
+        has_optional_codec_field => has_optional_codec_field,
         float_tolerance => float_tolerance,
     };
 

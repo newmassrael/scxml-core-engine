@@ -37,6 +37,9 @@ import (
 {% if has_procedure %}
 	"github.com/newmassrael/sce-forge-runtime/forge"
 {% endif %}
+{% if has_optional_codec_field %}
+	"github.com/newmassrael/sce-forge-runtime/optional"
+{% endif %}
 {% if has_timer %}
 	"github.com/newmassrael/sce-forge-runtime/timer"
 {% endif %}

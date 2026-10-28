@@ -7147,7 +7147,7 @@ fn render_codec(
                     // host-language list type wraps in the same shape
                     // item B2 established for tail/length-ref present-if:
                     // Option<Vec<T>> / std::optional<vector> / MutableList?
-                    // / Optional[List]; Go uses bare slice nilness; C11
+                    // / Optional[List] / optional.Of[[]T] (Go); C11
                     // keeps the carrier-bit-as-truth model (the elems
                     // array stays plain — wire presence is the gate, not
                     // the C-side `_len`). Predicate=None codecs keep the
@@ -7204,13 +7204,10 @@ fn render_codec(
                             crate::generator::Language::Rust
                             | crate::generator::Language::Cpp
                             | crate::generator::Language::Kotlin
+                            | crate::generator::Language::Go
                             | crate::generator::Language::Python => l
                                 .optional_of(&bare)
                                 .expect("these backends wrap the present type"),
-                            // Go bare slice already encodes nilness as
-                            // absent (matches item B2 tail/length-ref
-                            // present-if precedent — no pointer wrap).
-                            crate::generator::Language::Go => bare.clone(),
                             // C11 carrier-bit-as-truth: wire presence is
                             // the parent flag, not the C-side `_len`.
                             // Bare body_type (template renders the
@@ -7398,11 +7395,14 @@ fn render_codec(
                         (crate::generator::Language::Cpp, true) => format!("std::optional<std::vector<{body_type}>>"),
                         (crate::generator::Language::Kotlin, false) => format!("MutableList<{body_type}>"),
                         (crate::generator::Language::Kotlin, true) => format!("MutableList<{body_type}>?"),
-                        // Go: bare slice's nilness already carries
-                        // present-or-absent semantics — no pointer
-                        // wrap needed (mirrors the gated repeat). Plain
-                        // `[]T` accommodates both gated and non-gated.
-                        (crate::generator::Language::Go, _) => format!("[]{body_type}"),
+                        // Go: a gated chain is the one optional type over the
+                        // slice (docs/adr/0055, section 5), so an empty chain
+                        // that was on the wire and a chain that was not stay
+                        // two values.
+                        (crate::generator::Language::Go, false) => format!("[]{body_type}"),
+                        (crate::generator::Language::Go, true) => l
+                            .optional_of(&format!("[]{body_type}"))
+                            .expect("Go wraps the present type"),
                         (crate::generator::Language::Python, false) => format!("List[{body_type}]"),
                         (crate::generator::Language::Python, true) => format!("Optional[List[{body_type}]]"),
                         // C11 emits a fixed-buffer + length pair via the
@@ -7577,7 +7577,7 @@ fn render_codec(
                     // embed emits the bare type; the gated embed
                     // (sce:present-if) wraps in a per-language
                     // optional (Option<T> / std::optional<T> / T? /
-                    // *T / Optional[T]). C11 keeps the bare struct
+                    // optional.Of[T] / Optional[T]). C11 keeps the bare struct
                     // member with carrier-bit-as-truth (no nullable
                     // wrapper — see embed_streaming_decode_stmt /
                     // embed_streaming_encode_block C11 arms). The
@@ -7605,10 +7605,10 @@ fn render_codec(
                                 .expect("Rust wraps the present type"),
                             crate::generator::Language::Cpp
                             | crate::generator::Language::Kotlin
+                            | crate::generator::Language::Go
                             | crate::generator::Language::Python => l
                                 .optional_of(&body_type)
                                 .expect("these backends wrap the present type"),
-                            crate::generator::Language::Go => format!("*{body_type}"),
                             crate::generator::Language::C11 => body_type.clone(),
                         }
                     } else {
@@ -8056,38 +8056,10 @@ fn render_codec(
                         crate::generator::Language::Rust
                         | crate::generator::Language::Cpp
                         | crate::generator::Language::Kotlin
+                        | crate::generator::Language::Go
                         | crate::generator::Language::Python => l
                             .optional_of(&inner)
                             .expect("these backends wrap the present type"),
-                        crate::generator::Language::Go => {
-                            // The codec's own shape until step 13 of
-                            // docs/adr/0055 moves it to `optional.Of[T]`.
-                            // Go has no native optional; the canonical
-                            // shape for "value-or-absent" is a pointer
-                            // (`nil` ⇔ absent). For BYTES Tail / LengthRef
-                            // the slice itself is nullable, so a bare
-                            // `[]byte` carries the same presence signal
-                            // without a pointer wrapper — see the
-                            // helper's Tail/LengthRef arms which decode
-                            // via `append([]byte(nil), ...)`. Fixed and
-                            // Vle keep `*T` because their value types
-                            // have no nil distinction. STRING fields
-                            // (gated String ships for
-                            // length-ref) are NOT nilable in
-                            // Go (`string` is a value type, no zero
-                            // value distinguishes empty-from-absent),
-                            // so they take the `*string` shape uniformly
-                            // with Fixed/Vle.
-                            if matches!(
-                                f.bit_size,
-                                BitSize::Tail | BitSize::LengthRef
-                            ) && !f.is_string()
-                            {
-                                inner.to_string()
-                            } else {
-                                format!("*{inner}")
-                            }
-                        }
                         // C11 has no nullable wrapper — the gated field
                         // stays as plain `T` and presence is encoded by
                         // the carrier flag bit (set on the struct member).
@@ -8100,9 +8072,9 @@ fn render_codec(
                     // otherwise call `0.toUByte()` / `0` against the
                     // nullable carrier and fail to type-check — `null`
                     // / `None` is the only sane default for the
-                    // wrapped type. Go's struct pointer fields default
-                    // to `nil` automatically and need no explicit
-                    // initializer; C11 keeps the zero-value default.
+                    // wrapped type. Go's `optional.Of[T]` is absent at
+                    // its zero value and needs no explicit initializer;
+                    // C11 keeps the zero-value default.
                     if matches!(lang, crate::generator::Language::Kotlin) {
                         obj.insert("kt_default".into(), "null".into());
                     }
@@ -11447,7 +11419,7 @@ fn repeat_streaming_encode_block(
     // RFC §synth-5-B — when the repeat carries `sce:present-if`, the
     // encode body wraps in a per-language predicate test that reads
     // through the wrapped storage shape (Option<Vec> / std::optional
-    // / MutableList? / Optional[List] / Go nilness / C11 carrier-bit).
+    // / MutableList? / Optional[List] / optional.Of[[]T] / C11 carrier-bit).
     if let Some(pred) = &field.present_if {
         return repeat_streaming_encode_block_gated(
             field,
@@ -11692,11 +11664,10 @@ fn embed_streaming_decode_stmt(
             // Go body decoders return `(*T, error)`. Non-gated host
             // struct fields are value-typed `T` (cross-language parity
             // with Cpp/Rust/Kotlin/Python); gated host fields are
-            // `*T` (Go-idiomatic nullable). The `(_, None|Some)`
-            // value-typed branches dereference the decoder's pointer
-            // result (`*_emb`) into a value local before assigning to
-            // the struct literal — assigning the pointer directly to
-            // a value-typed field would not compile.
+            // `optional.Of[T]` (docs/adr/0055, section 5). Either way the
+            // decoder's pointer result (`*_emb`) is read into a value
+            // before it is assigned to the struct literal — assigning the
+            // pointer directly to a value-typed field would not compile.
             match (&test_lit, len_expr(Language::Go)) {
                 (None, None) => format!(
                     "var {go_id} {body_type}\n\t\
@@ -11709,14 +11680,15 @@ fn embed_streaming_decode_stmt(
                      }}"
                 ),
                 (Some(test), None) => format!(
-                    "var {go_id} *{body_type}\n\t\
+                    "var {go_id} {held}\n\t\
                      if {test} {{\n\t\t\
                          _emb, err := {body_decoder}(cursor{thread_arg})\n\t\t\
                          if err != nil {{\n\t\t\t\
                              return nil, err\n\t\t\
                          }}\n\t\t\
-                         {go_id} = _emb\n\t\
-                     }}"
+                         {go_id} = optional.Some(*_emb)\n\t\
+                     }}",
+                    held = go_optional(&body_type),
                 ),
                 (None, Some(sibling)) => format!(
                     "var {go_id} {body_type}\n\t\
@@ -11738,7 +11710,7 @@ fn embed_streaming_decode_stmt(
                      }}"
                 ),
                 (Some(test), Some(sibling)) => format!(
-                    "var {go_id} *{body_type}\n\t\
+                    "var {go_id} {held}\n\t\
                      if {test} {{\n\t\t\
                          _len := int({sibling})\n\t\t\
                          _raw, err := cursor.PeekSlice(_len)\n\t\t\
@@ -11753,8 +11725,9 @@ fn embed_streaming_decode_stmt(
                          if err := cursor.Advance(_len); err != nil {{\n\t\t\t\
                              return nil, err\n\t\t\
                          }}\n\t\t\
-                         {go_id} = _emb\n\t\
-                     }}"
+                         {go_id} = optional.Some(*_emb)\n\t\
+                     }}",
+                    held = go_optional(&body_type),
                 ),
             }
         }
@@ -11973,8 +11946,9 @@ fn embed_streaming_encode_block(
                 )
             } else {
                 format!(
-                    "\tif s.{go_id} != nil {{\n\t\t\
-                         if err := s.{go_id}.Encode(w{comma_thread}); err != nil {{\n\t\t\t\
+                    "\tif s.{go_id}.IsPresent() {{\n\t\t\
+                         _body := s.{go_id}.Proven()\n\t\t\
+                         if err := _body.Encode(w{comma_thread}); err != nil {{\n\t\t\t\
                              return err\n\t\t\
                          }}\n\t\
                      }}"
@@ -12719,46 +12693,52 @@ fn repeat_streaming_decode_stmt_gated(ctx: RepeatDecodeGated<'_>) -> String {
                  }}\n            \
              }} else null"
         ),
-        // Go: bare slice nilness as presence — pre-declare `var Id []T`,
-        // populate only inside the True arm. A co-gated count field is `*T`
-        // (deref via `*<Pascal>`, sound by validator); an unconditional count
-        // is a plain value read directly.
+        // Go: the one optional type over the slice — pre-declare
+        // `var Id optional.Of[[]T]`, build the list inside the True arm and
+        // hand it over whole, so an empty list that was on the wire and a
+        // list that was not stay two values. A co-gated count field is an
+        // `optional.Of[T]` (read through `Proven()`, sound by validator); an
+        // unconditional count is a plain value read directly.
         (Language::Go, CountRef::LengthField(len_field)) => {
             let go_id = filters::to_pascal_case(id.to_string());
             let go_len = filters::to_pascal_case(len_field.clone());
             let count_read = if count_is_gated {
-                format!("*{go_len}")
+                format!("{go_len}.Proven()")
             } else {
                 go_len.clone()
             };
+            let held = go_optional(&format!("[]{body_type}"));
             format!(
-                "var {go_id} []{body_type}\n\t\
+                "var {go_id} {held}\n\t\
                  if {test} {{\n\t\t\
                      _n := {count_read}\n\t\t\
-                     {go_id} = make([]{body_type}, 0, _n)\n\t\t\
+                     _list := make([]{body_type}, 0, _n)\n\t\t\
                      for _i := 0; _i < int(_n); _i++ {{\n\t\t\t\
                          _elem, err := {body_decoder}(cursor{decode_arg})\n\t\t\t\
                          if err != nil {{\n\t\t\t\t\
                              return nil, err\n\t\t\t\
                          }}\n\t\t\t\
-                         {go_id} = append({go_id}, *_elem)\n\t\t\
-                     }}\n\t\
+                         _list = append(_list, *_elem)\n\t\t\
+                     }}\n\t\t\
+                     {go_id} = optional.Some(_list)\n\t\
                  }}"
             )
         }
         (Language::Go, CountRef::UntilEof) => {
             let go_id = filters::to_pascal_case(id.to_string());
+            let held = go_optional(&format!("[]{body_type}"));
             format!(
-                "var {go_id} []{body_type}\n\t\
+                "var {go_id} {held}\n\t\
                  if {test} {{\n\t\t\
-                     {go_id} = make([]{body_type}, 0)\n\t\t\
+                     _list := make([]{body_type}, 0)\n\t\t\
                      for cursor.Remaining() > 0 {{\n\t\t\t\
                          _elem, err := {body_decoder}(cursor{decode_arg})\n\t\t\t\
                          if err != nil {{\n\t\t\t\t\
                              return nil, err\n\t\t\t\
                          }}\n\t\t\t\
-                         {go_id} = append({go_id}, *_elem)\n\t\t\
-                     }}\n\t\
+                         _list = append(_list, *_elem)\n\t\t\
+                     }}\n\t\t\
+                     {go_id} = optional.Some(_list)\n\t\
                  }}"
             )
         }
@@ -12871,17 +12851,16 @@ fn repeat_streaming_encode_block_gated(
                  }}\n        \
              }}"
         ),
-        // Go: `[]T` slice nilness encodes presence (matches item B2
-        // tail's `if s.X != nil` shape, line 5250). `len(s.X) > 0`
-        // would conflate empty-present with absent; nilness is the
-        // only signal that round-trips a 0-element list distinctly
-        // from absent.
+        // Go: the list is an `optional.Of[[]T]`, so `len(...) > 0` is not the
+        // test (it would conflate an empty list that was given with one that
+        // was not): presence is what the type says.
         Language::Go => {
             let go_id = filters::to_pascal_case(id.to_string());
             format!(
-                "\tif s.{go_id} != nil {{\n\t\t\
-                     for _i := range s.{go_id} {{\n\t\t\t\
-                         if err := s.{go_id}[_i].Encode(w{encode_arg}); err != nil {{\n\t\t\t\t\
+                "\tif s.{go_id}.IsPresent() {{\n\t\t\
+                     _list := s.{go_id}.Proven()\n\t\t\
+                     for _i := range _list {{\n\t\t\t\
+                         if err := _list[_i].Encode(w{encode_arg}); err != nil {{\n\t\t\t\t\
                              return err\n\t\t\t\
                          }}\n\t\t\
                      }}\n\t\
@@ -13625,8 +13604,8 @@ struct TlvChainDecodeGated<'a> {
 ///   - Rust:    `let id = if test { Some(<built-vec>) } else { None };`
 ///   - Cpp:     `std::optional<vector> id; if (test) { ...build... }`
 ///   - Kotlin:  `val id: MutableList<T>? = if (test) { ... } else null`
-///   - Go:      bare slice — pre-decl `var Id []T`; populate inside
-///     `if test {}` (slice nilness carries presence)
+///   - Go:      pre-decl `var Id optional.Of[[]T]`; build the list inside
+///     `if test {}` and hand it over with `optional.Some`
 ///   - C11:     carrier-bit-as-truth — emit the same body unconditionally,
 ///     but skip wire reads when `(out->carrier & mask) == 0`
 ///     (encode mirrors via `(self->carrier & mask) == 0` skip)
@@ -13801,7 +13780,7 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
                      if err != nil {{\n\t\t\t\t\
                          return nil, err\n\t\t\t\
                      }}\n\t\t\t\
-                     {go_id} = append({go_id}, *_elem)\n\t\t"
+                     _list = append(_list, *_elem)\n\t\t"
                 ),
                 (acc, _) => {
                     let indent = "\t\t\t";
@@ -13814,7 +13793,7 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
                         lines.push(format!("_more = _elem.{acc}()"));
                     }
                     lines.extend(entry_binds.update_lines(field, "_elem", lang, indent));
-                    lines.push(format!("{go_id} = append({go_id}, *_elem)"));
+                    lines.push("_list = append(_list, *_elem)".to_string());
                     if acc.is_some() {
                         lines.push("if !_more {\n\t\t\t\tbreak\n\t\t\t}".to_string());
                     }
@@ -13822,12 +13801,17 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
                 }
             };
             let more_decl = more_decl_line(lang, &entry_flag_acc, entry_binds, "\t\t");
+            // The chain is built in a local and handed over whole once the
+            // loop and its guard have accepted it: a chain the guard refuses
+            // is no value of the field.
+            let held = go_optional(&format!("[]{body_type}"));
             format!(
-                "var {go_id} []{body_type}\n\t\
+                "var {go_id} {held}\n\t\
                  if {test} {{\n\t\t\
-                     {go_id} = make([]{body_type}, 0, {max_depth})\n\t\t\
+                     _list := make([]{body_type}, 0, {max_depth})\n\t\t\
                      {more_decl}for _i := 0; _i < int({max_depth}); _i++ {{\n{body}\
-                     }}{overflow_check}\n\t\
+                     }}{overflow_check}\n\t\t\
+                     {go_id} = optional.Some(_list)\n\t\
                  }}"
             )
         }
@@ -13969,16 +13953,20 @@ fn tlv_chain_streaming_encode_block_gated(
                  }}"
             )
         }
+        // Go: the chain is an `optional.Of[[]T]`; it is walked where it was
+        // given, and an absent one writes nothing.
         Language::Go => {
             let go_id = filters::to_pascal_case(id.to_string());
-            let decls = entry_binds.decls(lang, "\t");
-            let entry = format!("s.{go_id}[_i]");
-            let updates = chain_encode_updates(entry_binds, field, &entry, lang, "\t\t");
+            let decls = entry_binds.decls(lang, "\t\t");
+            let updates = chain_encode_updates(entry_binds, field, "_list[_i]", lang, "\t\t\t");
             format!(
-                "\t{decls}for _i := range s.{go_id} {{\n\t\t\
-                     if err := s.{go_id}[_i].Encode(w{encode_arg}); err != nil {{\n\t\t\t\
-                         return err\n\t\t\
-                     }}{updates}\n\t\
+                "\tif s.{go_id}.IsPresent() {{\n\t\t\
+                     _list := s.{go_id}.Proven()\n\t\t\
+                     {decls}for _i := range _list {{\n\t\t\t\
+                         if err := _list[_i].Encode(w{encode_arg}); err != nil {{\n\t\t\t\t\
+                             return err\n\t\t\t\
+                         }}{updates}\n\t\t\
+                     }}\n\t\
                  }}"
             )
         }
@@ -14540,9 +14528,9 @@ fn present_if_decode_fixed(
         // Go: non-gated declares the carrier-typed local outside a
         // sub-block then assigns from a freshly-peeked slice; the
         // sub-block scopes the temporary `raw` / `err` so multi-field
-        // codecs don't accumulate `:=` shadowing. Gated declares a
-        // pointer (`*T`) defaulted to `nil`, allocates a stack local
-        // `_v` only when the predicate fires, and stores its address.
+        // codecs don't accumulate `:=` shadowing. Gated declares an
+        // `optional.Of[T]`, absent at its zero value, reads into a local
+        // `_v` only when the predicate fires, and hands it over as present.
         // Tabs match the surrounding template indent (`Decode<X>` body
         // is at one tab; the sub-block lives at two tabs).
         (Language::Go, None) => {
@@ -14566,8 +14554,9 @@ fn present_if_decode_fixed(
             let ty = l.type_name(&field.sce_type);
             let go_id = filters::to_pascal_case(id.to_string());
             let test = present_if_test_literal(fields, p, lang);
+            let held = go_optional(&ty);
             format!(
-                "var {go_id} *{ty}\n\t\
+                "var {go_id} {held}\n\t\
                  if {test} {{\n\t\t\
                      raw, err := cursor.PeekSlice({n})\n\t\t\
                      if err != nil {{\n\t\t\t\
@@ -14577,7 +14566,7 @@ fn present_if_decode_fixed(
                      if err := cursor.Advance({n}); err != nil {{\n\t\t\t\
                          return nil, err\n\t\t\
                      }}\n\t\t\
-                     {go_id} = &_v\n\t\
+                     {go_id} = optional.Some(_v)\n\t\
                  }}"
             )
         }
@@ -14747,11 +14736,10 @@ fn present_if_decode_tail(
                  }}"
             )
         }
-        // Go: slice nilness already encodes presence (`[]byte` nil =
-        // absent), so the gated form uses `[]byte` directly without a
-        // pointer wrapper. The decode appends into a fresh slice
-        // (`append([]byte(nil), raw...)`) to copy the cursor's bytes
-        // into a codec-owned slice.
+        // Go: the gated form is an `optional.Of[[]byte]`, so an empty tail
+        // that was on the wire and one that was not stay two values. The
+        // decode appends into a fresh slice (`append([]byte(nil), raw...)`)
+        // to copy the cursor's bytes into a codec-owned slice.
         (Language::Go, None) => {
             let go_id = filters::to_pascal_case(id.to_string());
             format!(
@@ -14772,15 +14760,16 @@ fn present_if_decode_tail(
         (Language::Go, Some(p)) => {
             let go_id = filters::to_pascal_case(id.to_string());
             let test = present_if_test_literal(fields, p, lang);
+            let held = go_optional("[]byte");
             format!(
-                "var {go_id} []byte\n\t\
+                "var {go_id} {held}\n\t\
                  if {test} {{\n\t\t\
                      _n := cursor.Remaining()\n\t\t\
                      raw, err := cursor.PeekSlice(_n)\n\t\t\
                      if err != nil {{\n\t\t\t\
                          return nil, err\n\t\t\
                      }}\n\t\t\
-                     {go_id} = append([]byte(nil), raw...)\n\t\t\
+                     {go_id} = optional.Some(append([]byte(nil), raw...))\n\t\t\
                      if err := cursor.Advance(_n); err != nil {{\n\t\t\t\
                          return nil, err\n\t\t\
                      }}\n\t\
@@ -15011,15 +15000,16 @@ fn present_if_decode_length_ref(
         (Language::Go, Some(p)) => {
             let go_id = filters::to_pascal_case(id.to_string());
             let test = present_if_test_literal(fields, p, lang);
+            let held = go_optional("[]byte");
             format!(
-                "var {go_id} []byte\n\t\
+                "var {go_id} {held}\n\t\
                  if {test} {{\n\t\t\
                      _n := {n_go}\n\t\t\
                      raw, err := cursor.PeekSlice(_n)\n\t\t\
                      if err != nil {{\n\t\t\t\
                          return nil, err\n\t\t\
                      }}\n\t\t\
-                     {go_id} = append([]byte(nil), raw...)\n\t\t\
+                     {go_id} = optional.Some(append([]byte(nil), raw...))\n\t\t\
                      if err := cursor.Advance(_n); err != nil {{\n\t\t\t\
                          return nil, err\n\t\t\
                      }}\n\t\
@@ -15239,7 +15229,7 @@ fn present_if_decode_string_length_ref(
             let n_go = compute_n_go(len_field, fields, sibling_gated, arith);
             let test = present_if_test_literal(fields, p, lang);
             format!(
-                "var {go_id} *string\n\t\
+                "var {go_id} {held}\n\t\
                  if {test} {{\n\t\t\
                      _n := {n_go}\n\t\t\
                      raw, err := cursor.PeekSlice(_n)\n\t\t\
@@ -15249,12 +15239,12 @@ fn present_if_decode_string_length_ref(
                      if !utf8.Valid(raw) {{\n\t\t\t\
                          return nil, codec.ErrInvalidUTF8\n\t\t\
                      }}\n\t\t\
-                     _v := string(raw)\n\t\t\
-                     {go_id} = &_v\n\t\t\
+                     {go_id} = optional.Some(string(raw))\n\t\t\
                      if err := cursor.Advance(_n); err != nil {{\n\t\t\t\
                          return nil, err\n\t\t\
                      }}\n\t\
-                 }}"
+                 }}",
+                held = go_optional("string"),
             )
         }
         (Language::Python, None) => {
@@ -15474,8 +15464,9 @@ fn compute_n_go(len_field: &str, fields: &[CodecField], sibling_gated: bool, ari
     } else {
         let go_len = filters::to_pascal_case(len_field.to_string());
         if sibling_gated {
-            // Go *T deref panics on nil — trust contract.
-            format!("int(*{go_len})")
+            // A gated sibling is an `optional.Of[T]`, read where the same
+            // predicate proves it present — trust contract.
+            format!("int({go_len}.Proven())")
         } else {
             format!("int({go_len})")
         }
@@ -15686,14 +15677,15 @@ fn present_if_decode_vle(
             let ty = go_type(&field.sce_type);
             let go_id = filters::to_pascal_case(id.to_string());
             // vle_decode_stmt for Go binds `_v` as a typed local. Wrap
-            // in `if test { ... Pascal = &_v }` so the struct's
-            // `*T` field carries presence.
+            // in `if test { ... Pascal = optional.Some(_v) }` so the
+            // struct's `optional.Of[T]` field carries presence.
             format!(
-                "var {go_id} *{ty}\n\t\
+                "var {go_id} {held}\n\t\
                  if {test} {{\n\t\t\
                      {inner}\n\t\t\
-                     {go_id} = &{body_id}\n\t\
-                 }}"
+                     {go_id} = optional.Some({body_id})\n\t\
+                 }}",
+                held = go_optional(ty),
             )
         }
         // C11: vle_decode_stmt emits a typed-local declaration plus
@@ -15807,15 +15799,15 @@ fn present_if_encode_fixed(
         }
         (Language::Go, false) => streaming_fixed_field_encode_go(l, field, default_endian, n),
         (Language::Go, true) => {
-            // Go: nil-check the pointer field and dereference into
-            // a local `_v` so the byte appends operate on the carrier
-            // type (mirrors the non-gated form's `s.<Id>` read but
-            // through the optional).
+            // Go: test the optional field and read it into a local `_v`
+            // so the byte appends operate on the carrier type (mirrors
+            // the non-gated form's `s.<Id>` read but through the
+            // optional, which the test has proven present).
             let go_id = filters::to_pascal_case(id.to_string());
             let inner = streaming_fixed_field_encode_go_from_local(l, field, default_endian, n);
             format!(
-                "\tif s.{go_id} != nil {{\n\t\t\
-                     _v := *s.{go_id}\n\
+                "\tif s.{go_id}.IsPresent() {{\n\t\t\
+                     _v := s.{go_id}.Proven()\n\
                  {inner}\
                  \n\t}}"
             )
@@ -15866,8 +15858,8 @@ fn present_if_encode_fixed(
 }
 
 /// RFC §synth-5-B item B2 present-if + Tail bit-size encode: append all bytes
-/// of the field's bytes-typed value when the predicate / optional /
-/// nilness check passes; otherwise append nothing.
+/// of the field's bytes-typed value when the predicate / optional
+/// check passes; otherwise append nothing.
 fn present_if_encode_tail(
     field: &CodecField,
     fields: &[CodecField],
@@ -15906,12 +15898,12 @@ fn present_if_encode_tail(
         }
         (Language::Go, true) => {
             let go_id = filters::to_pascal_case(id.to_string());
-            // Go: `[]byte` slice nilness encodes presence directly —
-            // no pointer dereference needed. `if s.X != nil` matches
-            // the decode side which sets the slice via `append([]byte(nil), ...)`.
+            // Go: the field is an `optional.Of[[]byte]`, so an empty tail that
+            // was given is written (as nothing) and one that was left out is
+            // told from it by the type, not by the slice's nilness.
             format!(
-                "\tif s.{go_id} != nil {{\n\t\t\
-                     if err := w.WriteBytes(s.{go_id}); err != nil {{\n\t\t\t\
+                "\tif s.{go_id}.IsPresent() {{\n\t\t\
+                     if err := w.WriteBytes(s.{go_id}.Proven()); err != nil {{\n\t\t\t\
                          return err\n\t\t\
                      }}\n\t\
                  }}"
@@ -16021,14 +16013,13 @@ fn present_if_encode_string_length_ref(
                  }}"
             )
         }
-        // Gated String encode on Go: pointer-
-        // wrap via `*string` (mirrors gated bytes' `[]byte` slice
-        // nilness pattern but Go strings are not zeroable).
+        // Gated String encode on Go: the field is an `optional.Of[string]`,
+        // written where it is present.
         (Language::Go, Some(_)) => {
             let go_id = filters::to_pascal_case(id.to_string());
             format!(
-                "\tif s.{go_id} != nil {{\n\t\t\
-                     if err := w.WriteBytes([]byte(*s.{go_id})); err != nil {{\n\t\t\t\
+                "\tif s.{go_id}.IsPresent() {{\n\t\t\
+                     if err := w.WriteBytes([]byte(s.{go_id}.Proven())); err != nil {{\n\t\t\t\
                          return err\n\t\t\
                      }}\n\t\
                  }}"
@@ -16149,8 +16140,8 @@ fn present_if_encode_length_ref(
         (Language::Go, true) => {
             let go_id = filters::to_pascal_case(id.to_string());
             format!(
-                "\tif s.{go_id} != nil {{\n\t\t\
-                     if err := w.WriteBytes(s.{go_id}); err != nil {{\n\t\t\t\
+                "\tif s.{go_id}.IsPresent() {{\n\t\t\
+                     if err := w.WriteBytes(s.{go_id}.Proven()); err != nil {{\n\t\t\t\
                          return err\n\t\t\
                      }}\n\t\
                  }}"
@@ -16272,8 +16263,8 @@ fn present_if_encode_vle(
             let go_id = filters::to_pascal_case(id.to_string());
             let inner = vle_encode_block("_v", width_bits, lang);
             format!(
-                "\tif s.{go_id} != nil {{\n\t\t\
-                     _v := *s.{go_id}\n\
+                "\tif s.{go_id}.IsPresent() {{\n\t\t\
+                     _v := s.{go_id}.Proven()\n\
                  {inner}\n\t\
                  }}"
             )
@@ -16644,7 +16635,7 @@ fn streaming_fixed_field_encode_python_inner(
 }
 
 /// Go encode counterpart — gated, reads from `_v` local. The caller
-/// wraps this in `if s.<Id> != nil { _v := *s.<Id>; ... }` so `_v` is
+/// wraps this in `if s.<Id>.IsPresent() { _v := s.<Id>.Proven(); ... }` so `_v` is
 /// the unwrapped carrier value at one extra tab level.
 fn streaming_fixed_field_encode_go_from_local(
     l: &LangCtx,
@@ -17408,18 +17399,29 @@ fn chain_has_decl_lines(
             }]
         }
         Language::Go => {
-            // A nil slice ranges zero times, so an absent chain needs no case.
+            // A gated chain is an `optional.Of[[]T]`: it is walked where it is
+            // present, and an absent one has no entries.
             let list = if encode { format!("s.{id}") } else { id };
             let found = test("_e");
-            vec![
-                format!("{has} := false"),
-                format!("for _, _e := range {list} {{"),
-                format!("\tif {found} {{"),
-                format!("\t\t{has} = true"),
-                "\t\tbreak".to_string(),
-                "\t}".to_string(),
-                "}".to_string(),
-            ]
+            let (range, pad) = if gated {
+                (format!("{list}.Proven()"), "\t")
+            } else {
+                (list.clone(), "")
+            };
+            let mut lines = vec![format!("{has} := false")];
+            if gated {
+                lines.push(format!("if {list}.IsPresent() {{"));
+            }
+            lines.push(format!("{pad}for _, _e := range {range} {{"));
+            lines.push(format!("{pad}\tif {found} {{"));
+            lines.push(format!("{pad}\t\t{has} = true"));
+            lines.push(format!("{pad}\t\tbreak"));
+            lines.push(format!("{pad}\t}}"));
+            lines.push(format!("{pad}}}"));
+            if gated {
+                lines.push("}".to_string());
+            }
+            lines
         }
         Language::Python => {
             // The decode site reads the local the chain was bound to; the
@@ -17494,7 +17496,10 @@ fn gated_field_presence(field: &CodecField, lang: crate::generator::Language) ->
         ),
         Language::Cpp => (format!("{id}.has_value()"), format!("!{id}.has_value()")),
         Language::Kotlin => (format!("this.{id} != null"), format!("this.{id} == null")),
-        Language::Go => (format!("s.{id} != nil"), format!("s.{id} == nil")),
+        Language::Go => (
+            format!("s.{id}.IsPresent()"),
+            format!("!s.{id}.IsPresent()"),
+        ),
         Language::Python => (
             format!("self.{id} is not None"),
             format!("self.{id} is None"),
@@ -18443,7 +18448,8 @@ fn parent_tag_match_term_python(d: &ParentTagDerivation, imports: &[ImportContex
 
 /// Single-embed dispatch for Go. Writes into the named local via
 /// bitwise OR so multiple embeds combine cleanly on the same carrier.
-/// Optional embeds nil-check the embed pointer; nil → no contribution.
+/// An optional embed (`optional.Of[T]`) is dispatched where it is present;
+/// an absent one makes no contribution.
 ///
 /// Go's variant body is a struct with one `*<ArmBodyType>` field per
 /// arm — exactly one is non-nil at a time. Dispatch is by field
@@ -18464,17 +18470,27 @@ fn parent_tag_switch_block_go(
     let _ = parent_tag_embed_pascal(d, imports);
     let pascal = filters::to_pascal_case(d.embed_field_id.clone());
     let mask: u64 = (1u64 << d.width) - 1;
+    // A gated embed is read once, where it is present, into a local the arms
+    // dispatch on; an ungated one is the struct's own member.
+    let gated = d.present_if.is_some();
+    let embed = if gated {
+        "_embed".to_string()
+    } else {
+        format!("s.{pascal}")
+    };
     let mut switch_block = String::from("\tswitch {\n");
     for (alias, val, _) in &d.arms {
         let arm_variant = filters::to_pascal_case(alias.clone());
         let shifted = ((val & mask) << d.bit) & 0xFF;
         switch_block.push_str(&format!(
-            "\tcase s.{pascal}.Body.{arm_variant} != nil:\n\t\t{local} |= 0x{shifted:02X}\n"
+            "\tcase {embed}.Body.{arm_variant} != nil:\n\t\t{local} |= 0x{shifted:02X}\n"
         ));
     }
     switch_block.push_str("\t}\n");
-    if d.present_if.is_some() {
-        format!("\tif s.{pascal} != nil {{\n{switch_block}\t}}\n")
+    if gated {
+        format!(
+            "\tif s.{pascal}.IsPresent() {{\n\t_embed := s.{pascal}.Proven()\n{switch_block}\t}}\n"
+        )
     } else {
         switch_block
     }
@@ -26172,9 +26188,9 @@ struct EnumImport {
 /// The type an optional value (docs/adr/0055, section 5) is held in by `lang`,
 /// given `present`, the type its present value is spelled as there: the one
 /// spelling of the type per backend, which a statechart's variable, a record's
-/// field and a payload's field take, and a codec's gated field on every backend
-/// but C11, whose codec holds its entry in the struct of its element
-/// ([`LangCtx::c11_codec_optional`]; the `sce-static` lowering asks it through
+/// field and a payload's field take, and a codec's optional entry and gated field
+/// on every backend but C11, whose codec holds its entry in the struct of its
+/// element ([`LangCtx::c11_codec_optional`]; the `sce-static` lowering asks it through
 /// [`crate::forge::static_lowering::StaticTarget::optional_type`]).
 ///
 /// `None` for a backend whose spelling is not a wrap of the present type: C11
@@ -26209,6 +26225,13 @@ pub(crate) struct C11Optional {
     /// under the guard every unit that holds the same element shares. Empty for a
     /// number or a `bool`, which `sce/forge/optional.h` declares itself.
     pub(crate) declaration: String,
+}
+
+/// The type a Go codec holds a value that may be absent in, over `present`:
+/// [`optional_of`] for Go, which is also what a statechart's variable of the
+/// type is, so a value a codec decodes is taken whole by one that holds it.
+fn go_optional(present: &str) -> String {
+    optional_of(crate::generator::Language::Go, present).expect("Go wraps the present type")
 }
 
 pub(crate) struct LangCtx {

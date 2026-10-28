@@ -3,25 +3,26 @@
 
 {# Content-line codec kind (SCE_FORGE.md §4.6.4) — { decoded, encoded } cases
    and reject vectors, as the generic codec fragment has them, with what a
-   content-line component adds: an entry can be absent (a nil pointer) or a list
-   (a slice), a case marked `decode_only` is an input the codec reads and does
-   not write, and a refused decode leaves the cursor where it found it. Go names
-   each failure, so a reject asserts the sentinel itself. #}
+   content-line component adds: an entry can be absent (the runtime's optional
+   type) or a list (a slice), a case marked `decode_only` is an input the codec
+   reads and does not write, and a refused decode leaves the cursor where it
+   found it. Go names each failure, so a reject asserts the sentinel itself. #}
 	cases := ref.codecCases(t, "{{ f.ref_section }}", "{{ f.name }}")
 	type decodedShape struct {
 {% for field in f.fields %}
-		{# An absent entry is JSON `null`, which unmarshals to a nil pointer —
-		   the generated struct's own spelling of an absent optional entry. #}
+		{# An absent entry is JSON `null`, which the runtime's optional type reads
+		   as absent — the generated struct's own type for an optional entry, so
+		   the decoded case is handed to the struct as it is. #}
 {% if field.members %}
 		{# A list of line records (docs/adr/0014) is read into the generated record
 		   type itself: encoding/json matches `attendeeCn`, `value` and `values` to
-		   the fields by name, an absent parameter is a nil pointer. #}
+		   the fields by name, an absent parameter is an absent optional value. #}
 		{{ field.name | to_pascal_case }} []{{ f.name }}.{{ f.name | to_pascal_case }}{{ field.name | to_pascal_case }}Line `json:"{{ field.name }}"`
 {% else %}
 		{# A field that is an enum (docs/adr/0015) is written in a vector as its carrier
 		   number, which encoding/json reads straight into the enum's own defined
 		   integer type — the type the generated codec holds. #}
-		{{ field.name | to_pascal_case }} {% if field.list %}[]{% elif field.optional %}*{% endif %}{% if field.enum_document %}{{ field.enum_document }}.{{ field.enum_document | to_pascal_case }}{% else %}{{ field.type | go_type }}{% endif %} `json:"{{ field.name }}"`
+		{{ field.name | to_pascal_case }} {% if field.list %}[]{% elif field.optional %}optional.Of[{% endif %}{% if field.enum_document %}{{ field.enum_document }}.{{ field.enum_document | to_pascal_case }}{% else %}{{ field.type | go_type }}{% endif %}{% if field.optional and not field.list %}]{% endif %} `json:"{{ field.name }}"`
 {% endif %}
 {% endfor %}
 	}
@@ -61,9 +62,8 @@
 			}
 		}
 {% elif field.optional %}
-		if (roundTripped.{{ fp }} == nil) != (d.{{ fp }} == nil) ||
-			(roundTripped.{{ fp }} != nil && *roundTripped.{{ fp }} != *d.{{ fp }}) {
-			t.Errorf("{{ f.name }} case %d decode {{ field.name }}: present actual=%v expected=%v, or the values differ", i, roundTripped.{{ fp }} != nil, d.{{ fp }} != nil)
+		if !roundTripped.{{ fp }}.Equal(d.{{ fp }}) {
+			t.Errorf("{{ f.name }} case %d decode {{ field.name }}: actual=%v expected=%v", i, roundTripped.{{ fp }}, d.{{ fp }})
 		}
 {% else %}
 		if roundTripped.{{ fp }} != d.{{ fp }} {

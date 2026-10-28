@@ -95,8 +95,13 @@
 
 package {{ package }}
 
+{# `uses_optional` is read off the text by the render door: an entry that may be
+   absent is the runtime's `optional.Of[T]` (docs/adr/0055, section 5). #}
 import (
 	"github.com/newmassrael/sce-forge-runtime/codec"
+{% if uses_optional %}
+	"github.com/newmassrael/sce-forge-runtime/optional"
+{% endif %}
 {% for imp in all_imports %}
 {% if imp.include_stmt %}
 {{ imp.include_stmt }}
@@ -107,7 +112,7 @@ import (
 // {{ struct_name }} is one CBOR map (SCE_FORGE.md §4.6.1). Decode takes the
 // keys in any order and skips one this codec does not declare; encode writes
 // the entries present in ascending key order, every head in its shortest
-// form. An optional entry is a pointer, nil when absent.
+// form. An optional entry is an `optional.Of[T]`, absent at its zero value.
 type {{ struct_name }} struct {
 {% for e in entries %}
 	// {{ e.name }} is map key {{ e.key }}{% if e.required %}, required{% endif %}.
@@ -144,7 +149,7 @@ func decode{{ struct_name }}At(c *codec.SceCursor) (*{{ struct_name }}, error) {
 		return nil, err
 	}
 {% for e in entries %}
-	var {{ e.name | lower }}Held *{{ e.value_type }}
+	var {{ e.name | lower }}Held {{ e.held_type }}
 {% endfor %}
 	for i := uint64(0); i < count; i++ {
 		key, err := codec.CborReadUint(c)
@@ -155,10 +160,10 @@ func decode{{ struct_name }}At(c *codec.SceCursor) (*{{ struct_name }}, error) {
 {% for e in entries_by_key %}
 		case {{ e.key }}:
 			// A key given twice is not one map entry.
-			if {{ e.name | lower }}Held != nil {
+			if {{ e.name | lower }}Held.IsPresent() {
 				return nil, codec.ErrCborMalformed
 			}
-{{ decode_value(e) }}			{{ e.name | lower }}Held = &v
+{{ decode_value(e) }}			{{ e.name | lower }}Held = optional.Some(v)
 {% endfor %}
 		default:
 			if err := codec.CborSkip(c); err != nil {
@@ -167,13 +172,13 @@ func decode{{ struct_name }}At(c *codec.SceCursor) (*{{ struct_name }}, error) {
 		}
 	}
 {% for e in entries if e.required %}
-	if {{ e.name | lower }}Held == nil {
+	if !{{ e.name | lower }}Held.IsPresent() {
 		return nil, codec.ErrCborRequiredKeyMissing
 	}
 {% endfor %}
 	return &{{ struct_name }}{
 {% for e in entries %}
-		{{ e.name }}: {% if e.required %}*{% endif %}{{ e.name | lower }}Held,
+		{{ e.name }}: {{ e.name | lower }}Held{% if e.required %}.Proven(){% endif %},
 {% endfor %}
 	}, nil
 }
@@ -184,7 +189,7 @@ func decode{{ struct_name }}At(c *codec.SceCursor) (*{{ struct_name }}, error) {
 func (s *{{ struct_name }}) Encode(w codec.SceSink) error {
 	count := uint64({{ required_count }})
 {% for e in entries if not e.required %}
-	if s.{{ e.name }} != nil {
+	if s.{{ e.name }}.IsPresent() {
 		count++
 	}
 {% endfor %}
@@ -196,8 +201,8 @@ func (s *{{ struct_name }}) Encode(w codec.SceSink) error {
 	{
 		v := s.{{ e.name }}
 {% else %}
-	if s.{{ e.name }} != nil {
-		v := *s.{{ e.name }}
+	if s.{{ e.name }}.IsPresent() {
+		v := s.{{ e.name }}.Proven()
 {% endif %}
 		if err := codec.CborWriteUint(w, {{ e.key }}); err != nil {
 			return err
