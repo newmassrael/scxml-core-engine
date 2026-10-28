@@ -1014,6 +1014,30 @@ name = "a_standard_refusal_has_no_variant_for_no_refusal"
 path = "tests/a_standard_refusal_has_no_variant_for_no_refusal.rs"
 required-features = ["cli"]
 
+# What a child's optional variable is handed by a `<param>` (docs/adr/0055, step
+# 10): the judge's rules and each backend's slot. It runs `sce-codegen`, so it
+# carries the `cli` gate.
+[[test]]
+name = "a_childs_optional_variable_is_handed_an_optional_value"
+path = "tests/a_childs_optional_variable_is_handed_an_optional_value.rs"
+required-features = ["cli"]
+
+# A host action's argument that may be absent (docs/adr/0055, step 10): the
+# parameter of each backend's host method. It runs `sce-codegen`, so it carries
+# the `cli` gate.
+[[test]]
+name = "a_host_action_takes_an_argument_that_may_be_absent"
+path = "tests/a_host_action_takes_an_argument_that_may_be_absent.rs"
+required-features = ["cli"]
+
+# A host-run result's field that may be absent (docs/adr/0055, step 10): the
+# record each backend generates and the refusal of a request. It runs
+# `sce-codegen`, so it carries the `cli` gate.
+[[test]]
+name = "a_host_run_result_may_hold_a_field_that_may_be_absent"
+path = "tests/a_host_run_result_may_hold_a_field_that_may_be_absent.rs"
+required-features = ["cli"]
+
 # The Kotlin backend's spelling of an optional record (docs/adr/0055, step 9): the
 # text it generates for a statechart's variable, a call of an algorithm and an
 # algorithm's slot. It runs `sce-codegen generate`, so it carries the `cli` gate.

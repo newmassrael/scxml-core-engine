@@ -2614,8 +2614,8 @@ out is refused as any typed payload the data does not fit is. The record the
 generated interface hands the host holds the field in the backend's one optional
 type (`Option<T>`, `T?`, `optional.Of[T]`, `Optional[T]`, `std::optional<T>`, and
 in C11 the struct `sce_optional_<elem>_t`, whose text or byte string declares the
-`sce:max-size` its buffer is declared over and is refused by name, as
-`generate/unsupported-feature`, otherwise), and its `wire()` writes `null` for an
+`sce:max-size` its buffer is declared over and is refused by name, as a feature
+the backend does not lower yet, otherwise), and its `wire()` writes `null` for an
 absent field, so the machine reads the completion's field as any optional value
 (`_event.data.f`, narrowed by a test). A `sce:request` schema may not hold one: a
 request is text, and a `<param>` that cannot be evaluated is left out of an
