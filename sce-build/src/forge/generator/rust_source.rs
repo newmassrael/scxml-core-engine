@@ -83,6 +83,12 @@ pub(super) fn measure_impl(name: &str, lt: &str, trait_name: &str) -> String {
          \x20   /// writes the frame into a window of exactly that size and cannot fail.\n\
          \x20   pub fn measure<S: {trait_name} + ?Sized>(src: &S) -> Result<::sce_forge_runtime::codec::Measured<'_, Self, S>, CodecError> {{\n\
          \x20       ::sce_forge_runtime::codec::measure(src)\n\
+         \x20   }}\n\n\
+         \x20   /// Write `src` into `window` in one pass and return the bytes it is, for a\n\
+         \x20   /// window as large as the caller can spare. On an error the window holds a\n\
+         \x20   /// prefix to discard; see [`::sce_forge_runtime::codec::write_window`].\n\
+         \x20   pub fn write_window<S: {trait_name} + ?Sized>(src: &S, window: &mut [u8]) -> Result<usize, CodecError> {{\n\
+         \x20       ::sce_forge_runtime::codec::write_window::<Self, S>(src, window)\n\
          \x20   }}\n\
          }}\n"
     )

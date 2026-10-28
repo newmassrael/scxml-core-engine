@@ -598,6 +598,12 @@ impl<'a> SceSink for SliceSink<'a> {
         if value < 0x80 {
             return self.put([value as u8]);
         }
+        // Fourteen bits or fewer are two bytes at every width (a VLE of the
+        // narrowest field is allowed three): a request id or a length of a few
+        // hundred is stored in line too.
+        if value < 0x4000 {
+            return self.put([(value as u8 & 0x7F) | 0x80, (value >> 7) as u8]);
+        }
         self.write_vle_long(value, max_bits)
     }
 
@@ -811,6 +817,28 @@ impl<'s, C: SourceWrite<S>, S: ?Sized> Measured<'s, C, S> {
             "the source changed between measure and write_into"
         );
     }
+}
+
+/// Write `src` as codec `C` writes it into `window`, which is as large as the
+/// caller can spare, and say how many bytes the frame is. One pass, with no
+/// count before it (docs/adr/0061 "A one-pass window").
+///
+/// This is the choice for a caller that can reserve more than the frame needs
+/// and give back what it did not use: a transmit slot of the largest frame,
+/// committed at the length returned. The frame is written as the encode writes
+/// it, so a value the encoding cannot carry may be found after bytes have been
+/// written; on an error the window holds a prefix that the caller must discard,
+/// which is what a slot that is committed only on success does. A caller that
+/// must leave its buffer untouched on a refusal, or that must reserve exactly
+/// the frame's size, uses [`measure`] and [`Measured::write_into`] instead, at
+/// the price of the count.
+pub fn write_window<C: SourceWrite<S>, S: ?Sized>(
+    src: &S,
+    window: &mut [u8],
+) -> Result<usize, CodecError> {
+    let mut sink = SliceSink::new(window);
+    C::write(src, &mut sink)?;
+    Ok(sink.position())
 }
 
 /// Count `src` as codec `C` writes it: the size of the frame, or the refusal the
@@ -1281,6 +1309,32 @@ mod tests {
                 "nothing past the window is written"
             );
         }
+    }
+
+    #[test]
+    fn a_window_is_written_in_one_pass_and_the_length_is_what_was_written() {
+        let held = Held(300, b"abc");
+        let mut window = [0xEEu8; 16];
+        let n = write_window::<Pair, _>(&held, &mut window).unwrap();
+        let measured = measure::<Pair, _>(&held).unwrap();
+        assert_eq!(n, measured.len());
+        let mut exact = [0u8; 16];
+        measured.write_into(&mut exact[..n]);
+        assert_eq!(window[..n], exact[..n]);
+        assert!(
+            window[n..].iter().all(|&x| x == 0xEE),
+            "nothing past the frame is written"
+        );
+        // A window a byte short overflows; a refused value is refused.
+        let mut short = [0u8; 16];
+        assert_eq!(
+            write_window::<Pair, _>(&held, &mut short[..n - 1]),
+            Err(CodecError::BufferOverflow)
+        );
+        assert_eq!(
+            write_window::<Pair, _>(&Held(1, b"123456789"), &mut window),
+            Err(CodecError::LengthOutOfRange)
+        );
     }
 
     #[test]

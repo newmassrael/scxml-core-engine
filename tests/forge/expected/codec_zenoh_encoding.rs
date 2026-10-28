@@ -259,6 +259,13 @@ impl<'a> CodecZenohEncoding<'a> {
     pub fn measure<S: CodecZenohEncodingSource + ?Sized>(src: &S) -> Result<::sce_forge_runtime::codec::Measured<'_, Self, S>, CodecError> {
         ::sce_forge_runtime::codec::measure(src)
     }
+
+    /// Write `src` into `window` in one pass and return the bytes it is, for a
+    /// window as large as the caller can spare. On an error the window holds a
+    /// prefix to discard; see [`::sce_forge_runtime::codec::write_window`].
+    pub fn write_window<S: CodecZenohEncodingSource + ?Sized>(src: &S, window: &mut [u8]) -> Result<usize, CodecError> {
+        ::sce_forge_runtime::codec::write_window::<Self, S>(src, window)
+    }
 }
 
 

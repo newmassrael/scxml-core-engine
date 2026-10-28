@@ -205,6 +205,53 @@ candidates left, in the order the count ranks them, are: the counting pass being
 not done yet, since each makes `Measured` larger or the skeleton less plain, and the kit has not yet said what the
 step above bought.
 
+## Where the rest went, a staged design that did not pay, and a one-pass window (2026-10-28)
+
+The consumer's third measurement (`ef50d044ad`): hand-written writer 41.38 us, `encode_source` 46.36, `measure` with
+`write_into` 47.28, so +4.98 and +5.90 us over the hand writer, about 1,740 and 2,070 cycles. The instruction trace
+of the previous section counts 986 executed instructions for the generated path against 442 for a hand-staged
+writer of the same 57 bytes (byte-identical, held by the trace harness), of which 319 are the `memcpy` both pay.
+544 instructions cost 2,000 cycles on the kit, about 3.7 cycles each, which a Cortex-M7 running generated code that
+touches some twenty small functions in flash can explain by instruction-cache misses and wait states and a trace
+cannot show. So the trace ranks, and the kit decides.
+
+**A staged design, built and measured, and not kept.** The textbook answer to "the second pass re-derives what the
+first found" is to keep what was found: each codec gets `plan` (evaluate the source once, refuse what it cannot
+carry, count the bytes arithmetically from the same decision that generates each write) and `emit` (write from the
+plan), `Measured` holds the plan, and `write_source` is the two in sequence. It was built through the generator for
+every Rust codec (one `Prog` of paired statements so that the count and the write cannot drift, plans filled in
+place so that nested plans are not moved, `Default` plans), passed the whole conformance matrix, and was measured on
+the consumer's own generated codec: 1,833 instructions for `encode_source` and 2,442 for `measure` with `write_into`,
+against 986. A plan is as large as its deepest arm of every variant it nests (some 200 bytes for a Response), so
+returning it, zeroing it and moving it into `Measured` costs more than the derivation it saves: the derivation was
+about 200 instructions a pass, and `memclr` and `memcpy` of the plan about 650. This is the finding of ADR 0049 again,
+a record that carries its capacity is paid for at every move. The work is kept in the repository's stash for whoever
+wants to try a plan that is small by construction (a flat tape of the derived numbers in the order they are read,
+with the plans of list entries recomputed); it is not part of this change, and no interface here depends on it.
+
+**What was kept, each measured on the same trace:**
+
+| change | `encode_source` | one pass |
+|---|---|---|
+| after the one-byte VLE in line (`ef50d044ad`) | 986 | 764 |
+| a VLE of two bytes stored in line | 936 | 714 |
+
+A word-wise copy for short text and payload was tried and dropped: LLVM turns the loop back into the same `memcpy`
+call, and the copy is a cost the hand writer pays equally, so it is not part of the gap. Forcing the whole generated
+tree to inline took 986 to 900 instructions for 8.8 KB more text, which does not justify an option on the evidence
+of the trace alone; whether it helps the kit, where the number of functions touched may matter more than the number
+of instructions, is for the consumer to measure by adding `#[inline(always)]` to the `write_source` functions of its
+generated codecs, before the generator grows a switch for it.
+
+**A one-pass window.** The count is a pass of its own, 222 of the 936 instructions. A caller that can reserve more
+than the frame needs and give back what it did not use (a transmit slot of the largest frame, committed at the
+length written) does not need it. `write_window::<C, S>(src, &mut [u8]) -> Result<usize, CodecError>` and the
+generated `X::write_window(src, window)` write the frame in one pass into such a window and return its length. The
+price is the contract: on an error the window holds a prefix, which a slot that is committed only on success
+discards. A caller that must leave its buffer untouched, or reserve exactly the frame, keeps `measure` and
+`write_into`. The conformance matrix holds, for every codec, the same bytes and count as `encode_source`, the same
+refusal, and an overflow in a window a byte short.
+
 ## Considered alternatives
 
 - **A hand-written `encoded_len` beside `write_source`.** Two statements of the grammar; refused (the same ground as

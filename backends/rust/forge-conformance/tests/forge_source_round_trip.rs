@@ -86,6 +86,30 @@ macro_rules! agree {
                         "measure answers another refusal than encode, frame {frame:02x?}"
                     ),
                 }
+                // The one-pass window (docs/adr/0061): the bytes the encode
+                // writes and their count in a window that is large enough, the
+                // refusal the encode gives, and an overflow in a window a byte
+                // short. It leaves a prefix on an error, so nothing is claimed
+                // of what it holds then.
+                let mut roomy = vec![0xA5u8; by_source.len() + 8];
+                let windowed = <$ty>::write_window(&value, &mut roomy);
+                assert_eq!(
+                    windowed.map(|_| ()),
+                    verdict,
+                    "write_window answers another verdict, frame {frame:02x?}"
+                );
+                if verdict.is_ok() {
+                    assert_eq!(windowed, Ok(by_source.len()), "write_window counts other bytes, frame {frame:02x?}");
+                    assert_eq!(&roomy[..by_source.len()], &by_source[..], "write_window holds other bytes, frame {frame:02x?}");
+                    if !by_source.is_empty() {
+                        let mut tight = vec![0u8; by_source.len() - 1];
+                        assert_eq!(
+                            <$ty>::write_window(&value, &mut tight),
+                            Err(::sce_forge_runtime::codec::CodecError::BufferOverflow),
+                            "write_window fits a window a byte short, frame {frame:02x?}"
+                        );
+                    }
+                }
                 if verdict.is_ok() {
                     // The bytes are a frame, and a fixed point of the encode.
                     let again = <$ty>::decode(&mut SceCursor::new(&by_source)).unwrap_or_else(|e| {
