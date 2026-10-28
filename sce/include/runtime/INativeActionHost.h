@@ -29,9 +29,12 @@ namespace SCE {
  * an `<invoke>` of a type it does not implement.
  *
  * Arguments are `bool`, integers, reals and strings — what the host reads off
- * an event's typed payload. An argument that evaluates to anything else (an
- * array, an object, `undefined`) is no value a host operation takes, and
- * raises `error.execution` before the host is called.
+ * an event's typed payload — and `null`, the absent value of an argument the
+ * document declares `optional<T>` (docs/adr/0055, step 10): the host is handed
+ * `ScriptNull` where a generated host is handed its language's absent optional.
+ * An argument that evaluates to anything else (an array, an object,
+ * `undefined`) is no value a host operation takes, and raises `error.execution`
+ * before the host is called.
  *
  * A child session started by an `<invoke>` is given its own host by this one
  * (`hostForChild`), as a generated parent's host interface answers one for

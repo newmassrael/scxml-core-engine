@@ -1249,12 +1249,16 @@ bool ActionExecutorImpl::executeNativeAction(const NativeAction &action) {
                 return fail("the argument `" + argument.expr + "` could not be evaluated: " + result.getErrorMessage());
             }
             const ScriptValue &value = result.getInternalValue();
+            // `null` is the absent value of an argument declared `optional<T>`
+            // (docs/adr/0055, step 10): the host is told it is absent, as a generated
+            // host is handed its language's absent optional.
             const bool takenByAHost = std::holds_alternative<bool>(value) || std::holds_alternative<int64_t>(value) ||
                                       std::holds_alternative<double>(value) ||
-                                      std::holds_alternative<std::string>(value);
+                                      std::holds_alternative<std::string>(value) ||
+                                      std::holds_alternative<ScriptNull>(value);
             if (!takenByAHost) {
                 return fail("the argument `" + argument.expr +
-                            "` is not a bool, a number or a string, which is what a host operation takes");
+                            "` is not a bool, a number, a string or null, which is what a host operation takes");
             }
             values.push_back(value);
         }

@@ -108,6 +108,12 @@ constexpr const char *DOCUMENT = R"(<?xml version="1.0" encoding="UTF-8"?>
     <transition event="unbound_arg">
       <sce:action name="start" effect="notice"><sce:arg expr="no_such_variable + 1"/></sce:action>
     </transition>
+    <transition event="absent">
+      <sce:action name="start" effect="notice">
+        <sce:arg expr="null"/>
+        <sce:arg expr="n"/>
+      </sce:action>
+    </transition>
     <transition event="error.execution" target="failed"/>
   </state>
 
@@ -450,6 +456,28 @@ TEST_F(NativeActionRunsUnderTheInterpreterTest, AnArgumentNoHostOperationTakesSt
         EXPECT_EQ(sm_->getCurrentState(), "failed") << event;
         TearDown();
     }
+}
+
+// An argument declared `optional<T>` that is absent evaluates to `null`, which is a value a host
+// operation takes (docs/adr/0055, step 10): the host is told it is absent, where the generated hosts
+// are handed their language's absent optional, and the action is not refused. `undefined` and an
+// array stay refused above.
+TEST_F(NativeActionRunsUnderTheInterpreterTest, AnArgumentThatIsNullIsHandedToTheHostAsAbsent) {
+    auto host = std::make_shared<RecordingHost>();
+    loadWith(host);
+    ASSERT_TRUE(sm_->start());
+    host->calls.clear();
+
+    ASSERT_TRUE(sm_->processEvent("absent").success);
+
+    ASSERT_EQ(host->calls.size(), 1u) << "the host was called: `null` is an argument a host takes";
+    EXPECT_EQ(host->calls[0].first, "start");
+    const auto &args = host->calls[0].second;
+    ASSERT_EQ(args.size(), 2u);
+    EXPECT_TRUE(std::holds_alternative<ScriptNull>(args[0])) << "an absent argument is `null`, not `undefined`";
+    ASSERT_TRUE(std::holds_alternative<int64_t>(args[1])) << "a present one beside it is the value it is";
+    EXPECT_EQ(std::get<int64_t>(args[1]), 2);
+    EXPECT_EQ(sm_->getCurrentState(), "idle") << "a performed action raises nothing";
 }
 
 TEST_F(NativeActionRunsUnderTheInterpreterTest, AChildIsGivenTheHostItsParentsHostAnswersForItsDocument) {
