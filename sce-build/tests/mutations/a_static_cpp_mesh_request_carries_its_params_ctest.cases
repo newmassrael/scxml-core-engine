@@ -12,7 +12,7 @@
 # link: so the payload is what the machine writes, and the mutants each take one
 # decision of it away, and each still compiles:
 #
-#   the text of a param that was read is not put in the map;
+#   the text of a param that was read is put in the map twice;
 #   the typed value of a param that was read is not handed on;
 #   a param whose value failed is carried anyway;
 #   a param whose value failed is not reported.
@@ -27,10 +27,20 @@ mutation_ctest --test-dir build -R '^mesh_static_invoke_request_verification$'
 mutation_targets tools/codegen/templates/entry_exit_actions.jinja2
 mutation_oracles tests/mesh/test_mesh_static_invoke_request.cpp tests/mesh/brake_static_invoke.scxml
 
-mutation_case "the text of a param that was read is not put in the map" <<'PY'
+# The first round of this casefile held "the text of a param that was read is not put
+# in the map", and it SURVIVED because it is equivalent. The text map and the typed map
+# are merged per name (`mergeParams`, sce/src/common/EventDataHelper.cpp), and the typed
+# value wins whenever the typed map holds one value for each text the string map holds.
+# A native param pushes exactly one of each, so an empty text under the name changes no
+# byte of the payload: the text is only a fallback here, read only where the counts
+# differ, and the fixture has no name written twice, so no input the oracle feeds
+# reaches that difference. What the counts DO decide is observable: a second text under
+# the name makes the string vector longer than the typed one, the merge falls back to
+# the strings, and the pair is published as an array of texts instead of the value.
+mutation_case "the text of a param that was read is put in the map twice" <<'PY'
 edit("tools/codegen/templates/entry_exit_actions.jinja2",
      "                            _mesh_params_{{ invoke_info.invoke_id }}[\"{{ param.name | escape_cpp }}\"].push_back(\n                                ::SCE::ScriptResultUtils::valueText(paramValue));",
-     "                            _mesh_params_{{ invoke_info.invoke_id }}[\"{{ param.name | escape_cpp }}\"].push_back(\n                                std::string());")
+     "                            _mesh_params_{{ invoke_info.invoke_id }}[\"{{ param.name | escape_cpp }}\"].push_back(\n                                ::SCE::ScriptResultUtils::valueText(paramValue));\n                            _mesh_params_{{ invoke_info.invoke_id }}[\"{{ param.name | escape_cpp }}\"].push_back(\n                                ::SCE::ScriptResultUtils::valueText(paramValue));")
 PY
 
 mutation_case "the typed value of a param that was read is not handed on" <<'PY'
