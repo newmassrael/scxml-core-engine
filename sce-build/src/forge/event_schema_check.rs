@@ -170,11 +170,14 @@ pub fn check_records_carry_payload(
             .flat_map(|state| state.datamodel.iter()),
     );
     for var in variables {
-        let Some(alias) = var
-            .value_type
-            .as_ref()
-            .and_then(crate::forge::model::AlgorithmValueType::record_alias)
-        else {
+        // A variable of a record, or of an optional record (docs/adr/0055,
+        // step 9), holds the record the schema describes.
+        let Some(alias) = var.value_type.as_ref().and_then(|ty| {
+            ty.record_alias().or_else(|| {
+                ty.optional_elem()
+                    .and_then(crate::forge::model::OptionalElemType::record_alias)
+            })
+        }) else {
             continue;
         };
         let Some(schema) = records.get(alias) else {
@@ -191,7 +194,10 @@ pub fn check_records_carry_payload(
             ValidationError::AttributeRuleViolated {
                 element: format!("<data id=\"{}\">", var.id),
                 attr: "sce:type".into(),
-                value: format!("record:{alias}"),
+                value: var.value_type.as_ref().map_or_else(
+                    || format!("record:{alias}"),
+                    crate::forge::model::AlgorithmValueType::as_attr,
+                ),
                 rule: format!(
                     "a schema that declares a field — `{alias}` declares none, so the event it \
                      names carries no payload and no record type is generated for it"

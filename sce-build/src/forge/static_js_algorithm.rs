@@ -61,10 +61,10 @@ use crate::forge::generator::{
 };
 use crate::forge::model::{
     AlgorithmConstType, AlgorithmModel, AlgorithmStmt, AlgorithmValueType, FieldType, ForgeImport,
-    ListElemType, SceType,
+    ListElemType, OptionalElemType, SceType,
 };
 use crate::forge::narrowing::{
-    after_algorithm_statement, loop_entry, proves_written, Chain, Facts,
+    after_algorithm_statement, loop_entry, present_record_of, proves_written, Chain, Facts,
 };
 use crate::forge::static_js::{LOWERED_DATAMODEL, RUNTIME_GLOBAL};
 use crate::forge::types::{InferredType, OptionalElem, TypeCtx};
@@ -435,6 +435,11 @@ struct Body<'a> {
     /// Every record parameter, local and foreach item, by name, and the alias
     /// of the schema that types it.
     records: HashMap<&'a str, &'a str>,
+    /// Every optional record parameter and local (docs/adr/0055, step 9), by
+    /// name, and the alias of the schema that types it: `null` or the plain
+    /// object a record is, held whole, and written a field at a time only
+    /// where a test proves it present.
+    optional_records: HashMap<&'a str, &'a str>,
     /// Every buffer local.
     buffers: HashMap<&'a str, Buffer<'a>>,
     /// The parameters a `foreach` reads: a list, or bytes.
@@ -645,19 +650,36 @@ impl Body<'_> {
             AlgorithmStmt::Assign { target, expr, .. } => {
                 let target = target.trim();
                 // A field of a record is the record, written again with that
-                // field changed.
-                if let Some((root, field)) = target.split_once('.') {
-                    let (root, field) = (root.trim(), field.trim());
-                    if !self.records.contains_key(root) || field.contains(['.', '[']) {
+                // field changed; a field of the present value of an optional
+                // record (`x.value.f`, written where a test proves it present) is
+                // the object `x` holds, written again the same way.
+                let held = match present_record_of(target)
+                    .filter(|holder| self.optional_records.contains_key(holder))
+                {
+                    Some(root) => target
+                        .rsplit_once('.')
+                        .map(|(_, field)| (root, field.trim(), self.optional_records.get(root))),
+                    None => target.split_once('.').map(|(root, field)| {
+                        let root = root.trim();
+                        (root, field.trim(), self.records.get(root))
+                    }),
+                };
+                if let Some((root, field, alias)) = held {
+                    let Some(alias) = alias.copied() else {
+                        return Err(refuse(
+                            self.algorithm,
+                            format!("an assignment to the member `{target}`"),
+                        ));
+                    };
+                    if field.contains(['.', '[']) {
                         return Err(refuse(
                             self.algorithm,
                             format!("an assignment to the member `{target}`"),
                         ));
                     }
                     let text_field = self
-                        .records
-                        .get(root)
-                        .and_then(|alias| self.imports.record(alias))
+                        .imports
+                        .record(alias)
                         .and_then(|record| record.field(field))
                         .filter(|f| matches!(f.ty, FieldType::Scalar(SceType::String)));
                     let value = match text_field {
@@ -672,6 +694,14 @@ impl Body<'_> {
                         "{root} = {RUNTIME_GLOBAL}.set({root}, {}, {value});",
                         quoted(field),
                     ));
+                }
+                // A record put into an optional record is the object it is, by
+                // its name: there is no record expression (SCE_FORGE.md §4.12).
+                if self.optional_records.contains_key(target) {
+                    let name = expr.trim();
+                    if self.records.contains_key(name) || self.optional_records.contains_key(name) {
+                        return Ok(format!("{target} = {name};"));
+                    }
                 }
                 if target.contains('[') {
                     return Err(refuse(
@@ -855,10 +885,20 @@ fn holds(ty: &AlgorithmValueType) -> bool {
         }
         | AlgorithmValueType::Record { .. } => true,
         // A value that may be absent is `null` or its present value
-        // (docs/adr/0055), of the elements an algorithm holds one of.
-        AlgorithmValueType::Optional { elem } => elem
-            .scalar()
-            .is_some_and(AlgorithmValueType::algorithm_optional_admitted),
+        // (docs/adr/0055): a number, a `bool`, a text, a value of an enum (its
+        // declared name) or a record (a plain object). A byte string is the array
+        // of numbers an algorithm holds it as, which a variable of a statechart
+        // is not, and has no form here.
+        AlgorithmValueType::Optional { elem } => holds_optional(elem),
+    }
+}
+
+/// Whether this lowering holds an optional value of `elem`
+/// ([`holds`]).
+fn holds_optional(elem: &OptionalElemType) -> bool {
+    match elem {
+        OptionalElemType::Scalar(scalar) => has_a_value_form(scalar),
+        OptionalElemType::Record { .. } => true,
     }
 }
 
@@ -909,7 +949,7 @@ pub(crate) fn lower(m: &AlgorithmModel, imports: &Imports) -> Result<String, Gen
     let options = crate::ForgeCompileOptions::default();
     let types = AlgorithmTypes::collect(m, &imports.contexts, &options)
         .map_err(|e| GenerateError::unsupported(format!("the algorithm `{}`: {e}", m.name)))?;
-    types.refuse_optional(LOWERED_DATAMODEL)?;
+    types.refuse_optional(LOWERED_DATAMODEL, &holds_optional)?;
     let mut ctx = types.type_ctx(m, &imports.contexts);
     // An integer here is exact and may be a BigInt; one leaves the function as
     // the value it is, and a statechart that takes it from a call is the one
@@ -951,6 +991,11 @@ pub(crate) fn lower(m: &AlgorithmModel, imports: &Imports) -> Result<String, Gen
         .map(|(name, alias, _)| (*name, *alias))
         .collect();
     whole_values.extend(records.keys().copied());
+    let optional_records: HashMap<&str, &str> = types
+        .optional_records
+        .iter()
+        .map(|&(name, alias, _)| (name, alias))
+        .collect();
 
     let body = Body {
         algorithm: &m.name,
@@ -959,6 +1004,7 @@ pub(crate) fn lower(m: &AlgorithmModel, imports: &Imports) -> Result<String, Gen
         return_ty,
         imports,
         records,
+        optional_records,
         buffers,
         iterable,
         whole_values,

@@ -477,15 +477,21 @@ fn generated_callee(
 /// where the algorithm is imported ([`crate::forge::static_imports`]), as is one whose
 /// enum is not the document the statechart holds the field in.
 fn plain_schema<'a>(spec: &AdapterSpec<'a>, alias: &str) -> Option<&'a EventSchemaModel> {
-    // An optional field of a number or a `bool` is held in the same optional type
-    // by the machine's record and the algorithm's, and copies as it is
-    // (docs/adr/0055); one of any other element is held by no algorithm.
+    // An optional field is held in the same optional type by the machine's record
+    // and the algorithm's, and copies as it is (docs/adr/0055), where the backend
+    // spells an algorithm's optional value of its element
+    // ([`crate::forge::generator::algorithm_optional_spelled`]): a number or a
+    // `bool` on every generated backend until its step 9.
     spec.schemas.get(alias).filter(|schema| {
         schema.fields.iter().all(|f| match &f.sce_type {
             FieldType::Scalar(ty) => record_field_copies(ty, f.max_size),
-            FieldType::Optional { elem } => {
-                crate::forge::model::AlgorithmValueType::algorithm_optional_admitted(elem)
-            }
+            FieldType::Optional { elem } => match spec.lang {
+                Some(lang) => crate::forge::generator::algorithm_optional_spelled(
+                    lang,
+                    &crate::forge::model::OptionalElemType::Scalar(elem.clone()),
+                ),
+                None => true,
+            },
         })
     })
 }
@@ -545,6 +551,11 @@ pub struct AdapterSpec<'a> {
     /// The name the adapter is declared and called by ([`StaticTarget::state_adapter_name`]).
     pub name: String,
     pub machine: &'a str,
+    /// The backend the adapter is written for, which spells an algorithm's
+    /// optional value of an element or does not
+    /// ([`crate::forge::generator::algorithm_optional_spelled`]); `None` for a
+    /// target that is no generated backend.
+    pub lang: Option<Language>,
     /// The algorithm's function, as the target calls it ([`Callee::call`]).
     pub call: String,
     pub callee: &'a StaticCallee,
@@ -760,6 +771,68 @@ pub trait StaticTarget {
     /// the generated text. `None` for a target that needs none.
     fn optional_import(&self) -> Option<String> {
         None
+    }
+    /// Whether this target lowers an optional record, `optional<record:X>`
+    /// (docs/adr/0055, step 9): a variable that starts absent, a record taken
+    /// whole into it — from a record by name, a payload, an element of a list or
+    /// what an imported algorithm returns —, `r.value.f` read where a test proves
+    /// `r` present, and a field of it written there. The target's expression
+    /// emitter answers ([`ExprTarget::lowers_optional_record`]), so the walk and
+    /// the emitter cannot disagree; a target that answers `false` refuses the
+    /// document that holds one by name, as `generate/unsupported-feature` ("an
+    /// optional record has no <language> lowering yet"). One that answers `true`
+    /// spells the hooks below beside the ones every optional value is lowered by
+    /// ([`Self::optional_type`], [`Self::optional_none`],
+    /// [`Self::optional_some`]), all handed the record's own type
+    /// ([`Self::record_type`]) as the type of the present value, and reads an
+    /// element of a list of records whole ([`Self::record_at`]).
+    fn lowers_optional_record(&self) -> bool {
+        self.expr_target().lowers_optional_record()
+    }
+    /// Whether this target spells an optional value of `elem` in the slots of an
+    /// imported algorithm and in a record it hands one (docs/adr/0055, steps 8
+    /// and 9): the one answer the generated backends give by language
+    /// ([`crate::forge::generator::algorithm_optional_spelled`]), and the
+    /// Interpreter's lowering, whose values are the objects the algorithm holds,
+    /// always.
+    fn holds_algorithm_optional(&self, elem: &crate::forge::model::OptionalElemType) -> bool {
+        match self.expr_target().language() {
+            Some(lang) => crate::forge::generator::algorithm_optional_spelled(lang, elem),
+            None => true,
+        }
+    }
+    /// The declaration the machine's own unit makes of the optional type over
+    /// the record type `present` ([`Self::record_type`]), once however many
+    /// variables hold one, after the declaration of the record itself: C11's one
+    /// struct per record. `None` for a target whose optional type is the
+    /// language's or its runtime's own, which is every other
+    /// (docs/adr/0055, step 9).
+    fn optional_record_def(&self, _present: &str) -> Option<String> {
+        None
+    }
+    /// The statement that writes `value` into the field `field` of the present
+    /// value of the optional record at `target` — the one place a record held in
+    /// an optional is changed, where a test proves it present
+    /// (docs/adr/0055, step 9): `target` is what [`Self::variable_ref`] gave, and
+    /// `field` the identifier [`Self::record_field`] gave. `None` for a target
+    /// with no spelling, which refuses the document by name.
+    fn assign_present_field(&self, _target: &str, _field: &str, _value: &str) -> Option<String> {
+        None
+    }
+    /// [`Self::assign_present_field`] for a string field of the present value,
+    /// `value` already held to its bound ([`Self::assign_string_field`]).
+    fn assign_present_string_field(
+        &self,
+        target: &str,
+        field: &str,
+        value: &str,
+    ) -> Option<String> {
+        self.assign_present_field(target, field, value)
+    }
+    /// [`Self::assign_present_field`] for a byte-string field of the present
+    /// value, `value` already held to its bound ([`Self::assign_bytes_field`]).
+    fn assign_present_bytes_field(&self, target: &str, field: &str, value: &str) -> Option<String> {
+        self.assign_present_field(target, field, value)
     }
     /// `value`, an optional value whose present value is held in `present`,
     /// with `map` applied to its present value — `map(v)` spells it for a
@@ -2657,8 +2730,12 @@ impl StaticTarget for RustTarget {
                     ));
                     arguments.push(format!("&{name}_algorithm"));
                 }
+                // An optional record is held by no generated backend yet: the call
+                // is refused by name where the adapter is asked for
+                // (docs/adr/0055, step 9).
                 AdapterParam::State {
-                    slot: StaticSlot::Scalar(_) | StaticSlot::Optional(_),
+                    slot:
+                        StaticSlot::Scalar(_) | StaticSlot::Optional(_) | StaticSlot::OptionalRecord(_),
                     ..
                 } => return None,
             }
@@ -2671,6 +2748,7 @@ impl StaticTarget for RustTarget {
             StaticSlot::Scalar(ty) if scalar_ok(ty) => (self.scalar_type(ty), "r".to_string()),
             StaticSlot::Scalar(_) => return None,
             StaticSlot::Optional(ty) => (spec.optional_type(self, ty)?, "r".to_string()),
+            StaticSlot::OptionalRecord(_) => return None,
             StaticSlot::Record(alias) => (machine_record(alias), from_algorithm(alias, "r")?),
             StaticSlot::ScalarList(ty) if scalar_ok(ty) => (
                 format!("Vec<{}>", self.scalar_type(ty)),
@@ -3210,19 +3288,25 @@ fn record_field_bounds<'a>(
     kind: fn(&SceType) -> bool,
 ) -> impl Iterator<Item = (String, u32)> + 'a {
     variables.iter().flat_map(move |v| {
-        let schema = v
-            .value_type
-            .as_ref()
-            .and_then(crate::forge::model::AlgorithmValueType::record_alias)
-            .and_then(|alias| records.get(alias));
-        // An optional field is held to its bound as its present value is, where
-        // it is present ([`OptionalPlace`]).
-        schema.into_iter().flat_map(move |schema| {
-            schema.fields.iter().filter_map(move |field| {
-                kind(field.sce_type.scalar()?)
-                    .then_some((format!("{}.{}", v.id, field.id), field.max_size?))
-            })
-        })
+        // A field of an optional record's present value is written under
+        // `<id>.value.<field>` (docs/adr/0055, step 9).
+        let mut found = Vec::new();
+        if let Some((alias, holder)) = crate::forge::type_ctx::record_holder(v) {
+            if let Some(schema) = records.get(alias) {
+                // An optional field is held to its bound as its present value is,
+                // where it is present ([`OptionalPlace`]).
+                for field in &schema.fields {
+                    let (Some(scalar), Some(bound)) = (field.sce_type.scalar(), field.max_size)
+                    else {
+                        continue;
+                    };
+                    if kind(scalar) {
+                        found.push((format!("{holder}.{}", field.id), bound));
+                    }
+                }
+            }
+        }
+        found
     })
 }
 
@@ -3287,30 +3371,80 @@ pub(crate) fn optional_not_lowered(what: &str, lang: &str) -> GenerateError {
     ))
 }
 
-/// The refusal of the first optional value of `model` that a later step of
-/// docs/adr/0055 lowers, on any target: a variable of an optional record
-/// (step 9). The rest of what a later step lowers is refused where it is
-/// judged: a child session's optional variable as a `<param>`, an algorithm's
-/// optional slot of a text, an enum or a record, a typed request's optional
-/// field. `None` for a document that holds none of them.
-fn optional_beyond_this_step(scope: &StaticScope, lang: &str) -> Option<GenerateError> {
+/// The refusal of the first optional record of `scope` (docs/adr/0055, step 9)
+/// on a target, `lang`, that does not lower one yet
+/// ([`StaticTarget::lowers_optional_record`]): a variable of one, or a call of
+/// an imported algorithm that takes or returns one. `None` for a document that
+/// holds none. The rest of what a later step lowers is refused where it is
+/// judged: a child session's optional variable as a `<param>`, a typed
+/// request's optional field.
+fn optional_record_not_lowered(scope: &StaticScope, lang: &str) -> Option<GenerateError> {
     use crate::forge::model::AlgorithmValueType;
-    let variable = scope.variables.iter().find(|v| {
+    if let Some(variable) = scope.variables.iter().find(|v| {
         v.value_type
             .as_ref()
             .and_then(AlgorithmValueType::optional_elem)
             .is_some_and(|elem| elem.record_alias().is_some())
+    }) {
+        return Some(GenerateError::unsupported(format!(
+            "<data id=\"{}\" sce:type=\"{}\">: an optional record has no {lang} lowering yet",
+            variable.id,
+            variable
+                .value_type
+                .as_ref()
+                .map(AlgorithmValueType::as_attr)
+                .unwrap_or_default()
+        )));
+    }
+    let callee = scope.callees.iter().find(|c| {
+        c.value.as_ref().is_some_and(|v| {
+            v.params
+                .iter()
+                .chain(v.ret.iter())
+                .any(|slot| matches!(slot, StaticSlot::OptionalRecord(_)))
+        })
     })?;
     Some(GenerateError::unsupported(format!(
-        "<data id=\"{}\" sce:type=\"{}\">: an optional record has no {lang} lowering yet \
-         (docs/adr/0055, step 9)",
-        variable.id,
-        variable
-            .value_type
-            .as_ref()
-            .map(AlgorithmValueType::as_attr)
-            .unwrap_or_default()
+        "`{}(…)`: an imported algorithm that takes or returns an optional record has no {lang} \
+         lowering yet",
+        callee.alias
     )))
+}
+
+/// The refusal of the first call of an imported algorithm in `scope` whose slot
+/// holds an optional value the target does not spell in an algorithm's slots yet
+/// ([`StaticTarget::holds_algorithm_optional`], docs/adr/0055, steps 8 and 9),
+/// worded as every refusal of an optional value is ([`optional_not_lowered`]).
+/// `None` when the target spells every slot of every call.
+fn algorithm_optional_not_lowered(
+    scope: &StaticScope,
+    target: &dyn StaticTarget,
+) -> Option<GenerateError> {
+    use crate::forge::model::OptionalElemType;
+    scope.callees.iter().find_map(|callee| {
+        let value = callee.value.as_ref()?;
+        value
+            .params
+            .iter()
+            .chain(value.ret.iter())
+            .find_map(|slot| match slot {
+                StaticSlot::Optional(elem)
+                    if !target
+                        .holds_algorithm_optional(&OptionalElemType::Scalar(elem.clone())) =>
+                {
+                    Some(optional_not_lowered(
+                        &format!(
+                            "`{}(…)`, a call of an imported algorithm whose slot is of type \
+                             optional<{}>",
+                            callee.alias,
+                            elem.as_attr()
+                        ),
+                        target.name(),
+                    ))
+                }
+                _ => None,
+            })
+    })
 }
 
 /// The type the present value of an optional value (docs/adr/0055) of the
@@ -3383,19 +3517,113 @@ fn optional_places(
         if let Some(elem) = value_type.optional_elem().and_then(|e| e.scalar()) {
             places.insert(var.id.clone(), place(elem, var.capacity));
         }
-        let schema = value_type
-            .record_alias()
-            .and_then(|alias| records.get(alias));
+        // An optional field of a record variable is written as `<id>.<field>`, and
+        // one of the present value of an optional record variable as
+        // `<id>.value.<field>` (docs/adr/0055, step 9).
+        let held = crate::forge::type_ctx::record_holder(var);
+        let schema = held.as_ref().and_then(|(alias, _)| records.get(*alias));
+        let holder = held.as_ref().map_or("", |(_, holder)| holder.as_str());
         for field in schema.iter().flat_map(|schema| schema.fields.iter()) {
             if let Some(elem) = field.sce_type.optional_elem() {
                 places.insert(
-                    format!("{}.{}", var.id, field.id),
+                    format!("{holder}.{}", field.id),
                     place(elem, field.max_size),
                 );
             }
         }
     }
     places
+}
+
+/// An optional record variable (docs/adr/0055, step 9), as an `<assign>` to it
+/// is lowered: the alias of the schema it holds, the schema, and the type its
+/// present value is held in on the target ([`StaticTarget::record_type`]) — what
+/// every hook of an optional value is handed as `present`.
+#[derive(Debug, Clone)]
+struct OptionalRecordPlace {
+    alias: String,
+    schema: EventSchemaModel,
+    present: String,
+}
+
+/// A `sce-static` document's optional record variables ([`OptionalRecordPlace`]),
+/// each under its id.
+type OptionalRecordPlaces = std::collections::BTreeMap<String, OptionalRecordPlace>;
+
+/// The optional record variables of `variables` ([`OptionalRecordPlaces`]).
+fn optional_record_places(
+    variables: &[crate::model::Variable],
+    records: &std::collections::BTreeMap<String, EventSchemaModel>,
+    target: &dyn StaticTarget,
+    machine: &str,
+) -> OptionalRecordPlaces {
+    variables
+        .iter()
+        .filter_map(|var| {
+            let alias = var.value_type.as_ref()?.optional_elem()?.record_alias()?;
+            let schema = records.get(alias)?.clone();
+            Some((
+                var.id.clone(),
+                OptionalRecordPlace {
+                    alias: alias.to_string(),
+                    schema,
+                    present: target.record_type(machine, alias),
+                },
+            ))
+        })
+        .collect()
+}
+
+/// The record variable and the field `location` names, when it is a field of a
+/// record variable (`last.label`) or of the present value of an optional record
+/// variable (`pick.value.count`, docs/adr/0055, step 9).
+fn field_location<'l>(location: &'l str, rewrites: &Rewrites<'_>) -> Option<(&'l str, &'l str)> {
+    if let Some(holder) = crate::forge::narrowing::present_record_of(location)
+        .filter(|holder| rewrites.optional_records.contains_key(*holder))
+    {
+        let (_, field) = location.rsplit_once('.')?;
+        return Some((holder, field));
+    }
+    location
+        .split_once('.')
+        .filter(|(var, _)| rewrites.records.contains_key(*var))
+}
+
+/// How the value a field is written holds: as it is, a text held to its bound,
+/// or a byte string held to its bound ([`write_field`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FieldValue {
+    Plain,
+    Text,
+    Bytes,
+}
+
+/// The statement that writes `value` into `field` (as [`StaticTarget::record_field`]
+/// spells it) of the record variable, or of the present value of the optional
+/// record variable, `var`, which the machine reaches as `name`: the target's own
+/// spelling of each kind of field. `None` for an optional record on a target with
+/// no spelling for one, which `lower` refuses by name before it is asked.
+fn write_field(
+    rewrites: &Rewrites<'_>,
+    var: &str,
+    name: &str,
+    field: &str,
+    value: &str,
+    kind: FieldValue,
+) -> Option<String> {
+    let target = rewrites.target;
+    if rewrites.optional_records.contains_key(var) {
+        return match kind {
+            FieldValue::Plain => target.assign_present_field(name, field, value),
+            FieldValue::Text => target.assign_present_string_field(name, field, value),
+            FieldValue::Bytes => target.assign_present_bytes_field(name, field, value),
+        };
+    }
+    Some(match kind {
+        FieldValue::Plain => target.assign_field(name, field, value),
+        FieldValue::Text => target.assign_string_field(name, field, value),
+        FieldValue::Bytes => target.assign_bytes_field(name, field, value),
+    })
 }
 
 /// The absent value of the optional value whose present value is held in
@@ -3522,10 +3750,36 @@ pub fn lower(
             ));
         }
     }
-    // What a later step of docs/adr/0055 lowers stays refused by name on every
-    // target, the ones that lower an optional value included.
-    if let Some(refusal) = optional_beyond_this_step(&scope, lang) {
+    // What a target's own step of docs/adr/0055 has not written stays refused by
+    // name, the targets that lower an optional value included: an optional
+    // record, and an optional value of an element the target does not spell in an
+    // algorithm's slots.
+    if !target.lowers_optional_record() {
+        if let Some(refusal) = optional_record_not_lowered(&scope, lang) {
+            return Err(refusal);
+        }
+    }
+    if let Some(refusal) = algorithm_optional_not_lowered(&scope, target) {
         return Err(refusal);
+    }
+    // A target that lowers an optional record spells the statement that writes a
+    // field of its present value too: asked here, where one is declared, so that a
+    // target that answered `true` and wrote no such statement is refused by name
+    // rather than left to write nothing.
+    let holds_optional_record = scope.variables.iter().any(|v| {
+        v.value_type
+            .as_ref()
+            .and_then(crate::forge::model::AlgorithmValueType::optional_elem)
+            .is_some_and(|elem| elem.record_alias().is_some())
+    });
+    if holds_optional_record
+        && target.lowers_optional_record()
+        && target.assign_present_field("", "", "").is_none()
+    {
+        return Err(optional_not_lowered(
+            "a field written through an optional record",
+            lang,
+        ));
     }
     let variables = &scope.variables;
     let schemas = model.imported_event_schemas.clone();
@@ -3666,6 +3920,7 @@ pub fn lower(
         strings: string_vars,
         bytes: bytes_vars,
         optionals: optional_places(variables, &records, target, machine),
+        optional_records: optional_record_places(variables, &records, target, machine),
         machine,
         raises_error: model.events.contains("error.execution"),
         target,
@@ -3849,11 +4104,48 @@ pub fn lower(
                 });
                 continue;
             }
+            // An optional record is held in the target's one optional type over
+            // the record's own type, declared as a record variable's is, and
+            // starts absent: a record is put into it where the machine runs
+            // (docs/adr/0055, step 9). A target that does not lower one yet was
+            // refused above.
+            if let Some(place) = rewrites.optional_records.get(&var.id) {
+                let what = format!(
+                    "<data id=\"{}\" sce:type=\"optional<record:{}>\">",
+                    var.id, place.alias
+                );
+                let record_ty = declarations.record(&place.alias, &place.schema)?;
+                declarations.optional_record_def(&record_ty);
+                let ty = target
+                    .optional_type(&record_ty)
+                    .ok_or_else(|| optional_not_lowered(&what, lang))?;
+                let init = absent_value(target, &record_ty, &what)?;
+                rewrites.note(&var.expr, var.expr_spelling.as_ref(), &init);
+                fields.push(StaticField {
+                    id: var.id.clone(),
+                    name,
+                    ty,
+                    init,
+                    published,
+                    view: None,
+                    read: None,
+                    bound: None,
+                    // A saved state holds it as `null` or as the record it holds
+                    // (docs/adr/0055, section 4): the kind names it apart from a
+                    // record, which is never absent.
+                    saved_kind: "optional",
+                    saved_type: record_ty,
+                    saved_elem: Some("record"),
+                    reader: None,
+                    holds_bytes: holds_bytes(&place.schema),
+                });
+                continue;
+            }
             // An optional value is held in the target's one optional type over
             // the type its present value is held in, which is declared as a
             // present value of it is, and starts absent or at a present value,
-            // lifted (docs/adr/0055). `optional_beyond_this_step` refused an
-            // optional record, so every place here is of a scalar.
+            // lifted (docs/adr/0055). An optional record was taken above, so
+            // every place here is of a scalar.
             if let Some(place) = rewrites.optionals.get(&var.id) {
                 let what = format!(
                     "<data id=\"{}\" sce:type=\"optional<{}>\">",
@@ -4365,6 +4657,7 @@ pub fn lower(
         let spec = AdapterSpec {
             name: target.state_adapter_name(machine, callee, coded),
             machine,
+            lang: target.expr_target().language(),
             call: target
                 .callee(callee)
                 .expect("checked when the callees were read")
@@ -4669,6 +4962,17 @@ impl<'t> TypeDeclarations<'t> {
         }
         self.optional_def(&place.present, &place.elem);
         Ok(())
+    }
+
+    /// The declaration of the optional type over the record type `present`, for a
+    /// target that declares one ([`StaticTarget::optional_record_def`]), made once
+    /// however many variables hold one (docs/adr/0055, step 9).
+    fn optional_record_def(&mut self, present: &str) {
+        if let Some(def) = self.target.optional_record_def(present) {
+            if self.declared.insert(format!("optional<{present}>")) {
+                self.type_defs.push(def);
+            }
+        }
     }
 
     /// The declaration of the optional type over `present`, of the element
@@ -5418,6 +5722,9 @@ struct Rewrites<'m> {
     /// (docs/adr/0055): what an `<assign>` to one writes the absent value of, a
     /// present value lifted into, and a text held to the bound of.
     optionals: OptionalPlaces,
+    /// The optional record variables (docs/adr/0055, step 9): what an `<assign>`
+    /// to one takes whole, and a field written through one is told by.
+    optional_records: OptionalRecordPlaces,
     machine: &'m str,
     raises_error: bool,
     target: &'m dyn StaticTarget,
@@ -6017,6 +6324,9 @@ impl StaticTarget for CppTarget {
                 StaticSlot::Scalar(_) | StaticSlot::ScalarList(_) | StaticSlot::Optional(_) => {
                     from.to_string()
                 }
+                // An optional record is held by no generated backend yet
+                // (docs/adr/0055, step 9): the type of the result above refused it.
+                StaticSlot::OptionalRecord(_) => return None,
                 StaticSlot::Record(alias) => {
                     record_of(alias, machine_record(alias), from, Crossing::FromAlgorithm)?
                 }
@@ -11347,6 +11657,12 @@ fn lower_action(
                 lower_optional_assign(action, place, ctx, renames, rewrites)?;
                 return Ok(reads_payload);
             }
+            // ... and a place of an optional record takes a whole record, or
+            // `null` (docs/adr/0055, step 9).
+            if let Some(place) = rewrites.optional_records.get(action.location.trim()) {
+                lower_optional_record_assign(action, place, ctx, renames, rewrites)?;
+                return Ok(reads_payload);
+            }
             let slot = crate::forge::expr::infer_expr_type(&action.location, ctx)
                 .unwrap_or(InferredType::Unknown);
             let location = action.location.trim();
@@ -11409,9 +11725,7 @@ fn lower_action(
                 };
             }
             let construct = format!("<assign location='{location}'>");
-            let record_field = location
-                .split_once('.')
-                .filter(|(var, _)| rewrites.records.contains_key(*var));
+            let record_field = field_location(location, rewrites);
             // A target that rewrites the document itself writes a record's
             // field as an `<assign>` of the whole record, changed in that
             // field: its location and its value are both the walk's to note.
@@ -11433,20 +11747,17 @@ fn lower_action(
                     // A string field is written as the bound it was held to
                     // says, which a target that holds it in a buffer copies
                     // into it.
-                    let is_string = rewrites.strings.contains_key(location);
-                    let is_bytes = rewrites.bytes.contains_key(location);
+                    let kind = if rewrites.strings.contains_key(location) {
+                        FieldValue::Text
+                    } else if rewrites.bytes.contains_key(location) {
+                        FieldValue::Bytes
+                    } else {
+                        FieldValue::Plain
+                    };
                     statement(
                         &value,
                         slot,
-                        &|v| {
-                            if is_string {
-                                target.assign_string_field(name, &field, v)
-                            } else if is_bytes {
-                                target.assign_bytes_field(name, &field, v)
-                            } else {
-                                target.assign_field(name, &field, v)
-                            }
-                        },
+                        &|v| write_field(rewrites, var, name, &field, v, kind).unwrap_or_default(),
                         construct,
                     )
                 }
@@ -12062,9 +12373,7 @@ fn lower_optional_assign(
             }
         }
     };
-    let record_field = location
-        .split_once('.')
-        .filter(|(var, _)| rewrites.records.contains_key(*var));
+    let record_field = field_location(&location, rewrites);
     // A target that rewrites the document itself writes a record's field as an
     // `<assign>` of the whole record, changed in that field.
     let rewritten = record_field.and_then(|(var, field)| {
@@ -12079,11 +12388,15 @@ fn lower_optional_assign(
         None => rewrites.note(&action.expr, action.spellings.get("expr"), &value.text),
     }
     let write = |v: &str| match record_field {
-        Some((var, field)) => target.assign_field(
+        Some((var, field)) => write_field(
+            rewrites,
+            var,
             renames.get(var).copied().unwrap_or(var),
             &target.record_field(field.trim()),
             v,
-        ),
+            FieldValue::Plain,
+        )
+        .unwrap_or_default(),
         None => target.assign(
             renames
                 .get(location.as_str())
@@ -12098,6 +12411,110 @@ fn lower_optional_assign(
                 &write,
                 &value.text,
                 optional,
+                &execution_failure(rewrites, &construct),
+            ),
+            true,
+        )
+    } else {
+        (write(&value.text), false)
+    };
+    Ok(())
+}
+
+/// An `<assign>` to `place`, an optional record variable (docs/adr/0055, step 9),
+/// in place: the whole value it takes, by the one rule every target writes it by.
+/// The literal `null` is the absent value ([`StaticTarget::optional_none`]); a
+/// record is lifted into the present value ([`StaticTarget::optional_some`]) —
+/// one by the name of a record variable or a loop's record item, the payload of
+/// the event the transition is on made whole ([`payload_record_value`]), an element
+/// of a list of its schema read whole at an index ([`StaticTarget::record_at`]),
+/// or what an imported algorithm returns as a record — and an optional record
+/// is written as it is: the name of another optional record variable, or what an
+/// imported algorithm returns as one. Which of these the judge admitted
+/// ([`crate::forge::static_datamodel`]) is not asked again.
+fn lower_optional_record_assign(
+    action: &mut Action,
+    place: &OptionalRecordPlace,
+    ctx: &crate::forge::types::TypeCtx<'_>,
+    renames: &HashMap<&str, &str>,
+    rewrites: &Rewrites<'_>,
+) -> Result<(), GenerateError> {
+    let target = rewrites.target;
+    let lang = target.name();
+    let location = action.location.trim().to_string();
+    let construct = format!("<assign location='{location}'>");
+    let lower = |text: &str, slot: InferredType| {
+        rewrites.owned(text, ctx, renames, slot).map_err(|r| {
+            GenerateError::unsupported(format!("`{text}` has no {lang} lowering: {}", r.error))
+        })
+    };
+    // A record lifted into the present value of the optional record.
+    let lifted = |record: Receiving| -> Result<Receiving, GenerateError> {
+        Ok(Receiving {
+            text: present_value(target, &place.present, &record.text, &construct)?,
+            can_fail: record.can_fail,
+        })
+    };
+    let written = action.expr.trim().to_string();
+    let value = if is_null_literal(&written) {
+        Receiving {
+            text: absent_value(target, &place.present, &construct)?,
+            can_fail: false,
+        }
+    } else if written == crate::forge::event_schema_check::EVENT_DATA_PATH {
+        lifted(payload_record_value(
+            rewrites.machine,
+            &place.alias,
+            &place.schema,
+            target,
+            &lower,
+        )?)?
+    } else if let Some((list, index)) = indexed_element(&written) {
+        let lowered = lower(index, InferredType::Unknown)?;
+        let named = renames.get(list).copied().unwrap_or(list);
+        let element = target.record_at(named, &lowered.text).ok_or_else(|| {
+            optional_not_lowered(
+                &format!("{construct}: an element of a list of records taken whole"),
+                lang,
+            )
+        })?;
+        lifted(Receiving {
+            text: target.record_copy(&element, &place.schema),
+            can_fail: true,
+        })?
+    } else if rewrites.optional_records.contains_key(written.as_str()) {
+        // Another optional record, absent or present, is written as it is.
+        lower(&written, InferredType::Unknown)?
+    } else {
+        let value = lower(&written, InferredType::Unknown)?;
+        // What an imported algorithm answers as an optional record is optional
+        // already; any other record is a present value of it.
+        let optional_already = matches!(
+            rewrites.whole_state_call(&written),
+            Some((_, StaticSlot::OptionalRecord(_)))
+        );
+        if optional_already {
+            value
+        } else {
+            lifted(Receiving {
+                text: target.record_copy(&value.text, &place.schema),
+                can_fail: value.can_fail,
+            })?
+        }
+    };
+    rewrites.note(&action.expr, action.spellings.get("expr"), &value.text);
+    let name = renames
+        .get(location.as_str())
+        .copied()
+        .unwrap_or(location.as_str());
+    let write = |v: &str| target.assign(name, v);
+    let optional_ty = target.optional_type(&place.present).unwrap_or_default();
+    (action.native_code, action.native_fails) = if value.can_fail {
+        (
+            target.receiving_write_of(
+                &write,
+                &value.text,
+                &optional_ty,
                 &execution_failure(rewrites, &construct),
             ),
             true,

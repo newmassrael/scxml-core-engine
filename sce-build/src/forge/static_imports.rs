@@ -230,24 +230,18 @@ fn value_signature(
         // string the schema bounds is held within the same bound on both sides, and an
         // enum field crosses by the declared name of its variant.
         for field in &fields {
-            // An optional field of a number or a `bool` is held in the same
-            // optional type on both sides, and copies as it is (docs/adr/0055);
-            // one of another element is held by a statechart and no algorithm.
+            // An optional field is held in the same optional type on both sides,
+            // and copies as it is (docs/adr/0055); the present value of an optional
+            // value of an enum crosses by the declared name of its variant, as an
+            // enum field does.
             let ty = match &field.ty {
                 FieldType::Scalar(ty) => ty,
-                FieldType::Optional { elem }
-                    if AlgorithmValueType::algorithm_optional_admitted(elem) =>
-                {
-                    continue
-                }
-                FieldType::Optional { .. } => {
-                    return Err(format!(
-                        "its record `{alias}` has the field `{}` of type {}, and an \
-                         algorithm holds an optional value of a number or a bool only \
-                         (docs/adr/0055)",
-                        field.id,
-                        field.ty.as_attr()
-                    ))
+                FieldType::Optional { elem } => {
+                    if let SceType::Enum(reference) = elem {
+                        let what = format!("the field `{}` of its record `{alias}`", field.id);
+                        crossable_enum(&what, &reference.alias, field.enum_document.as_ref())?;
+                    }
+                    continue;
                 }
             };
             if crate::forge::static_lowering::record_field_copies(ty, field.max_size) {
@@ -326,21 +320,33 @@ fn value_signature(
             AlgorithmValueType::List {
                 elem: ListElemType::Record { alias },
             } => Ok(StaticSlot::RecordList(record(alias)?)),
-            // A value that may be absent, of a number or a `bool`: the same type
-            // on both sides, handed over and taken back as it is (docs/adr/0055).
+            // A value that may be absent, of a number, a `bool` or a text: the same
+            // type on both sides, handed over and taken back as it is
+            // (docs/adr/0055).
             AlgorithmValueType::Optional {
-                elem: OptionalElemType::Scalar(t),
-            } if AlgorithmValueType::algorithm_optional_admitted(t) => {
-                Ok(StaticSlot::Optional(t.clone()))
-            }
-            // The algorithm's own reader refuses an optional slot of any other
-            // element, so an algorithm that declares one never reaches here;
-            // were it to, it is refused by name.
-            AlgorithmValueType::Optional { .. } => Err(format!(
-                "its {name} is of type {}, and an algorithm holds an optional value of a \
-                 number or a bool only (docs/adr/0055)",
+                elem: OptionalElemType::Scalar(SceType::Enum(_)),
+            } => Err(format!(
+                "its {name} is of type {}, and a call crosses a value of an enum by the declared \
+                 name of its variant, which a statechart does not read through an optional \
+                 value yet (docs/adr/0055)",
                 ty.as_attr()
             )),
+            AlgorithmValueType::Optional {
+                elem: OptionalElemType::Scalar(SceType::Bytes),
+            } => Err(format!(
+                "its {name} is of type {}, and a byte string an algorithm holds is not the one \
+                 a statechart's variable holds, so no call crosses an optional one \
+                 (docs/adr/0055)",
+                ty.as_attr()
+            )),
+            AlgorithmValueType::Optional {
+                elem: OptionalElemType::Scalar(t),
+            } => Ok(StaticSlot::Optional(t.clone())),
+            // An optional record is named, as a record is, by the alias the
+            // statechart imports the same schema under (docs/adr/0055, step 9).
+            AlgorithmValueType::Optional {
+                elem: OptionalElemType::Record { alias },
+            } => Ok(StaticSlot::OptionalRecord(record(alias)?)),
         }
     };
     let params = signature

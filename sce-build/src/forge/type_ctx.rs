@@ -219,11 +219,17 @@ pub enum StaticSlot {
     ScalarList(SceType),
     /// `list<record:<alias>>`.
     RecordList(String),
-    /// `optional<T>` over a fixed-width number or a `bool` (docs/adr/0055): a
-    /// value the statechart hands over as it holds one — an optional variable,
+    /// `optional<T>` over a fixed-width number, a `bool` or a text (docs/adr/0055):
+    /// a value the statechart hands over as it holds one — an optional variable,
     /// `null`, or a value of `T`, lifted — and takes back into an optional
     /// variable. The same type on both sides, so it crosses as it is.
     Optional(SceType),
+    /// `optional<record:<alias>>` (docs/adr/0055, step 9), named by the alias the
+    /// STATECHART imports the schema under: a record the statechart holds in a
+    /// variable of its own, passed by the name of that variable — an optional
+    /// record, or a record, which is lifted — or by `null`, and taken back whole
+    /// into an optional record variable.
+    OptionalRecord(String),
 }
 
 impl StaticSlot {
@@ -683,22 +689,37 @@ fn static_record_paths<'v>(
             }
             continue;
         }
-        let Some(schema) = var
-            .value_type
-            .as_ref()
-            .and_then(AlgorithmValueType::record_alias)
-            .and_then(|alias| records.get(alias))
-        else {
+        let Some((alias, holder)) = record_holder(var) else {
+            continue;
+        };
+        let Some(schema) = records.get(alias) else {
             continue;
         };
         for field in &schema.fields {
             paths.push((
-                format!("{}.{}", var.id, field.id),
+                format!("{holder}.{}", field.id),
                 InferredType::of_field(&field.sce_type),
             ));
         }
     }
     paths
+}
+
+/// The alias of the schema a variable holds a record of, and the path the
+/// fields of that record are read under: `<id>` for a record variable, and
+/// `<id>.value` for an optional record, whose fields are those of its present
+/// value (docs/adr/0055, step 9). `None` for any other variable.
+pub(crate) fn record_holder(var: &crate::model::Variable) -> Option<(&str, String)> {
+    match var.value_type.as_ref()? {
+        AlgorithmValueType::Record { alias } => Some((alias.as_str(), var.id.clone())),
+        AlgorithmValueType::Optional {
+            elem: OptionalElemType::Record { alias },
+        } => Some((
+            alias.as_str(),
+            crate::forge::static_enum::present_value_path(&var.id),
+        )),
+        _ => None,
+    }
 }
 
 /// What stands between a list's name and a field's in the path an indexed read
@@ -733,17 +754,15 @@ fn static_record_string_bounds<'v>(
             }
             continue;
         }
-        let Some(schema) = var
-            .value_type
-            .as_ref()
-            .and_then(AlgorithmValueType::record_alias)
-            .and_then(|alias| records.get(alias))
-        else {
+        let Some((alias, holder)) = record_holder(var) else {
+            continue;
+        };
+        let Some(schema) = records.get(alias) else {
             continue;
         };
         for field in &schema.fields {
             if let Some(bound) = text_field_bound(field) {
-                bounds.push((format!("{}.{}", var.id, field.id), bound));
+                bounds.push((format!("{holder}.{}", field.id), bound));
             }
         }
     }
@@ -871,6 +890,9 @@ pub struct StaticScope {
     record_paths: Vec<(String, InferredType)>,
     /// The bound of each string field of those ([`static_record_string_bounds`]).
     record_string_bounds: Vec<(String, usize)>,
+    /// `<id>.value` of each optional record variable (docs/adr/0055, step 9): the
+    /// closed record its present value's fields are read under.
+    optional_record_values: Vec<String>,
     /// Every imported callee, an algorithm or a function of another kind
     /// ([`StaticCallee`]), callable as `Alias(args)`.
     pub callees: Vec<StaticCallee>,
@@ -909,6 +931,12 @@ pub(crate) fn named_limits<'n>(
 /// machine, `p` the payload of the event the transition is on (`_event.data`), `i` the
 /// item of a `<foreach>` over records.
 pub const STATE_CODES: [char; 3] = ['v', 'p', 'i'];
+
+/// How an argument of an optional record slot can be held, beside
+/// [`STATE_CODES`]: `n` the literal `null`, which holds no variable and no
+/// value, and is spelled as the absent value the slot's type has (docs/adr/0055,
+/// step 9).
+pub const OPTIONAL_RECORD_CODES: [char; 4] = ['v', 'p', 'i', 'n'];
 
 /// The names the arguments of a call of an algorithm with state in a slot take in the
 /// expression a lowering reads instead of the one the author wrote (docs/SCE_ACCEPTED_SUBSET.md
@@ -989,15 +1017,19 @@ fn value_func_sig(callee: &StaticCallee) -> Option<FuncSig> {
         .map(|slot| match slot {
             StaticSlot::Scalar(t) => InferredType::from_sce_type(t),
             StaticSlot::Optional(t) => optional(t),
-            StaticSlot::Record(_) | StaticSlot::ScalarList(_) | StaticSlot::RecordList(_) => {
-                InferredType::Unknown
-            }
+            StaticSlot::Record(_)
+            | StaticSlot::OptionalRecord(_)
+            | StaticSlot::ScalarList(_)
+            | StaticSlot::RecordList(_) => InferredType::Unknown,
         })
         .collect();
     let ret = match value.ret.as_ref()? {
         StaticSlot::Scalar(t) => InferredType::from_sce_type(t),
         StaticSlot::Optional(t) => optional(t),
         StaticSlot::Record(_) => InferredType::Unknown,
+        StaticSlot::OptionalRecord(_) => {
+            InferredType::Optional(crate::forge::types::OptionalElem::Record)
+        }
         StaticSlot::ScalarList(t) => InferredType::List(crate::forge::types::ListElem::of(t)?),
         StaticSlot::RecordList(_) => InferredType::List(crate::forge::types::ListElem::Record),
     };
@@ -1019,6 +1051,7 @@ fn state_code_combinations(value: &StaticValueSignature) -> Vec<Vec<char>> {
     for slot in value.params.iter().filter(|s| s.is_state()) {
         let options: &[char] = match slot {
             StaticSlot::Record(_) => &STATE_CODES,
+            StaticSlot::OptionalRecord(_) => &OPTIONAL_RECORD_CODES,
             _ => &['v'],
         };
         combos = combos
@@ -1050,6 +1083,16 @@ impl StaticScope {
         let record_paths = static_record_paths(variables.iter(), &model.imported_records);
         let record_string_bounds =
             static_record_string_bounds(variables.iter(), &model.imported_records);
+        let optional_record_values = variables
+            .iter()
+            .filter(|v| {
+                v.value_type
+                    .as_ref()
+                    .and_then(AlgorithmValueType::optional_elem)
+                    .is_some_and(|elem| elem.record_alias().is_some())
+            })
+            .map(|v| crate::forge::static_enum::present_value_path(&v.id))
+            .collect();
         let limits = named_limits(
             variables
                 .iter()
@@ -1080,6 +1123,7 @@ impl StaticScope {
             variables,
             record_paths,
             record_string_bounds,
+            optional_record_values,
             callees,
             state_calls,
             limits,
@@ -1109,12 +1153,19 @@ impl StaticScope {
     }
 
     /// Whether `callee` returns a record or a list: a value that is the right side of
-    /// an assignment to a variable of its type and nothing else.
+    /// an assignment to a variable of its type and nothing else. An optional record
+    /// is one too (docs/adr/0055, step 9): taken whole into an optional record
+    /// variable.
     pub fn returns_state(callee: &StaticCallee) -> bool {
         callee.value.as_ref().is_some_and(|v| {
             matches!(
                 v.ret,
-                Some(StaticSlot::Record(_) | StaticSlot::ScalarList(_) | StaticSlot::RecordList(_))
+                Some(
+                    StaticSlot::Record(_)
+                        | StaticSlot::OptionalRecord(_)
+                        | StaticSlot::ScalarList(_)
+                        | StaticSlot::RecordList(_)
+                )
             )
         })
     }
@@ -1187,6 +1238,30 @@ impl StaticScope {
                 .and_then(AlgorithmValueType::list_elem)
         };
         match (slot, shape) {
+            // An optional record takes `null`, an optional record variable of its
+            // schema, and a record of its schema as a present value lifted
+            // (docs/adr/0055, step 9): the three ways a record is held that are not
+            // a record slot's own are an optional variable and the literal.
+            (StaticSlot::OptionalRecord(_), ArgShape::Null) => Ok('n'),
+            (StaticSlot::OptionalRecord(alias), shape) => {
+                if let ArgShape::Name(name) = shape {
+                    let held = variable(name)
+                        .and_then(|v| v.value_type.as_ref())
+                        .and_then(AlgorithmValueType::optional_elem)
+                        .and_then(OptionalElemType::record_alias);
+                    match held {
+                        Some(held) if held == alias => return Ok('v'),
+                        Some(held) => {
+                            return Err(format!(
+                                "`{name}` is an optional record of `{held}`, and the algorithm \
+                                 takes an optional record of `{alias}`"
+                            ))
+                        }
+                        None => {}
+                    }
+                }
+                self.classify_state_arg(&StaticSlot::Record(alias.clone()), shape, context)
+            }
             (StaticSlot::Record(alias), ArgShape::Name(name)) => {
                 if let Some(var) = variable(name) {
                     return match var
@@ -1346,6 +1421,10 @@ impl StaticScope {
         self.record_string_bounds
             .iter()
             .filter(|(path, _)| !path.contains(INDEXED_ELEMENT))
+            // The field of an optional record's present value is read through a
+            // path of three names, `<id>.value.<field>`, which no target holds in
+            // a buffer of its own yet (docs/adr/0055, step 9).
+            .filter(|(path, _)| path.matches('.').count() == 1)
             .filter_map(|(path, _)| path.split_once('.'))
     }
 
@@ -1444,6 +1523,12 @@ impl StaticScope {
         let mut ctx = static_statechart(self.variables.iter(), paths, enums);
         for (path, bound) in &self.record_string_bounds {
             ctx.insert_string_capacity(path.as_str(), *bound);
+        }
+        // The present value of an optional record is a closed record of the
+        // schema's fields (`paths` types each as `<id>.value.<field>`), so a
+        // member it does not declare is `expression/unknown-member`.
+        for name in &self.optional_record_values {
+            ctx.insert_record(name.as_str(), RecordShape::Closed);
         }
         // What `_x.limits.<name>` reads (`_x` is the system variable a session
         // reserves for what a platform adds): the bounds the statechart names.

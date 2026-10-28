@@ -560,15 +560,49 @@ impl RecordImport {
             .any(|f| matches!(f.ty.present_type(), SceType::String))
     }
 
-    /// The first field that may be absent and is of an element no algorithm
-    /// holds an optional value of — a text or a value of an enum
-    /// ([`AlgorithmValueType::algorithm_optional_admitted`], docs/adr/0055) —
-    /// if any: what an algorithm that holds the record is refused by.
-    pub fn first_unheld_optional_field(&self) -> Option<&RecordField> {
-        self.fields.iter().find(|f| {
-            f.ty.optional_elem()
-                .is_some_and(|elem| !AlgorithmValueType::algorithm_optional_admitted(elem))
-        })
+    /// The first field that may be absent and is of an element `spelled` says the
+    /// backend holds no optional value of in an algorithm's record — a text or a
+    /// value of an enum while a backend spells only a number and a `bool`
+    /// ([`algorithm_optional_spelled`], docs/adr/0055) — if any: what an
+    /// algorithm that holds the record is refused by on that backend.
+    pub fn first_unheld_optional_field(
+        &self,
+        spelled: &dyn Fn(&SceType) -> bool,
+    ) -> Option<&RecordField> {
+        self.fields
+            .iter()
+            .find(|f| f.ty.optional_elem().is_some_and(|elem| !spelled(elem)))
+    }
+}
+
+/// Whether the backend `lang` spells an optional value of `elem` in what an
+/// algorithm holds: a parameter, a return, a local, and a field of a record it
+/// reads or returns (docs/adr/0055, steps 8 and 9). The reader admits every
+/// element a statechart's variable holds one of, and the Interpreter's lowering
+/// spells them all but a byte string; each generated backend spells the elements
+/// its step of the ADR has written, and refuses one that is not yet by name,
+/// where it renders it, as `generate/unsupported-feature` ("an optional value has
+/// no <language> lowering yet"). A backend's step adds the elements it spells to
+/// its own arm, and no other backend's.
+pub(crate) fn algorithm_optional_spelled(
+    lang: crate::generator::Language,
+    elem: &OptionalElemType,
+) -> bool {
+    use crate::generator::Language;
+    // What every backend spells in an algorithm since step 8: a fixed-width
+    // number and a `bool`, whose present value each holds as the value itself.
+    let number_or_bool = matches!(
+        elem,
+        OptionalElemType::Scalar(ty) if AlgorithmValueType::list_elem_admitted(ty)
+    );
+    match lang {
+        Language::Rust => number_or_bool,
+        Language::Kotlin => number_or_bool,
+        Language::Cpp => number_or_bool,
+        Language::Go => number_or_bool,
+        Language::Python => number_or_bool,
+        Language::C11 => number_or_bool,
+        Language::Swift => number_or_bool,
     }
 }
 
@@ -2803,13 +2837,13 @@ fn render_event_schema(
 ) -> Result<String, ForgeError> {
     // A field that may be absent (docs/adr/0055) is held in the backend's
     // optional type over its present value's where an algorithm's record holds
-    // one, a number or a `bool` ([`AlgorithmValueType::algorithm_optional_admitted`]),
-    // the struct an algorithm's record is. One of another element has no carrier
-    // in this struct yet: refused by name before a field is spelled.
+    // one on that backend ([`algorithm_optional_spelled`]), the struct an
+    // algorithm's record is. One of another element has no carrier in this struct
+    // yet: refused by name before a field is spelled.
     if let Some(field) = m.fields.iter().find(|f| {
-        f.sce_type
-            .optional_elem()
-            .is_some_and(|elem| !AlgorithmValueType::algorithm_optional_admitted(elem))
+        f.sce_type.optional_elem().is_some_and(|elem| {
+            !algorithm_optional_spelled(_lang, &OptionalElemType::Scalar(elem.clone()))
+        })
     }) {
         return Err(crate::forge::static_lowering::optional_not_lowered(
             &format!(
@@ -27502,24 +27536,34 @@ fn algorithm_format_param(l: &LangCtx, name: &str, ty: &SceType) -> String {
 /// ([`optional_of`]), and on C11 the struct `sce/forge/optional.h` declares for
 /// the element ([`crate::forge::static_lowering::c11_optional_type`]): the
 /// types a statechart's variable of the same element is held in, so a call
-/// hands one over as it is. The reader admits a number or a `bool` alone
-/// ([`AlgorithmValueType::algorithm_optional_admitted`]), which every backend
-/// names.
+/// hands one over as it is. The reader admits every element a statechart's
+/// variable holds one of; the backend spells the ones its step of the ADR has
+/// written ([`algorithm_optional_spelled`]) and refuses the others by name,
+/// as `generate/unsupported-feature`, where an algorithm's slot or local
+/// declares one.
 fn algorithm_optional_type(l: &LangCtx, elem: &OptionalElemType) -> Result<String, ForgeError> {
+    if !algorithm_optional_spelled(l.lang, elem) {
+        return Err(crate::forge::static_lowering::optional_not_lowered(
+            &format!(
+                "an algorithm's slot or local of type optional<{}>",
+                elem.as_attr()
+            ),
+            l.lang.canonical_name(),
+        )
+        .into());
+    }
     let refused = || -> ForgeError {
         GenerateError::InvalidConfig(format!(
-            "an algorithm's optional<{}> reached the renderer, which the algorithm's reader \
-             refuses (docs/adr/0055)",
-            elem.as_attr()
+            "an algorithm's optional<{}> reached the renderer of {}, which spells it in no \
+             type (docs/adr/0055)",
+            elem.as_attr(),
+            l.lang.canonical_name()
         ))
         .into()
     };
     let OptionalElemType::Scalar(ty) = elem else {
         return Err(refused());
     };
-    if !AlgorithmValueType::algorithm_optional_admitted(ty) {
-        return Err(refused());
-    }
     let present = l.type_name(ty);
     l.optional_of(&present)
         .or_else(|| match l.lang {
@@ -27933,6 +27977,50 @@ fn record_locals(
             }
         }
     }
+    walk(body, &mut out);
+    out
+}
+
+/// Every `optional<record:<alias>>` local of `body` — the name and the alias —
+/// at any depth (docs/adr/0055, step 9). A local of this type starts absent and
+/// is a statement of its own kind ([`AlgorithmStmt::Var`]), whose type
+/// [`record_locals`] does not read.
+fn optional_record_locals(body: &[AlgorithmStmt]) -> Vec<(&str, &str)> {
+    fn walk<'b>(stmts: &'b [AlgorithmStmt], out: &mut Vec<(&'b str, &'b str)>) {
+        for s in stmts {
+            match s {
+                AlgorithmStmt::Var { name, sce_type, .. } => {
+                    if let Some(alias) = sce_type
+                        .optional_elem()
+                        .and_then(OptionalElemType::record_alias)
+                    {
+                        out.push((name.as_str(), alias));
+                    }
+                }
+                AlgorithmStmt::If {
+                    then_body,
+                    else_body,
+                    ..
+                } => {
+                    walk(then_body, out);
+                    if let Some(eb) = else_body {
+                        walk(eb, out);
+                    }
+                }
+                AlgorithmStmt::While { body, .. } | AlgorithmStmt::Foreach { body, .. } => {
+                    walk(body, out)
+                }
+                AlgorithmStmt::RecordVar { .. }
+                | AlgorithmStmt::RecordFromCall { .. }
+                | AlgorithmStmt::Assign { .. }
+                | AlgorithmStmt::Append { .. }
+                | AlgorithmStmt::Return { .. }
+                | AlgorithmStmt::Call { .. }
+                | AlgorithmStmt::Require { .. } => {}
+            }
+        }
+    }
+    let mut out = Vec::new();
     walk(body, &mut out);
     out
 }
@@ -31384,6 +31472,14 @@ pub(crate) struct AlgorithmTypes<'a> {
     /// Every `record:<alias>` parameter and local — its name, the alias, and
     /// the event-schema import that types it (SCE_FORGE.md §4.12).
     pub(crate) records: Vec<(&'a str, &'a str, &'a RecordImport)>,
+    /// Every `optional<record:<alias>>` parameter and local — its name, the
+    /// alias, and the event-schema import that types it (docs/adr/0055, step 9).
+    /// The fields of its present value are read as `<name>.value.<field>`, and
+    /// the body holds it whole, by name, never as a record of its own.
+    pub(crate) optional_records: Vec<(&'a str, &'a str, &'a RecordImport)>,
+    /// `"<name>.value"` of each optional record: the closed record
+    /// [`AlgorithmTypes::type_ctx`] declares its present value's fields under.
+    optional_record_values: Vec<String>,
     /// The foreach items over a list of records: a record the body reads
     /// through a borrow of the caller's element and does not own, which a
     /// backend that holds a text-bearing record by clone rather than by copy
@@ -31645,22 +31741,66 @@ impl<'a> AlgorithmTypes<'a> {
             }
             records.push((*name, *alias, record));
         }
-        let limits = crate::forge::type_ctx::named_limits(
-            body_limits(&m.body)
-                .into_iter()
-                .chain(
-                    m.signature
-                        .returns_limit
-                        .as_deref()
-                        .zip(m.signature.returns_max_size),
-                )
-                .chain(records.iter().flat_map(|(_, _, record)| {
-                    record
-                        .fields
-                        .iter()
-                        .filter_map(|f| Some((f.limit.as_deref()?, f.max_size?)))
-                })),
-        );
+        // docs/adr/0055, step 9: every `optional<record:<alias>>` parameter and
+        // local holds the record its schema describes when it is present. Its
+        // fields are the members of `<name>.value`, typed as the schema types
+        // them, and read only where a test proves it present.
+        let optional_bindings = m
+            .signature
+            .params
+            .iter()
+            .filter_map(|p| {
+                p.sce_type
+                    .optional_elem()
+                    .and_then(OptionalElemType::record_alias)
+                    .map(|alias| {
+                        (
+                            p.name.as_str(),
+                            alias,
+                            p.type_spelling.as_ref(),
+                            format!("<sce:param name=\"{}\">", p.name),
+                        )
+                    })
+            })
+            .chain(
+                optional_record_locals(&m.body)
+                    .into_iter()
+                    .map(|(name, alias)| (name, alias, None, format!("<sce:var name=\"{name}\">"))),
+            )
+            .collect::<Vec<_>>();
+        let mut optional_records = Vec::new();
+        let mut optional_record_values = Vec::new();
+        for (name, alias, spelling, element) in &optional_bindings {
+            let record = resolve_record(imports, alias, *spelling, element)?;
+            for field in &record.fields {
+                let path = format!("{name}.value.{}", field.id);
+                if matches!(field.ty, FieldType::Scalar(SceType::String)) {
+                    text_members.push(path.clone());
+                }
+                record_members.push((path, field.ty.clone()));
+            }
+            optional_record_values.push(format!("{name}.value"));
+            optional_records.push((*name, *alias, record));
+        }
+        let limits =
+            crate::forge::type_ctx::named_limits(
+                body_limits(&m.body)
+                    .into_iter()
+                    .chain(
+                        m.signature
+                            .returns_limit
+                            .as_deref()
+                            .zip(m.signature.returns_max_size),
+                    )
+                    .chain(records.iter().chain(optional_records.iter()).flat_map(
+                        |(_, _, record)| {
+                            record
+                                .fields
+                                .iter()
+                                .filter_map(|f| Some((f.limit.as_deref()?, f.max_size?)))
+                        },
+                    )),
+            );
 
         Ok(Self {
             env,
@@ -31670,6 +31810,8 @@ impl<'a> AlgorithmTypes<'a> {
             bytes_buffers,
             record_items,
             records,
+            optional_records,
+            optional_record_values,
             borrowed_records,
             members,
             record_members,
@@ -31715,17 +31857,54 @@ impl<'a> AlgorithmTypes<'a> {
                 .any(|(_, ty)| ty.optional_elem().is_some())
     }
 
+    /// Every record parameter, local and loop item by name, with the alias of the
+    /// schema that types it.
+    pub(crate) fn record_aliases(&self) -> Vec<(String, String)> {
+        self.records
+            .iter()
+            .map(|&(name, alias, _)| (name.to_string(), alias.to_string()))
+            .collect()
+    }
+
+    /// Every optional record parameter and local by name, with the alias of the
+    /// schema that types it (docs/adr/0055, step 9).
+    pub(crate) fn optional_record_aliases(&self) -> Vec<(String, String)> {
+        self.optional_records
+            .iter()
+            .map(|&(name, alias, _)| (name.to_string(), alias.to_string()))
+            .collect()
+    }
+
     /// The refusal of a backend, `lang`, when a record the body holds has a
-    /// field that may be absent and is of an element no algorithm holds an
-    /// optional value of: a text or a value of an enum
-    /// ([`AlgorithmValueType::algorithm_optional_admitted`], docs/adr/0055). The
-    /// body was judged before any backend was asked; this refuses it by name
-    /// rather than render it with no type that holds the absence. One wording
-    /// for every backend and the Interpreter.
-    pub(crate) fn refuse_optional(&self, lang: &str) -> Result<(), GenerateError> {
+    /// field that may be absent and is of an element `spelled` says the backend
+    /// holds no optional value of in an algorithm: a text or a value of an enum
+    /// while a backend spells only a number and a `bool`
+    /// ([`algorithm_optional_spelled`], docs/adr/0055). The body was judged
+    /// before any backend was asked; this refuses it by name rather than render
+    /// it with no type that holds the absence. One wording for every backend and
+    /// the Interpreter.
+    pub(crate) fn refuse_optional(
+        &self,
+        lang: &str,
+        spelled: &dyn Fn(&OptionalElemType) -> bool,
+    ) -> Result<(), GenerateError> {
+        // An optional record parameter or local (docs/adr/0055, step 9) is held in
+        // no type on a backend that does not spell one yet.
+        if let Some(&(name, alias, _)) = self.optional_records.iter().find(|&&(_, alias, _)| {
+            !spelled(&OptionalElemType::Record {
+                alias: alias.to_string(),
+            })
+        }) {
+            return Err(crate::forge::static_lowering::optional_not_lowered(
+                &format!("`{name}`, an optional<record:{alias}> of an algorithm"),
+                lang,
+            ));
+        }
         let held = self.records.iter().find_map(|&(name, alias, record)| {
             record
-                .first_unheld_optional_field()
+                .first_unheld_optional_field(&|elem: &SceType| {
+                    spelled(&OptionalElemType::Scalar(elem.clone()))
+                })
                 .map(|field| (name, alias, field))
         });
         match held {
@@ -31785,6 +31964,12 @@ impl<'a> AlgorithmTypes<'a> {
             // The name as a whole value: what a call passes to an algorithm
             // whose parameter is this record (SCE_FORGE.md §4.12).
             type_ctx.insert_var(name, InferredType::Record(record.id));
+        }
+        // The present value of an optional record is a closed record of the
+        // schema's fields, read as `<name>.value.<field>` where a test proves
+        // the record present (docs/adr/0055, step 9).
+        for name in &self.optional_record_values {
+            type_ctx.insert_record(name.as_str(), RecordShape::Closed);
         }
         for (name, ty) in &self.members {
             type_ctx.insert_var(name.as_str(), InferredType::from_sce_type(ty));
@@ -32031,7 +32216,9 @@ fn render_algorithm(
     // The names the body's expressions are typed against — collected once,
     // for the renderer and the integer arithmetic contract alike.
     let types = AlgorithmTypes::collect(m, imports, options)?;
-    types.refuse_optional(lang.canonical_name())?;
+    types.refuse_optional(lang.canonical_name(), &|elem| {
+        algorithm_optional_spelled(lang, elem)
+    })?;
     // SCE_FORGE.md §4.12 records: each member access is renamed to the field
     // identifier the payload struct was emitted with on this backend
     // (`event_schema_field_ident`), through the local's own backend

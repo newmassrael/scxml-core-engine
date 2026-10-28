@@ -216,6 +216,15 @@ pub fn check(
             judge.record(&plain, var, alias, &model.imported_records)?;
             continue;
         }
+        if let Some(alias) = var
+            .value_type
+            .as_ref()
+            .and_then(crate::forge::model::AlgorithmValueType::optional_elem)
+            .and_then(crate::forge::model::OptionalElemType::record_alias)
+        {
+            judge.optional_record(&plain, var, alias, &model.imported_records)?;
+            continue;
+        }
         if let Some(alias) = judge.enum_vars.get(&var.id) {
             judge.enum_variable(
                 &plain,
@@ -605,6 +614,18 @@ pub(crate) fn enum_variables(
         }
         if let Some(schema) = value_type.record_alias().and_then(|a| records.get(a)) {
             held.extend(enum_fields(&var.id, schema));
+        }
+        // The enum field of an optional record is read under its present value,
+        // `<id>.value.<field>` (docs/adr/0055, step 9).
+        if let Some(schema) = value_type
+            .optional_elem()
+            .and_then(crate::forge::model::OptionalElemType::record_alias)
+            .and_then(|a| records.get(a))
+        {
+            held.extend(enum_fields(
+                &crate::forge::static_enum::present_value_path(&var.id),
+                schema,
+            ));
         }
         // The enum field of the element a list of records is indexed at, held
         // under `<list>[].<field>` whatever the index is.
@@ -1634,6 +1655,23 @@ impl<'a> Judge<'a> {
             {
                 InferredType::Unknown
             }
+            // An optional record a call answers is taken whole into an optional
+            // record variable of its schema, and a record into one as a present
+            // value (docs/adr/0055, step 9).
+            (
+                Some(StaticSlot::OptionalRecord(returned)),
+                Some(AlgorithmValueType::Optional {
+                    elem: crate::forge::model::OptionalElemType::Record { alias },
+                }),
+            ) if returned == alias => {
+                InferredType::Optional(crate::forge::types::OptionalElem::Record)
+            }
+            (
+                Some(StaticSlot::Record(returned)),
+                Some(AlgorithmValueType::Optional {
+                    elem: crate::forge::model::OptionalElemType::Record { alias },
+                }),
+            ) if returned == alias => InferredType::Unknown,
             (
                 Some(StaticSlot::ScalarList(returned)),
                 Some(AlgorithmValueType::List {
@@ -1661,6 +1699,9 @@ impl<'a> Judge<'a> {
                     callee.alias,
                     match slot {
                         StaticSlot::Record(alias) => format!("a record of `{alias}`"),
+                        StaticSlot::OptionalRecord(alias) => {
+                            format!("an optional record of `{alias}`")
+                        }
                         StaticSlot::ScalarList(t) => format!("a list of {}", t.as_attr()),
                         StaticSlot::RecordList(alias) => format!("a list of `{alias}`"),
                         StaticSlot::Scalar(t) => format!("a {}", t.as_attr()),
@@ -1835,6 +1876,127 @@ impl<'a> Judge<'a> {
             }
         }
         Ok(())
+    }
+
+    /// An `optional<record:<alias>>` variable (docs/adr/0055, step 9). It starts
+    /// absent: a record is built whole from one `<sce:set>` per field, which a
+    /// variable that may hold none has no use for, so its `expr` is `null` and a
+    /// record is put into it by name where the machine runs. What its schema holds
+    /// is held as a record variable's is: each enum field of a closed enum, each
+    /// text field bounded.
+    fn optional_record(
+        &self,
+        ctx: &TypeCtx<'_>,
+        var: &Variable,
+        alias: &str,
+        records: &std::collections::BTreeMap<String, crate::forge::model::EventSchemaModel>,
+    ) -> Result<(), Located<ForgeError>> {
+        let spelling = var.expr_spelling.as_ref();
+        if !is_null_literal(&var.expr) {
+            return Err(self.rule_at(
+                format!(
+                    "<data id=\"{}\" sce:type=\"{}\" expr=\"{}\">",
+                    var.id,
+                    var.value_type
+                        .as_ref()
+                        .map(|t| t.as_attr())
+                        .unwrap_or_default(),
+                    var.expr
+                ),
+                "an optional record starts absent, so its expr is `null`: a record is built \
+                 whole from one <sce:set> per field, which a variable that may hold none has \
+                 no use for, and a record is put into it by name where the machine runs",
+                spelling.map(|s| s.row()),
+                spelling.map(|s| s.col()),
+                "",
+                var.expr.trim(),
+            ));
+        }
+        if let Some(schema) = records.get(alias) {
+            self.schema_enums_closed(var, alias, schema)?;
+            self.schema_strings_bounded(var, alias, schema)?;
+        }
+        self.expr(
+            ctx,
+            &var.expr,
+            var.expr_spelling.as_ref(),
+            Expected::Slot(variable_type(var)),
+        )?;
+        Ok(())
+    }
+
+    /// The alias of the schema the optional record variable `name` is of, if
+    /// `name` is one (docs/adr/0055, step 9).
+    fn optional_record_alias(&self, name: &str) -> Option<&str> {
+        self.scope
+            .variables
+            .iter()
+            .find(|v| v.id == name.trim())
+            .and_then(|v| v.value_type.as_ref())
+            .and_then(crate::forge::model::AlgorithmValueType::optional_elem)
+            .and_then(crate::forge::model::OptionalElemType::record_alias)
+    }
+
+    /// An `<assign>` of a whole value to the optional record variable at the
+    /// action's location, of the schema `alias` (docs/adr/0055, step 9): `null`
+    /// makes it absent, and a record of its schema makes it present — by the name
+    /// of a record variable or of an optional record of the same schema, a loop's
+    /// record item, `_event.data` when the event's schema is the record's, the
+    /// element of a list of its schema at an index, or what an imported algorithm
+    /// returns as a record or an optional record of it. Nothing in an expression
+    /// makes a record, so any other value is refused, naming what is taken.
+    fn optional_record_assign(
+        &self,
+        ctx: &TypeCtx<'_>,
+        action: &Action,
+        alias: &str,
+        state: &str,
+    ) -> Result<(), Located<ForgeError>> {
+        if is_null_literal(&action.expr) {
+            return Ok(());
+        }
+        let location = action.location.trim();
+        if let Some(callee) = self
+            .scope
+            .whole_value_call(&action.expr)
+            .filter(|c| StaticScope::returns_state(c))
+        {
+            let target = self
+                .scope
+                .variables
+                .iter()
+                .find(|v| v.id == location)
+                .expect("the location names an optional record variable");
+            return self.state_from_call(ctx, action, target, callee);
+        }
+        if let Some((list, index)) = indexed_element(&action.expr) {
+            return self.element_copy(ctx, action, alias, list, index, state);
+        }
+        let written = action.expr.trim();
+        if let Some(held) = self.optional_record_alias(written) {
+            if held == alias {
+                return Ok(());
+            }
+            let spelling = action.spellings.get("expr");
+            return Err(self.rule_at(
+                "<assign>".to_string(),
+                &format!(
+                    "`{written}` is an optional record of the schema {held}, and `{location}` \
+                     holds one of the schema {alias}"
+                ),
+                spelling.map(|s| s.row()),
+                spelling.map(|s| s.col()),
+                state,
+                written,
+            ));
+        }
+        self.record_of(
+            "assign",
+            &action.expr,
+            action.spellings.get("expr"),
+            alias,
+            state,
+        )
     }
 
     /// A record of `schema` — a variable, or the element of a list — holds each enum
@@ -2688,6 +2850,22 @@ impl<'a> Judge<'a> {
                             .map(|(_, alias)| alias.clone())?;
                         schema_field(&alias, property)
                     }
+                    // A field of the present value of an optional record,
+                    // `pick.value.title`, is bounded by its schema as a record
+                    // variable's field is (docs/adr/0055, step 9).
+                    ExprKind::Member {
+                        object: record,
+                        property: value,
+                    } if value == crate::forge::expr::OPTIONAL_VALUE => {
+                        let ExprKind::Ident(holder) = &record.kind else {
+                            return None;
+                        };
+                        let alias = variable(holder)
+                            .and_then(|v| v.value_type.as_ref())
+                            .and_then(|t| t.optional_elem())
+                            .and_then(|elem| elem.record_alias())?;
+                        schema_field(alias, property)
+                    }
                     ExprKind::Index { object: list, .. } => {
                         let ExprKind::Ident(list) = &list.kind else {
                             return None;
@@ -3076,6 +3254,11 @@ impl<'a> Judge<'a> {
                         state,
                     );
                 }
+                // An optional record takes `null`, or a whole record by the same
+                // rule a record variable takes one (docs/adr/0055, step 9).
+                if let Some(alias) = self.optional_record_alias(location) {
+                    return self.optional_record_assign(ctx, action, alias, state);
+                }
                 if let Some(list) = self.list_var(location) {
                     // The lists a statechart takes whole: what an imported
                     // algorithm returns, when the variable can hold all it may.
@@ -3120,34 +3303,68 @@ impl<'a> Judge<'a> {
                 // Typing it reads it as an expression, which an index read
                 // is, so its shape is held first: a variable, or a field of
                 // one — an element of a list is never written.
-                crate::forge::expr::judge_lvalue_shape(&action.location).map_err(|refusal| {
-                    Located::in_file(
-                        ExpressionSite::new(&action.location, action.spellings.get("location"))
-                            .place(refusal),
-                        self.diag_label,
-                    )
-                })?;
-                // An optional value is written whole: `null` makes it absent and
-                // a value present (docs/adr/0055). Its `.value` is a read.
-                if let Some(holder) = crate::forge::static_enum::present_value_of(location)
-                    .filter(|holder| ctx.lookup_var(holder.trim()).is_optional())
-                {
-                    return Err(Located::in_file(
-                        ExpressionSite::new(&action.location, action.spellings.get("location"))
-                            .place(
-                                crate::forge::error::ExprError::UnsupportedConstruct {
-                                    construct: format!(
-                                        "an assignment to `{location}`, the value of an optional \
-                                         value (an optional value is assigned whole: \
+                //
+                // A field of the present value of an optional record,
+                // `pick.value.count`, is the one place a path of three names is
+                // written (docs/adr/0055, step 9): where a test proves the record
+                // present, and nowhere else, since an absent record has no field
+                // to write and no write makes one.
+                let present_field = narrowing::present_record_of(location)
+                    .filter(|holder| self.optional_record_alias(holder).is_some());
+                if let Some(holder) = present_field {
+                    if !ctx.proven.holds(holder) {
+                        return Err(Located::in_file(
+                            ExpressionSite::new(&action.location, action.spellings.get("location"))
+                                .place(
+                                    crate::forge::error::ExprError::UnsupportedConstruct {
+                                        construct: format!(
+                                            "a write to `{location}`, a field of the value of the \
+                                         optional record `{holder}`, where no test proves \
+                                         `{holder}` present (test it first: `{holder} !== \
+                                         null` around the write)"
+                                        ),
+                                        observed: Some(location.to_string()),
+                                    }
+                                    .at(None),
+                                ),
+                            self.diag_label,
+                        ));
+                    }
+                } else {
+                    crate::forge::expr::judge_lvalue_shape(&action.location).map_err(
+                        |refusal| {
+                            Located::in_file(
+                                ExpressionSite::new(
+                                    &action.location,
+                                    action.spellings.get("location"),
+                                )
+                                .place(refusal),
+                                self.diag_label,
+                            )
+                        },
+                    )?;
+                    // An optional value is written whole: `null` makes it absent
+                    // and a value present (docs/adr/0055). Its `.value` is a read.
+                    if let Some(holder) = crate::forge::static_enum::present_value_of(location)
+                        .filter(|holder| ctx.lookup_var(holder.trim()).is_optional())
+                    {
+                        return Err(Located::in_file(
+                            ExpressionSite::new(&action.location, action.spellings.get("location"))
+                                .place(
+                                    crate::forge::error::ExprError::UnsupportedConstruct {
+                                        construct: format!(
+                                            "an assignment to `{location}`, the value of an \
+                                         optional value (an optional value is assigned whole: \
                                          <assign location=\"{}\"> writes `null` or a value)",
-                                        holder.trim()
-                                    ),
-                                    observed: Some(location.to_string()),
-                                }
-                                .at(None),
-                            ),
-                        self.diag_label,
-                    ));
+                                            holder.trim()
+                                        ),
+                                        observed: Some(location.to_string()),
+                                    }
+                                    .at(None),
+                                ),
+                            self.diag_label,
+                        ));
+                    }
                 }
                 let slot = self.expr(
                     ctx,

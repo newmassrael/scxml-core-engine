@@ -11877,8 +11877,8 @@ pub(crate) fn read_type_attr(
 /// over an element it cannot hold is refused as a rule violation that names
 /// the rule.
 ///
-/// `optional<T>` (docs/adr/0055) is read over a fixed-width number or a `bool`
-/// ([`AlgorithmValueType::algorithm_optional_admitted`]); see
+/// `optional<T>` (docs/adr/0055) is read over every element a statechart's
+/// variable holds one of: a scalar, a value of an enum or a record; see
 /// [`read_algorithm_optional`].
 pub(crate) fn read_algorithm_value_type(
     node: &roxmltree::Node,
@@ -11967,15 +11967,16 @@ pub(crate) fn read_algorithm_value_type(
 }
 
 /// Read an algorithm's `optional<T>` (docs/adr/0055): a parameter, a return or
-/// a local that may be absent, over a fixed-width number or a `bool`
-/// ([`AlgorithmValueType::algorithm_optional_admitted`]).
+/// a local that may be absent, over every element a statechart's variable holds
+/// one of — a number, a `bool`, a text, a byte string, a value of an enum the
+/// document imports, or a record of an event schema it imports.
 ///
 /// What may stand inside is read as a statechart's variable reads it
 /// ([`read_optional_elem`]), so a misspelled element, an alias nothing imports,
-/// a list and a nested optional are refused with the same candidates. An
-/// element a statechart holds and an algorithm does not — a text, a byte
-/// string, a value of an enum, a record — is refused by name as a rule of this
-/// position, rather than offered as a misspelling.
+/// a list and a nested optional are refused with the same candidates. Which of
+/// the elements a backend spells in an algorithm's slots is that backend's, and
+/// each that does not yet refuses one by name where it renders it
+/// ([`crate::forge::generator::algorithm_optional_spelled`]).
 fn read_algorithm_optional(
     node: &roxmltree::Node,
     doc_name: &str,
@@ -11983,33 +11984,8 @@ fn read_algorithm_optional(
     attr: &str,
     text: &str,
 ) -> Result<AlgorithmValueType, Located<ForgeError>> {
-    let elem = read_optional_elem(
-        node,
-        doc_name,
-        element.clone(),
-        attr,
-        text,
-        OptionalElems::OrRecord,
-    )?;
-    match &elem {
-        OptionalElemType::Scalar(ty) if AlgorithmValueType::algorithm_optional_admitted(ty) => {
-            Ok(AlgorithmValueType::Optional { elem })
-        }
-        OptionalElemType::Scalar(_) | OptionalElemType::Record { .. } => Err(located(
-            node,
-            doc_name,
-            ValidationError::AttributeRuleViolated {
-                element,
-                attr: attr.into(),
-                value: value_as_written(node, attr, text),
-                rule: "an algorithm's optional parameter, return or local is of a fixed-width \
-                       number or a bool (docs/adr/0055): an optional text, byte string, value \
-                       of an enum or record is held by a `sce-static` statechart's variable, \
-                       and an algorithm does not hold one"
-                    .into(),
-            },
-        )),
-    }
+    read_optional_elem(node, doc_name, element, attr, text, OptionalElems::OrRecord)
+        .map(|elem| AlgorithmValueType::Optional { elem })
 }
 
 /// Read a `sce-static` statechart variable's `sce:type`: what

@@ -47,6 +47,7 @@ use std::collections::BTreeSet;
 
 use crate::forge::expr::{
     dotted_path, judge_optional_use, parse_to_ast, BinOp, Expected, ExprKind, TypedExpr, UnaryOp,
+    OPTIONAL_VALUE,
 };
 use crate::forge::expression_site::ExpressionSite;
 use crate::forge::model::AlgorithmStmt;
@@ -119,14 +120,41 @@ impl Facts {
 }
 
 /// Whether a write of `path` ends a fact about `subject`: `path` is the
-/// subject, a path below it, or a path above it.
+/// subject, a path below it, or a path above it — but for a path below the
+/// present value of the subject (`r.value.f` for `r`, an optional record), which
+/// changes what the record holds and not whether it is present: a field written
+/// under a test of `r` leaves `r` proven, so that a second field may be written
+/// after the first.
 fn ends(path: &str, subject: &str) -> bool {
     let below = |longer: &str, shorter: &str| {
         longer
             .strip_prefix(shorter)
             .is_some_and(|rest| rest.starts_with('.'))
     };
+    let within_present_value = path
+        .strip_prefix(subject)
+        .and_then(|rest| rest.strip_prefix('.'))
+        .and_then(|rest| rest.strip_prefix(OPTIONAL_VALUE))
+        .is_some_and(|rest| rest.starts_with('.'));
+    if within_present_value {
+        return false;
+    }
     path == subject || below(path, subject) || below(subject, path)
+}
+
+/// The optional record whose present value's field `target` names, when it is
+/// written `<record>.value.<field>` (`pick.value.count` gives `pick`): the shape
+/// of a write to a field of an optional record (docs/adr/0055), which stands only
+/// where a test proves the record present. `None` for any other location.
+pub(crate) fn present_record_of(target: &str) -> Option<&str> {
+    let marker = format!(".{OPTIONAL_VALUE}.");
+    let target = target.trim();
+    let (holder, field) = target.split_once(marker.as_str())?;
+    (!holder.is_empty()
+        && !holder.contains('.')
+        && !field.is_empty()
+        && !field.contains(['.', '[']))
+    .then_some(holder)
 }
 
 /// What a statement, or a block of them, may write: each location written, and
@@ -440,13 +468,16 @@ pub(crate) fn check_algorithm(
         return Ok(());
     }
     let ctx = types.type_ctx(m, imports);
+    let returns_return = m.signature.return_type.as_ref();
     let walk = AlgorithmWalk {
         ctx: &ctx,
-        returns: m
-            .signature
-            .return_type
-            .as_ref()
-            .map_or(InferredType::Unknown, value_type),
+        returns: returns_return.map_or(InferredType::Unknown, value_type),
+        returns_alias: returns_return
+            .and_then(crate::forge::model::AlgorithmValueType::optional_elem)
+            .and_then(crate::forge::model::OptionalElemType::record_alias)
+            .map(str::to_string),
+        records: types.record_aliases(),
+        optional_records: types.optional_record_aliases(),
     };
     walk.block(&m.body, &Facts::none())
 }
@@ -467,9 +498,63 @@ struct AlgorithmWalk<'w, 'c> {
     ctx: &'w TypeCtx<'c>,
     /// The type the algorithm returns.
     returns: InferredType,
+    /// The alias of the schema of the optional record the algorithm returns, when
+    /// it returns one (docs/adr/0055, step 9).
+    returns_alias: Option<String>,
+    /// Each record parameter, local and loop item by name, with the alias of the
+    /// schema that types it.
+    records: Vec<(String, String)>,
+    /// Each optional record parameter and local by name, with the alias of the
+    /// schema that types it.
+    optional_records: Vec<(String, String)>,
 }
 
 impl AlgorithmWalk<'_, '_> {
+    /// The alias of the schema of the optional record the local or parameter
+    /// `name` is, if it is one.
+    fn optional_record_alias(&self, name: &str) -> Option<&str> {
+        self.optional_records
+            .iter()
+            .find(|(held, _)| held == name)
+            .map(|(_, alias)| alias.as_str())
+    }
+
+    /// The refusal of `expr`, written at `spelling`, when it names a record of
+    /// another schema than the optional record of `alias` it is put into: a
+    /// record is put into an optional record by its name, and is of its schema
+    /// (docs/adr/0055, step 9). A value that is no record's name is the judge's.
+    fn record_fits(
+        &self,
+        expr: &str,
+        spelling: Option<&crate::attribute_spelling::AttributeSpelling>,
+        alias: Option<&str>,
+    ) -> Result<(), crate::forge::error::ForgeError> {
+        let name = expr.trim();
+        let Some(alias) = alias else {
+            return Ok(());
+        };
+        let held = self
+            .records
+            .iter()
+            .chain(self.optional_records.iter())
+            .find(|(held, _)| held == name)
+            .map(|(_, held)| held.as_str());
+        match held {
+            Some(held) if held != alias => {
+                let refusal = crate::forge::error::ExprError::UnsupportedConstruct {
+                    construct: format!(
+                        "`{name}`, a record of `{held}`, where an optional record of `{alias}` \
+                         is declared"
+                    ),
+                    observed: Some(name.to_string()),
+                }
+                .at(None);
+                Err(ExpressionSite::new(expr, spelling).place(refusal))
+            }
+            _ => Ok(()),
+        }
+    }
+
     /// `body`, entered with `entry` proven.
     fn block(
         &self,
@@ -496,12 +581,35 @@ impl AlgorithmWalk<'_, '_> {
                 init: Some(init),
                 init_spelling,
                 ..
-            } => self.judge(
-                init,
-                init_spelling.as_ref(),
-                Expected::Slot(value_type(sce_type)),
-                proven,
-            ),
+            } => {
+                // An optional record starts absent: a record is built by its
+                // `<sce:set>`s, which a local of this type has none of
+                // (docs/adr/0055, step 9).
+                if sce_type
+                    .optional_elem()
+                    .is_some_and(|elem| elem.record_alias().is_some())
+                    && !crate::forge::static_datamodel::is_null_literal(init)
+                {
+                    let refusal = crate::forge::error::ExprError::UnsupportedConstruct {
+                        construct: format!(
+                            "the initial value `{}` of a local of type {}, which starts absent \
+                             (`init=\"null\"`): a record is put into it by name where the \
+                             algorithm runs",
+                            init.trim(),
+                            sce_type.as_attr()
+                        ),
+                        observed: Some(init.trim().to_string()),
+                    }
+                    .at(None);
+                    return Err(ExpressionSite::new(init, init_spelling.as_ref()).place(refusal));
+                }
+                self.judge(
+                    init,
+                    init_spelling.as_ref(),
+                    Expected::Slot(value_type(sce_type)),
+                    proven,
+                )
+            }
             AlgorithmStmt::Var { init: None, .. } => Ok(()),
             AlgorithmStmt::RecordVar { name, fields, .. } => {
                 for field in fields {
@@ -547,6 +655,35 @@ impl AlgorithmWalk<'_, '_> {
                         .into();
                     return Err(at.place(refusal));
                 }
+                // A field of the value of an optional record is written only
+                // where a test proves the record present, as it is read
+                // (docs/adr/0055, step 9): there is no field to write in an
+                // absent record, and no write that makes one.
+                if let Some(holder) = present_record_of(target)
+                    .filter(|holder| self.optional_record_alias(holder).is_some())
+                {
+                    if !proven.holds(holder) {
+                        let at = ExpressionSite::new(target, target_spelling.as_ref())
+                            .locate(Some(0..target.len()));
+                        let refusal: crate::forge::error::ForgeError =
+                            crate::forge::error::ExprError::UnsupportedConstruct {
+                                construct: format!(
+                                    "a write to `{target}`, a field of the value of the optional \
+                                     record `{holder}`, where no test proves `{holder}` present \
+                                     (test it first: `{holder} !== null` around the write)"
+                                ),
+                                observed: at.observed(),
+                            }
+                            .into();
+                        return Err(at.place(refusal));
+                    }
+                }
+                // A record put whole into an optional record is of its schema.
+                self.record_fits(
+                    expr,
+                    expr_spelling.as_ref(),
+                    self.optional_record_alias(target),
+                )?;
                 let slot = self.ctx.lookup_var(target);
                 self.judge(expr, expr_spelling.as_ref(), Expected::Slot(slot), proven)
             }
@@ -593,12 +730,15 @@ impl AlgorithmWalk<'_, '_> {
             AlgorithmStmt::Return {
                 expr: Some(expr),
                 expr_spelling,
-            } => self.judge(
-                expr,
-                expr_spelling.as_ref(),
-                Expected::Slot(self.returns),
-                proven,
-            ),
+            } => {
+                self.record_fits(expr, expr_spelling.as_ref(), self.returns_alias.as_deref())?;
+                self.judge(
+                    expr,
+                    expr_spelling.as_ref(),
+                    Expected::Slot(self.returns),
+                    proven,
+                )
+            }
             AlgorithmStmt::Return { expr: None, .. } => Ok(()),
             AlgorithmStmt::Call { args, .. } => {
                 for arg in args {
@@ -823,5 +963,34 @@ mod tests {
             loop_entry(&held, &[if_then("c", vec![assign("r.due")])]),
             facts(&["item.due"])
         );
+    }
+
+    #[test]
+    fn a_write_below_the_present_value_of_a_record_ends_no_fact_about_the_record() {
+        // A field written under a test of `pick` changes what the record holds and
+        // not whether it is present, so a second field may be written after the
+        // first.
+        let held = facts(&["pick", "pick.value.due", "other"]);
+        assert_eq!(held.after(&writing(&["pick.value.count"])), held);
+        // It ends a fact about that field, and the record itself written ends every
+        // fact about it and below it.
+        assert_eq!(
+            held.after(&writing(&["pick.value.due"])),
+            facts(&["pick", "other"])
+        );
+        assert_eq!(held.after(&writing(&["pick"])), facts(&["other"]));
+        // A path that only begins with the same letters is another path.
+        assert_eq!(held.after(&writing(&["picked.value.count"])), held);
+    }
+
+    #[test]
+    fn a_field_written_through_an_optional_record_names_its_holder() {
+        assert_eq!(present_record_of("pick.value.count"), Some("pick"));
+        assert_eq!(present_record_of(" pick.value.count "), Some("pick"));
+        assert_eq!(present_record_of("pick.value"), None);
+        assert_eq!(present_record_of("pick.count"), None);
+        assert_eq!(present_record_of("pick.value.a.b"), None);
+        assert_eq!(present_record_of("a.b.value.c"), None);
+        assert_eq!(present_record_of("pick.value.a[0]"), None);
     }
 }

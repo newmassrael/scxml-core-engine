@@ -628,6 +628,13 @@ impl StaticTarget for JsTarget {
     fn assign_field(&self, _target: &str, _field: &str, _value: &str) -> String {
         String::new()
     }
+    // A field of the present value of an optional record is the object the variable
+    // holds, written again with that field changed (`field_assignment`) where a test
+    // proved it present: like any field, there is no statement of the lowering's to
+    // emit (docs/adr/0055, step 9).
+    fn assign_present_field(&self, _target: &str, _field: &str, _value: &str) -> Option<String> {
+        Some(String::new())
+    }
     // A list is the array its variable holds, and a record in it is the plain object it
     // is everywhere else, which a `set` writes again rather than changes: the element
     // the library reads — it throws for an index outside the array — is the value.

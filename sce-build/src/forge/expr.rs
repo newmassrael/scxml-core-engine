@@ -157,6 +157,32 @@ impl ExprTarget {
         }
     }
 
+    /// Whether this target's emitter spells an optional record
+    /// (`optional<record:X>`, docs/adr/0055, step 9): the test and the null
+    /// comparison of the whole value, and `x.value.f`, a field of the present
+    /// record where the build proved it present ([`OptionalForm::Proven`] of a
+    /// record, over which the member is read). The one answer a target gives: its
+    /// `sce-static` lowering asks it too
+    /// ([`crate::forge::static_lowering::StaticTarget::lowers_optional_record`]),
+    /// and a target that answers `false` is refused by name before its emitter is
+    /// reached ([`reject_unlowered_optional`]). Each target answers `true` in the
+    /// step that writes its spellings.
+    pub(crate) fn lowers_optional_record(self) -> bool {
+        match self {
+            // The Interpreter: a record is a plain object, absent is `null`, and
+            // `x.value.f` is the member read of the object `x` is.
+            ExprTarget::Js => true,
+            // Not yet: each of the six generated backends refuses an optional
+            // record by name until its step of docs/adr/0055 spells one.
+            ExprTarget::Rust => false,
+            ExprTarget::Kotlin => false,
+            ExprTarget::Cpp => false,
+            ExprTarget::Go => false,
+            ExprTarget::Python => false,
+            ExprTarget::C => false,
+        }
+    }
+
     /// How this target spells a name the author gave a local — a parameter or a
     /// variable of an algorithm, the item or the index of a `<foreach>` — where
     /// it is declared and where an expression reads it. The emitter's `Ident`
@@ -1130,8 +1156,11 @@ pub(crate) const CPP_SPAN: &str = "SCE::Forge::Span";
 /// - `??` on a value that is never absent, or with a default the present value's
 ///   type does not take.
 ///
-/// Reading the value of an optional record (`pick.value.title`) is refused by
-/// name until the step of the ADR that reads one.
+/// An optional record (docs/adr/0055, step 9) is read through a field of its
+/// present value (`pick.value.title`) where the build has proven it present, as
+/// any `x.value` is; its value taken whole, a default given with `??` and a
+/// comparison with anything but `null` are refused by name, a record being no
+/// operand.
 fn reject_optional_misuse(
     expr: &TypedExpr,
     facts: &crate::forge::narrowing::Facts,
@@ -1160,30 +1189,52 @@ fn reject_optional_misuse(
         }
         Ok(())
     };
+    // `x.value` read where `x` is proven present, or the refusal at `read`.
+    let proven_present = |optional: &TypedExpr, read: &TypedExpr| -> Result<(), Refusal> {
+        let tested = subject(optional);
+        if tested.as_deref().is_some_and(|s| facts.holds(s)) {
+            return Ok(());
+        }
+        Err(ExprError::OptionalReadUnproven {
+            optional: tested
+                .or_else(|| observed(optional))
+                .unwrap_or_else(|| optional.ty.describe()),
+            read: observed(read).unwrap_or_default(),
+        }
+        .at(read.span.clone()))
+    };
     match &expr.kind {
-        ExprKind::Member { object, property }
-            if property == OPTIONAL_VALUE && object.ty.is_optional() =>
-        {
-            if object.ty == InferredType::Optional(OptionalElem::Record) {
-                return Err(ExprError::UnsupportedConstruct {
-                    construct: "the value of an optional record, which no step of \
-                                docs/adr/0055 reads yet"
-                        .to_string(),
-                    observed: observed(expr),
+        ExprKind::Member { object, property } => {
+            // `x.value.f`, a field of the present value of an optional record
+            // (docs/adr/0055, step 9): the record is read through its field, and
+            // only where the build has proven it present. Its value as a whole is
+            // no expression: a record is no operand, and is passed by name.
+            if let ExprKind::Member {
+                object: holder,
+                property: value,
+            } = &object.kind
+            {
+                if value == OPTIONAL_VALUE
+                    && holder.ty == InferredType::Optional(OptionalElem::Record)
+                {
+                    proven_present(holder, expr)?;
+                    return reject_optional_misuse(holder, facts, source);
                 }
-                .at(expr.span.clone()));
             }
-            let tested = subject(object);
-            if !tested.as_deref().is_some_and(|s| facts.holds(s)) {
-                return Err(ExprError::OptionalReadUnproven {
-                    optional: tested
-                        .or_else(|| observed(object))
-                        .unwrap_or_else(|| object.ty.describe()),
-                    read: observed(expr).unwrap_or_default(),
+            if property == OPTIONAL_VALUE && object.ty.is_optional() {
+                if object.ty == InferredType::Optional(OptionalElem::Record) {
+                    return Err(ExprError::UnsupportedConstruct {
+                        construct: "the value of an optional record taken whole (a record is \
+                                    no operand: read a field of it, `x.value.<field>`, where \
+                                    a test proves it present)"
+                            .to_string(),
+                        observed: observed(expr),
+                    }
+                    .at(expr.span.clone()));
                 }
-                .at(expr.span.clone()));
+                proven_present(object, expr)?;
+                return reject_optional_misuse(object, facts, source);
             }
-            return reject_optional_misuse(object, facts, source);
         }
         ExprKind::Binary {
             op: op @ (BinOp::And | BinOp::Or),
@@ -1215,6 +1266,19 @@ fn reject_optional_misuse(
             left,
             right,
         } => match left.ty {
+            // A record is no operand, so no default can be given for an absent
+            // one: it is read through a conditional that tests it
+            // (`x !== null ? x.value.f : d`, docs/adr/0055, step 9).
+            InferredType::Optional(OptionalElem::Record) => {
+                return Err(ExprError::UnsupportedConstruct {
+                    construct: "a read of an optional record with a default (`??`): a record is \
+                                no operand, so it has no default; read a field of it where a \
+                                test proves it present, `x !== null ? x.value.<field> : <value>`"
+                        .to_string(),
+                    observed: observed(left),
+                }
+                .at(left.span.clone()))
+            }
             InferredType::Optional(elem) => {
                 let takes = matches!(right.ty, InferredType::Null)
                     || slot_admits(InferredType::Optional(elem), right.ty);
@@ -1259,6 +1323,24 @@ fn reject_optional_misuse(
                     if !slot_admits(InferredType::Optional(elem), side.ty) {
                         return Err(type_mismatch(InferredType::Optional(elem), side, source));
                     }
+                }
+                // A record is no operand, and no backend compares two alike: an
+                // optional record is tested against `null`, and its fields are
+                // compared where a test proves it present (docs/adr/0055,
+                // step 9).
+                let tests_null = [left, right]
+                    .into_iter()
+                    .any(|side| matches!(side.kind, ExprKind::NullLit));
+                if elem == OptionalElem::Record && !tests_null {
+                    return Err(ExprError::UnsupportedConstruct {
+                        construct: "a comparison of an optional record with a value other than \
+                                    `null` (records are compared by no backend: test it with \
+                                    `x !== null`, and compare its fields where it is proven \
+                                    present)"
+                            .to_string(),
+                        observed: observed(expr),
+                    }
+                    .at(expr.span.clone()));
                 }
             }
         }
@@ -1331,24 +1413,44 @@ fn described(got: InferredType, slot: InferredType) -> String {
 /// that holds one is refused by name where it is lowered for such a target, so
 /// an expression reaches here with one only where no such refusal ran.
 fn reject_unlowered_optional(expr: &TypedExpr, target: ExprTarget) -> Result<(), Refusal> {
-    if target.lowers_optional() {
+    let spells_value = target.lowers_optional();
+    if spells_value && target.lowers_optional_record() {
         return Ok(());
     }
+    // An optional record (docs/adr/0055, step 9) is spelled apart from the
+    // other optional values: a target that spells those and not it refuses a
+    // node that holds one, and the construct that reads its present value.
+    let is_record = expr.ty == InferredType::Optional(OptionalElem::Record)
+        || matches!(
+            &expr.kind,
+            ExprKind::Member { object, property }
+                if property == OPTIONAL_VALUE
+                    && object.ty == InferredType::Optional(OptionalElem::Record)
+        );
     // `null === null` reads no optional value, and is left as it was.
-    let refused = match optional_form(expr) {
-        Some(OptionalForm::Constant(_)) => None,
-        Some(form) => Some((form.describe(), form.span(expr))),
-        None if expr.ty.is_optional() => Some(("an optional value".to_string(), expr.span.clone())),
-        None => None,
+    let refused = if spells_value && !is_record {
+        None
+    } else {
+        match optional_form(expr) {
+            Some(OptionalForm::Constant(_)) => None,
+            Some(form) => Some((form.describe(), form.span(expr))),
+            None if expr.ty.is_optional() => {
+                Some(("an optional value".to_string(), expr.span.clone()))
+            }
+            None => None,
+        }
     };
     if let Some((what, at)) = refused {
         let lang = target
             .language()
             .map_or("ecmascript", crate::generator::Language::canonical_name);
+        let noun = if is_record {
+            "an optional record"
+        } else {
+            "an optional value"
+        };
         return Err(ExprError::UnsupportedConstruct {
-            construct: format!(
-                "{what}: an optional value has no {lang} lowering yet (docs/adr/0055)"
-            ),
+            construct: format!("{what}: {noun} has no {lang} lowering yet (docs/adr/0055)"),
             observed: None,
         }
         .at(at));
@@ -1522,6 +1624,13 @@ pub(crate) fn slot_admits(slot: InferredType, got: InferredType) -> bool {
     match (slot, got) {
         (T::Unknown | T::Null, _) | (_, T::Unknown) => true,
         (T::Optional(_), T::Null) => true,
+        // A record is no operand, so an optional record's slot takes an optional
+        // record, a record by name and `null`; and no other optional value or
+        // record fits a slot of another optional value (docs/adr/0055, step 9).
+        (T::Optional(OptionalElem::Record), got) => {
+            matches!(got, T::Record(_) | T::Optional(OptionalElem::Record))
+        }
+        (T::Optional(_), T::Optional(OptionalElem::Record) | T::Record(_)) => false,
         (T::Optional(want), T::Optional(got)) => slot_admits(want.present(), got.present()),
         (T::Optional(want), got) => slot_admits(want.present(), got),
         (_, T::Null) => false,
@@ -3013,6 +3122,9 @@ pub enum ArgShape {
     Name(String),
     /// `_event.data`, taken whole.
     EventData,
+    /// The literal `null`: the absent value of the optional record a call's
+    /// parameter is (docs/adr/0055, step 9).
+    Null,
     /// Anything else.
     Other,
 }
@@ -3052,6 +3164,7 @@ pub fn call_sites(raw_expr: &str, wanted: &dyn Fn(&str) -> bool) -> Result<Vec<C
                         |span: &std::ops::Range<usize>| span.start + offset..span.end + offset;
                     let shape = |arg: &TypedExpr| match &arg.kind {
                         ExprKind::Ident(name) => ArgShape::Name(name.clone()),
+                        ExprKind::NullLit => ArgShape::Null,
                         ExprKind::Member { object, property }
                             if property == "data"
                                 && matches!(&object.kind, ExprKind::Ident(o) if o == "_event") =>
