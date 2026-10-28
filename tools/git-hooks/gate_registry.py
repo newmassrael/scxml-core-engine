@@ -336,6 +336,8 @@ COST_MEASURED: dict[str, str] = {
     # not the gate. 52 is what it costs when it has something to do, which is
     # the only time the change set selects it.
     "forge-kotlin": "2026-09-18",
+    # 38s, the worse of two runs of the gate script through bx (38 and 19).
+    "swift-backend": "2026-10-28",
     # 72s, `scripts/gate genmc-queue` on pc2 with two harnesses and ten mutants
     # each, the first run that read GenMC's reports rather than its exit codes.
     "genmc-queue": "2026-10-10",
@@ -966,6 +968,50 @@ GATES: dict[str, dict] = {
                    "forge-conformance.yml.",
         "cost_s": 52,
         "summary": "Kotlin forge conformance (Gradle jvmTest)",
+    },
+    # ⚠ The Swift backend's own lane, and the one the family tables could not
+    # hold. `<family>-<canonical name>` slugs name a backend's arm of a lane the
+    # backend has: `w3c-<lang>` and `forge-<lang>` need an emitter that writes a
+    # W3C statechart or a Forge kind, and Swift has neither yet (the rows of
+    # `a_backend_holds_what_the_other_backends_hold` that say so). What Swift
+    # does have is a runtime, a forge runtime and two hundred generated machines
+    # that replay the shared scenarios, and until this entry nothing a runner ran
+    # compiled any of it: the Swift lane was `bx -- scripts/test_swift_backend.sh`
+    # by hand.
+    #
+    # The slug is `swift-backend` and not `forge-swift` on purpose. A
+    # `forge-swift` would be a Forge conformance gate that conforms nothing, and
+    # `a_backend_holds_what_the_other_backends_hold` reads the slug to decide
+    # that the backend HOLDS such a gate, which would erase the `NotYet` row that
+    # says it does not. When Swift's Forge and W3C arms exist they take
+    # `forge-swift` and `w3c-swift`, and this gate keeps judging the packages.
+    #
+    # `deps` is the generator, which the script regenerates the machines with.
+    "swift-backend": {
+        "workflows": ["swift-backend.yml"],
+        "runner_workflow": True,
+        "deps": ["codegen-build"],
+        # 38s and 19s, the gate script run twice end to end through `bx` on a
+        # build machine on 2026-10-28 (the first run built the packages, the
+        # second found them built); 38 is declared, the worse of the two. Not
+        # taken by `scripts/gate --measure`, which is refused locally for this
+        # repository. Both figures include the transfer.
+        #
+        # `ci_only` is not about the 38s, which the push budget could spend. The
+        # toolchain is what keeps it out: a hand-installed pin that `provision`
+        # puts on a build machine, and a push the hook handed to a machine that
+        # lacks it would be refused for a reason that says nothing about the
+        # tree. That is `genmc-queue`'s argument, and the gate fails loudly
+        # without a toolchain rather than skipping, so the lane is the place it
+        # runs until every build machine is verified to carry the pin.
+        "ci_only": "38s, and the 6.4.0 toolchain is a hand-installed pin "
+                   "(`[tools.swift]` in bx.toml) that not every build machine "
+                   "is verified to carry; the gate refuses without it, so a "
+                   "push that selected it there would be refused for a reason "
+                   "that says nothing about the tree. swift-backend.yml "
+                   "installs the pin by its digest.",
+        "cost_s": 38,
+        "summary": "Swift backend: runtime, forge runtime and generated machines",
     },
     # The C11 and C++ queues under GenMC (SCE Protocol-Synthesis RFC §synth-5-P,
     # layer 3), and the mutants that show the check reads orderings at all. It needs

@@ -1,0 +1,147 @@
+name: Swift backend (runtime, forge runtime, generated machines)
+
+# The lane that compiles and runs the Swift backend.
+#
+# Until this workflow existed nothing a hosted runner ran touched a line of Swift. The
+# other backends are reached through their W3C and Forge lanes, and Swift has neither yet
+# (`a_backend_holds_what_the_other_backends_hold` records both as not built). The backend
+# grew past two hundred committed generated machines and three SwiftPM packages on local
+# runs alone, so a break in a Swift template, in the runtime, or in the checked arithmetic
+# the generated code calls reached `main` unjudged and was read only by whoever next ran
+# the packages by hand.
+#
+# What it runs is `scripts/gate swift-backend`, the gate the pre-push hook runs too:
+# `scripts/test_swift_backend.sh` regenerates the machines from the templates and runs the
+# three packages (`backends/swift/runtime`, `forge-runtime`, `tests`), and the gate reads
+# the verdict from the output as well as the exit status, so a package whose tests were not
+# discovered is red and not a silent pass. Whether the COMMITTED machines are what the
+# generator writes is `regen-reproduces`' question and is kept there.
+#
+# ⚠ THE TOOLCHAIN IS PINNED, to the release `bx.toml` installs on the build machines
+# (`[tools.swift]`), and by the digest of its tarball. The gate READS `SWIFT_VERSION:`
+# below, so this lane and a developer's machine agree about which compiler builds the
+# packages, and the gate holds the version and the digest here equal to the build machines'
+# pin before it builds anything. Changing the number moves all three.
+#
+# The runner is `ubuntu-24.04` and not `ubuntu-latest` for the same reason: the digest
+# below is the 24.04 tarball's. A release pinned for one distribution and run on another
+# would fail the checksum, which is the right failure and a confusing one on a day the
+# image moved.
+#
+# The `paths:` filter is what `tools/git-hooks/gate_registry.py` reads to decide whether a
+# push runs the gate. It names what the packages read (the Swift tree and the shared
+# scenarios), what writes the machines they compile (the generator and its templates),
+# the gate's own files, and `bx.toml`, whose `[tools.swift]` pin the gate holds this one to.
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'backends/swift/**'
+      - 'sce-build/src/**'
+      - 'sce-build/Cargo.toml'
+      - 'sce-build/tests/fixtures/static_datamodel/**'
+      - 'sce-build/tests/fixtures/swift_statecharts/**'
+      - 'tools/codegen/templates/**'
+      - 'stdlib/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'scripts/test_swift_backend.sh'
+      - 'scripts/regen_swift_statecharts.sh'
+      - 'scripts/regen_static_datamodel_swift.sh'
+      - 'scripts/lib/sce_codegen.sh'
+      - 'scripts/gates/swift-backend.sh'
+      - 'scripts/gates/lib.sh'
+      - 'bx.toml'
+      - '.github/workflows/swift-backend.yml'
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+# Not cancelled by the push that follows it; the newest push runs after it. Owner decision,
+# 2026-10-01, for every lane: see `cpp-suite.yml` for the reasoning and the cost.
+#
+# ⚠ What holds this setting is `sce-build/tests/ci_supersession_policy.rs`, which
+# classifies EVERY workflow in this directory and reds one nobody classified.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  SWIFT_VERSION: '6.4.0'
+  # SHA-256 of swift-6.4.0-RELEASE-ubuntu24.04.tar.gz, taken from a tarball whose detached
+  # signature verified against swift.org's published keys; the same digest `bx.toml` pins.
+  SWIFT_SHA256_UBUNTU2404: 69f7b2b4dbce6090b6c92194b71149a057e16269093b5a9dded38afc4a05094e
+
+jobs:
+  swift-backend:
+    name: Swift packages build and pass, machines replay the shared scenarios
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v6
+      with:
+        submodules: recursive
+
+    - name: Install Rust Toolchain
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: stable
+
+    - name: Cache Cargo (codegen)
+      uses: actions/cache@v5
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-codegen-${{ hashFiles('sce-build/Cargo.toml') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-codegen-
+
+    - name: Build sce-codegen
+      run: |
+        # The Cargo cache restores all of `target`, but this step only builds
+        # the debug profile, so a release binary the cache still holds is not
+        # a product of this commit.
+        source scripts/lib/sce_codegen.sh
+        sce_codegen_drop_stale_release
+        cargo build --bin sce-codegen --features cli -p sce-build
+
+    # What swift.org lists for the toolchain on Ubuntu 24.04, as `bx.toml` lists it
+    # for the build machines. Without them the tarball unpacks and `swift --version`
+    # answers, and a compile or a link dies later.
+    - name: Install the packages the Swift toolchain links against
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y binutils libc6-dev libcurl4-openssl-dev libedit2 \
+          libncurses-dev libpython3-dev libsqlite3-0 libxml2-dev libz3-dev \
+          pkg-config tzdata unzip zlib1g-dev
+
+    # The toolchain lives where the build machines keep it, under
+    # `~/.local/share/swift/<version>/`, which is where the gate looks.
+    - name: Cache the Swift toolchain
+      id: swift-cache
+      uses: actions/cache@v5
+      with:
+        path: ~/.local/share/swift/${{ env.SWIFT_VERSION }}
+        key: swift-toolchain-ubuntu24.04-${{ env.SWIFT_VERSION }}-${{ env.SWIFT_SHA256_UBUNTU2404 }}
+
+    # The download is checked against the pinned digest, never against a checksum the same
+    # server publishes beside it.
+    - name: Install the pinned Swift toolchain
+      if: steps.swift-cache.outputs.cache-hit != 'true'
+      run: |
+        prefix="$HOME/.local/share/swift/$SWIFT_VERSION"
+        file="swift-$SWIFT_VERSION-RELEASE-ubuntu24.04.tar.gz"
+        mkdir -p "$prefix"
+        curl -fsSL --retry 3 --retry-all-errors -o "$file" \
+          "https://download.swift.org/swift-$SWIFT_VERSION-release/ubuntu2404/swift-$SWIFT_VERSION-RELEASE/$file"
+        echo "$SWIFT_SHA256_UBUNTU2404  $file" | sha256sum -c --quiet
+        tar -xzf "$file" -C "$prefix" --strip-components=1
+        rm -f "$file"
+
+    - name: Run the Swift backend gate
+      run: scripts/gate swift-backend

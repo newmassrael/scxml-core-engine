@@ -266,6 +266,13 @@ const LANES: &[(&str, f64, u32, u32, u32)] = &[
     // or two above 8.5; both are far under the 17.6-minute push gap, so no plausible correction changes
     // the classification. Replace it after 25 runs of its own and delete this paragraph.
     ("targets.yml", 8.5, 0, 0, 0),
+    // ⚠ STAND-IN, borrowed 2026-10-28 for a lane of no history: it builds `sce-codegen` and then runs
+    // `scripts/gate`, as `targets.yml` does (8.5). It also unpacks the pinned Swift toolchain (cached by
+    // version and digest after the first run) and builds three SwiftPM packages; the gate measured 38s and
+    // 19s through bx, so the true median may sit a few minutes above 8.5 on a cold runner, both far under
+    // the 17.6-minute push gap, so no plausible correction changes the classification. Replace it after 25
+    // runs of its own and delete this paragraph.
+    ("swift-backend.yml", 8.5, 0, 0, 0),
     ("clang-format-check.yml", 0.8, 0, 25, 0),
     ("clippy-check.yml", 7.7, 0, 22, 1),
     // ⚠ STAND-IN, borrowed 2026-10-27 for a lane of no history: it configures a scratch tree of the

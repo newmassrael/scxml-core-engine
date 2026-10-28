@@ -608,3 +608,56 @@ sce_gate_require_jdk() {
         || sce_gate_fail "Gradle would run on JDK $now, and this suite needs $floor+ (the version ${pin_file##*/} installs). JAVA_HOME=${JAVA_HOME:-<unset>}. Install a JDK $floor, or point SCE_JAVA_HOME at one — running on an older JVM fails inside a build script with a message that names no JDK."
     sce_gate_step "Gradle will run on JDK $now (floor $floor from ${pin_file##*/})"
 }
+
+# ── The Swift toolchain the Swift packages will ACTUALLY be built with ──
+#
+# The Swift gate needs the same guarantee the JDK one makes, and for the same
+# reason: "is there a `swift`" and "which toolchain builds the package" are
+# different questions. A toolchain is installed by hand under
+# `~/.local/share/swift/<version>/` (`[tools.swift]` in `bx.toml`) and is not on
+# PATH, and a machine that carries an older `swift` on PATH would build the
+# packages with a compiler this repository never ran them on: the Swift
+# Testing library and the language mode both moved between releases.
+#
+# The version is READ from the `SWIFT_VERSION:` the workflow installs, so a
+# lane and a developer's machine agree about which toolchain builds. The
+# `swift-backend` gate holds that pin equal to the one `bx.toml` installs on the
+# build machines, before it calls this.
+#
+# Exact, not a floor: unlike a JDK, a Swift release is a different compiler,
+# and the packages are verified on one. A toolchain of another version is not
+# used even when it is the one on PATH.
+#
+# Deliberately not skip-capable, for the reason `sce_gate_require_jdk` states:
+# the gate is selected because the Swift backend changed, and a skip would be
+# silence about that change.
+#
+# `$1` is the workflow file whose `SWIFT_VERSION:` pin is the version.
+sce_gate_require_swift() {
+    local pin_file="$1" version tag link
+
+    version="$(sed -n "s/^[[:space:]]*SWIFT_VERSION:[[:space:]]*['\"]\{0,1\}\([0-9][0-9.]*\).*/\1/p" \
+        "$pin_file" | head -1)"
+    [ -n "$version" ] \
+        || sce_gate_fail "no \`SWIFT_VERSION:\` pin found in $pin_file — this gate takes its toolchain from the version CI installs, and a missing pin would let it build on any Swift."
+
+    # What `swift --version` prints in parentheses: `swift-6.4-RELEASE` for the
+    # release `6.4.0`, and `swift-6.4.1-RELEASE` for a patch release.
+    tag="swift-${version%.0}-RELEASE"
+
+    if ! { command -v swift >/dev/null 2>&1 && swift --version 2>&1 | grep -qF "$tag"; }; then
+        link="$HOME/.local/share/swift/$version/bin/swift"
+        if [ -x "$link" ]; then
+            # `swiftc` and the rest of the toolchain sit beside the file the
+            # link points to, not beside the link.
+            PATH="$(dirname "$(readlink -f "$link")"):$PATH"
+            export PATH
+        fi
+    fi
+
+    command -v swift >/dev/null 2>&1 \
+        || sce_gate_fail "swift is not on PATH and $HOME/.local/share/swift/$version/bin/swift does not exist, and this gate was selected because the Swift backend changed. Install Swift $version (\`provision <alias>\` installs the \`[tools.swift]\` pin of bx.toml) — skipping here would report green on an unverified backend."
+    swift --version 2>&1 | grep -qF "$tag" \
+        || sce_gate_fail "swift would build the packages with $(swift --version 2>&1 | head -1), and they are verified on $tag (the version ${pin_file##*/} installs). Install Swift $version under ~/.local/share/swift/$version/ — another release is a different compiler."
+    sce_gate_step "Swift $tag (pinned by ${pin_file##*/})"
+}
