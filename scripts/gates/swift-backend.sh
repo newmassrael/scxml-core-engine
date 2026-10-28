@@ -30,30 +30,10 @@
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
-WORKFLOW="$SCE_REPO_ROOT/.github/workflows/swift-backend.yml"
-
-# The toolchain is pinned twice, in `bx.toml` (what `provision` installs on the build machines)
-# and in the workflow (what the hosted runner installs), and nothing derives one from the other.
-# The gate reads the workflow's version, so a build machine on the release bx.toml names and a
-# runner on another would each pass and disagree about which compiler the packages are verified
-# on. Held equal here, where both files are inputs of the lane's own `paths:` filter: the
-# release, and the digest of the Ubuntu 24.04 tarball the runner checks.
-bx_version="$(awk '/^\[/ { in_swift = ($0 == "[tools.swift]"); next }
-    in_swift && /^version = / { gsub(/[" ]/, "", $3); print $3; exit }' bx.toml)"
-bx_digest="$(grep -o 'ubuntu24\.04) sum=[0-9a-f]\{64\}' bx.toml | head -1 | sed 's/.*sum=//')"
-pin_version="$(sed -n "s/^[[:space:]]*SWIFT_VERSION:[[:space:]]*['\"]\{0,1\}\([0-9][0-9.]*\).*/\1/p" "$WORKFLOW" | head -1)"
-pin_digest="$(sed -n 's/^[[:space:]]*SWIFT_SHA256_UBUNTU2404:[[:space:]]*\([0-9a-f]\{64\}\).*/\1/p' "$WORKFLOW" | head -1)"
-[ -n "$bx_version" ] && [ -n "$bx_digest" ] \
-    || sce_gate_fail "bx.toml carries no \`[tools.swift]\` version or no Ubuntu 24.04 digest in its install command: the pin this gate compares the workflow's against is unreadable"
-[ -n "$pin_version" ] && [ -n "$pin_digest" ] \
-    || sce_gate_fail "swift-backend.yml carries no SWIFT_VERSION or no SWIFT_SHA256_UBUNTU2404"
-[ "$pin_version" = "$bx_version" ] \
-    || sce_gate_fail "swift-backend.yml installs Swift $pin_version and bx.toml installs $bx_version on the build machines: the packages would be verified on a compiler the build machines do not have"
-[ "$pin_digest" = "$bx_digest" ] \
-    || sce_gate_fail "swift-backend.yml checks a different Ubuntu 24.04 tarball digest than bx.toml does for Swift $bx_version"
-sce_gate_step "Swift $pin_version and its Ubuntu 24.04 digest are the same in bx.toml and the workflow"
-
-sce_gate_require_swift "$WORKFLOW"
+# The toolchain is the one `bx.toml` pins, which is also what the runner installs
+# (`scripts/install_swift_toolchain.sh`): one source, so the packages are verified on the
+# compiler the build machines have.
+sce_gate_require_swift
 
 LOG="$(mktemp)"
 sce_gate_on_exit "rm -f '$LOG'"

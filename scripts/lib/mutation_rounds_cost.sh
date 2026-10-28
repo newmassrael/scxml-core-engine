@@ -60,9 +60,12 @@
 #                    The 13 came from `mutation_rounds_selection`, 21 cargo
 #                    cases in 4h16m, about 12.2 each, because its cases drive
 #                    whole gate scripts; an oracle that links the workspace
-#                    costs more. `go`, `pytest` and `gradle` are carried by
-#                    this row; the honest cost of an unmeasured runner is the
-#                    worst measured one.
+#                    costs more. `go`, `pytest`, `gradle` and `swift` are
+#                    carried by this row; the honest cost of an unmeasured
+#                    runner is the worst measured one. `swift` has no round of
+#                    its own measured yet: its first is the one CI runs for
+#                    `a_swift_checked_operation_reports_the_failure_the_contract_names`,
+#                    and its row is replaced by what that reads.
 mutation_rounds_cost() {
     case "$1" in
         ctest) printf '35 45\n' ;;

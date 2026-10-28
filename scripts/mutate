@@ -484,6 +484,13 @@ mutation_ctest() { mutation_declare_runner ctest "$@"; }
 # mutation from one that never reached the code.
 mutation_go() { mutation_declare_runner go "$@"; }
 
+# A SwiftPM package's tests: the package directory, then any arguments `swift test`
+# takes (`--filter <regex>`), which go to the run and not to the build.
+#
+#     mutation_swift backends/swift/tests
+#     mutation_swift backends/swift/runtime --filter Engine
+mutation_swift() { mutation_declare_runner swift "$@"; }
+
 # pytest selector for the tests under study: a rootdir, then the arguments
 # pytest itself takes.
 #
@@ -2240,6 +2247,171 @@ mutation_go_check_selector() {
     return 1
 }
 
+# ── The Swift runner ───────────────────────────────────────────────
+#
+# A SwiftPM package whose test target is built to one executable, the
+# `<Package>PackageTests.xctest` that `swift build --build-tests` writes under the
+# package's `.build/`. That file is the artifact set, as a Go package's compiled test
+# binary is: a mutation that reaches it changes its hash, and one that leaves every
+# hash unchanged is INCONCLUSIVE and not SURVIVED.
+#
+# The selector is the package directory and then any arguments `swift test` takes
+# (`--filter <regex>`), passed to the run and never to the build, so the build is the
+# same file whatever the filter and a filter cannot hide a test from the baseline's
+# count.
+#
+# What `swift build` compiles is the COMMITTED generated tree
+# (`backends/swift/tests/Sources/StaticDatamodelMachines/`), as the cargo and Gradle
+# runners compile theirs, so a mutation upstream of it (a template, the Rust lowering)
+# reaches the binary only through a declared `mutation_regen`.
+#
+# The tests are run directly with `--skip-build` after a build the round owns, for the
+# reason the Go runner runs its compiled binary: the verdict is read from the run's own
+# lines and not from a cache.
+
+mutation_swift_package_dir() { printf '%s\n' "${MUTATION_RUNNER_ARGS[0]:-}"; }
+
+# The toolchain `bx.toml` pins (`scripts/lib/swift_pin.sh`), and no other.
+#
+# `swift` is a link into a toolchain whose own tools sit beside the file it points at,
+# and a toolchain installed by hand is not on PATH. A hosted runner image carries a
+# Swift of its own on PATH, of whatever release the image moved to, so the pinned one is
+# put FIRST and a `swift` already on PATH is not trusted: a round judged on another
+# compiler than the lane that gates the backend answers about a build nobody ships.
+mutation_swift_use_toolchain() {
+    local version link
+    source "$SCE_REPO_ROOT/scripts/lib/swift_pin.sh"
+    version="$(sce_swift_pin_version)"
+    [[ -n "$version" ]] || return 1
+    link="$HOME/.local/share/swift/$version/bin/swift"
+    [[ -x "$link" ]] || return 1
+    PATH="$(dirname "$(readlink -f "$link")"):$PATH"
+    export PATH
+}
+
+mutation_swift_require() {
+    local dir
+    dir="$(mutation_swift_package_dir)"
+    if [[ -z "$dir" || ! -f "$dir/Package.swift" ]]; then
+        red "mutation_swift needs a package directory first: '$dir' holds no Package.swift"
+        return 1
+    fi
+    if ! mutation_swift_use_toolchain; then
+        red "mutation_swift needs the Swift toolchain bx.toml pins under ~/.local/share/swift/<version>/,"
+        red "and this host has none (scripts/install_swift_toolchain.sh installs it): every case would"
+        red "read as a build that failed."
+        return 1
+    fi
+}
+
+# Compile the tests, then take the executables as the artifact set.
+#
+# Compiled BEFORE resolving, for the reason `mutation_go_resolve` states: resolution is
+# a file-existence test, and a package this round is the first to build has no
+# executable yet. A compile failure is ignored here and left to the baseline, which
+# reports it in the compiler's own words.
+mutation_swift_resolve() {
+    local dir bin artifact
+    mutation_swift_require || exit 2
+    dir="$(mutation_swift_package_dir)"
+    ( cd "$dir" && swift build --build-tests ) >>"$MUTATION_BUILD_LOG" 2>&1 || true
+    bin="$( cd "$dir" && swift build --build-tests --show-bin-path 2>/dev/null )" || true
+
+    MUTATION_ARTIFACTS=()
+    while IFS= read -r artifact; do
+        [[ -f "$artifact" ]] && MUTATION_ARTIFACTS+=("$artifact")
+    done < <(ls "$bin"/*PackageTests.xctest 2>/dev/null)
+
+    if [[ ${#MUTATION_ARTIFACTS[@]} -eq 0 ]]; then
+        red "the selector built no test executable: ${MUTATION_RUNNER_ARGS[*]}"
+        red "the build log's tail:"
+        mutation_build_diagnostics >&2
+        exit 2
+    fi
+}
+
+mutation_swift_build_and_hash() {
+    local dir
+    dir="$(mutation_swift_package_dir)"
+    : >"$MUTATION_BUILD_LOG"
+    ( cd "$dir" && swift build --build-tests ) >>"$MUTATION_BUILD_LOG" 2>&1 || return 1
+    mutation_hash_artifacts
+}
+
+# Run the tests and print "<tests_run> <failed> <timed_out>".
+#
+# Counted from the per-test verdict lines (`✔ Test <name> passed after`,
+# `✘ Test <name> failed after`, `↪ Test <name> skipped`) and not from the summary
+# alone, which says nothing about WHICH tests ran. The run's own summary line and the
+# per-argument lines of a parameterized test are left out, so a test is one count.
+#
+# A process that dies (a trap in the runtime, a fatal error) ends the whole run and
+# the tests after it print nothing. They exist and they did not pass, so counting only
+# the verdict lines would make a mutation that crashes the suite look like one that
+# changed which tests exist, and read INCONCLUSIVE where the tests are as red as they
+# can be. When the run ends nonzero with no summary line, every test the package lists
+# that did not report a pass counts as run and failed, and the line that says so is
+# named.
+mutation_swift_run() {
+    local dir out rc=0 run failed passed listed unreached
+    dir="$(mutation_swift_package_dir)"
+    : > "$MUTATION_FAILING"
+    : > "$MUTATION_FAILURE_DETAIL"
+    out="$(cd "$dir" && timeout "$MUTATION_ARTIFACT_TIMEOUT" swift test --skip-build \
+        "${MUTATION_RUNNER_ARGS[@]:1}" 2>&1)" || rc=$?
+    if [[ "$rc" == "124" ]]; then
+        printf 'swift test (did not terminate within %ss)\n' "$MUTATION_ARTIFACT_TIMEOUT" \
+            >> "$MUTATION_FAILING"
+        printf '0 0 1\n'
+        return 0
+    fi
+    passed="$(printf '%s\n' "$out" | grep -E '^✔ Test ' | grep -cvE '^✔ Test (run with|case) ' || true)"
+    failed="$(printf '%s\n' "$out" | grep -E '^✘ Test .* failed after ' | grep -cvE '^✘ Test (run with|case) ' || true)"
+    run=$(( ${passed:-0} + ${failed:-0}
+        + $(printf '%s\n' "$out" | grep -cE '^↪ Test ' || true) ))
+    printf '%s\n' "$out" | mutation_failures_from_swift >> "$MUTATION_FAILING"
+    printf '%s\n' "$out" | mutation_detail_from_swift >> "$MUTATION_FAILURE_DETAIL"
+    if [[ "$rc" != "0" ]] && ! printf '%s\n' "$out" | grep -qE '^[✔✘] Test run with '; then
+        listed="$(cd "$dir" && swift test list --skip-build "${MUTATION_RUNNER_ARGS[@]:1}" 2>/dev/null | grep -c . || true)"
+        unreached=$(( ${listed:-0} - ${passed:-0} - ${failed:-0} ))
+        if (( unreached > 0 )); then
+            printf '%s tests not reached: the process died before the run finished\n' "$unreached" \
+                >> "$MUTATION_FAILING"
+            run=$(( run + unreached ))
+            failed=$(( failed + unreached ))
+        fi
+    fi
+    printf '%s %s %s\n' "$run" "$failed" 0
+}
+
+# The selector still names a package with a test target. `swift package dump-package`
+# reads the manifest and builds no test, the part of the runner question the cheap mode
+# can answer, as `go list` is for the Go runner.
+#
+# A host with no pinned toolchain does not fail this, as a host with no `go` does not fail
+# the Go one: `--check` runs on every push, on runners that carry no Swift, and what it
+# can say there is that the package is named; the target count is read where a toolchain
+# is.
+mutation_swift_check_selector() {
+    local dir n
+    dir="$(mutation_swift_package_dir)"
+    if [[ -z "$dir" || ! -f "$dir/Package.swift" ]]; then
+        red "mutation_swift needs a package directory first: '$dir' holds no Package.swift"
+        return 1
+    fi
+    if ! mutation_swift_use_toolchain; then
+        dim "selector NOT checked: the Swift toolchain bx.toml pins is not installed here"
+        return 0
+    fi
+    n="$( ( cd "$dir" && swift package dump-package 2>/dev/null ) | grep -c '"type" : "test"' || true)"
+    if [[ "${n:-0}" -gt 0 ]]; then
+        dim "selector matches $n Swift test target(s)"
+        return 0
+    fi
+    red "the Swift selector names no package with a test target in $dir: ${MUTATION_RUNNER_ARGS[*]}"
+    return 1
+}
+
 # ── The pytest runner ──────────────────────────────────────────────
 #
 # Python builds nothing, so the artifact set is the source that will be
@@ -2904,11 +3076,11 @@ mutation_check_template_bridge() {
     # a runner that RUNS THE GENERATION STEP ITSELF reaches a template with
     # nothing declared. `ctest` does — `cmake --build` regenerates — and the
     # Go and pytest runners call `mutation_regenerate` from their own resolve.
-    # `cargo` and `gradle` do neither: both compile the COMMITTED generated
-    # tree, so a template mutation reaches their binaries only through a
-    # declared regeneration, or not at all.
+    # `cargo`, `gradle` and `swift` do neither: all three compile the COMMITTED
+    # generated tree, so a template mutation reaches their binaries only
+    # through a declared regeneration, or not at all.
     case "$MUTATION_RUNNER" in
-        cargo | gradle) ;;
+        cargo | gradle | swift) ;;
         *) return 0 ;;
     esac
     (( ${#MUTATION_REGEN_CMDS[@]} == 0 )) || return 0
@@ -3234,7 +3406,7 @@ mutation_check_needs() {
 mutation_init() {
     if [[ -z "$MUTATION_RUNNER" ]]; then
         red "the casefile declared no selector — one of mutation_tests,"
-        red "mutation_ctest, mutation_go, mutation_pytest or mutation_gradle"
+        red "mutation_ctest, mutation_go, mutation_pytest, mutation_gradle or mutation_swift"
         exit 2
     fi
     if [[ ${#MUTATION_TARGET_FILES[@]} -eq 0 && ${#MUTATION_RUNTIME_FILES[@]} -eq 0 ]]; then

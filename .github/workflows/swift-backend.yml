@@ -17,21 +17,22 @@ name: Swift backend (runtime, forge runtime, generated machines)
 # discovered is red and not a silent pass. Whether the COMMITTED machines are what the
 # generator writes is `regen-reproduces`' question and is kept there.
 #
-# ⚠ THE TOOLCHAIN IS PINNED, to the release `bx.toml` installs on the build machines
-# (`[tools.swift]`), and by the digest of its tarball. The gate READS `SWIFT_VERSION:`
-# below, so this lane and a developer's machine agree about which compiler builds the
-# packages, and the gate holds the version and the digest here equal to the build machines'
-# pin before it builds anything. Changing the number moves all three.
+# ⚠ THE TOOLCHAIN IS PINNED, and the pin lives in `bx.toml` (`[tools.swift]`) and nowhere
+# else: the release, and the digest of its tarball for each Ubuntu release. The build
+# machines install it with `provision`, this lane with `scripts/install_swift_toolchain.sh`,
+# and the gate reads it through `scripts/lib/swift_pin.sh`, so a bump is one edit and a
+# lane cannot verify the packages on a compiler the build machines do not have. Until
+# 2026-10-28 the version and digest were copied into this file as well, and the gate held
+# the two copies equal; that check is gone because the second copy is.
 #
-# The runner is `ubuntu-24.04` and not `ubuntu-latest` for the same reason: the digest
-# below is the 24.04 tarball's. A release pinned for one distribution and run on another
-# would fail the checksum, which is the right failure and a confusing one on a day the
-# image moved.
+# The runner is `ubuntu-24.04` and not `ubuntu-latest`: the pin carries a digest for each
+# Ubuntu release it supports, and a runner image that moved to a release with none would
+# fail by name instead of downloading a tarball nothing checks.
 #
 # The `paths:` filter is what `tools/git-hooks/gate_registry.py` reads to decide whether a
 # push runs the gate. It names what the packages read (the Swift tree and the shared
 # scenarios), what writes the machines they compile (the generator and its templates),
-# the gate's own files, and `bx.toml`, whose `[tools.swift]` pin the gate holds this one to.
+# the gate's own files, and `bx.toml`, which holds the toolchain pin.
 
 on:
   push:
@@ -50,6 +51,8 @@ on:
       - 'scripts/regen_swift_statecharts.sh'
       - 'scripts/regen_static_datamodel_swift.sh'
       - 'scripts/lib/sce_codegen.sh'
+      - 'scripts/lib/swift_pin.sh'
+      - 'scripts/install_swift_toolchain.sh'
       - 'scripts/gates/swift-backend.sh'
       - 'scripts/gates/lib.sh'
       - 'bx.toml'
@@ -66,12 +69,6 @@ on:
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
-
-env:
-  SWIFT_VERSION: '6.4.0'
-  # SHA-256 of swift-6.4.0-RELEASE-ubuntu24.04.tar.gz, taken from a tarball whose detached
-  # signature verified against swift.org's published keys; the same digest `bx.toml` pins.
-  SWIFT_SHA256_UBUNTU2404: 69f7b2b4dbce6090b6c92194b71149a057e16269093b5a9dded38afc4a05094e
 
 jobs:
   swift-backend:
@@ -120,34 +117,30 @@ jobs:
           libncurses-dev libpython3-dev libsqlite3-0 libxml2-dev libz3-dev \
           pkg-config tzdata unzip zlib1g-dev
 
+    # The release and the tarball's digest are `bx.toml`'s `[tools.swift]` and nothing in
+    # this file, so the key moves with the pin and the build machines and this lane cannot
+    # disagree about the compiler.
+    - name: Read the Swift pin
+      id: swift-pin
+      run: |
+        SCE_REPO_ROOT="$PWD"
+        source scripts/lib/swift_pin.sh
+        echo "version=$(sce_swift_pin_version)" >> "$GITHUB_OUTPUT"
+        echo "digest=$(sce_swift_pin_digest 24.04)" >> "$GITHUB_OUTPUT"
+
     # The toolchain lives where the build machines keep it, under
     # `~/.local/share/swift/<version>/`, which is where the gate looks.
     - name: Cache the Swift toolchain
-      id: swift-cache
       uses: actions/cache@v5
       with:
-        path: ~/.local/share/swift/${{ env.SWIFT_VERSION }}
-        key: swift-toolchain-ubuntu24.04-${{ env.SWIFT_VERSION }}-${{ env.SWIFT_SHA256_UBUNTU2404 }}
+        path: ~/.local/share/swift/${{ steps.swift-pin.outputs.version }}
+        key: swift-toolchain-ubuntu24.04-${{ steps.swift-pin.outputs.version }}-${{ steps.swift-pin.outputs.digest }}
 
-    # The download is checked against the pinned digest, never against a checksum the same
-    # server publishes beside it.
+    # Checked against the pinned digest, and a no-op on a toolchain the cache restored.
+    # The runner image carries a Swift of its own on PATH, and the gate takes this one
+    # and not that one.
     - name: Install the pinned Swift toolchain
-      if: steps.swift-cache.outputs.cache-hit != 'true'
-      run: |
-        prefix="$HOME/.local/share/swift/$SWIFT_VERSION"
-        file="swift-$SWIFT_VERSION-RELEASE-ubuntu24.04.tar.gz"
-        mkdir -p "$prefix"
-        curl -fsSL --retry 3 --retry-all-errors -o "$file" \
-          "https://download.swift.org/swift-$SWIFT_VERSION-release/ubuntu2404/swift-$SWIFT_VERSION-RELEASE/$file"
-        echo "$SWIFT_SHA256_UBUNTU2404  $file" | sha256sum -c --quiet
-        tar -xzf "$file" -C "$prefix" --strip-components=1
-        rm -f "$file"
-        # Only `swift` gets a link, as on the build machines (`prefix_link` of
-        # `[tools.swift]`): `swiftc` and the rest sit beside the file it points
-        # to, which is where the gate looks. The runner image carries a Swift of
-        # its own on PATH, and the gate takes this one and not that one.
-        mkdir -p "$prefix/bin"
-        ln -sfn "$prefix/usr/bin/swift" "$prefix/bin/swift"
+      run: scripts/install_swift_toolchain.sh
 
     - name: Run the Swift backend gate
       run: scripts/gate swift-backend

@@ -1,0 +1,56 @@
+# Mutation cases for "a checked operation of the Swift forge runtime computes at the
+# declared width or records the failure the contract names, and a string is held to its
+# UTF-8 bytes" (docs/SCE_FORGE.md section 3.4.1; the cases of
+# backends/go/forge-runtime/algorithm/algorithm_test.go).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_swift_checked_operation_reports_the_failure_the_contract_names.cases`.
+#
+# The first casefile of the Swift backend, and the one that proves the harness can judge
+# a Swift package at all: `mutation_swift` builds the package's test executable, hashes
+# it, and reads each test's verdict from Swift Testing's own lines. The judge is
+# `backends/swift/forge-runtime/Tests/SceForgeRuntimeTests/CheckedTests.swift`. The
+# mutants take one decision away each:
+#
+#   an integer sum that wraps instead of being reported;
+#   a quotient whose MIN / -1 overflow is let through;
+#   a string measured in characters and not in UTF-8 bytes;
+#   an element read past the list that records no failure;
+#   a second failure that replaces the first.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_swift backends/swift/forge-runtime
+mutation_targets backends/swift/forge-runtime/Sources/SceForgeRuntime/Checked.swift
+mutation_oracles backends/swift/forge-runtime/Tests/SceForgeRuntimeTests/CheckedTests.swift
+
+mutation_case "an integer sum that wraps instead of being reported" <<'PY'
+edit("backends/swift/forge-runtime/Sources/SceForgeRuntime/Checked.swift",
+     "        let (value, overflow) = a.addingReportingOverflow(b)",
+     "        let (value, overflow) = (a &+ b, false)")
+PY
+
+mutation_case "a quotient whose MIN / -1 overflow is let through" <<'PY'
+edit("backends/swift/forge-runtime/Sources/SceForgeRuntime/Checked.swift",
+     "        let (value, overflow) = a.dividedReportingOverflow(by: b)\n        if overflow {",
+     "        let (value, overflow) = a.dividedReportingOverflow(by: b)\n        if false && overflow {")
+PY
+
+mutation_case "a string measured in characters and not in UTF-8 bytes" <<'PY'
+edit("backends/swift/forge-runtime/Sources/SceForgeRuntime/Checked.swift",
+     "        if UInt64(value.utf8.count) > UInt64(capacity) {",
+     "        if UInt64(value.count) > UInt64(capacity) {")
+PY
+
+mutation_case "an element read past the list that records no failure" <<'PY'
+edit("backends/swift/forge-runtime/Sources/SceForgeRuntime/Checked.swift",
+     "            f.fail(.outOfRange)\n            return T()",
+     "            return T()")
+PY
+
+mutation_case "a second failure that replaces the first" <<'PY'
+edit("backends/swift/forge-runtime/Sources/SceForgeRuntime/Checked.swift",
+     "        if recorded == nil {",
+     "        if true {")
+PY

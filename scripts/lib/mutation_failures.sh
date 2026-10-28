@@ -273,6 +273,41 @@ mutation_detail_from_go() {
     '
 }
 
+# Swift Testing's verdict lines out of `swift test --skip-build`.
+#
+# A failing test closes with `✘ Test <name> failed after <n> seconds`. Two other
+# lines open the same way and are not a test: the run's own summary
+# (`✘ Test run with 3 tests failed`) and, for a parameterized test, one line per
+# argument (`✘ Test case passing 1 argument ... failed`). The parent test prints
+# its own verdict as well, so counting the case lines would report two red where
+# the runner reports one, and the count is what the harness compares against its
+# baseline. The same division `mutation_failures_from_go` draws between a test and
+# its subtests.
+#
+# The marks are matched as literal byte sequences, not as a bracket expression,
+# so a locale that reads the line byte by byte answers as one that reads it as
+# text.
+mutation_failures_from_swift() {
+    sed -n 's/^✘ Test \(.*\) failed after .*/\1/p' \
+        | grep -v -e '^run with ' -e '^case ' || true
+}
+
+# What a Swift test recorded before it failed.
+#
+# Swift Testing runs tests in parallel, so a test's lines are interleaved with its
+# neighbours' and there is no block to cut from `started` to `failed` the way the Go
+# parser cuts one. What is attributable to a test is each issue it recorded
+# (`✘ Test <name> recorded an issue at <file>:<line>:<col>: <message>`) and the `↳`
+# lines Swift Testing indents under it, which carry the expectation's operands.
+# Bounded like the others (MUTATION_DETAIL_HEAD_LINES above).
+mutation_detail_from_swift() {
+    awk -v max="$((MUTATION_DETAIL_HEAD_LINES + MUTATION_DETAIL_TAIL_LINES))" '
+        /^✘ Test .* recorded an issue/ { open = 1; if (n < max) { print; n++ }; next }
+        open && /^↳/ { if (n < max) { print; n++ }; next }
+        { open = 0 }
+    '
+}
+
 # pytest's short summary, which it prints for a failing run under `-q`.
 #
 # The node id alone — `path::test_name` — because the reason follows it after

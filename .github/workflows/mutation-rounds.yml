@@ -691,6 +691,40 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-gradle-
 
+    # And the same for a Swift round, which is the Swift backend's. The toolchain is the
+    # one `bx.toml` pins (`[tools.swift]`) and `swift-backend.yml` installs: a round
+    # judging the backend on a different compiler than the lane that gates it would be
+    # answering about a build nobody ships, the reason the Go step above states for its
+    # own pin. The release and the digest are read from `bx.toml` and written nowhere in
+    # this file.
+    - name: Install the packages the Swift toolchain links against
+      if: matrix.runner == 'swift'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y binutils libc6-dev libcurl4-openssl-dev libedit2 \
+          libncurses-dev libpython3-dev libsqlite3-0 libxml2-dev libz3-dev \
+          pkg-config tzdata unzip zlib1g-dev
+
+    - name: Read the Swift pin
+      id: swift-pin
+      if: matrix.runner == 'swift'
+      run: |
+        SCE_REPO_ROOT="$PWD"
+        source scripts/lib/swift_pin.sh
+        echo "version=$(sce_swift_pin_version)" >> "$GITHUB_OUTPUT"
+        echo "digest=$(sce_swift_pin_digest 24.04)" >> "$GITHUB_OUTPUT"
+
+    - name: Cache the Swift toolchain
+      if: matrix.runner == 'swift'
+      uses: actions/cache@v5
+      with:
+        path: ~/.local/share/swift/${{ steps.swift-pin.outputs.version }}
+        key: swift-toolchain-ubuntu24.04-${{ steps.swift-pin.outputs.version }}-${{ steps.swift-pin.outputs.digest }}
+
+    - name: Install the pinned Swift toolchain
+      if: matrix.runner == 'swift'
+      run: scripts/install_swift_toolchain.sh
+
     # The same repair `rust-workspace-tests.yml` already carries, and for the
     # same two tests. `gate_registry_contract` is the ORACLE of three casefiles
     # in this corpus, and it drives the staged citation stage as a subprocess;
