@@ -152,7 +152,7 @@ own handle (no read of shared state), and publishes `head = n` after the slot.
 
 ```
 publish(e):            // n is the producer's own count; i = n mod S, S = R + 1
-  stamp[i].store(busy(n), relaxed)
+  stamp[i].store(busy(n), release)         // release: see "Orders the memory model adds" below
   fence(release)
   for k: words[i][k].store(e[k], relaxed)
   stamp[i].store(done(n), release)
@@ -167,7 +167,7 @@ read(r):               // returns Item / Empty / Lagged, a bounded number of ste
   if s1 == done(r):
       copy words[r mod S] with relaxed loads
       fence(acquire)
-      if stamp[r mod S].load(relaxed) == s1:  return Item(r, copy)
+      if stamp[r mod S].load(acquire) == s1:  return Item(r, copy)
   h' = head.load(acquire)                    // the slot was reused while we looked: the producer is past us
   return Lagged{skipped = (h' - R) - r}
 ```
@@ -184,11 +184,22 @@ language gains the facility may use it without changing the document or the cont
 reader that compares against `done(r)` cannot mistake a later lap for the one it wants (the ABA hazard a version stamp
 exists to defeat).
 
+**Orders the memory model adds to the protocol.** The first version of this section wrote the busy stamp relaxed and
+read the second stamp relaxed, as the textbook seqlock does, and the loom model of §6 refused it twice, each time with
+a reader told it had lagged by nothing. The textbook seqlock needs a reader only to *detect* that a slot changed; this
+one also needs it to *know how far the publisher has come* when it does, by reloading `head`. That reload is ordered
+after the publish that began the lap only through a synchronizes-with edge, and each of the two places a reader can
+learn of a later lap has to supply one: the busy stamp is a release store, so that a reader seeing it sees the `head`
+store that ended the publish before, and the second stamp load is an acquire load, because an acquire fence orders a
+load only against the reads before it. Neither is a fault of the sequentially consistent model; both are outside what
+it can express, which is why §6 keeps the two layers.
+
 Properties, each of which is checked (§6):
 
-- **Wait-free** publish and read, in `O(W)` steps, with **no read-modify-write atomic**: loads and stores of the stamp
-  width and of one word. The row is on every target that has atomic loads and stores of those widths, ARMv6-M
-  included, which no SCQ-family queue row is. Wait-freedom of read holds because a failed validation is not retried:
+- **Wait-free** publish and read, in `O(W)` steps. The algorithm needs no read-modify-write atomic: loads and stores of
+  the stamp width and of one word. The Rust row below adds one, an 8-bit swap that takes the publisher's place, and
+  needs 64-bit atomics; the form for a target with only loads and stores, with a narrow stamp and the once-only handle
+  by ownership, is not built (see "What step 4 landed"). Wait-freedom of read holds because a failed validation is not retried:
   a mismatch *is* the answer, `Lagged`. A single producer is what makes this true; with several, a claimed but
   unpublished sequence number is a hole that readers can neither return nor skip (§8).
 - **Why `R + 1` slots.** A reader that has seen `h - r <= R` and found the slot reused did so because the producer began
@@ -350,6 +361,24 @@ Each step is green on its own, and the last two are the ones that need the consu
   its tests are unedited and pass. The element-document resolution and the width-and-wrap analysis wait for step 3,
   where the kind first needs them: nothing reads them before, and extracting what nothing reads would be a guess about
   their shape.
+
+### What step 4 landed for Rust (2026-10-28)
+
+- **The runtime row.** `backends/rust/forge-runtime/src/broadcast_log.rs`: `BroadcastLog<W, SLOTS>` with `W` 64-bit words
+  an entry and `SLOTS = retention + 1`, a `Publisher` handle taken once (an 8-bit swap), copyable `Reader` cursors that
+  carry their `lost` total, and `Read::{Item, Empty, Lagged}`. It shares the crate's atomics shim and `Padded` with the
+  queue rows, so `--cfg loom` reaches it. Present only where 64-bit atomics are, as SCQ is. Seven unit tests and clippy
+  with `-D warnings` pass on the build machine.
+- **The memory-model check found two faults in this ADR's first protocol** (see "Orders the memory model adds"), both
+  of which the sequentially consistent TLA+ model had passed. With both fixed the three loom models pass under three
+  preemptions. That bound is the other loom models' and what is established is "no violation within it".
+- **Eleven mutation cases** (`sce-build/tests/mutations/a_broadcast_log_orders_every_slot_hand_over.cases`): one per
+  order and fence of `publish` and `read`, a lap-blind stamp, and a window one entry too wide. Their anchors all apply
+  (`scripts/mutate --check`). Whether the models kill each of them is judged by the mutation round in CI and has not been
+  read; only the two orders above are known to be caught, by the faults they were.
+- **Not built for Rust:** the generated template (it waits for the kind of step 3), the stress run on real threads with
+  histories judged by `sce-codegen check-broadcast-history`, Miri and ThreadSanitizer runs, the narrow-stamp form with
+  its wrap bound, and the form for a target with only loads and stores.
 
 ## Consequences
 

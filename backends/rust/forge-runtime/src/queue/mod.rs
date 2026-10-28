@@ -63,7 +63,9 @@ pub mod lscq;
 pub mod scq;
 pub mod spsc;
 
-mod sync;
+/// Visible to the crate so the broadcast log (ADR 0062) is written against the
+/// same atomics and cells, and so the same `--cfg loom` swap reaches it.
+pub(crate) mod sync;
 
 /// Keeps what it wraps on a cache line of its own, so two indices that two
 /// cores update do not contend for one. It costs a cache line each and

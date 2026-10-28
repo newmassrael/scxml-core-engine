@@ -67,6 +67,12 @@ name = "loom_queue_spsc"
 path = "tests/loom_queue_spsc.rs"
 test = false
 
+# The broadcast log's models (ADR 0062), run the same way.
+[[test]]
+name = "loom_broadcast_log"
+path = "tests/loom_broadcast_log.rs"
+test = false
+
 [[test]]
 name = "loom_queue_scq"
 path = "tests/loom_queue_scq.rs"

@@ -15,7 +15,7 @@
 
 #[cfg(loom)]
 pub(crate) use loom::sync::atomic::{
-    AtomicBool, AtomicI64, AtomicPtr, AtomicU32, AtomicU64, AtomicUsize, Ordering,
+    fence, AtomicBool, AtomicI64, AtomicPtr, AtomicU32, AtomicU64, AtomicUsize, Ordering,
 };
 
 /// What every queue uses, on every target: loads and stores of a word.
@@ -35,6 +35,11 @@ pub(crate) use core::sync::atomic::AtomicU32;
 /// such row, and the module that uses them is absent there too.
 #[cfg(all(not(loom), target_has_atomic = "64"))]
 pub(crate) use core::sync::atomic::{AtomicI64, AtomicU64};
+
+/// The fences of the broadcast log's sequence-lock read (ADR 0062 section 4),
+/// present where its 64-bit stamp is.
+#[cfg(all(not(loom), target_has_atomic = "64"))]
+pub(crate) use core::sync::atomic::fence;
 
 #[cfg(loom)]
 pub(crate) use loom::cell::UnsafeCell;

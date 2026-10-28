@@ -21,6 +21,11 @@
 extern crate alloc;
 
 pub mod algorithm;
+/// The bounded broadcast log (ADR 0062): one publisher, any number of readers,
+/// the oldest entry forgotten when full. Its stamps are 64-bit atomics, so a
+/// target without them has no such module, as it has no SCQ.
+#[cfg(all(target_has_atomic = "64", target_has_atomic = "8"))]
+pub mod broadcast_log;
 pub mod cbor;
 pub mod codec;
 pub mod content_line;
