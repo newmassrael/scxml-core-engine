@@ -25,5 +25,5 @@ pub fn item_pick_first(
             found = Some(it.clone());
         }
     }
-    return found;
+    return found.clone();
 }
