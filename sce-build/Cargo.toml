@@ -998,6 +998,22 @@ name = "an_optional_record_is_spelled_by_the_cpp_backend"
 path = "tests/an_optional_record_is_spelled_by_the_cpp_backend.rs"
 required-features = ["cli"]
 
+# What a C11 codec holds an entry or a gated field that may be absent in
+# (docs/adr/0055, step 14): the struct of its element. It runs `sce-codegen
+# generate`, so it carries the `cli` gate.
+[[test]]
+name = "a_c11_codec_holds_what_may_be_absent_in_the_optional_type"
+path = "tests/a_c11_codec_holds_what_may_be_absent_in_the_optional_type.rs"
+required-features = ["cli"]
+
+# The standard refusal has no variant for no refusal, and the parent keeps its last
+# refusal as an optional record (docs/adr/0055, step 11). It runs `sce-codegen`, so
+# it carries the `cli` gate.
+[[test]]
+name = "a_standard_refusal_has_no_variant_for_no_refusal"
+path = "tests/a_standard_refusal_has_no_variant_for_no_refusal.rs"
+required-features = ["cli"]
+
 # The Kotlin backend's spelling of an optional record (docs/adr/0055, step 9): the
 # text it generates for a statechart's variable, a call of an algorithm and an
 # algorithm's slot. It runs `sce-codegen generate`, so it carries the `cli` gate.
