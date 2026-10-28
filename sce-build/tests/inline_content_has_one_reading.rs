@@ -226,6 +226,40 @@ fn without_comments(text: &str) -> String {
     out
 }
 
+/// The stripper removes each comment syntax and keeps the code beside it.
+///
+/// It is what lets the two absence assertions below read emitted sources that
+/// explain the searches they look for, and no emitted source carries such an
+/// explanation in a `//` or `#` comment today, so neither assertion would go red
+/// if the stripper stopped stripping them: the casefile case that disabled the
+/// line-comment arm SURVIVED for that reason. The stripper is therefore held to
+/// its own contract on text written for the purpose.
+#[test]
+fn the_comment_stripper_removes_every_comment_syntax_and_keeps_the_code() {
+    let source = "keep_a // gone_a\n\
+                  # gone_b\n\
+                  keep_b #t\n\
+                  \x20   # gone_c\n\
+                  keep_c /* gone_d\n\
+                  gone_e */ keep_d\n\
+                  keep_e\n";
+    let stripped = without_comments(source);
+    for gone in ["gone_a", "gone_b", "gone_c", "gone_d", "gone_e"] {
+        assert!(
+            !stripped.contains(gone),
+            "`{gone}` is inside a comment and survived the stripper: {stripped:?}"
+        );
+    }
+    // `#t` is Lua's length operator mid-line, which is the evidence the
+    // assertions look for, and the stripper must leave it standing.
+    for kept in ["keep_a", "keep_b #t", "keep_c", "keep_d", "keep_e"] {
+        assert!(
+            stripped.contains(kept),
+            "`{kept}` is code and was stripped: {stripped:?}"
+        );
+    }
+}
+
 /// The two languages a backend evaluates the reading in.
 ///
 /// Four backends lower the author's ECMAScript to Lua and evaluate that;

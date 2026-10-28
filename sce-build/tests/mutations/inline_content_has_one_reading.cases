@@ -128,6 +128,15 @@ PY
 # which is exactly the term the search below looks for. Aiming this at the
 # block path instead was SURVIVED in the first round — true, and useless,
 # because no emitted block comment happens to carry a search term today.
+#
+# That is now true of the line path as well: the one `//` comment that named
+# `jsonStringToScriptValue` sits in the mesh invoke template, which the probe
+# document never reaches, and C11's search term has no template left that
+# spells it. So no emitted line comment carries a term the two absence
+# assertions look for, and this case SURVIVED against every test that reads
+# emitted text. The stripper is held to its own contract by
+# `the_comment_stripper_removes_every_comment_syntax_and_keeps_the_code`,
+# which feeds it comments of its own, and that is the test this case turns red.
 mutation_case "the comment stripper stops stripping line comments" <<'PY'
 edit("sce-build/tests/inline_content_has_one_reading.rs",
      """        if (c == '/' && next == Some('/')) || (c == '#' && at_line_start) {""",
