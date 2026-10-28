@@ -4167,6 +4167,7 @@ fn render_swift(env: &mut Environment, model: &SCXMLModel) -> Result<String, Gen
         license_config => minijinja::Value::from_serialize(license_config()),
         static_fields => minijinja::Value::from_serialize(&static_lowering.fields),
         static_published => minijinja::Value::from_serialize(&static_published),
+        static_type_defs => static_lowering.type_defs.join("\n\n"),
         event_payload_active => payload.active,
         event_payload_defs => &payload.defs,
         event_payload_policy_fields => &payload.policy_fields,

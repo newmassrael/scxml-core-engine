@@ -10424,14 +10424,29 @@ impl StaticTarget for SwiftTarget {
         // A scalar of a number, a bool or a string; an enum, a record, a list, a
         // byte string and an optional value are not spelled yet.
         if let Some(var) = scope.variables.iter().find(|v| {
-            !v.value_type.as_ref().is_some_and(|t| {
-                t.scalar()
-                    .is_some_and(|ty| !matches!(ty, SceType::Bytes | SceType::Enum(_)))
-            })
+            !v.value_type
+                .as_ref()
+                .is_some_and(|t| t.scalar().is_some_and(|ty| !matches!(ty, SceType::Bytes)))
         }) {
             return Some(format!(
-                "<data id=\"{}\"> of an enum, record, list, byte string or optional type",
+                "<data id=\"{}\"> of a record, list, byte string or optional type",
                 var.id
+            ));
+        }
+        // A variant is a member of the enum's type, named lowerCamelCase, and one Swift
+        // reserves is not a member a `switch` or a leading dot can name.
+        if let Some((enum_name, variant)) = model.held_enums().values().find_map(|e| {
+            e.variants
+                .iter()
+                .find(|v| {
+                    let ident =
+                        crate::forge::enum_naming::variant_ident(Language::Swift, &e.name, &v.name);
+                    crate::reader_names::is_reserved_word(Language::Swift, &ident)
+                })
+                .map(|v| (e.name.clone(), v.name.clone()))
+        }) {
+            return Some(format!(
+                "the variant `{variant}` of the enum `{enum_name}`, a name Swift reserves"
             ));
         }
         // An event's typed payload is read through a struct of its schema's scalar
@@ -10522,8 +10537,81 @@ impl StaticTarget for SwiftTarget {
     fn record_value(&self, _ty: &str, _fields: &[(String, String)]) -> String {
         unreachable!("refused by SwiftTarget::unsupported")
     }
-    fn enum_number_symbols(&self, _ty: &str, _model: &EnumModel) -> (String, String) {
-        unreachable!("refused by SwiftTarget::unsupported")
+    fn enum_type(&self, machine: &str, alias: &str) -> Option<String> {
+        Some(format!(
+            "{machine}{}Enum",
+            filters::to_pascal_case(alias.to_string())
+        ))
+    }
+    // A member is scoped under the type, named lowerCamelCase
+    // ([`crate::forge::enum_naming::variant_ident`]); a word Swift reserves is refused
+    // where the enum is held ([`Self::unsupported`]).
+    fn enum_variant(&self, ty: &str, enum_name: &str, variant: &str) -> String {
+        crate::forge::enum_naming::variant_ref(Language::Swift, ty, enum_name, variant)
+    }
+    // An `Int`-style enum over the enum document's own carrier, each case holding the
+    // number the document declares for it. `declaredName` answers the name the
+    // document gives a value — what a `<log>` shows and what a host compares to a
+    // scenario.
+    fn enum_def(&self, ty: &str, alias: &str, model: &EnumModel) -> String {
+        let case_of = |variant: &str| {
+            crate::forge::enum_naming::variant_ident(Language::Swift, &model.name, variant)
+        };
+        let carrier = crate::forge::generator::swift_type(&model.underlying_type);
+        let cases: String = model
+            .variants
+            .iter()
+            .map(|v| format!("    case {} = {}\n", case_of(&v.name), v.value))
+            .collect();
+        let names: String = model
+            .variants
+            .iter()
+            .map(|v| {
+                format!(
+                    "        case .{}: return \"{}\"\n",
+                    case_of(&v.name),
+                    filters::escape_swift(v.name.clone())
+                )
+            })
+            .collect();
+        let reads: String = model
+            .variants
+            .iter()
+            .map(|v| {
+                format!(
+                    "        case \"{}\": self = .{}\n",
+                    filters::escape_swift(v.name.clone()),
+                    case_of(&v.name)
+                )
+            })
+            .collect();
+        format!(
+            "/// SCE Accepted Subset §2.15: an `enum:{alias}` datamodel value.\n\
+             public enum {ty}: {carrier}, CaseIterable, Sendable {{\n{cases}\n\
+             \x20   /// The name the enum document declares for the value.\n\
+             \x20   public var declaredName: String {{\n\
+             \x20       switch self {{\n{names}\x20       }}\n\
+             \x20   }}\n\n\
+             \x20   /// The number the enum document declares for the value.\n\
+             \x20   public static func toUnderlying(_ value: {ty}) -> {carrier} {{\n\
+             \x20       value.rawValue\n\
+             \x20   }}\n\n\
+             \x20   /// The variant that declares `raw`, and nil for a number no variant declares.\n\
+             \x20   public static func fromUnderlying(_ raw: {carrier}) -> {ty}? {{\n\
+             \x20       {ty}(rawValue: raw)\n\
+             \x20   }}\n\n\
+             \x20   /// The variant the enum document gives `name`, and nil for a name it does not\n\
+             \x20   /// declare.\n\
+             \x20   public init?(declaredName: String) {{\n\
+             \x20       switch declaredName {{\n{reads}\
+             \x20       default: return nil\n\
+             \x20       }}\n\
+             \x20   }}\n\
+             }}"
+        )
+    }
+    fn enum_number_symbols(&self, ty: &str, _model: &EnumModel) -> (String, String) {
+        (format!("{ty}.toUnderlying"), format!("{ty}.fromUnderlying"))
     }
     fn list_type(&self, _elem: &SceType) -> String {
         unreachable!("refused by SwiftTarget::unsupported")

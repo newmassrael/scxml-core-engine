@@ -185,6 +185,18 @@ private func payload() -> Machine {
     )
 }
 
+private func enumeration() -> Machine {
+    let policy = StaticEnumPolicy()
+    return drive(
+        policy,
+        variables: [
+            "layout": { .text(policy.layout.declaredName) },
+            "previous": { .text(policy.vPrevious.declaredName) },
+            "changes": { integer(policy.changes) },
+        ]
+    )
+}
+
 // MARK: - The scenarios
 
 // A counter counts to its flag and lets go: guards, `<assign>`, `<if>` and `<elseif>`
@@ -230,6 +242,15 @@ private func payload() -> Machine {
 // resumes through it finds the variables it kept.
 @Test func aHistoryResumesWhereItsParentWasLeft() {
     replay("static_history", history())
+}
+
+// MARK: - Enums
+
+// An enum variable starts at a variant, is compared with `===` and `!==` to a variant
+// or to another variable of the same enum, takes a conditional of two variants, and is
+// read by the host as the name its enum document declares.
+@Test func anEnumVariableHoldsAVariantOfItsEnum() {
+    replay("static_enum", enumeration())
 }
 
 // MARK: - Event payloads

@@ -5656,9 +5656,10 @@ pub(crate) fn found_wrapper(target: ExprTarget) -> Option<&'static str> {
         ExprTarget::Cpp => Some("SCE::Forge::Checked::found"),
         ExprTarget::Go => Some(GO_FOUND),
         ExprTarget::Python => Some("sce_algorithm.found"),
-        // Reached by a call of a lookup or an enum reading, which no Swift
-        // backend generates yet; the spelling comes with it.
-        ExprTarget::Swift => None,
+        // The enum's `fromUnderlying` answers an `Optional`, which `Checked.found`
+        // throws the failure of as an out-of-range read, for the call that may fail
+        // to pass on ([`pass_failure_on`]).
+        ExprTarget::Swift => Some("Checked.found"),
         ExprTarget::C | ExprTarget::Js => None,
     }
 }
@@ -9285,15 +9286,21 @@ pub(crate) fn pass_failure_on(
         // The callee throws its failure; `Checked.take` records it in the body's
         // `sceFailure` under the callee's own name, which the statement around it
         // throws, and answers the zero of the value's type in its place.
-        ExprTarget::Swift => {
-            let Some(zero) = swift::zero_of(ty.strip_quantity()) else {
+        ExprTarget::Swift => match swift::zero_of(ty.strip_quantity()) {
+            Some(zero) => format!("Checked.take(&sceFailure, fallback: {zero}, {{ try {call} }})"),
+            // A value the lattice does not type is a variant of an enum, whose zero is
+            // its first case: the one value of the type that can be named without
+            // naming the type.
+            None if ty == InferredType::Unknown => {
+                format!("Checked.takeCase(&sceFailure, {{ try {call} }})")
+            }
+            None => {
                 return Err(ExprError::UnsupportedConstruct {
                     construct: format!("a may-fail call returning {}", ty.describe()),
                     observed: None,
-                });
-            };
-            format!("Checked.take(&sceFailure, fallback: {zero}, {{ try {call} }})")
-        }
+                })
+            }
+        },
         ExprTarget::Python => call.to_string(),
         // A failure is a throw, which passes itself on as Python's does: the
         // expression that called the algorithm fails as an overflow of its own

@@ -182,3 +182,19 @@ private func aStringIsHeldToItsBytes(c: BoundCase) {
     #expect(Checked.take(&f, fallback: 0) { try callee(true) } == 0)
     #expect(f.error == .divideByZero)
 }
+
+private enum Level: UInt8, CaseIterable {
+    case low = 0
+    case high = 7
+}
+
+// A reading that found no variant is an out-of-range failure, which a call that may
+// fail passes on, and an enum's first case stands where it failed.
+@Test func foundThrowsOutOfRangeForAReadingThatFoundNothingAndTakeCaseNamesTheFirstCase() throws {
+    #expect(try Checked.found(Level(rawValue: 7)) == .high)
+    var f = Failure()
+    #expect(Checked.takeCase(&f) { try Checked.found(Level(rawValue: 7)) } == .high)
+    #expect(!f.failed)
+    #expect(Checked.takeCase(&f) { try Checked.found(Level(rawValue: 3)) } == .low)
+    #expect(f.error == .outOfRange)
+}

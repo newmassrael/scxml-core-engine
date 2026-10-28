@@ -227,6 +227,34 @@ public enum Checked {
         return xs[index]
     }
 
+    /// `value`, or an out-of-range failure thrown for a reading that found nothing: the
+    /// shape an enum's `fromUnderlying` answers (a number no variant declares), which a
+    /// call that may fail passes on through `take`.
+    public static func found<T>(_ value: T?) throws -> T {
+        guard let value else {
+            throw AlgorithmError.outOfRange
+        }
+        return value
+    }
+
+    /// `take` of a call that answers an enum: the first case stands where it failed,
+    /// the one value of the type that can be named without naming the type.
+    public static func takeCase<T: CaseIterable>(_ f: inout Failure, _ call: () throws -> T) -> T {
+        do {
+            return try call()
+        } catch let error as AlgorithmError {
+            f.fail(error)
+            guard let first = T.allCases.first else {
+                preconditionFailure("Checked.takeCase: an enum with no case")
+            }
+            return first
+        } catch {
+            preconditionFailure(
+                "Checked.takeCase: a may-fail reading threw an error that is not an AlgorithmError: \(error)"
+            )
+        }
+    }
+
     /// A call to another may-fail algorithm: its value, or `fallback` with its
     /// failure recorded in the caller's `Failure` under the callee's own name, which
     /// the statement around it throws.

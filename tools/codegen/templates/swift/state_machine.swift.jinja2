@@ -126,6 +126,14 @@ public enum {{ machine_name }}Event: Int, Hashable, Sendable {
     case null = {{ ns.idx }}
 }
 
+{% if static_type_defs %}
+// ======================================================================
+// SCE Accepted Subset §2.15: the types the static variables are held in
+// ======================================================================
+
+{{ static_type_defs }}
+
+{% endif %}
 {% if event_payload_active %}
 {{ event_payload_defs }}
 {% endif %}
