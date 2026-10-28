@@ -824,6 +824,35 @@ documents, not observed from a backend.
      records. It is listed as not yet lowered for the six generated backends in the three places step 4
      named, and the Interpreter replays it. Tests: `an_optional_record_is_held_read_and_written_where_proven`
      and the algorithm cases of `an_algorithm_holds_an_optional_value`.
+   - *Python.* Python lowers all of it, in `Optional[T]` over the type a present value has there.
+     A statechart's optional record is `Optional[<the machine's record>]`, started at `None`, the record being
+     the frozen dataclass a record variable is: a whole record is put into it as the variable would take it (a
+     list's element by the runtime's checked read, `StaticTarget::record_at`, which raises
+     `AlgorithmFailure` past the list as every checked operation does), `x.value.f` is the member of the
+     record `x` is, and a field is written by replacing the record with one whose field is changed
+     (`assign_present_field`, the text and byte-string forms being the same statement over a value the walk
+     has already held to the bound of the field). The saved form is `null` or the record's own
+     (`saved_write_optional` and `saved_read_optional` over `to_saved` and `from_saved`), and the shared saved
+     instance is restored and written again byte for byte. A call hands an optional record slot the variable
+     that holds one, a record, or `null` (the state code `n`, spelled `None`): the adapter tests the argument
+     (`None if p is None else <the algorithm's payload built from it>`) and builds the machine's record from
+     what the algorithm answers where it is present. `algorithm_optional_spelled` answers `true` for every
+     element on Python: an algorithm's slot, local or record field may be an optional text (`Optional[str]`),
+     byte string (`Optional[bytes]`), value of an enum (`Optional[<the enum document's class>]`) or record
+     (`Optional[<the schema's payload class>]`), and the unit of a schema with an optional text or enum field
+     is generated. A record put into an optional record in an algorithm's body is a copy
+     (`sce_algorithm.copied`), since the payload class is a mutable object and a name would otherwise share it;
+     a field of the present record is written in place (`held.f = e`, a text by `lower_text_write` to the bound
+     its field declares), where a test proves the record present. An optional enum field of a record crosses an
+     adapter by the declared name of its variant where it is present and stays `None` where it is not. Still
+     refused by name, for reasons that are not Python's: a statechart's call of an algorithm whose own slot is
+     an optional value of an enum or a byte string (refused where the import is read, since no engine reads an
+     enum through an optional value in a call yet and the Interpreter's byte string is another value), and an
+     algorithm's call of another algorithm with an optional record slot (`algorithm_record_slots` gives it no
+     slot, so it keeps the host-only refusal a list slot has). Tests:
+     `an_optional_record_is_spelled_by_generated_python`, `static_optional_record` in
+     `backends/python/tests/integration/static_datamodel/test_static_scenarios.py` and its saved instance in
+     `test_a_state_another_backend_saved_is_restored.py`.
 10. **The edges left refused by name**: a child session's optional variable as a `<param>` (with
     the shape of `InvokeParams` it needs), a host action's optional argument, a host-run
     `<invoke>`'s typed request and result with optional fields. Each with the scenario or test of
