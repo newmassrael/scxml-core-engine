@@ -1,10 +1,10 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d11fb6db69c27fed25f47a2f22a5bf7fb78da524d08f0c299e9cc553d32a6375
+// source-hash: b67ac92c47dabab09bc66be64b0a4b4a6acfabe17f95412102ed640a717fc04f
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_host_call.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: static_host_call.scxml:13 :: _machine
+// SCE-MAP: static_host_call.scxml:19 :: _machine
 
 package com.sce.integration.static_host_call
 
@@ -20,7 +20,10 @@ sealed interface StaticHostCallState : State {
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface StaticHostCallEvent : Event {
+    data object Escalate : StaticHostCallEvent
+    data object Plan : StaticHostCallEvent
     data object Retry : StaticHostCallEvent
+    data object Unplan : StaticHostCallEvent
 }
 // --- State Machine (W3C SCXML) ---
 
@@ -32,6 +35,7 @@ sealed interface StaticHostCallEvent : Event {
  */
 interface StaticHostCallActions {
     fun showAttempts(count: UInt, exhausted: Boolean)
+    fun showDue(day: Int?, urgent: Boolean?)
 }
 
 /**
@@ -43,6 +47,7 @@ class RecordingStaticHostCallActions : StaticHostCallActions {
     /** One recorded host call. */
     sealed interface Call {
         data class ShowAttempts(val count: UInt, val exhausted: Boolean) : Call
+        data class ShowDue(val day: Int?, val urgent: Boolean?) : Call
     }
 
     private val recorded = mutableListOf<Call>()
@@ -58,6 +63,9 @@ class RecordingStaticHostCallActions : StaticHostCallActions {
 
     override fun showAttempts(count: UInt, exhausted: Boolean) {
         recorded += Call.ShowAttempts(count, exhausted)
+    }
+    override fun showDue(day: Int?, urgent: Boolean?) {
+        recorded += Call.ShowDue(day, urgent)
     }
 }
 
@@ -91,6 +99,10 @@ class StaticHostCallStateMachine(
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
     /** W3C SCXML 5.2: the `attempts` datamodel variable, the machine's own. */
     private var vAttempts: UInt = 0.toUInt()
+    /** W3C SCXML 5.2: the `due` datamodel variable, the machine's own. */
+    private var vDue: Int? = null
+    /** W3C SCXML 5.2: the `urgent` datamodel variable, the machine's own. */
+    private var vUrgent: Boolean? = null
 
     /**
      * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
@@ -99,11 +111,15 @@ class StaticHostCallStateMachine(
      */
     class InvokeParams {
         var attempts: UInt? = null
+        var due: Int? = null
+        var urgent: Boolean? = null
     }
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
         params.attempts?.let { vAttempts = it }
+        params.due?.let { vDue = it }
+        params.urgent?.let { vUrgent = it }
     }
 
     /**
@@ -144,10 +160,10 @@ class StaticHostCallStateMachine(
      * later revision added at its default.
      */
     val savedShape: SavedShape = SavedShape(
-        first = "45f854bb5b58951e887962f98dd45032839c434e699a4b89615076899b615400",
-        revised = "3fe1ac7456f27818844cda68f46a7fc1bbc64bb64330873a80d51d33d5ed4f38",
-        format2First = "45f854bb5b58951e887962f98dd45032839c434e699a4b89615076899b615400",
-        format2Revised = "3fe1ac7456f27818844cda68f46a7fc1bbc64bb64330873a80d51d33d5ed4f38",
+        first = "0e54b09a3098bee9e28951082f40f18020c63b5d620a4120bb2c5c584a6ee23a",
+        revised = "d096c40e0051f0b1ca2156f87dfc2449eb12128020a11a693b3ed2d3bd1e3f48",
+        format2First = "0e54b09a3098bee9e28951082f40f18020c63b5d620a4120bb2c5c584a6ee23a",
+        format2Revised = "d096c40e0051f0b1ca2156f87dfc2449eb12128020a11a693b3ed2d3bd1e3f48",
         records = listOf(
         ),
         enums = listOf(
@@ -169,6 +185,8 @@ class StaticHostCallStateMachine(
         savedShape,
         linkedMapOf(
             "attempts" to SavedValues.of(vAttempts),
+            "due" to SavedValues.optional(vDue) { SavedValues.of(it) },
+            "urgent" to SavedValues.optional(vUrgent) { SavedValues.of(it) },
         ),
         wallNowMs,
     )
@@ -197,7 +215,11 @@ class StaticHostCallStateMachine(
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
         val saved1 = SavedValues.uint32(savedGrown.variable("attempts"), "attempts")
+        val saved2 = SavedValues.optional(savedGrown.variable("due"), "due") { e, w -> SavedValues.int32(e, w) }
+        val saved3 = SavedValues.optional(savedGrown.variable("urgent"), "urgent") { e, w -> SavedValues.bool(e, w) }
         vAttempts = saved1
+        vDue = saved2
+        vUrgent = saved3
         enterSaved(savedGrown, wallNowMs)
     }
 
@@ -212,6 +234,8 @@ class StaticHostCallStateMachine(
     override fun judgeAsSession(saved: SavedState) {
         val savedGrown = beginRestore(saved, savedShape)
         SavedValues.uint32(savedGrown.variable("attempts"), "attempts")
+        SavedValues.optional(savedGrown.variable("due"), "due") { e, w -> SavedValues.int32(e, w) }
+        SavedValues.optional(savedGrown.variable("urgent"), "urgent") { e, w -> SavedValues.bool(e, w) }
     }
 
     override fun restoreAsSession(saved: SavedState, wallNowMs: Long) = restore(saved, wallNowMs)
@@ -250,6 +274,33 @@ class StaticHostCallStateMachine(
             hasActions = true,
             isInternal = false,
         )
+
+        // W3C SCXML 3.13: idle's transition 1, as the microstep reads it.
+        val transitionIdleAt1 = EnabledTransition<StaticHostCallState, HistoryId>(
+            StaticHostCallState.Idle,
+            emptyList(),
+            1,
+            hasActions = true,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: idle's transition 2, as the microstep reads it.
+        val transitionIdleAt2 = EnabledTransition<StaticHostCallState, HistoryId>(
+            StaticHostCallState.Idle,
+            emptyList(),
+            2,
+            hasActions = true,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: idle's transition 3, as the microstep reads it.
+        val transitionIdleAt3 = EnabledTransition<StaticHostCallState, HistoryId>(
+            StaticHostCallState.Idle,
+            emptyList(),
+            3,
+            hasActions = true,
+            isInternal = false,
+        )
     }
 
     // W3C SCXML: Resolve state ID string to State object
@@ -270,13 +321,19 @@ class StaticHostCallStateMachine(
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): StaticHostCallEvent? = when (name) {
+        "escalate" -> StaticHostCallEvent.Escalate
+        "plan" -> StaticHostCallEvent.Plan
         "retry" -> StaticHostCallEvent.Retry
+        "unplan" -> StaticHostCallEvent.Unplan
         else -> null
     }
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: StaticHostCallEvent): String? = when (event) {
+        is StaticHostCallEvent.Escalate -> "escalate"
+        is StaticHostCallEvent.Plan -> "plan"
         is StaticHostCallEvent.Retry -> "retry"
+        is StaticHostCallEvent.Unplan -> "unplan"
     }
 
 
@@ -294,17 +351,20 @@ class StaticHostCallStateMachine(
     ): EnabledTransition<StaticHostCallState, HistoryId>? = when (state) {
         is StaticHostCallState.Idle -> when {
             event is StaticHostCallEvent.Retry && vAttempts < 3.toUInt() -> transitionIdleAt0
+            event is StaticHostCallEvent.Plan -> transitionIdleAt1
+            event is StaticHostCallEvent.Escalate -> transitionIdleAt2
+            event is StaticHostCallEvent.Unplan -> transitionIdleAt3
             else -> null
         }
     }
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: static_host_call.scxml:13 :: _machine
+    // SCE-MAP: static_host_call.scxml:19 :: _machine
     override fun onEntry(state: StaticHostCallState, isDefaultEntry: Boolean) {
         when (state) {
             is StaticHostCallState.Idle -> {
-                // SCE-MAP: static_host_call.scxml:18 :: idle :: _state_body
+                // SCE-MAP: static_host_call.scxml:26 :: idle :: _state_body
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
 
@@ -316,27 +376,53 @@ class StaticHostCallStateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: static_host_call.scxml:13 :: _machine
+    // SCE-MAP: static_host_call.scxml:19 :: _machine
     override fun onExit(state: StaticHostCallState) {
         when (state) {
             is StaticHostCallState.Idle -> {
-                // SCE-MAP: static_host_call.scxml:18 :: idle :: _state_body
+                // SCE-MAP: static_host_call.scxml:26 :: idle :: _state_body
             }
         }
     }
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: static_host_call.scxml:13 :: _machine
+    // SCE-MAP: static_host_call.scxml:19 :: _machine
     override fun executeTransitionContent(source: StaticHostCallState, transitionIndex: Int) {
         when (source) {
         is StaticHostCallState.Idle -> when (transitionIndex) {
             0 -> {
-                // SCE-MAP: static_host_call.scxml:25 :: idle :: _transition_0
+                // SCE-MAP: static_host_call.scxml:33 :: idle :: _transition_0
 
             if (try { vAttempts = com.sce.forge.runtime.SceChecked.add(vAttempts, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
                 return
             }
+            }
+            1 -> {
+                // SCE-MAP: static_host_call.scxml:36 :: idle :: _transition_1
+
+            vDue = 7
+
+            // W3C SCXML G.7: <sce:action name="showDue">
+            actions.showDue(vDue, vUrgent)
+            }
+            2 -> {
+                // SCE-MAP: static_host_call.scxml:43 :: idle :: _transition_2
+
+            vUrgent = true
+
+            // W3C SCXML G.7: <sce:action name="showDue">
+            actions.showDue(vDue, vUrgent)
+            }
+            3 -> {
+                // SCE-MAP: static_host_call.scxml:50 :: idle :: _transition_3
+
+            vDue = null
+
+            vUrgent = false
+
+            // W3C SCXML G.7: <sce:action name="showDue">
+            actions.showDue(vDue, vUrgent)
             }
             else -> {}
         }

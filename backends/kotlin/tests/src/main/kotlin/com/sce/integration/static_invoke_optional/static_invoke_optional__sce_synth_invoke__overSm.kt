@@ -1,0 +1,304 @@
+// SCE-GENERATED — DO NOT EDIT
+// source-hash: b67ac92c47dabab09bc66be64b0a4b4a6acfabe17f95412102ed640a717fc04f
+
+// GENERATED CODE — DO NOT EDIT
+// Source: sce-build/tests/fixtures/static_datamodel/static_invoke_optional__sce_synth_invoke__over.scxml
+// Generator: SCE Kotlin Code Generator v1.0
+// SCE-MAP: static_invoke_optional__sce_synth_invoke__over.scxml:3 :: _machine
+
+package com.sce.integration.static_invoke_optional
+
+import com.sce.runtime.*
+
+
+// --- States (W3C SCXML 3.2) ---
+
+sealed interface StaticInvokeOptionalSceSynthInvokeOverState : State {
+    data object Leaf : StaticInvokeOptionalSceSynthInvokeOverState
+    data object Waiting : StaticInvokeOptionalSceSynthInvokeOverState
+}
+
+// --- Events (W3C SCXML 3.12.1) ---
+
+sealed interface StaticInvokeOptionalSceSynthInvokeOverEvent : Event {
+
+}
+// --- State Machine (W3C SCXML) ---
+
+class StaticInvokeOptionalSceSynthInvokeOverStateMachine(
+    /**
+     * docs/adr/0045: the id of this machine's session (`_sessionid`), which a
+     * saved state names it by and a peer addresses it by (`#_scxml_<id>`), given
+     * by the host that creates it: an XML Nmtoken, refused when it is not one
+     * and never replaced. Drawn (a UUID version 4) when the host gives none. A
+     * child is given the id its parent derives for it, and this is not read.
+     */
+    sessionId: String? = null,
+) : StateMachineEngine<StaticInvokeOptionalSceSynthInvokeOverState, StaticInvokeOptionalSceSynthInvokeOverEvent>() {
+
+    init {
+        bindRootSessionId(sessionId)
+    }
+
+    // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
+    /** W3C SCXML 5.2: the `label` datamodel variable, the machine's own. */
+    private var vLabel: String? = "ab"
+
+    /**
+     * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
+     * machine's variables before it starts. A variable left `null` keeps the
+     * value its `<data>` gave it.
+     */
+    class InvokeParams {
+        var label: String? = null
+    }
+
+    /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
+    fun acceptParams(params: InvokeParams) {
+        params.label?.let { vLabel = it }
+    }
+
+    /**
+     * What a host observes: the full active configuration — every active
+     * state, each region of a `<parallel>` included — taken together at a macrostep boundary. `truncated` is
+     * `true` when that macrostep was stopped at the microstep ceiling, so the
+     * configuration is not a stable one.
+     */
+    data class Snapshot(
+        val configuration: Set<StaticInvokeOptionalSceSynthInvokeOverState>,
+        val truncated: Boolean,
+    )
+
+    private val _snapshot = kotlinx.coroutines.flow.MutableStateFlow(
+        Snapshot(emptySet(), false)
+    )
+
+    /**
+     * The machine as the host sees it: one [Snapshot] per completed macrostep
+     * (W3C SCXML Appendix D), never a state between two microsteps.
+     *
+     * Compose integration: `val s by sm.snapshot.collectAsState()`
+     */
+    val snapshot: kotlinx.coroutines.flow.StateFlow<Snapshot>
+        get() = _snapshot
+
+    override fun onMacrostepComplete(truncated: Boolean) {
+        _snapshot.value = Snapshot(activeConfiguration, truncated)
+    }
+
+    // ── SCE Accepted Subset §2.15: saving this machine, restoring it ─────────
+
+    /**
+     * What a saved state of this document is bound to: a state saved from a
+     * document that renamed, re-typed or moved a state or a variable is
+     * refused, one saved before a guard or an action changed is not, and one
+     * saved at an earlier revision of a record schema is read with each field a
+     * later revision added at its default.
+     */
+    val savedShape: SavedShape = SavedShape(
+        first = "09673d9c8a1b6c3f6f5398fec74ad88ce49bcfc4a0dda850fad1b194cac8f82f",
+        revised = "2621702ad47125bdac775ccb68982f4bd35a6a6477926daa0d49fd6d0a6f6385",
+        format2First = "09673d9c8a1b6c3f6f5398fec74ad88ce49bcfc4a0dda850fad1b194cac8f82f",
+        format2Revised = "2621702ad47125bdac775ccb68982f4bd35a6a6477926daa0d49fd6d0a6f6385",
+        records = listOf(
+        ),
+        enums = listOf(
+        ),
+    )
+
+    /**
+     * This machine's whole state at the macrostep boundary it stands at —
+     * every variable, the machine's own included, and where it stands — as
+     * the `sce-saved-state` document every backend reads ([SavedState.toJson]).
+     * Each delayed `<send>` still waiting is written as the moment it comes due
+     * on the wall clock whose reading now is [wallNowMs], in milliseconds since
+     * the Unix epoch.
+     *
+     * @throws StateRefusal for a machine that is not running, or whose last
+     *   macrostep stopped at the microstep ceiling.
+     */
+    fun save(wallNowMs: Long): SavedState = savedState(
+        savedShape,
+        linkedMapOf(
+            "label" to SavedValues.optional(vLabel) { SavedValues.of(it) },
+        ),
+        wallNowMs,
+    )
+
+    /** [save] at the host's wall clock now. */
+    fun save(): SavedState = save(SavedState.wallClockMs())
+
+    /**
+     * Stand this machine where [saved] left one, in place of [initialize]: no
+     * `<onentry>` runs and no `<data>` is evaluated, since the saved run
+     * already did both. Every value is read before any is written, so a
+     * refused restore leaves the machine as it was.
+     *
+     * The delayed sends [saved] holds are armed against this machine's `clock`,
+     * which is installed before a restore as before [initialize]; [wallNowMs]
+     * is what time it is on the wall clock the saved `due`s were written
+     * against. A send comes due when its saved moment does, and one already due
+     * comes due now.
+     *
+     * @throws StateRefusal for a machine that has already started, a state
+     *   saved from a document of another shape, a configuration that is not
+     *   one of this document, or a value its variable's type cannot hold.
+     */
+    fun restore(saved: SavedState, wallNowMs: Long) {
+        // The state as one of this machine: each record saved at an earlier
+        // revision of its schema holds the defaults of the fields added since.
+        val savedGrown = beginRestore(saved, savedShape)
+        val saved1 = SavedValues.optional(savedGrown.variable("label"), "label") { e, w -> SavedValues.string(e, w, 4) }
+        vLabel = saved1
+        enterSaved(savedGrown, wallNowMs)
+    }
+
+    /** [restore] at the host's wall clock now. */
+    fun restore(saved: SavedState) = restore(saved, SavedState.wallClockMs())
+
+    // docs/adr/0045: this machine as a child session of another's saved state —
+    // saved with it, judged with it before anything is built, and restored in
+    // place of initialized.
+    override fun saveAsSession(wallNowMs: Long): SavedState = save(wallNowMs)
+
+    override fun judgeAsSession(saved: SavedState) {
+        val savedGrown = beginRestore(saved, savedShape)
+        SavedValues.optional(savedGrown.variable("label"), "label") { e, w -> SavedValues.string(e, w, 4) }
+    }
+
+    override fun restoreAsSession(saved: SavedState, wallNowMs: Long) = restore(saved, wallNowMs)
+
+    override val initialState: StaticInvokeOptionalSceSynthInvokeOverState = StaticInvokeOptionalSceSynthInvokeOverState.Waiting
+
+    // W3C SCXML 6.2: which entry point a host must drive this machine with in
+    // the synchronous mode. The same verdict the generate manifest publishes
+    // as `needs_event_scheduler`.
+    override val needsEventScheduler: Boolean = false
+
+    // The generate manifest's `needs_parent`: what a root-start policy reads.
+    override val needsParent: Boolean = false
+
+    // --- Document structure (W3C SCXML 3.2-3.4, 3.10) ---
+    //
+    // What the runtime's Appendix D procedures (com.sce.runtime.Microstep)
+    // read of this document. The tables are built once, in the companion
+    // object below, because the structure is a fact about the document and
+    // not about a run.
+
+    // W3C SCXML 3.7: Check if state is a <final> element
+    override fun isFinalState(state: StaticInvokeOptionalSceSynthInvokeOverState): Boolean = when (state) {
+        is StaticInvokeOptionalSceSynthInvokeOverState.Leaf -> true
+        else -> false
+    }
+
+    // W3C SCXML 3.2: the target of the document's own initial transition, as
+    // written.
+    override val documentInitialTargets: List<EntryTarget<StaticInvokeOptionalSceSynthInvokeOverState, HistoryId>>
+        get() = documentInitialTargetList
+
+    private companion object {
+        val documentInitialTargetList: List<EntryTarget<StaticInvokeOptionalSceSynthInvokeOverState, HistoryId>> =
+            listOf(StateTarget(StaticInvokeOptionalSceSynthInvokeOverState.Waiting))
+
+        // W3C SCXML 3.13: waiting's transition 0, as the microstep reads it.
+        val transitionWaitingAt0 = EnabledTransition<StaticInvokeOptionalSceSynthInvokeOverState, HistoryId>(
+            StaticInvokeOptionalSceSynthInvokeOverState.Waiting,
+            listOf(StateTarget(StaticInvokeOptionalSceSynthInvokeOverState.Leaf)),
+            0,
+            hasActions = false,
+            isInternal = false,
+        )
+    }
+
+    // W3C SCXML: Resolve state ID string to State object
+    override fun resolveState(stateId: String): StaticInvokeOptionalSceSynthInvokeOverState? = when (stateId) {
+        "leaf" -> StaticInvokeOptionalSceSynthInvokeOverState.Leaf
+        "waiting" -> StaticInvokeOptionalSceSynthInvokeOverState.Waiting
+        else -> null
+    }
+
+    // W3C SCXML: Get state ID string from State object
+    override fun stateIdOf(state: StaticInvokeOptionalSceSynthInvokeOverState): String = when (state) {
+        is StaticInvokeOptionalSceSynthInvokeOverState.Leaf -> "leaf"
+        is StaticInvokeOptionalSceSynthInvokeOverState.Waiting -> "waiting"
+    }
+
+    // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
+    override fun documentOrderOf(state: StaticInvokeOptionalSceSynthInvokeOverState): Int = when (state) {
+        is StaticInvokeOptionalSceSynthInvokeOverState.Leaf -> 1
+        is StaticInvokeOptionalSceSynthInvokeOverState.Waiting -> 0
+    }
+
+    // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
+    override fun resolveEventByName(name: String): StaticInvokeOptionalSceSynthInvokeOverEvent? = when (name) {
+        else -> null
+    }
+
+    // W3C SCXML 6.4: Resolve Event object to event name string
+    // A child SM that inherits the has_parent_communication override while
+    // declaring no events of its own leaves the sealed hierarchy with zero
+    // implementors, so `StaticInvokeOptionalSceSynthInvokeOverEvent` is uninhabited: no caller can
+    // construct an argument and the body is unreachable. A `when` over an
+    // uninhabited sealed subject is vacuously exhaustive, so any branch —
+    // `else` included — is dead code the compiler rejects under -Werror.
+    // Returning the null directly is the honest expression of "unreachable".
+    override fun eventNameOf(event: StaticInvokeOptionalSceSynthInvokeOverEvent): String? = null
+
+
+
+
+
+    // W3C SCXML Appendix D selectTransitions, the half only this document can
+    // answer: the first of `state`'s own transitions, in document order, that
+    // `event` enables and whose guard holds; for `null`, its first eventless
+    // transition whose guard holds. The runtime walks the atomic states and
+    // their ancestors and keeps the ordered set.
+    override fun firstEnabledTransition(
+        state: StaticInvokeOptionalSceSynthInvokeOverState,
+        event: StaticInvokeOptionalSceSynthInvokeOverEvent?
+    ): EnabledTransition<StaticInvokeOptionalSceSynthInvokeOverState, HistoryId>? = when (state) {
+        is StaticInvokeOptionalSceSynthInvokeOverState.Waiting -> when {
+            event == null && vLabel != null && com.sce.forge.runtime.SceOptional.proven(vLabel) == "ab" -> transitionWaitingAt0
+            else -> null
+        }
+        else -> null
+    }
+
+
+    // Entry Actions (W3C SCXML 3.8)
+    // SCE-MAP: static_invoke_optional__sce_synth_invoke__over.scxml:3 :: _machine
+    override fun onEntry(state: StaticInvokeOptionalSceSynthInvokeOverState, isDefaultEntry: Boolean) {
+        when (state) {
+            is StaticInvokeOptionalSceSynthInvokeOverState.Leaf -> {
+                // SCE-MAP: static_invoke_optional__sce_synth_invoke__over.scxml:11 :: leaf :: _state_body
+                // W3C SCXML 3.7: Top-level final state reached
+                markFinalStateReached()
+            }
+            is StaticInvokeOptionalSceSynthInvokeOverState.Waiting -> {
+                // SCE-MAP: static_invoke_optional__sce_synth_invoke__over.scxml:8 :: waiting :: _state_body
+            }
+        }
+    }
+
+    // Exit Actions (W3C SCXML 3.9)
+    // SCE-MAP: static_invoke_optional__sce_synth_invoke__over.scxml:3 :: _machine
+    override fun onExit(state: StaticInvokeOptionalSceSynthInvokeOverState) {
+        when (state) {
+            is StaticInvokeOptionalSceSynthInvokeOverState.Leaf -> {
+                // SCE-MAP: static_invoke_optional__sce_synth_invoke__over.scxml:11 :: leaf :: _state_body
+            }
+            is StaticInvokeOptionalSceSynthInvokeOverState.Waiting -> {
+                // SCE-MAP: static_invoke_optional__sce_synth_invoke__over.scxml:8 :: waiting :: _state_body
+            }
+        }
+    }
+
+
+    // Transition Content (W3C SCXML 3.13)
+    // SCE-MAP: static_invoke_optional__sce_synth_invoke__over.scxml:3 :: _machine
+    override fun executeTransitionContent(source: StaticInvokeOptionalSceSynthInvokeOverState, transitionIndex: Int) {
+        when (source) {
+        else -> {}
+        }
+    }
+}

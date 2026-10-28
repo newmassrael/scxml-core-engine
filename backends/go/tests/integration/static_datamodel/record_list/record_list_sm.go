@@ -3500,7 +3500,8 @@ func (p *RecordListPolicy) Announced() uint32 {
 
 // RecordListInvokeParams holds the values a parent's `<param>` and
 // `namelist` give this machine's variables before it starts (§scxml-6.4.1). A
-// variable left nil keeps the value its `<data>` gave it.
+// variable left nil, or absent for an optional one, keeps the value its `<data>`
+// gave it.
 type RecordListInvokeParams struct {
 	VNode *uint64
 	VHub *bool

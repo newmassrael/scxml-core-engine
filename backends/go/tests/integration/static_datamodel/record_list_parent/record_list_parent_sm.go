@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d11fb6db69c27fed25f47a2f22a5bf7fb78da524d08f0c299e9cc553d32a6375
+// source-hash: b67ac92c47dabab09bc66be64b0a4b4a6acfabe17f95412102ed640a717fc04f
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -1617,7 +1617,8 @@ func (p *RecordListParentPolicy) RefusedCount() uint32 {
 
 // RecordListParentInvokeParams holds the values a parent's `<param>` and
 // `namelist` give this machine's variables before it starts (§scxml-6.4.1). A
-// variable left nil keeps the value its `<data>` gave it.
+// variable left nil, or absent for an optional one, keeps the value its `<data>`
+// gave it.
 type RecordListParentInvokeParams struct {
 	VTold *uint32
 	VRefusedCount *uint32
@@ -1682,8 +1683,7 @@ func (p *RecordListParentPolicy) ExecutePendingInvokes(engine *sce.Engine[Record
 				var seed RecordListParentSceSynthInvokeListInvokeParams
 				{
 					sceValue := true
-					seed.VAnnounce = &sceValue
-				}
+					seed.VAnnounce = &sceValue				}
 				childPolicy.AcceptParams(seed)
 			}
 

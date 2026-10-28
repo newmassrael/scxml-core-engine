@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d11fb6db69c27fed25f47a2f22a5bf7fb78da524d08f0c299e9cc553d32a6375
+// source-hash: b67ac92c47dabab09bc66be64b0a4b4a6acfabe17f95412102ed640a717fc04f
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -78,8 +78,8 @@
 // closure; this one suspicious-category lint reads the `match` of a constant
 // default as a hand-written `unwrap_or_default`.
 #![allow(clippy::manual_unwrap_or_default)]
-#![doc = "SCE-MAP: static_host_call.scxml:13 :: _machine"]
-// SCE-MAP: static_host_call.scxml:13 :: _machine
+#![doc = "SCE-MAP: static_host_call.scxml:19 :: _machine"]
+// SCE-MAP: static_host_call.scxml:19 :: _machine
 
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
@@ -101,7 +101,10 @@ pub enum StaticHostCallState {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum StaticHostCallEvent {
+    Escalate,
+    Plan,
     Retry,
+    Unplan,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
     Null,
 }
@@ -135,8 +138,12 @@ impl StaticHostCallEvent {
     /// agnostic; inert when unused. Associated (not a free `const`) so
     /// several machines glob-re-exported into one module never collide
     /// on the name.
-    pub const EXTERNALLY_DRIVABLE_EVENTS: &'static [StaticHostCallEvent] =
-        &[StaticHostCallEvent::Retry];
+    pub const EXTERNALLY_DRIVABLE_EVENTS: &'static [StaticHostCallEvent] = &[
+        StaticHostCallEvent::Escalate,
+        StaticHostCallEvent::Plan,
+        StaticHostCallEvent::Retry,
+        StaticHostCallEvent::Unplan,
+    ];
 }
 
 // ── SCE Accepted Subset §2.15: what a host observes of a sce-static machine ──
@@ -274,10 +281,10 @@ impl<A: StaticHostCallActions + 'static> StaticHostCallPersist for Engine<Static
 
     const SHAPE: ::sce_rust_runtime::saved_state::SavedShape =
         ::sce_rust_runtime::saved_state::SavedShape {
-            first: "45f854bb5b58951e887962f98dd45032839c434e699a4b89615076899b615400",
-            revised: "3fe1ac7456f27818844cda68f46a7fc1bbc64bb64330873a80d51d33d5ed4f38",
-            format2_first: "45f854bb5b58951e887962f98dd45032839c434e699a4b89615076899b615400",
-            format2_revised: "3fe1ac7456f27818844cda68f46a7fc1bbc64bb64330873a80d51d33d5ed4f38",
+            first: "0e54b09a3098bee9e28951082f40f18020c63b5d620a4120bb2c5c584a6ee23a",
+            revised: "d096c40e0051f0b1ca2156f87dfc2449eb12128020a11a693b3ed2d3bd1e3f48",
+            format2_first: "0e54b09a3098bee9e28951082f40f18020c63b5d620a4120bb2c5c584a6ee23a",
+            format2_revised: "d096c40e0051f0b1ca2156f87dfc2449eb12128020a11a693b3ed2d3bd1e3f48",
             records: &[],
             enums: &[],
         };
@@ -297,10 +304,20 @@ impl<A: StaticHostCallActions + 'static> StaticHostCallPersist for Engine<Static
         ::sce_rust_runtime::saved_state::save(
             self,
             &Self::SHAPE,
-            vec![(
-                "attempts".to_string(),
-                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.attempts),
-            )],
+            vec![
+                (
+                    "attempts".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.attempts),
+                ),
+                (
+                    "due".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.due),
+                ),
+                (
+                    "urgent".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.urgent),
+                ),
+            ],
             ::sce_rust_runtime::saved_state::save_history(self.policy(), Self::HISTORIES),
             Vec::new(),
             wall_now_ms,
@@ -321,6 +338,12 @@ impl<A: StaticHostCallActions + 'static> StaticHostCallPersist for Engine<Static
         let _: u32 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("attempts")?,
             "attempts",
+        )?;
+        let _: Option<i32> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(saved.variable("due")?, "due")?;
+        let _: Option<bool> = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("urgent")?,
+            "urgent",
         )?;
         ::sce_rust_runtime::saved_state::judge::<StaticHostCallPolicy<A>>(saved)
     }
@@ -346,6 +369,12 @@ impl<A: StaticHostCallActions + 'static> StaticHostCallPersist for Engine<Static
             saved.variable("attempts")?,
             "attempts",
         )?;
+        policy.due =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(saved.variable("due")?, "due")?;
+        policy.urgent = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("urgent")?,
+            "urgent",
+        )?;
         ::sce_rust_runtime::saved_state::enter(policy, saved, clock, wall_now_ms)
     }
 }
@@ -356,13 +385,21 @@ impl<A: StaticHostCallActions + 'static> StaticHostCallPersist for Engine<Static
 /// operation symbolic. No runtime script engine is involved.
 pub trait StaticHostCallActions {
     fn show_attempts(&mut self, count: u32, exhausted: bool);
+    fn show_due(&mut self, day: Option<i32>, urgent: Option<bool>);
 }
 
 /// One call the machine made of its host, recorded by
 /// [`RecordingStaticHostCallActions`].
 #[derive(Debug, Clone, PartialEq)]
 pub enum StaticHostCallActionsCall {
-    ShowAttempts { count: u32, exhausted: bool },
+    ShowAttempts {
+        count: u32,
+        exhausted: bool,
+    },
+    ShowDue {
+        day: Option<i32>,
+        urgent: Option<bool>,
+    },
 }
 
 /// [`StaticHostCallActions`] that performs nothing and records every call in
@@ -390,6 +427,10 @@ impl StaticHostCallActions for RecordingStaticHostCallActions {
         self.calls
             .push(StaticHostCallActionsCall::ShowAttempts { count, exhausted });
     }
+    fn show_due(&mut self, day: Option<i32>, urgent: Option<bool>) {
+        self.calls
+            .push(StaticHostCallActionsCall::ShowDue { day, urgent });
+    }
 }
 
 /// §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
@@ -398,6 +439,8 @@ impl StaticHostCallActions for RecordingStaticHostCallActions {
 #[derive(Default)]
 pub struct StaticHostCallInvokeParams {
     pub attempts: Option<u32>,
+    pub due: Option<i32>,
+    pub urgent: Option<bool>,
 }
 
 // ======================================================================
@@ -411,6 +454,10 @@ pub struct StaticHostCallPolicy<A: StaticHostCallActions + 'static> {
     actions: A,
     /// W3C SCXML 5.2: the `attempts` datamodel variable.
     attempts: u32,
+    /// W3C SCXML 5.2: the `due` datamodel variable.
+    due: Option<i32>,
+    /// W3C SCXML 5.2: the `urgent` datamodel variable.
+    urgent: Option<bool>,
     // W3C SCXML 5.10: the session's id (script engine, invoke tracking, the
     // saved state), bound when the machine is built and never empty
     // (docs/adr/0045): drawn, given by the host, or given by the parent.
@@ -433,9 +480,13 @@ pub struct StaticHostCallPolicy<A: StaticHostCallActions + 'static> {
 impl<A: StaticHostCallActions + 'static> StaticHostCallPolicy<A> {
     fn build(session_id: String, actions: A) -> Self {
         let attempts: u32 = 0;
+        let due: Option<i32> = None;
+        let urgent: Option<bool> = None;
         Self {
             actions,
             attempts,
+            due,
+            urgent,
             session_id: Some(session_id),
             parent_external_queue: None,
             invoke_id: String::new(),
@@ -494,6 +545,12 @@ impl<A: StaticHostCallActions + 'static> StaticHostCallPolicy<A> {
     pub fn accept_params(&mut self, params: StaticHostCallInvokeParams) {
         if let Some(value) = params.attempts {
             self.attempts = value;
+        }
+        if params.due.is_some() {
+            self.due = params.due;
+        }
+        if params.urgent.is_some() {
+            self.urgent = params.urgent;
         }
     }
 }
@@ -650,14 +707,20 @@ impl<A: StaticHostCallActions + 'static> StatePolicy for StaticHostCallPolicy<A>
 
     fn get_event_name(event: Self::Event) -> &'static str {
         match event {
+            StaticHostCallEvent::Escalate => "escalate",
+            StaticHostCallEvent::Plan => "plan",
             StaticHostCallEvent::Retry => "retry",
+            StaticHostCallEvent::Unplan => "unplan",
             StaticHostCallEvent::Null => "",
         }
     }
 
     fn get_event_from_name(name: &str) -> Option<Self::Event> {
         match name {
+            "escalate" => Some(StaticHostCallEvent::Escalate),
+            "plan" => Some(StaticHostCallEvent::Plan),
             "retry" => Some(StaticHostCallEvent::Retry),
+            "unplan" => Some(StaticHostCallEvent::Unplan),
             _ => None,
         }
     }
@@ -697,8 +760,8 @@ impl<A: StaticHostCallActions + 'static> StatePolicy for StaticHostCallPolicy<A>
     // ======================================================================
 
     // W3C SCXML 3.7: Execute <onentry> actions for a state
-    #[doc = "SCE-MAP: static_host_call.scxml:13 :: _machine"]
-    // SCE-MAP: static_host_call.scxml:13 :: _machine
+    #[doc = "SCE-MAP: static_host_call.scxml:19 :: _machine"]
+    // SCE-MAP: static_host_call.scxml:19 :: _machine
     fn execute_entry_actions(
         &mut self,
         state: Self::State,
@@ -707,7 +770,7 @@ impl<A: StaticHostCallActions + 'static> StatePolicy for StaticHostCallPolicy<A>
     ) {
         match state {
             StaticHostCallState::Idle => {
-                // SCE-MAP: static_host_call.scxml:18 :: idle :: _state_body
+                // SCE-MAP: static_host_call.scxml:26 :: idle :: _state_body
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
@@ -727,8 +790,8 @@ impl<A: StaticHostCallActions + 'static> StatePolicy for StaticHostCallPolicy<A>
     // recorded runs nothing.
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
-    #[doc = "SCE-MAP: static_host_call.scxml:13 :: _machine"]
-    // SCE-MAP: static_host_call.scxml:13 :: _machine
+    #[doc = "SCE-MAP: static_host_call.scxml:19 :: _machine"]
+    // SCE-MAP: static_host_call.scxml:19 :: _machine
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
@@ -744,8 +807,8 @@ impl<A: StaticHostCallActions + 'static> StatePolicy for StaticHostCallPolicy<A>
     // the first of `state`'s own transitions, in document order, that `event`
     // enables. The engine walks the atomic states and their ancestors and
     // keeps the ordered set. `Event::Null` asks for eventless transitions.
-    #[doc = "SCE-MAP: static_host_call.scxml:13 :: _machine"]
-    // SCE-MAP: static_host_call.scxml:13 :: _machine
+    #[doc = "SCE-MAP: static_host_call.scxml:19 :: _machine"]
+    // SCE-MAP: static_host_call.scxml:19 :: _machine
     fn first_enabled_transition(
         &mut self,
         state: Self::State,
@@ -767,6 +830,39 @@ impl<A: StaticHostCallActions + 'static> StatePolicy for StaticHostCallPolicy<A>
                         });
                     }
                 }
+                if event == StaticHostCallEvent::Plan {
+                    {
+                        return Some(::sce_rust_runtime::EnabledTransition {
+                            source: state,
+                            targets: &[],
+                            transition_index: 1,
+                            has_actions: true,
+                            is_internal: false,
+                        });
+                    }
+                }
+                if event == StaticHostCallEvent::Escalate {
+                    {
+                        return Some(::sce_rust_runtime::EnabledTransition {
+                            source: state,
+                            targets: &[],
+                            transition_index: 2,
+                            has_actions: true,
+                            is_internal: false,
+                        });
+                    }
+                }
+                if event == StaticHostCallEvent::Unplan {
+                    {
+                        return Some(::sce_rust_runtime::EnabledTransition {
+                            source: state,
+                            targets: &[],
+                            transition_index: 3,
+                            has_actions: true,
+                            is_internal: false,
+                        });
+                    }
+                }
                 None
             }
             _ => None,
@@ -775,8 +871,8 @@ impl<A: StaticHostCallActions + 'static> StatePolicy for StaticHostCallPolicy<A>
 
     // W3C SCXML 3.13: a transition's executable content, run by the engine
     // between the microstep's exits and its entries.
-    #[doc = "SCE-MAP: static_host_call.scxml:13 :: _machine"]
-    // SCE-MAP: static_host_call.scxml:13 :: _machine
+    #[doc = "SCE-MAP: static_host_call.scxml:19 :: _machine"]
+    // SCE-MAP: static_host_call.scxml:19 :: _machine
     fn execute_transition_content(
         &mut self,
         source: Self::State,
@@ -787,7 +883,7 @@ impl<A: StaticHostCallActions + 'static> StatePolicy for StaticHostCallPolicy<A>
             StaticHostCallState::Idle => {
                 match transition_index {
                     0 => {
-                        // SCE-MAP: static_host_call.scxml:25 :: idle :: _transition_0
+                        // SCE-MAP: static_host_call.scxml:33 :: idle :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
@@ -804,6 +900,45 @@ impl<A: StaticHostCallActions + 'static> StatePolicy for StaticHostCallPolicy<A>
                             if sce_failed {
                                 break 'action_block; // W3C SCXML 4.9: the error ends the block
                             }
+                        }
+                    }
+                    1 => {
+                        // SCE-MAP: static_host_call.scxml:36 :: idle :: _transition_1
+                        // W3C SCXML 3.13: Transition 1 actions
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            // W3C SCXML 5.3: <assign location="due">
+                            self.due = Some(7);
+
+                            // W3C SCXML G.7: <sce:action name="showDue">
+                            self.actions.show_due(self.due, self.urgent);
+                        }
+                    }
+                    2 => {
+                        // SCE-MAP: static_host_call.scxml:43 :: idle :: _transition_2
+                        // W3C SCXML 3.13: Transition 2 actions
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            // W3C SCXML 5.3: <assign location="urgent">
+                            self.urgent = Some(true);
+
+                            // W3C SCXML G.7: <sce:action name="showDue">
+                            self.actions.show_due(self.due, self.urgent);
+                        }
+                    }
+                    3 => {
+                        // SCE-MAP: static_host_call.scxml:50 :: idle :: _transition_3
+                        // W3C SCXML 3.13: Transition 3 actions
+                        // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                        'action_block: {
+                            // W3C SCXML 5.3: <assign location="due">
+                            self.due = None;
+
+                            // W3C SCXML 5.3: <assign location="urgent">
+                            self.urgent = Some(false);
+
+                            // W3C SCXML G.7: <sce:action name="showDue">
+                            self.actions.show_due(self.due, self.urgent);
                         }
                     }
                     _ => {}

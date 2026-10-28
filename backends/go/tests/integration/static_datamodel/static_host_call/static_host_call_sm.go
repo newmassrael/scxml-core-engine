@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d11fb6db69c27fed25f47a2f22a5bf7fb78da524d08f0c299e9cc553d32a6375
+// source-hash: b67ac92c47dabab09bc66be64b0a4b4a6acfabe17f95412102ed640a717fc04f
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -20,7 +20,7 @@
 // entry/exit actions, and event processing.
 
 
-// SCE-MAP: static_host_call.scxml:13 :: _machine
+// SCE-MAP: static_host_call.scxml:19 :: _machine
 
 package static_host_call
 
@@ -32,6 +32,7 @@ import (
 
 	sce "github.com/newmassrael/sce-go-runtime"
 	scealgorithm "github.com/newmassrael/sce-forge-runtime/algorithm"
+	"github.com/newmassrael/sce-forge-runtime/optional"
 )
 
 // Ensure imports are used
@@ -139,15 +140,24 @@ var transitionTargetsOfStaticHostCall = [1][][]StaticHostCallTarget{
 type StaticHostCallEvent int
 
 const (
-	StaticHostCallEventRetry StaticHostCallEvent = 0
+	StaticHostCallEventEscalate StaticHostCallEvent = 0
+	StaticHostCallEventPlan StaticHostCallEvent = 1
+	StaticHostCallEventRetry StaticHostCallEvent = 2
+	StaticHostCallEventUnplan StaticHostCallEvent = 3
 	// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-	StaticHostCallEventNull StaticHostCallEvent = 1
+	StaticHostCallEventNull StaticHostCallEvent = 4
 )
 
 func (e StaticHostCallEvent) String() string {
 	switch e {
+	case StaticHostCallEventEscalate:
+		return "escalate"
+	case StaticHostCallEventPlan:
+		return "plan"
 	case StaticHostCallEventRetry:
 		return "retry"
+	case StaticHostCallEventUnplan:
+		return "unplan"
 	case StaticHostCallEventNull:
 		return ""
 	}
@@ -160,12 +170,12 @@ func (e StaticHostCallEvent) String() string {
 // this machine names when every record schema it holds is in its first
 // revision (docs/adr/0045, section 2). The generator computes it once, so it is
 // the text every backend's constant is.
-const StaticHostCallSavedShapeFormat2 = "45f854bb5b58951e887962f98dd45032839c434e699a4b89615076899b615400"
+const StaticHostCallSavedShapeFormat2 = "0e54b09a3098bee9e28951082f40f18020c63b5d620a4120bb2c5c584a6ee23a"
 
 // StaticHostCallSavedShapeFormat2Revised is the shape a format-2 saved state
 // of this machine names when it names a later revision of a record schema or
 // an enum.
-const StaticHostCallSavedShapeFormat2Revised = "3fe1ac7456f27818844cda68f46a7fc1bbc64bb64330873a80d51d33d5ed4f38"
+const StaticHostCallSavedShapeFormat2Revised = "d096c40e0051f0b1ca2156f87dfc2449eb12128020a11a693b3ed2d3bd1e3f48"
 
 // StaticHostCallSavedEnumKeys names each enum a value of a saved state of
 // this machine is of, by its document (docs/adr/0044): the key `revisions`
@@ -180,10 +190,10 @@ var StaticHostCallSavedEnumKeys = [...]string{}
 // one saved at an earlier revision of a record schema is read with each field a
 // later revision added at its default.
 var StaticHostCallSavedShape = sce.SavedShape{
-	First:          "45f854bb5b58951e887962f98dd45032839c434e699a4b89615076899b615400",
-	Revised:        "3fe1ac7456f27818844cda68f46a7fc1bbc64bb64330873a80d51d33d5ed4f38",
-	Format2First:   "45f854bb5b58951e887962f98dd45032839c434e699a4b89615076899b615400",
-	Format2Revised: "3fe1ac7456f27818844cda68f46a7fc1bbc64bb64330873a80d51d33d5ed4f38",
+	First:          "0e54b09a3098bee9e28951082f40f18020c63b5d620a4120bb2c5c584a6ee23a",
+	Revised:        "d096c40e0051f0b1ca2156f87dfc2449eb12128020a11a693b3ed2d3bd1e3f48",
+	Format2First:   "0e54b09a3098bee9e28951082f40f18020c63b5d620a4120bb2c5c584a6ee23a",
+	Format2Revised: "d096c40e0051f0b1ca2156f87dfc2449eb12128020a11a693b3ed2d3bd1e3f48",
 	Records: []sce.RecordLineage{
 	},
 	Enums: []sce.EnumLineage{
@@ -213,6 +223,8 @@ func StaticHostCallSaveAt(engine *sce.Engine[StaticHostCallState, StaticHostCall
 	}
 	variables := sce.NewJSONObject()
 	variables.Set("attempts", sce.SavedWriteUint32(p.vAttempts))
+	variables.Set("due", optional.Wire(p.vDue, sce.SavedWriteInt32))
+	variables.Set("urgent", optional.Wire(p.vUrgent, sce.SavedWriteBool))
 	var children []sce.SavedChild
 	return sce.SaveSession(engine, &StaticHostCallSavedShape, variables,
 		sce.SaveHistory[StaticHostCallState, StaticHostCallEvent](p, StaticHostCallHistories),
@@ -239,6 +251,16 @@ func StaticHostCallJudge(saved *sce.SavedState) error {
 	if raw, err := grown.Variable("attempts"); err != nil {
 		return err
 	} else if _, err := sce.SavedReadUint32(raw, "attempts"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("due"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadOptional(raw, "due", sce.SavedReadInt32, optional.None[int32], optional.Some[int32]); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("urgent"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadOptional(raw, "urgent", sce.SavedReadBool, optional.None[bool], optional.Some[bool]); err != nil {
 		return err
 	}
 	return sce.JudgeSession[StaticHostCallState, StaticHostCallEvent](p, grown)
@@ -276,10 +298,28 @@ func StaticHostCallRestoreAt(policy *StaticHostCallPolicy, saved *sce.SavedState
 	if err != nil {
 		return nil, err
 	}
+	raw2, err := grown.Variable("due")
+	if err != nil {
+		return nil, err
+	}
+	read2, err := sce.SavedReadOptional(raw2, "due", sce.SavedReadInt32, optional.None[int32], optional.Some[int32])
+	if err != nil {
+		return nil, err
+	}
+	raw3, err := grown.Variable("urgent")
+	if err != nil {
+		return nil, err
+	}
+	read3, err := sce.SavedReadOptional(raw3, "urgent", sce.SavedReadBool, optional.None[bool], optional.Some[bool])
+	if err != nil {
+		return nil, err
+	}
 	if err := sce.JudgeSession[StaticHostCallState, StaticHostCallEvent](policy, grown); err != nil {
 		return nil, err
 	}
 	policy.vAttempts = read1
+	policy.vDue = read2
+	policy.vUrgent = read3
 	for _, recorded := range history {
 		policy.SetHistoryValue(recorded.History, recorded.States)
 	}
@@ -365,6 +405,7 @@ func (p *StaticHostCallPolicy) SetHistoryValue(history sce.HistoryID, states []S
 // operation symbolic. No runtime script engine is involved.
 type StaticHostCallActions interface {
 	ShowAttempts(count uint32, exhausted bool)
+	ShowDue(day optional.Of[int32], urgent optional.Of[bool])
 }
 
 // ======================================================================
@@ -383,6 +424,10 @@ type StaticHostCallPolicy struct {
 	// ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
 	// W3C SCXML 5.2: the `attempts` datamodel variable.
 	vAttempts uint32
+	// W3C SCXML 5.2: the `due` datamodel variable.
+	vDue optional.Of[int32]
+	// W3C SCXML 5.2: the `urgent` datamodel variable.
+	vUrgent optional.Of[bool]
 	// W3C SCXML 6.4: Parent communication (unbounded — see sce.ParentEventQueue)
 	ParentExternalQueue *sce.ParentEventQueue
 	InvokeID           string
@@ -406,14 +451,19 @@ func NewStaticHostCallPolicy(actions StaticHostCallActions) StaticHostCallPolicy
 		// machine; a child's is its parent's and the id it was started under.
 		SessionID: sce.DrawSessionID(),
 		vAttempts: 0,
+		vDue: optional.None[int32](),
+		vUrgent: optional.None[bool](),
 	}
 }
 
 // StaticHostCallInvokeParams holds the values a parent's `<param>` and
 // `namelist` give this machine's variables before it starts (§scxml-6.4.1). A
-// variable left nil keeps the value its `<data>` gave it.
+// variable left nil, or absent for an optional one, keeps the value its `<data>`
+// gave it.
 type StaticHostCallInvokeParams struct {
 	VAttempts *uint32
+	VDue optional.Of[int32]
+	VUrgent optional.Of[bool]
 }
 
 // AcceptParams gives this machine the values params carries, in place of the
@@ -421,6 +471,12 @@ type StaticHostCallInvokeParams struct {
 func (p *StaticHostCallPolicy) AcceptParams(params StaticHostCallInvokeParams) {
 	if params.VAttempts != nil {
 		p.vAttempts = *params.VAttempts
+	}
+	if params.VDue.IsPresent() {
+		p.vDue = params.VDue
+	}
+	if params.VUrgent.IsPresent() {
+		p.vUrgent = params.VUrgent
 	}
 }
 
@@ -540,8 +596,14 @@ func (p *StaticHostCallPolicy) GetEventName(event StaticHostCallEvent) string {
 // GetEventFromName looks up an event by name (W3C SCXML 3.12).
 func (p *StaticHostCallPolicy) GetEventFromName(name string) (StaticHostCallEvent, bool) {
 	switch name {
+	case "escalate":
+		return StaticHostCallEventEscalate, true
+	case "plan":
+		return StaticHostCallEventPlan, true
 	case "retry":
 		return StaticHostCallEventRetry, true
+	case "unplan":
+		return StaticHostCallEventUnplan, true
 	}
 	return StaticHostCallEventNull, false
 }
@@ -641,11 +703,11 @@ func (p *StaticHostCallPolicy) ClearEventMetadata() {
 // ExecuteEntryActions enters one state (W3C SCXML 3.8): adds it to the
 // configuration, runs its <onentry>, and its <initial> transition's content when
 // its initial state is entered by default.
-//line static_host_call.scxml:13
+//line static_host_call.scxml:19
 func (p *StaticHostCallPolicy) ExecuteEntryActions(state StaticHostCallState, engine *sce.Engine[StaticHostCallState, StaticHostCallEvent], isDefaultEntry bool) {
 	switch state {
 	case StaticHostCallStateIdle:
-//line static_host_call.scxml:18
+//line static_host_call.scxml:26
 		// W3C SCXML 3.8 + 4.9: onentry block 0, its own function so an
 		// error ends it with `return` from however deep a <foreach> it came.
 		func() {
@@ -663,7 +725,7 @@ func (p *StaticHostCallPolicy) ExecuteEntryActions(state StaticHostCallState, en
 // <initial> content) when the history was taken with nothing recorded. The
 // engine asks for it by the entry set's defaultHistoryContent answer; a history
 // that restored what it recorded runs nothing.
-//line static_host_call.scxml:13
+//line static_host_call.scxml:19
 func (p *StaticHostCallPolicy) ExecuteHistoryDefaultContent(history sce.HistoryID, engine *sce.Engine[StaticHostCallState, StaticHostCallEvent]) {
 	// W3C SCXML 3.10.2: no <history> in this document has default content.
 }
@@ -671,7 +733,7 @@ func (p *StaticHostCallPolicy) ExecuteHistoryDefaultContent(history sce.HistoryI
 // ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
 // runs its <onexit>, cancels its invocations and removes it from the
 // configuration — §scxml-D-exitStates's order.
-//line static_host_call.scxml:13
+//line static_host_call.scxml:19
 func (p *StaticHostCallPolicy) ExecuteExitActions(state StaticHostCallState, engine *sce.Engine[StaticHostCallState, StaticHostCallEvent], configurationBeforeExit []StaticHostCallState) {
 	// §scxml-D-exitStates orders one state's exit as onexit, then
 	// cancelInvoke, then configuration.delete(s), so `In(s)` inside s's own
@@ -688,7 +750,7 @@ func (p *StaticHostCallPolicy) ExecuteExitActions(state StaticHostCallState, eng
 // BindCurrentEvent binds the event whose transitions are about to be selected as
 // the _event their guards read (W3C SCXML 5.10) — before the first guard runs,
 // and not for an eventless selection, which has no event of its own.
-//line static_host_call.scxml:13
+//line static_host_call.scxml:19
 func (p *StaticHostCallPolicy) BindCurrentEvent(event StaticHostCallEvent, engine *sce.Engine[StaticHostCallState, StaticHostCallEvent]) {
 	// This document's guards never read _event, so there is nothing to bind.
 }
@@ -698,7 +760,7 @@ func (p *StaticHostCallPolicy) BindCurrentEvent(event StaticHostCallEvent, engin
 // that event enables and whose guard holds. The engine walks the atomic states
 // and their ancestors and keeps the ordered set; the null event asks for
 // eventless transitions.
-//line static_host_call.scxml:13
+//line static_host_call.scxml:19
 func (p *StaticHostCallPolicy) FirstEnabledTransition(state StaticHostCallState, event StaticHostCallEvent, engine *sce.Engine[StaticHostCallState, StaticHostCallEvent]) (sce.EnabledTransition[StaticHostCallState, sce.HistoryID], bool) {
 	switch state {
 	case StaticHostCallStateIdle:
@@ -716,19 +778,49 @@ func (p *StaticHostCallPolicy) FirstEnabledTransition(state StaticHostCallState,
 				}, true
 			}
 		}
+		if event == StaticHostCallEventPlan {
+			{
+				return sce.EnabledTransition[StaticHostCallState, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 1,
+					HasActions:      true,
+					IsInternal:      false,
+				}, true
+			}
+		}
+		if event == StaticHostCallEventEscalate {
+			{
+				return sce.EnabledTransition[StaticHostCallState, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 2,
+					HasActions:      true,
+					IsInternal:      false,
+				}, true
+			}
+		}
+		if event == StaticHostCallEventUnplan {
+			{
+				return sce.EnabledTransition[StaticHostCallState, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 3,
+					HasActions:      true,
+					IsInternal:      false,
+				}, true
+			}
+		}
 	}
 	return sce.EnabledTransition[StaticHostCallState, sce.HistoryID]{}, false
 }
 
 // ExecuteTransitionContent runs one transition's executable content (W3C SCXML
 // 3.13), between the microstep's exits and its entries.
-//line static_host_call.scxml:13
+//line static_host_call.scxml:19
 func (p *StaticHostCallPolicy) ExecuteTransitionContent(source StaticHostCallState, transitionIndex int, engine *sce.Engine[StaticHostCallState, StaticHostCallEvent]) {
 	switch source {
 	case StaticHostCallStateIdle:
 		switch transitionIndex {
 		case 0:
-//line static_host_call.scxml:25
+//line static_host_call.scxml:33
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -737,6 +829,46 @@ func (p *StaticHostCallPolicy) ExecuteTransitionContent(source StaticHostCallSta
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
+			}()
+		case 1:
+//line static_host_call.scxml:36
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
+
+
+	p.vDue = optional.Some[int32](7)
+
+
+		// W3C SCXML G.7: <sce:action name="showDue">
+		p.actions.ShowDue(p.vDue, p.vUrgent)
+			}()
+		case 2:
+//line static_host_call.scxml:43
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
+
+
+	p.vUrgent = optional.Some[bool](true)
+
+
+		// W3C SCXML G.7: <sce:action name="showDue">
+		p.actions.ShowDue(p.vDue, p.vUrgent)
+			}()
+		case 3:
+//line static_host_call.scxml:50
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
+
+
+	p.vDue = optional.None[int32]()
+
+
+
+	p.vUrgent = optional.Some[bool](false)
+
+
+		// W3C SCXML G.7: <sce:action name="showDue">
+		p.actions.ShowDue(p.vDue, p.vUrgent)
 			}()
 		}
 	}

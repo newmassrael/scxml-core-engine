@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d11fb6db69c27fed25f47a2f22a5bf7fb78da524d08f0c299e9cc553d32a6375
+// source-hash: b67ac92c47dabab09bc66be64b0a4b4a6acfabe17f95412102ed640a717fc04f
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_state_algorithm_optional.scxml
@@ -137,6 +137,8 @@ class StaticStateAlgorithmOptionalStateMachine(
      */
     class InvokeParams {
         var today: Long? = null
+        var first: Long? = null
+        var left: Long? = null
         var undated: UInt? = null
         var total: Long? = null
         var errors: UInt? = null
@@ -145,6 +147,8 @@ class StaticStateAlgorithmOptionalStateMachine(
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
         params.today?.let { vToday = it }
+        params.first?.let { vFirst = it }
+        params.left?.let { vLeft = it }
         params.undated?.let { vUndated = it }
         params.total?.let { vTotal = it }
         params.errors?.let { vErrors = it }

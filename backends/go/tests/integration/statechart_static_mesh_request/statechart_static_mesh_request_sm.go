@@ -544,7 +544,8 @@ func (p *StatechartStaticMeshRequestPolicy) Refused() uint32 {
 
 // StatechartStaticMeshRequestInvokeParams holds the values a parent's `<param>` and
 // `namelist` give this machine's variables before it starts (§scxml-6.4.1). A
-// variable left nil keeps the value its `<data>` gave it.
+// variable left nil, or absent for an optional one, keeps the value its `<data>`
+// gave it.
 type StatechartStaticMeshRequestInvokeParams struct {
 	VLoad *uint32
 	VLabel *string

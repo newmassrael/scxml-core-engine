@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d11fb6db69c27fed25f47a2f22a5bf7fb78da524d08f0c299e9cc553d32a6375
+// source-hash: b67ac92c47dabab09bc66be64b0a4b4a6acfabe17f95412102ed640a717fc04f
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -966,6 +966,9 @@ impl StaticOptionalPersist for Engine<StaticOptionalPolicy> {
 /// value its `<data>` gave it.
 #[derive(Default)]
 pub struct StaticOptionalInvokeParams {
+    pub due: Option<i64>,
+    pub other: Option<i64>,
+    pub title: Option<String>,
     pub days: Option<i64>,
     pub following: Option<i64>,
     pub late: Option<bool>,
@@ -978,6 +981,7 @@ pub struct StaticOptionalInvokeParams {
     pub absent: Option<bool>,
     pub status_done: Option<bool>,
     pub echoed: Option<i64>,
+    pub echo_title: Option<String>,
     pub fallbacks: Option<u32>,
     pub errors: Option<u32>,
     pub huge: Option<i64>,
@@ -1164,6 +1168,15 @@ impl StaticOptionalPolicy {
     /// §scxml-6.4.1: give this machine the values `params` carries, in place of
     /// the ones its `<data>` gave. Called before it initializes.
     pub fn accept_params(&mut self, params: StaticOptionalInvokeParams) {
+        if params.due.is_some() {
+            self.due = params.due;
+        }
+        if params.other.is_some() {
+            self.other = params.other;
+        }
+        if params.title.is_some() {
+            self.title = params.title;
+        }
         if let Some(value) = params.days {
             self.days = value;
         }
@@ -1199,6 +1212,9 @@ impl StaticOptionalPolicy {
         }
         if let Some(value) = params.echoed {
             self.echoed = value;
+        }
+        if params.echo_title.is_some() {
+            self.echo_title = params.echo_title;
         }
         if let Some(value) = params.fallbacks {
             self.fallbacks = value;

@@ -688,7 +688,8 @@ func (p *StaticInvokeEntryPolicy) Greetings() uint32 {
 
 // StaticInvokeEntryInvokeParams holds the values a parent's `<param>` and
 // `namelist` give this machine's variables before it starts (§scxml-6.4.1). A
-// variable left nil keeps the value its `<data>` gave it.
+// variable left nil, or absent for an optional one, keeps the value its `<data>`
+// gave it.
 type StaticInvokeEntryInvokeParams struct {
 	VBase *uint32
 	VBig *uint32
@@ -767,8 +768,7 @@ func (p *StaticInvokeEntryPolicy) ExecutePendingInvokes(engine *sce.Engine[Stati
 					var sceFailure scealgorithm.Failure
 					sceValue := scealgorithm.AddUint32(&sceFailure, p.vBig, 1)
 					if !sceFailure.Failed() {
-						seed.VStart = &sceValue
-					} else {
+						seed.VStart = &sceValue					} else {
 						// §scxml-5.7.1: a value that failed is reported and the
 						// child still starts, one value short.
 						engine.Raise(sce.NewPlatformError(StaticInvokeEntryEventErrorExecution, "<invoke> <param name='start'> could not be read"))
@@ -856,8 +856,7 @@ func (p *StaticInvokeEntryPolicy) ExecutePendingInvokes(engine *sce.Engine[Stati
 					var sceFailure scealgorithm.Failure
 					sceValue := scealgorithm.AddUint32(&sceFailure, p.vBase, 1)
 					if !sceFailure.Failed() {
-						seed.VStart = &sceValue
-					} else {
+						seed.VStart = &sceValue					} else {
 						// §scxml-5.7.1: a value that failed is reported and the
 						// child still starts, one value short.
 						engine.Raise(sce.NewPlatformError(StaticInvokeEntryEventErrorExecution, "<invoke> <param name='start'> could not be read"))

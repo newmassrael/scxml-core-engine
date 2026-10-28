@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d11fb6db69c27fed25f47a2f22a5bf7fb78da524d08f0c299e9cc553d32a6375
+// source-hash: b67ac92c47dabab09bc66be64b0a4b4a6acfabe17f95412102ed640a717fc04f
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -1221,8 +1221,12 @@ func (p *StaticOptionalPolicy) Errors() uint32 {
 
 // StaticOptionalInvokeParams holds the values a parent's `<param>` and
 // `namelist` give this machine's variables before it starts (§scxml-6.4.1). A
-// variable left nil keeps the value its `<data>` gave it.
+// variable left nil, or absent for an optional one, keeps the value its `<data>`
+// gave it.
 type StaticOptionalInvokeParams struct {
+	VDue optional.Of[int64]
+	VOther optional.Of[int64]
+	VTitle optional.Of[string]
 	VDays *int64
 	VFollowing *int64
 	VLate *bool
@@ -1235,6 +1239,7 @@ type StaticOptionalInvokeParams struct {
 	VAbsent *bool
 	VStatusDone *bool
 	VEchoed *int64
+	VEchoTitle optional.Of[string]
 	VFallbacks *uint32
 	VErrors *uint32
 	VHuge *int64
@@ -1243,6 +1248,15 @@ type StaticOptionalInvokeParams struct {
 // AcceptParams gives this machine the values params carries, in place of the
 // ones its `<data>` gave. Called before it initializes (§scxml-6.4.1).
 func (p *StaticOptionalPolicy) AcceptParams(params StaticOptionalInvokeParams) {
+	if params.VDue.IsPresent() {
+		p.vDue = params.VDue
+	}
+	if params.VOther.IsPresent() {
+		p.vOther = params.VOther
+	}
+	if params.VTitle.IsPresent() {
+		p.vTitle = params.VTitle
+	}
 	if params.VDays != nil {
 		p.vDays = *params.VDays
 	}
@@ -1278,6 +1292,9 @@ func (p *StaticOptionalPolicy) AcceptParams(params StaticOptionalInvokeParams) {
 	}
 	if params.VEchoed != nil {
 		p.vEchoed = *params.VEchoed
+	}
+	if params.VEchoTitle.IsPresent() {
+		p.vEchoTitle = params.VEchoTitle
 	}
 	if params.VFallbacks != nil {
 		p.vFallbacks = *params.VFallbacks

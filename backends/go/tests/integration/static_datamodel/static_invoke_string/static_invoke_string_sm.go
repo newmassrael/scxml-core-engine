@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d11fb6db69c27fed25f47a2f22a5bf7fb78da524d08f0c299e9cc553d32a6375
+// source-hash: b67ac92c47dabab09bc66be64b0a4b4a6acfabe17f95412102ed640a717fc04f
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -716,7 +716,8 @@ func (p *StaticInvokeStringPolicy) Errors() uint32 {
 
 // StaticInvokeStringInvokeParams holds the values a parent's `<param>` and
 // `namelist` give this machine's variables before it starts (§scxml-6.4.1). A
-// variable left nil keeps the value its `<data>` gave it.
+// variable left nil, or absent for an optional one, keeps the value its `<data>`
+// gave it.
 type StaticInvokeStringInvokeParams struct {
 	VLengthy *string
 	VCompleted *uint32
@@ -787,8 +788,7 @@ func (p *StaticInvokeStringPolicy) ExecutePendingInvokes(engine *sce.Engine[Stat
 					var sceFailure scealgorithm.Failure
 					sceValue := scealgorithm.Bounded(&sceFailure, "wxyz", 4)
 					if !sceFailure.Failed() {
-						seed.VTitle = &sceValue
-					} else {
+						seed.VTitle = &sceValue					} else {
 						// §scxml-5.7.1: a value that failed is reported and the
 						// child still starts, one value short.
 						engine.Raise(sce.NewPlatformError(StaticInvokeStringEventErrorExecution, "<invoke> <param name='title'> could not be read"))
@@ -876,8 +876,7 @@ func (p *StaticInvokeStringPolicy) ExecutePendingInvokes(engine *sce.Engine[Stat
 					var sceFailure scealgorithm.Failure
 					sceValue := scealgorithm.Bounded(&sceFailure, p.vLengthy, 4)
 					if !sceFailure.Failed() {
-						seed.VTitle = &sceValue
-					} else {
+						seed.VTitle = &sceValue					} else {
 						// §scxml-5.7.1: a value that failed is reported and the
 						// child still starts, one value short.
 						engine.Raise(sce.NewPlatformError(StaticInvokeStringEventErrorExecution, "<invoke> <param name='title'> could not be read"))
@@ -965,8 +964,7 @@ func (p *StaticInvokeStringPolicy) ExecutePendingInvokes(engine *sce.Engine[Stat
 					var sceFailure scealgorithm.Failure
 					sceValue := scealgorithm.Bounded(&sceFailure, "é€", 4)
 					if !sceFailure.Failed() {
-						seed.VTitle = &sceValue
-					} else {
+						seed.VTitle = &sceValue					} else {
 						// §scxml-5.7.1: a value that failed is reported and the
 						// child still starts, one value short.
 						engine.Raise(sce.NewPlatformError(StaticInvokeStringEventErrorExecution, "<invoke> <param name='title'> could not be read"))

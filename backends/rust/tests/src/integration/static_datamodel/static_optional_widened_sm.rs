@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d11fb6db69c27fed25f47a2f22a5bf7fb78da524d08f0c299e9cc553d32a6375
+// source-hash: b67ac92c47dabab09bc66be64b0a4b4a6acfabe17f95412102ed640a717fc04f
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -473,6 +473,8 @@ impl StaticOptionalWidenedPersist for Engine<StaticOptionalWidenedPolicy> {
 #[derive(Default)]
 pub struct StaticOptionalWidenedInvokeParams {
     pub entry: Option<u32>,
+    pub due: Option<i64>,
+    pub remind: Option<i64>,
     pub taken: Option<u32>,
     pub refusals: Option<u32>,
 }
@@ -579,6 +581,12 @@ impl StaticOptionalWidenedPolicy {
     pub fn accept_params(&mut self, params: StaticOptionalWidenedInvokeParams) {
         if let Some(value) = params.entry {
             self.entry = value;
+        }
+        if params.due.is_some() {
+            self.due = params.due;
+        }
+        if params.remind.is_some() {
+            self.remind = params.remind;
         }
         if let Some(value) = params.taken {
             self.taken = value;

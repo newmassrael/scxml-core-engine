@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d11fb6db69c27fed25f47a2f22a5bf7fb78da524d08f0c299e9cc553d32a6375
+// source-hash: b67ac92c47dabab09bc66be64b0a4b4a6acfabe17f95412102ed640a717fc04f
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_optional.scxml
@@ -233,6 +233,9 @@ class StaticOptionalStateMachine(
      * value its `<data>` gave it.
      */
     class InvokeParams {
+        var due: Long? = null
+        var other: Long? = null
+        var title: String? = null
         var days: Long? = null
         var following: Long? = null
         var late: Boolean? = null
@@ -245,6 +248,7 @@ class StaticOptionalStateMachine(
         var absent: Boolean? = null
         var statusDone: Boolean? = null
         var echoed: Long? = null
+        var echoTitle: String? = null
         var fallbacks: UInt? = null
         var errors: UInt? = null
         var huge: Long? = null
@@ -252,6 +256,9 @@ class StaticOptionalStateMachine(
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
+        params.due?.let { vDue = it }
+        params.other?.let { vOther = it }
+        params.title?.let { vTitle = it }
         params.days?.let { vDays = it }
         params.following?.let { vFollowing = it }
         params.late?.let { vLate = it }
@@ -264,6 +271,7 @@ class StaticOptionalStateMachine(
         params.absent?.let { vAbsent = it }
         params.statusDone?.let { vStatusDone = it }
         params.echoed?.let { vEchoed = it }
+        params.echoTitle?.let { vEchoTitle = it }
         params.fallbacks?.let { vFallbacks = it }
         params.errors?.let { vErrors = it }
         params.huge?.let { vHuge = it }
