@@ -4,9 +4,8 @@
   owner's answers", below), under the standing rule: the most long-term correct structure, cost
   ignored; never a sentinel number and never a companion flag that admits impossible states. Steps
   1 to 6 are implemented, and step 7 but for the restore's refusal of a `null` saved before a
-  widening (its "as built" note), and step 8, and the shared part of step 9 (the generated
-  backends' spellings of an optional record are their own steps), and steps 12, 13 and 14; the
-  others follow in the order section 9 gives. Section 8 and step 12 amended the same day by that
+  widening (its "as built" note), and steps 8, 9, 12, 13 and 14; the others follow in the order
+  section 9 gives. Section 8 and step 12 amended the same day by that
   rule: a codec
   document declares its format, and format 1 is refused for good (step 12 is implemented).
 - Date: 2026-10-21
@@ -758,12 +757,12 @@ documents, not observed from a backend.
    `CalleeSlot::Optional`. Tests: `sce-build/tests/an_algorithm_holds_an_optional_value.rs`, and the
    algorithm cases of `sce-build/tests/a_value_is_proven_present_only_where_tested.rs`, now
    generated.
-9. **`optional<record:X>`** (implemented, shared part). A variable and an algorithm slot of an
+9. **`optional<record:X>`** (implemented). A variable and an algorithm slot of an
    optional record: started at `null`, taken whole from a record, a payload, a list's element;
    `r.value.f` where proven; a field write to `r.value.f` where proven, and refused elsewhere.
    Tests: `scenarios/static_optional_record.json` on every engine, and its saved instance.
-   As built, the shared part lands on the Interpreter, and each generated backend refuses an
-   optional record by name until its own step, which spells it in the hooks the shared walk gives it:
+   As built, the shared part lands on the Interpreter, and each generated backend spells an
+   optional record in its own step, in the hooks the shared walk gives it:
    - *What the language says.* A variable starts at `null` and only there (`expr="null"`; a record
      is built from `<sce:set>` children, which a variable that may hold none has no use for). A
      whole record is put into it by the rule a record variable takes one by (`Judge::optional_record_assign`):
@@ -817,13 +816,13 @@ documents, not observed from a backend.
      record variable is. A saved state holds `null` or the record as an object whose members are its
      fields, which the saved-state schemas already admit; `saved/static_optional_record.json` and its
      format-1 twin hold one absent (`found`) and one present (`pick`) beside the machine's other values.
-     Rust and Kotlin, the two backends that save, restore it in their own steps.
+     Each generated backend that restores a saved state restores it, in the test of its own paragraph below.
    - *The scenario.* `static_optional_record.json` drives `static_optional_record.scxml` over
      `schema_item_pick.scxml` and `algorithm_item_pick_first.scxml`: an optional record taken from a payload,
      a record variable and a list's element, read and written under a test, made absent, and answered by an
      algorithm; `every_replay_scenario_keeps_to_its_vocabulary` holds its `null`s to the machine's optional
-     records. It is listed as not yet lowered for the six generated backends in the three places step 4
-     named, and the Interpreter replays it. Tests: `an_optional_record_is_held_read_and_written_where_proven`
+     records. The Interpreter replays it, and so does each generated backend, in the driver its own
+     paragraph below names. Tests: `an_optional_record_is_held_read_and_written_where_proven`
      and the algorithm cases of `an_algorithm_holds_an_optional_value`.
    - *Python.* Python lowers all of it, in `Optional[T]` over the type a present value has there.
      A statechart's optional record is `Optional[<the machine's record>]`, started at `None`, the record being
