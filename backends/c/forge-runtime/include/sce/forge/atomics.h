@@ -36,6 +36,12 @@
  * pair belong to the intrusive queue (Vyukov), whose links are u32 node
  * indices: a producer exchanges its node onto the tail, and a link is read
  * and written relaxed because the exchange and the acquire load order it.
+ *
+ * The broadcast log (sce/forge/broadcast_log.h, ADR 0062) adds, for u64 only,
+ * a relaxed load and a relaxed store, which move the words of an entry, and
+ * the acquire and the release fence that order those words against the stamp
+ * of their slot. A target that has no 64-bit atomic loads and stores has no
+ * broadcast log, as it has no SCQ over 64-bit entries.
  */
 
 #ifndef SCE_FORGE_ATOMICS_H
@@ -87,6 +93,13 @@ extern uint64_t sce_atomic_cas_strong_acq_rel_u64(uint64_t *p0, uint64_t p1, uin
 extern uint64_t sce_atomic_fetch_add_acq_rel_u64(uint64_t *p0, uint64_t p1);
 extern uint64_t sce_atomic_fetch_sub_acq_rel_u64(uint64_t *p0, uint64_t p1);
 extern uint64_t sce_atomic_fetch_or_acq_rel_u64(uint64_t *p0, uint64_t p1);
+
+/* The broadcast log's: the words of an entry move relaxed, between a release
+ * fence and an acquire fence that carry the order (ADR 0062 section 4). */
+extern uint64_t sce_atomic_load_relaxed_u64(const uint64_t *p0);
+extern void sce_atomic_store_relaxed_u64(uint64_t *p0, uint64_t p1);
+extern void sce_atomic_fence_acquire(void);
+extern void sce_atomic_fence_release(void);
 
 #ifdef __cplusplus
 } /* extern "C" */

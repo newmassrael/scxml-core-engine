@@ -424,6 +424,45 @@ add_test(NAME queue_history_check_c_refuses
 set_tests_properties(queue_history_check_c_refuses PROPERTIES
     PASS_REGULAR_EXPRESSION "queue histories refused")
 
+# ---------------------------------------------------------------------------
+# The broadcast-log kind (ADR 0062)
+# ---------------------------------------------------------------------------
+#
+# The runtime's log on its own (sce/forge/broadcast_log.h), under the same -Werror
+# bar and against the same hosted `sce_atomic_*` symbols as the queues: the unit
+# tests of the Rust row, the refusals of the constructor, and real threads.
+add_executable(broadcast_log_runtime_test_c "${CMAKE_CURRENT_SOURCE_DIR}/broadcast_log_runtime_test.c")
+target_compile_options(broadcast_log_runtime_test_c PRIVATE -Wall -Wextra -Wpedantic -Werror)
+target_link_libraries(broadcast_log_runtime_test_c PRIVATE sce_queue_host_intrinsics)
+add_test(NAME broadcast_log_runtime_c COMMAND broadcast_log_runtime_test_c)
+
+# Layer 3: the stress runs written as histories, judged by the command every
+# backend's broadcast-log histories are judged by. 5 shapes recorded 20 times.
+add_executable(broadcast_log_history_recorder_c "${CMAKE_CURRENT_SOURCE_DIR}/broadcast_log_history_recorder.c")
+target_compile_options(broadcast_log_history_recorder_c PRIVATE -Wall -Wextra -Wpedantic -Werror)
+target_link_libraries(broadcast_log_history_recorder_c PRIVATE sce_queue_host_intrinsics)
+set(BROADCAST_HISTORIES_DIR "${CMAKE_CURRENT_BINARY_DIR}/broadcast_histories")
+add_test(NAME broadcast_history_record_c COMMAND broadcast_log_history_recorder_c "${BROADCAST_HISTORIES_DIR}")
+set_tests_properties(broadcast_history_record_c PROPERTIES FIXTURES_SETUP broadcast_histories_c)
+add_test(NAME broadcast_history_check_c
+    COMMAND "${CMAKE_COMMAND}"
+            "-DCODEGEN=${SCE_CODEGEN}"
+            "-DDIR=${BROADCAST_HISTORIES_DIR}"
+            -DMINIMUM=100
+            -P "${REPO_ROOT}/tests/forge/conformance/check_broadcast_histories.cmake")
+set_tests_properties(broadcast_history_check_c PROPERTIES FIXTURES_REQUIRED broadcast_histories_c)
+
+# The same script over the corpus of histories sce-build keeps, which holds
+# histories that are not linearizable: it must refuse them, saying so.
+add_test(NAME broadcast_history_check_c_refuses
+    COMMAND "${CMAKE_COMMAND}"
+            "-DCODEGEN=${SCE_CODEGEN}"
+            "-DDIR=${REPO_ROOT}/sce-build/tests/fixtures/broadcast_histories"
+            -DMINIMUM=1
+            -P "${REPO_ROOT}/tests/forge/conformance/check_broadcast_histories.cmake")
+set_tests_properties(broadcast_history_check_c_refuses PROPERTIES
+    PASS_REGULAR_EXPRESSION "broadcast-log histories refused")
+
 # The headers the generator writes for a queue, compiled and used.
 #
 # A C11 queue depends on what the target's atomics are, which the generator cannot

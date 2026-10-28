@@ -94,3 +94,34 @@ void sce_atomic_fence_seq_cst(void) {
     __atomic_thread_fence(__ATOMIC_SEQ_CST);
 #endif
 }
+
+/* The broadcast log's (sce/forge/broadcast_log.h, ADR 0062): a relaxed load and
+ * store of a u64 word of an entry, and the acquire and the release fence that
+ * order the words against the stamp of their slot. Under ThreadSanitizer the
+ * fences are the same read-modify-write as above, which is stronger than either
+ * and which the tool models. */
+uint64_t sce_atomic_load_relaxed_u64(const uint64_t *p0) {
+    return __atomic_load_n(p0, __ATOMIC_RELAXED);
+}
+
+void sce_atomic_store_relaxed_u64(uint64_t *p0, uint64_t p1) {
+    __atomic_store_n(p0, p1, __ATOMIC_RELAXED);
+}
+
+void sce_atomic_fence_acquire(void) {
+#ifdef SCE_HOST_TSAN
+    static size_t barrier;
+    (void)__atomic_exchange_n(&barrier, 0u, __ATOMIC_SEQ_CST);
+#else
+    __atomic_thread_fence(__ATOMIC_ACQUIRE);
+#endif
+}
+
+void sce_atomic_fence_release(void) {
+#ifdef SCE_HOST_TSAN
+    static size_t barrier;
+    (void)__atomic_exchange_n(&barrier, 0u, __ATOMIC_SEQ_CST);
+#else
+    __atomic_thread_fence(__ATOMIC_RELEASE);
+#endif
+}
