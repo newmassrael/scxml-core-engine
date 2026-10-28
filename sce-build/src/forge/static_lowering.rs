@@ -12606,9 +12606,15 @@ fn lower_action(
             let slot = crate::forge::expr::infer_expr_type(&action.location, ctx)
                 .unwrap_or(InferredType::Unknown);
             let location = action.location.trim();
-            // The type of the record a payload is taken whole into, when it is.
+            // The type of the record a payload, or the element of a list of records
+            // a target reads whole ([`StaticTarget::record_at`]), is taken whole
+            // into, when it is: the value is held while it is computed in a value of
+            // its own type, as a read that can fail is.
             let whole_record = match rewrites.records.get(location) {
-                Some((alias, _)) if action.expr.trim() == "_event.data" => {
+                Some((alias, _))
+                    if action.expr.trim() == "_event.data"
+                        || indexed_element(&action.expr).is_some() =>
+                {
                     Some(target.record_type(rewrites.machine, alias))
                 }
                 _ => None,
