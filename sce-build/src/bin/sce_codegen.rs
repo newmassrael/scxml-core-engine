@@ -12729,13 +12729,13 @@ fn cmd_codec_roles(scxml_paths: &[String], include_dirs: &[String], error_format
 // A CBOR or content-line codec document in codec format 2 (docs/adr/0055,
 // section 8): the rewrite `validation/codec-format-superseded` names, applied to
 // the text so that the author replaces the document with what is printed. Reads
-// the file as written, without imports or preprocessing, since the rewrite is of
-// its own text; a document that holds a directive the preprocessor expands is
-// refused by the rewrite, and one that is no codec of these encodings has no
-// format and is said so.
+// the document as `generate` reads its input and as written, without imports or
+// preprocessing, since the rewrite is of its own text; a document that holds a
+// directive the preprocessor expands is refused by the rewrite, and one that is
+// no codec of these encodings has no format and is said so.
 
 fn cmd_codec_format(scxml_path: &str, error_format: ErrorFormat) {
-    let content = fs::read_to_string(scxml_path).unwrap_or_else(|e| {
+    let content = read_named_document(scxml_path).unwrap_or_else(|e| {
         cli_exit(CliError::ReadInput {
             path: scxml_path.to_string(),
             source: e,
