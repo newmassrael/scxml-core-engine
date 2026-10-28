@@ -258,6 +258,7 @@ fn a_variable_holds_each_element_and_is_lowered_where_its_step_landed() {
         );
         assert!(ok, "{spelled}: Rust lowers an optional value:\n{out}");
     }
+    // An optional record is lowered on Rust, whose own step 9 has landed.
     let text = statechart(
         r#"<data id="pick" sce:type="optional&lt;record:Move&gt;" expr="null"/>"#,
         "",
@@ -267,17 +268,38 @@ fn a_variable_holds_each_element_and_is_lowered_where_its_step_landed() {
         &[("probe.scxml", &text)],
         "probe.scxml",
     );
-    assert!(!ok, "no backend lowers an optional record yet:\n{out}");
-    assert!(
-        out.contains("an optional record has no")
-            && out.contains("lowering yet")
-            && out.contains("optional<record:Move>"),
-        "refused where it is lowered, naming the type:\n{out}"
+    assert!(ok, "Rust lowers an optional record:\n{out}");
+}
+
+/// The emitting backends whose own step 9 of docs/adr/0055 has not spelled an
+/// optional record, by the language `generate -l` names: each refuses a variable
+/// of one by name. A backend leaves this list in the step that spells one on it.
+const NOT_LOWERING_OPTIONAL_RECORD: &[&str] = &["kotlin", "cpp", "go", "c11"];
+
+#[test]
+fn a_backend_that_has_not_spelled_an_optional_record_refuses_it_by_name() {
+    let text = statechart(
+        r#"<data id="pick" sce:type="optional&lt;record:Move&gt;" expr="null"/>"#,
+        "",
     );
-    assert!(
-        out.contains("generate/unsupported-feature"),
-        "refused as a feature this backend does not lower:\n{out}"
-    );
+    for args in every_backend() {
+        let (ok, out) = run(&args, &[("probe.scxml", &text)], "probe.scxml");
+        if !NOT_LOWERING_OPTIONAL_RECORD.contains(&args[2]) {
+            assert!(ok, "{args:?} lowers an optional record:\n{out}");
+            continue;
+        }
+        assert!(!ok, "{args:?} must refuse an optional record:\n{out}");
+        assert!(
+            out.contains("an optional record has no")
+                && out.contains("lowering yet")
+                && out.contains("optional<record:Move>"),
+            "{args:?} refuses it where it is lowered, naming the type:\n{out}"
+        );
+        assert!(
+            out.contains("generate/unsupported-feature"),
+            "{args:?} refuses it as a feature it does not lower:\n{out}"
+        );
+    }
 }
 
 #[test]

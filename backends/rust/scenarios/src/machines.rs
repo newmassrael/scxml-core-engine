@@ -178,10 +178,7 @@ macro_rules! scenarios {
 /// (`generate/unsupported-feature`), so there is no module a row could build it
 /// from. The step that lowers the construct on Rust generates the machine, takes
 /// the entry off and adds the row.
-pub const NOT_YET_LOWERED: &[(&str, &str)] = &[(
-    "static_optional_record",
-    "an optional record has no Rust lowering yet (docs/adr/0055, step 9)",
-)];
+pub const NOT_YET_LOWERED: &[(&str, &str)] = &[];
 
 scenarios! {
     "presence_peer_alice" => presence_peer_sm::{PresencePeerPolicy, PresencePeerPersist} @ Manual;
@@ -231,6 +228,7 @@ scenarios! {
     "static_list_assign" => static_list_assign_sm::{StaticListAssignPolicy, StaticListAssignPersist};
     "static_list_index" => static_list_index_sm::{StaticListIndexPolicy, StaticListIndexPersist};
     "static_optional" => static_optional_sm::{StaticOptionalPolicy, StaticOptionalPersist};
+    "static_optional_record" => static_optional_record_sm::{StaticOptionalRecordPolicy, StaticOptionalRecordPersist};
     "static_optional_widened" => static_optional_widened_sm::{StaticOptionalWidenedPolicy, StaticOptionalWidenedPersist};
     "static_overflow" => static_overflow_sm::{StaticOverflowPolicy, StaticOverflowPersist};
     "static_payload" => static_payload_sm::{StaticPayloadPolicy, StaticPayloadPersist};

@@ -39,6 +39,10 @@ use sce_rust_tests::integration::static_datamodel::static_list_sm::{
     StaticListDayPickedPayload, StaticListInject, StaticListObserve, StaticListPersist,
     StaticListPolicy, StaticListState,
 };
+use sce_rust_tests::integration::static_datamodel::static_optional_record_sm::{
+    StaticOptionalRecordItemRecord, StaticOptionalRecordObserve, StaticOptionalRecordPersist,
+    StaticOptionalRecordPolicy,
+};
 use sce_rust_tests::integration::static_datamodel::static_optional_sm::{
     StaticOptionalDueRecord, StaticOptionalObserve, StaticOptionalPersist, StaticOptionalPolicy,
     StaticOptionalStatusEnum,
@@ -1846,4 +1850,112 @@ fn a_saved_null_is_refused_where_the_restoring_type_is_not_optional() {
         refusal.reason().contains("'item.due' is absent (null)"),
         "{refusal}"
     );
+}
+
+// ── static_optional_record: a record that may be absent (docs/adr/0055, step 9) ──
+
+const SHARED_OPTIONAL_RECORD: &str = include_str!(
+    "../../../../sce-build/tests/fixtures/static_datamodel/saved/static_optional_record.json"
+);
+const FORMAT1_OPTIONAL_RECORD: &str = include_str!(
+    "../../../../sce-build/tests/fixtures/static_datamodel/saved/format1/static_optional_record.json"
+);
+
+/// The record `static_optional_record` holds in `pick`, `draft` and its list.
+fn item(id: u32, title: &str, count: i32) -> StaticOptionalRecordItemRecord {
+    StaticOptionalRecordItemRecord {
+        id,
+        title: title.to_string(),
+        count,
+    }
+}
+
+#[test]
+fn a_saved_optional_record_is_restored_absent_or_present_and_saved_as_it_was_read() {
+    for text in [SHARED_OPTIONAL_RECORD, FORMAT1_OPTIONAL_RECORD] {
+        let mut restored = Engine::<StaticOptionalRecordPolicy>::restore(
+            StaticOptionalRecordPolicy::new(),
+            &SavedState::from_json(text).expect("reads"),
+        )
+        .expect("restores");
+        let data = restored.snapshot().data;
+        // `pick` holds a record and `found` none, beside a record that is never
+        // absent and a list of records.
+        assert_eq!(data.pick, Some(item(2, "bumped", 7)));
+        assert_eq!(data.found, None);
+        assert_eq!(data.draft, item(3, "gamma", 9));
+        assert_eq!(data.items, vec![item(1, "alpha", 2), item(2, "beta", 6)]);
+        // The restored machine carries on: `pick.clear` makes the record absent,
+        // and `pick.draft` takes the record `draft` holds into it.
+        restored.raise_external_by_name("pick.clear", "");
+        restored.step();
+        assert_eq!(restored.snapshot().data.pick, None);
+        restored.raise_external_by_name("pick.draft", "");
+        restored.step();
+        assert_eq!(restored.snapshot().data.pick, Some(item(3, "gamma", 9)));
+    }
+    // What was restored is saved as it was read.
+    let restored = Engine::<StaticOptionalRecordPolicy>::restore(
+        StaticOptionalRecordPolicy::new_with_session_id(ROOT).expect("an Nmtoken"),
+        &SavedState::from_json(SHARED_OPTIONAL_RECORD).expect("reads"),
+    )
+    .expect("restores");
+    assert_eq!(
+        restored.save().expect("saves").to_json(),
+        SHARED_OPTIONAL_RECORD.trim()
+    );
+}
+
+#[test]
+fn a_saved_absent_record_is_restored_absent_and_saved_as_null() {
+    let text = SHARED_OPTIONAL_RECORD.replace(
+        r#""pick":{"id":2,"title":"bumped","count":7}"#,
+        r#""pick":null"#,
+    );
+    assert_ne!(text, SHARED_OPTIONAL_RECORD, "the record is made absent");
+    let restored = Engine::<StaticOptionalRecordPolicy>::restore(
+        StaticOptionalRecordPolicy::new_with_session_id(ROOT).expect("an Nmtoken"),
+        &SavedState::from_json(&text).expect("reads"),
+    )
+    .expect("restores");
+    assert_eq!(restored.snapshot().data.pick, None);
+    assert_eq!(restored.save().expect("saves").to_json(), text.trim());
+}
+
+#[test]
+fn a_saved_null_is_refused_where_a_record_is_never_absent() {
+    // `draft` is a record, not an optional one: a state that holds `null` there is
+    // refused, naming it, and nothing is built.
+    let text = SHARED_OPTIONAL_RECORD.replace(
+        r#""draft":{"id":3,"title":"gamma","count":9}"#,
+        r#""draft":null"#,
+    );
+    assert_ne!(text, SHARED_OPTIONAL_RECORD, "the record is made absent");
+    let refusal = refused(Engine::<StaticOptionalRecordPolicy>::restore(
+        StaticOptionalRecordPolicy::new(),
+        &SavedState::from_json(&text).expect("reads"),
+    ));
+    assert!(
+        refusal
+            .reason()
+            .contains("'draft' is absent (null), and its type is not optional"),
+        "{refusal}"
+    );
+}
+
+#[test]
+fn a_record_an_optional_holds_is_held_to_the_bounds_of_its_fields() {
+    // A title past the 16 bytes the schema bounds it by is refused where it stands
+    // in the record `pick` holds, as it is in a record that is never absent.
+    let text = SHARED_OPTIONAL_RECORD.replace(
+        r#""pick":{"id":2,"title":"bumped","count":7}"#,
+        r#""pick":{"id":2,"title":"abcdefghijklmnopq","count":7}"#,
+    );
+    assert_ne!(text, SHARED_OPTIONAL_RECORD, "the title is made longer");
+    let refusal = refused(Engine::<StaticOptionalRecordPolicy>::restore(
+        StaticOptionalRecordPolicy::new(),
+        &SavedState::from_json(&text).expect("reads"),
+    ));
+    assert!(refusal.reason().contains("'pick.title'"), "{refusal}");
+    assert!(refusal.reason().contains("past the 16"), "{refusal}");
 }

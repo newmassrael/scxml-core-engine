@@ -92,6 +92,9 @@ use sce_rust_tests::integration::static_datamodel::static_list_index_sm::{
 use sce_rust_tests::integration::static_datamodel::static_list_sm::{
     StaticListPersist, StaticListPolicy,
 };
+use sce_rust_tests::integration::static_datamodel::static_optional_record_sm::{
+    StaticOptionalRecordPersist, StaticOptionalRecordPolicy,
+};
 use sce_rust_tests::integration::static_datamodel::static_optional_sm::{
     StaticOptionalPersist, StaticOptionalPolicy,
 };
@@ -1173,6 +1176,22 @@ fn static_optional_holds_tests_reads_and_carries_a_value_that_may_be_absent() {
         |engine| engine.save().expect("saves"),
         include_str!(
             "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_optional.json"
+        ),
+    );
+}
+
+// A record that may be absent (docs/adr/0055, step 9): taken whole from a payload, a
+// record variable and a list's element, read and written field by field only where a
+// test proves it present, made absent by `null`, and answered by an algorithm. Read
+// back through its saved state, which holds an absent record as `null` and a present
+// one as the object its fields make.
+#[test]
+fn static_optional_record_holds_reads_and_writes_a_record_that_may_be_absent() {
+    replay(
+        Engine::new(StaticOptionalRecordPolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_optional_record.json"
         ),
     );
 }

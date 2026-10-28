@@ -6055,11 +6055,6 @@ const INTERPRETER: &str = "interpreter";
 /// step 9 adds the scenario of an optional record, which only the Interpreter
 /// lowers until each backend's own step 9.
 const NOT_YET_LOWERED: &[(&str, &str, &str)] = &[
-    (
-        "static_optional_record",
-        "rust",
-        OPTIONAL_RECORD_NOT_LOWERED,
-    ),
     ("static_optional_record", "go", OPTIONAL_RECORD_NOT_LOWERED),
     ("static_optional_record", "c11", OPTIONAL_RECORD_NOT_LOWERED),
 ];

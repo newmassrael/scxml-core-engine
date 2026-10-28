@@ -84,6 +84,9 @@ ALGORITHMS+=(item_status_set item_status_count item_status_of)
 # static_state_algorithm_optional's: a list of records whose day may be absent, and
 # an optional day, in and out (docs/adr/0055).
 ALGORITHMS+=(goal_earliest goal_until goal_undated goal_day_sum)
+# static_optional_record's: a list of records in, an optional record out
+# (docs/adr/0055, step 9).
+ALGORITHMS+=(item_pick_first)
 # The records static_state_algorithm hands those algorithms and takes back: an
 # algorithm names one as `super::schema_<name>`, so it is generated beside them.
 SCHEMAS=(schema_entry schema_total)
@@ -92,6 +95,8 @@ SCHEMAS=(schema_entry schema_total)
 SCHEMAS+=(schema_item enum_item_status)
 # ... and static_state_algorithm_optional's record, whose `day` may be absent.
 SCHEMAS+=(schema_goal)
+# ... and static_optional_record's, the record it may hold none of.
+SCHEMAS+=(schema_item_pick)
 # The schedule todo_peer reads from the fields a to-do holds: the occurrence and schedule
 # records, the rules that order two writes, read a field, tell a conflict, select a day
 # and expand a repetition. Each is named by its file, which a machine's import names as

@@ -226,6 +226,15 @@ fn an_algorithms_slot_reads_every_optional_element_a_statechart_holds() {
 /// joins here in its step and keeps its other arms.
 const SPELLING_EVERY_OPTIONAL_ELEMENT: &[&str] = &["python", "kotlin"];
 
+/// Whether the backend `lang` (a name [`every_backend`] gives) spells an optional
+/// value of the element `written` in an algorithm's slots beyond a number and a
+/// `bool` (docs/adr/0055, step 9): the backends that spell every element, and Rust,
+/// which spells every one but a byte string, since a slot declares no bound for it.
+fn spells_in_a_slot(lang: &str, written: &str) -> bool {
+    SPELLING_EVERY_OPTIONAL_ELEMENT.contains(&lang)
+        || (lang == "rust" && !written.contains("bytes"))
+}
+
 /// Each generated backend refuses an algorithm that holds an optional value it
 /// does not spell yet, by name, where it renders the slot or the local
 /// (docs/adr/0055, step 9): `generate/unsupported-feature`, "an optional value has
@@ -275,16 +284,20 @@ fn every_backend_refuses_an_algorithms_optional_slot_it_does_not_spell_by_name()
                     "slot_probe.scxml",
                     &["enum_item_status.scxml", "schema_goal.scxml"],
                 );
-                // Python holds every element in `Optional[T]` over the type its
-                // present value has there (docs/adr/0055, step 9): it spells each
-                // slot, and the probe is generated.
-                if SPELLING_EVERY_OPTIONAL_ELEMENT.contains(&lang) {
+                // A backend that spells the element generates the probe: Python holds
+                // every element in `Optional[T]` over the type its present value has
+                // there, Rust all but a byte string (docs/adr/0055, step 9).
+                if spells_in_a_slot(lang, written) {
                     assert!(
                         ok,
                         "{lang} spells `{written}` on an algorithm's slot:\n{out}"
                     );
-                    // Python's `Optional[T]`, Kotlin's `T?`.
-                    let optional = if lang == "kotlin" { "?" } else { "Optional[" };
+                    // Python's `Optional[T]`, Kotlin's `T?`, Rust's `Option<T>`.
+                    let optional = match lang {
+                        "kotlin" => "?",
+                        "rust" => "Option<",
+                        _ => "Optional[",
+                    };
                     assert!(
                         written_text.contains(optional),
                         "{lang} holds `{written}` in its optional type:\n{written_text}"

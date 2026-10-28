@@ -89,16 +89,9 @@ fn run(args: &[&str], documents: &[(&str, &str)], file: &str) -> (bool, String, 
     )
 }
 
-/// The backends whose own step of docs/adr/0055 lowers an optional record, and which
-/// [`every_backend`] leaves out: what they emit is held by their own tests
-/// (`an_optional_record_is_spelled_by_the_cpp_backend`).
-const LOWERS_AN_OPTIONAL_RECORD: [&str; 1] = ["cpp"];
-
-/// The `generate` arguments of each backend that emits a statechart's machine and
-/// does not lower an optional record yet.
+/// The `generate` arguments of each backend that emits a statechart's machine.
 fn every_backend() -> Vec<Vec<&'static str>> {
     sce_build::forge::codegen_matrix::emitting(sce_build::forge::model::ForgeKind::Statechart)
-        .filter(|language| !LOWERS_AN_OPTIONAL_RECORD.contains(&language.canonical_name()))
         .map(|language| {
             let mut args = vec!["generate", "-l", language.canonical_name()];
             if language == sce_build::generator::Language::Go {
@@ -113,7 +106,7 @@ fn every_backend() -> Vec<Vec<&'static str>> {
 /// docs/adr/0055 has landed: each lowers an optional record, and is held to its own
 /// spellings by its own test; the rest refuse one by name until theirs. A backend
 /// joins here in its step.
-const LOWERING_AN_OPTIONAL_RECORD: &[&str] = &["python", "kotlin"];
+const LOWERING_AN_OPTIONAL_RECORD: &[&str] = &["python", "kotlin", "rust", "cpp"];
 
 /// [`every_backend`] without the ones that lower an optional record
 /// ([`LOWERING_AN_OPTIONAL_RECORD`]): the ones that still refuse one.
@@ -523,12 +516,12 @@ fn algorithm(body: &str) -> String {
     )
 }
 
-/// The algorithm of [`algorithm`] is called from a statechart with a variable that
-/// may be absent, with `null` and with a record, which is lifted: each argument is
-/// held by name, and the Interpreter's lowering hands the function the value the
-/// variable holds.
-#[test]
-fn an_algorithm_takes_an_optional_record_by_name_and_reads_it_where_proven() {
+/// The algorithm of [`algorithm`] that keeps the first record of its list in a
+/// local that may be absent, reads its parameter and the local where a test proves
+/// them present, and writes a field of the local, and the statechart that calls it
+/// with a variable that may be absent, with `null` and with a record (which is
+/// lifted): `(the algorithm's text, the statechart's text)`.
+fn pick_count_documents() -> (String, String) {
     let body = r#"<sce:foreach item="it" in="items">
       <sce:if cond="held === null">
         <sce:assign target="held" expr="it"/>
@@ -554,10 +547,20 @@ fn an_algorithm_takes_an_optional_record_by_name_and_reads_it_where_proven() {
         "  <datamodel>",
         "  <sce:import kind=\"algorithm\" src=\"algorithm_pick_count.scxml\" as=\"PickCount\"/>\n  <datamodel>",
     );
+    (algorithm(body), caller)
+}
+
+/// The algorithm of [`algorithm`] is called from a statechart with a variable that
+/// may be absent, with `null` and with a record, which is lifted: each argument is
+/// held by name, and the Interpreter's lowering hands the function the value the
+/// variable holds.
+#[test]
+fn an_algorithm_takes_an_optional_record_by_name_and_reads_it_where_proven() {
+    let (algorithm_text, caller) = pick_count_documents();
     let (ok, out, written) = run(
         &["lower"],
         &[
-            ("algorithm_pick_count.scxml", &algorithm(body)),
+            ("algorithm_pick_count.scxml", &algorithm_text),
             ("probe.scxml", &caller),
         ],
         "probe.scxml",
@@ -659,4 +662,335 @@ fn every_generated_backend_refuses_an_algorithm_that_holds_an_optional_record_by
             "{args:?} refuses it by name:\n{out}"
         );
     }
+}
+
+// ── Rust spells it ───────────────────────────────────────────────────────
+
+/// The machine of the scenario is generated for Rust. The variable is an `Option`
+/// of the record's own type, started absent; a record is put into it whole as a
+/// copy (a clone, the record owning text) from a record variable and from a
+/// list's element read by reference; a field of the present record is read through
+/// the runtime's `proven_ref` and written in place through `proven_mut`, where a
+/// test proves it present; and the optional record an algorithm answers is taken
+/// whole, its record copied from the algorithm's into the machine's.
+#[test]
+fn rust_spells_the_optional_record_scenario_machine() {
+    let (ok, out, written) = run(
+        &["generate", "-l", "rust"],
+        &[],
+        "static_optional_record.scxml",
+    );
+    assert!(ok, "Rust generates the machine:\n{out}");
+    for needle in [
+        // Held as an `Option` of the record's own type.
+        "pick: Option<StaticOptionalRecordItemRecord>,",
+        "found: Option<StaticOptionalRecordItemRecord>,",
+        // A record taken whole: from a record variable, from a list's element, and
+        // `null`.
+        "self.pick = Some(self.draft.clone());",
+        "self.pick = Some(sce_forge_runtime::algorithm::at_ref(&self.items, 1)?.clone());",
+        "self.pick = None;",
+        // The test, and the read of a field where it proves the record present.
+        "self.pick.is_some()",
+        "self.pick.is_none()",
+        "sce_forge_runtime::optional::proven_ref(&self.pick).count",
+        // The write of a field in place, a text held to its bound.
+        "sce_forge_runtime::optional::proven_mut(&mut self.pick).count = ",
+        "sce_forge_runtime::optional::proven_mut(&mut self.pick).title = \
+         sce_forge_runtime::algorithm::bounded(\"bumped\".to_string(), 16)?;",
+        // The call of the algorithm that answers an optional record.
+        "self.found = call_FirstAtLeast__v(&self.items, 5);",
+        "fn call_FirstAtLeast__v(p0: &[StaticOptionalRecordItemRecord], p1: i32) -> \
+         Option<StaticOptionalRecordItemRecord>",
+        "r.map(|sce_present| StaticOptionalRecordItemRecord { id: sce_present.id, title: \
+         sce_present.title.as_str().to_string(), count: sce_present.count })",
+    ] {
+        assert!(
+            written.contains(needle),
+            "the Rust machine holds `{needle}`:\n{written}"
+        );
+    }
+}
+
+/// An algorithm answers an optional record: the return and the local that may be
+/// absent are an `Option` of the schema's own struct, started absent, taken whole
+/// from a list's element by a copy (the record owns text), and returned as it is.
+#[test]
+fn rust_holds_an_optional_record_in_an_algorithms_return_and_local() {
+    let (ok, out, written) = run(
+        &["generate", "-l", "rust"],
+        &[],
+        "algorithm_item_pick_first.scxml",
+    );
+    assert!(ok, "Rust generates the algorithm:\n{out}");
+    for needle in [
+        " -> Option<schema_item_pick::SchemaItemPickPayload> {",
+        "let mut found: Option<schema_item_pick::SchemaItemPickPayload> = None;",
+        "if found.is_none() && it.count >= least {",
+        "found = Some(it.clone());",
+        "return found;",
+    ] {
+        assert!(
+            written.contains(needle),
+            "the Rust algorithm holds `{needle}`:\n{written}"
+        );
+    }
+}
+
+/// An optional record an algorithm takes is read through a borrow of the optional,
+/// and a field of the one it holds is written in place through a mutable one, each
+/// where a test proves the record present.
+#[test]
+fn rust_reads_and_writes_the_present_record_of_an_algorithms_optional_in_place() {
+    let (algorithm_text, _) = pick_count_documents();
+    let (ok, out, written) = run(
+        &["generate", "-l", "rust"],
+        &[("algorithm_pick_count.scxml", &algorithm_text)],
+        "algorithm_pick_count.scxml",
+    );
+    assert!(ok, "Rust generates the algorithm:\n{out}");
+    for needle in [
+        "x: Option<schema_item_pick::SchemaItemPickPayload>",
+        "if x.is_some() {",
+        "return sce_forge_runtime::optional::proven_ref(&x).count;",
+        "held = Some(it.clone());",
+        "sce_forge_runtime::optional::proven_mut(&mut held).count = 7;",
+        "return sce_forge_runtime::optional::proven_ref(&held).count;",
+    ] {
+        assert!(
+            written.contains(needle),
+            "the Rust algorithm holds `{needle}`:\n{written}"
+        );
+    }
+}
+
+/// A call hands an algorithm an optional record by the variable that holds one,
+/// by `null` and by a record, which is lifted: each way is one adapter, whose
+/// parameter is the type the argument is held in, so an optional record variable
+/// and a record variable are two adapters and not one that takes either.
+#[test]
+fn rust_hands_an_algorithm_an_optional_record_by_its_variable_by_null_and_by_a_record() {
+    let (algorithm_text, caller) = pick_count_documents();
+    let (ok, out, written) = run(
+        &["generate", "-l", "rust"],
+        &[
+            ("algorithm_pick_count.scxml", &algorithm_text),
+            ("probe.scxml", &caller),
+        ],
+        "probe.scxml",
+    );
+    assert!(ok, "Rust generates the machine:\n{out}");
+    for needle in [
+        // An optional record variable, lent as the optional it is, its record copied
+        // into the algorithm's where it is present.
+        "fn call_PickCount__ov(p0: &Option<",
+        "call_PickCount__ov(&self.pick, &self.items)",
+        "p0.as_ref().map(|r| schema_item_pick::SchemaItemPickPayload {",
+        // The literal `null`, lent as the absent value of the record's own type.
+        "fn call_PickCount__nv(p0: &Option<",
+        "call_PickCount__nv(&None::<",
+        // A record variable, lifted into the present value of the optional.
+        "call_PickCount__vv(&self.draft, &self.items)",
+        "Some(schema_item_pick::SchemaItemPickPayload {",
+    ] {
+        assert!(
+            written.contains(needle),
+            "the Rust machine holds `{needle}`:\n{written}"
+        );
+    }
+    assert!(
+        !written.contains("fn call_PickCount__vv(p0: &Option<"),
+        "a record variable is lent as the record it is:\n{written}"
+    );
+}
+
+/// The text of the fixture `name`.
+fn fixture_text(name: &str) -> String {
+    std::fs::read_to_string(fixtures().join(name)).expect("a fixture")
+}
+
+/// A value that may be absent of a text crosses an algorithm's slots on Rust: a
+/// parameter borrows it as an `Option<&str>`, the local and the return own it as an
+/// `Option<String>`, and a value taken from one is copied, as a text is.
+#[test]
+fn rust_holds_an_optional_text_in_an_algorithms_slots() {
+    let text = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="label_of" version="1.0">
+  <sce:signature>
+    <sce:param name="label" type="optional&lt;string&gt;"/>
+    <sce:return type="optional&lt;string&gt;"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="kept" type="optional&lt;string&gt;" init="null"/>
+    <sce:if cond="label !== null">
+      <sce:assign target="kept" expr="label"/>
+    </sce:if>
+    <sce:return expr="kept"/>
+  </sce:body>
+</scxml>
+"#;
+    let (ok, out, written) = run(
+        &["generate", "-l", "rust"],
+        &[("algorithm_label_of.scxml", text)],
+        "algorithm_label_of.scxml",
+    );
+    assert!(ok, "Rust generates the algorithm:\n{out}");
+    for needle in [
+        "pub fn label_of(label: Option<&str>) -> Option<String> {",
+        "let mut kept: Option<String> = None;",
+        "if label.as_deref().is_some() {",
+        "kept = label.as_deref().map(str::to_string);",
+        "return kept.as_deref().map(str::to_string);",
+    ] {
+        assert!(
+            written.contains(needle),
+            "the Rust algorithm holds `{needle}`:\n{written}"
+        );
+    }
+}
+
+/// An algorithm's record whose schema has a field that may be absent — a text, a
+/// value of an enum — holds each in the type a present one is held in, under an
+/// `Option`: the bounded text the schema declares, and the enum's own type.
+#[test]
+fn rust_holds_a_record_whose_text_and_enum_fields_may_be_absent() {
+    let schema = fixture_text("schema_due.scxml");
+    let (ok, out, written) = run(
+        &["generate", "-l", "rust"],
+        &[("schema_due.scxml", &schema)],
+        "schema_due.scxml",
+    );
+    assert!(ok, "Rust generates the schema's unit:\n{out}");
+    for needle in [
+        "pub due: Option<i64>,",
+        "pub title: Option<::sce_portable_bytes::SceString<16>>,",
+        "pub status: Option<",
+    ] {
+        assert!(
+            written.contains(needle),
+            "the Rust unit of the schema holds `{needle}`:\n{written}"
+        );
+    }
+}
+
+/// A call hands an algorithm a list of records whose text and enum fields may be
+/// absent, and takes an optional text back: an adapter copies a text where it is
+/// present into the bounded text the algorithm's record holds, and a value of the
+/// enum by the declared name of its variant, and the optional text the algorithm
+/// answers is held to the bound of the variable that takes it.
+#[test]
+fn rust_crosses_an_adapter_with_an_optional_text_and_an_optional_enum_field() {
+    let algorithm_text = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="first_title" version="1.0">
+  <sce:import kind="event-schema" src="schema_due.scxml" as="Due"/>
+  <sce:import kind="enum" src="enum_item_status.scxml" as="Status"/>
+  <sce:signature>
+    <sce:param name="items" type="list&lt;record:Due&gt;"/>
+    <sce:return type="optional&lt;string&gt;"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="found" type="optional&lt;string&gt;" init="null"/>
+    <sce:foreach item="d" in="items">
+      <sce:if cond="found === null &amp;&amp; d.title !== null">
+        <sce:assign target="found" expr="d.title"/>
+      </sce:if>
+    </sce:foreach>
+    <sce:return expr="found"/>
+  </sce:body>
+</scxml>
+"#;
+    let caller = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="idle" datamodel="sce-static" name="title_probe">
+  <sce:import kind="enum" src="enum_item_status.scxml" as="Status"/>
+  <sce:import kind="event-schema" src="schema_due.scxml" as="Due"/>
+  <sce:import kind="algorithm" src="algorithm_first_title.scxml" as="FirstTitle"/>
+  <datamodel>
+    <data id="items" sce:type="list&lt;record:Due&gt;" sce:capacity="3"/>
+    <data id="title" sce:type="optional&lt;string&gt;" sce:capacity="16" expr="null"/>
+  </datamodel>
+  <state id="idle">
+    <transition event="go">
+      <assign location="title" expr="FirstTitle(items)"/>
+    </transition>
+  </state>
+</scxml>
+"#;
+    let schema = fixture_text("schema_due.scxml");
+    let (ok, out, written) = run(
+        &["generate", "-l", "rust"],
+        &[
+            ("schema_due.scxml", &schema),
+            ("algorithm_first_title.scxml", algorithm_text),
+            ("probe.scxml", caller),
+        ],
+        "probe.scxml",
+    );
+    assert!(ok, "Rust generates the machine:\n{out}");
+    for needle in [
+        "fn call_FirstTitle__v(p0: &[",
+        "-> Option<String> {",
+        "r.title.as_deref().map(|sce_present| \
+         ::sce_portable_bytes::SceString::<16>::held(sce_present))",
+        "(r.status).map(|sce_present| match sce_present {",
+        "Some(sce_forge_runtime::algorithm::bounded(sce_present, 16)?)",
+    ] {
+        assert!(
+            written.contains(needle),
+            "the Rust machine holds `{needle}`:\n{written}"
+        );
+    }
+    // The algorithm itself reads the optional text of its record as the `&str` it
+    // derefs to, and answers the owned copy.
+    let (ok, out, written) = run(
+        &["generate", "-l", "rust"],
+        &[
+            ("schema_due.scxml", &schema),
+            ("algorithm_first_title.scxml", algorithm_text),
+        ],
+        "algorithm_first_title.scxml",
+    );
+    assert!(ok, "Rust generates the algorithm:\n{out}");
+    for needle in [
+        " -> Option<String> {",
+        "d.title.as_deref().is_some()",
+        "found = d.title.as_deref().map(str::to_string);",
+    ] {
+        assert!(
+            written.contains(needle),
+            "the Rust algorithm holds `{needle}`:\n{written}"
+        );
+    }
+}
+
+/// A byte string that may be absent has no bound in an algorithm's slot, and stays
+/// refused by name on Rust, as does a call whose slot is one.
+#[test]
+fn rust_refuses_an_optional_byte_string_in_an_algorithms_slot_by_name() {
+    let text = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="frame_of" version="1.0">
+  <sce:signature>
+    <sce:param name="frame" type="optional&lt;bytes&gt;"/>
+    <sce:return type="uint8"/>
+  </sce:signature>
+  <sce:body>
+    <sce:return expr="0"/>
+  </sce:body>
+</scxml>
+"#;
+    let (ok, out, _) = run(
+        &["generate", "-l", "rust"],
+        &[("algorithm_frame_of.scxml", text)],
+        "algorithm_frame_of.scxml",
+    );
+    assert!(!ok, "an optional byte string is refused:\n{out}");
+    assert!(
+        out.contains("generate/unsupported-feature")
+            && out.contains("an optional value has no")
+            && out.contains("lowering yet"),
+        "refused by name:\n{out}"
+    );
 }
