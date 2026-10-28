@@ -933,6 +933,37 @@ documents, not observed from a backend.
      one a statechart's variable holds on every backend; an algorithm's call of another with
      an optional value of an enum keeps its refusal of a variant as the argument.
      Tests: `a_kotlin_algorithm_holds_every_optional_element`.
+   - *Rust.* A variable of an optional record is an `Option` of the record's own type, started at
+     `None`, and lent to a host as `&Option<…>` where the record owns text (the field's `view`, which the
+     snapshot clones). A whole record is put into it as a copy, a clone where the record owns text and
+     `Copy` otherwise: a record variable, a loop's item, another optional record, the payload made whole
+     (each text checked against its bound first) and a list's element, which `StaticTarget::record_element`
+     reads by reference and clones through the runtime's `at_ref`, or by value through `at` for a record
+     that is plain data. `x.value.f` is read as `sce_forge_runtime::optional::proven_ref(&x).f` and a field
+     is written in place as `proven_mut(&mut x).f = e` (`StaticTarget::assign_present_field`): the record
+     stays where it is held and is never moved out, and the absent arm of both is `unreachable!`, written
+     once in the runtime as `proven`'s is. A call crosses an optional record through one adapter for each way
+     its argument is held: a record variable (`v`), the payload (`p`) and a loop's item (`i`) are lifted into
+     `Some(…)`, an optional record variable (`o`) is lent as `&Option<…>` and copied where it is present, and
+     `null` (`n`) is lent as `&None::<…>`; `o` is a code of its own beside `v`, since the two are values of
+     different types on a backend that converts neither at the call, and the optional record an algorithm
+     answers is mapped into the machine's own record. In an algorithm an optional record is an
+     `Option<schema_unit::…Payload>` in a parameter, the return and a local; a field of a local is written in
+     place where a test proves it present, a parameter is read only, and a whole record is taken into it by a
+     clone. Its saved state needs nothing of its own (`SavedValue for Option<T>` over the record's), and a
+     `null` where the restoring build holds a record that is never absent is refused naming the variable, as
+     every `null` is (`record_member`). Rust's arm of `algorithm_optional_spelled` answers every element but a
+     byte string: a text is an `Option<&str>` in a parameter, an `Option<String>` in a return and a local and
+     the schema's bounded `Option<SceString<N>>` in a record's field, which an adapter copies where it is
+     present; a value of an enum is an `Option` of its own type, and a record's optional enum field crosses
+     an adapter by the declared name of its variant. A byte string stays refused by name in a slot, since a
+     slot declares no bound for it (an algorithm's bytes carry theirs beside the buffer they build). A call
+     whose slot is an optional value of an enum is refused where the import is read (`value_signature`, one
+     reading for every backend: the enum judge holds an argument to the enum of its slot and has no
+     optional one yet). Tests: `sce-build/tests/an_optional_record_is_held_read_and_written_where_proven.rs`
+     (the `rust_…` cases), the runtime's `optional` and `saved_state` tests, `static_scenarios`'s
+     `static_optional_record_holds_reads_and_writes_a_record_that_may_be_absent` and the saved-state tests of
+     `static_datamodel.rs`.
 10. **The edges left refused by name**: a child session's optional variable as a `<param>` (with
     the shape of `InvokeParams` it needs), a host action's optional argument, a host-run
     `<invoke>`'s typed request and result with optional fields. Each with the scenario or test of
