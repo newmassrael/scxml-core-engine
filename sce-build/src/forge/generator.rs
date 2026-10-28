@@ -28222,23 +28222,36 @@ fn owned_record(lang: crate::generator::Language, local: &str, holds_text: bool)
 /// through the one would change the other (docs/adr/0055, step 9); the runtime's
 /// `copied` makes the copy, and leaves an absent value as it is. A record is no
 /// operand of the expression layer, so the name is spelled here, as the
-/// Interpreter's lowering spells it, and never lowered as an expression. `None` for
-/// `null`, any other value, a place of any other type and every other backend,
-/// which lower the value as they did.
+/// Interpreter's lowering spells it, and never lowered as an expression.
+///
+/// The other backends hold a record by value, so the name is the copy: Go lifts a
+/// record into `optional.Some` and hands an optional record over as it is, C++'s
+/// `std::optional<R>` takes either by assignment, and Kotlin's data class is
+/// immutable. Rust and C11 spell the lift in their own places
+/// ([`optional_record_lift`], [`c11_whole_optional`]). `None` for `null`, any other
+/// value and a place of any other type.
 fn record_copied_into_optional_record(
     ctx: &AlgorithmLowerCtx<'_>,
     slot: crate::forge::types::InferredType,
     source: &str,
 ) -> Option<String> {
     use crate::forge::types::{InferredType, OptionalElem};
-    if !matches!(ctx.lang, crate::generator::Language::Python)
-        || slot != InferredType::Optional(OptionalElem::Record)
-    {
+    use crate::generator::Language;
+    if slot != InferredType::Optional(OptionalElem::Record) {
         return None;
     }
     let name = source.trim();
-    (ctx.records.contains_key(name) || ctx.optional_records.contains_key(name))
-        .then(|| format!("sce_algorithm.copied({})", ctx.l.local_id(name)))
+    let is_record = ctx.records.contains_key(name);
+    if !is_record && !ctx.optional_records.contains_key(name) {
+        return None;
+    }
+    let local = ctx.l.local_id(name);
+    match ctx.lang {
+        Language::Python => Some(format!("sce_algorithm.copied({local})")),
+        Language::Go if is_record => Some(format!("optional.Some({local})")),
+        Language::Go | Language::Cpp | Language::Kotlin => Some(local),
+        Language::Rust | Language::C11 | Language::Swift => None,
+    }
 }
 
 /// What the value written to a record's `string` field is, once the validator
@@ -29919,20 +29932,6 @@ fn lower_algorithm_stmt(
                 out.push_str(&format!("{pad}{statement}\n"));
                 return Ok(());
             }
-            // A record put whole into an optional record local, by its name: a bare
-            // record name is no expression ("a record used as a value"), so it is
-            // the local itself, which Kotlin holds as the immutable data class it is.
-            if lang == Language::Kotlin
-                && optional_records.contains_key(target.trim())
-                && (records.contains_key(rhs.trim()) || optional_records.contains_key(rhs.trim()))
-            {
-                out.push_str(&format!(
-                    "{pad}{} = {}\n",
-                    l.local_id(target.trim()),
-                    l.local_id(rhs.trim())
-                ));
-                return Ok(());
-            }
             // SCE_FORGE.md §4.12: a record is updated a field at a time. A
             // whole-record assignment has no v1 meaning (there is no record
             // expression to assign from), and Kotlin's data class fields are
@@ -30184,7 +30183,12 @@ fn lower_algorithm_stmt(
             // A record put into an optional record, by its name, is spelled where a
             // record is no operand of the expression layer.
             if let Some(copied) = record_copied_into_optional_record(ctx, lhs_ty, rhs) {
-                out.push_str(&format!("{pad}{lhs} = {copied}\n"));
+                let semi = if matches!(lang, Language::Kotlin | Language::Python) {
+                    ""
+                } else {
+                    ";"
+                };
+                out.push_str(&format!("{pad}{lhs} = {copied}{semi}\n"));
                 return Ok(());
             }
             let rhs_site = ExpressionSite::new(rhs, expr_spelling.as_ref());
