@@ -376,9 +376,16 @@ Each step is green on its own, and the last two are the ones that need the consu
   order and fence of `publish` and `read`, a lap-blind stamp, and a window one entry too wide. Their anchors all apply
   (`scripts/mutate --check`). Whether the models kill each of them is judged by the mutation round in CI and has not been
   read; only the two orders above are known to be caught, by the faults they were.
-- **Not built for Rust:** the generated template (it waits for the kind of step 3), the stress run on real threads with
-  histories judged by `sce-codegen check-broadcast-history`, Miri and ThreadSanitizer runs, the narrow-stamp form with
-  its wrap bound, and the form for a target with only loads and stores.
+- **Real threads, judged.** `backends/rust/forge-conformance/tests/forge_broadcast_log.rs` runs one publisher and one or
+  two readers on threads over logs of two to four slots, readers opened at the oldest, at the head and at the first
+  entry, eight recordings a shape, and judges each recording in process and again, as files, by `sce-codegen
+  check-broadcast-history` (five files, 61 to 98 operations each, all linearizable). `scripts/gates/forge-rust.sh` runs
+  both, and the loom models. Whether any recorded run actually contained a `Lagged` answer is not asserted; the loom
+  models are what reach that branch for certain.
+- **Not built for Rust:** the generated template (it waits for the kind of step 3), Miri and ThreadSanitizer runs, the
+  narrow-stamp form with its wrap bound, and the form for a target with only loads and stores. The conformance crate's
+  `clippy -D warnings` over all targets was already red before this change, on an `into_*` method of generated codec
+  code under the toolchain the build machine has; the new test target is clean.
 
 ## Consequences
 

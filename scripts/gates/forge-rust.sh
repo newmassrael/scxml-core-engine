@@ -32,7 +32,15 @@ QUEUE_HISTORIES="$SCE_REPO_ROOT/target/queue-histories/rust"
 rm -rf "$QUEUE_HISTORIES"
 mkdir -p "$QUEUE_HISTORIES"
 
+# The broadcast log's runs are written and judged the same way (ADR 0062
+# section 6, layer 3), in a directory of their own so that each command is
+# handed only the histories of its own kind.
+BROADCAST_HISTORIES="$SCE_REPO_ROOT/target/broadcast-histories/rust"
+rm -rf "$BROADCAST_HISTORIES"
+mkdir -p "$BROADCAST_HISTORIES"
+
 SCE_QUEUE_HISTORY_DIR="$QUEUE_HISTORIES" \
+SCE_BROADCAST_HISTORY_DIR="$BROADCAST_HISTORIES" \
     cargo test --release -p sce-forge-conformance --features alloc \
     || sce_gate_fail "Rust forge conformance"
 
@@ -47,6 +55,16 @@ shopt -u nullglob
 "$(sce_codegen_require "$SCE_REPO_ROOT")" check-queue-history "${queue_histories[@]}" \
     || sce_gate_fail "Rust queue histories are not linearizable"
 
+# Five shapes are recorded (two and four slots, readers opened at the oldest, at
+# the head and at the first entry). The count is held for the reason the queue's is.
+shopt -s nullglob
+broadcast_histories=("$BROADCAST_HISTORIES"/*.json)
+shopt -u nullglob
+(( ${#broadcast_histories[@]} >= 5 )) \
+    || sce_gate_fail "Rust broadcast-log histories: ${#broadcast_histories[@]} written, expected at least 5"
+"$(sce_codegen_require "$SCE_REPO_ROOT")" check-broadcast-history "${broadcast_histories[@]}" \
+    || sce_gate_fail "Rust broadcast-log histories are not linearizable"
+
 # The queue runtime's loom models (SCE Protocol-Synthesis RFC §synth-5-P,
 # verification layer 3). They build only under `--cfg loom` and the target is
 # `test = false`, so no other lane reaches them; this is the one that does.
@@ -57,8 +75,8 @@ shopt -u nullglob
 cargo test --release -p sce-forge-runtime --target-dir target/loom \
     --config 'build.rustflags=["--cfg","loom"]' \
     --test loom_queue_spsc --test loom_queue_scq --test loom_queue_lscq \
-    --test loom_queue_lscq_race \
-    || sce_gate_fail "Rust forge queue loom models"
+    --test loom_queue_lscq_race --test loom_broadcast_log \
+    || sce_gate_fail "Rust forge queue and broadcast-log loom models"
 
 # The queue runtime under Miri and ThreadSanitizer (RFC §synth-5-P,
 # verification layer 5). Both need a nightly, and a floating `nightly` would
