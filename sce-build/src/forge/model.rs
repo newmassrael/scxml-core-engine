@@ -6377,7 +6377,7 @@ mod tests {
     fn forge_kind_attr_names_round_trip() {
         assert_eq!(
             ForgeKind::ALL_ATTR_NAMES.len(),
-            20,
+            21,
             "the kind vocabulary changed size — every arm below counts it"
         );
         let mut seen: BTreeSet<&'static str> = BTreeSet::new();

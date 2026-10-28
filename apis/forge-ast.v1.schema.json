@@ -4142,6 +4142,63 @@
             "name"
           ],
           "type": "object"
+        },
+        {
+          "description": "A bounded log read by cursors its readers own. See [`BroadcastLogModel`].",
+          "properties": {
+            "element_type": {
+              "description": "`<sce:element-type>` body text — references another forge kind by name. Opaque `String` at parse time; resolved cross-doc as a queue's is.",
+              "type": "string"
+            },
+            "kind": {
+              "enum": [
+                "broadcast-log"
+              ],
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "producers": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/QueueCardinality"
+                }
+              ],
+              "description": "`<sce:producers>`. `many` parses and is refused (`broadcast-log/producers-many-unsupported`, ADR 0062 §8)."
+            },
+            "progress": {
+              "$ref": "#/definitions/QueueProgress"
+            },
+            "retention": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/CapacitySource"
+                }
+              ],
+              "description": "`<sce:retention entries=\"N\"/>` or `<sce:retention source=\"deploy\" key=\"...\"/>` — how many of the latest entries a reader may rely on."
+            },
+            "source_location": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/SourceLocation"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Post-preprocessor source position of the `<scxml sce:kind=\"broadcast-log\">` root element (RFC §synth-5-O), for the SCE-MAP marker."
+            }
+          },
+          "required": [
+            "element_type",
+            "kind",
+            "name",
+            "producers",
+            "progress",
+            "retention"
+          ],
+          "type": "object"
         }
       ]
     },
@@ -4516,6 +4573,13 @@
           "description": "The features of a product line and the *requires* order on them — ADR 0057 §2. A declaration, read by the statecharts that import it to resolve their `sce:requires` conditions; it emits nothing of its own on any backend ([`crate::forge::codegen_matrix::KindClass::Declaration`]).",
           "enum": [
             "feature_model"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "A bounded log that one producer appends to and any number of readers read, each by a cursor of its own; a full log forgets its oldest entry and tells the reader that was too slow how many it missed — ADR 0062. The document states the contract (element type, producer cardinality, the progress guarantee, the retention) and names no algorithm. Distinct from [`Self::Queue`] (an entry is consumed by one reader, and a full queue refuses the writer) and from [`Self::BoundedCollection`] (a table addressed by position, not a sequence). Parsed and checked on every backend; no backend lowers it yet, so generation refuses it by name (`broadcast-log/runtime-missing`).",
+          "enum": [
+            "broadcast_log"
           ],
           "type": "string"
         }

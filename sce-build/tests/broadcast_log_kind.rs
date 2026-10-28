@@ -445,10 +445,15 @@ fn model(retention: &str) -> BroadcastLogModel {
 }
 
 fn generate_of(result: Result<(), ForgeError>) -> GenerateError {
-    match result.expect_err("the stamp is refused") {
-        ForgeError::Generate(boxed) => *boxed,
-        other => panic!("expected a generate error, got {other:?}"),
+    // A refusal placed on a row of the document arrives wrapped in the row.
+    fn unwrapped(error: ForgeError) -> GenerateError {
+        match error {
+            ForgeError::Generate(boxed) => *boxed,
+            ForgeError::Positioned { error, .. } => unwrapped(*error),
+            other => panic!("expected a generate error, got {other:?}"),
+        }
     }
+    unwrapped(result.expect_err("the stamp is refused"))
 }
 
 #[test]
