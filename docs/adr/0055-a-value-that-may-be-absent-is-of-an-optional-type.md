@@ -885,6 +885,29 @@ documents, not observed from a backend.
      `an_optional_record_is_spelled_by_the_cpp_backend`, the scenario `static_optional_record.json`
      replayed by the C++ scenario suite, and `saved/static_optional_record.json` restored and saved
      again by `AStateAnotherBackendSavedIsRestoredTest`.
+   - *Kotlin.* A variable is `T?` over the record's own data class (the one spelling
+     `optional_type` gives every element), absent is `null` and a present record is the data
+     class itself, so a record put into it is the reference a record variable is given. A
+     field is read as `SceOptional.proven(x).f`, the function every proven read is spelled
+     with, and written as `x = SceOptional.proven(x).copy(f = e)` (`assign_present_field`;
+     the walk holds a text or a byte string to its bound before it hands the hook the value,
+     as it does for a record variable's field). A list's element is taken whole by
+     `SceChecked.at` (`record_at`), which a record variable takes one from a list by too, in
+     place of the field-by-field copy it had. A call hands an optional record to the machine's
+     adapter by the name of the variable that holds it: the parameter of the adapter is the
+     machine's `T?`, so an optional record variable, a record variable (lifted) and the literal
+     `null` are served alike (the codes `v` and `n`), and the payload and a loop's item, which
+     are records, are lifted where the adapter builds the algorithm's record from them; what
+     the algorithm answers is read back as `r?.let { <machine record> }`. An algorithm's
+     parameter, return and local of `optional<record:X>` are `T?` over the schema's payload
+     class (`algorithm_optional_type` resolves the record through the algorithm's imports),
+     and a field of the present value is written as the data class replaced with that field
+     changed, a text field from a literal or a record's text field the build bounds
+     (`lower_optional_record_field_write`). The saved state is `SavedValues.optional` over
+     the record's own `toSaved` and `fromSaved`, a published one is handed to a host as it is
+     (a record with a byte string, detached where present), and the saved instance of the
+     scenario is restored by `StaticDatamodelTest`; the scenario is replayed by
+     `StaticScenarioTest`. Tests: `a_kotlin_machine_holds_an_optional_record`.
 10. **The edges left refused by name**: a child session's optional variable as a `<param>` (with
     the shape of `InvokeParams` it needs), a host action's optional argument, a host-run
     `<invoke>`'s typed request and result with optional fields. Each with the scenario or test of

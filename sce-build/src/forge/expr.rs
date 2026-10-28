@@ -175,10 +175,13 @@ impl ExprTarget {
             // Python: a record is a dataclass, absent is `None`, and `x.value.f`
             // is the member read of the record `x` is.
             ExprTarget::Python => true,
+            // Kotlin: a record is an immutable data class, `T?` over it holds it
+            // or `null`, and `x.value.f` is the member of the record
+            // `SceOptional.proven(x)` reads ([`kotlin_optional_form`]).
+            ExprTarget::Kotlin => true,
             // Not yet: each of the other generated backends refuses an optional
             // record by name until its step of docs/adr/0055 spells one.
             ExprTarget::Rust => false,
-            ExprTarget::Kotlin => false,
             // C++: `std::optional<Record>`, whose present record `x.value` reads as
             // `(*x)` and over which the member is read ([`cpp_optional`]).
             ExprTarget::Cpp => true,
@@ -7844,7 +7847,7 @@ fn kotlin_binop(op: BinOp) -> &'static str {
 
 /// The runtime function a proven read of an optional value is spelled with
 /// (docs/adr/0055, section 5): the value, which the build proved present.
-const KOTLIN_PROVEN: &str = "com.sce.forge.runtime.SceOptional.proven";
+pub(crate) const KOTLIN_PROVEN: &str = "com.sce.forge.runtime.SceOptional.proven";
 
 /// Apply language-specific coercion from a child's natural type to the
 /// expected parent type.

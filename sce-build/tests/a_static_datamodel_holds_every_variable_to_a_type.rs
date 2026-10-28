@@ -6060,11 +6060,6 @@ const NOT_YET_LOWERED: &[(&str, &str, &str)] = &[
         "rust",
         OPTIONAL_RECORD_NOT_LOWERED,
     ),
-    (
-        "static_optional_record",
-        "kotlin",
-        OPTIONAL_RECORD_NOT_LOWERED,
-    ),
     ("static_optional_record", "go", OPTIONAL_RECORD_NOT_LOWERED),
     ("static_optional_record", "c11", OPTIONAL_RECORD_NOT_LOWERED),
 ];

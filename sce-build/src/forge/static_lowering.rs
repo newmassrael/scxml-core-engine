@@ -1802,6 +1802,27 @@ impl StaticTarget for KotlinTarget {
     ) -> Option<String> {
         self.optional_map(value, present, wire)
     }
+    // An optional record is the record's own data class over `?`
+    // (docs/adr/0055, step 9): `T?` over the type of `record_type`, which the
+    // walk hands every hook above as the present type. A field of its present
+    // value is written the way a record's field is, a data class replaced with
+    // that field changed, the present value read by the one function a proven
+    // read is spelled with, so the write names no `!!` a smart cast would turn
+    // into a warning, and never names a value that is not there.
+    fn assign_present_field(&self, target: &str, field: &str, value: &str) -> Option<String> {
+        Some(format!(
+            "{target} = {}({target}).copy({field} = {value})",
+            crate::forge::expr::KOTLIN_PROVEN
+        ))
+    }
+    // The immutable `List` is read at an index by the runtime's checked read,
+    // which throws `AlgorithmFailure` for an index outside the list, received
+    // where the statement stands as any failure of one is.
+    fn record_at(&self, list: &str, index: &str) -> Option<String> {
+        Some(format!(
+            "com.sce.forge.runtime.SceChecked.at({list}, ({index}).toLong())"
+        ))
+    }
     fn state_argument(&self, _machine: &str, _arg: &StateArg, held: &str) -> String {
         held.to_string()
     }
@@ -1916,6 +1937,21 @@ impl StaticTarget for KotlinTarget {
         let from_algorithm = |alias: &str, from: &str| -> Option<String> {
             record_of(alias, machine_record(alias), from, Crossing::FromAlgorithm)
         };
+        // The type the machine holds the record of `alias` in as the call's
+        // argument is held as `code`: the payload class of the event the
+        // transition is on for `p`, the machine's own record type for any other.
+        let held_record = |alias: &str, code: char| -> Option<String> {
+            if code == 'p' {
+                let event = spec.payload_events.get(alias)?;
+                Some(format!(
+                    "{}{}Payload",
+                    spec.machine,
+                    filters::to_event_variant(event.to_string())
+                ))
+            } else {
+                Some(machine_record(alias))
+            }
+        };
         let mut declarations = Vec::new();
         let mut arguments = Vec::new();
         for (index, param) in spec.params.iter().enumerate() {
@@ -1949,19 +1985,32 @@ impl StaticTarget for KotlinTarget {
                     slot: StaticSlot::Record(alias),
                     code,
                 } => {
-                    let held = if *code == 'p' {
-                        let event = spec.payload_events.get(alias)?;
-                        format!(
-                            "{}{}Payload",
-                            spec.machine,
-                            filters::to_event_variant(event.to_string())
-                        )
-                    } else {
-                        machine_record(alias)
-                    };
-                    declarations.push(format!("{name}: {held}"));
+                    declarations.push(format!("{name}: {}", held_record(alias, *code)?));
                     arguments.push(to_algorithm(alias, &name)?);
                 }
+                // An optional record (docs/adr/0055, step 9) is held by the name of
+                // the variable that holds it, which is an optional record variable,
+                // a record variable (a present value, lifted) or the literal `null`
+                // (`v` and `n`: one adapter serves the three, its parameter the
+                // machine's `T?`, which a `T` and `null` stand in as they are), or
+                // by the payload or the loop's item (`p`, `i`: a record, lifted).
+                // The algorithm's record is built where the value is present.
+                AdapterParam::State {
+                    slot: StaticSlot::OptionalRecord(alias),
+                    code,
+                } => match *code {
+                    'p' | 'i' => {
+                        declarations.push(format!("{name}: {}", held_record(alias, *code)?));
+                        arguments.push(to_algorithm(alias, &name)?);
+                    }
+                    _ => {
+                        declarations.push(format!(
+                            "{name}: {}",
+                            self.optional_type(&machine_record(alias))?
+                        ));
+                        arguments.push(format!("{name}?.let {{ {} }}", to_algorithm(alias, "it")?));
+                    }
+                },
                 AdapterParam::State {
                     slot: StaticSlot::ScalarList(ty),
                     ..
@@ -1992,6 +2041,12 @@ impl StaticTarget for KotlinTarget {
                     (self.scalar_type(ty), from.to_string())
                 }
                 StaticSlot::Optional(ty) => (spec.optional_type(self, ty)?, from.to_string()),
+                // The machine's record is built where the algorithm's answer is
+                // present, and an absent one stays `null` (docs/adr/0055, step 9).
+                StaticSlot::OptionalRecord(alias) => (
+                    self.optional_type(&machine_record(alias))?,
+                    format!("{from}?.let {{ {} }}", from_algorithm(alias, "it")?),
+                ),
                 StaticSlot::Record(alias) => (machine_record(alias), from_algorithm(alias, from)?),
                 StaticSlot::ScalarList(ty) if plain_scalar(ty) => {
                     (self.list_type(ty), format!("{from}.toList()"))

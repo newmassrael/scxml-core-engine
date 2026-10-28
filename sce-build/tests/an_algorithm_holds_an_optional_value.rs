@@ -224,7 +224,7 @@ fn an_algorithms_slot_reads_every_optional_element_a_statechart_holds() {
 /// docs/adr/0055 spells an optional text, byte string, value of an enum and record
 /// in an algorithm's slots: each of them generates what the others refuse. A backend
 /// joins here in its step and keeps its other arms.
-const SPELLING_EVERY_OPTIONAL_ELEMENT: &[&str] = &["python"];
+const SPELLING_EVERY_OPTIONAL_ELEMENT: &[&str] = &["python", "kotlin"];
 
 /// Each generated backend refuses an algorithm that holds an optional value it
 /// does not spell yet, by name, where it renders the slot or the local
@@ -283,8 +283,10 @@ fn every_backend_refuses_an_algorithms_optional_slot_it_does_not_spell_by_name()
                         ok,
                         "{lang} spells `{written}` on an algorithm's slot:\n{out}"
                     );
+                    // Python's `Optional[T]`, Kotlin's `T?`.
+                    let optional = if lang == "kotlin" { "?" } else { "Optional[" };
                     assert!(
-                        written_text.contains("Optional["),
+                        written_text.contains(optional),
                         "{lang} holds `{written}` in its optional type:\n{written_text}"
                     );
                     continue;

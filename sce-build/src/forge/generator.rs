@@ -597,7 +597,6 @@ pub(crate) fn algorithm_optional_spelled(
     );
     match lang {
         Language::Rust => number_or_bool,
-        Language::Kotlin => number_or_bool,
         // C++: `std::optional<T>` over the type the present value is held in, so a
         // number, a `bool`, a text, a value of an enum and a record are each one
         // (the machine's own record and the algorithm's are both plain structs).
@@ -607,6 +606,9 @@ pub(crate) fn algorithm_optional_spelled(
         // with a byte string field is no record of an algorithm at all
         // ([`resolve_record`]).
         Language::Cpp => !matches!(elem, OptionalElemType::Scalar(SceType::Bytes)),
+        // `T?` over the type of the present value: the data class a record
+        // parameter is, in an algorithm's slot, local and return.
+        Language::Kotlin => number_or_bool || matches!(elem, OptionalElemType::Record { .. }),
         Language::Go => number_or_bool,
         // Python holds every element in `Optional[T]` over the type its present
         // value has there (`str`, `bytes`, the enum document's class, the schema's
@@ -28028,6 +28030,71 @@ fn lower_text_write(
     })
 }
 
+/// The statement that writes `rhs` into `target`, a field of the present value of
+/// the optional record `root` — written `<root>.value.<field>` — of an algorithm
+/// (docs/adr/0055, step 9), where `alias` names the schema of the record. A write
+/// stands only where a test proves the record present, which
+/// [`crate::forge::narrowing::check_algorithm`] judged before any backend was asked,
+/// so there is no field to write in a record that is not there.
+///
+/// Kotlin's record is an immutable data class, replaced by itself with the field
+/// changed, the present value read by the one function a proven read is spelled
+/// with. A text field is written as every record's is, from a text the build can
+/// bound ([`lower_text_write`]). A backend that does not spell an optional record
+/// in an algorithm yet refuses it by name before the body is lowered
+/// ([`AlgorithmTypes::refuse_optional`]); one that does adds its spelling here.
+fn lower_optional_record_field_write(
+    ctx: &AlgorithmLowerCtx<'_>,
+    type_ctx: &crate::forge::types::TypeCtx<'_>,
+    root: &str,
+    alias: &str,
+    target: (&str, Option<&crate::attribute_spelling::AttributeSpelling>),
+    rhs: (&str, Option<&crate::attribute_spelling::AttributeSpelling>),
+) -> Result<String, ForgeError> {
+    use crate::generator::Language;
+    let lang = ctx.lang;
+    let (target, target_spelling) = target;
+    let (rhs, rhs_spelling) = rhs;
+    if lang != Language::Kotlin {
+        return Err(crate::forge::static_lowering::optional_not_lowered(
+            &format!(
+                "`{}`, a field written through an optional record of an algorithm",
+                target.trim()
+            ),
+            lang.canonical_name(),
+        )
+        .into());
+    }
+    let field_id = target
+        .trim()
+        .rsplit_once('.')
+        .map_or("", |(_, field)| field.trim());
+    let record = resolve_record(ctx.imports, alias, None, "<sce:assign>")?;
+    let field = record.field(field_id).ok_or_else(|| -> ForgeError {
+        GenerateError::InvalidConfig(format!(
+            "`{}` writes `{field_id}`, which the schema `{alias}` of the optional record \
+             `{root}` does not declare — the judge refuses this before codegen",
+            target.trim()
+        ))
+        .into()
+    })?;
+    let value = match field.ty {
+        FieldType::Scalar(SceType::String) => lower_text_write(rhs, rhs_spelling, field, ctx)?,
+        _ => {
+            let slot = expr::infer_expr_type(target, type_ctx)
+                .map_err(|refusal| ExpressionSite::new(target, target_spelling).place(refusal))?;
+            expr::transpile_into(rhs, ctx.l.expr_target(), type_ctx, ctx.renames, slot)
+                .map_err(|refusal| ExpressionSite::new(rhs, rhs_spelling).place(refusal))?
+        }
+    };
+    let local = ctx.l.local_id(root);
+    let member = event_schema_field_ident(&field.id, lang);
+    Ok(format!(
+        "{local} = {}({local}).copy({member} = {value})",
+        expr::KOTLIN_PROVEN
+    ))
+}
+
 /// Every record local of `body` — `(name, alias, type spelling)` — nested
 /// bodies included. The names are also in `AlgorithmModel::body_bindings`;
 /// this walk adds where each type is written, which a refusal of the record
@@ -29127,6 +29194,27 @@ fn lower_algorithm_stmt(
             expr: rhs,
             expr_spelling,
         } => {
+            // A field of the present value of an optional record parameter or local
+            // (`x.value.f`), written where a test proves the record present
+            // (docs/adr/0055, step 9).
+            if let Some((root, alias)) = crate::forge::narrowing::present_record_of(target)
+                .and_then(|root| {
+                    optional_records
+                        .get(root)
+                        .map(|alias| (root, alias.as_str()))
+                })
+            {
+                let statement = lower_optional_record_field_write(
+                    ctx,
+                    type_ctx,
+                    root,
+                    alias,
+                    (target.as_str(), target_spelling.as_ref()),
+                    (rhs.as_str(), expr_spelling.as_ref()),
+                )?;
+                out.push_str(&format!("{pad}{statement}\n"));
+                return Ok(());
+            }
             // SCE_FORGE.md §4.12: a record is updated a field at a time. A
             // whole-record assignment has no v1 meaning (there is no record
             // expression to assign from), and Kotlin's data class fields are

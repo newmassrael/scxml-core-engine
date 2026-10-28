@@ -998,6 +998,14 @@ name = "an_optional_record_is_spelled_by_the_cpp_backend"
 path = "tests/an_optional_record_is_spelled_by_the_cpp_backend.rs"
 required-features = ["cli"]
 
+# The Kotlin backend's spelling of an optional record (docs/adr/0055, step 9): the
+# text it generates for a statechart's variable, a call of an algorithm and an
+# algorithm's slot. It runs `sce-codegen generate`, so it carries the `cli` gate.
+[[test]]
+name = "a_kotlin_machine_holds_an_optional_record"
+path = "tests/a_kotlin_machine_holds_an_optional_record.rs"
+required-features = ["cli"]
+
 [[test]]
 name = "a_statechart_calls_the_forge_kinds_that_are_functions"
 path = "tests/a_statechart_calls_the_forge_kinds_that_are_functions.rs"

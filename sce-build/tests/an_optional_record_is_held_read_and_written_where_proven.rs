@@ -113,7 +113,7 @@ fn every_backend() -> Vec<Vec<&'static str>> {
 /// docs/adr/0055 has landed: each lowers an optional record, and is held to its own
 /// spellings by its own test; the rest refuse one by name until theirs. A backend
 /// joins here in its step.
-const LOWERING_AN_OPTIONAL_RECORD: &[&str] = &["python"];
+const LOWERING_AN_OPTIONAL_RECORD: &[&str] = &["python", "kotlin"];
 
 /// [`every_backend`] without the ones that lower an optional record
 /// ([`LOWERING_AN_OPTIONAL_RECORD`]): the ones that still refuse one.
@@ -232,8 +232,8 @@ fn the_interpreter_lowers_the_optional_record_scenario_machine() {
     }
 }
 
-/// Each generated backend refuses the machine by name, as a feature it does not
-/// lower yet, until its own step of docs/adr/0055.
+/// Each generated backend that has not lowered one refuses the machine by name, as
+/// a feature it does not lower yet, until its own step of docs/adr/0055.
 #[test]
 fn every_generated_backend_refuses_the_optional_record_by_name() {
     for args in backends_refusing_an_optional_record() {
@@ -640,7 +640,8 @@ fn an_algorithm_puts_into_an_optional_record_a_record_of_its_schema() {
 }
 
 /// An algorithm that holds an optional record is refused by every generated
-/// backend, by name, where it renders the slot: its own step spells one.
+/// backend that has not lowered one, by name, where it renders the slot: its own
+/// step spells one.
 #[test]
 fn every_generated_backend_refuses_an_algorithm_that_holds_an_optional_record_by_name() {
     let text = algorithm(r#"<sce:return expr="-1"/>"#);

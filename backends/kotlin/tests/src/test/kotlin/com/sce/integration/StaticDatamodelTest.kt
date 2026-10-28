@@ -39,6 +39,8 @@ import com.sce.integration.static_list.StaticListStateMachine
 import com.sce.integration.static_optional.StaticOptionalDueRecord
 import com.sce.integration.static_optional.StaticOptionalStateMachine
 import com.sce.integration.static_optional.StaticOptionalStatusEnum
+import com.sce.integration.static_optional_record.StaticOptionalRecordItemRecord
+import com.sce.integration.static_optional_record.StaticOptionalRecordStateMachine
 import com.sce.integration.static_optional_unwidened.StaticOptionalUnwidenedStateMachine
 import com.sce.integration.static_overflow.StaticOverflowEvent
 import com.sce.integration.static_overflow.StaticOverflowState
@@ -1811,6 +1813,98 @@ class StaticDatamodelTest {
         try {
             val refusal = assertThrows(StateRefusal::class.java) { second.restore(SavedState.fromJson(text)) }
             assertTrue(refusal.message!!.contains("'item.due' is absent (null)"), refusal.message)
+        } finally {
+            second.cleanup()
+        }
+    }
+
+    // ── static_optional_record: a record that may be absent (docs/adr/0055, step 9) ──
+    //
+    // `pick` and `found` are `optional<record:Item>`, `draft` a record that is never
+    // absent. The shared fixture holds `found` absent and `pick` present beside the
+    // machine's other values: `null` where the record is absent, the object of its
+    // fields where it is present, as a record variable is saved.
+
+    /** The two items the shared fixture's list holds. */
+    private val pickedItems = listOf(
+        StaticOptionalRecordItemRecord(1u, "alpha", 2),
+        StaticOptionalRecordItemRecord(2u, "beta", 6),
+    )
+
+    @Test
+    fun anAbsentRecordIsRestoredAbsentAndAPresentOneAsTheObjectOfItsFields() {
+        val sm = StaticOptionalRecordStateMachine()
+        try {
+            sm.restore(SavedState.fromJson(sharedFixture("static_optional_record")))
+            assertEquals(null, sm.found)
+            assertEquals(StaticOptionalRecordItemRecord(2u, "bumped", 7), sm.pick)
+            assertEquals(StaticOptionalRecordItemRecord(3u, "gamma", 9), sm.draft)
+            assertEquals(pickedItems, sm.items)
+            // What was restored is saved as it was read.
+            assertEquals(sharedFixture("static_optional_record"), sm.save().toJson())
+            // The restored machine carries on: `pick.clear` makes the record absent,
+            // and `pick.bump` then writes nothing through it.
+            sm.sendEventByName("pick.clear")
+            sm.tick()
+            assertEquals(null, sm.pick)
+            sm.sendEventByName("pick.bump")
+            sm.tick()
+            assertEquals(null, sm.pick)
+            // A record put into `pick` is a copy: the list keeps the item it held.
+            sm.sendEventByName("pick.second")
+            sm.tick()
+            assertEquals(pickedItems[1], sm.pick)
+            sm.sendEventByName("pick.bump")
+            sm.tick()
+            assertEquals(StaticOptionalRecordItemRecord(2u, "bumped", 7), sm.pick)
+            assertEquals(pickedItems, sm.items)
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    @Test
+    fun aStateOfTheFirstFormatHoldingAnOptionalRecordRestoresAsTheSecondDoes() {
+        val sm = StaticOptionalRecordStateMachine()
+        try {
+            sm.restore(SavedState.fromJson(format1Fixture("static_optional_record")))
+            assertEquals(null, sm.found)
+            assertEquals(StaticOptionalRecordItemRecord(2u, "bumped", 7), sm.pick)
+            assertEquals(pickedItems, sm.items)
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    @Test
+    fun aSavedNullIsRefusedWhereARecordIsNeverAbsentAndAnOptionalRecordMissingAFieldIsRefused() {
+        val whole = sharedFixture("static_optional_record")
+        // `draft` is a record, never absent: a `null` there is refused.
+        val absentDraft = whole.replace(
+            "\"draft\":{\"id\":3,\"title\":\"gamma\",\"count\":9}",
+            "\"draft\":null",
+        )
+        assertTrue(absentDraft != whole, "the record variable is written")
+        val first = StaticOptionalRecordStateMachine()
+        try {
+            val refusal = assertThrows(StateRefusal::class.java) { first.restore(SavedState.fromJson(absentDraft)) }
+            assertTrue(refusal.message!!.contains("'draft'"), refusal.message)
+            // A refused restore leaves the machine as it was: never started.
+            assertThrows(StateRefusal::class.java) { first.save() }
+        } finally {
+            first.cleanup()
+        }
+        // `pick` is an optional record: what it holds is a record or `null`, and
+        // anything else is refused, naming the field the record lacks.
+        val partial = whole.replace(
+            "\"pick\":{\"id\":2,\"title\":\"bumped\",\"count\":7}",
+            "\"pick\":{\"id\":2,\"title\":\"bumped\"}",
+        )
+        assertTrue(partial != whole, "the optional record is written")
+        val second = StaticOptionalRecordStateMachine()
+        try {
+            val refusal = assertThrows(StateRefusal::class.java) { second.restore(SavedState.fromJson(partial)) }
+            assertTrue(refusal.message!!.contains("'pick'") && refusal.message!!.contains("count"), refusal.message)
         } finally {
             second.cleanup()
         }

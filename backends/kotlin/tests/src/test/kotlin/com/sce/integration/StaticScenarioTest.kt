@@ -59,6 +59,7 @@ import com.sce.integration.static_list.StaticListStateMachine
 import com.sce.integration.static_list_assign.StaticListAssignStateMachine
 import com.sce.integration.static_list_index.StaticListIndexStateMachine
 import com.sce.integration.static_optional.StaticOptionalStateMachine
+import com.sce.integration.static_optional_record.StaticOptionalRecordStateMachine
 import com.sce.integration.static_optional_widened.StaticOptionalWidenedStateMachine
 import com.sce.integration.static_overflow.StaticOverflowStateMachine
 import com.sce.integration.static_payload.StaticPayloadStateMachine
@@ -575,6 +576,30 @@ class StaticScenarioTest {
                 save = { sm.save() },
                 ended = { sm.isInFinalState },
                 donedata = { sm.donedataAtFinal() },
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    // docs/adr/0055, step 9: a record that may be absent. `pick` starts at `null`,
+    // takes a whole record from a payload, a record variable and a list's element,
+    // is read and written as `pick.value.<field>` only where a test proves it
+    // present, is made absent by `null`, and `found` takes what an algorithm
+    // answers, the first item of the list that holds at least 5 or an absent
+    // record. Read back through its saved state, which holds an absent record as
+    // `null` and a present one as the object of its fields.
+    @Test
+    fun staticOptionalRecordHoldsReadsAndWritesARecordThatMayBeAbsent() {
+        val sm = StaticOptionalRecordStateMachine()
+        sm.initialize()
+        try {
+            replay(
+                scenario("static_optional_record"),
+                send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
+                tick = { sm.tick() },
+                save = { sm.save() },
+                ended = { sm.isInFinalState },
             )
         } finally {
             sm.cleanup()

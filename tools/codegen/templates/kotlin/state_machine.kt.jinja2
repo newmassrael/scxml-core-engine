@@ -197,9 +197,9 @@ class {{ machine_name }}StateMachine(
    the array is the machine's own and a host that wrote into it would change the
    variable behind its bound, and an optional one (docs/adr/0055) as a copy where
    it is present; a record with a copy of each byte string it holds, for the same
-   reason; and so each record of a list. #}
+   reason, and an optional record where it is present; and so each record of a list. #}
 {% macro handed_out(field) -%}
-{% if field.saved_type == "bytes" and field.saved_kind == "optional" %}{{ field.name }}?.copyOf(){% elif field.saved_type == "bytes" %}{{ field.name }}.copyOf(){% elif field.holds_bytes and field.saved_kind == "record" %}{{ field.name }}.detached(){% elif field.holds_bytes and field.saved_kind == "record_list" %}{{ field.name }}.map { it.detached() }{% else %}{{ field.name }}{% endif %}
+{% if field.saved_type == "bytes" and field.saved_kind == "optional" %}{{ field.name }}?.copyOf(){% elif field.saved_type == "bytes" %}{{ field.name }}.copyOf(){% elif field.holds_bytes and field.saved_kind == "record" %}{{ field.name }}.detached(){% elif field.holds_bytes and field.saved_kind == "optional" %}{{ field.name }}?.detached(){% elif field.holds_bytes and field.saved_kind == "record_list" %}{{ field.name }}.map { it.detached() }{% else %}{{ field.name }}{% endif %}
 {%- endmacro %}
 {% for field in static_fields %}
 {% if field.published %}
@@ -302,7 +302,7 @@ class {{ machine_name }}StateMachine(
 
     // ── SCE Accepted Subset §2.15: saving this machine, restoring it ─────────
 {% macro saved_write(kind, type, name, elem) -%}
-{%- if kind == "optional" and elem == "enum" -%}
+{%- if kind == "optional" and (elem == "enum" or elem == "record") -%}
 SavedValues.optional({{ name }}) { it.toSaved() }
 {%- elif kind == "optional" -%}
 SavedValues.optional({{ name }}) { SavedValues.of(it) }
@@ -317,7 +317,7 @@ SavedValues.of({{ name }})
 {%- endif -%}
 {%- endmacro %}
 {% macro saved_read(kind, type, value, what, bound, elem) -%}
-{%- if kind == "optional" and elem == "enum" -%}
+{%- if kind == "optional" and (elem == "enum" or elem == "record") -%}
 SavedValues.optional({{ value }}, {{ what }}) { e, w -> {{ type }}.fromSaved(e, w) }
 {%- elif kind == "optional" and type == "bytes" -%}
 SavedValues.optional({{ value }}, {{ what }}) { e, w -> SavedValues.bytes(e, w, {{ bound if bound is not none else "Int.MAX_VALUE" }}) }
@@ -345,9 +345,9 @@ SavedValues.{{ type }}({{ value }}, {{ what }})
    could match (`crate::reader_names` reads a template name as a pattern), and
    did: `readBackProbe` lost its reader in every backend (2026-09-27).
    An optional value (docs/adr/0055) is written as `null` or as its present
-   value, `elem` saying how that is held: by its own type for an enum, as a
-   scalar otherwise; and it is read back absent from `null` and otherwise as its
-   present value is, a text held to its bound. #}
+   value, `elem` saying how that is held: by its own type for an enum or a record,
+   as a scalar otherwise; and it is read back absent from `null` and otherwise as
+   its present value is, a text held to its bound. #}
 
     /**
      * What a saved state of this document is bound to: a state saved from a

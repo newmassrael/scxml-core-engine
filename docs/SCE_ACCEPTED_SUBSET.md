@@ -4151,9 +4151,12 @@ return and local may be one, a call hands it by the name of the variable that ho
 (an optional record variable, a record lifted, or `null`) and takes one back into an
 optional record variable. The Interpreter's lowering spells all of this (a record is a
 plain object, absent is `null`, a field written is the object written again with the
-field changed); each generated backend refuses a document that declares one, or calls
-an algorithm that takes or returns one, by name as `generate/unsupported-feature`
-("an optional record has no <language> lowering yet") until its own step of the ADR.
+field changed); Kotlin spells it too, as `T?` over the record's own data class, a field
+written as the data class replaced by itself with that field changed and an
+algorithm's slot, local and return held in the same type; a generated backend that
+has not lowered one refuses a document that declares one, or calls an algorithm that
+takes or returns one, by name as `generate/unsupported-feature` ("an optional record
+has no <language> lowering yet") until its own step of the ADR.
 A saved state holds one as `null` or as the record, and a variable widened from
 `record:Item` to `optional<record:Item>` keeps its saved shape.
 `sce-build/tests/an_optional_record_is_held_read_and_written_where_proven.rs` and
@@ -6228,7 +6231,7 @@ table of `sce-build/tests/a_static_datamodel_holds_every_variable_to_a_type.rs`
 (`NOT_YET_LOWERED`, an engine to a line), the Rust scenario table
 (`backends/rust/scenarios/src/machines.rs`) and the Interpreter's scan — and the
 step of the ADR that lowers the construct on an engine takes its line off and replays
-the scenario: the six generated backends list the optional record's. A machine that publishes no
+the scenario: the generated backends that do not lower an optional record list its scenario. A machine that publishes no
 variable, such as `static_host_call`, is read from what it told its host, which is
 why `host_calls` exists; a driver whose machine records no host refuses a step
 that states it rather than pass it.
