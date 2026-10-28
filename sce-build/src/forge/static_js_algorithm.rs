@@ -60,7 +60,7 @@ use crate::forge::generator::{
     TextSource,
 };
 use crate::forge::model::{
-    AlgorithmConstType, AlgorithmModel, AlgorithmStmt, AlgorithmValueType, FieldType, ForgeImport,
+    AlgorithmConstType, AlgorithmModel, AlgorithmStmt, AlgorithmValueType, ForgeImport,
     ListElemType, OptionalElemType, SceType,
 };
 use crate::forge::narrowing::{
@@ -521,6 +521,9 @@ impl Body<'_> {
             ),
         })?;
         let text = match source {
+            // The absent value of a field that may be absent holds no text: it is
+            // `null`, and nothing is bounded (docs/adr/0055).
+            TextSource::Absent => return Ok("null".to_string()),
             TextSource::Literal => self.slot(rhs, InferredType::Str)?,
             TextSource::Field { record, field } => {
                 format!("{record}[{}]", quoted(&field.id))
@@ -621,7 +624,7 @@ impl Body<'_> {
                             format!("the record local `{name}`, which gives no value for `{id}`"),
                         ));
                     };
-                    let value = if matches!(field.ty, FieldType::Scalar(SceType::String)) {
+                    let value = if field.holds_text() {
                         self.text_write(&given.expr, field)?
                     } else {
                         lowered(&given.expr, InferredType::of_field(&field.ty))?
@@ -681,7 +684,7 @@ impl Body<'_> {
                         .imports
                         .record(alias)
                         .and_then(|record| record.field(field))
-                        .filter(|f| matches!(f.ty, FieldType::Scalar(SceType::String)));
+                        .filter(|f| f.holds_text());
                     let value = match text_field {
                         Some(text_field) => self.text_write(expr, text_field)?,
                         None => {

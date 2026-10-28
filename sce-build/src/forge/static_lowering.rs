@@ -603,6 +603,10 @@ impl AdapterSpec<'_> {
     /// `crossing` leaves, as the other side's record holds it: a value of an enum by
     /// [`Self::enum_crossing`], any other field as it is (`None` for an enum field this
     /// target cannot spell). `text` spells the copy of a field that is no enum.
+    ///
+    /// A field of `optional<enum:…>` crosses where it is present, by the name of
+    /// its variant, and stays absent where it is absent ([`StaticTarget::optional_map`],
+    /// docs/adr/0055).
     fn record_field_crossing(
         &self,
         target: &dyn StaticTarget,

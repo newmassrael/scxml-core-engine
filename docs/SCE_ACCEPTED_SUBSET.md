@@ -4058,7 +4058,14 @@ no format changes it); written there, the attribute is
 `bool`, a text, a byte string, a value of an enum or a record, and a record it reads
 or returns may have a field of one. Each generated backend spells a number and a
 `bool` and refuses the others by name where it renders the slot, the local or the
-record's field, until its own step; the Interpreter spells all but a byte string. A
+record's field, until its own step; Kotlin spells every element, and the Interpreter
+all but a byte string. A text field of such a record is written, in an algorithm, only
+from a literal or a record's text field that the build bounds by the field's
+`sce:max-size`, and from `null`: an optional text is held to the bound of its field as a
+text is. A statechart's call crosses a record's optional text as it is and its optional
+value of an enum by the declared name of its variant; an optional value of an enum or a
+byte string in a slot of an imported algorithm is refused by name where the import is
+read, as a statechart does not read through one yet. A
 local declares its initial value, `null` for absent (an optional record local starts
 absent, and a record is put into it by its name). The body reads one
 as a statechart does ("Reading an optional value", below): a test, `??`, and

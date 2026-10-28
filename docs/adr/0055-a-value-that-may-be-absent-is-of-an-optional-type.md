@@ -908,6 +908,26 @@ documents, not observed from a backend.
      (a record with a byte string, detached where present), and the saved instance of the
      scenario is restored by `StaticDatamodelTest`; the scenario is replayed by
      `StaticScenarioTest`. Tests: `a_kotlin_machine_holds_an_optional_record`.
+     Kotlin's arm of `algorithm_optional_spelled` answers every element: an algorithm's
+     slot and local of an optional text is `String?`, of a byte string `ByteArray?`, of a value
+     of an enum the enum document's class with `?`, and of a record its payload class with `?`,
+     and the unit of an event schema and the record an algorithm reads hold a field of one in
+     the same type. The enum judge registers the enum a parameter or local of
+     `optional<enum:…>` holds at its present value (`status.value`), as it does a record's
+     optional enum field, so that a value of it is compared with its own variant. A text an
+     algorithm writes to a record's field of `optional<string>` is judged as a text field's is
+     (`judge_text_write`), from a literal or a record's text field that fits the field's
+     `sce:max-size`, and from `null` (`TextSource::Absent`), so no optional text of a record
+     is held past the bound its schema declares, in the Interpreter's lowering too, which wrote
+     such a field unbounded. A statechart's call copies a record's optional text as it is and
+     its optional value of an enum by the declared name of its variant where it is present
+     (`AdapterSpec::record_field_crossing` through `optional_map`). Kept refused by name: an
+     optional value of an enum or a byte string in the slot of an imported algorithm that a
+     statechart calls (`value_signature`), since the enum judge reads a call's slots as the
+     enum they take and not as one that may be absent, and a byte string an algorithm holds is
+     not the one a statechart's variable holds on every backend; an algorithm's call of
+     another with an optional value of an enum keeps its refusal of an enum argument too.
+     Tests: `a_kotlin_algorithm_holds_every_optional_element`.
 10. **The edges left refused by name**: a child session's optional variable as a `<param>` (with
     the shape of `InvokeParams` it needs), a host action's optional argument, a host-run
     `<invoke>`'s typed request and result with optional fields. Each with the scenario or test of

@@ -545,6 +545,15 @@ pub struct RecordField {
     pub limit: Option<String>,
 }
 
+impl RecordField {
+    /// Whether the field holds a text, a `string` or an `optional<string>`: what an
+    /// algorithm writes only from a text the build can bound by the field's
+    /// `sce:max-size` ([`judge_text_write`]), and, for an optional one, from `null`.
+    pub fn holds_text(&self) -> bool {
+        matches!(self.ty.present_type(), SceType::String)
+    }
+}
+
 impl RecordImport {
     /// The field named `id`.
     pub fn field(&self, id: &str) -> Option<&RecordField> {
@@ -606,9 +615,14 @@ pub(crate) fn algorithm_optional_spelled(
         // with a byte string field is no record of an algorithm at all
         // ([`resolve_record`]).
         Language::Cpp => !matches!(elem, OptionalElemType::Scalar(SceType::Bytes)),
-        // `T?` over the type of the present value: the data class a record
-        // parameter is, in an algorithm's slot, local and return.
-        Language::Kotlin => number_or_bool || matches!(elem, OptionalElemType::Record { .. }),
+        // `T?` over the type of the present value, whatever it is: a number, a
+        // `bool`, a `String`, a `ByteArray`, the enum class of the enum document
+        // and the data class a record parameter is, in an algorithm's slot, local
+        // and return, and in a field of a record. A text is held to the bound its
+        // record's field declares where an algorithm writes one
+        // ([`judge_text_write`]), and to the bound of the variable a statechart
+        // takes it into where it crosses a call.
+        Language::Kotlin => true,
         Language::Go => number_or_bool,
         // Python holds every element in `Optional[T]` over the type its present
         // value has there (`str`, `bytes`, the enum document's class, the schema's
@@ -27833,6 +27847,9 @@ pub(crate) enum TextSource<'r> {
         record: String,
         field: &'r RecordField,
     },
+    /// `null`, the absent value, written to a field of `optional<string>`
+    /// (docs/adr/0055): it holds no text, so there is nothing to bound.
+    Absent,
 }
 
 /// Why a value cannot be written to a record's `string` field.
@@ -27857,6 +27874,10 @@ pub(crate) enum TextRefusal {
 ///   which is never fewer than the string it spells;
 /// - a field's bound is the `sce:max-size` its own schema declares.
 ///
+/// A field of `optional<string>` takes the same two, which are present values of
+/// it, and `null`, which is absent and holds no text to bound (docs/adr/0055); the
+/// bound it is held to is the field's `sce:max-size` all the same.
+///
 /// `record_of` answers the schema a record name is typed by: every record
 /// parameter, local and foreach item of the body.
 pub(crate) fn judge_text_write<'r>(
@@ -27869,6 +27890,10 @@ pub(crate) fn judge_text_write<'r>(
         .expect("resolve_record refuses a string field with no bound");
     let ast = expr::parse_to_ast(rhs).map_err(TextRefusal::Unreadable)?;
     match &ast.kind {
+        // The absent value stands only in a field that may be absent.
+        expr::ExprKind::NullLit if matches!(dest.ty, FieldType::Optional { .. }) => {
+            Ok(TextSource::Absent)
+        }
         expr::ExprKind::StringLit { value, .. } => {
             if value.len() > bound as usize {
                 return Err(TextRefusal::TooLong {
@@ -27942,6 +27967,13 @@ fn lower_field_text_write(
 /// the two lengths at build time and from a field by a copy whose widening is
 /// a build error; C11 the bounded buffer of the field's bound, filled by the
 /// bound's own helper; every other backend the language's string.
+///
+/// A field of `optional<string>` (docs/adr/0055) is written from the same texts, a
+/// present value of it, and from `null`. Kotlin's `String?` takes a `String` as it
+/// is; a backend that does not spell an optional text in an algorithm's record yet
+/// refuses the field by name before the body is lowered
+/// ([`AlgorithmTypes::refuse_optional`]), and one that does adds its lift of the text
+/// and its absent value here.
 fn lower_text_write(
     rhs: &str,
     spelling: Option<&crate::attribute_spelling::AttributeSpelling>,
@@ -27952,6 +27984,20 @@ fn lower_text_write(
     use crate::forge::types::InferredType;
     use crate::generator::Language;
     let lang = ctx.lang;
+    // Kotlin's `String?` and Python's `Optional[str]` take a text as it is.
+    if matches!(dest.ty, FieldType::Optional { .. })
+        && !matches!(lang, Language::Kotlin | Language::Python)
+    {
+        return Err(crate::forge::static_lowering::optional_not_lowered(
+            &format!(
+                "the field `{}`, an {}, written by an algorithm",
+                dest.id,
+                dest.ty.as_attr()
+            ),
+            lang.canonical_name(),
+        )
+        .into());
+    }
     let site = ExpressionSite::new(rhs, spelling);
     let bound = dest
         .max_size
@@ -28027,6 +28073,20 @@ fn lower_text_write(
                 Language::Swift => no_swift_emitter("lower_text_write"),
             }
         }
+        // `null`: Kotlin's and Python's absent value. Every other backend was refused
+        // above, for a field of `optional<string>` is the only one `null` is written to.
+        TextSource::Absent => match lang {
+            Language::Kotlin => "null".to_string(),
+            Language::Python => "None".to_string(),
+            Language::Rust | Language::Cpp | Language::Go | Language::C11 => {
+                return Err(crate::forge::static_lowering::optional_not_lowered(
+                    &format!("the field `{}`, written `null` by an algorithm", dest.id),
+                    lang.canonical_name(),
+                )
+                .into())
+            }
+            Language::Swift => no_swift_emitter("lower_text_write"),
+        },
     })
 }
 
@@ -28078,14 +28138,13 @@ fn lower_optional_record_field_write(
         ))
         .into()
     })?;
-    let value = match field.ty {
-        FieldType::Scalar(SceType::String) => lower_text_write(rhs, rhs_spelling, field, ctx)?,
-        _ => {
-            let slot = expr::infer_expr_type(target, type_ctx)
-                .map_err(|refusal| ExpressionSite::new(target, target_spelling).place(refusal))?;
-            expr::transpile_into(rhs, ctx.l.expr_target(), type_ctx, ctx.renames, slot)
-                .map_err(|refusal| ExpressionSite::new(rhs, rhs_spelling).place(refusal))?
-        }
+    let value = if field.holds_text() {
+        lower_text_write(rhs, rhs_spelling, field, ctx)?
+    } else {
+        let slot = expr::infer_expr_type(target, type_ctx)
+            .map_err(|refusal| ExpressionSite::new(target, target_spelling).place(refusal))?;
+        expr::transpile_into(rhs, ctx.l.expr_target(), type_ctx, ctx.renames, slot)
+            .map_err(|refusal| ExpressionSite::new(rhs, rhs_spelling).place(refusal))?
     };
     let local = ctx.l.local_id(root);
     let member = event_schema_field_ident(&field.id, lang);
@@ -29091,7 +29150,7 @@ fn lower_algorithm_stmt(
             let mut inits: Vec<(String, String)> = Vec::new();
             for (field, f) in record.fields.iter().zip(ordered) {
                 let site = ExpressionSite::new(&f.expr, f.expr_spelling.as_ref());
-                let value = if matches!(field.ty, FieldType::Scalar(SceType::String)) {
+                let value = if field.holds_text() {
                     lower_text_write(&f.expr, f.expr_spelling.as_ref(), field, ctx)?
                 } else {
                     expr::transpile_into(
@@ -29306,7 +29365,7 @@ fn lower_algorithm_stmt(
                 let alias = records.get(root.trim())?;
                 let record = resolve_record(imports, alias, None, "<sce:assign>").ok()?;
                 let field = record.field(field.trim())?;
-                matches!(field.ty.present_type(), SceType::String).then(|| (root.trim(), field))
+                field.holds_text().then(|| (root.trim(), field))
             });
             // The field of the present value of an optional record, `x.value.f`
             // (docs/adr/0055, step 9), is a member of the payload object `x` holds,

@@ -122,6 +122,21 @@ fn every_backend() -> Vec<Vec<&'static str>> {
         .collect()
 }
 
+/// The generated backends that spell an optional text and an optional value of an
+/// enum in what an algorithm holds, and so in the unit of an event schema and the
+/// record an algorithm reads (docs/adr/0055, step 9), by the language `generate -l`
+/// names. A backend joins this list in the step that spells them on it.
+const SPELLING_OPTIONAL_TEXT: &[&str] = &["kotlin"];
+
+/// The backends of [`every_backend`] that do not spell an optional text in what an
+/// algorithm holds yet: each refuses what the others generate.
+fn not_spelling_optional_text() -> Vec<Vec<&'static str>> {
+    every_backend()
+        .into_iter()
+        .filter(|args| !SPELLING_OPTIONAL_TEXT.contains(&args[2]))
+        .collect()
+}
+
 /// The refusal a backend gives a document that holds an optional value, before
 /// the step that lowers one there (`StaticTarget::lowers_optional`).
 const NOT_LOWERED: &str = "an optional value has no";
@@ -568,7 +583,7 @@ fn a_schema_field_holds_an_optional_scalar_and_the_forge_ast_spells_it() {
 /// algorithm holds, is refused by name.
 #[test]
 fn every_backend_refuses_a_schema_with_an_optional_text_field_by_name() {
-    for args in every_backend() {
+    for args in not_spelling_optional_text() {
         let (ok, out) = run(&args, &[(SCHEMA_DUE_FILE, SCHEMA_DUE)], SCHEMA_DUE_FILE);
         assert!(!ok, "{args:?} must refuse the schema's unit:\n{out}");
         assert!(
@@ -806,7 +821,7 @@ fn every_backend_refuses_an_algorithm_whose_record_holds_an_optional_text_field(
         ("due_id.scxml", algorithm.as_str()),
         (SCHEMA_DUE_FILE, SCHEMA_DUE),
     ];
-    for args in every_backend() {
+    for args in not_spelling_optional_text() {
         let (ok, out) = run(&args, &documents, "due_id.scxml");
         assert!(!ok, "{args:?} must refuse the algorithm:\n{out}");
         assert!(
