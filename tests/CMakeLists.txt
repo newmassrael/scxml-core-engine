@@ -490,6 +490,7 @@ add_executable(static_datamodel_generated_cpp_test
     integration/AStaticOptionalValueTest.cpp
     integration/AChildIsGivenItsHostByItsParentTest.cpp
     integration/StaticHostParamsAotTest.cpp
+    integration/HostResultMayHoldAValueThatIsAbsentAotTest.cpp
     integration/AStateAnotherBackendSavedIsRestoredTest.cpp
     integration/ASavedHostInvocationIsStartedAgainAfterARestoreTest.cpp
     integration/ASavedTreeHoldsEverySessionWhereItStoodTest.cpp
@@ -730,6 +731,15 @@ sce_add_state_machine(
     TARGET static_datamodel_generated_cpp_test
     SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/host_processor/statechart_static_delayed_host_send.scxml
     HOST_PROCESSOR x-sce-host
+)
+# A host-run `<invoke>` whose `sce:result` record holds values that may be absent
+# (docs/adr/0055, step 10): the host answers through the generated typed
+# interface, with the invoker declaration `scripts/regen_host_processor.sh`
+# passes.
+sce_add_state_machine(
+    TARGET static_datamodel_generated_cpp_test
+    SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/host_processor/statechart_host_invoker_optional.scxml
+    HOST_INVOKER x-sce-host
 )
 
 # The documents `static_invoke_hybrid`, `static_invoke_hybrid_saved`,

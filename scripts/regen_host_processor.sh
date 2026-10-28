@@ -94,6 +94,14 @@ STATIC_DELAYED_SEND_FIXTURE="sce-build/tests/fixtures/host_processor/statechart_
 # own because the type is the build's and not the host's.
 STATIC_MESH_REQUEST_FIXTURE="sce-build/tests/fixtures/host_processor/statechart_static_mesh_request.scxml"
 
+# The optional-result fixture (docs/adr/0055, step 10): a `datamodel="sce-static"`
+# machine whose host-run `<invoke>` completes with a `sce:result` record holding
+# values that may be absent, which the host hands in through the generated typed
+# interface and the engine delivers as JSON with `null` for an absent one.
+# Invoker declaration only, and a document of its own because the invoke the
+# first fixture types holds scalars that are always present.
+OPTIONAL_RESULT_FIXTURE="sce-build/tests/fixtures/host_processor/statechart_host_invoker_optional.scxml"
+
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
@@ -105,6 +113,7 @@ trap 'rm -rf "$TMP"' EXIT
 "$CODEGEN" generate "$STATIC_INVOKE_FIXTURE" -l rust -o "$TMP/" --host-invoker "$HOST_INVOKER"
 "$CODEGEN" generate "$STATIC_DELAYED_SEND_FIXTURE" -l rust -o "$TMP/" --host-processor "$HOST_PROCESSOR"
 "$CODEGEN" generate "$STATIC_MESH_REQUEST_FIXTURE" -l rust -o "$TMP/"
+"$CODEGEN" generate "$OPTIONAL_RESULT_FIXTURE" -l rust -o "$TMP/" --host-invoker "$HOST_INVOKER"
 
 mkdir -p "$GENERATED_DIR"
 source "$REPO_ROOT/scripts/lib/sce_generated_tree.sh"
@@ -116,6 +125,7 @@ MODRS="$GENERATED_DIR/mod.rs"
     echo "// GENERATED -- DO NOT EDIT (scripts/regen_host_processor.sh)"
     echo ""
     echo "mod statechart_delayed_host_send_sm;"
+    echo "mod statechart_host_invoker_optional_sm;"
     echo "mod statechart_host_invoker_sm;"
     echo "mod statechart_host_processor_sm;"
     echo "mod statechart_static_delayed_host_send_sm;"
@@ -123,6 +133,7 @@ MODRS="$GENERATED_DIR/mod.rs"
     echo "mod statechart_static_host_params_sm;"
     echo "mod statechart_static_mesh_request_sm;"
     echo "pub use statechart_delayed_host_send_sm::*;"
+    echo "pub use statechart_host_invoker_optional_sm::*;"
     echo "pub use statechart_host_invoker_sm::*;"
     echo "pub use statechart_host_processor_sm::*;"
     echo "pub use statechart_static_delayed_host_send_sm::*;"
@@ -254,10 +265,27 @@ for src in "$GO_STATIC_DELAYED_TMP"/*_sm.go; do
 done
 cp "$GO_STATIC_DELAYED_TMP"/*_sm.go "$GO_STATIC_DELAYED_DIR/"
 
+# The optional-result document (docs/adr/0055, step 10): a host-run `<invoke>`
+# whose `sce:result` record holds values that may be absent. Its own Go directory
+# for the package-name reason above.
+GO_OPTIONAL_RESULT_DIR="backends/go/tests/integration/statechart_host_invoker_optional"
+GO_OPTIONAL_RESULT_TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP" "$GO_TMP" "$GO_DELAYED_TMP" "$GO_INVOKER_TMP" "$GO_STATIC_PARAMS_TMP" "$GO_STATIC_MESH_TMP" "$GO_STATIC_INVOKE_TMP" "$GO_STATIC_DELAYED_TMP" "$GO_OPTIONAL_RESULT_TMP"' EXIT
+
+"$CODEGEN" generate "$OPTIONAL_RESULT_FIXTURE" -l go -o "$GO_OPTIONAL_RESULT_TMP/" --host-invoker "$HOST_INVOKER"
+mkdir -p "$GO_OPTIONAL_RESULT_DIR"
+sce_generated_tree_clear "$GO_OPTIONAL_RESULT_DIR"
+for src in "$GO_OPTIONAL_RESULT_TMP"/*_sm.go; do
+    [[ -f "$src" ]] || continue
+    sed -i "s|// From: ${GO_OPTIONAL_RESULT_TMP}/|// From: $(dirname "$OPTIONAL_RESULT_FIXTURE")/|g" "$src"
+done
+cp "$GO_OPTIONAL_RESULT_TMP"/*_sm.go "$GO_OPTIONAL_RESULT_DIR/"
+
 echo "Regenerated: $GENERATED_DIR/ from"
 echo "  $FIXTURE (--host-processor $HOST_PROCESSOR)"
 echo "  $INVOKER_FIXTURE (--host-invoker $HOST_INVOKER)"
 echo "  $DELAYED_FIXTURE (--host-processor $HOST_PROCESSOR)"
+echo "  $OPTIONAL_RESULT_FIXTURE (--host-invoker $HOST_INVOKER)"
 echo "Regenerated: $GO_GENERATED_DIR/ from"
 echo "  $FIXTURE (--host-processor $HOST_PROCESSOR)"
 echo "Regenerated: $GO_DELAYED_DIR/ from"
@@ -272,3 +300,5 @@ echo "Regenerated: $GO_STATIC_INVOKE_DIR/ from"
 echo "  $STATIC_INVOKE_FIXTURE (--host-invoker $HOST_INVOKER)"
 echo "Regenerated: $GO_STATIC_DELAYED_DIR/ from"
 echo "  $STATIC_DELAYED_SEND_FIXTURE (--host-processor $HOST_PROCESSOR)"
+echo "Regenerated: $GO_OPTIONAL_RESULT_DIR/ from"
+echo "  $OPTIONAL_RESULT_FIXTURE (--host-invoker $HOST_INVOKER)"

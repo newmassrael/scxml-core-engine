@@ -101,6 +101,14 @@ STATIC_DELAYED_SEND_FIXTURE="sce-build/tests/fixtures/host_processor/statechart_
 "$CODEGEN" generate "$STATIC_DELAYED_SEND_FIXTURE" -l python -o "$TMP/" \
     --input-root "$INPUT_ROOT" --host-processor "$HOST_PROCESSOR"
 
+# docs/adr/0055, step 10: a host-run `<invoke>` whose `sce:result` record holds
+# values that may be absent, in a `datamodel="sce-static"` machine. Invoker
+# declaration only, and a document of its own because the invoke the first
+# fixture types holds scalars that are always present.
+OPTIONAL_RESULT_FIXTURE="sce-build/tests/fixtures/host_processor/statechart_host_invoker_optional.scxml"
+"$CODEGEN" generate "$OPTIONAL_RESULT_FIXTURE" -l python -o "$TMP/" \
+    --input-root "$INPUT_ROOT" --host-invoker "$HOST_INVOKER"
+
 mkdir -p "$GENERATED_DIR"
 source "$REPO_ROOT/scripts/lib/sce_generated_tree.sh"
 sce_generated_tree_clear "$GENERATED_DIR"
@@ -119,3 +127,4 @@ echo "  $STATIC_LITERAL_FIXTURE (--host-processor $HOST_PROCESSOR)"
 echo "  $STATIC_MESH_REQUEST_FIXTURE (no host declaration)"
 echo "  $STATIC_INVOKE_FIXTURE (--host-invoker $HOST_INVOKER)"
 echo "  $STATIC_DELAYED_SEND_FIXTURE (--host-processor $HOST_PROCESSOR)"
+echo "  $OPTIONAL_RESULT_FIXTURE (--host-invoker $HOST_INVOKER)"

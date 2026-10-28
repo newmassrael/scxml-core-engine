@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.12, §2.15;
+  docs/adr/0055, step 10): a host-run `<invoke>` whose `sce:result` record holds
+  values that may be absent.
+
+  `asking` hands a lookup to the host and waits for `done.invoke.lookup`. The
+  host answers with a `LookupResult`: a count of rows, which every answer
+  carries, and a day, a label and a flag that a lookup may leave out. The host
+  completes through the typed interface, so the record it hands in holds each of
+  the three in its backend's optional type, and the JSON the engine delivers
+  writes an absent one as `null`, its key written all the same.
+
+  The machine copies each of the three into a variable that may be absent, then
+  reads each where a test proves it present, so what the scenario sees is what
+  the record held:
+
+    answered         completions read, counted last: a delivery that does not
+                     fit the record writes nothing here
+    rows_seen        the count every answer carries
+    at_present       whether the day came, `at_value` the day (0 when absent)
+    label_present    whether the label came, `label_value` the label
+    hit_known        whether the flag came, `hit_true` whether it was true
+                     (an absent flag is not true: `hit === true`)
+
+  A key left out of the record's JSON is no absent value: the first revision of
+  a schema is carried whole, so such a delivery is refused as any typed payload
+  the data does not fit is, and `answered` does not move.
+
+  Generated with the invoker declaration naming the type x-sce-host
+  (scripts/regen_host_processor.sh and the other host-processor scripts name the
+  flag; an XML comment cannot spell a double hyphen).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="idle" datamodel="sce-static"
+       name="statechart_host_invoker_optional">
+  <sce:import kind="event-schema" src="host_invoker_lookup_result.scxml" as="LookupResult"/>
+  <datamodel>
+    <data id="at" sce:type="optional&lt;int64&gt;" expr="null"/>
+    <data id="label" sce:type="optional&lt;string&gt;" sce:capacity="16" expr="null"/>
+    <data id="hit" sce:type="optional&lt;bool&gt;" expr="null"/>
+    <data id="answered" sce:type="uint8" expr="0" sce:direction="out"/>
+    <data id="rows_seen" sce:type="uint8" expr="0" sce:direction="out"/>
+    <data id="at_present" sce:type="bool" expr="false" sce:direction="out"/>
+    <data id="at_value" sce:type="int64" expr="0" sce:direction="out"/>
+    <data id="label_present" sce:type="bool" expr="false" sce:direction="out"/>
+    <data id="label_value" sce:type="string" sce:capacity="16" expr="''" sce:direction="out"/>
+    <data id="hit_known" sce:type="bool" expr="false" sce:direction="out"/>
+    <data id="hit_true" sce:type="bool" expr="false" sce:direction="out"/>
+  </datamodel>
+
+  <state id="idle">
+    <transition event="ask" target="asking"/>
+  </state>
+
+  <state id="asking">
+    <invoke type="x-sce-host" id="lookup" sce:result="LookupResult"/>
+    <transition event="done.invoke.lookup" target="idle">
+      <assign location="at" expr="_event.data.at"/>
+      <assign location="label" expr="_event.data.label"/>
+      <assign location="hit" expr="_event.data.hit"/>
+      <assign location="rows_seen" expr="_event.data.rows"/>
+      <assign location="at_present" expr="at !== null"/>
+      <assign location="at_value" expr="at !== null ? at.value : 0"/>
+      <assign location="label_present" expr="label !== null"/>
+      <if cond="label !== null">
+        <assign location="label_value" expr="label.value"/>
+      <else/>
+        <assign location="label_value" expr="''"/>
+      </if>
+      <assign location="hit_known" expr="hit !== null"/>
+      <assign location="hit_true" expr="hit === true"/>
+      <assign location="answered" expr="answered + 1"/>
+    </transition>
+  </state>
+</scxml>

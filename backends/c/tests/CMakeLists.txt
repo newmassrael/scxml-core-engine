@@ -3864,6 +3864,43 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         LABELS "integration;c11;aot"
     )
 
+    # SCE Accepted Subset §2.12 and docs/adr/0055, step 10: a host-run `<invoke>`
+    # whose `sce:result` record holds values that may be absent, in a
+    # `datamodel="sce-static"` machine. The document the other channels drive,
+    # generated with the same invoker declaration, and with the schema it imports
+    # staged beside it (the staging copies ONE file). Linked WITHOUT
+    # `sce_c_scripting` and `lua54`: the machine has no script engine, so the link
+    # is the proof.
+    sce_generate_static_integration_c_test(statechart_host_invoker_optional
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/host_processor/statechart_host_invoker_optional.scxml"
+        HOST_INVOKER x-sce-host
+        STAGE_ALSO host_invoker_lookup_result.scxml
+    )
+    add_executable(sce_c_integration_host_invoker_optional
+        integration/test_host_invoker_optional.c
+        ${INTEGRATION_C_TEST_statechart_host_invoker_optional_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_host_invoker_optional PRIVATE
+        sce_c_runtime sce_c_runtime_posix sce_c_base
+    )
+    target_include_directories(sce_c_integration_host_invoker_optional PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include"
+    )
+    set_target_properties(sce_c_integration_host_invoker_optional PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_host_invoker_optional
+        COMMAND sce_c_integration_host_invoker_optional
+    )
+    set_tests_properties(c11_integration_host_invoker_optional PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
     # SCE_MESH.md §9.5 under `datamodel="sce-static"` (docs/adr/0005, decisions 5 and
     # 7): a Mesh request whose peer and `<param>`s are typed expressions over the
     # machine's own fields reaches the router the host registers through the

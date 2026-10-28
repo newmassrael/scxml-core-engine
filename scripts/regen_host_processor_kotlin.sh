@@ -195,6 +195,29 @@ for src in "$STATIC_MESH_REQUEST_TMP"/*Sm.kt; do
     cp "$src" "$STATIC_MESH_REQUEST_DIR/"
 done
 
+# The optional-result fixture (docs/adr/0055, step 10): a `datamodel="sce-static"`
+# machine whose host-run `<invoke>` completes with a `sce:result` record holding
+# values that may be absent. Invoker declaration only, and a document of its own
+# because the invoke the first fixture types holds scalars that are always
+# present. Its own package for the reason the others have theirs.
+OPTIONAL_RESULT_FIXTURE="sce-build/tests/fixtures/host_processor/statechart_host_invoker_optional.scxml"
+OPTIONAL_RESULT_DIR="${SCE_KOTLIN_GENERATED_ROOT:-backends/kotlin/tests/src/main/kotlin}/com/sce/integration/statechart_host_invoker_optional"
+OPTIONAL_RESULT_TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP" "$DELAYED_TMP" "$INVOKER_TMP" "$STATIC_PARAMS_TMP" "$STATIC_INVOKE_TMP" "$STATIC_DELAYED_SEND_TMP" "$STATIC_MESH_REQUEST_TMP" "$OPTIONAL_RESULT_TMP"' EXIT
+
+"$CODEGEN" generate "$OPTIONAL_RESULT_FIXTURE" -l kotlin -o "$OPTIONAL_RESULT_TMP/" \
+    --input-root "$INPUT_ROOT" \
+    --kotlin-package-prefix "$PACKAGE_PREFIX" \
+    --host-invoker "$HOST_PROCESSOR"
+
+mkdir -p "$OPTIONAL_RESULT_DIR"
+sce_generated_tree_clear "$OPTIONAL_RESULT_DIR"
+for src in "$OPTIONAL_RESULT_TMP"/*Sm.kt; do
+    [[ -f "$src" ]] || continue
+    sed -i "s|// Source: ${OPTIONAL_RESULT_TMP}/|// Source: ${INPUT_ROOT}/|g" "$src"
+    cp "$src" "$OPTIONAL_RESULT_DIR/"
+done
+
 echo "Regenerated: $GENERATED_DIR/ from $FIXTURE (--host-processor $HOST_PROCESSOR)"
 echo "Regenerated: $DELAYED_DIR/ from $DELAYED_FIXTURE (--host-processor $HOST_PROCESSOR)"
 echo "Regenerated: $INVOKER_DIR/ from $INVOKER_FIXTURE (--host-invoker $HOST_PROCESSOR)"
@@ -202,3 +225,4 @@ echo "Regenerated: $STATIC_PARAMS_DIR/ from $STATIC_PARAMS_FIXTURE (--host-proce
 echo "Regenerated: $STATIC_INVOKE_DIR/ from $STATIC_INVOKE_FIXTURE (--host-invoker $HOST_PROCESSOR)"
 echo "Regenerated: $STATIC_DELAYED_SEND_DIR/ from $STATIC_DELAYED_SEND_FIXTURE (--host-processor $HOST_PROCESSOR)"
 echo "Regenerated: $STATIC_MESH_REQUEST_DIR/ from $STATIC_MESH_REQUEST_FIXTURE (no host declaration)"
+echo "Regenerated: $OPTIONAL_RESULT_DIR/ from $OPTIONAL_RESULT_FIXTURE (--host-invoker $HOST_PROCESSOR)"
