@@ -974,11 +974,35 @@ fn generate_c11(documents: &[(&str, &str)], file: &str) -> (bool, String, String
     )
 }
 
-/// A host-run record has no carrier for an absent value until the step that
-/// hands it one, so a typed `<invoke>` naming the schema is refused where the
-/// typed interface is checked.
+/// A host-run request is text, which has no spelling for an absent value, so a
+/// typed `<invoke>` whose `sce:request` names a schema with an optional field is
+/// refused where the typed interface is checked, naming `??`
+/// (docs/adr/0055, section 2).
 #[test]
-fn a_typed_host_invoke_of_a_schema_with_an_optional_field_is_refused_by_name() {
+fn a_typed_host_request_of_a_schema_with_an_optional_field_is_refused_by_name() {
+    let text = statechart_due(
+        "",
+        r#"<invoke type="sce-host-due" id="ask" sce:request="Due"/>"#,
+    );
+    let (ok, out) = run(
+        &["check", "-l", "rust"],
+        &[("probe.scxml", &text), (SCHEMA_DUE_FILE, SCHEMA_DUE)],
+        "probe.scxml",
+    );
+    assert!(!ok, "the typed invoke must be refused:\n{out}");
+    assert!(
+        out.contains("has no spelling for an absent value")
+            && out.contains("optional<int64>")
+            && out.contains("??"),
+        "refused by the schema's field, naming the repair:\n{out}"
+    );
+}
+
+/// A host-run result is the record's JSON, which spells an absent value `null`,
+/// so its optional field is admitted; the schema's optional enum is not, since an
+/// enumeration has no spelling in a host-run record.
+#[test]
+fn a_typed_host_result_refuses_an_optional_enum_and_no_other_optional_field() {
     let text = statechart_due(
         "",
         r#"<invoke type="sce-host-due" id="ask" sce:result="Due"/>"#,
@@ -988,10 +1012,14 @@ fn a_typed_host_invoke_of_a_schema_with_an_optional_field_is_refused_by_name() {
         &[("probe.scxml", &text), (SCHEMA_DUE_FILE, SCHEMA_DUE)],
         "probe.scxml",
     );
-    assert!(!ok, "the typed invoke must be refused:\n{out}");
+    assert!(!ok, "the optional enum must be refused:\n{out}");
     assert!(
-        out.contains("does not carry an optional value yet") && out.contains("optional<int64>"),
-        "refused by the schema's field:\n{out}"
+        out.contains("is enum-typed") && out.contains("optional<enum:Status>"),
+        "refused by the enum field, not by the optional day or text before it:\n{out}"
+    );
+    assert!(
+        !out.contains("has no spelling for an absent value"),
+        "a result is not the text carrier of a request:\n{out}"
     );
 }
 

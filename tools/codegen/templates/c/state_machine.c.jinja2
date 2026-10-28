@@ -360,6 +360,11 @@
    request value to its field, and its adapter reads the request back. */
 #include <stdlib.h>
 #include <sce/request_field.h>
+{% for line in host_invoker_source_includes %}
+{# docs/adr/0055: a result's field that may be absent is written through the
+   wire writer, which a machine of any data model includes for it. #}
+{{ line }}
+{% endfor %}
 {% endif %}
 
 /* SCE Protocol-Synthesis RFC §5.2 — C11 section attribute prefix

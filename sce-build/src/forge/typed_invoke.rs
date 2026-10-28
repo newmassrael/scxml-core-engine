@@ -21,7 +21,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::forge::error::{ForgeError, Located, SourceLocation, ValidationError};
-use crate::forge::model::{EventSchemaModel, FieldType, SceType};
+use crate::forge::model::{EventSchemaModel, SceType};
 use crate::host_processor_analyzer::HOST_INVOKE_DEADLINE_PARAM;
 use crate::model::{Invoke, SCXMLModel, UnsupportedInvokeInfo};
 
@@ -76,26 +76,38 @@ pub fn validate(
                         .to_string(),
                 ));
             }
-            // A host-run record has no carrier for a value that may be absent
-            // yet: what a host receives and answers is decided with the step of
-            // docs/adr/0055 that hands it one, so a schema holding one is
-            // refused by name until then.
-            if let Some(field) = schema.first_optional_field() {
-                return Err(refuse(format!(
-                    "field '{}' is optional ({}), and a host-run request or result does not \
-                     carry an optional value yet (docs/adr/0055)",
-                    field.id,
-                    field.sce_type.as_attr()
-                )));
+            // A request crosses to the host as text: each `<param>` is the
+            // text of its value, and an untyped `<param>` that could not be
+            // evaluated is reported and left out, so a key that is not there
+            // already means that. The carrier has no spelling of absence left
+            // (docs/adr/0055, section 2), so a field that may be absent is
+            // refused by name, with the one repair the language has: a field
+            // of the present type, whose `<param>` writes `x ?? d`. A result
+            // is not that carrier: the host completes it with the record's
+            // JSON, which spells an absent value `null` (section 4), so an
+            // optional field is the record's own.
+            if attr == "request" {
+                if let Some(field) = schema.first_optional_field() {
+                    return Err(refuse(format!(
+                        "field '{}' is optional ({}), and a host-run request is text, which \
+                         has no spelling for an absent value (a <param> left out already means \
+                         its value could not be evaluated) — declare the field as {} and write \
+                         `x ?? d` at its <param> (docs/adr/0055)",
+                        field.id,
+                        field.sce_type.as_attr(),
+                        field.sce_type.present_type().as_attr()
+                    )));
+                }
             }
             // The record crosses to and from the host as text in every
             // backend, and an enumeration has no spelling there that all six
             // share: its generated type is per-language, and the payload
             // lift that reads a completion refuses it for the same reason.
+            // An optional enumeration is the same enumeration.
             if let Some(field) = schema
                 .fields
                 .iter()
-                .find(|f| matches!(f.sce_type, FieldType::Scalar(SceType::Enum(_))))
+                .find(|f| matches!(f.sce_type.present_type(), SceType::Enum(_)))
             {
                 return Err(refuse(format!(
                     "field '{}' is enum-typed ({}), and a host-run record carries \

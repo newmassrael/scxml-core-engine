@@ -11346,6 +11346,19 @@ pub(crate) fn c11_optional_type(present: &str) -> Option<String> {
     c11_optional_elem(present).map(|name| format!("sce_optional_{name}_t"))
 }
 
+/// The declaration a C11 unit that holds the optional text or byte string `elem`,
+/// held to `bound` bytes, makes of it (docs/adr/0055): the buffer of the bound
+/// and the optional value over it, each under the guard every unit that holds one
+/// shares, so a program that includes two declares them once. A host-run
+/// record's result is such a unit, as a `sce-static` machine is. `None` for an
+/// element the runtime's own header declares an optional value of, or that has
+/// no buffer.
+pub(crate) fn c11_optional_buffer_def(elem: &SceType, bound: u32) -> Option<String> {
+    let target = CTarget::arguments();
+    let present = optional_present(&target, "", elem, Some(bound));
+    target.optional_def(&present, elem)
+}
+
 /// The type of an optional value whose present value is held in the C type
 /// `present`, as far as how it is read tells them apart
 /// ([`crate::forge::expr::c_present_read`]): an optional text — over a buffer, or

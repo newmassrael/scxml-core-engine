@@ -2984,9 +2984,14 @@ pub fn emitted_beside_templates(model: &SCXMLModel, language: Language) -> Strin
             ] {
                 out.push_str(&part);
             }
-            let host = crate::forge::host_invoker_interface::render_c11(&model, &model.name);
-            out.push_str(&host.decls);
-            out.push_str(&host.defs);
+            // A record the render refuses (an optional text with no bound) is
+            // refused again where the machine is generated, so nothing is
+            // reserved for an interface that is never emitted.
+            if let Ok(host) = crate::forge::host_invoker_interface::render_c11(&model, &model.name)
+            {
+                out.push_str(&host.decls);
+                out.push_str(&host.defs);
+            }
         }
         Language::Go => {
             let payload = crate::forge::generator::build_go_event_payload(
@@ -3628,7 +3633,7 @@ fn render_c11(
     let host_invoker = crate::forge::host_invoker_interface::render_c11(
         model,
         &format!("{csym_prefix}{}", model.name),
-    );
+    )?;
     let host_invoke_request_checks =
         crate::forge::host_invoker_interface::c11_request_checks(model);
 
@@ -3664,6 +3669,9 @@ fn render_c11(
         csym_prefix => &csym_prefix,
         host_invocation_peak => crate::host_processor_analyzer::host_invocation_peak(model),
         host_invoker_decls => &host_invoker.decls,
+        // docs/adr/0055: what a result's optional field is held in, included
+        // ahead of the declarations that hold it, whatever the data model.
+        host_invoker_includes => &host_invoker.header_includes,
         static_fields => minijinja::Value::from_serialize(&static_lowering.fields),
         static_published => minijinja::Value::from_serialize(&static_published),
         static_type_defs => static_lowering.type_defs.join("\n\n"),
@@ -3697,6 +3705,9 @@ fn render_c11(
         native_action_ops => &native.operation_names,
         csym_prefix => &csym_prefix,
         host_invoker_defs => &host_invoker.defs,
+        // docs/adr/0055: the wire writer a result's optional field is written
+        // with, included whatever the data model.
+        host_invoker_source_includes => &host_invoker.source_includes,
         host_invoke_request_checks => &host_invoke_request_checks,
         static_done_data => static_done_data,
         static_datamodel => model.datamodel == crate::model::Datamodel::SceStatic,
@@ -4586,7 +4597,18 @@ fn render_go(
         };
         tmpl.render(ctx).map_err(render_error)
     };
-    let first = render_with(&static_lowering.imports)?;
+    // A typed host-run result whose field may be absent holds it in the forge
+    // runtime's `optional.Of[T]` (docs/adr/0055), in a machine of any data model:
+    // the lowering of a `sce-static` machine lists the package where it holds an
+    // optional value, and the interface of any other is read for the name.
+    let mut base_imports = static_lowering.imports.clone();
+    let optional_import = format!("\t\"{}\"", crate::std_imports::GO_FORGE_OPTIONAL_PATH);
+    if crate::std_imports::go_uses_optional(&host_invoker_interface)
+        && !base_imports.contains(&optional_import)
+    {
+        base_imports.push(optional_import);
+    }
+    let first = render_with(&base_imports)?;
     // A Go file that names a package it does not import does not compile, and
     // what a `sce-static` machine names is a fact about the text its lowering
     // wrote — `strconv.FormatUint` for a string joined to a number — which no
@@ -4598,8 +4620,8 @@ fn render_go(
     // refused when the text no longer names it, which is the case when the only
     // call stood after an element that always ends its block — the templates
     // emit nothing there.
-    let named = crate::std_imports::go_imports_named_in(&first, &static_lowering.imports);
-    if unimported.is_empty() && named.len() == static_lowering.imports.len() {
+    let named = crate::std_imports::go_imports_named_in(&first, &base_imports);
+    if unimported.is_empty() && named.len() == base_imports.len() {
         return Ok(first);
     }
     let mut imports = named;

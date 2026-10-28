@@ -74,6 +74,12 @@
    below hold. #}
 {{ static_optional_include }}
 {% endif %}
+{% for line in host_invoker_includes %}
+{# docs/adr/0055: a typed host-run result's field that may be absent is the
+   struct the runtime declares for its element, which the record below holds
+   in a machine of any data model. #}
+{{ line }}
+{% endfor %}
 {# `SCE_STATIC_ASSERT`, used by the compile-time invariants at the
    bottom of this header. This header opens `extern "C"`, so a C++
    application linking the generated machine compiles it as C++ —

@@ -268,3 +268,107 @@ fn a_record_with_an_enum_typed_field_is_refused() {
         "reported on the attribute's row"
     );
 }
+
+/// A statechart whose one state runs `invoke`, importing the schema whose
+/// `<data>` lines are `fields` as `Answer`: parsed from a directory of its own,
+/// as the aliases resolve through sibling files. The refusal's code and what it
+/// names.
+fn parse_answer(case: &str, fields: &str, invoke: &str) -> Result<(), (String, String)> {
+    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
+        .join("a_typed_host_invoke_is_held_to_its_schemas")
+        .join(case);
+    std::fs::create_dir_all(&dir).expect("create scratch dir");
+    std::fs::write(
+        dir.join("answer.scxml"),
+        format!(
+            r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       name="answer" sce:kind="event-schema" sce:event-name="answer.record">
+  <datamodel>
+{fields}
+  </datamodel>
+</scxml>"#
+        ),
+    )
+    .expect("write schema");
+    let path = dir.join("asking.scxml");
+    std::fs::write(
+        &path,
+        format!(
+            r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       name="asking" version="1.0" initial="asking" datamodel="ecmascript">
+  <sce:import kind="event-schema" src="answer.scxml" as="Answer"/>
+  <state id="asking">
+{invoke}
+  </state>
+</scxml>"#
+        ),
+    )
+    .expect("write statechart");
+    SCXMLParser::new()
+        .parse_file(path.to_str().expect("utf-8 path"))
+        .map(|_| ())
+        .map_err(|refusal| {
+            let diagnostic = &refusal.error.to_diagnostics()[0];
+            (
+                serde_json::to_value(diagnostic.code)
+                    .expect("code serializes")
+                    .as_str()
+                    .expect("code is a string")
+                    .to_string(),
+                diagnostic.actual.clone().unwrap_or_default(),
+            )
+        })
+}
+
+/// The fields of a record a host may answer with: a value that may be absent of
+/// each kind a record holds, beside one that never is.
+const OPTIONAL_ANSWER_FIELDS: &str = r#"    <data id="id" sce:type="uint32" sce:direction="in"/>
+    <data id="due" sce:type="optional&lt;int64&gt;" sce:direction="in"/>
+    <data id="done" sce:type="optional&lt;bool&gt;" sce:direction="in"/>
+    <data id="note" sce:type="optional&lt;string&gt;" sce:max-size="16" sce:direction="in"/>
+    <data id="blob" sce:type="optional&lt;bytes&gt;" sce:max-size="8" sce:direction="in"/>"#;
+
+/// A result is the record's JSON, which spells an absent value `null`
+/// (docs/adr/0055, section 4), so a field of it may be a number, a `bool`, a
+/// text or a byte string that may be absent.
+#[test]
+fn a_result_whose_fields_may_be_absent_is_accepted() {
+    parse_answer(
+        "optional_result",
+        OPTIONAL_ANSWER_FIELDS,
+        r#"    <invoke type="x-app-host" id="ask" sce:result="Answer"/>"#,
+    )
+    .expect("a result may hold a field that may be absent");
+}
+
+/// A request is text: each `<param>` is the text of its value, and a `<param>`
+/// left out already means its value could not be evaluated, so a field that may
+/// be absent has no spelling there and is refused by name
+/// (docs/adr/0055, section 2).
+#[test]
+fn a_request_whose_fields_may_be_absent_is_refused() {
+    let (code, actual) = parse_answer(
+        "optional_request",
+        OPTIONAL_ANSWER_FIELDS,
+        r#"    <invoke type="x-app-host" id="ask" sce:request="Answer">
+      <param name="id" expr="1"/>
+    </invoke>"#,
+    )
+    .expect_err("refused");
+    assert_eq!(code, "validation/typed-invoke-schema");
+    assert_eq!(actual, "Answer");
+}
+
+/// One schema named as the request and as the result is held to the request's
+/// rule, whichever attribute is written first.
+#[test]
+fn a_schema_named_as_request_and_result_is_held_to_the_request_rule() {
+    let (code, actual) = parse_answer(
+        "optional_both",
+        OPTIONAL_ANSWER_FIELDS,
+        r#"    <invoke type="x-app-host" id="ask" sce:result="Answer" sce:request="Answer"/>"#,
+    )
+    .expect_err("refused");
+    assert_eq!(code, "validation/typed-invoke-schema");
+    assert_eq!(actual, "Answer");
+}

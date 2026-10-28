@@ -23,11 +23,20 @@
 //! its field where the invocation started (the generated start site calls
 //! the runtime's `request_field_wire`), and what the adapter parses is the
 //! text that check produced.
+//!
+//! A request is text, and holds no field that may be absent
+//! (`typed_invoke::validate` refuses one by name). A result is the record's
+//! JSON, which spells an absent value `null`, so a result's field may be
+//! `optional<T>` (docs/adr/0055, section 4): the record holds it in the
+//! backend's one optional type, and its `wire` writes `null` for an absent
+//! value and what the field is written as otherwise.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::filters;
-use crate::forge::model::{EventSchemaModel, SceType, SchemaField};
+use crate::forge::error::GenerateError;
+use crate::forge::model::{EventSchemaModel, FieldType, SceType, SchemaField};
+use crate::generator::Language;
 use crate::model::{Invoke, SCXMLModel};
 
 /// One host-run `<invoke>` that names a request or a result record.
@@ -121,8 +130,27 @@ pub enum RequestFieldSpelling {
     Bytes(u32),
 }
 
-/// A typed request or result holds no optional field (`typed_invoke::validate`
-/// refuses one by name, docs/adr/0055), so every field read in this module is
+/// The type a field of a typed record is held in on `lang`, given `present`,
+/// the type a present value of it is spelled as there: `present` itself for a
+/// field every record carries, and the backend's one optional type over it for
+/// a field that may be absent (docs/adr/0055, section 5). Only a result holds
+/// the second kind ([`typed_invoke::validate`](crate::forge::typed_invoke::validate)).
+fn record_field_type(lang: Language, f: &SchemaField, present: &str) -> String {
+    match &f.sce_type {
+        FieldType::Scalar(_) => present.to_string(),
+        FieldType::Optional { .. } => crate::forge::generator::optional_of(lang, present)
+            .unwrap_or_else(|| {
+                panic!(
+                    "{} spells an optional field of a host-run record in a type of its own, \
+                     which its renderer declares",
+                    lang.canonical_name()
+                )
+            }),
+    }
+}
+
+/// A typed request holds no optional field (`typed_invoke::validate` refuses
+/// one by name, docs/adr/0055), so every request field read in this module is
 /// the scalar a present value of it is.
 fn request_field_spelling(f: &SchemaField) -> RequestFieldSpelling {
     RequestFieldSpelling::Scalar(match f.sce_type.present_type() {
@@ -398,10 +426,11 @@ pub fn render_go(model: &SCXMLModel, machine_name: &str) -> String {
                 .fields
                 .iter()
                 .map(|f| {
+                    let present = crate::forge::generator::go_type(f.sce_type.present_type());
                     format!(
                         "\t{} {}\n",
                         exported(&f.id),
-                        crate::forge::generator::go_type(f.sce_type.present_type())
+                        record_field_type(Language::Go, f, present)
                     )
                 })
                 .collect();
@@ -415,11 +444,25 @@ type {name} struct {{\n{fields}}}\n\n",
                     .fields
                     .iter()
                     .map(|f| {
-                        let value = format!("r.{}", exported(&f.id));
-                        let value = if matches!(f.sce_type.present_type(), SceType::Bytes) {
-                            format!("sce.BytesAsPayloadText({value})")
-                        } else {
-                            value
+                        // How a present value `held` of the field is written.
+                        let present = |held: &str| {
+                            if matches!(f.sce_type.present_type(), SceType::Bytes) {
+                                format!("sce.BytesAsPayloadText({held})")
+                            } else {
+                                held.to_string()
+                            }
+                        };
+                        let held = format!("r.{}", exported(&f.id));
+                        let value = match &f.sce_type {
+                            FieldType::Scalar(_) => present(&held),
+                            // An absent value is `nil`, which `PayloadJSON` writes
+                            // as `null`, its key written all the same
+                            // (docs/adr/0055, section 4).
+                            FieldType::Optional { .. } => format!(
+                                "optional.Wire({held}, func(v {}) any {{ return {} }})",
+                                crate::forge::generator::go_type(f.sce_type.present_type()),
+                                present("v")
+                            ),
                         };
                         format!("sce.Pair(\"{}\", {value}), ", f.id)
                     })
@@ -576,7 +619,13 @@ pub fn render_python(model: &SCXMLModel) -> String {
             let fields: String = schema
                 .fields
                 .iter()
-                .map(|f| format!("    {}: {}\n", f.id, l(f.sce_type.present_type())))
+                .map(|f| {
+                    format!(
+                        "    {}: {}\n",
+                        f.id,
+                        record_field_type(Language::Python, f, l(f.sce_type.present_type()))
+                    )
+                })
                 .collect();
             let wire = if what == "Result" {
                 let items: Vec<String> = schema
@@ -584,9 +633,19 @@ pub fn render_python(model: &SCXMLModel) -> String {
                     .iter()
                     .map(|f| {
                         // JSON has no byte string, so a `bytes` field rides
-                        // as its byte-exact Latin-1 text.
+                        // as its byte-exact Latin-1 text. An absent optional
+                        // field is the `None` it is, which `json.dumps` writes
+                        // as `null` (docs/adr/0055, section 4).
+                        let optional = matches!(f.sce_type, FieldType::Optional { .. });
                         if matches!(f.sce_type.present_type(), SceType::Bytes) {
-                            format!("\"{0}\": self.{0}.decode(\"latin-1\")", f.id)
+                            if optional {
+                                format!(
+                                    "\"{0}\": None if self.{0} is None else self.{0}.decode(\"latin-1\")",
+                                    f.id
+                                )
+                            } else {
+                                format!("\"{0}\": self.{0}.decode(\"latin-1\")", f.id)
+                            }
                         } else {
                             format!("\"{0}\": self.{0}", f.id)
                         }
@@ -766,11 +825,18 @@ pub fn render_kotlin(model: &SCXMLModel, machine_name: &str) -> KotlinHostInvoke
                     format!(
                         "    val {}: {},\n",
                         f.id,
-                        crate::forge::generator::kotlin_type(f.sce_type.present_type())
+                        record_field_type(
+                            Language::Kotlin,
+                            f,
+                            crate::forge::generator::kotlin_type(f.sce_type.present_type())
+                        )
                     )
                 })
                 .collect();
             let body = if what == "Result" {
+                // An absent optional field is the `null` it is, which
+                // `EventPayload.encode` writes as `null` (docs/adr/0055,
+                // section 4), its key written all the same.
                 let items: Vec<String> = schema
                     .fields
                     .iter()
@@ -935,6 +1001,9 @@ pub fn render_cpp(model: &SCXMLModel) -> CppHostInvokerInterface {
     if typed.is_empty() {
         return CppHostInvokerInterface { defs, members };
     }
+    // The type a present value of `f` is held in: what a request's reader
+    // names (`requestField<T>`), and what the optional type of a result's
+    // field wraps.
     let cpp_type = |f: &SchemaField| crate::forge::generator::cpp_type(f.sce_type.present_type());
     for invoke in &typed {
         let pascal = filters::to_pascal_case(invoke.field_suffix.to_string());
@@ -943,17 +1012,40 @@ pub fn render_cpp(model: &SCXMLModel) -> CppHostInvokerInterface {
             let fields: String = schema
                 .fields
                 .iter()
-                .map(|f| format!("    {} {}{{}};\n", cpp_type(f), f.id))
+                .map(|f| {
+                    format!(
+                        "    {} {}{{}};\n",
+                        record_field_type(Language::Cpp, f, cpp_type(f)),
+                        f.id
+                    )
+                })
                 .collect();
             let wire = if what == "Result" {
                 let items: Vec<String> = schema
                     .fields
                     .iter()
                     .map(|f| {
-                        format!(
-                            "::SCE::Common::EventPayloadFields::field(\"{0}\", {0})",
-                            f.id
-                        )
+                        let present = format!(
+                            "::SCE::Common::EventPayloadFields::field(\"{0}\", {1})",
+                            f.id,
+                            // An optional field is read through `*`, the value it
+                            // holds when present.
+                            if matches!(f.sce_type, FieldType::Optional { .. }) {
+                                format!("*{}", f.id)
+                            } else {
+                                f.id.clone()
+                            }
+                        );
+                        match &f.sce_type {
+                            FieldType::Scalar(_) => present,
+                            // An absent value is `null`, its key written all the
+                            // same (docs/adr/0055, section 4).
+                            FieldType::Optional { .. } => format!(
+                                "({0}.has_value() ? {present} : \
+                                 ::SCE::Common::EventPayloadFields::absent(\"{0}\"))",
+                                f.id
+                            ),
+                        }
                     })
                     .collect();
                 format!(
@@ -1136,9 +1228,19 @@ pub fn c11_request_checks(model: &SCXMLModel) -> BTreeMap<String, BTreeMap<Strin
 /// one invoker table per declared `type`, registration and typed completion)
 /// and the source's definitions (`defs` — the adapter, and the two functions).
 /// Both empty when the document has no typed host-run invoke.
+///
+/// A result whose field may be absent (docs/adr/0055, section 4) holds it in the
+/// struct `sce/forge/optional.h` declares for its element and writes it with the
+/// wire writer of `sce/forge/wire.h`: the two includes a machine of any data
+/// model needs for it are named in `header_includes` and `source_includes`, empty
+/// where no field is optional.
 pub struct C11HostInvokerInterface {
     pub decls: String,
     pub defs: String,
+    /// The lines the header includes before `decls`.
+    pub header_includes: Vec<String>,
+    /// The lines the source includes before `defs`.
+    pub source_includes: Vec<String>,
 }
 
 /// The C11 host interface for `model`'s typed host-run invokes. `sm` is the
@@ -1148,19 +1250,70 @@ pub struct C11HostInvokerInterface {
 /// `user_data` handed back to each, as the runtime's own registry is, and the
 /// adapter is registered with that table as its `user_data`. The table must
 /// outlive the registry it is registered in.
-pub fn render_c11(model: &SCXMLModel, sm: &str) -> C11HostInvokerInterface {
+///
+/// Refused, as `generate/unsupported-feature`, when a result holds an optional
+/// text or byte string that declares no `sce:max-size`: the struct that holds it
+/// is over the buffer of its bound, and a field with none has no buffer.
+pub fn render_c11(model: &SCXMLModel, sm: &str) -> Result<C11HostInvokerInterface, GenerateError> {
     let mut decls = String::new();
     let mut defs = String::new();
+    let mut header_includes: Vec<String> = Vec::new();
+    let mut source_includes: Vec<String> = Vec::new();
     let typed = typed_host_invokes(model);
     if typed.is_empty() {
-        return C11HostInvokerInterface { decls, defs };
+        return Ok(C11HostInvokerInterface {
+            decls,
+            defs,
+            header_includes,
+            source_includes,
+        });
     }
+    // The declarations of the optional text and byte string a result holds, each
+    // written once however many records hold it (the guards they are under say
+    // the same to a program that includes another unit holding it).
+    let mut declared = BTreeSet::new();
     for invoke in &typed {
         let snake = filters::to_snake_case(invoke.field_suffix.to_string());
         for (record, what, role) in records_of(invoke) {
             let Some(schema) = record else { continue };
             let what_snake = what.to_ascii_lowercase();
             let name = format!("{sm}_{snake}_{what_snake}_t");
+            for field in &schema.fields {
+                let FieldType::Optional { elem } = &field.sce_type else {
+                    continue;
+                };
+                if header_includes.is_empty() {
+                    header_includes
+                        .push(crate::forge::static_lowering::C11_OPTIONAL_INCLUDE.into());
+                    source_includes.push("#include <sce/forge/wire.h>".to_string());
+                }
+                match (elem, field.max_size) {
+                    (SceType::String | SceType::Bytes, None) => {
+                        return Err(crate::forge::static_lowering::optional_not_lowered(
+                            &format!(
+                                "the field `{}` of `{name}`, sce:type=\"{}\", a text or a byte \
+                                 string with no sce:max-size, which the buffer it is held in is \
+                                 declared over",
+                                field.id,
+                                field.sce_type.as_attr()
+                            ),
+                            Language::C11.canonical_name(),
+                        ));
+                    }
+                    (SceType::String | SceType::Bytes, Some(bound)) => {
+                        if let Some(def) =
+                            crate::forge::static_lowering::c11_optional_buffer_def(elem, bound)
+                        {
+                            if declared.insert(def.clone()) {
+                                decls.push_str(&format!("{def}\n\n"));
+                            }
+                        }
+                    }
+                    // A number and a `bool` are declared by the runtime's header,
+                    // and an enum is refused where the schema is judged.
+                    _ => {}
+                }
+            }
             let fields: String = schema
                 .fields
                 .iter()
@@ -1317,7 +1470,12 @@ if (invoker == NULL) {{\n        return false;\n    }}\n    \
 return sce_host_invoker_register(registry, \"{invoke_type}\", {sm}_{type_snake}_invoker_adapter, (void *)invoker);\n}}\n\n"
         ));
     }
-    C11HostInvokerInterface { decls, defs }
+    Ok(C11HostInvokerInterface {
+        decls,
+        defs,
+        header_includes,
+        source_includes,
+    })
 }
 
 /// The `sce_request_read_*` call reading field `id` of type `ty` into the
