@@ -48,3 +48,26 @@ shopt -u nullglob
     || sce_gate_fail "Python queue histories: ${#queue_histories[@]} written, expected at least 287"
 "$(sce_codegen_require "$SCE_REPO_ROOT")" check-queue-history "${queue_histories[@]}" \
     || sce_gate_fail "Python queue histories are not linearizable"
+
+# The broadcast-log kind's Python arm (ADR 0062): the runtime's properties and
+# the stress runs, which write their histories into the directory
+# SCE_BROADCAST_HISTORY_DIR names, emptied first for the reason above. One log
+# under one lock, so the histories are judged against the sequential log of
+# the retention each run was built with.
+BROADCAST_HISTORIES="$SCE_REPO_ROOT/target/broadcast-histories/python"
+rm -rf "$BROADCAST_HISTORIES"
+mkdir -p "$BROADCAST_HISTORIES"
+( cd backends/python/forge-runtime && SCE_BROADCAST_HISTORY_DIR="$BROADCAST_HISTORIES" \
+    PYTHONPATH=tests python3 -m unittest \
+    tests.test_broadcast_log_runtime tests.test_broadcast_log_history ) \
+    || sce_gate_fail "Python forge broadcast log"
+# 5 shapes recorded 10 times. A run that recorded fewer would pass the judgement
+# below, so the count is held. Linearizability is judged by the command every
+# backend's histories are judged by, not by a checker of the arm's own.
+shopt -s nullglob
+broadcast_histories=("$BROADCAST_HISTORIES"/*.json)
+shopt -u nullglob
+(( ${#broadcast_histories[@]} >= 50 )) \
+    || sce_gate_fail "Python broadcast histories: ${#broadcast_histories[@]} written, expected at least 50"
+"$(sce_codegen_require "$SCE_REPO_ROOT")" check-broadcast-history "${broadcast_histories[@]}" \
+    || sce_gate_fail "Python broadcast histories are not linearizable"
