@@ -17,6 +17,11 @@
 #     same operations in any order are told the same. TLC must find no violation.
 #   * SharedListConflicts_arrival.cfg: the rule before that review (a conflicting operation is refused
 #     at the door and the device frozen from there). TLC must find the divergence the review found.
+#   * BroadcastLog.cfg, BroadcastLog_r1.cfg (docs/formal/BroadcastLog.tla, ADR 0062): the bounded log's
+#     protocol, retention 2 and 1, one producer and two readers. TLC must find no violation.
+#   * BroadcastLog_without_extra_slot.cfg, BroadcastLog_without_revalidation.cfg: the ring with only R
+#     slots, and the read without its second stamp load. TLC must find an answer the specification does
+#     not give (a Lagged that skipped nothing; an Item made of two entries).
 #
 # Needs Java 11 or later. TLC is fetched once into ~/.cache/sce-formal and checked against a pinned
 # SHA-256, or taken from $TLA2TOOLS.
@@ -82,4 +87,24 @@ if [[ "$status" -ne 12 ]]; then
     echo "check.sh: expected TLC to report an invariant violation (exit 12), got $status" >&2
     exit 1
 fi
+for config in BroadcastLog BroadcastLog_r1; do
+    echo "== $config: the bounded log of ADR 0062 as designed, no violation expected"
+    if ! tlc "$config.cfg" BroadcastLog; then
+        echo "check.sh: TLC found a violation of the bounded log's protocol ($config)" >&2
+        exit 1
+    fi
+done
+
+for config in BroadcastLog_without_extra_slot BroadcastLog_without_revalidation; do
+    echo "== $config: a design the ADR rejects, a violation expected"
+    set +e
+    tlc "$config.cfg" BroadcastLog > "$config.log" 2>&1
+    status=$?
+    set -e
+    tail -n 25 "$config.log"
+    if [[ "$status" -ne 12 ]]; then
+        echo "check.sh: expected TLC to report an invariant violation (exit 12) for $config, got $status" >&2
+        exit 1
+    fi
+done
 echo "check.sh: the models hold with the rules the code applies and fail without them"

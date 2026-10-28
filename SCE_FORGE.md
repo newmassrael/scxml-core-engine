@@ -2742,6 +2742,8 @@ Practical test: write a sample SCXML for the candidate kind and identify what is
 
 The kind must serve **at least three independent application domains** drawn from SCE's plausible consumer set. Single-domain kinds expand the catalog without expanding its utility — they belong in a consumer-side library, not in Forge.
 
+The count is of **domains the kind's contract serves**, not of consumers that have asked. A kind that one consumer has requested is admitted when its contract is domain-neutral (it names nothing of that consumer) and serves three or more of the domains below; a kind whose contract is shaped by its one consumer is a single-domain kind and fails (owner decision, 2026-10-28).
+
 Reference domains (non-exhaustive): embedded telemetry, network protocols, game networking, GUI / scene state, MMORPG data plane, sensor pipelines, build / CI systems, ML inference, robotics control.
 
 | Example | Cross-domain reuse | Reasoning |
