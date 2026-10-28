@@ -4,8 +4,7 @@
   owner's answers", below), under the standing rule: the most long-term correct structure, cost
   ignored; never a sentinel number and never a companion flag that admits impossible states. Steps
   1 to 6 are implemented, and step 7 but for the restore's refusal of a `null` saved before a
-  widening (its "as built" note), and steps 8, 9, 11, 12, 13 and 14; the others follow in the
-  order section 9 gives. Section 8 and step 12 amended the same day by that
+  widening (its "as built" note), and steps 8 to 14. Section 8 and step 12 amended the same day by that
   rule: a codec
   document declares its format, and format 1 is refused for good (step 12 is implemented).
 - Date: 2026-10-21
