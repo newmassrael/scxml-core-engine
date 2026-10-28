@@ -8,6 +8,7 @@ package codec_chain_has_marker
 
 import (
 	"github.com/newmassrael/sce-forge-runtime/codec"
+	"github.com/newmassrael/sce-forge-runtime/optional"
 	"example.com/sce-forge/codec_zenoh_ext_entry"
 	"example.com/sce-forge/codec_chain_has_marker_slice"
 )
@@ -15,11 +16,11 @@ import (
 // CodecChainHasMarker represents the codec frame layout.
 type CodecChainHasMarker struct {
 	Header uint8
-	Extensions []codec_zenoh_ext_entry.CodecZenohExtEntry
-	PayloadLen *uint64
-	Payload []byte
-	SliceCount *uint32
-	Slices []codec_chain_has_marker_slice.CodecChainHasMarkerSlice
+	Extensions optional.Of[[]codec_zenoh_ext_entry.CodecZenohExtEntry]
+	PayloadLen optional.Of[uint64]
+	Payload optional.Of[[]byte]
+	SliceCount optional.Of[uint32]
+	Slices optional.Of[[]codec_chain_has_marker_slice.CodecChainHasMarkerSlice]
 }
 
 // DecodeCodecChainHasMarker decodes the next frame from cursor.
@@ -32,7 +33,7 @@ func DecodeCodecChainHasMarker(cursor *codec.SceCursor) (*CodecChainHasMarker, e
 	// The positional `raw[byte_off]` path is valid only when every
 	// field's absolute offset is fixed at codegen time; this branch
 	// handles every codec where it is not — present-if-gated fields
-	// (runtime presence; `*T` / nil `[]byte`), VLE / repeat / TLV-chain /
+	// (runtime presence, held by the runtime's optional type), VLE / repeat / TLV-chain /
 	// embed fields (runtime width), string fields (UTF-8 decode), and a
 	// fixed field after a variable-length payload (offset depends on the
 	// payload length). Each field reads its own bytes from the cursor and
@@ -50,9 +51,9 @@ func DecodeCodecChainHasMarker(cursor *codec.SceCursor) (*CodecChainHasMarker, e
 			return nil, err
 		}
 	}
-	var Extensions []codec_zenoh_ext_entry.CodecZenohExtEntry
+	var Extensions optional.Of[[]codec_zenoh_ext_entry.CodecZenohExtEntry]
 	if (Header & 0x80) != 0 {
-		Extensions = make([]codec_zenoh_ext_entry.CodecZenohExtEntry, 0, 4)
+		_list := make([]codec_zenoh_ext_entry.CodecZenohExtEntry, 0, 4)
 		_more := false
 		for _i := 0; _i < int(4); _i++ {
 			if cursor.Remaining() == 0 {
@@ -63,7 +64,7 @@ func DecodeCodecChainHasMarker(cursor *codec.SceCursor) (*CodecChainHasMarker, e
 				return nil, err
 			}
 			_more = _elem.Z()
-			Extensions = append(Extensions, *_elem)
+			_list = append(_list, *_elem)
 			if !_more {
 				break
 			}
@@ -74,49 +75,53 @@ func DecodeCodecChainHasMarker(cursor *codec.SceCursor) (*CodecChainHasMarker, e
 		if _more {
 			return nil, codec.ErrTlvChainOverflow
 		}
+		Extensions = optional.Some(_list)
 	}
 	_has_Extensions_18 := false
-	for _, _e := range Extensions {
-		if (uint64(_e.Header) & 127) == 18 {
-			_has_Extensions_18 = true
-			break
+	if Extensions.IsPresent() {
+		for _, _e := range Extensions.Proven() {
+			if (uint64(_e.Header) & 127) == 18 {
+				_has_Extensions_18 = true
+				break
+			}
 		}
 	}
-	var PayloadLen *uint64
+	var PayloadLen optional.Of[uint64]
 	if !_has_Extensions_18 {
 		_v, err := cursor.ReadVLEU64()
 	if err != nil { return nil, err }
-		PayloadLen = &_v
+		PayloadLen = optional.Some(_v)
 	}
-	var Payload []byte
+	var Payload optional.Of[[]byte]
 	if !_has_Extensions_18 {
-		_n := int(*PayloadLen)
+		_n := int(PayloadLen.Proven())
 		raw, err := cursor.PeekSlice(_n)
 		if err != nil {
 			return nil, err
 		}
-		Payload = append([]byte(nil), raw...)
+		Payload = optional.Some(append([]byte(nil), raw...))
 		if err := cursor.Advance(_n); err != nil {
 			return nil, err
 		}
 	}
-	var SliceCount *uint32
+	var SliceCount optional.Of[uint32]
 	if _has_Extensions_18 {
 		_v, err := cursor.ReadVLEU32()
 	if err != nil { return nil, err }
-		SliceCount = &_v
+		SliceCount = optional.Some(_v)
 	}
-	var Slices []codec_chain_has_marker_slice.CodecChainHasMarkerSlice
+	var Slices optional.Of[[]codec_chain_has_marker_slice.CodecChainHasMarkerSlice]
 	if _has_Extensions_18 {
-		_n := *SliceCount
-		Slices = make([]codec_chain_has_marker_slice.CodecChainHasMarkerSlice, 0, _n)
+		_n := SliceCount.Proven()
+		_list := make([]codec_chain_has_marker_slice.CodecChainHasMarkerSlice, 0, _n)
 		for _i := 0; _i < int(_n); _i++ {
 			_elem, err := codec_chain_has_marker_slice.DecodeCodecChainHasMarkerSlice(cursor)
 			if err != nil {
 				return nil, err
 			}
-			Slices = append(Slices, *_elem)
+			_list = append(_list, *_elem)
 		}
+		Slices = optional.Some(_list)
 	}
 	return &CodecChainHasMarker{
 		Header: Header,
@@ -162,38 +167,40 @@ func (s *CodecChainHasMarker) SetE(v bool) {
 // sinks (e.g. BytesSink) are effectively infallible.
 func (s *CodecChainHasMarker) Encode(w codec.SceSink) error {
 	_has_Extensions_18 := false
-	for _, _e := range s.Extensions {
-		if (uint64(_e.Header) & 127) == 18 {
-			_has_Extensions_18 = true
-			break
+	if s.Extensions.IsPresent() {
+		for _, _e := range s.Extensions.Proven() {
+			if (uint64(_e.Header) & 127) == 18 {
+				_has_Extensions_18 = true
+				break
+			}
 		}
 	}
 	if !_has_Extensions_18 {
-		if s.PayloadLen == nil {
+		if !s.PayloadLen.IsPresent() {
 			return codec.ErrPresentIfMismatch
 		}
-	} else if s.PayloadLen != nil {
+	} else if s.PayloadLen.IsPresent() {
 		return codec.ErrPresentIfMismatch
 	}
 	if !_has_Extensions_18 {
-		if s.Payload == nil {
+		if !s.Payload.IsPresent() {
 			return codec.ErrPresentIfMismatch
 		}
-	} else if s.Payload != nil {
+	} else if s.Payload.IsPresent() {
 		return codec.ErrPresentIfMismatch
 	}
 	if _has_Extensions_18 {
-		if s.SliceCount == nil {
+		if !s.SliceCount.IsPresent() {
 			return codec.ErrPresentIfMismatch
 		}
-	} else if s.SliceCount != nil {
+	} else if s.SliceCount.IsPresent() {
 		return codec.ErrPresentIfMismatch
 	}
 	if _has_Extensions_18 {
-		if s.Slices == nil {
+		if !s.Slices.IsPresent() {
 			return codec.ErrPresentIfMismatch
 		}
-	} else if s.Slices != nil {
+	} else if s.Slices.IsPresent() {
 		return codec.ErrPresentIfMismatch
 	}
 	// Streaming cursor encode (SSOT selection: `needs_streaming`).
@@ -207,31 +214,35 @@ func (s *CodecChainHasMarker) Encode(w codec.SceSink) error {
 	if err := w.WriteBytes([]byte{ s.Header }); err != nil {
 		return err
 	}
-	for _i := range s.Extensions {
-		if err := s.Extensions[_i].Encode(w); err != nil {
-			return err
+	if s.Extensions.IsPresent() {
+		_list := s.Extensions.Proven()
+		for _i := range _list {
+			if err := _list[_i].Encode(w); err != nil {
+				return err
+			}
 		}
 	}
-	if s.PayloadLen != nil {
-		_v := *s.PayloadLen
+	if s.PayloadLen.IsPresent() {
+		_v := s.PayloadLen.Proven()
 	if err := codec.WriteVLEU64(w, uint64(_v)); err != nil {
 		return err
 	}
 	}
-	if s.Payload != nil {
-		if err := w.WriteBytes(s.Payload); err != nil {
+	if s.Payload.IsPresent() {
+		if err := w.WriteBytes(s.Payload.Proven()); err != nil {
 			return err
 		}
 	}
-	if s.SliceCount != nil {
-		_v := *s.SliceCount
+	if s.SliceCount.IsPresent() {
+		_v := s.SliceCount.Proven()
 	if err := codec.WriteVLEU32(w, uint32(_v)); err != nil {
 		return err
 	}
 	}
-	if s.Slices != nil {
-		for _i := range s.Slices {
-			if err := s.Slices[_i].Encode(w); err != nil {
+	if s.Slices.IsPresent() {
+		_list := s.Slices.Proven()
+		for _i := range _list {
+			if err := _list[_i].Encode(w); err != nil {
 				return err
 			}
 		}

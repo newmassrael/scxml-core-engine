@@ -8,6 +8,7 @@ package codec_zenoh_init_body
 
 import (
 	"github.com/newmassrael/sce-forge-runtime/codec"
+	"github.com/newmassrael/sce-forge-runtime/optional"
 )
 
 // CodecZenohInitBody represents the codec frame layout.
@@ -15,10 +16,10 @@ type CodecZenohInitBody struct {
 	Version uint8
 	Cbyte uint8
 	Zid []byte
-	SnRes *uint8
-	BatchSize *uint16
-	CookieLen *uint64
-	Cookie []byte
+	SnRes optional.Of[uint8]
+	BatchSize optional.Of[uint16]
+	CookieLen optional.Of[uint64]
+	Cookie optional.Of[[]byte]
 }
 
 // DecodeCodecZenohInitBody decodes the next frame from cursor.
@@ -31,7 +32,7 @@ func DecodeCodecZenohInitBody(cursor *codec.SceCursor, S byte, A byte) (*CodecZe
 	// The positional `raw[byte_off]` path is valid only when every
 	// field's absolute offset is fixed at codegen time; this branch
 	// handles every codec where it is not — present-if-gated fields
-	// (runtime presence; `*T` / nil `[]byte`), VLE / repeat / TLV-chain /
+	// (runtime presence, held by the runtime's optional type), VLE / repeat / TLV-chain /
 	// embed fields (runtime width), string fields (UTF-8 decode), and a
 	// fixed field after a variable-length payload (offset depends on the
 	// payload length). Each field reads its own bytes from the cursor and
@@ -72,7 +73,7 @@ func DecodeCodecZenohInitBody(cursor *codec.SceCursor, S byte, A byte) (*CodecZe
 			return nil, err
 		}
 	}
-	var SnRes *uint8
+	var SnRes optional.Of[uint8]
 	if (S & 0x01) != 0 {
 		raw, err := cursor.PeekSlice(1)
 		if err != nil {
@@ -82,9 +83,9 @@ func DecodeCodecZenohInitBody(cursor *codec.SceCursor, S byte, A byte) (*CodecZe
 		if err := cursor.Advance(1); err != nil {
 			return nil, err
 		}
-		SnRes = &_v
+		SnRes = optional.Some(_v)
 	}
-	var BatchSize *uint16
+	var BatchSize optional.Of[uint16]
 	if (S & 0x01) != 0 {
 		raw, err := cursor.PeekSlice(2)
 		if err != nil {
@@ -94,22 +95,22 @@ func DecodeCodecZenohInitBody(cursor *codec.SceCursor, S byte, A byte) (*CodecZe
 		if err := cursor.Advance(2); err != nil {
 			return nil, err
 		}
-		BatchSize = &_v
+		BatchSize = optional.Some(_v)
 	}
-	var CookieLen *uint64
+	var CookieLen optional.Of[uint64]
 	if (A & 0x01) != 0 {
 		_v, err := cursor.ReadVLEU64()
 	if err != nil { return nil, err }
-		CookieLen = &_v
+		CookieLen = optional.Some(_v)
 	}
-	var Cookie []byte
+	var Cookie optional.Of[[]byte]
 	if (A & 0x01) != 0 {
-		_n := int(*CookieLen)
+		_n := int(CookieLen.Proven())
 		raw, err := cursor.PeekSlice(_n)
 		if err != nil {
 			return nil, err
 		}
-		Cookie = append([]byte(nil), raw...)
+		Cookie = optional.Some(append([]byte(nil), raw...))
 		if err := cursor.Advance(_n); err != nil {
 			return nil, err
 		}
@@ -173,14 +174,14 @@ func (s *CodecZenohInitBody) Encode(w codec.SceSink, S byte, A byte) error {
 	if err := w.WriteBytes(s.Zid); err != nil {
 		return err
 	}
-	if s.SnRes != nil {
-		_v := *s.SnRes
+	if s.SnRes.IsPresent() {
+		_v := s.SnRes.Proven()
 		if err := w.WriteBytes([]byte{ _v }); err != nil {
 			return err
 		}
 	}
-	if s.BatchSize != nil {
-		_v := *s.BatchSize
+	if s.BatchSize.IsPresent() {
+		_v := s.BatchSize.Proven()
 		if err := w.WriteBytes([]byte{ byte(_v & 0xFF) }); err != nil {
 			return err
 		}
@@ -188,14 +189,14 @@ func (s *CodecZenohInitBody) Encode(w codec.SceSink, S byte, A byte) error {
 			return err
 		}
 	}
-	if s.CookieLen != nil {
-		_v := *s.CookieLen
+	if s.CookieLen.IsPresent() {
+		_v := s.CookieLen.Proven()
 	if err := codec.WriteVLEU64(w, uint64(_v)); err != nil {
 		return err
 	}
 	}
-	if s.Cookie != nil {
-		if err := w.WriteBytes(s.Cookie); err != nil {
+	if s.Cookie.IsPresent() {
+		if err := w.WriteBytes(s.Cookie.Proven()); err != nil {
 			return err
 		}
 	}

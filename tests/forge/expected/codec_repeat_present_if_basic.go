@@ -8,14 +8,15 @@ package codec_repeat_present_if_basic
 
 import (
 	"github.com/newmassrael/sce-forge-runtime/codec"
+	"github.com/newmassrael/sce-forge-runtime/optional"
 	"example.com/sce-forge/codec_repeat_elem"
 )
 
 // CodecRepeatPresentIfBasic represents the codec frame layout.
 type CodecRepeatPresentIfBasic struct {
 	Carrier uint8
-	NumElems *uint8
-	Elems []codec_repeat_elem.CodecRepeatElem
+	NumElems optional.Of[uint8]
+	Elems optional.Of[[]codec_repeat_elem.CodecRepeatElem]
 }
 
 // DecodeCodecRepeatPresentIfBasic decodes the next frame from cursor.
@@ -28,7 +29,7 @@ func DecodeCodecRepeatPresentIfBasic(cursor *codec.SceCursor) (*CodecRepeatPrese
 	// The positional `raw[byte_off]` path is valid only when every
 	// field's absolute offset is fixed at codegen time; this branch
 	// handles every codec where it is not — present-if-gated fields
-	// (runtime presence; `*T` / nil `[]byte`), VLE / repeat / TLV-chain /
+	// (runtime presence, held by the runtime's optional type), VLE / repeat / TLV-chain /
 	// embed fields (runtime width), string fields (UTF-8 decode), and a
 	// fixed field after a variable-length payload (offset depends on the
 	// payload length). Each field reads its own bytes from the cursor and
@@ -46,7 +47,7 @@ func DecodeCodecRepeatPresentIfBasic(cursor *codec.SceCursor) (*CodecRepeatPrese
 			return nil, err
 		}
 	}
-	var NumElems *uint8
+	var NumElems optional.Of[uint8]
 	if (Carrier & 0x01) != 0 {
 		raw, err := cursor.PeekSlice(1)
 		if err != nil {
@@ -56,19 +57,20 @@ func DecodeCodecRepeatPresentIfBasic(cursor *codec.SceCursor) (*CodecRepeatPrese
 		if err := cursor.Advance(1); err != nil {
 			return nil, err
 		}
-		NumElems = &_v
+		NumElems = optional.Some(_v)
 	}
-	var Elems []codec_repeat_elem.CodecRepeatElem
+	var Elems optional.Of[[]codec_repeat_elem.CodecRepeatElem]
 	if (Carrier & 0x01) != 0 {
-		_n := *NumElems
-		Elems = make([]codec_repeat_elem.CodecRepeatElem, 0, _n)
+		_n := NumElems.Proven()
+		_list := make([]codec_repeat_elem.CodecRepeatElem, 0, _n)
 		for _i := 0; _i < int(_n); _i++ {
 			_elem, err := codec_repeat_elem.DecodeCodecRepeatElem(cursor)
 			if err != nil {
 				return nil, err
 			}
-			Elems = append(Elems, *_elem)
+			_list = append(_list, *_elem)
 		}
+		Elems = optional.Some(_list)
 	}
 	return &CodecRepeatPresentIfBasic{
 		Carrier: Carrier,
@@ -111,15 +113,16 @@ func (s *CodecRepeatPresentIfBasic) Encode(w codec.SceSink) error {
 	if err := w.WriteBytes([]byte{ s.Carrier }); err != nil {
 		return err
 	}
-	if s.NumElems != nil {
-		_v := *s.NumElems
+	if s.NumElems.IsPresent() {
+		_v := s.NumElems.Proven()
 		if err := w.WriteBytes([]byte{ _v }); err != nil {
 			return err
 		}
 	}
-	if s.Elems != nil {
-		for _i := range s.Elems {
-			if err := s.Elems[_i].Encode(w); err != nil {
+	if s.Elems.IsPresent() {
+		_list := s.Elems.Proven()
+		for _i := range _list {
+			if err := _list[_i].Encode(w); err != nil {
 				return err
 			}
 		}

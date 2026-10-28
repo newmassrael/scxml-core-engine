@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 09d8fec62ddcc806d17c4e1da241b802dbe4f5317b3bd415a705b2ad99d82f3e
+// source-hash: 8b4828d778fc1da05444ac6a052eb44c820b7a80e1f4075fc52bc6e97e8a070a
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -1287,7 +1287,7 @@ func (p *StaticRecordEnumPolicy) ExecuteTransitionContent(source StaticRecordEnu
 			func() {
 
 
-	if (func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.At(&sceFailure, p.vSeen[:], int64(0)).layout; if sceFailure.Failed() { return true }; p.vShown.layout = sceValue; return false }()) || (func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.At(&sceFailure, p.vSeen[:], int64(0)).zoom; if sceFailure.Failed() { return true }; p.vShown.zoom = sceValue; return false }()) {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.At(&sceFailure, p.vSeen[:], int64(0)); if sceFailure.Failed() { return true }; p.vShown = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1298,7 +1298,7 @@ func (p *StaticRecordEnumPolicy) ExecuteTransitionContent(source StaticRecordEnu
 			func() {
 
 
-	if (func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AtU(&sceFailure, p.vSeen[:], uint64(scealgorithm.SubUint32(&sceFailure, uint32(len(p.vSeen)), 1))).layout; if sceFailure.Failed() { return true }; p.vShown.layout = sceValue; return false }()) || (func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AtU(&sceFailure, p.vSeen[:], uint64(scealgorithm.SubUint32(&sceFailure, uint32(len(p.vSeen)), 1))).zoom; if sceFailure.Failed() { return true }; p.vShown.zoom = sceValue; return false }()) {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.At(&sceFailure, p.vSeen[:], int64(scealgorithm.SubUint32(&sceFailure, uint32(len(p.vSeen)), 1))); if sceFailure.Failed() { return true }; p.vShown = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

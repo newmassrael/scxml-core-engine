@@ -8,13 +8,14 @@ package codec_zenoh_decl_ext_keyexpr_inner
 
 import (
 	"github.com/newmassrael/sce-forge-runtime/codec"
+	"github.com/newmassrael/sce-forge-runtime/optional"
 )
 
 // CodecZenohDeclExtKeyexprInner represents the codec frame layout.
 type CodecZenohDeclExtKeyexprInner struct {
 	InnerHeader uint8
 	Id uint64
-	Suffix []byte
+	Suffix optional.Of[[]byte]
 }
 
 // DecodeCodecZenohDeclExtKeyexprInner decodes the next frame from cursor.
@@ -27,7 +28,7 @@ func DecodeCodecZenohDeclExtKeyexprInner(cursor *codec.SceCursor) (*CodecZenohDe
 	// The positional `raw[byte_off]` path is valid only when every
 	// field's absolute offset is fixed at codegen time; this branch
 	// handles every codec where it is not — present-if-gated fields
-	// (runtime presence; `*T` / nil `[]byte`), VLE / repeat / TLV-chain /
+	// (runtime presence, held by the runtime's optional type), VLE / repeat / TLV-chain /
 	// embed fields (runtime width), string fields (UTF-8 decode), and a
 	// fixed field after a variable-length payload (offset depends on the
 	// payload length). Each field reads its own bytes from the cursor and
@@ -47,14 +48,14 @@ func DecodeCodecZenohDeclExtKeyexprInner(cursor *codec.SceCursor) (*CodecZenohDe
 	}
 	Id, err := cursor.ReadVLEU64()
 	if err != nil { return nil, err }
-	var Suffix []byte
+	var Suffix optional.Of[[]byte]
 	if (InnerHeader & 0x01) != 0 {
 		_n := cursor.Remaining()
 		raw, err := cursor.PeekSlice(_n)
 		if err != nil {
 			return nil, err
 		}
-		Suffix = append([]byte(nil), raw...)
+		Suffix = optional.Some(append([]byte(nil), raw...))
 		if err := cursor.Advance(_n); err != nil {
 			return nil, err
 		}
@@ -115,8 +116,8 @@ func (s *CodecZenohDeclExtKeyexprInner) Encode(w codec.SceSink) error {
 	if err := codec.WriteVLEU64(w, uint64(s.Id)); err != nil {
 		return err
 	}
-	if s.Suffix != nil {
-		if err := w.WriteBytes(s.Suffix); err != nil {
+	if s.Suffix.IsPresent() {
+		if err := w.WriteBytes(s.Suffix.Proven()); err != nil {
 			return err
 		}
 	}

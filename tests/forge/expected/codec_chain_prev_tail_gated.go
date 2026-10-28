@@ -8,13 +8,14 @@ package codec_chain_prev_tail_gated
 
 import (
 	"github.com/newmassrael/sce-forge-runtime/codec"
+	"github.com/newmassrael/sce-forge-runtime/optional"
 	"example.com/sce-forge/codec_chain_prev_entry"
 )
 
 // CodecChainPrevTailGated represents the codec frame layout.
 type CodecChainPrevTailGated struct {
 	Head uint8
-	Entries []codec_chain_prev_entry.CodecChainPrevEntry
+	Entries optional.Of[[]codec_chain_prev_entry.CodecChainPrevEntry]
 }
 
 // DecodeCodecChainPrevTailGated decodes the next frame from cursor.
@@ -27,7 +28,7 @@ func DecodeCodecChainPrevTailGated(cursor *codec.SceCursor) (*CodecChainPrevTail
 	// The positional `raw[byte_off]` path is valid only when every
 	// field's absolute offset is fixed at codegen time; this branch
 	// handles every codec where it is not — present-if-gated fields
-	// (runtime presence; `*T` / nil `[]byte`), VLE / repeat / TLV-chain /
+	// (runtime presence, held by the runtime's optional type), VLE / repeat / TLV-chain /
 	// embed fields (runtime width), string fields (UTF-8 decode), and a
 	// fixed field after a variable-length payload (offset depends on the
 	// payload length). Each field reads its own bytes from the cursor and
@@ -45,9 +46,9 @@ func DecodeCodecChainPrevTailGated(cursor *codec.SceCursor) (*CodecChainPrevTail
 			return nil, err
 		}
 	}
-	var Entries []codec_chain_prev_entry.CodecChainPrevEntry
+	var Entries optional.Of[[]codec_chain_prev_entry.CodecChainPrevEntry]
 	if (Head & 0x02) != 0 {
-		Entries = make([]codec_chain_prev_entry.CodecChainPrevEntry, 0, 4)
+		_list := make([]codec_chain_prev_entry.CodecChainPrevEntry, 0, 4)
 		var _prev_entries_after_marker byte
 		for _i := 0; _i < int(4); _i++ {
 			if cursor.Remaining() == 0 {
@@ -61,11 +62,12 @@ func DecodeCodecChainPrevTailGated(cursor *codec.SceCursor) (*CodecChainPrevTail
 			if (uint64(_elem.Header) & 127) == 4 {
 				_prev_entries_after_marker = 1
 			}
-			Entries = append(Entries, *_elem)
+			_list = append(_list, *_elem)
 		}
 		if cursor.Remaining() > 0 {
 			return nil, codec.ErrTlvChainOverflow
 		}
+		Entries = optional.Some(_list)
 	}
 	return &CodecChainPrevTailGated{
 		Head: Head,
@@ -119,14 +121,17 @@ func (s *CodecChainPrevTailGated) Encode(w codec.SceSink) error {
 	if err := w.WriteBytes([]byte{ s.Head }); err != nil {
 		return err
 	}
-	var _prev_entries_after_marker byte
-	for _i := range s.Entries {
-		if err := s.Entries[_i].Encode(w, _prev_entries_after_marker, byte((s.Head >> 0) & 0x1)); err != nil {
-			return err
-		}
-		_prev_entries_after_marker = 0
-		if (uint64(s.Entries[_i].Header) & 127) == 4 {
-			_prev_entries_after_marker = 1
+	if s.Entries.IsPresent() {
+		_list := s.Entries.Proven()
+		var _prev_entries_after_marker byte
+		for _i := range _list {
+			if err := _list[_i].Encode(w, _prev_entries_after_marker, byte((s.Head >> 0) & 0x1)); err != nil {
+				return err
+			}
+			_prev_entries_after_marker = 0
+			if (uint64(_list[_i].Header) & 127) == 4 {
+				_prev_entries_after_marker = 1
+			}
 		}
 	}
 	return nil

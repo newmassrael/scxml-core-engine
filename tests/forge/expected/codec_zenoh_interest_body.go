@@ -8,13 +8,14 @@ package codec_zenoh_interest_body
 
 import (
 	"github.com/newmassrael/sce-forge-runtime/codec"
+	"github.com/newmassrael/sce-forge-runtime/optional"
 	"example.com/sce-forge/codec_zenoh_wireexpr"
 )
 
 // CodecZenohInterestBody represents the codec frame layout.
 type CodecZenohInterestBody struct {
 	Header uint8
-	Keyexpr *codec_zenoh_wireexpr.CodecZenohWireexpr
+	Keyexpr optional.Of[codec_zenoh_wireexpr.CodecZenohWireexpr]
 }
 
 // DecodeCodecZenohInterestBody decodes the next frame from cursor.
@@ -27,7 +28,7 @@ func DecodeCodecZenohInterestBody(cursor *codec.SceCursor) (*CodecZenohInterestB
 	// The positional `raw[byte_off]` path is valid only when every
 	// field's absolute offset is fixed at codegen time; this branch
 	// handles every codec where it is not — present-if-gated fields
-	// (runtime presence; `*T` / nil `[]byte`), VLE / repeat / TLV-chain /
+	// (runtime presence, held by the runtime's optional type), VLE / repeat / TLV-chain /
 	// embed fields (runtime width), string fields (UTF-8 decode), and a
 	// fixed field after a variable-length payload (offset depends on the
 	// payload length). Each field reads its own bytes from the cursor and
@@ -45,13 +46,13 @@ func DecodeCodecZenohInterestBody(cursor *codec.SceCursor) (*CodecZenohInterestB
 			return nil, err
 		}
 	}
-	var Keyexpr *codec_zenoh_wireexpr.CodecZenohWireexpr
+	var Keyexpr optional.Of[codec_zenoh_wireexpr.CodecZenohWireexpr]
 	if (Header & 0x10) != 0 {
 		_emb, err := codec_zenoh_wireexpr.DecodeCodecZenohWireexpr(cursor, byte((Header >> 5) & 0x1))
 		if err != nil {
 			return nil, err
 		}
-		Keyexpr = _emb
+		Keyexpr = optional.Some(*_emb)
 	}
 	return &CodecZenohInterestBody{
 		Header: Header,
@@ -177,8 +178,9 @@ func (s *CodecZenohInterestBody) Encode(w codec.SceSink) error {
 	if err := w.WriteBytes([]byte{ s.Header }); err != nil {
 		return err
 	}
-	if s.Keyexpr != nil {
-		if err := s.Keyexpr.Encode(w, byte((s.Header >> 5) & 0x1)); err != nil {
+	if s.Keyexpr.IsPresent() {
+		_body := s.Keyexpr.Proven()
+		if err := _body.Encode(w, byte((s.Header >> 5) & 0x1)); err != nil {
 			return err
 		}
 	}

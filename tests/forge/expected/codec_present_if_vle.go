@@ -8,12 +8,13 @@ package codec_present_if_vle
 
 import (
 	"github.com/newmassrael/sce-forge-runtime/codec"
+	"github.com/newmassrael/sce-forge-runtime/optional"
 )
 
 // CodecPresentIfVle represents the codec frame layout.
 type CodecPresentIfVle struct {
 	Flags uint8
-	OptionalId *uint64
+	OptionalId optional.Of[uint64]
 }
 
 // DecodeCodecPresentIfVle decodes the next frame from cursor.
@@ -26,7 +27,7 @@ func DecodeCodecPresentIfVle(cursor *codec.SceCursor) (*CodecPresentIfVle, error
 	// The positional `raw[byte_off]` path is valid only when every
 	// field's absolute offset is fixed at codegen time; this branch
 	// handles every codec where it is not — present-if-gated fields
-	// (runtime presence; `*T` / nil `[]byte`), VLE / repeat / TLV-chain /
+	// (runtime presence, held by the runtime's optional type), VLE / repeat / TLV-chain /
 	// embed fields (runtime width), string fields (UTF-8 decode), and a
 	// fixed field after a variable-length payload (offset depends on the
 	// payload length). Each field reads its own bytes from the cursor and
@@ -44,11 +45,11 @@ func DecodeCodecPresentIfVle(cursor *codec.SceCursor) (*CodecPresentIfVle, error
 			return nil, err
 		}
 	}
-	var OptionalId *uint64
+	var OptionalId optional.Of[uint64]
 	if (Flags & 0x01) != 0 {
 		_v, err := cursor.ReadVLEU64()
 	if err != nil { return nil, err }
-		OptionalId = &_v
+		OptionalId = optional.Some(_v)
 	}
 	return &CodecPresentIfVle{
 		Flags: Flags,
@@ -90,8 +91,8 @@ func (s *CodecPresentIfVle) Encode(w codec.SceSink) error {
 	if err := w.WriteBytes([]byte{ s.Flags }); err != nil {
 		return err
 	}
-	if s.OptionalId != nil {
-		_v := *s.OptionalId
+	if s.OptionalId.IsPresent() {
+		_v := s.OptionalId.Proven()
 	if err := codec.WriteVLEU64(w, uint64(_v)); err != nil {
 		return err
 	}

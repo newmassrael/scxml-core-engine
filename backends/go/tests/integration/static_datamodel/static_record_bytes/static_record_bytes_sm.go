@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 09d8fec62ddcc806d17c4e1da241b802dbe4f5317b3bd415a705b2ad99d82f3e
+// source-hash: 8b4828d778fc1da05444ac6a052eb44c820b7a80e1f4075fc52bc6e97e8a070a
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -1392,7 +1392,7 @@ func (p *StaticRecordBytesPolicy) ExecuteTransitionContent(source StaticRecordBy
 			func() {
 
 
-	if (func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.At(&sceFailure, p.vFrames[:], int64(0)).sensor; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticRecordBytesEventErrorExecution, "<assign location='last.sensor'>: an integer operation overflowed or failed")); return true }; p.vLast.sensor = sceValue; return false }()) || (func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.BoundedBytes(&sceFailure, scealgorithm.At(&sceFailure, p.vFrames[:], int64(0)).frame, 8); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticRecordBytesEventErrorExecution, "<assign location='last.frame'>: an integer operation overflowed or failed")); return true }; p.vLast.frame = sceValue; return false }()) {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.At(&sceFailure, p.vFrames[:], int64(0)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticRecordBytesEventErrorExecution, "<assign location='last'>: an integer operation overflowed or failed")); return true }; p.vLast = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1403,7 +1403,7 @@ func (p *StaticRecordBytesPolicy) ExecuteTransitionContent(source StaticRecordBy
 			func() {
 
 
-	if (func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AtU(&sceFailure, p.vFrames[:], uint64(scealgorithm.SubUint32(&sceFailure, uint32(len(p.vFrames)), 1))).sensor; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticRecordBytesEventErrorExecution, "<assign location='last.sensor'>: an integer operation overflowed or failed")); return true }; p.vLast.sensor = sceValue; return false }()) || (func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.BoundedBytes(&sceFailure, scealgorithm.AtU(&sceFailure, p.vFrames[:], uint64(scealgorithm.SubUint32(&sceFailure, uint32(len(p.vFrames)), 1))).frame, 8); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticRecordBytesEventErrorExecution, "<assign location='last.frame'>: an integer operation overflowed or failed")); return true }; p.vLast.frame = sceValue; return false }()) {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.At(&sceFailure, p.vFrames[:], int64(scealgorithm.SubUint32(&sceFailure, uint32(len(p.vFrames)), 1))); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticRecordBytesEventErrorExecution, "<assign location='last'>: an integer operation overflowed or failed")); return true }; p.vLast = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

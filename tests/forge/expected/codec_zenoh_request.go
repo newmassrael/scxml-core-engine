@@ -8,6 +8,7 @@ package codec_zenoh_request
 
 import (
 	"github.com/newmassrael/sce-forge-runtime/codec"
+	"github.com/newmassrael/sce-forge-runtime/optional"
 	"example.com/sce-forge/codec_zenoh_wireexpr"
 	"example.com/sce-forge/codec_zenoh_ext_entry"
 	"example.com/sce-forge/codec_zenoh_msg_put"
@@ -39,7 +40,7 @@ type CodecZenohRequest struct {
 	Header uint8
 	Rid uint64
 	Keyexpr codec_zenoh_wireexpr.CodecZenohWireexpr
-	Extensions []codec_zenoh_ext_entry.CodecZenohExtEntry
+	Extensions optional.Of[[]codec_zenoh_ext_entry.CodecZenohExtEntry]
 	Body CodecZenohRequestVariant
 }
 
@@ -91,9 +92,9 @@ func DecodeCodecZenohRequest(cursor *codec.SceCursor) (*CodecZenohRequest, error
 		}
 		Keyexpr = *_emb
 	}
-	var Extensions []codec_zenoh_ext_entry.CodecZenohExtEntry
+	var Extensions optional.Of[[]codec_zenoh_ext_entry.CodecZenohExtEntry]
 	if (Header & 0x80) != 0 {
-		Extensions = make([]codec_zenoh_ext_entry.CodecZenohExtEntry, 0, 4)
+		_list := make([]codec_zenoh_ext_entry.CodecZenohExtEntry, 0, 4)
 		_more := false
 		for _i := 0; _i < int(4); _i++ {
 			if cursor.Remaining() == 0 {
@@ -104,7 +105,7 @@ func DecodeCodecZenohRequest(cursor *codec.SceCursor) (*CodecZenohRequest, error
 				return nil, err
 			}
 			_more = _elem.Z()
-			Extensions = append(Extensions, *_elem)
+			_list = append(_list, *_elem)
 			if !_more {
 				break
 			}
@@ -115,6 +116,7 @@ func DecodeCodecZenohRequest(cursor *codec.SceCursor) (*CodecZenohRequest, error
 		if _more {
 			return nil, codec.ErrTlvChainOverflow
 		}
+		Extensions = optional.Some(_list)
 	}
 	_peekSlice, err := cursor.PeekSlice(1)
 	if err != nil {
@@ -230,9 +232,12 @@ func (s *CodecZenohRequest) Encode(w codec.SceSink) error {
 	if err := s.Keyexpr.Encode(w, byte((s.Header >> 5) & 0x1)); err != nil {
 		return err
 	}
-	for _i := range s.Extensions {
-		if err := s.Extensions[_i].Encode(w); err != nil {
-			return err
+	if s.Extensions.IsPresent() {
+		_list := s.Extensions.Proven()
+		for _i := range _list {
+			if err := _list[_i].Encode(w); err != nil {
+				return err
+			}
 		}
 	}
 	// Append the active arm body's encoded bytes via the same sink.

@@ -8,14 +8,15 @@ package codec_chain_prev_entry
 
 import (
 	"github.com/newmassrael/sce-forge-runtime/codec"
+	"github.com/newmassrael/sce-forge-runtime/optional"
 )
 
 // CodecChainPrevEntry represents the codec frame layout.
 type CodecChainPrevEntry struct {
 	Header uint8
-	ShortValue *uint8
-	LongValue *uint16
-	Tag *uint8
+	ShortValue optional.Of[uint8]
+	LongValue optional.Of[uint16]
+	Tag optional.Of[uint8]
 }
 
 // DecodeCodecChainPrevEntry decodes the next frame from cursor.
@@ -28,7 +29,7 @@ func DecodeCodecChainPrevEntry(cursor *codec.SceCursor, afterMarker byte, tagged
 	// The positional `raw[byte_off]` path is valid only when every
 	// field's absolute offset is fixed at codegen time; this branch
 	// handles every codec where it is not — present-if-gated fields
-	// (runtime presence; `*T` / nil `[]byte`), VLE / repeat / TLV-chain /
+	// (runtime presence, held by the runtime's optional type), VLE / repeat / TLV-chain /
 	// embed fields (runtime width), string fields (UTF-8 decode), and a
 	// fixed field after a variable-length payload (offset depends on the
 	// payload length). Each field reads its own bytes from the cursor and
@@ -46,7 +47,7 @@ func DecodeCodecChainPrevEntry(cursor *codec.SceCursor, afterMarker byte, tagged
 			return nil, err
 		}
 	}
-	var ShortValue *uint8
+	var ShortValue optional.Of[uint8]
 	if (afterMarker & 0x01) == 0 {
 		raw, err := cursor.PeekSlice(1)
 		if err != nil {
@@ -56,9 +57,9 @@ func DecodeCodecChainPrevEntry(cursor *codec.SceCursor, afterMarker byte, tagged
 		if err := cursor.Advance(1); err != nil {
 			return nil, err
 		}
-		ShortValue = &_v
+		ShortValue = optional.Some(_v)
 	}
-	var LongValue *uint16
+	var LongValue optional.Of[uint16]
 	if (afterMarker & 0x01) != 0 {
 		raw, err := cursor.PeekSlice(2)
 		if err != nil {
@@ -68,9 +69,9 @@ func DecodeCodecChainPrevEntry(cursor *codec.SceCursor, afterMarker byte, tagged
 		if err := cursor.Advance(2); err != nil {
 			return nil, err
 		}
-		LongValue = &_v
+		LongValue = optional.Some(_v)
 	}
-	var Tag *uint8
+	var Tag optional.Of[uint8]
 	if (tagged & 0x01) != 0 {
 		raw, err := cursor.PeekSlice(1)
 		if err != nil {
@@ -80,7 +81,7 @@ func DecodeCodecChainPrevEntry(cursor *codec.SceCursor, afterMarker byte, tagged
 		if err := cursor.Advance(1); err != nil {
 			return nil, err
 		}
-		Tag = &_v
+		Tag = optional.Some(_v)
 	}
 	return &CodecChainPrevEntry{
 		Header: Header,
@@ -134,14 +135,14 @@ func (s *CodecChainPrevEntry) Encode(w codec.SceSink, afterMarker byte, tagged b
 	if err := w.WriteBytes([]byte{ s.Header }); err != nil {
 		return err
 	}
-	if s.ShortValue != nil {
-		_v := *s.ShortValue
+	if s.ShortValue.IsPresent() {
+		_v := s.ShortValue.Proven()
 		if err := w.WriteBytes([]byte{ _v }); err != nil {
 			return err
 		}
 	}
-	if s.LongValue != nil {
-		_v := *s.LongValue
+	if s.LongValue.IsPresent() {
+		_v := s.LongValue.Proven()
 		if err := w.WriteBytes([]byte{ byte(_v >> 8 & 0xFF) }); err != nil {
 			return err
 		}
@@ -149,8 +150,8 @@ func (s *CodecChainPrevEntry) Encode(w codec.SceSink, afterMarker byte, tagged b
 			return err
 		}
 	}
-	if s.Tag != nil {
-		_v := *s.Tag
+	if s.Tag.IsPresent() {
+		_v := s.Tag.Proven()
 		if err := w.WriteBytes([]byte{ _v }); err != nil {
 			return err
 		}

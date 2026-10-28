@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 09d8fec62ddcc806d17c4e1da241b802dbe4f5317b3bd415a705b2ad99d82f3e
+// source-hash: 8b4828d778fc1da05444ac6a052eb44c820b7a80e1f4075fc52bc6e97e8a070a
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_record_enum.scxml
@@ -659,14 +659,14 @@ class StaticRecordEnumStateMachine(
             11 -> {
                 // SCE-MAP: static_record_enum.scxml:84 :: viewing :: _transition_11
 
-            if ((try { vShown = vShown.copy(layout = com.sce.forge.runtime.SceChecked.at(vSeen, (0).toLong()).layout); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) || (try { vShown = vShown.copy(zoom = com.sce.forge.runtime.SceChecked.at(vSeen, (0).toLong()).zoom); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true })) {
+            if (try { vShown = com.sce.forge.runtime.SceChecked.at(vSeen, (0).toLong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
                 return
             }
             }
             12 -> {
                 // SCE-MAP: static_record_enum.scxml:87 :: viewing :: _transition_12
 
-            if ((try { vShown = vShown.copy(layout = com.sce.forge.runtime.SceChecked.at(vSeen, (com.sce.forge.runtime.SceChecked.sub((vSeen).size.toUInt(), 1.toUInt())).toLong()).layout); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) || (try { vShown = vShown.copy(zoom = com.sce.forge.runtime.SceChecked.at(vSeen, (com.sce.forge.runtime.SceChecked.sub((vSeen).size.toUInt(), 1.toUInt())).toLong()).zoom); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true })) {
+            if (try { vShown = com.sce.forge.runtime.SceChecked.at(vSeen, (com.sce.forge.runtime.SceChecked.sub((vSeen).size.toUInt(), 1.toUInt())).toLong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { true }) {
                 return
             }
             }

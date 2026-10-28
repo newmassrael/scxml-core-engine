@@ -8,13 +8,14 @@ package codec_init_syn_body
 
 import (
 	"github.com/newmassrael/sce-forge-runtime/codec"
+	"github.com/newmassrael/sce-forge-runtime/optional"
 )
 
 // CodecInitSynBody represents the codec frame layout.
 type CodecInitSynBody struct {
 	Version uint8
-	SnRes *uint8
-	BatchSize *uint16
+	SnRes optional.Of[uint8]
+	BatchSize optional.Of[uint16]
 }
 
 // DecodeCodecInitSynBody decodes the next frame from cursor.
@@ -27,7 +28,7 @@ func DecodeCodecInitSynBody(cursor *codec.SceCursor, S byte) (*CodecInitSynBody,
 	// The positional `raw[byte_off]` path is valid only when every
 	// field's absolute offset is fixed at codegen time; this branch
 	// handles every codec where it is not — present-if-gated fields
-	// (runtime presence; `*T` / nil `[]byte`), VLE / repeat / TLV-chain /
+	// (runtime presence, held by the runtime's optional type), VLE / repeat / TLV-chain /
 	// embed fields (runtime width), string fields (UTF-8 decode), and a
 	// fixed field after a variable-length payload (offset depends on the
 	// payload length). Each field reads its own bytes from the cursor and
@@ -45,7 +46,7 @@ func DecodeCodecInitSynBody(cursor *codec.SceCursor, S byte) (*CodecInitSynBody,
 			return nil, err
 		}
 	}
-	var SnRes *uint8
+	var SnRes optional.Of[uint8]
 	if (S & 0x01) != 0 {
 		raw, err := cursor.PeekSlice(1)
 		if err != nil {
@@ -55,9 +56,9 @@ func DecodeCodecInitSynBody(cursor *codec.SceCursor, S byte) (*CodecInitSynBody,
 		if err := cursor.Advance(1); err != nil {
 			return nil, err
 		}
-		SnRes = &_v
+		SnRes = optional.Some(_v)
 	}
-	var BatchSize *uint16
+	var BatchSize optional.Of[uint16]
 	if (S & 0x01) != 0 {
 		raw, err := cursor.PeekSlice(2)
 		if err != nil {
@@ -67,7 +68,7 @@ func DecodeCodecInitSynBody(cursor *codec.SceCursor, S byte) (*CodecInitSynBody,
 		if err := cursor.Advance(2); err != nil {
 			return nil, err
 		}
-		BatchSize = &_v
+		BatchSize = optional.Some(_v)
 	}
 	return &CodecInitSynBody{
 		Version: Version,
@@ -92,14 +93,14 @@ func (s *CodecInitSynBody) Encode(w codec.SceSink, S byte) error {
 	if err := w.WriteBytes([]byte{ s.Version }); err != nil {
 		return err
 	}
-	if s.SnRes != nil {
-		_v := *s.SnRes
+	if s.SnRes.IsPresent() {
+		_v := s.SnRes.Proven()
 		if err := w.WriteBytes([]byte{ _v }); err != nil {
 			return err
 		}
 	}
-	if s.BatchSize != nil {
-		_v := *s.BatchSize
+	if s.BatchSize.IsPresent() {
+		_v := s.BatchSize.Proven()
 		if err := w.WriteBytes([]byte{ byte(_v >> 8 & 0xFF) }); err != nil {
 			return err
 		}

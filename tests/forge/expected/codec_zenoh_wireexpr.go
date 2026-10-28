@@ -8,14 +8,15 @@ package codec_zenoh_wireexpr
 
 import (
 	"github.com/newmassrael/sce-forge-runtime/codec"
+	"github.com/newmassrael/sce-forge-runtime/optional"
 	"unicode/utf8"
 )
 
 // CodecZenohWireexpr represents the codec frame layout.
 type CodecZenohWireexpr struct {
 	Id uint64
-	SuffixLen *uint64
-	Suffix *string
+	SuffixLen optional.Of[uint64]
+	Suffix optional.Of[string]
 }
 
 // DecodeCodecZenohWireexpr decodes the next frame from cursor.
@@ -28,7 +29,7 @@ func DecodeCodecZenohWireexpr(cursor *codec.SceCursor, N byte) (*CodecZenohWiree
 	// The positional `raw[byte_off]` path is valid only when every
 	// field's absolute offset is fixed at codegen time; this branch
 	// handles every codec where it is not — present-if-gated fields
-	// (runtime presence; `*T` / nil `[]byte`), VLE / repeat / TLV-chain /
+	// (runtime presence, held by the runtime's optional type), VLE / repeat / TLV-chain /
 	// embed fields (runtime width), string fields (UTF-8 decode), and a
 	// fixed field after a variable-length payload (offset depends on the
 	// payload length). Each field reads its own bytes from the cursor and
@@ -37,15 +38,15 @@ func DecodeCodecZenohWireexpr(cursor *codec.SceCursor, N byte) (*CodecZenohWiree
 	// other field flows through `present_if_decode_stmt`.
 	Id, err := cursor.ReadVLEU64()
 	if err != nil { return nil, err }
-	var SuffixLen *uint64
+	var SuffixLen optional.Of[uint64]
 	if (N & 0x01) != 0 {
 		_v, err := cursor.ReadVLEU64()
 	if err != nil { return nil, err }
-		SuffixLen = &_v
+		SuffixLen = optional.Some(_v)
 	}
-	var Suffix *string
+	var Suffix optional.Of[string]
 	if (N & 0x01) != 0 {
-		_n := int(*SuffixLen)
+		_n := int(SuffixLen.Proven())
 		raw, err := cursor.PeekSlice(_n)
 		if err != nil {
 			return nil, err
@@ -53,8 +54,7 @@ func DecodeCodecZenohWireexpr(cursor *codec.SceCursor, N byte) (*CodecZenohWiree
 		if !utf8.Valid(raw) {
 			return nil, codec.ErrInvalidUTF8
 		}
-		_v := string(raw)
-		Suffix = &_v
+		Suffix = optional.Some(string(raw))
 		if err := cursor.Advance(_n); err != nil {
 			return nil, err
 		}
@@ -82,14 +82,14 @@ func (s *CodecZenohWireexpr) Encode(w codec.SceSink, N byte) error {
 	if err := codec.WriteVLEU64(w, uint64(s.Id)); err != nil {
 		return err
 	}
-	if s.SuffixLen != nil {
-		_v := *s.SuffixLen
+	if s.SuffixLen.IsPresent() {
+		_v := s.SuffixLen.Proven()
 	if err := codec.WriteVLEU64(w, uint64(_v)); err != nil {
 		return err
 	}
 	}
-	if s.Suffix != nil {
-		if err := w.WriteBytes([]byte(*s.Suffix)); err != nil {
+	if s.Suffix.IsPresent() {
+		if err := w.WriteBytes([]byte(s.Suffix.Proven())); err != nil {
 			return err
 		}
 	}

@@ -8,13 +8,14 @@ package codec_zenoh_scout
 
 import (
 	"github.com/newmassrael/sce-forge-runtime/codec"
+	"github.com/newmassrael/sce-forge-runtime/optional"
 )
 
 // CodecZenohScout represents the codec frame layout.
 type CodecZenohScout struct {
 	Version uint8
 	Cbyte uint8
-	Zid []byte
+	Zid optional.Of[[]byte]
 }
 
 // DecodeCodecZenohScout decodes the next frame from cursor.
@@ -27,7 +28,7 @@ func DecodeCodecZenohScout(cursor *codec.SceCursor) (*CodecZenohScout, error) {
 	// The positional `raw[byte_off]` path is valid only when every
 	// field's absolute offset is fixed at codegen time; this branch
 	// handles every codec where it is not — present-if-gated fields
-	// (runtime presence; `*T` / nil `[]byte`), VLE / repeat / TLV-chain /
+	// (runtime presence, held by the runtime's optional type), VLE / repeat / TLV-chain /
 	// embed fields (runtime width), string fields (UTF-8 decode), and a
 	// fixed field after a variable-length payload (offset depends on the
 	// payload length). Each field reads its own bytes from the cursor and
@@ -56,14 +57,14 @@ func DecodeCodecZenohScout(cursor *codec.SceCursor) (*CodecZenohScout, error) {
 			return nil, err
 		}
 	}
-	var Zid []byte
+	var Zid optional.Of[[]byte]
 	if (Cbyte & 0x08) != 0 {
 		_n := (int((Cbyte >> 4) & 0xF) + 1)
 		raw, err := cursor.PeekSlice(_n)
 		if err != nil {
 			return nil, err
 		}
-		Zid = append([]byte(nil), raw...)
+		Zid = optional.Some(append([]byte(nil), raw...))
 		if err := cursor.Advance(_n); err != nil {
 			return nil, err
 		}
@@ -132,8 +133,8 @@ func (s *CodecZenohScout) Encode(w codec.SceSink) error {
 	if err := w.WriteBytes([]byte{ s.Cbyte }); err != nil {
 		return err
 	}
-	if s.Zid != nil {
-		if err := w.WriteBytes(s.Zid); err != nil {
+	if s.Zid.IsPresent() {
+		if err := w.WriteBytes(s.Zid.Proven()); err != nil {
 			return err
 		}
 	}

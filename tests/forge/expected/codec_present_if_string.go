@@ -8,14 +8,15 @@ package codec_present_if_string
 
 import (
 	"github.com/newmassrael/sce-forge-runtime/codec"
+	"github.com/newmassrael/sce-forge-runtime/optional"
 	"unicode/utf8"
 )
 
 // CodecPresentIfString represents the codec frame layout.
 type CodecPresentIfString struct {
 	Carrier uint8
-	TextLen *uint8
-	Text *string
+	TextLen optional.Of[uint8]
+	Text optional.Of[string]
 }
 
 // DecodeCodecPresentIfString decodes the next frame from cursor.
@@ -28,7 +29,7 @@ func DecodeCodecPresentIfString(cursor *codec.SceCursor) (*CodecPresentIfString,
 	// The positional `raw[byte_off]` path is valid only when every
 	// field's absolute offset is fixed at codegen time; this branch
 	// handles every codec where it is not — present-if-gated fields
-	// (runtime presence; `*T` / nil `[]byte`), VLE / repeat / TLV-chain /
+	// (runtime presence, held by the runtime's optional type), VLE / repeat / TLV-chain /
 	// embed fields (runtime width), string fields (UTF-8 decode), and a
 	// fixed field after a variable-length payload (offset depends on the
 	// payload length). Each field reads its own bytes from the cursor and
@@ -46,7 +47,7 @@ func DecodeCodecPresentIfString(cursor *codec.SceCursor) (*CodecPresentIfString,
 			return nil, err
 		}
 	}
-	var TextLen *uint8
+	var TextLen optional.Of[uint8]
 	if (Carrier & 0x01) != 0 {
 		raw, err := cursor.PeekSlice(1)
 		if err != nil {
@@ -56,11 +57,11 @@ func DecodeCodecPresentIfString(cursor *codec.SceCursor) (*CodecPresentIfString,
 		if err := cursor.Advance(1); err != nil {
 			return nil, err
 		}
-		TextLen = &_v
+		TextLen = optional.Some(_v)
 	}
-	var Text *string
+	var Text optional.Of[string]
 	if (Carrier & 0x01) != 0 {
-		_n := int(*TextLen)
+		_n := int(TextLen.Proven())
 		raw, err := cursor.PeekSlice(_n)
 		if err != nil {
 			return nil, err
@@ -68,8 +69,7 @@ func DecodeCodecPresentIfString(cursor *codec.SceCursor) (*CodecPresentIfString,
 		if !utf8.Valid(raw) {
 			return nil, codec.ErrInvalidUTF8
 		}
-		_v := string(raw)
-		Text = &_v
+		Text = optional.Some(string(raw))
 		if err := cursor.Advance(_n); err != nil {
 			return nil, err
 		}
@@ -115,14 +115,14 @@ func (s *CodecPresentIfString) Encode(w codec.SceSink) error {
 	if err := w.WriteBytes([]byte{ s.Carrier }); err != nil {
 		return err
 	}
-	if s.TextLen != nil {
-		_v := *s.TextLen
+	if s.TextLen.IsPresent() {
+		_v := s.TextLen.Proven()
 		if err := w.WriteBytes([]byte{ _v }); err != nil {
 			return err
 		}
 	}
-	if s.Text != nil {
-		if err := w.WriteBytes([]byte(*s.Text)); err != nil {
+	if s.Text.IsPresent() {
+		if err := w.WriteBytes([]byte(s.Text.Proven())); err != nil {
 			return err
 		}
 	}

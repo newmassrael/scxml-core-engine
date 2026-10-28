@@ -8,13 +8,14 @@ package codec_tlv_chain_present_if_basic
 
 import (
 	"github.com/newmassrael/sce-forge-runtime/codec"
+	"github.com/newmassrael/sce-forge-runtime/optional"
 	"example.com/sce-forge/codec_tlv_entry"
 )
 
 // CodecTlvChainPresentIfBasic represents the codec frame layout.
 type CodecTlvChainPresentIfBasic struct {
 	Carrier uint8
-	Entries []codec_tlv_entry.CodecTlvEntry
+	Entries optional.Of[[]codec_tlv_entry.CodecTlvEntry]
 }
 
 // DecodeCodecTlvChainPresentIfBasic decodes the next frame from cursor.
@@ -27,7 +28,7 @@ func DecodeCodecTlvChainPresentIfBasic(cursor *codec.SceCursor) (*CodecTlvChainP
 	// The positional `raw[byte_off]` path is valid only when every
 	// field's absolute offset is fixed at codegen time; this branch
 	// handles every codec where it is not — present-if-gated fields
-	// (runtime presence; `*T` / nil `[]byte`), VLE / repeat / TLV-chain /
+	// (runtime presence, held by the runtime's optional type), VLE / repeat / TLV-chain /
 	// embed fields (runtime width), string fields (UTF-8 decode), and a
 	// fixed field after a variable-length payload (offset depends on the
 	// payload length). Each field reads its own bytes from the cursor and
@@ -45,9 +46,9 @@ func DecodeCodecTlvChainPresentIfBasic(cursor *codec.SceCursor) (*CodecTlvChainP
 			return nil, err
 		}
 	}
-	var Entries []codec_tlv_entry.CodecTlvEntry
+	var Entries optional.Of[[]codec_tlv_entry.CodecTlvEntry]
 	if (Carrier & 0x01) != 0 {
-		Entries = make([]codec_tlv_entry.CodecTlvEntry, 0, 4)
+		_list := make([]codec_tlv_entry.CodecTlvEntry, 0, 4)
 		for _i := 0; _i < int(4); _i++ {
 			if cursor.Remaining() == 0 {
 				break
@@ -56,11 +57,12 @@ func DecodeCodecTlvChainPresentIfBasic(cursor *codec.SceCursor) (*CodecTlvChainP
 			if err != nil {
 				return nil, err
 			}
-			Entries = append(Entries, *_elem)
+			_list = append(_list, *_elem)
 		}
 		if cursor.Remaining() > 0 {
 			return nil, codec.ErrTlvChainOverflow
 		}
+		Entries = optional.Some(_list)
 	}
 	return &CodecTlvChainPresentIfBasic{
 		Carrier: Carrier,
@@ -102,9 +104,12 @@ func (s *CodecTlvChainPresentIfBasic) Encode(w codec.SceSink) error {
 	if err := w.WriteBytes([]byte{ s.Carrier }); err != nil {
 		return err
 	}
-	for _i := range s.Entries {
-		if err := s.Entries[_i].Encode(w); err != nil {
-			return err
+	if s.Entries.IsPresent() {
+		_list := s.Entries.Proven()
+		for _i := range _list {
+			if err := _list[_i].Encode(w); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

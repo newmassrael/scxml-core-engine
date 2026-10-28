@@ -8,13 +8,14 @@ package codec_zenoh_undecl_token
 
 import (
 	"github.com/newmassrael/sce-forge-runtime/codec"
+	"github.com/newmassrael/sce-forge-runtime/optional"
 	"example.com/sce-forge/codec_zenoh_decl_ext_keyexpr"
 )
 
 // CodecZenohUndeclToken represents the codec frame layout.
 type CodecZenohUndeclToken struct {
 	Id uint32
-	ExtKeyexpr *codec_zenoh_decl_ext_keyexpr.CodecZenohDeclExtKeyexpr
+	ExtKeyexpr optional.Of[codec_zenoh_decl_ext_keyexpr.CodecZenohDeclExtKeyexpr]
 }
 
 // DecodeCodecZenohUndeclToken decodes the next frame from cursor.
@@ -27,7 +28,7 @@ func DecodeCodecZenohUndeclToken(cursor *codec.SceCursor, Z byte) (*CodecZenohUn
 	// The positional `raw[byte_off]` path is valid only when every
 	// field's absolute offset is fixed at codegen time; this branch
 	// handles every codec where it is not — present-if-gated fields
-	// (runtime presence; `*T` / nil `[]byte`), VLE / repeat / TLV-chain /
+	// (runtime presence, held by the runtime's optional type), VLE / repeat / TLV-chain /
 	// embed fields (runtime width), string fields (UTF-8 decode), and a
 	// fixed field after a variable-length payload (offset depends on the
 	// payload length). Each field reads its own bytes from the cursor and
@@ -36,13 +37,13 @@ func DecodeCodecZenohUndeclToken(cursor *codec.SceCursor, Z byte) (*CodecZenohUn
 	// other field flows through `present_if_decode_stmt`.
 	Id, err := cursor.ReadVLEU32()
 	if err != nil { return nil, err }
-	var ExtKeyexpr *codec_zenoh_decl_ext_keyexpr.CodecZenohDeclExtKeyexpr
+	var ExtKeyexpr optional.Of[codec_zenoh_decl_ext_keyexpr.CodecZenohDeclExtKeyexpr]
 	if (Z & 0x01) != 0 {
 		_emb, err := codec_zenoh_decl_ext_keyexpr.DecodeCodecZenohDeclExtKeyexpr(cursor)
 		if err != nil {
 			return nil, err
 		}
-		ExtKeyexpr = _emb
+		ExtKeyexpr = optional.Some(*_emb)
 	}
 	return &CodecZenohUndeclToken{
 		Id: Id,
@@ -66,8 +67,9 @@ func (s *CodecZenohUndeclToken) Encode(w codec.SceSink, Z byte) error {
 	if err := codec.WriteVLEU32(w, uint32(s.Id)); err != nil {
 		return err
 	}
-	if s.ExtKeyexpr != nil {
-		if err := s.ExtKeyexpr.Encode(w); err != nil {
+	if s.ExtKeyexpr.IsPresent() {
+		_body := s.ExtKeyexpr.Proven()
+		if err := _body.Encode(w); err != nil {
 			return err
 		}
 	}

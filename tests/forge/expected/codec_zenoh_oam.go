@@ -8,6 +8,7 @@ package codec_zenoh_oam
 
 import (
 	"github.com/newmassrael/sce-forge-runtime/codec"
+	"github.com/newmassrael/sce-forge-runtime/optional"
 	"example.com/sce-forge/codec_zenoh_ext_entry"
 	"example.com/sce-forge/codec_zenoh_ext_unit"
 	"example.com/sce-forge/codec_zenoh_ext_zint"
@@ -37,7 +38,7 @@ type CodecZenohOamVariant struct {
 type CodecZenohOam struct {
 	Header uint8
 	Id uint16
-	Extensions []codec_zenoh_ext_entry.CodecZenohExtEntry
+	Extensions optional.Of[[]codec_zenoh_ext_entry.CodecZenohExtEntry]
 	Body CodecZenohOamVariant
 }
 
@@ -81,9 +82,9 @@ func DecodeCodecZenohOam(cursor *codec.SceCursor) (*CodecZenohOam, error) {
 	}
 	Id, err := cursor.ReadVLEU16()
 	if err != nil { return nil, err }
-	var Extensions []codec_zenoh_ext_entry.CodecZenohExtEntry
+	var Extensions optional.Of[[]codec_zenoh_ext_entry.CodecZenohExtEntry]
 	if (Header & 0x80) != 0 {
-		Extensions = make([]codec_zenoh_ext_entry.CodecZenohExtEntry, 0, 4)
+		_list := make([]codec_zenoh_ext_entry.CodecZenohExtEntry, 0, 4)
 		_more := false
 		for _i := 0; _i < int(4); _i++ {
 			if cursor.Remaining() == 0 {
@@ -94,7 +95,7 @@ func DecodeCodecZenohOam(cursor *codec.SceCursor) (*CodecZenohOam, error) {
 				return nil, err
 			}
 			_more = _elem.Z()
-			Extensions = append(Extensions, *_elem)
+			_list = append(_list, *_elem)
 			if !_more {
 				break
 			}
@@ -105,6 +106,7 @@ func DecodeCodecZenohOam(cursor *codec.SceCursor) (*CodecZenohOam, error) {
 		if _more {
 			return nil, codec.ErrTlvChainOverflow
 		}
+		Extensions = optional.Some(_list)
 	}
 	// Dispatch on the tag field; each arm decodes its body codec from
 	// the cursor. The default arm (when declared) carries the runtime
@@ -197,9 +199,12 @@ func (s *CodecZenohOam) Encode(w codec.SceSink) error {
 	if err := codec.WriteVLEU16(w, uint16(s.Id)); err != nil {
 		return err
 	}
-	for _i := range s.Extensions {
-		if err := s.Extensions[_i].Encode(w); err != nil {
-			return err
+	if s.Extensions.IsPresent() {
+		_list := s.Extensions.Proven()
+		for _i := range _list {
+			if err := _list[_i].Encode(w); err != nil {
+				return err
+			}
 		}
 	}
 	// Append the active arm body's encoded bytes via the same sink.

@@ -8,6 +8,7 @@ package codec_zenoh_reply
 
 import (
 	"github.com/newmassrael/sce-forge-runtime/codec"
+	"github.com/newmassrael/sce-forge-runtime/optional"
 	"example.com/sce-forge/codec_zenoh_ext_entry"
 	"example.com/sce-forge/codec_zenoh_push_body"
 )
@@ -15,8 +16,8 @@ import (
 // CodecZenohReply represents the codec frame layout.
 type CodecZenohReply struct {
 	Header uint8
-	Consolidation *uint8
-	Extensions []codec_zenoh_ext_entry.CodecZenohExtEntry
+	Consolidation optional.Of[uint8]
+	Extensions optional.Of[[]codec_zenoh_ext_entry.CodecZenohExtEntry]
 	Body codec_zenoh_push_body.CodecZenohPushBody
 }
 
@@ -43,7 +44,7 @@ func DecodeCodecZenohReply(cursor *codec.SceCursor) (*CodecZenohReply, error) {
 	// The positional `raw[byte_off]` path is valid only when every
 	// field's absolute offset is fixed at codegen time; this branch
 	// handles every codec where it is not — present-if-gated fields
-	// (runtime presence; `*T` / nil `[]byte`), VLE / repeat / TLV-chain /
+	// (runtime presence, held by the runtime's optional type), VLE / repeat / TLV-chain /
 	// embed fields (runtime width), string fields (UTF-8 decode), and a
 	// fixed field after a variable-length payload (offset depends on the
 	// payload length). Each field reads its own bytes from the cursor and
@@ -61,7 +62,7 @@ func DecodeCodecZenohReply(cursor *codec.SceCursor) (*CodecZenohReply, error) {
 			return nil, err
 		}
 	}
-	var Consolidation *uint8
+	var Consolidation optional.Of[uint8]
 	if (Header & 0x20) != 0 {
 		raw, err := cursor.PeekSlice(1)
 		if err != nil {
@@ -71,11 +72,11 @@ func DecodeCodecZenohReply(cursor *codec.SceCursor) (*CodecZenohReply, error) {
 		if err := cursor.Advance(1); err != nil {
 			return nil, err
 		}
-		Consolidation = &_v
+		Consolidation = optional.Some(_v)
 	}
-	var Extensions []codec_zenoh_ext_entry.CodecZenohExtEntry
+	var Extensions optional.Of[[]codec_zenoh_ext_entry.CodecZenohExtEntry]
 	if (Header & 0x80) != 0 {
-		Extensions = make([]codec_zenoh_ext_entry.CodecZenohExtEntry, 0, 4)
+		_list := make([]codec_zenoh_ext_entry.CodecZenohExtEntry, 0, 4)
 		_more := false
 		for _i := 0; _i < int(4); _i++ {
 			if cursor.Remaining() == 0 {
@@ -86,7 +87,7 @@ func DecodeCodecZenohReply(cursor *codec.SceCursor) (*CodecZenohReply, error) {
 				return nil, err
 			}
 			_more = _elem.Z()
-			Extensions = append(Extensions, *_elem)
+			_list = append(_list, *_elem)
 			if !_more {
 				break
 			}
@@ -97,6 +98,7 @@ func DecodeCodecZenohReply(cursor *codec.SceCursor) (*CodecZenohReply, error) {
 		if _more {
 			return nil, codec.ErrTlvChainOverflow
 		}
+		Extensions = optional.Some(_list)
 	}
 	var Body codec_zenoh_push_body.CodecZenohPushBody
 	{
@@ -182,15 +184,18 @@ func (s *CodecZenohReply) Encode(w codec.SceSink) error {
 	if err := w.WriteBytes([]byte{ s.Header }); err != nil {
 		return err
 	}
-	if s.Consolidation != nil {
-		_v := *s.Consolidation
+	if s.Consolidation.IsPresent() {
+		_v := s.Consolidation.Proven()
 		if err := w.WriteBytes([]byte{ _v }); err != nil {
 			return err
 		}
 	}
-	for _i := range s.Extensions {
-		if err := s.Extensions[_i].Encode(w); err != nil {
-			return err
+	if s.Extensions.IsPresent() {
+		_list := s.Extensions.Proven()
+		for _i := range _list {
+			if err := _list[_i].Encode(w); err != nil {
+				return err
+			}
 		}
 	}
 	if err := s.Body.Encode(w); err != nil {

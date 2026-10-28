@@ -8,6 +8,7 @@ package codec_zenoh_hello
 
 import (
 	"github.com/newmassrael/sce-forge-runtime/codec"
+	"github.com/newmassrael/sce-forge-runtime/optional"
 	"example.com/sce-forge/codec_zenoh_locator"
 )
 
@@ -16,8 +17,8 @@ type CodecZenohHello struct {
 	Version uint8
 	Cbyte uint8
 	Zid []byte
-	NumLocators *uint64
-	Locators []codec_zenoh_locator.CodecZenohLocator
+	NumLocators optional.Of[uint64]
+	Locators optional.Of[[]codec_zenoh_locator.CodecZenohLocator]
 }
 
 // DecodeCodecZenohHello decodes the next frame from cursor.
@@ -30,7 +31,7 @@ func DecodeCodecZenohHello(cursor *codec.SceCursor, L byte) (*CodecZenohHello, e
 	// The positional `raw[byte_off]` path is valid only when every
 	// field's absolute offset is fixed at codegen time; this branch
 	// handles every codec where it is not — present-if-gated fields
-	// (runtime presence; `*T` / nil `[]byte`), VLE / repeat / TLV-chain /
+	// (runtime presence, held by the runtime's optional type), VLE / repeat / TLV-chain /
 	// embed fields (runtime width), string fields (UTF-8 decode), and a
 	// fixed field after a variable-length payload (offset depends on the
 	// payload length). Each field reads its own bytes from the cursor and
@@ -71,23 +72,24 @@ func DecodeCodecZenohHello(cursor *codec.SceCursor, L byte) (*CodecZenohHello, e
 			return nil, err
 		}
 	}
-	var NumLocators *uint64
+	var NumLocators optional.Of[uint64]
 	if (L & 0x01) != 0 {
 		_v, err := cursor.ReadVLEU64()
 	if err != nil { return nil, err }
-		NumLocators = &_v
+		NumLocators = optional.Some(_v)
 	}
-	var Locators []codec_zenoh_locator.CodecZenohLocator
+	var Locators optional.Of[[]codec_zenoh_locator.CodecZenohLocator]
 	if (L & 0x01) != 0 {
-		_n := *NumLocators
-		Locators = make([]codec_zenoh_locator.CodecZenohLocator, 0, _n)
+		_n := NumLocators.Proven()
+		_list := make([]codec_zenoh_locator.CodecZenohLocator, 0, _n)
 		for _i := 0; _i < int(_n); _i++ {
 			_elem, err := codec_zenoh_locator.DecodeCodecZenohLocator(cursor)
 			if err != nil {
 				return nil, err
 			}
-			Locators = append(Locators, *_elem)
+			_list = append(_list, *_elem)
 		}
+		Locators = optional.Some(_list)
 	}
 	return &CodecZenohHello{
 		Version: Version,
@@ -146,15 +148,16 @@ func (s *CodecZenohHello) Encode(w codec.SceSink, L byte) error {
 	if err := w.WriteBytes(s.Zid); err != nil {
 		return err
 	}
-	if s.NumLocators != nil {
-		_v := *s.NumLocators
+	if s.NumLocators.IsPresent() {
+		_v := s.NumLocators.Proven()
 	if err := codec.WriteVLEU64(w, uint64(_v)); err != nil {
 		return err
 	}
 	}
-	if s.Locators != nil {
-		for _i := range s.Locators {
-			if err := s.Locators[_i].Encode(w); err != nil {
+	if s.Locators.IsPresent() {
+		_list := s.Locators.Proven()
+		for _i := range _list {
+			if err := _list[_i].Encode(w); err != nil {
 				return err
 			}
 		}

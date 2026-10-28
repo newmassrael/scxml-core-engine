@@ -8,12 +8,13 @@ package codec_present_if_basic
 
 import (
 	"github.com/newmassrael/sce-forge-runtime/codec"
+	"github.com/newmassrael/sce-forge-runtime/optional"
 )
 
 // CodecPresentIfBasic represents the codec frame layout.
 type CodecPresentIfBasic struct {
 	Flags uint8
-	Seq *uint16
+	Seq optional.Of[uint16]
 }
 
 // DecodeCodecPresentIfBasic decodes the next frame from cursor.
@@ -26,7 +27,7 @@ func DecodeCodecPresentIfBasic(cursor *codec.SceCursor) (*CodecPresentIfBasic, e
 	// The positional `raw[byte_off]` path is valid only when every
 	// field's absolute offset is fixed at codegen time; this branch
 	// handles every codec where it is not — present-if-gated fields
-	// (runtime presence; `*T` / nil `[]byte`), VLE / repeat / TLV-chain /
+	// (runtime presence, held by the runtime's optional type), VLE / repeat / TLV-chain /
 	// embed fields (runtime width), string fields (UTF-8 decode), and a
 	// fixed field after a variable-length payload (offset depends on the
 	// payload length). Each field reads its own bytes from the cursor and
@@ -44,7 +45,7 @@ func DecodeCodecPresentIfBasic(cursor *codec.SceCursor) (*CodecPresentIfBasic, e
 			return nil, err
 		}
 	}
-	var Seq *uint16
+	var Seq optional.Of[uint16]
 	if (Flags & 0x01) != 0 {
 		raw, err := cursor.PeekSlice(2)
 		if err != nil {
@@ -54,7 +55,7 @@ func DecodeCodecPresentIfBasic(cursor *codec.SceCursor) (*CodecPresentIfBasic, e
 		if err := cursor.Advance(2); err != nil {
 			return nil, err
 		}
-		Seq = &_v
+		Seq = optional.Some(_v)
 	}
 	return &CodecPresentIfBasic{
 		Flags: Flags,
@@ -96,8 +97,8 @@ func (s *CodecPresentIfBasic) Encode(w codec.SceSink) error {
 	if err := w.WriteBytes([]byte{ s.Flags }); err != nil {
 		return err
 	}
-	if s.Seq != nil {
-		_v := *s.Seq
+	if s.Seq.IsPresent() {
+		_v := s.Seq.Proven()
 		if err := w.WriteBytes([]byte{ byte(_v >> 8 & 0xFF) }); err != nil {
 			return err
 		}

@@ -8,6 +8,7 @@ package codec_chain_has_tagged
 
 import (
 	"github.com/newmassrael/sce-forge-runtime/codec"
+	"github.com/newmassrael/sce-forge-runtime/optional"
 	"example.com/sce-forge/codec_chain_has_tagged_entry"
 )
 
@@ -15,8 +16,8 @@ import (
 type CodecChainHasTagged struct {
 	Header uint8
 	Entries []codec_chain_has_tagged_entry.CodecChainHasTaggedEntry
-	Priority *uint8
-	Checksum *uint16
+	Priority optional.Of[uint8]
+	Checksum optional.Of[uint16]
 }
 
 // DecodeCodecChainHasTagged decodes the next frame from cursor.
@@ -29,7 +30,7 @@ func DecodeCodecChainHasTagged(cursor *codec.SceCursor) (*CodecChainHasTagged, e
 	// The positional `raw[byte_off]` path is valid only when every
 	// field's absolute offset is fixed at codegen time; this branch
 	// handles every codec where it is not — present-if-gated fields
-	// (runtime presence; `*T` / nil `[]byte`), VLE / repeat / TLV-chain /
+	// (runtime presence, held by the runtime's optional type), VLE / repeat / TLV-chain /
 	// embed fields (runtime width), string fields (UTF-8 decode), and a
 	// fixed field after a variable-length payload (offset depends on the
 	// payload length). Each field reads its own bytes from the cursor and
@@ -83,7 +84,7 @@ func DecodeCodecChainHasTagged(cursor *codec.SceCursor) (*CodecChainHasTagged, e
 			break
 		}
 	}
-	var Priority *uint8
+	var Priority optional.Of[uint8]
 	if _has_Entries_7 || (Header & 0x01) != 0 {
 		raw, err := cursor.PeekSlice(1)
 		if err != nil {
@@ -93,9 +94,9 @@ func DecodeCodecChainHasTagged(cursor *codec.SceCursor) (*CodecChainHasTagged, e
 		if err := cursor.Advance(1); err != nil {
 			return nil, err
 		}
-		Priority = &_v
+		Priority = optional.Some(_v)
 	}
-	var Checksum *uint16
+	var Checksum optional.Of[uint16]
 	if !_has_Entries_9 {
 		raw, err := cursor.PeekSlice(2)
 		if err != nil {
@@ -105,7 +106,7 @@ func DecodeCodecChainHasTagged(cursor *codec.SceCursor) (*CodecChainHasTagged, e
 		if err := cursor.Advance(2); err != nil {
 			return nil, err
 		}
-		Checksum = &_v
+		Checksum = optional.Some(_v)
 	}
 	return &CodecChainHasTagged{
 		Header: Header,
@@ -153,17 +154,17 @@ func (s *CodecChainHasTagged) Encode(w codec.SceSink) error {
 		}
 	}
 	if _has_Entries_7 || (s.Header & 0x01) != 0 {
-		if s.Priority == nil {
+		if !s.Priority.IsPresent() {
 			return codec.ErrPresentIfMismatch
 		}
-	} else if s.Priority != nil {
+	} else if s.Priority.IsPresent() {
 		return codec.ErrPresentIfMismatch
 	}
 	if !_has_Entries_9 {
-		if s.Checksum == nil {
+		if !s.Checksum.IsPresent() {
 			return codec.ErrPresentIfMismatch
 		}
-	} else if s.Checksum != nil {
+	} else if s.Checksum.IsPresent() {
 		return codec.ErrPresentIfMismatch
 	}
 	// Streaming cursor encode (SSOT selection: `needs_streaming`).
@@ -182,14 +183,14 @@ func (s *CodecChainHasTagged) Encode(w codec.SceSink) error {
 			return err
 		}
 	}
-	if s.Priority != nil {
-		_v := *s.Priority
+	if s.Priority.IsPresent() {
+		_v := s.Priority.Proven()
 		if err := w.WriteBytes([]byte{ _v }); err != nil {
 			return err
 		}
 	}
-	if s.Checksum != nil {
-		_v := *s.Checksum
+	if s.Checksum.IsPresent() {
+		_v := s.Checksum.Proven()
 		if err := w.WriteBytes([]byte{ byte(_v >> 8 & 0xFF) }); err != nil {
 			return err
 		}

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 09d8fec62ddcc806d17c4e1da241b802dbe4f5317b3bd415a705b2ad99d82f3e
+// source-hash: 8b4828d778fc1da05444ac6a052eb44c820b7a80e1f4075fc52bc6e97e8a070a
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_record_list_index.scxml
@@ -620,21 +620,21 @@ class StaticRecordListIndexStateMachine(
             3 -> {
                 // SCE-MAP: static_record_list_index.scxml:64 :: reading :: _transition_3
 
-            if ((try { vPicked = vPicked.copy(year = com.sce.forge.runtime.SceChecked.at(vDays, (0).toLong()).year); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordListIndexEvent.Error.Execution, "<assign location='picked.year'>: an integer operation overflowed or failed"); true }) || (try { vPicked = vPicked.copy(month = com.sce.forge.runtime.SceChecked.at(vDays, (0).toLong()).month); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordListIndexEvent.Error.Execution, "<assign location='picked.month'>: an integer operation overflowed or failed"); true }) || (try { vPicked = vPicked.copy(dayOfMonth = com.sce.forge.runtime.SceChecked.at(vDays, (0).toLong()).dayOfMonth); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordListIndexEvent.Error.Execution, "<assign location='picked.dayOfMonth'>: an integer operation overflowed or failed"); true })) {
+            if (try { vPicked = com.sce.forge.runtime.SceChecked.at(vDays, (0).toLong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordListIndexEvent.Error.Execution, "<assign location='picked'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             4 -> {
                 // SCE-MAP: static_record_list_index.scxml:67 :: reading :: _transition_4
 
-            if ((try { vPicked = vPicked.copy(year = com.sce.forge.runtime.SceChecked.at(vDays, (com.sce.forge.runtime.SceChecked.sub((vDays).size.toUInt(), 1.toUInt())).toLong()).year); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordListIndexEvent.Error.Execution, "<assign location='picked.year'>: an integer operation overflowed or failed"); true }) || (try { vPicked = vPicked.copy(month = com.sce.forge.runtime.SceChecked.at(vDays, (com.sce.forge.runtime.SceChecked.sub((vDays).size.toUInt(), 1.toUInt())).toLong()).month); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordListIndexEvent.Error.Execution, "<assign location='picked.month'>: an integer operation overflowed or failed"); true }) || (try { vPicked = vPicked.copy(dayOfMonth = com.sce.forge.runtime.SceChecked.at(vDays, (com.sce.forge.runtime.SceChecked.sub((vDays).size.toUInt(), 1.toUInt())).toLong()).dayOfMonth); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordListIndexEvent.Error.Execution, "<assign location='picked.dayOfMonth'>: an integer operation overflowed or failed"); true })) {
+            if (try { vPicked = com.sce.forge.runtime.SceChecked.at(vDays, (com.sce.forge.runtime.SceChecked.sub((vDays).size.toUInt(), 1.toUInt())).toLong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordListIndexEvent.Error.Execution, "<assign location='picked'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             5 -> {
                 // SCE-MAP: static_record_list_index.scxml:70 :: reading :: _transition_5
 
-            if ((try { vPicked = vPicked.copy(year = com.sce.forge.runtime.SceChecked.at(vDays, (vCursor).toLong()).year); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordListIndexEvent.Error.Execution, "<assign location='picked.year'>: an integer operation overflowed or failed"); true }) || (try { vPicked = vPicked.copy(month = com.sce.forge.runtime.SceChecked.at(vDays, (vCursor).toLong()).month); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordListIndexEvent.Error.Execution, "<assign location='picked.month'>: an integer operation overflowed or failed"); true }) || (try { vPicked = vPicked.copy(dayOfMonth = com.sce.forge.runtime.SceChecked.at(vDays, (vCursor).toLong()).dayOfMonth); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordListIndexEvent.Error.Execution, "<assign location='picked.dayOfMonth'>: an integer operation overflowed or failed"); true })) {
+            if (try { vPicked = com.sce.forge.runtime.SceChecked.at(vDays, (vCursor).toLong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordListIndexEvent.Error.Execution, "<assign location='picked'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }

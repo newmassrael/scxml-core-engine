@@ -8,6 +8,7 @@ package codec_nested_parent
 
 import (
 	"github.com/newmassrael/sce-forge-runtime/codec"
+	"github.com/newmassrael/sce-forge-runtime/optional"
 	"example.com/sce-forge/codec_nested_body"
 )
 
@@ -16,7 +17,7 @@ type CodecNestedParent struct {
 	Hdr uint8
 	M uint8
 	RequiredBody codec_nested_body.CodecNestedBody
-	OptionalBody *codec_nested_body.CodecNestedBody
+	OptionalBody optional.Of[codec_nested_body.CodecNestedBody]
 	BodyList []codec_nested_body.CodecNestedBody
 }
 
@@ -30,7 +31,7 @@ func DecodeCodecNestedParent(cursor *codec.SceCursor) (*CodecNestedParent, error
 	// The positional `raw[byte_off]` path is valid only when every
 	// field's absolute offset is fixed at codegen time; this branch
 	// handles every codec where it is not — present-if-gated fields
-	// (runtime presence; `*T` / nil `[]byte`), VLE / repeat / TLV-chain /
+	// (runtime presence, held by the runtime's optional type), VLE / repeat / TLV-chain /
 	// embed fields (runtime width), string fields (UTF-8 decode), and a
 	// fixed field after a variable-length payload (offset depends on the
 	// payload length). Each field reads its own bytes from the cursor and
@@ -67,13 +68,13 @@ func DecodeCodecNestedParent(cursor *codec.SceCursor) (*CodecNestedParent, error
 		}
 		RequiredBody = *_emb
 	}
-	var OptionalBody *codec_nested_body.CodecNestedBody
+	var OptionalBody optional.Of[codec_nested_body.CodecNestedBody]
 	if (Hdr & 0x01) != 0 {
 		_emb, err := codec_nested_body.DecodeCodecNestedBody(cursor)
 		if err != nil {
 			return nil, err
 		}
-		OptionalBody = _emb
+		OptionalBody = optional.Some(*_emb)
 	}
 	BodyList := make([]codec_nested_body.CodecNestedBody, 0, M)
 	for _i := 0; _i < int(M); _i++ {
@@ -132,8 +133,9 @@ func (s *CodecNestedParent) Encode(w codec.SceSink) error {
 	if err := s.RequiredBody.Encode(w); err != nil {
 		return err
 	}
-	if s.OptionalBody != nil {
-		if err := s.OptionalBody.Encode(w); err != nil {
+	if s.OptionalBody.IsPresent() {
+		_body := s.OptionalBody.Proven()
+		if err := _body.Encode(w); err != nil {
 			return err
 		}
 	}

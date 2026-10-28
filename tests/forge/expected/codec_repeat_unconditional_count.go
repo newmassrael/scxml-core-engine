@@ -8,6 +8,7 @@ package codec_repeat_unconditional_count
 
 import (
 	"github.com/newmassrael/sce-forge-runtime/codec"
+	"github.com/newmassrael/sce-forge-runtime/optional"
 	"example.com/sce-forge/codec_repeat_elem"
 )
 
@@ -16,7 +17,7 @@ type CodecRepeatUnconditionalCount struct {
 	Options uint8
 	LinksLen uint8
 	Links []codec_repeat_elem.CodecRepeatElem
-	Weights []codec_repeat_elem.CodecRepeatElem
+	Weights optional.Of[[]codec_repeat_elem.CodecRepeatElem]
 }
 
 // DecodeCodecRepeatUnconditionalCount decodes the next frame from cursor.
@@ -29,7 +30,7 @@ func DecodeCodecRepeatUnconditionalCount(cursor *codec.SceCursor) (*CodecRepeatU
 	// The positional `raw[byte_off]` path is valid only when every
 	// field's absolute offset is fixed at codegen time; this branch
 	// handles every codec where it is not — present-if-gated fields
-	// (runtime presence; `*T` / nil `[]byte`), VLE / repeat / TLV-chain /
+	// (runtime presence, held by the runtime's optional type), VLE / repeat / TLV-chain /
 	// embed fields (runtime width), string fields (UTF-8 decode), and a
 	// fixed field after a variable-length payload (offset depends on the
 	// payload length). Each field reads its own bytes from the cursor and
@@ -66,17 +67,18 @@ func DecodeCodecRepeatUnconditionalCount(cursor *codec.SceCursor) (*CodecRepeatU
 		}
 		Links = append(Links, *_elem)
 	}
-	var Weights []codec_repeat_elem.CodecRepeatElem
+	var Weights optional.Of[[]codec_repeat_elem.CodecRepeatElem]
 	if (Options & 0x01) != 0 {
 		_n := LinksLen
-		Weights = make([]codec_repeat_elem.CodecRepeatElem, 0, _n)
+		_list := make([]codec_repeat_elem.CodecRepeatElem, 0, _n)
 		for _i := 0; _i < int(_n); _i++ {
 			_elem, err := codec_repeat_elem.DecodeCodecRepeatElem(cursor)
 			if err != nil {
 				return nil, err
 			}
-			Weights = append(Weights, *_elem)
+			_list = append(_list, *_elem)
 		}
+		Weights = optional.Some(_list)
 	}
 	return &CodecRepeatUnconditionalCount{
 		Options: Options,
@@ -128,9 +130,10 @@ func (s *CodecRepeatUnconditionalCount) Encode(w codec.SceSink) error {
 			return err
 		}
 	}
-	if s.Weights != nil {
-		for _i := range s.Weights {
-			if err := s.Weights[_i].Encode(w); err != nil {
+	if s.Weights.IsPresent() {
+		_list := s.Weights.Proven()
+		for _i := range _list {
+			if err := _list[_i].Encode(w); err != nil {
 				return err
 			}
 		}

@@ -8,6 +8,7 @@ package codec_zenoh_decl_queryable
 
 import (
 	"github.com/newmassrael/sce-forge-runtime/codec"
+	"github.com/newmassrael/sce-forge-runtime/optional"
 	"example.com/sce-forge/codec_zenoh_wireexpr"
 )
 
@@ -15,8 +16,8 @@ import (
 type CodecZenohDeclQueryable struct {
 	Id uint32
 	Wireexpr codec_zenoh_wireexpr.CodecZenohWireexpr
-	ExtType *uint8
-	ExtValue *uint64
+	ExtType optional.Of[uint8]
+	ExtValue optional.Of[uint64]
 }
 
 // DecodeCodecZenohDeclQueryable decodes the next frame from cursor.
@@ -29,7 +30,7 @@ func DecodeCodecZenohDeclQueryable(cursor *codec.SceCursor, N byte, Z byte) (*Co
 	// The positional `raw[byte_off]` path is valid only when every
 	// field's absolute offset is fixed at codegen time; this branch
 	// handles every codec where it is not — present-if-gated fields
-	// (runtime presence; `*T` / nil `[]byte`), VLE / repeat / TLV-chain /
+	// (runtime presence, held by the runtime's optional type), VLE / repeat / TLV-chain /
 	// embed fields (runtime width), string fields (UTF-8 decode), and a
 	// fixed field after a variable-length payload (offset depends on the
 	// payload length). Each field reads its own bytes from the cursor and
@@ -46,7 +47,7 @@ func DecodeCodecZenohDeclQueryable(cursor *codec.SceCursor, N byte, Z byte) (*Co
 		}
 		Wireexpr = *_emb
 	}
-	var ExtType *uint8
+	var ExtType optional.Of[uint8]
 	if (Z & 0x01) != 0 {
 		raw, err := cursor.PeekSlice(1)
 		if err != nil {
@@ -56,13 +57,13 @@ func DecodeCodecZenohDeclQueryable(cursor *codec.SceCursor, N byte, Z byte) (*Co
 		if err := cursor.Advance(1); err != nil {
 			return nil, err
 		}
-		ExtType = &_v
+		ExtType = optional.Some(_v)
 	}
-	var ExtValue *uint64
+	var ExtValue optional.Of[uint64]
 	if (Z & 0x01) != 0 {
 		_v, err := cursor.ReadVLEU64()
 	if err != nil { return nil, err }
-		ExtValue = &_v
+		ExtValue = optional.Some(_v)
 	}
 	return &CodecZenohDeclQueryable{
 		Id: Id,
@@ -91,14 +92,14 @@ func (s *CodecZenohDeclQueryable) Encode(w codec.SceSink, N byte, Z byte) error 
 	if err := s.Wireexpr.Encode(w, N); err != nil {
 		return err
 	}
-	if s.ExtType != nil {
-		_v := *s.ExtType
+	if s.ExtType.IsPresent() {
+		_v := s.ExtType.Proven()
 		if err := w.WriteBytes([]byte{ _v }); err != nil {
 			return err
 		}
 	}
-	if s.ExtValue != nil {
-		_v := *s.ExtValue
+	if s.ExtValue.IsPresent() {
+		_v := s.ExtValue.Proven()
 	if err := codec.WriteVLEU64(w, uint64(_v)); err != nil {
 		return err
 	}

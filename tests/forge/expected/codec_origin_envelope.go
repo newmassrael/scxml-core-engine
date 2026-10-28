@@ -8,6 +8,7 @@ package codec_origin_envelope
 
 import (
 	"github.com/newmassrael/sce-forge-runtime/codec"
+	"github.com/newmassrael/sce-forge-runtime/optional"
 	"unicode/utf8"
 	"example.com/sce-forge/codec_origin_leaf"
 )
@@ -19,7 +20,7 @@ type CodecOriginEnvelope struct {
 	Note string
 	M uint8
 	Required codec_origin_leaf.CodecOriginLeaf
-	Optional *codec_origin_leaf.CodecOriginLeaf
+	Optional optional.Of[codec_origin_leaf.CodecOriginLeaf]
 	Items []codec_origin_leaf.CodecOriginLeaf
 }
 
@@ -33,7 +34,7 @@ func DecodeCodecOriginEnvelope(cursor *codec.SceCursor) (*CodecOriginEnvelope, e
 	// The positional `raw[byte_off]` path is valid only when every
 	// field's absolute offset is fixed at codegen time; this branch
 	// handles every codec where it is not — present-if-gated fields
-	// (runtime presence; `*T` / nil `[]byte`), VLE / repeat / TLV-chain /
+	// (runtime presence, held by the runtime's optional type), VLE / repeat / TLV-chain /
 	// embed fields (runtime width), string fields (UTF-8 decode), and a
 	// fixed field after a variable-length payload (offset depends on the
 	// payload length). Each field reads its own bytes from the cursor and
@@ -96,13 +97,13 @@ func DecodeCodecOriginEnvelope(cursor *codec.SceCursor) (*CodecOriginEnvelope, e
 		}
 		Required = *_emb
 	}
-	var Optional *codec_origin_leaf.CodecOriginLeaf
+	var Optional optional.Of[codec_origin_leaf.CodecOriginLeaf]
 	if (Hdr & 0x01) != 0 {
 		_emb, err := codec_origin_leaf.DecodeCodecOriginLeaf(cursor)
 		if err != nil {
 			return nil, err
 		}
-		Optional = _emb
+		Optional = optional.Some(*_emb)
 	}
 	Items := make([]codec_origin_leaf.CodecOriginLeaf, 0, M)
 	for _i := 0; _i < int(M); _i++ {
@@ -169,8 +170,9 @@ func (s *CodecOriginEnvelope) Encode(w codec.SceSink) error {
 	if err := s.Required.Encode(w); err != nil {
 		return err
 	}
-	if s.Optional != nil {
-		if err := s.Optional.Encode(w); err != nil {
+	if s.Optional.IsPresent() {
+		_body := s.Optional.Proven()
+		if err := _body.Encode(w); err != nil {
 			return err
 		}
 	}

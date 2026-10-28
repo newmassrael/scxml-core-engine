@@ -8,16 +8,17 @@ package codec_zenoh_value_zbuf
 
 import (
 	"github.com/newmassrael/sce-forge-runtime/codec"
+	"github.com/newmassrael/sce-forge-runtime/optional"
 	"example.com/sce-forge/codec_zenoh_value_slice"
 )
 
 // CodecZenohValueZbuf represents the codec frame layout.
 type CodecZenohValueZbuf struct {
 	ValueLen uint64
-	Value []byte
-	Encoding *uint64
-	SliceCount *uint64
-	Slices []codec_zenoh_value_slice.CodecZenohValueSlice
+	Value optional.Of[[]byte]
+	Encoding optional.Of[uint64]
+	SliceCount optional.Of[uint64]
+	Slices optional.Of[[]codec_zenoh_value_slice.CodecZenohValueSlice]
 }
 
 // DecodeCodecZenohValueZbuf decodes the next frame from cursor.
@@ -30,7 +31,7 @@ func DecodeCodecZenohValueZbuf(cursor *codec.SceCursor, afterShm byte) (*CodecZe
 	// The positional `raw[byte_off]` path is valid only when every
 	// field's absolute offset is fixed at codegen time; this branch
 	// handles every codec where it is not — present-if-gated fields
-	// (runtime presence; `*T` / nil `[]byte`), VLE / repeat / TLV-chain /
+	// (runtime presence, held by the runtime's optional type), VLE / repeat / TLV-chain /
 	// embed fields (runtime width), string fields (UTF-8 decode), and a
 	// fixed field after a variable-length payload (offset depends on the
 	// payload length). Each field reads its own bytes from the cursor and
@@ -39,41 +40,42 @@ func DecodeCodecZenohValueZbuf(cursor *codec.SceCursor, afterShm byte) (*CodecZe
 	// other field flows through `present_if_decode_stmt`.
 	ValueLen, err := cursor.ReadVLEU64()
 	if err != nil { return nil, err }
-	var Value []byte
+	var Value optional.Of[[]byte]
 	if (afterShm & 0x01) == 0 {
 		_n := int(ValueLen)
 		raw, err := cursor.PeekSlice(_n)
 		if err != nil {
 			return nil, err
 		}
-		Value = append([]byte(nil), raw...)
+		Value = optional.Some(append([]byte(nil), raw...))
 		if err := cursor.Advance(_n); err != nil {
 			return nil, err
 		}
 	}
-	var Encoding *uint64
+	var Encoding optional.Of[uint64]
 	if (afterShm & 0x01) != 0 {
 		_v, err := cursor.ReadVLEU64()
 	if err != nil { return nil, err }
-		Encoding = &_v
+		Encoding = optional.Some(_v)
 	}
-	var SliceCount *uint64
+	var SliceCount optional.Of[uint64]
 	if (afterShm & 0x01) != 0 {
 		_v, err := cursor.ReadVLEU64()
 	if err != nil { return nil, err }
-		SliceCount = &_v
+		SliceCount = optional.Some(_v)
 	}
-	var Slices []codec_zenoh_value_slice.CodecZenohValueSlice
+	var Slices optional.Of[[]codec_zenoh_value_slice.CodecZenohValueSlice]
 	if (afterShm & 0x01) != 0 {
-		_n := *SliceCount
-		Slices = make([]codec_zenoh_value_slice.CodecZenohValueSlice, 0, _n)
+		_n := SliceCount.Proven()
+		_list := make([]codec_zenoh_value_slice.CodecZenohValueSlice, 0, _n)
 		for _i := 0; _i < int(_n); _i++ {
 			_elem, err := codec_zenoh_value_slice.DecodeCodecZenohValueSlice(cursor)
 			if err != nil {
 				return nil, err
 			}
-			Slices = append(Slices, *_elem)
+			_list = append(_list, *_elem)
 		}
+		Slices = optional.Some(_list)
 	}
 	return &CodecZenohValueZbuf{
 		ValueLen: ValueLen,
@@ -100,26 +102,27 @@ func (s *CodecZenohValueZbuf) Encode(w codec.SceSink, afterShm byte) error {
 	if err := codec.WriteVLEU64(w, uint64(s.ValueLen)); err != nil {
 		return err
 	}
-	if s.Value != nil {
-		if err := w.WriteBytes(s.Value); err != nil {
+	if s.Value.IsPresent() {
+		if err := w.WriteBytes(s.Value.Proven()); err != nil {
 			return err
 		}
 	}
-	if s.Encoding != nil {
-		_v := *s.Encoding
+	if s.Encoding.IsPresent() {
+		_v := s.Encoding.Proven()
 	if err := codec.WriteVLEU64(w, uint64(_v)); err != nil {
 		return err
 	}
 	}
-	if s.SliceCount != nil {
-		_v := *s.SliceCount
+	if s.SliceCount.IsPresent() {
+		_v := s.SliceCount.Proven()
 	if err := codec.WriteVLEU64(w, uint64(_v)); err != nil {
 		return err
 	}
 	}
-	if s.Slices != nil {
-		for _i := range s.Slices {
-			if err := s.Slices[_i].Encode(w); err != nil {
+	if s.Slices.IsPresent() {
+		_list := s.Slices.Proven()
+		for _i := range _list {
+			if err := _list[_i].Encode(w); err != nil {
 				return err
 			}
 		}

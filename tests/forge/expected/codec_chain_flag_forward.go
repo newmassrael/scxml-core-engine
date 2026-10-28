@@ -8,13 +8,14 @@ package codec_chain_flag_forward
 
 import (
 	"github.com/newmassrael/sce-forge-runtime/codec"
+	"github.com/newmassrael/sce-forge-runtime/optional"
 	"example.com/sce-forge/codec_chain_flag_entry"
 )
 
 // CodecChainFlagForward represents the codec frame layout.
 type CodecChainFlagForward struct {
 	Head uint8
-	Entries []codec_chain_flag_entry.CodecChainFlagEntry
+	Entries optional.Of[[]codec_chain_flag_entry.CodecChainFlagEntry]
 }
 
 // DecodeCodecChainFlagForward decodes the next frame from cursor.
@@ -27,7 +28,7 @@ func DecodeCodecChainFlagForward(cursor *codec.SceCursor, wide byte) (*CodecChai
 	// The positional `raw[byte_off]` path is valid only when every
 	// field's absolute offset is fixed at codegen time; this branch
 	// handles every codec where it is not — present-if-gated fields
-	// (runtime presence; `*T` / nil `[]byte`), VLE / repeat / TLV-chain /
+	// (runtime presence, held by the runtime's optional type), VLE / repeat / TLV-chain /
 	// embed fields (runtime width), string fields (UTF-8 decode), and a
 	// fixed field after a variable-length payload (offset depends on the
 	// payload length). Each field reads its own bytes from the cursor and
@@ -45,9 +46,9 @@ func DecodeCodecChainFlagForward(cursor *codec.SceCursor, wide byte) (*CodecChai
 			return nil, err
 		}
 	}
-	var Entries []codec_chain_flag_entry.CodecChainFlagEntry
+	var Entries optional.Of[[]codec_chain_flag_entry.CodecChainFlagEntry]
 	if (Head & 0x01) != 0 {
-		Entries = make([]codec_chain_flag_entry.CodecChainFlagEntry, 0, 4)
+		_list := make([]codec_chain_flag_entry.CodecChainFlagEntry, 0, 4)
 		_more := false
 		for _i := 0; _i < int(4); _i++ {
 			if cursor.Remaining() == 0 {
@@ -58,7 +59,7 @@ func DecodeCodecChainFlagForward(cursor *codec.SceCursor, wide byte) (*CodecChai
 				return nil, err
 			}
 			_more = _elem.Z()
-			Entries = append(Entries, *_elem)
+			_list = append(_list, *_elem)
 			if !_more {
 				break
 			}
@@ -69,6 +70,7 @@ func DecodeCodecChainFlagForward(cursor *codec.SceCursor, wide byte) (*CodecChai
 		if _more {
 			return nil, codec.ErrTlvChainOverflow
 		}
+		Entries = optional.Some(_list)
 	}
 	return &CodecChainFlagForward{
 		Head: Head,
@@ -110,9 +112,12 @@ func (s *CodecChainFlagForward) Encode(w codec.SceSink, wide byte) error {
 	if err := w.WriteBytes([]byte{ s.Head }); err != nil {
 		return err
 	}
-	for _i := range s.Entries {
-		if err := s.Entries[_i].Encode(w, wide); err != nil {
-			return err
+	if s.Entries.IsPresent() {
+		_list := s.Entries.Proven()
+		for _i := range _list {
+			if err := _list[_i].Encode(w, wide); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

@@ -8,13 +8,14 @@ package codec_ext_encoding_info
 
 import (
 	"github.com/newmassrael/sce-forge-runtime/codec"
+	"github.com/newmassrael/sce-forge-runtime/optional"
 )
 
 // CodecExtEncodingInfo represents the codec frame layout.
 type CodecExtEncodingInfo struct {
 	CombinedId uint32
 	SchemaSize uint8
-	Schema []byte
+	Schema optional.Of[[]byte]
 }
 
 // DecodeCodecExtEncodingInfo decodes the next frame from cursor.
@@ -27,7 +28,7 @@ func DecodeCodecExtEncodingInfo(cursor *codec.SceCursor) (*CodecExtEncodingInfo,
 	// The positional `raw[byte_off]` path is valid only when every
 	// field's absolute offset is fixed at codegen time; this branch
 	// handles every codec where it is not — present-if-gated fields
-	// (runtime presence; `*T` / nil `[]byte`), VLE / repeat / TLV-chain /
+	// (runtime presence, held by the runtime's optional type), VLE / repeat / TLV-chain /
 	// embed fields (runtime width), string fields (UTF-8 decode), and a
 	// fixed field after a variable-length payload (offset depends on the
 	// payload length). Each field reads its own bytes from the cursor and
@@ -47,14 +48,14 @@ func DecodeCodecExtEncodingInfo(cursor *codec.SceCursor) (*CodecExtEncodingInfo,
 			return nil, err
 		}
 	}
-	var Schema []byte
+	var Schema optional.Of[[]byte]
 	if (CombinedId & 0x00000001) != 0 {
 		_n := int(SchemaSize)
 		raw, err := cursor.PeekSlice(_n)
 		if err != nil {
 			return nil, err
 		}
-		Schema = append([]byte(nil), raw...)
+		Schema = optional.Some(append([]byte(nil), raw...))
 		if err := cursor.Advance(_n); err != nil {
 			return nil, err
 		}
@@ -103,8 +104,8 @@ func (s *CodecExtEncodingInfo) Encode(w codec.SceSink) error {
 	if err := w.WriteBytes([]byte{ s.SchemaSize }); err != nil {
 		return err
 	}
-	if s.Schema != nil {
-		if err := w.WriteBytes(s.Schema); err != nil {
+	if s.Schema.IsPresent() {
+		if err := w.WriteBytes(s.Schema.Proven()); err != nil {
 			return err
 		}
 	}

@@ -8,14 +8,15 @@ package codec_zenoh_encoding
 
 import (
 	"github.com/newmassrael/sce-forge-runtime/codec"
+	"github.com/newmassrael/sce-forge-runtime/optional"
 	"unicode/utf8"
 )
 
 // CodecZenohEncoding represents the codec frame layout.
 type CodecZenohEncoding struct {
 	PackedId uint32
-	SchemaLen *uint64
-	Schema *string
+	SchemaLen optional.Of[uint64]
+	Schema optional.Of[string]
 }
 
 // DecodeCodecZenohEncoding decodes the next frame from cursor.
@@ -28,7 +29,7 @@ func DecodeCodecZenohEncoding(cursor *codec.SceCursor) (*CodecZenohEncoding, err
 	// The positional `raw[byte_off]` path is valid only when every
 	// field's absolute offset is fixed at codegen time; this branch
 	// handles every codec where it is not — present-if-gated fields
-	// (runtime presence; `*T` / nil `[]byte`), VLE / repeat / TLV-chain /
+	// (runtime presence, held by the runtime's optional type), VLE / repeat / TLV-chain /
 	// embed fields (runtime width), string fields (UTF-8 decode), and a
 	// fixed field after a variable-length payload (offset depends on the
 	// payload length). Each field reads its own bytes from the cursor and
@@ -37,15 +38,15 @@ func DecodeCodecZenohEncoding(cursor *codec.SceCursor) (*CodecZenohEncoding, err
 	// other field flows through `present_if_decode_stmt`.
 	PackedId, err := cursor.ReadVLEU32()
 	if err != nil { return nil, err }
-	var SchemaLen *uint64
+	var SchemaLen optional.Of[uint64]
 	if (PackedId & 0x00000001) != 0 {
 		_v, err := cursor.ReadVLEU64()
 	if err != nil { return nil, err }
-		SchemaLen = &_v
+		SchemaLen = optional.Some(_v)
 	}
-	var Schema *string
+	var Schema optional.Of[string]
 	if (PackedId & 0x00000001) != 0 {
-		_n := int(*SchemaLen)
+		_n := int(SchemaLen.Proven())
 		raw, err := cursor.PeekSlice(_n)
 		if err != nil {
 			return nil, err
@@ -53,8 +54,7 @@ func DecodeCodecZenohEncoding(cursor *codec.SceCursor) (*CodecZenohEncoding, err
 		if !utf8.Valid(raw) {
 			return nil, codec.ErrInvalidUTF8
 		}
-		_v := string(raw)
-		Schema = &_v
+		Schema = optional.Some(string(raw))
 		if err := cursor.Advance(_n); err != nil {
 			return nil, err
 		}
@@ -100,14 +100,14 @@ func (s *CodecZenohEncoding) Encode(w codec.SceSink) error {
 	if err := codec.WriteVLEU32(w, uint32(s.PackedId)); err != nil {
 		return err
 	}
-	if s.SchemaLen != nil {
-		_v := *s.SchemaLen
+	if s.SchemaLen.IsPresent() {
+		_v := s.SchemaLen.Proven()
 	if err := codec.WriteVLEU64(w, uint64(_v)); err != nil {
 		return err
 	}
 	}
-	if s.Schema != nil {
-		if err := w.WriteBytes([]byte(*s.Schema)); err != nil {
+	if s.Schema.IsPresent() {
+		if err := w.WriteBytes([]byte(s.Schema.Proven())); err != nil {
 			return err
 		}
 	}

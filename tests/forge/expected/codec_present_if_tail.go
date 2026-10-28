@@ -8,12 +8,13 @@ package codec_present_if_tail
 
 import (
 	"github.com/newmassrael/sce-forge-runtime/codec"
+	"github.com/newmassrael/sce-forge-runtime/optional"
 )
 
 // CodecPresentIfTail represents the codec frame layout.
 type CodecPresentIfTail struct {
 	Flags uint8
-	Payload []byte
+	Payload optional.Of[[]byte]
 }
 
 // DecodeCodecPresentIfTail decodes the next frame from cursor.
@@ -26,7 +27,7 @@ func DecodeCodecPresentIfTail(cursor *codec.SceCursor) (*CodecPresentIfTail, err
 	// The positional `raw[byte_off]` path is valid only when every
 	// field's absolute offset is fixed at codegen time; this branch
 	// handles every codec where it is not — present-if-gated fields
-	// (runtime presence; `*T` / nil `[]byte`), VLE / repeat / TLV-chain /
+	// (runtime presence, held by the runtime's optional type), VLE / repeat / TLV-chain /
 	// embed fields (runtime width), string fields (UTF-8 decode), and a
 	// fixed field after a variable-length payload (offset depends on the
 	// payload length). Each field reads its own bytes from the cursor and
@@ -44,14 +45,14 @@ func DecodeCodecPresentIfTail(cursor *codec.SceCursor) (*CodecPresentIfTail, err
 			return nil, err
 		}
 	}
-	var Payload []byte
+	var Payload optional.Of[[]byte]
 	if (Flags & 0x01) != 0 {
 		_n := cursor.Remaining()
 		raw, err := cursor.PeekSlice(_n)
 		if err != nil {
 			return nil, err
 		}
-		Payload = append([]byte(nil), raw...)
+		Payload = optional.Some(append([]byte(nil), raw...))
 		if err := cursor.Advance(_n); err != nil {
 			return nil, err
 		}
@@ -96,8 +97,8 @@ func (s *CodecPresentIfTail) Encode(w codec.SceSink) error {
 	if err := w.WriteBytes([]byte{ s.Flags }); err != nil {
 		return err
 	}
-	if s.Payload != nil {
-		if err := w.WriteBytes(s.Payload); err != nil {
+	if s.Payload.IsPresent() {
+		if err := w.WriteBytes(s.Payload.Proven()); err != nil {
 			return err
 		}
 	}

@@ -8,6 +8,7 @@ package codec_zenoh_response
 
 import (
 	"github.com/newmassrael/sce-forge-runtime/codec"
+	"github.com/newmassrael/sce-forge-runtime/optional"
 	"unicode/utf8"
 	"example.com/sce-forge/codec_zenoh_ext_entry"
 	"example.com/sce-forge/codec_zenoh_reply"
@@ -37,9 +38,9 @@ type CodecZenohResponse struct {
 	Header uint8
 	RequestId uint64
 	KeyId uint32
-	SuffixLen *uint64
-	Suffix *string
-	Extensions []codec_zenoh_ext_entry.CodecZenohExtEntry
+	SuffixLen optional.Of[uint64]
+	Suffix optional.Of[string]
+	Extensions optional.Of[[]codec_zenoh_ext_entry.CodecZenohExtEntry]
 	Body CodecZenohResponseVariant
 }
 
@@ -85,15 +86,15 @@ func DecodeCodecZenohResponse(cursor *codec.SceCursor) (*CodecZenohResponse, err
 	if err != nil { return nil, err }
 	KeyId, err := cursor.ReadVLEU32()
 	if err != nil { return nil, err }
-	var SuffixLen *uint64
+	var SuffixLen optional.Of[uint64]
 	if (Header & 0x20) != 0 {
 		_v, err := cursor.ReadVLEU64()
 	if err != nil { return nil, err }
-		SuffixLen = &_v
+		SuffixLen = optional.Some(_v)
 	}
-	var Suffix *string
+	var Suffix optional.Of[string]
 	if (Header & 0x20) != 0 {
-		_n := int(*SuffixLen)
+		_n := int(SuffixLen.Proven())
 		raw, err := cursor.PeekSlice(_n)
 		if err != nil {
 			return nil, err
@@ -101,15 +102,14 @@ func DecodeCodecZenohResponse(cursor *codec.SceCursor) (*CodecZenohResponse, err
 		if !utf8.Valid(raw) {
 			return nil, codec.ErrInvalidUTF8
 		}
-		_v := string(raw)
-		Suffix = &_v
+		Suffix = optional.Some(string(raw))
 		if err := cursor.Advance(_n); err != nil {
 			return nil, err
 		}
 	}
-	var Extensions []codec_zenoh_ext_entry.CodecZenohExtEntry
+	var Extensions optional.Of[[]codec_zenoh_ext_entry.CodecZenohExtEntry]
 	if (Header & 0x80) != 0 {
-		Extensions = make([]codec_zenoh_ext_entry.CodecZenohExtEntry, 0, 4)
+		_list := make([]codec_zenoh_ext_entry.CodecZenohExtEntry, 0, 4)
 		_more := false
 		for _i := 0; _i < int(4); _i++ {
 			if cursor.Remaining() == 0 {
@@ -120,7 +120,7 @@ func DecodeCodecZenohResponse(cursor *codec.SceCursor) (*CodecZenohResponse, err
 				return nil, err
 			}
 			_more = _elem.Z()
-			Extensions = append(Extensions, *_elem)
+			_list = append(_list, *_elem)
 			if !_more {
 				break
 			}
@@ -131,6 +131,7 @@ func DecodeCodecZenohResponse(cursor *codec.SceCursor) (*CodecZenohResponse, err
 		if _more {
 			return nil, codec.ErrTlvChainOverflow
 		}
+		Extensions = optional.Some(_list)
 	}
 	_peekSlice, err := cursor.PeekSlice(1)
 	if err != nil {
@@ -242,20 +243,23 @@ func (s *CodecZenohResponse) Encode(w codec.SceSink) error {
 	if err := codec.WriteVLEU32(w, uint32(s.KeyId)); err != nil {
 		return err
 	}
-	if s.SuffixLen != nil {
-		_v := *s.SuffixLen
+	if s.SuffixLen.IsPresent() {
+		_v := s.SuffixLen.Proven()
 	if err := codec.WriteVLEU64(w, uint64(_v)); err != nil {
 		return err
 	}
 	}
-	if s.Suffix != nil {
-		if err := w.WriteBytes([]byte(*s.Suffix)); err != nil {
+	if s.Suffix.IsPresent() {
+		if err := w.WriteBytes([]byte(s.Suffix.Proven())); err != nil {
 			return err
 		}
 	}
-	for _i := range s.Extensions {
-		if err := s.Extensions[_i].Encode(w); err != nil {
-			return err
+	if s.Extensions.IsPresent() {
+		_list := s.Extensions.Proven()
+		for _i := range _list {
+			if err := _list[_i].Encode(w); err != nil {
+				return err
+			}
 		}
 	}
 	// Append the active arm body's encoded bytes via the same sink.

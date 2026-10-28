@@ -8,14 +8,15 @@ package codec_repeat_flag_gated
 
 import (
 	"github.com/newmassrael/sce-forge-runtime/codec"
+	"github.com/newmassrael/sce-forge-runtime/optional"
 	"example.com/sce-forge/codec_chain_flag_entry"
 )
 
 // CodecRepeatFlagGated represents the codec frame layout.
 type CodecRepeatFlagGated struct {
 	Head uint8
-	Count *uint8
-	Entries []codec_chain_flag_entry.CodecChainFlagEntry
+	Count optional.Of[uint8]
+	Entries optional.Of[[]codec_chain_flag_entry.CodecChainFlagEntry]
 }
 
 // DecodeCodecRepeatFlagGated decodes the next frame from cursor.
@@ -28,7 +29,7 @@ func DecodeCodecRepeatFlagGated(cursor *codec.SceCursor) (*CodecRepeatFlagGated,
 	// The positional `raw[byte_off]` path is valid only when every
 	// field's absolute offset is fixed at codegen time; this branch
 	// handles every codec where it is not — present-if-gated fields
-	// (runtime presence; `*T` / nil `[]byte`), VLE / repeat / TLV-chain /
+	// (runtime presence, held by the runtime's optional type), VLE / repeat / TLV-chain /
 	// embed fields (runtime width), string fields (UTF-8 decode), and a
 	// fixed field after a variable-length payload (offset depends on the
 	// payload length). Each field reads its own bytes from the cursor and
@@ -46,7 +47,7 @@ func DecodeCodecRepeatFlagGated(cursor *codec.SceCursor) (*CodecRepeatFlagGated,
 			return nil, err
 		}
 	}
-	var Count *uint8
+	var Count optional.Of[uint8]
 	if (Head & 0x02) != 0 {
 		raw, err := cursor.PeekSlice(1)
 		if err != nil {
@@ -56,19 +57,20 @@ func DecodeCodecRepeatFlagGated(cursor *codec.SceCursor) (*CodecRepeatFlagGated,
 		if err := cursor.Advance(1); err != nil {
 			return nil, err
 		}
-		Count = &_v
+		Count = optional.Some(_v)
 	}
-	var Entries []codec_chain_flag_entry.CodecChainFlagEntry
+	var Entries optional.Of[[]codec_chain_flag_entry.CodecChainFlagEntry]
 	if (Head & 0x02) != 0 {
-		_n := *Count
-		Entries = make([]codec_chain_flag_entry.CodecChainFlagEntry, 0, _n)
+		_n := Count.Proven()
+		_list := make([]codec_chain_flag_entry.CodecChainFlagEntry, 0, _n)
 		for _i := 0; _i < int(_n); _i++ {
 			_elem, err := codec_chain_flag_entry.DecodeCodecChainFlagEntry(cursor, byte((Head >> 0) & 0x1))
 			if err != nil {
 				return nil, err
 			}
-			Entries = append(Entries, *_elem)
+			_list = append(_list, *_elem)
 		}
+		Entries = optional.Some(_list)
 	}
 	return &CodecRepeatFlagGated{
 		Head: Head,
@@ -123,15 +125,16 @@ func (s *CodecRepeatFlagGated) Encode(w codec.SceSink) error {
 	if err := w.WriteBytes([]byte{ s.Head }); err != nil {
 		return err
 	}
-	if s.Count != nil {
-		_v := *s.Count
+	if s.Count.IsPresent() {
+		_v := s.Count.Proven()
 		if err := w.WriteBytes([]byte{ _v }); err != nil {
 			return err
 		}
 	}
-	if s.Entries != nil {
-		for _i := range s.Entries {
-			if err := s.Entries[_i].Encode(w, byte((s.Head >> 0) & 0x1)); err != nil {
+	if s.Entries.IsPresent() {
+		_list := s.Entries.Proven()
+		for _i := range _list {
+			if err := _list[_i].Encode(w, byte((s.Head >> 0) & 0x1)); err != nil {
 				return err
 			}
 		}

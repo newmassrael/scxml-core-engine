@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 09d8fec62ddcc806d17c4e1da241b802dbe4f5317b3bd415a705b2ad99d82f3e
+// source-hash: 8b4828d778fc1da05444ac6a052eb44c820b7a80e1f4075fc52bc6e97e8a070a
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -1266,7 +1266,7 @@ func (p *StaticRecordListIndexPolicy) ExecuteTransitionContent(source StaticReco
 			func() {
 
 
-	if (func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.At(&sceFailure, p.vDays[:], int64(0)).year; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticRecordListIndexEventErrorExecution, "<assign location='picked.year'>: an integer operation overflowed or failed")); return true }; p.vPicked.year = sceValue; return false }()) || (func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.At(&sceFailure, p.vDays[:], int64(0)).month; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticRecordListIndexEventErrorExecution, "<assign location='picked.month'>: an integer operation overflowed or failed")); return true }; p.vPicked.month = sceValue; return false }()) || (func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.At(&sceFailure, p.vDays[:], int64(0)).dayOfMonth; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticRecordListIndexEventErrorExecution, "<assign location='picked.dayOfMonth'>: an integer operation overflowed or failed")); return true }; p.vPicked.dayOfMonth = sceValue; return false }()) {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.At(&sceFailure, p.vDays[:], int64(0)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticRecordListIndexEventErrorExecution, "<assign location='picked'>: an integer operation overflowed or failed")); return true }; p.vPicked = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1277,7 +1277,7 @@ func (p *StaticRecordListIndexPolicy) ExecuteTransitionContent(source StaticReco
 			func() {
 
 
-	if (func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AtU(&sceFailure, p.vDays[:], uint64(scealgorithm.SubUint32(&sceFailure, uint32(len(p.vDays)), 1))).year; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticRecordListIndexEventErrorExecution, "<assign location='picked.year'>: an integer operation overflowed or failed")); return true }; p.vPicked.year = sceValue; return false }()) || (func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AtU(&sceFailure, p.vDays[:], uint64(scealgorithm.SubUint32(&sceFailure, uint32(len(p.vDays)), 1))).month; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticRecordListIndexEventErrorExecution, "<assign location='picked.month'>: an integer operation overflowed or failed")); return true }; p.vPicked.month = sceValue; return false }()) || (func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AtU(&sceFailure, p.vDays[:], uint64(scealgorithm.SubUint32(&sceFailure, uint32(len(p.vDays)), 1))).dayOfMonth; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticRecordListIndexEventErrorExecution, "<assign location='picked.dayOfMonth'>: an integer operation overflowed or failed")); return true }; p.vPicked.dayOfMonth = sceValue; return false }()) {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.At(&sceFailure, p.vDays[:], int64(scealgorithm.SubUint32(&sceFailure, uint32(len(p.vDays)), 1))); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticRecordListIndexEventErrorExecution, "<assign location='picked'>: an integer operation overflowed or failed")); return true }; p.vPicked = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1288,7 +1288,7 @@ func (p *StaticRecordListIndexPolicy) ExecuteTransitionContent(source StaticReco
 			func() {
 
 
-	if (func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.At(&sceFailure, p.vDays[:], int64(p.vCursor)).year; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticRecordListIndexEventErrorExecution, "<assign location='picked.year'>: an integer operation overflowed or failed")); return true }; p.vPicked.year = sceValue; return false }()) || (func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.At(&sceFailure, p.vDays[:], int64(p.vCursor)).month; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticRecordListIndexEventErrorExecution, "<assign location='picked.month'>: an integer operation overflowed or failed")); return true }; p.vPicked.month = sceValue; return false }()) || (func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.At(&sceFailure, p.vDays[:], int64(p.vCursor)).dayOfMonth; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticRecordListIndexEventErrorExecution, "<assign location='picked.dayOfMonth'>: an integer operation overflowed or failed")); return true }; p.vPicked.dayOfMonth = sceValue; return false }()) {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.At(&sceFailure, p.vDays[:], int64(p.vCursor)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticRecordListIndexEventErrorExecution, "<assign location='picked'>: an integer operation overflowed or failed")); return true }; p.vPicked = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
