@@ -1883,7 +1883,18 @@ pub fn emit_model_artifacts(
                 options,
                 variants,
             ),
-            _ => Err(forge::error::Located::new(
+            // Every backend is named: one added to `Language` is decided here, not
+            // inherited from the arm (`a_backend_is_decided_at_every_site_and_listed_once`).
+            (generator::Language::Rust, None)
+            | (
+                generator::Language::Cpp
+                | generator::Language::Kotlin
+                | generator::Language::Go
+                | generator::Language::Python
+                | generator::Language::C11
+                | generator::Language::Swift,
+                _,
+            ) => Err(forge::error::Located::new(
                 forge::error::GenerateError::CodegenFeatureSelectionRequired {
                     model: line.model_name().to_string(),
                     language: forge::codegen_matrix::language_wire_name(language).to_string(),
