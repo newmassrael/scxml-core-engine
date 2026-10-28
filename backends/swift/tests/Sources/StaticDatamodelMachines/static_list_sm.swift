@@ -496,6 +496,9 @@ public final class StaticListPolicy: StatePolicy {
             case 0:
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 sceBlock: do {
+                    if pendingPayloadTag != .dayPicked {
+                        break sceBlock
+                    }
 
                 // SCE Accepted Subset §2.15: <sce:append target="picked">
 

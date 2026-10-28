@@ -284,6 +284,70 @@ private func reals32() -> Machine {
     )
 }
 
+// A record as a scenario writes it: an object of its fields, in the schema's order.
+private func day(_ year: UInt16, _ month: UInt8, _ dayOfMonth: UInt8) -> JSONValue {
+    .object([
+        (key: "year", value: integer(year)),
+        (key: "month", value: integer(month)),
+        (key: "dayOfMonth", value: integer(dayOfMonth)),
+    ])
+}
+
+private func recordFields() -> Machine {
+    let policy = StaticRecordFieldsPolicy()
+    return drive(
+        policy,
+        variables: [
+            "shown": {
+                day(policy.shown.year, policy.shown.month, policy.shown.dayOfMonth)
+            },
+            "refusals": { integer(policy.refusals) },
+        ]
+    )
+}
+
+private func recordList() -> Machine {
+    let policy = StaticRecordListPolicy()
+    return drive(
+        policy,
+        variables: [
+            "draft": { day(policy.draft.year, policy.draft.month, policy.draft.dayOfMonth) },
+            "last": { day(policy.last.year, policy.last.month, policy.last.dayOfMonth) },
+            "days": { .array(policy.days.map { day($0.year, $0.month, $0.dayOfMonth) }) },
+            "copies": { .array(policy.copies.map { day($0.year, $0.month, $0.dayOfMonth) }) },
+            "total": { integer(policy.total) },
+            "errors": { integer(policy.errors) },
+        ]
+    )
+}
+
+private func reading(_ sensor: UInt8, _ value: Double) -> JSONValue {
+    .object([(key: "sensor", value: integer(sensor)), (key: "value", value: real(value))])
+}
+
+private func recordReal() -> Machine {
+    let policy = StaticRecordRealPolicy()
+    return drive(
+        policy,
+        variables: [
+            "last": { reading(policy.last.sensor, policy.last.value) },
+            "sum": { real(policy.sum) },
+        ]
+    )
+}
+
+private func recordReal32() -> Machine {
+    let policy = StaticRecordReal32Policy()
+    return drive(
+        policy,
+        variables: [
+            "last": { reading(policy.last.sensor, Double(policy.last.value)) },
+            "sum": { real(policy.sum) },
+            "errors": { integer(policy.errors) },
+        ]
+    )
+}
+
 // MARK: - The scenarios
 
 // A counter counts to its flag and lets go: guards, `<assign>`, `<if>` and `<elseif>`
@@ -329,6 +393,28 @@ private func reals32() -> Machine {
 // resumes through it finds the variables it kept.
 @Test func aHistoryResumesWhereItsParentWasLeft() {
     replay("static_history", history())
+}
+
+// MARK: - Records
+
+// A record is built whole from its `<sce:set>`s, read field by field in a guard and an
+// assignment, and written a field at a time.
+@Test func aRecordIsBuiltWholeAndReadAndWrittenAFieldAtATime() {
+    replay("static_record_fields", recordFields())
+}
+
+// A record is taken into a list by name, and the list holds a copy of it: a record
+// written after it was taken does not move the element.
+@Test func aRecordListHoldsCopiesOfTheRecordsItTook() {
+    replay("static_record_list", recordList())
+}
+
+@Test func aRecordWithA64BitRealFieldIsReadAndWrittenAFieldAtATime() {
+    replay("static_record_real", recordReal())
+}
+
+@Test func aRecordWithA32BitRealFieldIsHeldToBinary32() {
+    replay("static_record_real32", recordReal32())
 }
 
 // MARK: - Reals

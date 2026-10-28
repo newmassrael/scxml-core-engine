@@ -469,6 +469,9 @@ public final class StaticPayloadPolicy: StatePolicy {
             case 0:
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 sceBlock: do {
+                    if pendingPayloadTag != .dayPicked {
+                        break sceBlock
+                    }
 
 
                 self.vLate = true
@@ -487,6 +490,9 @@ public final class StaticPayloadPolicy: StatePolicy {
             case 1:
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 sceBlock: do {
+                    if pendingPayloadTag != .dayPicked {
+                        break sceBlock
+                    }
 
 
                 self.vLate = false

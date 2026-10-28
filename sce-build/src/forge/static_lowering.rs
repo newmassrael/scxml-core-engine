@@ -10428,18 +10428,34 @@ impl StaticTarget for SwiftTarget {
         if let Some(var) = scope.variables.iter().find(|v| {
             !v.value_type.as_ref().is_some_and(|t| {
                 t.scalar().is_some_and(|ty| !matches!(ty, SceType::Bytes))
-                    // A list of numbers or truth values, bound by `sce:capacity`; a list
-                    // of enums or of records is not spelled yet.
+                    // A record, and a list of numbers, truth values or records, bound by
+                    // `sce:capacity`; a list of enums is not spelled yet.
+                    || t.record_alias().is_some()
                     || t.list_elem().is_some_and(|elem| {
                         elem.scalar()
-                            .is_some_and(|ty| !matches!(ty, SceType::Enum(_) | SceType::Bytes))
+                            .is_none_or(|ty| !matches!(ty, SceType::Enum(_) | SceType::Bytes))
                     })
             })
         }) {
             return Some(format!(
-                "<data id=\"{}\"> of a record, a list of enums or records, a byte string or an \
-                 optional type",
+                "<data id=\"{}\"> of a list of enums, a byte string or an optional type",
                 var.id
+            ));
+        }
+        // A record's field is named as the author wrote it, so one Swift reserves cannot
+        // be a field, and an optional field is not spelled yet.
+        if let Some((alias, field)) = model
+            .imported_records
+            .iter()
+            .flat_map(|(alias, schema)| schema.fields.iter().map(move |field| (alias, field)))
+            .find(|(_, field)| {
+                matches!(field.sce_type, FieldType::Optional { .. })
+                    || crate::reader_names::is_reserved_word(Language::Swift, &field.id)
+            })
+        {
+            return Some(format!(
+                "the field `{}` of the record `{alias}`, an optional value or a name Swift reserves",
+                field.id
             ));
         }
         // A variant is a member of the enum's type, named lowerCamelCase, and one Swift
@@ -10528,23 +10544,47 @@ impl StaticTarget for SwiftTarget {
     fn scalar_view(&self, _ty: &SceType) -> Option<String> {
         None
     }
-    fn record_type(&self, _machine: &str, _alias: &str) -> String {
-        unreachable!("refused by SwiftTarget::unsupported")
+    fn record_type(&self, machine: &str, alias: &str) -> String {
+        format!(
+            "{machine}{}Record",
+            filters::to_pascal_case(alias.to_string())
+        )
     }
+    // A struct of the schema's fields in the schema's order, named as the author
+    // wrote them because an expression reads a field by that name
+    // (`shown.dayOfMonth` is `self.vShown.dayOfMonth`). It is a value, so a host that
+    // reads one holds a copy, and it is `Equatable` and `Sendable` as its fields are.
     fn record_def(
         &self,
-        _ty: &str,
-        _alias: &str,
-        _schema: &EventSchemaModel,
-        _enum_types: &std::collections::BTreeMap<String, String>,
+        ty: &str,
+        alias: &str,
+        schema: &EventSchemaModel,
+        enum_types: &std::collections::BTreeMap<String, String>,
     ) -> String {
-        unreachable!("refused by SwiftTarget::unsupported")
+        let fields: String = schema
+            .fields
+            .iter()
+            .map(|field| {
+                let held = match field.sce_type.present_type() {
+                    SceType::Enum(reference) => enum_types[&reference.alias].clone(),
+                    other => crate::forge::generator::swift_type(other).to_string(),
+                };
+                format!("    public var {}: {held}\n", self.record_field(&field.id))
+            })
+            .collect();
+        format!(
+            "/// SCE Accepted Subset §2.15: a `record:{alias}` datamodel value.\n\
+             public struct {ty}: Equatable, Sendable {{\n{fields}}}"
+        )
     }
-    fn record_field(&self, _id: &str) -> String {
-        unreachable!("refused by SwiftTarget::unsupported")
+    // The author's spelling, which is what an expression's member access writes;
+    // [`Self::unsupported`] has refused a name Swift reserves.
+    fn record_field(&self, id: &str) -> String {
+        id.to_string()
     }
-    fn record_value(&self, _ty: &str, _fields: &[(String, String)]) -> String {
-        unreachable!("refused by SwiftTarget::unsupported")
+    fn record_value(&self, ty: &str, fields: &[(String, String)]) -> String {
+        let args: Vec<String> = fields.iter().map(|(f, v)| format!("{f}: {v}")).collect();
+        format!("{ty}({})", args.join(", "))
     }
     fn enum_type(&self, machine: &str, alias: &str) -> Option<String> {
         Some(format!(
@@ -10630,11 +10670,11 @@ impl StaticTarget for SwiftTarget {
     fn list_view(&self, _elem: &SceType) -> Option<String> {
         None
     }
-    fn record_list_type(&self, _record: &str) -> String {
-        unreachable!("refused by SwiftTarget::unsupported")
+    fn record_list_type(&self, record: &str) -> String {
+        format!("[{record}]")
     }
     fn record_list_view(&self, _record: &str) -> Option<String> {
-        unreachable!("refused by SwiftTarget::unsupported")
+        None
     }
     fn list_empty(&self) -> String {
         "[]".to_string()
@@ -10657,8 +10697,8 @@ impl StaticTarget for SwiftTarget {
     fn fresh_send_id(&self) -> String {
         "engine.nextAutoSendID()".to_string()
     }
-    fn assign_field(&self, _target: &str, _field: &str, _value: &str) -> String {
-        unreachable!("refused by SwiftTarget::unsupported")
+    fn assign_field(&self, target: &str, field: &str, value: &str) -> String {
+        format!("{target}.{field} = {value}")
     }
     // The label is text and the value is shown as Swift shows it, never a format.
     fn log(&self, label: &str, value: &str, _ty: InferredType) -> String {
