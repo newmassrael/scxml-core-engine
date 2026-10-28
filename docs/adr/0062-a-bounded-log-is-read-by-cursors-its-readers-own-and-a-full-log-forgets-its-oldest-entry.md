@@ -332,6 +332,25 @@ Each step is green on its own, and the last two are the ones that need the consu
 5. **C11 and C++**: runtime, templates, GenMC scenarios. Then **Go**, **Kotlin**, **Python**; Swift stays refused.
 6. **The differential run against the consumer's ring** (§6.5), then the consumer's switch to the generated row.
 
+### What step 1 landed (2026-10-28)
+
+- **The checker and its form.** `sce-build/src/broadcast_history.rs`: the general search of §5, the JSON form
+  (`tests/forge/conformance/broadcast_history.schema.json`, held as strict as the reader by a test), and
+  `sce-codegen check-broadcast-history`. 17 fixture histories are judged as their names say, among them the two answers
+  the TLA+ model found for the rejected designs (a `lagged` that skipped nothing, an item of two entries), and the
+  linearization-point case of §5 (a read that takes effect before an overlapping publish moves the window on). 11 tests
+  pass on the build machine.
+- **The search state is the frontier alone.** `h` is the number of publishes among the publisher's placed operations,
+  and a reader's cursor is a function of the readings it recorded, so neither needs to be part of the state.
+- **Still to do in step 1:** the specialisation of §5 and its differential test against the general search. The general
+  search is the definition and is exponential in the number of readers' operations in the worst case, so until the
+  specialisation exists the stress runs of the backends keep their histories short.
+- **Step 2, the part that landed:** `sce-build/src/history_common.rs` holds the checker's answer (`Verdict`), the error of
+  a file that is not a history, the clock model and the real-time order. `queue_history.rs` re-exports and uses them;
+  its tests are unedited and pass. The element-document resolution and the width-and-wrap analysis wait for step 3,
+  where the kind first needs them: nothing reads them before, and extracting what nothing reads would be a guess about
+  their shape.
+
 ## Consequences
 
 - `queue` keeps its definition. A reader of it is not asked to understand a policy it does not have.

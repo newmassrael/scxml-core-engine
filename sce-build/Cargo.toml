@@ -441,6 +441,13 @@ name = "queue_history_format"
 path = "tests/queue_history_format.rs"
 required-features = ["cli"]
 
+# The broadcast-log history form and `sce-codegen check-broadcast-history` on
+# the real binary, held the way the queue's is.
+[[test]]
+name = "broadcast_history_format"
+path = "tests/broadcast_history_format.rs"
+required-features = ["cli"]
+
 # `sce-codegen diagram` on the binary: files named by state, a refusal
 # that writes nothing, and the written set checkable for drift.
 [[test]]

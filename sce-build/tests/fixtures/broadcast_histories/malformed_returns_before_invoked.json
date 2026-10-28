@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "retention": 2,
+  "publisher": [
+    {"call": "publish", "value": 5, "seq": 0, "invoked": 4, "returned": 3}
+  ],
+  "readers": []
+}

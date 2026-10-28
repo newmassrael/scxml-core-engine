@@ -5594,6 +5594,10 @@
         {
           "file": "backends/cpp/forge-runtime/tests/genmc/linked_segment_handover.cpp",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/history_common.rs",
+          "kind": "references"
         }
       ]
     },

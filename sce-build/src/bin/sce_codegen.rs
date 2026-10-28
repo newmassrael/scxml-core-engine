@@ -3449,6 +3449,22 @@ enum Commands {
         files: Vec<String>,
     },
 
+    /// Judge recorded broadcast-log histories for linearizability (ADR 0062
+    /// section 5).
+    ///
+    /// Each FILE is a history in the JSON form that
+    /// `tests/forge/conformance/broadcast_history.schema.json` describes: what
+    /// the publisher and the readers of one stress run observed, each
+    /// operation with the instants it was invoked and returned. Judged and
+    /// reported as `check-queue-history` does: one line per file, and the
+    /// command fails when any file is not linearizable, is not a history, or
+    /// records no operation.
+    CheckBroadcastHistory {
+        /// The history files to judge
+        #[arg(required = true)]
+        files: Vec<String>,
+    },
+
     /// Verify that generated files were generated from the current inputs,
     /// per spec §synth-6.2.6.
     ///
@@ -4062,6 +4078,7 @@ fn main() {
             header_dir,
         } => cmd_check_aot_briefs(&manifest, &header_dir),
         Commands::CheckQueueHistory { files } => cmd_check_queue_history(&files),
+        Commands::CheckBroadcastHistory { files } => cmd_check_broadcast_history(&files),
         Commands::ProvenanceRoster => cmd_provenance_roster(),
         Commands::Kinds { kind } => cmd_kinds(kind.as_deref()),
         Commands::Expand { scxml, include_dir } => cmd_expand(&scxml, &include_dir),
@@ -4171,6 +4188,7 @@ fn assert_unchanged_refusal(command: &Commands) -> Option<String> {
         | Commands::ListFixtures(_)
         | Commands::CheckAotBriefs { .. }
         | Commands::CheckQueueHistory { .. }
+        | Commands::CheckBroadcastHistory { .. }
         | Commands::ProvenanceRoster
         | Commands::Kinds { .. }
         | Commands::Expand { .. }
@@ -13041,19 +13059,47 @@ fn cmd_check_aot_briefs(manifest_path: &str, header_dir: &str) {
 /// Every file is judged and a line printed for each before the command fails,
 /// so a run that wrote six histories and broke two says which two.
 fn cmd_check_queue_history(files: &[String]) {
-    use sce_build::queue_history::{check, History, Verdict};
+    use sce_build::queue_history::{check, History};
+
+    judge_history_files("check-queue-history", files, |text| {
+        let history = History::from_json(text).map_err(|e| e.to_string())?;
+        let operations = history.participants.iter().map(Vec::len).sum();
+        Ok((operations, check(&history)))
+    });
+}
+
+/// Judge recorded broadcast-log histories. See `Commands::CheckBroadcastHistory`.
+fn cmd_check_broadcast_history(files: &[String]) {
+    use sce_build::broadcast_history::{check, History};
+
+    judge_history_files("check-broadcast-history", files, |text| {
+        let history = History::from_json(text).map_err(|e| e.to_string())?;
+        let operations =
+            history.publisher.len() + history.readers.iter().map(Vec::len).sum::<usize>();
+        Ok((operations, check(&history)))
+    });
+}
+
+/// Judge the history files of one kind: read each, let `judge` parse it and
+/// say how many operations it records and what the checker made of them, and
+/// print a line per file. Every file is judged before the command fails.
+fn judge_history_files(
+    stage: &'static str,
+    files: &[String],
+    judge: impl Fn(&str) -> Result<(usize, sce_build::history_common::Verdict), String>,
+) {
+    use sce_build::history_common::Verdict;
 
     let mut refused = 0usize;
     for path in files {
         let verdict = std::fs::read_to_string(path)
             .map_err(|e| format!("cannot be read: {e}"))
-            .and_then(|text| History::from_json(&text).map_err(|e| e.to_string()))
-            .and_then(|history| {
-                let operations: usize = history.participants.iter().map(Vec::len).sum();
+            .and_then(|text| judge(&text))
+            .and_then(|(operations, verdict)| {
                 if operations == 0 {
                     return Err("records no operation, which proves nothing".to_string());
                 }
-                match check(&history) {
+                match verdict {
                     Verdict::Linearizable => Ok(operations),
                     Verdict::NotLinearizable { explored, deepest } => Err(format!(
                         "is not linearizable: the search explored {explored} states and got no \
@@ -13072,7 +13118,7 @@ fn cmd_check_queue_history(files: &[String]) {
     }
     if refused != 0 {
         cli_exit(CliError::ScxmlGenerate {
-            stage: "check-queue-history",
+            stage,
             detail: format!("{refused} of {} histories refused", files.len()),
         });
     }

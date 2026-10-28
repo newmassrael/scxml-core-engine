@@ -42,6 +42,11 @@ pub mod attribute_spelling;
 /// for them — read from a file beside the specification, enforced the same
 /// way for every entry point, and pinned by an acceptance record.
 pub mod authoring_profile;
+/// The linearizability checker for broadcast-log histories and the JSON form
+/// a backend's stress run writes one in (ADR 0062 §5). Here, and not in a
+/// backend's tests, so `sce-codegen check-broadcast-history` judges the
+/// history of every backend.
+pub mod broadcast_history;
 pub mod cli_error;
 pub mod cli_language;
 /// Text placed inside a comment in generated source — the one encoding
@@ -163,6 +168,10 @@ pub mod generator;
 /// hash would carry.
 pub mod generator_witness;
 pub mod gui_structure;
+/// What the history checkers of the concurrent kinds share: the clock model,
+/// the real-time order, the checker's answer and the error of a file that is
+/// not a history (ADR 0062 §7).
+pub mod history_common;
 /// Which `<send>` / `<invoke>` `type` values this build has a lowering
 /// path for, and the sites naming one it does not. Single source of
 /// truth for the accepted set — the per-backend send templates read the

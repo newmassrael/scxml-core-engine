@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "retention": 2,
+  "publisher": [
+    {"call": "publish", "value": 5, "seq": 0, "invoked": 3, "returned": 4}
+  ],
+  "readers": [
+    [
+      {"call": "open", "from": "oldest", "cursor": 0, "invoked": 1, "returned": 2},
+      {"call": "read", "outcome": "empty", "invoked": 5, "returned": 6}
+    ]
+  ]
+}

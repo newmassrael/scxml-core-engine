@@ -1,0 +1,121 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "BroadcastLogHistory",
+  "description": "What the publisher and the readers of one broadcast-log stress run observed (ADR 0062 section 5). Every backend's stress run writes this form and `sce-codegen check-broadcast-history` judges it, so one linearizability checker serves all of them. A participant is one thread or goroutine; its operations are listed in its program order. Every operation carries two readings of ONE clock that all participants share, taken immediately before the call (`invoked`) and immediately after it returned (`returned`); a counter that each participant increments atomically at both points is such a clock, and gives distinct readings. An operation that returned before another was invoked is ordered before it; operations that overlap may be ordered either way. The history is linearizable when its operations can be put in one sequence that keeps that order and is a run of the sequential bounded log of `retention` entries: `h` entries published, only the last `retention` retained; a reader owns a cursor that `open` sets and `read` moves.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "retention", "publisher", "readers"],
+  "properties": {
+    "version": {
+      "description": "The version of this format. A reader that meets another refuses the file.",
+      "const": 1
+    },
+    "retention": {
+      "description": "The retention of the sequential log the run is judged against: the number of entries a reader may rely on, which the log under test was built with. The ring under test holds one slot more.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "publisher": {
+      "description": "The one publisher's operations in its program order: publishes, and reads of the head.",
+      "type": "array",
+      "items": { "$ref": "#/definitions/Operation" }
+    },
+    "readers": {
+      "description": "One list per reader, in that reader's program order. A read needs an earlier open of the same reader.",
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": { "$ref": "#/definitions/Operation" }
+      }
+    }
+  },
+  "definitions": {
+    "Operation": {
+      "description": "One observed operation. A publish names its `value` and the sequence number `seq` it took, which is its position among the publisher's publishes. An open names where the cursor was asked to start (`from`: `oldest`, `head`, or `at` with the sequence number `at`) and the `cursor` it set. A read names its `outcome`: `item` (the entry `seq` that held `value`), `empty` (the cursor was at the head) or `lagged` (the cursor was `skipped` entries below the start of the window, and moved to it). A head names the number it returned.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["call", "invoked", "returned"],
+      "properties": {
+        "call": { "enum": ["publish", "open", "read", "head"] },
+        "outcome": { "enum": ["item", "empty", "lagged"] },
+        "value": { "type": "integer", "minimum": 0 },
+        "seq": { "type": "integer", "minimum": 0 },
+        "skipped": { "type": "integer", "minimum": 0 },
+        "from": { "enum": ["oldest", "head", "at"] },
+        "at": { "type": "integer", "minimum": 0 },
+        "cursor": { "type": "integer", "minimum": 0 },
+        "head": { "type": "integer", "minimum": 0 },
+        "invoked": {
+          "description": "The clock reading taken immediately before the call.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "returned": {
+          "description": "The clock reading taken immediately after the call returned. Later than `invoked`, and earlier than the same participant's next `invoked`.",
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "oneOf": [
+        {
+          "properties": { "call": { "const": "publish" } },
+          "required": ["value", "seq"],
+          "not": { "anyOf": [
+            { "required": ["outcome"] }, { "required": ["skipped"] }, { "required": ["from"] },
+            { "required": ["at"] }, { "required": ["cursor"] }, { "required": ["head"] }
+          ] }
+        },
+        {
+          "properties": { "call": { "const": "open" }, "from": { "enum": ["oldest", "head"] } },
+          "required": ["from", "cursor"],
+          "not": { "anyOf": [
+            { "required": ["outcome"] }, { "required": ["value"] }, { "required": ["seq"] },
+            { "required": ["skipped"] }, { "required": ["at"] }, { "required": ["head"] }
+          ] }
+        },
+        {
+          "properties": { "call": { "const": "open" }, "from": { "const": "at" } },
+          "required": ["from", "at", "cursor"],
+          "not": { "anyOf": [
+            { "required": ["outcome"] }, { "required": ["value"] }, { "required": ["seq"] },
+            { "required": ["skipped"] }, { "required": ["head"] }
+          ] }
+        },
+        {
+          "properties": { "call": { "const": "read" }, "outcome": { "const": "item" } },
+          "required": ["outcome", "seq", "value"],
+          "not": { "anyOf": [
+            { "required": ["skipped"] }, { "required": ["from"] }, { "required": ["at"] },
+            { "required": ["cursor"] }, { "required": ["head"] }
+          ] }
+        },
+        {
+          "properties": { "call": { "const": "read" }, "outcome": { "const": "empty" } },
+          "required": ["outcome"],
+          "not": { "anyOf": [
+            { "required": ["value"] }, { "required": ["seq"] }, { "required": ["skipped"] },
+            { "required": ["from"] }, { "required": ["at"] }, { "required": ["cursor"] },
+            { "required": ["head"] }
+          ] }
+        },
+        {
+          "properties": { "call": { "const": "read" }, "outcome": { "const": "lagged" } },
+          "required": ["outcome", "skipped"],
+          "not": { "anyOf": [
+            { "required": ["value"] }, { "required": ["seq"] }, { "required": ["from"] },
+            { "required": ["at"] }, { "required": ["cursor"] }, { "required": ["head"] }
+          ] }
+        },
+        {
+          "properties": { "call": { "const": "head" } },
+          "required": ["head"],
+          "not": { "anyOf": [
+            { "required": ["outcome"] }, { "required": ["value"] }, { "required": ["seq"] },
+            { "required": ["skipped"] }, { "required": ["from"] }, { "required": ["at"] },
+            { "required": ["cursor"] }
+          ] }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "retention": 3,
+  "publisher": [
+    {"call": "publish", "value": 1, "seq": 0, "invoked": 1, "returned": 2},
+    {"call": "head", "head": 1, "invoked": 3, "returned": 5},
+    {"call": "publish", "value": 2, "seq": 1, "invoked": 7, "returned": 8}
+  ],
+  "readers": [
+    [
+      {"call": "open", "from": "head", "cursor": 1, "invoked": 4, "returned": 6},
+      {"call": "read", "outcome": "item", "seq": 1, "value": 2, "invoked": 9, "returned": 10},
+      {"call": "head", "head": 2, "invoked": 11, "returned": 12}
+    ],
+    [
+      {"call": "open", "from": "oldest", "cursor": 0, "invoked": 13, "returned": 14},
+      {"call": "read", "outcome": "item", "seq": 0, "value": 1, "invoked": 15, "returned": 16},
+      {"call": "read", "outcome": "item", "seq": 1, "value": 2, "invoked": 17, "returned": 18},
+      {"call": "read", "outcome": "empty", "invoked": 19, "returned": 20}
+    ]
+  ]
+}
