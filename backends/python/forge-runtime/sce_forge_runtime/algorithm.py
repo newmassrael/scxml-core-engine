@@ -17,6 +17,7 @@ the caller by itself, so the generated body needs nothing after a statement.
 
 from __future__ import annotations
 
+import dataclasses
 import enum
 import math
 import struct
@@ -139,6 +140,18 @@ def otherwise(value, default):
     if value is not None:
         return value
     return default()
+
+
+def copied(record):
+    """``record``, a payload of an event schema (a dataclass of fixed-width,
+    text and enum fields), as a copy of its own, and an absent value (``None``)
+    as it is: what a record put into an optional record is, so that a field
+    written through the one is not written through the other
+    (docs/adr/0055). A record is a value in every language of this contract, and
+    Python's payload class is a mutable object a name would otherwise share."""
+    if record is None:
+        return None
+    return dataclasses.replace(record)
 
 
 def to_f32(value: float) -> float:

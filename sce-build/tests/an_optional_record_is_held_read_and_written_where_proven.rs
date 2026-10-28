@@ -102,6 +102,25 @@ fn every_backend() -> Vec<Vec<&'static str>> {
         .collect()
 }
 
+/// The generated backends, by the language `generate -l` names, whose step 9 of
+/// docs/adr/0055 has landed: each lowers an optional record, and is held to its own
+/// spellings by its own test; the rest refuse one by name until theirs. A backend
+/// joins here in its step.
+const LOWERING_AN_OPTIONAL_RECORD: &[&str] = &["python"];
+
+/// [`every_backend`] without the ones that lower an optional record
+/// ([`LOWERING_AN_OPTIONAL_RECORD`]): the ones that still refuse one.
+fn backends_refusing_an_optional_record() -> Vec<Vec<&'static str>> {
+    every_backend()
+        .into_iter()
+        .filter(|args| {
+            !args
+                .get(2)
+                .is_some_and(|lang| LOWERING_AN_OPTIONAL_RECORD.contains(lang))
+        })
+        .collect()
+}
+
 /// A `sce-static` statechart that imports `Item` and `Day`, declares `data` beside
 /// `pick`, an optional record of `Item`, a record `draft`, a list `items`, a number
 /// `count`, a text `title`, a record `day` of the other schema and a list `days` of
@@ -210,7 +229,7 @@ fn the_interpreter_lowers_the_optional_record_scenario_machine() {
 /// lower yet, until its own step of docs/adr/0055.
 #[test]
 fn every_generated_backend_refuses_the_optional_record_by_name() {
-    for args in every_backend() {
+    for args in backends_refusing_an_optional_record() {
         let (ok, out, _) = run(&args, &[], "static_optional_record.scxml");
         assert!(!ok, "{args:?} must refuse the machine:\n{out}");
         assert!(
@@ -618,7 +637,7 @@ fn an_algorithm_puts_into_an_optional_record_a_record_of_its_schema() {
 #[test]
 fn every_generated_backend_refuses_an_algorithm_that_holds_an_optional_record_by_name() {
     let text = algorithm(r#"<sce:return expr="-1"/>"#);
-    for args in every_backend() {
+    for args in backends_refusing_an_optional_record() {
         let (ok, out, _) = run(
             &args,
             &[("algorithm_pick_count.scxml", &text)],

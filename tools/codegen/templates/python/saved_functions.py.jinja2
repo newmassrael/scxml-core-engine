@@ -12,7 +12,7 @@
     enum's own (`to_saved` / `from_saved`, emitted with the type by the static
     lowering), and every other type's by the runtime's `sce_saved` functions. -#}
 {% macro saved_write(field, source) -%}
-{%- if field.saved_kind == "optional" and field.saved_elem == "enum" -%}
+{%- if field.saved_kind == "optional" and (field.saved_elem == "enum" or field.saved_elem == "record") -%}
 sce_saved.saved_write_optional({{ source }}.{{ field.name }}, lambda v: v.to_saved())
 {%- elif field.saved_kind == "optional" -%}
 sce_saved.saved_write_optional({{ source }}.{{ field.name }}, sce_saved.saved_write_{{ field.saved_type }})
@@ -27,7 +27,7 @@ sce_saved.saved_write_{{ field.saved_type }}({{ source }}.{{ field.name }})
 {%- endif -%}
 {%- endmacro %}
 {% macro saved_read(field, raw) -%}
-{%- if field.saved_kind == "optional" and field.saved_elem == "enum" -%}
+{%- if field.saved_kind == "optional" and (field.saved_elem == "enum" or field.saved_elem == "record") -%}
 sce_saved.saved_read_optional({{ raw }}, {{ field.id | py_string_literal }}, {{ field.saved_type }}.from_saved)
 {%- elif field.saved_kind == "optional" and field.saved_type == "bytes" -%}
 sce_saved.saved_read_optional({{ raw }}, {{ field.id | py_string_literal }}, sce_saved.saved_bounded_bytes({{ field.bound if field.bound is not none else 2147483647 }}))

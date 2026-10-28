@@ -641,7 +641,10 @@ fn crossing_enums(
         if let Some(alias) = slot.enum_alias() {
             aliases.insert(alias.to_string());
         }
-        if let StaticSlot::Record(record) | StaticSlot::RecordList(record) = slot {
+        if let StaticSlot::Record(record)
+        | StaticSlot::RecordList(record)
+        | StaticSlot::OptionalRecord(record) = slot
+        {
             for field in records.get(record).iter().flat_map(|s| s.fields.iter()) {
                 if let SceType::Enum(reference) = field.sce_type.present_type() {
                     aliases.insert(reference.alias.clone());
@@ -4733,7 +4736,10 @@ pub fn lower(
             .iter()
             .filter(|_| target.adapter_names_returned_schema());
         for slot in value.params.iter().chain(returned) {
-            if let StaticSlot::Record(alias) | StaticSlot::RecordList(alias) = slot {
+            if let StaticSlot::Record(alias)
+            | StaticSlot::RecordList(alias)
+            | StaticSlot::OptionalRecord(alias) = slot
+            {
                 if let Some(line) = records
                     .get(alias)
                     .and_then(|schema| target.schema_import(&schema.name))
@@ -8015,7 +8021,7 @@ pub fn lower_go(
 /// therefore a block of lines, not an expression: the templates indent each.
 ///
 /// Lowers scalar, enum, list and record variables, an optional value of a scalar
-/// held as `Optional[T]` (docs/adr/0055), guards, `<assign>`, `<if>`,
+/// or of a record held as `Optional[T]` (docs/adr/0055), guards, `<assign>`, `<if>`,
 /// `<foreach>`, `<log>`, `<raise>`, `In()`, a typed payload and a call of an
 /// imported algorithm — a module beside the machine's own, whose failing call
 /// raises the same `AlgorithmFailure` a checked operation does; every construct
@@ -8114,6 +8120,25 @@ impl StaticTarget for PythonTarget {
     fn optional_some(&self, _present: &str, value: &str) -> Option<String> {
         Some(value.to_string())
     }
+    // A field of the present value of an optional record (docs/adr/0055, step 9):
+    // the record the variable holds is a frozen dataclass, so the field is written
+    // by replacing it with one whose field is changed, as a record variable's field
+    // is ([`Self::assign_field`]). The statement stands where a test proved the
+    // record present, so what it replaces is the record and never `None`. A text
+    // or a byte string is handed in held to the bound its field declares, which
+    // is how the walk holds every write ([`write_field`]), so the string and bytes
+    // forms are this one.
+    fn assign_present_field(&self, target: &str, field: &str, value: &str) -> Option<String> {
+        Some(self.assign_field(target, field, value))
+    }
+    // The element of a list of records at an index, whole: the runtime's checked
+    // read, which raises `AlgorithmFailure` for an index outside the list as every
+    // checked operation raises one, and the statement catches it where it stands.
+    // The records a list holds are frozen, so the element is the value and a copy
+    // of it would be the element again ([`StaticTarget::record_copy`]).
+    fn record_at(&self, list: &str, index: &str) -> Option<String> {
+        Some(format!("sce_algorithm.at({list}, {index})"))
+    }
     // A present text held to its bound, which raises `AlgorithmFailure` in the
     // statement that writes it; an absent one stays `None`.
     fn optional_map(
@@ -8139,8 +8164,14 @@ impl StaticTarget for PythonTarget {
             &wire(PYTHON_PRESENT),
         ))
     }
-    fn state_argument(&self, _machine: &str, _arg: &StateArg, held: &str) -> String {
-        held.to_string()
+    // The literal `null` an optional record's slot takes holds no variable: it is
+    // the absent value (docs/adr/0055, step 9).
+    fn state_argument(&self, _machine: &str, arg: &StateArg, held: &str) -> String {
+        if arg.code == 'n' {
+            "None".to_string()
+        } else {
+            held.to_string()
+        }
     }
     fn state_adapter_name(&self, _machine: &str, _callee: &StaticCallee, coded: &str) -> String {
         format!("_call_{coded}")
@@ -8230,14 +8261,20 @@ impl StaticTarget for PythonTarget {
                 .iter()
                 .map(|f| {
                     let field = event_schema_field_ident(&f.id, Language::Python);
-                    spec.record_field_crossing(
-                        self,
-                        f,
-                        &format!("{from}.{field}"),
-                        crossing,
-                        str::to_string,
-                    )
-                    .map(|value| format!("{field}={value}"))
+                    let member = format!("{from}.{field}");
+                    let crossed = match &f.sce_type {
+                        // An optional value of an enum crosses by the declared name
+                        // of its variant where it is present, and is absent on the
+                        // other side where it is absent here (docs/adr/0055,
+                        // section 2): the variant is mapped, `None` is not.
+                        FieldType::Optional {
+                            elem: SceType::Enum(reference),
+                        } => spec
+                            .enum_crossing(self, &reference.alias, PYTHON_PRESENT, crossing)
+                            .map(|present| Self::present_or(&member, "None", &present)),
+                        _ => spec.record_field_crossing(self, f, &member, crossing, str::to_string),
+                    };
+                    crossed.map(|value| format!("{field}={value}"))
                 })
                 .collect::<Option<Vec<String>>>()?;
             Some(fields.join(", "))
@@ -8277,6 +8314,18 @@ impl StaticTarget for PythonTarget {
                     slot: StaticSlot::Record(alias),
                     ..
                 } => arguments.push(to_algorithm(alias, &name)?),
+                // An optional record is `None`, or a record built as a record
+                // argument is (docs/adr/0055, step 9): the argument is what the
+                // call held, the machine's optional variable, a record variable, a
+                // payload, a loop's item or the literal `null`, and a record is
+                // never `None`, so one test says which it is whichever it was.
+                AdapterParam::State {
+                    slot: StaticSlot::OptionalRecord(alias),
+                    ..
+                } => arguments.push(format!(
+                    "(None if {name} is None else {})",
+                    to_algorithm(alias, &name)?
+                )),
                 AdapterParam::State {
                     slot: StaticSlot::ScalarList(ty),
                     ..
@@ -8297,6 +8346,11 @@ impl StaticTarget for PythonTarget {
             StaticSlot::Scalar(ty) if plain_scalar(ty) => "r".to_string(),
             StaticSlot::Optional(_) => "r".to_string(),
             StaticSlot::Record(alias) => from_algorithm(alias, "r")?,
+            // `None`, or the machine's own record built from what the algorithm
+            // gave back (docs/adr/0055, step 9).
+            StaticSlot::OptionalRecord(alias) => {
+                format!("(None if r is None else {})", from_algorithm(alias, "r")?)
+            }
             StaticSlot::ScalarList(ty) if plain_scalar(ty) => "list(r)".to_string(),
             StaticSlot::RecordList(alias) => {
                 format!("[{} for e in r]", from_algorithm(alias, "e")?)

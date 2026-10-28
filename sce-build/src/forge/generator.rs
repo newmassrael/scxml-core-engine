@@ -600,7 +600,11 @@ pub(crate) fn algorithm_optional_spelled(
         Language::Kotlin => number_or_bool,
         Language::Cpp => number_or_bool,
         Language::Go => number_or_bool,
-        Language::Python => number_or_bool,
+        // Python holds every element in `Optional[T]` over the type its present
+        // value has there (`str`, `bytes`, the enum document's class, the schema's
+        // payload class), `None` absent: a number, a `bool`, a text, a byte string,
+        // a value of an enum and a record alike.
+        Language::Python => true,
         Language::C11 => number_or_bool,
         Language::Swift => number_or_bool,
     }
@@ -2908,6 +2912,7 @@ fn render_event_schema(
             let held = match &f.sce_type {
                 FieldType::Optional { elem } => Some(algorithm_optional_type(
                     &l,
+                    imports,
                     &OptionalElemType::Scalar(elem.clone()),
                 )?),
                 FieldType::Scalar(_) => None,
@@ -27541,7 +27546,14 @@ fn algorithm_format_param(l: &LangCtx, name: &str, ty: &SceType) -> String {
 /// written ([`algorithm_optional_spelled`]) and refuses the others by name,
 /// as `generate/unsupported-feature`, where an algorithm's slot or local
 /// declares one.
-fn algorithm_optional_type(l: &LangCtx, elem: &OptionalElemType) -> Result<String, ForgeError> {
+///
+/// `imports` are the document's, which name the payload struct an optional record
+/// is held in; a schema's own field is never a record, so its unit asks with none.
+fn algorithm_optional_type(
+    l: &LangCtx,
+    imports: &[ImportContext],
+    elem: &OptionalElemType,
+) -> Result<String, ForgeError> {
     if !algorithm_optional_spelled(l.lang, elem) {
         return Err(crate::forge::static_lowering::optional_not_lowered(
             &format!(
@@ -27561,10 +27573,16 @@ fn algorithm_optional_type(l: &LangCtx, elem: &OptionalElemType) -> Result<Strin
         ))
         .into()
     };
-    let OptionalElemType::Scalar(ty) = elem else {
-        return Err(refused());
+    // The type a present value is held in: a scalar's, or the payload struct of the
+    // schema an optional record is of.
+    let present = match elem {
+        OptionalElemType::Scalar(ty) => l.type_name(ty),
+        OptionalElemType::Record { alias } => std::borrow::Cow::Owned(
+            resolve_record(imports, alias, None, &format!("optional<record:{alias}>"))?
+                .qualified_type
+                .clone(),
+        ),
     };
-    let present = l.type_name(ty);
     l.optional_of(&present)
         .or_else(|| match l.lang {
             crate::generator::Language::C11 => {
@@ -27743,6 +27761,32 @@ fn owned_record(lang: crate::generator::Language, local: &str, holds_text: bool)
         format!("{local}.clone()")
     } else {
         local.to_string()
+    }
+}
+
+/// `lowered`, the value a body writes into a place of type `slot` from the
+/// expression `source`, as that place holds it: a record put into an optional
+/// record, by its name, is a copy of it on a backend whose record the body may
+/// write a field of in place. Python's payload class is a mutable dataclass, so the
+/// optional record and the record it was taken from would be one object, and a
+/// field written through the one would change the other (docs/adr/0055, step 9);
+/// the runtime's `copied` makes the copy, and leaves an absent value as it is. A
+/// place of any other type, `null`, and every other backend are left as they are.
+fn copied_into_optional_record(
+    lang: crate::generator::Language,
+    slot: crate::forge::types::InferredType,
+    source: &str,
+    lowered: String,
+) -> String {
+    use crate::forge::types::{InferredType, OptionalElem};
+    let into_optional_record = slot == InferredType::Optional(OptionalElem::Record);
+    if matches!(lang, crate::generator::Language::Python)
+        && into_optional_record
+        && source.trim() != "null"
+    {
+        format!("sce_algorithm.copied({lowered})")
+    } else {
+        lowered
     }
 }
 
@@ -28459,6 +28503,7 @@ struct AlgorithmBodyCfg<'a> {
     append_buffers: &'a std::collections::HashMap<String, AppendBufferDecl>,
     c11_result_type: Option<&'a str>,
     records: &'a std::collections::HashMap<String, String>,
+    optional_records: &'a std::collections::HashMap<String, String>,
     borrowed_records: &'a std::collections::HashSet<String>,
     channel: ReturnChannel<'a>,
 }
@@ -28499,6 +28544,7 @@ fn lower_algorithm_body(
         append_buffers: cfg.append_buffers,
         c11_result_type: cfg.c11_result_type,
         records: cfg.records,
+        optional_records: cfg.optional_records,
         borrowed_records: cfg.borrowed_records,
         channel: cfg.channel,
     };
@@ -28617,6 +28663,10 @@ struct AlgorithmLowerCtx<'a> {
     /// alias that types it — what a member assignment, a record local, a
     /// record return and a record appended to a list are judged against.
     records: &'a std::collections::HashMap<String, String>,
+    /// Every optional record parameter and local (docs/adr/0055, step 9), keyed by
+    /// the SCXML name, to the alias of the event schema that types it: held whole
+    /// by name, and written a field at a time where a test proves it present.
+    optional_records: &'a std::collections::HashMap<String, String>,
     /// The foreach items among [`Self::records`]: records the body reads
     /// through a borrow of the caller's element ([`AlgorithmTypes::borrowed_records`]).
     borrowed_records: &'a std::collections::HashSet<String>,
@@ -28696,6 +28746,7 @@ fn lower_algorithm_stmt(
         append_buffers,
         c11_result_type,
         records,
+        optional_records,
         borrowed_records,
         channel,
     } = ctx;
@@ -28823,7 +28874,7 @@ fn lower_algorithm_stmt(
                     InferredType::from_sce_type(scalar),
                 ),
                 (None, Some(elem)) => (
-                    algorithm_optional_type(l, elem)?,
+                    algorithm_optional_type(l, imports, elem)?,
                     InferredType::Optional(crate::forge::types::OptionalElem::of_value(elem)),
                 ),
                 (None, None) => {
@@ -28844,6 +28895,7 @@ fn lower_algorithm_stmt(
                 expr::transpile_into_owned(init, l.expr_target(), type_ctx, renames, slot)
                     .map(|lowered| lowered.text)
                     .map_err(|refusal| site.place(refusal))?;
+            let init_lowered = copied_into_optional_record(lang, slot, init, init_lowered);
             let local = l.local_id(name);
             // Rust: emit `let mut` only when the local is reassigned
             // somewhere in the body (workspace `warnings = "deny"` makes
@@ -29032,6 +29084,47 @@ fn lower_algorithm_stmt(
                 let field = record.field(field.trim())?;
                 matches!(field.ty, FieldType::Scalar(SceType::String)).then(|| (root.trim(), field))
             });
+            // The field of the present value of an optional record, `x.value.f`
+            // (docs/adr/0055, step 9), is a member of the payload object `x` holds,
+            // written in place: the judge has held the write to a place where a test
+            // proves `x` present, and a text to the bound its field declares. The
+            // location is three names deep, which is no assignment target of the
+            // expression layer ([`expr::transpile_lvalue`]), so it is spelled here.
+            if matches!(lang, Language::Python) {
+                if let Some(holder) = crate::forge::narrowing::present_record_of(trimmed_target)
+                    .filter(|holder| optional_records.contains_key(*holder))
+                {
+                    let alias = &optional_records[holder];
+                    let record = resolve_record(imports, alias, None, "<sce:assign>")?;
+                    let field = trimmed_target
+                        .rsplit_once('.')
+                        .and_then(|(_, field)| record.field(field.trim()))
+                        .ok_or_else(|| -> ForgeError {
+                            GenerateError::InvalidConfig(format!(
+                                "the assignment to `{trimmed_target}` names no field of the \
+                                 record:{alias} the judge held it to"
+                            ))
+                            .into()
+                        })?;
+                    let value = if matches!(field.ty, FieldType::Scalar(SceType::String)) {
+                        lower_text_write(rhs, expr_spelling.as_ref(), field, ctx)?
+                    } else {
+                        let rhs_site = ExpressionSite::new(rhs, expr_spelling.as_ref());
+                        expr::transpile_into_owned(
+                            rhs,
+                            l.expr_target(),
+                            type_ctx,
+                            renames,
+                            InferredType::of_field(&field.ty),
+                        )
+                        .map(|lowered| lowered.text)
+                        .map_err(|refusal| rhs_site.place(refusal))?
+                    };
+                    let member = event_schema_field_ident(&field.id, lang);
+                    out.push_str(&format!("{pad}{}.{member} = {value}\n", l.local_id(holder)));
+                    return Ok(());
+                }
+            }
             if let Some((root, field)) = text_target {
                 let value = lower_text_write(rhs, expr_spelling.as_ref(), field, ctx)?;
                 let local = l.local_id(root);
@@ -29079,6 +29172,7 @@ fn lower_algorithm_stmt(
                 expr::transpile_into_owned(rhs, l.expr_target(), type_ctx, renames, lhs_ty)
                     .map(|lowered| lowered.text)
                     .map_err(|refusal| rhs_site.place(refusal))?;
+            let rhs_lowered = copied_into_optional_record(lang, lhs_ty, rhs, rhs_lowered);
             let semi = if matches!(lang, Language::Kotlin | Language::Python) {
                 ""
             } else {
@@ -32283,7 +32377,7 @@ fn render_algorithm(
             // A value that may be absent is passed by value, as a number is
             // (docs/adr/0055).
             if let Some(elem) = p.sce_type.optional_elem() {
-                return Ok(l.place_param(&p.name, &algorithm_optional_type(&l, elem)?));
+                return Ok(l.place_param(&p.name, &algorithm_optional_type(&l, imports, elem)?));
             }
             p.sce_type
                 .scalar()
@@ -32368,7 +32462,7 @@ fn render_algorithm(
     // parameter of it is.
     let return_optional = declared_return
         .and_then(|t| t.optional_elem())
-        .map(|elem| algorithm_optional_type(&l, elem))
+        .map(|elem| algorithm_optional_type(&l, imports, elem))
         .transpose()?;
     let may_fail = m.signature.may_fail;
     let return_type = match (return_scalar, lang) {
@@ -32697,6 +32791,8 @@ fn render_algorithm(
         .iter()
         .map(|(name, alias, _)| (name.to_string(), alias.to_string()))
         .collect();
+    let optional_records: std::collections::HashMap<String, String> =
+        types.optional_record_aliases().into_iter().collect();
     let body = lower_algorithm_body(
         &m.body,
         &AlgorithmBodyCfg {
@@ -32709,6 +32805,7 @@ fn render_algorithm(
             append_buffers: &append_buffers,
             c11_result_type: c11_result_type.as_deref(),
             records: &records,
+            optional_records: &optional_records,
             borrowed_records: &types.borrowed_records,
             channel,
         },

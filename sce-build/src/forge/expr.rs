@@ -172,13 +172,15 @@ impl ExprTarget {
             // The Interpreter: a record is a plain object, absent is `null`, and
             // `x.value.f` is the member read of the object `x` is.
             ExprTarget::Js => true,
-            // Not yet: each of the six generated backends refuses an optional
+            // Python: a record is a dataclass, absent is `None`, and `x.value.f`
+            // is the member read of the record `x` is.
+            ExprTarget::Python => true,
+            // Not yet: each of the other generated backends refuses an optional
             // record by name until its step of docs/adr/0055 spells one.
             ExprTarget::Rust => false,
             ExprTarget::Kotlin => false,
             ExprTarget::Cpp => false,
             ExprTarget::Go => false,
-            ExprTarget::Python => false,
             ExprTarget::C => false,
         }
     }

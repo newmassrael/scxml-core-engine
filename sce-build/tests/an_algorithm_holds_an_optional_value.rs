@@ -220,6 +220,12 @@ fn an_algorithms_slot_reads_every_optional_element_a_statechart_holds() {
     }
 }
 
+/// The generated backends, by the language `generate -l` names, whose step 9 of
+/// docs/adr/0055 spells an optional text, byte string, value of an enum and record
+/// in an algorithm's slots: each of them generates what the others refuse. A backend
+/// joins here in its step and keeps its other arms.
+const SPELLING_EVERY_OPTIONAL_ELEMENT: &[&str] = &["python"];
+
 /// Each generated backend refuses an algorithm that holds an optional value it
 /// does not spell yet, by name, where it renders the slot or the local
 /// (docs/adr/0055, step 9): `generate/unsupported-feature`, "an optional value has
@@ -257,12 +263,26 @@ fn every_backend_refuses_an_algorithms_optional_slot_it_does_not_spell_by_name()
                 .replace("  <sce:signature>", &format!("{imports}  <sce:signature>"))
                 .replace("<sce:return expr=\"held\"/>", "<sce:return expr=\"null\"/>");
             for (lang, args) in every_backend() {
-                let (ok, out, _) = run_probe(
+                let (ok, out, written_text) = run_probe(
                     &args,
                     &text,
                     "slot_probe.scxml",
                     &["enum_item_status.scxml", "schema_goal.scxml"],
                 );
+                // Python holds every element in `Optional[T]` over the type its
+                // present value has there (docs/adr/0055, step 9): it spells each
+                // slot, and the probe is generated.
+                if SPELLING_EVERY_OPTIONAL_ELEMENT.contains(&lang) {
+                    assert!(
+                        ok,
+                        "{lang} spells `{written}` on an algorithm's slot:\n{out}"
+                    );
+                    assert!(
+                        written_text.contains("Optional["),
+                        "{lang} holds `{written}` in its optional type:\n{written_text}"
+                    );
+                    continue;
+                }
                 assert!(
                     !ok,
                     "{lang} refuses `{written}` on an algorithm's slot:\n{out}"
