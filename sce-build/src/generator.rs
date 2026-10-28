@@ -1679,18 +1679,40 @@ const STATIC_DATAMODEL_BACKENDS: &[Language] = &[
     Language::C11,
 ];
 
-/// Whether `language` lowers `datamodel="sce-static"`: the answer
+/// The backends that lower part of `datamodel="sce-static"` and refuse the rest by
+/// name ([`crate::forge::static_lowering::StaticTarget::unsupported`]).
+///
+/// Apart from [`STATIC_DATAMODEL_BACKENDS`] for the reason `codegen_matrix`'s
+/// `ships_in_part` keeps a backend apart from the ones that ship a kind: what is
+/// asked of every backend that lowers the model — it generates every document the
+/// others do, its scenarios are replayed, it holds every capability — is not yet
+/// true of it, and a backend in the list above is held to all of it. A backend moves
+/// to that list in the commit that lowers the last construct it refuses.
+const STATIC_DATAMODEL_IN_PART: &[Language] = &[Language::Swift];
+
+/// Whether `language` lowers `datamodel="sce-static"` whole: the answer
 /// [`STATIC_DATAMODEL_BACKENDS`] gives, for a reader outside this module (the
 /// backend parity check) that must ask the registry rather than restate it.
 pub fn lowers_static_datamodel(language: Language) -> bool {
     STATIC_DATAMODEL_BACKENDS.contains(&language)
 }
 
+/// Whether `language` lowers part of `datamodel="sce-static"`
+/// ([`STATIC_DATAMODEL_IN_PART`]).
+pub fn lowers_static_datamodel_in_part(language: Language) -> bool {
+    STATIC_DATAMODEL_IN_PART.contains(&language)
+}
+
 fn reject_static_datamodel_in_unsupported_lang(
     model: &SCXMLModel,
     language: Language,
 ) -> Result<(), GenerateError> {
-    reject_static_datamodel_outside(model, language, STATIC_DATAMODEL_BACKENDS)?;
+    let accepted: Vec<Language> = STATIC_DATAMODEL_BACKENDS
+        .iter()
+        .chain(STATIC_DATAMODEL_IN_PART)
+        .copied()
+        .collect();
+    reject_static_datamodel_outside(model, language, &accepted)?;
     reject_static_invoke_idlocation_outside(model, language, STATIC_INVOKE_IDLOCATION_BACKENDS)
 }
 
@@ -3976,6 +3998,7 @@ pub fn generate_go_with_templates(
 
 /// Generate Swift code from an analyzed SCXMLModel (filesystem-based).
 pub fn generate_swift(model: &SCXMLModel, template_dir: &Path) -> Result<String, GenerateError> {
+    reject_static_datamodel_in_unsupported_lang(model, Language::Swift)?;
     reject_swift_unsupported_features(model)?;
     let mut env = new_env();
     load_templates(&mut env, template_dir, Language::Swift)?;
@@ -3988,6 +4011,7 @@ pub fn generate_swift_with_templates(
     model: &SCXMLModel,
     templates: &[(&str, &str)],
 ) -> Result<String, GenerateError> {
+    reject_static_datamodel_in_unsupported_lang(model, Language::Swift)?;
     reject_swift_unsupported_features(model)?;
     let mut env = new_env();
     load_template_strings(&mut env, templates, Language::Swift)?;
@@ -4031,16 +4055,24 @@ fn first_unlowered_swift_action(
 /// refusal: a template reads an element it has no arm for as nothing, and the
 /// machine it produced would compile and not do what the document said.
 fn reject_swift_unsupported_features(model: &SCXMLModel) -> Result<(), GenerateError> {
-    if model.datamodel != crate::model::Datamodel::Null {
-        return Err(swift_unsupported(
-            format!(
-                "datamodel=\"{}\" in '{}'",
-                model.datamodel.as_str(),
-                model.name
-            ),
-            model.source_location.clone(),
-        ));
-    }
+    // A `sce-static` document's expressions and executable content are the static
+    // lowering's to judge ([`crate::forge::static_lowering::SwiftTarget`]), which
+    // names what it does not spell yet; a `null` one has none, and the guards and
+    // content its templates read are the ones below.
+    let is_static = match model.datamodel {
+        crate::model::Datamodel::Null => false,
+        crate::model::Datamodel::SceStatic => true,
+        _ => {
+            return Err(swift_unsupported(
+                format!(
+                    "datamodel=\"{}\" in '{}'",
+                    model.datamodel.as_str(),
+                    model.name
+                ),
+                model.source_location.clone(),
+            ));
+        }
+    };
     let mut states: Vec<&crate::model::State> = model.states.values().collect();
     states.sort_by_key(|state| state.document_order);
     for state in states {
@@ -4055,6 +4087,9 @@ fn reject_swift_unsupported_features(model: &SCXMLModel) -> Result<(), GenerateE
                 format!("the <donedata> of final state '{}'", state.id),
                 state.source_location.clone(),
             ));
+        }
+        if is_static {
+            continue;
         }
         for transition in &state.transitions {
             if !transition.cond.is_empty() && !transition.is_pure_in_predicate {
@@ -4106,6 +4141,16 @@ fn render_swift(env: &mut Environment, model: &SCXMLModel) -> Result<String, Gen
     // Stamp each transition with the symbol identity the sourcemap keys off, before
     // any analysis pass clones or serialises the transitions.
     symbol_mangling::stamp_symbol_attribution(&mut model_lowered);
+    // SCE Accepted Subset §2.15: a `sce-static` document's every expression lowered
+    // to Swift — its variables as properties of the policy. Nothing for any other
+    // data model.
+    let static_lowering =
+        crate::forge::static_lowering::lower_swift(&mut model_lowered, &machine_name)?;
+    let static_published: Vec<&crate::forge::static_lowering::StaticField> = static_lowering
+        .fields
+        .iter()
+        .filter(|f| f.published)
+        .collect();
     model_lowered.into_artifact_coordinates();
     let model = &model_lowered;
 
@@ -4116,6 +4161,8 @@ fn render_swift(env: &mut Environment, model: &SCXMLModel) -> Result<String, Gen
         model => minijinja::Value::from_serialize(model),
         machine_name => machine_name,
         license_config => minijinja::Value::from_serialize(license_config()),
+        static_fields => minijinja::Value::from_serialize(&static_lowering.fields),
+        static_published => minijinja::Value::from_serialize(&static_published),
     };
     tmpl.render(ctx).map_err(render_error)
 }

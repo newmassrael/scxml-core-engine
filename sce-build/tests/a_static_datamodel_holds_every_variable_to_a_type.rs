@@ -6030,6 +6030,14 @@ const SCENARIO_DRIVERS: &[(&str, &str, Reach)] = &[
         "backends/c/tests/integration/test_static_scalars.c",
         Reach::Names("_scenario(\"{s}\""),
     ),
+    // A backend that lowers the model in part replays every scenario of the machines
+    // it lowers, and is asked about each machine (`check -l swift`), so a construct it
+    // gains joins the list by itself.
+    (
+        "swift",
+        "backends/swift/tests/Tests/StaticDatamodelTests/ScalarScenarioTests.swift",
+        Reach::Names("replay(\"{s}\""),
+    ),
 ];
 
 /// The engine a scenario is replayed on beside the six of [`SCENARIO_DRIVERS`]:
@@ -6060,6 +6068,10 @@ const COMMITTED_MACHINES: &[(&str, &str)] = &[
     (
         "go",
         "backends/go/tests/integration/static_datamodel/{m}/{m}_sm.go",
+    ),
+    (
+        "swift",
+        "backends/swift/tests/Sources/StaticDatamodelMachines/{m}_sm.swift",
     ),
 ];
 
@@ -6159,7 +6171,7 @@ fn every_scenario_is_replayed_on_every_backend_that_lowers_its_machine() {
         .collect();
     scenarios.sort();
     assert!(!scenarios.is_empty(), "no scenario to judge");
-    let regen: Vec<String> = ["rust", "kotlin", "go", "python"]
+    let regen: Vec<String> = ["rust", "kotlin", "go", "python", "swift"]
         .iter()
         .map(|lang| {
             std::fs::read_to_string(root.join(format!("scripts/regen_static_datamodel_{lang}.sh")))

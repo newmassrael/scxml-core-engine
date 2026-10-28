@@ -1128,6 +1128,33 @@ fn c_literal(text: &str, ty: &SceType) -> String {
     }
 }
 
+/// Map SceType to Swift type name (SCE_FORGE.md Section 3.3): the language's own
+/// fixed-width integers, `Float` and `Double`, `String`, and the `[UInt8]` a byte
+/// string is held in.
+pub(crate) fn swift_type(ty: &SceType) -> &'static str {
+    match ty {
+        SceType::Uint8 => "UInt8",
+        SceType::Uint16 => "UInt16",
+        SceType::Uint32 => "UInt32",
+        SceType::Uint64 => "UInt64",
+        SceType::Int8 => "Int8",
+        SceType::Int16 => "Int16",
+        SceType::Int32 => "Int32",
+        SceType::Int64 => "Int64",
+        SceType::Float32 => "Float",
+        SceType::Float64 => "Double",
+        SceType::Bool => "Bool",
+        SceType::String => "String",
+        SceType::Bytes => "[UInt8]",
+        // Enum kind: see `cpp_type` — use `LangCtx::type_name` for Enum-aware
+        // lookups.
+        SceType::Enum(_) => unreachable!(
+            "swift_type called on SceType::Enum — use LangCtx::type_name \
+             from a context built with the document's imports"
+        ),
+    }
+}
+
 /// Map SceType to Kotlin type name (SCE_FORGE.md Section 3.3).
 pub(crate) fn kotlin_type(ty: &SceType) -> &'static str {
     match ty {
@@ -24553,6 +24580,7 @@ fn bytes_wrap_for(target: ExprTarget, transpiled: &str) -> String {
         ExprTarget::Rust => format!("{transpiled}.as_bytes().to_vec()"),
         ExprTarget::Go => format!("[]byte({transpiled})"),
         ExprTarget::Python => format!("{transpiled}.encode()"),
+        ExprTarget::Swift => format!("Array({transpiled}.utf8)"),
         ExprTarget::C => {
             // C bytes container is already sce_forge_bytes_t — _event.data
             // (`_st->pending_event_data`) is a value-typed struct copy
@@ -29910,7 +29938,32 @@ pub(crate) fn forge_local_id(id: &str, language: crate::generator::Language) -> 
         Language::Go => go_local_spelling(id),
         Language::Cpp => cpp_local_spelling(id),
         Language::Kotlin => kotlin_local_spelling(id),
-        Language::Swift => no_swift_emitter("forge_local_id"),
+        Language::Swift => swift_local_spelling(id),
+    }
+}
+
+/// How a local the author named — a parameter, a variable of an algorithm, the item
+/// of a `<foreach>` — is spelled in Swift, where it is declared and where it is read.
+///
+/// A type is capitalised in Swift and a local is not, so a local spelled as one hides
+/// it: the author's `Checked` hides the forge runtime's, `String` the standard
+/// library's. A name whose stem (the name without its trailing underscores) is
+/// capitalised, or is the generator's own (`sceFailure`, `sce_x`), gets one more
+/// underscore, so an author's own `Foo_` is `Foo__` and no two names meet.
+///
+/// One function for the declaration, every read and every call.
+pub fn swift_local_spelling(id: &str) -> String {
+    let stem = id.trim_end_matches('_');
+    let capital = stem.chars().next().is_some_and(|c| c.is_ascii_uppercase());
+    let own_prefix = stem.starts_with("sce_")
+        || stem
+            .strip_prefix("sce")
+            .and_then(|rest| rest.chars().next())
+            .is_some_and(|c| c.is_ascii_uppercase());
+    if capital || own_prefix {
+        format!("{id}_")
+    } else {
+        id.to_string()
     }
 }
 

@@ -6056,8 +6056,12 @@ holds after each event, in words no engine owns, so one file judges every engine
 that runs the machine. It is not the scenario set of §2.18, which is a person's
 examples of what a specification says and runs on nothing until a driver is
 written for a design: a scenario of this kind belongs to a fixture of this section
-and is replayed by seven drivers in six languages, the six generated backends and
-the Interpreter. These are the first three of the six steps of
+and is replayed by eight drivers in seven languages, the seven generated backends and
+the Interpreter. The Swift driver replays the scenarios of the machines Swift
+lowers so far, which `a_static_datamodel_holds_every_variable_to_a_type` asks the
+generator for rather than lists; a machine Swift refuses by name is a scenario it
+does not replay yet, and a construct it gains joins them by itself. These are the
+first three of the six steps of
 `static_timers.json`, without its `about`:
 
 ```json

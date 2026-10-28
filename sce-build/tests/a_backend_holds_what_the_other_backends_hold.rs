@@ -412,7 +412,7 @@ const ACCEPTED: &[(Language, &str, Why)] = &[
         Why::NotYet("a queue needs the 64-bit compare-and-swap rows and a ThreadSanitizer lane, which are built after the other kinds"),
     ),
     // What the emitters carry, once they exist.
-    (Language::Swift, "sce-static data model", Why::NotYet(SWIFT_NO_EMITTER)),
+    (Language::Swift, "sce-static data model", Why::NotYet(SWIFT_STATIC_IN_PART)),
     (Language::Swift, "may-fail algorithm bodies", Why::NotYet(SWIFT_NO_FORGE)),
     (Language::Swift, "CBOR codec", Why::NotYet(SWIFT_NO_FORGE)),
     (Language::Swift, "content-line codec", Why::NotYet(SWIFT_NO_FORGE)),
@@ -461,6 +461,12 @@ const ACCEPTED: &[(Language, &str, Why)] = &[
 /// Swift writes a statechart in part, so what reads a whole one does not exist for it.
 const SWIFT_NO_EMITTER: &str =
     "Swift writes a datamodel null statechart so far; the rest of the emitter is built after it";
+
+/// Swift lowers the scalar core of the static data model and refuses the rest by
+/// name (`generator::lowers_static_datamodel_in_part`).
+const SWIFT_STATIC_IN_PART: &str =
+    "Swift lowers the scalar variables, guards and executable content of a sce-static machine; \
+     its payloads, enums, records, lists, optionals, sends and invokes are built after them";
 
 /// Swift's Forge emitters are built after its statechart emitter and runtime.
 const SWIFT_NO_FORGE: &str =

@@ -10309,6 +10309,311 @@ pub fn lower_c11(
     lower(model, &format!("{csym_prefix}{stem}"), &target)
 }
 
+/// Swift: a variable is a stored property of the machine's policy class, set by
+/// the machine's own statements.
+///
+/// The failure of a checked operation is a value, as in Go and C++: a helper of
+/// `Checked` records it in the statement's `sceFailure` and yields zero, so a value
+/// that can fail is computed into a local first and written only when it did not.
+/// The statement is a closure called where it stands, answering whether it failed,
+/// which the dispatcher acts on by leaving the labelled block it stands in
+/// (§scxml-4.9).
+///
+/// Lowers scalar variables, guards, `<assign>`, `<if>`, `<log>`, `<raise>` and
+/// `In()`; every construct past those is refused by name
+/// ([`StaticTarget::unsupported`]) until its spelling is written, rather than left
+/// as an undefined name in generated code.
+pub struct SwiftTarget;
+
+impl SwiftTarget {
+    /// `parts` as the statements of one block, the empty ones left out — what runs
+    /// on a failure may be nothing, when the document declares no `error.execution`
+    /// to raise.
+    fn then(parts: &[&str]) -> String {
+        parts
+            .iter()
+            .map(|part| part.trim().trim_end_matches(';').trim())
+            .filter(|part| !part.is_empty())
+            .collect::<Vec<_>>()
+            .join("; ")
+    }
+
+    /// The first action of `actions`, or of a block nested in one, that this
+    /// target has no lowering for yet.
+    fn unlowered_action(actions: &[Action]) -> Option<String> {
+        for action in actions {
+            match action.action_type.as_str() {
+                "assign" | "log" | "if" | "raise" => {}
+                other => return Some(format!("<{}>", other.replace('_', ":"))),
+            }
+            for block in action.nested_blocks() {
+                if let Some(found) = Self::unlowered_action(block.actions) {
+                    return Some(found);
+                }
+            }
+        }
+        None
+    }
+}
+
+impl StaticTarget for SwiftTarget {
+    fn name(&self) -> &'static str {
+        "Swift"
+    }
+    // No call of an imported algorithm is spelled yet.
+    fn callee(&self, _callee: &StaticCallee) -> Option<Callee> {
+        None
+    }
+    fn unsupported(&self, model: &SCXMLModel, scope: &StaticScope) -> Option<String> {
+        // A scalar of a number, a bool or a string; an enum, a record, a list, a
+        // byte string and an optional value are not spelled yet.
+        if let Some(var) = scope.variables.iter().find(|v| {
+            !v.value_type.as_ref().is_some_and(|t| {
+                t.scalar()
+                    .is_some_and(|ty| !matches!(ty, SceType::Bytes | SceType::Enum(_)))
+            })
+        }) {
+            return Some(format!(
+                "<data id=\"{}\"> of an enum, record, list, byte string or optional type",
+                var.id
+            ));
+        }
+        if !model.imported_event_schemas.is_empty() {
+            return Some("an imported event schema".to_string());
+        }
+        for state in model.states.values() {
+            let blocks = state
+                .on_entry_blocks
+                .iter()
+                .chain(&state.on_exit_blocks)
+                .map(Vec::as_slice)
+                .chain([
+                    state.initial_transition_actions.as_slice(),
+                    state.initial_history_default_actions.as_slice(),
+                ])
+                .chain(state.transitions.iter().map(|t| t.actions.as_slice()));
+            for block in blocks {
+                if let Some(found) = Self::unlowered_action(block) {
+                    return Some(found);
+                }
+            }
+            if !state.invokes.is_empty() {
+                return Some("an <invoke>".to_string());
+            }
+            if state.donedata.is_some() {
+                return Some("a <donedata>".to_string());
+            }
+        }
+        None
+    }
+    fn expr_target(&self) -> ExprTarget {
+        ExprTarget::Swift
+    }
+    // A prefix keeps a variable's property from meeting another member of the
+    // policy, which a bare name could (`engine`, `sessionID`).
+    fn field_name(&self, id: &str) -> String {
+        format!("v{}", filters::to_pascal_case(id.to_string()))
+    }
+    // The author's name in the case a Swift property is written in, and none for a
+    // name the language reserves or the class already holds a member by.
+    fn reader_name(&self, id: &str, machine: &str) -> Option<String> {
+        let spelled = filters::to_camel_case(id.to_string());
+        (!crate::reader_names::reader_is_taken(Language::Swift, &spelled, machine))
+            .then_some(spelled)
+    }
+    fn field_ref(&self, name: &str) -> String {
+        format!("self.{name}")
+    }
+    fn in_function(&self) -> &'static str {
+        "self.isStateActive"
+    }
+    fn scalar_type(&self, ty: &SceType) -> String {
+        crate::forge::generator::swift_type(ty).to_string()
+    }
+    fn scalar_view(&self, _ty: &SceType) -> Option<String> {
+        None
+    }
+    fn record_type(&self, _machine: &str, _alias: &str) -> String {
+        unreachable!("refused by SwiftTarget::unsupported")
+    }
+    fn record_def(
+        &self,
+        _ty: &str,
+        _alias: &str,
+        _schema: &EventSchemaModel,
+        _enum_types: &std::collections::BTreeMap<String, String>,
+    ) -> String {
+        unreachable!("refused by SwiftTarget::unsupported")
+    }
+    fn record_field(&self, _id: &str) -> String {
+        unreachable!("refused by SwiftTarget::unsupported")
+    }
+    fn record_value(&self, _ty: &str, _fields: &[(String, String)]) -> String {
+        unreachable!("refused by SwiftTarget::unsupported")
+    }
+    fn enum_number_symbols(&self, _ty: &str, _model: &EnumModel) -> (String, String) {
+        unreachable!("refused by SwiftTarget::unsupported")
+    }
+    fn list_type(&self, _elem: &SceType) -> String {
+        unreachable!("refused by SwiftTarget::unsupported")
+    }
+    fn list_view(&self, _elem: &SceType) -> Option<String> {
+        unreachable!("refused by SwiftTarget::unsupported")
+    }
+    fn record_list_type(&self, _record: &str) -> String {
+        unreachable!("refused by SwiftTarget::unsupported")
+    }
+    fn record_list_view(&self, _record: &str) -> Option<String> {
+        unreachable!("refused by SwiftTarget::unsupported")
+    }
+    fn list_empty(&self) -> String {
+        unreachable!("refused by SwiftTarget::unsupported")
+    }
+    // The bound a string variable keeps, counted in UTF-8 bytes
+    // (`Checked.bounded`, which records the failure and answers the empty text).
+    fn bounded_string(&self, value: &str, capacity: u32) -> String {
+        format!("Checked.bounded(&sceFailure, {value}, capacity: {capacity})")
+    }
+    fn bounded_bytes(&self, value: &str, capacity: u32) -> String {
+        format!("Checked.bounded(&sceFailure, {value}, capacity: {capacity})")
+    }
+    fn assign(&self, target: &str, value: &str) -> String {
+        format!("{target} = {value}")
+    }
+    fn list_within(&self, _value: &str, _capacity: u32, _symbol: &str, _elem: &SceType) -> String {
+        unreachable!("refused by SwiftTarget::unsupported")
+    }
+    // The count is the engine's the action is handed.
+    fn fresh_send_id(&self) -> String {
+        "engine.nextAutoSendID()".to_string()
+    }
+    fn assign_field(&self, _target: &str, _field: &str, _value: &str) -> String {
+        unreachable!("refused by SwiftTarget::unsupported")
+    }
+    // The label is text and the value is shown as Swift shows it, never a format.
+    fn log(&self, label: &str, value: &str, _ty: InferredType) -> String {
+        format!(
+            "print(\"{}\" + String(describing: {value}))",
+            filters::escape_swift(label.to_string())
+        )
+    }
+    fn append(
+        &self,
+        _target: &str,
+        _capacity: u32,
+        _value: &str,
+        _value_can_fail: bool,
+        _overflow: &str,
+        _failed: &str,
+    ) -> String {
+        unreachable!("refused by SwiftTarget::unsupported")
+    }
+    fn clear(&self, _target: &str) -> String {
+        unreachable!("refused by SwiftTarget::unsupported")
+    }
+    fn raise_execution_error(&self, machine: &str, message: &str) -> String {
+        format!(
+            "engine.raise(EventWithMetadata.platformError({machine}Event.{}, message: \"{}\"))",
+            filters::to_swift_variant("error.execution".to_string()),
+            filters::escape_swift(message.to_string())
+        )
+    }
+    // The runtime's checked helpers record a failure in `sceFailure` and answer a
+    // zero, so a statement that wrote its value would write that zero. The
+    // expression is a closure called where it stands, answering whether it failed,
+    // so the dispatcher can end its block as it does for any error.
+    fn receiving_statement(&self, statement: &str, failed: &str) -> String {
+        format!(
+            "{{ () -> Bool in var sceFailure = Failure(); {statement}; \
+             if sceFailure.failed {{ {} }}; return false }}()",
+            Self::then(&[failed, "return true"])
+        )
+    }
+    fn receiving_write(
+        &self,
+        write: &dyn Fn(&str) -> String,
+        value: &str,
+        ty: InferredType,
+        failed: &str,
+    ) -> String {
+        // The local takes the type the value is of where that can be named, so a
+        // value no operand of which is typed is not an `Int`.
+        let annotation = crate::forge::expr::swift::nameable_type(ty)
+            .map(|name| format!(": {name}"))
+            .unwrap_or_default();
+        format!(
+            "{{ () -> Bool in var sceFailure = Failure(); let sceValue{annotation} = {value}; \
+             if sceFailure.failed {{ {} }}; {}; return false }}()",
+            Self::then(&[failed, "return true"]),
+            write("sceValue")
+        )
+    }
+    // Only a host call's arguments reach here, and its one spelling is
+    // [`Self::receiving_host_call`].
+    fn receiving_call(&self, _statement: &str, _failed: &str) -> String {
+        unreachable!("a Swift host call is received through receiving_host_call")
+    }
+    // A failed checked operation is a value, so the call could not be stopped after
+    // its arguments were evaluated: each is computed into a local first, and the
+    // host is called only when none of them failed. A block of its own, so two
+    // calls in one scope do not declare the same locals.
+    fn receiving_host_call(
+        &self,
+        _statement: &str,
+        callee: &str,
+        args: &[String],
+        _arg_types: &[SceType],
+        failed: &str,
+    ) -> String {
+        let locals: String = args
+            .iter()
+            .enumerate()
+            .map(|(i, arg)| format!("let sceArg{i} = {arg}; "))
+            .collect();
+        let names: Vec<String> = (0..args.len()).map(|i| format!("sceArg{i}")).collect();
+        format!(
+            "do {{ var sceFailure = Failure(); {locals}\
+             if sceFailure.failed {{ {} }} else {{ {callee}({}) }} }}",
+            Self::then(&[failed]),
+            names.join(", ")
+        )
+    }
+    fn receiving_condition(&self, value: &str, failed: &str, flag: &str) -> String {
+        format!(
+            "{{ () -> Bool in var sceFailure = Failure(); let sceValue: Bool = {value}; \
+             if sceFailure.failed {{ {} }}; return sceValue }}()",
+            Self::then(&[failed, flag, "return false"])
+        )
+    }
+    // The flag is a local of the `<if>`, named by its ordinal, which the condition's
+    // closure sets by reference.
+    fn condition_failed_flag(&self, if_ordinal: u32) -> String {
+        format!("ifCondFailed{if_ordinal} = true")
+    }
+    // Asked for every event of the document when the paths an expression reads are
+    // built, though only an event that carries a typed payload has one to read, and
+    // [`Self::unsupported`] refuses a document that declares one: the name is the
+    // one the payload channel will give the field.
+    fn payload_accessor(&self, event: &str) -> String {
+        format!(
+            "self.pending{}Payload",
+            filters::to_event_variant(event.to_string())
+        )
+    }
+    fn payload_guard(&self, _machine: &str, _event: &str, _lowered: &str) -> String {
+        unreachable!("refused by SwiftTarget::unsupported")
+    }
+    fn wire_value(&self, _ty: InferredType, _value: &str) -> String {
+        unreachable!("refused by SwiftTarget::unsupported")
+    }
+}
+
+/// Rewrite `model` — a clone the Swift backend renders — so every expression of a
+/// `sce-static` document is native Swift.
+pub fn lower_swift(model: &mut SCXMLModel, machine: &str) -> Result<StaticLowering, GenerateError> {
+    lower(model, machine, &SwiftTarget)
+}
+
 /// The target that spells `lang`, when it lowers `sce-static` at all.
 pub(crate) fn target_for(lang: Language) -> Option<&'static dyn StaticTarget> {
     match lang {
@@ -10323,10 +10628,7 @@ pub(crate) fn target_for(lang: Language) -> Option<&'static dyn StaticTarget> {
         // asked of it from outside the walk is a host action's arguments, which
         // count and name nothing.
         Language::C11 => Some(&C_ARGUMENTS),
-        // No `StaticTarget` for Swift yet: `STATIC_DATAMODEL_BACKENDS` does not
-        // list it, so a `sce-static` document is refused for it before a walk
-        // asks for the target.
-        Language::Swift => None,
+        Language::Swift => Some(&SwiftTarget),
     }
 }
 

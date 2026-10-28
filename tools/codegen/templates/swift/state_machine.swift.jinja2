@@ -17,6 +17,9 @@
 {{ sce_map.source_marker(model.source_location, "swift", module_level=true, symbol_artifact=sce_artifact.machine) }}
 
 import SceRuntime
+{% if static_fields %}
+import SceForgeRuntime
+{% endif %}
 
 // ======================================================================
 // State type (W3C SCXML 3.3)
@@ -150,6 +153,30 @@ public final class {{ machine_name }}Policy: StatePolicy {
     /// W3C SCXML 6.4: the queue the invoking parent installs, whose presence is
     /// the link to it. Unbounded; see `ParentEventQueue`.
     public var parentEventQueue: ParentEventQueue?
+{% if static_fields %}
+
+    // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
+{# Under `sce-static` this class IS the datamodel's home: there is no script
+   engine, and every expression was lowered to Swift reading and writing these
+   properties (`crate::forge::static_lowering`). Only the machine's own statements
+   write them. A variable declared `sce:direction="out"` is read by the host
+   through the reader below; every other one is the machine's own. #}
+{# Module-internal, not private: no host outside the module reads a variable that is
+   not published, and a test of the machine (`@testable import`) reads them all, as
+   the Go driver reads an unexported field. #}
+{% for field in static_fields %}
+    /// W3C SCXML 5.2: the `{{ field.id }}` datamodel variable{% if field.published %}, published (`sce:direction="out"`){% endif %}.
+    var {{ field.name }}: {{ field.ty }} = {{ field.init }}
+{% endfor %}
+{% for field in static_published %}
+{% if field.reader %}
+
+    /// Reports what the published `{{ field.id }}` datamodel variable holds now
+    /// (W3C SCXML 5.2). Only the machine writes it.
+    public var {{ field.reader }}: {{ field.ty }} { {{ field.name }} }
+{% endif %}
+{% endfor %}
+{% endif %}
 
     public init() {
         sessionID = drawSessionID()

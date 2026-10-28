@@ -1,0 +1,57 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{# W3C SCXML 4.3: Conditional execution (if/elseif/else). #}
+{# W3C SCXML 5.9.1 + 4.9: a native cond that can fail (`native_cond_fails`) sets a
+   flag itself: the cond is false, the chain goes on, and the <if> ends its block
+   when it has run. The flag is named by the <if>'s ordinal so a nested <if>
+   cannot reuse its parent's. Outside an action block there is no block to end.
+
+   The conds are parenthesised so a closure at the head of one is not read as the
+   block the `if` opens. #}
+{% set if_native_can_fail = action.native_cond_fails or (action.elseif_branches | selectattr("native_cond_fails") | list | length > 0) %}
+{% if if_native_can_fail %}
+                var ifCondFailed{{ action.if_ordinal }} = false
+{% endif %}
+{% if action.native_cond %}
+                if ({{ action.native_cond }}) {
+{% elif action.is_pure_in_predicate %}
+                if ({{ action.cond_cpp | to_in_predicate_swift }}) {
+{% else %}
+                // W3C SCXML 4.2: cond="{{ action.cond }}" decided at build time
+                if {{ 'true' if action.cond_constant else 'false' }} {
+{% endif %}
+{% for then_action in action.then_actions %}
+                    {% with action=then_action %}{% include 'actions/' ~ then_action.type ~ '.swift.jinja2' %}{% endwith %}
+
+{% endfor %}
+{% for elseif in action.elseif_branches %}
+{% if elseif.native_cond %}
+                } else if ({{ elseif.native_cond }}) {
+{% elif elseif.is_pure_in_predicate %}
+                } else if ({{ elseif.cond_cpp | to_in_predicate_swift }}) {
+{% else %}
+                } else if {{ 'true' if elseif.cond_constant else 'false' }} {
+{% endif %}
+{% for elseif_action in elseif.actions %}
+                    {% with action=elseif_action %}{% include 'actions/' ~ elseif_action.type ~ '.swift.jinja2' %}{% endwith %}
+
+{% endfor %}
+{% endfor %}
+{% if action.else_actions %}
+                } else {
+{% for else_action in action.else_actions %}
+                    {% with action=else_action %}{% include 'actions/' ~ else_action.type ~ '.swift.jinja2' %}{% endwith %}
+
+{% endfor %}
+{% endif %}
+                }
+{% if if_native_can_fail %}
+{% if in_action_block is defined and in_action_block %}
+                if ifCondFailed{{ action.if_ordinal }} {
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+                }
+{% else %}
+                _ = ifCondFailed{{ action.if_ordinal }}
+{% endif %}
+{% endif %}

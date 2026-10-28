@@ -1176,8 +1176,17 @@ pub fn register_swift_filters(env: &mut minijinja::Environment, _scope: &Arc<Doc
 /// A state id or an event name as the case of a Swift enum: lowerCamel, the
 /// spelling `crate::scxml_identifier` and `crate::reader_names` hold a document
 /// name against for this backend.
+///
+/// A name Swift reserves is written in backticks, which declare it and name it
+/// again wherever the template writes it (`case `break``, `.`break``): an event a
+/// document calls `break` is a case, not a refusal.
 pub fn to_swift_variant(name: String) -> String {
-    to_camel_case(name)
+    let spelled = to_camel_case(name);
+    if crate::reader_names::is_reserved_word(crate::generator::Language::Swift, &spelled) {
+        format!("`{spelled}`")
+    } else {
+        spelled
+    }
 }
 
 /// Transform C++ In() predicate code to Swift: a call on the policy itself.

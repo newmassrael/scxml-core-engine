@@ -382,8 +382,8 @@ public final class StructureLightPolicy: StatePolicy {
         activeStates.append(state)
         switch state {
         case .green:
-            // W3C SCXML 3.8 + 4.9: onentry block 0.
-            do {
+            // W3C SCXML 3.8 + 4.9: onentry block 0; an error ends it.
+            sceBlock: do {
 
             engine.raise(EventWithMetadata(StructureLightEvent.warm))
 
@@ -434,7 +434,7 @@ public final class StructureLightPolicy: StatePolicy {
         switch state {
         case .green:
             if event == .warm {
-                if isStateActive("green") {
+                if (isStateActive("green")) {
                     return EnabledTransition(
                         source: state,
                         targets: [.state(.yellow)],

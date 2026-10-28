@@ -128,6 +128,10 @@ scripts/regen_static_datamodel_go.sh
 # compiles against the Swift runtime.
 stage "Swift statechart tree"
 scripts/regen_swift_statecharts.sh
+# ... and the machines of the static datamodel fixtures it lowers, another target of
+# the same package.
+stage "Static datamodel Swift tree"
+scripts/regen_static_datamodel_swift.sh
 
 # W3C SCXML G.7 `<sce:action>` native host dispatch gate, driven by its own
 # regen script like the EventSchema gates above.

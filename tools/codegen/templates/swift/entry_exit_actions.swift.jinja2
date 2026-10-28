@@ -41,8 +41,8 @@
 {% if state.on_entry_blocks or state.initial_transition_actions or (state.is_final and state.parent) %}
         case .{{ state_id | to_state_variant }}:
 {% for block in state.on_entry_blocks %}
-            // W3C SCXML 3.8 + 4.9: onentry block {{ loop.index0 }}.
-            do {
+            // W3C SCXML 3.8 + 4.9: onentry block {{ loop.index0 }}; an error ends it.
+            sceBlock: do {
 {% for action in block %}
                 {% with in_action_block=true %}{% include 'actions/' ~ action.type ~ '.swift.jinja2' %}{% endwith %}
 
@@ -54,7 +54,7 @@
             // content runs when this state's initial state is entered by DEFAULT,
             // not when the state is entered only as an ancestor of a deeper target.
             if isDefaultEntry {
-                do {
+                sceBlock: do {
 {% for action in state.initial_transition_actions %}
                     {% with in_action_block=true %}{% include 'actions/' ~ action.type ~ '.swift.jinja2' %}{% endwith %}
 
@@ -125,8 +125,8 @@
 {% if state.on_exit_blocks %}
         case .{{ state_id | to_state_variant }}:
 {% for block in state.on_exit_blocks %}
-            // W3C SCXML 3.9 + 4.9: onexit block {{ loop.index0 }}.
-            do {
+            // W3C SCXML 3.9 + 4.9: onexit block {{ loop.index0 }}; an error ends it.
+            sceBlock: do {
 {% for action in block %}
                 {% with in_action_block=true %}{% include 'actions/' ~ action.type ~ '.swift.jinja2' %}{% endwith %}
 

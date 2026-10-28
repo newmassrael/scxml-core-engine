@@ -70,6 +70,8 @@ use std::sync::LazyLock;
 /// answers with, so the caller holding the attribute can place it.
 pub type Refusal = Spanned<ExprError>;
 
+pub(crate) mod swift;
+
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Public API
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -88,6 +90,10 @@ pub enum ExprTarget {
     /// promotion under push-down). The emitter is restricted to operators
     /// the transform fixtures exercise.
     C,
+    /// Swift. Every integer type is the language's own fixed-width one, a checked
+    /// operation is `Checked.<op>(&sceFailure, …)` of the forge runtime, and a
+    /// string is compared over its UTF-8 bytes (`expr/swift.rs`).
+    Swift,
     /// ECMAScript, spelled for the Interpreter's script engine: the lowering
     /// that lets a `datamodel="sce-static"` document run there
     /// (docs/SCE_ACCEPTED_SUBSET.md §2.15). It is NOT a code-generation
@@ -115,6 +121,7 @@ impl ExprTarget {
             ExprTarget::Go => Some(Language::Go),
             ExprTarget::Python => Some(Language::Python),
             ExprTarget::C => Some(Language::C11),
+            ExprTarget::Swift => Some(Language::Swift),
             ExprTarget::Js => None,
         }
     }
@@ -145,6 +152,8 @@ impl ExprTarget {
             ExprTarget::Rust => true,
             // C11: `sce_optional_<elem>_t` of `sce/forge/optional.h` ([`c_optional`]).
             ExprTarget::C => true,
+            // Swift: not yet; its step of the optional value writes `T?`.
+            ExprTarget::Swift => false,
         }
     }
 
@@ -169,20 +178,14 @@ impl ExprTarget {
     /// the moment one backend's emitter can fail where another cannot
     /// (e.g. an unrepresentable `bytes` form). Kept exhaustive by
     /// `expr_target_all_contains_every_variant`.
-    ///
-    /// Swift is not on it, and cannot be until it has an expression emitter:
-    /// a target that refuses every expression makes "lowers natively on all
-    /// backends" false for every guard and payload read, which would move the
-    /// analysis (`select_native_typed_guards`, `typed_inject_events`) of all
-    /// the other backends' documents. The target joins this list, and
-    /// [`ExprTarget::language`], in the commit that writes its emitter.
-    pub(crate) const ALL: [ExprTarget; 6] = [
+    pub(crate) const ALL: [ExprTarget; 7] = [
         ExprTarget::Cpp,
         ExprTarget::Kotlin,
         ExprTarget::Rust,
         ExprTarget::Go,
         ExprTarget::Python,
         ExprTarget::C,
+        ExprTarget::Swift,
     ];
 }
 
@@ -496,6 +499,7 @@ fn lower_at(
         }
         ExprTarget::Rust => emit_rust(&ast, expected)?,
         ExprTarget::Go => emit_go(&ast, expected)?,
+        ExprTarget::Swift => swift::emit(&ast, expected)?,
         ExprTarget::Python => emit_python(&ast, expected)?,
         ExprTarget::C if position == Position::Owned && expected == InferredType::Bytes => {
             emit_c_owned_bytes(&ast)?
@@ -2164,6 +2168,7 @@ pub fn transpile_lvalue(
         ExprTarget::Kotlin => emit_kotlin(&ast, InferredType::Unknown)?,
         ExprTarget::Rust => emit_rust(&ast, InferredType::Unknown)?,
         ExprTarget::Go => emit_go(&ast, InferredType::Unknown)?,
+        ExprTarget::Swift => swift::emit(&ast, InferredType::Unknown)?,
         ExprTarget::Python => emit_python(&ast, InferredType::Unknown)?,
         ExprTarget::C => emit_c(&ast, InferredType::Unknown)?,
         ExprTarget::Js => emit_js(&ast, InferredType::Unknown)?,
@@ -5651,6 +5656,9 @@ pub(crate) fn found_wrapper(target: ExprTarget) -> Option<&'static str> {
         ExprTarget::Cpp => Some("SCE::Forge::Checked::found"),
         ExprTarget::Go => Some(GO_FOUND),
         ExprTarget::Python => Some("sce_algorithm.found"),
+        // Reached by a call of a lookup or an enum reading, which no Swift
+        // backend generates yet; the spelling comes with it.
+        ExprTarget::Swift => None,
         ExprTarget::C | ExprTarget::Js => None,
     }
 }
@@ -5799,6 +5807,7 @@ pub(crate) fn validation_result_valid(target: ExprTarget) -> &'static str {
         | ExprTarget::Cpp
         | ExprTarget::Python
         | ExprTarget::C
+        | ExprTarget::Swift
         | ExprTarget::Js => "valid",
     }
 }
@@ -9273,6 +9282,18 @@ pub(crate) fn pass_failure_on(
             };
             format!("scealgorithm.Take[{value}](&sceFailure)({call})")
         }
+        // The callee throws its failure; `Checked.take` records it in the body's
+        // `sceFailure` under the callee's own name, which the statement around it
+        // throws, and answers the zero of the value's type in its place.
+        ExprTarget::Swift => {
+            let Some(zero) = swift::zero_of(ty.strip_quantity()) else {
+                return Err(ExprError::UnsupportedConstruct {
+                    construct: format!("a may-fail call returning {}", ty.describe()),
+                    observed: None,
+                });
+            };
+            format!("Checked.take(&sceFailure, fallback: {zero}, {{ try {call} }})")
+        }
         ExprTarget::Python => call.to_string(),
         // A failure is a throw, which passes itself on as Python's does: the
         // expression that called the algorithm fails as an overflow of its own
@@ -10938,7 +10959,8 @@ mod tests {
                 | ExprTarget::Rust
                 | ExprTarget::Go
                 | ExprTarget::Python
-                | ExprTarget::C => true,
+                | ExprTarget::C
+                | ExprTarget::Swift => true,
                 // The ecmascript lowering runs a `sce-static` document in the
                 // Interpreter; it has no `Language`, and listing it in `ALL`
                 // would make every "lowers natively on all backends" verdict
@@ -10953,6 +10975,7 @@ mod tests {
             ExprTarget::Go,
             ExprTarget::Python,
             ExprTarget::C,
+            ExprTarget::Swift,
             ExprTarget::Js,
         ];
         for t in every {
@@ -10967,7 +10990,7 @@ mod tests {
                 "{t:?}: a backend has a Language and the ecmascript target has none"
             );
         }
-        assert_eq!(ExprTarget::ALL.len(), 6);
+        assert_eq!(ExprTarget::ALL.len(), 7);
     }
 
     fn empty_ctx() -> TypeCtx<'static> {

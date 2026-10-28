@@ -1,0 +1,13 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{# W3C SCXML 4.7: Log action. The label is a string literal, escaped for it where
+   the template writes it (`generator::register_template`), and a value is shown
+   as Swift shows it, never as a format. #}
+{%- set label = action.label | default('') -%}
+{% if action.native_code %}
+{# `datamodel="sce-static"`: the whole statement was lowered to Swift. #}
+{% include 'actions/_native_statement.swift.jinja2' %}
+{% else %}
+                print("{{ label | escape_swift }}")
+{% endif %}

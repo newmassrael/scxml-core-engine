@@ -5,9 +5,12 @@
 import PackageDescription
 
 // The machines `sce-codegen generate -l swift` writes, compiled against the Swift
-// runtime, and the tests that drive each through its `Engine`. `StaticMachines` holds
-// only generated files (`scripts/regen_swift_statecharts.sh`); what drives them is
-// written by hand beside it.
+// runtime, and the tests that drive each through its `Engine`. `StaticMachines` and
+// `StaticDatamodelMachines` hold only generated files
+// (`scripts/regen_swift_statecharts.sh`, `scripts/regen_static_datamodel_swift.sh`);
+// what drives them is written by hand beside them. The second is the machines of
+// `datamodel="sce-static"` (docs/SCE_ACCEPTED_SUBSET.md §2.15), which the shared
+// replay scenarios drive.
 let package = Package(
     name: "SceSwiftTests",
     platforms: [.macOS(.v15), .iOS(.v18)],
@@ -27,6 +30,20 @@ let package = Package(
             name: "StaticMachinesTests",
             dependencies: [
                 "StaticMachines",
+                .product(name: "SceRuntime", package: "runtime"),
+            ]
+        ),
+        .target(
+            name: "StaticDatamodelMachines",
+            dependencies: [
+                .product(name: "SceRuntime", package: "runtime"),
+                .product(name: "SceForgeRuntime", package: "forge-runtime"),
+            ]
+        ),
+        .testTarget(
+            name: "StaticDatamodelTests",
+            dependencies: [
+                "StaticDatamodelMachines",
                 .product(name: "SceRuntime", package: "runtime"),
             ]
         ),

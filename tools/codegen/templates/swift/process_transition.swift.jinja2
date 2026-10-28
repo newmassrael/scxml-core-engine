@@ -24,6 +24,7 @@
    SCXML 5.9). #}
 {% macro guard_expr(trans) -%}
 {%- if trans.is_pure_in_predicate -%}{{ trans.cond_cpp | to_in_predicate_swift }}
+{%- elif trans.native_guard -%}{{ trans.native_guard }}
 {%- else -%}{{ 'true' if trans.cond_constant else 'false' }}
 {%- endif -%}
 {%- endmacro %}
@@ -58,10 +59,14 @@
 {% for trans in state.transitions %}
             if {{ event_match(trans) }} {
 {% if trans.cond %}
-{% if not trans.is_pure_in_predicate %}
+{% if trans.native_guard and not trans.is_pure_in_predicate %}
+                // W3C SCXML 5.9: cond="{{ trans.cond }}" lowered to Swift at build time
+{% elif not trans.is_pure_in_predicate %}
                 // W3C SCXML 5.9: cond="{{ trans.cond }}" decided at build time
 {% endif %}
-                if {{ guard_expr(trans) }} {
+{# The parentheses keep a guard that begins with a closure from being read as
+   the block the `if` opens. #}
+                if ({{ guard_expr(trans) }}) {
 {% else %}
                 do {
 {% endif %}
@@ -96,7 +101,7 @@
 {% if trans.actions %}
             case {{ trans.transition_index }}:
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                do {
+                sceBlock: do {
 {% for action in trans.actions %}
                     {% with in_action_block=true %}{% include 'actions/' ~ action.type ~ '.swift.jinja2' %}{% endwith %}
 
