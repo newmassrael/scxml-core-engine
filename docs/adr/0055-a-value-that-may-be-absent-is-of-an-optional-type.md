@@ -1088,8 +1088,7 @@ documents, not observed from a backend.
     they hold, the sixth, handed an absent variable and `null`, never ends),
     `sce-build/tests/a_childs_optional_variable_is_handed_an_optional_value.rs` (the judge's rules
     and each backend's slot) and the unit tests of `static_datamodel`.
-=======
-    As built, *a host action's optional argument* (implemented). The parameter of a host method for
+    As built for the second edge, *a host action's optional argument* (implemented, edge B). The parameter of a host method for
     an argument that may be absent is the declared type of an event schema's field, a scalar or an
     optional scalar (`FieldType`), so no second type and no flag stands beside it:
     `native_action::static_argument_type` answers `FieldType::Optional { elem }` for an expression of
