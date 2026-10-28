@@ -964,6 +964,43 @@ documents, not observed from a backend.
      (the `rust_…` cases), the runtime's `optional` and `saved_state` tests, `static_scenarios`'s
      `static_optional_record_holds_reads_and_writes_a_record_that_may_be_absent` and the saved-state tests of
      `static_datamodel.rs`.
+   - *Go.* A variable is `optional.Of[R]` over the machine's own record struct, built by the package's
+     two constructors and started at `optional.None[R]()`. A present record is a value `Proven()`
+     answers, so `r.value.f` is `r.Proven().f`, and a write of a field is a block that copies the
+     present record, writes the field into the copy (a text or a byte string held to its bound by the
+     helpers a record's field takes) and puts `optional.Some(copy)` back (`assign_present_field`). A
+     list's element is read whole through `scealgorithm.At` (`record_at`), which a record variable
+     assigned from `items[i]` takes now too, where it was copied a field at a time. The adapter of a call
+     names the algorithm's record type for a parameter only: it builds the algorithm's optional record
+     from the machine's present one, and takes an optional record back through `Get()`, building the
+     machine's own struct field by field, so a return alone imports no schema package. `o` names an
+     optional record variable among the codes of an optional record slot's argument, apart from `v`,
+     a record variable the call lifts, since Go types tell the two apart; `null` is
+     `optional.None[R]()` (`state_argument`). A saved state writes the record through its own `ToSaved`
+     and reads it through `<R>FromSaved`, as it does an enum.
+     `generator::algorithm_optional_spelled` answers `true` for every element on Go: an algorithm's
+     parameter, return and local of `optional<string>`, `optional<bytes>`, `optional<enum:E>` and
+     `optional<record:X>` are `optional.Of[T]` over the type the algorithm holds a present value in
+     (the enum document's own type, the schema's payload struct), a record's optional text or enum
+     field is the same type in the schema's unit, and an optional enum field crosses an adapter by
+     `optional.Convert` over the declared name of the variant. The absent value of an enum or a
+     record names a type the expression layer does not carry, so a place that is given `null` whole (a
+     local's start, an assignment to a local or parameter, the return) writes its own
+     (`TypedAbsences`), and `null` of one of them inside an expression is refused by name
+     as it is in a statechart. A field of the present value of an optional record an algorithm holds
+     is written through the same block (`<sce:assign target="x.value.f">`), a text from a literal or
+     a record's text field held to the bound the schema declares, and an optional text field lifted.
+     Still refused, on every backend: an imported algorithm's slot of an optional value of an enum or
+     a byte string in a statechart's call (the enum judge does not read an optional value through a
+     call, and the byte string an algorithm holds is not every backend's statechart one), at the
+     import, `x ?? d` of an optional enum where the lattice names no type for `d`, and a record
+     whose optional field is a byte string, which no algorithm's record carries. Tests:
+     `go_lowers_the_optional_record_scenario_machine`, `go_lowers_an_algorithm_that_answers_an_optional_record`,
+     `go_reads_and_writes_a_field_of_an_algorithms_optional_record` and
+     `go_spells_an_optional_text_byte_string_enum_and_record_in_an_algorithms_slots`, the Go runtime's
+     `TestConvertChangesTheTypeOfAPresentValueOnly`, and `static_scenarios_test.go`
+     `TestARecordThatMayBeAbsentIsHeldReadAndWrittenWhereProven` with the saved instance in
+     `a_state_another_backend_saved_is_restored_test.go`.
 10. **The edges left refused by name**: a child session's optional variable as a `<param>` (with
     the shape of `InvokeParams` it needs), a host action's optional argument, a host-run
     `<invoke>`'s typed request and result with optional fields. Each with the scenario or test of
