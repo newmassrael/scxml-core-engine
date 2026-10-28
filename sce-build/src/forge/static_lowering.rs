@@ -11584,9 +11584,6 @@ impl StaticTarget for SwiftTarget {
             if !state.invokes.is_empty() {
                 return Some("an <invoke>".to_string());
             }
-            if state.donedata.is_some() {
-                return Some("a <donedata>".to_string());
-            }
         }
         None
     }

@@ -38,7 +38,7 @@
 {% endif %}
         switch state {
 {% for state_id, state in model.states | dictsort %}
-{% if state.on_entry_blocks or state.initial_transition_actions or (state.is_final and state.parent) %}
+{% if state.on_entry_blocks or state.initial_transition_actions or (state.is_final and (state.parent or state.donedata)) %}
         case .{{ state_id | to_state_variant }}:
 {% for block in state.on_entry_blocks %}
             // W3C SCXML 3.8 + 4.9: onentry block {{ loop.index0 }}; an error ends it.
@@ -62,10 +62,77 @@
                 }
             }
 {% endif %}
+{% if state.is_final and state.donedata %}
+{# `datamodel="sce-static"`: each value is native code (`DoneData::native_content`,
+   `native_content_value`, `DoneDataParam::native_value`), read from the machine's own
+   fields as the final is entered, so no script engine is asked for any of them (SCE
+   Accepted Subset §2.15). A document under another data model is refused for a
+   <donedata> before it reaches here. #}
+            // W3C SCXML 5.5: the data of the final's done event, from its <donedata>.
+            var doneEventData = ""
+{% if state.donedata.native_content %}
+            // W3C SCXML 5.5: inline text is the content value, finished at build time.
+            doneEventData = "{{ state.donedata.native_content | escape_swift }}"
+{% elif state.donedata.native_content_value %}
+            // W3C SCXML 5.5: the value of <content expr> is the done event's whole data, as
+            // the JSON it is. "If the evaluation of 'expr' produces an error, the Processor
+            // MUST place error.execution in the internal event queue and use the empty string
+            // as the value of the <content> element."
+            do {
+{% if state.donedata.native_content_value_fails %}
+                let sceFailure = Failure()
+                let doneValue: WireValue = {{ state.donedata.native_content_value }}
+                if sceFailure.failed {
+{% if 'error.execution' in model.events %}
+                    engine.raise(EventWithMetadata.platformError({{ machine_name }}Event.{{ 'error.execution' | to_event_variant }}, message: "<donedata> <content expr> failed to evaluate"))
+{% endif %}
+                    doneEventData = WireValue.text("").json
+                } else {
+                    doneEventData = doneValue.json
+                }
+{% else %}
+                let doneValue: WireValue = {{ state.donedata.native_content_value }}
+                doneEventData = doneValue.json
+{% endif %}
+            }
+{% elif state.donedata.params %}
+            // W3C SCXML 5.7.1: a <param> that cannot be read is reported and its pair left
+            // out; the pairs that survived are the data, `{}` when none did.
+            var doneParts: [PayloadPair] = []
+{% for param in state.donedata.params %}
+{% if param.native_value %}
+            do {
+{% if param.native_fails %}
+                let sceFailure = Failure()
+{% endif %}
+                let sceValue: WireValue = {{ param.native_value }}
+{% if param.native_fails %}
+                if !sceFailure.failed {
+                    doneParts.append(PayloadPair("{{ param.name | escape_swift }}", sceValue))
+                } else {
+{% if 'error.execution' in model.events %}
+                    engine.raise(EventWithMetadata.platformError({{ machine_name }}Event.{{ 'error.execution' | to_event_variant }}, message: "<donedata> <param name={{ param.name | escape_swift }}> failed to evaluate"))
+{% endif %}
+                }
+{% else %}
+                doneParts.append(PayloadPair("{{ param.name | escape_swift }}", sceValue))
+{% endif %}
+            }
+{% endif %}
+{% endfor %}
+            doneEventData = doneParts.isEmpty ? "{}" : payloadJSON(doneParts)
+{% endif %}
+{% endif %}
 {% if state.is_final and state.parent %}
 {% set done_event = ("done.state." ~ state.parent) | to_event_variant %}
             // W3C SCXML 3.7: Final state reached; raise done.state.{{ state.parent }}
+{% if state.donedata %}
+            var doneMetadata = EventMetadata.platform()
+            doneMetadata.data = doneEventData
+            engine.raise(EventWithMetadata({{ machine_name }}Event.{{ done_event }}, metadata: doneMetadata))
+{% else %}
             engine.raise(EventWithMetadata({{ machine_name }}Event.{{ done_event }}))
+{% endif %}
 {% if model.has_parallel_states and state.parent in model.states and model.states[state.parent].parent %}
 {% set grandparent_id = model.states[state.parent].parent %}
 {% if grandparent_id in model.states and model.states[grandparent_id].is_parallel and ('done.state.' ~ grandparent_id) in model.events %}
@@ -79,6 +146,11 @@
             }
 {% endif %}
 {% endif %}
+{% endif %}
+{% if state.is_final and not state.parent and state.donedata %}
+            // W3C SCXML 5.5 + 6.3.1: a top-level final stashes its data on the engine, so the
+            // invoking parent can lift it onto done.invoke.<id>._event.data.
+            engine.stashDonedataAtFinal(doneEventData)
 {% endif %}
 {% endif %}
 {% endfor %}

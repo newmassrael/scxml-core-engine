@@ -43,6 +43,11 @@ struct Machine {
     /// Whether the machine ended in a top-level `<final>`.
     var ended: () -> Bool
 
+    /// The data the top-level `<final>`'s `<donedata>` handed its done event, as the text
+    /// the engine stashed (§scxml-5.5): JSON for a pair or a value, empty when the final
+    /// carries none.
+    var donedata: () -> String
+
     /// The variables a scenario may state, each as the JSON a scenario writes it.
     var variables: [String: () -> JSONValue]
 }
@@ -65,6 +70,7 @@ func drive<Policy: StatePolicy>(
         state: { policy.getStateName(engine.getCurrentState()) },
         configuration: { engine.getActiveStates().map { policy.getStateName($0) } },
         ended: { engine.isInFinalState },
+        donedata: { engine.donedataAtFinal },
         variables: variables
     )
 }
@@ -139,7 +145,7 @@ private let scenarioDirectory: String = {
 private let unreplayedStepMembers = ["restore", "invoke"]
 
 /// The members of a step's `expect` this driver does not judge yet.
-private let unreplayedExpectMembers = ["donedata", "host_calls", "child_hosts", "sent"]
+private let unreplayedExpectMembers = ["host_calls", "child_hosts", "sent"]
 
 /// Fails the test that is replaying, at the line of the test that asked for it.
 private func record(_ message: String, _ at: SourceLocation) {
@@ -210,6 +216,16 @@ func replay(_ name: String, _ machine: Machine, sourceLocation: SourceLocation =
         if case .bool(true)? = expect.member("ended") {
             if !machine.ended() {
                 fail("the machine ended in a top-level <final>")
+            }
+            // The done event's data is JSON for a pair or a value, which a scenario
+            // writes as the value it is; text that is not JSON is the data as written,
+            // and the empty text is a final that hands none.
+            if let want = expect.member("donedata") {
+                let text = machine.donedata()
+                let got = (try? parseJSON(text)) ?? .text(text)
+                if !sameValue(got, want) {
+                    fail("the done event's data is \(text), not \(writeJSON(want))")
+                }
             }
             continue
         }

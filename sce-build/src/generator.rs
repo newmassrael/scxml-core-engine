@@ -4093,7 +4093,9 @@ fn reject_swift_unsupported_features(model: &SCXMLModel) -> Result<(), GenerateE
                 invoke.base().source_location.clone(),
             ));
         }
-        if state.is_final && state.donedata.is_some() {
+        // A `sce-static` document's <donedata> is native code the lowering has finished
+        // (SCE Accepted Subset §2.15); any other data model would need a script engine.
+        if !is_static && state.is_final && state.donedata.is_some() {
             return Err(swift_unsupported(
                 format!("the <donedata> of final state '{}'", state.id),
                 state.source_location.clone(),

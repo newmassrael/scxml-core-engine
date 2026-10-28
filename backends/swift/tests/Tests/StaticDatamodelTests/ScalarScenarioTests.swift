@@ -477,6 +477,37 @@ private func wireEnum() -> Machine {
     )
 }
 
+private func donedata() -> Machine {
+    let policy = StaticDonedataPolicy()
+    return drive(policy, variables: ["count": { integer(policy.count) }])
+}
+
+private func donedataContent() -> Machine {
+    let policy = StaticDonedataContentPolicy()
+    return drive(policy, variables: ["count": { integer(policy.count) }])
+}
+
+private func donedataRecord() -> Machine {
+    let policy = StaticDonedataRecordPolicy()
+    return drive(
+        policy,
+        variables: ["shown": { view(policy.shown.layout.declaredName, policy.shown.zoom) }]
+    )
+}
+
+private func bytesWire() -> Machine {
+    let policy = StaticBytesWirePolicy()
+    return drive(
+        policy,
+        variables: [
+            "held": { bytesText(policy.held) },
+            "echo": { bytesText(policy.echo) },
+            "relays": { integer(policy.relays) },
+            "errors": { integer(policy.errors) },
+        ]
+    )
+}
+
 private func wireWide() -> Machine {
     let policy = StaticWireWidePolicy()
     return drive(
@@ -796,6 +827,33 @@ private func recordBytes() -> Machine {
 // machine's own enum.
 @Test func anEnumCrossesASendAsItsDeclaredName() {
     replay("static_wire_enum", wireEnum())
+}
+
+// A top-level final hands its done event the pairs of its `<donedata>`, each read from the
+// machine's fields as the state is entered; a pair whose value does not fit is left out
+// and the others cross (§scxml-5.7.1).
+@Test func aFinalHandsItsDoneEventTheValuesOfItsParams() {
+    replay("static_donedata", donedata())
+}
+
+// A `<content>` is the done event's whole data: inline text finished at build time, or
+// the one value an `expr` computes. An `expr` that cannot be computed is the evaluation
+// that failed, so the data is the empty string and error.execution is raised.
+@Test func aFinalHandsItsDoneEventTheValueOfItsContent() {
+    replay("static_donedata_content", donedataContent())
+    replay("static_donedata_content_text", donedataContent())
+    replay("static_donedata_content_value", donedataContent())
+    replay("static_donedata_content_lost", donedataContent())
+}
+
+// A record crosses a `<param>` as the object its fields spell.
+@Test func aRecordCrossesAFinalsParamAsItsFields() {
+    replay("static_donedata_record", donedataRecord())
+}
+
+// A byte string crosses the wire as the text of its bytes.
+@Test func aByteStringCrossesTheWireAsTheTextOfItsBytes() {
+    replay("static_bytes_wire", bytesWire())
 }
 
 // A 64-bit integer crosses as the text of its digits, exactly.
