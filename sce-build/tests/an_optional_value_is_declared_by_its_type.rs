@@ -122,21 +122,6 @@ fn every_backend() -> Vec<Vec<&'static str>> {
         .collect()
 }
 
-/// The generated backends that spell an optional text and an optional value of an
-/// enum in what an algorithm holds, and so in the unit of an event schema and the
-/// record an algorithm reads (docs/adr/0055, step 9), by the language `generate -l`
-/// names. A backend joins this list in the step that spells them on it.
-const SPELLING_OPTIONAL_TEXT: &[&str] = &["kotlin", "go", "python", "rust", "cpp"];
-
-/// The backends of [`every_backend`] that do not spell an optional text in what an
-/// algorithm holds yet: each refuses what the others generate.
-fn not_spelling_optional_text() -> Vec<Vec<&'static str>> {
-    every_backend()
-        .into_iter()
-        .filter(|args| !SPELLING_OPTIONAL_TEXT.contains(&args[2]))
-        .collect()
-}
-
 /// The refusal a backend gives a document that holds an optional value, before
 /// the step that lowers one there (`StaticTarget::lowers_optional`).
 const NOT_LOWERED: &str = "an optional value has no";
@@ -271,34 +256,17 @@ fn a_variable_holds_each_element_and_is_lowered_where_its_step_landed() {
     assert!(ok, "Rust lowers an optional record:\n{out}");
 }
 
-/// The emitting backends whose own step 9 of docs/adr/0055 has not spelled an
-/// optional record, by the language `generate -l` names: each refuses a variable
-/// of one by name. A backend leaves this list in the step that spells one on it.
-const NOT_LOWERING_OPTIONAL_RECORD: &[&str] = &["kotlin", "cpp", "go", "c11"];
-
+/// Every emitting backend lowers a variable of an optional record (docs/adr/0055,
+/// step 9), each held to its own spellings by its own test.
 #[test]
-fn a_backend_that_has_not_spelled_an_optional_record_refuses_it_by_name() {
+fn every_backend_lowers_a_variable_of_an_optional_record() {
     let text = statechart(
         r#"<data id="pick" sce:type="optional&lt;record:Move&gt;" expr="null"/>"#,
         "",
     );
     for args in every_backend() {
         let (ok, out) = run(&args, &[("probe.scxml", &text)], "probe.scxml");
-        if !NOT_LOWERING_OPTIONAL_RECORD.contains(&args[2]) {
-            assert!(ok, "{args:?} lowers an optional record:\n{out}");
-            continue;
-        }
-        assert!(!ok, "{args:?} must refuse an optional record:\n{out}");
-        assert!(
-            out.contains("an optional record has no")
-                && out.contains("lowering yet")
-                && out.contains("optional<record:Move>"),
-            "{args:?} refuses it where it is lowered, naming the type:\n{out}"
-        );
-        assert!(
-            out.contains("generate/unsupported-feature"),
-            "{args:?} refuses it as a feature it does not lower:\n{out}"
-        );
+        assert!(ok, "{args:?} lowers an optional record:\n{out}");
     }
 }
 
@@ -600,18 +568,13 @@ fn a_schema_field_holds_an_optional_scalar_and_the_forge_ast_spells_it() {
 }
 
 /// The unit an event schema generates holds the struct an algorithm's record of
-/// it is (docs/adr/0055, step 8): an optional field of a number or a `bool` is held
-/// in the backend's optional type, and one of a text or an enum, which no
-/// algorithm holds there yet, is refused by name.
+/// it is (docs/adr/0055, steps 8 and 9): an optional field of a number, a `bool`, a
+/// text or an enum is held in the backend's optional type, on every backend.
 #[test]
-fn every_backend_refuses_a_schema_with_an_optional_text_field_by_name() {
-    for args in not_spelling_optional_text() {
+fn every_backend_generates_a_schema_with_an_optional_text_field() {
+    for args in every_backend() {
         let (ok, out) = run(&args, &[(SCHEMA_DUE_FILE, SCHEMA_DUE)], SCHEMA_DUE_FILE);
-        assert!(!ok, "{args:?} must refuse the schema's unit:\n{out}");
-        assert!(
-            out.contains(NOT_LOWERED) && out.contains("optional<string>"),
-            "{args:?} refuses it by its text field:\n{out}"
-        );
+        assert!(ok, "{args:?} generates the schema's unit:\n{out}");
     }
 }
 
@@ -874,11 +837,11 @@ fn a_c11_machine_holds_each_optional_value_in_the_runtime_struct() {
     }
 }
 
-/// An algorithm whose record is of the schema is judged, and refused where
-/// each backend renders it, by its text field: an algorithm holds an optional
-/// value of a number or a `bool` only (docs/adr/0055, step 8).
+/// An algorithm whose record is of the schema holds an optional text and an optional
+/// value of an enum as the fields of the record, which every backend spells
+/// (docs/adr/0055, steps 8 and 9).
 #[test]
-fn every_backend_refuses_an_algorithm_whose_record_holds_an_optional_text_field() {
+fn every_backend_generates_an_algorithm_whose_record_holds_an_optional_text_field() {
     let algorithm = format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
@@ -898,14 +861,117 @@ fn every_backend_refuses_an_algorithm_whose_record_holds_an_optional_text_field(
         ("due_id.scxml", algorithm.as_str()),
         (SCHEMA_DUE_FILE, SCHEMA_DUE),
     ];
-    for args in not_spelling_optional_text() {
+    for args in every_backend() {
         let (ok, out) = run(&args, &documents, "due_id.scxml");
-        assert!(!ok, "{args:?} must refuse the algorithm:\n{out}");
         assert!(
-            out.contains(NOT_LOWERED) && out.contains("record:Due") && out.contains("`title`"),
-            "{args:?} refuses it by the record's text field:\n{out}"
+            ok,
+            "{args:?} spells the record's optional fields, and generates it:\n{out}"
         );
     }
+}
+
+/// C11 holds the optional text and the optional value of an enum a schema declares
+/// in the struct `sce/forge/optional.h` declares over each — the text over the
+/// buffer of its `sce:max-size`, the enum over the type its document declares —
+/// under the guards every unit that holds one shares, so that the algorithm that
+/// reads the record and the machine that holds it declare each once
+/// (docs/adr/0055, step 9).
+#[test]
+fn c11_declares_the_optional_text_and_enum_of_a_schema_in_its_unit() {
+    let (ok, out, written) = generate_c11(&[(SCHEMA_DUE_FILE, SCHEMA_DUE)], SCHEMA_DUE_FILE);
+    assert!(ok, "C11 generates the schema:\n{out}");
+    for spelled in [
+        "sce_optional_int64_t due;",
+        "sce_optional_string_16_t title;",
+        "sce_optional_enum_enum_item_status_t status;",
+        "#ifndef SCE_OPTIONAL_STRING_16\n#define SCE_OPTIONAL_STRING_16\n",
+        "SCE_OPTIONAL_DECLARE_STRING(16)",
+        "#ifndef SCE_OPTIONAL_ENUM_ENUM_ITEM_STATUS\n#define SCE_OPTIONAL_ENUM_ENUM_ITEM_STATUS\n",
+        "SCE_OPTIONAL_DECLARE(enum_enum_item_status, ",
+    ] {
+        assert!(
+            written.contains(spelled),
+            "the schema's unit holds `{spelled}`:\n{written}"
+        );
+    }
+    // The buffer is declared before the optional value of it, and the enum before
+    // the optional value of that.
+    let buffer = written.find("sce_static_string_16_t;").expect("the buffer");
+    let optional = written
+        .find("SCE_OPTIONAL_DECLARE_STRING(16)")
+        .expect("the optional text");
+    let record = written
+        .find("sce_optional_int64_t due;")
+        .expect("the struct");
+    assert!(
+        buffer < optional && optional < record,
+        "the buffer, its optional value and then the struct:\n{written}"
+    );
+}
+
+/// An algorithm of C11 holds an optional text only as the field of a record: its
+/// own parameter, return and local declare no bound for the buffer, so each is
+/// refused by name, as is an optional byte string, which no algorithm holds.
+#[test]
+fn c11_refuses_an_algorithms_own_optional_text_and_bytes_by_name() {
+    for written in ["optional&lt;string&gt;", "optional&lt;bytes&gt;"] {
+        let algorithm = format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="held_text" version="1.0">
+  <sce:signature>
+    <sce:param name="held" type="{written}"/>
+    <sce:return type="uint32"/>
+  </sce:signature>
+  <sce:body>
+    <sce:return expr="0"/>
+  </sce:body>
+</scxml>
+"#
+        );
+        let (ok, out, _) = generate_c11(&[("held_text.scxml", &algorithm)], "held_text.scxml");
+        assert!(!ok, "C11 refuses `{written}` as a parameter:\n{out}");
+        assert!(
+            out.contains("generate/unsupported-feature") && out.contains(NOT_LOWERED),
+            "refused by name:\n{out}"
+        );
+    }
+}
+
+/// `sce-codegen generate -l c11` of `file`, among `documents` and the siblings:
+/// `(exit_ok, stderr + stdout, the text of every file written)`.
+fn generate_c11(documents: &[(&str, &str)], file: &str) -> (bool, String, String) {
+    let dir = tempdir().expect("tempdir");
+    for name in SIBLINGS {
+        std::fs::copy(fixtures().join(name), dir.path().join(name)).expect("copy a sibling");
+    }
+    for (name, text) in documents {
+        std::fs::write(dir.path().join(name), text).expect("write a document");
+    }
+    let out_dir = tempdir().expect("tempdir");
+    let out = Command::new(sce_codegen_bin())
+        .arg("--workspace-root")
+        .arg(repo_root())
+        .arg("--error-format=json")
+        .args(["generate", "-l", "c11"])
+        .arg(dir.path().join(file))
+        .arg("-o")
+        .arg(out_dir.path())
+        .output()
+        .expect("invoke sce-codegen");
+    let mut written = String::new();
+    for entry in std::fs::read_dir(out_dir.path()).expect("the output directory") {
+        let path = entry.expect("an entry").path();
+        if path.is_file() {
+            written.push_str(&std::fs::read_to_string(&path).unwrap_or_default());
+            written.push('\n');
+        }
+    }
+    (
+        out.status.success(),
+        String::from_utf8_lossy(&out.stderr).into_owned() + &String::from_utf8_lossy(&out.stdout),
+        written,
+    )
 }
 
 /// A host-run record has no carrier for an absent value until the step that

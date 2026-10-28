@@ -72,6 +72,11 @@
 //     records; it is tested, read where a test proves it present, read with a default
 //     evaluated only when it is absent, and compared; a payload carries it as a value
 //     or `null` and is refused without its key, and a send and the done data write it.
+//   * `static_optional_record`: a record that may be absent is the flag and the whole
+//     record the runtime declares over the machine's record type; it starts absent,
+//     takes a record from a payload, a record variable and a list's element, is read
+//     and written a field at a time only where a test proves it present, is made
+//     absent by `null`, and takes what an algorithm answers as one.
 //   * `static_state_algorithm_optional`: the same struct handed to an algorithm and
 //     taken back — a list of records whose day may be absent, and an optional day.
 //   * `static_optional_widened`: a payload read through a revision that widened a
@@ -161,6 +166,7 @@
 #include "static_list_assign_sm.h"
 #include "static_list_index_sm.h"
 #include "static_list_sm.h"
+#include "static_optional_record_sm.h"
 #include "static_optional_sm.h"
 #include "static_optional_widened_sm.h"
 #include "static_overflow_sm.h"
@@ -2100,6 +2106,105 @@ static const record_variable_t optional_records[] = {
 STATIC_OPTIONAL_SCENARIO(static_optional, optional_states, optional_variables, static_optional_text, optional_records,
                          static_optional_done, static_optional_presence)
 
+// static_optional_record: a record that may be absent (docs/adr/0055, step 9) is the
+// flag and the whole record `sce/forge/optional.h` declares over the machine's
+// record type: `pick` and `found` start absent, `pick` takes the item of a payload,
+// a record variable and a list's element, is read and written through `.value`
+// where a test proves it present, and `found` takes what an algorithm answers. A
+// scenario states an absent one as `null` and a present one as the object of its
+// fields, whose text is the buffer's text, copied where it outlives the value the
+// reader holds by value.
+#define PICKED_FIELDS(N, E) N(id) E(title, static_optional_record_item_title) N(count)
+VARIABLE_READER(static_optional_record, count)
+VARIABLE_READER(static_optional_record, shown)
+VARIABLE_READER(static_optional_record, known)
+VARIABLE_READER(static_optional_record, absent)
+VARIABLE_READER(static_optional_record, errors)
+
+static const char *static_optional_record_item_title(sce_static_string_16_t title) {
+    static char copy[sizeof(title.data)];
+    memcpy(copy, title.data, sizeof(copy));
+    return copy;
+}
+
+// The readers of a record that may be absent: a field of it is read where it is
+// present, and nowhere else, so a scenario that states a record for an absent one
+// finds no field to compare.
+#define OPTIONAL_RECORD_READER(M, VAR, OPTIONAL, RECORD, FIELDS)                                                       \
+    static bool M##_read_record_##VAR(const void *sm, size_t index, const char *field, int64_t *out) {                 \
+        const OPTIONAL held = M##_get_##VAR((const M##_t *)sm);                                                        \
+        const RECORD *rec = &held.value;                                                                               \
+        (void)index;                                                                                                   \
+        (void)rec;                                                                                                     \
+        (void)field;                                                                                                   \
+        (void)out;                                                                                                     \
+        if (!held.present) {                                                                                           \
+            return false;                                                                                              \
+        }                                                                                                              \
+        FIELDS(RECORD_NUMBER, RECORD_NOT_NUMBER)                                                                       \
+        return false;                                                                                                  \
+    }                                                                                                                  \
+    static const char *M##_text_record_##VAR(const void *sm, size_t index, const char *field) {                        \
+        const OPTIONAL held = M##_get_##VAR((const M##_t *)sm);                                                        \
+        const RECORD *rec = &held.value;                                                                               \
+        (void)index;                                                                                                   \
+        (void)rec;                                                                                                     \
+        (void)field;                                                                                                   \
+        if (!held.present) {                                                                                           \
+            return NULL;                                                                                               \
+        }                                                                                                              \
+        FIELDS(RECORD_NOT_NAME, RECORD_NAME)                                                                           \
+        return NULL;                                                                                                   \
+    }
+
+OPTIONAL_RECORD_READER(static_optional_record, pick, sce_optional_record_static_optional_record_record_item_t,
+                       static_optional_record_record_item_t, PICKED_FIELDS)
+OPTIONAL_RECORD_READER(static_optional_record, found, sce_optional_record_static_optional_record_record_item_t,
+                       static_optional_record_record_item_t, PICKED_FIELDS)
+RECORD_READER(static_optional_record, draft, static_optional_record_record_item_t, PICKED_FIELDS)
+RECORD_LIST_READER(static_optional_record, items, static_optional_record_record_item_view_t,
+                   static_optional_record_record_item_t, PICKED_FIELDS)
+
+static const char *static_optional_record_text(void *sm, const char *name) {
+    if (strcmp(name, "title") == 0) {
+        return static_optional_record_get_title((const static_optional_record_t *)sm);
+    }
+    return NULL;
+}
+
+// Whether the optional record a step names is present: 1, 0, or -1 for a place that
+// holds none. The machine's records hold no field that may be absent.
+static int static_optional_record_presence(void *sm, const char *name, size_t index, const char *field) {
+    (void)index;
+    const static_optional_record_t *machine = (const static_optional_record_t *)sm;
+    if (field != NULL) {
+        return -1;
+    }
+    if (strcmp(name, "pick") == 0) {
+        return static_optional_record_get_pick(machine).present ? 1 : 0;
+    }
+    if (strcmp(name, "found") == 0) {
+        return static_optional_record_get_found(machine).present ? 1 : 0;
+    }
+    return -1;
+}
+
+static const name_value_t optional_record_states[] = {
+    {"holding", STATIC_OPTIONAL_RECORD_STATE_HOLDING},
+};
+static const variable_t optional_record_variables[] = {
+    {"count", static_optional_record_read_count},   {"shown", static_optional_record_read_shown},
+    {"known", static_optional_record_read_known},   {"absent", static_optional_record_read_absent},
+    {"errors", static_optional_record_read_errors},
+};
+static const record_variable_t optional_record_records[] = {RECORD_ROW(static_optional_record, pick),
+                                                            RECORD_ROW(static_optional_record, found),
+                                                            RECORD_ROW(static_optional_record, draft),
+                                                            RECORD_LIST_ROW(static_optional_record, items),
+                                                            {NULL, NULL, NULL, NULL}};
+STATIC_OPTIONAL_SCENARIO(static_optional_record, optional_record_states, optional_record_variables,
+                         static_optional_record_text, optional_record_records, NULL, static_optional_record_presence)
+
 // static_state_algorithm_optional: a statechart hands algorithms values that may be
 // absent (docs/adr/0055) and holds the ones they give back. A goal's day is the
 // struct `sce/forge/optional.h` declares for an int64, in the machine's record, in
@@ -3454,6 +3559,7 @@ int main(void) {
     bad |= static_record_enum_scenario("static_record_enum", 29);
     bad |= static_whole_payload_scenario("static_whole_payload", 9);
     bad |= static_optional_scenario("static_optional", 16);
+    bad |= static_optional_record_scenario("static_optional_record", 17);
     bad |= static_state_algorithm_optional_scenario("static_state_algorithm_optional", 9);
     bad |= static_optional_widened_scenario("static_optional_widened", 6);
     bad |= static_schema_revision_scenario("static_schema_revision", 9);

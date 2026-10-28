@@ -24,6 +24,7 @@
 #include "static_enum_sm.h"
 #include "static_history_sm.h"
 #include "static_list_sm.h"
+#include "static_optional_record_sm.h"
 #include "static_optional_sm.h"
 #include "static_record_sm.h"
 #include "static_schema_pending_sm.h"
@@ -87,6 +88,7 @@ ROUND_TRIP(static_enum)
 ROUND_TRIP(static_history)
 ROUND_TRIP(static_list)
 ROUND_TRIP(static_optional)
+ROUND_TRIP(static_optional_record)
 ROUND_TRIP(static_record)
 ROUND_TRIP(static_schema_revision)
 ROUND_TRIP_CLOCKED(static_schema_pending)
@@ -104,6 +106,7 @@ static const machine_t machines[] = {
     {"static_history", round_trip_static_history},
     {"static_list", round_trip_static_list},
     {"static_optional", round_trip_static_optional},
+    {"static_optional_record", round_trip_static_optional_record},
     {"static_record", round_trip_static_record},
     {"static_schema_pending", round_trip_static_schema_pending},
     {"static_schema_revision", round_trip_static_schema_revision},
@@ -113,15 +116,20 @@ static const machine_t machines[] = {
 
 // The stem of the document a shared text is of: the file's own name up to the part that says which
 // moment of the run it is. `static_schema_pending_first` and `static_schema_revision_second` are
-// moments of one document, and `static_timers_midway` of another.
+// moments of one document, and `static_timers_midway` of another. The longest stem that begins the
+// name is the document's: `static_optional_record` is a document of its own, not a moment of
+// `static_optional`.
 static const machine_t *machine_of(const char *name) {
+    const machine_t *found = NULL;
+    size_t found_len = 0u;
     for (size_t i = 0u; i < sizeof(machines) / sizeof(machines[0]); ++i) {
         const size_t n = strlen(machines[i].stem);
-        if (strncmp(name, machines[i].stem, n) == 0 && (name[n] == '_' || name[n] == '.')) {
-            return &machines[i];
+        if (strncmp(name, machines[i].stem, n) == 0 && (name[n] == '_' || name[n] == '.') && n > found_len) {
+            found = &machines[i];
+            found_len = n;
         }
     }
-    return NULL;
+    return found;
 }
 
 // The text of `path` without its closing newline; false when it cannot be read.
@@ -190,6 +198,17 @@ static int round_trips(const char *directory, bool format2) {
 static void a_format_two_state_another_backend_saved_is_restored_and_saved_as_it_was(void) {
     const int checked = round_trips(SCE_SAVED_FIXTURES_DIR, true);
     CHECK(checked >= 8, "only %d of the shared format-2 texts were held to a machine", checked);
+}
+
+// A text is held to the machine of the longest stem that begins its name: the optional record's
+// state is the document `static_optional_record`'s, whose name begins with `static_optional`'s.
+static void a_document_whose_name_begins_with_anothers_is_held_to_its_own_machine(void) {
+    const machine_t *record = machine_of("static_optional_record.json");
+    const machine_t *plain = machine_of("static_optional.json");
+    CHECK(record != NULL && strcmp(record->stem, "static_optional_record") == 0,
+          "static_optional_record.json is held to %s", record == NULL ? "no machine" : record->stem);
+    CHECK(plain != NULL && strcmp(plain->stem, "static_optional") == 0, "static_optional.json is held to %s",
+          plain == NULL ? "no machine" : plain->stem);
 }
 
 static void a_format_one_state_is_restored_and_takes_the_machines_own_session(void) {
@@ -438,6 +457,7 @@ static void a_save_into_no_buffer_measures_the_text(void) {
 }
 
 int main(void) {
+    a_document_whose_name_begins_with_anothers_is_held_to_its_own_machine();
     a_format_two_state_another_backend_saved_is_restored_and_saved_as_it_was();
     a_format_one_state_is_restored_and_takes_the_machines_own_session();
     a_waiting_send_survives_a_restore();

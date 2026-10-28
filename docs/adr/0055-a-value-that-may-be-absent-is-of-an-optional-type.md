@@ -1001,6 +1001,39 @@ documents, not observed from a backend.
      `TestConvertChangesTheTypeOfAPresentValueOnly`, and `static_scenarios_test.go`
      `TestARecordThatMayBeAbsentIsHeldReadAndWrittenWhereProven` with the saved instance in
      `a_state_another_backend_saved_is_restored_test.go`.
+   - *C11.* The variable is `sce_optional_record_<type>_t`, declared by `SCE_OPTIONAL_DECLARE_RECORD` of
+     `sce/forge/optional.h` (the constructors and no `_eq`, since two records are no operand of `===`) beside
+     the machine's own record type, named by that type so that the machine's record and the algorithm's, two
+     structs, each have their own. It starts at `_none()` and takes a record whole as `_some(copy)`: a payload
+     field by field and held to the bounds as a record variable takes one, a record variable by value, an
+     element of a list by a checked index read that gives a zero record when the index is outside the list
+     (`StaticTarget::record_at`), and what an algorithm answers. `x.value.f` is the member `.value.f` of the
+     struct, a text field through its buffer (`.value.f.data`), and a field is written through `.value` by the
+     three hooks, the text and the byte string by the copy a record variable's field takes. A call hands an
+     algorithm one as the machine's optional value whatever holds it (a record variable is lifted at the call,
+     which the code `v` names alike for it and for an optional record variable), and the adapter builds the
+     algorithm's own from it field by field, and the machine's from the algorithm's answer. A saved state holds
+     it as `null` or the record, and the C11 saved-state test restores `saved/static_optional_record.json` and
+     its format-1 twin (a text is held to the machine of the longest stem that begins its name, since
+     `static_optional_record` begins with `static_optional`). The scenario is replayed by
+     `test_static_scalars.c` and is off the `NOT_YET_LOWERED` list.
+     `algorithm_optional_spelled` answers, for C11, a number, a `bool`, a value of an enum, a record and a text
+     as the field of a record over the buffer of its `sce:max-size`. An algorithm's parameter, local and return
+     of an optional record is `sce_optional_record_<SchemaPayload>_t`, of an optional enum
+     `sce_optional_enum_<document>_t`, each declared in the unit that holds one under a guard the machine, the
+     schema and the algorithm share, so a program that includes them declares it once; the schema's unit
+     declares the optional text and enum its fields hold. The value `null` and a record or variant lifted into
+     one are written whole where a place says the type (`c11_whole_optional`: an initial value, an
+     `<sce:assign>` by `__typeof__` of its place, a return), as a statechart's variable takes them, and a
+     `null` or a lift nested in an expression stays refused by name, as it is for a text. A text in an
+     algorithm's own parameter, local or return declares no bound for the buffer an optional text is held in
+     (section 1: a text is bounded by `sce:capacity` or `sce:max-size`), so it keeps the named refusal, as does
+     a byte string, which no algorithm's slot or record holds; an algorithm called by another algorithm with an
+     optional record in a slot keeps the host-only refusal of `algorithm_record_slots`. Tests:
+     `c11_unit_forge_optional` (the record's type and the constructors by place), the C11 cases of
+     `an_optional_record_is_held_read_and_written_where_proven` and of
+     `an_optional_value_is_declared_by_its_type`, `c11_spells_an_optional_record_over_its_struct_type`, and the
+     `static_optional_record` scenario and saved state of the C11 suite.
 10. **The edges left refused by name**: a child session's optional variable as a `<param>` (with
     the shape of `InvokeParams` it needs), a host action's optional argument, a host-run
     `<invoke>`'s typed request and result with optional fields. Each with the scenario or test of

@@ -2656,7 +2656,8 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     set(_STATE_ALGORITHM_HEADERS "")
     foreach(_STATE_HEADER schema_entry schema_total ledger_add ledger_total ledger_amount ledger_bump ledger_ids
                           schema_item enum_item_status item_status_set item_status_count item_status_of
-                          schema_goal goal_earliest goal_until goal_undated goal_day_sum)
+                          schema_goal goal_earliest goal_until goal_undated goal_day_sum
+                          schema_item_pick item_pick_first)
         if(_STATE_HEADER MATCHES "^(schema|enum)_")
             set(_STATE_SOURCE
                 "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/${_STATE_HEADER}.scxml")
@@ -2770,6 +2771,16 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
         SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_optional.scxml"
         STAGE_ALSO schema_due.scxml schema_due_sent.scxml enum_item_status.scxml
+    )
+    # A record that may be absent (docs/adr/0055, step 9): the machine holds an
+    # optional record, takes a record into it from a payload, a record variable and
+    # a list's element, reads and writes a field of it where a test proves it
+    # present, and takes back what an algorithm answers as one. The schema's and
+    # the algorithm's header are generated beside it (`_STATE_ALGORITHM_HEADERS`).
+    sce_generate_static_integration_c_test(static_optional_record
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_optional_record.scxml"
+        STAGE_ALSO schema_item_pick.scxml algorithm_item_pick_first.scxml
     )
     # A machine hands algorithms values that may be absent (docs/adr/0055): a list of
     # records whose day may be absent, and an optional day, in and out. The schema's
@@ -3173,6 +3184,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         ${INTEGRATION_C_TEST_static_record_enum_SOURCES}
         ${INTEGRATION_C_TEST_static_whole_payload_SOURCES}
         ${INTEGRATION_C_TEST_static_optional_SOURCES}
+        ${INTEGRATION_C_TEST_static_optional_record_SOURCES}
         ${INTEGRATION_C_TEST_static_state_algorithm_optional_SOURCES}
         ${INTEGRATION_C_TEST_static_optional_widened_SOURCES}
         ${INTEGRATION_C_TEST_static_schema_revision_SOURCES}
@@ -3278,6 +3290,9 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
             ${INTEGRATION_C_TEST_static_history_SOURCES}
             ${INTEGRATION_C_TEST_static_list_SOURCES}
             ${INTEGRATION_C_TEST_static_optional_SOURCES}
+            ${INTEGRATION_C_TEST_static_optional_record_SOURCES}
+            "${SCE_C_INTEGRATION_GENERATED_DIR}/schema_item_pick.h"
+            "${SCE_C_INTEGRATION_GENERATED_DIR}/item_pick_first.h"
             ${INTEGRATION_C_TEST_static_record_SOURCES}
             ${_DAYS_IN_MONTH_HEADER}
             ${INTEGRATION_C_TEST_static_schema_pending_SOURCES}

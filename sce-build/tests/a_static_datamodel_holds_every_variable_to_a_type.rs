@@ -6051,16 +6051,9 @@ const INTERPRETER: &str = "interpreter";
 /// an engine takes that engine's line off and replays the scenario in its driver;
 /// the test below fails for a line whose engine lowers the machine, and for a
 /// machine no engine lowers that does not name every engine here.
-/// Empty since step 5 of docs/adr/0055 lowered an optional value on all seven;
-/// step 9 adds the scenario of an optional record, which only the Interpreter
-/// lowers until each backend's own step 9.
-const NOT_YET_LOWERED: &[(&str, &str, &str)] =
-    &[("static_optional_record", "c11", OPTIONAL_RECORD_NOT_LOWERED)];
-
-/// Why the scenario of an optional record is not replayed on a generated backend
-/// yet.
-const OPTIONAL_RECORD_NOT_LOWERED: &str =
-    "an optional record has no lowering on it yet (docs/adr/0055, step 9)";
+/// Empty since step 5 of docs/adr/0055 lowered an optional value on all seven, and
+/// again since step 9 lowered an optional record on all seven.
+const NOT_YET_LOWERED: &[(&str, &str, &str)] = &[];
 
 /// Where each backend's regen script commits a machine: the file that exists
 /// only if it did.
