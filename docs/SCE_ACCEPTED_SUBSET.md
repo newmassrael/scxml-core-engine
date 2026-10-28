@@ -2357,7 +2357,8 @@ installed with `StateMachine::setNativeActionHost` before `start()` — an
 reason the AOT host is a constructor requirement. The action's `name` is the
 operation, and each `<sce:arg expr>` is an expression of the document's data
 model, evaluated when the action runs, in document order, to a `bool`, an
-integer, a real or a string; the host answers whether it performed the
+integer, a real, a string or `null` (the absent value of an argument declared
+`optional<T>`, §2.15); the host answers whether it performed the
 operation. An action nobody performs is **not dropped**: no host installed, a
 host that answers it provides no such operation, an argument that cannot be
 evaluated, and an argument that is no value a host operation takes (an array,
@@ -4139,7 +4140,8 @@ that is text alone — a BasicHTTP send, a host-run `<invoke>`'s `params` — re
 one as `scxml/static-datamodel-rule`, naming `??`, and a send of one to a field
 that is not optional is refused by the rule that holds a send to its reader. A
 child's optional variable takes a `<param>` of an optional value ("A child's optional
-variable", under Child sessions), and a host action no optional argument, yet.
+variable", under Child sessions), and a host action takes an argument that may be absent
+as the parameter of its backend's own optional type ("Host actions", below).
 **Proven present** is the narrowing of the ADR's section 3. A
 subject is a variable, a field of a record variable, of the payload or of a
 loop's record item, an algorithm's parameter or local or a field of one — never
@@ -6028,6 +6030,30 @@ because no payload is in scope to type it. The host method's parameter types
 are the arguments' types, and every call site of one name must agree on them
 as it must under any data model.
 
+An argument whose expression is of `optional<T>` over a number, a `bool`, a
+text or a byte string (docs/adr/0055, step 10) is the host method's parameter
+in the backend's own optional type over the type a present value is passed as:
+`Option<T>` on Rust, with a text as `Option<&str>` and a byte string as
+`Option<&[u8]>`, borrowed as an algorithm's parameter borrows them; `T?` on
+Kotlin; `optional.Of[T]` on Go; `Optional[T]` on Python; `std::optional<T>` on
+C++, taken by value; and on C11 the struct `sce/forge/optional.h` declares for
+a number or a `bool`. The parameter is the type of an event schema's field, a
+scalar or an optional scalar, and the signature names it as `optional<int32>`
+against `int32`: two calls of one name that disagree on it are
+`validation/native-action-signature-conflict` like any other two types, and
+nothing is coerced to make them agree. An absent argument is the backend's
+absent optional, a present one the value it is, and the Interpreter's host is
+handed `null` for an absent one. `_event.data.<field>` of a field that may be
+absent is such an argument, and `.value` of one is a value of `T` where the
+`cond` of the transition proves it present (§2.15, "Proven present"). `null` as
+an argument has no type, since it is typed by the optional place it stands in
+and an argument stands in none (`validation/native-action-argument`); a value
+of an enum or a record is no host argument, present or absent, and neither is
+an optional one. C11 declares its struct for a text or a byte string over a
+buffer of a bound, which a host method's parameter does not declare, so an
+optional text or byte string is refused there by name
+(`generate/unsupported-feature`, "an optional value has no C11 lowering yet").
+
 **The Interpreter does not run it as written.** Generated code is what runs a
 `sce-static` document (§3.2 lets a platform decide which data models it
 supports). The Interpreter hands every expression to its script engine, which
@@ -6244,7 +6270,7 @@ first three of the six steps of
 | `variables` | expect | variable to value, for the variables the document publishes (`sce:direction="out"`): a number, a bool, an enum by its declared name, a string, a record as an object of its fields, a list as an array, a real written with a fraction or an exponent, and `null` for an absent value of a variable or a record's field declared `optional<T>` |
 | `ended` | expect | `true` when the machine ended in a top-level `<final>`; such a machine has no saved state, so the step states nothing but `ended`, `donedata`, `host_calls`, `child_hosts` and `sent` |
 | `donedata` | expect | with `ended`, the data the final's `<donedata>` left for an invoking parent, as JSON, compared as a value; `null` for a pair that carries an optional value that is absent |
-| `host_calls` | expect | the calls the machine made of its host in this step, oldest first: `{"action": <the name the document gives the <sce:action>>, "args": [<each <sce:arg>, in the document's order>]}`; the start's calls belong to the first step, a step that states none is not judged on them, and they are not carried into the next |
+| `host_calls` | expect | the calls the machine made of its host in this step, oldest first: `{"action": <the name the document gives the <sce:action>>, "args": [<each <sce:arg>, in the document's order>]}`, an argument that may be absent written `null` when it is (and only there: the replay judges a `null` against the positions the action declares `optional<T>`); the start's calls belong to the first step, a step that states none is not judged on them, and they are not carried into the next |
 | `child_hosts` | expect | the hosts the machine's own host answered for its invoked children, and what each child asked of its host, in this step: one entry for each child whose host was asked for in this step or that called its host in it, oldest asked first, `{"invoke": <the id of the <invoke>>, "start": <how many children that invoke had started, this one included, from 1>, "candidate": <the stem of the document a hybrid <invoke> started, left out for an inline child>, "host_calls": [<the child's calls in this step, as `host_calls` writes them>]}`; a child asked for earlier that called nothing in this step has no entry, a step that states none is not judged on them, and they are not carried into the next. A child is told by its invoke and its start, so two entries of one step may not name the same child |
 | `sent` | expect | what the machine sent its Mesh peers in this step, oldest first: `{"target": <the peer as the document writes it, "#server">, "event": <the event's name>, "data": <the event's data, as JSON>}`, `data` left out when the send carried none; the start's sends belong to the first step, a step that states none is not judged on them, and they are not carried into the next. A send a child session made through its own router carries `"invoke"` (the path of invoke ids that started it, as a step's `invoke` writes it) and `"start"` (how many children that path had started, this one included, from 1); an entry without them is the machine's own |
 

@@ -204,6 +204,14 @@ answer the language would not have to invent. A test of a flag that may be absen
   the callee is imported, and an argument that is optional is `expression/type-mismatch`, naming a
   test and `??`. A lookup whose miss answers `optional<T>` (the reading ADR 0048 turns into a
   failure) is not decided here; this type is what it would answer.
+- *A host action's argument (`<sce:arg>`).* An argument whose expression is of `optional<T>` over
+  a number, a `bool`, a text or a byte string is the host method's parameter in the backend's own
+  optional type over `T` (step 10); the Interpreter's host is handed `null` for an absent one. The
+  method's signature names the type, `optional<int32>` against `int32`, so two calls of one name
+  that disagree on it are a signature conflict and nothing is coerced; `null` as an argument has no
+  type, and a value of an enum or a record is no host argument, present or absent. C11's text and
+  byte string stay refused by name: its struct is declared over a buffer of a bound, which a host
+  method's parameter does not declare.
 - *`<param>`, `<donedata>`, a typed request.* An optional value is carried as section 4 writes it.
   A carrier that is text and not JSON — a BasicHTTP form, the `params` of a host-run `<invoke>`
   with no `sce:request` — has no spelling for absence, so an optional value there is refused at
@@ -1080,6 +1088,52 @@ documents, not observed from a backend.
     they hold, the sixth, handed an absent variable and `null`, never ends),
     `sce-build/tests/a_childs_optional_variable_is_handed_an_optional_value.rs` (the judge's rules
     and each backend's slot) and the unit tests of `static_datamodel`.
+=======
+    As built, *a host action's optional argument* (implemented). The parameter of a host method for
+    an argument that may be absent is the declared type of an event schema's field, a scalar or an
+    optional scalar (`FieldType`), so no second type and no flag stands beside it:
+    `native_action::static_argument_type` answers `FieldType::Optional { elem }` for an expression of
+    `optional<T>` over a number, a `bool`, a text or a byte string, and the signature table, the
+    generated interface, the recording hosts and the receivers of a failing argument
+    (`StaticTarget::receiving_host_call`) read that one type. Each backend spells it as its own
+    optional type over the type a present value is passed as (`generator::host_param_type`):
+    `Option<T>` on Rust, with a text as `Option<&str>` and a byte string as `Option<&[u8]>`, borrowed
+    inside the `Option` as an algorithm's parameter borrows them, so the machine's expression reads
+    them as `x.as_deref()`; `T?`; `optional.Of[T]`; `Optional[T]`; `std::optional<T>`, by value; and
+    on C11 the struct `sce/forge/optional.h` declares for a number or a `bool`, held in a local of its
+    type where the call receives a failing argument. The signature's canonical string is
+    `optional<int32>` against `int32` (`canonical_argument_type`), so two calls of one name that
+    disagree are the existing `validation/native-action-signature-conflict`, and an argument is never
+    coerced to the type another call gave the position. The Interpreter lifts the edge by its engine:
+    the lowering leaves each argument for the engine to compute, `ActionExecutorImpl::executeNativeAction`
+    takes `ScriptNull` among the values a host takes (it raised `error.execution` for it), and the host
+    is handed `null` for an absent argument, as a generated host is handed its language's absent
+    optional. Refused, kept: `null` as an argument has no type, since it is typed by the optional place
+    it stands in (`validation/native-action-argument`, as every argument of no type is); a value of an
+    enum or a record is no host argument, present or absent (the same code, naming the type: a host
+    method takes no enum or record argument today); C11's text and byte string
+    (`generate/unsupported-feature`, "an optional value has no C11 lowering yet", from
+    `StaticTarget::holds_host_optional` where the walk meets the action), since its struct is declared
+    over a buffer of a bound and a host method's parameter declares none; and the payload channel of a
+    document that is not `sce-static` (`validate_args`: "an enum-typed or optional EventSchema field"),
+    where an argument is a bare `_event.data.<field>` that no scope types, which stays as it was. Under
+    `sce-static` an optional field of the payload is an argument as the expression it is
+    (`_event.data.due`), and `_event.data.due.value` is one of `T` where the `cond` of the transition
+    proves it present: the call is rendered under the facts validation judged it by
+    (`native_action::facts_of_condition`, handed to `lower_static_argument`), where it used to be judged
+    without them and a `.value` the first admitted panicked in the second. A unit that names the
+    runtime's optional type only in the host interface (`flag ? 3 : null` as the argument, no optional
+    variable) imports it as one that holds a variable does (`Rewrites::host_optional`). The scenario
+    `static_host_call.json` calls `showDue(day, urgent)`, an `optional<int32>` and an `optional<bool>`,
+    from three events: an absent argument is `null` in `host_calls`, and
+    `scenario_replay::MachineFacts::host_arguments` admits a `null` exactly at the positions the
+    machine's action declares optional (`arguments_that_may_be_absent`). Tests:
+    `sce-build/tests/a_host_action_takes_an_argument_that_may_be_absent.rs` and the unit tests of
+    `forge::native_action` (the interface, the recorders and the signature of each backend), the
+    scenario on the seven drivers, each driver's own host of `static_host_call`
+    (`static_datamodel.rs`, `StaticDatamodelTest`, `static_scenarios_test.go`,
+    `test_a_static_host_action.py`, `AStaticHostIsHandedTypedValuesTest`, `test_static_host_call.c`),
+    and `AnArgumentThatIsNullIsHandedToTheHostAsAbsent` for the Interpreter's executor.
 11. **`record_refusal.none` retired** (implemented) (section 7): the enum, `record_list.scxml`,
     `record_list_parent.scxml` holding `optional<record:Refused>`, `scenarios/record_list_parent.json`
     and the Go, C and C++ drivers that read the refusal by hand, the pin in
