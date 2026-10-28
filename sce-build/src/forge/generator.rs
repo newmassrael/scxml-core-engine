@@ -27764,30 +27764,32 @@ fn owned_record(lang: crate::generator::Language, local: &str, holds_text: bool)
     }
 }
 
-/// `lowered`, the value a body writes into a place of type `slot` from the
-/// expression `source`, as that place holds it: a record put into an optional
-/// record, by its name, is a copy of it on a backend whose record the body may
-/// write a field of in place. Python's payload class is a mutable dataclass, so the
-/// optional record and the record it was taken from would be one object, and a
-/// field written through the one would change the other (docs/adr/0055, step 9);
-/// the runtime's `copied` makes the copy, and leaves an absent value as it is. A
-/// place of any other type, `null`, and every other backend are left as they are.
-fn copied_into_optional_record(
-    lang: crate::generator::Language,
+/// The value a body writes into a place of type `slot` from the expression
+/// `source` when `source` is a record put into an optional record by its name (a
+/// record parameter, local or loop item, or another optional record), as that place
+/// holds it: a copy of it, on a backend whose record the body may write a field of
+/// in place. Python's payload class is a mutable dataclass, so the optional record
+/// and the record it was taken from would be one object, and a field written
+/// through the one would change the other (docs/adr/0055, step 9); the runtime's
+/// `copied` makes the copy, and leaves an absent value as it is. A record is no
+/// operand of the expression layer, so the name is spelled here, as the
+/// Interpreter's lowering spells it, and never lowered as an expression. `None` for
+/// `null`, any other value, a place of any other type and every other backend,
+/// which lower the value as they did.
+fn record_copied_into_optional_record(
+    ctx: &AlgorithmLowerCtx<'_>,
     slot: crate::forge::types::InferredType,
     source: &str,
-    lowered: String,
-) -> String {
+) -> Option<String> {
     use crate::forge::types::{InferredType, OptionalElem};
-    let into_optional_record = slot == InferredType::Optional(OptionalElem::Record);
-    if matches!(lang, crate::generator::Language::Python)
-        && into_optional_record
-        && source.trim() != "null"
+    if !matches!(ctx.lang, crate::generator::Language::Python)
+        || slot != InferredType::Optional(OptionalElem::Record)
     {
-        format!("sce_algorithm.copied({lowered})")
-    } else {
-        lowered
+        return None;
     }
+    let name = source.trim();
+    (ctx.records.contains_key(name) || ctx.optional_records.contains_key(name))
+        .then(|| format!("sce_algorithm.copied({})", ctx.l.local_id(name)))
 }
 
 /// What the value written to a record's `string` field is, once the validator
@@ -28891,11 +28893,12 @@ fn lower_algorithm_stmt(
             // initial value is lowered for a place that owns it: `let mut r:
             // String = "";` is a type error that no document of a string local
             // could get past, and every other backend emits what it always did.
-            let init_lowered =
-                expr::transpile_into_owned(init, l.expr_target(), type_ctx, renames, slot)
+            let init_lowered = match record_copied_into_optional_record(ctx, slot, init) {
+                Some(copied) => copied,
+                None => expr::transpile_into_owned(init, l.expr_target(), type_ctx, renames, slot)
                     .map(|lowered| lowered.text)
-                    .map_err(|refusal| site.place(refusal))?;
-            let init_lowered = copied_into_optional_record(lang, slot, init, init_lowered);
+                    .map_err(|refusal| site.place(refusal))?,
+            };
             let local = l.local_id(name);
             // Rust: emit `let mut` only when the local is reassigned
             // somewhere in the body (workspace `warnings = "deny"` makes
@@ -29164,6 +29167,12 @@ fn lower_algorithm_stmt(
             let target_site = ExpressionSite::new(target, target_spelling.as_ref());
             let (lhs, lhs_ty) = expr::transpile_lvalue(target, l.expr_target(), type_ctx, renames)
                 .map_err(|refusal| target_site.place(refusal))?;
+            // A record put into an optional record, by its name, is spelled where a
+            // record is no operand of the expression layer.
+            if let Some(copied) = record_copied_into_optional_record(ctx, lhs_ty, rhs) {
+                out.push_str(&format!("{pad}{lhs} = {copied}\n"));
+                return Ok(());
+            }
             let rhs_site = ExpressionSite::new(rhs, expr_spelling.as_ref());
             // The place assigned to owns the value, as a local's initial value
             // is lowered (see `AlgorithmStmt::Var`): `r = 'x'` must be a
@@ -29172,7 +29181,6 @@ fn lower_algorithm_stmt(
                 expr::transpile_into_owned(rhs, l.expr_target(), type_ctx, renames, lhs_ty)
                     .map(|lowered| lowered.text)
                     .map_err(|refusal| rhs_site.place(refusal))?;
-            let rhs_lowered = copied_into_optional_record(lang, lhs_ty, rhs, rhs_lowered);
             let semi = if matches!(lang, Language::Kotlin | Language::Python) {
                 ""
             } else {
