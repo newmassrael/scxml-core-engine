@@ -235,6 +235,8 @@ class StaticPayloadEnumUnimportedStateMachine(
                 revisions = listOf(),
                 added = listOf(
                 ),
+                widened = listOf(
+                ),
                 holders = listOf(
                     RecordHolder("kept", true),
                 ),

@@ -590,6 +590,7 @@ impl StaticPayloadEnumUnimportedPersist for Engine<StaticPayloadEnumUnimportedPo
                 revision: 1,
                 revisions: &[],
                 added: &[],
+                widened: &[],
                 holders: &[::sce_rust_runtime::saved_state::RecordHolder {
                     variable: "kept",
                     list: true,

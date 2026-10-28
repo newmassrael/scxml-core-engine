@@ -1738,6 +1738,7 @@ impl RecordListPersist for Engine<RecordListPolicy> {
                     revision: 1,
                     revisions: &[],
                     added: &[],
+                    widened: &[],
                     holders: &[
                         ::sce_rust_runtime::saved_state::RecordHolder {
                             variable: "clock",
@@ -1754,6 +1755,7 @@ impl RecordListPersist for Engine<RecordListPolicy> {
                     revision: 1,
                     revisions: &[],
                     added: &[],
+                    widened: &[],
                     holders: &[::sce_rust_runtime::saved_state::RecordHolder {
                         variable: "digest",
                         list: true,
@@ -1764,6 +1766,7 @@ impl RecordListPersist for Engine<RecordListPolicy> {
                     revision: 1,
                     revisions: &[],
                     added: &[],
+                    widened: &[],
                     holders: &[
                         ::sce_rust_runtime::saved_state::RecordHolder {
                             variable: "values",
@@ -1788,6 +1791,7 @@ impl RecordListPersist for Engine<RecordListPolicy> {
                     revision: 1,
                     revisions: &[],
                     added: &[],
+                    widened: &[],
                     holders: &[
                         ::sce_rust_runtime::saved_state::RecordHolder {
                             variable: "adds",
@@ -1816,6 +1820,7 @@ impl RecordListPersist for Engine<RecordListPolicy> {
                     revision: 1,
                     revisions: &[],
                     added: &[],
+                    widened: &[],
                     holders: &[
                         ::sce_rust_runtime::saved_state::RecordHolder {
                             variable: "answers",
@@ -1832,6 +1837,7 @@ impl RecordListPersist for Engine<RecordListPolicy> {
                     revision: 1,
                     revisions: &[],
                     added: &[],
+                    widened: &[],
                     holders: &[::sce_rust_runtime::saved_state::RecordHolder {
                         variable: "roster",
                         list: true,
@@ -1842,6 +1848,7 @@ impl RecordListPersist for Engine<RecordListPolicy> {
                     revision: 1,
                     revisions: &[],
                     added: &[],
+                    widened: &[],
                     holders: &[
                         ::sce_rust_runtime::saved_state::RecordHolder {
                             variable: "staged",

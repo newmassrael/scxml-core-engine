@@ -338,6 +338,8 @@ class RecordListParentStateMachine(
                 revisions = listOf(),
                 added = listOf(
                 ),
+                widened = listOf(
+                ),
                 holders = listOf(
                     RecordHolder("refused", false),
                 ),
@@ -348,6 +350,8 @@ class RecordListParentStateMachine(
                 revisions = listOf(),
                 added = listOf(
                 ),
+                widened = listOf(
+                ),
                 holders = listOf(
                     RecordHolder("shown", false),
                 ),
@@ -357,6 +361,8 @@ class RecordListParentStateMachine(
                 revision = 1,
                 revisions = listOf(),
                 added = listOf(
+                ),
+                widened = listOf(
                 ),
                 holders = listOf(
                     RecordHolder("others", true),

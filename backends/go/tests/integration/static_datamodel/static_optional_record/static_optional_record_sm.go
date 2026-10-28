@@ -320,6 +320,8 @@ var StaticOptionalRecordSavedShape = sce.SavedShape{
 			Revisions: []string{},
 			Added: []sce.AddedField{
 			},
+			Widened: []sce.WidenedField{
+			},
 			Holders: []sce.RecordHolder{
 				{Variable: "pick", List: false},
 				{Variable: "found", List: false},

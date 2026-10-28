@@ -455,6 +455,7 @@ impl StaticStateAlgorithmOptionalPersist for Engine<StaticStateAlgorithmOptional
                 revision: 1,
                 revisions: &[],
                 added: &[],
+                widened: &[],
                 holders: &[
                     ::sce_rust_runtime::saved_state::RecordHolder {
                         variable: "goals",

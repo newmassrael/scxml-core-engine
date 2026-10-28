@@ -482,6 +482,7 @@ impl StaticSchemaRevisionPersist for Engine<StaticSchemaRevisionPolicy> {
                         default: "true",
                     },
                 ],
+                widened: &[],
                 holders: &[::sce_rust_runtime::saved_state::RecordHolder {
                     variable: "last",
                     list: false,

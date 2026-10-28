@@ -1882,6 +1882,7 @@ impl RecordListParentSceSynthInvokeListPersist
                     revision: 1,
                     revisions: &[],
                     added: &[],
+                    widened: &[],
                     holders: &[
                         ::sce_rust_runtime::saved_state::RecordHolder {
                             variable: "clock",
@@ -1898,6 +1899,7 @@ impl RecordListParentSceSynthInvokeListPersist
                     revision: 1,
                     revisions: &[],
                     added: &[],
+                    widened: &[],
                     holders: &[::sce_rust_runtime::saved_state::RecordHolder {
                         variable: "digest",
                         list: true,
@@ -1908,6 +1910,7 @@ impl RecordListParentSceSynthInvokeListPersist
                     revision: 1,
                     revisions: &[],
                     added: &[],
+                    widened: &[],
                     holders: &[
                         ::sce_rust_runtime::saved_state::RecordHolder {
                             variable: "values",
@@ -1932,6 +1935,7 @@ impl RecordListParentSceSynthInvokeListPersist
                     revision: 1,
                     revisions: &[],
                     added: &[],
+                    widened: &[],
                     holders: &[
                         ::sce_rust_runtime::saved_state::RecordHolder {
                             variable: "adds",
@@ -1960,6 +1964,7 @@ impl RecordListParentSceSynthInvokeListPersist
                     revision: 1,
                     revisions: &[],
                     added: &[],
+                    widened: &[],
                     holders: &[
                         ::sce_rust_runtime::saved_state::RecordHolder {
                             variable: "answers",
@@ -1976,6 +1981,7 @@ impl RecordListParentSceSynthInvokeListPersist
                     revision: 1,
                     revisions: &[],
                     added: &[],
+                    widened: &[],
                     holders: &[::sce_rust_runtime::saved_state::RecordHolder {
                         variable: "roster",
                         list: true,
@@ -1986,6 +1992,7 @@ impl RecordListParentSceSynthInvokeListPersist
                     revision: 1,
                     revisions: &[],
                     added: &[],
+                    widened: &[],
                     holders: &[
                         ::sce_rust_runtime::saved_state::RecordHolder {
                             variable: "staged",

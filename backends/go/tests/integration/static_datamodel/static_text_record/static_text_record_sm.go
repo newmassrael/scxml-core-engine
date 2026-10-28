@@ -306,6 +306,8 @@ var StaticTextRecordSavedShape = sce.SavedShape{
 			Revisions: []string{},
 			Added: []sce.AddedField{
 			},
+			Widened: []sce.WidenedField{
+			},
 			Holders: []sce.RecordHolder{
 				{Variable: "slots", List: true},
 				{Variable: "held", List: false},

@@ -314,6 +314,8 @@ var StaticRecordListSavedShape = sce.SavedShape{
 			Revisions: []string{},
 			Added: []sce.AddedField{
 			},
+			Widened: []sce.WidenedField{
+			},
 			Holders: []sce.RecordHolder{
 				{Variable: "draft", List: false},
 				{Variable: "last", List: false},

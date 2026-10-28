@@ -209,6 +209,8 @@ class StaticWholePayloadStateMachine(
                 revisions = listOf(),
                 added = listOf(
                 ),
+                widened = listOf(
+                ),
                 holders = listOf(
                     RecordHolder("shown", false),
                     RecordHolder("seen", true),

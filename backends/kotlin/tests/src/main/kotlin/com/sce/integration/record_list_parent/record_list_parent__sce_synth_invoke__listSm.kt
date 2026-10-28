@@ -779,6 +779,8 @@ class RecordListParentSceSynthInvokeListStateMachine(
                 revisions = listOf(),
                 added = listOf(
                 ),
+                widened = listOf(
+                ),
                 holders = listOf(
                     RecordHolder("clock", false),
                     RecordHolder("stamp", false),
@@ -790,6 +792,8 @@ class RecordListParentSceSynthInvokeListStateMachine(
                 revisions = listOf(),
                 added = listOf(
                 ),
+                widened = listOf(
+                ),
                 holders = listOf(
                     RecordHolder("digest", true),
                 ),
@@ -799,6 +803,8 @@ class RecordListParentSceSynthInvokeListStateMachine(
                 revision = 1,
                 revisions = listOf(),
                 added = listOf(
+                ),
+                widened = listOf(
                 ),
                 holders = listOf(
                     RecordHolder("values", true),
@@ -812,6 +818,8 @@ class RecordListParentSceSynthInvokeListStateMachine(
                 revision = 1,
                 revisions = listOf(),
                 added = listOf(
+                ),
+                widened = listOf(
                 ),
                 holders = listOf(
                     RecordHolder("adds", true),
@@ -827,6 +835,8 @@ class RecordListParentSceSynthInvokeListStateMachine(
                 revisions = listOf(),
                 added = listOf(
                 ),
+                widened = listOf(
+                ),
                 holders = listOf(
                     RecordHolder("answers", true),
                     RecordHolder("answer", false),
@@ -838,6 +848,8 @@ class RecordListParentSceSynthInvokeListStateMachine(
                 revisions = listOf(),
                 added = listOf(
                 ),
+                widened = listOf(
+                ),
                 holders = listOf(
                     RecordHolder("roster", true),
                 ),
@@ -847,6 +859,8 @@ class RecordListParentSceSynthInvokeListStateMachine(
                 revision = 1,
                 revisions = listOf(),
                 added = listOf(
+                ),
+                widened = listOf(
                 ),
                 holders = listOf(
                     RecordHolder("staged", true),

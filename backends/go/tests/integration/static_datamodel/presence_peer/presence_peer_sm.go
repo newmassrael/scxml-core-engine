@@ -463,6 +463,8 @@ var PresencePeerSavedShape = sce.SavedShape{
 			Revisions: []string{},
 			Added: []sce.AddedField{
 			},
+			Widened: []sce.WidenedField{
+			},
 			Holders: []sce.RecordHolder{
 				{Variable: "online", List: true},
 				{Variable: "rebuilt", List: true},

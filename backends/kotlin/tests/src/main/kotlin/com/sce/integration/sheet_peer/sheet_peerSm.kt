@@ -415,6 +415,8 @@ class SheetPeerStateMachine(
                 revisions = listOf(),
                 added = listOf(
                 ),
+                widened = listOf(
+                ),
                 holders = listOf(
                     RecordHolder("clock", false),
                     RecordHolder("stamp", false),
@@ -426,6 +428,8 @@ class SheetPeerStateMachine(
                 revisions = listOf(),
                 added = listOf(
                 ),
+                widened = listOf(
+                ),
                 holders = listOf(
                     RecordHolder("cells", true),
                     RecordHolder("write", false),
@@ -436,6 +440,8 @@ class SheetPeerStateMachine(
                 revision = 1,
                 revisions = listOf(),
                 added = listOf(
+                ),
+                widened = listOf(
                 ),
                 holders = listOf(
                     RecordHolder("gone", true),
@@ -449,6 +455,8 @@ class SheetPeerStateMachine(
                 revisions = listOf(),
                 added = listOf(
                 ),
+                widened = listOf(
+                ),
                 holders = listOf(
                     RecordHolder("rows", true),
                     RecordHolder("cols", true),
@@ -460,6 +468,8 @@ class SheetPeerStateMachine(
                 revision = 1,
                 revisions = listOf(),
                 added = listOf(
+                ),
+                widened = listOf(
                 ),
                 holders = listOf(
                     RecordHolder("shown", true),

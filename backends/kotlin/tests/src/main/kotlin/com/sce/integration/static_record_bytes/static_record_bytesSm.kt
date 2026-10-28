@@ -215,6 +215,8 @@ class StaticRecordBytesStateMachine(
                 revisions = listOf(),
                 added = listOf(
                 ),
+                widened = listOf(
+                ),
                 holders = listOf(
                     RecordHolder("last", false),
                     RecordHolder("frames", true),

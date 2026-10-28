@@ -191,6 +191,8 @@ class StaticRecordListStateMachine(
                 revisions = listOf(),
                 added = listOf(
                 ),
+                widened = listOf(
+                ),
                 holders = listOf(
                     RecordHolder("draft", false),
                     RecordHolder("last", false),

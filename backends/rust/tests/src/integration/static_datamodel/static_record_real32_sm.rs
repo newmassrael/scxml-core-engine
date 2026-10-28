@@ -378,6 +378,7 @@ impl StaticRecordReal32Persist for Engine<StaticRecordReal32Policy> {
                 revision: 1,
                 revisions: &[],
                 added: &[],
+                widened: &[],
                 holders: &[::sce_rust_runtime::saved_state::RecordHolder {
                     variable: "last",
                     list: false,

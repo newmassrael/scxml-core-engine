@@ -604,6 +604,7 @@ impl StaticStateAlgorithmEnumPersist for Engine<StaticStateAlgorithmEnumPolicy> 
                 revision: 1,
                 revisions: &[],
                 added: &[],
+                widened: &[],
                 holders: &[
                     ::sce_rust_runtime::saved_state::RecordHolder {
                         variable: "items",

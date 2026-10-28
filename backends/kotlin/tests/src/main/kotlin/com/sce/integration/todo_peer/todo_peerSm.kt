@@ -689,6 +689,8 @@ class TodoPeerStateMachine(
                 revisions = listOf(),
                 added = listOf(
                 ),
+                widened = listOf(
+                ),
                 holders = listOf(
                     RecordHolder("answers", true),
                     RecordHolder("answer", false),
@@ -700,6 +702,8 @@ class TodoPeerStateMachine(
                 revisions = listOf(),
                 added = listOf(
                 ),
+                widened = listOf(
+                ),
                 holders = listOf(
                     RecordHolder("roster", true),
                 ),
@@ -709,6 +713,8 @@ class TodoPeerStateMachine(
                 revision = 1,
                 revisions = listOf(),
                 added = listOf(
+                ),
+                widened = listOf(
                 ),
                 holders = listOf(
                     RecordHolder("agenda", true),
@@ -722,6 +728,8 @@ class TodoPeerStateMachine(
                 revisions = listOf(),
                 added = listOf(
                 ),
+                widened = listOf(
+                ),
                 holders = listOf(
                     RecordHolder("sched", false),
                 ),
@@ -731,6 +739,8 @@ class TodoPeerStateMachine(
                 revision = 1,
                 revisions = listOf(),
                 added = listOf(
+                ),
+                widened = listOf(
                 ),
                 holders = listOf(
                     RecordHolder("clock", false),
@@ -743,6 +753,8 @@ class TodoPeerStateMachine(
                 revisions = listOf(),
                 added = listOf(
                 ),
+                widened = listOf(
+                ),
                 holders = listOf(
                     RecordHolder("digest", true),
                 ),
@@ -752,6 +764,8 @@ class TodoPeerStateMachine(
                 revision = 1,
                 revisions = listOf(),
                 added = listOf(
+                ),
+                widened = listOf(
                 ),
                 holders = listOf(
                     RecordHolder("values", true),
@@ -763,6 +777,8 @@ class TodoPeerStateMachine(
                 revision = 1,
                 revisions = listOf(),
                 added = listOf(
+                ),
+                widened = listOf(
                 ),
                 holders = listOf(
                     RecordHolder("adds", true),

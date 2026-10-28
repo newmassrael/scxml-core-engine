@@ -224,6 +224,8 @@ class StaticStateAlgorithmOptionalStateMachine(
                 revisions = listOf(),
                 added = listOf(
                 ),
+                widened = listOf(
+                ),
                 holders = listOf(
                     RecordHolder("goals", true),
                     RecordHolder("draft", false),

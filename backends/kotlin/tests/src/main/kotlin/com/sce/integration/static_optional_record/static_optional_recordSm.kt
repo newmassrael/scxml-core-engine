@@ -238,6 +238,8 @@ class StaticOptionalRecordStateMachine(
                 revisions = listOf(),
                 added = listOf(
                 ),
+                widened = listOf(
+                ),
                 holders = listOf(
                     RecordHolder("pick", false),
                     RecordHolder("found", false),

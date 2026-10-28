@@ -241,6 +241,8 @@ class StaticStateAlgorithmStateMachine(
                 revisions = listOf(),
                 added = listOf(
                 ),
+                widened = listOf(
+                ),
                 holders = listOf(
                     RecordHolder("entries", true),
                     RecordHolder("last", false),
@@ -251,6 +253,8 @@ class StaticStateAlgorithmStateMachine(
                 revision = 1,
                 revisions = listOf(),
                 added = listOf(
+                ),
+                widened = listOf(
                 ),
                 holders = listOf(
                     RecordHolder("total", false),

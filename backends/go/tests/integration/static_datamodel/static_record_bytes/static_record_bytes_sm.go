@@ -288,6 +288,8 @@ var StaticRecordBytesSavedShape = sce.SavedShape{
 			Revisions: []string{},
 			Added: []sce.AddedField{
 			},
+			Widened: []sce.WidenedField{
+			},
 			Holders: []sce.RecordHolder{
 				{Variable: "last", List: false},
 				{Variable: "frames", List: true},

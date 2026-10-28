@@ -343,6 +343,8 @@ var StaticStateAlgorithmSavedShape = sce.SavedShape{
 			Revisions: []string{},
 			Added: []sce.AddedField{
 			},
+			Widened: []sce.WidenedField{
+			},
 			Holders: []sce.RecordHolder{
 				{Variable: "entries", List: true},
 				{Variable: "last", List: false},
@@ -353,6 +355,8 @@ var StaticStateAlgorithmSavedShape = sce.SavedShape{
 			Revision:  1,
 			Revisions: []string{},
 			Added: []sce.AddedField{
+			},
+			Widened: []sce.WidenedField{
 			},
 			Holders: []sce.RecordHolder{
 				{Variable: "total", List: false},

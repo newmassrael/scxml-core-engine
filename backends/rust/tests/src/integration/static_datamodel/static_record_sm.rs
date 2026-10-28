@@ -382,6 +382,7 @@ impl StaticRecordPersist for Engine<StaticRecordPolicy> {
                 revision: 1,
                 revisions: &[],
                 added: &[],
+                widened: &[],
                 holders: &[::sce_rust_runtime::saved_state::RecordHolder {
                     variable: "shown",
                     list: false,

@@ -258,6 +258,8 @@ class StaticStateAlgorithmEnumStateMachine(
                 revisions = listOf(),
                 added = listOf(
                 ),
+                widened = listOf(
+                ),
                 holders = listOf(
                     RecordHolder("items", true),
                     RecordHolder("draft", false),

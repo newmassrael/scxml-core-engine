@@ -1672,6 +1672,8 @@ var RecordListParentSceSynthInvokeListSavedShape = sce.SavedShape{
 			Revisions: []string{},
 			Added: []sce.AddedField{
 			},
+			Widened: []sce.WidenedField{
+			},
 			Holders: []sce.RecordHolder{
 				{Variable: "clock", List: false},
 				{Variable: "stamp", List: false},
@@ -1683,6 +1685,8 @@ var RecordListParentSceSynthInvokeListSavedShape = sce.SavedShape{
 			Revisions: []string{},
 			Added: []sce.AddedField{
 			},
+			Widened: []sce.WidenedField{
+			},
 			Holders: []sce.RecordHolder{
 				{Variable: "digest", List: true},
 			},
@@ -1692,6 +1696,8 @@ var RecordListParentSceSynthInvokeListSavedShape = sce.SavedShape{
 			Revision:  1,
 			Revisions: []string{},
 			Added: []sce.AddedField{
+			},
+			Widened: []sce.WidenedField{
 			},
 			Holders: []sce.RecordHolder{
 				{Variable: "values", List: true},
@@ -1705,6 +1711,8 @@ var RecordListParentSceSynthInvokeListSavedShape = sce.SavedShape{
 			Revision:  1,
 			Revisions: []string{},
 			Added: []sce.AddedField{
+			},
+			Widened: []sce.WidenedField{
 			},
 			Holders: []sce.RecordHolder{
 				{Variable: "adds", List: true},
@@ -1720,6 +1728,8 @@ var RecordListParentSceSynthInvokeListSavedShape = sce.SavedShape{
 			Revisions: []string{},
 			Added: []sce.AddedField{
 			},
+			Widened: []sce.WidenedField{
+			},
 			Holders: []sce.RecordHolder{
 				{Variable: "answers", List: true},
 				{Variable: "answer", List: false},
@@ -1731,6 +1741,8 @@ var RecordListParentSceSynthInvokeListSavedShape = sce.SavedShape{
 			Revisions: []string{},
 			Added: []sce.AddedField{
 			},
+			Widened: []sce.WidenedField{
+			},
 			Holders: []sce.RecordHolder{
 				{Variable: "roster", List: true},
 			},
@@ -1740,6 +1752,8 @@ var RecordListParentSceSynthInvokeListSavedShape = sce.SavedShape{
 			Revision:  1,
 			Revisions: []string{},
 			Added: []sce.AddedField{
+			},
+			Widened: []sce.WidenedField{
 			},
 			Holders: []sce.RecordHolder{
 				{Variable: "staged", List: true},

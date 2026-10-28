@@ -386,6 +386,8 @@ var StaticStateAlgorithmEnumSavedShape = sce.SavedShape{
 			Revisions: []string{},
 			Added: []sce.AddedField{
 			},
+			Widened: []sce.WidenedField{
+			},
 			Holders: []sce.RecordHolder{
 				{Variable: "items", List: true},
 				{Variable: "draft", List: false},

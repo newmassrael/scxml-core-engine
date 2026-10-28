@@ -1118,6 +1118,8 @@ var SheetPeerSavedShape = sce.SavedShape{
 			Revisions: []string{},
 			Added: []sce.AddedField{
 			},
+			Widened: []sce.WidenedField{
+			},
 			Holders: []sce.RecordHolder{
 				{Variable: "clock", List: false},
 				{Variable: "stamp", List: false},
@@ -1129,6 +1131,8 @@ var SheetPeerSavedShape = sce.SavedShape{
 			Revisions: []string{},
 			Added: []sce.AddedField{
 			},
+			Widened: []sce.WidenedField{
+			},
 			Holders: []sce.RecordHolder{
 				{Variable: "cells", List: true},
 				{Variable: "write", List: false},
@@ -1139,6 +1143,8 @@ var SheetPeerSavedShape = sce.SavedShape{
 			Revision:  1,
 			Revisions: []string{},
 			Added: []sce.AddedField{
+			},
+			Widened: []sce.WidenedField{
 			},
 			Holders: []sce.RecordHolder{
 				{Variable: "gone", List: true},
@@ -1152,6 +1158,8 @@ var SheetPeerSavedShape = sce.SavedShape{
 			Revisions: []string{},
 			Added: []sce.AddedField{
 			},
+			Widened: []sce.WidenedField{
+			},
 			Holders: []sce.RecordHolder{
 				{Variable: "rows", List: true},
 				{Variable: "cols", List: true},
@@ -1163,6 +1171,8 @@ var SheetPeerSavedShape = sce.SavedShape{
 			Revision:  1,
 			Revisions: []string{},
 			Added: []sce.AddedField{
+			},
+			Widened: []sce.WidenedField{
 			},
 			Holders: []sce.RecordHolder{
 				{Variable: "shown", List: true},

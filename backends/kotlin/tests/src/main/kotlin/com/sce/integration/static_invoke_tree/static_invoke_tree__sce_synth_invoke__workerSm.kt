@@ -208,6 +208,8 @@ class StaticInvokeTreeSceSynthInvokeWorkerStateMachine(
                     AddedField("layout", 2, "\"week\""),
                     AddedField("urgent", 3, "true"),
                 ),
+                widened = listOf(
+                ),
                 holders = listOf(
                     RecordHolder("last", false),
                 ),

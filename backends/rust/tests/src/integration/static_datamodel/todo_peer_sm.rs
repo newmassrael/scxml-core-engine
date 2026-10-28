@@ -1876,6 +1876,7 @@ impl TodoPeerPersist for Engine<TodoPeerPolicy> {
                     revision: 1,
                     revisions: &[],
                     added: &[],
+                    widened: &[],
                     holders: &[
                         ::sce_rust_runtime::saved_state::RecordHolder {
                             variable: "answers",
@@ -1892,6 +1893,7 @@ impl TodoPeerPersist for Engine<TodoPeerPolicy> {
                     revision: 1,
                     revisions: &[],
                     added: &[],
+                    widened: &[],
                     holders: &[::sce_rust_runtime::saved_state::RecordHolder {
                         variable: "roster",
                         list: true,
@@ -1902,6 +1904,7 @@ impl TodoPeerPersist for Engine<TodoPeerPolicy> {
                     revision: 1,
                     revisions: &[],
                     added: &[],
+                    widened: &[],
                     holders: &[
                         ::sce_rust_runtime::saved_state::RecordHolder {
                             variable: "agenda",
@@ -1922,6 +1925,7 @@ impl TodoPeerPersist for Engine<TodoPeerPolicy> {
                     revision: 1,
                     revisions: &[],
                     added: &[],
+                    widened: &[],
                     holders: &[::sce_rust_runtime::saved_state::RecordHolder {
                         variable: "sched",
                         list: false,
@@ -1932,6 +1936,7 @@ impl TodoPeerPersist for Engine<TodoPeerPolicy> {
                     revision: 1,
                     revisions: &[],
                     added: &[],
+                    widened: &[],
                     holders: &[
                         ::sce_rust_runtime::saved_state::RecordHolder {
                             variable: "clock",
@@ -1948,6 +1953,7 @@ impl TodoPeerPersist for Engine<TodoPeerPolicy> {
                     revision: 1,
                     revisions: &[],
                     added: &[],
+                    widened: &[],
                     holders: &[::sce_rust_runtime::saved_state::RecordHolder {
                         variable: "digest",
                         list: true,
@@ -1958,6 +1964,7 @@ impl TodoPeerPersist for Engine<TodoPeerPolicy> {
                     revision: 1,
                     revisions: &[],
                     added: &[],
+                    widened: &[],
                     holders: &[
                         ::sce_rust_runtime::saved_state::RecordHolder {
                             variable: "values",
@@ -1974,6 +1981,7 @@ impl TodoPeerPersist for Engine<TodoPeerPolicy> {
                     revision: 1,
                     revisions: &[],
                     added: &[],
+                    widened: &[],
                     holders: &[
                         ::sce_rust_runtime::saved_state::RecordHolder {
                             variable: "adds",

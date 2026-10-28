@@ -364,6 +364,8 @@ var StaticSchemaPendingSavedShape = sce.SavedShape{
 			Added: []sce.AddedField{
 				{ID: "urgent", Since: 2, Default: "true"},
 			},
+			Widened: []sce.WidenedField{
+			},
 			Holders: []sce.RecordHolder{
 				{Variable: "last", List: false},
 			},

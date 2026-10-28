@@ -1193,6 +1193,7 @@ impl SheetPeerPersist for Engine<SheetPeerPolicy> {
                     revision: 1,
                     revisions: &[],
                     added: &[],
+                    widened: &[],
                     holders: &[
                         ::sce_rust_runtime::saved_state::RecordHolder {
                             variable: "clock",
@@ -1209,6 +1210,7 @@ impl SheetPeerPersist for Engine<SheetPeerPolicy> {
                     revision: 1,
                     revisions: &[],
                     added: &[],
+                    widened: &[],
                     holders: &[
                         ::sce_rust_runtime::saved_state::RecordHolder {
                             variable: "cells",
@@ -1225,6 +1227,7 @@ impl SheetPeerPersist for Engine<SheetPeerPolicy> {
                     revision: 1,
                     revisions: &[],
                     added: &[],
+                    widened: &[],
                     holders: &[
                         ::sce_rust_runtime::saved_state::RecordHolder {
                             variable: "gone",
@@ -1245,6 +1248,7 @@ impl SheetPeerPersist for Engine<SheetPeerPolicy> {
                     revision: 1,
                     revisions: &[],
                     added: &[],
+                    widened: &[],
                     holders: &[
                         ::sce_rust_runtime::saved_state::RecordHolder {
                             variable: "rows",
@@ -1265,6 +1269,7 @@ impl SheetPeerPersist for Engine<SheetPeerPolicy> {
                     revision: 1,
                     revisions: &[],
                     added: &[],
+                    widened: &[],
                     holders: &[::sce_rust_runtime::saved_state::RecordHolder {
                         variable: "shown",
                         list: true,

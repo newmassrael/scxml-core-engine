@@ -166,6 +166,8 @@ class StaticRecordReal32StateMachine(
                 revisions = listOf(),
                 added = listOf(
                 ),
+                widened = listOf(
+                ),
                 holders = listOf(
                     RecordHolder("last", false),
                 ),

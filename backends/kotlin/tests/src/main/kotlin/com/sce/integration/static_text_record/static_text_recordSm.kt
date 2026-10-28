@@ -199,6 +199,8 @@ class StaticTextRecordStateMachine(
                 revisions = listOf(),
                 added = listOf(
                 ),
+                widened = listOf(
+                ),
                 holders = listOf(
                     RecordHolder("slots", true),
                     RecordHolder("held", false),

@@ -2078,6 +2078,8 @@ var TodoPeerSavedShape = sce.SavedShape{
 			Revisions: []string{},
 			Added: []sce.AddedField{
 			},
+			Widened: []sce.WidenedField{
+			},
 			Holders: []sce.RecordHolder{
 				{Variable: "answers", List: true},
 				{Variable: "answer", List: false},
@@ -2089,6 +2091,8 @@ var TodoPeerSavedShape = sce.SavedShape{
 			Revisions: []string{},
 			Added: []sce.AddedField{
 			},
+			Widened: []sce.WidenedField{
+			},
 			Holders: []sce.RecordHolder{
 				{Variable: "roster", List: true},
 			},
@@ -2098,6 +2102,8 @@ var TodoPeerSavedShape = sce.SavedShape{
 			Revision:  1,
 			Revisions: []string{},
 			Added: []sce.AddedField{
+			},
+			Widened: []sce.WidenedField{
 			},
 			Holders: []sce.RecordHolder{
 				{Variable: "agenda", List: true},
@@ -2111,6 +2117,8 @@ var TodoPeerSavedShape = sce.SavedShape{
 			Revisions: []string{},
 			Added: []sce.AddedField{
 			},
+			Widened: []sce.WidenedField{
+			},
 			Holders: []sce.RecordHolder{
 				{Variable: "sched", List: false},
 			},
@@ -2120,6 +2128,8 @@ var TodoPeerSavedShape = sce.SavedShape{
 			Revision:  1,
 			Revisions: []string{},
 			Added: []sce.AddedField{
+			},
+			Widened: []sce.WidenedField{
 			},
 			Holders: []sce.RecordHolder{
 				{Variable: "clock", List: false},
@@ -2132,6 +2142,8 @@ var TodoPeerSavedShape = sce.SavedShape{
 			Revisions: []string{},
 			Added: []sce.AddedField{
 			},
+			Widened: []sce.WidenedField{
+			},
 			Holders: []sce.RecordHolder{
 				{Variable: "digest", List: true},
 			},
@@ -2141,6 +2153,8 @@ var TodoPeerSavedShape = sce.SavedShape{
 			Revision:  1,
 			Revisions: []string{},
 			Added: []sce.AddedField{
+			},
+			Widened: []sce.WidenedField{
 			},
 			Holders: []sce.RecordHolder{
 				{Variable: "values", List: true},
@@ -2152,6 +2166,8 @@ var TodoPeerSavedShape = sce.SavedShape{
 			Revision:  1,
 			Revisions: []string{},
 			Added: []sce.AddedField{
+			},
+			Widened: []sce.WidenedField{
 			},
 			Holders: []sce.RecordHolder{
 				{Variable: "adds", List: true},

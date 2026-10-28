@@ -386,6 +386,7 @@ impl StaticPayloadBytesPersist for Engine<StaticPayloadBytesPolicy> {
                 revision: 1,
                 revisions: &[],
                 added: &[],
+                widened: &[],
                 holders: &[
                     ::sce_rust_runtime::saved_state::RecordHolder {
                         variable: "last",

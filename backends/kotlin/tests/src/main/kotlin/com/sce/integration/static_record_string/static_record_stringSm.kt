@@ -187,6 +187,8 @@ class StaticRecordStringStateMachine(
                 revisions = listOf(),
                 added = listOf(
                 ),
+                widened = listOf(
+                ),
                 holders = listOf(
                     RecordHolder("last", false),
                     RecordHolder("labels", true),

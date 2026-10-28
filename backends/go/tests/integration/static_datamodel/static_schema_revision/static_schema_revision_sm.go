@@ -367,6 +367,8 @@ var StaticSchemaRevisionSavedShape = sce.SavedShape{
 				{ID: "layout", Since: 2, Default: "\"week\""},
 				{ID: "urgent", Since: 3, Default: "true"},
 			},
+			Widened: []sce.WidenedField{
+			},
 			Holders: []sce.RecordHolder{
 				{Variable: "last", List: false},
 			},

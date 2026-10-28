@@ -381,6 +381,8 @@ class StaticOptionalStateMachine(
                 revisions = listOf(),
                 added = listOf(
                 ),
+                widened = listOf(
+                ),
                 holders = listOf(
                     RecordHolder("item", false),
                     RecordHolder("items", true),

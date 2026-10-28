@@ -195,6 +195,8 @@ class StaticSchemaPendingStateMachine(
                 added = listOf(
                     AddedField("urgent", 2, "true"),
                 ),
+                widened = listOf(
+                ),
                 holders = listOf(
                     RecordHolder("last", false),
                 ),

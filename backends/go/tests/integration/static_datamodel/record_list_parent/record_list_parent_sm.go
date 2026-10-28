@@ -1118,6 +1118,8 @@ var RecordListParentSavedShape = sce.SavedShape{
 			Revisions: []string{},
 			Added: []sce.AddedField{
 			},
+			Widened: []sce.WidenedField{
+			},
 			Holders: []sce.RecordHolder{
 				{Variable: "refused", List: false},
 			},
@@ -1128,6 +1130,8 @@ var RecordListParentSavedShape = sce.SavedShape{
 			Revisions: []string{},
 			Added: []sce.AddedField{
 			},
+			Widened: []sce.WidenedField{
+			},
 			Holders: []sce.RecordHolder{
 				{Variable: "shown", List: false},
 			},
@@ -1137,6 +1141,8 @@ var RecordListParentSavedShape = sce.SavedShape{
 			Revision:  1,
 			Revisions: []string{},
 			Added: []sce.AddedField{
+			},
+			Widened: []sce.WidenedField{
 			},
 			Holders: []sce.RecordHolder{
 				{Variable: "others", List: true},

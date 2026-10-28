@@ -378,6 +378,7 @@ impl StaticRecordBytesPersist for Engine<StaticRecordBytesPolicy> {
                 revision: 1,
                 revisions: &[],
                 added: &[],
+                widened: &[],
                 holders: &[
                     ::sce_rust_runtime::saved_state::RecordHolder {
                         variable: "last",

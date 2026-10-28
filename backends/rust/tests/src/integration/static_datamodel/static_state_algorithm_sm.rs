@@ -503,6 +503,7 @@ impl StaticStateAlgorithmPersist for Engine<StaticStateAlgorithmPolicy> {
                     revision: 1,
                     revisions: &[],
                     added: &[],
+                    widened: &[],
                     holders: &[
                         ::sce_rust_runtime::saved_state::RecordHolder {
                             variable: "entries",
@@ -519,6 +520,7 @@ impl StaticStateAlgorithmPersist for Engine<StaticStateAlgorithmPolicy> {
                     revision: 1,
                     revisions: &[],
                     added: &[],
+                    widened: &[],
                     holders: &[::sce_rust_runtime::saved_state::RecordHolder {
                         variable: "total",
                         list: false,

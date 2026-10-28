@@ -399,6 +399,7 @@ impl StaticRecordListPersist for Engine<StaticRecordListPolicy> {
                 revision: 1,
                 revisions: &[],
                 added: &[],
+                widened: &[],
                 holders: &[
                     ::sce_rust_runtime::saved_state::RecordHolder {
                         variable: "draft",

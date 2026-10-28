@@ -1007,6 +1007,7 @@ impl RecordListParentPersist for Engine<RecordListParentPolicy> {
                     revision: 1,
                     revisions: &[],
                     added: &[],
+                    widened: &[],
                     holders: &[::sce_rust_runtime::saved_state::RecordHolder {
                         variable: "refused",
                         list: false,
@@ -1017,6 +1018,7 @@ impl RecordListParentPersist for Engine<RecordListParentPolicy> {
                     revision: 1,
                     revisions: &[],
                     added: &[],
+                    widened: &[],
                     holders: &[::sce_rust_runtime::saved_state::RecordHolder {
                         variable: "shown",
                         list: false,
@@ -1027,6 +1029,7 @@ impl RecordListParentPersist for Engine<RecordListParentPolicy> {
                     revision: 1,
                     revisions: &[],
                     added: &[],
+                    widened: &[],
                     holders: &[
                         ::sce_rust_runtime::saved_state::RecordHolder {
                             variable: "others",

@@ -460,6 +460,8 @@ var StaticPayloadEnumUnimportedSavedShape = sce.SavedShape{
 			Revisions: []string{},
 			Added: []sce.AddedField{
 			},
+			Widened: []sce.WidenedField{
+			},
 			Holders: []sce.RecordHolder{
 				{Variable: "kept", List: true},
 			},

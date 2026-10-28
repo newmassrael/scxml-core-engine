@@ -253,6 +253,8 @@ class PresencePeerStateMachine(
                 revisions = listOf(),
                 added = listOf(
                 ),
+                widened = listOf(
+                ),
                 holders = listOf(
                     RecordHolder("online", true),
                     RecordHolder("rebuilt", true),

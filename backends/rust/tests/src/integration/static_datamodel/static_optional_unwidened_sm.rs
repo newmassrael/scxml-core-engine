@@ -465,6 +465,7 @@ impl StaticOptionalUnwidenedPersist for Engine<StaticOptionalUnwidenedPolicy> {
                 revision: 1,
                 revisions: &[],
                 added: &[],
+                widened: &[],
                 holders: &[
                     ::sce_rust_runtime::saved_state::RecordHolder {
                         variable: "item",
