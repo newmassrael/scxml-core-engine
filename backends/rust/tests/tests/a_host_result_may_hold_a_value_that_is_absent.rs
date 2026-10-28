@@ -209,7 +209,7 @@ fn the_record_is_written_with_null_for_an_absent_value() {
     };
     assert_eq!(
         absent.wire().as_str(),
-        r#"{"rows":3,"at":null,"label":null,"hit":null}"#
+        r#"{"rows":3, "at":null, "label":null, "hit":null}"#
     );
     let mixed = LookupResult {
         rows: 3,
@@ -219,7 +219,7 @@ fn the_record_is_written_with_null_for_an_absent_value() {
     };
     assert_eq!(
         mixed.wire().as_str(),
-        r#"{"rows":3,"at":null,"label":"ab","hit":false}"#
+        r#"{"rows":3, "at":null, "label":"ab", "hit":false}"#
     );
 }
 
