@@ -12,12 +12,18 @@
 #   a 64-bit `<param>` is written as a JSON number and not as its digits;
 #   a JSON number past 2^53 - 1 is read as a 64-bit field.
 #
+# The lowering is a compiled target: the regeneration carries its edit into the
+# generated machines, which the run hashes. The runtime package is imported as it
+# stands on disk, so it is a runtime target; declared as a compiled one, the second
+# case was reported INCONCLUSIVE, since no generated machine or test file differs
+# from the baseline when only the runtime changed.
+#
 # Anchors are literal slices of the source; an edit that moves one is reported
 # INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_pytest backends/python/tests integration/static_datamodel/
 mutation_targets sce-build/src/forge/static_lowering.rs
-mutation_targets backends/python/runtime/sce_runtime/event_payload.py
+mutation_runtime_targets backends/python/runtime/sce_runtime/event_payload.py
 mutation_regen scripts/regen_static_datamodel_python.sh
 mutation_oracles backends/python/tests/integration/static_datamodel/test_static_scenarios.py sce-build/tests/fixtures/static_datamodel/scenarios/static_wire_wide.json
 
