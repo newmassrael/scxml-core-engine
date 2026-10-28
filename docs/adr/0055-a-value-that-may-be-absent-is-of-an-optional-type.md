@@ -3,8 +3,7 @@
 - Status: Accepted (2026-10-21). The owner decided every question the proposal left open ("The
   owner's answers", below), under the standing rule: the most long-term correct structure, cost
   ignored; never a sentinel number and never a companion flag that admits impossible states. Steps
-  1 to 6 are implemented, and step 7 but for the restore's refusal of a `null` saved before a
-  widening (its "as built" note), and steps 8 to 14. Section 8 and step 12 amended the same day by that
+  1 to 14 are implemented. Section 8 and step 12 amended the same day by that
   rule: a codec
   document declares its format, and format 1 is refused for good (step 12 is implemented).
 - Date: 2026-10-21
@@ -746,11 +745,28 @@ documents, not observed from a backend.
    reader of `T` (the Rust runtime's
    `a_field_of_t_refuses_null_as_an_older_receiver_of_a_widened_field_does`); the scenario
    vocabulary admits `null` only where the machine's field is optional, so no scenario states it.
-   Not yet built: the restore's refusal of a `null` a record field holds in a state saved at a
-   revision before the one that widened the field. Such a state is one no build writes (the field
-   was `T` there), and the restore reads it absent; refusing it needs the widened fields and their
-   revisions in the shape constant the Rust and Kotlin templates write, and in each runtime's
-   `upgrade`.
+   As built, the restore refuses a `null` a record field holds in a state saved at a revision
+   before the one that widened the field. Such a state is one no build writes (the field was `T`
+   there). The saved shape the generator computes (`SavedRecordLineage`) carries, beside `added`,
+   `widened`: each field a revision widened, with the revision that added it (1 for a field of the
+   first revision) and the one that widened it (`SavedWidenedField`). Every machine that restores a
+   saved state writes it into its shape constant (`WidenedField` in the Rust, Kotlin, Python, Go
+   and C++ runtimes), and each runtime's `upgrade` judges it with the revision the state names for
+   the schema, on the values as saved and before a record is grown by defaults (which may be `null`
+   for an optional field added with no default): a record variable, or each record of a list,
+   holding `null` in a field with `since <= at < optional_since` is refused as `'<variable>.<field>'
+   is null, which revision <at> of '<event>' holds as a value: revision <optional_since> widened
+   it`. A field the revision does not yet declare keeps the refusal of a field a revision does not
+   declare, and a state saved at or after the widening reads `null` as absent. C11 holds no shape
+   constant: its generated record reader takes the revision of the schema the state was saved at
+   as `at` and refuses the same `null` with the same text. The tests are the unit tests of each
+   runtime (`a_null_saved_before_the_field_was_widened_is_refused` in the Rust runtime,
+   `ANullSavedBeforeAFieldWasWidenedIsRefusedTest` in Kotlin,
+   `test_a_null_saved_before_the_field_was_widened_is_refused` in Python,
+   `TestANullSavedBeforeAFieldWasWidenedIsRefused` in Go, `SavedState.ANullSavedBeforeAFieldWasWidenedIsRefused`
+   in C++), and in `static_lowering` the shape's `widened` and the C reader's text. No machine
+   of the fixtures holds a record of a widened schema, so no saved instance of a generated machine
+   exercises the refusal; the runtimes' `upgrade` is what the generated machines call.
 8. **Algorithms** (implemented). Optional parameters, returns and locals (the algorithm reader stops refusing
    them); the adapters' copy of an optional field and of an optional enum crossing by name; section
    3 in a body. Tests: `scenarios/static_state_algorithm_optional.json` (an algorithm that answers

@@ -5961,7 +5961,11 @@ build), and one whose `fields` is not the machine's own digest of that revision
 one of this machine: each record saved at an earlier revision, a record variable
 or each element of a list of records, takes the `sce:default` of every field a
 later revision added, and a record that already holds such a field is refused,
-since its revision does not declare it. An event in the saved external queue or
+since its revision does not declare it. A record that holds `null` in a field a
+later revision widened to `optional<T>` (`sce:optional-since`) is refused too,
+naming the field, the revision it was saved at and the revision that widened it:
+at that revision the field was a value of `T`, so no build wrote it absent. A
+record saved at or after the widening reads `null` as absent. An event in the saved external queue or
 in a waiting send holds its data as the wire carried it, and the lift reads it
 with the defaults when it is delivered. The shared fixtures
 `saved/static_schema_revision*.json` are a state of `static_schema_revision`
@@ -8329,7 +8333,12 @@ name's default where the old name's value was meant. Such a change is a new fiel
 one. The one exception is a widening from `T` to `optional<T>` declared with
 `sce:optional-since` (above): every value of `T` is a value of `optional<T>` and
 is written the same on the wire and in a saved state, so everything written before
-the widening reads after it, as present. What it does not make safe is the other
+the widening reads after it, as present. A record saved at a revision before the
+one that widened a field holds it as a value, so a `null` there is no absence and
+no build wrote it: the restore refuses it, naming the field and both revisions
+(`'last.due' is null, which revision 1 of 'due.widened' holds as a value:
+revision 2 widened it`), and a record saved at or after the widening reads `null`
+as absent. What it does not make safe is the other
 direction in time: a receiver built before the widening refuses a `null` a newer
 sender writes, so its receivers are upgraded first. A narrowing, from
 `optional<T>` to `T`, is refused like any other change of type. The language does
