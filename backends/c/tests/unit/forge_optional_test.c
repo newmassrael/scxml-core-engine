@@ -34,6 +34,16 @@ typedef struct {
 SCE_OPTIONAL_DECLARE_STRING(8)
 SCE_OPTIONAL_DECLARE_BYTES(4)
 
+// A record as a machine declares its own, and the optional value of it: a struct with
+// no `_eq`, since two records are no operand of `===`.
+typedef struct {
+    uint32_t id;
+    sce_static_string_8_t title;
+    int32_t count;
+} item_t;
+
+SCE_OPTIONAL_DECLARE_RECORD(record_item, item_t)
+
 static int failures = 0;
 
 static void expect(bool holds, const char *what) {
@@ -88,6 +98,37 @@ static void the_constructors(void) {
     expect(yes.present && yes.value, "an optional bool holds true");
     expect(half.present && half.value == 0.5, "an optional float64 holds 0.5");
     expect(top.present && top.value == UINT8_MAX, "an optional uint8 holds 255");
+}
+
+// A record that may be absent is the flag and the whole record: absent holds a zero record,
+// present holds a copy of the one it was made from, and a field is written through
+// `.value` where the flag is set, without the flag changing.
+static void a_record_may_be_absent_and_is_written_a_field_at_a_time(void) {
+    const item_t first = {1u, {"alpha"}, 2};
+    sce_optional_record_item_t held = sce_optional_record_item_none();
+    expect(!held.present, "none() of a record is absent");
+    expect(held.value.id == 0u && held.value.count == 0 && held.value.title.data[0] == '\0',
+           "none() of a record holds a zero record");
+
+    held = sce_optional_record_item_some(first);
+    expect(held.present, "some(r) is present");
+    expect(held.value.id == 1u && held.value.count == 2, "some(r) holds the fields of r");
+    expect_text("the text of the record held", held.value.title.data, "alpha");
+
+    // The optional holds a copy: a write through it does not reach the record it was made from.
+    held.value.count = 3;
+    strcpy(held.value.title.data, "beta");
+    expect(held.present && held.value.count == 3, "a field written leaves the record present");
+    expect(first.count == 2, "a record put into an optional is a copy: the number");
+    expect_text("a record put into an optional is a copy: the text", first.title.data, "alpha");
+
+    // A place names the type where no constructor can.
+    sce_optional_record_item_t place;
+    place = SCE_OPTIONAL_PRESENT_OF(__typeof__(place), first);
+    expect(place.present && place.value.id == 1u && place.value.count == 2, "PRESENT_OF holds the record");
+    place = SCE_OPTIONAL_ABSENT_OF(__typeof__(place));
+    expect(!place.present, "ABSENT_OF is absent");
+    expect(place.value.id == 0u && place.value.count == 0, "ABSENT_OF holds a zero record");
 }
 
 static void equality_is_total(void) {
@@ -237,6 +278,7 @@ static void the_reader_tells_a_value_null_and_a_missing_key_apart(void) {
 
 int main(void) {
     the_constructors();
+    a_record_may_be_absent_and_is_written_a_field_at_a_time();
     equality_is_total();
     the_default_is_evaluated_only_when_absent();
     an_absent_value_crosses_as_null();

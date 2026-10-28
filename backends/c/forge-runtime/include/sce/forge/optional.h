@@ -31,7 +31,11 @@
  *     `sce_static_bytes_<N>_t` (`sce_optional_bytes_<N>_t`);
  *   - a value of an enum, `SCE_OPTIONAL_DECLARE(enum_<document>, <type>,
  *     SCE_OPTIONAL_SAME_VALUE)`, under the enum document's guard
- *     (`sce_optional_enum_<document>_t`).
+ *     (`sce_optional_enum_<document>_t`);
+ *   - a record, `SCE_OPTIONAL_DECLARE_RECORD(record_<type>, <type>)`, beside the
+ *     struct it wraps and under a guard of its own (`sce_optional_record_<type>_t`),
+ *     with no `_eq`: a record is read through a proven `.value` and written a
+ *     field at a time, and two of them are no operand of `===`.
  *
  * The read with a default, `x ?? d`, is a conditional over the flag, so `d` is
  * evaluated only when `x` is absent: a default that would fail fails only then
@@ -85,35 +89,51 @@ extern "C" {
 /* `x === t` of an optional text and a present text. */
 #define SCE_OPTIONAL_HOLDS_TEXT(x, t) ((x).present && strcmp((x).value.data, (t)) == 0)
 
-/* The optional value of the element type `T`, named `sce_optional_<elem>_t`, with
- * its two constructors and its `_eq`; `same(a, b)` answers whether two present
- * values of `T` are the same value. */
-#define SCE_OPTIONAL_DECLARE(elem, T, same)                                                                            \
+/* The optional value of the type `T`, named `<prefix>_t`, with its two constructors,
+ * `<prefix>_none()` and `<prefix>_some(v)`, and no comparison: what every optional
+ * type is made of, and the whole of a record's, which is no operand of `===`.
+ *
+ * It takes the name already joined (`sce_optional_int64`), and not the element: a
+ * macro that passed the element on would expand it first, and `bool` is a macro
+ * (`<stdbool.h>`) that must stay the word the element is named by. */
+#define SCE_OPTIONAL_DECLARE_NAMED(prefix, T)                                                                          \
     typedef struct {                                                                                                   \
         bool present;                                                                                                  \
         T value;                                                                                                       \
-    } sce_optional_##elem##_t;                                                                                         \
+    } prefix##_t;                                                                                                      \
                                                                                                                        \
     /* An absent value: not present, and its value zero. The members are what the type says; the                       \
      * padding between them is not part of the value, and a compiler may leave it as it was. */                        \
-    static inline sce_optional_##elem##_t sce_optional_##elem##_none(void) {                                           \
-        sce_optional_##elem##_t absent;                                                                                \
+    static inline prefix##_t prefix##_none(void) {                                                                     \
+        prefix##_t absent;                                                                                             \
         memset(&absent, 0, sizeof(absent));                                                                            \
         return absent;                                                                                                 \
     }                                                                                                                  \
                                                                                                                        \
     /* A present value, `value`. */                                                                                    \
-    static inline sce_optional_##elem##_t sce_optional_##elem##_some(T value) {                                        \
-        sce_optional_##elem##_t held = sce_optional_##elem##_none();                                                   \
+    static inline prefix##_t prefix##_some(T value) {                                                                  \
+        prefix##_t held = prefix##_none();                                                                             \
         held.present = true;                                                                                           \
         held.value = value;                                                                                            \
         return held;                                                                                                   \
-    }                                                                                                                  \
+    }
+
+/* The optional value of the element type `T`, named `sce_optional_<elem>_t`, with
+ * its two constructors and its `_eq`; `same(a, b)` answers whether two present
+ * values of `T` are the same value. */
+#define SCE_OPTIONAL_DECLARE(elem, T, same)                                                                            \
+    SCE_OPTIONAL_DECLARE_NAMED(sce_optional_##elem, T)                                                                 \
                                                                                                                        \
     /* `a === b`: both absent, or both present and the same value. */                                                  \
     static inline bool sce_optional_##elem##_eq(sce_optional_##elem##_t a, sce_optional_##elem##_t b) {                \
         return SCE_OPTIONAL_SAME(a, b, same);                                                                          \
     }
+
+/* A record of the struct type `T` that may be absent, named `sce_optional_<elem>_t`,
+ * with its two constructors. A record is read through a proven `.value` and written
+ * a field at a time (`x.value.f`), and two of them are no operand of `===`, so the
+ * type has no `_eq`. */
+#define SCE_OPTIONAL_DECLARE_RECORD(elem, T) SCE_OPTIONAL_DECLARE_NAMED(sce_optional_##elem, T)
 
 /* A text of at most `capacity` UTF-8 bytes that may be absent, over the buffer
  * `sce_static_string_<capacity>_t` the machine declares first. */
@@ -136,6 +156,14 @@ SCE_OPTIONAL_DECLARE(uint32, uint32_t, SCE_OPTIONAL_SAME_VALUE)
 SCE_OPTIONAL_DECLARE(uint64, uint64_t, SCE_OPTIONAL_SAME_VALUE)
 SCE_OPTIONAL_DECLARE(float32, float, SCE_OPTIONAL_SAME_VALUE)
 SCE_OPTIONAL_DECLARE(float64, double, SCE_OPTIONAL_SAME_VALUE)
+
+/* The absent value, and a present one holding `v`, of the optional type `T`, where
+ * the place a statement writes it to names the type and no constructor can: `T` is
+ * `__typeof__(place)`. The constructors above are the spelling wherever the element
+ * is named; these are the one for a place, as `place = SCE_OPTIONAL_PRESENT_OF(
+ * __typeof__(place), v)`. */
+#define SCE_OPTIONAL_ABSENT_OF(T) ((T){.present = false})
+#define SCE_OPTIONAL_PRESENT_OF(T, v) ((T){.present = true, .value = (v)})
 
 /* `x ?? d` of a number, a `bool` or an enum: the value of a present `x`, and `d`,
  * evaluated only then, of an absent one. */
