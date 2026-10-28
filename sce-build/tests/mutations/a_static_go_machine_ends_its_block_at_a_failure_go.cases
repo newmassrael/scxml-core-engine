@@ -24,119 +24,22 @@
 # declared: the generated files are compiled into the tests, and the command is
 # what carries a mutated template or spelling into them.
 #
+# The generated files are declared by a pattern, not one by one:
+# `mutation_targets_glob` asks the tree for every `<m>_sm.go` the regeneration
+# commits, the children of an `<invoke>` and the documents of a hybrid
+# `<invoke>` among them. A machine added to the fixtures is a target as soon as
+# its regeneration is committed, and there is no line here to forget; a machine
+# the casefile left out is one the round would regenerate and never restore.
+# `the_go_mutation_casefile_names_every_committed_go_machine` holds the pattern
+# to the tree.
+#
 # Anchors are literal slices of the source; an edit that moves one is reported
 # INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_go backends/go/tests ./integration/static_datamodel/
 mutation_targets tools/codegen/templates/go/actions/_native_statement.go.jinja2 tools/codegen/templates/go/actions/if.go.jinja2 tools/codegen/templates/go/actions/send.go.jinja2 tools/codegen/templates/go/entry_exit_actions.go.jinja2 tools/codegen/templates/go/invoke_methods.go.jinja2 tools/codegen/templates/go/process_transition.go.jinja2 sce-build/src/forge/static_lowering.rs
 mutation_targets sce-build/src/forge/generator.rs
-mutation_targets backends/go/tests/integration/static_datamodel/static_block_ends/static_block_ends_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_block_ends_list/static_block_ends_list_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_bytes/static_bytes_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_bytes_wire/static_bytes_wire_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_cancel_expr/static_cancel_expr_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_child_host/static_child_host__sce_synth_invoke__worker_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_child_host/static_child_host_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_child_host_hybrid/static_child_host_hybrid_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_child_host_hybrid/static_hosted_first_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_child_host_hybrid/static_hosted_second_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_child_mesh/static_child_mesh__sce_synth_invoke__list_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_child_mesh/static_child_mesh_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_child_mesh/static_mesh_relay__sce_synth_invoke__inner_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_child_mesh/static_mesh_relay_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_counter/static_counter_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_donedata/static_donedata_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_donedata_content/static_donedata_content_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_donedata_record/static_donedata_record_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_enum/static_enum_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_event_arrival/static_event_arrival_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_event_wildcard/static_event_wildcard_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_foreach/static_foreach_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_history/static_history_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_host_call/static_host_call_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_host_call_arguments/static_host_call_arguments_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_host_clock/static_host_clock_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_host_duty/static_host_duty_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_host_duty_child/static_host_duty_child_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_host_duty_child/static_host_duty_child__sce_synth_invoke__worker_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_host_http/static_host_http_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_host_kv/static_host_kv_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_host_notify/static_host_notify_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_invoke/static_invoke_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_invoke/static_invoke__sce_synth_invoke__worker_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_invoke_params/static_invoke_params_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_invoke_params/static_invoke_params__sce_synth_invoke__control_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_invoke_params/static_invoke_params__sce_synth_invoke__watcher_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_invoke_params/static_invoke_params__sce_synth_invoke__worker_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_invoke_string/static_invoke_string_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_invoke_string/static_invoke_string__sce_synth_invoke__fits_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_invoke_string/static_invoke_string__sce_synth_invoke__over_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_invoke_string/static_invoke_string__sce_synth_invoke__wide_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_invoke_entry/static_invoke_entry_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_invoke_entry/static_invoke_entry__sce_synth_invoke__first_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_invoke_entry/static_invoke_entry__sce_synth_invoke__second_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_invoke_hybrid/static_invoke_hybrid_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_invoke_hybrid/static_hybrid_first_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_invoke_hybrid/static_hybrid_second_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_invoke_hybrid_saved/static_invoke_hybrid_saved_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_invoke_hybrid_saved/static_hybrid_watcher_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_invoke_hybrid_saved/static_hybrid_holder_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_invoke_tree/static_invoke_tree_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_invoke_tree/static_invoke_tree__sce_synth_invoke__worker_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_invoke_tree/static_hybrid_holder_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_invoke_tree/static_hybrid_watcher_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_list/static_list_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_list_assign/static_list_assign_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_list_index/static_list_index_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_record_list_index/static_record_list_index_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_overflow/static_overflow_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_payload/static_payload_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_payload_bytes/static_payload_bytes_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_payload_enum/static_payload_enum_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_payload_enum_unimported/static_payload_enum_unimported_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_payload_relay/static_payload_relay_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_real/static_real_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_real32/static_real32_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_record/static_record_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_record_bytes/static_record_bytes_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_record_enum/static_record_enum_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_record_fields/static_record_fields_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_record_list/static_record_list_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_record_real/static_record_real_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_record_real32/static_record_real32_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_record_string/static_record_string_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_schema_pending/static_schema_pending_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_schema_revision/static_schema_revision_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_send_content/static_send_content_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_send_delay/static_send_delay_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_send_event/static_send_event_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_send_http/static_send_http_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_send_idlocation/static_send_idlocation_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_send_namelist/static_send_namelist_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_send_params/static_send_params_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_send_target/static_send_target_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_send_type/static_send_type_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_state_algorithm/static_state_algorithm_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_string_capacity/static_string_capacity_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_text_record/static_text_record_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_timers/static_timers_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_whole_payload/static_whole_payload_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_wire_enum/static_wire_enum_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_wire_wide/static_wire_wide_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/sync_client/sync_client_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/todo_peer/todo_peer_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/sheet_peer/sheet_peer_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/presence_peer/presence_peer_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/record_list/record_list_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/record_list_parent/record_list_parent_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/record_list_parent/record_list_parent__sce_synth_invoke__list_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_enum_number/static_enum_number_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_forge_calls/static_forge_calls_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_state_algorithm_enum/static_state_algorithm_enum_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_optional/static_optional_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_optional_unwidened/static_optional_unwidened_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_state_algorithm_optional/static_state_algorithm_optional_sm.go
-mutation_targets backends/go/tests/integration/static_datamodel/static_optional_widened/static_optional_widened_sm.go
+mutation_targets_glob 'backends/go/tests/integration/static_datamodel/*/*_sm.go'
 mutation_regen scripts/regen_static_datamodel_go.sh
 mutation_oracles backends/go/tests/integration/static_datamodel/static_scenarios_test.go
 

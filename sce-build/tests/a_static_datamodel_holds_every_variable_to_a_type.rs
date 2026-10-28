@@ -6077,8 +6077,16 @@ const COMMITTED_MACHINES: &[(&str, &str)] = &[
 
 /// The Go mutation casefile declares the machines `scripts/regen_static_datamodel_go.sh`
 /// commits as targets, because a mutated template reaches the tests only through
-/// them, and it cannot derive that list. A machine the script commits and the
-/// casefile does not name is one the round would regenerate and never restore.
+/// them. A machine the script commits and the casefile does not declare is one
+/// the round would regenerate and never restore.
+///
+/// The casefile does not type that list: it derives it from the tree with one
+/// `mutation_targets_glob` pattern, so a machine added to the fixtures owes the
+/// casefile nothing. What is held here is the derivation, asked of the harness
+/// that owns the casefile vocabulary (`scripts/mutate --declares`) and not read
+/// out of the casefile's text: every machine the tree commits is among the
+/// declared targets, and the casefile types no machine of its own, which would
+/// be the hand-kept second list again.
 ///
 /// A directory the script commits holds a machine (`<m>_sm.go`, with one
 /// `<m>__sce_synth_invoke__<id>_sm.go` beside it for each child an `<invoke>`
@@ -6093,10 +6101,36 @@ const COMMITTED_MACHINES: &[(&str, &str)] = &[
 #[test]
 fn the_go_mutation_casefile_names_every_committed_go_machine() {
     let root = repo_root();
-    let casefile = std::fs::read_to_string(root.join(
-        "sce-build/tests/mutations/a_static_go_machine_ends_its_block_at_a_failure_go.cases",
-    ))
-    .expect("the Go casefile");
+    let casefile_path =
+        "sce-build/tests/mutations/a_static_go_machine_ends_its_block_at_a_failure_go.cases";
+    let casefile = std::fs::read_to_string(root.join(casefile_path)).expect("the Go casefile");
+    let typed_machine = casefile.lines().find(|line| {
+        line.starts_with("mutation_targets ")
+            && line.contains("backends/go/tests/integration/static_datamodel/")
+    });
+    assert!(
+        typed_machine.is_none(),
+        "the Go casefile types a machine as a mutation target ({typed_machine:?}); the machines \
+         are derived by its `mutation_targets_glob` pattern, and a typed line is a second list \
+         that the next machine will owe a line to"
+    );
+    let declared = std::process::Command::new(root.join("scripts/mutate"))
+        .arg("--declares")
+        .arg(casefile_path)
+        .current_dir(&root)
+        .output()
+        .expect("run scripts/mutate --declares");
+    assert!(
+        declared.status.success(),
+        "`scripts/mutate --declares` failed over the Go casefile:\n{}",
+        String::from_utf8_lossy(&declared.stderr)
+    );
+    let declared_targets: std::collections::BTreeSet<String> =
+        String::from_utf8_lossy(&declared.stdout)
+            .lines()
+            .filter_map(|line| line.strip_prefix("target\t"))
+            .map(str::to_owned)
+            .collect();
     let committed = root.join("backends/go/tests/integration/static_datamodel");
     let mut directories: Vec<String> = std::fs::read_dir(&committed)
         .expect("the committed Go machines")
@@ -6137,7 +6171,7 @@ fn the_go_mutation_casefile_names_every_committed_go_machine() {
             let target =
                 format!("backends/go/tests/integration/static_datamodel/{directory}/{file}");
             assert!(
-                casefile.contains(&target),
+                declared_targets.contains(&target),
                 "the Go casefile does not declare {target} as a mutation target"
             );
         }

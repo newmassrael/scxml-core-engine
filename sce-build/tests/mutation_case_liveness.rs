@@ -1289,3 +1289,179 @@ fn a_library_selector_resolves_against_the_crate_type_cargo_reports() {
          target exists:\n{output}"
     );
 }
+
+// ── A set of targets the tree decides ──
+
+/// The source every file of a glob fixture holds, so a case can aim at any of them.
+const A_MACHINE_BODY: &str = "fn keep(x: u8) -> u8 {\n    x + 1\n}\n";
+
+/// A casefile whose targets are a subject plus a `mutation_targets_glob` pattern
+/// over `machines/` in the fixture's own directory.
+///
+/// `machines` are the file names written there (a name ending in `/` is made a
+/// directory); `pattern` is relative to `machines/`; `edited` names, relative
+/// to the fixture directory, the one file the single case edits. Everything is
+/// in a temporary directory, so no run here touches the working tree.
+fn glob_fixture(machines: &[&str], pattern: &str, edited: &str) -> Fixture {
+    let dir = tempdir().expect("temp dir");
+    let target = dir.path().join("subject.txt");
+    fs::write(&target, A_MACHINE_BODY).expect("write the subject");
+    let oracle = dir.path().join("oracle.txt");
+    fs::write(&oracle, "the assertions that would catch it\n").expect("write the oracle");
+    let machine_dir = dir.path().join("machines");
+    fs::create_dir_all(&machine_dir).expect("create the machine directory");
+    for name in machines {
+        match name.strip_suffix('/') {
+            Some(directory) => {
+                fs::create_dir_all(machine_dir.join(directory)).expect("create a directory")
+            }
+            None => fs::write(machine_dir.join(name), A_MACHINE_BODY).expect("write a machine"),
+        }
+    }
+    let edited_path = dir.path().join(edited).display().to_string();
+    let casefile = dir.path().join("fixture.cases");
+    fs::write(
+        &casefile,
+        format!(
+            "{LIVE_SELECTOR}\n\
+             mutation_targets {}\n\
+             mutation_targets_glob '{}/{pattern}'\n\
+             mutation_oracles {}\n\n\
+             mutation_case \"edits a file of the fixture\" <<'PY'\n\
+             edit({edited_path:?}, \"x + 1\", \"x + 2\")\n\
+             PY\n",
+            target.display(),
+            machine_dir.display(),
+            oracle.display()
+        ),
+    )
+    .expect("write the casefile");
+    Fixture {
+        _dir: dir,
+        casefile,
+        target,
+    }
+}
+
+/// The `target` lines `scripts/mutate --declares` prints for a casefile, with
+/// the fixture directory taken off the front so a test names `machines/a_sm.go`.
+fn declared_targets_of(f: &Fixture) -> Vec<String> {
+    let out = Command::new(repo_root().join("scripts/mutate"))
+        .arg("--declares")
+        .arg(&f.casefile)
+        .env("SCE_MUTATION_INFLIGHT_DIR", inflight_dir(&f.casefile))
+        .current_dir(repo_root())
+        .output()
+        .expect("run scripts/mutate --declares");
+    assert!(
+        out.status.success(),
+        "--declares refused a casefile with a glob target:\n{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let fixture_dir = f.target.parent().expect("the fixture directory");
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter_map(|line| line.strip_prefix("target\t"))
+        .filter_map(|path| Path::new(path).strip_prefix(fixture_dir).ok())
+        .map(|relative| relative.display().to_string())
+        .collect()
+}
+
+/// A pattern declares the files the tree holds under it, and only files.
+///
+/// The derived set is what replaced a casefile's typed list of generated
+/// machines, so the two things a typed list got right by construction have to
+/// hold here too: a file the pattern does not match is not a target, and a
+/// directory whose name matches is not a file a case can edit.
+#[test]
+fn a_glob_target_declares_the_files_under_the_pattern_and_only_files() {
+    let f = glob_fixture(
+        &["b_sm.go", "a_sm.go", "c.go", "d_sm.go/"],
+        "*_sm.go",
+        "subject.txt",
+    );
+    let targets = declared_targets_of(&f);
+    assert_eq!(
+        targets,
+        ["subject.txt", "machines/a_sm.go", "machines/b_sm.go"],
+        "the glob must declare every file it matches in byte order after the \
+         plain declarations, and neither the unmatched file nor the directory"
+    );
+}
+
+/// A file added under the pattern is a target with the casefile untouched.
+///
+/// This is the property the typed list lacked: a new machine owed the casefile
+/// a line, and the owner of the machine had to remember it. The same casefile,
+/// read again after a file appears, declares it.
+#[test]
+fn a_file_added_under_a_glob_is_declared_without_the_casefile_changing() {
+    let f = glob_fixture(&["a_sm.go"], "*_sm.go", "subject.txt");
+    let before = declared_targets_of(&f);
+    assert!(
+        !before.contains(&"machines/z_sm.go".to_string()),
+        "the fixture already declared the file this test adds: {before:?}"
+    );
+    let machine_dir = f
+        .target
+        .parent()
+        .expect("the fixture directory")
+        .join("machines");
+    fs::write(machine_dir.join("z_sm.go"), A_MACHINE_BODY).expect("add a machine");
+    let after = declared_targets_of(&f);
+    assert!(
+        after.contains(&"machines/z_sm.go".to_string()),
+        "a file added under the pattern was not declared: {after:?}"
+    );
+}
+
+/// A case may edit a file that only the pattern declared, and the check
+/// restores it, which is what makes the pattern a declaration and not a note.
+#[test]
+fn a_case_may_edit_a_file_only_a_glob_declared() {
+    let f = glob_fixture(&["a_sm.go"], "*_sm.go", "machines/a_sm.go");
+    let machine = f
+        .target
+        .parent()
+        .expect("the fixture directory")
+        .join("machines/a_sm.go");
+    let (ok, output) = check(&f.casefile);
+    assert!(
+        ok,
+        "the check refused a case aimed at a glob-declared file:\n{output}"
+    );
+    assert!(
+        output.contains("applies       edits a file of the fixture"),
+        "the case aimed at a glob-declared file did not report that it applies:\n{output}"
+    );
+    assert_eq!(
+        fs::read_to_string(&machine).expect("read the machine"),
+        A_MACHINE_BODY,
+        "the check left the glob-declared file mutated: the pattern did not put it under the restore"
+    );
+}
+
+/// A pattern that matches nothing is refused by the check, by name.
+///
+/// A set derived from the tree that came back empty reads like a casefile whose
+/// targets stopped mattering, so the harness says so where the tree is read.
+#[test]
+fn a_glob_that_matches_no_file_is_refused() {
+    let f = glob_fixture(&["c.go"], "*_sm.go", "subject.txt");
+    assert_rejected(&f, "mutation_targets_glob matches no file");
+}
+
+/// `--declares` is the one mode that does not refuse an empty match: it runs in
+/// trees that hold the harness and the corpus and nothing else, and declares
+/// what it can resolve there.
+#[test]
+fn a_declaration_does_not_refuse_a_glob_that_matches_nothing() {
+    let f = glob_fixture(&["c.go"], "*_sm.go", "subject.txt");
+    let targets = declared_targets_of(&f);
+    assert_eq!(
+        targets,
+        ["subject.txt"],
+        "an empty glob must add no target to a declaration and must not stop it"
+    );
+}

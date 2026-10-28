@@ -107,6 +107,18 @@
 # (`mutation_ctest_generator_is_stale`); the cargo runner compiles the
 # committed tree and needs one, or the mutation reaches nothing.
 #
+# A set of targets that the tree decides — every machine a regeneration commits,
+# one directory each — is declared with `mutation_targets_glob` and a quoted
+# pattern, never one `mutation_targets` line per file:
+#
+#     mutation_targets_glob 'backends/go/tests/integration/static_datamodel/*/*_sm.go'
+#
+# The pattern is expanded relative to the repository root when the casefile is
+# read, matches files only, and is refused when it matches nothing (`--declares`
+# aside, which also runs in trees that hold only the harness and the corpus).
+# A file added under the pattern is a target the moment it exists, so the
+# casefile has nothing to forget.
+#
 # A suite that talks to a service outside this tree declares that service with
 # `mutation_needs`, so the caller can provision it and the round can refuse
 # early when nobody did:
@@ -517,6 +529,60 @@ mutation_gradle() { mutation_declare_runner gradle "$@"; }
 # — leaving the earlier files edited, unrestored, and reported as though the
 # case body had changed nothing.
 mutation_targets() { MUTATION_TARGET_FILES+=("$@"); }
+
+# Files a case is allowed to edit, COMPILED INTO the tests, named by a pattern
+# the tree answers rather than one by one.
+#
+#     mutation_targets_glob 'backends/go/tests/integration/static_datamodel/*/*_sm.go'
+#
+# For a set of files that grows with the tree and that nobody should have to
+# remember to extend. A generator mutation reaches every machine the
+# regeneration writes, and the machines are committed one directory each, so
+# a casefile that spelled them as `mutation_targets` lines was a hand-kept
+# copy of a directory listing: every new machine owed it a line, and the
+# test that held the two together went red on each one. The tree is the list,
+# so the casefile asks the tree, and that test now holds the DERIVATION to the
+# tree instead of two lists to each other.
+#
+# The pattern is expanded HERE, relative to the repository root, so it must be
+# quoted in the casefile; an unquoted one would be expanded by the shell
+# before this function saw it and would hand over nothing at all for a
+# pattern that matches no file. Files only, never a directory, and each
+# pattern's matches in byte order so every reader of the declaration, the
+# snapshot and the restore see one sequence. A file already declared by
+# `mutation_targets` is declared once: `mutation_unique` takes the first.
+#
+# A pattern that matches NOTHING is refused, by `--check` and by a round: a
+# derived set that came back empty is the silent loss of coverage this word
+# exists to end, and it reads exactly like a casefile whose targets all
+# stopped mattering. `--declares` is the exception, for the reason
+# `mutation_cargo_oracles` is silent: it runs in trees that are only the
+# harness and the corpus (the selection fixture in
+# `mutation_rounds_selection.rs`), where the honest answer is "no paths
+# resolved" and a refusal would stop the gate for a tree it never reads. The
+# refusal that matters stands where the tree is read.
+mutation_targets_glob() {
+    local pattern match matched
+    if (( $# == 0 )); then
+        red "mutation_targets_glob takes one or more patterns and was given none"
+        exit 2
+    fi
+    for pattern in "$@"; do
+        matched=0
+        while IFS= read -r match; do
+            [[ -f "$match" ]] || continue
+            MUTATION_TARGET_FILES+=("$match")
+            matched=1
+        done < <(compgen -G "$pattern" | LC_ALL=C sort)
+        if (( ! matched )) && [[ "$MUTATION_MODE" != "declares" ]]; then
+            red "mutation_targets_glob matches no file: $pattern"
+            red "(a pattern is relative to the repository root and is quoted in the"
+            red "casefile; a set derived from the tree that came back empty would"
+            red "leave every case below measuring nothing it declared)"
+            exit 2
+        fi
+    done
+}
 
 # Files a case is allowed to edit that the tests READ AT RUN TIME — a shell
 # script a test executes, a fixture a test loads — rather than link into a
