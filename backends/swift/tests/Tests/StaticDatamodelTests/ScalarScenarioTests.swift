@@ -97,6 +97,81 @@ private func history() -> Machine {
     return drive(policy, variables: ["resumed": { integer(policy.resumed) }])
 }
 
+private func timers() -> Machine {
+    let policy = StaticTimersPolicy()
+    return drive(policy, variables: ["trace": { integer(policy.trace) }])
+}
+
+private func sendDelay() -> Machine {
+    let policy = StaticSendDelayPolicy()
+    return drive(
+        policy,
+        variables: [
+            "wait": { integer(policy.wait) },
+            "beats": { integer(policy.beats) },
+            "refusals": { integer(policy.refusals) },
+        ]
+    )
+}
+
+private func sendEvent() -> Machine {
+    let policy = StaticSendEventPolicy()
+    return drive(
+        policy,
+        variables: [
+            "pings": { integer(policy.pings) },
+            "pongs": { integer(policy.pongs) },
+            "refusals": { integer(policy.refusals) },
+        ]
+    )
+}
+
+private func cancelExpr() -> Machine {
+    let policy = StaticCancelExprPolicy()
+    return drive(
+        policy,
+        variables: [
+            "a_fired": { integer(policy.aFired) },
+            "b_fired": { integer(policy.bFired) },
+            "refusals": { integer(policy.refusals) },
+        ]
+    )
+}
+
+private func sendIdLocation() -> Machine {
+    let policy = StaticSendIdlocationPolicy()
+    return drive(
+        policy,
+        variables: [
+            "first_fired": { integer(policy.firstFired) },
+            "second_fired": { integer(policy.secondFired) },
+            "refusals": { integer(policy.refusals) },
+        ]
+    )
+}
+
+private func sendTarget() -> Machine {
+    let policy = StaticSendTargetPolicy()
+    return drive(
+        policy,
+        variables: [
+            "landed": { integer(policy.landed) },
+            "refused": { integer(policy.refused) },
+        ]
+    )
+}
+
+private func sendType() -> Machine {
+    let policy = StaticSendTypePolicy()
+    return drive(
+        policy,
+        variables: [
+            "landed": { integer(policy.landed) },
+            "refused": { integer(policy.refused) },
+        ]
+    )
+}
+
 // MARK: - The scenarios
 
 // A counter counts to its flag and lets go: guards, `<assign>`, `<if>` and `<elseif>`
@@ -142,4 +217,42 @@ private func history() -> Machine {
 // resumes through it finds the variables it kept.
 @Test func aHistoryResumesWhereItsParentWasLeft() {
     replay("static_history", history())
+}
+
+// MARK: - Sends and cancels
+
+// A delayed `<send>` still waiting is part of a machine's state: armed on entering a
+// state, delivered when its time comes, and removed by the `<cancel>` that names it.
+@Test func aDelayedSendIsDeliveredWhenItsTimeComesAndACancelRemovesIt() {
+    replay("static_timers", timers())
+}
+
+@Test func aCancelStopsTheTimersOfTheStateItLeaves() {
+    replay("static_timers_stop", timers())
+}
+
+// The delay of a `<send>` is a string the machine computes, read as the CSS2 time it
+// must be: a value that is no time, or an operation that fails, is refused.
+@Test func aSendWaitsForADelayTheMachineComputes() {
+    replay("static_send_delay", sendDelay())
+}
+
+@Test func aSendDeliversTheEventTheMachineNames() {
+    replay("static_send_event", sendEvent())
+}
+
+@Test func aCancelNamesTheSendItRemovesByAComputedId() {
+    replay("static_cancel_expr", cancelExpr())
+}
+
+@Test func aSendHandsItsIdToTheVariableItNames() {
+    replay("static_send_idlocation", sendIdLocation())
+}
+
+@Test func aSendGoesOnlyByARouteTheDocumentDeclares() {
+    replay("static_send_target", sendTarget())
+}
+
+@Test func aSendOfAComputedTypeGoesByAProcessorTheDocumentDeclares() {
+    replay("static_send_type", sendType())
 }

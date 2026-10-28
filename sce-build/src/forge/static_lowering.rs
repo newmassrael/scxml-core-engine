@@ -10343,7 +10343,12 @@ impl SwiftTarget {
     fn unlowered_action(actions: &[Action]) -> Option<String> {
         for action in actions {
             match action.action_type.as_str() {
-                "assign" | "log" | "if" | "raise" => {}
+                "assign" | "log" | "if" | "raise" | "cancel" => {}
+                "send" => {
+                    if let Some(what) = Self::unlowered_send(action) {
+                        return Some(what);
+                    }
+                }
                 other => return Some(format!("<{}>", other.replace('_', ":"))),
             }
             for block in action.nested_blocks() {
@@ -10356,9 +10361,60 @@ impl SwiftTarget {
     }
 }
 
+impl SwiftTarget {
+    /// What of `send` this target has no lowering for yet, described for a refusal:
+    /// the data a send carries, a processor but the SCXML one, and a target but the
+    /// machine's own queues and its parent.
+    fn unlowered_send(send: &Action) -> Option<String> {
+        let scxml_processor = |name: &str| {
+            name == crate::host_processor_analyzer::SCXML_EVENT_PROCESSOR_TYPE || name == "scxml"
+        };
+        if !send.params.is_empty() || !send.namelist.trim().is_empty() {
+            return Some("a <send> carrying a <param> or a namelist".to_string());
+        }
+        if !send.content.is_empty() || !send.contentexpr.is_empty() {
+            return Some("a <send> carrying <content>".to_string());
+        }
+        if !send.send_type.is_empty() && !scxml_processor(&send.send_type) {
+            return Some(format!("a <send type=\"{}\">", send.send_type));
+        }
+        if let Some(other) = send.types.iter().find(|t| !scxml_processor(t)) {
+            return Some(format!(
+                "a <send> that may take the processor type \"{other}\""
+            ));
+        }
+        // The machine's own external queue, its internal queue, itself by its session
+        // id, and its parent: `#_<invokeid>`, a URL and a Mesh peer are other
+        // transports.
+        let own = |target: &str| {
+            target.is_empty()
+                || target == "#_internal"
+                || target == "#_parent"
+                || target.starts_with("#_scxml_")
+        };
+        // A `targetexpr` is held to the routes the document declares (`sce:targets`).
+        std::iter::once(send.target.as_str())
+            .chain(send.targets.iter().map(String::as_str))
+            .find(|target| !own(target))
+            .map(|target| format!("a <send target=\"{target}\">"))
+    }
+}
+
 impl StaticTarget for SwiftTarget {
     fn name(&self) -> &'static str {
         "Swift"
+    }
+    // The send template reads the string a `delayexpr`, an `eventexpr` and a
+    // `sendidexpr` compute as a CSS2 time, an event name and a send id
+    // (`parseDelayToMs`, `Engine.sendNamedExternal`, `Engine.cancelEvent`).
+    fn lowers_delay_expr(&self) -> bool {
+        true
+    }
+    fn lowers_event_expr(&self) -> bool {
+        true
+    }
+    fn lowers_cancel_expr(&self) -> bool {
+        true
     }
     // No call of an imported algorithm is spelled yet.
     fn callee(&self, _callee: &StaticCallee) -> Option<Callee> {

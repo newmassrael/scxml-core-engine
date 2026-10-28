@@ -1,0 +1,322 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{# W3C SCXML 6.2: Send event, to this session's own queues and to its parent, under
+   `datamodel="sce-static"`. What a send carries (a `<param>`, a namelist,
+   `<content>`), another processor type and any other target are refused by name
+   before this template runs (`SwiftTarget::unlowered_send`), so none is read here. #}
+{# The error an element raises, with the id of the send it names (W3C SCXML 6.2.4). #}
+{% macro send_error(code, message, send_id) %}
+{% if code in model.events %}
+                        var sendError = EventWithMetadata.platformError({{ machine_name }}Event.{{ code | to_event_variant }}, message: {{ message }})
+                        sendError.metadata.sendID = {{ send_id }}
+                        engine.raise(sendError)
+{% endif %}
+{% endmacro %}
+{% set send_id = action.id if action.id else action.auto_send_id %}
+{% set in_block = in_action_block is defined and in_action_block %}
+{% set send_id_swift = 'sendID' if action.native_idlocation else '"' ~ (send_id | default('') | escape_swift) ~ '"' %}
+{% set static_target = action.target if (action.target and not action.targetexpr) else '' %}
+{% set computed_event = action.native_event %}
+{% set event_name_swift = 'sendEventName' if computed_event else '"' ~ (action.event | default('', true) | escape_swift) ~ '"' %}
+{% set send_prologue = action.native_delay or action.native_event or action.native_target %}
+{# W3C SCXML 6.2: the wait, as a Duration, or none for an immediate send. A delay
+   postpones a send and does not change where it goes, so each delivery below takes
+   it. The build read a static delay once, by the grammar every engine shares
+   (ARCHITECTURE.md, "Durations"). #}
+{% if action.native_delay %}
+{% set delay_swift = 'Duration.milliseconds(Int64(sendDelayMs))' %}
+{% elif action.delay %}
+{% set delay_swift = 'Duration.milliseconds(' ~ action.delay_ms ~ ')' %}
+{% else %}
+{% set delay_swift = none %}
+{% endif %}
+{% if send_id and not action.native_idlocation %}
+                // W3C SCXML 6.2: send id="{{ send_id }}"
+{% endif %}
+                do {
+{% if action.native_idlocation %}
+                    // W3C SCXML 6.2.4: under `datamodel="sce-static"` the machine generates
+                    // the id and writes it to the variable `idlocation` names before it
+                    // reads any other argument (`Action::native_idlocation`); that
+                    // variable is then the id the send is known by (`Action::native_sendid`).
+                    {{ action.native_idlocation }}
+                    let sendID = {{ action.native_sendid }}
+{% endif %}
+{% if action.delay_invalid and not action.delayexpr %}
+                    // W3C SCXML 6.2: the written delay is not a CSS2 time (ARCHITECTURE.md,
+                    // "Durations"; the build decided it once). It is known before anything
+                    // is evaluated, so the send ends here with the argument error.
+{{ send_error('error.execution', '"<send> delay is not a CSS2 time"', send_id_swift) }}
+{% if in_block %}
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+{% endif %}
+{% elif action.send_type_unsupported %}
+                    // W3C SCXML 6.2: Unsupported send type raises error.execution — the build
+                    // decided it once, as it decides the choice a computed `typeexpr` makes
+                    // when its value is none of the declared types.
+{{ send_error('error.execution', '"<send type=' ~ (action.send_type | escape_swift) ~ '> names a processor this platform does not support"', send_id_swift) }}
+{% if in_block %}
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+{% endif %}
+{% elif action.target_unsupported %}
+                    // W3C SCXML 6.2.4: the target is not one this processor can address
+                    // (`Action::target_unsupported`, decided once at build time).
+{{ send_error('error.execution', '"<send target=' ~ (action.target | escape_swift) ~ '> is not a target this processor can address"', send_id_swift) }}
+{% if in_block %}
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+{% endif %}
+{% else %}
+{# ── The element's own arguments, evaluated once ──
+   W3C SCXML 6.2.3: "The Processor MUST evaluate all arguments to <send> when the
+   <send> element is evaluated", and "if the evaluation of <send>'s arguments
+   produces an error, the Processor MUST discard the message without attempting to
+   deliver it". So every argument is read here, before the delivery, which only
+   reads the locals this prologue leaves. The first failure is one error.execution,
+   the message goes nowhere, and — the error having been raised while the element
+   was processed — the block ends (W3C SCXML 4.9). #}
+{% if send_prologue %}
+                    var sendArgError = ""
+{% endif %}
+{% if action.native_event %}
+                    // The event's name is a string computed from the machine's fields now. A
+                    // name that evaluates to nothing names no event, and an operation that
+                    // fails cannot be evaluated: either is the argument error.
+                    var sendEventName = ""
+                    if sendArgError.isEmpty {
+{% if action.native_event_fails %}
+                        var sceFailure = Failure()
+{% endif %}
+                        sendEventName = {{ action.native_event }}
+{% if action.native_event_fails %}
+                        if sceFailure.failed {
+                            sendEventName = ""
+                        }
+{% endif %}
+                        if sendEventName.isEmpty {
+                            sendArgError = "<send> eventexpr could not be evaluated to an event name"
+                        }
+                    }
+{% endif %}
+{% if action.native_target %}
+                    // docs/adr/0005, decision 3: the target is a string computed from the
+                    // machine's fields now, and the send goes only by a route the document
+                    // declared as `sce:targets`. A value in none of them names no route this
+                    // send may take — an address nobody answers at, which is reported as
+                    // error.communication (W3C SCXML 6.2.4) — and an operation that fails
+                    // cannot be evaluated, the argument error.
+                    var sendTarget = ""
+                    var sendTargetKnown = false
+                    if sendArgError.isEmpty {
+{% if action.native_target_fails %}
+                        var sceFailure = Failure()
+{% endif %}
+                        let sceRoute = {{ action.native_target }}
+{% if action.native_target_fails %}
+                        if sceFailure.failed {
+                            sendArgError = "<send> targetexpr could not be evaluated"
+                        } else {
+                            switch sceRoute {
+                            case {% for entry in action.targets %}"{{ entry | escape_swift }}"{{ ", " if not loop.last }}{% endfor %}:
+                                sendTarget = sceRoute
+                                sendTargetKnown = true
+                            default:
+                                break
+                            }
+                        }
+{% else %}
+                        switch sceRoute {
+                        case {% for entry in action.targets %}"{{ entry | escape_swift }}"{{ ", " if not loop.last }}{% endfor %}:
+                            sendTarget = sceRoute
+                            sendTargetKnown = true
+                        default:
+                            break
+                        }
+{% endif %}
+                    }
+{% endif %}
+{% if action.native_delay %}
+                    var sendDelayMs: UInt64 = 0
+                    if sendArgError.isEmpty {
+                        // The delay is a string computed from the machine's fields now, and
+                        // read as the CSS2 time it must be (ARCHITECTURE.md, "Durations"): an
+                        // operation that fails, or a value that is no time, is the argument
+                        // error, and the message is not scheduled under some default wait.
+{% if action.native_delay_fails %}
+                        var sceFailure = Failure()
+{% endif %}
+                        let sceDelay = {{ action.native_delay }}
+{% if action.native_delay_fails %}
+                        if sceFailure.failed {
+                            sendArgError = "<send> delayexpr could not be evaluated"
+                        } else if let ms = parseDelayToMs(sceDelay) {
+                            sendDelayMs = ms
+                        } else {
+                            sendArgError = "<send> delayexpr is not a CSS2 time"
+                        }
+{% else %}
+                        if let ms = parseDelayToMs(sceDelay) {
+                            sendDelayMs = ms
+                        } else {
+                            sendArgError = "<send> delayexpr is not a CSS2 time"
+                        }
+{% endif %}
+                    }
+{% endif %}
+{% if send_prologue %}
+                    if !sendArgError.isEmpty {
+{{ send_error('error.execution', 'sendArgError', send_id_swift) }}
+{% if in_block %}
+                        break sceBlock  // W3C SCXML 4.9: the error ends the block
+{% endif %}
+                    }
+{% endif %}
+{% if action.native_target %}
+                    if sendArgError.isEmpty && (!sendTargetKnown || isUnreachableTarget(sendTarget)) {
+                        // W3C SCXML C.1: a target that evaluates to no route, or to text that
+                        // names nothing (empty or "undefined"), is not reachable —
+                        // error.communication, nothing delivered, and the error ends the block
+                        // as any other would (W3C SCXML 4.9).
+{{ send_error('error.communication', '"<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach"', send_id_swift) }}
+{% if in_block %}
+                        break sceBlock
+{% else %}
+                        sendArgError = "unreachable target"  // discards the message below
+{% endif %}
+                    }
+{% endif %}
+{% if send_prologue and not in_block %}
+                    if sendArgError.isEmpty {
+{% endif %}
+{% if action.native_target %}
+                    // W3C SCXML 6.2.4 + C.1: a targetexpr is a target — the value is routed as
+                    // the same value written in `target` is, at once or after the delay, by
+                    // the table `classifyTarget` holds.
+                    let sendRouted = engine.sendToTarget(
+                        event: engine.resolveEventByName({{ event_name_swift }}),
+                        eventName: {{ event_name_swift }},
+                        target: sendTarget,
+                        ownSessionID: self.sessionID,
+                        delay: {{ delay_swift if delay_swift else '.zero' }},
+                        sendID: {{ send_id_swift }},
+                        eventData: "",
+                        origin: self.sessionID
+                    )
+                    if sendRouted == .notSupported {
+{{ send_error('error.execution', '"<send> targetexpr produced a value that is not a target"', send_id_swift) }}
+{% if in_block %}
+                        break sceBlock  // W3C SCXML 4.9: the error ends the block
+{% endif %}
+                    }
+                    if sendRouted == .notReachable {
+{{ send_error('error.communication', '"<send> targetexpr names a session this processor cannot reach"', send_id_swift) }}
+{% if in_block %}
+                        break sceBlock  // W3C SCXML 4.9: the error ends the block
+{% endif %}
+                    }
+{% elif static_target == '#_internal' %}
+                    // W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
+                    // and does not change the queue.
+{% if action.event %}
+{% if delay_swift %}
+                    engine.scheduleRoutedEvent(
+                        {{ machine_name }}Event.{{ action.event | to_event_variant }},
+                        delay: {{ delay_swift }},
+                        sendID: {{ send_id_swift }},
+                        eventData: "",
+                        origin: self.sessionID,
+                        route: ScheduledRoute(kind: .internalQueue, eventName: "")
+                    )
+{% else %}
+                    engine.raise(EventWithMetadata({{ machine_name }}Event.{{ action.event | to_event_variant }}))
+{% endif %}
+{% elif computed_event %}
+                    // W3C SCXML 3.12.1 + 5.10: a computed name is delivered as the event the
+                    // document's names resolve it to, and `_event.name` is the whole name.
+                    engine.sendNamedInternal(
+                        sendEventName,
+                        delay: {{ delay_swift if delay_swift else '.zero' }},
+                        sendID: {{ send_id_swift }},
+                        eventData: "",
+                        origin: self.sessionID
+                    )
+{% endif %}
+{% elif static_target == '#_parent' %}
+                    // W3C SCXML 6.2: Send to parent
+{% if delay_swift %}
+                    // W3C SCXML 6.2 + 6.4: delayed to the parent. It waits in this child's own
+                    // queue, so `<cancel>` reaches it and a child that ended first drops it.
+                    engine.scheduleRoutedEvent(
+                        nil,
+                        delay: {{ delay_swift }},
+                        sendID: {{ send_id_swift }},
+                        eventData: "",
+                        origin: self.sessionID,
+                        route: ScheduledRoute(kind: .parent, eventName: {{ event_name_swift }})
+                    )
+{% else %}
+                    if !self.deliverToParent(eventName: {{ event_name_swift }}, eventData: "") {
+                        // W3C SCXML C.1: this session was started by its host, not by an
+                        // `<invoke>`, so `#_parent` reaches nobody — error.communication,
+                        // nothing delivered, and the block ends (4.9).
+{{ send_error('error.communication', '"<send target=#_parent> has no parent session to reach"', send_id_swift) }}
+{% if in_block %}
+                        break sceBlock  // W3C SCXML 4.9: the error ends the block
+{% endif %}
+                    }
+{% endif %}
+{% else %}
+{# The session's own external queue: no target, or `#_scxml_<sessionid>`, which names
+   a session, and the only one this processor reaches by that name is its own — the
+   bare prefix names it too (W3C SCXML C.1, test 190). Any other is not reachable. #}
+{% if static_target is startingwith('#_scxml_') and static_target != '#_scxml_' %}
+                    if self.sessionID != "{{ static_target | slice_from(8) | escape_swift }}" {
+                        // W3C SCXML C.1: `#_scxml_<sessionid>` names a session this processor
+                        // cannot reach — error.communication, nothing delivered, the block ended.
+{{ send_error('error.communication', '"<send target=' ~ (static_target | escape_swift) ~ '> names a session this processor cannot reach"', send_id_swift) }}
+{% if in_block %}
+                        break sceBlock  // W3C SCXML 4.9: the error ends the block
+{% endif %}
+                    }
+{% endif %}
+{% if static_target is startingwith('#_scxml_') and static_target != '#_scxml_' %}
+                    else {
+{% else %}
+                    do {
+{% endif %}
+                    // W3C SCXML 6.2 / C.1: deliver the event to this session's own external
+                    // queue, carrying this session as its origin.
+{% if computed_event %}
+                        // W3C SCXML 3.12.1 + 5.10: a computed name is delivered as the event the
+                        // document's names resolve it to, and `_event.name` is the whole name.
+                        engine.sendNamedExternal(
+                            sendEventName,
+                            delay: {{ delay_swift if delay_swift else '.zero' }},
+                            sendID: {{ send_id_swift }},
+                            eventData: "",
+                            origin: self.sessionID
+                        )
+{% elif delay_swift %}
+                        // W3C SCXML 6.2: delayed to this session's external queue.
+                        engine.scheduleEvent(
+                            {{ machine_name }}Event.{{ action.event | to_event_variant }},
+                            delay: {{ delay_swift }},
+                            sendID: {{ send_id_swift }},
+                            eventData: "",
+                            origin: self.sessionID
+                        )
+{% elif action.event %}
+                        engine.raiseExternalWithMeta(
+                            EventWithMetadata(
+                                {{ machine_name }}Event.{{ action.event | to_event_variant }},
+                                metadata: .external(sendID: {{ send_id_swift }}, origin: self.sessionID)
+                            )
+                        )
+{% endif %}
+                    }
+{% endif %}
+{% if send_prologue and not in_block %}
+                    }
+{% endif %}
+{% endif %}{# end of the delay refusal #}
+                }

@@ -1,0 +1,33 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{# W3C SCXML 6.3: Cancel delayed send event. <cancel> carries either sendid or
+   sendidexpr (W3C §6.3); both empty is rejected at parse time. Under
+   `datamodel="sce-static"` a sendidexpr is a string computed from the machine's
+   fields now (`Action::native_sendid`): an id no send holds cancels nothing, and an
+   operation that fails cannot be evaluated, which raises error.execution and ends
+   the block. #}
+{% if action.sendid %}
+                _ = engine.cancelEvent(sendID: "{{ action.sendid | escape_swift }}")
+{% elif action.native_sendid %}
+                do {
+{% if action.native_sendid_fails %}
+                    var sceFailure = Failure()
+{% endif %}
+                    let cancelSendID = {{ action.native_sendid }}
+{% if action.native_sendid_fails %}
+                    if sceFailure.failed {
+{% if 'error.execution' in model.events %}
+                        engine.raise(EventWithMetadata.platformError({{ machine_name }}Event.{{ 'error.execution' | to_event_variant }}, message: "<cancel> sendidexpr failed to evaluate"))
+{% endif %}
+{% if in_action_block is defined and in_action_block %}
+                        break sceBlock  // W3C SCXML 4.9: the error ends the block
+{% endif %}
+                    } else {
+                        _ = engine.cancelEvent(sendID: cancelSendID)
+                    }
+{% else %}
+                    _ = engine.cancelEvent(sendID: cancelSendID)
+{% endif %}
+                }
+{% endif %}
