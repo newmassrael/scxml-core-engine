@@ -11410,7 +11410,7 @@ impl StaticTarget for SwiftTarget {
         // byte string and an optional value are not spelled yet.
         if let Some(var) = scope.variables.iter().find(|v| {
             !v.value_type.as_ref().is_some_and(|t| {
-                t.scalar().is_some_and(|ty| !matches!(ty, SceType::Bytes))
+                t.scalar().is_some()
                     // A record, and a list of numbers, truth values or records, bound by
                     // `sce:capacity`; a list of enums is not spelled yet.
                     || t.record_alias().is_some()
@@ -11421,7 +11421,7 @@ impl StaticTarget for SwiftTarget {
             })
         }) {
             return Some(format!(
-                "<data id=\"{}\"> of a list of enums, a byte string or an optional type",
+                "<data id=\"{}\"> of a list of enums, of byte strings or an optional type",
                 var.id
             ));
         }

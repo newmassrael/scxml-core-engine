@@ -539,6 +539,63 @@ private func recordString() -> Machine {
     )
 }
 
+// A byte string as a scenario writes it: its byte-exact Latin-1 text.
+private func bytesText(_ bytes: [UInt8]) -> JSONValue {
+    .text(bytesAsPayloadText(bytes))
+}
+
+private func framed(_ sensor: UInt8, _ frame: [UInt8]) -> JSONValue {
+    .object([(key: "sensor", value: integer(sensor)), (key: "frame", value: bytesText(frame))])
+}
+
+private func bytesVariables() -> Machine {
+    let policy = StaticBytesPolicy()
+    return drive(
+        policy,
+        variables: [
+            "frame": { bytesText(policy.frame) },
+            "tail": { bytesText(policy.vTail) },
+            "size": { integer(policy.size) },
+            "matches": { integer(policy.matches) },
+            "misses": { integer(policy.misses) },
+            "errors": { integer(policy.errors) },
+        ]
+    )
+}
+
+private func payloadBytes() -> Machine {
+    let policy = StaticPayloadBytesPolicy()
+    return drive(
+        policy,
+        variables: [
+            "last": { framed(policy.last.sensor, policy.last.frame) },
+            "held": { bytesText(policy.held) },
+            "frames": { .array(policy.frames.map { framed($0.sensor, $0.frame) }) },
+            "size": { integer(policy.size) },
+            "matches": { integer(policy.matches) },
+            "misses": { integer(policy.misses) },
+            "errors": { integer(policy.errors) },
+        ]
+    )
+}
+
+private func recordBytes() -> Machine {
+    let policy = StaticRecordBytesPolicy()
+    return drive(
+        policy,
+        variables: [
+            "last": { framed(policy.last.sensor, policy.last.frame) },
+            "spare": { bytesText(policy.spare) },
+            "frames": { .array(policy.frames.map { framed($0.sensor, $0.frame) }) },
+            "size": { integer(policy.size) },
+            "matches": { integer(policy.matches) },
+            "misses": { integer(policy.misses) },
+            "leads": { integer(policy.leads) },
+            "errors": { integer(policy.errors) },
+        ]
+    )
+}
+
 // MARK: - The scenarios
 
 // A counter counts to its flag and lets go: guards, `<assign>`, `<if>` and `<elseif>`
@@ -624,6 +681,24 @@ private func recordString() -> Machine {
 // assignment that does not fit refuses.
 @Test func aRecordHoldsBoundedText() {
     replay("static_record_string", recordString())
+}
+
+// MARK: - Byte strings
+
+// A byte string holds no more than its bound, is compared by its contents and measured
+// in bytes, and an assignment that does not fit is refused.
+@Test func aByteStringIsHeldToItsBoundAndComparedByItsContents() {
+    replay("static_bytes", bytesVariables())
+}
+
+// A payload's byte-string field is read at its bound and compared as the variable's is.
+@Test func aPayloadsByteStringFieldIsHeldToItsBound() {
+    replay("static_payload_bytes", payloadBytes())
+}
+
+// A record holds a byte string, which a list copies with the record.
+@Test func aRecordHoldsAByteString() {
+    replay("static_record_bytes", recordBytes())
 }
 
 // MARK: - Reals
