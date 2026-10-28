@@ -1113,3 +1113,14 @@ def test_a_statechart_hands_an_algorithm_a_value_that_may_be_absent() -> None:
 # a field of the first revision, is refused.
 def test_an_older_entry_reads_a_widened_field_present_and_a_newer_null_absent() -> None:
     replay("static_optional_widened")
+
+
+# docs/adr/0055, step 9: a record that may be absent, `None` until one is put into it,
+# whole, from a payload, a record variable, a list's element and an algorithm's answer;
+# its fields read as `pick.value.<field>` only where a test proves it present and
+# written the same way, one after the other; made absent again by `null`; a list that
+# holds three refusing a fourth item before anything after the append runs. A record put
+# into it is the frozen record the machine holds, so the list's item is not changed by
+# the write through `pick`.
+def test_a_record_that_may_be_absent_is_held_read_and_written_where_proven() -> None:
+    replay("static_optional_record")

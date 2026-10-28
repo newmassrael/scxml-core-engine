@@ -9,12 +9,15 @@ absence is JSON ``null``, and a delivery that lacks the key of a first-revision
 field is refused, not read as absent. ``static_optional`` holds the machine to
 the answers the other engines give; the cases here pin the runtime's reader
 (``lift`` over ``OptionalOf``), its writer (``write_optional``) and the default
-``x ?? d`` is read with (``otherwise``).
+``x ?? d`` is read with (``otherwise``), and the two helpers an optional record
+(docs/adr/0055, step 9) is held with: the copy a record put into one is
+(``copied``) and the checked read of a list's element (``at``).
 """
 from __future__ import annotations
 
 import json
 import sys
+from dataclasses import dataclass
 from enum import IntEnum
 from pathlib import Path
 
@@ -116,3 +119,38 @@ def test_a_default_is_computed_only_when_the_value_is_absent() -> None:
     with pytest.raises(algorithm.AlgorithmFailure) as failure:
         algorithm.otherwise(None, overflow)
     assert failure.value.error is algorithm.AlgorithmError.OVERFLOW
+
+
+@dataclass
+class _Item:
+    """A payload class as a schema's generated module declares one: a mutable
+    dataclass of the schema's fields."""
+
+    id: int
+    title: str
+    count: int
+
+
+def test_a_record_put_into_an_optional_record_is_a_copy_of_its_own() -> None:
+    item = _Item(1, "alpha", 2)
+    held = algorithm.copied(item)
+    assert held == item
+    assert held is not item
+    # A field written through the optional record is not written through the
+    # record it was taken from.
+    held.count = 9
+    held.title = "bumped"
+    assert item == _Item(1, "alpha", 2)
+
+
+def test_an_absent_optional_record_is_copied_as_absent() -> None:
+    assert algorithm.copied(None) is None
+
+
+def test_the_element_of_a_list_is_read_whole_and_a_negative_index_is_no_element() -> None:
+    items = [_Item(1, "a", 1), _Item(2, "b", 2)]
+    assert algorithm.at(items, 1) is items[1]
+    for index in (-1, 2):
+        with pytest.raises(algorithm.AlgorithmFailure) as failure:
+            algorithm.at(items, index)
+        assert failure.value.error is algorithm.AlgorithmError.OUT_OF_RANGE

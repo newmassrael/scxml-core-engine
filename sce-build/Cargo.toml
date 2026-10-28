@@ -980,6 +980,15 @@ name = "an_optional_record_is_held_read_and_written_where_proven"
 path = "tests/an_optional_record_is_held_read_and_written_where_proven.rs"
 required-features = ["cli"]
 
+# The Python backend spells an optional record and every optional element an
+# algorithm holds (docs/adr/0055, step 9): the text `sce-codegen generate -l python`
+# writes for the scenario's machine, its algorithm and the calls between them. It
+# runs `generate`, so it carries the `cli` gate.
+[[test]]
+name = "an_optional_record_is_spelled_by_generated_python"
+path = "tests/an_optional_record_is_spelled_by_generated_python.rs"
+required-features = ["cli"]
+
 [[test]]
 name = "a_statechart_calls_the_forge_kinds_that_are_functions"
 path = "tests/a_statechart_calls_the_forge_kinds_that_are_functions.rs"

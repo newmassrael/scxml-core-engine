@@ -38,6 +38,7 @@ _MACHINES = (
     "static_history",
     "static_list",
     "static_optional",
+    "static_optional_record",
     "static_record",
     "static_schema_pending",
     "static_schema_revision",
@@ -49,11 +50,11 @@ _MACHINES = (
 def _machine_of(name: str) -> str:
     """The stem of the document a shared text is of: the file's own name up to the
     part that says which moment of the run it is (``static_schema_pending_first`` and
-    ``static_schema_revision_second`` are moments of one document each)."""
-    for stem in _MACHINES:
-        if name == stem or name.startswith(stem + "_"):
-            return stem
-    return ""
+    ``static_schema_revision_second`` are moments of one document each). The longest
+    stem a name begins with is the document: ``static_optional_record`` begins with
+    ``static_optional`` too, and is not a moment of that one."""
+    matching = [stem for stem in _MACHINES if name == stem or name.startswith(stem + "_")]
+    return max(matching, key=len, default="")
 
 
 def _restored_and_saved_again(stem: str, text: str) -> str:
