@@ -221,6 +221,7 @@ scenarios! {
     "static_host_duty" => static_host_duty_sm::{StaticHostDutyPolicy, StaticHostDutyPersist} ~ RecordingStaticHostDutyActions => static_host_duty;
     "static_invoke" => static_invoke_sm::{StaticInvokePolicy, StaticInvokePersist};
     "static_invoke_abort" => static_invoke_sm::{StaticInvokePolicy, StaticInvokePersist};
+    "static_invoke_optional" => static_invoke_optional_sm::{StaticInvokeOptionalPolicy, StaticInvokeOptionalPersist};
     "static_invoke_params" => static_invoke_params_sm::{StaticInvokeParamsPolicy, StaticInvokeParamsPersist};
     "static_invoke_string" => static_invoke_string_sm::{StaticInvokeStringPolicy, StaticInvokeStringPersist};
     "static_invoke_tree" => static_invoke_tree_sm::{StaticInvokeTreePolicy, StaticInvokeTreePersist} @ Manual;

@@ -71,6 +71,9 @@ use sce_rust_tests::integration::static_datamodel::static_forge_calls_sm::{
 use sce_rust_tests::integration::static_datamodel::static_history_sm::{
     StaticHistoryPersist, StaticHistoryPolicy,
 };
+use sce_rust_tests::integration::static_datamodel::static_invoke_optional_sm::{
+    StaticInvokeOptionalPersist, StaticInvokeOptionalPolicy,
+};
 use sce_rust_tests::integration::static_datamodel::static_invoke_params_sm::{
     StaticInvokeParamsPersist, StaticInvokeParamsPolicy,
 };
@@ -731,6 +734,20 @@ fn static_invoke_string_holds_a_handed_string_to_the_childs_bound() {
         |engine| engine.save().expect("saves"),
         include_str!(
             "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_invoke_string.json"
+        ),
+    );
+}
+
+// A child's variable of `optional<T>` is handed the whole optional value its
+// <param> computes (docs/adr/0055, step 10): a value of `T` present, `null` and an
+// absent variable absent, and one past the bound the child declared left out.
+#[test]
+fn static_invoke_optional_hands_a_child_an_optional_value() {
+    replay(
+        Engine::new(StaticInvokeOptionalPolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_invoke_optional.json"
         ),
     );
 }

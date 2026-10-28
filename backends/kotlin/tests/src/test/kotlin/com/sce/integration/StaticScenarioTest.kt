@@ -52,6 +52,7 @@ import com.sce.integration.static_host_call.StaticHostCallStateMachine
 import com.sce.integration.static_host_duty.RecordingStaticHostDutyActions
 import com.sce.integration.static_host_duty.StaticHostDutyStateMachine
 import com.sce.integration.static_invoke.StaticInvokeStateMachine
+import com.sce.integration.static_invoke_optional.StaticInvokeOptionalStateMachine
 import com.sce.integration.static_invoke_params.StaticInvokeParamsStateMachine
 import com.sce.integration.static_invoke_tree.StaticInvokeTreeStateMachine
 import com.sce.integration.static_invoke_string.StaticInvokeStringStateMachine
@@ -978,6 +979,26 @@ class StaticScenarioTest {
         try {
             replay(
                 scenario("static_invoke_string"),
+                send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
+                tick = { repeat(SETTLE_TICKS) { sm.tick() } },
+                save = { sm.save() },
+                ended = { sm.isInFinalState },
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    // A child's variable of `optional<T>` is handed the whole optional value its
+    // <param> computes (docs/adr/0055, step 10): a value of `T` present, `null` and
+    // an absent variable absent, and one past the bound the child declared left out.
+    @Test
+    fun staticInvokeOptionalHandsAChildAnOptionalValue() {
+        val sm = StaticInvokeOptionalStateMachine()
+        sm.initialize()
+        try {
+            replay(
+                scenario("static_invoke_optional"),
                 send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
                 tick = { repeat(SETTLE_TICKS) { sm.tick() } },
                 save = { sm.save() },

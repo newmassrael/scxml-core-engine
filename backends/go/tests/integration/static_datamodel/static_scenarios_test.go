@@ -61,6 +61,7 @@ import (
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_host_call_arguments"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_host_duty"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_invoke"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_invoke_optional"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_invoke_params"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_invoke_tree"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_invoke_string"
@@ -2113,6 +2114,18 @@ func TestAStringHandedToAChildIsHeldToItsBoundInBytes(t *testing.T) {
 	policy := static_invoke_string.NewStaticInvokeStringPolicy()
 	policy.SessionID = sce.GenerateSessionID()
 	replay(t, "static_invoke_string", drive[static_invoke_string.StaticInvokeStringState, static_invoke_string.StaticInvokeStringEvent](&policy, map[string]func() any{
+		"completed": func() any { return policy.Completed() },
+		"errors":    func() any { return policy.Errors() },
+	}))
+}
+
+// A child's variable of `optional<T>` is handed the whole optional value its
+// <param> computes (docs/adr/0055, step 10): a value of `T` present, `null` and an
+// absent variable absent, and one past the bound the child declared left out.
+func TestAChildsOptionalVariableIsHandedAnOptionalValue(t *testing.T) {
+	policy := static_invoke_optional.NewStaticInvokeOptionalPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	replay(t, "static_invoke_optional", drive[static_invoke_optional.StaticInvokeOptionalState, static_invoke_optional.StaticInvokeOptionalEvent](&policy, map[string]func() any{
 		"completed": func() any { return policy.Completed() },
 		"errors":    func() any { return policy.Errors() },
 	}))

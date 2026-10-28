@@ -985,6 +985,13 @@ def test_a_string_handed_to_a_child_is_held_to_its_bound_in_bytes() -> None:
     replay("static_invoke_string")
 
 
+# A child's variable of `optional<T>` is handed the whole optional value its
+# `<param>` computes (docs/adr/0055, step 10): a value of `T` present, `null` and
+# an absent variable absent, and one past the bound the child declared left out.
+def test_a_childs_optional_variable_is_handed_an_optional_value() -> None:
+    replay("static_invoke_optional")
+
+
 # Leaving the state that holds an `<invoke>` cancels the child, which then ends
 # nothing and counts nothing.
 def test_leaving_the_state_of_an_invoke_cancels_the_child() -> None:

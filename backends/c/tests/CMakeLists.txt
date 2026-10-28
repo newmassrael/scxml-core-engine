@@ -3061,6 +3061,14 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         )
     endforeach()
 
+    # A child's variable of `optional<T>` is handed the whole optional value its
+    # `<param>` computes (docs/adr/0055, step 10); `static_invoke_optional` and its
+    # children are used by the scenarios below.
+    sce_generate_static_integration_c_test(static_invoke_optional
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_invoke_optional.scxml"
+    )
+
     # The host-action machine of `static_host_call` is generated once and used by
     # two executables: the scenarios below, which read what it told its host, and
     # the host-action cases further down.
@@ -3164,6 +3172,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         ${INTEGRATION_C_TEST_static_invoke_SOURCES}
         ${INTEGRATION_C_TEST_static_invoke_params_SOURCES}
         ${INTEGRATION_C_TEST_static_invoke_string_SOURCES}
+        ${INTEGRATION_C_TEST_static_invoke_optional_SOURCES}
         ${INTEGRATION_C_TEST_static_list_SOURCES}
         ${INTEGRATION_C_TEST_static_list_index_SOURCES}
         ${INTEGRATION_C_TEST_static_list_assign_SOURCES}

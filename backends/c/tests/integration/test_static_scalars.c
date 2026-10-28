@@ -159,6 +159,7 @@
 #include "static_history_sm.h"
 #include "static_host_call_sm.h"
 #include "static_host_duty_sm.h"
+#include "static_invoke_optional_sm.h"
 #include "static_invoke_params_sm.h"
 #include "static_invoke_sm.h"
 #include "static_invoke_string_sm.h"
@@ -3017,6 +3018,22 @@ static const variable_t invoke_string_variables[] = {
 };
 STATIC_SCENARIO(static_invoke_string, invoke_string_states, invoke_string_variables, NULL, no_lists, no_records)
 
+// static_invoke_optional: a child's variable of `optional<T>` is handed the whole
+// optional value its `<param>` computes (docs/adr/0055, step 10): a value of `T`
+// present, `null` and an absent variable absent, and one past the bound the child
+// declared left out, which raises `error.execution`.
+VARIABLE_READER(static_invoke_optional, completed)
+VARIABLE_READER(static_invoke_optional, errors)
+
+static const name_value_t invoke_optional_states[] = {
+    {"running", STATIC_INVOKE_OPTIONAL_STATE_RUNNING},
+};
+static const variable_t invoke_optional_variables[] = {
+    {"completed", static_invoke_optional_read_completed},
+    {"errors", static_invoke_optional_read_errors},
+};
+STATIC_SCENARIO(static_invoke_optional, invoke_optional_states, invoke_optional_variables, NULL, no_lists, no_records)
+
 // static_timers: four delayed sends armed on entering a state are delivered when
 // each is due, two due the same moment in the order they were sent, and the last
 // takes the machine to its final state; a `<cancel>` by the id of the longest
@@ -3614,6 +3631,7 @@ int main(void) {
     bad |= static_invoke_scenario("static_invoke_abort", 4);
     bad |= static_invoke_params_scenario("static_invoke_params", 2);
     bad |= static_invoke_string_scenario("static_invoke_string", 1);
+    bad |= static_invoke_optional_scenario("static_invoke_optional", 1);
     bad |= static_timers_scenario("static_timers", 6);
     bad |= static_timers_scenario("static_timers_stop", 5);
     bad |= static_invoke_tree_scenario("static_invoke_tree", 7);
