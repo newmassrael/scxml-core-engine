@@ -23,6 +23,8 @@ package com.sce.integration
 
 import com.sce.integration.invoke_unsupported_type.InvokeUnsupportedTypeState
 import com.sce.integration.invoke_unsupported_type.InvokeUnsupportedTypeStateMachine
+import com.sce.w3c.driveOnVirtualTime
+import com.sce.w3c.initializeOnVirtualTime
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.DisplayName
@@ -35,13 +37,8 @@ class InvokeUnsupportedTypeTest {
     @Test
     fun anUnsupportedInvokeTypeRaisesErrorExecution() {
         val sm = InvokeUnsupportedTypeStateMachine()
-        sm.initialize()
-
-        val deadline = System.currentTimeMillis() + 2000L
-        while (!sm.isInFinalState && System.currentTimeMillis() < deadline) {
-            sm.tick()
-            Thread.sleep(10)
-        }
+        sm.initializeOnVirtualTime()
+        sm.driveOnVirtualTime(2000L)
 
         assertTrue(
             sm.isInFinalState,

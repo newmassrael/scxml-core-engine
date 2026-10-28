@@ -25,6 +25,8 @@ package com.sce.integration
 import com.sce.integration.wildcard_in_document_order.WildcardInDocumentOrderState
 import com.sce.integration.wildcard_in_document_order.WildcardInDocumentOrderStateMachine
 import com.sce.w3c.W3CTestBase
+import com.sce.w3c.driveOnVirtualTime
+import com.sce.w3c.initializeOnVirtualTime
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
@@ -36,13 +38,8 @@ class WildcardInDocumentOrderTest {
     @Test
     fun aWildcardKeepsItsGuardAndItsType() {
         val sm = WildcardInDocumentOrderStateMachine(W3CTestBase.createEngine())
-        sm.initialize()
-
-        val deadline = System.currentTimeMillis() + 2000L
-        while (!sm.isInFinalState && System.currentTimeMillis() < deadline) {
-            sm.tick()
-            Thread.sleep(10)
-        }
+        sm.initializeOnVirtualTime()
+        sm.driveOnVirtualTime(2000L)
 
         // Each failure final names the case, so this one assertion says which
         // property of the wildcard was lost:

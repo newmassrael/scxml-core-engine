@@ -24,6 +24,8 @@ package com.sce.integration
 import com.sce.integration.nested_final_not_terminal.NestedFinalNotTerminalEvent
 import com.sce.integration.nested_final_not_terminal.NestedFinalNotTerminalState
 import com.sce.integration.nested_final_not_terminal.NestedFinalNotTerminalStateMachine
+import com.sce.w3c.driveOnVirtualTime
+import com.sce.w3c.initializeOnVirtualTime
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.DisplayName
@@ -36,7 +38,7 @@ class NestedFinalNotTerminalTest {
     @Test
     fun aNestedFinalDoesNotEndTheSession() {
         val sm = NestedFinalNotTerminalStateMachine()
-        sm.initialize()
+        sm.initializeOnVirtualTime()
 
         assertEquals(
             NestedFinalNotTerminalState.PhaseDone,
@@ -55,11 +57,7 @@ class NestedFinalNotTerminalTest {
 
         sm.send(NestedFinalNotTerminalEvent.Resume)
 
-        val deadline = System.currentTimeMillis() + 2000L
-        while (!sm.isInFinalState && System.currentTimeMillis() < deadline) {
-            sm.tick()
-            Thread.sleep(10)
-        }
+        sm.driveOnVirtualTime(2000L)
 
         assertEquals(
             NestedFinalNotTerminalState.Pass,

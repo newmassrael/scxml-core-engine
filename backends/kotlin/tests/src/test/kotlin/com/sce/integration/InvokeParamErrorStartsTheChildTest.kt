@@ -28,6 +28,8 @@ package com.sce.integration
 import com.sce.integration.invoke_param_error_starts_the_child.InvokeParamErrorStartsTheChildState
 import com.sce.integration.invoke_param_error_starts_the_child.InvokeParamErrorStartsTheChildStateMachine
 import com.sce.w3c.W3CTestBase
+import com.sce.w3c.driveOnVirtualTime
+import com.sce.w3c.initializeOnVirtualTime
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
@@ -39,18 +41,12 @@ class InvokeParamErrorStartsTheChildTest {
     @Test
     fun anInvokeParamThatWillNotEvaluateCostsItsPairAndNothingElse() {
         val sm = InvokeParamErrorStartsTheChildStateMachine(W3CTestBase.createEngine())
-        sm.initialize()
+        sm.initializeOnVirtualTime()
 
         // The fixture's own `timeout` is a 3 s delayed `<send>`: a channel that
         // terminated the element leaves the machine waiting on a session that
         // was never created, and only the clock turns that into a verdict.
-        if (!sm.isInFinalState) {
-            val deadline = System.currentTimeMillis() + 10000L
-            while (!sm.isInFinalState && System.currentTimeMillis() < deadline) {
-                Thread.sleep(10)
-                sm.tick()
-            }
-        }
+        sm.driveOnVirtualTime(10000L)
 
         try {
             assertEquals(

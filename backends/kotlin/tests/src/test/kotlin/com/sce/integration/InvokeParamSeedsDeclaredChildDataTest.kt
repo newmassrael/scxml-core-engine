@@ -24,6 +24,8 @@ package com.sce.integration
 import com.sce.integration.invoke_param_seeds_declared_child_data.InvokeParamSeedsDeclaredChildDataState
 import com.sce.integration.invoke_param_seeds_declared_child_data.InvokeParamSeedsDeclaredChildDataStateMachine
 import com.sce.w3c.W3CTestBase
+import com.sce.w3c.driveOnVirtualTime
+import com.sce.w3c.initializeOnVirtualTime
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
@@ -35,16 +37,10 @@ class InvokeParamSeedsDeclaredChildDataTest {
     @Test
     fun anInvokeParamCarriesTheInvokingSessionsValue() {
         val sm = InvokeParamSeedsDeclaredChildDataStateMachine(W3CTestBase.createEngine())
-        sm.initialize()
+        sm.initializeOnVirtualTime()
 
         // Three sequential invokes, each answering in its own macrostep.
-        if (!sm.isInFinalState) {
-            val deadline = System.currentTimeMillis() + 3000L
-            while (!sm.isInFinalState && System.currentTimeMillis() < deadline) {
-                Thread.sleep(10)
-                sm.tick()
-            }
-        }
+        sm.driveOnVirtualTime(3000L)
 
         try {
             assertEquals(

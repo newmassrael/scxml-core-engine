@@ -11,8 +11,8 @@
 // transitions have run. The `<cancel>` then executes against a queue the event
 // has already left.
 //
-// The host below sleeps past BOTH fire times before its first tick, because
-// that is the only condition under which the two dispatch orders differ. A
+// The host below moves its clock past BOTH fire times before its first tick,
+// because that is the only condition under which the two dispatch orders differ. A
 // host that wakes between them passes either way, which is why every existing
 // suite was blind to this.
 //
@@ -35,6 +35,8 @@ import com.sce.integration.late_tick_honours_cancel.LateTickHonoursCancelStateMa
 import com.sce.runtime.ManualClock
 import com.sce.runtime.MonotonicClock
 import com.sce.runtime.SceClock
+import com.sce.w3c.driveOnVirtualTime
+import com.sce.w3c.initializeOnVirtualTime
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertNull
@@ -101,18 +103,16 @@ class LateTickHonoursCancelTest {
 
     @Test
     fun aCancelSurvivesATickThatArrivesAfterBothDeadlines() {
-        val sm = started()
+        val sm = LateTickHonoursCancelStateMachine()
+        sm.initializeOnVirtualTime()
         assertEquals(
             LateTickHonoursCancelState.Waiting,
             sm.currentState.value,
             "the machine should be waiting on its two delayed sends"
         )
 
-        val armedFor = System.currentTimeMillis()
-        Thread.sleep(pastBothDeadlines)
-        val sleptFor = System.currentTimeMillis() - armedFor
-        sm.tick()
-        val tickTook = System.currentTimeMillis() - armedFor - sleptFor
+        // The first turn after arming starts with both entries already due.
+        sm.advanceTimeMs(pastBothDeadlines)
 
         assertNotEquals(
             LateTickHonoursCancelState.CancelLost,
@@ -122,24 +122,12 @@ class LateTickHonoursCancelTest {
                 "scheduler drain queued them together and the cancel found nothing " +
                 "left to drop. W3C SCXML 6.3 cancels a send that has not been " +
                 "dispatched — dispatch is one entry per macrostep, not one " +
-                "queue-flush per tick. " +
-                // This engine reads a real clock. The two numbers separate the
-                // explanations a wall-clock failure has: a slept-for far above
-                // 400 ms means the host was descheduled before the tick, while a
-                // tick that took long enough to cross a deadline of its own means
-                // the dispatch loop chased a deadline it created. Neither can
-                // reorder the two arms any more — `aStallBetweenTwoArmsDoesNotReorderThem`
-                // owns that, deterministically — so a failure here is a new fact.
-                "[slept ${sleptFor}ms, tick took ${tickTook}ms]"
+                "queue-flush per tick."
         )
 
         // The verdict is itself scheduler-driven, so a channel whose tick loop
         // stopped working fails here rather than passing by never moving.
-        val deadline = System.currentTimeMillis() + 2000L
-        while (!sm.isInFinalState && System.currentTimeMillis() < deadline) {
-            sm.tick()
-            Thread.sleep(20L)
-        }
+        sm.driveOnVirtualTime(2000L)
         assertEquals(
             LateTickHonoursCancelState.Pass,
             sm.terminalState,
@@ -150,20 +138,13 @@ class LateTickHonoursCancelTest {
 
     @Test
     fun aPunctualHostReachesTheSameVerdict() {
-        // A 10 ms tick loop USUALLY wakes between the two deadlines, which is the
-        // interleaving this case was written for — but nothing makes it do so on
-        // a loaded host, where the first tick can land past both. That is the
-        // sibling case above, and the two must reach the same verdict: the name
-        // of this test is the contract, not the schedule it hoped for.
-        //
-        // Measured 2026-08-19: pinning `Pass` alone let a late first tick report
-        // `CancelLost` as "the punctual host failed", which is a false red about
-        // a real defect the other case already owns. Asserting the invariant on
-        // every wake-up is both stronger and timing-free.
-        val sm = started()
-        val deadline = System.currentTimeMillis() + 2000L
-        while (!sm.isInFinalState && System.currentTimeMillis() < deadline) {
-            sm.tick()
+        // The drive wakes the machine at each deadline in turn, so the first wake
+        // lands between the two sends: the interleaving this case was written
+        // for, reached by construction. The invariant is asserted on every wake-up
+        // rather than pinning `Pass` alone, so a wrong verdict names its cause.
+        val sm = LateTickHonoursCancelStateMachine()
+        sm.initializeOnVirtualTime()
+        sm.driveOnVirtualTime(2000L) {
             assertNotEquals(
                 LateTickHonoursCancelState.CancelLost,
                 sm.terminalState,
@@ -172,7 +153,7 @@ class LateTickHonoursCancelTest {
                     "6.3 cancels a send that has not been dispatched, and dispatch is " +
                     "one entry per macrostep"
             )
-            Thread.sleep(10L)
+            sm.isInFinalState
         }
         assertEquals(
             LateTickHonoursCancelState.Pass,
