@@ -1098,8 +1098,10 @@ answers `std::nullopt` when encode refuses; a refused decode is `std::nullopt`,
 the C++ codec convention, and encode's refusals are `CodecError::CborOutOfRange`
 and `CborWrongLength`. `sce/forge/cbor.h` holds its items, rule for rule the
 Rust runtime's (`cbor_runtime_test`). Go generates a struct of owned values
-whose optional entries are pointers — so an absent byte string (`nil`) and a
-present empty one stay two values — with `Decode<Name>(*codec.SceCursor)`, which
+whose optional entries are `optional.Of[T]` of the Go forge runtime — the type a
+statechart's `optional<T>` variable is, so an absent byte string and a present
+empty one stay two values and a value read from the map is taken whole by such a
+variable — with `Decode<Name>(*codec.SceCursor)`, which
 moves the cursor only when the whole map decoded, `Encode(codec.SceSink)` and
 `EncodeToBytes() ([]byte, error)`; its refusals are the typed
 `codec.ErrCborMalformed`, `ErrCborRequiredKeyMissing`, `ErrCborWrongLength`,
@@ -1479,8 +1481,8 @@ the runtime, which a generated decode does not carry out. An encode refusal is a
 `LineRequiredMissing`); a value that is not UTF-8 is refused on encode as the
 decode would refuse it.
 
-Go generates it as a struct of `string`, `[]string` for a list and a pointer for
-an absent optional entry, over `codec.ContentLineReader` and
+Go generates it as a struct of `string`, `[]string` for a list and `optional.Of[T]`
+for an entry or parameter that may be absent, over `codec.ContentLineReader` and
 `codec.ContentLineWriter`. Its decode returns the typed error of the rule that
 refused (`codec.ErrLineMalformed`, `ErrLineRequiredMissing`, `ErrLineTooMany`,
 `ErrLineTooLong`, `ErrLineBadEscape`, `ErrLineBadValue`, or `ErrNeedMoreBytes`),
