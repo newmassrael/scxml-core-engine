@@ -387,6 +387,37 @@ Each step is green on its own, and the last two are the ones that need the consu
   `clippy -D warnings` over all targets was already red before this change, on an `into_*` method of generated codec
   code under the toolchain the build machine has; the new test target is clean.
 
+### What step 3 landed (2026-10-28)
+
+- **The kind, parsed and checked on every backend.** `ForgeKind::BroadcastLog` and `ForgeDocument::BroadcastLog` hold a
+  `BroadcastLogModel` (`producers` and `progress` are the queue's `QueueCardinality` and `QueueProgress`, `retention` is a
+  `CapacitySource`, so a count is written the two ways a capacity is). The parser shares the cardinality and progress reads
+  with the queue's, requires all four elements with no default, and refuses `producers` `many` after it parses
+  (`broadcast-log/producers-many-unsupported`, placed on the producers row). The grammar (`<sce:retention>`), the kind
+  catalog and its example (`sce-build/kind-examples/broadcast-log.scxml`), the pseudocode head line, the manifest and
+  catalog schemas, and the SCE_FORGE.md admission note are in.
+- **Nine codes, each with its acceptance-doc row.** `element-type-not-a-kind` is raised by the cross-document pass beside
+  the queue's and carries a `Fix::ReplaceOneOf`. `progress-unreachable-on-backend` (Python gives `blocking`) and
+  `runtime-missing` are raised by the generator: the codegen matrix has a new outcome, `EmitOutcome::RuntimeMissing`
+  (`awaits_runtime`), so that a valid document for any language, Swift included, is refused by the kind's own code with the
+  document and the language named, and not as `codegen/generic-kind-backend-emit-missing`. The backend ceiling is checked
+  first, because waiting for the row would not repair it.
+- **Left undone, and why.**
+  - `element-size-unbounded` is declared and not raised: the codec model has no encoded size that is a constant of the
+    build, so there is nothing to compare. The check belongs with the first row that stores bytes (step 4).
+  - `wrap-bound-unstated`, `wrap-bound-below-deploy-minimum` and `slots-not-a-divisor-of-the-stamp-space` are implemented as
+    one function (`judge_broadcast_log_stamp`) over the stamp width, and no row calls it: the width is a property of a
+    row, and no row exists. The deploy figure is the one the queue's SCQ row reads, `machines.<m>.queues.<name>.min_wrap_ops`,
+    here keyed by the log's name; nothing resolves it for a log yet, and a retention written as `source="deploy"` has no
+    resolution either (the queue's `resolve_queue_deploy_limits` has no counterpart), so a log with a deploy-key retention
+    parses and is refused as `runtime-missing` before a number is needed.
+  - `progress-unreachable` is wired to the selection table and cannot fire: the one row is wait-free, which no declaration
+    exceeds. It fires when a row that gives less (a multi-producer one, §8) is added.
+  - The new RFC section beside §synth-5-P is not added (it goes through the Mnemosyne MCP with its bindings), and the
+    `validation/sce-attribute-unread` hint naming `broadcast-log` for an `sce:on-full` written on a queue is not confirmed
+    or added (§1).
+  - `apis/forge-ast.v1.schema.json` is regenerated from the types, not edited by hand.
+
 ## Consequences
 
 - `queue` keeps its definition. A reader of it is not asked to understand a policy it does not have.

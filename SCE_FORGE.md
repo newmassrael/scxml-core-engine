@@ -242,8 +242,8 @@ A kind declared IN PLACE, on a `<data>` element inside a `sce:kind="statechart"`
 <data id="temperature" sce:kind="transform">...</data>
 
 <!-- NOT inline-eligible: procedure, filter, validator, timer, observer,
-     algorithm, link, worker, buffer-pool, bounded-collection, queue, enum,
-     event-schema → declared as their own documents and imported. -->
+     algorithm, link, worker, buffer-pool, bounded-collection, queue,
+     broadcast-log, enum, event-schema → declared as their own documents and imported. -->
 ```
 
 **Inline transform example** — the body is exactly what the standalone document's `<datamodel>` would carry:
@@ -2779,6 +2779,18 @@ The request, from the owner, was a kind for queues that hand elements between ex
 | Cross-domain reuse | PASS | ISR-to-task hand-off, network receive, logging, audio, game tick, and SCE Mesh's own inter-machine transport |
 
 Passed 3-of-3 axes; admitted. Two alternatives were ruled out before admission. Extending `bounded-collection` was rejected because its invariants (a slot table addressed by handles, with insert/remove/get) are not a FIFO's, and serving both would need the bolt-on validator that marks a category error. Keeping the queue inside `worker` was rejected because the tree already carried four queue implementations with four contracts (two worker templates, `EventQueueBridge`, `ShmChannel`), and none could be named by a document. Its first consumer is its own verification suite (owner decision, 2026-09-30); `worker` and SCE Mesh migrate onto it afterwards.
+
+### Application: 2026-10-28 `broadcast-log` (a bounded log read by cursors its readers own)
+
+The request, from a downstream consumer, was an overflow policy for the `queue` kind (`sce:on-full="overwrite-oldest"`) and a way to read how many entries were overwritten. The design is ADR 0062.
+
+| Axis | Pass/Fail | Reason |
+|---|---|---|
+| Domain alignment | PASS | A concurrency primitive of the same family as `queue`; its observable contract (sequence, window, `Lagged`) is byte-identical across backends and its progress guarantee is declared per backend and checked, not assumed |
+| Futamura projection compatibility | PASS | Element type, producer cardinality, retention, stamp width and required progress are build-time; only `head` and the slot contents are runtime |
+| Cross-domain reuse | PASS | Embedded telemetry and sensor pipelines (an interrupt handler publishes, several tasks each read every sample), network protocols and observability (several diagnostic readers follow a session's events), game networking (a late joiner or replay reader resumes from the oldest retained tick), robotics control (a sensor stream read by a controller, a logger and a safety monitor, none able to slow the sensor) |
+
+Passed 3-of-3 axes; admitted. The flag on `queue` was ruled out before admission: a queue consumes (each element goes to one reader), and a full queue refuses the writer, so "overwrite the oldest of a consumed queue" would make the consumer's end a location the producer also writes, which destroys the property that makes the Lamport row wait-free on loads and stores alone. What the request describes, a ring every reader reads in full at its own pace, with loss reported to the reader that suffered it, is a different abstract data type: a bounded log. The kind's name fixes its sequential specification, and `ring`, `journal` and `stream` each name something else (storage, durability, an unbounded flow). Only `producers` `one` is offered: with several producers a claimed but unpublished sequence number is a hole readers can neither return nor skip (ADR 0062 §8). The Axis 3 count above is of domains the contract serves, as the owner decided on 2026-10-28, not of consumers that have asked.
 
 ### When admission is borderline
 
