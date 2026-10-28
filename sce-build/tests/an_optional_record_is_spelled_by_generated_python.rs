@@ -45,6 +45,10 @@ fn generate(siblings: &[&str], documents: &[(&str, &str)], file: &str) -> (bool,
     for (name, text) in documents {
         std::fs::write(dir.path().join(name), text).expect("write a document");
     }
+    // The document asked for is a fixture unless the test wrote it.
+    if !documents.iter().any(|(name, _)| *name == file) {
+        std::fs::copy(fixtures().join(file), dir.path().join(file)).expect("copy the document");
+    }
     let out_dir = tempdir().expect("tempdir");
     let out = Command::new(sce_codegen_bin())
         .arg("--workspace-root")
@@ -146,7 +150,8 @@ fn an_algorithm_that_answers_an_optional_record_is_generated_in_optional_of_the_
             "from typing import Optional",
             "found: Optional[",
             ") -> Optional[",
-            "found is None and it.count >= least",
+            "found is None and ",
+            "it.count >= least",
             "found = sce_algorithm.copied(it)",
             "return found",
         ],
