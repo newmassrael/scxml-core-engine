@@ -31,6 +31,8 @@ package com.sce.integration
 import com.sce.integration.donedata_late_completion.DonedataLateCompletionState
 import com.sce.integration.donedata_late_completion.DonedataLateCompletionStateMachine
 import com.sce.w3c.W3CTestBase
+import com.sce.w3c.driveOnVirtualTime
+import com.sce.w3c.initializeOnVirtualTime
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
@@ -45,15 +47,8 @@ class DonedataLateCompletionTest {
         // parent's `done.invoke` guard and the child's `<donedata>` param
         // both evaluate expressions.
         val sm = DonedataLateCompletionStateMachine(W3CTestBase.createEngine())
-        sm.initialize()
-
-        if (!sm.isInFinalState) {
-            val deadline = System.currentTimeMillis() + 2000L
-            while (!sm.isInFinalState && System.currentTimeMillis() < deadline) {
-                Thread.sleep(10)
-                sm.tick()
-            }
-        }
+        sm.initializeOnVirtualTime()
+        sm.driveOnVirtualTime(2000L)
 
         assertEquals(
             DonedataLateCompletionState.Pass,

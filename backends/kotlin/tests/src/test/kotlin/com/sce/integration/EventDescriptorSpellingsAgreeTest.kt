@@ -22,6 +22,8 @@ package com.sce.integration
 
 import com.sce.integration.event_descriptor_spellings_agree.EventDescriptorSpellingsAgreeState
 import com.sce.integration.event_descriptor_spellings_agree.EventDescriptorSpellingsAgreeStateMachine
+import com.sce.w3c.driveOnVirtualTime
+import com.sce.w3c.initializeOnVirtualTime
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
@@ -33,13 +35,8 @@ class EventDescriptorSpellingsAgreeTest {
     @Test
     fun everySpellingOfOneDescriptorCatchesTheSameEvents() {
         val sm = EventDescriptorSpellingsAgreeStateMachine()
-        sm.initialize()
-
-        val deadline = System.currentTimeMillis() + 2000L
-        while (!sm.isInFinalState && System.currentTimeMillis() < deadline) {
-            sm.tick()
-            Thread.sleep(10)
-        }
+        sm.initializeOnVirtualTime()
+        sm.driveOnVirtualTime(2000L)
 
         // Each failure final names the case, so this one assertion says which
         // spelling disagreed with the clause:

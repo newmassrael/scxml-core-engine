@@ -28,6 +28,8 @@ package com.sce.integration
 import com.sce.integration.host_event_reaches_the_child.HostEventReachesTheChildEvent
 import com.sce.integration.host_event_reaches_the_child.HostEventReachesTheChildState
 import com.sce.integration.host_event_reaches_the_child.HostEventReachesTheChildStateMachine
+import com.sce.w3c.driveOnVirtualTime
+import com.sce.w3c.initializeOnVirtualTime
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
@@ -39,17 +41,11 @@ class HostEventReachesTheChildTest {
     @Test
     fun anEventTheHostHandsOverReachesTheAutoforwardChild() {
         val sm = HostEventReachesTheChildStateMachine()
-        sm.initialize()
+        sm.initializeOnVirtualTime()
 
         // The child opens the exchange, so let its `ready` move the parent into
         // `armed` — the one state that can be handed an event from outside.
-        val armedDeadline = System.currentTimeMillis() + 2000L
-        while (sm.currentState.value !is HostEventReachesTheChildState.Armed &&
-            System.currentTimeMillis() < armedDeadline
-        ) {
-            Thread.sleep(10)
-            sm.tick()
-        }
+        sm.driveOnVirtualTime(2000L) { sm.currentState.value is HostEventReachesTheChildState.Armed }
         assertEquals(
             HostEventReachesTheChildState.Armed,
             sm.currentState.value,
@@ -61,11 +57,7 @@ class HostEventReachesTheChildTest {
         // The axis: the host's own entry point.
         sm.send(HostEventReachesTheChildEvent.HostPing)
 
-        val deadline = System.currentTimeMillis() + 2000L
-        while (!sm.isInFinalState && System.currentTimeMillis() < deadline) {
-            Thread.sleep(10)
-            sm.tick()
-        }
+        sm.driveOnVirtualTime(2000L)
 
         assertEquals(
             HostEventReachesTheChildState.Pass,

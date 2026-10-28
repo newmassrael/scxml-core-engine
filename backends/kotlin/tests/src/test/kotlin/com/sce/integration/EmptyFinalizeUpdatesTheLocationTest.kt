@@ -28,6 +28,8 @@ package com.sce.integration
 import com.sce.integration.empty_finalize_updates_the_location.EmptyFinalizeUpdatesTheLocationState
 import com.sce.integration.empty_finalize_updates_the_location.EmptyFinalizeUpdatesTheLocationStateMachine
 import com.sce.w3c.W3CTestBase
+import com.sce.w3c.driveOnVirtualTime
+import com.sce.w3c.initializeOnVirtualTime
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
@@ -39,17 +41,11 @@ class EmptyFinalizeUpdatesTheLocationTest {
     @Test
     fun anEmptyFinalizeUpdatesTheLocationAndAnAbsentOneDoesNot() {
         val sm = EmptyFinalizeUpdatesTheLocationStateMachine(W3CTestBase.createEngine())
-        sm.initialize()
+        sm.initializeOnVirtualTime()
 
         // Each phase is settled by a 3 s delayed `<send>`: a child that never
         // answers must reach a verdict rather than hang.
-        if (!sm.isInFinalState) {
-            val deadline = System.currentTimeMillis() + 15000L
-            while (!sm.isInFinalState && System.currentTimeMillis() < deadline) {
-                Thread.sleep(10)
-                sm.tick()
-            }
-        }
+        sm.driveOnVirtualTime(15000L)
 
         try {
             assertEquals(

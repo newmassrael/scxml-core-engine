@@ -22,6 +22,8 @@ package com.sce.integration
 import com.sce.integration.invoke_expression_failure_is_reported.InvokeExpressionFailureIsReportedState
 import com.sce.integration.invoke_expression_failure_is_reported.InvokeExpressionFailureIsReportedStateMachine
 import com.sce.w3c.W3CTestBase
+import com.sce.w3c.driveOnVirtualTime
+import com.sce.w3c.initializeOnVirtualTime
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.DisplayName
@@ -36,13 +38,8 @@ class InvokeExpressionFailureIsReportedTest {
         // The fixture declares `<data>` and its `<invoke>` names an
         // expression, so the machine needs an engine to evaluate both.
         val sm = InvokeExpressionFailureIsReportedStateMachine(W3CTestBase.createEngine())
-        sm.initialize()
-
-        val deadline = System.currentTimeMillis() + 2000L
-        while (!sm.isInFinalState && System.currentTimeMillis() < deadline) {
-            sm.tick()
-            Thread.sleep(10)
-        }
+        sm.initializeOnVirtualTime()
+        sm.driveOnVirtualTime(2000L)
 
         assertTrue(
             sm.isInFinalState,

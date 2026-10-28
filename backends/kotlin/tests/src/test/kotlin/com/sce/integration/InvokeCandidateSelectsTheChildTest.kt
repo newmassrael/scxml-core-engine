@@ -26,6 +26,8 @@ package com.sce.integration
 import com.sce.integration.invoke_candidate_selects_the_child.InvokeCandidateSelectsTheChildState
 import com.sce.integration.invoke_candidate_selects_the_child.InvokeCandidateSelectsTheChildStateMachine
 import com.sce.w3c.W3CTestBase
+import com.sce.w3c.driveOnVirtualTime
+import com.sce.w3c.initializeOnVirtualTime
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.DisplayName
@@ -38,13 +40,8 @@ class InvokeCandidateSelectsTheChildTest {
     @Test
     fun theEvaluatedValueSelectsWhichCandidateRuns() {
         val sm = InvokeCandidateSelectsTheChildStateMachine(W3CTestBase.createEngine())
-        sm.initialize()
-
-        val deadline = System.currentTimeMillis() + 2000L
-        while (!sm.isInFinalState && System.currentTimeMillis() < deadline) {
-            sm.tick()
-            Thread.sleep(10)
-        }
+        sm.initializeOnVirtualTime()
+        sm.driveOnVirtualTime(2000L)
 
         assertTrue(
             sm.isInFinalState,

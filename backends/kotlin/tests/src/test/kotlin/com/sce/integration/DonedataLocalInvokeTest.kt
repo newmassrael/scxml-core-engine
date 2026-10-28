@@ -20,6 +20,8 @@ package com.sce.integration
 import com.sce.integration.donedata_local_invoke.DonedataLocalInvokeState
 import com.sce.integration.donedata_local_invoke.DonedataLocalInvokeStateMachine
 import com.sce.w3c.W3CTestBase
+import com.sce.w3c.driveOnVirtualTime
+import com.sce.w3c.initializeOnVirtualTime
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
@@ -31,19 +33,12 @@ class DonedataLocalInvokeTest {
     @Test
     fun parentObservesDonedataOnDoneInvoke() {
         val sm = DonedataLocalInvokeStateMachine(W3CTestBase.createEngine())
-        sm.initialize()
+        sm.initializeOnVirtualTime()
 
         // Children are synchronous (single top-level `<final>`), so
         // `initialize()` completes both invoke handshakes before it
-        // returns. Fall through to `tick()` polling only defensively in
-        // case the runtime model later adds async microstep scheduling.
-        if (!sm.isInFinalState) {
-            val deadline = System.currentTimeMillis() + 2000L
-            while (!sm.isInFinalState && System.currentTimeMillis() < deadline) {
-                Thread.sleep(10)
-                sm.tick()
-            }
-        }
+        // returns; the drive is a no-op unless that ever changes.
+        sm.driveOnVirtualTime(2000L)
 
         try {
             assertEquals(

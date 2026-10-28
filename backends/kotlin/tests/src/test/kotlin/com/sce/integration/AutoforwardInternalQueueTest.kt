@@ -21,6 +21,8 @@ package com.sce.integration
 
 import com.sce.integration.autoforward_internal_queue.AutoforwardInternalQueueState
 import com.sce.integration.autoforward_internal_queue.AutoforwardInternalQueueStateMachine
+import com.sce.w3c.driveOnVirtualTime
+import com.sce.w3c.initializeOnVirtualTime
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
@@ -32,15 +34,8 @@ class AutoforwardInternalQueueTest {
     @Test
     fun anInternalQueueEventIsNeverAutoforwarded() {
         val sm = AutoforwardInternalQueueStateMachine()
-        sm.initialize()
-
-        if (!sm.isInFinalState) {
-            val deadline = System.currentTimeMillis() + 2000L
-            while (!sm.isInFinalState && System.currentTimeMillis() < deadline) {
-                Thread.sleep(10)
-                sm.tick()
-            }
-        }
+        sm.initializeOnVirtualTime()
+        sm.driveOnVirtualTime(2000L)
 
         assertEquals(
             AutoforwardInternalQueueState.Pass,
