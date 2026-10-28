@@ -136,8 +136,9 @@ pub fn rewrite_python_conftest(source: &str, sce_root: &std::path::Path) -> Resu
 pub const KOTLIN_RUNTIME_PACKAGES: &[&str] = &["runtime", "scripting"];
 
 /// The committed Kotlin sources a suite carries: the two JUnit base
-/// classes every generated test extends, and the BasicHTTP test server
-/// one of them drives.
+/// classes every generated test extends, the virtual-time driver the
+/// first of them runs a machine with, and the BasicHTTP test server
+/// the second drives.
 ///
 /// Each entry is `(source set, path within the package root, contents)`
 /// — a Kotlin source tree mirrors package names as directories, so the
@@ -147,6 +148,11 @@ pub const KOTLIN_SUITE_SOURCES: &[(&str, &str, &str)] = &[
         "src/test/kotlin",
         "w3c/W3CTestBase.kt",
         include_str!("../../backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CTestBase.kt"),
+    ),
+    (
+        "src/test/kotlin",
+        "w3c/VirtualDrive.kt",
+        include_str!("../../backends/kotlin/tests/src/test/kotlin/com/sce/w3c/VirtualDrive.kt"),
     ),
     (
         "src/test/kotlin",
@@ -702,12 +708,15 @@ mod tests {
         assert!(GO_HARNESS_SOURCE.contains("func SetupHTTPTest"));
         assert!(GO_HARNESS_SOURCE.contains("func BasicHTTPAccessURI"));
         assert!(PYTHON_CONFTEST_SOURCE.contains("setup_http"));
-        assert_eq!(KOTLIN_SUITE_SOURCES.len(), 3);
+        assert_eq!(KOTLIN_SUITE_SOURCES.len(), 4);
         assert!(KOTLIN_SUITE_SOURCES[0]
             .2
             .contains("abstract class W3CTestBase"));
-        assert!(KOTLIN_SUITE_SOURCES[1].2.contains("W3CHttpTestBase"));
-        assert!(KOTLIN_SUITE_SOURCES[2]
+        assert!(KOTLIN_SUITE_SOURCES[1]
+            .2
+            .contains("StateMachineEngine<S, E>.initializeOnVirtualTime"));
+        assert!(KOTLIN_SUITE_SOURCES[2].2.contains("W3CHttpTestBase"));
+        assert!(KOTLIN_SUITE_SOURCES[3]
             .2
             .contains("class W3CHttpTestServer"));
     }

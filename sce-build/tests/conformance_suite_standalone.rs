@@ -192,6 +192,10 @@ fn an_emitted_kotlin_suite_moves_the_suite_packages_and_not_the_runtime() {
         "build.gradle.kts",
         "src/test/kotlin/com/acme/conformance/w3c/W3CTestBase.kt",
         "src/test/kotlin/com/acme/conformance/w3c/W3CHttpTestBase.kt",
+        // The virtual-time driver W3CTestBase calls; without it the
+        // emitted suite fails compileTestKotlin on an unresolved
+        // reference.
+        "src/test/kotlin/com/acme/conformance/w3c/VirtualDrive.kt",
         // The BasicHTTP test server one of those base classes drives.
         // Its absence is what the first emitted Kotlin suite failed to
         // compile on, and a list of packages could not have caught it.
