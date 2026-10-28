@@ -43,8 +43,8 @@ PY
 
 mutation_case "a number is handed to an enum parameter" <<'PY'
 edit("sce-build/src/forge/static_enum.rs",
-     "                let wanted = slots.params.get(index).cloned().flatten();\n",
-     "                let wanted = slots.params.get(index).cloned().flatten().filter(|_| held.is_some());\n")
+     "                let wanted = slot.map(|slot| slot.alias);\n",
+     "                let wanted = slot.map(|slot| slot.alias).filter(|_| held.is_some());\n")
 PY
 
 # The list that would hand the open enum over is refused where it is declared, before
