@@ -356,6 +356,92 @@ fn null_is_refused_where_the_machine_declares_no_optional_value() {
     );
 }
 
+/// The shared scenario of an optional record (docs/adr/0055, step 9) is one the
+/// command finds nothing wrong with, held to its machine: each `null` it states —
+/// `pick` and `found`, the variables declared `optional<record:Item>` — stands where
+/// the machine declares one, and a record they hold is stated field by field.
+#[test]
+fn the_optional_record_scenario_states_null_only_where_its_machine_declares_one() {
+    let scenario = fixtures().join("scenarios/static_optional_record.json");
+    let machine = fixtures().join("static_optional_record.scxml");
+    let (ok, lines, stderr) = scenarios(&[
+        scenario.to_str().expect("a path"),
+        "--machine",
+        machine.to_str().expect("a path"),
+    ]);
+    assert!(ok, "the command ran:\n{stderr}");
+    assert_eq!(lines[0]["machine"], "static_optional_record", "{lines:?}");
+    assert_eq!(lines[0]["usable"], true, "{lines:?}");
+    assert_eq!(
+        lines.len(),
+        1,
+        "a usable scenario has no problem lines: {lines:?}"
+    );
+    // A scenario that stated no `null` would pass the rule for nothing: each
+    // optional record is stated absent, and one present beside it.
+    let text = std::fs::read_to_string(&scenario).expect("the scenario is readable");
+    let value: Value = sce_build::strict_json::from_str(&text).expect("the scenario is JSON");
+    let steps = &value["steps"];
+    for (pointer, what) in [
+        ("/0/expect/variables/pick", "an optional record"),
+        ("/0/expect/variables/found", "an optional record"),
+        ("/9/expect/variables/pick", "an optional record made absent"),
+    ] {
+        assert!(
+            steps.pointer(pointer).is_some_and(Value::is_null),
+            "{what} is stated absent at /steps{pointer}"
+        );
+    }
+    assert!(
+        steps
+            .pointer("/4/expect/variables/pick")
+            .is_some_and(Value::is_object),
+        "an optional record is stated present as the object its fields make"
+    );
+}
+
+/// `null` where a record is declared that is never absent is refused, at its place
+/// and naming the variable: `draft` is `record:Item`, `pick` is optional.
+#[test]
+fn null_is_refused_for_a_record_that_is_never_absent() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("absent.json");
+    std::fs::write(
+        &path,
+        r#"{
+  "machine": "static_optional_record",
+  "steps": [
+    { "expect": { "variables": { "pick": null, "draft": null,
+                                  "items": [ { "id": 1, "title": null, "count": 2 } ] } } }
+  ]
+}
+"#,
+    )
+    .expect("write the scenario");
+    let machine = fixtures().join("static_optional_record.scxml");
+    let (ok, lines, stderr) = scenarios(&[
+        path.to_str().expect("a path"),
+        "--machine",
+        machine.to_str().expect("a path"),
+    ]);
+    assert!(ok, "findings are no refusal:\n{stderr}");
+    assert_eq!(lines[0]["usable"], false, "{lines:?}");
+    let mut refused: Vec<String> = lines[1..]
+        .iter()
+        .filter(|line| line["code"] == "null-not-optional")
+        .map(|line| line["path"].as_str().expect("a path").to_string())
+        .collect();
+    refused.sort();
+    assert_eq!(
+        refused,
+        vec![
+            "/steps/0/expect/variables/draft",
+            "/steps/0/expect/variables/items/0/title",
+        ],
+        "{lines:?}"
+    );
+}
+
 /// A file that is neither a scenario set nor a replay scenario is refused, as it was.
 #[test]
 fn a_file_that_is_no_scenario_is_still_refused() {

@@ -67,8 +67,9 @@ const DATA: &str = r#"<data id="count" sce:type="uint32" expr="0"/>
     <data id="status" sce:type="optional&lt;enum:ViewMode&gt;" expr="null"/>"#;
 
 /// The optional values no `<log>` takes, declared only by the probes that
-/// log them: an optional record is refused by every backend's lowering, so a
-/// probe that must be accepted does not hold one.
+/// log them: an optional record is refused by every generated backend's lowering
+/// until its own step of docs/adr/0055, so a probe that must be accepted by all of
+/// them does not hold one.
 const OPTIONAL_UNLOGGED: &str = r#"
     <data id="maybe" sce:type="optional&lt;bytes&gt;" sce:capacity="8" expr="null"/>
     <data id="pick" sce:type="optional&lt;record:Day&gt;" expr="null"/>"#;

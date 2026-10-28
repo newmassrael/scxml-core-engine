@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15, "Optional variables"
+  and "Reading an optional value"; docs/adr/0055, step 9): a record that may be
+  absent. `pick` is an `optional<record:Item>` that starts absent, and `found` another
+  that an algorithm's answer is taken into; `draft` is a record that is never absent,
+  and `items` a list of records, all of `schema_item_pick.scxml`.
+
+  `item.picked` puts the item it carries into the list, into `draft`, and, whole, into
+  `pick`: a record taken from a payload. The append comes first, so a fourth item, which
+  the list of three does not hold, fails there, nothing after it runs, and error.execution
+  is raised. `pick.draft` takes the record `draft` holds into `pick`, and `pick.second` the
+  element of `items` at index 1: a record taken from a record by name and one taken from
+  a list's element. `pick.clear` makes it absent again.
+
+  `pick.read` reads a field of the record only where a test proves it present: an `<if>`
+  and its `<else>`, the right operand of `&&`, and the branches of a conditional, naming
+  `pick.value.<field>`. `pick.bump` writes two fields of the record the same way, one
+  after the other: a write of a field of a record present changes the record and not
+  whether it is present, so the second write is still proven. A record put into `pick` is
+  a copy, so the item the list holds and the one `pick` holds are two. `pick.find` asks
+  `FirstAtLeast` for the first item of `items` that holds at least 5: an optional record in
+  an algorithm's return, absent when no item holds that much.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="holding" datamodel="sce-static" name="static_optional_record">
+  <sce:import kind="event-schema" src="schema_item_pick.scxml" as="Item"/>
+  <sce:import kind="algorithm" src="algorithm_item_pick_first.scxml" as="FirstAtLeast"/>
+  <datamodel>
+    <data id="pick" sce:type="optional&lt;record:Item&gt;" expr="null" sce:direction="out"/>
+    <data id="found" sce:type="optional&lt;record:Item&gt;" expr="null" sce:direction="out"/>
+    <data id="draft" sce:type="record:Item" sce:direction="out">
+      <sce:set name="id" expr="0"/>
+      <sce:set name="title" expr="'draft'"/>
+      <sce:set name="count" expr="0"/>
+    </data>
+    <data id="items" sce:type="list&lt;record:Item&gt;" sce:capacity="3" sce:direction="out"/>
+    <data id="title" sce:type="string" sce:capacity="16" expr="''" sce:direction="out"/>
+    <data id="count" sce:type="int32" expr="0" sce:direction="out"/>
+    <data id="shown" sce:type="int32" expr="0" sce:direction="out"/>
+    <data id="known" sce:type="bool" expr="false" sce:direction="out"/>
+    <data id="absent" sce:type="bool" expr="false" sce:direction="out"/>
+    <data id="errors" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="holding">
+    <!-- An item comes in: appended, kept in `draft`, and taken whole from the payload
+         into `pick`. -->
+    <transition event="item.picked" type="internal">
+      <sce:append target="items" expr="_event.data"/>
+      <assign location="draft" expr="_event.data"/>
+      <assign location="pick" expr="_event.data"/>
+    </transition>
+    <!-- A record taken whole from a record variable, and from a list's element. -->
+    <transition event="pick.draft" type="internal">
+      <assign location="pick" expr="draft"/>
+    </transition>
+    <transition event="pick.second" type="internal">
+      <assign location="pick" expr="items[1]"/>
+    </transition>
+    <transition event="pick.clear" type="internal">
+      <assign location="pick" expr="null"/>
+    </transition>
+    <!-- Each read of a field where a test proves the record present. -->
+    <transition event="pick.read" type="internal">
+      <if cond="pick !== null">
+        <assign location="title" expr="pick.value.title"/>
+        <assign location="count" expr="pick.value.count"/>
+      <else/>
+        <assign location="title" expr="'none'"/>
+        <assign location="count" expr="-1"/>
+      </if>
+      <assign location="known" expr="pick !== null &amp;&amp; pick.value.count &gt; 1"/>
+      <assign location="absent" expr="pick === null"/>
+      <assign location="shown" expr="pick !== null ? pick.value.count : 0"/>
+    </transition>
+    <!-- Two fields written under one test of the record. -->
+    <transition event="pick.bump" type="internal">
+      <if cond="pick !== null">
+        <assign location="pick.value.count" expr="pick.value.count + 1"/>
+        <assign location="pick.value.title" expr="'bumped'"/>
+      </if>
+    </transition>
+    <!-- An algorithm answers an optional record, taken whole into `found`. -->
+    <transition event="pick.find" type="internal">
+      <assign location="found" expr="FirstAtLeast(items, 5)"/>
+    </transition>
+    <transition event="error.execution" type="internal">
+      <assign location="errors" expr="errors + 1"/>
+    </transition>
+  </state>
+</scxml>

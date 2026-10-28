@@ -1,0 +1,104 @@
+{
+  "machine": "static_optional_record",
+  "about": "A record that may be absent (docs/adr/0055, step 9): `pick` is an optional record that starts absent, taken whole from a payload, from a record variable and from a list's element, read as `pick.value.title` and `pick.value.count` only where a test proves it present (an <if> with its <else>, `&&`, a conditional), written as `pick.value.count` and `pick.value.title` under one test, made absent again by `null`, and `found` takes what an algorithm answers, the first item of the list that holds at least 5 or an absent record. A record put into `pick` is a copy: the list keeps the item as it was when `pick` was bumped. The list holds three: a fourth item appends nothing, nothing after the append runs (`pick` and `draft` stay), and error.execution is raised. A field's int32 and uint32 are numbers; an absent record is `null`. Expected values are derived from the document, not observed from a backend.",
+  "steps": [
+    { "note": "nothing picked yet: `pick` and `found` start absent, `draft` holds the record it was built with",
+      "expect": { "state": "holding", "variables": {
+        "pick": null, "found": null,
+        "draft": { "id": 0, "title": "draft", "count": 0 },
+        "items": [], "title": "", "count": 0, "shown": 0, "known": false, "absent": false, "errors": 0 } } },
+
+    { "note": "an empty list holds no item that reaches 5: the algorithm answers an absent record",
+      "event": "pick.find",
+      "expect": { "variables": { "pick": null, "found": null, "items": [], "errors": 0 } } },
+
+    { "note": "an item whole from the payload into `pick`, and into the list and `draft` besides",
+      "event": "item.picked", "data": { "id": 1, "title": "alpha", "count": 2 },
+      "expect": { "variables": {
+        "pick": { "id": 1, "title": "alpha", "count": 2 },
+        "draft": { "id": 1, "title": "alpha", "count": 2 },
+        "items": [ { "id": 1, "title": "alpha", "count": 2 } ],
+        "errors": 0 } } },
+
+    { "note": "the one item holds 2, short of 5, so the answer is still absent",
+      "event": "pick.find",
+      "expect": { "variables": { "found": null, "errors": 0 } } },
+
+    { "note": "a second item replaces what `pick` holds, and joins the list",
+      "event": "item.picked", "data": { "id": 2, "title": "beta", "count": 6 },
+      "expect": { "variables": {
+        "pick": { "id": 2, "title": "beta", "count": 6 },
+        "draft": { "id": 2, "title": "beta", "count": 6 },
+        "items": [ { "id": 1, "title": "alpha", "count": 2 }, { "id": 2, "title": "beta", "count": 6 } ],
+        "errors": 0 } } },
+
+    { "note": "present: the `<if>` reads its fields, `&&` and the conditional read the count, and `pick === null` is false",
+      "event": "pick.read",
+      "expect": { "variables": {
+        "title": "beta", "count": 6, "shown": 6, "known": true, "absent": false,
+        "pick": { "id": 2, "title": "beta", "count": 6 } } } },
+
+    { "note": "two fields written under one test: the count 6 becomes 7, and the title `bumped`; the record is still present for the second write",
+      "event": "pick.bump",
+      "expect": { "variables": {
+        "pick": { "id": 2, "title": "bumped", "count": 7 },
+        "items": [ { "id": 1, "title": "alpha", "count": 2 }, { "id": 2, "title": "beta", "count": 6 } ] } } },
+
+    { "note": "the fields read are the ones written",
+      "event": "pick.read",
+      "expect": { "variables": { "title": "bumped", "count": 7, "shown": 7, "known": true, "absent": false } } },
+
+    { "note": "the second item of the list, as the list holds it (6), is the first to reach 5: the algorithm answers it whole",
+      "event": "pick.find",
+      "expect": { "variables": {
+        "found": { "id": 2, "title": "beta", "count": 6 },
+        "pick": { "id": 2, "title": "bumped", "count": 7 } } } },
+
+    { "note": "`null` makes the record absent",
+      "event": "pick.clear",
+      "expect": { "variables": { "pick": null, "found": { "id": 2, "title": "beta", "count": 6 } } } },
+
+    { "note": "absent: the `<else>` is read, `&&` is false before it reads a field, the conditional answers 0, and `pick === null` is true",
+      "event": "pick.read",
+      "expect": { "variables": {
+        "title": "none", "count": -1, "shown": 0, "known": false, "absent": true, "pick": null } } },
+
+    { "note": "nothing is written through an absent record: the test around the writes is false",
+      "event": "pick.bump",
+      "expect": { "variables": { "pick": null, "title": "none", "errors": 0 } } },
+
+    { "note": "a record variable taken whole: `draft` holds the second item",
+      "event": "pick.draft",
+      "expect": { "variables": {
+        "pick": { "id": 2, "title": "beta", "count": 6 },
+        "draft": { "id": 2, "title": "beta", "count": 6 } } } },
+
+    { "note": "a third item fills the list, and is `pick` and `draft` too",
+      "event": "item.picked", "data": { "id": 3, "title": "gamma", "count": 9 },
+      "expect": { "variables": {
+        "pick": { "id": 3, "title": "gamma", "count": 9 },
+        "draft": { "id": 3, "title": "gamma", "count": 9 },
+        "items": [ { "id": 1, "title": "alpha", "count": 2 }, { "id": 2, "title": "beta", "count": 6 },
+                   { "id": 3, "title": "gamma", "count": 9 } ],
+        "errors": 0 } } },
+
+    { "note": "a list's element taken whole: index 1 is the second item, and `draft` stays the third",
+      "event": "pick.second",
+      "expect": { "variables": {
+        "pick": { "id": 2, "title": "beta", "count": 6 },
+        "draft": { "id": 3, "title": "gamma", "count": 9 } } } },
+
+    { "note": "a fourth item does not fit the three the list holds: the append fails first, nothing after it runs, and error.execution says so",
+      "event": "item.picked", "data": { "id": 4, "title": "delta", "count": 1 },
+      "expect": { "variables": {
+        "pick": { "id": 2, "title": "beta", "count": 6 },
+        "draft": { "id": 3, "title": "gamma", "count": 9 },
+        "items": [ { "id": 1, "title": "alpha", "count": 2 }, { "id": 2, "title": "beta", "count": 6 },
+                   { "id": 3, "title": "gamma", "count": 9 } ],
+        "errors": 1 } } },
+
+    { "note": "the list of three still answers its first item that holds 5 or more: the second",
+      "event": "pick.find",
+      "expect": { "variables": { "found": { "id": 2, "title": "beta", "count": 6 }, "errors": 1 } } }
+  ]
+}

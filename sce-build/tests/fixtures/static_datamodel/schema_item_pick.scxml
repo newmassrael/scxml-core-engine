@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  An item a machine may have picked out, or none (docs/adr/0055, step 9): the
+  record `static_optional_record.scxml` holds in an `optional<record:Item>`
+  variable, keeps in a list, hands to an algorithm and takes back, and the
+  payload of the event that picks one. Every field is present in every delivery:
+  what may be absent is the whole record, which a variable of
+  `optional<record:Item>` holds, and not a field of it.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="schema_item_pick"
+       sce:event-name="item.picked">
+  <datamodel>
+    <data id="id" sce:type="uint32" sce:direction="in"/>
+    <data id="title" sce:type="string" sce:max-size="16" sce:direction="in"/>
+    <data id="count" sce:type="int32" sce:direction="in"/>
+  </datamodel>
+</scxml>

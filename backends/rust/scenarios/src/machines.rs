@@ -178,7 +178,10 @@ macro_rules! scenarios {
 /// (`generate/unsupported-feature`), so there is no module a row could build it
 /// from. The step that lowers the construct on Rust generates the machine, takes
 /// the entry off and adds the row.
-pub const NOT_YET_LOWERED: &[(&str, &str)] = &[];
+pub const NOT_YET_LOWERED: &[(&str, &str)] = &[(
+    "static_optional_record",
+    "an optional record has no Rust lowering yet (docs/adr/0055, step 9)",
+)];
 
 scenarios! {
     "presence_peer_alice" => presence_peer_sm::{PresencePeerPolicy, PresencePeerPersist} @ Manual;

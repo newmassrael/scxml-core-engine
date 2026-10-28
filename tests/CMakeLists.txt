@@ -378,12 +378,21 @@ endif()
 # them, so the engines are held to one answer.
 # ============================================================================
 
-# sce_add_static_scenario_suite(TARGET <target> SCENARIOS <dir> FIXTURES <dir>)
+# sce_add_static_scenario_suite(TARGET <target> SCENARIOS <dir> FIXTURES <dir>
+#                               [NOT_YET_LOWERED <machine>...])
 #
 # Every scenario under SCENARIOS replayed against the machine its `machine` names, one
 # translation unit per machine (integration/static_scenarios/StaticScenarioMachineTest.cpp.in)
 # with a test for each of its scenarios, and the machine generated into TARGET from
 # FIXTURES/<machine>.scxml, or from the library for a `sce:std/<path>`.
+#
+# NOT_YET_LOWERED names the machines the generator refuses for C++ by name
+# (`generate/unsupported-feature`) until the step of docs/adr/0055 that lowers their
+# construct on C++: their scenarios are replayed by the engines that lower them, and
+# each is a machine this suite neither generates nor compiles. A name no scenario
+# drives is refused, so the list cannot outlive the scenario; the step that lowers the
+# construct takes its machine off it, which the sce-build test of the scenarios holds
+# (`every_scenario_is_replayed_on_every_backend_that_lowers_its_machine`).
 #
 # Derived from the directory and not listed, so a scenario added there is replayed
 # with no edit to this file or to a test, and no unit compiles more than one machine.
@@ -395,7 +404,7 @@ endif()
 # A machine whose host takes part in its run has its host in
 # integration/static_scenarios/hosts/<machine>.h, which its unit includes.
 function(sce_add_static_scenario_suite)
-    cmake_parse_arguments(PARSE_ARGV 0 _suite "" "TARGET;SCENARIOS;FIXTURES" "")
+    cmake_parse_arguments(PARSE_ARGV 0 _suite "" "TARGET;SCENARIOS;FIXTURES" "NOT_YET_LOWERED")
     set(_here "${CMAKE_CURRENT_SOURCE_DIR}/integration/static_scenarios")
     file(GLOB _scenario_files CONFIGURE_DEPENDS "${_suite_SCENARIOS}/*.json")
     file(GLOB _host_files CONFIGURE_DEPENDS "${_here}/hosts/*.h")
@@ -435,6 +444,14 @@ function(sce_add_static_scenario_suite)
         if(NOT _hosted IN_LIST _machines)
             message(FATAL_ERROR "${_host} is the host of ${_hosted}, which no scenario replays")
         endif()
+    endforeach()
+
+    # A machine C++ does not lower yet is replayed elsewhere and compiled nowhere here.
+    foreach(_pending IN LISTS _suite_NOT_YET_LOWERED)
+        if(NOT _pending IN_LIST _machines)
+            message(FATAL_ERROR "${_pending} is listed as not yet lowered, and no scenario drives it")
+        endif()
+        list(REMOVE_ITEM _machines "${_pending}")
     endforeach()
 
     foreach(_machine IN LISTS _machines)
@@ -507,6 +524,9 @@ sce_add_static_scenario_suite(
     TARGET static_datamodel_generated_cpp_test
     SCENARIOS ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/scenarios
     FIXTURES ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel
+    # The optional record (docs/adr/0055, step 9): the generator refuses it for C++ by
+    # name until C++'s own step, which takes this line off.
+    NOT_YET_LOWERED static_optional_record
 )
 # The machines of the target's other tests that no scenario replays: a BasicHTTP
 # send, whose request a scenario has no word for; the hybrid invokes held to which

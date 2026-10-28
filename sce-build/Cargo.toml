@@ -971,6 +971,15 @@ name = "an_algorithm_holds_an_optional_value"
 path = "tests/an_algorithm_holds_an_optional_value.rs"
 required-features = ["cli"]
 
+# An optional record is held, read and written where a test proves it present
+# (docs/adr/0055, step 9): a statechart's variable and an algorithm's slot, what
+# is put into one, and the refusals. It runs `sce-codegen check`, `generate` and
+# `lower`, so it carries the `cli` gate.
+[[test]]
+name = "an_optional_record_is_held_read_and_written_where_proven"
+path = "tests/an_optional_record_is_held_read_and_written_where_proven.rs"
+required-features = ["cli"]
+
 [[test]]
 name = "a_statechart_calls_the_forge_kinds_that_are_functions"
 path = "tests/a_statechart_calls_the_forge_kinds_that_are_functions.rs"

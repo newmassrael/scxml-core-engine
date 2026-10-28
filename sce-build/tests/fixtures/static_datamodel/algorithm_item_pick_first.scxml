@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The first item of a list that holds at least `least` (docs/adr/0055, step 9): a
+  list of records and a count in, an optional record out. The answer is absent for
+  an empty list and for one in which no item reaches the count. `found` is a local
+  that may be absent, starting absent; an item that reaches the count is put into it
+  whole, by its name, while it is still absent.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm"
+       name="item_pick_first"
+       version="1.0">
+  <sce:import kind="event-schema" src="schema_item_pick.scxml" as="Item"/>
+  <sce:signature>
+    <sce:param name="items" type="list&lt;record:Item&gt;"/>
+    <sce:param name="least" type="int32"/>
+    <sce:return type="optional&lt;record:Item&gt;"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="found" type="optional&lt;record:Item&gt;" init="null"/>
+    <sce:foreach item="it" in="items">
+      <sce:if cond="found === null &amp;&amp; it.count &gt;= least">
+        <sce:assign target="found" expr="it"/>
+      </sce:if>
+    </sce:foreach>
+    <sce:return expr="found"/>
+  </sce:body>
+</scxml>

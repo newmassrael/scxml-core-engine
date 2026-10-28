@@ -8,7 +8,9 @@
 //! same element is held in, and reads it with the spellings the expression
 //! emitter gives every optional value, so a statechart hands one over and takes
 //! one back as it holds it. An optional text, byte string, value of an enum or
-//! record is a statechart's, and an algorithm's slot refuses it by name.
+//! record is read on an algorithm's slots too (docs/adr/0055, step 9), and a
+//! generated backend that does not spell one yet refuses it by name where it
+//! renders it; the Interpreter's lowering spells all but the byte string.
 //!
 //! The scenario `static_state_algorithm_optional.json` replays the machine and
 //! the algorithms of the fixture directory on every engine; this file holds what
@@ -166,11 +168,66 @@ fn an_algorithms_parameter_return_and_local_hold_an_optional_number() {
     }
 }
 
-/// An optional text, byte string, value of an enum or record is held by a
-/// statechart's variable and by no algorithm's slot: each is refused by name, as
-/// a rule of the position, on the parameter, the return and the local alike.
+/// An optional text, byte string, value of an enum or record is read on an
+/// algorithm's parameter, return and local as a statechart's variable reads it
+/// (docs/adr/0055, step 9): the reader admits every element a statechart holds
+/// one of, and the model carries the type as written.
 #[test]
-fn an_algorithms_slot_refuses_an_optional_value_it_does_not_hold_by_name() {
+fn an_algorithms_slot_reads_every_optional_element_a_statechart_holds() {
+    use sce_build::forge::model::ForgeDocument;
+    for (written, elem) in [
+        (
+            "optional&lt;string&gt;",
+            OptionalElemType::Scalar(SceType::String),
+        ),
+        (
+            "optional&lt;bytes&gt;",
+            OptionalElemType::Scalar(SceType::Bytes),
+        ),
+        (
+            "optional&lt;record:Goal&gt;",
+            OptionalElemType::Record {
+                alias: "Goal".to_string(),
+            },
+        ),
+    ] {
+        let imports = if written.contains("record:Goal") {
+            "  <sce:import kind=\"event-schema\" src=\"schema_goal.scxml\" as=\"Goal\"/>\n"
+        } else {
+            ""
+        };
+        let text = slots(written, written, written)
+            .replace("  <sce:signature>", &format!("{imports}  <sce:signature>"));
+        let parsed = sce_build::forge::parser::parse_forge_with_imports(
+            &text,
+            sce_build::DocumentLabel::symmetric("slot_probe"),
+        )
+        .unwrap_or_else(|e| panic!("`{written}` is read on every slot: {e:?}"))
+        .expect("an algorithm is a forge document");
+        let ForgeDocument::Algorithm(algorithm) = &parsed.document else {
+            panic!("expected an algorithm, got {:?}", parsed.document.kind());
+        };
+        let optional = AlgorithmValueType::Optional { elem };
+        assert_eq!(
+            algorithm.signature.params[0].sce_type, optional,
+            "{written}"
+        );
+        assert_eq!(
+            algorithm.signature.return_type.as_ref(),
+            Some(&optional),
+            "{written}"
+        );
+    }
+}
+
+/// Each generated backend refuses an algorithm that holds an optional value it
+/// does not spell yet, by name, where it renders the slot or the local
+/// (docs/adr/0055, step 9): `generate/unsupported-feature`, "an optional value has
+/// no <language> lowering yet", on the parameter, the return and the local alike.
+/// A number and a `bool` are spelled by every backend, so the other two slots of
+/// each probe are of `int64`.
+#[test]
+fn every_backend_refuses_an_algorithms_optional_slot_it_does_not_spell_by_name() {
     for written in [
         "optional&lt;string&gt;",
         "optional&lt;bytes&gt;",
@@ -182,24 +239,40 @@ fn an_algorithms_slot_refuses_an_optional_value_it_does_not_hold_by_name() {
             ("optional&lt;int64&gt;", written, "optional&lt;int64&gt;"),
             ("optional&lt;int64&gt;", "optional&lt;int64&gt;", written),
         ] {
-            let text = slots(param, ret, local).replace(
-                "  <sce:signature>",
-                "  <sce:import kind=\"enum\" src=\"enum_item_status.scxml\" as=\"Status\"/>\n  \
-                 <sce:import kind=\"event-schema\" src=\"schema_goal.scxml\" as=\"Goal\"/>\n  \
-                 <sce:signature>",
-            );
-            let (ok, out, _) = run_probe(
-                &["check", "-l", "rust"],
-                &text,
-                "slot_probe.scxml",
-                &["enum_item_status.scxml", "schema_goal.scxml"],
-            );
-            assert!(!ok, "`{written}` is refused on an algorithm's slot:\n{out}");
-            assert!(
-                out.contains("validation/attribute-rule-violated")
-                    && out.contains("an algorithm's optional parameter, return or local"),
-                "`{written}` is refused by name:\n{out}"
-            );
+            // The body answers `null`, so each probe is judged fit whatever the
+            // return is: the refusal is the backend's. A document imports what
+            // its slots name and nothing else.
+            let mut imports = String::new();
+            if written.contains("enum:Status") {
+                imports.push_str(
+                    "  <sce:import kind=\"enum\" src=\"enum_item_status.scxml\" as=\"Status\"/>\n",
+                );
+            }
+            if written.contains("record:Goal") {
+                imports.push_str(
+                    "  <sce:import kind=\"event-schema\" src=\"schema_goal.scxml\" as=\"Goal\"/>\n",
+                );
+            }
+            let text = slots(param, ret, local)
+                .replace("  <sce:signature>", &format!("{imports}  <sce:signature>"))
+                .replace("<sce:return expr=\"held\"/>", "<sce:return expr=\"null\"/>");
+            for (lang, args) in every_backend() {
+                let (ok, out, _) = run_probe(
+                    &args,
+                    &text,
+                    "slot_probe.scxml",
+                    &["enum_item_status.scxml", "schema_goal.scxml"],
+                );
+                assert!(
+                    !ok,
+                    "{lang} refuses `{written}` on an algorithm's slot:\n{out}"
+                );
+                assert!(
+                    out.contains("generate/unsupported-feature")
+                        && out.contains("an optional value has no"),
+                    "{lang} refuses `{written}` by name:\n{out}"
+                );
+            }
         }
     }
 }
