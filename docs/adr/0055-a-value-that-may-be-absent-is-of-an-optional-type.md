@@ -212,10 +212,14 @@ answer the language would not have to invent. A test of a flag that may be absen
   type, and a value of an enum or a record is no host argument, present or absent. C11's text and
   byte string stay refused by name: its struct is declared over a buffer of a bound, which a host
   method's parameter does not declare.
-- *`<param>`, `<donedata>`, a typed request.* An optional value is carried as section 4 writes it.
-  A carrier that is text and not JSON — a BasicHTTP form, the `params` of a host-run `<invoke>`
-  with no `sce:request` — has no spelling for absence, so an optional value there is refused at
-  the `<param>` (`scxml/static-datamodel-rule`, naming `??`). A `<send>` of an optional value to a
+- *`<param>`, `<donedata>`, a typed request and result.* An optional value is carried as section 4
+  writes it. A carrier that is text and not JSON — a BasicHTTP form, the `params` of a host-run
+  `<invoke>` — has no spelling for absence, so an optional value there is refused at the `<param>`
+  (`scxml/static-datamodel-rule`, naming `??`). A typed request is those `params` read back as a
+  record, so it is that carrier: a `sce:request` schema with a field that may be absent is refused
+  where the invoke is checked (`validation/typed-invoke-schema`, naming `??`), and a typed result,
+  which the host completes with the record's JSON, holds an optional field and writes an absent
+  one as `null` (step 10 of section 9). A `<send>` of an optional value to a
   field of `T` is refused by the rule that holds a send to the field that reads it (§2.15); a value
   of `T` to a field of `optional<T>` is admitted.
 - *A child session's `<param>`.* A child's variable of `optional<T>` over a bool, a number or a
@@ -1133,6 +1137,63 @@ documents, not observed from a backend.
     (`static_datamodel.rs`, `StaticDatamodelTest`, `static_scenarios_test.go`,
     `test_a_static_host_action.py`, `AStaticHostIsHandedTypedValuesTest`, `test_static_host_call.c`),
     and `AnArgumentThatIsNullIsHandedToTheHostAsAbsent` for the Interpreter's executor.
+    *As built, for a host-run `<invoke>`'s typed request and result.* The edge is decided by the
+    carrier of each half, as section 2 and section 4 say a carrier decides it. A host-run record
+    crosses to the host in two ways: the request as text (each `<param>` is the text of its value,
+    in the `params` a handler reads, and the generated adapter parses them back), and the result as
+    JSON (`complete_host_invoke` with the record's JSON, which the machine's payload lift reads).
+    - *The request keeps its refusal, and it is final.* A field of a `sce:request` schema that may
+      be absent is refused where the invoke is checked (`validation/typed-invoke-schema`, in
+      `forge::typed_invoke::validate`), naming `??`: declare the field as its present type and
+      write `x ?? d` at the `<param>`. The carrier has no `null`, and a key left out of the
+      `params` is not free to mean "absent": an untyped `<param>` whose value cannot be evaluated
+      is reported and left out, so a handler that reads the `params` without the adapter would
+      read as absent what the untyped invoke reports as not evaluated, which is the second
+      meaning of one absence that this language refuses (no second absence, and never a
+      sentinel). The message names both the carrier and the repair. The same schema named as the
+      request and the result is held to the request's rule.
+    - *The result lifts.* A field of a `sce:result` schema may be `optional<T>` of a number, a
+      `bool`, a text or a byte string; an optional enum stays refused with the enum, since a
+      host-run record carries no field of an enumeration (the existing refusal now reads the type
+      a present value has). The record the generated interface hands the host holds the field in
+      the backend's one optional type (`Option<T>`, `T?`, `optional.Of[T]`, `Optional[T]`,
+      `std::optional<T>`, `sce_optional_<elem>_t`) through one function of the module that
+      renders the interface (`record_field_type`, over `forge::generator::optional_of`), and its `wire`
+      writes the key of every field, `null` where the field is absent and what the field is
+      written as, on that backend, where it is present (Rust's `optional_json`, Go's
+      `optional.Wire`, Python's `None`, which `json.dumps` writes as `null`, Kotlin's `encode`,
+      C++'s `EventPayloadFields::absent`, C11's wire writer). The machine reads the completion
+      with the payload lift of section 4: `null` is absent and a key left out is refused, as any
+      typed payload the data does not fit is. The request-side readers and the descriptors every
+      runtime holds (`RequestFieldSpelling`, `request_field`, `TypedRequest`) are unchanged, since
+      no request holds an optional field.
+    - *Whatever the data model.* The generated interface does not depend on the data model, so a
+      machine of any data model holds the result's optional field: Go lists the forge runtime's
+      `optional` package among its imports where the interface names it (`generator::render_go`),
+      and C11 includes `sce/forge/optional.h` before the record and `sce/forge/wire.h` before the
+      function that writes it (`C11HostInvokerInterface::header_includes`, `source_includes`),
+      and declares the buffer of an optional text or byte string and the optional value over it
+      under the guards every unit that holds one shares
+      (`static_lowering::c11_optional_buffer_def`). A C11 optional text or byte string with no
+      `sce:max-size` has no buffer to be held in and is refused by name, as it is in a payload
+      (`generate/unsupported-feature`, "an optional value has no c11 lowering yet").
+    - *The Interpreter* runs no host-run `<invoke>` (`InvokeHandlerFactory::createHandler`
+      answers none for the type, and `InvokeExecutor::executeInvoke` raises `error.execution`, SCE
+      Accepted Subset §2.12), so a result has nothing to lower there.
+    - Tests: in `sce-build`, `a_host_run_result_may_hold_a_field_that_may_be_absent` (every
+      backend checks one, and each renders its record's type and its `null`, and C11 refuses an
+      unbounded optional text), `a_typed_host_invoke_is_held_to_its_schemas` (a result accepts
+      one, a request, and a schema that is both, refuse it) and
+      `an_optional_value_is_declared_by_its_type`; on every backend that runs a host-run
+      `<invoke>`, `statechart_host_invoker_optional.scxml` and its `LookupResult` record
+      (a day, a label and a flag that may be absent beside a count that never is): Rust
+      `a_host_result_may_hold_a_value_that_is_absent`, Go `host_invoker_optional_test.go`, Kotlin
+      `AHostResultMayHoldAValueThatIsAbsentTest`, Python
+      `test_host_result_may_hold_a_value_that_is_absent.py`, C++
+      `HostResultMayHoldAValueThatIsAbsentAotTest`, C11 `test_host_invoker_optional.c`. Each reads
+      the all-absent and the all-present answer, a zero, an empty text and a false flag (present,
+      not absent), a mixed one, the record's JSON with `null` for an absent value, and a
+      completion that leaves a key out (refused: `answered` does not move).
 11. **`record_refusal.none` retired** (implemented) (section 7): the enum, `record_list.scxml`,
     `record_list_parent.scxml` holding `optional<record:Refused>`, `scenarios/record_list_parent.json`
     and the Go, C and C++ drivers that read the refusal by hand, the pin in
