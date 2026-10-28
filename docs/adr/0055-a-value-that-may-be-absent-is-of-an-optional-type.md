@@ -853,6 +853,38 @@ documents, not observed from a backend.
      `an_optional_record_is_spelled_by_generated_python`, `static_optional_record` in
      `backends/python/tests/integration/static_datamodel/test_static_scenarios.py` and its saved instance in
      `test_a_state_another_backend_saved_is_restored.py`.
+   - *C++.* An optional record is a `std::optional` over the machine's own record
+     (`<Machine><Alias>Record`), started at `std::optional<…>()`; `x.value.f` is `(*x).f` and a
+     field written is `(*x).f = e;` (`assign_present_field`, its text and byte-string forms
+     the same statement over a value already held to its bound). A list's element taken whole
+     is the runtime's checked read, `SCE::Forge::Checked::at(sce_failure_, list, index)`
+     (`record_at`), which records an index outside the list as the failure every statement ends
+     its block at; a record variable and a payload are lifted by `std::optional`'s own
+     conversion, and the saved state writes the variable as null or through the record's own
+     `<Record>ToSaved` and reads it through `<Record>FromSaved` (`cpp_saved_value.jinja2`).
+     A call hands an optional record over as the adapter's `const std::optional<Record> &`
+     (an optional record variable, a record variable and `null`, which is `std::nullopt`) mapped
+     into the algorithm's record by `SCE::Forge::mapPresent`, and a payload and a loop's item
+     as a record lifted into the present value; what the algorithm answers is mapped back the
+     same way. In an algorithm an optional record is the same `std::optional` over the type the
+     imported schema declares, in a parameter, a local and a return, and a field is written as
+     `(*x).f = e;` where the narrowing proves `x` present, its text from a bounded literal or a
+     text field of a record, as a bare text field is (`lower_field_text_write`).
+     `generator::algorithm_optional_spelled` answers true for C++ for a number, a `bool`, a text, a
+     value of an enum and a record, so an algorithm's slot or local of one, a record with an
+     optional text or enum field (the unit of its schema, and what an adapter copies) are
+     spelled: an optional text field is written from a literal held to its bound or `null`, and
+     an optional enum field crosses an adapter by the declared name of its variant, mapped where
+     it is present (`AdapterSpec::record_field_crossing`). What C++ keeps refused by name is the
+     optional byte string in an algorithm's slot, local and record field: an algorithm holds a
+     byte string as a borrowed view in a parameter, as an append buffer in a local and as an
+     owned vector in a return, three types no one `std::optional` holds as it is, and a record
+     with a byte string field is no record of an algorithm (`resolve_record`); and the
+     optional enum as a slot a statechart's call crosses, which `value_signature` refuses for
+     every backend until a statechart reads one through its enum document. Tests:
+     `an_optional_record_is_spelled_by_the_cpp_backend`, the scenario `static_optional_record.json`
+     replayed by the C++ scenario suite, and `saved/static_optional_record.json` restored and saved
+     again by `AStateAnotherBackendSavedIsRestoredTest`.
 10. **The edges left refused by name**: a child session's optional variable as a `<param>` (with
     the shape of `InvokeParams` it needs), a host action's optional argument, a host-run
     `<invoke>`'s typed request and result with optional fields. Each with the scenario or test of
