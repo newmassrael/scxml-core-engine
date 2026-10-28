@@ -55,3 +55,23 @@ shopt -u nullglob
 # The packages the generator writes for a queue, under the race detector too.
 ( cd backends/go/forge-runtime && go test -race -count=1 -run 'Lamport|Scq|Lscq' ./conformance/ ) \
     || sce_gate_fail "Go forge queue generated packages under the race detector"
+
+# The broadcast-log kind's Go arm (ADR 0062). The same two kinds of evidence as
+# the queue's: the race detector over the runtime's tests, and the histories its
+# stress runs write, judged by the command every backend's broadcast histories
+# are judged by. The directory is emptied first for the same reason.
+BROADCAST_HISTORIES="$SCE_REPO_ROOT/target/broadcast-histories/go"
+rm -rf "$BROADCAST_HISTORIES"
+mkdir -p "$BROADCAST_HISTORIES"
+( cd backends/go/forge-runtime \
+    && SCE_BROADCAST_HISTORY_DIR="$BROADCAST_HISTORIES" go test -race -count=1 ./broadcastlog/ ) \
+    || sce_gate_fail "Go forge broadcast-log runtime under the race detector"
+# 4 log shapes recorded 25 times. A run that recorded fewer would pass the
+# judgement below, so the count is held.
+shopt -s nullglob
+broadcast_histories=("$BROADCAST_HISTORIES"/*.json)
+shopt -u nullglob
+(( ${#broadcast_histories[@]} >= 100 )) \
+    || sce_gate_fail "Go broadcast histories: ${#broadcast_histories[@]} written, expected at least 100"
+"$(sce_codegen_require "$SCE_REPO_ROOT")" check-broadcast-history "${broadcast_histories[@]}" \
+    || sce_gate_fail "Go broadcast histories are not linearizable"
