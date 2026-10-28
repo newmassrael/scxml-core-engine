@@ -34,7 +34,7 @@ use crate::forge::expr::{
     dotted_path, parse_to_ast, BinOp, ExprKind, Refusal, TypedExpr, OPTIONAL_VALUE,
 };
 use crate::forge::expression_site::ExpressionSite;
-use crate::forge::generator::{AlgorithmTypes, ImportContext};
+use crate::forge::generator::{AlgorithmTypes, CalleeEnum, ImportContext};
 use crate::forge::model::{AlgorithmModel, AlgorithmStmt, AlgorithmValueType, SceType};
 use crate::forge::type_ctx::INDEXED_ELEMENT;
 use crate::forge::types::TypeCtx;
@@ -421,12 +421,23 @@ fn class_of(
                     match held(arg, ctx, reading)? {
                         Held::Null => {}
                         Held::Enum(given) | Held::Optional(given) if given == *wanted => {}
-                        Held::Enum(given) | Held::Optional(given) => {
+                        Held::Enum(given) => {
                             return Err(refuse(
                                 arg,
                                 &format!(
                                     "a value of the enum `{given}` handed to `{}`, whose \
                                      parameter takes an optional value of the enum `{wanted}`",
+                                    slots.callee
+                                ),
+                            ))
+                        }
+                        Held::Optional(given) => {
+                            return Err(refuse(
+                                arg,
+                                &format!(
+                                    "an optional value of the enum `{given}` handed to `{}`, \
+                                     whose parameter takes an optional value of the enum \
+                                     `{wanted}`",
                                     slots.callee
                                 ),
                             ))
@@ -582,16 +593,21 @@ fn callee_enums(imports: &[ImportContext], name: &str) -> Option<CallEnums> {
         .iter()
         .find(|i| i.alias == alias && i.kind == "algorithm")?;
     let slots = import.enum_slots.as_ref()?;
-    // An algorithm's slots of one algorithm's call of another hold a value of an
-    // enum that is never absent ([`crate::forge::generator::CalleeEnumSlots`]).
+    // A slot of one algorithm's call of another holds a value of an enum, or an
+    // optional value of one (docs/adr/0055), by the alias this body imports it under
+    // ([`crate::forge::generator::CalleeEnumSlots`]).
+    let slot = |held: &CalleeEnum| EnumSlot {
+        alias: held.alias.clone(),
+        optional: held.optional,
+    };
     Some(CallEnums {
         callee: alias.to_string(),
         params: slots
             .params
             .iter()
-            .map(|held| held.clone().map(EnumSlot::present))
+            .map(|held| held.as_ref().map(slot))
             .collect(),
-        ret: slots.ret.clone().map(EnumSlot::present),
+        ret: slots.ret.as_ref().map(slot),
     })
 }
 

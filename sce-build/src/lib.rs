@@ -3682,6 +3682,10 @@ pub fn compile_forge_from_parsed(
         // the same reason.
         forge::static_enum::check_algorithm(m, &import_ctx, options)
             .map_err(|e| Located::in_file(e, label.diagnostic_label))?;
+        // An optional record stands only where an optional record of its own schema
+        // is declared: the identity its type does not carry, held here once.
+        forge::optional_record_call::check_algorithm(m, &import_ctx, options)
+            .map_err(|e| Located::in_file(e, label.diagnostic_label))?;
     }
 
     // `previous(x)` reads x from the activation before this one: x must be
@@ -7070,35 +7074,37 @@ fn algorithm_record_slots(
 ) -> Option<forge::generator::AlgorithmSlots> {
     use forge::generator::{AlgorithmSlots, CalleeSlot};
     use forge::model::AlgorithmValueType;
+    // The schema the callee's import `alias` names, and the payload type it is
+    // spelled as on `language`: read from where the callee reads it.
+    let schema = |alias: &str| -> Option<(forge::types::RecordId, String)> {
+        let imp = callee_imports
+            .iter()
+            .find(|i| i.alias == alias && matches!(i.kind, forge::model::ForgeKind::EventSchema))?;
+        let source = forge::import_source::ImportSource::read(callee_base, imp).ok()?;
+        let parsed = source.parse().ok()??;
+        let forge::model::ForgeDocument::EventSchema(sm) = &parsed.document else {
+            return None;
+        };
+        Some((
+            forge::types::RecordId::intern(&forge::stdlib::identity(&source.path), &sm.name),
+            forge::generator::event_schema_payload_type(&sm.name, language),
+        ))
+    };
     let slot = |ty: &AlgorithmValueType| -> Option<CalleeSlot> {
         match ty {
             AlgorithmValueType::Scalar(t) => Some(CalleeSlot::Scalar(t.clone())),
-            // An algorithm's optional slot is of a number or a bool
-            // (docs/adr/0055); an optional record is no slot an algorithm's
-            // reader takes, and would keep its host-only refusal, as a list does.
+            // An optional slot over a scalar (docs/adr/0055): the value of an enum
+            // in one is held to its enum by `algorithm_enum_slots`.
             AlgorithmValueType::Optional {
                 elem: forge::model::OptionalElemType::Scalar(t),
             } => Some(CalleeSlot::Optional(t.clone())),
-            AlgorithmValueType::List { .. }
-            | AlgorithmValueType::Optional {
-                elem: forge::model::OptionalElemType::Record { .. },
-            } => None,
+            // An optional record, of the schema the callee names.
+            AlgorithmValueType::Optional {
+                elem: forge::model::OptionalElemType::Record { alias },
+            } => schema(alias).map(|(id, _)| CalleeSlot::OptionalRecord { id }),
+            AlgorithmValueType::List { .. } => None,
             AlgorithmValueType::Record { alias } => {
-                let imp = callee_imports.iter().find(|i| {
-                    i.alias == *alias && matches!(i.kind, forge::model::ForgeKind::EventSchema)
-                })?;
-                let source = forge::import_source::ImportSource::read(callee_base, imp).ok()?;
-                let parsed = source.parse().ok()??;
-                let forge::model::ForgeDocument::EventSchema(sm) = &parsed.document else {
-                    return None;
-                };
-                Some(CalleeSlot::Record {
-                    id: forge::types::RecordId::intern(
-                        &forge::stdlib::identity(&source.path),
-                        &sm.name,
-                    ),
-                    qualified_type: forge::generator::event_schema_payload_type(&sm.name, language),
-                })
+                schema(alias).map(|(id, qualified_type)| CalleeSlot::Record { id, qualified_type })
             }
         }
     };
@@ -7128,15 +7134,20 @@ fn algorithm_record_slots(
 /// document names it ([`forge::generator::CalleeEnumSlots`]): `own_enums` is each
 /// enum document the importer imports, by alias and identity, and the callee's own
 /// enum imports are read from `callee_base`, where the callee reads them. `None`
-/// for an algorithm none of whose slots holds a value of an enum.
+/// for an algorithm none of whose slots holds a value of an enum. A slot of
+/// `optional<enum:…>` holds one, and says it may be absent (docs/adr/0055).
 fn algorithm_enum_slots(
     am: &forge::model::AlgorithmModel,
     callee_imports: &[forge::model::ForgeImport],
     callee_base: &Path,
     own_enums: &[(String, String)],
 ) -> Option<forge::generator::CalleeEnumSlots> {
-    let held = |ty: &forge::model::AlgorithmValueType| -> Option<String> {
-        let forge::model::SceType::Enum(reference) = ty.scalar()? else {
+    let held = |ty: &forge::model::AlgorithmValueType| -> Option<forge::generator::CalleeEnum> {
+        let (scalar, optional) = match ty.optional_elem() {
+            Some(elem) => (elem.scalar()?, true),
+            None => (ty.scalar()?, false),
+        };
+        let forge::model::SceType::Enum(reference) = scalar else {
             return None;
         };
         // An enum document the callee cannot read has no identity to compare: it
@@ -7144,12 +7155,13 @@ fn algorithm_enum_slots(
         let identity =
             forge::static_imports::enum_identity(callee_imports, callee_base, &reference.alias)
                 .unwrap_or_else(|| format!("the enum `{}` of `{}`", reference.alias, am.name));
-        Some(
-            own_enums
+        Some(forge::generator::CalleeEnum {
+            alias: own_enums
                 .iter()
                 .find(|(_, own)| *own == identity)
                 .map_or(identity, |(alias, _)| alias.clone()),
-        )
+            optional,
+        })
     };
     let slots = forge::generator::CalleeEnumSlots {
         params: am

@@ -508,9 +508,19 @@ pub struct ImportContext {
 pub struct CalleeEnumSlots {
     /// One per parameter, in order: the enum it holds, or `None` for a parameter
     /// that holds no enum.
-    pub params: Vec<Option<String>>,
+    pub params: Vec<Option<CalleeEnum>>,
     /// The enum the return holds, if it holds one.
-    pub ret: Option<String>,
+    pub ret: Option<CalleeEnum>,
+}
+
+/// The enum one slot of an imported algorithm holds, named as the importing
+/// document names it ([`CalleeEnumSlots`]), and whether the slot may be absent
+/// (docs/adr/0055): a slot of `optional<enum:…>` takes `null`, an optional value of
+/// its enum and a value of it, and an optional return is an optional value of it.
+#[derive(Debug, Clone)]
+pub struct CalleeEnum {
+    pub alias: String,
+    pub optional: bool,
 }
 
 /// An imported event-schema as a record type (SCE_FORGE.md §4.12): the
@@ -671,9 +681,17 @@ pub enum CalleeSlot {
         id: crate::forge::types::RecordId,
         qualified_type: String,
     },
-    /// `optional<T>` over a number or a `bool` (docs/adr/0055): an argument of
-    /// `T` is lifted, `null` is absent.
+    /// `optional<T>` over a scalar (docs/adr/0055): an argument of `T` is
+    /// lifted, `null` is absent. A value of an enum is one: which enum is the
+    /// importing body's enum rule ([`CalleeEnumSlots`]).
     Optional(SceType),
+    /// `optional<record:X>` of the schema `id` (docs/adr/0055, step 9): `null`,
+    /// an optional record and a record of that very schema stand in it. The type
+    /// an expression has names no schema, so which one is held to is the check of
+    /// the optional record calls of an algorithm's body, not the expression's.
+    OptionalRecord {
+        id: crate::forge::types::RecordId,
+    },
 }
 
 impl CalleeSlot {
@@ -684,6 +702,7 @@ impl CalleeSlot {
             Self::Scalar(ty) => InferredType::from_sce_type(ty),
             Self::Record { id, .. } => InferredType::Record(*id),
             Self::Optional(elem) => InferredType::Optional(OptionalElem::of(elem)),
+            Self::OptionalRecord { .. } => InferredType::Optional(OptionalElem::Record),
         }
     }
 }

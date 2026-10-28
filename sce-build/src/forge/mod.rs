@@ -46,6 +46,7 @@ pub mod model;
 pub mod namespace;
 pub mod narrowing;
 pub mod native_action;
+pub(crate) mod optional_record_call;
 pub mod ownership_contract;
 pub mod page;
 pub mod parser;

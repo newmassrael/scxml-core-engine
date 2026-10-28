@@ -929,6 +929,12 @@ name = "an_algorithm_holds_an_enum_where_one_is_declared"
 path = "tests/an_algorithm_holds_an_enum_where_one_is_declared.rs"
 required-features = ["cli"]
 
+# Spawns `sce-codegen check`, `generate` and `lower-algorithm`, so it carries the `cli` gate.
+[[test]]
+name = "an_algorithm_calls_another_with_an_optional_enum_or_record"
+path = "tests/an_algorithm_calls_another_with_an_optional_enum_or_record.rs"
+required-features = ["cli"]
+
 [[test]]
 name = "a_send_is_held_to_the_schema_its_receiver_reads"
 path = "tests/a_send_is_held_to_the_schema_its_receiver_reads.rs"

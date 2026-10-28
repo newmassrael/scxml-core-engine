@@ -790,6 +790,13 @@ documents, not observed from a backend.
    `CalleeSlot::Optional`. Tests: `sce-build/tests/an_algorithm_holds_an_optional_value.rs`, and the
    algorithm cases of `sce-build/tests/a_value_is_proven_present_only_where_tested.rs`, now
    generated.
+   Another algorithm's body calls one with an optional enum or an optional record slot as it
+   does one of a number: `CalleeEnumSlots` names the enum of the slot as the caller imports it and
+   says it may be absent, so `forge::static_enum` holds an argument and the answer to the enum
+   document the slot is of, and `CalleeSlot::OptionalRecord` carries the schema of an optional
+   record slot, which `forge::optional_record_call` holds an argument (`null`, a record or an
+   optional record of that schema) and an answer to, since the type an expression has names no
+   schema. Tests: `sce-build/tests/an_algorithm_calls_another_with_an_optional_enum_or_record.rs`.
 9. **`optional<record:X>`** (implemented). A variable and an algorithm slot of an
    optional record: started at `null`, taken whole from a record, a payload, a list's element;
    `r.value.f` where proven; a field write to `r.value.f` where proven, and refused elsewhere.
@@ -880,9 +887,7 @@ documents, not observed from a backend.
      adapter by the declared name of its variant where it is present and stays `None` where it is not. Still
      refused by name, for reasons that are not Python's: a statechart's call of an algorithm whose own slot is
      an optional value of an enum or a byte string (refused where the import is read, since no engine reads an
-     enum through an optional value in a call yet and the Interpreter's byte string is another value), and an
-     algorithm's call of another algorithm with an optional record slot (`algorithm_record_slots` gives it no
-     slot, so it keeps the host-only refusal a list slot has). Tests:
+     enum through an optional value in a call yet and the Interpreter's byte string is another value). Tests:
      `an_optional_record_is_spelled_by_generated_python`, `static_optional_record` in
      `backends/python/tests/integration/static_datamodel/test_static_scenarios.py` and its saved instance in
      `test_a_state_another_backend_saved_is_restored.py`.
@@ -1061,8 +1066,7 @@ documents, not observed from a backend.
      `null` or a lift nested in an expression stays refused by name, as it is for a text. A text in an
      algorithm's own parameter, local or return declares no bound for the buffer an optional text is held in
      (section 1: a text is bounded by `sce:capacity` or `sce:max-size`), so it keeps the named refusal, as does
-     a byte string, which no algorithm's slot or record holds; an algorithm called by another algorithm with an
-     optional record in a slot keeps the host-only refusal of `algorithm_record_slots`. Tests:
+     a byte string, which no algorithm's slot or record holds. Tests:
      `c11_unit_forge_optional` (the record's type and the constructors by place), the C11 cases of
      `an_optional_record_is_held_read_and_written_where_proven` and of
      `an_optional_value_is_declared_by_its_type`, `c11_spells_an_optional_record_over_its_struct_type`, and the
