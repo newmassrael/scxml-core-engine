@@ -609,6 +609,19 @@ foreach(_STATE_ALGORITHM goal_earliest goal_until goal_undated goal_day_sum)
         HEADER ${_STATE_ALGORITHM}.h
     )
 endforeach()
+# static_optional_record's `item_pick_first`: the record it answers is the record of
+# the schema it imports, which is generated beside it and included by its header
+# (docs/adr/0055, step 9).
+sce_add_algorithm(
+    TARGET static_datamodel_generated_cpp_test
+    SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/schema_item_pick.scxml
+    HEADER schema_item_pick.h
+)
+sce_add_algorithm(
+    TARGET static_datamodel_generated_cpp_test
+    SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/algorithm_item_pick_first.scxml
+    HEADER item_pick_first.h
+)
 foreach(_STD_SYNC_RULE sync_failure sync_retry_at sync_delete_outcome sync_upload_outcome)
     sce_add_algorithm(
         TARGET static_datamodel_generated_cpp_test
