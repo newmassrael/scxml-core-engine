@@ -129,10 +129,18 @@ public enum StaticSchemaRevisionViewModeEnum: UInt8, CaseIterable, Sendable {
 }
 
 /// SCE Accepted Subset §2.15: a `record:Revised` datamodel value.
-public struct StaticSchemaRevisionRevisedRecord: Equatable, Sendable {
-    public var level: UInt8
-    public var layout: StaticSchemaRevisionViewModeEnum
-    public var urgent: Bool
+public struct StaticSchemaRevisionRevisedRecord: Equatable, Sendable, SceDefault {
+    public var level: UInt8 = 0
+    public var layout: StaticSchemaRevisionViewModeEnum = StaticSchemaRevisionViewModeEnum.allCases[0]
+    public var urgent: Bool = false
+
+    public init() {}
+
+    public init(level: UInt8, layout: StaticSchemaRevisionViewModeEnum, urgent: Bool) {
+        self.level = level
+        self.layout = layout
+        self.urgent = urgent
+    }
 }
 
 // NL-to-IR Item C1 Path A: the typed `_event.data` payload channel for the

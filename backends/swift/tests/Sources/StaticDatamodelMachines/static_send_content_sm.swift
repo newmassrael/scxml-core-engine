@@ -132,9 +132,16 @@ public enum StaticSendContentViewModeEnum: UInt8, CaseIterable, Sendable {
 }
 
 /// SCE Accepted Subset §2.15: a `record:View` datamodel value.
-public struct StaticSendContentViewRecord: Equatable, Sendable {
-    public var layout: StaticSendContentViewModeEnum
-    public var zoom: UInt8
+public struct StaticSendContentViewRecord: Equatable, Sendable, SceDefault {
+    public var layout: StaticSendContentViewModeEnum = StaticSendContentViewModeEnum.allCases[0]
+    public var zoom: UInt8 = 0
+
+    public init() {}
+
+    public init(layout: StaticSendContentViewModeEnum, zoom: UInt8) {
+        self.layout = layout
+        self.zoom = zoom
+    }
 }
 
 // NL-to-IR Item C1 Path A: the typed `_event.data` payload channel for the

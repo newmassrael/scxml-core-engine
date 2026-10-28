@@ -130,11 +130,20 @@ public enum StaticOptionalUnwidenedStatusEnum: UInt8, CaseIterable, Sendable {
 }
 
 /// SCE Accepted Subset §2.15: a `record:Due` datamodel value.
-public struct StaticOptionalUnwidenedDueRecord: Equatable, Sendable {
-    public var id: UInt32
-    public var due: Int64
-    public var title: String
-    public var status: StaticOptionalUnwidenedStatusEnum
+public struct StaticOptionalUnwidenedDueRecord: Equatable, Sendable, SceDefault {
+    public var id: UInt32 = 0
+    public var due: Int64 = 0
+    public var title: String = ""
+    public var status: StaticOptionalUnwidenedStatusEnum = StaticOptionalUnwidenedStatusEnum.allCases[0]
+
+    public init() {}
+
+    public init(id: UInt32, due: Int64, title: String, status: StaticOptionalUnwidenedStatusEnum) {
+        self.id = id
+        self.due = due
+        self.title = title
+        self.status = status
+    }
 }
 
 // ======================================================================

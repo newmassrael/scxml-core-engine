@@ -127,10 +127,18 @@ public enum StaticSchemaPendingSignalLevelEnum: UInt8, CaseIterable, Sendable {
 }
 
 /// SCE Accepted Subset §2.15: a `record:Signal` datamodel value.
-public struct StaticSchemaPendingSignalRecord: Equatable, Sendable {
-    public var level: StaticSchemaPendingSignalLevelEnum
-    public var count: UInt16
-    public var urgent: Bool
+public struct StaticSchemaPendingSignalRecord: Equatable, Sendable, SceDefault {
+    public var level: StaticSchemaPendingSignalLevelEnum = StaticSchemaPendingSignalLevelEnum.allCases[0]
+    public var count: UInt16 = 0
+    public var urgent: Bool = false
+
+    public init() {}
+
+    public init(level: StaticSchemaPendingSignalLevelEnum, count: UInt16, urgent: Bool) {
+        self.level = level
+        self.count = count
+        self.urgent = urgent
+    }
 }
 
 // NL-to-IR Item C1 Path A: the typed `_event.data` payload channel for the
