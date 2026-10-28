@@ -61,7 +61,13 @@ source "$SCE_REPO_ROOT/scripts/lib/sce_codegen.sh"
 QUEUE_HISTORIES="$SCE_REPO_ROOT/target/queue-histories/kotlin"
 rm -rf "$QUEUE_HISTORIES"
 mkdir -p "$QUEUE_HISTORIES"
-SCE_QUEUE_HISTORY_DIR="$QUEUE_HISTORIES" ./gradlew --console=plain :sce-forge-runtime-kotlin:jvmTest \
+# The broadcast log's stress runs (ADR 0062) are written and emptied the same
+# way, to SCE_BROADCAST_HISTORY_DIR, by the same Gradle run.
+BROADCAST_HISTORIES="$SCE_REPO_ROOT/target/broadcast-histories/kotlin"
+rm -rf "$BROADCAST_HISTORIES"
+mkdir -p "$BROADCAST_HISTORIES"
+SCE_QUEUE_HISTORY_DIR="$QUEUE_HISTORIES" SCE_BROADCAST_HISTORY_DIR="$BROADCAST_HISTORIES" \
+    ./gradlew --console=plain :sce-forge-runtime-kotlin:jvmTest \
     || sce_gate_fail "Kotlin forge conformance"
 
 # 4 Lamport capacities recorded 3 times, 6 SCQ shapes recorded 25 times and 5
@@ -75,6 +81,17 @@ shopt -u nullglob
     || sce_gate_fail "Kotlin queue histories: ${#queue_histories[@]} written, expected at least 287"
 "$(sce_codegen_require "$SCE_REPO_ROOT")" check-queue-history "${queue_histories[@]}" \
     || sce_gate_fail "Kotlin queue histories are not linearizable"
+
+# 4 retention and reader shapes recorded 25 times. As above, a run that wrote
+# fewer would pass the judgement, so the count is held, and the histories are
+# judged by the command every backend's are.
+shopt -s nullglob
+broadcast_histories=("$BROADCAST_HISTORIES"/*.json)
+shopt -u nullglob
+(( ${#broadcast_histories[@]} >= 100 )) \
+    || sce_gate_fail "Kotlin broadcast-log histories: ${#broadcast_histories[@]} written, expected at least 100"
+"$(sce_codegen_require "$SCE_REPO_ROOT")" check-broadcast-history "${broadcast_histories[@]}" \
+    || sce_gate_fail "Kotlin broadcast-log histories are not linearizable"
 
 # ⚠ A gate that builds an artifact and does not look at the result is how this
 # workflow "came to be mirrored in name only" (forge-go.sh's words). Gradle

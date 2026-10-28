@@ -285,7 +285,12 @@ tasks.withType<Test>().configureEach {
     // Gradle does not know it: a gate that empties the directory and runs the
     // task again would otherwise find it UP-TO-DATE, the tests unrun and the
     // directory empty. Asking for histories therefore always runs the tests.
-    if (providers.environmentVariable("SCE_QUEUE_HISTORY_DIR").isPresent) {
+    // The broadcast log's stress runs (ADR 0062) write theirs the same way, to
+    // the directory SCE_BROADCAST_HISTORY_DIR names (BroadcastLogHistoryTest),
+    // and the same reasoning holds.
+    if (providers.environmentVariable("SCE_QUEUE_HISTORY_DIR").isPresent ||
+        providers.environmentVariable("SCE_BROADCAST_HISTORY_DIR").isPresent
+    ) {
         outputs.upToDateWhen { false }
     }
     // The queue contract is read at run time by path, so it is an input like
