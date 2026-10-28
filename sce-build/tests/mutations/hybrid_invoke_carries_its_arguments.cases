@@ -43,11 +43,19 @@ PY
 # staged beside it only after that parse. Without the input root every
 # candidate reads as unreadable and declares nothing — the defect the first
 # run of this fixture found on both template channels.
+#
+# A rebuilt generator reconfigures the tree, and the configure step runs it with
+# `--plan` on the same document and the same arguments to learn which files a
+# fixture produces. A mutant that dropped the input root from every run was
+# reported INCONCLUSIVE: the reconfigure failed (`rebuilding 'build.ninja':
+# subcommand failed`) before a test was built. So the mutant drops the roots from
+# the runs that write files, the build's own, and keeps them for a run that only
+# answers what it would write.
 
 mutation_case "candidates are not looked for under the input root" <<'PY'
 edit("sce-build/src/bin/sce_codegen.rs",
      "            .with_candidate_roots(input_root_override.map(PathBuf::from).into_iter().collect())",
-     "            .with_candidate_roots(Vec::new())")
+     "            .with_candidate_roots(if output_mode().holds_in_memory() { input_root_override.map(PathBuf::from).into_iter().collect() } else { Vec::new() })")
 PY
 
 # ── C++ AOT: the candidate is seeded by the invoke's metadata ──────
@@ -62,16 +70,17 @@ edit("tools/codegen/templates/invoke_methods.jinja2",
 PY
 
 # ── C++ AOT: an unreadable namelist still starts a candidate ───────
+#
+# The guard also declares `namelistTypedParams`, which the seeding after it reads, so
+# the whole call cannot go. Only the refusal is lifted, and only for an invoke with
+# candidates: the one that names none keeps it, as a static child's does.
 
 mutation_case "the C++ AOT starts a candidate whose namelist cannot be read" <<'PY'
 edit("tools/codegen/templates/invoke_methods.jinja2",
-     """{{ invoke_namelist_guard(invoke_info) }}
-
-                        // W3C SCXML 6.5: Generate child session ID
-""",
-     """
-                        // W3C SCXML 6.5: Generate child session ID
-""")
+     """                            if (!namelistValid) {
+                                // W3C SCXML 6.4.1: Invoke cancelled due to namelist validation failure""",
+     """                            if (!namelistValid && {{ 'false' if invoke_info.candidates else 'true' }}) {
+                                // W3C SCXML 6.4.1: Invoke cancelled due to namelist validation failure""")
 PY
 
 # ── C11: the same two ──────────────────────────────────────────────
