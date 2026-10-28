@@ -22,6 +22,8 @@ package com.sce.integration
 import com.sce.integration.a_computed_event_name_is_matched_like_any_other.AComputedEventNameIsMatchedLikeAnyOtherState
 import com.sce.integration.a_computed_event_name_is_matched_like_any_other.AComputedEventNameIsMatchedLikeAnyOtherStateMachine
 import com.sce.w3c.W3CTestBase
+import com.sce.w3c.driveOnVirtualTime
+import com.sce.w3c.initializeOnVirtualTime
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
@@ -33,15 +35,8 @@ class AComputedEventNameIsMatchedLikeAnyOtherTest {
     @Test
     fun aComputedNameIsMatchedByTokenAndToldWhole() {
         val sm = AComputedEventNameIsMatchedLikeAnyOtherStateMachine(W3CTestBase.createEngine())
-        sm.initialize()
-
-        if (!sm.isInFinalState) {
-            val deadline = System.currentTimeMillis() + 2000L
-            while (!sm.isInFinalState && System.currentTimeMillis() < deadline) {
-                Thread.sleep(10)
-                sm.tick()
-            }
-        }
+        sm.initializeOnVirtualTime()
+        sm.driveOnVirtualTime(2000L)
 
         assertEquals(
             AComputedEventNameIsMatchedLikeAnyOtherState.Pass,

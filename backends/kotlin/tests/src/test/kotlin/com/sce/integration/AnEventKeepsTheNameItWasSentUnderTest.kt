@@ -20,6 +20,8 @@ package com.sce.integration
 import com.sce.integration.an_event_keeps_the_name_it_was_sent_under.AnEventKeepsTheNameItWasSentUnderState
 import com.sce.integration.an_event_keeps_the_name_it_was_sent_under.AnEventKeepsTheNameItWasSentUnderStateMachine
 import com.sce.w3c.W3CTestBase
+import com.sce.w3c.driveOnVirtualTime
+import com.sce.w3c.initializeOnVirtualTime
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
@@ -31,15 +33,8 @@ class AnEventKeepsTheNameItWasSentUnderTest {
     @Test
     fun aNameTheDocumentDoesNotWriteIsToldWhole() {
         val sm = AnEventKeepsTheNameItWasSentUnderStateMachine(W3CTestBase.createEngine())
-        sm.initialize()
-
-        if (!sm.isInFinalState) {
-            val deadline = System.currentTimeMillis() + 2000L
-            while (!sm.isInFinalState && System.currentTimeMillis() < deadline) {
-                Thread.sleep(10)
-                sm.tick()
-            }
-        }
+        sm.initializeOnVirtualTime()
+        sm.driveOnVirtualTime(2000L)
 
         assertEquals(
             AnEventKeepsTheNameItWasSentUnderState.Pass,

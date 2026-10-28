@@ -15,6 +15,8 @@ package com.sce.integration
 import com.sce.integration.a_send_reaches_only_what_its_target_names.ASendReachesOnlyWhatItsTargetNamesState
 import com.sce.integration.a_send_reaches_only_what_its_target_names.ASendReachesOnlyWhatItsTargetNamesStateMachine
 import com.sce.w3c.W3CTestBase
+import com.sce.w3c.driveOnVirtualTime
+import com.sce.w3c.initializeOnVirtualTime
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.DisplayName
@@ -43,13 +45,8 @@ class ASendReachesOnlyWhatItsTargetNamesTest {
     @Test
     fun aSendReachesOnlyWhatItsTargetNames() {
         val sm = ASendReachesOnlyWhatItsTargetNamesStateMachine(W3CTestBase.createEngine())
-        sm.initialize()
-
-        val deadline = System.currentTimeMillis() + 2000L
-        while (!sm.isInFinalState && System.currentTimeMillis() < deadline) {
-            sm.tick()
-            Thread.sleep(10)
-        }
+        sm.initializeOnVirtualTime()
+        sm.driveOnVirtualTime(2000L)
 
         assertTrue(sm.isInFinalState, "the machine never completed (parked in ${sm.currentState.value})")
         assertEquals(ASendReachesOnlyWhatItsTargetNamesState.Done, sm.terminalState, "the run must end in `done`")

@@ -14,6 +14,8 @@ package com.sce.integration
 import com.sce.integration.a_delayed_send_reaches_what_its_target_names.ADelayedSendReachesWhatItsTargetNamesState
 import com.sce.integration.a_delayed_send_reaches_what_its_target_names.ADelayedSendReachesWhatItsTargetNamesStateMachine
 import com.sce.w3c.W3CTestBase
+import com.sce.w3c.driveOnVirtualTime
+import com.sce.w3c.initializeOnVirtualTime
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.DisplayName
@@ -25,13 +27,8 @@ class ADelayedSendReachesWhatItsTargetNamesTest {
     @Test
     fun aDelayedSendReachesWhatItsTargetNames() {
         val sm = ADelayedSendReachesWhatItsTargetNamesStateMachine(W3CTestBase.createEngine())
-        sm.initialize()
-
-        val deadline = System.currentTimeMillis() + 3000L
-        while (!sm.isInFinalState && System.currentTimeMillis() < deadline) {
-            sm.tick()
-            Thread.sleep(5)
-        }
+        sm.initializeOnVirtualTime()
+        sm.driveOnVirtualTime(3000L)
 
         assertTrue(sm.isInFinalState, "the machine never completed (parked in ${sm.currentState.value})")
         assertEquals(ADelayedSendReachesWhatItsTargetNamesState.Done, sm.terminalState, "the run must end in `done`")

@@ -14,6 +14,8 @@ package com.sce.integration
 import com.sce.integration.a_target_expression_is_routed_as_its_literal_is.ATargetExpressionIsRoutedAsItsLiteralIsState
 import com.sce.integration.a_target_expression_is_routed_as_its_literal_is.ATargetExpressionIsRoutedAsItsLiteralIsStateMachine
 import com.sce.w3c.W3CTestBase
+import com.sce.w3c.driveOnVirtualTime
+import com.sce.w3c.initializeOnVirtualTime
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.DisplayName
@@ -25,13 +27,8 @@ class ATargetExpressionIsRoutedAsItsLiteralIsTest {
     @Test
     fun aTargetExpressionIsRoutedAsItsLiteralIs() {
         val sm = ATargetExpressionIsRoutedAsItsLiteralIsStateMachine(W3CTestBase.createEngine())
-        sm.initialize()
-
-        val deadline = System.currentTimeMillis() + 3000L
-        while (!sm.isInFinalState && System.currentTimeMillis() < deadline) {
-            sm.tick()
-            Thread.sleep(5)
-        }
+        sm.initializeOnVirtualTime()
+        sm.driveOnVirtualTime(3000L)
 
         assertTrue(sm.isInFinalState, "the machine never completed (parked in ${sm.currentState.value})")
         assertEquals(ATargetExpressionIsRoutedAsItsLiteralIsState.Done, sm.terminalState, "the run must end in `done`")
