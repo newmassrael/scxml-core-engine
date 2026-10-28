@@ -20,10 +20,17 @@ mutation_tests -p sce-build --features cli --lib
 mutation_targets sce-build/src/forge/xsd_validator.rs
 mutation_oracles sce-build/src/forge/xsd_validator.rs
 
+# The placement still runs and its answer is dropped: the workspace denies
+# warnings, so a mutant that left `placed_where_written` with no caller would
+# make it and the helpers only it calls dead code, and would not compile.
+
 mutation_case "a violation keeps the row libxml2 gave" <<'PY'
 edit("sce-build/src/forge/xsd_validator.rs",
      r'''                    Some(written) => placed_where_written(diag, written),''',
-     r'''                    Some(_) => diag,''')
+     r'''                    Some(written) => {
+                        let _ = placed_where_written(diag.clone(), written);
+                        diag
+                    }''')
 PY
 
 mutation_case "an attribute violation stands at its element" <<'PY'

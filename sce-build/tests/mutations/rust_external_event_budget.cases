@@ -33,10 +33,14 @@ mutation_oracles backends/rust/tests/tests/external_chain_is_bounded.rs
 
 # ── The refusal itself ──────────────────────────────────────────────
 
+# The comparison stays written and is made never true with `&& false`: the
+# workspace denies warnings, so an `if false` would leave `taken` assigned and
+# never read, and the mutant would not compile.
+
 mutation_case "the drain has no budget at all" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
      "            if taken >= self.max_external_events_per_call {",
-     "            if false {")
+     "            if taken >= self.max_external_events_per_call && false {")
 PY
 
 mutation_case "the budget is one event more than it says" <<'PY'
@@ -75,7 +79,7 @@ PY
 mutation_case "the cut does not say which event it was still taking" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
      "            self.last_truncated_event = head;",
-     "            self.last_truncated_event = None;")
+     "            self.last_truncated_event = head.filter(|_| false);")
 PY
 
 # ── The budget is the invocation's own, from a clean start ──────────
@@ -99,7 +103,7 @@ PY
 mutation_case "the scheduler's same-instant pops have no budget" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
      "                    if popped_due_at_reading >= self.max_external_events_per_call {",
-     "                    if false {")
+     "                    if popped_due_at_reading >= self.max_external_events_per_call && false {")
 PY
 
 # The bound must count entries due AT the reading, not every entry popped at it.

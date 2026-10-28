@@ -32,5 +32,5 @@ PY
 mutation_case "a published list of records is handed out as a copy" <<'PY'
 edit("sce-build/src/forge/static_lowering.rs",
      "        Some(format!(\"const std::vector<{record}>&\"))",
-     "        None")
+     "        let _ = record;\n        None")
 PY
