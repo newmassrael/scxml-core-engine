@@ -2985,11 +2985,13 @@ const CHAIN_HAS_SET: &[&str] = &[
     "codec_chain_has_tagged.scxml",
 ];
 
-/// `generate --inline-encode` (docs/adr/0061) marks the function that writes each
+/// `generate --inline-encode` (docs/adr/0061) marks the functions that write each
 /// codec `#[inline(always)]` and changes nothing else. A codec set that nests
 /// bodies, lists, a chain and a variant, generated with it, still compiles as
-/// a program, and the text the option adds is the attribute alone: with the
-/// option off nothing is marked, and the two outputs differ in no other line.
+/// a program, and the text the option adds is the attribute, the window sink's
+/// name and the one function that tells the trait to write a window through that
+/// sink: with the option off nothing is marked, and the two outputs differ in no
+/// other line.
 #[test]
 fn inline_encode_marks_the_writing_functions_and_changes_nothing_else() {
     let dir = resource_dir();
@@ -3008,17 +3010,29 @@ fn inline_encode_marks_the_writing_functions_and_changes_nothing_else() {
             "{name}: marked with the option off"
         );
         // The window is written through the sink that asks to be inlined when the
-        // codec's writes are; that name is the only other difference.
-        let kept: Vec<String> = inlined
+        // codec's writes are, and the trait is told so by one function; those
+        // are the only other differences.
+        const WINDOW_CHOICE: &str = "\n    fn write_window(src: &S, window: &mut [u8]) -> Result<usize, CodecError> {\n        Self::write_window(src, window)\n    }\n";
+        let kept: String = inlined
             .lines()
             .filter(|l| l.trim() != "#[inline(always)]")
-            .map(|l| l.replace("codec::WindowSink::new", "codec::SliceSink::new"))
+            .map(|l| {
+                format!(
+                    "{}\n",
+                    l.replace("codec::WindowSink::new", "codec::SliceSink::new")
+                )
+            })
             .collect();
-        marked += inlined.lines().count() - kept.len();
+        marked += inlined.lines().count() - kept.lines().count();
+        assert!(
+            kept.contains(WINDOW_CHOICE) == inlined.contains("SourceWrite<S> for"),
+            "{name}: the option did not choose the window sink for the trait"
+        );
+        let kept = kept.replace(WINDOW_CHOICE, "");
         assert_eq!(
-            kept,
-            plain.lines().map(str::to_string).collect::<Vec<_>>(),
-            "{name}: the option changed more than the attribute and the window's sink"
+            kept.lines().collect::<Vec<_>>(),
+            plain.lines().collect::<Vec<_>>(),
+            "{name}: the option changed more than the attribute, the window's sink and its choice"
         );
     }
     assert!(marked > 0, "no function was marked");

@@ -91,17 +91,34 @@ pub(super) fn measure_impl(name: &str, lt: &str, trait_name: &str, inline_encode
     } else {
         ("", "SliceSink")
     };
+    // The trait's own `write_window` goes through `SliceSink`; a codec whose
+    // writes fold into the caller says the window sink that does the same, by
+    // way of the inherent function of that name (which an inherent call
+    // resolves to before the trait's).
+    let window_choice = if inline_encode {
+        format!(
+            "\n{inline}\
+             \x20   fn write_window(src: &S, window: &mut [u8]) -> Result<usize, CodecError> {{\n\
+             \x20       Self::write_window(src, window)\n\
+             \x20   }}\n"
+        )
+    } else {
+        String::new()
+    };
     format!(
         "impl{generics} ::sce_forge_runtime::codec::SourceWrite<S> for {name}{lt} {{\n\
+         {inline}\
          \x20   fn write<K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {{\n\
          \x20       Self::write_source(src, w)\n\
          \x20   }}\n\
+         {window_choice}\
          }}\n\n\
          #[allow(dead_code)]\n\
          impl{lt} {name}{lt} {{\n\
          \x20   /// The size of the frame [`Self::encode_source`] writes for `src`, found\n\
          \x20   /// with nothing written, or the refusal that encode would give. The result\n\
          \x20   /// writes the frame into a window of exactly that size and cannot fail.\n\
+         {inline}\
          \x20   pub fn measure<S: {trait_name} + ?Sized>(src: &S) -> Result<::sce_forge_runtime::codec::Measured<'_, Self, S>, CodecError> {{\n\
          \x20       ::sce_forge_runtime::codec::measure(src)\n\
          \x20   }}\n\n\

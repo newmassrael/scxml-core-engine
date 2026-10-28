@@ -807,6 +807,17 @@ pub const fn vle_len_u64(v: u64) -> usize {
 pub trait SourceWrite<S: ?Sized> {
     /// The skeleton of the codec, run into any sink.
     fn write<K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError>;
+
+    /// The skeleton run into `window` through the sink the codec chooses, and the
+    /// bytes it wrote. A codec generated to fold its writes into the caller
+    /// (`--inline-encode`) chooses the sink that does the same; any other writes
+    /// through [`SliceSink`].
+    #[inline]
+    fn write_window(src: &S, window: &mut [u8]) -> Result<usize, CodecError> {
+        let mut sink = SliceSink::new(window);
+        Self::write(src, &mut sink)?;
+        Ok(sink.position())
+    }
 }
 
 /// A source that has been counted: it passed every refusal of the encode, and the
@@ -839,15 +850,15 @@ impl<'s, C: SourceWrite<S>, S: ?Sized> Measured<'s, C, S> {
     /// the same thing the second time as the first (its accessors are reads of
     /// a value, and a source that changes under the encode has broken that, see
     /// docs/adr/0061 §3). It never writes outside the window.
+    #[inline(always)]
     pub fn write_into(self, window: &mut [u8]) {
         assert!(
             window.len() == self.len,
             "the window is not the length Measured::len reported"
         );
-        let mut sink = SliceSink::new(window);
-        let written = C::write(self.src, &mut sink);
+        let written = C::write_window(self.src, window);
         assert!(
-            written.is_ok() && sink.position() == self.len,
+            matches!(written, Ok(n) if n == self.len),
             "the source changed between measure and write_into"
         );
     }
@@ -866,17 +877,17 @@ impl<'s, C: SourceWrite<S>, S: ?Sized> Measured<'s, C, S> {
 /// must leave its buffer untouched on a refusal, or that must reserve exactly
 /// the frame's size, uses [`measure`] and [`Measured::write_into`] instead, at
 /// the price of the count.
+#[inline(always)]
 pub fn write_window<C: SourceWrite<S>, S: ?Sized>(
     src: &S,
     window: &mut [u8],
 ) -> Result<usize, CodecError> {
-    let mut sink = SliceSink::new(window);
-    C::write(src, &mut sink)?;
-    Ok(sink.position())
+    C::write_window(src, window)
 }
 
 /// Count `src` as codec `C` writes it: the size of the frame, or the refusal the
 /// encode would give, with nothing written anywhere.
+#[inline(always)]
 pub fn measure<C: SourceWrite<S>, S: ?Sized>(src: &S) -> Result<Measured<'_, C, S>, CodecError> {
     let mut count = CountSink::new();
     C::write(src, &mut count)?;
@@ -1399,6 +1410,47 @@ mod tests {
             write_window::<Pair, _>(&Held(1, b"123456789"), &mut window),
             Err(CodecError::LengthOutOfRange)
         );
+    }
+
+    /// A codec that chooses the sink its window is written through, and counts
+    /// the times it was asked to.
+    static CHOSEN_WINDOWS: core::sync::atomic::AtomicUsize =
+        core::sync::atomic::AtomicUsize::new(0);
+
+    struct Chosen;
+
+    impl<S: PairSource + ?Sized> SourceWrite<S> for Chosen {
+        fn write<K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {
+            Pair::write(src, w)
+        }
+
+        fn write_window(src: &S, window: &mut [u8]) -> Result<usize, CodecError> {
+            CHOSEN_WINDOWS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+            let mut sink = WindowSink::new(window);
+            Self::write(src, &mut sink)?;
+            Ok(sink.position())
+        }
+    }
+
+    #[test]
+    fn both_window_writes_go_through_the_sink_the_codec_chooses() {
+        use core::sync::atomic::Ordering::Relaxed;
+        let held = Held(300, b"abc");
+        let mut by_default = [0u8; 16];
+        let n = write_window::<Pair, _>(&held, &mut by_default).unwrap();
+
+        let before = CHOSEN_WINDOWS.load(Relaxed);
+        let mut chosen = [0u8; 16];
+        assert_eq!(write_window::<Chosen, _>(&held, &mut chosen), Ok(n));
+        assert_eq!(CHOSEN_WINDOWS.load(Relaxed), before + 1);
+
+        let mut exact = [0u8; 16];
+        measure::<Chosen, _>(&held)
+            .unwrap()
+            .write_into(&mut exact[..n]);
+        assert_eq!(CHOSEN_WINDOWS.load(Relaxed), before + 2);
+        assert_eq!(by_default[..n], chosen[..n]);
+        assert_eq!(by_default[..n], exact[..n]);
     }
 
     #[test]

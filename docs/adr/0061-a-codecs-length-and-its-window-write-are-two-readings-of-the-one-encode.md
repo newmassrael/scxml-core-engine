@@ -289,6 +289,55 @@ discards. A caller that must leave its buffer untouched, or reserve exactly the 
 `write_into`. The conformance matrix holds, for every codec, the same bytes and count as `encode_source`, the same
 refusal, and an overflow in a window a byte short.
 
+## The two-phase path was five calls, not two passes (2026-10-28)
+
+The flat plan tape that the staged-design section left open was tried as a question first: what could it save? The
+counting pass alone (`measure(..).len()`, with the Parts the consumer builds) is 252 instructions on the consumer's
+plain Reply, and `measure` followed by `write_into` was 917, more than `encode_source` (773), which runs the same two
+passes. The difference was not the passes. `SourceWrite::write`, the generated `X::measure`, the runtime's `measure`
+and `Measured::write_into` were each a function, so each pass was a call into code that could see neither the
+Parts nor the other pass, and nothing derived in the first was known in the second.
+
+Making that chain one inlinable body, and nothing else, gives (instructions executed, the Reply of the earlier
+sections, bytes identical to `encode_source`; QEMU Cortex-M7, opt-level s, LTO):
+
+| path | before | `--inline-encode` | default generation |
+|---|---|---|---|
+| `measure` then `write_into` | 917 | 569 | 961 |
+| `encode_source` | 773 | 773 | 966 |
+| `write_window`, one pass | 476 | 476 | 743 |
+| hand-written writer | 442 | 442 | 442 |
+
+The tape is therefore not built. What it would keep, the compiler already shares once both passes are in one body:
+the values derived from the Parts, and the Parts themselves. A bound computed before the measurement (252 for the
+count plus 442 for the best write, 694) was wrong in a useful direction: it counted the Parts twice and could not see
+the fusion, and 569 is below it. The two-phase path, which is the one whose refusal comes before any byte and whose
+window is exactly the frame, costs 93 instructions more than the one-pass window and 127 more than the hand writer.
+
+What changed to get there:
+
+- `Measured::write_into`, `measure` and the free `write_window` are `#[inline(always)]`. Each is a few statements
+  around a call; none of them contains the codec.
+- `SourceWrite` gains `write_window`, with a body (a `SliceSink` over the window, the skeleton, the position). A codec
+  generated with `--inline-encode` overrides it to say `WindowSink`, as the generated `X::write_window` already did, so
+  the choice of sink stays with the codec and `write_into` does not impose an always-inlined sink on a consumer that
+  did not ask for one. `SourceWrite::write` and `X::measure` carry the attribute under the same option.
+- Laws: a codec that overrides `write_window` is the one both `write_into` and `write_window` call (runtime unit
+  test); the generated set with the option compiles under the lints of the others, and differs from the set without
+  it by the attribute, the sink's name and that one function.
+
+The default generation is not made worse by this: its `measure` then `write_into` is now level with `encode_source`
+(961 against 966), where the calls made it 144 more in the inlined configuration. Its `encode_source` and
+`write_window` rows are higher than the 936 and 714 recorded earlier in this ADR; the cause of that 30 was not
+isolated.
+
+**Removing the per-write capacity test** (an estimated 5%) was examined and is not done. In safe Rust it cannot be
+merged across writes, because the window is exactly the frame and a test for a run of writes would have to be for the
+run's largest size, which refuses a window that is exactly right. Removing it needs `unsafe`, and the contract of
+`write_into` (a source that changed between the two phases panics and never writes outside the window) is the property
+that test supplies. The runtime has no `unsafe`; giving it up for a few percent is the owner's decision and was not
+taken.
+
 ## Considered alternatives
 
 - **A hand-written `encoded_len` beside `write_source`.** Two statements of the grammar; refused (the same ground as
