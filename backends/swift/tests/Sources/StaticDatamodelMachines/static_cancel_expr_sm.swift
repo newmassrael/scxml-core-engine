@@ -533,8 +533,8 @@ public final class StaticCancelExprPolicy: StatePolicy {
                 sceBlock: do {
 
                 do {
-                    var sceFailure = Failure()
-                    let cancelSendID = Checked.mul(&sceFailure, self.vScale, 2000000000) > 1 ? "a" : "b"
+                    let sceFailure = Failure()
+                    let cancelSendID = Checked.mul(sceFailure, self.vScale, 2000000000) > 1 ? "a" : "b"
                     if sceFailure.failed {
                         engine.raise(EventWithMetadata.platformError(StaticCancelExprEvent.errorExecution, message: "<cancel> sendidexpr failed to evaluate"))
                         break sceBlock  // W3C SCXML 4.9: the error ends the block
@@ -549,7 +549,7 @@ public final class StaticCancelExprPolicy: StatePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in var sceFailure = Failure(); let sceValue: String = Checked.bounded(&sceFailure, "b", capacity: 8); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticCancelExprEvent.errorExecution, message: "<assign location='which'>: an integer operation overflowed or failed")); return true }; self.vWhich = sceValue; return false }()) {
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, "b", capacity: 8); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticCancelExprEvent.errorExecution, message: "<assign location='which'>: an integer operation overflowed or failed")); return true }; self.vWhich = sceValue; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -559,7 +559,7 @@ public final class StaticCancelExprPolicy: StatePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in var sceFailure = Failure(); let sceValue: String = Checked.bounded(&sceFailure, "", capacity: 8); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticCancelExprEvent.errorExecution, message: "<assign location='which'>: an integer operation overflowed or failed")); return true }; self.vWhich = sceValue; return false }()) {
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, "", capacity: 8); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticCancelExprEvent.errorExecution, message: "<assign location='which'>: an integer operation overflowed or failed")); return true }; self.vWhich = sceValue; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -569,7 +569,7 @@ public final class StaticCancelExprPolicy: StatePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in var sceFailure = Failure(); let sceValue: UInt32 = Checked.add(&sceFailure, self.vAFired, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticCancelExprEvent.errorExecution, message: "<assign location='a_fired'>: an integer operation overflowed or failed")); return true }; self.vAFired = sceValue; return false }()) {
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vAFired, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticCancelExprEvent.errorExecution, message: "<assign location='a_fired'>: an integer operation overflowed or failed")); return true }; self.vAFired = sceValue; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -579,7 +579,7 @@ public final class StaticCancelExprPolicy: StatePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in var sceFailure = Failure(); let sceValue: UInt32 = Checked.add(&sceFailure, self.vBFired, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticCancelExprEvent.errorExecution, message: "<assign location='b_fired'>: an integer operation overflowed or failed")); return true }; self.vBFired = sceValue; return false }()) {
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vBFired, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticCancelExprEvent.errorExecution, message: "<assign location='b_fired'>: an integer operation overflowed or failed")); return true }; self.vBFired = sceValue; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -589,7 +589,7 @@ public final class StaticCancelExprPolicy: StatePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in var sceFailure = Failure(); let sceValue: UInt32 = Checked.add(&sceFailure, self.vRefusals, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticCancelExprEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; self.vRefusals = sceValue; return false }()) {
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vRefusals, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticCancelExprEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; self.vRefusals = sceValue; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

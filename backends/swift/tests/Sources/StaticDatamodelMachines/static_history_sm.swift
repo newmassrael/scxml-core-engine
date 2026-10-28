@@ -777,7 +777,7 @@ public final class StaticHistoryPolicy: StatePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in var sceFailure = Failure(); let sceValue: UInt8 = Checked.add(&sceFailure, self.vResumed, 1); if sceFailure.failed { return true }; self.vResumed = sceValue; return false }()) {
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt8 = Checked.add(sceFailure, self.vResumed, 1); if sceFailure.failed { return true }; self.vResumed = sceValue; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

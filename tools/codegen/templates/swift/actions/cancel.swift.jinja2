@@ -12,7 +12,7 @@
 {% elif action.native_sendid %}
                 do {
 {% if action.native_sendid_fails %}
-                    var sceFailure = Failure()
+                    let sceFailure = Failure()
 {% endif %}
                     let cancelSendID = {{ action.native_sendid }}
 {% if action.native_sendid_fails %}

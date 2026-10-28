@@ -538,7 +538,7 @@ public final class StaticReal32Policy: StatePolicy {
 
                 // SCE Accepted Subset §2.15: <sce:append target="samples">
 
-                if ({ () -> Bool in var sceFailure = Failure(); if self.vSamples.count >= 3 { return true }; let sceValue = Checked.element(of: self.vSamples, self.vTenth + 0.2); if sceFailure.failed { return true }; self.vSamples.append(sceValue); return false }()) {
+                if ({ () -> Bool in let sceFailure = Failure(); if self.vSamples.count >= 3 { return true }; let sceValue = Checked.element(of: self.vSamples, self.vTenth + 0.2); if sceFailure.failed { return true }; self.vSamples.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -549,7 +549,7 @@ public final class StaticReal32Policy: StatePolicy {
 
                 // SCE Accepted Subset §2.15: <sce:append target="samples">
 
-                if ({ () -> Bool in var sceFailure = Failure(); if self.vSamples.count >= 3 { return true }; let sceValue = Checked.element(of: self.vSamples, Float(self.vWide)); if sceFailure.failed { return true }; self.vSamples.append(sceValue); return false }()) {
+                if ({ () -> Bool in let sceFailure = Failure(); if self.vSamples.count >= 3 { return true }; let sceValue = Checked.element(of: self.vSamples, Float(self.vWide)); if sceFailure.failed { return true }; self.vSamples.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

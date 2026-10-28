@@ -481,7 +481,7 @@ public final class StaticEnumPolicy: StatePolicy {
 
 
 
-                if ({ () -> Bool in var sceFailure = Failure(); let sceValue: UInt32 = Checked.add(&sceFailure, self.vChanges, 1); if sceFailure.failed { return true }; self.vChanges = sceValue; return false }()) {
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vChanges, 1); if sceFailure.failed { return true }; self.vChanges = sceValue; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -499,7 +499,7 @@ public final class StaticEnumPolicy: StatePolicy {
 
 
 
-                if ({ () -> Bool in var sceFailure = Failure(); let sceValue: UInt32 = Checked.add(&sceFailure, self.vChanges, 1); if sceFailure.failed { return true }; self.vChanges = sceValue; return false }()) {
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vChanges, 1); if sceFailure.failed { return true }; self.vChanges = sceValue; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -513,7 +513,7 @@ public final class StaticEnumPolicy: StatePolicy {
 
 
 
-                if ({ () -> Bool in var sceFailure = Failure(); let sceValue: UInt32 = Checked.add(&sceFailure, self.vChanges, 1); if sceFailure.failed { return true }; self.vChanges = sceValue; return false }()) {
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vChanges, 1); if sceFailure.failed { return true }; self.vChanges = sceValue; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -531,7 +531,7 @@ public final class StaticEnumPolicy: StatePolicy {
 
 
 
-                if ({ () -> Bool in var sceFailure = Failure(); let sceValue: UInt32 = Checked.add(&sceFailure, self.vChanges, 1); if sceFailure.failed { return true }; self.vChanges = sceValue; return false }()) {
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vChanges, 1); if sceFailure.failed { return true }; self.vChanges = sceValue; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -549,7 +549,7 @@ public final class StaticEnumPolicy: StatePolicy {
 
 
 
-                if ({ () -> Bool in var sceFailure = Failure(); let sceValue: UInt32 = Checked.add(&sceFailure, self.vChanges, 1); if sceFailure.failed { return true }; self.vChanges = sceValue; return false }()) {
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vChanges, 1); if sceFailure.failed { return true }; self.vChanges = sceValue; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

@@ -491,7 +491,7 @@ public final class StaticRecordFieldsPolicy: StatePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in var sceFailure = Failure(); let sceValue: UInt8 = Checked.add(&sceFailure, self.vShown.dayOfMonth, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticRecordFieldsEvent.errorExecution, message: "<assign location='shown.dayOfMonth'>: an integer operation overflowed or failed")); return true }; self.vShown.dayOfMonth = sceValue; return false }()) {
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt8 = Checked.add(sceFailure, self.vShown.dayOfMonth, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticRecordFieldsEvent.errorExecution, message: "<assign location='shown.dayOfMonth'>: an integer operation overflowed or failed")); return true }; self.vShown.dayOfMonth = sceValue; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -520,7 +520,7 @@ public final class StaticRecordFieldsPolicy: StatePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in var sceFailure = Failure(); let sceValue: UInt16 = Checked.sub(&sceFailure, self.vShown.year, 5000); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticRecordFieldsEvent.errorExecution, message: "<assign location='shown.year'>: an integer operation overflowed or failed")); return true }; self.vShown.year = sceValue; return false }()) {
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt16 = Checked.sub(sceFailure, self.vShown.year, 5000); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticRecordFieldsEvent.errorExecution, message: "<assign location='shown.year'>: an integer operation overflowed or failed")); return true }; self.vShown.year = sceValue; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -534,7 +534,7 @@ public final class StaticRecordFieldsPolicy: StatePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in var sceFailure = Failure(); let sceValue: UInt32 = Checked.add(&sceFailure, self.vRefusals, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticRecordFieldsEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; self.vRefusals = sceValue; return false }()) {
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vRefusals, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticRecordFieldsEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; self.vRefusals = sceValue; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

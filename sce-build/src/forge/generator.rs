@@ -4737,9 +4737,26 @@ pub struct SwiftEventPayload {
 /// `_event.data`, at the width the schema declares: the property it is assigned to
 /// carries the type, so a field widened in its schema cannot keep being read at the
 /// old width.
-fn swift_payload_reader(f: &SchemaField) -> String {
+fn swift_payload_reader(
+    f: &SchemaField,
+    static_enums: &[crate::forge::static_lowering::StaticEnumType],
+) -> String {
     let id = &f.id;
     match f.sce_type.present_type() {
+        // An enum is the machine's own, lifted from the variant's declared name; a name
+        // the enum does not declare is a payload that does not fit its schema, refused
+        // as a number out of range is.
+        SceType::Enum(r) => {
+            let e = static_enum_of(static_enums, &r.alias);
+            format!(
+                "try {{ () throws -> {ty} in let name = try fields.text(\"{id}\"); \
+                 guard let variant = {ty}(declaredName: name) else {{ \
+                 throw PayloadRefusal(\"'{id}' (\\(name)) is not a variant of {alias}\") }}; \
+                 return variant }}()",
+                ty = e.ty,
+                alias = r.alias
+            )
+        }
         // A 64-bit integer is read from the text of its digits, or from a number exact
         // in a double.
         SceType::Uint64 => format!("try fields.unsigned64(\"{id}\")"),
@@ -4753,7 +4770,6 @@ fn swift_payload_reader(f: &SchemaField) -> String {
         SceType::Bool => format!("try fields.truth(\"{id}\")"),
         SceType::String => format!("try fields.text(\"{id}\")"),
         SceType::Bytes => format!("try fields.bytes(\"{id}\")"),
-        SceType::Enum(_) => unreachable!("refused by SwiftTarget::unsupported"),
     }
 }
 
@@ -4762,6 +4778,8 @@ fn swift_payload_reader(f: &SchemaField) -> String {
 fn swift_payload_pair(f: &SchemaField) -> String {
     let id = &f.id;
     match f.sce_type.present_type() {
+        // The name the enum document declares for the value.
+        SceType::Enum(_) => format!(".text(\"{id}\", {id}.declaredName)"),
         SceType::Uint64 => format!(".unsigned64(\"{id}\", {id})"),
         SceType::Int64 => format!(".signed64(\"{id}\", {id})"),
         SceType::Uint8
@@ -4775,19 +4793,20 @@ fn swift_payload_pair(f: &SchemaField) -> String {
         SceType::Bool => format!(".truth(\"{id}\", {id})"),
         SceType::String => format!(".text(\"{id}\", {id})"),
         SceType::Bytes => format!(".bytes(\"{id}\", {id})"),
-        SceType::Enum(_) => unreachable!("refused by SwiftTarget::unsupported"),
     }
 }
 
 /// Build the [`SwiftEventPayload`] for `model`: the channel carries the events whose
 /// typed payload a lowered expression reads (`payload_events`, from the static
-/// lowering), and is inactive when none does.
+/// lowering), and is inactive when none does. An enum field is held in the machine's
+/// own type for the enum, which the static lowering declares (`static_enums`).
 ///
 /// A `sce-static` machine's guards are written by its lowering, so none is selected
 /// here (the Go and Rust builders select the typed guards of every other data model).
 pub fn build_swift_event_payload(
     model: &crate::model::SCXMLModel,
     payload_events: &std::collections::BTreeSet<String>,
+    static_enums: &[crate::forge::static_lowering::StaticEnumType],
 ) -> SwiftEventPayload {
     if payload_events.is_empty() {
         return SwiftEventPayload::default();
@@ -4813,19 +4832,30 @@ pub fn build_swift_event_payload(
         let mut inits = Vec::new();
         let mut pairs = Vec::new();
         for f in &schema.fields {
-            let ty = swift_type(f.sce_type.present_type());
-            let zero = match f.sce_type.present_type() {
-                SceType::Bool => "false",
-                SceType::String => "\"\"",
-                SceType::Bytes => "[]",
-                SceType::Float32 | SceType::Float64 => "0.0",
-                _ => "0",
+            let (ty, zero) = match f.sce_type.present_type() {
+                // The first case stands where the struct holds nothing yet.
+                SceType::Enum(r) => {
+                    let ty = static_enum_of(static_enums, &r.alias).ty.clone();
+                    let zero = format!("{ty}.allCases[0]");
+                    (ty, zero)
+                }
+                present => (
+                    swift_type(present).to_string(),
+                    match present {
+                        SceType::Bool => "false",
+                        SceType::String => "\"\"",
+                        SceType::Bytes => "[]",
+                        SceType::Float32 | SceType::Float64 => "0.0",
+                        _ => "0",
+                    }
+                    .to_string(),
+                ),
             };
             field_lines.push_str(&format!("    var {}: {ty} = {zero}\n", f.id));
             reads.push_str(&format!(
                 "            payload.{} = {}\n",
                 f.id,
-                swift_payload_reader(f)
+                swift_payload_reader(f, static_enums)
             ));
             params.push(format!("{}: {ty}", f.id));
             inits.push(format!("{0}: {0}", f.id));

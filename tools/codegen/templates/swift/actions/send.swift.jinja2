@@ -85,7 +85,7 @@
                     var sendEventName = ""
                     if sendArgError.isEmpty {
 {% if action.native_event_fails %}
-                        var sceFailure = Failure()
+                        let sceFailure = Failure()
 {% endif %}
                         sendEventName = {{ action.native_event }}
 {% if action.native_event_fails %}
@@ -109,7 +109,7 @@
                     var sendTargetKnown = false
                     if sendArgError.isEmpty {
 {% if action.native_target_fails %}
-                        var sceFailure = Failure()
+                        let sceFailure = Failure()
 {% endif %}
                         let sceRoute = {{ action.native_target }}
 {% if action.native_target_fails %}
@@ -143,7 +143,7 @@
                         // operation that fails, or a value that is no time, is the argument
                         // error, and the message is not scheduled under some default wait.
 {% if action.native_delay_fails %}
-                        var sceFailure = Failure()
+                        let sceFailure = Failure()
 {% endif %}
                         let sceDelay = {{ action.native_delay }}
 {% if action.native_delay_fails %}

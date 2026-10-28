@@ -532,8 +532,8 @@ public final class StaticSendIdlocationPolicy: StatePolicy {
                         // read as the CSS2 time it must be (ARCHITECTURE.md, "Durations"): an
                         // operation that fails, or a value that is no time, is the argument
                         // error, and the message is not scheduled under some default wait.
-                        var sceFailure = Failure()
-                        let sceDelay = Checked.mul(&sceFailure, self.vScale, 2000000000) > 1 ? "200ms" : "300ms"
+                        let sceFailure = Failure()
+                        let sceDelay = Checked.mul(sceFailure, self.vScale, 2000000000) > 1 ? "200ms" : "300ms"
                         if sceFailure.failed {
                             sendArgError = "<send> delayexpr could not be evaluated"
                         } else if let ms = parseDelayToMs(sceDelay) {
@@ -588,7 +588,7 @@ public final class StaticSendIdlocationPolicy: StatePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in var sceFailure = Failure(); let sceValue: UInt32 = Checked.add(&sceFailure, self.vFirstFired, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticSendIdlocationEvent.errorExecution, message: "<assign location='first_fired'>: an integer operation overflowed or failed")); return true }; self.vFirstFired = sceValue; return false }()) {
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vFirstFired, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticSendIdlocationEvent.errorExecution, message: "<assign location='first_fired'>: an integer operation overflowed or failed")); return true }; self.vFirstFired = sceValue; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -598,7 +598,7 @@ public final class StaticSendIdlocationPolicy: StatePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in var sceFailure = Failure(); let sceValue: UInt32 = Checked.add(&sceFailure, self.vSecondFired, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticSendIdlocationEvent.errorExecution, message: "<assign location='second_fired'>: an integer operation overflowed or failed")); return true }; self.vSecondFired = sceValue; return false }()) {
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vSecondFired, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticSendIdlocationEvent.errorExecution, message: "<assign location='second_fired'>: an integer operation overflowed or failed")); return true }; self.vSecondFired = sceValue; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -608,7 +608,7 @@ public final class StaticSendIdlocationPolicy: StatePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in var sceFailure = Failure(); let sceValue: UInt32 = Checked.add(&sceFailure, self.vRefusals, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticSendIdlocationEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; self.vRefusals = sceValue; return false }()) {
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vRefusals, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticSendIdlocationEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; self.vRefusals = sceValue; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

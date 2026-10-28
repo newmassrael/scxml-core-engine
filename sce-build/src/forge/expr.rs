@@ -91,7 +91,7 @@ pub enum ExprTarget {
     /// the transform fixtures exercise.
     C,
     /// Swift. Every integer type is the language's own fixed-width one, a checked
-    /// operation is `Checked.<op>(&sceFailure, …)` of the forge runtime, and a
+    /// operation is `Checked.<op>(sceFailure, …)` of the forge runtime, and a
     /// string is compared over its UTF-8 bytes (`expr/swift.rs`).
     Swift,
     /// ECMAScript, spelled for the Interpreter's script engine: the lowering
@@ -9287,12 +9287,12 @@ pub(crate) fn pass_failure_on(
         // `sceFailure` under the callee's own name, which the statement around it
         // throws, and answers the zero of the value's type in its place.
         ExprTarget::Swift => match swift::zero_of(ty.strip_quantity()) {
-            Some(zero) => format!("Checked.take(&sceFailure, fallback: {zero}, {{ try {call} }})"),
+            Some(zero) => format!("Checked.take(sceFailure, fallback: {zero}, {{ try {call} }})"),
             // A value the lattice does not type is a variant of an enum, whose zero is
             // its first case: the one value of the type that can be named without
             // naming the type.
             None if ty == InferredType::Unknown => {
-                format!("Checked.takeCase(&sceFailure, {{ try {call} }})")
+                format!("Checked.takeCase(sceFailure, {{ try {call} }})")
             }
             None => {
                 return Err(ExprError::UnsupportedConstruct {

@@ -4153,8 +4153,11 @@ fn render_swift(env: &mut Environment, model: &SCXMLModel) -> Result<String, Gen
         .collect();
     // The typed `_event.data` channel of the events a lowered expression reads a
     // field of (NL-to-IR Item C1 Path A).
-    let payload =
-        crate::forge::generator::build_swift_event_payload(model, &static_lowering.payload_events);
+    let payload = crate::forge::generator::build_swift_event_payload(
+        model,
+        &static_lowering.payload_events,
+        &static_lowering.enums,
+    );
     model_lowered.into_artifact_coordinates();
     let model = &model_lowered;
 

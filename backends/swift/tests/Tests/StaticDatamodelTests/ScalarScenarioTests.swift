@@ -348,6 +348,68 @@ private func recordReal32() -> Machine {
     )
 }
 
+private func enumNumber() -> Machine {
+    let policy = StaticEnumNumberPolicy()
+    return drive(
+        policy,
+        variables: [
+            "number": { integer(policy.number) },
+            "status": { .text(policy.status.declaredName) },
+            "checks": { integer(policy.checks) },
+            "refusals": { integer(policy.refusals) },
+        ]
+    )
+}
+
+private func payloadEnum() -> Machine {
+    let policy = StaticPayloadEnumPolicy()
+    return drive(
+        policy,
+        variables: [
+            "layout": { .text(policy.layout.declaredName) },
+            "zoom": { integer(policy.zoom) },
+            "agenda": { .bool(policy.agenda) },
+            "shown": { integer(policy.shown) },
+        ]
+    )
+}
+
+private func view(_ layout: String, _ zoom: UInt8) -> JSONValue {
+    .object([(key: "layout", value: .text(layout)), (key: "zoom", value: integer(zoom))])
+}
+
+private func wholePayload() -> Machine {
+    let policy = StaticWholePayloadPolicy()
+    return drive(
+        policy,
+        variables: [
+            "shown": { view(policy.shown.layout.declaredName, policy.shown.zoom) },
+            "seen": { .array(policy.seen.map { view($0.layout.declaredName, $0.zoom) }) },
+            "updates": { integer(policy.updates) },
+            "agendas": { integer(policy.agendas) },
+            "others": { integer(policy.others) },
+        ]
+    )
+}
+
+private func schemaRevision() -> Machine {
+    let policy = StaticSchemaRevisionPolicy()
+    return drive(
+        policy,
+        variables: [
+            "last": {
+                .object([
+                    (key: "level", value: integer(policy.last.level)),
+                    (key: "layout", value: .text(policy.last.layout.declaredName)),
+                    (key: "urgent", value: .bool(policy.last.urgent)),
+                ])
+            },
+            "taken": { integer(policy.taken) },
+            "refusals": { integer(policy.refusals) },
+        ]
+    )
+}
+
 // MARK: - The scenarios
 
 // A counter counts to its flag and lets go: guards, `<assign>`, `<if>` and `<elseif>`
@@ -463,6 +525,30 @@ private func recordReal32() -> Machine {
 // read by the host as the name its enum document declares.
 @Test func anEnumVariableHoldsAVariantOfItsEnum() {
     replay("static_enum", enumeration())
+}
+
+// MARK: - Enums in a payload
+
+// An enum field of a payload is held in the machine's own enum, lifted from the
+// variant's declared name, and an enum is read as the number its variant declares and
+// back, the number of a closed enum no variant declares being refused.
+@Test func anEnumIsReadAsItsNumberAndBack() {
+    replay("static_enum_number", enumNumber())
+}
+
+@Test func anEventsPayloadCarriesAnEnumField() {
+    replay("static_payload_enum", payloadEnum())
+}
+
+// A payload is taken into a record whole, and a list takes the record by name.
+@Test func aWholePayloadIsTakenIntoARecord() {
+    replay("static_whole_payload", wholePayload())
+}
+
+// A schema that grew is read with the defaults of the fields a later revision added
+// where the delivery lacks them.
+@Test func aSchemaThatGrewIsReadWithTheDefaultsOfItsLaterFields() {
+    replay("static_schema_revision", schemaRevision())
 }
 
 // MARK: - Event payloads

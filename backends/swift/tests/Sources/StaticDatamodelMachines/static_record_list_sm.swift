@@ -578,7 +578,7 @@ public final class StaticRecordListPolicy: StatePolicy {
 
                 // SCE Accepted Subset §2.15: <sce:append target="days">
 
-                if ({ () -> Bool in var sceFailure = Failure(); if self.vDays.count >= 3 { engine.raise(EventWithMetadata.platformError(StaticRecordListEvent.errorExecution, message: "<sce:append target='days'>: the list already holds its capacity of 3")); return true }; let sceValue = Checked.element(of: self.vDays, self.vDraft); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticRecordListEvent.errorExecution, message: "<sce:append target='days'>: an integer operation overflowed or failed")); return true }; self.vDays.append(sceValue); return false }()) {
+                if ({ () -> Bool in let sceFailure = Failure(); if self.vDays.count >= 3 { engine.raise(EventWithMetadata.platformError(StaticRecordListEvent.errorExecution, message: "<sce:append target='days'>: the list already holds its capacity of 3")); return true }; let sceValue = Checked.element(of: self.vDays, self.vDraft); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticRecordListEvent.errorExecution, message: "<sce:append target='days'>: an integer operation overflowed or failed")); return true }; self.vDays.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -596,7 +596,7 @@ public final class StaticRecordListPolicy: StatePolicy {
                     _ = d
 
 
-                if ({ () -> Bool in var sceFailure = Failure(); let sceValue: UInt32 = Checked.add(&sceFailure, self.vTotal, UInt32(d.dayOfMonth)); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticRecordListEvent.errorExecution, message: "<assign location='total'>: an integer operation overflowed or failed")); return true }; self.vTotal = sceValue; return false }()) {
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vTotal, UInt32(d.dayOfMonth)); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticRecordListEvent.errorExecution, message: "<assign location='total'>: an integer operation overflowed or failed")); return true }; self.vTotal = sceValue; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -617,7 +617,7 @@ public final class StaticRecordListPolicy: StatePolicy {
 
                 // SCE Accepted Subset §2.15: <sce:append target="copies">
 
-                if ({ () -> Bool in var sceFailure = Failure(); if self.vCopies.count >= 3 { engine.raise(EventWithMetadata.platformError(StaticRecordListEvent.errorExecution, message: "<sce:append target='copies'>: the list already holds its capacity of 3")); return true }; let sceValue = Checked.element(of: self.vCopies, d); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticRecordListEvent.errorExecution, message: "<sce:append target='copies'>: an integer operation overflowed or failed")); return true }; self.vCopies.append(sceValue); return false }()) {
+                if ({ () -> Bool in let sceFailure = Failure(); if self.vCopies.count >= 3 { engine.raise(EventWithMetadata.platformError(StaticRecordListEvent.errorExecution, message: "<sce:append target='copies'>: the list already holds its capacity of 3")); return true }; let sceValue = Checked.element(of: self.vCopies, d); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticRecordListEvent.errorExecution, message: "<sce:append target='copies'>: an integer operation overflowed or failed")); return true }; self.vCopies.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -658,7 +658,7 @@ public final class StaticRecordListPolicy: StatePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in var sceFailure = Failure(); let sceValue: UInt32 = Checked.add(&sceFailure, self.vErrors, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticRecordListEvent.errorExecution, message: "<assign location='errors'>: an integer operation overflowed or failed")); return true }; self.vErrors = sceValue; return false }()) {
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vErrors, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticRecordListEvent.errorExecution, message: "<assign location='errors'>: an integer operation overflowed or failed")); return true }; self.vErrors = sceValue; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

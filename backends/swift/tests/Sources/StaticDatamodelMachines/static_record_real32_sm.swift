@@ -504,7 +504,7 @@ public final class StaticRecordReal32Policy: StatePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in var sceFailure = Failure(); let sceValue: UInt32 = Checked.add(&sceFailure, self.vErrors, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticRecordReal32Event.errorExecution, message: "<assign location='errors'>: an integer operation overflowed or failed")); return true }; self.vErrors = sceValue; return false }()) {
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vErrors, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticRecordReal32Event.errorExecution, message: "<assign location='errors'>: an integer operation overflowed or failed")); return true }; self.vErrors = sceValue; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

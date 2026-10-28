@@ -502,7 +502,7 @@ public final class StaticListPolicy: StatePolicy {
 
                 // SCE Accepted Subset §2.15: <sce:append target="picked">
 
-                if ({ () -> Bool in var sceFailure = Failure(); if self.vPicked.count >= 3 { engine.raise(EventWithMetadata.platformError(StaticListEvent.errorExecution, message: "<sce:append target='picked'>: the list already holds its capacity of 3")); return true }; let sceValue = Checked.element(of: self.vPicked, self.pendingDayPickedPayload.dayOfMonth); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticListEvent.errorExecution, message: "<sce:append target='picked'>: an integer operation overflowed or failed")); return true }; self.vPicked.append(sceValue); return false }()) {
+                if ({ () -> Bool in let sceFailure = Failure(); if self.vPicked.count >= 3 { engine.raise(EventWithMetadata.platformError(StaticListEvent.errorExecution, message: "<sce:append target='picked'>: the list already holds its capacity of 3")); return true }; let sceValue = Checked.element(of: self.vPicked, self.pendingDayPickedPayload.dayOfMonth); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticListEvent.errorExecution, message: "<sce:append target='picked'>: an integer operation overflowed or failed")); return true }; self.vPicked.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -525,7 +525,7 @@ public final class StaticListPolicy: StatePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in var sceFailure = Failure(); let sceValue: UInt32 = Checked.add(&sceFailure, self.vRefusals, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticListEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; self.vRefusals = sceValue; return false }()) {
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vRefusals, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticListEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; self.vRefusals = sceValue; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

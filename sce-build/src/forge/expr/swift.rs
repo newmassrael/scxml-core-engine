@@ -370,7 +370,7 @@ fn emit_node(expr: &TypedExpr) -> Result<String, Refusal> {
                 ));
             };
             format!(
-                "Checked.at(&sceFailure, {}, {}, fallback: {zero})",
+                "Checked.at(sceFailure, {}, {}, fallback: {zero})",
                 emit(left, InferredType::Unknown)?,
                 emit(index, InferredType::Unknown)?,
             )
@@ -387,7 +387,7 @@ fn emit_node(expr: &TypedExpr) -> Result<String, Refusal> {
                 ));
             };
             format!(
-                "Checked.narrow(&sceFailure, {}, to: {}.self)",
+                "Checked.narrow(sceFailure, {}, to: {}.self)",
                 emit(left, left.ty)?,
                 int_type(signed, bits)
             )
@@ -404,7 +404,7 @@ fn emit_node(expr: &TypedExpr) -> Result<String, Refusal> {
                     first = format!("{}({first})", int_type(signed, bits));
                 }
             }
-            let mut operands = vec!["&sceFailure".to_string(), first];
+            let mut operands = vec!["sceFailure".to_string(), first];
             if let Some(right) = right {
                 operands.push(emit(right, expr.ty)?);
             }
@@ -665,11 +665,11 @@ mod tests {
         ctx.receives_failures = true;
         assert_eq!(
             emit_in("count + step", &ctx, int(false, 32)).unwrap(),
-            "Checked.add(&sceFailure, count, step)"
+            "Checked.add(sceFailure, count, step)"
         );
         assert_eq!(
             emit_in("count - 1", &ctx, int(false, 32)).unwrap(),
-            "Checked.sub(&sceFailure, count, 1)"
+            "Checked.sub(sceFailure, count, 1)"
         );
     }
 

@@ -10474,21 +10474,21 @@ impl StaticTarget for SwiftTarget {
                 "the variant `{variant}` of the enum `{enum_name}`, a name Swift reserves"
             ));
         }
-        // An event's typed payload is read through a struct of its schema's scalar
-        // fields, each named as the author wrote it: one Swift reserves cannot be a
-        // property, and an enum or an optional field is not spelled yet.
+        // An event's typed payload is read through a struct of its schema's fields, each
+        // named as the author wrote it: one Swift reserves cannot be a property, and an
+        // optional field is not spelled yet.
         if let Some((schema, field)) = model
             .imported_event_schemas
             .values()
             .flat_map(|schema| schema.fields.iter().map(move |field| (schema, field)))
             .find(|(_, field)| {
-                !matches!(&field.sce_type, FieldType::Scalar(ty) if !matches!(ty, SceType::Enum(_)))
+                matches!(field.sce_type, FieldType::Optional { .. })
                     || crate::reader_names::is_reserved_word(Language::Swift, &field.id)
             })
         {
             return Some(format!(
-                "the field `{}` of the event schema `{}`, an enum, an optional value or a name \
-                 Swift reserves",
+                "the field `{}` of the event schema `{}`, an optional value or a name Swift \
+                 reserves",
                 field.id, schema.name
             ));
         }
@@ -10682,10 +10682,10 @@ impl StaticTarget for SwiftTarget {
     // The bound a string variable keeps, counted in UTF-8 bytes
     // (`Checked.bounded`, which records the failure and answers the empty text).
     fn bounded_string(&self, value: &str, capacity: u32) -> String {
-        format!("Checked.bounded(&sceFailure, {value}, capacity: {capacity})")
+        format!("Checked.bounded(sceFailure, {value}, capacity: {capacity})")
     }
     fn bounded_bytes(&self, value: &str, capacity: u32) -> String {
-        format!("Checked.bounded(&sceFailure, {value}, capacity: {capacity})")
+        format!("Checked.bounded(sceFailure, {value}, capacity: {capacity})")
     }
     fn assign(&self, target: &str, value: &str) -> String {
         format!("{target} = {value}")
@@ -10722,7 +10722,7 @@ impl StaticTarget for SwiftTarget {
         failed: &str,
     ) -> String {
         format!(
-            "{{ () -> Bool in var sceFailure = Failure(); \
+            "{{ () -> Bool in let sceFailure = Failure(); \
              if {target}.count >= {capacity} {{ {} }}; \
              let sceValue = Checked.element(of: {target}, {value}); \
              if sceFailure.failed {{ {} }}; \
@@ -10767,7 +10767,7 @@ impl StaticTarget for SwiftTarget {
     // so the dispatcher can end its block as it does for any error.
     fn receiving_statement(&self, statement: &str, failed: &str) -> String {
         format!(
-            "{{ () -> Bool in var sceFailure = Failure(); {statement}; \
+            "{{ () -> Bool in let sceFailure = Failure(); {statement}; \
              if sceFailure.failed {{ {} }}; return false }}()",
             Self::then(&[failed, "return true"])
         )
@@ -10785,7 +10785,7 @@ impl StaticTarget for SwiftTarget {
             .map(|name| format!(": {name}"))
             .unwrap_or_default();
         format!(
-            "{{ () -> Bool in var sceFailure = Failure(); let sceValue{annotation} = {value}; \
+            "{{ () -> Bool in let sceFailure = Failure(); let sceValue{annotation} = {value}; \
              if sceFailure.failed {{ {} }}; {}; return false }}()",
             Self::then(&[failed, "return true"]),
             write("sceValue")
@@ -10815,7 +10815,7 @@ impl StaticTarget for SwiftTarget {
             .collect();
         let names: Vec<String> = (0..args.len()).map(|i| format!("sceArg{i}")).collect();
         format!(
-            "do {{ var sceFailure = Failure(); {locals}\
+            "do {{ let sceFailure = Failure(); {locals}\
              if sceFailure.failed {{ {} }} else {{ {callee}({}) }} }}",
             Self::then(&[failed]),
             names.join(", ")
@@ -10823,7 +10823,7 @@ impl StaticTarget for SwiftTarget {
     }
     fn receiving_condition(&self, value: &str, failed: &str, flag: &str) -> String {
         format!(
-            "{{ () -> Bool in var sceFailure = Failure(); let sceValue: Bool = {value}; \
+            "{{ () -> Bool in let sceFailure = Failure(); let sceValue: Bool = {value}; \
              if sceFailure.failed {{ {} }}; return sceValue }}()",
             Self::then(&[failed, flag, "return false"])
         )
@@ -10842,6 +10842,11 @@ impl StaticTarget for SwiftTarget {
             "self.pending{}Payload",
             filters::to_event_variant(event.to_string())
         )
+    }
+    // An enum field of the payload is held in the machine's own enum, lifted from the
+    // variant's declared name (`build_swift_event_payload`).
+    fn payload_enum_fields(&self) -> bool {
+        true
     }
     // The tag says which event's payload the channel holds now, so a guard that reads
     // this event's fields holds only for a delivery that carried them.

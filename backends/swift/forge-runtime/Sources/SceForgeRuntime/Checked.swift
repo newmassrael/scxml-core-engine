@@ -57,13 +57,19 @@ public enum AlgorithmError: Error, Sendable, Equatable, CustomStringConvertible 
 /// The first failure a body's checked operations recorded. Later ones are kept out:
 /// the statement that failed first is the one the caller learns of, whatever else the
 /// same expression evaluated after it.
-public struct Failure: Sendable {
+///
+/// A class, not a struct passed `inout`: a call that may fail is a closure that reads
+/// the same record its checked arguments write, and Swift refuses two accesses of one
+/// `inout` that overlap (`Checked.take(&f) { … Checked.add(&f, …) … }`). A reference has
+/// no exclusive access to give up, so a failure is recorded wherever in an expression
+/// the operation that failed stands.
+public final class Failure {
     private var recorded: AlgorithmError?
 
     public init() {}
 
     /// Records `error` unless a failure is already recorded.
-    public mutating func fail(_ error: AlgorithmError) {
+    public func fail(_ error: AlgorithmError) {
         if recorded == nil {
             recorded = error
         }
@@ -90,7 +96,7 @@ public struct Failure: Sendable {
 /// The checked integer operations, by the width of the type they are called at.
 public enum Checked {
     /// `a + b` at the width of `T`, or 0 and an overflow.
-    public static func add<T: FixedWidthInteger>(_ f: inout Failure, _ a: T, _ b: T) -> T {
+    public static func add<T: FixedWidthInteger>(_ f: Failure, _ a: T, _ b: T) -> T {
         let (value, overflow) = a.addingReportingOverflow(b)
         if overflow {
             f.fail(.overflow)
@@ -100,7 +106,7 @@ public enum Checked {
     }
 
     /// `a - b` at the width of `T`, or 0 and an overflow.
-    public static func sub<T: FixedWidthInteger>(_ f: inout Failure, _ a: T, _ b: T) -> T {
+    public static func sub<T: FixedWidthInteger>(_ f: Failure, _ a: T, _ b: T) -> T {
         let (value, overflow) = a.subtractingReportingOverflow(b)
         if overflow {
             f.fail(.overflow)
@@ -110,7 +116,7 @@ public enum Checked {
     }
 
     /// `a * b` at the width of `T`, or 0 and an overflow.
-    public static func mul<T: FixedWidthInteger>(_ f: inout Failure, _ a: T, _ b: T) -> T {
+    public static func mul<T: FixedWidthInteger>(_ f: Failure, _ a: T, _ b: T) -> T {
         let (value, overflow) = a.multipliedReportingOverflow(by: b)
         if overflow {
             f.fail(.overflow)
@@ -121,7 +127,7 @@ public enum Checked {
 
     /// `a / b` truncated toward zero, or 0 and a division by zero, or 0 and an
     /// overflow for `MIN / -1`.
-    public static func div<T: FixedWidthInteger>(_ f: inout Failure, _ a: T, _ b: T) -> T {
+    public static func div<T: FixedWidthInteger>(_ f: Failure, _ a: T, _ b: T) -> T {
         if b == 0 {
             f.fail(.divideByZero)
             return 0
@@ -137,7 +143,7 @@ public enum Checked {
     /// `a % b` with the dividend's sign, or 0 and a division by zero. A remainder
     /// whose quotient overflows has no value either: `MIN % -1` fails as `MIN / -1`
     /// does, on every backend.
-    public static func rem<T: FixedWidthInteger>(_ f: inout Failure, _ a: T, _ b: T) -> T {
+    public static func rem<T: FixedWidthInteger>(_ f: Failure, _ a: T, _ b: T) -> T {
         if b == 0 {
             f.fail(.divideByZero)
             return 0
@@ -150,7 +156,7 @@ public enum Checked {
     }
 
     /// `-a` at the width of `T`, or 0 and an overflow.
-    public static func neg<T: FixedWidthInteger>(_ f: inout Failure, _ a: T) -> T {
+    public static func neg<T: FixedWidthInteger>(_ f: Failure, _ a: T) -> T {
         let (value, overflow) = T.zero.subtractingReportingOverflow(a)
         if overflow {
             f.fail(.overflow)
@@ -162,7 +168,7 @@ public enum Checked {
     /// A value stored where a narrower integer type is declared is the same value,
     /// or 0 and an overflow when the type cannot hold it: never a wrapped one.
     public static func narrow<From: BinaryInteger, To: FixedWidthInteger>(
-        _ f: inout Failure,
+        _ f: Failure,
         _ value: From,
         to type: To.Type
     ) -> To {
@@ -180,7 +186,7 @@ public enum Checked {
     /// Counted in bytes, as every backend counts them, so a machine holds the same
     /// value wherever it runs. A Swift `String.count` is grapheme clusters, which two
     /// characters of four bytes each would make two against a bound of four.
-    public static func bounded(_ f: inout Failure, _ value: String, capacity: UInt32) -> String {
+    public static func bounded(_ f: Failure, _ value: String, capacity: UInt32) -> String {
         if UInt64(value.utf8.count) > UInt64(capacity) {
             f.fail(.capacityExceeded)
             return ""
@@ -191,7 +197,7 @@ public enum Checked {
     /// `bounded` for a byte string: a copy of `value` when it holds no more than
     /// `capacity` bytes, and the empty value with a capacity failure recorded
     /// otherwise (docs/adr/0005, decision 2).
-    public static func bounded(_ f: inout Failure, _ value: [UInt8], capacity: UInt32) -> [UInt8] {
+    public static func bounded(_ f: Failure, _ value: [UInt8], capacity: UInt32) -> [UInt8] {
         if UInt64(value.count) > UInt64(capacity) {
             f.fail(.capacityExceeded)
             return []
@@ -204,7 +210,7 @@ public enum Checked {
     /// failure recorded otherwise. A list an algorithm returns may hold more than the
     /// bound it declared on a backend whose lists grow, and a machine holds the same
     /// list wherever it runs, so the list it takes is held to its own.
-    public static func within<T>(_ f: inout Failure, _ items: [T], capacity: UInt32) -> [T] {
+    public static func within<T>(_ f: Failure, _ items: [T], capacity: UInt32) -> [T] {
         if UInt64(items.count) > UInt64(capacity) {
             f.fail(.capacityExceeded)
             return []
@@ -215,7 +221,7 @@ public enum Checked {
     /// The element of `xs` at `i`, or `fallback` and an out-of-range failure when `i`
     /// is below 0 or not below the length: never a trap.
     public static func at<T, I: BinaryInteger>(
-        _ f: inout Failure,
+        _ f: Failure,
         _ xs: [T],
         _ i: I,
         fallback: @autoclosure () -> T
@@ -246,7 +252,7 @@ public enum Checked {
 
     /// `take` of a call that answers an enum: the first case stands where it failed,
     /// the one value of the type that can be named without naming the type.
-    public static func takeCase<T: CaseIterable>(_ f: inout Failure, _ call: () throws -> T) -> T {
+    public static func takeCase<T: CaseIterable>(_ f: Failure, _ call: () throws -> T) -> T {
         do {
             return try call()
         } catch let error as AlgorithmError {
@@ -265,7 +271,7 @@ public enum Checked {
     /// A call to another may-fail algorithm: its value, or `fallback` with its
     /// failure recorded in the caller's `Failure` under the callee's own name, which
     /// the statement around it throws.
-    public static func take<T>(_ f: inout Failure, fallback: @autoclosure () -> T, _ call: () throws -> T) -> T {
+    public static func take<T>(_ f: Failure, fallback: @autoclosure () -> T, _ call: () throws -> T) -> T {
         do {
             return try call()
         } catch let error as AlgorithmError {

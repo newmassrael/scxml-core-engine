@@ -43,15 +43,20 @@ if [ "${#CANDIDATES[@]}" -lt 1 ]; then
 fi
 MACHINES=()
 SOURCES=()
+# What a machine that is not lowered yet is refused for, one line each, so a run reads
+# what stands between Swift and the rest of the fixtures.
+REFUSED=()
 for source in "${CANDIDATES[@]}"; do
     status=0
-    "$CODEGEN" check -l swift "$source" > /dev/null 2>&1 || status=$?
+    verdict="$("$CODEGEN" check -l swift --error-format=json "$source" 2>&1)" || status=$?
     case "$status" in
         0)
             MACHINES+=("$(basename "$source" .scxml)")
             SOURCES+=("$source")
             ;;
-        7) ;;
+        7)
+            REFUSED+=("$(basename "$source" .scxml): $(printf '%s' "$verdict" | grep -o '"message":"[^"]*"' | head -n 1 | cut -c1-170)")
+            ;;
         *)
             echo "error: sce-codegen check -l swift $source failed with status $status" >&2
             exit 1
@@ -102,3 +107,7 @@ for machine in "${MACHINES[@]}"; do
 done
 
 echo "Regenerated: ${MACHINES[*]} under $GENERATED_DIR/"
+if [ "${#REFUSED[@]}" -gt 0 ]; then
+    echo "Not lowered yet (${#REFUSED[@]}), refused by name:"
+    printf '  %s\n' "${REFUSED[@]}"
+fi
