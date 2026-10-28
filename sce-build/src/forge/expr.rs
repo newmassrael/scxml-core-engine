@@ -14509,14 +14509,16 @@ mod tests {
             rust("pick.value.count", int(true, 32)),
             "sce_forge_runtime::optional::proven_ref(&pick).count"
         );
-        // An optional text is returned owned, as a present one is.
-        assert_eq!(rust("title", text), "title.as_deref().map(str::to_string)");
+        // An optional text is read borrowed, and a return owns it, as a present one
+        // does ([`transpile_into_owned`]).
+        assert_eq!(rust("title", text), "title.as_deref()");
         assert_eq!(rust("null", text), "None");
         let owned = |expr: &str, expected: InferredType| {
             transpile_into_owned(expr, ExprTarget::Rust, &ctx, &empty_renames(), expected)
                 .unwrap_or_else(|e| panic!("{expr} lowers owned for Rust: {e:?}"))
                 .text
         };
+        assert_eq!(owned("title", text), "title.as_deref().map(str::to_string)");
         // A place that holds an optional record keeps its own: another takes a copy.
         assert_eq!(owned("other", record), "other.clone()");
         assert_eq!(owned("null", record), "None");

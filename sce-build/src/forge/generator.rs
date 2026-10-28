@@ -31072,6 +31072,18 @@ fn lower_algorithm_stmt(
                     };
                     let lowered = match whole {
                         Some(whole) => whole,
+                        // A return owns the value of an optional it answers: Rust reads
+                        // an optional text or byte string borrowed, and the signature
+                        // declares the owned `Option<String>` (docs/adr/0055, step 9).
+                        None if return_ty.is_optional() => expr::transpile_into_owned(
+                            rhs,
+                            l.expr_target(),
+                            type_ctx,
+                            renames,
+                            return_ty,
+                        )
+                        .map(|lowered| lowered.text)
+                        .map_err(|refusal| site.place(refusal))?,
                         None => {
                             expr::transpile_into(rhs, l.expr_target(), type_ctx, renames, return_ty)
                                 .map_err(|refusal| site.place(refusal))?
