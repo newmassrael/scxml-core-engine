@@ -187,9 +187,10 @@ const NOT_A_DOCUMENTS: &[(&str, Why, Functions)] = &[
             ("addr2sce_load_symbol_table", 1),
             ("load_sourcemap", 1),
             // The run histories a backend's stress test wrote, named on the
-            // command line (`check-queue-history`): records of a run and not
-            // documents a document names.
-            ("cmd_check_queue_history", 1),
+            // command line (`check-queue-history`, `check-broadcast-history`):
+            // records of a run and not documents a document names. Both commands
+            // read them in the one function that judges the files of a kind.
+            ("judge_history_files", 1),
             // The document a command is named, read before its pipeline is given
             // it (`generate`, the AST emit and the position finder all read it
             // here), and the replay scenario a command is named: the operator's own

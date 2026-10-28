@@ -590,7 +590,12 @@ fn options_for(language: Language) -> ForgeCompileOptions {
             go_module_prefix: Some("github.com/acme/project/generated".to_string()),
             ..ForgeCompileOptions::default()
         },
-        _ => ForgeCompileOptions::default(),
+        Language::Rust
+        | Language::Cpp
+        | Language::Kotlin
+        | Language::Python
+        | Language::C11
+        | Language::Swift => ForgeCompileOptions::default(),
     }
 }
 
