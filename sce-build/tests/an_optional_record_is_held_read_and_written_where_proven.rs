@@ -437,6 +437,15 @@ fn a_field_is_not_read_where_nothing_proves_the_record_present() {
         out.contains("`pick !== null`"),
         "naming the test that proves it:\n{out}"
     );
+    // A record has no `??`, so no default is named for it: the test is the repair.
+    assert!(
+        out.contains("a record has no default to read it with"),
+        "saying a record is read only where the test holds:\n{out}"
+    );
+    assert!(
+        !out.contains("pick ?? <value>"),
+        "naming no default for a record:\n{out}"
+    );
     // The test of the wrong sense proves nothing where it is true.
     refused(
         &on_go(

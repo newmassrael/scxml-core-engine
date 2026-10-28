@@ -10937,7 +10937,7 @@ fn expression_fields(e: &ExprError) -> DiagnosticPayload {
         // under a test or rewrites with a default. No fix: which of the two is
         // the author's choice (SCE_ERROR_CONTRACT.md §3), and `expected` stays
         // absent with it.
-        ExprError::OptionalReadUnproven { optional, read } => DiagnosticPayload {
+        ExprError::OptionalReadUnproven { optional, read, .. } => DiagnosticPayload {
             code: DiagnosticCode::ExpressionOptionalReadUnproven,
             stage: Stage::Expression,
             expected: None,
@@ -14653,9 +14653,22 @@ mod tests {
                 ExprError::OptionalReadUnproven {
                     optional: "due".into(),
                     read: "due.value".into(),
+                    record: false,
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:f884c356090d0840","code":"expression/optional-read-unproven","stage":"expression","spec":"SCE Accepted Subset §2.15","message":"due.value reads the value of due, which may be absent here: test it first (`due !== null` around the read), or read it with a default (`due ?? <value>`)","actual":"due.value"}"#,
+            ),
+            (
+                // The same read of an optional record, which no default reads: the
+                // repair named is the test alone (the message is no part of the id).
+                "forge/expression-optional-read-unproven-record",
+                ExprError::OptionalReadUnproven {
+                    optional: "pick".into(),
+                    read: "pick.value.title".into(),
+                    record: true,
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:efb627275943f7d4","code":"expression/optional-read-unproven","stage":"expression","spec":"SCE Accepted Subset §2.15","message":"pick.value.title reads the value of pick, which may be absent here: test it first (`pick !== null` around the read); a record has no default to read it with, so read a field of it only where that test holds","actual":"pick.value.title"}"#,
             ),
             (
                 // A name the datamodel provides, called. The repair is

@@ -5419,10 +5419,20 @@ pub enum ExprError {
     /// reading an absent value. Refused when the document is checked, at the
     /// read. The record carries no fix: the repair is the author's choice
     /// between a test around the read and a read with a default.
+    ///
+    /// An optional record has no default to read it with (a record is no
+    /// operand, so `??` takes none of it): the repair named for one is the test
+    /// alone, and a field of it is read where that test holds.
     #[error(
         "{read} reads the value of {optional}, which may be absent here: test it \
-         first (`{optional} !== null` around the read), or read it with a default \
-         (`{optional} ?? <value>`)"
+         first (`{optional} !== null` around the read){}",
+        if *.record {
+            "; a record has no default to read it with, so read a field of it only where \
+             that test holds"
+                .to_string()
+        } else {
+            format!(", or read it with a default (`{} ?? <value>`)", .optional)
+        }
     )]
     OptionalReadUnproven {
         /// The optional value read, as the subject a test would name, or as
@@ -5430,6 +5440,9 @@ pub enum ExprError {
         optional: String,
         /// The read as written (`due.value`).
         read: String,
+        /// Whether the optional value is an optional record, which no default
+        /// reads.
+        record: bool,
     },
 
     /// Loose equality (`==` / `!=`) instead of strict.

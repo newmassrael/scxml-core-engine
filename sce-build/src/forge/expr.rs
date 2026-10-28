@@ -1227,6 +1227,9 @@ fn reject_optional_misuse(
                 .or_else(|| observed(optional))
                 .unwrap_or_else(|| optional.ty.describe()),
             read: observed(read).unwrap_or_default(),
+            // A record has no default to read it with, so the repair named for one
+            // is the test alone.
+            record: optional.ty == InferredType::Optional(OptionalElem::Record),
         }
         .at(read.span.clone()))
     };
