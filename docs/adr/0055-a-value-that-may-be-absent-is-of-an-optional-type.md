@@ -210,10 +210,16 @@ answer the language would not have to invent. A test of a flag that may be absen
   the `<param>` (`scxml/static-datamodel-rule`, naming `??`). A `<send>` of an optional value to a
   field of `T` is refused by the rule that holds a send to the field that reads it (§2.15); a value
   of `T` to a field of `optional<T>` is admitted.
-- *A child session's `<param>`.* A child's variable of `optional<T>` is not handed a value until a
-  step decides the shape of `InvokeParams` (which already spells "not handed" as `None` / `null` /
-  `std::optional`, so an optional variable needs a second absence inside the first): refused by
-  name at the `<param>` until then.
+- *A child session's `<param>`.* A child's variable of `optional<T>` over a bool, a number or a
+  text is handed the whole optional value its `<param>` computes (step 10): a value of `T` is
+  present, `null` is absent, and an optional variable is handed as it is. `InvokeParams` already
+  spells "not handed" as `None` / `null` / `std::optional`, and a variable not handed keeps its
+  start, so an absent seed is a value not handed: the slot of an optional variable is the
+  backend's optional type itself and holds no second absence, which Kotlin's `T??`, Python's
+  `None` and ECMAScript's `null` could not. What that needs of the child is that absent and "not
+  handed" are one state, which they are where the variable starts at `null`; where it starts at a
+  value, the `<param>` is refused unless its value is never absent. A child's optional enum, byte
+  string or record is refused by name, as an enum, a byte string and a record are.
 - *`<log>`.* An absent value is logged as `null`, on every engine.
 
 ### 3. Where a value is proven present: narrowing
@@ -1038,6 +1044,42 @@ documents, not observed from a backend.
     the shape of `InvokeParams` it needs), a host action's optional argument, a host-run
     `<invoke>`'s typed request and result with optional fields. Each with the scenario or test of
     its edge.
+    As built for the first edge, a child session's optional variable as a `<param>` (edge A):
+    - *The shape.* `InvokeParams` keeps one slot per seedable variable, and a variable of
+      `optional<T>` is that slot in its own optional type: `Option<T>`, `T?`, `std::optional<T>`,
+      `optional.Of[T]` and `Optional[T]`, each left absent when nothing is handed, and tested
+      before it is taken (`is_some()`, `?.let`, `if (params.v_x)`, `IsPresent()`, `is not None`);
+      C11 has no such object and the invoking machine writes the whole `sce_optional_<elem>_t`
+      into the child's variable. No backend nests an optional in an optional, which the first
+      draft of section 2 feared and four of the carriers could not hold. `StaticField::seeded`
+      says which variables a slot is made for (one rule, `static_datamodel::seed_slot`, for the
+      judge, the lowering and every template), and `Param::native_seed_optional` that a seed is
+      such a whole value, so that a template does not wrap it in the optional of the slot a
+      scalar's seed is put in (Rust `Some(…)`, Go `&sceValue`, C++ `::value_type`).
+    - *The value.* The seed of an optional variable is lowered by the rule an `<assign>` to it
+      writes by (`optional_whole_value`, shared with `lower_optional_assign`): `null` is the
+      absent value, an optional value is handed as it is, a value of `T` is lowered into the
+      element and lifted, and a text is held to the `sce:capacity` the child declares, a value past
+      it failing as any other does (left out, `error.execution`, the child keeps its start). The
+      expected slot is the variable's `optional<T>`.
+    - *Absent is "not handed".* An absent seed is no more than a seed not handed, which is the
+      child's own start, so the child's variable is `null` either way only where it starts at
+      `null`. Where it starts at a value (`expr="3"`), a value that may be absent (an optional
+      variable, `null`, a conditional of them) would leave the child at 3 and read as absent, a
+      silent difference between what the document says and what runs: it is refused at the
+      `<param>` as `scxml/static-datamodel-rule`, naming the start and the two ways to write a
+      value that is never absent, a value of `T` and `x ?? d`. A value of `T` lifts into such a
+      variable and replaces its start.
+    - *What stays refused.* A child's optional enum, byte string or record, by the wording that
+      names a list, a record, an enum and bytes (`unseedable_variable`).
+    - *The Interpreter.* The lowered `<param>` carries the optional value as the library spells
+      it (`null` or the value, a text's present value through `SceStatic.mapPresent` and the
+      bound); a `namelist` name that lands in an optional text the child bounds is refused by
+      name, as one that lands in a bounded text is.
+    Tests: `scenarios/static_invoke_optional.json` on every engine (five children end on what
+    they hold, the sixth, handed an absent variable and `null`, never ends),
+    `sce-build/tests/a_childs_optional_variable_is_handed_an_optional_value.rs` (the judge's rules
+    and each backend's slot) and the unit tests of `static_datamodel`.
 11. **`record_refusal.none` retired** (implemented) (section 7): the enum, `record_list.scxml`,
     `record_list_parent.scxml` holding `optional<record:Refused>`, `scenarios/record_list_parent.json`
     and the Go, C and C++ drivers that read the refusal by hand, the pin in

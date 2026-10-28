@@ -3277,7 +3277,7 @@ line of the element or attribute that breaks it:
 | a `<send targetexpr>` that declares no `sce:targets`, one written beside a `target`, or a `sce:targets` that names a route the SCXML Event I/O Processor cannot address, a Mesh peer, two entries of one route, no entry, a send with no `targetexpr`, or a `type` other than the SCXML processor | See **A computed target** below. A `targetexpr` is a string expression; the routes it can take are declared, since a machine with no script engine has nothing to learn them from when the send runs. Refused at the attribute as `scxml/static-datamodel-rule` (the missing declaration and the two targets) or where `sce:targets` is written (`validation/incompatible-attributes`, `validation/empty-value`) |
 | a hybrid `<invoke>` that declares no `sce:candidates`, one whose `<content expr>` produces the child's document, a candidate that is not a `sce-static` document this build read, a `srcexpr` that is not a string, or an argument no candidate declares a variable for or of another type than the candidate's variable | See **A hybrid `<invoke>`** under §2.13. Refused at the `<invoke>` (or its `<param>`) as `scxml/static-datamodel-rule`: with no declared set there is no finite list of children to lower, and an argument every candidate would drop is refused as a static invoke's is |
 | `<invoke idlocation>` on a host-run invocation or a Mesh request | Refused: such an invocation is started under the id the build wrote (the `id`, or `<state>.platform_N`), so there is no generated id to keep; a document that must name it writes `id`, which `done.invoke.<id>` and `error.invoke.<id>` already match. On a child session (`type="scxml"`, in-line, by `src` or hybrid) it is admitted: each start is started under `<state>.<start>.<id>` (docs/adr/0045), the id the child's events carry and a saved tree holds as the child's `invokeid`, and `idlocation` names a string variable the document declares whose `sce:capacity` exceeds the longest such id (the start a count of up to twenty digits), or is refused on its line. Every backend that saves writes it |
-| a `<param>` or a `namelist` name of an `<invoke type="scxml">` whose child is not a `sce-static` document this build read, does not declare the name as a top-level `<data>`, declares it as a list, a record, an enum or bytes, is handed it twice, or is handed a value not of the variable's type | See **Child sessions** below. Refused at the `<param>` as `scxml/static-datamodel-rule` (a value of the wrong type as the expression's own refusal) rather than accepted and never delivered |
+| a `<param>` or a `namelist` name of an `<invoke type="scxml">` whose child is not a `sce-static` document this build read, does not declare the name as a top-level `<data>`, declares it as a list, a record, an enum or bytes (or an optional value of an enum, bytes or a record), is handed it twice, is handed a value not of the variable's type, or is a variable of `optional<T>` that starts at a value and is handed a value that may be absent | See **Child sessions** below. Refused at the `<param>` as `scxml/static-datamodel-rule` (a value of the wrong type as the expression's own refusal) rather than accepted and never delivered |
 | a `<finalize>` of an `<invoke type="scxml">` | §6.5 runs it in the invoking machine before a child's event is processed, but the model keeps its body as one script text and the generated code hands that text to a script engine this model never builds (measured 2026-10-01: the Rust body is an empty block, Kotlin finds no engine): the assignment would be accepted and never run. Refused at the `<invoke>` as `scxml/static-datamodel-rule`; the invoking state takes what the child sent in a transition. An EMPTY `<finalize/>` beside a `<param location>` or a `namelist` is the same refusal: §6.5.2 gives it the meaning "update each from the event's data of that name", which the model writes out as that script text. Lowering a body is not the obstacle — a `<finalize>` runs before any child event is processed, to read that event's `_event.data`, and no type rule reaches a payload that arrives from whichever event comes next; a body that reads none has no consumer. Under `ecmascript` the same document runs it |
 | a `<param>` or a `namelist` name of a `<send>` whose value is of a kind the field that reads it cannot hold — a field of the schema this document declares the event by, or of the schema a child the send is delivered to (`#_<id>`) declares it by | See **Child sessions** below ("What a send carries is held to the field that reads it"). Refused at the `<param>` as `scxml/static-datamodel-rule`: no delivery of it fits the schema |
 | a `<param>` or a `namelist` name of a `<send>` whose text or byte string has a declared bound past the `sce:max-size` of the field that reads it | See **Child sessions** below ("A text is held to the bound of the field that reads it", docs/adr/0050). Refused at the `<param>` as `scxml/static-datamodel-rule`, naming both bounds and the narrowing: an assignment to a variable of the field's bound |
@@ -3895,7 +3895,10 @@ Each generated `sce-static` machine with such a variable carries the way in:
 Kotlin a nested `InvokeParams` and `acceptParams`, Rust `<Machine>InvokeParams` and
 `accept_params`, C++ a nested `InvokeParams` (a `std::optional` per variable) and
 `acceptParams`, each variable `null` / `None` / empty when nothing is handed it and
-keeping the value its `<data>` gave it; C11 has no such object, and the invoking
+keeping the value its `<data>` gave it (the slot of a variable declared
+`optional<T>` is that backend's one optional type itself, `Option<T>`, `T?`,
+`std::optional<T>`, `optional.Of[T]` or `Optional[T]`, and not a second one inside
+it: see "A child's optional variable" below); C11 has no such object, and the invoking
 machine writes the values into the child's own variables between the two steps its
 start takes (`<machine>_invoked_begin`, `<machine>_invoked_enter`, described with C11
 below).
@@ -3915,6 +3918,30 @@ while one handed eight bytes and one handed two characters of five bytes are
 left out and reported, each starting with the value its `<data>` gave it. A bound
 counted in characters lets the second through, and a child that took a value past
 its bound never ends.
+
+**A child's optional variable** (docs/adr/0055, step 10). A child's top-level
+`<data>` of `optional<T>` over a bool, a number or a text is handed the whole
+optional value its `<param>` (or `namelist` name) computes: a value of `T` is
+present, `null` is absent, and an optional variable of the invoking machine is
+handed as it is; a text is held to the `sce:capacity` the child declares, and a
+value past it fails as above, is left out, and the child keeps its own start. A
+value not handed is the child's own start, so an absent value is no more than a
+value not handed: where the child's variable starts at `null` the two are the
+same state, and the slot that carries the seed is the backend's optional type
+itself (`Option<T>`, `T?`, `std::optional<T>`, `optional.Of[T]`, `Optional[T]`,
+and in C11 the `sce_optional_<elem>_t` the invoking machine writes into the
+child's variable whole), with no second absence inside it. Where the child's
+variable starts at a value (`expr="3"`), an absent value would leave it that value
+and read as "not handed", so the `<param>` is refused unless its value is never
+absent (a value of `T`, or `x ?? d`), naming the start and the two repairs, as
+`scxml/static-datamodel-rule`. An optional enum, byte string or record, like an
+enum, a byte string, a record and a list, is handed no value. The witness is
+`static_invoke_optional.scxml`, driven on all seven engines: five children end on
+what they hold (an optional variable of the parent handed as it is, values of `T`
+lifted, `x ?? d` handed to a variable that starts at a value, a text past its bound
+left out and one that fits), and the sixth, handed an absent variable and `null`,
+never ends. `sce-build/tests/a_childs_optional_variable_is_handed_an_optional_value.rs`
+holds the judge's rules and what each backend writes for the slot.
 
 A child is handed its values once, when it starts: a field the machine changes
 while the child runs does not reach it. A restore starts each running child again
@@ -4111,8 +4138,9 @@ Mesh request carries an optional value (as JSON, `null` when absent); a carrier
 that is text alone — a BasicHTTP send, a host-run `<invoke>`'s `params` — refuses
 one as `scxml/static-datamodel-rule`, naming `??`, and a send of one to a field
 that is not optional is refused by the rule that holds a send to its reader. A
-child's optional variable takes no `<param>`, and a host action no optional
-argument, yet. **Proven present** is the narrowing of the ADR's section 3. A
+child's optional variable takes a `<param>` of an optional value ("A child's optional
+variable", under Child sessions), and a host action no optional argument, yet.
+**Proven present** is the narrowing of the ADR's section 3. A
 subject is a variable, a field of a record variable, of the payload or of a
 loop's record item, an algorithm's parameter or local or a field of one — never
 an element read by its index or a call's value. A test proves it: within an
