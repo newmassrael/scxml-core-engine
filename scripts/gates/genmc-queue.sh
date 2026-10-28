@@ -6,7 +6,9 @@
 #
 # The C11 and C++ queues under GenMC: layer 3 of the queue kind's verification
 # (SCE Protocol-Synthesis RFC §synth-5-P). GenMC explores every execution the C11
-# memory model allows, where a stress run samples the few a machine gives.
+# memory model allows, where a stress run samples the few a machine gives. The
+# harnesses named broadcast_log_* are the bounded broadcast log's (ADR 0062
+# section 6), read by the same loops and mutants.
 #
 # TWO CLAIMS, and the second is what makes the first worth reading:
 #
@@ -61,7 +63,9 @@ CXX_HARNESS_DIR=backends/cpp/forge-runtime/tests/genmc
 CXX_INCLUDE_DIR=backends/cpp/forge-runtime/include
 CXX_SHIM="$CXX_HARNESS_DIR/genmc_cxx_shim.h"
 # The headers a C++ mutant rewrites; every other header is read as it is.
-CXX_MUTATED_HEADERS=(queue.h queue_segmented.h)
+# broadcast_log.h is the bounded broadcast log's (ADR 0062); the harnesses named
+# broadcast_log_* read it, and a mutant of theirs is a rewrite of its orderings.
+CXX_MUTATED_HEADERS=(queue.h queue_segmented.h broadcast_log.h)
 UNROLL=20
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
@@ -98,6 +102,14 @@ MUTANTS=(
     # fence weakened alone is caught, so it is not redundant with the
     # sequentially consistent accesses around it.
     "fence|s/__atomic_thread_fence(__ATOMIC_SEQ_CST)/__atomic_thread_fence(__ATOMIC_RELAXED)/"
+    # The two fences the broadcast log's seqlock needs (ADR 0062 section 4): the
+    # release fence between the busy stamp and the words, and the acquire fence
+    # between the copy and the second stamp load. `all` weakens them with every
+    # other ordering, which a harness can catch for a reason that has nothing to do
+    # with a fence, so each is weakened alone. Only the broadcast_log_* harnesses
+    # use them; for every other harness these two change nothing that runs.
+    "fence_acquire|s/__atomic_thread_fence(__ATOMIC_ACQUIRE)/__atomic_thread_fence(__ATOMIC_RELAXED)/"
+    "fence_release|s/__atomic_thread_fence(__ATOMIC_RELEASE)/__atomic_thread_fence(__ATOMIC_RELAXED)/"
     # Orderings that may be redundant ONE AT A TIME because another provides the
     # hand-over, so each GROUP that could be the sole provider is weakened too.
     "threshold|s/__atomic_load_n(p0, __ATOMIC_SEQ_CST)/__atomic_load_n(p0, __ATOMIC_RELAXED)/;s/__atomic_store_n(p0, p1, __ATOMIC_SEQ_CST)/__atomic_store_n(p0, p1, __ATOMIC_RELAXED)/"
@@ -118,6 +130,12 @@ CXX_MUTANTS=(
     "acq_rel|s/std::memory_order_acq_rel/std::memory_order_relaxed/g"
     "seq_cst|s/std::memory_order_seq_cst/std::memory_order_relaxed/g"
     "acquire_release|s/std::memory_order_acquire/std::memory_order_relaxed/g;s/std::memory_order_release/std::memory_order_relaxed/g"
+    # The broadcast log's two fences alone (see the C `fence_acquire` and
+    # `fence_release`): `acquire` and `release` above weaken them together with
+    # the loads and stores, which can be caught for a reason that has nothing to do
+    # with a fence.
+    "fence_acquire|s/atomic_thread_fence(std::memory_order_acquire)/atomic_thread_fence(std::memory_order_relaxed)/"
+    "fence_release|s/atomic_thread_fence(std::memory_order_release)/atomic_thread_fence(std::memory_order_relaxed)/"
     "all|s/std::memory_order_acq_rel/std::memory_order_relaxed/g;s/std::memory_order_acquire/std::memory_order_relaxed/g;s/std::memory_order_release/std::memory_order_relaxed/g;s/std::memory_order_seq_cst/std::memory_order_relaxed/g"
 )
 

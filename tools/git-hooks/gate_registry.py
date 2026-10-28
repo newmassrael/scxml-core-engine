@@ -982,7 +982,8 @@ GATES: dict[str, dict] = {
         "runner_workflow": True,
         # What the gate reads, and no wider: the runtime headers GenMC compiles,
         # the harnesses, and the hosted atomics every C harness includes whole.
-        # For C++ that is the two queue headers a mutant rewrites and the
+        # For C++ that is the three headers a mutant rewrites (the two queue
+        # headers and the broadcast log) and the
         # harnesses with their shim and support headers; every other header of
         # that runtime is not read. The same set as the workflow's `paths:`,
         # which the self-test holds.
@@ -992,6 +993,7 @@ GATES: dict[str, dict] = {
             "backends/c/forge-runtime/tests/conformance/sce_atomic_host.c",
             "backends/cpp/forge-runtime/include/sce/forge/queue.h",
             "backends/cpp/forge-runtime/include/sce/forge/queue_segmented.h",
+            "backends/cpp/forge-runtime/include/sce/forge/broadcast_log.h",
             "backends/cpp/forge-runtime/tests/genmc/**",
             "scripts/install_genmc.sh",
         ],
