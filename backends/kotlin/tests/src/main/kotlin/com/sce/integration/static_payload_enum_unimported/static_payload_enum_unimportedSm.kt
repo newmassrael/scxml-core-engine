@@ -1,10 +1,10 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 8b4828d778fc1da05444ac6a052eb44c820b7a80e1f4075fc52bc6e97e8a070a
+// source-hash: d11fb6db69c27fed25f47a2f22a5bf7fb78da524d08f0c299e9cc553d32a6375
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_payload_enum_unimported.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: static_payload_enum_unimported.scxml:16 :: _machine
+// SCE-MAP: static_payload_enum_unimported.scxml:18 :: _machine
 
 package com.sce.integration.static_payload_enum_unimported
 
@@ -40,7 +40,6 @@ data class StaticPayloadEnumUnimportedRecordListRefusedPayload(val id: UInt, val
 // ── SCE Accepted Subset §2.15: sce-static enum and record variable classes ─────
 /** SCE Accepted Subset §2.15: an `enum:Why` datamodel value. */
 enum class StaticPayloadEnumUnimportedWhyEnum(val declaredName: String) {
-    NONE("none"),
     NOT_WRITER("notWriter"),
     NO_ROOM_FOR_VALUE("noRoomForValue"),
     NO_ROOM_FOR_HISTORY("noRoomForHistory"),
@@ -55,7 +54,6 @@ enum class StaticPayloadEnumUnimportedWhyEnum(val declaredName: String) {
 
     /** The number the enum document declares for this value. */
     fun toUnderlying(): UByte = when (this) {
-        NONE -> 0u.toUByte()
         NOT_WRITER -> 1u.toUByte()
         NO_ROOM_FOR_VALUE -> 2u.toUByte()
         NO_ROOM_FOR_HISTORY -> 3u.toUByte()
@@ -135,10 +133,10 @@ class StaticPayloadEnumUnimportedStateMachine(
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
     /** W3C SCXML 5.2: the `last` datamodel variable, published (`sce:direction="out"`). */
-    private var vLast: StaticPayloadEnumUnimportedWhyEnum = StaticPayloadEnumUnimportedWhyEnum.NONE
+    private var vLast: StaticPayloadEnumUnimportedWhyEnum? = null
 
     /** What the published `last` holds. */
-    val last: StaticPayloadEnumUnimportedWhyEnum get() = vLast
+    val last: StaticPayloadEnumUnimportedWhyEnum? get() = vLast
     /** W3C SCXML 5.2: the `kept` datamodel variable, published (`sce:direction="out"`). */
     private var vKept: List<StaticPayloadEnumUnimportedRefusedRecord> = emptyList()
 
@@ -173,7 +171,7 @@ class StaticPayloadEnumUnimportedStateMachine(
 
     /** The published variables as one immutable value, in declaration order. */
     data class Data(
-        val last: StaticPayloadEnumUnimportedWhyEnum,
+        val last: StaticPayloadEnumUnimportedWhyEnum?,
         val kept: List<StaticPayloadEnumUnimportedRefusedRecord>,
         val row: UInt,
         val refusals: UInt,
@@ -226,10 +224,10 @@ class StaticPayloadEnumUnimportedStateMachine(
      * later revision added at its default.
      */
     val savedShape: SavedShape = SavedShape(
-        first = "b438ab24fdbeaa8a6e5b4374868634cd1f5563b57bdda5aa1ab05ac6aa345cb4",
-        revised = "49947d270ab07ed43e599cbb214b814e9848b17e4a4db30d99f64b907fb7c69d",
-        format2First = "d405568787fe6df52784dfd89231491aa1d68562f4788d2515c076e8d9bac5d0",
-        format2Revised = "54654acbc9d1b0f11710436fbb18e8367f3a511e51dc474789a41fe83a68fa95",
+        first = "60b1f94fa3bf7ca3236aafdd09c81831b91b1473dba7a603b712203b06b90104",
+        revised = "abcc6fca73cad31c2aec6e1e94f26d004b87084345c8e133e718fe481447e64d",
+        format2First = "e46e9211d49e6ad750d2a7d941e066e5bd755b8fab314f055bf6cf953c5dae5d",
+        format2Revised = "c1d6a992c546dec8ec42587953284ed8519eac537d64581625ce7063f8b5268f",
         records = listOf(
             RecordLineage(
                 event = "record_list.refused",
@@ -281,7 +279,7 @@ class StaticPayloadEnumUnimportedStateMachine(
     fun save(wallNowMs: Long): SavedState = savedState(
         savedShape,
         linkedMapOf(
-            "last" to vLast.toSaved(),
+            "last" to SavedValues.optional(vLast) { it.toSaved() },
             "kept" to SavedValues.list(vKept) { it.toSaved() },
             "row" to SavedValues.of(vRow),
             "refusals" to SavedValues.of(vRefusals),
@@ -312,7 +310,7 @@ class StaticPayloadEnumUnimportedStateMachine(
         // The state as one of this machine: each record saved at an earlier
         // revision of its schema holds the defaults of the fields added since.
         val savedGrown = beginRestore(saved, savedShape)
-        val saved1 = StaticPayloadEnumUnimportedWhyEnum.fromSaved(savedGrown.variable("last"), "last")
+        val saved1 = SavedValues.optional(savedGrown.variable("last"), "last") { e, w -> StaticPayloadEnumUnimportedWhyEnum.fromSaved(e, w) }
         val saved2 = SavedValues.list(savedGrown.variable("kept"), "kept", 2) { e, w -> StaticPayloadEnumUnimportedRefusedRecord.fromSaved(e, w) }
         val saved3 = SavedValues.uint32(savedGrown.variable("row"), "row")
         val saved4 = SavedValues.uint32(savedGrown.variable("refusals"), "refusals")
@@ -333,7 +331,7 @@ class StaticPayloadEnumUnimportedStateMachine(
 
     override fun judgeAsSession(saved: SavedState) {
         val savedGrown = beginRestore(saved, savedShape)
-        StaticPayloadEnumUnimportedWhyEnum.fromSaved(savedGrown.variable("last"), "last")
+        SavedValues.optional(savedGrown.variable("last"), "last") { e, w -> StaticPayloadEnumUnimportedWhyEnum.fromSaved(e, w) }
         SavedValues.list(savedGrown.variable("kept"), "kept", 2) { e, w -> StaticPayloadEnumUnimportedRefusedRecord.fromSaved(e, w) }
         SavedValues.uint32(savedGrown.variable("row"), "row")
         SavedValues.uint32(savedGrown.variable("refusals"), "refusals")
@@ -472,33 +470,33 @@ class StaticPayloadEnumUnimportedStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: static_payload_enum_unimported.scxml:16 :: _machine
+    // SCE-MAP: static_payload_enum_unimported.scxml:18 :: _machine
     override fun onEntry(state: StaticPayloadEnumUnimportedState, isDefaultEntry: Boolean) {
         when (state) {
             is StaticPayloadEnumUnimportedState.Listening -> {
-                // SCE-MAP: static_payload_enum_unimported.scxml:26 :: listening :: _state_body
+                // SCE-MAP: static_payload_enum_unimported.scxml:28 :: listening :: _state_body
             }
         }
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: static_payload_enum_unimported.scxml:16 :: _machine
+    // SCE-MAP: static_payload_enum_unimported.scxml:18 :: _machine
     override fun onExit(state: StaticPayloadEnumUnimportedState) {
         when (state) {
             is StaticPayloadEnumUnimportedState.Listening -> {
-                // SCE-MAP: static_payload_enum_unimported.scxml:26 :: listening :: _state_body
+                // SCE-MAP: static_payload_enum_unimported.scxml:28 :: listening :: _state_body
             }
         }
     }
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: static_payload_enum_unimported.scxml:16 :: _machine
+    // SCE-MAP: static_payload_enum_unimported.scxml:18 :: _machine
     override fun executeTransitionContent(source: StaticPayloadEnumUnimportedState, transitionIndex: Int) {
         when (source) {
         is StaticPayloadEnumUnimportedState.Listening -> when (transitionIndex) {
             0 -> {
-                // SCE-MAP: static_payload_enum_unimported.scxml:27 :: listening :: _transition_0
+                // SCE-MAP: static_payload_enum_unimported.scxml:29 :: listening :: _transition_0
                 if (pendingRecordListRefusedPayload == null) {
                     return
                 }

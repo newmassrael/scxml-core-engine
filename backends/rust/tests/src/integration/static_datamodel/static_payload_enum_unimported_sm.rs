@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 8b4828d778fc1da05444ac6a052eb44c820b7a80e1f4075fc52bc6e97e8a070a
+// source-hash: d11fb6db69c27fed25f47a2f22a5bf7fb78da524d08f0c299e9cc553d32a6375
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -78,8 +78,8 @@
 // closure; this one suspicious-category lint reads the `match` of a constant
 // default as a hand-written `unwrap_or_default`.
 #![allow(clippy::manual_unwrap_or_default)]
-#![doc = "SCE-MAP: static_payload_enum_unimported.scxml:16 :: _machine"]
-// SCE-MAP: static_payload_enum_unimported.scxml:16 :: _machine
+#![doc = "SCE-MAP: static_payload_enum_unimported.scxml:18 :: _machine"]
+// SCE-MAP: static_payload_enum_unimported.scxml:18 :: _machine
 
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
@@ -187,7 +187,6 @@ impl StaticPayloadEnumUnimportedInject
                 StaticPayloadEnumUnimportedRecordCommandEnum::Retire => "retire",
             }),
             ::sce_rust_runtime::event_payload::quote(match payload.reason {
-                StaticPayloadEnumUnimportedWhyEnum::None => "none",
                 StaticPayloadEnumUnimportedWhyEnum::NotWriter => "notWriter",
                 StaticPayloadEnumUnimportedWhyEnum::NoRoomForValue => "noRoomForValue",
                 StaticPayloadEnumUnimportedWhyEnum::NoRoomForHistory => "noRoomForHistory",
@@ -210,7 +209,6 @@ impl StaticPayloadEnumUnimportedInject
 /// SCE Accepted Subset §2.15: an `enum:Why` datamodel value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StaticPayloadEnumUnimportedWhyEnum {
-    None,
     NotWriter,
     NoRoomForValue,
     NoRoomForHistory,
@@ -226,7 +224,6 @@ impl StaticPayloadEnumUnimportedWhyEnum {
     #[allow(dead_code)]
     pub fn sce_name(self) -> &'static str {
         match self {
-            Self::None => "none",
             Self::NotWriter => "notWriter",
             Self::NoRoomForValue => "noRoomForValue",
             Self::NoRoomForHistory => "noRoomForHistory",
@@ -242,7 +239,6 @@ impl StaticPayloadEnumUnimportedWhyEnum {
     #[allow(dead_code)]
     pub fn to_underlying(self) -> u8 {
         match self {
-            Self::None => 0,
             Self::NotWriter => 1,
             Self::NoRoomForValue => 2,
             Self::NoRoomForHistory => 3,
@@ -258,7 +254,6 @@ impl StaticPayloadEnumUnimportedWhyEnum {
     #[allow(dead_code)]
     pub fn from_underlying(raw: u8) -> Option<Self> {
         match raw {
-            0 => Some(Self::None),
             1 => Some(Self::NotWriter),
             2 => Some(Self::NoRoomForValue),
             3 => Some(Self::NoRoomForHistory),
@@ -330,7 +325,7 @@ pub struct StaticPayloadEnumUnimportedRefusedRecord {
 #[derive(Debug, Clone, PartialEq)]
 #[allow(non_snake_case)]
 pub struct StaticPayloadEnumUnimportedData {
-    pub last: StaticPayloadEnumUnimportedWhyEnum,
+    pub last: Option<StaticPayloadEnumUnimportedWhyEnum>,
     pub kept: Vec<StaticPayloadEnumUnimportedRefusedRecord>,
     pub row: u32,
     pub refusals: u32,
@@ -379,7 +374,6 @@ impl ::sce_rust_runtime::saved_state::SavedValue for StaticPayloadEnumUnimported
     fn to_saved(&self) -> ::sce_rust_runtime::json::Value {
         ::sce_rust_runtime::json::Value::Text(
             match self {
-                Self::None => "none",
                 Self::NotWriter => "notWriter",
                 Self::NoRoomForValue => "noRoomForValue",
                 Self::NoRoomForHistory => "noRoomForHistory",
@@ -399,7 +393,6 @@ impl ::sce_rust_runtime::saved_state::SavedValue for StaticPayloadEnumUnimported
     ) -> Result<Self, ::sce_rust_runtime::saved_state::StateRefusal> {
         match value {
             ::sce_rust_runtime::json::Value::Text(declared) => match declared.as_str() {
-                "none" => Ok(Self::None),
                 "notWriter" => Ok(Self::NotWriter),
                 "noRoomForValue" => Ok(Self::NoRoomForValue),
                 "noRoomForHistory" => Ok(Self::NoRoomForHistory),
@@ -588,10 +581,10 @@ impl StaticPayloadEnumUnimportedPersist for Engine<StaticPayloadEnumUnimportedPo
 
     const SHAPE: ::sce_rust_runtime::saved_state::SavedShape =
         ::sce_rust_runtime::saved_state::SavedShape {
-            first: "b438ab24fdbeaa8a6e5b4374868634cd1f5563b57bdda5aa1ab05ac6aa345cb4",
-            revised: "49947d270ab07ed43e599cbb214b814e9848b17e4a4db30d99f64b907fb7c69d",
-            format2_first: "d405568787fe6df52784dfd89231491aa1d68562f4788d2515c076e8d9bac5d0",
-            format2_revised: "54654acbc9d1b0f11710436fbb18e8367f3a511e51dc474789a41fe83a68fa95",
+            first: "60b1f94fa3bf7ca3236aafdd09c81831b91b1473dba7a603b712203b06b90104",
+            revised: "abcc6fca73cad31c2aec6e1e94f26d004b87084345c8e133e718fe481447e64d",
+            format2_first: "e46e9211d49e6ad750d2a7d941e066e5bd755b8fab314f055bf6cf953c5dae5d",
+            format2_revised: "c1d6a992c546dec8ec42587953284ed8519eac537d64581625ce7063f8b5268f",
             records: &[::sce_rust_runtime::saved_state::RecordLineage {
                 event: "record_list.refused",
                 revision: 1,
@@ -685,7 +678,7 @@ impl StaticPayloadEnumUnimportedPersist for Engine<StaticPayloadEnumUnimportedPo
             saved,
             Self::HISTORIES,
         )?;
-        let _: StaticPayloadEnumUnimportedWhyEnum =
+        let _: Option<StaticPayloadEnumUnimportedWhyEnum> =
             ::sce_rust_runtime::saved_state::SavedValue::from_saved(
                 saved.variable("last")?,
                 "last",
@@ -752,7 +745,7 @@ pub struct StaticPayloadEnumUnimportedPolicy {
     // transition guards (`matches!(&self.pending_payload, …)`).
     pending_payload: StaticPayloadEnumUnimportedPayload,
     /// W3C SCXML 5.2: the `last` datamodel variable, published (`sce:direction="out"`).
-    last: StaticPayloadEnumUnimportedWhyEnum,
+    last: Option<StaticPayloadEnumUnimportedWhyEnum>,
     /// W3C SCXML 5.2: the `kept` datamodel variable, published (`sce:direction="out"`).
     kept: Vec<StaticPayloadEnumUnimportedRefusedRecord>,
     /// W3C SCXML 5.2: the `row` datamodel variable, published (`sce:direction="out"`).
@@ -780,7 +773,7 @@ pub struct StaticPayloadEnumUnimportedPolicy {
 
 impl StaticPayloadEnumUnimportedPolicy {
     fn build(session_id: String) -> Self {
-        let last: StaticPayloadEnumUnimportedWhyEnum = StaticPayloadEnumUnimportedWhyEnum::None;
+        let last: Option<StaticPayloadEnumUnimportedWhyEnum> = None;
         let kept: Vec<StaticPayloadEnumUnimportedRefusedRecord> = Vec::new();
         let row: u32 = 0;
         let refusals: u32 = 0;
@@ -848,7 +841,7 @@ impl StaticPayloadEnumUnimportedPolicy {
 
     /// W3C SCXML 5.2: what the published `last` datamodel variable
     /// holds now. Only the machine writes it.
-    pub fn last(&self) -> StaticPayloadEnumUnimportedWhyEnum {
+    pub fn last(&self) -> Option<StaticPayloadEnumUnimportedWhyEnum> {
         self.last
     }
 
@@ -1116,7 +1109,6 @@ impl StatePolicy for StaticPayloadEnumUnimportedPolicy {
                             }
                         },
                         reason: match fields.text("reason")?.as_str() {
-                            "none" => StaticPayloadEnumUnimportedWhyEnum::None,
                             "notWriter" => StaticPayloadEnumUnimportedWhyEnum::NotWriter,
                             "noRoomForValue" => StaticPayloadEnumUnimportedWhyEnum::NoRoomForValue,
                             "noRoomForHistory" => {
@@ -1150,8 +1142,8 @@ impl StatePolicy for StaticPayloadEnumUnimportedPolicy {
     // ======================================================================
 
     // W3C SCXML 3.7: Execute <onentry> actions for a state
-    #[doc = "SCE-MAP: static_payload_enum_unimported.scxml:16 :: _machine"]
-    // SCE-MAP: static_payload_enum_unimported.scxml:16 :: _machine
+    #[doc = "SCE-MAP: static_payload_enum_unimported.scxml:18 :: _machine"]
+    // SCE-MAP: static_payload_enum_unimported.scxml:18 :: _machine
     fn execute_entry_actions(
         &mut self,
         state: Self::State,
@@ -1167,8 +1159,8 @@ impl StatePolicy for StaticPayloadEnumUnimportedPolicy {
     // recorded runs nothing.
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
-    #[doc = "SCE-MAP: static_payload_enum_unimported.scxml:16 :: _machine"]
-    // SCE-MAP: static_payload_enum_unimported.scxml:16 :: _machine
+    #[doc = "SCE-MAP: static_payload_enum_unimported.scxml:18 :: _machine"]
+    // SCE-MAP: static_payload_enum_unimported.scxml:18 :: _machine
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
@@ -1184,8 +1176,8 @@ impl StatePolicy for StaticPayloadEnumUnimportedPolicy {
     // the first of `state`'s own transitions, in document order, that `event`
     // enables. The engine walks the atomic states and their ancestors and
     // keeps the ordered set. `Event::Null` asks for eventless transitions.
-    #[doc = "SCE-MAP: static_payload_enum_unimported.scxml:16 :: _machine"]
-    // SCE-MAP: static_payload_enum_unimported.scxml:16 :: _machine
+    #[doc = "SCE-MAP: static_payload_enum_unimported.scxml:18 :: _machine"]
+    // SCE-MAP: static_payload_enum_unimported.scxml:18 :: _machine
     fn first_enabled_transition(
         &mut self,
         state: Self::State,
@@ -1213,8 +1205,8 @@ impl StatePolicy for StaticPayloadEnumUnimportedPolicy {
 
     // W3C SCXML 3.13: a transition's executable content, run by the engine
     // between the microstep's exits and its entries.
-    #[doc = "SCE-MAP: static_payload_enum_unimported.scxml:16 :: _machine"]
-    // SCE-MAP: static_payload_enum_unimported.scxml:16 :: _machine
+    #[doc = "SCE-MAP: static_payload_enum_unimported.scxml:18 :: _machine"]
+    // SCE-MAP: static_payload_enum_unimported.scxml:18 :: _machine
     fn execute_transition_content(
         &mut self,
         source: Self::State,
@@ -1225,7 +1217,7 @@ impl StatePolicy for StaticPayloadEnumUnimportedPolicy {
             StaticPayloadEnumUnimportedState::Listening => {
                 match transition_index {
                     0 => {
-                        // SCE-MAP: static_payload_enum_unimported.scxml:27 :: listening :: _transition_0
+                        // SCE-MAP: static_payload_enum_unimported.scxml:29 :: listening :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
                         let ev = match &self.pending_payload {
                             StaticPayloadEnumUnimportedPayload::RecordListRefused(ev) => ev.clone(),
@@ -1234,7 +1226,7 @@ impl StatePolicy for StaticPayloadEnumUnimportedPolicy {
                         // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                         'action_block: {
                             // W3C SCXML 5.3: <assign location="last">
-                            self.last = ev.reason;
+                            self.last = Some(ev.reason);
 
                             // W3C SCXML 5.3: <assign location="row">
                             self.row = ev.id;

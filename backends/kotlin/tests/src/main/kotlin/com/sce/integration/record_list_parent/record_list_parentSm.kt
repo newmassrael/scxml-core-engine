@@ -1,10 +1,10 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 8b4828d778fc1da05444ac6a052eb44c820b7a80e1f4075fc52bc6e97e8a070a
+// source-hash: d11fb6db69c27fed25f47a2f22a5bf7fb78da524d08f0c299e9cc553d32a6375
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/record_list_parent.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: record_list_parent.scxml:37 :: _machine
+// SCE-MAP: record_list_parent.scxml:40 :: _machine
 
 package com.sce.integration.record_list_parent
 
@@ -66,7 +66,7 @@ data class RecordListParentRecordListJoinPayload(val node: ULong, val hub: Boole
 // RecordListParentRecordListRefusedPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `record_list.refused`. Consumers inject it via the `raiseRecordListRefused` seam
 // on the machine — they never name this class directly.
-data class RecordListParentRecordListRefusedPayload(val id: UInt, val field: UShort, val kind: RecordListParentCommandEnum, val reason: RecordListParentRefusalEnum)
+data class RecordListParentRecordListRefusedPayload(val id: UInt, val field: UShort, val kind: RecordListParentRecordCommandEnum, val reason: RecordListParentRecordRefusalEnum)
 
 // RecordListParentRecordListRegisterPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `record_list.register`. Consumers inject it via the `raiseRecordListRegister` seam
@@ -125,8 +125,8 @@ data class RecordListParentToldValueRecord(val id: UInt, val field: UShort, val 
         fun fromSaved(value: Any?, what: String): RecordListParentToldValueRecord = RecordListParentToldValueRecord(id = SavedValues.uint32(SavedValues.field(value, what, "id"), "$what.id"), field = SavedValues.uint16(SavedValues.field(value, what, "field"), "$what.field"), ordinal = SavedValues.uint32(SavedValues.field(value, what, "ordinal"), "$what.ordinal"), value = SavedValues.int64(SavedValues.field(value, what, "value"), "$what.value"), text = SavedValues.string(SavedValues.field(value, what, "text"), "$what.text", 96), wallTime = SavedValues.int64(SavedValues.field(value, what, "wallTime"), "$what.wallTime"), counter = SavedValues.uint32(SavedValues.field(value, what, "counter"), "$what.counter"), nodeId = SavedValues.uint64(SavedValues.field(value, what, "nodeId"), "$what.nodeId"))
     }
 }
-/** SCE Accepted Subset §2.15: an `enum:Command` datamodel value. */
-enum class RecordListParentCommandEnum(val declaredName: String) {
+/** SCE Accepted Subset §2.15: an `enum:record_command` datamodel value. */
+enum class RecordListParentRecordCommandEnum(val declaredName: String) {
     EDIT("edit"),
     CLEAR("clear"),
     RETIRE("retire");
@@ -143,19 +143,18 @@ enum class RecordListParentCommandEnum(val declaredName: String) {
 
     companion object {
         /** The value a saved state holds, refused unless it is one. */
-        fun fromSaved(value: Any?, what: String): RecordListParentCommandEnum {
+        fun fromSaved(value: Any?, what: String): RecordListParentRecordCommandEnum {
             val declared = SavedValues.string(value, what)
             return entries.firstOrNull { it.declaredName == declared }
-                ?: throw StateRefusal("'$what' ($declared) is not a variant of Command")
+                ?: throw StateRefusal("'$what' ($declared) is not a variant of record_command")
         }
 
         /** The variant that declares [raw], or null for a number no variant declares. */
-        fun fromUnderlying(raw: UByte): RecordListParentCommandEnum? = entries.firstOrNull { it.toUnderlying() == raw }
+        fun fromUnderlying(raw: UByte): RecordListParentRecordCommandEnum? = entries.firstOrNull { it.toUnderlying() == raw }
     }
 }
-/** SCE Accepted Subset §2.15: an `enum:Refusal` datamodel value. */
-enum class RecordListParentRefusalEnum(val declaredName: String) {
-    NONE("none"),
+/** SCE Accepted Subset §2.15: an `enum:record_refusal` datamodel value. */
+enum class RecordListParentRecordRefusalEnum(val declaredName: String) {
     NOT_WRITER("notWriter"),
     NO_ROOM_FOR_VALUE("noRoomForValue"),
     NO_ROOM_FOR_HISTORY("noRoomForHistory"),
@@ -170,7 +169,6 @@ enum class RecordListParentRefusalEnum(val declaredName: String) {
 
     /** The number the enum document declares for this value. */
     fun toUnderlying(): UByte = when (this) {
-        NONE -> 0u.toUByte()
         NOT_WRITER -> 1u.toUByte()
         NO_ROOM_FOR_VALUE -> 2u.toUByte()
         NO_ROOM_FOR_HISTORY -> 3u.toUByte()
@@ -183,24 +181,24 @@ enum class RecordListParentRefusalEnum(val declaredName: String) {
 
     companion object {
         /** The value a saved state holds, refused unless it is one. */
-        fun fromSaved(value: Any?, what: String): RecordListParentRefusalEnum {
+        fun fromSaved(value: Any?, what: String): RecordListParentRecordRefusalEnum {
             val declared = SavedValues.string(value, what)
             return entries.firstOrNull { it.declaredName == declared }
-                ?: throw StateRefusal("'$what' ($declared) is not a variant of Refusal")
+                ?: throw StateRefusal("'$what' ($declared) is not a variant of record_refusal")
         }
 
         /** The variant that declares [raw], or null for a number no variant declares. */
-        fun fromUnderlying(raw: UByte): RecordListParentRefusalEnum? = entries.firstOrNull { it.toUnderlying() == raw }
+        fun fromUnderlying(raw: UByte): RecordListParentRecordRefusalEnum? = entries.firstOrNull { it.toUnderlying() == raw }
     }
 }
 /** SCE Accepted Subset §2.15: a `record:Refused` datamodel value. */
-data class RecordListParentRefusedRecord(val id: UInt, val field: UShort, val kind: RecordListParentCommandEnum, val reason: RecordListParentRefusalEnum) {
+data class RecordListParentRefusedRecord(val id: UInt, val field: UShort, val kind: RecordListParentRecordCommandEnum, val reason: RecordListParentRecordRefusalEnum) {
     /** This value as a saved state writes it. */
     fun toSaved(): Any = linkedMapOf("id" to SavedValues.of(id), "field" to SavedValues.of(field), "kind" to kind.toSaved(), "reason" to reason.toSaved())
 
     companion object {
         /** The value a saved state holds, refused unless it is one. */
-        fun fromSaved(value: Any?, what: String): RecordListParentRefusedRecord = RecordListParentRefusedRecord(id = SavedValues.uint32(SavedValues.field(value, what, "id"), "$what.id"), field = SavedValues.uint16(SavedValues.field(value, what, "field"), "$what.field"), kind = RecordListParentCommandEnum.fromSaved(SavedValues.field(value, what, "kind"), "$what.kind"), reason = RecordListParentRefusalEnum.fromSaved(SavedValues.field(value, what, "reason"), "$what.reason"))
+        fun fromSaved(value: Any?, what: String): RecordListParentRefusedRecord = RecordListParentRefusedRecord(id = SavedValues.uint32(SavedValues.field(value, what, "id"), "$what.id"), field = SavedValues.uint16(SavedValues.field(value, what, "field"), "$what.field"), kind = RecordListParentRecordCommandEnum.fromSaved(SavedValues.field(value, what, "kind"), "$what.kind"), reason = RecordListParentRecordRefusalEnum.fromSaved(SavedValues.field(value, what, "reason"), "$what.reason"))
     }
 }
 /** The bounds this machine is built with, each by the name `sce:limit` gives it (docs/adr/0050). */
@@ -246,10 +244,10 @@ class RecordListParentStateMachine(
     /** W3C SCXML 5.2: the `other` datamodel variable, the machine's own. */
     private var vOther: RecordListParentToldValueRecord = RecordListParentToldValueRecord(id = 0.toUInt(), field = 0.toUShort(), ordinal = 0.toUInt(), value = 0, text = "", wallTime = 0, counter = 0.toUInt(), nodeId = 0.toULong())
     /** W3C SCXML 5.2: the `refused` datamodel variable, published (`sce:direction="out"`). */
-    private var vRefused: RecordListParentRefusedRecord = RecordListParentRefusedRecord(id = 0.toUInt(), field = 0.toUShort(), kind = RecordListParentCommandEnum.EDIT, reason = RecordListParentRefusalEnum.NONE)
+    private var vRefused: RecordListParentRefusedRecord? = null
 
     /** What the published `refused` holds. */
-    val refused: RecordListParentRefusedRecord get() = vRefused
+    val refused: RecordListParentRefusedRecord? get() = vRefused
     /** W3C SCXML 5.2: the `refusedCount` datamodel variable, published (`sce:direction="out"`). */
     private var vRefusedCount: UInt = 0.toUInt()
 
@@ -277,7 +275,7 @@ class RecordListParentStateMachine(
         val told: UInt,
         val shown: RecordListParentToldRecord,
         val others: List<RecordListParentToldValueRecord>,
-        val refused: RecordListParentRefusedRecord,
+        val refused: RecordListParentRefusedRecord?,
         val refusedCount: UInt,
     )
 
@@ -329,10 +327,10 @@ class RecordListParentStateMachine(
      * later revision added at its default.
      */
     val savedShape: SavedShape = SavedShape(
-        first = "4cdc6c4dba4e65c99e14df0217f3def6c61bcb56e9239c2721561f4d6a4a41f9",
-        revised = "b6b60aaa34a0ccc6709edd6a2d309c0d7f69b895257b4acd809b4343159de88c",
-        format2First = "4a7cf799833ca50a1b8f86c5afd486ded0f2f0cc626c5260347c2fb4b3a4fa90",
-        format2Revised = "8f73aa2806bb64e5c8311f7ae969457a2ab12e90928b5ed33643a47d7bb8037b",
+        first = "d29628f9cc18dfa690b968ce10709031b7e718b8f8e45573c79d78466a4fc1cf",
+        revised = "4c3e62bd1e2a8511315643a001a26fd69249ba1130d0128413aa2164e09adae4",
+        format2First = "11b03bea0c822147097a0e03f3585997b3c1a52659ebeb3187b514d1470b7a7a",
+        format2Revised = "798fa308f5f8f9083f3778bf144eb6dd07fedbddf41f1721540579f8bed9afde",
         records = listOf(
             RecordLineage(
                 event = "record_list.refused",
@@ -408,7 +406,7 @@ class RecordListParentStateMachine(
             "shown" to vShown.toSaved(),
             "others" to SavedValues.list(vOthers) { it.toSaved() },
             "other" to vOther.toSaved(),
-            "refused" to vRefused.toSaved(),
+            "refused" to SavedValues.optional(vRefused) { it.toSaved() },
             "refusedCount" to SavedValues.of(vRefusedCount),
         ),
         wallNowMs,
@@ -441,7 +439,7 @@ class RecordListParentStateMachine(
         val saved2 = RecordListParentToldRecord.fromSaved(savedGrown.variable("shown"), "shown")
         val saved3 = SavedValues.list(savedGrown.variable("others"), "others", 8) { e, w -> RecordListParentToldValueRecord.fromSaved(e, w) }
         val saved4 = RecordListParentToldValueRecord.fromSaved(savedGrown.variable("other"), "other")
-        val saved5 = RecordListParentRefusedRecord.fromSaved(savedGrown.variable("refused"), "refused")
+        val saved5 = SavedValues.optional(savedGrown.variable("refused"), "refused") { e, w -> RecordListParentRefusedRecord.fromSaved(e, w) }
         val saved6 = SavedValues.uint32(savedGrown.variable("refusedCount"), "refusedCount")
         vTold = saved1
         vShown = saved2
@@ -466,7 +464,7 @@ class RecordListParentStateMachine(
         RecordListParentToldRecord.fromSaved(savedGrown.variable("shown"), "shown")
         SavedValues.list(savedGrown.variable("others"), "others", 8) { e, w -> RecordListParentToldValueRecord.fromSaved(e, w) }
         RecordListParentToldValueRecord.fromSaved(savedGrown.variable("other"), "other")
-        RecordListParentRefusedRecord.fromSaved(savedGrown.variable("refused"), "refused")
+        SavedValues.optional(savedGrown.variable("refused"), "refused") { e, w -> RecordListParentRefusedRecord.fromSaved(e, w) }
         SavedValues.uint32(savedGrown.variable("refusedCount"), "refusedCount")
     }
 
@@ -543,7 +541,7 @@ class RecordListParentStateMachine(
                     pendingRecordListJoinPayload = RecordListParentRecordListJoinPayload(fields.uint64("node"), fields.boolean("hub"))
                 } else if (event == RecordListParentEvent.RecordList.Refused) {
                     val fields = EventPayload.decode(metadata.data)
-                    pendingRecordListRefusedPayload = RecordListParentRecordListRefusedPayload(fields.uint32("id"), fields.uint16("field"), fields.string("kind").let { name -> RecordListParentCommandEnum.entries.firstOrNull { it.declaredName == name } ?: throw EventPayload.Refusal("'kind' ($name) is not a variant of Command") }, fields.string("reason").let { name -> RecordListParentRefusalEnum.entries.firstOrNull { it.declaredName == name } ?: throw EventPayload.Refusal("'reason' ($name) is not a variant of Refusal") })
+                    pendingRecordListRefusedPayload = RecordListParentRecordListRefusedPayload(fields.uint32("id"), fields.uint16("field"), fields.string("kind").let { name -> RecordListParentRecordCommandEnum.entries.firstOrNull { it.declaredName == name } ?: throw EventPayload.Refusal("'kind' ($name) is not a variant of record_command") }, fields.string("reason").let { name -> RecordListParentRecordRefusalEnum.entries.firstOrNull { it.declaredName == name } ?: throw EventPayload.Refusal("'reason' ($name) is not a variant of record_refusal") })
                 } else if (event == RecordListParentEvent.RecordList.Register) {
                     val fields = EventPayload.decode(metadata.data)
                     pendingRecordListRegisterPayload = RecordListParentRecordListRegisterPayload(fields.uint32("id"), fields.uint16("field"), fields.uint32("count"), fields.int64("value"), fields.string("text"), fields.int64("wallTime"), fields.uint32("counter"), fields.uint64("nodeId"))
@@ -621,7 +619,7 @@ class RecordListParentStateMachine(
     }
     // NL→IR Item C1 Path A typed `_event.data` inject seam for
     // `record_list.refused` — binds the event name and the payload field values in one call.
-    fun raiseRecordListRefused(id: UInt, field: UShort, kind: RecordListParentCommandEnum, reason: RecordListParentRefusalEnum) {
+    fun raiseRecordListRefused(id: UInt, field: UShort, kind: RecordListParentRecordCommandEnum, reason: RecordListParentRecordRefusalEnum) {
         send(
             RecordListParentEvent.RecordList.Refused,
             EventMetadata(
@@ -959,11 +957,11 @@ class RecordListParentStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: record_list_parent.scxml:37 :: _machine
+    // SCE-MAP: record_list_parent.scxml:40 :: _machine
     override fun onEntry(state: RecordListParentState, isDefaultEntry: Boolean) {
         when (state) {
             is RecordListParentState.Holding -> {
-                // SCE-MAP: record_list_parent.scxml:87 :: holding :: _state_body
+                // SCE-MAP: record_list_parent.scxml:83 :: holding :: _state_body
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
                 deferStaticInvoke("list", state)
             }
@@ -1021,11 +1019,11 @@ class RecordListParentStateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: record_list_parent.scxml:37 :: _machine
+    // SCE-MAP: record_list_parent.scxml:40 :: _machine
     override fun onExit(state: RecordListParentState) {
         when (state) {
             is RecordListParentState.Holding -> {
-                // SCE-MAP: record_list_parent.scxml:87 :: holding :: _state_body
+                // SCE-MAP: record_list_parent.scxml:83 :: holding :: _state_body
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
                 cancelPendingInvokesForState(state)
                 // W3C SCXML 6.4: Cancel active invoked child on state exit
@@ -1036,12 +1034,12 @@ class RecordListParentStateMachine(
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: record_list_parent.scxml:37 :: _machine
+    // SCE-MAP: record_list_parent.scxml:40 :: _machine
     override fun executeTransitionContent(source: RecordListParentState, transitionIndex: Int) {
         when (source) {
         is RecordListParentState.Holding -> when (transitionIndex) {
             0 -> {
-                // SCE-MAP: record_list_parent.scxml:93 :: holding :: _transition_0
+                // SCE-MAP: record_list_parent.scxml:89 :: holding :: _transition_0
                 if (pendingRecordListJoinPayload == null) {
                     return
                 }
@@ -1069,7 +1067,7 @@ class RecordListParentStateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             1 -> {
-                // SCE-MAP: record_list_parent.scxml:99 :: holding :: _transition_1
+                // SCE-MAP: record_list_parent.scxml:95 :: holding :: _transition_1
                 if (pendingRecordListEditPayload == null) {
                     return
                 }
@@ -1105,7 +1103,7 @@ class RecordListParentStateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             2 -> {
-                // SCE-MAP: record_list_parent.scxml:109 :: holding :: _transition_2
+                // SCE-MAP: record_list_parent.scxml:105 :: holding :: _transition_2
                 if (pendingRecordListClearPayload == null) {
                     return
                 }
@@ -1137,7 +1135,7 @@ class RecordListParentStateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             3 -> {
-                // SCE-MAP: record_list_parent.scxml:117 :: holding :: _transition_3
+                // SCE-MAP: record_list_parent.scxml:113 :: holding :: _transition_3
                 if (pendingRecordListRetirePayload == null) {
                     return
                 }
@@ -1167,7 +1165,7 @@ class RecordListParentStateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             4 -> {
-                // SCE-MAP: record_list_parent.scxml:124 :: holding :: _transition_4
+                // SCE-MAP: record_list_parent.scxml:120 :: holding :: _transition_4
                 if (pendingRecordListRolePayload == null) {
                     return
                 }
@@ -1195,7 +1193,7 @@ class RecordListParentStateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             5 -> {
-                // SCE-MAP: record_list_parent.scxml:130 :: holding :: _transition_5
+                // SCE-MAP: record_list_parent.scxml:126 :: holding :: _transition_5
                 if (pendingRecordListRoomPayload == null) {
                     return
                 }
@@ -1225,7 +1223,7 @@ class RecordListParentStateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             6 -> {
-                // SCE-MAP: record_list_parent.scxml:137 :: holding :: _transition_6
+                // SCE-MAP: record_list_parent.scxml:133 :: holding :: _transition_6
                 if (pendingRecordListWritePayload == null) {
                     return
                 }
@@ -1263,7 +1261,7 @@ class RecordListParentStateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             7 -> {
-                // SCE-MAP: record_list_parent.scxml:148 :: holding :: _transition_7
+                // SCE-MAP: record_list_parent.scxml:144 :: holding :: _transition_7
                 if (pendingRecordListSupersedePayload == null) {
                     return
                 }
@@ -1299,7 +1297,7 @@ class RecordListParentStateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             8 -> {
-                // SCE-MAP: record_list_parent.scxml:161 :: holding :: _transition_8
+                // SCE-MAP: record_list_parent.scxml:157 :: holding :: _transition_8
                 if (pendingRecordListRegisterPayload == null) {
                     return
                 }
@@ -1329,7 +1327,7 @@ class RecordListParentStateMachine(
             }
             }
             9 -> {
-                // SCE-MAP: record_list_parent.scxml:173 :: holding :: _transition_9
+                // SCE-MAP: record_list_parent.scxml:169 :: holding :: _transition_9
                 if (pendingRecordListValuePayload == null) {
                     return
                 }
@@ -1361,18 +1359,12 @@ class RecordListParentStateMachine(
             }
             }
             10 -> {
-                // SCE-MAP: record_list_parent.scxml:188 :: holding :: _transition_10
+                // SCE-MAP: record_list_parent.scxml:184 :: holding :: _transition_10
                 if (pendingRecordListRefusedPayload == null) {
                     return
                 }
 
-            vRefused = vRefused.copy(id = pendingRecordListRefusedPayload!!.id)
-
-            vRefused = vRefused.copy(field = pendingRecordListRefusedPayload!!.field)
-
-            vRefused = vRefused.copy(kind = pendingRecordListRefusedPayload!!.kind)
-
-            vRefused = vRefused.copy(reason = pendingRecordListRefusedPayload!!.reason)
+            vRefused = RecordListParentRefusedRecord(id = pendingRecordListRefusedPayload!!.id, field = pendingRecordListRefusedPayload!!.field, kind = pendingRecordListRefusedPayload!!.kind, reason = pendingRecordListRefusedPayload!!.reason)
 
             if (try { vRefusedCount = com.sce.forge.runtime.SceChecked.add(vRefusedCount, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentEvent.Error.Execution, "<assign location='refusedCount'>: an integer operation overflowed or failed"); true }) {
                 return

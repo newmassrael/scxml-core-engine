@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 9313ff05336b94eeb54552b43ab70c62d4e55585e0cedc6ece4c89ceb09077d5
+// source-hash: 634c022b7eb332297dcb6115177eef8cafdb472ead988f0bdc39838cb7f8d8ae
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce:std/shared/record_list.scxml
@@ -242,7 +242,6 @@ data class RecordListPartRecord(val kind: UByte, val id: UInt, val field: UShort
 }
 /** SCE Accepted Subset §2.15: an `enum:Refusal` datamodel value. */
 enum class RecordListRefusalEnum(val declaredName: String) {
-    NONE("none"),
     NOT_WRITER("notWriter"),
     NO_ROOM_FOR_VALUE("noRoomForValue"),
     NO_ROOM_FOR_HISTORY("noRoomForHistory"),
@@ -257,7 +256,6 @@ enum class RecordListRefusalEnum(val declaredName: String) {
 
     /** The number the enum document declares for this value. */
     fun toUnderlying(): UByte = when (this) {
-        NONE -> 0u.toUByte()
         NOT_WRITER -> 1u.toUByte()
         NO_ROOM_FOR_VALUE -> 2u.toUByte()
         NO_ROOM_FOR_HISTORY -> 3u.toUByte()
@@ -770,10 +768,10 @@ class RecordListStateMachine(
      * later revision added at its default.
      */
     val savedShape: SavedShape = SavedShape(
-        first = "340859b0a721fd543a2cd19a56c731fc7deccc79c4a0e1238a11b13b109af194",
-        revised = "c9dd599d8c983201c9142c8b856ba4bd71dac00d28a5903fbfc6af1649dcee5d",
-        format2First = "5cc454c365171a28f062aae53cb34fa6b9bd33e46775c22fa8b23dd6b87d271a",
-        format2Revised = "3ab46f231c112905dd81548ea9ffa1858522c5b71c84747d9223883798a347b4",
+        first = "b9de4ddc5460d55ea67b11e5f7b85473c44d2879aafb4bae5ab00811a707f429",
+        revised = "d404fdb4f5731790516c940d94a1f83b63dbfcb947f2e096f93e4ea529d40a80",
+        format2First = "091a179d000b2f2cb209ae48bb504c63ce0976b9e88c74bf13c001fe6b7efba1",
+        format2Revised = "f6a25db2dee068cd0208ca7d01fc6fbe12df24ae8234343dd9772cf65863b547",
         records = listOf(
             RecordLineage(
                 event = "merge.hlc_timestamp",

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 9313ff05336b94eeb54552b43ab70c62d4e55585e0cedc6ece4c89ceb09077d5
+// source-hash: 634c022b7eb332297dcb6115177eef8cafdb472ead988f0bdc39838cb7f8d8ae
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -1461,7 +1461,6 @@ func RecordListPartRecordFromSaved(value any, what string) (RecordListPartRecord
 type RecordListRefusalEnum uint8
 
 const (
-	RecordListRefusalEnumNone RecordListRefusalEnum = 0
 	RecordListRefusalEnumNotWriter RecordListRefusalEnum = 1
 	RecordListRefusalEnumNoRoomForValue RecordListRefusalEnum = 2
 	RecordListRefusalEnumNoRoomForHistory RecordListRefusalEnum = 3
@@ -1475,8 +1474,6 @@ const (
 // String is the name the enum document declares for the value.
 func (v RecordListRefusalEnum) String() string {
 	switch v {
-	case RecordListRefusalEnumNone:
-		return "none"
 	case RecordListRefusalEnumNotWriter:
 		return "notWriter"
 	case RecordListRefusalEnumNoRoomForValue:
@@ -1506,7 +1503,7 @@ func (v RecordListRefusalEnum) ToUnderlying() uint8 {
 // number no variant declares.
 func RecordListRefusalEnumFromUnderlying(raw uint8) (RecordListRefusalEnum, bool) {
 	switch raw {
-	case 0, 1, 2, 3, 4, 5, 6, 7, 8:
+	case 1, 2, 3, 4, 5, 6, 7, 8:
 		return RecordListRefusalEnum(raw), true
 	}
 	return 0, false
@@ -1524,8 +1521,6 @@ func RecordListRefusalEnumFromSaved(value any, what string) (RecordListRefusalEn
 		return 0, err
 	}
 	switch declared {
-	case "none":
-		return RecordListRefusalEnumNone, nil
 	case "notWriter":
 		return RecordListRefusalEnumNotWriter, nil
 	case "noRoomForValue":
@@ -1643,12 +1638,12 @@ const RecordListLimitSharedTypedText uint32 = 32
 // this machine names when every record schema it holds is in its first
 // revision (docs/adr/0045, section 2). The generator computes it once, so it is
 // the text every backend's constant is.
-const RecordListSavedShapeFormat2 = "5cc454c365171a28f062aae53cb34fa6b9bd33e46775c22fa8b23dd6b87d271a"
+const RecordListSavedShapeFormat2 = "091a179d000b2f2cb209ae48bb504c63ce0976b9e88c74bf13c001fe6b7efba1"
 
 // RecordListSavedShapeFormat2Revised is the shape a format-2 saved state
 // of this machine names when it names a later revision of a record schema or
 // an enum.
-const RecordListSavedShapeFormat2Revised = "3ab46f231c112905dd81548ea9ffa1858522c5b71c84747d9223883798a347b4"
+const RecordListSavedShapeFormat2Revised = "f6a25db2dee068cd0208ca7d01fc6fbe12df24ae8234343dd9772cf65863b547"
 
 // RecordListSavedEnumKeys names each enum a value of a saved state of
 // this machine is of, by its document (docs/adr/0044): the key `revisions`
@@ -1666,10 +1661,10 @@ var RecordListSavedEnumKeys = [...]string{
 // one saved at an earlier revision of a record schema is read with each field a
 // later revision added at its default.
 var RecordListSavedShape = sce.SavedShape{
-	First:          "340859b0a721fd543a2cd19a56c731fc7deccc79c4a0e1238a11b13b109af194",
-	Revised:        "c9dd599d8c983201c9142c8b856ba4bd71dac00d28a5903fbfc6af1649dcee5d",
-	Format2First:   "5cc454c365171a28f062aae53cb34fa6b9bd33e46775c22fa8b23dd6b87d271a",
-	Format2Revised: "3ab46f231c112905dd81548ea9ffa1858522c5b71c84747d9223883798a347b4",
+	First:          "b9de4ddc5460d55ea67b11e5f7b85473c44d2879aafb4bae5ab00811a707f429",
+	Revised:        "d404fdb4f5731790516c940d94a1f83b63dbfcb947f2e096f93e4ea529d40a80",
+	Format2First:   "091a179d000b2f2cb209ae48bb504c63ce0976b9e88c74bf13c001fe6b7efba1",
+	Format2Revised: "f6a25db2dee068cd0208ca7d01fc6fbe12df24ae8234343dd9772cf65863b547",
 	Records: []sce.RecordLineage{
 		{
 			Event:     "merge.hlc_timestamp",

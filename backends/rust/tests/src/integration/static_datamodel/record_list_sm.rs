@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 9313ff05336b94eeb54552b43ab70c62d4e55585e0cedc6ece4c89ceb09077d5
+// source-hash: 634c022b7eb332297dcb6115177eef8cafdb472ead988f0bdc39838cb7f8d8ae
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -711,7 +711,6 @@ pub struct RecordListPartRecord {
 /// SCE Accepted Subset §2.15: an `enum:Refusal` datamodel value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RecordListRefusalEnum {
-    None,
     NotWriter,
     NoRoomForValue,
     NoRoomForHistory,
@@ -727,7 +726,6 @@ impl RecordListRefusalEnum {
     #[allow(dead_code)]
     pub fn sce_name(self) -> &'static str {
         match self {
-            Self::None => "none",
             Self::NotWriter => "notWriter",
             Self::NoRoomForValue => "noRoomForValue",
             Self::NoRoomForHistory => "noRoomForHistory",
@@ -743,7 +741,6 @@ impl RecordListRefusalEnum {
     #[allow(dead_code)]
     pub fn to_underlying(self) -> u8 {
         match self {
-            Self::None => 0,
             Self::NotWriter => 1,
             Self::NoRoomForValue => 2,
             Self::NoRoomForHistory => 3,
@@ -759,7 +756,6 @@ impl RecordListRefusalEnum {
     #[allow(dead_code)]
     pub fn from_underlying(raw: u8) -> Option<Self> {
         match raw {
-            0 => Some(Self::None),
             1 => Some(Self::NotWriter),
             2 => Some(Self::NoRoomForValue),
             3 => Some(Self::NoRoomForHistory),
@@ -1290,7 +1286,6 @@ impl ::sce_rust_runtime::saved_state::SavedValue for RecordListRefusalEnum {
     fn to_saved(&self) -> ::sce_rust_runtime::json::Value {
         ::sce_rust_runtime::json::Value::Text(
             match self {
-                Self::None => "none",
                 Self::NotWriter => "notWriter",
                 Self::NoRoomForValue => "noRoomForValue",
                 Self::NoRoomForHistory => "noRoomForHistory",
@@ -1310,7 +1305,6 @@ impl ::sce_rust_runtime::saved_state::SavedValue for RecordListRefusalEnum {
     ) -> Result<Self, ::sce_rust_runtime::saved_state::StateRefusal> {
         match value {
             ::sce_rust_runtime::json::Value::Text(declared) => match declared.as_str() {
-                "none" => Ok(Self::None),
                 "notWriter" => Ok(Self::NotWriter),
                 "noRoomForValue" => Ok(Self::NoRoomForValue),
                 "noRoomForHistory" => Ok(Self::NoRoomForHistory),
@@ -1734,10 +1728,10 @@ impl RecordListPersist for Engine<RecordListPolicy> {
 
     const SHAPE: ::sce_rust_runtime::saved_state::SavedShape =
         ::sce_rust_runtime::saved_state::SavedShape {
-            first: "340859b0a721fd543a2cd19a56c731fc7deccc79c4a0e1238a11b13b109af194",
-            revised: "c9dd599d8c983201c9142c8b856ba4bd71dac00d28a5903fbfc6af1649dcee5d",
-            format2_first: "5cc454c365171a28f062aae53cb34fa6b9bd33e46775c22fa8b23dd6b87d271a",
-            format2_revised: "3ab46f231c112905dd81548ea9ffa1858522c5b71c84747d9223883798a347b4",
+            first: "b9de4ddc5460d55ea67b11e5f7b85473c44d2879aafb4bae5ab00811a707f429",
+            revised: "d404fdb4f5731790516c940d94a1f83b63dbfcb947f2e096f93e4ea529d40a80",
+            format2_first: "091a179d000b2f2cb209ae48bb504c63ce0976b9e88c74bf13c001fe6b7efba1",
+            format2_revised: "f6a25db2dee068cd0208ca7d01fc6fbe12df24ae8234343dd9772cf65863b547",
             records: &[
                 ::sce_rust_runtime::saved_state::RecordLineage {
                     event: "merge.hlc_timestamp",

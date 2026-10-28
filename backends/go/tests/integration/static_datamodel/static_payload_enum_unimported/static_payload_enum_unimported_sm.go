@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 8b4828d778fc1da05444ac6a052eb44c820b7a80e1f4075fc52bc6e97e8a070a
+// source-hash: d11fb6db69c27fed25f47a2f22a5bf7fb78da524d08f0c299e9cc553d32a6375
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -20,7 +20,7 @@
 // entry/exit actions, and event processing.
 
 
-// SCE-MAP: static_payload_enum_unimported.scxml:16 :: _machine
+// SCE-MAP: static_payload_enum_unimported.scxml:18 :: _machine
 
 package static_payload_enum_unimported
 
@@ -32,6 +32,7 @@ import (
 
 	sce "github.com/newmassrael/sce-go-runtime"
 	scealgorithm "github.com/newmassrael/sce-forge-runtime/algorithm"
+	"github.com/newmassrael/sce-forge-runtime/optional"
 )
 
 // Ensure imports are used
@@ -200,7 +201,6 @@ func StaticPayloadEnumUnimportedRaiseRecordListRefused(e *sce.Engine[StaticPaylo
 type StaticPayloadEnumUnimportedWhyEnum uint8
 
 const (
-	StaticPayloadEnumUnimportedWhyEnumNone StaticPayloadEnumUnimportedWhyEnum = 0
 	StaticPayloadEnumUnimportedWhyEnumNotWriter StaticPayloadEnumUnimportedWhyEnum = 1
 	StaticPayloadEnumUnimportedWhyEnumNoRoomForValue StaticPayloadEnumUnimportedWhyEnum = 2
 	StaticPayloadEnumUnimportedWhyEnumNoRoomForHistory StaticPayloadEnumUnimportedWhyEnum = 3
@@ -214,8 +214,6 @@ const (
 // String is the name the enum document declares for the value.
 func (v StaticPayloadEnumUnimportedWhyEnum) String() string {
 	switch v {
-	case StaticPayloadEnumUnimportedWhyEnumNone:
-		return "none"
 	case StaticPayloadEnumUnimportedWhyEnumNotWriter:
 		return "notWriter"
 	case StaticPayloadEnumUnimportedWhyEnumNoRoomForValue:
@@ -245,7 +243,7 @@ func (v StaticPayloadEnumUnimportedWhyEnum) ToUnderlying() uint8 {
 // number no variant declares.
 func StaticPayloadEnumUnimportedWhyEnumFromUnderlying(raw uint8) (StaticPayloadEnumUnimportedWhyEnum, bool) {
 	switch raw {
-	case 0, 1, 2, 3, 4, 5, 6, 7, 8:
+	case 1, 2, 3, 4, 5, 6, 7, 8:
 		return StaticPayloadEnumUnimportedWhyEnum(raw), true
 	}
 	return 0, false
@@ -263,8 +261,6 @@ func StaticPayloadEnumUnimportedWhyEnumFromSaved(value any, what string) (Static
 		return 0, err
 	}
 	switch declared {
-	case "none":
-		return StaticPayloadEnumUnimportedWhyEnumNone, nil
 	case "notWriter":
 		return StaticPayloadEnumUnimportedWhyEnumNotWriter, nil
 	case "noRoomForValue":
@@ -430,12 +426,12 @@ func StaticPayloadEnumUnimportedRefusedRecordFromSaved(value any, what string) (
 // this machine names when every record schema it holds is in its first
 // revision (docs/adr/0045, section 2). The generator computes it once, so it is
 // the text every backend's constant is.
-const StaticPayloadEnumUnimportedSavedShapeFormat2 = "d405568787fe6df52784dfd89231491aa1d68562f4788d2515c076e8d9bac5d0"
+const StaticPayloadEnumUnimportedSavedShapeFormat2 = "e46e9211d49e6ad750d2a7d941e066e5bd755b8fab314f055bf6cf953c5dae5d"
 
 // StaticPayloadEnumUnimportedSavedShapeFormat2Revised is the shape a format-2 saved state
 // of this machine names when it names a later revision of a record schema or
 // an enum.
-const StaticPayloadEnumUnimportedSavedShapeFormat2Revised = "54654acbc9d1b0f11710436fbb18e8367f3a511e51dc474789a41fe83a68fa95"
+const StaticPayloadEnumUnimportedSavedShapeFormat2Revised = "c1d6a992c546dec8ec42587953284ed8519eac537d64581625ce7063f8b5268f"
 
 // StaticPayloadEnumUnimportedSavedEnumKeys names each enum a value of a saved state of
 // this machine is of, by its document (docs/adr/0044): the key `revisions`
@@ -453,10 +449,10 @@ var StaticPayloadEnumUnimportedSavedEnumKeys = [...]string{
 // one saved at an earlier revision of a record schema is read with each field a
 // later revision added at its default.
 var StaticPayloadEnumUnimportedSavedShape = sce.SavedShape{
-	First:          "b438ab24fdbeaa8a6e5b4374868634cd1f5563b57bdda5aa1ab05ac6aa345cb4",
-	Revised:        "49947d270ab07ed43e599cbb214b814e9848b17e4a4db30d99f64b907fb7c69d",
-	Format2First:   "d405568787fe6df52784dfd89231491aa1d68562f4788d2515c076e8d9bac5d0",
-	Format2Revised: "54654acbc9d1b0f11710436fbb18e8367f3a511e51dc474789a41fe83a68fa95",
+	First:          "60b1f94fa3bf7ca3236aafdd09c81831b91b1473dba7a603b712203b06b90104",
+	Revised:        "abcc6fca73cad31c2aec6e1e94f26d004b87084345c8e133e718fe481447e64d",
+	Format2First:   "e46e9211d49e6ad750d2a7d941e066e5bd755b8fab314f055bf6cf953c5dae5d",
+	Format2Revised: "c1d6a992c546dec8ec42587953284ed8519eac537d64581625ce7063f8b5268f",
 	Records: []sce.RecordLineage{
 		{
 			Event:     "record_list.refused",
@@ -516,7 +512,7 @@ func StaticPayloadEnumUnimportedSaveAt(engine *sce.Engine[StaticPayloadEnumUnimp
 		return nil, sce.Refuse("the engine is not one of StaticPayloadEnumUnimported")
 	}
 	variables := sce.NewJSONObject()
-	variables.Set("last", p.vLast.ToSaved())
+	variables.Set("last", optional.Wire(p.vLast, func(v StaticPayloadEnumUnimportedWhyEnum) any { return v.ToSaved() }))
 	variables.Set("kept", sce.SavedWriteList(p.vKept, func(r StaticPayloadEnumUnimportedRefusedRecord) any { return r.ToSaved() }))
 	variables.Set("row", sce.SavedWriteUint32(p.vRow))
 	variables.Set("refusals", sce.SavedWriteUint32(p.vRefusals))
@@ -545,7 +541,7 @@ func StaticPayloadEnumUnimportedJudge(saved *sce.SavedState) error {
 	}
 	if raw, err := grown.Variable("last"); err != nil {
 		return err
-	} else if _, err := StaticPayloadEnumUnimportedWhyEnumFromSaved(raw, "last"); err != nil {
+	} else if _, err := sce.SavedReadOptional(raw, "last", StaticPayloadEnumUnimportedWhyEnumFromSaved, optional.None[StaticPayloadEnumUnimportedWhyEnum], optional.Some[StaticPayloadEnumUnimportedWhyEnum]); err != nil {
 		return err
 	}
 	if raw, err := grown.Variable("kept"); err != nil {
@@ -594,7 +590,7 @@ func StaticPayloadEnumUnimportedRestoreAt(policy *StaticPayloadEnumUnimportedPol
 	if err != nil {
 		return nil, err
 	}
-	read1, err := StaticPayloadEnumUnimportedWhyEnumFromSaved(raw1, "last")
+	read1, err := sce.SavedReadOptional(raw1, "last", StaticPayloadEnumUnimportedWhyEnumFromSaved, optional.None[StaticPayloadEnumUnimportedWhyEnum], optional.Some[StaticPayloadEnumUnimportedWhyEnum])
 	if err != nil {
 		return nil, err
 	}
@@ -725,7 +721,7 @@ type StaticPayloadEnumUnimportedPolicy struct {
 	SessionID string
 	// ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
 	// W3C SCXML 5.2: the `last` datamodel variable, published (`sce:direction="out"`).
-	vLast StaticPayloadEnumUnimportedWhyEnum
+	vLast optional.Of[StaticPayloadEnumUnimportedWhyEnum]
 	// W3C SCXML 5.2: the `kept` datamodel variable, published (`sce:direction="out"`).
 	vKept []StaticPayloadEnumUnimportedRefusedRecord
 	// W3C SCXML 5.2: the `row` datamodel variable, published (`sce:direction="out"`).
@@ -748,7 +744,7 @@ func NewStaticPayloadEnumUnimportedPolicy() StaticPayloadEnumUnimportedPolicy {
 		// host that has one for it gives it with SetSessionID before it starts the
 		// machine; a child's is its parent's and the id it was started under.
 		SessionID: sce.DrawSessionID(),
-		vLast: StaticPayloadEnumUnimportedWhyEnumNone,
+		vLast: optional.None[StaticPayloadEnumUnimportedWhyEnum](),
 		vKept: nil,
 		vRow: 0,
 		vRefusals: 0,
@@ -757,7 +753,7 @@ func NewStaticPayloadEnumUnimportedPolicy() StaticPayloadEnumUnimportedPolicy {
 
 // Last reports what the published `last` datamodel
 // variable holds now (W3C SCXML 5.2). Only the machine writes it.
-func (p *StaticPayloadEnumUnimportedPolicy) Last() StaticPayloadEnumUnimportedWhyEnum {
+func (p *StaticPayloadEnumUnimportedPolicy) Last() optional.Of[StaticPayloadEnumUnimportedWhyEnum] {
 	return p.vLast
 }
 
@@ -1034,7 +1030,7 @@ func (p *StaticPayloadEnumUnimportedPolicy) LiftTypedPayload(event StaticPayload
 		if payload.kind, err = func() (StaticPayloadEnumUnimportedRecordCommandEnum, error) { name, err := sce.PayloadString(fields, "kind"); if err != nil { return 0, err }; switch name { case "edit": return StaticPayloadEnumUnimportedRecordCommandEnumEdit, nil; case "clear": return StaticPayloadEnumUnimportedRecordCommandEnumClear, nil; case "retire": return StaticPayloadEnumUnimportedRecordCommandEnumRetire, nil; }; return 0, fmt.Errorf("%q (%s) is not a variant of record_command", "kind", name) }(); err != nil {
 			return err
 		}
-		if payload.reason, err = func() (StaticPayloadEnumUnimportedWhyEnum, error) { name, err := sce.PayloadString(fields, "reason"); if err != nil { return 0, err }; switch name { case "none": return StaticPayloadEnumUnimportedWhyEnumNone, nil; case "notWriter": return StaticPayloadEnumUnimportedWhyEnumNotWriter, nil; case "noRoomForValue": return StaticPayloadEnumUnimportedWhyEnumNoRoomForValue, nil; case "noRoomForHistory": return StaticPayloadEnumUnimportedWhyEnumNoRoomForHistory, nil; case "noRoomForDigest": return StaticPayloadEnumUnimportedWhyEnumNoRoomForDigest, nil; case "textTooLong": return StaticPayloadEnumUnimportedWhyEnumTextTooLong, nil; case "changeTooLarge": return StaticPayloadEnumUnimportedWhyEnumChangeTooLarge, nil; case "registerNamedTwice": return StaticPayloadEnumUnimportedWhyEnumRegisterNamedTwice, nil; case "clockExhausted": return StaticPayloadEnumUnimportedWhyEnumClockExhausted, nil; }; return 0, fmt.Errorf("%q (%s) is not a variant of Why", "reason", name) }(); err != nil {
+		if payload.reason, err = func() (StaticPayloadEnumUnimportedWhyEnum, error) { name, err := sce.PayloadString(fields, "reason"); if err != nil { return 0, err }; switch name { case "notWriter": return StaticPayloadEnumUnimportedWhyEnumNotWriter, nil; case "noRoomForValue": return StaticPayloadEnumUnimportedWhyEnumNoRoomForValue, nil; case "noRoomForHistory": return StaticPayloadEnumUnimportedWhyEnumNoRoomForHistory, nil; case "noRoomForDigest": return StaticPayloadEnumUnimportedWhyEnumNoRoomForDigest, nil; case "textTooLong": return StaticPayloadEnumUnimportedWhyEnumTextTooLong, nil; case "changeTooLarge": return StaticPayloadEnumUnimportedWhyEnumChangeTooLarge, nil; case "registerNamedTwice": return StaticPayloadEnumUnimportedWhyEnumRegisterNamedTwice, nil; case "clockExhausted": return StaticPayloadEnumUnimportedWhyEnumClockExhausted, nil; }; return 0, fmt.Errorf("%q (%s) is not a variant of Why", "reason", name) }(); err != nil {
 			return err
 		}
 		p.pendingRecordListRefusedPayload = payload
@@ -1059,7 +1055,7 @@ func (p *StaticPayloadEnumUnimportedPolicy) ClearEventMetadata() {
 // ExecuteEntryActions enters one state (W3C SCXML 3.8): adds it to the
 // configuration, runs its <onentry>, and its <initial> transition's content when
 // its initial state is entered by default.
-//line static_payload_enum_unimported.scxml:16
+//line static_payload_enum_unimported.scxml:18
 func (p *StaticPayloadEnumUnimportedPolicy) ExecuteEntryActions(state StaticPayloadEnumUnimportedState, engine *sce.Engine[StaticPayloadEnumUnimportedState, StaticPayloadEnumUnimportedEvent], isDefaultEntry bool) {
 	switch state {
 	default:
@@ -1072,7 +1068,7 @@ func (p *StaticPayloadEnumUnimportedPolicy) ExecuteEntryActions(state StaticPayl
 // <initial> content) when the history was taken with nothing recorded. The
 // engine asks for it by the entry set's defaultHistoryContent answer; a history
 // that restored what it recorded runs nothing.
-//line static_payload_enum_unimported.scxml:16
+//line static_payload_enum_unimported.scxml:18
 func (p *StaticPayloadEnumUnimportedPolicy) ExecuteHistoryDefaultContent(history sce.HistoryID, engine *sce.Engine[StaticPayloadEnumUnimportedState, StaticPayloadEnumUnimportedEvent]) {
 	// W3C SCXML 3.10.2: no <history> in this document has default content.
 }
@@ -1080,7 +1076,7 @@ func (p *StaticPayloadEnumUnimportedPolicy) ExecuteHistoryDefaultContent(history
 // ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
 // runs its <onexit>, cancels its invocations and removes it from the
 // configuration — §scxml-D-exitStates's order.
-//line static_payload_enum_unimported.scxml:16
+//line static_payload_enum_unimported.scxml:18
 func (p *StaticPayloadEnumUnimportedPolicy) ExecuteExitActions(state StaticPayloadEnumUnimportedState, engine *sce.Engine[StaticPayloadEnumUnimportedState, StaticPayloadEnumUnimportedEvent], configurationBeforeExit []StaticPayloadEnumUnimportedState) {
 	// §scxml-D-exitStates orders one state's exit as onexit, then
 	// cancelInvoke, then configuration.delete(s), so `In(s)` inside s's own
@@ -1097,7 +1093,7 @@ func (p *StaticPayloadEnumUnimportedPolicy) ExecuteExitActions(state StaticPaylo
 // BindCurrentEvent binds the event whose transitions are about to be selected as
 // the _event their guards read (W3C SCXML 5.10) — before the first guard runs,
 // and not for an eventless selection, which has no event of its own.
-//line static_payload_enum_unimported.scxml:16
+//line static_payload_enum_unimported.scxml:18
 func (p *StaticPayloadEnumUnimportedPolicy) BindCurrentEvent(event StaticPayloadEnumUnimportedEvent, engine *sce.Engine[StaticPayloadEnumUnimportedState, StaticPayloadEnumUnimportedEvent]) {
 	// This document's guards never read _event, so there is nothing to bind.
 }
@@ -1107,7 +1103,7 @@ func (p *StaticPayloadEnumUnimportedPolicy) BindCurrentEvent(event StaticPayload
 // that event enables and whose guard holds. The engine walks the atomic states
 // and their ancestors and keeps the ordered set; the null event asks for
 // eventless transitions.
-//line static_payload_enum_unimported.scxml:16
+//line static_payload_enum_unimported.scxml:18
 func (p *StaticPayloadEnumUnimportedPolicy) FirstEnabledTransition(state StaticPayloadEnumUnimportedState, event StaticPayloadEnumUnimportedEvent, engine *sce.Engine[StaticPayloadEnumUnimportedState, StaticPayloadEnumUnimportedEvent]) (sce.EnabledTransition[StaticPayloadEnumUnimportedState, sce.HistoryID], bool) {
 	switch state {
 	case StaticPayloadEnumUnimportedStateListening:
@@ -1127,13 +1123,13 @@ func (p *StaticPayloadEnumUnimportedPolicy) FirstEnabledTransition(state StaticP
 
 // ExecuteTransitionContent runs one transition's executable content (W3C SCXML
 // 3.13), between the microstep's exits and its entries.
-//line static_payload_enum_unimported.scxml:16
+//line static_payload_enum_unimported.scxml:18
 func (p *StaticPayloadEnumUnimportedPolicy) ExecuteTransitionContent(source StaticPayloadEnumUnimportedState, transitionIndex int, engine *sce.Engine[StaticPayloadEnumUnimportedState, StaticPayloadEnumUnimportedEvent]) {
 	switch source {
 	case StaticPayloadEnumUnimportedStateListening:
 		switch transitionIndex {
 		case 0:
-//line static_payload_enum_unimported.scxml:27
+//line static_payload_enum_unimported.scxml:29
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticPayloadEnumUnimportedPayloadTagRecordListRefused {
@@ -1141,7 +1137,7 @@ func (p *StaticPayloadEnumUnimportedPolicy) ExecuteTransitionContent(source Stat
 				}
 
 
-	p.vLast = p.pendingRecordListRefusedPayload.reason
+	p.vLast = optional.Some[StaticPayloadEnumUnimportedWhyEnum](p.pendingRecordListRefusedPayload.reason)
 
 
 
