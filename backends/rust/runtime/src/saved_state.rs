@@ -1524,7 +1524,7 @@ pub fn record_bounded_bytes(
 /// with when the field is optional ([`optional`]). A `null` where a record is
 /// held is no record that lacks a field but a value absent where the restoring
 /// build's type is not optional, and is refused as every `null` is
-/// ([`not_a`]): a state saved after a record was widened to `optional<record:X>`
+/// (as a value that is not a record): a state saved after a record was widened to `optional<record:X>`
 /// is refused by a build from before it, naming the variable.
 pub fn record_member<'v>(
     value: &'v Value,
