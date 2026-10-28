@@ -243,6 +243,23 @@ of the trace alone; whether it helps the kit, where the number of functions touc
 of instructions, is for the consumer to measure by adding `#[inline(always)]` to the `write_source` functions of its
 generated codecs, before the generator grows a switch for it.
 
+**Three smaller ideas, measured and not kept**, each on the same trace of the consumer's Reply:
+evaluating each gate once at the head of the prologue (936 to 971, worse: the values stay live across the writes and
+are spilled), an inline hint on the thin `write_source` wrapper (no change), and a word-wise copy (above). The
+`Result` checks after each write are about a tenth of what is left; they are the contract of a fallible sink and are
+not removed.
+
+**`generate --inline-encode`.** The forced-inline experiment is now an option, `ForgeCompileOptions::inline_encode`,
+that marks the function which writes each codec `#[inline(always)]` and changes nothing else (a test holds that the
+two outputs differ in no other line, and that the marked set compiles under the same lints). Generated for the
+consumer's Reply it reproduces the hand-edited experiment: `encode_source` 936 to 876 instructions and the one-pass
+window 714 to 693, byte for byte the same frame, for about 5 KB more text in the measured image. That is a modest
+saving in instructions; the reason to have the option is that the 544 instructions by which the generated path
+exceeds the hand-written one cost the consumer's kit about 2,000 cycles (3.7 each), more than instructions alone
+explain, and a frame written by one function instead of nine may close part of that. Whether it does is not known: it
+is off by default and meant to be measured on the target before it is kept, and unlike `--views` it is a property of
+one document.
+
 **A one-pass window.** The count is a pass of its own, 222 of the 936 instructions. A caller that can reserve more
 than the frame needs and give back what it did not use (a transmit slot of the largest frame, committed at the
 length written) does not need it. `write_window::<C, S>(src, &mut [u8]) -> Result<usize, CodecError>` and the

@@ -2985,6 +2985,47 @@ const CHAIN_HAS_SET: &[&str] = &[
     "codec_chain_has_tagged.scxml",
 ];
 
+/// `generate --inline-encode` (docs/adr/0061) marks the function that writes each
+/// codec `#[inline(always)]` and changes nothing else. A codec set that nests
+/// bodies, lists, a chain and a variant, generated with it, still compiles as
+/// a program, and the text the option adds is the attribute alone: with the
+/// option off nothing is marked, and the two outputs differ in no other line.
+#[test]
+fn inline_encode_marks_the_writing_functions_and_changes_nothing_else() {
+    let dir = resource_dir();
+    let rust = sce_build::generator::Language::Rust;
+    let off = generate_files_for_codec_set_with(&dir, CHAIN_HAS_SET, rust, golden_options(rust))
+        .expect("generate with the option off");
+    let mut on_opts = golden_options(rust);
+    on_opts.inline_encode = true;
+    let on = generate_files_for_codec_set_with(&dir, CHAIN_HAS_SET, rust, on_opts)
+        .expect("generate with the option on");
+    assert_eq!(off.len(), on.len());
+    let mut marked = 0usize;
+    for ((name, plain), (_, inlined)) in off.iter().zip(&on) {
+        assert!(
+            !plain.contains("#[inline(always)]"),
+            "{name}: marked with the option off"
+        );
+        let kept: Vec<&str> = inlined
+            .lines()
+            .filter(|l| l.trim() != "#[inline(always)]")
+            .collect();
+        marked += inlined.lines().count() - kept.len();
+        assert_eq!(
+            kept,
+            plain.lines().collect::<Vec<_>>(),
+            "{name}: the option changed more than the attribute"
+        );
+    }
+    assert!(marked > 0, "no function was marked");
+    // The marked set is also a program, under the same lints as the others.
+    if let Err(e) = rustc_run_generated_set(on, "inline_encode_rust", "build", RustcProfile::Alloc)
+    {
+        panic!("the set generated with --inline-encode does not compile:\n{e}");
+    }
+}
+
 /// A golden is text; this is the gate that it is also a program. The
 /// chain-membership lowering names locals, entry accessors and members on
 /// both the decode and the encode site, in six spellings each, and a name

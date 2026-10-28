@@ -1769,6 +1769,13 @@ struct GenerateArgs {
     /// with it on too; ignored for other languages.
     #[arg(long)]
     views: bool,
+    /// Rust only: always inline the functions that write each codec, so the
+    /// functions of a frame become one (docs/adr/0061). It trades text for the
+    /// instructions and calls of the nested writes; measure it on the target
+    /// before keeping it. Off by default, and when off the output is unchanged.
+    /// A property of one document, not of a set; ignored for other languages.
+    #[arg(long)]
+    inline_encode: bool,
     /// Path to a .clang-format file for C++ output formatting.
     /// When omitted, the built-in default style is used.
     #[arg(long)]
@@ -6165,6 +6172,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
         go_module_prefix,
         owned_origin,
         views,
+        inline_encode,
         format_style,
         no_format,
         deploy,
@@ -6295,6 +6303,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
                 const_fold_budget,
                 owned_origin,
                 views,
+                inline_encode,
                 ..Default::default()
             };
 
@@ -7104,6 +7113,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
                             const_fold_budget,
                             owned_origin,
                             views,
+                            inline_encode,
                             ..Default::default()
                         }),
                         codegen: Some(&sce_build::generator::StatechartCodegenOptions {

@@ -28,6 +28,8 @@ pub(in super::super) struct Input<'a> {
     pub(in super::super) l: &'a LangCtx,
     /// `to_pascal_case(m.name)`.
     pub(in super::super) struct_name: &'a str,
+    /// Whether the function that writes is always inlined (`--inline-encode`).
+    pub(in super::super) inline_encode: bool,
 }
 
 struct Plan<'a> {
@@ -402,12 +404,14 @@ impl Plan<'_> {
              \x20   }}\n\n\
              \x20   /// [`Self::encode_source`] without the pre-pass a parent has already made.\n\
              \x20   #[doc(hidden)]\n\
+             {inline}\
              \x20   pub fn write_source<S: {trait_name} + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {{\n\
              {body}\
              \x20   }}\n\
              }}\n\n\
              {measure}",
             records = self.record_traits(),
+            inline = super::write_attribute(self.input.inline_encode),
             measure = super::measure_impl(name, "", &trait_name),
         )
     }
