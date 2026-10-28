@@ -179,12 +179,15 @@ impl ExprTarget {
             // or `null`, and `x.value.f` is the member of the record
             // `SceOptional.proven(x)` reads ([`kotlin_optional_form`]).
             ExprTarget::Kotlin => true,
-            // Not yet: each of the other generated backends refuses an optional
-            // record by name until its step of docs/adr/0055 spells one.
-            ExprTarget::Rust => false,
+            // Rust: an `Option` of the record's own type; `x.value.f` is read
+            // through the runtime's `proven_ref` and written through `proven_mut`,
+            // so the record stays where it is held ([`rust_optional::proven_ref`]).
+            ExprTarget::Rust => true,
             // C++: `std::optional<Record>`, whose present record `x.value` reads as
             // `(*x)` and over which the member is read ([`cpp_optional`]).
             ExprTarget::Cpp => true,
+            // Not yet: each of the other generated backends refuses an optional
+            // record by name until its step of docs/adr/0055 spells one.
             ExprTarget::Go => false,
             ExprTarget::C => false,
         }
@@ -528,6 +531,18 @@ fn lower_at(
             emit_rust_owned_bytes(&ast)?
         }
         ExprTarget::Rust if position == Position::Owned && expected.is_optional() => {
+            emit_rust_owned_optional(&ast, expected)?
+        }
+        // A text or a byte string that may be absent, returned, leaves the function
+        // as the owned value its signature declares, as a present one does: an
+        // expression reads one borrowed (docs/adr/0055).
+        ExprTarget::Rust
+            if position == Position::Returned
+                && matches!(
+                    expected,
+                    InferredType::Optional(OptionalElem::Str | OptionalElem::Bytes)
+                ) =>
+        {
             emit_rust_owned_optional(&ast, expected)?
         }
         ExprTarget::Rust => emit_rust(&ast, expected)?,
@@ -8277,8 +8292,24 @@ fn emit_rust_owned_bytes(expr: &TypedExpr) -> Result<String, Refusal> {
 fn emit_rust_owned_optional(expr: &TypedExpr, expected: InferredType) -> Result<String, Refusal> {
     let view = emit_rust(expr, expected)?;
     Ok(match expected {
-        InferredType::Optional(elem @ (OptionalElem::Str | OptionalElem::Bytes)) => {
+        // The absent value is owned as it is: there is no borrowed text to copy.
+        InferredType::Optional(elem @ (OptionalElem::Str | OptionalElem::Bytes))
+            if !matches!(expr.kind, ExprKind::NullLit) =>
+        {
             rust_optional::owned(&wrap_postfix(expr, view), elem)
+        }
+        // An optional record that a variable, a parameter or a local holds is
+        // copied where another place takes it whole, as a record is
+        // (docs/adr/0055, step 9): the place keeps its own, and the body may read
+        // it again. A value a call answers is owned already.
+        InferredType::Optional(OptionalElem::Record)
+            if expr.ty == InferredType::Optional(OptionalElem::Record)
+                && matches!(
+                    expr.kind,
+                    ExprKind::Ident(_) | ExprKind::Raw(_) | ExprKind::Member { .. }
+                ) =>
+        {
+            format!("{}.clone()", wrap_postfix(expr, view))
         }
         _ => view,
     })
@@ -8319,6 +8350,14 @@ fn rust_optional_form(form: OptionalForm<'_>, whole: &TypedExpr) -> Result<Strin
             } else {
                 rust_optional::is_absent(&view)
             }
+        }
+        // A record is read in place, through a borrow, and the member `.f` of the
+        // field read is taken of it: the record that owns text is not `Copy`, and
+        // `x.value` taken whole is no expression (docs/adr/0055, step 9).
+        OptionalForm::Proven { subject }
+            if subject.ty == InferredType::Optional(OptionalElem::Record) =>
+        {
+            rust_optional::proven_ref(&wrap_postfix(subject, read(subject)?))
         }
         OptionalForm::Proven { subject } => rust_optional::proven(&read(subject)?),
         OptionalForm::Otherwise { value, fallback } => {
@@ -14431,6 +14470,50 @@ mod tests {
         };
         assert_eq!(owned("title", text), "title.as_deref().map(str::to_string)");
         assert_eq!(owned("due", optional), "due");
+        // The absent value is owned as it is, and not mapped over.
+        assert_eq!(owned("null", text), "None");
+    }
+
+    /// Rust reads the present record of an optional record through a borrow of the
+    /// optional where the build proved it present, so the record that owns text is
+    /// not moved out of the place that holds it; takes a record a place holds whole
+    /// as a copy; and returns an optional text as the owned value its signature
+    /// declares, an expression reading one borrowed (docs/adr/0055, step 9).
+    #[test]
+    fn rust_reads_an_optional_record_through_a_borrow_and_owns_what_it_copies_and_returns() {
+        let mut ctx = TypeCtx::new();
+        let record = InferredType::Optional(OptionalElem::Record);
+        let text = InferredType::Optional(OptionalElem::Str);
+        ctx.insert_var("pick", record);
+        ctx.insert_var("other", record);
+        ctx.insert_var("title", text);
+        ctx.insert_record("pick.value", RecordShape::Closed);
+        ctx.insert_var("pick.value.count", int(true, 32));
+        let ctx = ctx.proving(crate::forge::narrowing::proves_written(
+            "pick !== null",
+            true,
+        ));
+        let rust = |expr: &str, expected: InferredType| {
+            transpile_into(expr, ExprTarget::Rust, &ctx, &empty_renames(), expected)
+                .unwrap_or_else(|e| panic!("{expr} lowers for Rust: {e:?}"))
+        };
+        assert_eq!(rust("pick !== null", InferredType::Bool), "pick.is_some()");
+        assert_eq!(rust("null === pick", InferredType::Bool), "pick.is_none()");
+        assert_eq!(
+            rust("pick.value.count", int(true, 32)),
+            "sce_forge_runtime::optional::proven_ref(&pick).count"
+        );
+        // An optional text is returned owned, as a present one is.
+        assert_eq!(rust("title", text), "title.as_deref().map(str::to_string)");
+        assert_eq!(rust("null", text), "None");
+        let owned = |expr: &str, expected: InferredType| {
+            transpile_into_owned(expr, ExprTarget::Rust, &ctx, &empty_renames(), expected)
+                .unwrap_or_else(|e| panic!("{expr} lowers owned for Rust: {e:?}"))
+                .text
+        };
+        // A place that holds an optional record keeps its own: another takes a copy.
+        assert_eq!(owned("other", record), "other.clone()");
+        assert_eq!(owned("null", record), "None");
     }
 
     /// C11 spells each construct of an optional value over `sce_optional_<elem>_t`

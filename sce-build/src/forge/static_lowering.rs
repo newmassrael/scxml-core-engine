@@ -477,21 +477,27 @@ fn generated_callee(
 /// where the algorithm is imported ([`crate::forge::static_imports`]), as is one whose
 /// enum is not the document the statechart holds the field in.
 fn plain_schema<'a>(spec: &AdapterSpec<'a>, alias: &str) -> Option<&'a EventSchemaModel> {
-    // An optional field is held in the same optional type by the machine's record
-    // and the algorithm's, and copies as it is (docs/adr/0055), where the backend
-    // spells an algorithm's optional value of its element
-    // ([`crate::forge::generator::algorithm_optional_spelled`]): a number or a
-    // `bool` on every generated backend until its step 9.
+    // An optional field is held in the optional type of the machine's record and the
+    // algorithm's, which an adapter copies where it is present
+    // (docs/adr/0055), where the backend spells an algorithm's optional value of its
+    // element ([`crate::forge::generator::algorithm_optional_spelled`]): a number or
+    // a `bool` on every generated backend, and the rest as its own step 9 spells it.
     spec.schemas.get(alias).filter(|schema| {
         schema.fields.iter().all(|f| match &f.sce_type {
             FieldType::Scalar(ty) => record_field_copies(ty, f.max_size),
-            FieldType::Optional { elem } => match spec.lang {
-                Some(lang) => crate::forge::generator::algorithm_optional_spelled(
-                    lang,
-                    &crate::forge::model::OptionalElemType::Scalar(elem.clone()),
-                ),
-                None => true,
-            },
+            // ... and a text that may be absent is bounded by the schema as a
+            // text is, since the algorithm's record holds it in a buffer of that
+            // bound.
+            FieldType::Optional { elem } => {
+                (!matches!(elem, SceType::String) || f.max_size.is_some())
+                    && match spec.lang {
+                        Some(lang) => crate::forge::generator::algorithm_optional_spelled(
+                            lang,
+                            &crate::forge::model::OptionalElemType::Scalar(elem.clone()),
+                        ),
+                        None => true,
+                    }
+            }
         })
     })
 }
@@ -601,12 +607,10 @@ impl AdapterSpec<'_> {
 
     /// `value`, a field of a record of the schema `alias` read from the side
     /// `crossing` leaves, as the other side's record holds it: a value of an enum by
-    /// [`Self::enum_crossing`], any other field as it is (`None` for an enum field this
-    /// target cannot spell). `text` spells the copy of a field that is no enum.
-    ///
-    /// A field of `optional<enum:…>` crosses where it is present, by the name of
-    /// its variant, and stays absent where it is absent ([`StaticTarget::optional_map`],
-    /// docs/adr/0055).
+    /// [`Self::enum_crossing`], one that may be absent by
+    /// [`Self::optional_enum_crossing`], any other field as it is (`None` for an
+    /// enum field this target cannot spell). `text` spells the copy of a field that
+    /// is no enum.
     fn record_field_crossing(
         &self,
         target: &dyn StaticTarget,
@@ -1301,6 +1305,17 @@ pub trait StaticTarget {
     /// names: it copies the element into the record a field at a time.
     fn record_at(&self, _list: &str, _index: &str) -> Option<String> {
         None
+    }
+    /// The element of `list` at `index` as the copy a variable holds
+    /// ([`Self::record_copy`] of [`Self::record_at`]), as an expression that fails
+    /// when the index is outside the list: what an optional record takes into
+    /// itself from a list's element (docs/adr/0055, step 9). A target whose copy of
+    /// an element is not that composition — a Rust record that owns text is cloned
+    /// out of the list by reference, and one that is plain data is read by value —
+    /// spells its own. `None` for a target that reads no element whole.
+    fn record_element(&self, list: &str, index: &str, schema: &EventSchemaModel) -> Option<String> {
+        self.record_at(list, index)
+            .map(|element| self.record_copy(&element, schema))
     }
     /// [`Self::receiving_write`] of a value that is a record of the type `held`,
     /// for a target that names the type of the local the value is computed into.
@@ -2626,9 +2641,15 @@ impl StaticTarget for RustTarget {
         Some(crate::forge::rust_optional::wire(value, wire))
     }
     // Lent to the adapter, which converts what the algorithm's types differ in and
-    // gives nothing back of it.
-    fn state_argument(&self, _machine: &str, _arg: &StateArg, held: &str) -> String {
-        format!("&{held}")
+    // gives nothing back of it. The literal `null` handed to an optional record is
+    // the absent value of the record's own type, lent as well (docs/adr/0055, step 9).
+    fn state_argument(&self, machine: &str, arg: &StateArg, held: &str) -> String {
+        match (&arg.slot, arg.code) {
+            (StaticSlot::OptionalRecord(alias), 'n') => {
+                format!("&None::<{}>", self.record_type(machine, alias))
+            }
+            _ => format!("&{held}"),
+        }
     }
     fn state_adapter_name(&self, _machine: &str, _callee: &StaticCallee, coded: &str) -> String {
         format!("call_{coded}")
@@ -2734,13 +2755,24 @@ impl StaticTarget for RustTarget {
                     };
                     let read = format!("{from}.{held}");
                     spec.record_field_crossing(self, f, &read, Crossing::ToAlgorithm, |read| {
-                        match (f.sce_type.present_type(), f.max_size) {
+                        match (&f.sce_type, f.max_size) {
                             // The machine holds the text within the schema's bound,
                             // which is the bound the algorithm's record holds it in:
                             // the copy is the one a text already held to it takes.
-                            (SceType::String, Some(bound)) => {
+                            (FieldType::Scalar(SceType::String), Some(bound)) => {
                                 format!("::sce_portable_bytes::SceString::<{bound}>::held(&{read})")
                             }
+                            // ... and a text that may be absent is copied where it is
+                            // present, and stays absent (docs/adr/0055, step 9).
+                            (
+                                FieldType::Optional {
+                                    elem: SceType::String,
+                                },
+                                Some(bound),
+                            ) => format!(
+                                "{read}.as_deref().map(|sce_present| \
+                                 ::sce_portable_bytes::SceString::<{bound}>::held(sce_present))"
+                            ),
                             _ => read.to_string(),
                         }
                     })
@@ -2765,8 +2797,15 @@ impl StaticTarget for RustTarget {
                     // The algorithm's text is held within the field's bound by
                     // construction, so the machine's `String` takes it whole.
                     spec.record_field_crossing(self, f, &read, Crossing::FromAlgorithm, |read| {
-                        match f.sce_type.present_type() {
-                            SceType::String => format!("{read}.as_str().to_string()"),
+                        match &f.sce_type {
+                            FieldType::Scalar(SceType::String) => {
+                                format!("{read}.as_str().to_string()")
+                            }
+                            FieldType::Optional {
+                                elem: SceType::String,
+                            } => format!(
+                                "{read}.as_ref().map(|sce_present| sce_present.as_str().to_string())"
+                            ),
                             _ => read.to_string(),
                         }
                     })
@@ -2781,6 +2820,21 @@ impl StaticTarget for RustTarget {
         };
         let algorithm_record = |alias: &str| {
             plain(alias).map(|schema| event_schema_payload_type(&schema.name, Language::Rust))
+        };
+        // What a record that crosses a call is held as where the call is: the
+        // machine's own record, or the payload struct of the event the transition
+        // is on.
+        let held_record = |alias: &str, code: char| -> Option<String> {
+            if code == 'p' {
+                let event = spec.payload_events.get(alias)?;
+                Some(format!(
+                    "{}{}Payload",
+                    spec.machine,
+                    filters::to_event_variant(event.to_string())
+                ))
+            } else {
+                Some(machine_record(alias))
+            }
         };
         let mut declarations = Vec::new();
         let mut prelude = Vec::new();
@@ -2808,7 +2862,17 @@ impl StaticTarget for RustTarget {
                     arguments.push(name);
                 }
                 // `Option<T>` of a number or a `bool` is `Copy`, and the
-                // algorithm's own type (docs/adr/0055).
+                // algorithm's own type (docs/adr/0055). A text is handed as the
+                // borrow the algorithm's parameter takes, which the expression of
+                // the argument reads an optional text as already; a value of an
+                // enum crosses by the declared name of its variant and a byte
+                // string is no value of an algorithm's slot, and both are refused
+                // where the import is read.
+                AdapterParam::Optional(SceType::String) => {
+                    declarations.push(format!("{name}: Option<&str>"));
+                    arguments.push(name);
+                }
+                AdapterParam::Optional(SceType::Enum(_) | SceType::Bytes) => return None,
                 AdapterParam::Optional(ty) => {
                     declarations.push(format!("{name}: {}", spec.optional_type(self, ty)?));
                     arguments.push(name);
@@ -2817,18 +2881,37 @@ impl StaticTarget for RustTarget {
                     slot: StaticSlot::Record(alias),
                     code,
                 } => {
-                    let held = if *code == 'p' {
-                        let event = spec.payload_events.get(alias)?;
-                        format!(
-                            "{}{}Payload",
-                            spec.machine,
-                            filters::to_event_variant(event.to_string())
-                        )
-                    } else {
-                        machine_record(alias)
-                    };
-                    declarations.push(format!("{name}: &{held}"));
+                    declarations.push(format!("{name}: &{}", held_record(alias, *code)?));
                     arguments.push(to_algorithm(alias, &name, *code == 'p')?);
+                }
+                // An optional record the machine holds, or the literal `null`, is
+                // lent as the optional it is and its record copied into the
+                // algorithm's where it is present; any other record is lifted into
+                // the present value of the algorithm's (docs/adr/0055, step 9).
+                AdapterParam::State {
+                    slot: StaticSlot::OptionalRecord(alias),
+                    code: 'o' | 'n',
+                } => {
+                    declarations.push(format!(
+                        "{name}: &{}",
+                        self.optional_type(&machine_record(alias))?
+                    ));
+                    prelude.push(format!(
+                        "    let {name}_algorithm: Option<{}> = {name}.as_ref().map(|r| {});\n",
+                        algorithm_record(alias)?,
+                        to_algorithm(alias, "r", false)?
+                    ));
+                    arguments.push(format!("{name}_algorithm"));
+                }
+                AdapterParam::State {
+                    slot: StaticSlot::OptionalRecord(alias),
+                    code,
+                } => {
+                    declarations.push(format!("{name}: &{}", held_record(alias, *code)?));
+                    arguments.push(format!(
+                        "Some({})",
+                        to_algorithm(alias, &name, *code == 'p')?
+                    ));
                 }
                 AdapterParam::State {
                     slot: StaticSlot::ScalarList(ty),
@@ -2852,12 +2935,10 @@ impl StaticTarget for RustTarget {
                     ));
                     arguments.push(format!("&{name}_algorithm"));
                 }
-                // An optional record is held by no generated backend yet: the call
-                // is refused by name where the adapter is asked for
-                // (docs/adr/0055, step 9).
+                // A number, a truth value and a value that may be absent are no
+                // state a call lends: they are the scalar parameters above.
                 AdapterParam::State {
-                    slot:
-                        StaticSlot::Scalar(_) | StaticSlot::Optional(_) | StaticSlot::OptionalRecord(_),
+                    slot: StaticSlot::Scalar(_) | StaticSlot::Optional(_),
                     ..
                 } => return None,
             }
@@ -2869,8 +2950,17 @@ impl StaticTarget for RustTarget {
             ),
             StaticSlot::Scalar(ty) if scalar_ok(ty) => (self.scalar_type(ty), "r".to_string()),
             StaticSlot::Scalar(_) => return None,
+            StaticSlot::Optional(SceType::Enum(_) | SceType::Bytes) => return None,
             StaticSlot::Optional(ty) => (spec.optional_type(self, ty)?, "r".to_string()),
-            StaticSlot::OptionalRecord(_) => return None,
+            // The optional record the algorithm answers, its record copied into the
+            // machine's where it is present (docs/adr/0055, step 9).
+            StaticSlot::OptionalRecord(alias) => (
+                self.optional_type(&machine_record(alias))?,
+                format!(
+                    "r.map(|sce_present| {})",
+                    from_algorithm(alias, "sce_present")?
+                ),
+            ),
             StaticSlot::Record(alias) => (machine_record(alias), from_algorithm(alias, "r")?),
             StaticSlot::ScalarList(ty) if scalar_ok(ty) => (
                 format!("Vec<{}>", self.scalar_type(ty)),
@@ -2982,6 +3072,26 @@ impl StaticTarget for RustTarget {
         } else {
             value.to_string()
         }
+    }
+    // An element of a list of records, taken whole (docs/adr/0055, step 9): a
+    // record that owns text is read by reference and cloned out of the list, one
+    // that is plain data is `Copy` and read by value, through the runtime's own
+    // checked read of an index.
+    fn record_element(&self, list: &str, index: &str, schema: &EventSchemaModel) -> Option<String> {
+        Some(if owns_a_buffer(schema) {
+            format!("sce_forge_runtime::algorithm::at_ref(&{list}, {index})?.clone()")
+        } else {
+            format!("sce_forge_runtime::algorithm::at(&{list}, {index})?")
+        })
+    }
+    // A field of the present record of an optional one, written through the
+    // runtime's `proven_mut` of a borrow of the optional: the record stays where it
+    // is held, and the field is changed in place (docs/adr/0055, step 9).
+    fn assign_present_field(&self, target: &str, field: &str, value: &str) -> Option<String> {
+        Some(format!(
+            "{} = {value};",
+            crate::forge::rust_optional::proven_field_place(target, field)
+        ))
     }
     // The schema's id as written, as this file's payload structs spell their
     // fields — one file, one spelling of a schema field.
@@ -4243,13 +4353,18 @@ pub fn lower(
                     .ok_or_else(|| optional_not_lowered(&what, lang))?;
                 let init = absent_value(target, &record_ty, &what)?;
                 rewrites.note(&var.expr, var.expr_spelling.as_ref(), &init);
+                // A record a host is lent and not handed (one that owns text) is
+                // lent in its optional too.
+                let view = target
+                    .record_view(&record_ty, &place.schema)
+                    .map(|_| ty.clone());
                 fields.push(StaticField {
                     id: var.id.clone(),
                     name,
                     ty,
                     init,
                     published,
-                    view: None,
+                    view,
                     read: None,
                     bound: None,
                     // A saved state holds it as `null` or as the record it holds
@@ -12713,19 +12828,26 @@ fn lower_optional_record_assign(
     } else if let Some((list, index)) = indexed_element(&written) {
         let lowered = lower(index, InferredType::Unknown)?;
         let named = renames.get(list).copied().unwrap_or(list);
-        let element = target.record_at(named, &lowered.text).ok_or_else(|| {
-            optional_not_lowered(
-                &format!("{construct}: an element of a list of records taken whole"),
-                lang,
-            )
-        })?;
+        let element = target
+            .record_element(named, &lowered.text, &place.schema)
+            .ok_or_else(|| {
+                optional_not_lowered(
+                    &format!("{construct}: an element of a list of records taken whole"),
+                    lang,
+                )
+            })?;
         lifted(Receiving {
-            text: target.record_copy(&element, &place.schema),
+            text: element,
             can_fail: true,
         })?
     } else if rewrites.optional_records.contains_key(written.as_str()) {
-        // Another optional record, absent or present, is written as it is.
-        lower(&written, InferredType::Unknown)?
+        // Another optional record, absent or present, is a copy of it, as a
+        // record is: what holds it keeps its own.
+        let value = lower(&written, InferredType::Unknown)?;
+        Receiving {
+            text: target.record_copy(&value.text, &place.schema),
+            can_fail: value.can_fail,
+        }
     } else {
         let value = lower(&written, InferredType::Unknown)?;
         // What an imported algorithm answers as an optional record is optional

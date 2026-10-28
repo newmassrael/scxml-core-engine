@@ -937,9 +937,12 @@ pub const STATE_CODES: [char; 3] = ['v', 'p', 'i'];
 
 /// How an argument of an optional record slot can be held, beside
 /// [`STATE_CODES`]: `n` the literal `null`, which holds no variable and no
-/// value, and is spelled as the absent value the slot's type has (docs/adr/0055,
-/// step 9).
-pub const OPTIONAL_RECORD_CODES: [char; 4] = ['v', 'p', 'i', 'n'];
+/// value, and is spelled as the absent value the slot's type has, and `o` a
+/// variable that is an optional record itself, which `v`, a record variable that
+/// is lifted into one, is not: the two are values of different types on a
+/// backend that does not convert one into the other where a call is made, so each
+/// is the argument of an adapter of its own (docs/adr/0055, step 9).
+pub const OPTIONAL_RECORD_CODES: [char; 5] = ['v', 'p', 'i', 'n', 'o'];
 
 /// The names the arguments of a call of an algorithm with state in a slot take in the
 /// expression a lowering reads instead of the one the author wrote (docs/SCE_ACCEPTED_SUBSET.md
@@ -1264,7 +1267,7 @@ impl StaticScope {
                         .and_then(AlgorithmValueType::optional_elem)
                         .and_then(OptionalElemType::record_alias);
                     match held {
-                        Some(held) if held == alias => return Ok('v'),
+                        Some(held) if held == alias => return Ok('o'),
                         Some(held) => {
                             return Err(format!(
                                 "`{name}` is an optional record of `{held}`, and the algorithm \
