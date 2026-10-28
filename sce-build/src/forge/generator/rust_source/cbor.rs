@@ -28,6 +28,8 @@ pub(in super::super) struct Input<'a> {
     pub(in super::super) struct_name: &'a str,
     /// `<'a>` when the map borrows a string or bytes entry, otherwise nothing.
     pub(in super::super) struct_lifetime: &'a str,
+    /// Whether the function that writes is always inlined (`--inline-encode`).
+    pub(in super::super) inline_encode: bool,
 }
 
 /// The type an accessor returns for the value of `e` when it is present.
@@ -188,11 +190,13 @@ pub(in super::super) fn render(input: &Input<'_>) -> String {
          \x20   }}\n\n\
          \x20   /// [`Self::encode_source`] without the pre-pass a parent has already made.\n\
          \x20   #[doc(hidden)]\n\
+         {inline}\
          \x20   pub fn write_source<S: {trait_name} + ?Sized, K: SceSink>(src: &S, w: &mut K) -> Result<(), CodecError> {{\n\
          {body}\
          \x20   }}\n\
          }}\n\n\
          {measure}",
-        measure = super::measure_impl(name, lt, &trait_name),
+        inline = super::write_attribute(input.inline_encode),
+        measure = super::measure_impl(name, lt, &trait_name, input.inline_encode),
     )
 }

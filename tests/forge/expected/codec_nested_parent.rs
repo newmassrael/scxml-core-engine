@@ -316,7 +316,9 @@ impl<'a> CodecNestedParent<'a> {
     /// window as large as the caller can spare. On an error the window holds a
     /// prefix to discard; see [`::sce_forge_runtime::codec::write_window`].
     pub fn write_window<S: CodecNestedParentSource + ?Sized>(src: &S, window: &mut [u8]) -> Result<usize, CodecError> {
-        ::sce_forge_runtime::codec::write_window::<Self, S>(src, window)
+        let mut sink = ::sce_forge_runtime::codec::SliceSink::new(window);
+        Self::write_source(src, &mut sink)?;
+        Ok(sink.position())
     }
 }
 

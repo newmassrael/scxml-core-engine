@@ -50,6 +50,20 @@ pub(super) struct Input<'a> {
     pub(super) view_lifetime: Option<&'a str>,
     /// Whether the codec has an owned form: it holds a borrowed field.
     pub(super) owned: bool,
+    /// Whether the functions that write are always inlined into their callers
+    /// (`generate --inline-encode`): the nine small functions of a frame become
+    /// one, for the instructions and the call overhead they cost, at the price of
+    /// text. Off, the output is as it was.
+    pub(super) inline_encode: bool,
+}
+
+/// The attribute of a function that writes, for [`Input::inline_encode`].
+pub(super) fn write_attribute(inline_encode: bool) -> &'static str {
+    if inline_encode {
+        "\x20   #[inline(always)]\n"
+    } else {
+        ""
+    }
 }
 
 /// The source interface of a codec, as the text a codec file holds, or why the
@@ -65,10 +79,17 @@ pub(super) fn render(input: &Input<'_>) -> Result<String, Unsupported> {
 /// no wire rule; the one statement is `write_source`. `lt` is the codec's
 /// lifetime parameter (`<'a>` or nothing). A codec that takes a flag from its
 /// parent is written only through that parent and has no measure.
-pub(super) fn measure_impl(name: &str, lt: &str, trait_name: &str) -> String {
+pub(super) fn measure_impl(name: &str, lt: &str, trait_name: &str, inline_encode: bool) -> String {
     let generics = match lt.strip_prefix('<').and_then(|s| s.strip_suffix('>')) {
         Some(lifetime) => format!("<{lifetime}, S: {trait_name} + ?Sized>"),
         None => format!("<S: {trait_name} + ?Sized>"),
+    };
+    // The window is written through the sink that asks to be inlined when the
+    // codec's writes are, so that the whole write can fold into the caller.
+    let (inline, sink) = if inline_encode {
+        (write_attribute(true), "WindowSink")
+    } else {
+        ("", "SliceSink")
     };
     format!(
         "impl{generics} ::sce_forge_runtime::codec::SourceWrite<S> for {name}{lt} {{\n\
@@ -87,8 +108,11 @@ pub(super) fn measure_impl(name: &str, lt: &str, trait_name: &str) -> String {
          \x20   /// Write `src` into `window` in one pass and return the bytes it is, for a\n\
          \x20   /// window as large as the caller can spare. On an error the window holds a\n\
          \x20   /// prefix to discard; see [`::sce_forge_runtime::codec::write_window`].\n\
+         {inline}\
          \x20   pub fn write_window<S: {trait_name} + ?Sized>(src: &S, window: &mut [u8]) -> Result<usize, CodecError> {{\n\
-         \x20       ::sce_forge_runtime::codec::write_window::<Self, S>(src, window)\n\
+         \x20       let mut sink = ::sce_forge_runtime::codec::{sink}::new(window);\n\
+         \x20       Self::write_source(src, &mut sink)?;\n\
+         \x20       Ok(sink.position())\n\
          \x20   }}\n\
          }}\n"
     )
@@ -1241,7 +1265,12 @@ impl<'a> Plan<'a> {
         let measure = if self.m().flag_inputs.is_empty() {
             format!(
                 "\n{}",
-                measure_impl(self.name(), self.lt(), &self.trait_name)
+                measure_impl(
+                    self.name(),
+                    self.lt(),
+                    &self.trait_name,
+                    self.input.inline_encode
+                )
             )
         } else {
             String::new()
@@ -1274,10 +1303,12 @@ impl<'a> Plan<'a> {
         let trait_name = &self.trait_name;
         let params = self.input_params();
         let args = self.input_args();
+        let inline = write_attribute(self.input.inline_encode);
         if self.overridable().is_empty() {
             return format!(
                 "\x20   /// [`Self::encode_source`] without the guard a parent has already made.\n\
                  \x20   #[doc(hidden)]\n\
+                 {inline}\
                  \x20   pub fn write_source<S: {trait_name} + ?Sized, K: SceSink>(src: &S, w: &mut K{params}) -> Result<(), CodecError> {{\n\
                  {body}\
                  \x20   }}\n"
@@ -1287,12 +1318,14 @@ impl<'a> Plan<'a> {
         format!(
             "\x20   /// [`Self::encode_source`] without the guard a parent has already made.\n\
              \x20   #[doc(hidden)]\n\
+             {inline}\
              \x20   pub fn write_source<S: {trait_name} + ?Sized, K: SceSink>(src: &S, w: &mut K{params}) -> Result<(), CodecError> {{\n\
              \x20       Self::write_source_in(src, w{args}, &{overrides}::default())\n\
              \x20   }}\n\n\
              \x20   /// [`Self::write_source`] with the flags a parent sets in place of the\n\
              \x20   /// ones `src` presents.\n\
              \x20   #[doc(hidden)]\n\
+             {inline}\
              \x20   pub fn write_source_in<S: {trait_name} + ?Sized, K: SceSink>(src: &S, w: &mut K{params}, over: &{overrides}) -> Result<(), CodecError> {{\n\
              {body}\
              \x20   }}\n"

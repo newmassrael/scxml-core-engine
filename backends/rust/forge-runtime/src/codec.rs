@@ -477,18 +477,24 @@ pub trait SceSink {
     }
 }
 
-/// Bounded sink over a caller-owned `&mut [u8]`. Raises
-/// `CodecError::BufferOverflow` when an append would exceed the slice
-/// capacity. The natural sink for MCU / DMA / fixed-frame call sites.
-///
-/// Available on `no_std` without `alloc` — the underlying storage is a
-/// borrowed slice the caller already owns.
-pub struct SliceSink<'a> {
+/// A bounded sink over a caller-owned `&mut [u8]`, defined once and made twice
+/// ([`SliceSink`], [`WindowSink`]): the two do the same, and differ in how hard
+/// they ask to be inlined. A sink that is asked to be inlined everywhere makes
+/// every codec that writes through it larger, which only a caller that wants the
+/// whole write folded into its own code (docs/adr/0061, `generate --inline-encode`)
+/// should pay for; the ordinary one keeps the codecs as they were.
+macro_rules! bounded_slice_sink {
+    (
+        $(#[$doc:meta])*
+        $name:ident, inline: $inline:meta, inline_bytes: $inline_bytes:meta
+    ) => {
+$(#[$doc])*
+pub struct $name<'a> {
     buf: &'a mut [u8],
     pos: usize,
 }
 
-impl<'a> SliceSink<'a> {
+impl<'a> $name<'a> {
     /// Wrap `buf` with write position 0.
     pub fn new(buf: &'a mut [u8]) -> Self {
         Self { buf, pos: 0 }
@@ -512,7 +518,7 @@ impl<'a> SliceSink<'a> {
     }
 }
 
-impl<'a> SliceSink<'a> {
+impl<'a> $name<'a> {
     /// Append `N` bytes whose count the compiler knows: one capacity test and
     /// stores, with no call to a copy routine. A byte, a fixed-width integer or
     /// a VLE is written this way; only a string or a payload is of a length the
@@ -537,7 +543,8 @@ impl<'a> SliceSink<'a> {
     }
 }
 
-impl<'a> SceSink for SliceSink<'a> {
+impl<'a> SceSink for $name<'a> {
+    #[$inline_bytes]
     fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), CodecError> {
         let Some(end) = self.pos.checked_add(bytes.len()) else {
             return Err(CodecError::BufferOverflow);
@@ -550,37 +557,37 @@ impl<'a> SceSink for SliceSink<'a> {
         Ok(())
     }
 
-    #[inline]
+    #[$inline]
     fn write_u8(&mut self, b: u8) -> Result<(), CodecError> {
         self.put([b])
     }
 
-    #[inline]
+    #[$inline]
     fn write_u16_le(&mut self, v: u16) -> Result<(), CodecError> {
         self.put(v.to_le_bytes())
     }
 
-    #[inline]
+    #[$inline]
     fn write_u16_be(&mut self, v: u16) -> Result<(), CodecError> {
         self.put(v.to_be_bytes())
     }
 
-    #[inline]
+    #[$inline]
     fn write_u32_le(&mut self, v: u32) -> Result<(), CodecError> {
         self.put(v.to_le_bytes())
     }
 
-    #[inline]
+    #[$inline]
     fn write_u32_be(&mut self, v: u32) -> Result<(), CodecError> {
         self.put(v.to_be_bytes())
     }
 
-    #[inline]
+    #[$inline]
     fn write_u64_le(&mut self, v: u64) -> Result<(), CodecError> {
         self.put(v.to_le_bytes())
     }
 
-    #[inline]
+    #[$inline]
     fn write_u64_be(&mut self, v: u64) -> Result<(), CodecError> {
         self.put(v.to_be_bytes())
     }
@@ -590,7 +597,7 @@ impl<'a> SceSink for SliceSink<'a> {
     /// a VLE that does not fit writes nothing. The bytes are those of the
     /// provided method (seven bits each with the continuation bit set, the last
     /// of a full-width value a full eight).
-    #[inline]
+    #[$inline]
     fn write_vle_inner(&mut self, value: u64, max_bits: u32) -> Result<(), CodecError> {
         // A value of seven bits or fewer is one byte of itself, which is most
         // of the fields a frame holds: stored in line, with the general case a
@@ -607,27 +614,28 @@ impl<'a> SceSink for SliceSink<'a> {
         self.write_vle_long(value, max_bits)
     }
 
-    #[inline]
+    #[$inline]
     fn write_vle_u16(&mut self, v: u16) -> Result<(), CodecError> {
         self.write_vle_inner(u64::from(v), 16)
     }
 
-    #[inline]
+    #[$inline]
     fn write_vle_u32(&mut self, v: u32) -> Result<(), CodecError> {
         self.write_vle_inner(u64::from(v), 32)
     }
 
-    #[inline]
+    #[$inline]
     fn write_vle_u64(&mut self, v: u64) -> Result<(), CodecError> {
         self.write_vle_inner(v, 64)
     }
 
+    #[$inline]
     fn position(&self) -> usize {
         self.pos
     }
 }
 
-impl<'a> SliceSink<'a> {
+impl<'a> $name<'a> {
     /// A VLE of two bytes or more: one capacity test and the bytes in place.
     #[inline(never)]
     fn write_vle_long(&mut self, value: u64, max_bits: u32) -> Result<(), CodecError> {
@@ -648,6 +656,32 @@ impl<'a> SliceSink<'a> {
         self.pos += n;
         Ok(())
     }
+}
+    };
+}
+
+bounded_slice_sink! {
+    /// Bounded sink over a caller-owned `&mut [u8]`. Raises
+    /// `CodecError::BufferOverflow` when an append would exceed the slice
+    /// capacity. The natural sink for MCU / DMA / fixed-frame call sites.
+    ///
+    /// Available on `no_std` without `alloc` — the underlying storage is a
+    /// borrowed slice the caller already owns.
+    SliceSink, inline: inline, inline_bytes: cfg(all())
+}
+
+bounded_slice_sink! {
+    /// [`SliceSink`] that asks to be inlined at every call.
+    ///
+    /// The same sink, for a write that is to be folded into its caller: a codec
+    /// written through it, with its own functions inlined (`generate
+    /// --inline-encode`), becomes straight-line code in which whatever the caller
+    /// knows of the value (a field that is never there, a flag that is constant)
+    /// is known to the compiler, and the checks and derivations for it are gone.
+    /// Through an ordinary sink the same codec is a call for each field and the
+    /// compiler learns nothing. It costs text at each call site, so a codec is
+    /// written through it only where that was asked for.
+    WindowSink, inline: inline(always), inline_bytes: inline(always)
 }
 
 /// A sink that keeps nothing and counts what it is given: the size an encode
@@ -1223,9 +1257,39 @@ mod tests {
                         &want.bytes[..want.len],
                         "{masked:#x} at {bits} bits"
                     );
+                    // The sink that asks to be inlined everywhere is the same
+                    // sink: it writes the bytes the other does.
+                    let mut window_buf = [0u8; 64];
+                    let mut window = WindowSink::new(&mut window_buf);
+                    run(&mut window, masked, bits);
+                    assert_eq!(window.position(), want.len, "{masked:#x} at {bits} bits");
+                    assert_eq!(
+                        &window_buf[..want.len],
+                        &want.bytes[..want.len],
+                        "window sink, {masked:#x} at {bits} bits"
+                    );
                 }
             }
         }
+    }
+
+    #[test]
+    fn a_window_sink_refuses_as_a_slice_sink_does() {
+        let mut a = [0xEEu8; 3];
+        let mut b = [0xEEu8; 3];
+        let mut slice = SliceSink::new(&mut a);
+        let mut window = WindowSink::new(&mut b);
+        for k in [
+            &mut slice as &mut dyn SceSink,
+            &mut window as &mut dyn SceSink,
+        ] {
+            k.write_u8(1).unwrap();
+            k.write_u8(2).unwrap();
+            assert_eq!(k.write_vle_u64(300), Err(CodecError::BufferOverflow));
+            assert_eq!(k.write_bytes(&[9, 9]), Err(CodecError::BufferOverflow));
+            assert_eq!(k.position(), 2);
+        }
+        assert_eq!(a, b);
     }
 
     #[test]
