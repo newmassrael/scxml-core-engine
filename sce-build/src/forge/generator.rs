@@ -605,7 +605,6 @@ pub(crate) fn algorithm_optional_spelled(
         OptionalElemType::Scalar(ty) if AlgorithmValueType::list_elem_admitted(ty)
     );
     match lang {
-        Language::Rust => number_or_bool,
         // C++: `std::optional<T>` over the type the present value is held in, so a
         // number, a `bool`, a text, a value of an enum and a record are each one
         // (the machine's own record and the algorithm's are both plain structs).
@@ -623,6 +622,17 @@ pub(crate) fn algorithm_optional_spelled(
         // ([`judge_text_write`]), and to the bound of the variable a statechart
         // takes it into where it crosses a call.
         Language::Kotlin => true,
+        // Rust spells every element but a byte string: a number, a `bool` and a
+        // value of an enum by value; a text as the `String` a local and a return
+        // hold, the `&str` a parameter borrows and the bounded text a record's
+        // field holds; a record as its schema's own struct. A byte string has no
+        // bound in a slot (a `bytes` an algorithm builds declares its capacity
+        // beside the buffer, `sce:returns-max-size`), and is an algorithm's own
+        // array of numbers, which a statechart's variable is not.
+        Language::Rust => match elem {
+            OptionalElemType::Scalar(SceType::Bytes) => false,
+            OptionalElemType::Scalar(_) | OptionalElemType::Record { .. } => true,
+        },
         Language::Go => number_or_bool,
         // Python holds every element in `Optional[T]` over the type its present
         // value has there (`str`, `bytes`, the enum document's class, the schema's
@@ -2934,11 +2944,24 @@ fn render_event_schema(
             // ([`algorithm_optional_type`]), which every key below names, since
             // one language's template is rendered at a time.
             let held = match &f.sce_type {
-                FieldType::Optional { elem } => Some(algorithm_optional_type(
-                    &l,
-                    imports,
-                    &OptionalElemType::Scalar(elem.clone()),
-                )?),
+                FieldType::Optional { elem } => {
+                    let held = algorithm_optional_type(
+                        &l,
+                        imports,
+                        &OptionalElemType::Scalar(elem.clone()),
+                    )?;
+                    // A text the schema bounds is held, where it is present, in the
+                    // buffer a present one is: the runtime's bounded text on Rust,
+                    // which an algorithm's record reads as the `&str` it derefs to.
+                    Some(match (_lang, text_bound) {
+                        (crate::generator::Language::Rust, Some(_))
+                            if matches!(elem, SceType::String) =>
+                        {
+                            l.optional_of(&rs_type).unwrap_or(held)
+                        }
+                        _ => held,
+                    })
+                }
                 FieldType::Scalar(_) => None,
             };
             let spelled = |plain: std::borrow::Cow<'static, str>| {
@@ -27582,20 +27605,33 @@ fn algorithm_optional_type(
         OptionalElemType::Record { alias } => format!("optional<record:{alias}>"),
         OptionalElemType::Scalar(_) => String::new(),
     };
-    algorithm_optional_slot_type(l, imports, elem, None, &element)
+    algorithm_optional_slot_type(l, imports, elem, SlotKind::Held, None, &element)
+}
+
+/// Where an algorithm declares a value that may be absent: a parameter borrows
+/// what its caller hands it, and the return and a local own what they hold.
+/// The two differ only where a backend borrows an argument and owns what it
+/// keeps (Rust's text, [`algorithm_optional_slot_type`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SlotKind {
+    Param,
+    Held,
 }
 
 /// [`algorithm_optional_type`] for a slot or a local that may name a record
 /// (docs/adr/0055, step 9): an `optional<record:<alias>>` is the backend's one
 /// optional type over the type the schema imported as `alias` declares
 /// ([`RecordImport::qualified_type`]), so a statechart's call hands one over as
-/// its own optional record is held. `imports` are the document's, `spelling` the
-/// `type` attribute that names the record and `element` the element that
-/// carries it, which a refusal of the record is placed at ([`resolve_record`]).
+/// its own optional record is held; on Rust a parameter borrows the text it takes
+/// (`Option<&str>`, as a `string` parameter is a `&str`) and a return or a local
+/// owns the one it holds (`Option<String>`). `imports` are the document's,
+/// `spelling` the `type` attribute that names the record and `element` the element
+/// that carries it, which a refusal of the record is placed at ([`resolve_record`]).
 fn algorithm_optional_slot_type(
     l: &LangCtx,
     imports: &[ImportContext],
     elem: &OptionalElemType,
+    kind: SlotKind,
     spelling: Option<&crate::attribute_spelling::AttributeSpelling>,
     element: &str,
 ) -> Result<String, ForgeError> {
@@ -27621,6 +27657,11 @@ fn algorithm_optional_slot_type(
     // The type a present value is held in: a scalar's, or the payload struct of the
     // schema an optional record is of.
     let present = match elem {
+        OptionalElemType::Scalar(SceType::String)
+            if kind == SlotKind::Param && l.lang == crate::generator::Language::Rust =>
+        {
+            std::borrow::Cow::Owned(rust_param_type(&SceType::String))
+        }
         OptionalElemType::Scalar(ty) => l.type_name(ty),
         OptionalElemType::Record { alias } => std::borrow::Cow::Owned(
             resolve_record(imports, alias, spelling, element)?
@@ -27796,6 +27837,62 @@ fn record_text_operand(lang: crate::generator::Language, member: &str) -> String
     }
 }
 
+/// The field `member` of the present value of the optional record `local`, where
+/// the build has proven it present (docs/adr/0055, step 9): the place a read takes
+/// it from (`write` false) and the place a write puts into it (`write` true).
+/// Rust borrows the record where the optional holds it, through the runtime's
+/// `proven_ref` and `proven_mut`, so a record that owns text is neither moved nor
+/// copied. A backend that spells no optional record in an algorithm
+/// ([`algorithm_optional_spelled`]) was refused before a body was rendered, so
+/// asked of one it is a fault of the pipeline, not of the document.
+fn optional_record_field_place(
+    lang: crate::generator::Language,
+    local: &str,
+    member: &str,
+    write: bool,
+) -> Result<String, ForgeError> {
+    use crate::generator::Language;
+    match lang {
+        Language::Rust if write => Ok(crate::forge::rust_optional::proven_field_place(
+            local, member,
+        )),
+        Language::Rust => Ok(format!(
+            "{}.{member}",
+            crate::forge::rust_optional::proven_ref(local)
+        )),
+        Language::Cpp
+        | Language::Kotlin
+        | Language::Go
+        | Language::Python
+        | Language::C11
+        | Language::Swift => Err(GenerateError::InvalidConfig(format!(
+            "an algorithm's optional record reached the renderer of {}, which spells none \
+             (docs/adr/0055, step 9)",
+            lang.canonical_name()
+        ))
+        .into()),
+    }
+}
+
+/// `value`, a record of an optional record's schema, lifted into its present
+/// value (docs/adr/0055, step 9): `Some(value)` on Rust, the one backend that
+/// spells an optional record in an algorithm so far; any other was refused before
+/// a body was rendered.
+fn optional_record_lift(
+    lang: crate::generator::Language,
+    value: &str,
+) -> Result<String, ForgeError> {
+    match lang {
+        crate::generator::Language::Rust => Ok(crate::forge::rust_optional::present(value)),
+        other => Err(GenerateError::InvalidConfig(format!(
+            "an algorithm's optional record reached the renderer of {}, which spells none \
+             (docs/adr/0055, step 9)",
+            other.canonical_name()
+        ))
+        .into()),
+    }
+}
+
 /// A record `local` handed on as a value the receiver may keep — an argument
 /// to another algorithm, an element appended to a list, a returned borrow.
 /// A Rust record that holds text is not `Copy`, and the body reads the record
@@ -27956,7 +28053,13 @@ fn lower_field_text_write(
                 ty: FieldType::Scalar(SceType::String),
                 ..dest.clone()
             };
-            lower_text_write(rhs, spelling, &held, ctx)
+            let text = lower_text_write(rhs, spelling, &held, ctx)?;
+            // Kotlin's `String?`, Python's `Optional[str]` and C++'s `std::optional`
+            // take the text as it is; Rust lifts it into the `Option` its field holds.
+            Ok(match ctx.lang {
+                crate::generator::Language::Rust => crate::forge::rust_optional::present(&text),
+                _ => text,
+            })
         }
     }
 }
@@ -28152,6 +28255,34 @@ fn lower_optional_record_field_write(
         "{local} = {}({local}).copy({member} = {value})",
         expr::KOTLIN_PROVEN
     ))
+}
+
+/// The value written to the field `dest` of a record in an algorithm's body,
+/// lowered into the field's slot: a text, or a text that may be absent, as every
+/// record's text is written ([`lower_field_text_write`]), and any other value as the
+/// value assigned to a place of the field's type is, made owned. `type_ctx` is the
+/// context the statement is read in, where what a test proved is proven.
+fn lower_field_write(
+    rhs: &str,
+    spelling: Option<&crate::attribute_spelling::AttributeSpelling>,
+    dest: &RecordField,
+    ctx: &AlgorithmLowerCtx<'_>,
+    type_ctx: &crate::forge::types::TypeCtx<'_>,
+) -> Result<String, ForgeError> {
+    use crate::forge::types::InferredType;
+    if dest.holds_text() {
+        return lower_field_text_write(rhs, spelling, dest, ctx);
+    }
+    let site = ExpressionSite::new(rhs, spelling);
+    expr::transpile_into_owned(
+        rhs,
+        ctx.l.expr_target(),
+        type_ctx,
+        ctx.renames,
+        InferredType::of_field(&dest.ty),
+    )
+    .map(|lowered| lowered.text)
+    .map_err(|refusal| site.place(refusal))
 }
 
 /// Every record local of `body` — `(name, alias, type spelling)` — nested
@@ -29067,6 +29198,7 @@ fn lower_algorithm_stmt(
                         l,
                         imports,
                         elem,
+                        SlotKind::Held,
                         None,
                         &format!("<sce:var name=\"{name}\">"),
                     )?,
@@ -29150,8 +29282,11 @@ fn lower_algorithm_stmt(
             let mut inits: Vec<(String, String)> = Vec::new();
             for (field, f) in record.fields.iter().zip(ordered) {
                 let site = ExpressionSite::new(&f.expr, f.expr_spelling.as_ref());
+                // A text, or a text that may be absent, is built as a record's text is
+                // written everywhere ([`lower_field_text_write`]); any other value is
+                // the expression held to the type of the field.
                 let value = if field.holds_text() {
-                    lower_text_write(&f.expr, f.expr_spelling.as_ref(), field, ctx)?
+                    lower_field_text_write(&f.expr, f.expr_spelling.as_ref(), field, ctx)?
                 } else {
                     expr::transpile_into(
                         &f.expr,
@@ -29312,6 +29447,54 @@ fn lower_algorithm_stmt(
                 .into();
                 return Err(at.place(refusal));
             }
+            // A record of the optional's own schema, taken whole into it by its name
+            // (`held = it`, docs/adr/0055, step 9): the name is the local itself, in
+            // the backend's value rule (a copy where a record that owns text is
+            // cloned), lifted into the present value. The expression transpiler
+            // refuses a bare record name as a value, so it is not asked.
+            if let Some(alias) = optional_records
+                .get(trimmed_target)
+                .filter(|_| matches!(lang, Language::Rust))
+            {
+                let named = rhs.trim();
+                if records.get(named) == Some(alias) {
+                    let holds_text =
+                        resolve_record(imports, alias, None, "<sce:assign>")?.holds_text();
+                    let value = optional_record_lift(
+                        lang,
+                        &owned_record(lang, &l.local_id(named), holds_text),
+                    )?;
+                    out.push_str(&format!("{pad}{} = {value};\n", l.local_id(trimmed_target)));
+                    return Ok(());
+                }
+            }
+            // A field of the present value of an optional record
+            // (`held.value.count`, docs/adr/0055, step 9) is written where a test
+            // proved the record present, through the record where the optional
+            // holds it, which no read of the field names.
+            let optional_field = trimmed_target.split_once('.').and_then(|(root, rest)| {
+                if !matches!(lang, Language::Rust) {
+                    return None;
+                }
+                let alias = optional_records.get(root.trim())?;
+                let record = resolve_record(imports, alias, None, "<sce:assign>").ok()?;
+                let field = rest
+                    .trim()
+                    .strip_prefix(expr::OPTIONAL_VALUE)?
+                    .strip_prefix('.')?;
+                Some((root.trim(), record.field(field.trim())?))
+            });
+            if let Some((root, field)) = optional_field {
+                let value = lower_field_write(rhs, expr_spelling.as_ref(), field, ctx, type_ctx)?;
+                let place = optional_record_field_place(
+                    lang,
+                    &l.local_id(root),
+                    &event_schema_field_ident(&field.id, lang),
+                    true,
+                )?;
+                out.push_str(&format!("{pad}{place} = {value};\n"));
+                return Ok(());
+            }
             // A field of the present value of an optional record
             // (`found.value.count`, docs/adr/0055, step 9) is written where a test
             // proves the record present, as [`crate::forge::narrowing::check_algorithm`]
@@ -29322,6 +29505,7 @@ fn lower_algorithm_stmt(
             if let Some((holder, alias)) =
                 crate::forge::narrowing::present_record_of(trimmed_target)
                     .and_then(|holder| optional_records.get(holder).map(|alias| (holder, alias)))
+                    .filter(|_| matches!(lang, Language::Cpp))
             {
                 let field_id = trimmed_target
                     .rsplit_once('.')
@@ -29341,41 +29525,15 @@ fn lower_algorithm_stmt(
                         .into();
                     return Err(at.place(refusal));
                 };
-                let value = if matches!(field.ty.present_type(), SceType::String) {
-                    lower_field_text_write(rhs, expr_spelling.as_ref(), field, ctx)?
-                } else {
-                    let site = ExpressionSite::new(rhs, expr_spelling.as_ref());
-                    expr::transpile_into_owned(
-                        rhs,
-                        l.expr_target(),
-                        type_ctx,
-                        renames,
-                        InferredType::of_field(&field.ty),
-                    )
-                    .map(|lowered| lowered.text)
-                    .map_err(|refusal| site.place(refusal))?
-                };
-                let local = l.local_id(holder);
-                let member = event_schema_field_ident(&field.id, lang);
-                match lang {
-                    Language::Cpp => {
-                        out.push_str(&format!("{pad}(*{local}).{member} = {value};\n"));
-                    }
-                    Language::Rust
-                    | Language::Kotlin
-                    | Language::Go
-                    | Language::Python
-                    | Language::C11
-                    | Language::Swift => {
-                        return Err(crate::forge::static_lowering::optional_not_lowered(
-                            &format!(
-                                "a write to `{trimmed_target}`, a field of an optional record"
-                            ),
-                            lang.canonical_name(),
-                        )
-                        .into());
-                    }
-                }
+                let value = lower_field_write(rhs, expr_spelling.as_ref(), field, ctx, type_ctx)?;
+                // C++ is the only target this block spells; the others write the
+                // field in their own blocks, or refuse it by name before the body
+                // is lowered ([`AlgorithmTypes::refuse_optional`]).
+                out.push_str(&format!(
+                    "{pad}(*{}).{} = {value};\n",
+                    l.local_id(holder),
+                    event_schema_field_ident(&field.id, lang)
+                ));
                 return Ok(());
             }
             // A record's string field is written from a text the validator can
@@ -29429,7 +29587,7 @@ fn lower_algorithm_stmt(
                 }
             }
             if let Some((root, field)) = text_target {
-                let value = lower_field_text_write(rhs, expr_spelling.as_ref(), field, ctx)?;
+                let value = lower_field_write(rhs, expr_spelling.as_ref(), field, ctx, type_ctx)?;
                 let local = l.local_id(root);
                 let member = event_schema_field_ident(&field.id, lang);
                 out.push_str(&match lang {
@@ -32692,6 +32850,33 @@ fn render_algorithm(
             owned_record(lang, &local, record.holds_text()),
         ));
     }
+    // The fields of an optional record's present value, read as
+    // `<name>.value.<field>` where a test proves it present (docs/adr/0055, step
+    // 9): the field of the record the optional holds, as the backend spells it, in
+    // the record's own place. A write of one is the statement's own
+    // ([`optional_record_field_place`]), which no rename reaches.
+    for &(name, _, record) in types
+        .optional_records
+        .iter()
+        .filter(|_| matches!(lang, Language::Rust))
+    {
+        let local = l.local_id(name);
+        for field in &record.fields {
+            let member = optional_record_field_place(
+                lang,
+                &local,
+                &event_schema_field_ident(&field.id, lang),
+                false,
+            )?;
+            record_renames.push((
+                format!("{name}.value.{}", field.id),
+                match field.ty {
+                    FieldType::Scalar(SceType::String) => record_text_operand(lang, &member),
+                    _ => member,
+                },
+            ));
+        }
+    }
     let type_ctx = types.type_ctx(m, imports);
 
     // Per-RFC §synth-5-J-5 signature emit (item C7 lowering, 2026-05-13):
@@ -32724,12 +32909,14 @@ fn render_algorithm(
                 );
             }
             // A value that may be absent is passed by value, as a number is
-            // (docs/adr/0055).
+            // (docs/adr/0055); a parameter is read-only, so a record it holds is
+            // read through the borrow `proven_ref` takes and never written.
             if let Some(elem) = p.sce_type.optional_elem() {
                 let held = algorithm_optional_slot_type(
                     &l,
                     imports,
                     elem,
+                    SlotKind::Param,
                     p.type_spelling.as_ref(),
                     &format!("<sce:param name=\"{}\">", p.name),
                 )?;
@@ -32818,7 +33005,9 @@ fn render_algorithm(
     // parameter of it is.
     let return_optional = declared_return
         .and_then(|t| t.optional_elem())
-        .map(|elem| algorithm_optional_slot_type(&l, imports, elem, None, "<sce:return>"))
+        .map(|elem| {
+            algorithm_optional_slot_type(&l, imports, elem, SlotKind::Held, None, "<sce:return>")
+        })
         .transpose()?;
     let may_fail = m.signature.may_fail;
     let return_type = match (return_scalar, lang) {
