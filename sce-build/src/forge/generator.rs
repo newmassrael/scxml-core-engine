@@ -1439,7 +1439,6 @@ pub fn generate_cpp_with_imports_and_externs(
             crate::generator::Language::Cpp,
             false,
             false,
-            false,
         )?,
         ForgeDocument::Validator(m) => {
             render_validator(&env, m, imports, crate::generator::Language::Cpp)?
@@ -6338,8 +6337,6 @@ fn render_codec(
     owned_origin: bool,
     // Rust only: also render `{Codec}View` (ADR 0049).
     views: bool,
-    // Rust only: always inline the functions that write (docs/adr/0061).
-    inline_encode: bool,
 ) -> Result<String, ForgeError> {
     // SCE_FORGE.md §4.6: a CBOR codec has no positional field for anything
     // below to read, so it is rendered by its own module before any of it runs.
@@ -6359,7 +6356,6 @@ fn render_codec(
                 l: &l,
                 struct_name: &filters::to_pascal_case(m.name.clone()),
                 struct_lifetime: if borrows { "<'a>" } else { "" },
-                inline_encode,
             }));
         }
         return Ok(text);
@@ -6376,7 +6372,6 @@ fn render_codec(
                     m,
                     l: &l,
                     struct_name: &filters::to_pascal_case(m.name.clone()),
-                    inline_encode,
                 },
             ));
         }
@@ -8938,7 +8933,6 @@ fn render_codec(
                 view_lifetime: (emit_views && m.has_own_view())
                     .then(|| rust_view::view_lifetime(codec_self_view_borrowed(m, imports))),
                 owned: self_borrowed,
-                inline_encode,
             })
             .map_err(|rust_source::Unsupported(why)| {
                 ForgeError::from(GenerateError::unsupported_at(
@@ -18926,7 +18920,6 @@ pub fn generate_kotlin_with_imports(
             crate::generator::Language::Kotlin,
             false,
             false,
-            false,
         )?,
         ForgeDocument::Validator(m) => {
             render_validator(&env, m, imports, crate::generator::Language::Kotlin)?
@@ -19112,7 +19105,6 @@ pub fn generate_rust_with_imports_and_externs(
             crate::generator::Language::Rust,
             options.owned_origin,
             options.views,
-            options.inline_encode,
         )?,
         ForgeDocument::Validator(m) => {
             render_validator(&env, m, imports, crate::generator::Language::Rust)?
@@ -22268,7 +22260,6 @@ pub fn generate_go_with_imports(
             crate::generator::Language::Go,
             false,
             false,
-            false,
         )?,
         ForgeDocument::Validator(m) => {
             render_validator(&env, m, imports, crate::generator::Language::Go)?
@@ -22479,7 +22470,6 @@ pub fn generate_python_with_imports(
             m,
             imports,
             crate::generator::Language::Python,
-            false,
             false,
             false,
         )?,
@@ -22738,7 +22728,6 @@ pub fn generate_c11_with_imports_and_externs(
             m,
             imports,
             crate::generator::Language::C11,
-            false,
             false,
             false,
         )?,

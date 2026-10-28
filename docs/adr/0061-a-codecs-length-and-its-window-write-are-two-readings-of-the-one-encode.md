@@ -249,16 +249,23 @@ are spilled), an inline hint on the thin `write_source` wrapper (no change), and
 `Result` checks after each write are about a tenth of what is left; they are the contract of a fallible sink and are
 not removed.
 
-**`generate --inline-encode`.** The forced-inline experiment is now an option, `ForgeCompileOptions::inline_encode`,
-that marks the function which writes each codec `#[inline(always)]` and changes nothing else (a test holds that the
-two outputs differ in no other line, and that the marked set compiles under the same lints). Generated for the
-consumer's Reply it reproduces the hand-edited experiment: `encode_source` 936 to 876 instructions and the one-pass
-window 714 to 693, byte for byte the same frame, for about 5 KB more text in the measured image. That is a modest
-saving in instructions; the reason to have the option is that the 544 instructions by which the generated path
-exceeds the hand-written one cost the consumer's kit about 2,000 cycles (3.7 each), more than instructions alone
-explain, and a frame written by one function instead of nine may close part of that. Whether it does is not known: it
-is off by default and meant to be measured on the target before it is kept, and unlike `--views` it is a property of
-one document.
+**`generate --inline-encode`, built, measured on the kit, and removed.** The forced-inline experiment was made an
+option (`#[inline(always)]` on the function that writes each codec, nothing else changed) so that the consumer could
+measure it where the trace cannot see: the 544 instructions by which the generated path exceeds the hand-written one
+cost its kit about 2,000 cycles (3.7 each), more than instructions explain, and a frame written by one function
+instead of nine might have closed part of that. It did not. On the T2G kit (Cortex-M7 at 350 MHz, `opt-level = "s"`,
+LTO), plain Reply, with and without the option: the hand-written writer 42.55 and 42.84 us; `encode_source` 47.10 and
+47.74; `measure` with `write_into` 47.46 and 48.54; `write_window` 44.37 and 44.39. The option moved no time beyond the
+kit's layout noise (0.6 to 1 us) and cost 3.4, 6.8 and 3.9 KB of text in the three generated arms. The trace had
+ranked it as a small saving (876 against 936 instructions) and the kit agreed that it is small; the number of
+functions touched is therefore not the cost the kit pays for, and the option was removed rather than kept as text
+the consumers would have to pay for and measure again.
+
+The kit settles the ranking of the generated arms. `write_window`, the one-pass window, is 1.8 us (about 640 cycles)
+over the hand-written writer, against 4.55 for `encode_source` and 4.9 for `measure` with `write_into`, which are
+level within the noise. A consumer that can reserve the largest frame and give back the unused tail takes
+`write_window`; one that must reserve the exact frame, or leave its buffer untouched on a refusal, takes `measure`
+and pays the second walk of the source.
 
 **A one-pass window.** The count is a pass of its own, 222 of the 936 instructions. A caller that can reserve more
 than the frame needs and give back what it did not use (a transmit slot of the largest frame, committed at the

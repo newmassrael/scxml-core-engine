@@ -50,20 +50,6 @@ pub(super) struct Input<'a> {
     pub(super) view_lifetime: Option<&'a str>,
     /// Whether the codec has an owned form: it holds a borrowed field.
     pub(super) owned: bool,
-    /// Whether the functions that write are always inlined into their callers
-    /// (`generate --inline-encode`): the nine small functions of a frame become
-    /// one, for the instructions and the call overhead they cost, at the price of
-    /// text. Off, the output is as it was.
-    pub(super) inline_encode: bool,
-}
-
-/// The attribute of a function that writes, for [`Input::inline_encode`].
-pub(super) fn write_attribute(inline_encode: bool) -> &'static str {
-    if inline_encode {
-        "\x20   #[inline(always)]\n"
-    } else {
-        ""
-    }
 }
 
 /// The source interface of a codec, as the text a codec file holds, or why the
@@ -1288,12 +1274,10 @@ impl<'a> Plan<'a> {
         let trait_name = &self.trait_name;
         let params = self.input_params();
         let args = self.input_args();
-        let inline = write_attribute(self.input.inline_encode);
         if self.overridable().is_empty() {
             return format!(
                 "\x20   /// [`Self::encode_source`] without the guard a parent has already made.\n\
                  \x20   #[doc(hidden)]\n\
-                 {inline}\
                  \x20   pub fn write_source<S: {trait_name} + ?Sized, K: SceSink>(src: &S, w: &mut K{params}) -> Result<(), CodecError> {{\n\
                  {body}\
                  \x20   }}\n"
@@ -1309,7 +1293,6 @@ impl<'a> Plan<'a> {
              \x20   /// [`Self::write_source`] with the flags a parent sets in place of the\n\
              \x20   /// ones `src` presents.\n\
              \x20   #[doc(hidden)]\n\
-             {inline}\
              \x20   pub fn write_source_in<S: {trait_name} + ?Sized, K: SceSink>(src: &S, w: &mut K{params}, over: &{overrides}) -> Result<(), CodecError> {{\n\
              {body}\
              \x20   }}\n"
