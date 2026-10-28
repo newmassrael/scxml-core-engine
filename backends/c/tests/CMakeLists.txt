@@ -3228,8 +3228,14 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
         "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include"
     )
+    # `static_invoke_optional` starts six children from one state. This backend bounds the
+    # invokes a parent holds pending at SCE_MAX_INVOKES (sce/invoke.h, 4 by default), its
+    # documented resource limit, and only generated code reads it, so this target raises
+    # it above the fixture's six: what is measured is the value each child is handed, not
+    # the default bound, past which a pending invoke is never started.
     target_compile_definitions(sce_c_integration_static_scalars PRIVATE
         SCE_STATIC_SCENARIO_DIR="${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/scenarios"
+        SCE_MAX_INVOKES=8
     )
     set_target_properties(sce_c_integration_static_scalars PROPERTIES
         C_STANDARD 11
