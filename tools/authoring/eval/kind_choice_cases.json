@@ -117,6 +117,11 @@
       "prose": "Two receive tasks pass the frames they receive to one processing task, which takes them in the order they were put in. Up to 64 frames may be waiting. A receive task must never be held up by the processing task being slow or stopped, and nothing may be allocated while the program runs."
     },
     {
+      "id": "sample-history",
+      "kind": "broadcast-log",
+      "prose": "An interrupt handler records each sensor sample. A logger and a safety monitor each read every sample, at their own pace. The latest 1023 samples are kept, and when the buffer is full the oldest sample is overwritten. A reader that falls behind must be told how many samples it missed and continue from the oldest one still kept. Neither reader may ever hold the interrupt handler up."
+    },
+    {
       "id": "client-only-build",
       "kind": "feature-model",
       "prose": "The session code is built in two shapes. A client build opens sessions and never accepts one; a server build also accepts incoming sessions. Accepting is only possible in a build that has sessions at all. The build options must name both capabilities so that a client build leaves the accepting code out entirely."

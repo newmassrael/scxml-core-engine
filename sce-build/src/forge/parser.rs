@@ -938,6 +938,9 @@ fn parse_forge_from_node(
         ForgeKind::FeatureModel => {
             parse_feature_model(root, label).map(ForgeDocument::FeatureModel)
         }
+        ForgeKind::BroadcastLog => {
+            parse_broadcast_log(root, label).map(ForgeDocument::BroadcastLog)
+        }
         ForgeKind::Statechart => Err(located(
             root,
             label.diagnostic_label,
@@ -10586,6 +10589,124 @@ fn read_required_word<'a>(
         })
 }
 
+/// A required `<sce:producers>` or `<sce:consumers>`: `one` or `many`, no
+/// default. The same two words for a queue (RFC §synth-5-P) and a broadcast
+/// log (ADR 0062), so the closed set is stated once.
+fn read_cardinality(
+    root: &roxmltree::Node,
+    doc_name: &str,
+    kind: ForgeKind,
+    local: &str,
+) -> Result<QueueCardinality, Located<ForgeError>> {
+    Ok(
+        match read_required_word(root, doc_name, kind, local, &["one", "many"])? {
+            "one" => QueueCardinality::One,
+            _ => QueueCardinality::Many,
+        },
+    )
+}
+
+/// The required `<sce:progress>`: `wait-free`, `lock-free` or `blocking`, no
+/// default. Shared by the queue (RFC §synth-5-P) and the broadcast log (ADR
+/// 0062), which state progress in the same lattice.
+fn read_progress(
+    root: &roxmltree::Node,
+    doc_name: &str,
+    kind: ForgeKind,
+) -> Result<QueueProgress, Located<ForgeError>> {
+    Ok(
+        match read_required_word(
+            root,
+            doc_name,
+            kind,
+            "progress",
+            &["wait-free", "lock-free", "blocking"],
+        )? {
+            "wait-free" => QueueProgress::WaitFree,
+            "lock-free" => QueueProgress::LockFree,
+            _ => QueueProgress::Blocking,
+        },
+    )
+}
+
+/// Parse `<scxml sce:kind="broadcast-log">…</scxml>` into a
+/// [`BroadcastLogModel`] — ADR 0062.
+///
+/// **Required, no default:** `<sce:element-type>`, `<sce:producers>`,
+/// `<sce:progress>` and `<sce:retention>` (`entries="N"`, or `source="deploy"
+/// key="…"`). **Refused here, once the document is read:** `producers` `many`
+/// (`broadcast-log/producers-many-unsupported`, ADR 0062 §8) and a declared
+/// progress the selection table does not give
+/// (`broadcast-log/progress-unreachable`). What needs another document, the
+/// deploy file or the target (the element's kind, a deploy key, the stamp
+/// width) is judged where those are in hand.
+fn parse_broadcast_log(
+    root: &roxmltree::Node,
+    label: DocumentLabel<'_>,
+) -> Result<BroadcastLogModel, Located<ForgeError>> {
+    let doc_name = label.identifier;
+    let diag = label.diagnostic_label;
+
+    let element_type = read_element_type(root, diag, ForgeKind::BroadcastLog)?;
+    let producers = read_cardinality(root, diag, ForgeKind::BroadcastLog, "producers")?;
+    let progress = read_progress(root, diag, ForgeKind::BroadcastLog)?;
+    // Both were read just above, so the root is only the fallback of a
+    // refusal that has to be placed somewhere.
+    let producers_node = find_sce_child(root, "producers").unwrap_or(*root);
+    let progress_node = find_sce_child(root, "progress").unwrap_or(*root);
+    let retention_node = find_sce_child(root, "retention").ok_or_else(|| {
+        located(
+            root,
+            diag,
+            ValidationError::MissingElement {
+                kind: ForgeKind::BroadcastLog,
+                element: "sce:retention".into(),
+            },
+        )
+    })?;
+    let retention = read_capacity_source(&retention_node, diag, "<sce:retention>", "entries")?;
+
+    let model = BroadcastLogModel {
+        name: doc_name.to_string(),
+        element_type,
+        producers,
+        progress,
+        retention,
+        source_location: forge_source_location_of(root, diag),
+        element_type_line: find_sce_child(root, "element-type").map(|node| row_of(&node)),
+        progress_line: Some(row_of(&progress_node)),
+        retention_line: Some(row_of(&retention_node)),
+    };
+
+    // ── Judged on the document alone: the selection table ──
+    let Some(selection) = model.selection() else {
+        return Err(located(
+            &producers_node,
+            diag,
+            ValidationError::BroadcastLogProducersManyUnsupported {
+                log_name: doc_name.to_string(),
+            },
+        ));
+    };
+    if model.progress > selection.reachable() {
+        let progress_word = |p: QueueProgress| match p {
+            QueueProgress::WaitFree => "wait-free",
+            QueueProgress::LockFree => "lock-free",
+            QueueProgress::Blocking => "blocking",
+        };
+        return Err(located(
+            &progress_node,
+            diag,
+            ValidationError::BroadcastLogProgressUnreachable {
+                log_name: doc_name.to_string(),
+                declared: progress_word(model.progress).into(),
+                reachable: progress_word(selection.reachable()).into(),
+            },
+        ));
+    }
+    Ok(model)
+}
+
 /// Parse `<scxml sce:kind="queue">…</scxml>` into a [`QueueModel`] — RFC
 /// §synth-5-P.
 ///
@@ -10607,35 +10728,9 @@ fn parse_queue(
     let diag = label.diagnostic_label;
 
     let element_type = read_element_type(root, diag, ForgeKind::Queue)?;
-    let cardinality = |word: &str| match word {
-        "one" => QueueCardinality::One,
-        _ => QueueCardinality::Many,
-    };
-    let producers = cardinality(read_required_word(
-        root,
-        diag,
-        ForgeKind::Queue,
-        "producers",
-        &["one", "many"],
-    )?);
-    let consumers = cardinality(read_required_word(
-        root,
-        diag,
-        ForgeKind::Queue,
-        "consumers",
-        &["one", "many"],
-    )?);
-    let progress = match read_required_word(
-        root,
-        diag,
-        ForgeKind::Queue,
-        "progress",
-        &["wait-free", "lock-free", "blocking"],
-    )? {
-        "wait-free" => QueueProgress::WaitFree,
-        "lock-free" => QueueProgress::LockFree,
-        _ => QueueProgress::Blocking,
-    };
+    let producers = read_cardinality(root, diag, ForgeKind::Queue, "producers")?;
+    let consumers = read_cardinality(root, diag, ForgeKind::Queue, "consumers")?;
+    let progress = read_progress(root, diag, ForgeKind::Queue)?;
 
     // ── Storage: exactly one of three ──
     let bounded = find_sce_child(root, "bounded");

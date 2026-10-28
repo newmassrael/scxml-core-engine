@@ -337,6 +337,11 @@ fn forge_doc_provenance(doc: &ForgeDocument) -> (&'static str, &str, &Option<Sou
             &m.name,
             &m.source_location,
         ),
+        ForgeDocument::BroadcastLog(m) => (
+            "<scxml sce:kind=\"broadcast-log\">",
+            &m.name,
+            &m.source_location,
+        ),
     }
 }
 

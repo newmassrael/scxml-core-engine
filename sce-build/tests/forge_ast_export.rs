@@ -352,6 +352,9 @@ const FIXTURE_PER_KIND: &[(&str, &str)] = &[
     ("queue", "queue_ast_export_min.scxml"),
     // ADR 0057 §2: a feature model with one requires edge.
     ("feature-model", "feature_model_ast_export_min.scxml"),
+    // ADR 0062: a broadcast log. One producer, wait-free, a constant
+    // retention: the shape that needs no deploy file.
+    ("broadcast-log", "broadcast_log_ast_export_min.scxml"),
 ];
 
 #[test]

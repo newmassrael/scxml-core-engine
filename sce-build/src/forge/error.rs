@@ -3285,6 +3285,88 @@ pub enum ValidationError {
         candidates: Vec<String>,
     },
 
+    /// ADR 0062 §3 (`broadcast-log/element-type-not-a-kind`) —
+    /// `<sce:element-type>` does not name a codec or procedure document in
+    /// this build. The log stores the bytes of the element document's own wire
+    /// form, so the name has to resolve exactly as a queue's does.
+    ///
+    /// Raised by the cross-document pass of
+    /// [`crate::compile_scxml_with_imports`], which holds the element
+    /// candidates; a single-document compile cannot resolve it. The closed
+    /// candidate list rides `Fix::ReplaceOneOf` with the sorted codec and
+    /// procedure names.
+    #[error(
+        "broadcast-log '{log_name}': <sce:element-type>{element_type}</sce:element-type> does not name a codec-kind struct or procedure-kind state record in this build. \
+         ADR 0062 §3: the log stores the bytes of the element document's own wire form, which resolves as a queue's element does. \
+         Declare the element type as a separate `.scxml` document (codec: `<scxml sce:kind=\"codec\" name=\"{element_type}\">`; procedure: `<scxml sce:kind=\"procedure\" name=\"{element_type}\">`), or replace the body text with one of the registered candidates: {}.",
+        crate::forge::error::joined_or_none(.candidates)
+    )]
+    BroadcastLogElementTypeNotAKind {
+        /// Log name from `<scxml sce:kind="broadcast-log" name="...">`.
+        log_name: String,
+        /// `<sce:element-type>` body text as authored.
+        element_type: String,
+        /// Sorted codec and procedure document names in the build.
+        candidates: Vec<String>,
+    },
+
+    /// ADR 0062 §3 (`broadcast-log/element-size-unbounded`) — the element
+    /// document's encoded size is not a constant of the build. A slot holds the
+    /// element's bytes as a fixed number of words (ADR 0062 §4), so an element
+    /// whose size varies has no slot to live in.
+    ///
+    /// Declared with the rest of the kind's refusals; the cross-document pass
+    /// that reads an element's encoded size is the step that gives the codec
+    /// model a build-time size to read (ADR 0062, "What step 3 landed").
+    #[error(
+        "broadcast-log '{log_name}': the encoded size of element-type '{element_type}' ({element_kind} kind) is not a build-time constant: {reason}. \
+         ADR 0062 §4: a slot holds the element's wire bytes as a fixed number of words. \
+         Repair: bound the element (a `sce:max-size` on each variable-length field), or log a fixed-size record that refers to the variable part."
+    )]
+    BroadcastLogElementSizeUnbounded {
+        /// Log name from `<scxml sce:kind="broadcast-log" name="...">`.
+        log_name: String,
+        /// Element-type name, already resolved to a codec or procedure.
+        element_type: String,
+        /// `codec` or `procedure`.
+        element_kind: String,
+        /// What makes the size unbounded, in a clause that follows "is not a
+        /// build-time constant: ".
+        reason: String,
+    },
+
+    /// ADR 0062 §8 (`broadcast-log/producers-many-unsupported`) —
+    /// `<sce:producers>many</sce:producers>`. The document parses, and the kind
+    /// refuses it: with several producers a claimed but unpublished sequence
+    /// number is a hole that readers can neither return nor skip.
+    #[error(
+        "broadcast-log '{log_name}': <sce:producers>many</sce:producers> is not offered. \
+         ADR 0062 §8: with several producers a claimed but unpublished sequence number is a hole that readers can neither return nor skip, and the design that closes it gives readers a weaker progress and needs a read-modify-write atomic. \
+         Repair: declare <sce:producers>one</sce:producers> (several producers publish through one context that owns the log's producer handle)."
+    )]
+    BroadcastLogProducersManyUnsupported {
+        /// Log name from `<scxml sce:kind="broadcast-log" name="...">`.
+        log_name: String,
+    },
+
+    /// ADR 0062 §3 (`broadcast-log/progress-unreachable`) — the declared
+    /// `<sce:progress>` is stronger than the row the selection table gives the
+    /// log. Refused rather than weakened: a declaration the log cannot keep is
+    /// a contract the author would rely on.
+    #[error(
+        "broadcast-log '{log_name}': <sce:progress>{declared}</sce:progress> cannot be met: the log's selection row gives {reachable}. \
+         ADR 0062 §3: progress is declared, checked, and never silently weakened. \
+         Repair: declare {reachable}."
+    )]
+    BroadcastLogProgressUnreachable {
+        /// Log name from `<scxml sce:kind="broadcast-log" name="...">`.
+        log_name: String,
+        /// The progress the document declares.
+        declared: String,
+        /// The strongest progress the selection row gives both publish and read.
+        reachable: String,
+    },
+
     /// SCE Protocol-Synthesis RFC §synth-5-L line 2655
     /// (`collection/overflow-policy-oldest-wins-requires-ordering-insertion`)
     /// — `<sce:on-overflow>oldest-wins</sce:on-overflow>` declared
@@ -6084,6 +6166,112 @@ pub enum GenerateError {
         queue_name: String,
         /// The target's `platform.class`, as the deploy spells it.
         platform_class: String,
+    },
+
+    /// ADR 0062 §3 (`broadcast-log/progress-unreachable-on-backend`) — the
+    /// declared `<sce:progress>` is stronger than the most the target language
+    /// can give any broadcast log. `broadcast-log/progress-unreachable` judges
+    /// the document alone against the selection table; this is the same
+    /// judgement against the target: a Python log is one ring under one lock and
+    /// gives `blocking`. Refused rather than weakened.
+    #[error(
+        "broadcast-log '{log_name}': <sce:progress>{declared}</sce:progress> cannot be met on the {language} backend: {because}, so its log gives {reachable} at most. \
+         ADR 0062 §3: progress is declared, checked, and never silently weakened. \
+         Repair: declare {reachable}, or generate for a target that gives {declared}."
+    )]
+    BroadcastLogProgressUnreachableOnBackend {
+        /// Log name from `<scxml sce:kind="broadcast-log" name="...">`.
+        log_name: String,
+        /// The progress the document declares.
+        declared: String,
+        /// The strongest progress the target gives.
+        reachable: String,
+        /// The target language's wire name.
+        language: String,
+        /// Why the target gives no more, in a clause that follows "on the
+        /// {language} backend: ".
+        because: String,
+    },
+
+    /// ADR 0062 §4 (`broadcast-log/wrap-bound-unstated`) — a log whose stamp is
+    /// narrower than 64 bits, whose wrap bound is `2^(bits - 1)` publishes, and
+    /// the deploy does not state `queues.<log>.min_wrap_ops`, the longest delay
+    /// the design relies on. Without it the bound cannot be judged against
+    /// anything.
+    #[error(
+        "broadcast-log '{log_name}': the log's {stamp_bits}-bit stamp tells {bound} publishes apart, and the deploy states no machines.<machine>.queues.{log_name}.min_wrap_ops to judge it against. \
+         ADR 0062 §4: a reader stopped for longer than the bound could mistake a later lap for its own, which is not decidable from the document. \
+         Repair: state machines.<machine>.queues.{log_name}.min_wrap_ops, the longest delay in publishes the design relies on, or use a target with 64-bit atomic loads and stores (a bound of 2^63)."
+    )]
+    BroadcastLogWrapBoundUnstated {
+        /// Log name from `<scxml sce:kind="broadcast-log" name="...">`.
+        log_name: String,
+        /// The stamp's width in bits.
+        stamp_bits: u32,
+        /// The log's wrap bound in publishes.
+        bound: u64,
+    },
+
+    /// ADR 0062 §4 (`broadcast-log/wrap-bound-below-deploy-minimum`) — the
+    /// deploy states a `min_wrap_ops` above the log's wrap bound, so a delay the
+    /// design relies on is long enough to mislead a reader.
+    #[error(
+        "broadcast-log '{log_name}': the log's {stamp_bits}-bit stamp tells {bound} publishes apart, below the {min_wrap_ops} that machines.<machine>.queues.{log_name}.min_wrap_ops says the design relies on. \
+         ADR 0062 §4: a reader stopped for longer than the bound could mistake a later lap for its own. \
+         Repair: use a target with 64-bit atomic loads and stores (a bound of 2^63), or lower min_wrap_ops to a delay the design can bound."
+    )]
+    BroadcastLogWrapBoundBelowDeployMinimum {
+        /// Log name from `<scxml sce:kind="broadcast-log" name="...">`.
+        log_name: String,
+        /// The stamp's width in bits.
+        stamp_bits: u32,
+        /// The log's wrap bound in publishes.
+        bound: u64,
+        /// The `min_wrap_ops` the deploy states.
+        min_wrap_ops: u64,
+    },
+
+    /// ADR 0062 §4 (`broadcast-log/slots-not-a-divisor-of-the-stamp-space`) — a
+    /// log whose stamp is narrower than 64 bits keeps `retention + 1` slots, and
+    /// that number is not a power of two. The slot index `n mod (retention + 1)`
+    /// must stay continuous across the stamp's wrap, which only a divisor of
+    /// `2^bits` guarantees. The repair is a choice of retention (one of the two
+    /// nearest accepted, or a wider stamp), so it is not a `Fix`.
+    #[error(
+        "broadcast-log '{log_name}': retention {retention} keeps {slots} slots, which does not divide the 2^{stamp_bits} values of the log's {stamp_bits}-bit stamp. \
+         ADR 0062 §4: the slot index must stay continuous across the stamp's wrap, so a narrow stamp needs a slot count that is a power of two. \
+         Repair: declare a retention one less than a power of two (the nearest below is {nearest_below}, the nearest above is {nearest_above}), or use a target with 64-bit atomic loads and stores."
+    )]
+    BroadcastLogSlotsNotADivisorOfTheStampSpace {
+        /// Log name from `<scxml sce:kind="broadcast-log" name="...">`.
+        log_name: String,
+        /// The retention the document declares, resolved to a count.
+        retention: u32,
+        /// `retention + 1`.
+        slots: u64,
+        /// The stamp's width in bits.
+        stamp_bits: u32,
+        /// The largest retention below the declared one that is accepted.
+        nearest_below: u64,
+        /// The smallest retention above the declared one that is accepted.
+        nearest_above: u64,
+    },
+
+    /// ADR 0062 §3 (`broadcast-log/runtime-missing`) — a valid broadcast log
+    /// document for a language whose forge runtime has no row for it yet. The
+    /// runtimes land one language at a time (ADR 0062, "Order of landing"), so a
+    /// document that is valid can still be one a backend cannot lower yet.
+    /// Refused by name rather than lowered to a log that gives less.
+    #[error(
+        "broadcast-log '{log_name}': the {language} forge runtime has no broadcast-log row yet. \
+         ADR 0062 §3: the kind is specified for the backends in the ADR's order, and this document is valid; it is refused rather than lowered to a log that gives less. \
+         Repair: generate for a backend whose runtime has the row, or wait for the {language} row."
+    )]
+    BroadcastLogRuntimeMissing {
+        /// Log name from `<scxml sce:kind="broadcast-log" name="...">`.
+        log_name: String,
+        /// The target language's wire name.
+        language: String,
     },
 
     /// `deploy.yaml`'s

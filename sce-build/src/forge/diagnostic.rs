@@ -1447,6 +1447,50 @@ pub enum DiagnosticCode {
     #[serde(rename = "queue/segmented-needs-alloc")]
     QueueSegmentedNeedsAlloc,
 
+    // ── ADR 0062 broadcast-log kind. Nine codes: the first four are judged
+    //    where the document (and the build's other documents) are in hand, the
+    //    rest at generation, where the target and the deploy are. Only
+    //    `broadcast-log/element-type-not-a-kind` carries a `Fix`: its repair is
+    //    a choice among documents that exist. ──
+    /// `<sce:element-type>` names no codec or procedure document in the build.
+    /// Carries a `Fix::ReplaceOneOf` over the documents that exist.
+    #[serde(rename = "broadcast-log/element-type-not-a-kind")]
+    BroadcastLogElementTypeNotAKind,
+    /// The element document's encoded size is not a constant of the build, so
+    /// a slot has no fixed number of words to hold it.
+    #[serde(rename = "broadcast-log/element-size-unbounded")]
+    BroadcastLogElementSizeUnbounded,
+    /// `<sce:producers>many</sce:producers>`: the document parses and the kind
+    /// refuses it (ADR 0062 §8).
+    #[serde(rename = "broadcast-log/producers-many-unsupported")]
+    BroadcastLogProducersManyUnsupported,
+    /// The declared `<sce:progress>` is stronger than the row the selection
+    /// table gives the log. `expected` carries the strongest it gives.
+    #[serde(rename = "broadcast-log/progress-unreachable")]
+    BroadcastLogProgressUnreachable,
+    /// The document is valid and declares a progress stronger than the target
+    /// language can give any log (Python, one ring under one lock, gives
+    /// `blocking`). `expected` carries what the backend gives, `actual` what
+    /// the document declared.
+    #[serde(rename = "broadcast-log/progress-unreachable-on-backend")]
+    BroadcastLogProgressUnreachableOnBackend,
+    /// A log whose stamp is narrower than 64 bits and the deploy states no
+    /// `queues.<log>.min_wrap_ops`. `expected` carries the log's wrap bound.
+    #[serde(rename = "broadcast-log/wrap-bound-unstated")]
+    BroadcastLogWrapBoundUnstated,
+    /// The deploy's `min_wrap_ops` is above the log's wrap bound. `expected`
+    /// carries the bound, `actual` the figure the deploy states.
+    #[serde(rename = "broadcast-log/wrap-bound-below-deploy-minimum")]
+    BroadcastLogWrapBoundBelowDeployMinimum,
+    /// A log with a stamp narrower than 64 bits whose `retention + 1` slots are
+    /// not a power of two. `actual` carries the retention.
+    #[serde(rename = "broadcast-log/slots-not-a-divisor-of-the-stamp-space")]
+    BroadcastLogSlotsNotADivisorOfTheStampSpace,
+    /// The document is valid and the target language's forge runtime has no
+    /// broadcast-log row yet. `actual` carries the language.
+    #[serde(rename = "broadcast-log/runtime-missing")]
+    BroadcastLogRuntimeMissing,
+
     // ── §synth-5-J-2 Rust no_std variant rejection (item C3).
     //    Producer: `cmd_generate` walks the parsed SCXML model when
     //    `--no-std` is passed to `sce-codegen generate -l rust` and
@@ -3860,6 +3904,16 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         QueueProgressInsufficientForIsr,
         QueueAllocInIsr,
         QueueSegmentedNeedsAlloc,
+        // ADR 0062 broadcast-log kind
+        BroadcastLogElementTypeNotAKind,
+        BroadcastLogElementSizeUnbounded,
+        BroadcastLogProducersManyUnsupported,
+        BroadcastLogProgressUnreachable,
+        BroadcastLogProgressUnreachableOnBackend,
+        BroadcastLogWrapBoundUnstated,
+        BroadcastLogWrapBoundBelowDeployMinimum,
+        BroadcastLogSlotsNotADivisorOfTheStampSpace,
+        BroadcastLogRuntimeMissing,
         // Codegen Rust no_std variant rejection (SCE Protocol-Synthesis RFC §synth-5-J-2,
         // item C3)
         CodegenNoStdScriptNotSupported,
@@ -5198,7 +5252,18 @@ impl DiagnosticCode {
             | ValidationFeatureVariantIllFormed
             | ValidationFeatureSelectionWithoutModel
             | ValidationFeatureSelectionUndeclared
-            | ValidationFeatureSelectionIncomplete => None,
+            | ValidationFeatureSelectionIncomplete
+            // ADR 0062: the broadcast log's rules are SCE's (an SCE ADR, not
+            // an external specification section).
+            | BroadcastLogElementTypeNotAKind
+            | BroadcastLogElementSizeUnbounded
+            | BroadcastLogProducersManyUnsupported
+            | BroadcastLogProgressUnreachable
+            | BroadcastLogProgressUnreachableOnBackend
+            | BroadcastLogWrapBoundUnstated
+            | BroadcastLogWrapBoundBelowDeployMinimum
+            | BroadcastLogSlotsNotADivisorOfTheStampSpace
+            | BroadcastLogRuntimeMissing => None,
         }
     }
 
@@ -5418,6 +5483,15 @@ impl DiagnosticCode {
             | QueueProgressInsufficientForIsr
             | QueueAllocInIsr
             | QueueSegmentedNeedsAlloc
+            | BroadcastLogElementTypeNotAKind
+            | BroadcastLogElementSizeUnbounded
+            | BroadcastLogProducersManyUnsupported
+            | BroadcastLogProgressUnreachable
+            | BroadcastLogProgressUnreachableOnBackend
+            | BroadcastLogWrapBoundUnstated
+            | BroadcastLogWrapBoundBelowDeployMinimum
+            | BroadcastLogSlotsNotADivisorOfTheStampSpace
+            | BroadcastLogRuntimeMissing
             | CodegenNoStdScriptNotSupported
             | CodegenNoStdHttpNotSupported
             | CodegenNoStdFsLoadNotSupported
@@ -6028,6 +6102,21 @@ impl DiagnosticCode {
             QueueProgressInsufficientForIsr => "queue/progress-insufficient-for-isr",
             QueueAllocInIsr => "queue/alloc-in-isr",
             QueueSegmentedNeedsAlloc => "queue/segmented-needs-alloc",
+            BroadcastLogElementTypeNotAKind => "broadcast-log/element-type-not-a-kind",
+            BroadcastLogElementSizeUnbounded => "broadcast-log/element-size-unbounded",
+            BroadcastLogProducersManyUnsupported => "broadcast-log/producers-many-unsupported",
+            BroadcastLogProgressUnreachable => "broadcast-log/progress-unreachable",
+            BroadcastLogProgressUnreachableOnBackend => {
+                "broadcast-log/progress-unreachable-on-backend"
+            }
+            BroadcastLogWrapBoundUnstated => "broadcast-log/wrap-bound-unstated",
+            BroadcastLogWrapBoundBelowDeployMinimum => {
+                "broadcast-log/wrap-bound-below-deploy-minimum"
+            }
+            BroadcastLogSlotsNotADivisorOfTheStampSpace => {
+                "broadcast-log/slots-not-a-divisor-of-the-stamp-space"
+            }
+            BroadcastLogRuntimeMissing => "broadcast-log/runtime-missing",
             TimerPeriodBelowTickRate => "timer/period-below-tick-rate",
             TimerSlotOverflow => "timer/slot-overflow",
             ExternSymbolNotInWhitelist => "extern/symbol-not-in-whitelist",
@@ -10002,6 +10091,65 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
                 link_field.clone(),
             ],
         },
+        ValidationError::BroadcastLogElementTypeNotAKind {
+            log_name,
+            element_type,
+            candidates,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::BroadcastLogElementTypeNotAKind,
+            stage: Stage::Validation,
+            // As `queue/element-type-not-a-kind`: `actual` is the
+            // element-type text as authored, and the sorted codec + procedure
+            // names ride `Fix::ReplaceOneOf`.
+            expected: None,
+            actual: Some(element_type.clone()),
+            fix: Some(Fix::ReplaceOneOf {
+                candidates: candidates.clone(),
+            }),
+            key_fragments: vec![log_name.clone(), element_type.clone()],
+        },
+        ValidationError::BroadcastLogElementSizeUnbounded {
+            log_name,
+            element_type,
+            element_kind,
+            reason,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::BroadcastLogElementSizeUnbounded,
+            stage: Stage::Validation,
+            // The repair bounds the element or changes what is logged; it is
+            // not a choice among closed candidates.
+            expected: None,
+            actual: Some(element_type.clone()),
+            fix: None,
+            key_fragments: vec![
+                log_name.clone(),
+                element_type.clone(),
+                element_kind.clone(),
+                reason.clone(),
+            ],
+        },
+        ValidationError::BroadcastLogProducersManyUnsupported { log_name } => DiagnosticPayload {
+            code: DiagnosticCode::BroadcastLogProducersManyUnsupported,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some("many".to_string()),
+            fix: None,
+            key_fragments: vec![log_name.clone()],
+        },
+        ValidationError::BroadcastLogProgressUnreachable {
+            log_name,
+            declared,
+            reachable,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::BroadcastLogProgressUnreachable,
+            stage: Stage::Validation,
+            // As `queue/progress-unreachable`: the strongest progress the
+            // selection row gives is the one thing the table says.
+            expected: Some(vec![reachable.clone()]),
+            actual: Some(declared.clone()),
+            fix: None,
+            key_fragments: vec![log_name.clone(), declared.clone()],
+        },
         ValidationError::TimerPeriodBelowTickRate {
             timer_name,
             machine,
@@ -11273,6 +11421,83 @@ fn generate_fields(e: &GenerateError) -> DiagnosticPayload {
             actual: Some(declared.clone()),
             fix: None,
             key_fragments: vec![queue_name.clone(), declared.clone(), language.clone()],
+        },
+        GenerateError::BroadcastLogProgressUnreachableOnBackend {
+            log_name,
+            declared,
+            reachable,
+            language,
+            because: _,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::BroadcastLogProgressUnreachableOnBackend,
+            stage: Stage::Generate,
+            // As `queue/progress-unreachable-on-backend`: what the backend
+            // gives is a closed fact the repair names, and declaring it is one
+            // repair among several, so it is metadata and not a `Fix`.
+            expected: Some(vec![reachable.clone()]),
+            actual: Some(declared.clone()),
+            fix: None,
+            key_fragments: vec![log_name.clone(), declared.clone(), language.clone()],
+        },
+        GenerateError::BroadcastLogWrapBoundUnstated {
+            log_name,
+            stamp_bits,
+            bound,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::BroadcastLogWrapBoundUnstated,
+            stage: Stage::Generate,
+            expected: Some(vec![bound.to_string()]),
+            actual: None,
+            fix: None,
+            key_fragments: vec![log_name.clone(), stamp_bits.to_string(), bound.to_string()],
+        },
+        GenerateError::BroadcastLogWrapBoundBelowDeployMinimum {
+            log_name,
+            stamp_bits,
+            bound,
+            min_wrap_ops,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::BroadcastLogWrapBoundBelowDeployMinimum,
+            stage: Stage::Generate,
+            expected: Some(vec![bound.to_string()]),
+            actual: Some(min_wrap_ops.to_string()),
+            fix: None,
+            key_fragments: vec![
+                log_name.clone(),
+                stamp_bits.to_string(),
+                bound.to_string(),
+                min_wrap_ops.to_string(),
+            ],
+        },
+        GenerateError::BroadcastLogSlotsNotADivisorOfTheStampSpace {
+            log_name,
+            retention,
+            slots: _,
+            stamp_bits,
+            nearest_below: _,
+            nearest_above: _,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::BroadcastLogSlotsNotADivisorOfTheStampSpace,
+            stage: Stage::Generate,
+            // The retention as written, resolved to a count; the two nearest
+            // accepted counts are a choice, so they ride the message and not a
+            // `Fix`.
+            expected: None,
+            actual: Some(retention.to_string()),
+            fix: None,
+            key_fragments: vec![
+                log_name.clone(),
+                stamp_bits.to_string(),
+                retention.to_string(),
+            ],
+        },
+        GenerateError::BroadcastLogRuntimeMissing { log_name, language } => DiagnosticPayload {
+            code: DiagnosticCode::BroadcastLogRuntimeMissing,
+            stage: Stage::Generate,
+            expected: None,
+            actual: Some(language.clone()),
+            fix: None,
+            key_fragments: vec![log_name.clone(), language.clone()],
         },
         // ── Non-MCU backend refuses `platform.c11_section_attribute`
         //    (SCE Protocol-Synthesis RFC §5.2).
@@ -12705,7 +12930,7 @@ mod tests {
             (
                 "forge/unsupported-kind",
                 ValidationError::UnsupportedKind("bogus".into()).into(),
-                r#"{"v":1,"id":"fnv1a:812898e1a23fda4d","code":"validation/unsupported-kind","stage":"validation","spec":"SCE Forge §3.2","message":"unsupported sce:kind value: 'bogus'","actual":"bogus","fix":{"kind":"replace_one_of","candidates":["statechart","transform","lookup","condition","codec","procedure","validator","filter","interpolation","timer","observer","algorithm","link","buffer-pool","worker","bounded-collection","enum","event-schema","queue","feature-model"]}}"#,
+                r#"{"v":1,"id":"fnv1a:812898e1a23fda4d","code":"validation/unsupported-kind","stage":"validation","spec":"SCE Forge §3.2","message":"unsupported sce:kind value: 'bogus'","actual":"bogus","fix":{"kind":"replace_one_of","candidates":["statechart","transform","lookup","condition","codec","procedure","validator","filter","interpolation","timer","observer","algorithm","link","buffer-pool","worker","bounded-collection","enum","event-schema","queue","feature-model","broadcast-log"]}}"#,
             ),
             (
                 "forge/duplicate-id",
@@ -14949,6 +15174,101 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:148d6732211910e1","code":"queue/alloc-in-isr","stage":"generate","spec":"SCE Protocol-Synthesis RFC §5.P","message":"queue 'rx_events': a producer runs in an interrupt handler, and the queue is `segmented`, so its push may allocate a segment. SCE Protocol-Synthesis RFC §5.P (Placement): an ISR producer on a segmented queue is refused. Repair: use `bounded` storage, whose push allocates nothing, or run the producer in a thread."}"#,
+            ),
+            // ── ADR 0062: broadcast-log kind ──
+            (
+                "forge/broadcast-log-element-type-not-a-kind",
+                ValidationError::BroadcastLogElementTypeNotAKind {
+                    log_name: "event_ring".into(),
+                    element_type: "event_recrd".into(),
+                    candidates: vec!["event_record".into(), "status_record".into()],
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:687724e8fd8a4a13","code":"broadcast-log/element-type-not-a-kind","stage":"validation","message":"broadcast-log 'event_ring': <sce:element-type>event_recrd</sce:element-type> does not name a codec-kind struct or procedure-kind state record in this build. ADR 0062 §3: the log stores the bytes of the element document's own wire form, which resolves as a queue's element does. Declare the element type as a separate `.scxml` document (codec: `<scxml sce:kind=\"codec\" name=\"event_recrd\">`; procedure: `<scxml sce:kind=\"procedure\" name=\"event_recrd\">`), or replace the body text with one of the registered candidates: event_record, status_record.","actual":"event_recrd","fix":{"kind":"replace_one_of","candidates":["event_record","status_record"]}}"#,
+            ),
+            (
+                "forge/broadcast-log-element-size-unbounded",
+                ValidationError::BroadcastLogElementSizeUnbounded {
+                    log_name: "event_ring".into(),
+                    element_type: "event_record".into(),
+                    element_kind: "codec".into(),
+                    reason: "field 'payload' is a bytes field with no sce:max-size".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:fd8592c56b38c1d5","code":"broadcast-log/element-size-unbounded","stage":"validation","message":"broadcast-log 'event_ring': the encoded size of element-type 'event_record' (codec kind) is not a build-time constant: field 'payload' is a bytes field with no sce:max-size. ADR 0062 §4: a slot holds the element's wire bytes as a fixed number of words. Repair: bound the element (a `sce:max-size` on each variable-length field), or log a fixed-size record that refers to the variable part.","actual":"event_record"}"#,
+            ),
+            (
+                "forge/broadcast-log-producers-many-unsupported",
+                ValidationError::BroadcastLogProducersManyUnsupported {
+                    log_name: "event_ring".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:b4eb996c49e46674","code":"broadcast-log/producers-many-unsupported","stage":"validation","message":"broadcast-log 'event_ring': <sce:producers>many</sce:producers> is not offered. ADR 0062 §8: with several producers a claimed but unpublished sequence number is a hole that readers can neither return nor skip, and the design that closes it gives readers a weaker progress and needs a read-modify-write atomic. Repair: declare <sce:producers>one</sce:producers> (several producers publish through one context that owns the log's producer handle).","actual":"many"}"#,
+            ),
+            (
+                "forge/broadcast-log-progress-unreachable",
+                ValidationError::BroadcastLogProgressUnreachable {
+                    log_name: "event_ring".into(),
+                    declared: "wait-free".into(),
+                    reachable: "lock-free".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:de5ecfc761ef0a00","code":"broadcast-log/progress-unreachable","stage":"validation","message":"broadcast-log 'event_ring': <sce:progress>wait-free</sce:progress> cannot be met: the log's selection row gives lock-free. ADR 0062 §3: progress is declared, checked, and never silently weakened. Repair: declare lock-free.","expected":["lock-free"],"actual":"wait-free"}"#,
+            ),
+            (
+                "forge/broadcast-log-progress-unreachable-on-backend",
+                GenerateError::BroadcastLogProgressUnreachableOnBackend {
+                    log_name: "event_ring".into(),
+                    declared: "wait-free".into(),
+                    reachable: "blocking".into(),
+                    language: "python".into(),
+                    because: "its log is one ring under one lock".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:4a4bb0aa9cb94880","code":"broadcast-log/progress-unreachable-on-backend","stage":"generate","message":"broadcast-log 'event_ring': <sce:progress>wait-free</sce:progress> cannot be met on the python backend: its log is one ring under one lock, so its log gives blocking at most. ADR 0062 §3: progress is declared, checked, and never silently weakened. Repair: declare blocking, or generate for a target that gives wait-free.","expected":["blocking"],"actual":"wait-free"}"#,
+            ),
+            (
+                "forge/broadcast-log-wrap-bound-unstated",
+                GenerateError::BroadcastLogWrapBoundUnstated {
+                    log_name: "event_ring".into(),
+                    stamp_bits: 32,
+                    bound: 2_147_483_648,
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:b1f9df3a18d41ab5","code":"broadcast-log/wrap-bound-unstated","stage":"generate","message":"broadcast-log 'event_ring': the log's 32-bit stamp tells 2147483648 publishes apart, and the deploy states no machines.<machine>.queues.event_ring.min_wrap_ops to judge it against. ADR 0062 §4: a reader stopped for longer than the bound could mistake a later lap for its own, which is not decidable from the document. Repair: state machines.<machine>.queues.event_ring.min_wrap_ops, the longest delay in publishes the design relies on, or use a target with 64-bit atomic loads and stores (a bound of 2^63).","expected":["2147483648"]}"#,
+            ),
+            (
+                "forge/broadcast-log-wrap-bound-below-deploy-minimum",
+                GenerateError::BroadcastLogWrapBoundBelowDeployMinimum {
+                    log_name: "event_ring".into(),
+                    stamp_bits: 32,
+                    bound: 2_147_483_648,
+                    min_wrap_ops: 4_000_000_000,
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:53cdaf9b77cf179c","code":"broadcast-log/wrap-bound-below-deploy-minimum","stage":"generate","message":"broadcast-log 'event_ring': the log's 32-bit stamp tells 2147483648 publishes apart, below the 4000000000 that machines.<machine>.queues.event_ring.min_wrap_ops says the design relies on. ADR 0062 §4: a reader stopped for longer than the bound could mistake a later lap for its own. Repair: use a target with 64-bit atomic loads and stores (a bound of 2^63), or lower min_wrap_ops to a delay the design can bound.","expected":["2147483648"],"actual":"4000000000"}"#,
+            ),
+            (
+                "forge/broadcast-log-slots-not-a-divisor-of-the-stamp-space",
+                GenerateError::BroadcastLogSlotsNotADivisorOfTheStampSpace {
+                    log_name: "event_ring".into(),
+                    retention: 5,
+                    slots: 6,
+                    stamp_bits: 32,
+                    nearest_below: 3,
+                    nearest_above: 7,
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:22d8b4d81f9dc162","code":"broadcast-log/slots-not-a-divisor-of-the-stamp-space","stage":"generate","message":"broadcast-log 'event_ring': retention 5 keeps 6 slots, which does not divide the 2^32 values of the log's 32-bit stamp. ADR 0062 §4: the slot index must stay continuous across the stamp's wrap, so a narrow stamp needs a slot count that is a power of two. Repair: declare a retention one less than a power of two (the nearest below is 3, the nearest above is 7), or use a target with 64-bit atomic loads and stores.","actual":"5"}"#,
+            ),
+            (
+                "forge/broadcast-log-runtime-missing",
+                GenerateError::BroadcastLogRuntimeMissing {
+                    log_name: "event_ring".into(),
+                    language: "rust".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:91bd428e1a9720f1","code":"broadcast-log/runtime-missing","stage":"generate","message":"broadcast-log 'event_ring': the rust forge runtime has no broadcast-log row yet. ADR 0062 §3: the kind is specified for the backends in the ADR's order, and this document is valid; it is refused rather than lowered to a log that gives less. Repair: generate for a backend whose runtime has the row, or wait for the rust row.","actual":"rust"}"#,
             ),
             (
                 "forge/queue-segmented-needs-alloc",
@@ -18369,6 +18689,9 @@ mod tests {
             | QueueElementTypeNotAKind
             | QueueIntrusiveLinkFieldMissing
             | QueueIntrusiveLinkFieldNotU32
+            // Broadcast-log cross-document resolution (ADR 0062): the sorted
+            // codec + procedure names for the element type.
+            | BroadcastLogElementTypeNotAKind
             // C7-lowering algorithm-over-BC dispatch (RFC §synth-5-A line 311
             // + §synth-5-L line 2611-2618 + 2642-2647). Two of the six
             // codes carry a closed candidate set:
@@ -18604,6 +18927,17 @@ mod tests {
             | QueueProgressInsufficientForIsr
             | QueueSegmentedNeedsAlloc
             | QueueStorageRuntimeMissing
+            // `broadcast-log/progress-unreachable` and
+            // `.../progress-unreachable-on-backend`: `expected` is the
+            // strongest progress the selection row or the backend gives, as
+            // for the queue's two; `.../wrap-bound-unstated` and
+            // `.../wrap-bound-below-deploy-minimum`: `expected` is the log's
+            // wrap bound, as for the queue's two. Each repair is a choice, so
+            // none is a `Fix`.
+            | BroadcastLogProgressUnreachable
+            | BroadcastLogProgressUnreachableOnBackend
+            | BroadcastLogWrapBoundUnstated
+            | BroadcastLogWrapBoundBelowDeployMinimum
             // `deploy/scheduler-session-runtime-not-applicable`: `expected` is
             // the one scheduler kind the block applies to (`tokio`). Dropping
             // the block is the other repair, so it is not a `Fix`.
@@ -18906,6 +19240,15 @@ mod tests {
             | QueueAllocatorProgressMissing
             | QueueAllocInIsr
             | QueueParticipantsUnresolved
+            // Broadcast-log (ADR 0062) refusals whose repair is the author's
+            // choice and which report nothing a candidate list could hold:
+            // a producer cardinality, an element that is not of a fixed size,
+            // a retention that is not one less than a power of two for a
+            // narrow stamp, and a language whose runtime has no row yet.
+            | BroadcastLogElementSizeUnbounded
+            | BroadcastLogProducersManyUnsupported
+            | BroadcastLogSlotsNotADivisorOfTheStampSpace
+            | BroadcastLogRuntimeMissing
             // Item C3 no_std rejections: author repair is
             // "drop --no-std" or "remove the offending construct"
             // (`<script>` / HTTP send / `<data src>` / `<invoke>`).
@@ -19795,6 +20138,15 @@ mod tests {
                 | QueueAllocInIsr
                 | QueueProgressInsufficientForIsr
                 | QueueSegmentedNeedsAlloc
+                | BroadcastLogElementTypeNotAKind
+                | BroadcastLogElementSizeUnbounded
+                | BroadcastLogProducersManyUnsupported
+                | BroadcastLogProgressUnreachable
+                | BroadcastLogProgressUnreachableOnBackend
+                | BroadcastLogWrapBoundUnstated
+                | BroadcastLogWrapBoundBelowDeployMinimum
+                | BroadcastLogSlotsNotADivisorOfTheStampSpace
+                | BroadcastLogRuntimeMissing
                 | MemReassemblyPoolVariantMissingMaxFragments
                 | MemReassemblyPoolVariantMissingTimeout
                 | MemReassemblySlotSizeBelowDeclaredMtu
@@ -20821,6 +21173,15 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | QueueAllocInIsr
             | QueueProgressInsufficientForIsr
             | QueueSegmentedNeedsAlloc
+            | BroadcastLogElementTypeNotAKind
+            | BroadcastLogElementSizeUnbounded
+            | BroadcastLogProducersManyUnsupported
+            | BroadcastLogProgressUnreachable
+            | BroadcastLogProgressUnreachableOnBackend
+            | BroadcastLogWrapBoundUnstated
+            | BroadcastLogWrapBoundBelowDeployMinimum
+            | BroadcastLogSlotsNotADivisorOfTheStampSpace
+            | BroadcastLogRuntimeMissing
             | MemReassemblyPoolVariantMissingMaxFragments
             | MemReassemblyPoolVariantMissingTimeout
             | MemReassemblySlotSizeBelowDeclaredMtu

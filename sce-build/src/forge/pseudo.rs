@@ -325,16 +325,16 @@ use std::fmt::Write as _;
 use crate::comment_text;
 use crate::forge::model::{
     AlgorithmConst, AlgorithmConstType, AlgorithmModel, AlgorithmStmt, BackpressurePolicy, BitSize,
-    BoundedCollectionModel, BufferPoolModel, BufferPoolVariant, CachePolicy, CapacitySource,
-    CodecEncoding, CodecField, CodecModel, CodecTestVector, CodecVariant, CollectionOrdering,
-    ConcurrencyMode, ConditionModel, CountRef, DecodedFieldValue, DecodedValue, Direction, Endian,
-    EnumModel, EventSchemaModel, FeaturesModel, FilterModel, FilterType, FlagDef, FoldBody,
-    ForgeDocument, ForgeField, InterpolationMethod, InterpolationModel, LinkClass, LinkModel,
-    LookupModel, MissPolicy, ObserverModel, OutOfBounds, OverflowPolicy, PresentIfPredicate,
-    PresentIfScope, ProcedureHelper, ProcedureModel, ProcedureState, ProcedureTransition,
-    QueueCardinality, QueueModel, QueueProgress, QueueStorage, SceType, TestVector,
-    TestVectorValue, TimerModel, TlvOverflowPolicy, TlvTerminateStrategy, TransformModel,
-    ValidatorModel, WorkerModel,
+    BoundedCollectionModel, BroadcastLogModel, BufferPoolModel, BufferPoolVariant, CachePolicy,
+    CapacitySource, CodecEncoding, CodecField, CodecModel, CodecTestVector, CodecVariant,
+    CollectionOrdering, ConcurrencyMode, ConditionModel, CountRef, DecodedFieldValue, DecodedValue,
+    Direction, Endian, EnumModel, EventSchemaModel, FeaturesModel, FilterModel, FilterType,
+    FlagDef, FoldBody, ForgeDocument, ForgeField, InterpolationMethod, InterpolationModel,
+    LinkClass, LinkModel, LookupModel, MissPolicy, ObserverModel, OutOfBounds, OverflowPolicy,
+    PresentIfPredicate, PresentIfScope, ProcedureHelper, ProcedureModel, ProcedureState,
+    ProcedureTransition, QueueCardinality, QueueModel, QueueProgress, QueueStorage, SceType,
+    TestVector, TestVectorValue, TimerModel, TlvOverflowPolicy, TlvTerminateStrategy,
+    TransformModel, ValidatorModel, WorkerModel,
 };
 use crate::forge::page::{Indent, Node, Part, Shape, Word, EN};
 use crate::model::BlockRole;
@@ -561,6 +561,7 @@ pub fn render_nodes(
         ForgeDocument::Interpolation(m) => Ok(render_interpolation(m)),
         ForgeDocument::BoundedCollection(m) => Ok(render_bounded_collection(m)),
         ForgeDocument::Queue(m) => Ok(render_queue(m)),
+        ForgeDocument::BroadcastLog(m) => Ok(render_broadcast_log(m)),
         ForgeDocument::FeatureModel(m) => Ok(render_feature_model(m)),
         ForgeDocument::Worker(m) => Ok(render_worker(m)),
         ForgeDocument::BufferPool(m) => Ok(render_buffer_pool(m)),
@@ -1977,6 +1978,32 @@ fn render_queue(m: &QueueModel) -> Vec<Node> {
         let _ = write!(head, " participants {}", source(participants));
     }
     out.line(&head);
+    out.nodes
+}
+
+/// A broadcast log is one head line, as a queue is: what it carries, how many
+/// producers write it, the progress it promises, and how many of the latest
+/// entries a reader may rely on.
+fn render_broadcast_log(m: &BroadcastLogModel) -> Vec<Node> {
+    let mut out = Out::new();
+    let producers = match m.producers {
+        QueueCardinality::One => "one",
+        QueueCardinality::Many => "many",
+    };
+    let progress = match m.progress {
+        QueueProgress::WaitFree => "wait-free",
+        QueueProgress::LockFree => "lock-free",
+        QueueProgress::Blocking => "blocking",
+    };
+    let retention = match &m.retention {
+        CapacitySource::DeployKey { key } => format!("deploy-key {}", text(key)),
+        CapacitySource::CompileConst { value } => format!("const {value}"),
+    };
+    out.line(&format!(
+        "broadcast-log {} of {} producers {producers} progress {progress} retention {retention}",
+        text(&m.name),
+        text(&m.element_type),
+    ));
     out.nodes
 }
 

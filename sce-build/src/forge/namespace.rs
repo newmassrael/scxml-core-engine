@@ -218,6 +218,7 @@ fn declarations(parsed: &ParsedForge) -> Vec<(&str, Declared)> {
         | ForgeDocument::Worker(_)
         | ForgeDocument::BoundedCollection(_)
         | ForgeDocument::Queue(_)
+        | ForgeDocument::BroadcastLog(_)
         | ForgeDocument::Enum(_)
         | ForgeDocument::FeatureModel(_)
         | ForgeDocument::Statechart(_) => {}

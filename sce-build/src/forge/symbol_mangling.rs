@@ -409,6 +409,7 @@ fn forge_doc_name(doc: &ForgeDocument) -> &str {
         ForgeDocument::EventSchema(m) => &m.name,
         ForgeDocument::Queue(m) => &m.name,
         ForgeDocument::FeatureModel(m) => &m.name,
+        ForgeDocument::BroadcastLog(m) => &m.name,
     }
 }
 

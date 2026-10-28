@@ -184,6 +184,17 @@ pub enum ForgeKind {
     /// to resolve their `sce:requires` conditions; it emits nothing of its
     /// own on any backend ([`crate::forge::codegen_matrix::KindClass::Declaration`]).
     FeatureModel,
+    /// A bounded log that one producer appends to and any number of readers
+    /// read, each by a cursor of its own; a full log forgets its oldest entry
+    /// and tells the reader that was too slow how many it missed — ADR 0062.
+    /// The document states the contract (element type, producer cardinality,
+    /// the progress guarantee, the retention) and names no algorithm.
+    /// Distinct from [`Self::Queue`] (an entry is consumed by one reader, and a
+    /// full queue refuses the writer) and from [`Self::BoundedCollection`] (a
+    /// table addressed by position, not a sequence). Parsed and checked on every
+    /// backend; no backend lowers it yet, so generation refuses it by name
+    /// (`broadcast-log/runtime-missing`).
+    BroadcastLog,
 }
 
 impl ForgeKind {
@@ -212,6 +223,7 @@ impl ForgeKind {
         "event-schema",
         "queue",
         "feature-model",
+        "broadcast-log",
     ];
 
     /// This kind's `sce:kind` attribute value — the inverse of
@@ -247,6 +259,7 @@ impl ForgeKind {
             Self::EventSchema => "event-schema",
             Self::Queue => "queue",
             Self::FeatureModel => "feature-model",
+            Self::BroadcastLog => "broadcast-log",
         }
     }
 
@@ -273,6 +286,7 @@ impl ForgeKind {
             "event-schema" => Some(Self::EventSchema),
             "queue" => Some(Self::Queue),
             "feature-model" => Some(Self::FeatureModel),
+            "broadcast-log" => Some(Self::BroadcastLog),
             _ => None,
         }
     }
@@ -346,6 +360,10 @@ impl ForgeKind {
             Self::Queue => true,
             // A feature model emits nothing, so nothing of it is held.
             Self::FeatureModel => false,
+            // ADR 0062: a log is the ring, the producer's handle and the
+            // readers' cursors, owned by whoever constructs it, so it has
+            // instance state.
+            Self::BroadcastLog => true,
         }
     }
 
@@ -414,6 +432,9 @@ impl ForgeKind {
             Self::Queue => RuntimeDep::ForgeRuntime,
             // A declaration emits nothing, so it depends on nothing.
             Self::FeatureModel => RuntimeDep::None,
+            // ADR 0062: the algorithm lives once per language in that
+            // language's forge runtime, as the queue's does.
+            Self::BroadcastLog => RuntimeDep::ForgeRuntime,
         }
     }
 
@@ -441,6 +462,7 @@ impl ForgeKind {
                 | Self::EventSchema
                 | Self::Queue
                 | Self::FeatureModel
+                | Self::BroadcastLog
         )
     }
 }
@@ -468,6 +490,7 @@ impl std::fmt::Display for ForgeKind {
             Self::EventSchema => write!(f, "event-schema"),
             Self::Queue => write!(f, "queue"),
             Self::FeatureModel => write!(f, "feature-model"),
+            Self::BroadcastLog => write!(f, "broadcast-log"),
         }
     }
 }
@@ -5829,6 +5852,116 @@ impl QueueModel {
     }
 }
 
+/// Broadcast-log document — ADR 0062: a bounded log that one producer appends
+/// to and any number of readers read, each by a cursor it owns; a full log
+/// forgets its oldest entry, and a reader that was too slow is told how many it
+/// missed.
+///
+/// Schema (per `<scxml sce:kind="broadcast-log">` body): `<sce:element-type>`,
+/// `<sce:producers>`, `<sce:progress>` and `<sce:retention>` are required and
+/// have no default, as for a queue: a reader of the document learns the
+/// contract from the document. The producer cardinality and the progress are
+/// the queue's own words ([`QueueCardinality`], [`QueueProgress`]); the
+/// retention is a count written the two ways a capacity is
+/// ([`CapacitySource`]). The log keeps `retention + 1` slots (ADR 0062 §2): the
+/// slot being overwritten cannot be promised to a reader.
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct BroadcastLogModel {
+    pub name: String,
+    /// `<sce:element-type>` body text — references another forge kind by
+    /// name. Opaque `String` at parse time; resolved cross-doc as a queue's
+    /// is.
+    pub element_type: String,
+    /// `<sce:producers>`. `many` parses and is refused
+    /// (`broadcast-log/producers-many-unsupported`, ADR 0062 §8).
+    pub producers: QueueCardinality,
+    pub progress: QueueProgress,
+    /// `<sce:retention entries="N"/>` or `<sce:retention source="deploy"
+    /// key="..."/>` — how many of the latest entries a reader may rely on.
+    pub retention: CapacitySource,
+    /// Post-preprocessor source position of the `<scxml
+    /// sce:kind="broadcast-log">` root element (RFC §synth-5-O), for the
+    /// SCE-MAP marker.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_location: Option<SourceLocation>,
+    /// Row of `<sce:element-type>`, for the refusals that name the element
+    /// document. Skipped from serialization to keep the wire byte-stable, the
+    /// way every other `line` on a model is.
+    #[serde(skip)]
+    pub element_type_line: Option<u32>,
+    /// Row of `<sce:progress>`, for the refusals about the progress it
+    /// declares. Skipped from serialization for the same reason.
+    #[serde(skip)]
+    pub progress_line: Option<u32>,
+    /// Row of `<sce:retention>`, for the refusals about the slot count.
+    /// Skipped from serialization for the same reason.
+    #[serde(skip)]
+    pub retention_line: Option<u32>,
+}
+
+/// The progress a broadcast log's two operations give — one row of the ADR 0062
+/// §4 selection table.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BroadcastLogSelection {
+    pub publish: QueueProgress,
+    pub read: QueueProgress,
+}
+
+impl BroadcastLogSelection {
+    /// The strongest progress that both publish and read give: what a
+    /// `<sce:progress>` declaration is checked against.
+    pub fn reachable(self) -> QueueProgress {
+        self.publish.min(self.read)
+    }
+}
+
+/// The widest stamp a broadcast log keeps, in bits: the target has atomic loads
+/// and stores of this width (ADR 0062 §4). A narrower stamp is a concrete
+/// obligation the document alone cannot discharge.
+pub const BROADCAST_LOG_FULL_STAMP_BITS: u32 = 64;
+
+/// How many publishes a stamp of `stamp_bits` bits tells apart, as the longest
+/// delay in operations a reader may be stopped for before it can mistake a later
+/// lap for its own: `2^(stamp_bits - 1)`, the top bit being the sequence's sign
+/// (ADR 0062 §4: a 32-bit stamp wraps after `2^31` publishes, a 64-bit one stays
+/// below `2^63`). A width of 0 is taken as 1 and a width above 64 as 64.
+pub const fn broadcast_log_wrap_bound_ops(stamp_bits: u32) -> u64 {
+    let exponent = if stamp_bits == 0 {
+        0
+    } else if stamp_bits > BROADCAST_LOG_FULL_STAMP_BITS {
+        BROADCAST_LOG_FULL_STAMP_BITS - 1
+    } else {
+        stamp_bits - 1
+    };
+    1u64 << exponent
+}
+
+/// Whether the slot count `retention + 1` divides the stamp space `2^stamp_bits`,
+/// which is what keeps the slot index `n mod (retention + 1)` continuous across
+/// the stamp's wrap (ADR 0062 §4). Only a narrow stamp wraps, so only a narrow
+/// stamp asks for it; a full-width stamp is never asked.
+pub const fn broadcast_log_slots_divide_the_stamp_space(retention: u32) -> bool {
+    (retention as u64 + 1).is_power_of_two()
+}
+
+impl BroadcastLogModel {
+    /// The ADR 0062 §4 selection table. The one row is a single producer: its
+    /// publish and every read are wait-free on loads and stores alone. `None`
+    /// for `producers` `many`, which no row serves (ADR 0062 §8): a claimed but
+    /// unpublished sequence number is a hole that readers can neither return
+    /// nor skip.
+    pub fn selection(&self) -> Option<BroadcastLogSelection> {
+        match self.producers {
+            QueueCardinality::One => Some(BroadcastLogSelection {
+                publish: QueueProgress::WaitFree,
+                read: QueueProgress::WaitFree,
+            }),
+            QueueCardinality::Many => None,
+        }
+    }
+}
+
 /// Worker document — RFC §synth-5-D concurrent execution context driven
 /// by a `<sce:link-rx>` source.
 ///
@@ -5943,6 +6076,9 @@ pub enum ForgeDocument {
     /// The features of a product line. See [`FeaturesModel`].
     #[serde(rename = "feature-model")]
     FeatureModel(FeaturesModel),
+    /// A bounded log read by cursors its readers own. See [`BroadcastLogModel`].
+    #[serde(rename = "broadcast-log")]
+    BroadcastLog(BroadcastLogModel),
 }
 
 impl ForgeDocument {
@@ -5968,6 +6104,7 @@ impl ForgeDocument {
             Self::EventSchema(m) => &m.name,
             Self::Queue(m) => &m.name,
             Self::FeatureModel(m) => &m.name,
+            Self::BroadcastLog(m) => &m.name,
         }
     }
 
@@ -5993,6 +6130,7 @@ impl ForgeDocument {
             Self::EventSchema(_) => ForgeKind::EventSchema,
             Self::Queue(_) => ForgeKind::Queue,
             Self::FeatureModel(_) => ForgeKind::FeatureModel,
+            Self::BroadcastLog(_) => ForgeKind::BroadcastLog,
         }
     }
 
@@ -6064,6 +6202,9 @@ impl ForgeDocument {
             // A feature model is read by its importer's conditions, by
             // feature name, never through its alias.
             Self::FeatureModel(_) => return None,
+            // A log is reached through its producer handle and its readers'
+            // cursors, not through fields of a record.
+            Self::BroadcastLog(_) => return None,
         })
     }
 
@@ -6142,6 +6283,8 @@ impl ForgeDocument {
             Self::Queue(_) => RuntimeDep::ForgeRuntime,
             // A declaration emits nothing, so it depends on nothing.
             Self::FeatureModel(_) => RuntimeDep::None,
+            // The log's algorithm lives in the language's forge runtime.
+            Self::BroadcastLog(_) => RuntimeDep::ForgeRuntime,
         }
     }
 }

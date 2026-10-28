@@ -62,10 +62,17 @@ fn a_backend_with_no_emitter_exists_so_that_this_measures_something() {
 fn every_kind_is_refused_for_it_by_the_matrix_and_named() {
     for language in backends_with_no_emitter() {
         // A declaration writes no file on any backend, so a backend with no
-        // emitter serves it as every other backend does.
-        let (declarations, renders): (Vec<ForgeKind>, Vec<ForgeKind>) = every_kind()
-            .into_iter()
-            .partition(|kind| lookup(*kind, language) == EmitOutcome::Declaration);
+        // emitter serves it as every other backend does. A kind that awaits
+        // its runtime (ADR 0062) passes the matrix too, since the refusal is
+        // the dispatch's, which holds the document and names it
+        // (`broadcast-log/runtime-missing`); the test below holds that.
+        let (declarations, renders): (Vec<ForgeKind>, Vec<ForgeKind>) =
+            every_kind().into_iter().partition(|kind| {
+                matches!(
+                    lookup(*kind, language),
+                    EmitOutcome::Declaration | EmitOutcome::RuntimeMissing
+                )
+            });
         for kind in declarations {
             assert!(check(kind, language).is_ok(), "{kind} on {language:?}");
         }

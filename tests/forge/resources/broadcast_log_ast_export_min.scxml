@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ADR 0062 (broadcast-log kind): the minimal broadcast log the forge-AST
+  export round-trips. One producer, wait-free, a retention of seven: seven
+  entries and an eighth slot that is being overwritten make a power of two,
+  so the document needs no stamp-width judgement on a narrow target. The
+  element document is named and not resolved here, as for the queue fixture.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://sce.dev/ext sce-forge.xsd"
+       sce:kind="broadcast-log"
+       name="broadcast_log_ast_export_min"
+       version="1.0">
+  <sce:element-type>event_record</sce:element-type>
+  <sce:producers>one</sce:producers>
+  <sce:progress>wait-free</sce:progress>
+  <sce:retention entries="7"/>
+</scxml>

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ADR 0062 (broadcast-log kind): a broadcast log whose retention is a deploy
+  limit and not a constant, the form a capacity takes when the deploy file
+  states it. The parser reads the key; the number is resolved where the
+  deploy and the target machine are in hand.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="broadcast-log"
+       name="broadcast_log_deploy_retention"
+       version="1.0">
+  <sce:element-type>event_record</sce:element-type>
+  <sce:producers>one</sce:producers>
+  <sce:progress>lock-free</sce:progress>
+  <sce:retention source="deploy" key="machines.mcu_node.limits.event_retention"/>
+</scxml>

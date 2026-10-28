@@ -52,7 +52,7 @@
     "kindName": {
       "description": "An sce:kind value the parser accepts. The enumeration is ForgeKind::ALL_ATTR_NAMES, in its order, which a test holds this list to.",
       "type": "string",
-      "enum": ["statechart", "transform", "lookup", "condition", "codec", "procedure", "validator", "filter", "interpolation", "timer", "observer", "algorithm", "link", "buffer-pool", "worker", "bounded-collection", "enum", "event-schema", "queue", "feature-model"]
+      "enum": ["statechart", "transform", "lookup", "condition", "codec", "procedure", "validator", "filter", "interpolation", "timer", "observer", "algorithm", "link", "buffer-pool", "worker", "bounded-collection", "enum", "event-schema", "queue", "feature-model", "broadcast-log"]
     },
     "kind": {
       "type": "object",
@@ -95,7 +95,7 @@
           "type": "boolean"
         },
         "backends": {
-          "description": "The backends that emit the kind, by the wire spelling the manifest's languages use. Empty for a declaration (role variability), which emits nothing on any backend: the documents that import it read it.",
+          "description": "The backends that emit the kind, by the wire spelling the manifest's languages use. Empty for a declaration (role variability), which emits nothing on any backend: the documents that import it read it. Also empty for a kind that is accepted and checked before any backend has its runtime (broadcast-log): generating it is refused by name.",
           "type": "array",
           "uniqueItems": true,
           "items": { "enum": ["rust", "cpp", "kotlin", "go", "python", "c11", "swift"] }

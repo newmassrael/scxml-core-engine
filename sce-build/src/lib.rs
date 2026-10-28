@@ -4080,6 +4080,7 @@ fn compile_document_set(
     let mut bounded_collections_for_xref: Vec<(String, forge::model::BoundedCollectionModel)> =
         Vec::new();
     let mut queues_for_xref: Vec<(String, forge::model::QueueModel)> = Vec::new();
+    let mut broadcast_logs_for_xref: Vec<(String, forge::model::BroadcastLogModel)> = Vec::new();
     let mut element_type_candidates: std::collections::HashMap<
         String,
         forge::model::ForgeDocument,
@@ -4172,6 +4173,9 @@ fn compile_document_set(
             }
             forge::model::ForgeDocument::Queue(queue) => {
                 queues_for_xref.push((path_str.to_string(), queue));
+            }
+            forge::model::ForgeDocument::BroadcastLog(log) => {
+                broadcast_logs_for_xref.push((path_str.to_string(), log));
             }
             forge::model::ForgeDocument::Link(link) => {
                 // The cross-doc link validators read this
@@ -4392,6 +4396,10 @@ fn compile_document_set(
     // resolves against the same candidates a bounded collection's does
     // (RFC §synth-5-P).
     validate_queue_cross_refs(&queues_for_xref, &element_type_candidates)?;
+    // A broadcast log stores the bytes of the element document's own wire
+    // form, so its element type resolves against the same candidates (ADR
+    // 0062 §3).
+    validate_broadcast_log_cross_refs(&broadcast_logs_for_xref, &element_type_candidates)?;
 
     // ── Deploy-aware cross-doc link validators ──
     //
@@ -6965,6 +6973,45 @@ fn validate_queue_cross_refs(
     Ok(())
 }
 
+/// ADR 0062 §3 — the broadcast log's reference to another document, which only
+/// the whole build can judge: `broadcast-log/element-type-not-a-kind`,
+/// `<sce:element-type>` does not name a codec or procedure document in the
+/// build. The candidates are the same map the bounded-collection and queue
+/// passes read, so a name that is an element there is an element here. The
+/// closed list rides `Fix::ReplaceOneOf`, and the refusal is placed on the
+/// element-type row. An empty `logs` is a no-op, which is every build with no
+/// broadcast-log document.
+///
+/// `broadcast-log/element-size-unbounded` is declared and not raised here: it
+/// needs the element's encoded size as a constant of the build, which the codec
+/// model does not yet expose (ADR 0062, "What step 3 landed").
+fn validate_broadcast_log_cross_refs(
+    logs: &[(String, forge::model::BroadcastLogModel)],
+    element_type_candidates: &std::collections::HashMap<String, forge::model::ForgeDocument>,
+) -> Result<(), forge::error::Located<forge::error::ForgeError>> {
+    use forge::error::{Located, ValidationError};
+
+    let mut element_type_names: Vec<String> = element_type_candidates.keys().cloned().collect();
+    element_type_names.sort();
+
+    for (diag_label, log) in logs {
+        if !element_type_candidates.contains_key(log.element_type.as_str()) {
+            return Err(Located::new(
+                ValidationError::BroadcastLogElementTypeNotAKind {
+                    log_name: log.name.clone(),
+                    element_type: log.element_type.clone(),
+                    candidates: element_type_names.clone(),
+                }
+                .into(),
+                diag_label.clone(),
+                log.element_type_line,
+                None,
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// RFC §synth-5-P *Migration* (the worker) — the queue a worker names as its
 /// inbox must declare `consumers` `one`: a worker is the only context that pops
 /// its inbox, and a `many`-consumer queue is a different contract with an
@@ -7417,7 +7464,10 @@ fn discover_stateful_member_methods(
         // SCXML event names, not method calls on an alias.
         | ForgeDocument::EventSchema(_)
         // A feature model emits nothing, so nothing is called on it.
-        | ForgeDocument::FeatureModel(_) => Vec::new(),
+        | ForgeDocument::FeatureModel(_)
+        // ADR 0062: a log's publish and read are reached through the
+        // producer handle and the readers' cursors, not on the alias.
+        | ForgeDocument::BroadcastLog(_) => Vec::new(),
     }
 }
 

@@ -559,6 +559,12 @@ pub const fn guide(kind: ForgeKind) -> KindGuide {
                     "buffer-pool slots are raw byte regions lent out for DMA, not elements \
                      delivered in order",
                 ),
+                apart!(
+                    K::BroadcastLog,
+                    "a queue hands each element to exactly one reader, which removes it; a \
+                     broadcast-log keeps the latest entries for every reader, each at its own \
+                     pace, and a full one forgets its oldest",
+                ),
             ],
             notes: &[
                 "names its element type by reference; the element is declared elsewhere",
@@ -570,6 +576,54 @@ pub const fn guide(kind: ForgeKind) -> KindGuide {
                  allocator) or intrusive (the caller owns every node)",
             ],
             example: Example::Document(include_str!("../../kind-examples/queue.scxml")),
+        },
+        K::BroadcastLog => KindGuide {
+            role: KindRole::PlatformResource,
+            summary: "A bounded log that one execution context appends to and any number of \
+                      readers read, each by a cursor of its own: reading removes nothing, and \
+                      when the log is full the oldest entry is forgotten and a reader that was \
+                      too slow is told how many entries it missed.",
+            choose_when: &[
+                "the text asks for a ring of the latest N records that several readers each \
+                 read in full, at their own pace",
+                "the text says a full buffer overwrites its oldest record rather than refusing \
+                 the writer or waiting for a reader",
+                "the text says a reader that falls behind must learn how many records it \
+                 missed, or must resume from the oldest record still held",
+                "the text says a slow or stopped reader must never hold the producer up",
+            ],
+            distinct_from: &[
+                apart!(
+                    K::Queue,
+                    "a queue gives each element to one reader, which removes it, and refuses \
+                     the writer when it is full; a broadcast-log keeps every entry for all \
+                     readers and forgets the oldest when it is full",
+                ),
+                apart!(
+                    K::BoundedCollection,
+                    "a bounded-collection is a table whose entries are added, looked up and \
+                     removed by position or key; a broadcast-log is a sequence that is only \
+                     appended to",
+                ),
+                apart!(
+                    K::BufferPool,
+                    "buffer-pool slots are raw byte regions lent out for DMA, not records \
+                     published in order",
+                ),
+            ],
+            notes: &[
+                "names its element type by reference; the element is declared elsewhere, and \
+                 its encoded size must be fixed when the program is built",
+                "states the producer cardinality (one is offered: with several producers the \
+                 document is accepted and refused), the progress it must give, and the \
+                 retention, the number of latest entries a reader may rely on",
+                "the loss is reported to the reader that suffered it and counted nowhere else: \
+                 the log keeps no count of overwrites",
+                "the document names no algorithm and no memory ordering",
+                "no backend generates it yet: a valid document is refused by name \
+                 (broadcast-log/runtime-missing) until a language's runtime has its row",
+            ],
+            example: Example::Document(include_str!("../../kind-examples/broadcast-log.scxml")),
         },
         K::FeatureModel => KindGuide {
             role: KindRole::Variability,
@@ -673,7 +727,8 @@ pub struct KindRecord {
     pub inline_eligible: bool,
     /// The backends that emit the kind — [`codegen_matrix::lookup`]. Empty for
     /// a [`codegen_matrix::KindClass::Declaration`], which emits nothing on any
-    /// backend.
+    /// backend, and for a kind whose runtime no backend has yet
+    /// ([`codegen_matrix::awaits_runtime`]).
     pub backends: Vec<&'static str>,
     pub example: ExampleRecord,
 }

@@ -92,6 +92,9 @@ pub fn pictures(
         // A feature model is a list of features and what each requires; the
         // pseudocode page carries it.
         ForgeDocument::FeatureModel(_) => Ok(Vec::new()),
+        // A broadcast log has no picture of its own yet, as a queue has none:
+        // the pseudocode page and the field table carry it.
+        ForgeDocument::BroadcastLog(_) => Ok(Vec::new()),
     }
 }
 

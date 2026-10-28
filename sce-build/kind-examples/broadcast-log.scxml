@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- broadcast-log: a bounded log that one producer appends to and any number
+     of readers read, each at its own pace. An interrupt handler publishes
+     sensor events; a logger and a monitor each read every event, and a
+     reader that falls more than a thousand and twenty-three behind is told
+     how many it missed and resumes at the oldest event still held. Nothing a
+     reader does can hold the producer up. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="broadcast-log" name="event_ring" version="1.0">
+  <sce:element-type>event_record</sce:element-type>
+  <sce:producers>one</sce:producers>
+  <sce:progress>wait-free</sce:progress>
+  <sce:retention entries="1023"/>
+</scxml>

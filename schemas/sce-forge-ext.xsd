@@ -85,6 +85,11 @@
            order on them. A declaration: read by the statecharts that
            import it, emits nothing of its own. -->
       <xs:enumeration value="feature-model"/>
+      <!-- ADR 0062 — a bounded log one producer appends to and any number
+           of readers read, each by a cursor of its own; a full log forgets
+           its oldest entry. The document states the contract (element type,
+           producers, progress, retention) and names no algorithm. -->
+      <xs:enumeration value="broadcast-log"/>
     </xs:restriction>
   </xs:simpleType>
 
@@ -2362,6 +2367,20 @@
   <xs:element name="participants">
     <xs:complexType>
       <xs:attribute name="const" type="xs:string"/>
+      <xs:attribute name="source" type="xs:string"/>
+      <xs:attribute name="key" type="xs:string"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- Broadcast-log kind (ADR 0062). `element-type`, `producers` and
+       `progress` are the elements above; the retention is the number of
+       latest entries a reader may rely on, written the two ways a capacity
+       is. Every attribute is optional for the reason `capacity` above is:
+       the parser decides which are required, and a grammar narrower than
+       the parser removes a form the parser accepts. -->
+  <xs:element name="retention">
+    <xs:complexType>
+      <xs:attribute name="entries" type="xs:string"/>
       <xs:attribute name="source" type="xs:string"/>
       <xs:attribute name="key" type="xs:string"/>
     </xs:complexType>

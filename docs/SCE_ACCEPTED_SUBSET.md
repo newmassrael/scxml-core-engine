@@ -472,7 +472,7 @@ producer side really holds is that it says when it did not validate.
 
 The `sce:kind` attribute on the root `<scxml>` element selects the
 forge kind the document compiles to. The closed value set is the
-twenty variants of `ForgeKind`, written in the `sce:kind` attribute
+twenty-one variants of `ForgeKind`, written in the `sce:kind` attribute
 as the kebab-case tokens below (source of truth:
 `sce-build/src/forge/model.rs` `ForgeKind::from_attr`; see
 `forge_kinds_catalog.md` for the stateful/stateless/inline-eligible
@@ -483,8 +483,29 @@ statechart   procedure   transform   lookup       condition
 codec        validator   filter      interpolation
 timer        observer    algorithm   link         worker
 buffer-pool  bounded-collection      enum         event-schema
-queue        feature-model
+queue        feature-model            broadcast-log
 ```
+
+`broadcast-log` (ADR 0062) is a bounded log that one producer appends to and
+any number of readers read, each by a cursor of its own; a full log forgets
+its oldest entry and tells a reader that was too slow how many it missed. Its
+`<sce:element-type>`, `<sce:producers>`, `<sce:progress>` and `<sce:retention>`
+(`entries="N"`, or `source="deploy" key="…"`) are all required and none has a
+default. The document parses and is checked on every backend; no backend
+lowers it yet, so generating one is refused by name
+(`broadcast-log/runtime-missing`). A document is refused when `producers` is
+`many` (`broadcast-log/producers-many-unsupported`), when its
+`<sce:element-type>` names no codec or procedure of the build
+(`broadcast-log/element-type-not-a-kind`), and when the progress it declares is
+more than its selection row gives (`broadcast-log/progress-unreachable`) or
+than the target language can give (`broadcast-log/progress-unreachable-on-backend`,
+Python gives `blocking`). A stamp narrower than 64 bits asks the deploy for
+`queues.<log>.min_wrap_ops` (`broadcast-log/wrap-bound-unstated`,
+`broadcast-log/wrap-bound-below-deploy-minimum`) and a retention one less than a
+power of two (`broadcast-log/slots-not-a-divisor-of-the-stamp-space`); an
+element whose encoded size is not fixed when the program is built is
+`broadcast-log/element-size-unbounded`. The last four are judged where the
+target and the deploy are in hand, which is when a language's row exists.
 
 `feature-model` is a declaration (ADR 0057 §2): its `<sce:feature
 name="…" requires="…"/>` children name the features of a product line and
@@ -8440,7 +8461,7 @@ completed), and a selection for a document that imports no model is
 
 ---
 
-## Appendix — `DiagnosticCode` index (478 codes)
+## Appendix — `DiagnosticCode` index (487 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -8672,6 +8693,15 @@ Codes that the author can avoid by writing a better SCXML /
 | `queue/progress-insufficient-for-isr` | Generate |
 | `queue/alloc-in-isr` | Generate |
 | `queue/segmented-needs-alloc` | Generate |
+| `broadcast-log/element-type-not-a-kind` | Validation |
+| `broadcast-log/element-size-unbounded` | Validation |
+| `broadcast-log/producers-many-unsupported` | Validation |
+| `broadcast-log/progress-unreachable` | Validation |
+| `broadcast-log/progress-unreachable-on-backend` | Generate |
+| `broadcast-log/wrap-bound-unstated` | Generate |
+| `broadcast-log/wrap-bound-below-deploy-minimum` | Generate |
+| `broadcast-log/slots-not-a-divisor-of-the-stamp-space` | Generate |
+| `broadcast-log/runtime-missing` | Generate |
 | `timer/period-below-tick-rate` | Validation |
 | `timer/slot-overflow` | Mesh Deploy |
 | `extern/symbol-not-in-whitelist` | Validation |

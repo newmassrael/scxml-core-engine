@@ -204,6 +204,9 @@ pub fn requirement_nodes(doc: &ForgeDocument) -> ReviewScope {
         ForgeDocument::FeatureModel(_) => ReviewScope::NoAnnotationSite {
             kind: "feature-model",
         },
+        ForgeDocument::BroadcastLog(_) => ReviewScope::NoAnnotationSite {
+            kind: "broadcast-log",
+        },
     }
 }
 

@@ -32,6 +32,10 @@ const PICTURES: &[(&str, &[&str])] = &[
     // not.
     ("algorithm", &[]),
     ("bounded-collection", &["slots.svg"]),
+    // A broadcast log is a contract and not a shape, as a queue is: its
+    // reading is the pseudocode page, where the producer cardinality, the
+    // progress and the retention are each a word, and the field table.
+    ("broadcast-log", &[]),
     ("buffer-pool", &["slots.svg"]),
     ("codec", &["layout.svg"]),
     ("condition", &["dataflow.svg"]),

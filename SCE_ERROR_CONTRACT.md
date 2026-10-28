@@ -737,6 +737,15 @@ references against a real document and drift silently.
 | `algorithm/return-missing` | `validation` | no | SCE Protocol-Synthesis RFC §5.A |
 | `algorithm/test-vector-unsupported-kind` | `validation` | no | SCE Protocol-Synthesis RFC §5.B |
 | `algorithm/undeclared-integer-failure` | `validation` | no | SCE Forge §3.4.1 |
+| `broadcast-log/element-size-unbounded` | `validation` | no |  |
+| `broadcast-log/element-type-not-a-kind` | `validation` | `replace_one_of` |  |
+| `broadcast-log/producers-many-unsupported` | `validation` | no |  |
+| `broadcast-log/progress-unreachable` | `validation` | no |  |
+| `broadcast-log/progress-unreachable-on-backend` | `generate` | no |  |
+| `broadcast-log/runtime-missing` | `generate` | no |  |
+| `broadcast-log/slots-not-a-divisor-of-the-stamp-space` | `generate` | no |  |
+| `broadcast-log/wrap-bound-below-deploy-minimum` | `generate` | no |  |
+| `broadcast-log/wrap-bound-unstated` | `generate` | no |  |
 | `codec/dma-alignment-unsatisfiable` | `validation` | no | SCE Protocol-Synthesis RFC §5.B |
 | `codec/flag-bind-carrier-after-embed` | `validation` | no | SCE Protocol-Synthesis RFC §5.B |
 | `codec/flag-bind-duplicate-input` | `validation` | no | SCE Protocol-Synthesis RFC §5.B |

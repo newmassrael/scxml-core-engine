@@ -106,6 +106,9 @@ fn derived_facts() -> Vec<Fact> {
                 // serves it alike.
                 EmitOutcome::Declaration => Holding::Holds,
                 EmitOutcome::TemplateMissing => Holding::Lacks,
+                // A valid kind whose runtime row has landed on no backend yet:
+                // every backend lacks it alike, and refuses it by its own code.
+                EmitOutcome::RuntimeMissing => Holding::Lacks,
                 EmitOutcome::McuClassOnNonMcuLanguage => Holding::NotApplicable(
                     "an MCU-class kind on a backend that is not an MCU target (codegen_matrix)"
                         .to_string(),

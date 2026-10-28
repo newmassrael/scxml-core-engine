@@ -1529,6 +1529,13 @@ pub fn generate_cpp_with_imports_and_externs(
         // ring and SCQ (`sce/forge/queue.h`); the bounded storage mode is
         // lowered and the others are refused by name inside the render.
         ForgeDocument::Queue(m) => render_queue_cpp(&env, m, imports, options)?,
+        // ADR 0062: a broadcast log is parsed and checked, and no language's
+        // forge runtime has its row yet, so every dispatch refuses it by name
+        // ([`refuse_broadcast_log`]). `codegen_matrix::check` lets it through
+        // to here, since only the dispatcher has the document.
+        ForgeDocument::BroadcastLog(m) => {
+            return Err(refuse_broadcast_log(m, crate::generator::Language::Cpp))
+        }
         // A declaration writes no file (`KindClass::Declaration`).
         ForgeDocument::FeatureModel(_) => return Ok(GeneratedOutput::default()),
     };
@@ -19007,6 +19014,10 @@ pub fn generate_kotlin_with_imports(
         }
         // Queue kind: see cpp dispatch.
         ForgeDocument::Queue(m) => render_queue_kotlin(&env, m, imports, options)?,
+        // Broadcast log: see cpp dispatch.
+        ForgeDocument::BroadcastLog(m) => {
+            return Err(refuse_broadcast_log(m, crate::generator::Language::Kotlin))
+        }
         // Feature model: see cpp dispatch.
         ForgeDocument::FeatureModel(_) => return Ok(GeneratedOutput::default()),
     };
@@ -19194,6 +19205,10 @@ pub fn generate_rust_with_imports_and_externs(
         // RFC §synth-5-P: the generated type names a queue of
         // `sce_forge_runtime::queue`, which has the bounded storage mode.
         ForgeDocument::Queue(m) => render_queue_rust(&env, m, imports, options)?,
+        // Broadcast log: see cpp dispatch.
+        ForgeDocument::BroadcastLog(m) => {
+            return Err(refuse_broadcast_log(m, crate::generator::Language::Rust))
+        }
         // Feature model: see cpp dispatch.
         ForgeDocument::FeatureModel(_) => return Ok(GeneratedOutput::default()),
     };
@@ -20304,6 +20319,114 @@ fn render_queue_cpp(
             "queue.h.jinja2 (cpp): {e}"
         )))
     })
+}
+
+/// The refusal a broadcast log is answered with when a language is asked to
+/// lower it (ADR 0062): the document is valid, judged on its own and against the
+/// language, and no language's forge runtime has its row yet
+/// ([`crate::forge::codegen_matrix::awaits_runtime`]).
+///
+/// The refusal that no runtime to come can repair is the one given: a declared
+/// progress the language cannot keep
+/// (`broadcast-log/progress-unreachable-on-backend`) comes before the one that
+/// says the row is missing (`broadcast-log/runtime-missing`), because waiting for
+/// the row would not repair it. Each dispatcher's arm for the kind returns this,
+/// so a backend that has not landed its row refuses by name and never reaches a
+/// template that does not exist; the arm is replaced by the render in the change
+/// that makes [`crate::forge::codegen_matrix::template_ships`] answer `true` for
+/// the pair.
+fn refuse_broadcast_log(
+    m: &crate::forge::model::BroadcastLogModel,
+    language: crate::generator::Language,
+) -> ForgeError {
+    let wire = crate::forge::codegen_matrix::language_wire_name(language);
+    let (ceiling, because) = crate::forge::codegen_matrix::broadcast_log_progress_ceiling(language);
+    if m.progress > ceiling {
+        let word = |p: crate::forge::model::QueueProgress| match p {
+            crate::forge::model::QueueProgress::WaitFree => "wait-free",
+            crate::forge::model::QueueProgress::LockFree => "lock-free",
+            crate::forge::model::QueueProgress::Blocking => "blocking",
+        };
+        return ForgeError::from(GenerateError::BroadcastLogProgressUnreachableOnBackend {
+            log_name: m.name.clone(),
+            declared: word(m.progress).to_string(),
+            reachable: word(ceiling).to_string(),
+            language: wire.to_string(),
+            because: because.to_string(),
+        })
+        .at_line(m.progress_line);
+    }
+    ForgeError::from(GenerateError::BroadcastLogRuntimeMissing {
+        log_name: m.name.clone(),
+        language: wire.to_string(),
+    })
+}
+
+/// Judge a broadcast log against the stamp a language's row keeps (ADR 0062 §4):
+/// the obligations of a stamp narrower than 64 bits, which the document alone
+/// cannot discharge.
+///
+/// A stamp of 64 bits is never asked anything: the sequence stays below `2^63`.
+/// A narrower one wraps after `2^(bits - 1)` publishes, so the deploy must state
+/// the longest delay the design relies on (`machines.<m>.queues.<log>.min_wrap_ops`,
+/// the key a queue's SCQ row reads, here naming a log) and the bound must cover it
+/// (`broadcast-log/wrap-bound-unstated`,
+/// `broadcast-log/wrap-bound-below-deploy-minimum`); and the slot index
+/// `n mod (retention + 1)` must stay continuous across the wrap, so
+/// `retention + 1` must divide `2^bits`
+/// (`broadcast-log/slots-not-a-divisor-of-the-stamp-space`).
+///
+/// `retention` is the count after a deploy key, if the document wrote one, has
+/// been resolved. No language calls this yet: the stamp width is a property of a
+/// row, and no row exists (`broadcast-log/runtime-missing`). The row that keeps a
+/// narrow stamp calls it with the width it keeps.
+pub fn judge_broadcast_log_stamp(
+    m: &crate::forge::model::BroadcastLogModel,
+    retention: u32,
+    stamp_bits: u32,
+    min_wrap_ops: Option<u64>,
+) -> Result<(), ForgeError> {
+    use crate::forge::model::{
+        broadcast_log_slots_divide_the_stamp_space, broadcast_log_wrap_bound_ops,
+        BROADCAST_LOG_FULL_STAMP_BITS,
+    };
+    if stamp_bits >= BROADCAST_LOG_FULL_STAMP_BITS {
+        return Ok(());
+    }
+    if !broadcast_log_slots_divide_the_stamp_space(retention) {
+        let slots = u64::from(retention) + 1;
+        let next_power = slots.next_power_of_two();
+        return Err(
+            ForgeError::from(GenerateError::BroadcastLogSlotsNotADivisorOfTheStampSpace {
+                log_name: m.name.clone(),
+                retention,
+                slots,
+                stamp_bits,
+                nearest_below: next_power / 2 - 1,
+                nearest_above: next_power - 1,
+            })
+            .at_line(m.retention_line),
+        );
+    }
+    let bound = broadcast_log_wrap_bound_ops(stamp_bits);
+    match min_wrap_ops {
+        None => Err(ForgeError::from(
+            GenerateError::BroadcastLogWrapBoundUnstated {
+                log_name: m.name.clone(),
+                stamp_bits,
+                bound,
+            },
+        )),
+        Some(min_wrap_ops) if min_wrap_ops > bound => Err(ForgeError::from(
+            GenerateError::BroadcastLogWrapBoundBelowDeployMinimum {
+                log_name: m.name.clone(),
+                stamp_bits,
+                bound,
+                min_wrap_ops,
+            },
+        )),
+        Some(_) => Ok(()),
+    }
 }
 
 /// What a bounded queue's render needs whatever the language: the numbers
@@ -22337,6 +22460,10 @@ pub fn generate_go_with_imports(
         // Queue kind: see cpp dispatch. Go's runtime has the same two rows
         // (`sce-forge-runtime/queue`).
         ForgeDocument::Queue(m) => render_queue_go(&env, m, imports, options)?,
+        // Broadcast log: see cpp dispatch.
+        ForgeDocument::BroadcastLog(m) => {
+            return Err(refuse_broadcast_log(m, crate::generator::Language::Go))
+        }
         // Feature model: see cpp dispatch.
         ForgeDocument::FeatureModel(_) => return Ok(GeneratedOutput::default()),
     };
@@ -22557,6 +22684,10 @@ pub fn generate_python_with_imports(
         }
         // Queue kind: see cpp dispatch.
         ForgeDocument::Queue(m) => render_queue_python(&env, m, imports, options)?,
+        // Broadcast log: see cpp dispatch.
+        ForgeDocument::BroadcastLog(m) => {
+            return Err(refuse_broadcast_log(m, crate::generator::Language::Python))
+        }
         // Feature model: see cpp dispatch.
         ForgeDocument::FeatureModel(_) => return Ok(GeneratedOutput::default()),
     };
@@ -22665,8 +22796,13 @@ fn settle_python_source_encoding(source: String) -> String {
 /// Swift has no emitter for a kind that renders anything yet
 /// ([`crate::forge::codegen_matrix::template_ships`] is `false` for every
 /// kind), so the one document it generates is a declaration, which writes no
-/// file; every other kind is `codegen/generic-kind-backend-emit-missing`.
+/// file; every other kind is `codegen/generic-kind-backend-emit-missing`, except
+/// a kind that is parsed and checked before any runtime has its row, which is
+/// refused by its own code (`refuse_broadcast_log`).
 pub fn generate_swift(doc: &ForgeDocument) -> Result<GeneratedOutput, ForgeError> {
+    if let ForgeDocument::BroadcastLog(m) = doc {
+        return Err(refuse_broadcast_log(m, crate::generator::Language::Swift));
+    }
     match crate::forge::codegen_matrix::lookup(doc.kind(), crate::generator::Language::Swift) {
         crate::forge::codegen_matrix::EmitOutcome::Declaration => Ok(GeneratedOutput::default()),
         _ => Err(ForgeError::from(
@@ -22822,6 +22958,10 @@ pub fn generate_c11_with_imports_and_externs(
         }
         // Queue kind: see cpp dispatch.
         ForgeDocument::Queue(m) => render_queue_c(&env, m, imports, options)?,
+        // Broadcast log: see cpp dispatch.
+        ForgeDocument::BroadcastLog(m) => {
+            return Err(refuse_broadcast_log(m, crate::generator::Language::C11))
+        }
         // Feature model: see cpp dispatch.
         ForgeDocument::FeatureModel(_) => return Ok(GeneratedOutput::default()),
     };
@@ -30465,7 +30605,10 @@ impl StatelessFunction {
             // function call).
             | ForgeDocument::EventSchema(_)
             // A feature model is read by name in its importer's conditions.
-            | ForgeDocument::FeatureModel(_) => None,
+            | ForgeDocument::FeatureModel(_)
+            // ADR 0062: stateful, as a queue is — reached through its producer
+            // handle and its readers' cursors.
+            | ForgeDocument::BroadcastLog(_) => None,
         }
     }
 

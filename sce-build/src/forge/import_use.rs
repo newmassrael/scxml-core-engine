@@ -406,6 +406,12 @@ impl Names {
                 self.name(&m.element_type);
                 Ok(())
             }
+            // A broadcast log names the document its entries are, as a queue
+            // does (ADR 0062).
+            ForgeDocument::BroadcastLog(m) => {
+                self.name(&m.element_type);
+                Ok(())
+            }
             ForgeDocument::EventSchema(m) => m
                 .fields
                 .iter()

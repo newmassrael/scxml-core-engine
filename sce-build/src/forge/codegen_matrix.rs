@@ -62,6 +62,12 @@ pub enum EmitOutcome {
     McuClassOnNonMcuLanguage,
     /// A [`KindClass::Declaration`]: generation succeeds and writes nothing.
     Declaration,
+    /// A kind whose document is valid on every backend and whose runtime row has
+    /// not landed on this one ([`awaits_runtime`]): [`check`] lets it through to
+    /// the dispatch, which refuses the document by name with the kind's own code
+    /// (`broadcast-log/runtime-missing`). Not an emitting backend, so
+    /// [`emitting`] and the catalog's `backends` leave it out.
+    RuntimeMissing,
 }
 
 /// Classify a kind per the §synth-5-J-4 matrix.
@@ -102,7 +108,12 @@ pub const fn kind_class(kind: ForgeKind) -> KindClass {
         // RFC §synth-5-P: a Queue is specified for all six backends (Python
         // at `blocking` only). It is Generic, so a backend whose runtime has
         // not landed yet is `codegen/generic-kind-backend-emit-missing`.
-        | ForgeKind::Queue => KindClass::Generic,
+        | ForgeKind::Queue
+        // ADR 0062: a broadcast log is specified for all six backends (Python
+        // at `blocking` only). A backend whose runtime has no row yet is
+        // `broadcast-log/runtime-missing`, not a missing template
+        // ([`awaits_runtime`]).
+        | ForgeKind::BroadcastLog => KindClass::Generic,
         // RFC §synth-5-C / §synth-5-J-4: Link is the first MCU-class kind.
         // Authoring it on cpp/kotlin/go/python raises
         // `codegen/mcu-class-kind-on-non-mcu-language`. The (rust, *)
@@ -299,7 +310,37 @@ pub const fn template_ships(kind: ForgeKind, lang: Language) -> bool {
             | Language::C11
             | Language::Swift => false,
         },
+        // ADR 0062 BroadcastLog: the algorithm lives once per language in that
+        // language's forge runtime, and no runtime has the row yet (the order
+        // of landing is Rust, then C11 and C++, then Go, Kotlin and Python;
+        // Swift stays refused). Each backend flips to `true` in the change
+        // that gives it the row and the template, and [`awaits_runtime`] stops
+        // answering for the kind when the last of them has.
+        ForgeKind::BroadcastLog => match lang {
+            Language::Rust
+            | Language::Cpp
+            | Language::Go
+            | Language::Kotlin
+            | Language::Python
+            | Language::C11
+            | Language::Swift => false,
+        },
     }
+}
+
+/// Whether `kind` is a valid kind whose absence of a template on a backend is
+/// a runtime that has not landed there yet, and not a defect of the generator.
+///
+/// A [`KindClass::Generic`] kind with no template on a backend is, by default,
+/// `codegen/generic-kind-backend-emit-missing`: the matrix says the backend
+/// should have emitted it, and none does. A kind that is parsed and checked
+/// before any runtime has its row is not that: its document is valid and the
+/// refusal is the kind's own code, which names the document and the language
+/// (`broadcast-log/runtime-missing`, ADR 0062). [`lookup`] answers
+/// [`EmitOutcome::RuntimeMissing`] for it, and the generator's dispatch builds
+/// the refusal where the document is in hand.
+pub const fn awaits_runtime(kind: ForgeKind) -> bool {
+    matches!(kind, ForgeKind::BroadcastLog)
 }
 
 /// Whether the template for `(kind, lang)` ships but lowers only part of what the
@@ -352,6 +393,8 @@ pub const fn lookup(kind: ForgeKind, lang: Language) -> EmitOutcome {
         KindClass::Generic => {
             if template_ships(kind, lang) {
                 EmitOutcome::Emit
+            } else if awaits_runtime(kind) {
+                EmitOutcome::RuntimeMissing
             } else {
                 EmitOutcome::TemplateMissing
             }
@@ -409,7 +452,10 @@ pub fn writes_something(lang: Language) -> bool {
 pub fn check(kind: ForgeKind, lang: Language) -> Result<(), GenerateError> {
     match lookup(kind, lang) {
         // A declaration passes: each dispatcher's arm for it writes no file.
-        EmitOutcome::Emit | EmitOutcome::Declaration => Ok(()),
+        // A kind that awaits its runtime passes too: each dispatcher's arm for
+        // it refuses the document by name, which only the dispatcher can do,
+        // since the document is not in hand here.
+        EmitOutcome::Emit | EmitOutcome::Declaration | EmitOutcome::RuntimeMissing => Ok(()),
         EmitOutcome::TemplateMissing => Err(emit_missing(kind, lang)),
         EmitOutcome::McuClassOnNonMcuLanguage => {
             Err(GenerateError::CodegenMcuClassKindOnNonMcuLanguage {
@@ -594,6 +640,36 @@ pub const fn queue_progress_ceiling(
         Language::Rust | Language::Cpp | Language::Kotlin | Language::Go | Language::Swift => {
             (QueueProgress::WaitFree, "")
         }
+    }
+}
+
+/// The strongest progress a target can give any `broadcast-log` document (ADR 0062
+/// §4, Per backend). The selection table judges a document against the row its
+/// producer cardinality picks (`broadcast-log/progress-unreachable`); this is the
+/// judgement against the language, which no document can lift:
+///
+/// - Python keeps one ring under one lock, so its log gives `blocking`, the ceiling
+///   [`queue_progress_ceiling`] gives it too.
+/// - Every other backend's row is built from atomic loads and stores of one stamp
+///   and one word, with no read-modify-write atomic, so a target with only those
+///   (a C11 target whose `platform.atomic_rmw_width` is 0 included) gives
+///   `wait-free`. A deploy's width does not enter, unlike the queue's.
+///
+/// Swift has no runtime yet (`template_ships`), so its answer is never read; it
+/// stays with the backends that take nothing from the platform until its atomics
+/// decide it.
+pub const fn broadcast_log_progress_ceiling(lang: Language) -> (QueueProgress, &'static str) {
+    match lang {
+        Language::Python => (
+            QueueProgress::Blocking,
+            "its log is one ring under one lock",
+        ),
+        Language::Rust
+        | Language::Cpp
+        | Language::Kotlin
+        | Language::Go
+        | Language::C11
+        | Language::Swift => (QueueProgress::WaitFree, ""),
     }
 }
 
