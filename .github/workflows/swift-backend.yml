@@ -142,6 +142,12 @@ jobs:
         echo "$SWIFT_SHA256_UBUNTU2404  $file" | sha256sum -c --quiet
         tar -xzf "$file" -C "$prefix" --strip-components=1
         rm -f "$file"
+        # Only `swift` gets a link, as on the build machines (`prefix_link` of
+        # `[tools.swift]`): `swiftc` and the rest sit beside the file it points
+        # to, which is where the gate looks. The runner image carries a Swift of
+        # its own on PATH, and the gate takes this one and not that one.
+        mkdir -p "$prefix/bin"
+        ln -sfn "$prefix/usr/bin/swift" "$prefix/bin/swift"
 
     - name: Run the Swift backend gate
       run: scripts/gate swift-backend
