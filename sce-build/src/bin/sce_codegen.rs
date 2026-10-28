@@ -3303,6 +3303,29 @@ enum Commands {
         #[arg(short = 'I', long = "include-dir", value_name = "DIR")]
         include_dir: Vec<String>,
     },
+    /// Print a CBOR or content-line codec document in codec format 2
+    /// (docs/adr/0055, section 8), the format `check` and `generate` read.
+    ///
+    /// A document that declares no `sce:codec-format`, or `="1"`, is refused
+    /// (`validation/codec-format-superseded`), and this is its rewrite: each
+    /// entry that was `sce:required="true"` is its bare type with the attribute
+    /// removed, each that was not (or was `="false"`) is `optional<T>`, and the
+    /// root declares `sce:codec-format="2"`. Every other byte is the author's,
+    /// comments and spacing included, so the output replaces the document as it
+    /// is, and a document that `check` accepts after it generates the bytes the
+    /// document of format 1 did.
+    ///
+    /// A document already in format 2 is printed as it is. One that is not a
+    /// CBOR or content-line codec has no format and is refused, as is one that
+    /// holds a directive the preprocessor expands: the entries that expand to
+    /// are no text of the document, so run `expand` and rewrite what it prints.
+    ///
+    /// The document goes to stdout as raw bytes, as `expand` does, so a caller
+    /// can capture it exactly.
+    CodecFormat {
+        /// The codec document to rewrite.
+        scxml: String,
+    },
     /// Print a `datamodel="sce-static"` statechart as the
     /// `datamodel="ecmascript"` document the Interpreter runs.
     ///
@@ -4090,6 +4113,7 @@ fn main() {
         Commands::CodecRoles { scxml, include_dir } => {
             cmd_codec_roles(&scxml, &include_dir, error_format)
         }
+        Commands::CodecFormat { scxml } => cmd_codec_format(&scxml, error_format),
         Commands::Lower {
             scxml,
             include_dir,
@@ -4194,6 +4218,7 @@ fn assert_unchanged_refusal(command: &Commands) -> Option<String> {
         | Commands::Expand { .. }
         | Commands::Project { .. }
         | Commands::CodecRoles { .. }
+        | Commands::CodecFormat { .. }
         | Commands::Lower { .. }
         | Commands::LowerAlgorithm { .. }
         | Commands::Verify { .. }
@@ -12697,6 +12722,35 @@ fn cmd_codec_roles(scxml_paths: &[String], include_dirs: &[String], error_format
         }
     }
     out_bytes(out.as_bytes());
+}
+
+// ── Subcommand: codec-format ───────────────────────────────────
+//
+// A CBOR or content-line codec document in codec format 2 (docs/adr/0055,
+// section 8): the rewrite `validation/codec-format-superseded` names, applied to
+// the text so that the author replaces the document with what is printed. Reads
+// the file as written, without imports or preprocessing, since the rewrite is of
+// its own text; a document that holds a directive the preprocessor expands is
+// refused by the rewrite, and one that is no codec of these encodings has no
+// format and is said so.
+
+fn cmd_codec_format(scxml_path: &str, error_format: ErrorFormat) {
+    let content = fs::read_to_string(scxml_path).unwrap_or_else(|e| {
+        cli_exit(CliError::ReadInput {
+            path: scxml_path.to_string(),
+            source: e,
+        })
+    });
+    match sce_build::forge::codec_format::rewritten_document(&content, scxml_path)
+        .unwrap_or_else(|err| error_format.emit_forge_and_exit(&err))
+    {
+        Some(rewritten) => out_bytes(rewritten.as_bytes()),
+        None => cli_exit(CliError::Usage {
+            detail: format!(
+                "codec-format rewrites a CBOR or content-line codec, and {scxml_path} is not one"
+            ),
+        }),
+    }
 }
 
 // ── Subcommand: lower ──────────────────────────────────────────
