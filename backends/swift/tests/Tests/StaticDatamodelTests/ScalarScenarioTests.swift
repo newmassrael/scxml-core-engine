@@ -256,6 +256,34 @@ private func blockEndsList() -> Machine {
     )
 }
 
+private func reals64() -> Machine {
+    let policy = StaticRealPolicy()
+    return drive(
+        policy,
+        variables: [
+            "level": { real(policy.level) },
+            "total": { real(policy.total) },
+            "drift": { real(policy.drift) },
+            "samples": { reals(policy.samples) },
+            "errors": { integer(policy.errors) },
+        ]
+    )
+}
+
+private func reals32() -> Machine {
+    let policy = StaticReal32Policy()
+    return drive(
+        policy,
+        variables: [
+            "level": { real(policy.level) },
+            "drift": { real(policy.drift) },
+            "wide": { real(policy.wide) },
+            "samples": { reals(policy.samples) },
+            "total": { real(policy.total) },
+        ]
+    )
+}
+
 // MARK: - The scenarios
 
 // A counter counts to its flag and lets go: guards, `<assign>`, `<if>` and `<elseif>`
@@ -301,6 +329,20 @@ private func blockEndsList() -> Machine {
 // resumes through it finds the variables it kept.
 @Test func aHistoryResumesWhereItsParentWasLeft() {
     replay("static_history", history())
+}
+
+// MARK: - Reals
+
+// A real is a double, conversions between an integer and a real are written where
+// they are made, and `round` and `floor` answer the integer the context declares.
+@Test func aRealVariableIsComputedAsADouble() {
+    replay("static_real", reals64())
+}
+
+// A 32-bit real is a binary32, and an operation on one is rounded to binary32 where it
+// is made: `16777216 + 1` is `16777216`, where a double makes `16777217`.
+@Test func aSingleIsRoundedToBinary32WhereAnOperationIsMade() {
+    replay("static_real32", reals32())
 }
 
 // MARK: - Lists

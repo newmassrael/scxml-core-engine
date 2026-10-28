@@ -83,8 +83,13 @@ func integers<T: BinaryInteger>(_ values: [T]) -> JSONValue {
 
 /// A real variable as a scenario writes it. A single widens to the double it is,
 /// exactly, wherever it crosses a boundary (SCE_FORGE.md §3.4.1).
-func real(_ value: Double) -> JSONValue {
-    .number("\(value)")
+func real<T: BinaryFloatingPoint>(_ value: T) -> JSONValue {
+    .number("\(Double(value))")
+}
+
+/// A list of reals as a scenario writes it: its elements, in order.
+func reals<T: BinaryFloatingPoint>(_ values: [T]) -> JSONValue {
+    .array(values.map { real($0) })
 }
 
 /// Whether two JSON values are one value. An integer is the same digits, which a
