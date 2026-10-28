@@ -503,6 +503,50 @@ fn mark_optional_params(entry: &mut serde_json::Value) {
     entry["optional_params"] = optional.into();
 }
 
+/// How a C11 codec holds `item`, the context of an entry `e` or of one of its
+/// parameters, by the member paths its template reads and writes it through. The
+/// value of one that may be absent (`optional`) is the `value` of the struct
+/// `sce/forge/optional.h` declares for its element, present when its `present`
+/// member is true (docs/adr/0055, section 8), and the declaration that struct needs
+/// first is added to `declarations` once:
+///
+/// - `value_ref`: the member that holds the value of a number, a `bool` or an enum;
+/// - `data_ref`: the member that holds the data written to a line — the buffer of
+///   a string, and the value itself for any other kind;
+/// - `len_ref`: the member that holds the length of a string held beside its
+///   buffer, none for one held as every text of the machine is, ended by its
+///   terminator;
+/// - `present_ref`: the member that says a value that may be absent is present.
+fn c11_hold(
+    l: &LangCtx,
+    item: &mut serde_json::Value,
+    e: &ContentLineEntry,
+    optional: bool,
+    declarations: &mut Vec<String>,
+) {
+    let name = item["name"].as_str().unwrap_or_default().to_string();
+    let value = if optional {
+        let held = l.c11_codec_optional(e.present_type(), e.max_size);
+        if !held.declaration.is_empty() && !declarations.contains(&held.declaration) {
+            declarations.push(held.declaration);
+        }
+        item["field_type"] = held.type_name.into();
+        format!("{name}.value")
+    } else {
+        name.clone()
+    };
+    let (data, len) = match (e.present_type(), optional) {
+        (SceType::String, true) => (format!("{value}.data"), None),
+        (SceType::String, false) => (name.clone(), Some(format!("{name}_len"))),
+        _ => (value.clone(), None),
+    };
+    item["optional_c"] = optional.into();
+    item["value_ref"] = value.into();
+    item["data_ref"] = data.into();
+    item["len_ref"] = len.into();
+    item["present_ref"] = format!("{name}.present").into();
+}
+
 fn render_c(
     env: &minijinja::Environment,
     m: &CodecModel,
@@ -512,16 +556,48 @@ fn render_c(
     let mut ctx = l.base_context(&m.name);
     l.insert_imports(&mut ctx, imports);
     crate::forge::generator::insert_c_codec_symbols(&mut ctx, &m.name);
-    // A string is a fixed array the size of its bound beside its length, a list
-    // an array of them beside a count, and an optional entry or parameter a
-    // `<name>_present` flag beside its value (until `sce_optional_<elem>_t`
-    // replaces it, docs/adr/0055, step 14): no allocation, as the rest of the
-    // C11 runtime. Every string has its bound (`sce:max-size` is required of
-    // one), so C11 refuses nothing the other backends admit.
+    // A required string is a fixed array the size of its bound beside its
+    // length, and a list an array of them beside a count. An entry or parameter
+    // that may be absent is the struct `sce/forge/optional.h` declares for its
+    // element (docs/adr/0055, section 5), the one a statechart's variable of the
+    // same type is held in: no allocation, as the rest of the C11 runtime. Every
+    // string has its bound (`sce:max-size` is required of one), so C11 refuses
+    // nothing the other backends admit.
     let mut entries = entries_context(&l, m, |_| "char".to_string(), |_| None);
     let codec_snake = crate::filters::to_snake_case(m.name.clone());
-    for entry in &mut entries {
-        mark_optional_params(entry);
+    let content = m
+        .content_line
+        .as_ref()
+        .expect("a content-line codec carries its entries");
+    let mut declarations: Vec<String> = Vec::new();
+    for (entry, e) in entries
+        .iter_mut()
+        .zip(content.entries.iter().filter(|e| e.param.is_none()))
+    {
+        // A list, a list of values and a line record are held by the shapes
+        // their own members give them, never by the struct of one value.
+        let alone = ["is_list", "is_values", "is_records"]
+            .iter()
+            .all(|key| entry[*key].as_bool() != Some(true));
+        c11_hold(&l, entry, e, !e.is_required() && alone, &mut declarations);
+        if let Some(serde_json::Value::Array(params)) = entry.get_mut("params") {
+            for (param, p) in params.iter_mut().zip(content.parameters_of(e)) {
+                c11_hold(&l, param, p, !p.is_required(), &mut declarations);
+            }
+        }
+        // The parameters an encode of an absent property must find absent, by
+        // the member each is present in.
+        let optional_params: Vec<serde_json::Value> = entry["params"]
+            .as_array()
+            .map(|params| {
+                params
+                    .iter()
+                    .filter(|p| p["required"].as_bool() != Some(true))
+                    .map(|p| serde_json::json!({ "present_ref": p["present_ref"] }))
+                    .collect()
+            })
+            .unwrap_or_default();
+        entry["optional_params"] = optional_params.into();
         // A line record is a typedef of its own, named from the codec and the entry
         // as the codec's own typedef is (`<codec>_t`).
         if entry["is_records"].as_bool() == Some(true) {
@@ -549,6 +625,7 @@ fn render_c(
             .into();
         }
     }
+    ctx.insert("optional_declarations".into(), declarations.into());
     insert_component(&mut ctx, m);
     insert_enum_tables(&mut ctx, &l, m);
     // One buffer serves every enum the codec reads, so it is the size of the

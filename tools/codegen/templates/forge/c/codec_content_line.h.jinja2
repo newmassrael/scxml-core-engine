@@ -25,8 +25,8 @@
     so a closed and an open enum are read by one rule (docs/adr/0015): a closed
     enum's conversion answers false for a carrier it does not declare. A record
     keeps its value in `rec`, a list in the next row of its array, any other
-    entry in its own member. #}
-{% set target = ("rec->" ~ e.value_member) if e.is_records else (("v->" ~ e.name ~ "[v->" ~ e.name ~ "_count]") if e.is_list else ("v->" ~ e.name)) %}
+    entry in the member its value is held in. #}
+{% set target = ("rec->" ~ e.value_member) if e.is_records else (("v->" ~ e.name ~ "[v->" ~ e.name ~ "_count]") if e.is_list else ("v->" ~ e.value_ref)) %}
 {{ step("sce_forge_cl_property_read_enum(&line, kTexts_" ~ e.enum_alias ~ ", sizeof kTexts_" ~ e.enum_alias ~ " / sizeof kTexts_" ~ e.enum_alias ~ "[0], enum_word, " ~ e.enum_cap ~ "U, &raw_u)", "            ") }}
 {% if e.enum_is_open %}
             {{ target }} = {{ e.enum_from }}(({{ e.carrier_type }})raw_u);
@@ -44,15 +44,15 @@
 {{ step("sce_forge_cl_property_read_string(&line, " ~ e.max_size ~ "U, " ~ ("true" if e.text else "false") ~ ", v->" ~ e.name ~ "[v->" ~ e.name ~ "_count], &v->" ~ e.name ~ "_len[v->" ~ e.name ~ "_count])", "            ") }}
             v->{{ e.name }}_count++;
 {% elif e.kind == "string" %}
-{{ step("sce_forge_cl_property_read_string(&line, " ~ e.max_size ~ "U, " ~ ("true" if e.text else "false") ~ ", v->" ~ e.name ~ ", &v->" ~ e.name ~ "_len)", "            ") }}
+{{ step("sce_forge_cl_property_read_string(&line, " ~ e.max_size ~ "U, " ~ ("true" if e.text else "false") ~ ", v->" ~ e.data_ref ~ ", &" ~ (("v->" ~ e.len_ref) if e.len_ref else "text_len") ~ ")", "            ") }}
 {% elif e.kind == "bool" %}
-{{ step("sce_forge_cl_property_read_bool(&line, &v->" ~ e.name ~ ")", "            ") }}
+{{ step("sce_forge_cl_property_read_bool(&line, &v->" ~ e.value_ref ~ ")", "            ") }}
 {% elif e.kind == "uint" %}
 {{ step("sce_forge_cl_property_read_uint(&line, " ~ e.max_expr ~ ", &raw_u)", "            ") }}
-            v->{{ e.name }} = ({{ e.value_type }})raw_u;
+            v->{{ e.value_ref }} = ({{ e.value_type }})raw_u;
 {% else %}
 {{ step("sce_forge_cl_property_read_int(&line, " ~ e.min_expr ~ ", " ~ e.max_expr ~ ", &raw_i)", "            ") }}
-            v->{{ e.name }} = ({{ e.value_type }})raw_i;
+            v->{{ e.value_ref }} = ({{ e.value_type }})raw_i;
 {% endif %}
 {% endmacro %}
 {#- The write of one property's value, its name and parameters already
@@ -72,6 +72,10 @@
 {{ step("sce_forge_cl_writer_int(&out, (int64_t)" ~ element ~ ")", i) }}
 {% endif %}
 {% endmacro %}
+{#- The length of the string `x` holds, read from `holder`: the member beside its
+    buffer, or, for a text held as every text of the machine is, the length it
+    ends at. #}
+{% macro length_of(x, holder) %}{% if x.len_ref %}{{ holder }}{{ x.len_ref }}{% else %}strlen({{ holder }}{{ x.data_ref }}){% endif %}{% endmacro %}
 {#- The parameters of a property, each written when present, at indent `i`, read
     from `holder`: `self->` for the codec itself, `rec->` for the record of one
     line. #}
@@ -81,17 +85,17 @@
 {#- A parameter that is an enum is written as the text of its variant
     (docs/adr/0015); an optional one is present when its flag says so. #}
 {% if p.required %}
-{{ step("sce_forge_cl_writer_enum_param(&out, \"" ~ p.param ~ "\", kTexts_" ~ p.enum_alias ~ ", sizeof kTexts_" ~ p.enum_alias ~ " / sizeof kTexts_" ~ p.enum_alias ~ "[0], (uint64_t)" ~ p.enum_to_fn ~ "(" ~ holder ~ p.name ~ "))", i) }}
+{{ step("sce_forge_cl_writer_enum_param(&out, \"" ~ p.param ~ "\", kTexts_" ~ p.enum_alias ~ ", sizeof kTexts_" ~ p.enum_alias ~ " / sizeof kTexts_" ~ p.enum_alias ~ "[0], (uint64_t)" ~ p.enum_to_fn ~ "(" ~ holder ~ p.value_ref ~ "))", i) }}
 {% else %}
-{{ i }}if ({{ holder }}{{ p.name }}_present) {
-{{ step("sce_forge_cl_writer_enum_param(&out, \"" ~ p.param ~ "\", kTexts_" ~ p.enum_alias ~ ", sizeof kTexts_" ~ p.enum_alias ~ " / sizeof kTexts_" ~ p.enum_alias ~ "[0], (uint64_t)" ~ p.enum_to_fn ~ "(" ~ holder ~ p.name ~ "))", i ~ "    ") }}
+{{ i }}if ({{ holder }}{{ p.present_ref }}) {
+{{ step("sce_forge_cl_writer_enum_param(&out, \"" ~ p.param ~ "\", kTexts_" ~ p.enum_alias ~ ", sizeof kTexts_" ~ p.enum_alias ~ " / sizeof kTexts_" ~ p.enum_alias ~ "[0], (uint64_t)" ~ p.enum_to_fn ~ "(" ~ holder ~ p.value_ref ~ "))", i ~ "    ") }}
 {{ i }}}
 {% endif %}
 {% elif p.required %}
-{{ step("sce_forge_cl_writer_param(&out, \"" ~ p.param ~ "\", " ~ holder ~ p.name ~ ", " ~ holder ~ p.name ~ "_len, " ~ p.max_size ~ "U)", i) }}
+{{ step("sce_forge_cl_writer_param(&out, \"" ~ p.param ~ "\", " ~ holder ~ p.data_ref ~ ", " ~ length_of(p, holder) ~ ", " ~ p.max_size ~ "U)", i) }}
 {% else %}
-{{ i }}if ({{ holder }}{{ p.name }}_present) {
-{{ step("sce_forge_cl_writer_param(&out, \"" ~ p.param ~ "\", " ~ holder ~ p.name ~ ", " ~ holder ~ p.name ~ "_len, " ~ p.max_size ~ "U)", i ~ "    ") }}
+{{ i }}if ({{ holder }}{{ p.present_ref }}) {
+{{ step("sce_forge_cl_writer_param(&out, \"" ~ p.param ~ "\", " ~ holder ~ p.data_ref ~ ", " ~ length_of(p, holder) ~ ", " ~ p.max_size ~ "U)", i ~ "    ") }}
 {{ i }}}
 {% endif %}
 {% endfor %}
@@ -112,6 +116,7 @@
 
 #include "sce/forge/codec.h"
 #include "sce/forge/content_line.h"
+#include "sce/forge/optional.h"
 {% for imp in all_imports %}
 {% if imp.include_stmt %}
 {{ imp.include_stmt }}
@@ -122,6 +127,14 @@
 extern "C" {
 #endif
 
+{#- What an entry or parameter that may be absent is held in beside the buffer or
+    the enum it wraps: each under the guard every unit that holds the same element
+    shares (docs/adr/0055, section 5), so a machine that includes this codec and
+    holds a value of the same type declares it once. #}
+{% for declaration in optional_declarations %}
+{{ declaration }}
+
+{% endfor %}
 {# What an entry that is an enum is written and read by (docs/adr/0015): each
    variant's text and the carrier it stands for, held as data here because the
    enum's own type carries none. #}
@@ -141,26 +154,27 @@ static const sce_forge_cl_enum_text_t kTexts_{{ t.alias }}[] = {
 /* One `{{ component }}` component of content lines (SCE_FORGE.md §4.6.4). Decode
  * reads the properties this codec declares in any order and skips the rest;
  * encode writes the entries present in declaration order, folded at 75 octets.
- * A string is held in a fixed array the size of its bound, with its length
- * beside it; a list holds up to its `sce:max-count` of them with a count; an
- * optional entry or parameter is present when `<name>_present` is true. A
- * zero-initialised value is the infallible starting value: every entry at its
- * zero, every optional one absent. */
+ * A required string is held in a fixed array the size of its bound, with its
+ * length beside it; a list holds up to its `sce:max-count` of them with a count.
+ * An optional entry or parameter is the `sce_optional_<elem>_t` of its element
+ * (sce/forge/optional.h), present when its `present` member is true: its `value`
+ * is a number, a `bool` or an enum as it is, and a string the buffer of its
+ * bound ended by its terminator. A zero-initialised value is the infallible
+ * starting value: every entry at its zero, every optional one absent. */
 {% for e in entries if e.is_records %}
 /* One line of `{{ e.property }}` (docs/adr/0014): the parameters it carries and its
- * {% if e.separator %}list of values, cut at `{{ e.separator }}`{% else %}value{% endif %}. A parameter that may be absent is present when
- * `<name>_present` is true. */
+ * {% if e.separator %}list of values, cut at `{{ e.separator }}`{% else %}value{% endif %}. A parameter that may be absent is the
+ * `sce_optional_<elem>_t` of its element. */
 typedef struct {
 {% for p in e.params %}
     /* Parameter `{{ p.param }}`{% if p.required %}, required{% endif %}. */
-{% if p.kind == "enum" %}
+{% if not p.required %}
+    {{ p.field_type }} {{ p.name }};
+{% elif p.kind == "enum" %}
     {{ p.value_type }} {{ p.name }};
 {% else %}
     char {{ p.name }}[{{ p.max_size }}];
     size_t {{ p.name }}_len;
-{% endif %}
-{% if not p.required %}
-    bool {{ p.name }}_present;
 {% endif %}
 {% endfor %}
 {% if e.separator %}
@@ -196,26 +210,24 @@ typedef struct {
 {% elif e.kind == "enum" and e.is_list %}
     {{ e.value_type }} {{ e.name }}[{{ e.max_count }}];
     size_t {{ e.name }}_count;
+{% elif e.optional_c %}
+    {{ e.field_type }} {{ e.name }};
 {% elif e.kind == "string" %}
     char {{ e.name }}[{{ e.max_size }}];
     size_t {{ e.name }}_len;
 {% else %}
     {{ e.value_type }} {{ e.name }};
 {% endif %}
-{% if not e.required and not e.is_list and not e.is_records and not e.is_values %}
-    bool {{ e.name }}_present;
-{% endif %}
 {% if not e.is_records %}
 {% for p in e.params %}
     /* Parameter `{{ p.param }}` of `{{ e.property }}`{% if p.required %}, required{% endif %}. */
-{% if p.kind == "enum" %}
+{% if not p.required %}
+    {{ p.field_type }} {{ p.name }};
+{% elif p.kind == "enum" %}
     {{ p.value_type }} {{ p.name }};
 {% else %}
     char {{ p.name }}[{{ p.max_size }}];
     size_t {{ p.name }}_len;
-{% endif %}
-{% if not p.required %}
-    bool {{ p.name }}_present;
 {% endif %}
 {% endfor %}
 {% endif %}
@@ -233,6 +245,7 @@ static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *c
     sce_forge_cl_reader_t reader;
     uint64_t raw_u = 0;
     int64_t raw_i = 0;
+    size_t text_len = 0;
 {# The buffer an enum's text is read into: one more than the longest text of any
    enum this codec reads, so a value that fills it is longer than every text
    (docs/adr/0015). #}
@@ -252,6 +265,7 @@ static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *c
 {% endfor %}
     (void)raw_u;
     (void)raw_i;
+    (void)text_len;
     s = sce_forge_cl_reader_begin(&reader, sce_forge_cursor_peek(&c, sce_forge_cursor_remaining(&c)),
                                   sce_forge_cursor_remaining(&c), "{{ component }}");
     if (s != SCE_FORGE_CODEC_OK) {
@@ -304,18 +318,18 @@ static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *c
 {% if p.kind == "enum" %}
 {{ step("sce_forge_cl_property_read_param_enum(&line, kTexts_" ~ p.enum_alias ~ ", sizeof kTexts_" ~ p.enum_alias ~ " / sizeof kTexts_" ~ p.enum_alias ~ "[0], enum_word, " ~ p.enum_cap ~ "U, &raw_u)", "                    ") }}
 {% if p.enum_is_open %}
-                    {{ holder }}{{ p.name }} = {{ p.enum_from }}(({{ p.carrier_type }})raw_u);
+                    {{ holder }}{{ p.value_ref }} = {{ p.enum_from }}(({{ p.carrier_type }})raw_u);
 {% else %}
-                    if (!{{ p.enum_from }}(({{ p.carrier_type }})raw_u, &{{ holder }}{{ p.name }})) {
+                    if (!{{ p.enum_from }}(({{ p.carrier_type }})raw_u, &{{ holder }}{{ p.value_ref }})) {
                         return SCE_FORGE_CODEC_LINE_BAD_VALUE;
                     }
 {% endif %}
 {% else %}
-{{ step("sce_forge_cl_property_read_param_string(&line, " ~ p.max_size ~ "U, " ~ holder ~ p.name ~ ", &" ~ holder ~ p.name ~ "_len)", "                    ") }}
+{{ step("sce_forge_cl_property_read_param_string(&line, " ~ p.max_size ~ "U, " ~ holder ~ p.data_ref ~ ", &" ~ ((holder ~ p.len_ref) if p.len_ref else "text_len") ~ ")", "                    ") }}
 {% endif %}
                     seen_{{ p.name }} = true;
 {% if not p.required %}
-                    {{ holder }}{{ p.name }}_present = true;
+                    {{ holder }}{{ p.present_ref }} = true;
 {% endif %}
                 }
 {% endfor %}
@@ -333,8 +347,8 @@ static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *c
             }
 {% elif not e.is_list %}
             seen_{{ e.name }} = true;
-{% if not e.required and not e.is_values %}
-            v->{{ e.name }}_present = true;
+{% if e.optional_c %}
+            v->{{ e.present_ref }} = true;
 {% endif %}
 {% endif %}
         }
@@ -408,11 +422,11 @@ static inline sce_forge_codec_status_t {{ c_encode_func }}(const {{ c_struct_typ
 {% elif e.required %}
     {
 {{ step("sce_forge_cl_writer_property(&out, \"" ~ e.property ~ "\")", "        ") }}
-{{ write_params(e, "        ", "self->") }}{{ write_value(e, "        ", "self->" ~ e.name, "self->" ~ e.name ~ "_len") }}    }
+{{ write_params(e, "        ", "self->") }}{{ write_value(e, "        ", "self->" ~ e.data_ref, length_of(e, "self->")) }}    }
 {% else %}
-    if ({{ ("self->" ~ e.name ~ "_count > 0U") if e.is_values else ("self->" ~ e.name ~ "_present") }}) {
+    if ({{ ("self->" ~ e.name ~ "_count > 0U") if e.is_values else ("self->" ~ e.present_ref) }}) {
 {{ step("sce_forge_cl_writer_property(&out, \"" ~ e.property ~ "\")", "        ") }}
-{{ write_params(e, "        ", "self->") }}{{ write_value(e, "        ", "self->" ~ e.name, "self->" ~ e.name ~ "_len") }}    }{% if e.optional_params %} else if ({% for p in e.optional_params %}{% if not loop.first %} || {% endif %}self->{{ p.name }}_present{% endfor %}) {
+{{ write_params(e, "        ", "self->") }}{{ write_value(e, "        ", "self->" ~ e.data_ref, length_of(e, "self->")) }}    }{% if e.optional_params %} else if ({% for p in e.optional_params %}{% if not loop.first %} || {% endif %}self->{{ p.present_ref }}{% endfor %}) {
         /* A parameter with no value of its property has no line to stand on. */
         return SCE_FORGE_CODEC_LINE_REQUIRED_MISSING;
     }{% endif %}

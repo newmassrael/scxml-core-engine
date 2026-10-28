@@ -179,11 +179,14 @@ static void test_{{ f.name }}(void) {
                 }
             }
 {% elif m.enum_document and m.optional %}
-            if (round_tripped.{{ fn }}[k].{{ mn }}_present != want->{{ mn }}_present) {
+{#- A parameter that may be absent is the struct `sce/forge/optional.h` declares
+    for its element (docs/adr/0055, section 8): `present` says whether it is, and
+    `value` is the value. #}
+            if (round_tripped.{{ fn }}[k].{{ mn }}.present != want->{{ mn }}_present) {
                 fprintf(stderr, "FAIL: {{ f.name }} case %zu {{ field.name }}[%zu].{{ m.name }}: present differs\n", i, k);
                 ++g_failures;
             } else if (want->{{ mn }}_present &&
-                       (long long){{ m.enum_document | to_snake_case }}_to_underlying(round_tripped.{{ fn }}[k].{{ mn }}) != (long long)want->{{ mn }}) {
+                       (long long){{ m.enum_document | to_snake_case }}_to_underlying(round_tripped.{{ fn }}[k].{{ mn }}.value) != (long long)want->{{ mn }}) {
                 fprintf(stderr, "FAIL: {{ f.name }} case %zu {{ field.name }}[%zu].{{ m.name }}: carrier differs\n", i, k);
                 ++g_failures;
             }
@@ -193,13 +196,13 @@ static void test_{{ f.name }}(void) {
                 ++g_failures;
             }
 {% elif m.optional %}
-            if (round_tripped.{{ fn }}[k].{{ mn }}_present != want->{{ mn }}_present) {
+            if (round_tripped.{{ fn }}[k].{{ mn }}.present != want->{{ mn }}_present) {
                 fprintf(stderr, "FAIL: {{ f.name }} case %zu {{ field.name }}[%zu].{{ m.name }}: present actual=%d expected=%d\n",
-                    i, k, (int)round_tripped.{{ fn }}[k].{{ mn }}_present, (int)want->{{ mn }}_present);
+                    i, k, (int)round_tripped.{{ fn }}[k].{{ mn }}.present, (int)want->{{ mn }}_present);
                 ++g_failures;
             } else if (want->{{ mn }}_present &&
-                       (round_tripped.{{ fn }}[k].{{ mn }}_len != want->{{ mn }}_len ||
-                        memcmp(round_tripped.{{ fn }}[k].{{ mn }}, want->{{ mn }}, want->{{ mn }}_len) != 0)) {
+                       (strlen(round_tripped.{{ fn }}[k].{{ mn }}.value.data) != want->{{ mn }}_len ||
+                        memcmp(round_tripped.{{ fn }}[k].{{ mn }}.value.data, want->{{ mn }}, want->{{ mn }}_len) != 0)) {
                 fprintf(stderr, "FAIL: {{ f.name }} case %zu {{ field.name }}[%zu].{{ m.name }}\n", i, k);
                 ++g_failures;
             }
@@ -234,33 +237,38 @@ static void test_{{ f.name }}(void) {
 {% endif %}
         }
 {% else %}
+{#- Where the decoded value is held: the member itself, or the `value` of the
+    struct an entry that may be absent is held in (docs/adr/0055, section 8). #}
+{% set got =("round_tripped." ~ fn ~ ".value") if field.optional else ("round_tripped." ~ fn) %}
 {% if field.optional %}
-        if (round_tripped.{{ fn }}_present != cases[i].input_{{ fn }}_present) {
+        if (round_tripped.{{ fn }}.present != cases[i].input_{{ fn }}_present) {
             fprintf(stderr, "FAIL: {{ f.name }} case %zu decode field {{ field.name }}: present actual=%d expected=%d\n",
-                i, (int)round_tripped.{{ fn }}_present, (int)cases[i].input_{{ fn }}_present);
+                i, (int)round_tripped.{{ fn }}.present, (int)cases[i].input_{{ fn }}_present);
             ++g_failures;
             continue;
         }
         if (cases[i].input_{{ fn }}_present) {
 {% endif %}
 {% if field.type == "string" %}
-        if (round_tripped.{{ fn }}_len != cases[i].input_{{ fn }}_len ||
-            memcmp(round_tripped.{{ fn }}, cases[i].input_{{ fn }}, cases[i].input_{{ fn }}_len) != 0) {
+{% set got_data = (got ~ ".data") if field.optional else got %}
+{% set got_len = ("strlen(" ~ got ~ ".data)") if field.optional else (got ~ "_len") %}
+        if ({{ got_len }} != cases[i].input_{{ fn }}_len ||
+            memcmp({{ got_data }}, cases[i].input_{{ fn }}, cases[i].input_{{ fn }}_len) != 0) {
             fprintf(stderr, "FAIL: {{ f.name }} case %zu decode field {{ field.name }}: actual_len=%zu expected_len=%zu\n",
-                i, round_tripped.{{ fn }}_len, cases[i].input_{{ fn }}_len);
+                i, {{ got_len }}, cases[i].input_{{ fn }}_len);
             ++g_failures;
         }
 {% elif field.enum_document %}
 {#- An enum (docs/adr/0015) is held as the enum's own type and baked as its
     carrier number, so the two are compared as carriers. #}
-        if ((long long){{ field.enum_document | to_snake_case }}_to_underlying(round_tripped.{{ fn }}) != (long long)cases[i].input_{{ fn }}) {
+        if ((long long){{ field.enum_document | to_snake_case }}_to_underlying({{ got }}) != (long long)cases[i].input_{{ fn }}) {
             fprintf(stderr, "FAIL: {{ f.name }} case %zu decode field {{ field.name }}: carrier differs\n", i);
             ++g_failures;
         }
 {% else %}
-        if (round_tripped.{{ fn }} != cases[i].input_{{ fn }}) {
+        if ({{ got }} != cases[i].input_{{ fn }}) {
             fprintf(stderr, "FAIL: {{ f.name }} case %zu decode field {{ field.name }}: actual=%lld expected=%lld\n",
-                i, (long long)round_tripped.{{ fn }}, (long long)cases[i].input_{{ fn }});
+                i, (long long){{ got }}, (long long)cases[i].input_{{ fn }});
             ++g_failures;
         }
 {% endif %}
@@ -288,15 +296,18 @@ static void test_{{ f.name }}(void) {
             }
             val.{{ fn }}[k].{{ mn }}_count = want->{{ mn }}_count;
 {% elif m.enum_document %}
-{#- A carrier number taken to the enum's own type (docs/adr/0015). #}
+{#- A carrier number taken to the enum's own type (docs/adr/0015). A parameter
+    that may be absent is the struct `sce/forge/optional.h` declares for its
+    element (docs/adr/0055, section 8), its value the `value` member. #}
+{% set held = (fn ~ "[k]." ~ mn ~ ".value") if m.optional else (fn ~ "[k]." ~ mn) %}
 {% if m.optional %}
-            val.{{ fn }}[k].{{ mn }}_present = want->{{ mn }}_present;
+            val.{{ fn }}[k].{{ mn }}.present = want->{{ mn }}_present;
             if (want->{{ mn }}_present) {
 {% endif %}
 {% if m.enum_open %}
-            val.{{ fn }}[k].{{ mn }} = {{ m.enum_document | to_snake_case }}_from_underlying(({{ m.type | c_type }})want->{{ mn }});
+            val.{{ held }} = {{ m.enum_document | to_snake_case }}_from_underlying(({{ m.type | c_type }})want->{{ mn }});
 {% else %}
-            if (!{{ m.enum_document | to_snake_case }}_from_underlying(({{ m.type | c_type }})want->{{ mn }}, &val.{{ fn }}[k].{{ mn }})) {
+            if (!{{ m.enum_document | to_snake_case }}_from_underlying(({{ m.type | c_type }})want->{{ mn }}, &val.{{ held }})) {
                 fprintf(stderr, "FAIL: {{ f.name }} case %zu: a carrier no variant declares\n", i);
                 ++g_failures;
             }
@@ -304,14 +315,16 @@ static void test_{{ f.name }}(void) {
 {% if m.optional %}
             }
 {% endif %}
+{% elif m.optional %}
+            val.{{ fn }}[k].{{ mn }}.present = want->{{ mn }}_present;
+            if (want->{{ mn }}_len > 0) {
+                memcpy(val.{{ fn }}[k].{{ mn }}.value.data, want->{{ mn }}, want->{{ mn }}_len);
+            }
 {% else %}
             if (want->{{ mn }}_len > 0) {
                 memcpy(val.{{ fn }}[k].{{ mn }}, want->{{ mn }}, want->{{ mn }}_len);
             }
             val.{{ fn }}[k].{{ mn }}_len = want->{{ mn }}_len;
-{% if m.optional %}
-            val.{{ fn }}[k].{{ mn }}_present = want->{{ mn }}_present;
-{% endif %}
 {% endif %}
 {% endfor %}
         }
@@ -335,14 +348,19 @@ static void test_{{ f.name }}(void) {
         }
         val.{{ fn }}_count = cases[i].input_{{ fn }}_count;
 {% else %}
+{#- Where the value is built: the member itself, or the `value` of the struct an
+    entry that may be absent is held in (docs/adr/0055, section 8). #}
+{% set built = (fn ~ ".value") if field.optional else fn %}
 {% if field.optional %}
-        val.{{ fn }}_present = cases[i].input_{{ fn }}_present;
+        val.{{ fn }}.present = cases[i].input_{{ fn }}_present;
 {% endif %}
 {% if field.type == "string" %}
         if (cases[i].input_{{ fn }}_len > 0) {
-            memcpy(val.{{ fn }}, cases[i].input_{{ fn }}, cases[i].input_{{ fn }}_len);
+            memcpy(val.{{ built }}{{ ".data" if field.optional else "" }}, cases[i].input_{{ fn }}, cases[i].input_{{ fn }}_len);
         }
+{% if not field.optional %}
         val.{{ fn }}_len = cases[i].input_{{ fn }}_len;
+{% endif %}
 {% elif field.enum_document %}
 {#- The carrier number a vector holds, taken to the enum's own type: a closed
     enum answers false for a carrier it does not declare, which no case holds. #}
@@ -351,9 +369,9 @@ static void test_{{ f.name }}(void) {
         if (cases[i].input_{{ fn }}_present) {
 {% endif %}
 {% if field.enum_open %}
-        val.{{ fn }} = {{ field.enum_document | to_snake_case }}_from_underlying(({{ field.type | c_type }})cases[i].input_{{ fn }});
+        val.{{ built }} = {{ field.enum_document | to_snake_case }}_from_underlying(({{ field.type | c_type }})cases[i].input_{{ fn }});
 {% else %}
-        if (!{{ field.enum_document | to_snake_case }}_from_underlying(({{ field.type | c_type }})cases[i].input_{{ fn }}, &val.{{ fn }})) {
+        if (!{{ field.enum_document | to_snake_case }}_from_underlying(({{ field.type | c_type }})cases[i].input_{{ fn }}, &val.{{ built }})) {
             fprintf(stderr, "FAIL: {{ f.name }} case %zu: a carrier no variant declares\n", i);
             ++g_failures;
             continue;
@@ -363,7 +381,7 @@ static void test_{{ f.name }}(void) {
         }
 {% endif %}
 {% else %}
-        val.{{ fn }} = cases[i].input_{{ fn }};
+        val.{{ built }} = cases[i].input_{{ fn }};
 {% endif %}
 {% endif %}
 {% endfor %}

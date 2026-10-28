@@ -26173,13 +26173,13 @@ struct EnumImport {
 /// given `present`, the type its present value is spelled as there: the one
 /// spelling of the type per backend, which a statechart's variable, a record's
 /// field and a payload's field take, and a codec's gated field on every backend
-/// but Go and C11, whose codecs move to it in steps 13 and 14 of the ADR
-/// ([`LangCtx::optional_of`]; the `sce-static` lowering asks it through
+/// but C11, whose codec holds its entry in the struct of its element
+/// ([`LangCtx::c11_codec_optional`]; the `sce-static` lowering asks it through
 /// [`crate::forge::static_lowering::StaticTarget::optional_type`]).
 ///
 /// `None` for a backend whose spelling is not a wrap of the present type: C11
-/// declares one struct per element (`sce_optional_<elem>_t`) in the step that
-/// lowers it there, and Swift has no emitter.
+/// declares one struct per element (`sce_optional_<elem>_t`), named by what the
+/// element is held in, and Swift has no emitter.
 pub(crate) fn optional_of(lang: crate::generator::Language, present: &str) -> Option<String> {
     use crate::generator::Language;
     match lang {
@@ -26198,6 +26198,17 @@ pub(crate) fn optional_of(lang: crate::generator::Language, present: &str) -> Op
 /// statement declares, and an expression whose element the lattice names.
 pub(crate) fn go_optional_none(present: &str) -> String {
     format!("optional.None[{present}]()")
+}
+
+/// The C11 struct a codec holds an entry that may be absent in, and what its
+/// header declares for it first ([`LangCtx::c11_codec_optional`]).
+pub(crate) struct C11Optional {
+    /// `sce_optional_<elem>_t`, the type of the member.
+    pub(crate) type_name: String,
+    /// The declaration the header makes before the struct that holds the member,
+    /// under the guard every unit that holds the same element shares. Empty for a
+    /// number or a `bool`, which `sce/forge/optional.h` declares itself.
+    pub(crate) declaration: String,
 }
 
 pub(crate) struct LangCtx {
@@ -26494,9 +26505,10 @@ impl LangCtx {
     /// type its present value is: [`Self::optional_of`], so a codec's entry is
     /// spelled as a statechart's variable of the same type is.
     ///
-    /// A codec on Go keeps its pointer and one on C11 its `<name>_present` flag
-    /// until the steps of the ADR that move them (13 and 14), so neither asks
-    /// for it.
+    /// A codec on C11 holds an entry that may be absent in the struct of its
+    /// element, which is no wrap of the type of the present value and is declared
+    /// beside what the element is held in ([`Self::c11_codec_optional`]), so it
+    /// asks for none.
     pub(crate) fn codec_optional_of(&self, present: &str) -> String {
         self.optional_of(present).unwrap_or_else(|| {
             panic!(
@@ -26505,6 +26517,50 @@ impl LangCtx {
                 self.lang
             )
         })
+    }
+
+    /// What a C11 codec names and declares for an entry or parameter that may be
+    /// absent (docs/adr/0055, section 8): the struct `sce/forge/optional.h` declares
+    /// for its element, which a statechart's variable of the same type is held in
+    /// too, so a value read from a codec is taken whole by one. `present` is the
+    /// type of the present value and `bound` the bytes a text or a byte string is
+    /// held to (the buffer of its `sce:max-size`, or of its `sce:length`).
+    ///
+    /// A text is the buffer a text of that bound is held in everywhere else in C11
+    /// (`sce_static_string_<bound>_t`), a byte string the buffer and the length it
+    /// holds (`sce_static_bytes_<bound>_t`), and an enum the machine's own name for
+    /// the document's type (`<document>_enum_t`), of which the codec declares the
+    /// alias the machine would, since the unit that holds the type is the enum
+    /// document's and a repeated typedef of one type is C11's own.
+    pub(crate) fn c11_codec_optional(&self, present: &SceType, bound: Option<u32>) -> C11Optional {
+        use crate::forge::static_lowering as lowering;
+        debug_assert_eq!(self.lang, crate::generator::Language::C11);
+        let mut alias = String::new();
+        let held = match present {
+            SceType::String => lowering::c_string_storage_type(
+                bound.expect("a C11 text entry carries its bound: `cbor_codec::refusal` saw to it"),
+            ),
+            SceType::Bytes => lowering::c_bytes_storage_type(
+                bound.expect("a C11 byte string entry carries its bound, as a text does"),
+            ),
+            SceType::Enum(r) => {
+                let imported = self.enum_import(&r.alias);
+                let held = format!("{}_enum_t", imported.snake);
+                alias = format!("typedef {} {held};\n", imported.qualified);
+                held
+            }
+            scalar => c_type(scalar).to_string(),
+        };
+        let type_name = lowering::c11_optional_type(&held)
+            .expect("every element a codec holds has an optional type in C11");
+        let declaration = lowering::target_for(crate::generator::Language::C11)
+            .and_then(|target| target.optional_def(&held, present))
+            .map(|declared| format!("{alias}{declared}"))
+            .unwrap_or_default();
+        C11Optional {
+            type_name,
+            declaration,
+        }
     }
 
     /// Parameter type for function signatures (uses references/borrows for
@@ -35069,6 +35125,54 @@ mod tests {
         assert_eq!(spelled(Language::Python).as_deref(), Some("Optional[T]"));
         assert_eq!(spelled(Language::C11), None);
         assert_eq!(spelled(Language::Swift), None);
+    }
+
+    /// A C11 codec holds an entry that may be absent in the struct
+    /// `sce/forge/optional.h` declares for its element, named and declared as a
+    /// statechart's variable of the same type is (docs/adr/0055, section 8): the
+    /// `sce-static` lowering and the codec ask one answer, so a value read from a
+    /// codec is taken whole by a variable of its type.
+    #[test]
+    fn a_c11_codec_entry_is_held_in_the_type_a_statechart_variable_of_its_type_is() {
+        use crate::forge::static_lowering::{c11_optional_type, target_for};
+        use crate::generator::Language;
+        let l = LangCtx::primitive(Language::C11);
+        let target = target_for(Language::C11).expect("C11 lowers sce-static");
+        // A number and a `bool` are the runtime's own: named by the type, and
+        // declared by nobody.
+        for (ty, held, name) in [
+            (SceType::Uint64, "uint64_t", "sce_optional_uint64_t"),
+            (SceType::Int32, "int32_t", "sce_optional_int32_t"),
+            (SceType::Float64, "double", "sce_optional_float64_t"),
+            (SceType::Bool, "bool", "sce_optional_bool_t"),
+        ] {
+            let codec = l.c11_codec_optional(&ty, None);
+            assert_eq!(codec.type_name, name);
+            assert_eq!(Some(codec.type_name), target.optional_type(held));
+            assert!(
+                codec.declaration.is_empty(),
+                "{held} is declared by the runtime"
+            );
+        }
+        // A text is the buffer of its bound and a byte string that buffer and
+        // its length, each declared beside its buffer under the guard every unit
+        // that holds one shares.
+        let text = l.c11_codec_optional(&SceType::String, Some(24));
+        assert_eq!(text.type_name, "sce_optional_string_24_t");
+        assert_eq!(
+            Some(text.type_name),
+            c11_optional_type("sce_static_string_24_t")
+        );
+        assert_eq!(
+            Some(text.declaration),
+            target.optional_def("sce_static_string_24_t", &SceType::String)
+        );
+        let bytes = l.c11_codec_optional(&SceType::Bytes, Some(16));
+        assert_eq!(bytes.type_name, "sce_optional_bytes_16_t");
+        assert_eq!(
+            Some(bytes.declaration),
+            target.optional_def("sce_static_bytes_16_t", &SceType::Bytes)
+        );
     }
 
     /// A C++ aggregate is initialized by position, in the order the members are

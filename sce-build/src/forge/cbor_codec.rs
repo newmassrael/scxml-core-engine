@@ -323,23 +323,54 @@ fn render_c(
         l.type_name(e.present_type()).into_owned()
     })?;
     crate::forge::generator::insert_c_codec_symbols(&mut ctx, &m.name);
-    // A text or byte string is a fixed array the size of its bound beside
-    // its length (the bound is present: `refusal` saw to it), an exact-length
-    // one an array of that length alone; an optional entry carries a
-    // `<name>_present` flag beside its value, until `sce_optional_<elem>_t`
-    // replaces it (docs/adr/0055, step 14).
+    // A required text or byte string is a fixed array the size of its bound
+    // beside its length (the bound is present: `refusal` saw to it), an
+    // exact-length one an array of that length alone. An entry that may be
+    // absent is the struct `sce/forge/optional.h` declares for its element
+    // (docs/adr/0055, section 5), the one a statechart's variable of the same
+    // type is held in: its value is the member `value`, a text the buffer of
+    // its bound and a byte string that buffer and its length. The template
+    // reads each entry through the member paths set here, so the one place
+    // that knows how an entry is held is this one.
+    let mut declarations: Vec<String> = Vec::new();
     if let Some(serde_json::Value::Array(entries)) = ctx.get_mut("entries") {
         for (entry, e) in entries.iter_mut().zip(&m.cbor_entries) {
-            entry["capacity"] = e.length.or(e.max_size).into();
+            let name = entry["name"].as_str().unwrap_or_default().to_string();
+            let capacity = e.length.or(e.max_size);
+            entry["capacity"] = capacity.into();
+            let optional = !e.is_required();
+            let value = if optional {
+                let held = l.c11_codec_optional(e.present_type(), capacity);
+                if !held.declaration.is_empty() && !declarations.contains(&held.declaration) {
+                    declarations.push(held.declaration);
+                }
+                entry["field_type"] = held.type_name.into();
+                format!("{name}.value")
+            } else {
+                name.clone()
+            };
+            let (data, len) = match (e.present_type(), optional) {
+                (SceType::String, true) => (format!("{value}.data"), None),
+                (SceType::Bytes, true) => (format!("{value}.data"), Some(format!("{value}.len"))),
+                (SceType::String | SceType::Bytes, false) => {
+                    (name.clone(), Some(format!("{name}_len")))
+                }
+                _ => (value.clone(), None),
+            };
+            entry["value_ref"] = value.clone().into();
+            entry["data_ref"] = data.into();
+            entry["len_ref"] = len.into();
+            entry["present_ref"] = format!("{name}.present").into();
             // C11's encode reads the value in place rather than binding it,
             // so the conversion is spelled over the struct member.
             if matches!(e.present_type(), SceType::Enum(_)) {
-                let member = format!("self->{}", entry["name"].as_str().unwrap_or_default());
-                entry["enum_to_underlying"] =
-                    l.codec_carrier_expr(e.present_type(), &member).into();
+                entry["enum_to_underlying"] = l
+                    .codec_carrier_expr(e.present_type(), &format!("self->{value}"))
+                    .into();
             }
         }
     }
+    ctx.insert("optional_declarations".into(), declarations.into());
     ctx.insert("max_encoded_bytes".into(), max_encoded_bytes(m).into());
     render_in_key_order(&l, env, ctx)
 }

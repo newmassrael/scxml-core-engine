@@ -98,18 +98,33 @@ static void test_{{ f.name }}(void) {
         static {{ f.name }}_t val;
 {% for field in f.fields %}
 {% set sibling_owns_len = (f.fields | selectattr('name', 'equalto', field.name + '_len') | list | length) > 0 %}
+{% set fname = field.name | to_snake_case %}
+{% if field.optional %}
+        {# An entry that may be absent is the struct `sce/forge/optional.h` declares
+           for its element (docs/adr/0055, section 8): its value is the `value`
+           member, a text the buffer of its bound ended by its terminator and a byte
+           string that buffer and its length, and an absent one is every byte zero. #}
+        memset(&val.{{ fname }}, 0, sizeof val.{{ fname }});
+        val.{{ fname }}.present = cases[i].input_{{ fname }}_present;
+{% endif %}
 {% if field.type in ("bytes", "string") %}
 {% set len_src = "cases[i].input_" + (field.name | to_snake_case) + "_len" %}
 {% if sibling_owns_len %}
 {% set len_src = "cases[i].input_" + field.name + "_len" %}
 {% endif %}
-        memcpy(val.{{ field.name | to_snake_case }}, cases[i].input_{{ field.name | to_snake_case }}, {{ len_src }});
-        val.{{ field.name | to_snake_case }}_len = {{ len_src }};
-{% else %}
-        val.{{ field.name | to_snake_case }} = cases[i].input_{{ field.name | to_snake_case }};
-{% endif %}
 {% if field.optional %}
-        val.{{ field.name | to_snake_case }}_present = cases[i].input_{{ field.name | to_snake_case }}_present;
+        memcpy(val.{{ fname }}.value.data, cases[i].input_{{ fname }}, {{ len_src }});
+{% if field.type == "bytes" %}
+        val.{{ fname }}.value.len = {{ len_src }};
+{% endif %}
+{% else %}
+        memcpy(val.{{ fname }}, cases[i].input_{{ fname }}, {{ len_src }});
+        val.{{ fname }}_len = {{ len_src }};
+{% endif %}
+{% elif field.optional %}
+        val.{{ fname }}.value = cases[i].input_{{ fname }};
+{% else %}
+        val.{{ fname }} = cases[i].input_{{ fname }};
 {% endif %}
 {% endfor %}
 {% set max_macro = (f.name | to_upper_snake_case) ~ "_MAX_BYTES" %}
@@ -138,36 +153,50 @@ static void test_{{ f.name }}(void) {
         }
 {% for field in f.fields %}
 {% set sibling_owns_len = (f.fields | selectattr('name', 'equalto', field.name + '_len') | list | length) > 0 %}
+{% set fname = field.name | to_snake_case %}
+{# Where the decoded value is held: the member itself, or the `value` of the
+   struct an entry that may be absent is held in. #}
+{% set got = ("round_tripped." ~ fname ~ ".value") if field.optional else ("round_tripped." ~ fname) %}
 {% if field.optional %}
         {# Present on both sides, or absent on both; the value is compared
            only where it is present. #}
-        if (round_tripped.{{ field.name | to_snake_case }}_present != cases[i].input_{{ field.name | to_snake_case }}_present) {
+        if (round_tripped.{{ fname }}.present != cases[i].input_{{ fname }}_present) {
             fprintf(stderr,
                 "FAIL: {{ f.name }} case %zu decode field {{ field.name }}: present actual=%d expected=%d\n",
-                i, (int)round_tripped.{{ field.name | to_snake_case }}_present,
-                (int)cases[i].input_{{ field.name | to_snake_case }}_present);
+                i, (int)round_tripped.{{ fname }}.present,
+                (int)cases[i].input_{{ fname }}_present);
             ++g_failures;
             continue;
         }
-        if (cases[i].input_{{ field.name | to_snake_case }}_present) {
+        if (cases[i].input_{{ fname }}_present) {
 {% endif %}
 {% if field.type in ("bytes", "string") %}
 {% set len_src = "cases[i].input_" + (field.name | to_snake_case) + "_len" %}
 {% if sibling_owns_len %}
 {% set len_src = "cases[i].input_" + field.name + "_len" %}
 {% endif %}
-        if ((size_t)round_tripped.{{ field.name | to_snake_case }}_len != (size_t){{ len_src }} ||
-            memcmp(round_tripped.{{ field.name | to_snake_case }}, cases[i].input_{{ field.name | to_snake_case }}, {{ len_src }}) != 0) {
+{% if not field.optional %}
+{% set got_data = got %}
+{% set got_len = got ~ "_len" %}
+{% elif field.type == "bytes" %}
+{% set got_data = got ~ ".data" %}
+{% set got_len = got ~ ".len" %}
+{% else %}
+{% set got_data = got ~ ".data" %}
+{% set got_len = "strlen(" ~ got ~ ".data)" %}
+{% endif %}
+        if ((size_t){{ got_len }} != (size_t){{ len_src }} ||
+            memcmp({{ got_data }}, cases[i].input_{{ fname }}, {{ len_src }}) != 0) {
             fprintf(stderr,
                 "FAIL: {{ f.name }} case %zu decode field {{ field.name }}: actual_len=%zu expected_len=%zu\n",
-                i, (size_t)round_tripped.{{ field.name | to_snake_case }}_len, (size_t){{ len_src }});
+                i, (size_t){{ got_len }}, (size_t){{ len_src }});
             ++g_failures;
         }
 {% else %}
-        if (round_tripped.{{ field.name | to_snake_case }} != cases[i].input_{{ field.name | to_snake_case }}) {
+        if ({{ got }} != cases[i].input_{{ fname }}) {
             fprintf(stderr,
                 "FAIL: {{ f.name }} case %zu decode field {{ field.name }}: actual=%lld expected=%lld\n",
-                i, (long long)round_tripped.{{ field.name | to_snake_case }}, (long long)cases[i].input_{{ field.name | to_snake_case }});
+                i, (long long){{ got }}, (long long)cases[i].input_{{ fname }});
             ++g_failures;
         }
 {% endif %}

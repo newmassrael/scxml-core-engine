@@ -37,6 +37,11 @@
  *     with no `_eq`: a record is read through a proven `.value` and written a
  *     field at a time, and two of them are no operand of `===`.
  *
+ * A generated CBOR or content-line codec holds an entry or a parameter that may
+ * be absent in the same struct, declared by its header under the same guards as a
+ * machine's, so a value read from a codec is the value a statechart's variable of
+ * that type holds.
+ *
  * The read with a default, `x ?? d`, is a conditional over the flag, so `d` is
  * evaluated only when `x` is absent: a default that would fail fails only then
  * (`SCE_OPTIONAL_VALUE_OR` and its siblings). C11 has no portable way to name a
