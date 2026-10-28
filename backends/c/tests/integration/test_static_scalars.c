@@ -3325,8 +3325,9 @@ STATIC_SCENARIO_UNROUTED(record_list)
     E(wallTime, wide_signed_digits)                                                                                    \
     N(counter)                                                                                                         \
     E(nodeId, wide_digits)
-// The last change the list refused: the command at fault and the reason, each by the
-// name its enum declares, record_command and record_refusal (docs/adr/0046, docs/adr/0052).
+// The last change the list refused, a record that is absent until there is one: the
+// command at fault and the reason, each by the name its enum declares, record_command
+// and record_refusal (docs/adr/0046, docs/adr/0055).
 #define RECORD_LIST_REFUSED_FIELDS(N, E)                                                                               \
     N(id)                                                                                                              \
     N(field)                                                                                                           \
@@ -3344,7 +3345,19 @@ static const char *record_list_parent_text_text(sce_static_string_96_t text) {
 RECORD_READER(record_list_parent, shown, record_list_parent_record_told_t, RECORD_LIST_REGISTER_FIELDS)
 RECORD_LIST_READER(record_list_parent, others, record_list_parent_record_told_value_view_t,
                    record_list_parent_record_told_value_t, RECORD_LIST_REGISTER_VALUE_FIELDS)
-RECORD_READER(record_list_parent, refused, record_list_parent_record_refused_t, RECORD_LIST_REFUSED_FIELDS)
+OPTIONAL_RECORD_READER(record_list_parent, refused, sce_optional_record_record_list_parent_record_refused_t,
+                       record_list_parent_record_refused_t, RECORD_LIST_REFUSED_FIELDS)
+
+// Whether the optional record a step names is present: 1, 0, or -1 for a place that
+// holds none. `refused` is the one the machine holds, and its fields are all present.
+static int record_list_parent_presence(void *sm, const char *name, size_t index, const char *field) {
+    (void)index;
+    if (field != NULL || strcmp(name, "refused") != 0) {
+        return -1;
+    }
+    return record_list_parent_get_refused((const record_list_parent_t *)sm).present ? 1 : 0;
+}
+
 static const name_value_t record_list_parent_states[] = {
     {"holding", RECORD_LIST_PARENT_STATE_HOLDING},
 };
@@ -3356,8 +3369,8 @@ static const record_variable_t record_list_parent_records[] = {RECORD_ROW(record
                                                                RECORD_LIST_ROW(record_list_parent, others),
                                                                RECORD_ROW(record_list_parent, refused),
                                                                {NULL, NULL, NULL, NULL}};
-STATIC_SCENARIO(record_list_parent, record_list_parent_states, record_list_parent_variables, NULL, no_lists,
-                record_list_parent_records)
+STATIC_OPTIONAL_SCENARIO(record_list_parent, record_list_parent_states, record_list_parent_variables, NULL,
+                         record_list_parent_records, NULL, record_list_parent_presence)
 
 // sheet_peer: one copy of a shared sheet of numbers, replayed the same way: its
 // cells merged by `lww_write`, its rows and columns placed by `rga_insert` and

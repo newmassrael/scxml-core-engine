@@ -5,11 +5,11 @@
   sce:std/shared/record_refusal.scxml — why a copy of a shared record list refused a
   change of its own (docs/adr/0046), as record_list.refused (record_refused) tells the
   statechart that invoked the list. A change is refused whole, so a reason is the
-  reason of the whole change:
+  reason of the whole change. Every variant is a reason: there is none for "no change
+  was refused". A parent that keeps its last refusal holds it in an `optional<record:Refused>`
+  (record_refused) that starts absent (docs/adr/0055), so before the first refusal it
+  holds no refusal at all, and not a refusal with a reason that stands for none:
 
-  - `none`: no change was refused. The list never tells it: it is the value a parent
-    holds the last refusal in before there was one (docs/adr/0052), since a statechart
-    variable of the enum always holds one of its variants;
   - `notWriter`: the copy's member may only read (record_list.role);
   - `noRoomForValue`: the values the copy would hold after the change pass the room the
     host gave it (record_list.room, `values`);
@@ -27,7 +27,6 @@
        version="1.0" sce:kind="enum" name="record_refusal" sce:underlying-type="uint8">
   <datamodel>
     <data id="variants">
-      <sce:variant name="none" value="0"/>
       <sce:variant name="notWriter" value="1"/>
       <sce:variant name="noRoomForValue" value="2"/>
       <sce:variant name="noRoomForHistory" value="3"/>

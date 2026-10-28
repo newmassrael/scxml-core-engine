@@ -6,19 +6,21 @@
   record_command (the schema's `Command`) and whose `reason` is the enum
   record_refusal (the schema's `Refusal`).
 
-  The document names a variant of record_refusal, so it imports that enum, under an
-  alias of its own, `Why`: `_event.data.reason` is a value of `Why`, since an enum is
-  the document it is declared in and not the alias another document imports it
-  under. It names no variant of record_command, so it does not import that enum at
-  all: `kind` is held all the same, in the machine's type for the enum document the
-  schema imports, when the payload is kept whole in `kept`.
+  The document names a variable of record_refusal, `last`, so it imports that enum,
+  under an alias of its own, `Why`: `_event.data.reason` is a value of `Why`, since an
+  enum is the document it is declared in and not the alias another document imports it
+  under. `last` is an `optional<enum:Why>`, absent until the first refusal (docs/adr/0055):
+  the enum has no variant that stands for no refusal. It names no variant of
+  record_command, so it does not import that enum at all: `kind` is held all the same,
+  in the machine's type for the enum document the schema imports, when the payload is
+  kept whole in `kept`.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0" initial="listening" datamodel="sce-static" name="static_payload_enum_unimported">
   <sce:import kind="event-schema" src="sce:std/shared/record_refused.scxml" as="Refused"/>
   <sce:import kind="enum" src="sce:std/shared/record_refusal.scxml" as="Why"/>
   <datamodel>
-    <data id="last" sce:type="enum:Why" expr="Why.none" sce:direction="out"/>
+    <data id="last" sce:type="optional&lt;enum:Why&gt;" expr="null" sce:direction="out"/>
     <data id="kept" sce:type="list&lt;record:Refused&gt;" sce:capacity="2" sce:direction="out"/>
     <data id="row" sce:type="uint32" expr="0" sce:direction="out"/>
     <data id="refusals" sce:type="uint32" expr="0" sce:direction="out"/>

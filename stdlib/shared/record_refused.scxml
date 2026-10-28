@@ -8,7 +8,9 @@
   by its row (`id`), its field (`field`, 0 for a retire) and its `kind`, the command it
   was (record_command: an edit, a clear or a retire): the one whose text or staging
   failed, the second of two that name one register, or, for what is judged of the whole
-  change, the one that ended it. `reason` says why (record_refusal), and is never `none`.
+  change, the one that ended it. `reason` says why (record_refusal), and every refusal
+  has all four fields: no field of it may be absent, and no refusal is the absence of the
+  record, which a parent keeps in an `optional<record:Refused>` (docs/adr/0055).
   Nothing of a refused change is taken in, stamped or sent, so a parent that told its
   user the change was made tells them it was not.
 
@@ -16,7 +18,8 @@
   (docs/adr/0052). A statechart that reads the payload holds each field in its type for
   the document, imported or not, and imports an enum, under any alias, only to name it
   (a variant, a variable of it): a record variable of this schema names a variant of
-  each when it starts, so it imports both (docs/adr/0054).
+  each when it starts, so it imports both (docs/adr/0054), and an optional one starts
+  absent and names none.
 
   A list a host started has no parent and tells no one, as it tells no register.
 -->
