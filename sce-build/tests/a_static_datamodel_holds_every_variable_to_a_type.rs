@@ -6054,10 +6054,8 @@ const INTERPRETER: &str = "interpreter";
 /// Empty since step 5 of docs/adr/0055 lowered an optional value on all seven;
 /// step 9 adds the scenario of an optional record, which only the Interpreter
 /// lowers until each backend's own step 9.
-const NOT_YET_LOWERED: &[(&str, &str, &str)] = &[
-    ("static_optional_record", "go", OPTIONAL_RECORD_NOT_LOWERED),
-    ("static_optional_record", "c11", OPTIONAL_RECORD_NOT_LOWERED),
-];
+const NOT_YET_LOWERED: &[(&str, &str, &str)] =
+    &[("static_optional_record", "c11", OPTIONAL_RECORD_NOT_LOWERED)];
 
 /// Why the scenario of an optional record is not replayed on a generated backend
 /// yet.

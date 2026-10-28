@@ -68,6 +68,7 @@ import (
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_list_assign"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_list_index"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_optional"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_optional_record"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_optional_widened"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_overflow"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_payload"
@@ -1597,6 +1598,56 @@ func TestAnOlderEntryReadsAWidenedFieldPresentAndANewerNullAbsent(t *testing.T) 
 		"remind":   func() any { return optionalJSON(policy.Remind()) },
 		"taken":    func() any { return policy.Taken() },
 		"refusals": func() any { return policy.Refusals() },
+	}))
+}
+
+// itemPickRecord is a `record:Item` (schema_item_pick) as a host reads it: an id,
+// a text of at most sixteen UTF-8 bytes and a count.
+type itemPickRecord interface {
+	Id() uint32
+	Title() string
+	Count() int32
+}
+
+// itemPickJSON is an item as a scenario states it: its fields by the schema's ids.
+func itemPickJSON(item itemPickRecord) any {
+	return map[string]any{"id": item.Id(), "title": item.Title(), "count": item.Count()}
+}
+
+// optionalItemPickJSON is an optional record as a scenario states it (docs/adr/0055,
+// step 9): `null` where it is absent, and the record's fields where it is present.
+func optionalItemPickJSON[R itemPickRecord](item optional.Of[R]) any {
+	if present, ok := item.Get(); ok {
+		return itemPickJSON(present)
+	}
+	return nil
+}
+
+// A record that may be absent (docs/adr/0055, step 9) starts absent, is taken
+// whole from a payload, a record variable, a list's element and an algorithm's
+// answer, is read as `pick.value.f` and written the same way only where a test
+// proves it present, and is made absent again by `null`.
+func TestARecordThatMayBeAbsentIsHeldReadAndWrittenWhereProven(t *testing.T) {
+	policy := static_optional_record.NewStaticOptionalRecordPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	replay(t, "static_optional_record", drive[static_optional_record.StaticOptionalRecordState, static_optional_record.StaticOptionalRecordEvent](&policy, map[string]func() any{
+		"pick":  func() any { return optionalItemPickJSON(policy.Pick()) },
+		"found": func() any { return optionalItemPickJSON(policy.Found()) },
+		"draft": func() any { return itemPickJSON(policy.Draft()) },
+		"items": func() any {
+			items := policy.Items()
+			out := make([]any, len(items))
+			for i, item := range items {
+				out[i] = itemPickJSON(item)
+			}
+			return out
+		},
+		"title":  func() any { return policy.Title() },
+		"count":  func() any { return policy.Count() },
+		"shown":  func() any { return policy.Shown() },
+		"known":  func() any { return policy.Known() },
+		"absent": func() any { return policy.Absent() },
+		"errors": func() any { return policy.Errors() },
 	}))
 }
 

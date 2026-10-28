@@ -26,6 +26,7 @@ import (
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_history"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_list"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_optional"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_optional_record"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_record"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_schema_pending"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_schema_revision"
@@ -82,6 +83,11 @@ var machinesBySavedStem = map[string]restoredAgain{
 		engine, err := static_optional.StaticOptionalRestoreAt(&policy, saved, sce.NewManualClock(0), wall)
 		return restoreAndSave(engine, err, static_optional.StaticOptionalSaveAt, wall)
 	},
+	"static_optional_record": func(saved *sce.SavedState, wall int64) (string, error) {
+		policy := static_optional_record.NewStaticOptionalRecordPolicy()
+		engine, err := static_optional_record.StaticOptionalRecordRestoreAt(&policy, saved, sce.NewManualClock(0), wall)
+		return restoreAndSave(engine, err, static_optional_record.StaticOptionalRecordSaveAt, wall)
+	},
 	"static_record": func(saved *sce.SavedState, wall int64) (string, error) {
 		policy := static_record.NewStaticRecordPolicy()
 		engine, err := static_record.StaticRecordRestoreAt(&policy, saved, sce.NewManualClock(0), wall)
@@ -110,19 +116,23 @@ var machinesBySavedStem = map[string]restoredAgain{
 }
 
 // machineOfSavedText is the stem of the document a shared text is of: the file's
-// own name up to the part that says which moment of the run it is.
+// own name up to the part that says which moment of the run it is. A stem that
+// another stem begins (`static_optional` and `static_optional_record`) is read as
+// the longer one when the name is the longer one's: the document is the one whose
+// whole name the text carries.
 func machineOfSavedText(name string) string {
+	found := ""
 	for stem := range machinesBySavedStem {
 		if strings.HasPrefix(name, stem) {
 			// `static_schema_pending_first` and `static_schema_revision_second` are
 			// moments of one document; `static_timers_midway` of another.
 			rest := strings.TrimPrefix(name, stem)
-			if rest == "" || strings.HasPrefix(rest, "_") {
-				return stem
+			if (rest == "" || strings.HasPrefix(rest, "_")) && len(stem) > len(found) {
+				found = stem
 			}
 		}
 	}
-	return ""
+	return found
 }
 
 func sharedSavedDir(t *testing.T, format1 bool) string {

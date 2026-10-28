@@ -224,7 +224,7 @@ fn an_algorithms_slot_reads_every_optional_element_a_statechart_holds() {
 /// docs/adr/0055 spells an optional text, byte string, value of an enum and record
 /// in an algorithm's slots: each of them generates what the others refuse. A backend
 /// joins here in its step and keeps its other arms.
-const SPELLING_EVERY_OPTIONAL_ELEMENT: &[&str] = &["python", "kotlin"];
+const SPELLING_EVERY_OPTIONAL_ELEMENT: &[&str] = &["python", "kotlin", "go"];
 
 /// Whether the backend `lang` (a name [`every_backend`] gives) spells an optional
 /// value of the element `written` in an algorithm's slots beyond a number and a
@@ -292,10 +292,12 @@ fn every_backend_refuses_an_algorithms_optional_slot_it_does_not_spell_by_name()
                         ok,
                         "{lang} spells `{written}` on an algorithm's slot:\n{out}"
                     );
-                    // Python's `Optional[T]`, Kotlin's `T?`, Rust's `Option<T>`.
+                    // Python's `Optional[T]`, Kotlin's `T?`, Rust's `Option<T>`, Go's
+                    // `optional.Of[T]`.
                     let optional = match lang {
                         "kotlin" => "?",
                         "rust" => "Option<",
+                        "go" => "optional.Of[",
                         _ => "Optional[",
                     };
                     assert!(
@@ -315,6 +317,65 @@ fn every_backend_refuses_an_algorithms_optional_slot_it_does_not_spell_by_name()
                 );
             }
         }
+    }
+}
+
+/// Go spells every element an algorithm may hold an optional value of
+/// (docs/adr/0055, step 9): a text, a byte string, a value of an enum and a record
+/// in a parameter, the return and a local, each in `optional.Of[T]` over the type
+/// the algorithm holds a present value in, and the local that starts at `null` at
+/// the absent value of that type — which an enum's and a record's cannot be named
+/// by an expression, so the statement that declares the place writes it.
+#[test]
+fn go_spells_an_optional_text_byte_string_enum_and_record_in_an_algorithms_slots() {
+    let args = [
+        "generate",
+        "-l",
+        "go",
+        "--go-module-prefix",
+        "example.test/generated",
+    ];
+    for (written, present) in [
+        ("optional&lt;string&gt;", "string"),
+        ("optional&lt;bytes&gt;", "[]byte"),
+        ("optional&lt;enum:Status&gt;", ".EnumItemStatus"),
+        ("optional&lt;record:Goal&gt;", ".SchemaGoalPayload"),
+    ] {
+        let mut imports = String::new();
+        if written.contains("enum:Status") {
+            imports.push_str(
+                "  <sce:import kind=\"enum\" src=\"enum_item_status.scxml\" as=\"Status\"/>\n",
+            );
+        }
+        if written.contains("record:Goal") {
+            imports.push_str(
+                "  <sce:import kind=\"event-schema\" src=\"schema_goal.scxml\" as=\"Goal\"/>\n",
+            );
+        }
+        let text = slots(written, written, written)
+            .replace("  <sce:signature>", &format!("{imports}  <sce:signature>"))
+            .replace("<sce:return expr=\"held\"/>", "<sce:return expr=\"null\"/>");
+        let (ok, out, generated) = run_probe(
+            &args,
+            &text,
+            "slot_probe.scxml",
+            &["enum_item_status.scxml", "schema_goal.scxml"],
+        );
+        assert!(ok, "Go spells `{written}` on an algorithm's slots:\n{out}");
+        // The parameter, the return and the local are all of the one type, and the
+        // local starts at that type's absent value; the return of `null` is too.
+        let held_type = format!("{present}]");
+        assert!(
+            generated.matches("optional.Of[").count() >= 3
+                && generated.contains(&held_type)
+                && generated.contains("var held optional.Of[")
+                && generated.contains("= optional.None["),
+            "Go holds `{written}` in optional.Of over `{present}` on the three slots:\n{generated}"
+        );
+        assert!(
+            generated.contains("return optional.None["),
+            "a return of `null` is the absent value of the return's type:\n{generated}"
+        );
     }
 }
 

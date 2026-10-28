@@ -106,7 +106,7 @@ fn every_backend() -> Vec<Vec<&'static str>> {
 /// docs/adr/0055 has landed: each lowers an optional record, and is held to its own
 /// spellings by its own test; the rest refuse one by name until theirs. A backend
 /// joins here in its step.
-const LOWERING_AN_OPTIONAL_RECORD: &[&str] = &["python", "kotlin", "rust", "cpp"];
+const LOWERING_AN_OPTIONAL_RECORD: &[&str] = &["python", "kotlin", "rust", "cpp", "go"];
 
 /// [`every_backend`] without the ones that lower an optional record
 /// ([`LOWERING_AN_OPTIONAL_RECORD`]): the ones that still refuse one.
@@ -225,8 +225,117 @@ fn the_interpreter_lowers_the_optional_record_scenario_machine() {
     }
 }
 
-/// Each generated backend that has not lowered one refuses the machine by name, as
-/// a feature it does not lower yet, until its own step of docs/adr/0055.
+/// The `generate` arguments of Go, which the machine of the scenario needs the module
+/// prefix of: it calls an algorithm.
+fn go_args() -> Vec<&'static str> {
+    vec![
+        "generate",
+        "-l",
+        "go",
+        "--go-module-prefix",
+        "example.test/generated",
+    ]
+}
+
+/// Go lowers the machine of the scenario: the variable is `optional.Of` over the
+/// machine's own record struct and starts at its absent value, a field is read
+/// through the proven read of the variable, a field is written into a copy of the
+/// present record that is put back, a list's element is read whole through the
+/// runtime's `At`, and a call hands an algorithm the present record and takes its
+/// answer back, absent or present, through the adapter.
+#[test]
+fn go_lowers_the_optional_record_scenario_machine() {
+    let (ok, out, written) = run(&go_args(), &[], "static_optional_record.scxml");
+    assert!(ok, "Go lowers the machine:\n{out}");
+    for needle in [
+        // The variable and its start.
+        "optional.Of[StaticOptionalRecordItemRecord]",
+        "optional.None[StaticOptionalRecordItemRecord]()",
+        // A test of presence and a proven read of a field, in a condition and in a
+        // value.
+        "p.vPick.IsPresent()",
+        "p.vPick.Proven().title",
+        "p.vPick.Proven().count",
+        // A field written into a copy, and the copy put back as the present record.
+        "sceRecord := p.vPick.Proven(); sceRecord.count =",
+        "sceRecord := p.vPick.Proven(); sceRecord.title =",
+        "p.vPick = optional.Some(sceRecord)",
+        // A list's element, whole, by the runtime's read of an element.
+        "scealgorithm.At(&sceFailure, p.vItems[:], int64(1))",
+        // The adapter takes the algorithm's answer into the machine's own record.
+        "var out optional.Of[StaticOptionalRecordItemRecord]",
+        "out = optional.Some(StaticOptionalRecordItemRecord{",
+        // A saved state holds `null` or the record.
+        "optional.Wire(p.vPick, func(v StaticOptionalRecordItemRecord) any { return v.ToSaved() })",
+    ] {
+        assert!(
+            written.contains(needle),
+            "the Go machine holds `{needle}`:\n{written}"
+        );
+    }
+}
+
+/// Go lowers the algorithm of the scenario: its answer is an optional record, its
+/// local starts absent, a record is put into the local whole and the local is
+/// tested before it is answered.
+#[test]
+fn go_lowers_an_algorithm_that_answers_an_optional_record() {
+    let (ok, out, written) = run(&go_args(), &[], "algorithm_item_pick_first.scxml");
+    assert!(ok, "Go lowers the algorithm:\n{out}");
+    for needle in [
+        ") optional.Of[",
+        "var found optional.Of[",
+        "= optional.None[",
+        "found = optional.Some(it)",
+        "return found",
+    ] {
+        assert!(
+            written.contains(needle),
+            "the Go algorithm holds `{needle}`:\n{written}"
+        );
+    }
+}
+
+/// A field of the present value of an optional record an algorithm holds is read
+/// through the proven read of its local, by the identifier the payload struct has,
+/// and written into a copy of the record that is put back as the present value.
+#[test]
+fn go_reads_and_writes_a_field_of_an_algorithms_optional_record() {
+    let body = r#"<sce:foreach item="it" in="items">
+      <sce:if cond="held === null">
+        <sce:assign target="held" expr="it"/>
+      </sce:if>
+    </sce:foreach>
+    <sce:if cond="x !== null">
+      <sce:return expr="x.value.count"/>
+    </sce:if>
+    <sce:if cond="held !== null">
+      <sce:assign target="held.value.count" expr="7"/>
+      <sce:return expr="held.value.count"/>
+    </sce:if>
+    <sce:return expr="-1"/>"#;
+    let (ok, out, written) = run(
+        &go_args(),
+        &[("algorithm_pick_count.scxml", &algorithm(body))],
+        "algorithm_pick_count.scxml",
+    );
+    assert!(ok, "Go lowers the algorithm:\n{out}");
+    for needle in [
+        "x optional.Of[",
+        "x.IsPresent()",
+        "return x.Proven().Count",
+        "sceRecord := held.Proven(); sceRecord.Count = 7; held = optional.Some(sceRecord)",
+        "return held.Proven().Count",
+    ] {
+        assert!(
+            written.contains(needle),
+            "the Go algorithm holds `{needle}`:\n{written}"
+        );
+    }
+}
+
+/// Each generated backend that does not lower it yet refuses the machine by name,
+/// as a feature it does not lower yet, until its own step of docs/adr/0055.
 #[test]
 fn every_generated_backend_refuses_the_optional_record_by_name() {
     for args in backends_refusing_an_optional_record() {

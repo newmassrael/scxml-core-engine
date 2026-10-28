@@ -126,7 +126,7 @@ fn every_backend() -> Vec<Vec<&'static str>> {
 /// enum in what an algorithm holds, and so in the unit of an event schema and the
 /// record an algorithm reads (docs/adr/0055, step 9), by the language `generate -l`
 /// names. A backend joins this list in the step that spells them on it.
-const SPELLING_OPTIONAL_TEXT: &[&str] = &["kotlin"];
+const SPELLING_OPTIONAL_TEXT: &[&str] = &["kotlin", "go", "python", "rust", "cpp"];
 
 /// The backends of [`every_backend`] that do not spell an optional text in what an
 /// algorithm holds yet: each refuses what the others generate.
@@ -602,7 +602,7 @@ fn a_schema_field_holds_an_optional_scalar_and_the_forge_ast_spells_it() {
 /// The unit an event schema generates holds the struct an algorithm's record of
 /// it is (docs/adr/0055, step 8): an optional field of a number or a `bool` is held
 /// in the backend's optional type, and one of a text or an enum, which no
-/// algorithm holds, is refused by name.
+/// algorithm holds there yet, is refused by name.
 #[test]
 fn every_backend_refuses_a_schema_with_an_optional_text_field_by_name() {
     for args in not_spelling_optional_text() {
@@ -613,6 +613,61 @@ fn every_backend_refuses_a_schema_with_an_optional_text_field_by_name() {
             "{args:?} refuses it by its text field:\n{out}"
         );
     }
+}
+
+/// Go holds an optional text and an optional value of an enum in the unit of a schema
+/// as it holds an optional number (docs/adr/0055, step 9): `optional.Of` over the
+/// field's own type, the enum document's for an enum.
+#[test]
+fn go_holds_an_optional_text_and_enum_field_of_a_schema_in_its_optional_type() {
+    let args = [
+        "generate",
+        "-l",
+        "go",
+        "--go-module-prefix",
+        "example.test/generated",
+    ];
+    let dir = tempdir().expect("tempdir");
+    for name in SIBLINGS {
+        std::fs::copy(fixtures().join(name), dir.path().join(name)).expect("copy a sibling");
+    }
+    std::fs::write(dir.path().join(SCHEMA_DUE_FILE), SCHEMA_DUE).expect("write the schema");
+    let out_dir = tempdir().expect("tempdir");
+    let out = Command::new(sce_codegen_bin())
+        .arg("--workspace-root")
+        .arg(repo_root())
+        .args(args)
+        .arg(dir.path().join(SCHEMA_DUE_FILE))
+        .arg("-o")
+        .arg(out_dir.path())
+        .output()
+        .expect("invoke sce-codegen");
+    assert!(
+        out.status.success(),
+        "Go generates the schema's unit:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let mut text = String::new();
+    for entry in std::fs::read_dir(out_dir.path()).expect("the output directory") {
+        let path = entry.expect("an entry").path();
+        if path.is_file() {
+            text.push_str(&std::fs::read_to_string(&path).unwrap_or_default());
+        }
+    }
+    for needle in [
+        "Due optional.Of[int64]",
+        "Title optional.Of[string]",
+        "Status optional.Of[",
+    ] {
+        assert!(
+            text.contains(needle),
+            "the Go unit holds `{needle}`:\n{text}"
+        );
+    }
+    assert!(
+        text.contains(".EnumItemStatus]"),
+        "an optional enum is over the enum document's own type:\n{text}"
+    );
 }
 
 /// An event schema whose optional fields are a number and a `bool`.
