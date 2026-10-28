@@ -10434,8 +10434,23 @@ impl StaticTarget for SwiftTarget {
                 var.id
             ));
         }
-        if !model.imported_event_schemas.is_empty() {
-            return Some("an imported event schema".to_string());
+        // An event's typed payload is read through a struct of its schema's scalar
+        // fields, each named as the author wrote it: one Swift reserves cannot be a
+        // property, and an enum or an optional field is not spelled yet.
+        if let Some((schema, field)) = model
+            .imported_event_schemas
+            .values()
+            .flat_map(|schema| schema.fields.iter().map(move |field| (schema, field)))
+            .find(|(_, field)| {
+                !matches!(&field.sce_type, FieldType::Scalar(ty) if !matches!(ty, SceType::Enum(_)))
+                    || crate::reader_names::is_reserved_word(Language::Swift, &field.id)
+            })
+        {
+            return Some(format!(
+                "the field `{}` of the event schema `{}`, an enum, an optional value or a name \
+                 Swift reserves",
+                field.id, schema.name
+            ));
         }
         for state in model.states.values() {
             let blocks = state
@@ -10656,8 +10671,13 @@ impl StaticTarget for SwiftTarget {
             filters::to_event_variant(event.to_string())
         )
     }
-    fn payload_guard(&self, _machine: &str, _event: &str, _lowered: &str) -> String {
-        unreachable!("refused by SwiftTarget::unsupported")
+    // The tag says which event's payload the channel holds now, so a guard that reads
+    // this event's fields holds only for a delivery that carried them.
+    fn payload_guard(&self, _machine: &str, event: &str, lowered: &str) -> String {
+        format!(
+            "self.pendingPayloadTag == .{} && ({lowered})",
+            filters::to_swift_variant(event.to_string())
+        )
     }
     fn wire_value(&self, _ty: InferredType, _value: &str) -> String {
         unreachable!("refused by SwiftTarget::unsupported")

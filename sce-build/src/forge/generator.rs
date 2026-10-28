@@ -4712,6 +4712,233 @@ type {tag_type} int\n\nconst (\n{tag_consts})\n\n{structs}{raise_fns}"
     }
 }
 
+/// The pieces of a Swift machine's typed `_event.data` payload channel, which
+/// `state_machine.swift.jinja2` places: the twin of [`GoEventPayload`].
+#[derive(Debug, Clone, Default)]
+pub struct SwiftEventPayload {
+    /// The top-level declarations: the tag enum and one payload struct per event.
+    pub defs: String,
+    pub active: bool,
+    /// The policy's stored properties: the tag and one view per event.
+    pub policy_fields: String,
+    /// The policy's `populateEventMetadata`, which binds a typed carrier.
+    pub populate: String,
+    /// The body of `liftTypedPayload`: what every producer but the inject seam fills
+    /// is read out of `EventMetadata.data`, and a refusal is thrown for the engine to
+    /// raise as `error.execution`.
+    pub lift: String,
+    /// The policy's `clearEventMetadata`.
+    pub clear: String,
+    /// The per-event typed inject seams, an extension of the machine's `Engine`.
+    pub raise_seams: String,
+}
+
+/// The `PayloadFields` call that reads one EventSchema field out of a decoded
+/// `_event.data`, at the width the schema declares: the property it is assigned to
+/// carries the type, so a field widened in its schema cannot keep being read at the
+/// old width.
+fn swift_payload_reader(f: &SchemaField) -> String {
+    let id = &f.id;
+    match f.sce_type.present_type() {
+        // A 64-bit integer is read from the text of its digits, or from a number exact
+        // in a double.
+        SceType::Uint64 => format!("try fields.unsigned64(\"{id}\")"),
+        SceType::Int64 => format!("try fields.signed64(\"{id}\")"),
+        SceType::Uint8 | SceType::Uint16 | SceType::Uint32 => {
+            format!("try fields.unsigned(\"{id}\")")
+        }
+        SceType::Int8 | SceType::Int16 | SceType::Int32 => format!("try fields.signed(\"{id}\")"),
+        SceType::Float32 => format!("try fields.float32(\"{id}\")"),
+        SceType::Float64 => format!("try fields.float64(\"{id}\")"),
+        SceType::Bool => format!("try fields.truth(\"{id}\")"),
+        SceType::String => format!("try fields.text(\"{id}\")"),
+        SceType::Bytes => format!("try fields.bytes(\"{id}\")"),
+        SceType::Enum(_) => unreachable!("refused by SwiftTarget::unsupported"),
+    }
+}
+
+/// The `PayloadPair` that spells one EventSchema field for the inject seam's `data`,
+/// the wire the script engine binds `_event.data` from.
+fn swift_payload_pair(f: &SchemaField) -> String {
+    let id = &f.id;
+    match f.sce_type.present_type() {
+        SceType::Uint64 => format!(".unsigned64(\"{id}\", {id})"),
+        SceType::Int64 => format!(".signed64(\"{id}\", {id})"),
+        SceType::Uint8
+        | SceType::Uint16
+        | SceType::Uint32
+        | SceType::Int8
+        | SceType::Int16
+        | SceType::Int32 => format!(".integer(\"{id}\", {id})"),
+        SceType::Float32 => format!(".real(\"{id}\", Double({id}))"),
+        SceType::Float64 => format!(".real(\"{id}\", {id})"),
+        SceType::Bool => format!(".truth(\"{id}\", {id})"),
+        SceType::String => format!(".text(\"{id}\", {id})"),
+        SceType::Bytes => format!(".bytes(\"{id}\", {id})"),
+        SceType::Enum(_) => unreachable!("refused by SwiftTarget::unsupported"),
+    }
+}
+
+/// Build the [`SwiftEventPayload`] for `model`: the channel carries the events whose
+/// typed payload a lowered expression reads (`payload_events`, from the static
+/// lowering), and is inactive when none does.
+///
+/// A `sce-static` machine's guards are written by its lowering, so none is selected
+/// here (the Go and Rust builders select the typed guards of every other data model).
+pub fn build_swift_event_payload(
+    model: &crate::model::SCXMLModel,
+    payload_events: &std::collections::BTreeSet<String>,
+) -> SwiftEventPayload {
+    if payload_events.is_empty() {
+        return SwiftEventPayload::default();
+    }
+    let machine = filters::to_pascal_case(model.name.clone());
+    let tag_type = format!("{machine}PayloadTag");
+    let mut tag_cases = String::from("    case none\n");
+    let mut structs = String::new();
+    let mut policy_fields = format!("    var pendingPayloadTag: {tag_type} = .none\n");
+    let mut lift_cases = String::new();
+    let mut populate_cases = String::new();
+    let mut raise_seams = String::new();
+
+    for event in payload_events {
+        let schema = &model.imported_event_schemas[event];
+        let pascal = filters::to_event_variant(event.clone());
+        let case = filters::to_swift_variant(event.clone());
+        let struct_name = format!("{machine}{pascal}Payload");
+        let field = format!("pending{pascal}Payload");
+        let mut field_lines = String::new();
+        let mut reads = String::new();
+        let mut params = Vec::new();
+        let mut inits = Vec::new();
+        let mut pairs = Vec::new();
+        for f in &schema.fields {
+            let ty = swift_type(f.sce_type.present_type());
+            let zero = match f.sce_type.present_type() {
+                SceType::Bool => "false",
+                SceType::String => "\"\"",
+                SceType::Bytes => "[]",
+                SceType::Float32 | SceType::Float64 => "0.0",
+                _ => "0",
+            };
+            field_lines.push_str(&format!("    var {}: {ty} = {zero}\n", f.id));
+            reads.push_str(&format!(
+                "            payload.{} = {}\n",
+                f.id,
+                swift_payload_reader(f)
+            ));
+            params.push(format!("{}: {ty}", f.id));
+            inits.push(format!("{0}: {0}", f.id));
+            pairs.push(swift_payload_pair(f));
+        }
+        let decode = match crate::forge::schema_revision::defaults_wire(schema) {
+            Some(defaults) => format!(
+                "try PayloadFields.decode(metadata.data, defaults: \"{}\")",
+                filters::escape_swift(defaults)
+            ),
+            None => "try PayloadFields.decode(metadata.data)".to_string(),
+        };
+        lift_cases.push_str(&format!(
+            "        case .{case}:\n\
+             \x20           let fields = {decode}\n\
+             \x20           var payload = {struct_name}()\n\
+             {reads}\
+             \x20           {field} = payload\n\
+             \x20           pendingPayloadTag = .{case}\n"
+        ));
+        tag_cases.push_str(&format!("    case {case}\n"));
+        structs.push_str(&format!(
+            "/// The typed `_event.data` payload of `{event}` (NL-to-IR Item C1 Path A): what a\n\
+             /// natively lowered expression reads. Internal to the module; a host hands the\n\
+             /// values to the inject seam below.\n\
+             struct {struct_name} {{\n{field_lines}}}\n\n"
+        ));
+        policy_fields.push_str(&format!("    var {field} = {struct_name}()\n"));
+        populate_cases.push_str(&format!(
+            "        case let payload as {struct_name}:\n\
+             \x20           pendingPayloadTag = .{case}\n\
+             \x20           {field} = payload\n"
+        ));
+        // A host-run invocation's completion has a typed payload and no inject seam:
+        // the engine takes one only through `completeHostInvoke`, which checks the
+        // start is still running.
+        if crate::forge::typed_invoke::is_completion_binding(event) {
+            continue;
+        }
+        raise_seams.push_str(&format!(
+            "    /// Raises `{event}` with its payload, binding the event and the payload's\n\
+             \x20   /// values in one call so the pairing of a name and a type cannot be\n\
+             \x20   /// constructed inconsistently (NL-to-IR Item C1 Path A). Both carriers are\n\
+             \x20   /// filled: the typed one a native expression reads, and `data`, which is what\n\
+             \x20   /// every other reader of `_event.data` binds it from.\n\
+             \x20   public func raise{pascal}({params}) {{\n\
+             \x20       raiseExternalWithMeta(\n\
+             \x20           EventWithMetadata(\n\
+             \x20               {machine}Event.{case},\n\
+             \x20               metadata: EventMetadata(\n\
+             \x20                   data: payloadJSON({pairs}),\n\
+             \x20                   eventType: .externalEvent,\n\
+             \x20                   typedPayload: {struct_name}({inits})\n\
+             \x20               )\n\
+             \x20           )\n\
+             \x20       )\n\
+             \x20   }}\n\n",
+            params = params.join(", "),
+            pairs = pairs.join(", "),
+            inits = inits.join(", "),
+        ));
+    }
+    // `.none` first, so a delivery without a typed carrier matches no event.
+    let populate = format!(
+        "    public func populateEventMetadata(_ metadata: EventMetadata) {{\n\
+         \x20       pendingPayloadTag = .none\n\
+         \x20       switch metadata.typedPayload {{\n{populate_cases}\
+         \x20       default:\n\
+         \x20           break\n\
+         \x20       }}\n\
+         \x20   }}\n"
+    );
+    // ⚠ The lift's refusal is `error.execution` and a guard that does not fire, which
+    // is what the SCRIPT ENGINE answers for the same guard on the same data
+    // (§scxml-3.13). A native lowering that answered differently would make the
+    // optimisation observable. The raise is the engine's (`liftPayload`), so every
+    // machine answers alike; this only reports.
+    let lift = format!(
+        "    public func liftTypedPayload(event: {machine}Event, metadata: EventMetadata) throws {{\n\
+         \x20       // A typed carrier already bound the view, so the producer was the inject\n\
+         \x20       // seam and there is nothing to read out of `data`.\n\
+         \x20       if pendingPayloadTag != .none {{\n\
+         \x20           return\n\
+         \x20       }}\n\
+         \x20       switch event {{\n{lift_cases}\
+         \x20       default:\n\
+         \x20           break\n\
+         \x20       }}\n\
+         \x20   }}\n"
+    );
+    let defs = format!(
+        "// NL-to-IR Item C1 Path A: the typed `_event.data` payload channel for the\n\
+         // events whose payload a natively lowered expression reads: a tag, and one\n\
+         // `pending<Event>Payload` view per event on the policy.\n\
+         enum {tag_type} {{\n{tag_cases}}}\n\n{structs}"
+    );
+    let raise_seams = format!(
+        "extension Engine where Policy == {machine}Policy {{\n{}}}\n",
+        raise_seams.trim_end_matches('\n').to_string() + "\n"
+    );
+    SwiftEventPayload {
+        defs,
+        active: true,
+        policy_fields,
+        populate,
+        lift,
+        clear: format!(
+            "    public func clearEventMetadata() {{\n        pendingPayloadTag = .none\n    }}\n"
+        ),
+        raise_seams,
+    }
+}
+
 /// EventSchema native lowering — C++-codegen payload
 /// data, the C++ twin of [`build_rust_event_payload`] /
 /// [`build_go_event_payload`].

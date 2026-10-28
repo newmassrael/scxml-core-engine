@@ -2199,6 +2199,11 @@
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "SCE::Static",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "build_swift_event_payload",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {

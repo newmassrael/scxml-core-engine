@@ -172,6 +172,19 @@ private func sendType() -> Machine {
     )
 }
 
+private func payload() -> Machine {
+    let policy = StaticPayloadPolicy()
+    return drive(
+        policy,
+        variables: [
+            "day": { integer(policy.day) },
+            "late": { .bool(policy.late) },
+            "sinceEpoch": { integer(policy.sinceEpoch) },
+            "refusals": { integer(policy.refusals) },
+        ]
+    )
+}
+
 // MARK: - The scenarios
 
 // A counter counts to its flag and lets go: guards, `<assign>`, `<if>` and `<elseif>`
@@ -217,6 +230,15 @@ private func sendType() -> Machine {
 // resumes through it finds the variables it kept.
 @Test func aHistoryResumesWhereItsParentWasLeft() {
     replay("static_history", history())
+}
+
+// MARK: - Event payloads
+
+// An event's typed payload is read in a guard and in assignments, at the width its
+// schema declares: a value that does not fit is refused as `error.execution`, and
+// the guard that read it does not fire.
+@Test func anEventsTypedPayloadIsReadInAGuardAndInAssignments() {
+    replay("static_payload", payload())
 }
 
 // MARK: - Sends and cancels

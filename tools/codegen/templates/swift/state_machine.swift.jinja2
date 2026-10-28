@@ -126,6 +126,9 @@ public enum {{ machine_name }}Event: Int, Hashable, Sendable {
     case null = {{ ns.idx }}
 }
 
+{% if event_payload_active %}
+{{ event_payload_defs }}
+{% endif %}
 // ======================================================================
 // Policy
 // ======================================================================
@@ -153,6 +156,12 @@ public final class {{ machine_name }}Policy: StatePolicy {
     /// W3C SCXML 6.4: the queue the invoking parent installs, whose presence is
     /// the link to it. Unbounded; see `ParentEventQueue`.
     public var parentEventQueue: ParentEventQueue?
+{% if event_payload_active %}
+
+    // The typed `_event.data` of the event being processed, bound by the policy's
+    // `populateEventMetadata` or lifted by `liftTypedPayload`.
+{{ event_payload_policy_fields }}
+{% endif %}
 {% if static_fields %}
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
@@ -447,7 +456,23 @@ public final class {{ machine_name }}Policy: StatePolicy {
     /// W3C SCXML 5.10: `_event` is bound by the policy's guards, and this
     /// document's guards never read it, so there is nothing to bind.
     public func bindCurrentEvent(_ event: {{ machine_name }}Event, engine: Engine<{{ machine_name }}Policy>) {}
+{% if event_payload_active %}
+
+    /// Binds the typed `_event.data` view an inject seam carried (§scxml-5.10).
+{{ event_payload_populate }}
+
+    /// Reads the typed `_event.data` view out of the data every other producer
+    /// carries, and refuses what the schema does not admit (§scxml-3.13).
+{{ event_payload_lift }}
+
+    /// Forgets the typed view once the event's transition has been processed.
+{{ event_payload_clear }}
+{% endif %}
 
 {% include 'entry_exit_actions.swift.jinja2' %}
 {% include 'process_transition.swift.jinja2' %}
 }
+{% if event_payload_active %}
+
+{{ event_payload_raise_seams }}
+{% endif %}

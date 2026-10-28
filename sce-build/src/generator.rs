@@ -4151,6 +4151,10 @@ fn render_swift(env: &mut Environment, model: &SCXMLModel) -> Result<String, Gen
         .iter()
         .filter(|f| f.published)
         .collect();
+    // The typed `_event.data` channel of the events a lowered expression reads a
+    // field of (NL-to-IR Item C1 Path A).
+    let payload =
+        crate::forge::generator::build_swift_event_payload(model, &static_lowering.payload_events);
     model_lowered.into_artifact_coordinates();
     let model = &model_lowered;
 
@@ -4163,6 +4167,13 @@ fn render_swift(env: &mut Environment, model: &SCXMLModel) -> Result<String, Gen
         license_config => minijinja::Value::from_serialize(license_config()),
         static_fields => minijinja::Value::from_serialize(&static_lowering.fields),
         static_published => minijinja::Value::from_serialize(&static_published),
+        event_payload_active => payload.active,
+        event_payload_defs => &payload.defs,
+        event_payload_policy_fields => &payload.policy_fields,
+        event_payload_populate => &payload.populate,
+        event_payload_lift => &payload.lift,
+        event_payload_clear => &payload.clear,
+        event_payload_raise_seams => &payload.raise_seams,
     };
     tmpl.render(ctx).map_err(render_error)
 }
