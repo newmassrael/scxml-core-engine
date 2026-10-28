@@ -47,7 +47,7 @@ use crate::forge::error::{
 };
 use crate::forge::event_schema_check::schema_is_native_payload_eligible;
 use crate::forge::generator::host_param_type;
-use crate::forge::model::{EventSchemaModel, ForgeKind, SceType};
+use crate::forge::model::{EventSchemaModel, FieldType, ForgeKind, SceType};
 use crate::generator::Language;
 use crate::model::{Action, Param, SCXMLModel};
 use std::collections::{BTreeMap, BTreeSet};
@@ -237,7 +237,7 @@ fn one_argument_err(
 /// signature-comparison key and in the conflict diagnostic. Enum is included
 /// for exhaustiveness but never reached — enum-typed payloads are rejected by
 /// the eligibility check before signatures are collected.
-fn canonical_type(ty: &SceType) -> &'static str {
+pub(crate) fn canonical_type(ty: &SceType) -> &'static str {
     match ty {
         SceType::Uint8 => "uint8",
         SceType::Uint16 => "uint16",
@@ -253,6 +253,19 @@ fn canonical_type(ty: &SceType) -> &'static str {
         SceType::String => "string",
         SceType::Bytes => "bytes",
         SceType::Enum(_) => "enum",
+    }
+}
+
+/// [`canonical_type`] of an argument's declared type, which tells a value from
+/// the same value that may be absent: `int64` from `optional<int64>`
+/// (docs/adr/0055, step 10). The host method one name declares has one
+/// parameter type for each position, so two calls that disagree on it — one
+/// passing `x`, an optional, and another a plain `int64` — are a signature
+/// conflict like any other, and nothing is coerced to make them agree.
+fn canonical_argument_type(ty: &FieldType) -> String {
+    match ty {
+        FieldType::Scalar(scalar) => canonical_type(scalar).to_string(),
+        FieldType::Optional { elem } => format!("{OPTIONAL_PREFIX}{}>", canonical_type(elem)),
     }
 }
 
@@ -290,6 +303,42 @@ pub fn validate(
     imported_schemas: &BTreeMap<String, EventSchemaModel>,
     diag_label: &str,
 ) -> Result<(), Located<ForgeError>> {
+    let signatures = collect_signatures(scxml, imported_schemas, diag_label)?;
+    check_releases(scxml, diag_label)?;
+    check_host_operations(scxml, &signatures, diag_label)
+}
+
+/// For each host operation `scxml` declares, whether each of its arguments may
+/// be absent, in the document's order (docs/adr/0055, step 10): what a scenario
+/// that records the calls its machine made of its host reads to know where an
+/// absent argument is written as `null`. Empty for a document [`validate`]
+/// refuses, and for one that declares no action.
+pub fn arguments_that_may_be_absent(scxml: &SCXMLModel) -> BTreeMap<String, Vec<bool>> {
+    match collect_signatures(scxml, &scxml.imported_event_schemas, "") {
+        Ok(signatures) => signatures
+            .into_iter()
+            .map(|(name, (types, _, _))| {
+                let absent = types
+                    .iter()
+                    .map(|ty| ty.starts_with(OPTIONAL_PREFIX))
+                    .collect();
+                (name, absent)
+            })
+            .collect(),
+        Err(_) => BTreeMap::new(),
+    }
+}
+
+/// How [`canonical_argument_type`] begins the name of a type that may be absent.
+const OPTIONAL_PREFIX: &str = "optional<";
+
+/// The document-wide signature table of `scxml`'s host operations, each name
+/// registered at its first call site and every later call held to it.
+fn collect_signatures(
+    scxml: &SCXMLModel,
+    imported_schemas: &BTreeMap<String, EventSchemaModel>,
+    diag_label: &str,
+) -> Result<SignatureTable, Located<ForgeError>> {
     // Document-wide signature table: a `name` that recurs — on any transition
     // or in any entry/exit/initial block — must carry the same argument types
     // every time, so a single generated `Actions` trait method serves every
@@ -324,14 +373,7 @@ pub fn validate(
         }
 
         for transition in &state.transitions {
-            // A test of a payload field in the `cond` proves it in the content,
-            // as the statechart's judge reads it
-            // ([`crate::forge::narrowing::Facts::of_payload`]).
-            let mut proven = if transition.is_cpp_condition || transition.is_kt_condition {
-                crate::forge::narrowing::Facts::none()
-            } else {
-                crate::forge::narrowing::proves_written(&transition.cond, true).of_payload()
-            };
+            let mut proven = facts_of_condition(transition);
             for action in &transition.actions {
                 let scope = PayloadScope::Transition {
                     event: &transition.event,
@@ -349,8 +391,21 @@ pub fn validate(
             }
         }
     }
-    check_releases(scxml, diag_label)?;
-    check_host_operations(scxml, &signatures, diag_label)
+    Ok(signatures)
+}
+
+/// The fields of the payload proven present where the content of `transition`
+/// begins: a test of a payload field in the `cond` proves it in the content, as
+/// the statechart's judge reads it
+/// ([`crate::forge::narrowing::Facts::of_payload`]). Read by validation and by
+/// the lowering of each call, so an argument is judged under the same facts in
+/// both and a `.value` the first admitted is not refused by the second.
+fn facts_of_condition(transition: &crate::model::Transition) -> crate::forge::narrowing::Facts {
+    if transition.is_cpp_condition || transition.is_kt_condition {
+        crate::forge::narrowing::Facts::none()
+    } else {
+        crate::forge::narrowing::proves_written(&transition.cond, true).of_payload()
+    }
 }
 
 /// One site where a machine states a duty — an action whose effect is `duty`
@@ -729,7 +784,19 @@ fn static_signature(
                 .place(refusal),
                 diag_label,
             ),
-            ArgumentRefusal::Untyped => one_argument_err(
+            ArgumentRefusal::Untyped(crate::forge::types::InferredType::Null) => one_argument_err(
+                action,
+                arg,
+                diag_label,
+                format!(
+                    "argument '{}' has no type a host method could declare: `null` is the \
+                         absent value of the optional place it stands in, and an argument stands \
+                         in none, so the method's parameter would have no type; pass an optional \
+                         value that is absent, a variable declared `optional<T>`",
+                    arg.expr
+                ),
+            ),
+            ArgumentRefusal::Untyped(_) => one_argument_err(
                 action,
                 arg,
                 diag_label,
@@ -745,15 +812,15 @@ fn static_signature(
                 arg,
                 diag_label,
                 format!(
-                    "argument '{}' is {}, which may be absent, and a host method takes no \
-                     argument that may be absent yet: pass it with a default (`?? <value>`), \
-                     or pass its `.value` where a `!== null` test proves it present",
+                    "argument '{}' is {}, which may be absent, and a host method takes no value \
+                     of an enum or of a record, present or absent: pass the number or the text \
+                     it stands for, with a default where it may be absent (`?? <value>`)",
                     arg.expr,
                     ty.describe()
                 ),
             ),
         })?;
-        sig.push(canonical_type(&ty).to_string());
+        sig.push(canonical_argument_type(&ty));
     }
     Ok(sig)
 }
@@ -762,31 +829,48 @@ fn static_signature(
 pub(crate) enum ArgumentRefusal {
     /// The expression itself was refused by the expression layer.
     Expression(crate::forge::expr::Refusal),
-    /// It was accepted, but its type is not one a host method can declare.
-    Untyped,
-    /// It is an optional value (docs/adr/0055), which no host method takes yet.
+    /// It was accepted, but its type is not one a host method can declare: the
+    /// type it has (a list, a record, `null`, a name nothing typed).
+    Untyped(crate::forge::types::InferredType),
+    /// It is an optional value of an element no host method takes (a value of an
+    /// enum or a record, docs/adr/0055): the scalar an optional value is over is
+    /// a host method's parameter, [`FieldType::Optional`].
     Optional(crate::forge::types::InferredType),
 }
 
 /// The declared type a `<sce:action>` argument is passed as under the static
 /// data model: the argument judged against `ctx` and carried as the value it
-/// is ([`crate::forge::types::InferredType::to_sce_type`]). The one reading,
-/// shared by validation and by each backend's lowering, so the method a host
-/// implements and the call a machine makes cannot disagree.
+/// is ([`crate::forge::types::InferredType::to_sce_type`]), or as the optional
+/// value it is when the expression may be absent (docs/adr/0055, step 10) — the
+/// declared type of a field of an event schema, a scalar or an optional scalar,
+/// so no second type stands beside it for a host method to declare. The one
+/// reading, shared by validation and by each backend's lowering, so the method a
+/// host implements and the call a machine makes cannot disagree.
+///
+/// A value is not coerced to the type of another call of the same name: an
+/// argument that is `optional<int64>` at one call site and `int64` at another is
+/// two signatures ([`register_signature`]), as two different widths are.
 pub(crate) fn static_argument_type(
     ctx: &crate::forge::types::TypeCtx<'_>,
     arg: &Param,
-) -> Result<SceType, ArgumentRefusal> {
+) -> Result<FieldType, ArgumentRefusal> {
     let ty = crate::forge::expr::judge_into(
         &arg.expr,
         ctx,
         crate::forge::expr::Expected::Hint(crate::forge::types::InferredType::Unknown),
     )
     .map_err(ArgumentRefusal::Expression)?;
-    if ty.is_optional() {
-        return Err(ArgumentRefusal::Optional(ty));
+    if let crate::forge::types::InferredType::Optional(elem) = ty {
+        // A value of an enum or a record is no scalar a host method declares,
+        // present or absent.
+        return elem
+            .scalar()
+            .map(|elem| FieldType::Optional { elem })
+            .ok_or(ArgumentRefusal::Optional(ty));
     }
-    ty.to_sce_type().ok_or(ArgumentRefusal::Untyped)
+    ty.to_sce_type()
+        .map(FieldType::Scalar)
+        .ok_or(ArgumentRefusal::Untyped(ty))
 }
 
 /// The first call of each native action name: the signature every later
@@ -1020,13 +1104,14 @@ fn realization_member(lang: Language) -> &'static str {
 /// One host operation's signature: the ordered `(parameter name, declared
 /// type)` pairs its generated interface method takes.
 ///
-/// The declared [`SceType`] is kept rather than a rendered per-language type
-/// string, because one `SceType` does not always map to one parameter — C11
-/// lowers `bytes` to a `const uint8_t *` plus its `size_t` length sibling, a
-/// pair no single type string can express. The per-language expansion happens
-/// once, at emit, in [`params_for`] and [`args_for`], which is also the one
-/// place their arities are kept equal.
-type Signature = Vec<(String, SceType)>;
+/// The declared [`FieldType`] — a scalar, or an optional scalar for an argument
+/// that may be absent (docs/adr/0055, step 10) — is kept rather than a rendered
+/// per-language type string, because one `SceType` does not always map to one
+/// parameter — C11 lowers `bytes` to a `const uint8_t *` plus its `size_t`
+/// length sibling, a pair no single type string can express. The per-language
+/// expansion happens once, at emit, in [`params_for`] and [`args_for`], which
+/// is also the one place their arities are kept equal.
+type Signature = Vec<(String, FieldType)>;
 
 /// Per-transition payload context for lowering an arg-bearing `<sce:action>`.
 struct PayloadBinding<'a> {
@@ -1127,10 +1212,10 @@ fn call_expression(lang: Language, name: &str, args: &[String]) -> String {
 /// make a byte run readable at all in C. Keeping that expansion here (and its
 /// mirror in [`args_for`]) is what lets the signature table stay in declared
 /// `SceType`s while each backend spells them its own way.
-fn params_for(lang: Language, pname: &str, ty: &SceType) -> Vec<String> {
+fn params_for(lang: Language, pname: &str, ty: &FieldType) -> Vec<String> {
     let ident = param_ident(lang, pname);
     match (lang, ty) {
-        (Language::C11, SceType::Bytes) => vec![
+        (Language::C11, FieldType::Scalar(SceType::Bytes)) => vec![
             format!("const uint8_t *{ident}"),
             format!("size_t {ident}_len"),
         ],
@@ -1286,7 +1371,7 @@ fn render_with_options(
             if !is_native(action) {
                 continue;
             }
-            calls.lower(action, None);
+            calls.lower(action, None, &crate::forge::narrowing::Facts::none());
             any = true;
         }
 
@@ -1296,12 +1381,17 @@ fn render_with_options(
                 event: &event,
                 schema: schemas.get(&event),
             };
+            // The facts each call is judged under are the ones validation judged
+            // it under: those the `cond` proves, less what an action before it
+            // writes.
+            let mut proven = facts_of_condition(transition);
             for action in &mut transition.actions {
-                if !is_native(action) {
-                    continue;
+                let writes = crate::forge::narrowing::Writes::of(&*action);
+                if is_native(action) {
+                    calls.lower(action, Some(&binding), &proven);
+                    any = true;
                 }
-                calls.lower(action, Some(&binding));
-                any = true;
+                proven = proven.after(&writes);
             }
         }
     }
@@ -1493,7 +1583,12 @@ impl CallRendering<'_> {
     /// lowers to a bare host call in either case; an arg-bearing one reads its
     /// values from the event's typed payload and is wrapped in that backend's
     /// tag check.
-    fn lower(&mut self, action: &mut Action, binding: Option<&PayloadBinding>) {
+    fn lower(
+        &mut self,
+        action: &mut Action,
+        binding: Option<&PayloadBinding>,
+        proven: &crate::forge::narrowing::Facts,
+    ) {
         let lang = self.lang;
         let name = action.native_action_name.clone();
 
@@ -1519,6 +1614,7 @@ impl CallRendering<'_> {
                     event,
                     arg,
                     lang,
+                    proven,
                 )
                 .expect("validated: a sce-static argument is typed against this scope");
                 let pname = if arg.name.is_empty() {
@@ -1533,7 +1629,7 @@ impl CallRendering<'_> {
             }
             // The signature keeps the first call site's; the types the arguments
             // are held in while a failing one is received are this site's own.
-            let typed_args: Vec<(String, SceType)> = call_args
+            let typed_args: Vec<(String, FieldType)> = call_args
                 .iter()
                 .cloned()
                 .zip(params.iter().map(|(_, ty)| ty.clone()))
@@ -1600,7 +1696,7 @@ impl CallRendering<'_> {
             // An eligible schema holds no optional field (docs/adr/0055).
             let ty = f.sce_type.present_type();
             call_args.extend(args_for(lang, &accessor, field, ty));
-            params.push((pname, ty.clone()));
+            params.push((pname, FieldType::Scalar(ty.clone())));
         }
 
         self.payload_events.insert(binding.event.to_string());
@@ -2089,18 +2185,27 @@ fn kotlin_recording_host(
             .collect();
         // A `bytes` argument arrives as a `ByteArray`, which a data class
         // compares by reference; it is recorded as a copy in a `List<Byte>`,
-        // which compares by value, so the promise above holds for it too.
+        // which compares by value, so the promise above holds for it too. One
+        // that may be absent is a `ByteArray?`, recorded as a `List<Byte>?`.
         let fields: Vec<String> = sig
             .iter()
             .map(|(n, t)| match t {
-                SceType::Bytes => format!("val {}: List<Byte>", param_ident(lang, n)),
+                FieldType::Scalar(SceType::Bytes) => {
+                    format!("val {}: List<Byte>", param_ident(lang, n))
+                }
+                FieldType::Optional {
+                    elem: SceType::Bytes,
+                } => format!("val {}: List<Byte>?", param_ident(lang, n)),
                 _ => format!("val {}: {}", param_ident(lang, n), host_param_type(lang, t)),
             })
             .collect();
         let args: Vec<String> = sig
             .iter()
             .map(|(n, t)| match t {
-                SceType::Bytes => format!("{}.toList()", param_ident(lang, n)),
+                FieldType::Scalar(SceType::Bytes) => format!("{}.toList()", param_ident(lang, n)),
+                FieldType::Optional {
+                    elem: SceType::Bytes,
+                } => format!("{}?.toList()", param_ident(lang, n)),
                 _ => param_ident(lang, n),
             })
             .collect();
@@ -2158,10 +2263,19 @@ fn rust_recording_host(
     has_duty: bool,
 ) -> String {
     let lang = Language::Rust;
-    let owned = |t: &SceType| -> String {
+    // The type a recorded call holds an argument in: the owned copy of a borrowed
+    // text or byte string, present or inside the `Option` an argument that may be
+    // absent is taken in.
+    let owned = |t: &FieldType| -> String {
         match t {
-            SceType::String => "String".to_string(),
-            SceType::Bytes => "Vec<u8>".to_string(),
+            FieldType::Scalar(SceType::String) => "String".to_string(),
+            FieldType::Scalar(SceType::Bytes) => "Vec<u8>".to_string(),
+            FieldType::Optional {
+                elem: SceType::String,
+            } => "Option<String>".to_string(),
+            FieldType::Optional {
+                elem: SceType::Bytes,
+            } => "Option<Vec<u8>>".to_string(),
             _ => host_param_type(lang, t),
         }
     };
@@ -2224,8 +2338,14 @@ fn rust_recording_host(
             .map(|(n, t)| {
                 let id = param_ident(lang, n);
                 match t {
-                    SceType::String => format!("{id}: {id}.to_string()"),
-                    SceType::Bytes => format!("{id}: {id}.to_vec()"),
+                    FieldType::Scalar(SceType::String) => format!("{id}: {id}.to_string()"),
+                    FieldType::Scalar(SceType::Bytes) => format!("{id}: {id}.to_vec()"),
+                    FieldType::Optional {
+                        elem: SceType::String,
+                    } => format!("{id}: {id}.map(str::to_string)"),
+                    FieldType::Optional {
+                        elem: SceType::Bytes,
+                    } => format!("{id}: {id}.map(<[u8]>::to_vec)"),
                     _ => id,
                 }
             })
@@ -2808,8 +2928,8 @@ mod tests {
         sigs.insert(
             "append_fragment".to_string(),
             vec![
-                ("payload".to_string(), SceType::Bytes),
-                ("offset".to_string(), SceType::Uint32),
+                ("payload".to_string(), FieldType::Scalar(SceType::Bytes)),
+                ("offset".to_string(), FieldType::Scalar(SceType::Uint32)),
             ],
         );
         sigs.insert("reset_slot".to_string(), Vec::new());
@@ -3027,8 +3147,8 @@ mod tests {
         sigs.insert(
             "append_fragment".to_string(),
             vec![
-                ("payload".to_string(), SceType::Bytes),
-                ("offset".to_string(), SceType::Uint32),
+                ("payload".to_string(), FieldType::Scalar(SceType::Bytes)),
+                ("offset".to_string(), FieldType::Scalar(SceType::Uint32)),
             ],
         );
         sigs.insert("reset_slot".to_string(), Vec::new());
@@ -3112,5 +3232,176 @@ mod tests {
         );
         let plain = build_interface(Language::Rust, "MActions", &sigs, &[], false);
         assert!(!plain.contains("type "), "{plain}");
+    }
+
+    /// `show(day, note, blob, urgent)`, each argument one that may be absent
+    /// (docs/adr/0055, step 10).
+    fn optional_signatures() -> BTreeMap<String, Signature> {
+        let optional = |elem| FieldType::Optional { elem };
+        let mut sigs: BTreeMap<String, Signature> = BTreeMap::new();
+        sigs.insert(
+            "show".to_string(),
+            vec![
+                ("day".to_string(), optional(SceType::Int32)),
+                ("note".to_string(), optional(SceType::String)),
+                ("blob".to_string(), optional(SceType::Bytes)),
+                ("urgent".to_string(), optional(SceType::Bool)),
+            ],
+        );
+        sigs
+    }
+
+    /// The interface of every backend that lowers an argument that may be absent
+    /// declares the method's parameter in the backend's own optional type over the
+    /// type a present value is passed as: a Rust host borrows a present text and
+    /// byte string inside the `Option`, C++ takes the `std::optional` by value.
+    #[test]
+    fn an_argument_that_may_be_absent_is_the_backends_optional_type_in_the_interface() {
+        let sigs = optional_signatures();
+        for (lang, declared) in [
+            (
+                Language::Rust,
+                "    fn show(&mut self, day: Option<i32>, note: Option<&str>, \
+                 blob: Option<&[u8]>, urgent: Option<bool>);\n",
+            ),
+            (
+                Language::Kotlin,
+                "    fun show(day: Int?, note: String?, blob: ByteArray?, urgent: Boolean?)\n",
+            ),
+            (
+                Language::Go,
+                "\tShow(day optional.Of[int32], note optional.Of[string], \
+                 blob optional.Of[[]byte], urgent optional.Of[bool])\n",
+            ),
+            (
+                Language::Python,
+                "    def show(self, day: Optional[int], note: Optional[str], \
+                 blob: Optional[bytes], urgent: Optional[bool]) -> None:\n",
+            ),
+            (
+                Language::Cpp,
+                "    virtual void show(std::optional<int32_t> day, std::optional<std::string> note, \
+                 std::optional<std::vector<uint8_t>> blob, std::optional<bool> urgent) = 0;\n",
+            ),
+        ] {
+            let out = build_interface(lang, "MActions", &sigs, &[], false);
+            assert!(out.contains(declared), "{lang:?}:\n{out}");
+        }
+    }
+
+    /// C11 declares its struct per element, which the runtime does for a number and a
+    /// `bool`: the member takes the struct by value, after the `user_data` every member
+    /// is handed.
+    #[test]
+    fn c11_takes_a_number_and_a_bool_that_may_be_absent_in_the_struct_of_its_element() {
+        let optional = |elem| FieldType::Optional { elem };
+        let mut sigs: BTreeMap<String, Signature> = BTreeMap::new();
+        sigs.insert(
+            "show".to_string(),
+            vec![
+                ("day".to_string(), optional(SceType::Int32)),
+                ("urgent".to_string(), optional(SceType::Bool)),
+                ("ratio".to_string(), optional(SceType::Float64)),
+            ],
+        );
+        let out = build_interface(Language::C11, "m_actions_t", &sigs, &[], false);
+        assert!(
+            out.contains(
+                "    void (*show)(void *user_data, sce_optional_int32_t day, \
+                 sce_optional_bool_t urgent, sce_optional_float64_t ratio);\n"
+            ),
+            "{out}"
+        );
+    }
+
+    /// A recording host keeps a text and a byte string that may be absent as the owned
+    /// copy of a present one, and keeps the absent one as it is, so a recorded call
+    /// compares by value as every other does.
+    #[test]
+    fn the_recorders_keep_an_argument_that_may_be_absent_by_value() {
+        let sigs = optional_signatures();
+        let rust = rust_recording_host("MActions", &sigs, &[], false);
+        for needle in [
+            "    Show { day: Option<i32>, note: Option<String>, blob: Option<Vec<u8>>, \
+             urgent: Option<bool> },\n",
+            "fn show(&mut self, day: Option<i32>, note: Option<&str>, blob: Option<&[u8]>, \
+             urgent: Option<bool>) {",
+            "self.calls.push(MActionsCall::Show { day, note: note.map(str::to_string), \
+             blob: blob.map(<[u8]>::to_vec), urgent });",
+        ] {
+            assert!(rust.contains(needle), "`{needle}` in:\n{rust}");
+        }
+        let kotlin = build_interface(Language::Kotlin, "MActions", &sigs, &[], false);
+        for needle in [
+            "data class Show(val day: Int?, val note: String?, val blob: List<Byte>?, \
+             val urgent: Boolean?) : Call",
+            "recorded += Call.Show(day, note, blob?.toList(), urgent)",
+        ] {
+            assert!(kotlin.contains(needle), "`{needle}` in:\n{kotlin}");
+        }
+    }
+
+    /// The signature tells a value from the same value that may be absent, so two
+    /// calls of one action name that disagree on it are the conflict two types make.
+    #[test]
+    fn a_signature_tells_a_value_from_the_same_value_that_may_be_absent() {
+        let present = FieldType::Scalar(SceType::Int64);
+        let absent = FieldType::Optional {
+            elem: SceType::Int64,
+        };
+        assert_eq!(canonical_argument_type(&present), "int64");
+        assert_eq!(canonical_argument_type(&absent), "optional<int64>");
+        assert_ne!(
+            canonical_argument_type(&present),
+            canonical_argument_type(&absent)
+        );
+    }
+
+    /// An action whose arguments are written in `onentry` and `onexit` of one state.
+    fn shown(entry: &str, exit: &str) -> SCXMLModel {
+        parse(&format!(
+            r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+                      version="1.0" initial="s" datamodel="sce-static">
+                 <datamodel>
+                   <data id="due" sce:type="optional&lt;int32&gt;" expr="null"/>
+                   <data id="plain" sce:type="int32" expr="0"/>
+                 </datamodel>
+                 <state id="s">
+                   <onentry><sce:action name="show" effect="notice">{entry}</sce:action></onentry>
+                   <onexit><sce:action name="show" effect="notice">{exit}</sce:action></onexit>
+                 </state>
+               </scxml>"#
+        ))
+    }
+
+    /// An argument of an expression that may be absent is accepted, and the document
+    /// says which positions of the operation may be absent, in the document's order.
+    #[test]
+    fn an_argument_that_may_be_absent_is_accepted_and_reported_by_position() {
+        let both = r#"<sce:arg name="day" expr="due"/><sce:arg name="n" expr="plain"/>"#;
+        let model = shown(both, both);
+        assert!(validate(&model, &BTreeMap::new(), "t").is_ok());
+        assert_eq!(
+            arguments_that_may_be_absent(&model),
+            BTreeMap::from([("show".to_string(), vec![true, false])])
+        );
+    }
+
+    /// One method serves every call site of a name, so an argument that is
+    /// `optional<int32>` at one call and `int32` at another is a conflict, and nothing
+    /// is coerced to make the two agree.
+    #[test]
+    fn two_calls_that_disagree_on_whether_an_argument_may_be_absent_conflict() {
+        let model = shown(
+            r#"<sce:arg name="day" expr="due"/>"#,
+            r#"<sce:arg name="day" expr="plain"/>"#,
+        );
+        let refusal = validate(&model, &BTreeMap::new(), "t").expect_err("the signatures differ");
+        let text = format!("{:?}", refusal.error);
+        assert!(
+            text.contains("NativeActionSignatureConflict")
+                && text.contains("(int32) here disagree with (optional<int32>)"),
+            "{text}"
+        );
     }
 }

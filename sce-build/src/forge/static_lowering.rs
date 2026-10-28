@@ -865,6 +865,18 @@ pub trait StaticTarget {
             None => true,
         }
     }
+    /// Whether this target spells a host method's parameter of `optional<elem>`
+    /// (docs/adr/0055, step 10): the type the host interface declares for an
+    /// argument of a `<sce:action>` that may be absent. The generated backends
+    /// answer by language ([`crate::forge::generator::host_optional_argument_spelled`]);
+    /// the Interpreter hands its host the value its engine computes, `null` when
+    /// the argument is absent, so it spells every element.
+    fn holds_host_optional(&self, elem: &SceType) -> bool {
+        match self.expr_target().language() {
+            Some(lang) => crate::forge::generator::host_optional_argument_spelled(lang, elem),
+            None => true,
+        }
+    }
     /// The declaration the machine's own unit makes of the optional type over
     /// the record type `present` ([`Self::record_type`]), once however many
     /// variables hold one, after the declaration of the record itself: C11's one
@@ -1660,7 +1672,7 @@ pub trait StaticTarget {
         statement: &str,
         _callee: &str,
         _args: &[String],
-        _arg_types: &[SceType],
+        _arg_types: &[FieldType],
         failed: &str,
     ) -> String {
         self.receiving_call(statement, failed)
@@ -4199,6 +4211,7 @@ pub fn lower(
         sites: Default::default(),
         elements: Default::default(),
         next_if_ordinal: std::cell::Cell::new(max_if_ordinal(model) + 1),
+        host_optional: std::cell::Cell::new(false),
     };
 
     let refused = |what: &str, text: &str, refusal: Refusal| {
@@ -4894,6 +4907,12 @@ pub fn lower(
     let type_defs = declarations.type_defs;
     let mut adapter_defs = Vec::new();
     let mut imports: BTreeSet<String> = imports.into_iter().collect();
+    // A host operation that takes an argument that may be absent names the runtime's
+    // optional type in the host interface, though the machine holds no variable of
+    // it (`flag ? 3 : null`): the unit imports it as it does for a variable.
+    if rewrites.host_optional.get() {
+        imports.extend(target.optional_import());
+    }
     let payload_events_by_alias: std::collections::BTreeMap<String, String> = records
         .iter()
         .map(|(alias, schema)| (alias.clone(), schema.event_name.clone()))
@@ -6060,6 +6079,12 @@ struct Rewrites<'m> {
     /// choice the walk expands ([`expand_computed_type`]) never shares the flag a
     /// condition that fails is recorded on with one the author wrote.
     next_if_ordinal: std::cell::Cell<u32>,
+    /// Whether a host operation of the document takes an argument that may be
+    /// absent (docs/adr/0055, step 10), which the host interface the machine's
+    /// unit declares names the optional type of, so the unit imports the runtime's
+    /// where the target's import is not read off the generated text. Set by the
+    /// walk where it meets one, read once it is done.
+    host_optional: std::cell::Cell<bool>,
 }
 
 impl Rewrites<'_> {
@@ -7175,7 +7200,7 @@ impl StaticTarget for CppTarget {
         _statement: &str,
         callee: &str,
         args: &[String],
-        _arg_types: &[SceType],
+        _arg_types: &[FieldType],
         failed: &str,
     ) -> String {
         let locals: String = args
@@ -8343,7 +8368,7 @@ impl StaticTarget for GoTarget<'_> {
         _statement: &str,
         callee: &str,
         args: &[String],
-        _arg_types: &[SceType],
+        _arg_types: &[FieldType],
         failed: &str,
     ) -> String {
         let locals: String = args
@@ -9249,7 +9274,7 @@ impl StaticTarget for PythonTarget {
         statement: &str,
         _callee: &str,
         _args: &[String],
-        _arg_types: &[SceType],
+        _arg_types: &[FieldType],
         failed: &str,
     ) -> String {
         let on_failure = if failed.is_empty() { "pass" } else { failed };
@@ -10904,18 +10929,26 @@ impl StaticTarget for CTarget {
         _statement: &str,
         callee: &str,
         args: &[String],
-        arg_types: &[SceType],
+        arg_types: &[FieldType],
         failed: &str,
     ) -> String {
+        // An argument that may be absent is held in the struct `sce/forge/optional.h`
+        // declares for its element (docs/adr/0055, step 10), the type the host's
+        // member takes it in.
         let locals: String = args
             .iter()
             .zip(arg_types)
             .enumerate()
             .map(|(i, (arg, ty))| {
-                format!(
-                    "{} sce_arg{i} = {arg}; ",
-                    crate::forge::generator::c_type(ty)
-                )
+                let held = match ty {
+                    FieldType::Scalar(scalar) => {
+                        crate::forge::generator::c_type(scalar).to_string()
+                    }
+                    FieldType::Optional { .. } => {
+                        crate::forge::generator::host_param_type(Language::C11, ty)
+                    }
+                };
+                format!("{held} sce_arg{i} = {arg}; ")
             })
             .collect();
         let names: String = (0..args.len()).map(|i| format!(", sce_arg{i}")).collect();
@@ -11869,7 +11902,7 @@ impl StaticTarget for SwiftTarget {
         _statement: &str,
         callee: &str,
         args: &[String],
-        _arg_types: &[SceType],
+        _arg_types: &[FieldType],
         failed: &str,
     ) -> String {
         let locals: String = args
@@ -11984,8 +12017,9 @@ pub(crate) struct StaticArgument {
     /// when [`Self::reads_payload`], the bound payload.
     pub text: String,
     /// The type the host method declares for it
-    /// ([`crate::forge::native_action::static_argument_type`]).
-    pub ty: SceType,
+    /// ([`crate::forge::native_action::static_argument_type`]): a scalar, or an
+    /// optional scalar for an argument that may be absent (docs/adr/0055, step 10).
+    pub ty: FieldType,
     /// Whether it reads the triggering event's typed payload, so the call
     /// must sit under the payload channel's guard.
     pub reads_payload: bool,
@@ -11998,27 +12032,33 @@ pub(crate) struct StaticArgument {
 /// judged against the scope validation judged it against — the document's
 /// `scope`, and the event's payload when the action sits on a transition
 /// whose event carries one — and spelled with the renames every other
-/// lowered expression takes. `None` for an argument validation refused,
-/// which never reaches here, and for a backend that does not lower the model.
+/// lowered expression takes. `proven` are the subjects of the payload the
+/// transition's `cond` proves present where the action stands (docs/adr/0055,
+/// section 3), so a `.value` validation admitted is lowered and not refused. `None`
+/// for an argument validation refused, which never reaches here, and for a backend
+/// that does not lower the model.
 pub(crate) fn lower_static_argument(
     scope: &StaticScope,
     event: Option<(&str, &EventSchemaModel)>,
     arg: &crate::model::Param,
     lang: Language,
+    proven: &Facts,
 ) -> Option<StaticArgument> {
     let target = target_for(lang)?;
     let paths = scope.paths(event.map(|(_, schema)| schema));
-    let ctx = scope.ctx(&paths, &[]);
+    let ctx = scope.ctx(&paths, &[]).proving(proven.clone());
     let names = names(scope, target);
     let accessor = event.map(|(event, _)| target.payload_accessor(event));
     let renames = renames(&names, accessor.as_deref(), target);
     let ty = crate::forge::native_action::static_argument_type(&ctx, arg).ok()?;
+    // The argument is lowered into a place of its own type: an optional value is
+    // read as it is, and is lifted into nothing.
     let lowered = transpile_into_receiving(
         &arg.expr,
         target.expr_target(),
         &ctx,
         &renames,
-        InferredType::from_sce_type(&ty),
+        InferredType::of_field(&ty),
     )
     .ok()?;
     Some(StaticArgument {
@@ -12039,7 +12079,7 @@ pub(crate) fn receive_static_statement(
     lang: Language,
     statement: &str,
     callee: &str,
-    args: &[(String, SceType)],
+    args: &[(String, FieldType)],
     machine: &str,
     raises_error: bool,
     construct: &str,
@@ -12053,7 +12093,7 @@ pub(crate) fn receive_static_statement(
     } else {
         String::new()
     };
-    let (texts, types): (Vec<String>, Vec<SceType>) = args.iter().cloned().unzip();
+    let (texts, types): (Vec<String>, Vec<FieldType>) = args.iter().cloned().unzip();
     Some(target.receiving_host_call(statement, callee, &texts, &types, &failed))
 }
 
@@ -12889,6 +12929,33 @@ fn lower_action(
                 reads_payload |= reads(&param.expr);
                 let value = lower(&param.expr, InferredType::Unknown)?;
                 rewrites.note(&param.expr, param.expr_spelling.as_ref(), &value.text);
+            }
+        }
+        // A host operation a generated backend declares as a method of its host
+        // interface (`forge::native_action` renders the call): an argument that may
+        // be absent is the parameter of the backend's optional type over its element
+        // (docs/adr/0055, step 10), which a target with no spelling of one for that
+        // element refuses by name. Validation judged the arguments; one it refused
+        // is not asked about again.
+        "native_action" => {
+            for param in &action.params {
+                if let Ok(FieldType::Optional { elem }) =
+                    crate::forge::native_action::static_argument_type(ctx, param)
+                {
+                    if !target.holds_host_optional(&elem) {
+                        return Err(optional_not_lowered(
+                            &format!(
+                                "`<sce:arg expr=\"{}\">` of the host operation `{}`, of type \
+                                 optional<{}>",
+                                param.expr,
+                                action.native_action_name,
+                                crate::forge::native_action::canonical_type(&elem)
+                            ),
+                            lang,
+                        ));
+                    }
+                    rewrites.host_optional.set(true);
+                }
             }
         }
         // What a `<send>` carries is read from the machine's fields now, when

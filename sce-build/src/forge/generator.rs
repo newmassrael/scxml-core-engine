@@ -1327,11 +1327,70 @@ pub(crate) fn rust_param_type(ty: &SceType) -> String {
 /// express is C11's `bytes`, which is a pointer plus a length — two parameters
 /// from one field — and `native_action::params_for` owns that expansion.
 ///
-/// Primitive by construction: every `ty` here is a field of a
-/// payload-eligible EventSchema, and `schema_is_native_payload_eligible`
-/// refuses an enum-typed one before any signature is collected.
-pub(crate) fn host_param_type(lang: crate::generator::Language, ty: &SceType) -> String {
-    LangCtx::primitive(lang).param_type(ty)
+/// Primitive by construction: every `ty` here is a scalar a payload field or a
+/// typed expression has, or that scalar made optional, and no value of an enum
+/// is a host argument (`native_action::static_argument_type` refuses it, and
+/// `schema_is_native_payload_eligible` refuses an enum-typed field before any
+/// signature is collected).
+///
+/// An argument that may be absent (docs/adr/0055, step 10) is the backend's own
+/// optional type over the type a present value is passed as: the one spelling
+/// every other surface of the backend gives the type ([`optional_of`]), and on
+/// C11 the struct `sce/forge/optional.h` declares for the element. A text or a
+/// byte string a Rust host borrows is borrowed inside the optional too
+/// (`Option<&str>`, `Option<&[u8]>`), as an algorithm's parameter borrows it;
+/// C++ takes the optional by value over the type the machine holds the present
+/// value in, as its algorithm slots do.
+pub(crate) fn host_param_type(lang: crate::generator::Language, ty: &FieldType) -> String {
+    let ctx = LangCtx::primitive(lang);
+    match ty {
+        FieldType::Scalar(scalar) => ctx.param_type(scalar),
+        FieldType::Optional { elem } => match lang {
+            crate::generator::Language::C11 => crate::forge::static_lowering::c11_optional_type(
+                c_type(elem),
+            )
+            .unwrap_or_else(|| {
+                panic!(
+                    "a C11 host method's optional parameter of {elem:?} was spelled: \
+                         `host_optional_argument_spelled` refuses the elements that have no struct \
+                         where the machine is lowered"
+                )
+            }),
+            crate::generator::Language::Rust => format!("Option<{}>", rust_param_type(elem)),
+            crate::generator::Language::Swift => no_swift_emitter("host_param_type"),
+            crate::generator::Language::Cpp
+            | crate::generator::Language::Kotlin
+            | crate::generator::Language::Go
+            | crate::generator::Language::Python => {
+                let present = ctx.type_name(elem);
+                optional_of(lang, &present)
+                    .expect("these backends spell it as a wrap of the present type")
+            }
+        },
+    }
+}
+
+/// Whether the backend `lang` spells a host method's parameter of `optional<elem>`
+/// (docs/adr/0055, step 10): the type [`host_param_type`] writes. Every element a
+/// host argument can be — a number, a `bool`, a text, a byte string — is one on
+/// every backend but C11, whose struct is declared per element and, for a text or a
+/// byte string, over a buffer of a bound: a host method's parameter declares none,
+/// so an optional text or byte string is refused there by name, as an algorithm's
+/// slot of one is ([`algorithm_optional_spelled`]). A value of an enum or a record
+/// is no host argument on any backend, so it never reaches the question.
+pub(crate) fn host_optional_argument_spelled(
+    lang: crate::generator::Language,
+    elem: &SceType,
+) -> bool {
+    match lang {
+        crate::generator::Language::C11 => AlgorithmValueType::list_elem_admitted(elem),
+        crate::generator::Language::Swift => false,
+        crate::generator::Language::Rust
+        | crate::generator::Language::Cpp
+        | crate::generator::Language::Kotlin
+        | crate::generator::Language::Go
+        | crate::generator::Language::Python => true,
+    }
 }
 
 // ── Per-language literal formatters ───────────────────────────
