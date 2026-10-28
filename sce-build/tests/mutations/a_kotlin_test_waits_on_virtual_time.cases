@@ -1,0 +1,53 @@
+# Mutation cases for "a Kotlin test waits for a machine on a clock it owns".
+#
+# Run with `scripts/mutate sce-build/tests/mutations/a_kotlin_test_waits_on_virtual_time.cases`.
+#
+# The oracle scans the Kotlin test sources for the three ways of reading the
+# wall, with comments removed first. Five defects would let a wall-clock wait
+# back in without a red: the comment stripping gives out in either direction,
+# a call stops being recognised, or either of the two lists stops being told
+# from the other. Each case below disables one of them in the oracle itself.
+#
+# What no case here can cover is the population floor (`population >= 100`):
+# lowering it changes nothing while the tree is the size it is, so a case
+# against it would only ever report SURVIVED.
+
+mutation_tests -p sce-build --features cli --test a_kotlin_test_waits_on_virtual_time
+mutation_targets sce-build/tests/a_kotlin_test_waits_on_virtual_time.rs
+
+# A block comment is read as code, so the files that explain what they
+# replaced are refused for explaining it.
+mutation_case "a block comment is no longer removed" <<'PY'
+edit("sce-build/tests/a_kotlin_test_waits_on_virtual_time.rs",
+     'while let Some(open) = rest.find("/*") {',
+     'while let Some(open) = rest.find("/*#") {')
+PY
+
+# A line comment is read as code, the same refusal by the other door.
+mutation_case "a line comment is no longer removed" <<'PY'
+edit("sce-build/tests/a_kotlin_test_waits_on_virtual_time.rs",
+     '.map(|line| line.split("//").next().unwrap_or(""))',
+     '.map(|line| line)')
+PY
+
+# A call stops being recognised: the suite goes back to sleeping and the scan
+# sees nothing.
+mutation_case "a sleep is no longer a wait on the wall" <<'PY'
+edit("sce-build/tests/a_kotlin_test_waits_on_virtual_time.rs",
+     '["currentTimeMillis", "Thread.sleep", "nanoTime"]',
+     '["currentTimeMillis", "Thread.sleepx", "nanoTime"]')
+PY
+
+# A new wait is let through because the file already has a reason named.
+mutation_case "every file that reads the wall is taken as named" <<'PY'
+edit("sce-build/tests/a_kotlin_test_waits_on_virtual_time.rs",
+     '.filter(|file| !allowed.contains(&file.as_str()))',
+     '.filter(|file| allowed.contains(&file.as_str()))')
+PY
+
+# A converted file keeps its licence, free for the next wait to borrow.
+mutation_case "a named file that no longer reads the wall is kept" <<'PY'
+edit("sce-build/tests/a_kotlin_test_waits_on_virtual_time.rs",
+     '.filter(|file| !reading.iter().any(|r| r == file))',
+     '.filter(|file| reading.iter().any(|r| r == file) && false)')
+PY
