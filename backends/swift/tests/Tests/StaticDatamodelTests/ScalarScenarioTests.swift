@@ -197,6 +197,65 @@ private func enumeration() -> Machine {
     )
 }
 
+private func list() -> Machine {
+    let policy = StaticListPolicy()
+    return drive(
+        policy,
+        variables: [
+            "picked": { integers(policy.picked) },
+            "refusals": { integer(policy.refusals) },
+            "count": { integer(policy.count) },
+        ]
+    )
+}
+
+private func listIndex() -> Machine {
+    let policy = StaticListIndexPolicy()
+    return drive(
+        policy,
+        variables: [
+            "picked": { integers(policy.picked) },
+            "cursor": { integer(policy.cursor) },
+            "under": { integer(policy.under) },
+            "first": { integer(policy.first) },
+            "last": { integer(policy.last) },
+            "ordered": { .bool(policy.ordered) },
+            "room": { .bool(policy.room) },
+            "count": { integer(policy.count) },
+            "refusals": { integer(policy.refusals) },
+        ]
+    )
+}
+
+private func foreachList() -> Machine {
+    let policy = StaticForeachPolicy()
+    return drive(
+        policy,
+        variables: [
+            "picked": { integers(policy.picked) },
+            "total": { integer(policy.total) },
+            "weighted": { integer(policy.weighted) },
+            "small": { integer(policy.small) },
+            "crossings": { integer(policy.crossings) },
+            "visited": { integer(policy.visited) },
+            "finished": { integer(policy.finished) },
+            "errors": { integer(policy.errors) },
+        ]
+    )
+}
+
+private func blockEndsList() -> Machine {
+    let policy = StaticBlockEndsListPolicy()
+    return drive(
+        policy,
+        variables: [
+            "picked": { integers(policy.picked) },
+            "afterAppend": { integer(policy.afterAppend) },
+            "errors": { integer(policy.errors) },
+        ]
+    )
+}
+
 // MARK: - The scenarios
 
 // A counter counts to its flag and lets go: guards, `<assign>`, `<if>` and `<elseif>`
@@ -242,6 +301,31 @@ private func enumeration() -> Machine {
 // resumes through it finds the variables it kept.
 @Test func aHistoryResumesWhereItsParentWasLeft() {
     replay("static_history", history())
+}
+
+// MARK: - Lists
+
+// A list is filled to its bound and emptied: the append that would pass the bound is
+// refused as `error.execution` and leaves the list as it was.
+@Test func aListIsFilledToItsBoundAndEmptied() {
+    replay("static_list", list())
+}
+
+// An element is read by its index, and an index outside the list is refused rather
+// than read.
+@Test func aListElementIsReadByItsIndex() {
+    replay("static_list_index", listIndex())
+}
+
+// A `<foreach>` walks the list as it was when the loop began, so a body that appends to
+// the list or empties it does not move it.
+@Test func aForeachWalksAListVariable() {
+    replay("static_foreach", foreachList())
+}
+
+// An append that fails ends its block, and only its block.
+@Test func aFailingAppendEndsItsBlockAndOnlyItsBlock() {
+    replay("static_block_ends_list", blockEndsList())
 }
 
 // MARK: - Enums

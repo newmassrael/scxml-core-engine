@@ -76,6 +76,11 @@ func integer<T: BinaryInteger>(_ value: T) -> JSONValue {
     .number(String(value))
 }
 
+/// A list of integers as a scenario writes it: its elements, in order.
+func integers<T: BinaryInteger>(_ values: [T]) -> JSONValue {
+    .array(values.map { integer($0) })
+}
+
 /// A real variable as a scenario writes it. A single widens to the double it is,
 /// exactly, wherever it crosses a boundary (SCE_FORGE.md §3.4.1).
 func real(_ value: Double) -> JSONValue {

@@ -227,6 +227,13 @@ public enum Checked {
         return xs[index]
     }
 
+    /// `value` as an element of `list`, which gives a literal the element's type: the
+    /// value an append stores is computed into a local before it is appended, and a
+    /// local of a literal alone would be an `Int`.
+    public static func element<T>(of list: [T], _ value: T) -> T {
+        value
+    }
+
     /// `value`, or an out-of-range failure thrown for a reading that found nothing: the
     /// shape an enum's `fromUnderlying` answers (a number no variant declares), which a
     /// call that may fail passes on through `take`.

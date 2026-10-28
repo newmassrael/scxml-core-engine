@@ -10344,6 +10344,8 @@ impl SwiftTarget {
         for action in actions {
             match action.action_type.as_str() {
                 "assign" | "log" | "if" | "raise" | "cancel" => {}
+                // A list is filled, emptied and walked by native statements.
+                "sce_append" | "sce_clear" | "foreach" => {}
                 "send" => {
                     if let Some(what) = Self::unlowered_send(action) {
                         return Some(what);
@@ -10424,12 +10426,19 @@ impl StaticTarget for SwiftTarget {
         // A scalar of a number, a bool or a string; an enum, a record, a list, a
         // byte string and an optional value are not spelled yet.
         if let Some(var) = scope.variables.iter().find(|v| {
-            !v.value_type
-                .as_ref()
-                .is_some_and(|t| t.scalar().is_some_and(|ty| !matches!(ty, SceType::Bytes)))
+            !v.value_type.as_ref().is_some_and(|t| {
+                t.scalar().is_some_and(|ty| !matches!(ty, SceType::Bytes))
+                    // A list of numbers or truth values, bound by `sce:capacity`; a list
+                    // of enums or of records is not spelled yet.
+                    || t.list_elem().is_some_and(|elem| {
+                        elem.scalar()
+                            .is_some_and(|ty| !matches!(ty, SceType::Enum(_) | SceType::Bytes))
+                    })
+            })
         }) {
             return Some(format!(
-                "<data id=\"{}\"> of a record, list, byte string or optional type",
+                "<data id=\"{}\"> of a record, a list of enums or records, a byte string or an \
+                 optional type",
                 var.id
             ));
         }
@@ -10613,11 +10622,13 @@ impl StaticTarget for SwiftTarget {
     fn enum_number_symbols(&self, ty: &str, _model: &EnumModel) -> (String, String) {
         (format!("{ty}.toUnderlying"), format!("{ty}.fromUnderlying"))
     }
-    fn list_type(&self, _elem: &SceType) -> String {
-        unreachable!("refused by SwiftTarget::unsupported")
+    // An `Array` of the element: a value, so a host that reads one holds a copy and
+    // cannot write through it into what the machine keeps.
+    fn list_type(&self, elem: &SceType) -> String {
+        format!("[{}]", crate::forge::generator::swift_type(elem))
     }
     fn list_view(&self, _elem: &SceType) -> Option<String> {
-        unreachable!("refused by SwiftTarget::unsupported")
+        None
     }
     fn record_list_type(&self, _record: &str) -> String {
         unreachable!("refused by SwiftTarget::unsupported")
@@ -10626,7 +10637,7 @@ impl StaticTarget for SwiftTarget {
         unreachable!("refused by SwiftTarget::unsupported")
     }
     fn list_empty(&self) -> String {
-        unreachable!("refused by SwiftTarget::unsupported")
+        "[]".to_string()
     }
     // The bound a string variable keeps, counted in UTF-8 bytes
     // (`Checked.bounded`, which records the failure and answers the empty text).
@@ -10656,19 +10667,52 @@ impl StaticTarget for SwiftTarget {
             filters::escape_swift(label.to_string())
         )
     }
+    // An expression that is `true` when the append failed: the list is full, or the
+    // value could not be computed. The room is checked first, so a full list computes
+    // nothing, and the value is computed into a local before it is appended, so a
+    // failed one leaves the list as it was. The local takes the element's type from the
+    // list, which a literal alone could not give it (`Checked.element`).
     fn append(
         &self,
-        _target: &str,
-        _capacity: u32,
-        _value: &str,
+        target: &str,
+        capacity: u32,
+        value: &str,
         _value_can_fail: bool,
-        _overflow: &str,
-        _failed: &str,
+        overflow: &str,
+        failed: &str,
     ) -> String {
-        unreachable!("refused by SwiftTarget::unsupported")
+        format!(
+            "{{ () -> Bool in var sceFailure = Failure(); \
+             if {target}.count >= {capacity} {{ {} }}; \
+             let sceValue = Checked.element(of: {target}, {value}); \
+             if sceFailure.failed {{ {} }}; \
+             {target}.append(sceValue); return false }}()",
+            Self::then(&[overflow, "return true"]),
+            Self::then(&[failed, "return true"]),
+        )
     }
-    fn clear(&self, _target: &str) -> String {
-        unreachable!("refused by SwiftTarget::unsupported")
+    fn clear(&self, target: &str) -> String {
+        format!("{target}.removeAll()")
+    }
+    // The loop walks the list as it was when it began (§scxml-4.6: a shallow copy): an
+    // `Array` is a value, so a body that appends to or empties the list does not move
+    // it. The position is a `uint32`, as `len` is, and a name the body never reads is
+    // still used.
+    fn foreach_loop(
+        &self,
+        list: &str,
+        item: &str,
+        index: Option<&str>,
+    ) -> Option<(String, String)> {
+        Some(match index {
+            None => (format!("for {item} in {list}"), format!("_ = {item}")),
+            Some(index) => (
+                format!("for (sceIndex, {item}) in {list}.enumerated()"),
+                format!(
+                    "let {index} = UInt32(truncatingIfNeeded: sceIndex); _ = {index}; _ = {item}"
+                ),
+            ),
+        })
     }
     fn raise_execution_error(&self, machine: &str, message: &str) -> String {
         format!(
