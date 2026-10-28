@@ -2302,6 +2302,17 @@ pub fn transpile_lvalue(
     let emitted = match target {
         ExprTarget::Cpp => emit_cpp(&ast, InferredType::Unknown)?,
         ExprTarget::Kotlin => emit_kotlin(&ast, InferredType::Unknown)?,
+        // A place that holds an optional text or byte string is read borrowed
+        // ([`rust_optional::view`]); the place assigned to is the storage itself.
+        ExprTarget::Rust
+            if matches!(ty, InferredType::Optional(_))
+                && matches!(
+                    ast.kind,
+                    ExprKind::Ident(_) | ExprKind::Raw(_) | ExprKind::Member { .. }
+                ) =>
+        {
+            rust_emit_value(&ast)?
+        }
         ExprTarget::Rust => emit_rust(&ast, InferredType::Unknown)?,
         ExprTarget::Go => emit_go(&ast, InferredType::Unknown)?,
         ExprTarget::Swift => swift::emit(&ast, InferredType::Unknown)?,

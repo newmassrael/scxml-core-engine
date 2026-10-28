@@ -220,8 +220,8 @@ fn kotlin_hands_an_optional_record_to_an_algorithm_by_the_name_that_holds_it() {
         "call_PickCount__nv",
     ] {
         let signature = format!(
-            "private fun {adapter}(p0: OptionalRecordCallItemRecord?, p1: \
-             List<OptionalRecordCallItemRecord>): Int {{"
+            "private fun {adapter}(p0: ProbeItemRecord?, p1: \
+             List<ProbeItemRecord>): Int {{"
         );
         holds_each(&written, &[signature.as_str()]);
     }

@@ -287,7 +287,7 @@ fn an_algorithm_holds_an_optional_text_enum_and_record_in_every_slot() {
         let needles = [
             format!("{spelled} given"),
             format!("{spelled} held = std::nullopt;"),
-            format!("inline {spelled}\n"),
+            format!("inline {spelled}"),
         ];
         let needles: Vec<&str> = needles.iter().map(String::as_str).collect();
         holds_each(&out, &needles);
@@ -499,11 +499,12 @@ fn each_way_an_optional_record_is_handed_to_an_algorithm_has_its_adapter() {
             "call_YearOf__v(v_day)",
             "call_YearOf__n(std::nullopt)",
             "SCE::Forge::mapPresent(p0, [&](const ",
-            "{/*year=*/scePresent.year, /*month=*/scePresent.month, /*dayOfMonth=*/scePresent.dayOfMonth}",
+            "SchemaDayPayload{/*year=*/scePresent.year, /*month=*/scePresent.month,",
             // The payload and the loop's item, lifted.
             "call_YearOf__p(",
             "call_YearOf__i(",
-            "std::optional<SCE::Generated::SchemaDay::SchemaDayPayload>(SCE::Generated::SchemaDay::SchemaDayPayload{/*year=*/p0.year, /*month=*/p0.month, /*dayOfMonth=*/p0.dayOfMonth})",
+            "std::optional<SCE::Generated::SchemaDay::SchemaDayPayload>(SCE::Generated::SchemaDay::SchemaDayPayload{",
+            "/*year=*/p0.year, /*month=*/p0.month, /*dayOfMonth=*/p0.dayOfMonth}",
         ],
     );
 }

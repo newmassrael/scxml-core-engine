@@ -1079,7 +1079,7 @@ fn rust_crosses_an_adapter_with_an_optional_text_and_an_optional_enum_field() {
         "-> Option<String> {",
         "r.title.as_deref().map(|sce_present| \
          ::sce_portable_bytes::SceString::<16>::held(sce_present))",
-        "(r.status).map(|sce_present| match sce_present {",
+        "status: match r.status { Some(sce_present) => Some(match sce_present {",
         "Some(sce_forge_runtime::algorithm::bounded(sce_present, 16)?)",
     ] {
         assert!(
@@ -1303,13 +1303,16 @@ fn c11_hands_an_algorithm_an_optional_record_whatever_holds_it() {
     c11_writes(
         &written,
         &[
-            // One adapter for the variables, another for `null`.
+            // One adapter for the optional record variable, one for the record
+            // variable and one for `null`.
+            "call_PickCount__ov(",
             "call_PickCount__vv(",
             "call_PickCount__nv(",
-            // `null` is the absent value, a record variable is lifted, and an
-            // optional record variable is handed as it is.
-            "sce_optional_record_optional_record_probe_record_item_none()",
-            "sce_optional_record_optional_record_probe_record_item_some(sm->policy.v_draft)",
+            // `null` is the absent value, a record variable is lifted by its
+            // adapter, and an optional record variable is handed as it is.
+            "sce_optional_record_probe_record_item_none()",
+            "call_PickCount__vv(sm->policy.v_draft,",
+            "call_PickCount__ov(sm->policy.v_pick,",
         ],
     );
     assert!(

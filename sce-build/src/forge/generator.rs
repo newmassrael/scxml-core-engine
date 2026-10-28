@@ -30055,19 +30055,20 @@ fn lower_algorithm_stmt(
                 ));
                 return Ok(());
             }
-            // A text field of the present value of an optional record local is
-            // written into its buffer as a record's is, `<name>.value.<field>`
-            // (docs/adr/0055, step 9): the narrowing judged the record present.
+            // A field of the present value of an optional record local is written
+            // as a record's is, `<name>.value.<field>` (docs/adr/0055, step 9): a
+            // text into its buffer, any other value as the value assigned to a place
+            // of the field's type. The narrowing judged the record present.
             if lang == Language::C11 {
-                let present_text = trimmed_target.split_once('.').and_then(|(root, rest)| {
+                let present_field = trimmed_target.split_once('.').and_then(|(root, rest)| {
                     let alias = optional_records.get(root.trim())?;
                     let record = resolve_record(imports, alias, None, "<sce:assign>").ok()?;
                     let field = record.field(rest.trim().strip_prefix("value.")?)?;
-                    matches!(field.ty, FieldType::Scalar(SceType::String))
-                        .then(|| (root.trim(), field))
+                    matches!(field.ty, FieldType::Scalar(_)).then(|| (root.trim(), field))
                 });
-                if let Some((root, field)) = present_text {
-                    let value = lower_text_write(rhs, expr_spelling.as_ref(), field, ctx)?;
+                if let Some((root, field)) = present_field {
+                    let value =
+                        lower_field_write(rhs, expr_spelling.as_ref(), field, ctx, type_ctx)?;
                     out.push_str(&format!(
                         "{pad}{}.value.{} = {value};\n",
                         l.local_id(root),
@@ -31061,18 +31062,28 @@ fn lower_algorithm_stmt(
                     };
                     let lowered = match whole {
                         Some(whole) => whole,
-                        // A return owns the value of an optional it answers: Rust reads
-                        // an optional text or byte string borrowed, and the signature
-                        // declares the owned `Option<String>` (docs/adr/0055, step 9).
-                        None if return_ty.is_optional() => expr::transpile_into_owned(
-                            rhs,
-                            l.expr_target(),
-                            type_ctx,
-                            renames,
+                        // A return owns the optional text or byte string it answers:
+                        // Rust reads one borrowed, and the signature declares the
+                        // owned `Option<String>` (docs/adr/0055, step 9). An optional
+                        // record is moved out as it is, as the last use of its place.
+                        None if matches!(
                             return_ty,
-                        )
-                        .map(|lowered| lowered.text)
-                        .map_err(|refusal| site.place(refusal))?,
+                            InferredType::Optional(
+                                crate::forge::types::OptionalElem::Str
+                                    | crate::forge::types::OptionalElem::Bytes
+                            )
+                        ) =>
+                        {
+                            expr::transpile_into_owned(
+                                rhs,
+                                l.expr_target(),
+                                type_ctx,
+                                renames,
+                                return_ty,
+                            )
+                            .map(|lowered| lowered.text)
+                            .map_err(|refusal| site.place(refusal))?
+                        }
                         None => {
                             expr::transpile_into(rhs, l.expr_target(), type_ctx, renames, return_ty)
                                 .map_err(|refusal| site.place(refusal))?
