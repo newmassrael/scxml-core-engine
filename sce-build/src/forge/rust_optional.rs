@@ -94,6 +94,26 @@ pub fn proven(view: &str) -> String {
     format!("{RUNTIME}::proven({view})")
 }
 
+/// `x.value` where the build has proven the optional record `held` present,
+/// read as the record's own place (`&T`) and not moved out
+/// (docs/adr/0055, step 9): the runtime's `proven_ref` over a borrow of `held`,
+/// over which the member `.f` of the field read is spelled. A record that owns
+/// text is not `Copy`, and what holds it keeps it, so [`proven`], which takes the
+/// value, is for an element that is. `held` is a place or a postfix expression
+/// (`self.pick`, `x`).
+pub fn proven_ref(held: &str) -> String {
+    format!("{RUNTIME}::proven_ref(&{held})")
+}
+
+/// The place `field` of the present record `held` is written through, where the
+/// build has proven `held` present (docs/adr/0055, step 9): the runtime's
+/// `proven_mut` over a mutable borrow of `held`, which the field names. The
+/// location of an assignment, `x.value.f = e`; `held` is a place or a postfix
+/// expression, as for [`proven_ref`].
+pub fn proven_field_place(held: &str, field: &str) -> String {
+    format!("{RUNTIME}::proven_mut(&mut {held}).{field}")
+}
+
 /// `x ?? d`, of the [`view`] of `x` and the spelling of `d`: the present value
 /// of `x`, and `d` only where `x` is absent, so `d` is evaluated (and may fail)
 /// only then, and `x` once. `d_is_optional` says that `d` is itself an
@@ -237,6 +257,26 @@ mod tests {
             expression(&proven("self.due")),
             "sce_forge_runtime::optional::proven(self.due)"
         );
+    }
+
+    #[test]
+    fn a_proven_record_is_read_and_written_in_place_through_the_runtime() {
+        assert_eq!(
+            expression(&proven_ref("self.pick")),
+            "sce_forge_runtime::optional::proven_ref(&self.pick)"
+        );
+        // A field of it is read through the borrow ...
+        assert_eq!(
+            expression(&format!("{}.count", proven_ref("self.pick"))),
+            "sce_forge_runtime::optional::proven_ref(&self.pick).count"
+        );
+        // ... and written through the mutable one, as the place of an assignment.
+        assert_eq!(
+            expression(&proven_field_place("self.pick", "count")),
+            "sce_forge_runtime::optional::proven_mut(&mut self.pick).count"
+        );
+        syn::parse_str::<syn::Stmt>(&format!("{} = 7;", proven_field_place("held", "count")))
+            .expect("the place is one a Rust assignment writes through");
     }
 
     #[test]
