@@ -5738,9 +5738,11 @@ fn validate_codec_length_field_refs(
 /// codec (forward references are rejected so the streaming decoder
 /// reads the length value before reaching the embed payload) AND its
 /// host-language type must be integer (so the value drives an inner
-/// cursor scope size). Folds into `validation/attribute-rule-violated` —
+/// cursor scope size) AND must not be gated by `sce:present-if`: a gated
+/// sibling is a value that may be absent, and an absent length bounds
+/// nothing. Folds into `validation/attribute-rule-violated` —
 /// the rule text names the offending sibling so the author can
-/// reorder or retype directly.
+/// reorder, retype or ungate directly.
 fn validate_codec_embed_length_from(
     fields: &[CodecField],
     label: DocumentLabel<'_>,
@@ -5779,6 +5781,17 @@ fn validate_codec_embed_length_from(
                     "length source must be an integer field; \
                      '{target}' is sce:type=\"{:?}\"",
                     carrier.sce_type
+                )));
+            }
+            // A gated sibling is a value that may be absent (docs/adr/0055): every
+            // language's decode would read it as the number it is not, and an
+            // absent length bounds nothing, so the embed is bounded by an entry
+            // every frame carries.
+            if carrier.present_if.is_some() {
+                return Err(invalid(format!(
+                    "length source must be a field every frame carries; '{target}' \
+                     is gated by sce:present-if, so it may be absent where the \
+                     embed is decoded and bounds nothing"
                 )));
             }
         }

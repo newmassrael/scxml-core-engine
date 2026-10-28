@@ -1360,6 +1360,12 @@ documents, not observed from a backend.
     runtime's own type, so a codec's entry and a statechart's variable are one type or it does not
     compile.
 
+A gated sibling named by `sce:length-from` of an embedded codec is refused where the codec is read
+(`validate_codec_embed_length_from`, `validation/attribute-rule-violated`, on every backend): an
+embed's decode reads its length sibling as the number it is, which a gated field is not wherever it is
+held as an optional value, and an absent length bounds nothing. Test:
+`sce-build/tests/a_codec_embed_is_bounded_by_a_length_every_frame_carries.rs`.
+
 There is no step 15. The step the first accepted text listed there, "the end of the codec
 transition", which removed two temporary refusals, is withdrawn: the refusal of format 1 is
 permanent (section 8).
