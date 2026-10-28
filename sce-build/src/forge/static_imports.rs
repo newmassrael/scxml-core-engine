@@ -275,8 +275,9 @@ fn value_signature(
         })
     };
     // An enum slot is named, as a record slot is, by the alias the statechart imports
-    // the same document under.
-    let enum_slot = |name: &str, alias: &str| -> Result<StaticSlot, String> {
+    // the same document under: the type of a value of that enum, which a slot of an
+    // optional value of it holds too.
+    let enum_slot = |name: &str, alias: &str| -> Result<SceType, String> {
         let what = format!("its {name}");
         let held = crossable_enum(
             &what,
@@ -295,14 +296,12 @@ fn value_signature(
                     held.identity
                 )
             })?;
-        Ok(StaticSlot::Scalar(SceType::Enum(EnumRef {
-            alias: own_alias,
-        })))
+        Ok(SceType::Enum(EnumRef { alias: own_alias }))
     };
     let slot = |name: &str, ty: &AlgorithmValueType| -> Result<StaticSlot, String> {
         match ty {
             AlgorithmValueType::Scalar(SceType::Enum(reference)) => {
-                enum_slot(name, &reference.alias)
+                enum_slot(name, &reference.alias).map(StaticSlot::Scalar)
             }
             AlgorithmValueType::Scalar(t) => Ok(StaticSlot::Scalar(t.clone())),
             AlgorithmValueType::Record { alias } => Ok(StaticSlot::Record(record(alias)?)),
@@ -323,14 +322,13 @@ fn value_signature(
             // A value that may be absent, of a number, a `bool` or a text: the same
             // type on both sides, handed over and taken back as it is
             // (docs/adr/0055).
+            //
+            // One of an enum is named, as an enum slot is, by the alias the
+            // statechart imports the document under, and crosses by the declared name
+            // of its variant where it is present, as a value of the enum does.
             AlgorithmValueType::Optional {
-                elem: OptionalElemType::Scalar(SceType::Enum(_)),
-            } => Err(format!(
-                "its {name} is of type {}, and a call crosses a value of an enum by the declared \
-                 name of its variant, which a statechart does not read through an optional \
-                 value yet (docs/adr/0055)",
-                ty.as_attr()
-            )),
+                elem: OptionalElemType::Scalar(SceType::Enum(reference)),
+            } => enum_slot(name, &reference.alias).map(StaticSlot::Optional),
             AlgorithmValueType::Optional {
                 elem: OptionalElemType::Scalar(SceType::Bytes),
             } => Err(format!(

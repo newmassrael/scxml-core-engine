@@ -4063,9 +4063,10 @@ all but a byte string. A text field of such a record is written, in an algorithm
 from a literal or a record's text field that the build bounds by the field's
 `sce:max-size`, and from `null`: an optional text is held to the bound of its field as a
 text is. A statechart's call crosses a record's optional text as it is and its optional
-value of an enum by the declared name of its variant; an optional value of an enum or a
-byte string in a slot of an imported algorithm is refused by name where the import is
-read, as a statechart does not read through one yet. A
+value of an enum by the declared name of its variant, in a slot of an imported algorithm
+as in a record's field; an optional byte string in a slot of an imported algorithm is
+refused by name where the import is read, as the byte string an algorithm holds is not the
+one a statechart's variable holds on every backend. A
 local declares its initial value, `null` for absent (an optional record local starts
 absent, and a record is put into it by its name). The body reads one
 as a statechart does ("Reading an optional value", below): a test, `??`, and

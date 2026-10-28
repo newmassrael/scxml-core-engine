@@ -48,9 +48,29 @@ pub(crate) struct CallEnums {
     pub callee: String,
     /// One per parameter, in order: the enum it takes, or `None` for a parameter
     /// that is not an enum.
-    pub params: Vec<Option<String>>,
+    pub params: Vec<Option<EnumSlot>>,
     /// The enum it returns, if it returns one.
-    pub ret: Option<String>,
+    pub ret: Option<EnumSlot>,
+}
+
+/// The enum a slot of a call holds, by the alias the importing document names
+/// it, and whether the slot may be absent (docs/adr/0055): a parameter of
+/// `optional<enum:…>` takes `null`, an optional value of its enum and a value of
+/// it, and a return of one is an optional value of it.
+#[derive(Debug, Clone)]
+pub(crate) struct EnumSlot {
+    pub alias: String,
+    pub optional: bool,
+}
+
+impl EnumSlot {
+    /// A slot of a value of the enum `alias`, which is never absent.
+    pub(crate) fn present(alias: impl Into<String>) -> Self {
+        Self {
+            alias: alias.into(),
+            optional: false,
+        }
+    }
 }
 
 /// What [`value_enum`] asks of the document it reads.
@@ -219,6 +239,23 @@ fn held(node: &TypedExpr, ctx: &TypeCtx<'_>, reading: &EnumReading<'_>) -> Resul
             (_, Held::Enum(_) | Held::Optional(_)) => Err(refuse(right, NOT_AN_OPERAND)),
             _ => Ok(Held::Neither),
         },
+        // The call of an imported algorithm that returns an optional value of an
+        // enum is one, its arguments held to the enums its parameters take as
+        // any call's are.
+        ExprKind::Call { callee, .. } => {
+            let present = class_of(node, ctx, reading)?;
+            let optional = match &callee.kind {
+                ExprKind::Ident(name) => (reading.calls)(name)
+                    .and_then(|slots| slots.ret)
+                    .filter(|slot| slot.optional),
+                _ => None,
+            };
+            Ok(match (present, optional) {
+                (Some(alias), _) => Held::Enum(alias),
+                (None, Some(slot)) => Held::Optional(slot.alias),
+                (None, None) => Held::Neither,
+            })
+        }
         _ => Ok(class_of(node, ctx, reading)?.map_or(Held::Neither, Held::Enum)),
     }
 }
@@ -372,8 +409,45 @@ fn class_of(
                 return nothing_but(node, ctx, reading);
             };
             for (index, arg) in args.iter().enumerate() {
+                let slot = slots.params.get(index).cloned().flatten();
+                // A parameter of an optional value of an enum takes `null`, an
+                // optional value of its enum and a value of it, which is present
+                // (docs/adr/0055); anything else is no value of the enum.
+                if let Some(EnumSlot {
+                    alias: wanted,
+                    optional: true,
+                }) = &slot
+                {
+                    match held(arg, ctx, reading)? {
+                        Held::Null => {}
+                        Held::Enum(given) | Held::Optional(given) if given == *wanted => {}
+                        Held::Enum(given) | Held::Optional(given) => {
+                            return Err(refuse(
+                                arg,
+                                &format!(
+                                    "a value of the enum `{given}` handed to `{}`, whose \
+                                     parameter takes an optional value of the enum `{wanted}`",
+                                    slots.callee
+                                ),
+                            ))
+                        }
+                        Held::Neither => {
+                            return Err(refuse(
+                                arg,
+                                &format!(
+                                    "a value that is neither `null` nor of the enum `{wanted}` \
+                                     handed to `{}`, whose parameter takes an optional value of \
+                                     it (write `{wanted}.<variant>`, `null`, or a variable or a \
+                                     field of that enum)",
+                                    slots.callee
+                                ),
+                            ))
+                        }
+                    }
+                    continue;
+                }
                 let held = class_of(arg, ctx, reading)?;
-                let wanted = slots.params.get(index).cloned().flatten();
+                let wanted = slot.map(|slot| slot.alias);
                 match (wanted, held) {
                     (None, None) => {}
                     (Some(wanted), Some(held)) if wanted == held => {}
@@ -401,7 +475,12 @@ fn class_of(
                     (None, Some(_)) => return Err(refuse(arg, NOT_AN_OPERAND)),
                 }
             }
-            Ok(slots.ret)
+            // A return of an optional value of an enum is no value of the enum
+            // ([`held`] reads it as one that may be absent).
+            Ok(slots
+                .ret
+                .filter(|slot| !slot.optional)
+                .map(|slot| slot.alias))
         }
         _ => nothing_but(node, ctx, reading),
     }
@@ -453,10 +532,15 @@ impl Slot {
         }
     }
 
-    /// The place a parameter of a call that holds the enum `wanted` (`None` for a
-    /// parameter that holds none) is.
-    fn of_call(wanted: Option<&str>) -> Self {
-        wanted.map_or(Self::Scalar, |alias| Self::Enum(alias.to_string()))
+    /// The place a parameter of a call that holds the enum `slot` names (`None` for
+    /// a parameter that holds none) is: a place of that enum, or of an optional
+    /// value of it (docs/adr/0055).
+    fn of_call(slot: Option<&EnumSlot>) -> Self {
+        match slot {
+            None => Self::Scalar,
+            Some(slot) if slot.optional => Self::OptionalEnum(slot.alias.clone()),
+            Some(slot) => Self::Enum(slot.alias.clone()),
+        }
     }
 }
 
@@ -498,10 +582,16 @@ fn callee_enums(imports: &[ImportContext], name: &str) -> Option<CallEnums> {
         .iter()
         .find(|i| i.alias == alias && i.kind == "algorithm")?;
     let slots = import.enum_slots.as_ref()?;
+    // An algorithm's slots of one algorithm's call of another hold a value of an
+    // enum that is never absent ([`crate::forge::generator::CalleeEnumSlots`]).
     Some(CallEnums {
         callee: alias.to_string(),
-        params: slots.params.clone(),
-        ret: slots.ret.clone(),
+        params: slots
+            .params
+            .iter()
+            .map(|held| held.clone().map(EnumSlot::present))
+            .collect(),
+        ret: slots.ret.clone().map(EnumSlot::present),
     })
 }
 
@@ -615,7 +705,7 @@ impl AlgorithmWalk<'_, '_> {
                     let wanted = slots
                         .as_ref()
                         .and_then(|s| s.params.get(index))
-                        .and_then(|held| held.as_deref());
+                        .and_then(Option::as_ref);
                     self.expect(&arg.expr, arg.spelling.as_ref(), &Slot::of_call(wanted))?;
                 }
                 Ok(())

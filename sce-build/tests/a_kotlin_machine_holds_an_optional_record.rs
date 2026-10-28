@@ -349,3 +349,34 @@ fn kotlin_refuses_a_write_through_an_optional_record_nothing_proves_present() {
         "refused at the write:\n{out}"
     );
 }
+
+/// A record is put into an optional record local and returned as the optional record
+/// the signature declares by its name: a bare record name is no expression, so each is
+/// the local itself.
+#[test]
+fn kotlin_puts_and_returns_a_record_by_name_as_an_optional_record() {
+    let text = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="first_item" version="1.0">
+  <sce:import kind="event-schema" src="schema_item_pick.scxml" as="Item"/>
+  <sce:signature>
+    <sce:param name="items" type="list&lt;record:Item&gt;"/>
+    <sce:return type="optional&lt;record:Item&gt;"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="held" type="optional&lt;record:Item&gt;" init="null"/>
+    <sce:foreach item="it" in="items">
+      <sce:assign target="held" expr="it"/>
+      <sce:return expr="it"/>
+    </sce:foreach>
+    <sce:return expr="held"/>
+  </sce:body>
+</scxml>
+"#;
+    let (ok, out, written) = generate_kotlin(
+        &[("algorithm_first_item.scxml", text)],
+        "algorithm_first_item.scxml",
+    );
+    assert!(ok, "Kotlin generates the algorithm:\n{out}");
+    holds_each(&written, &["held = it", "return it", "return held"]);
+}

@@ -508,22 +508,76 @@ fn the_interpreter_holds_an_optional_text_field_to_its_bound() {
     );
 }
 
-/// What a call crosses is named by the document that declares it: an optional value
-/// of an enum or a byte string in a slot of an imported algorithm is not one a
-/// statechart reads through yet, and is refused by name where the import is read, as
-/// it was before the algorithm could spell one.
+/// An optional value of an enum in a slot of an imported algorithm is the machine's
+/// `T?` over its own enum class, which crosses where it is present by the declared name
+/// of its variant, in the parameter and in the answer; a value of the enum, `null` and an
+/// optional value are each an argument of it.
 #[test]
-fn kotlin_still_refuses_an_optional_enum_or_bytes_in_the_slot_of_a_call_by_name() {
-    for (imports, written, named) in [
-        (
-            "  <sce:import kind=\"enum\" src=\"enum_item_status.scxml\" as=\"Status\"/>\n",
-            "optional&lt;enum:Status&gt;",
-            "optional<enum:Status>",
-        ),
-        ("", "optional&lt;bytes&gt;", "optional<bytes>"),
-    ] {
-        let algorithm = slots(imports, written, written, written);
-        let machine = r#"<?xml version="1.0" encoding="UTF-8"?>
+fn kotlin_adapts_a_call_whose_slots_hold_an_optional_value_of_an_enum() {
+    let algorithm = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="status_next" version="1.0">
+  <sce:import kind="enum" src="enum_item_status.scxml" as="Status"/>
+  <sce:signature>
+    <sce:param name="given" type="optional&lt;enum:Status&gt;"/>
+    <sce:return type="optional&lt;enum:Status&gt;"/>
+  </sce:signature>
+  <sce:body>
+    <sce:return expr="given"/>
+  </sce:body>
+</scxml>
+"#;
+    let machine = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="idle" datamodel="sce-static" name="optional_enum_call">
+  <sce:import kind="enum" src="enum_item_status.scxml" as="Status"/>
+  <sce:import kind="algorithm" src="algorithm_status_next.scxml" as="Next"/>
+  <datamodel>
+    <data id="status" sce:type="optional&lt;enum:Status&gt;" expr="null"/>
+  </datamodel>
+  <state id="idle">
+    <transition event="go" type="internal">
+      <assign location="status" expr="Next(status)"/>
+      <assign location="status" expr="Next(Status.open)"/>
+      <assign location="status" expr="Next(null)"/>
+    </transition>
+  </state>
+</scxml>
+"#;
+    let (ok, out, written) = run_kotlin(
+        "generate",
+        &[
+            ("algorithm_status_next.scxml", algorithm),
+            ("optional_enum_call.scxml", machine),
+        ],
+        "optional_enum_call.scxml",
+    );
+    assert!(ok, "Kotlin generates the machine:\n{out}");
+    holds_each(
+        &written,
+        &[
+            "private fun call_Next__(p0: OptionalEnumCallStatusEnum?): OptionalEnumCallStatusEnum? {",
+            // The variant crosses by its declared name where it is present, both ways.
+            "(p0)?.let { scePresent -> when (scePresent) {",
+            "(r)?.let { scePresent -> when (scePresent) {",
+            "OptionalEnumCallStatusEnum.IN_PROGRESS -> EnumItemStatus.IN_PROGRESS",
+            "EnumItemStatus.IN_PROGRESS -> OptionalEnumCallStatusEnum.IN_PROGRESS",
+            "vStatus = call_Next__(vStatus)",
+            "vStatus = call_Next__(OptionalEnumCallStatusEnum.OPEN)",
+            "vStatus = call_Next__(null)",
+        ],
+    );
+}
+
+/// What a call crosses is named by the document that declares it: a byte string an
+/// algorithm holds is not the one a statechart's variable holds on every backend, so
+/// an optional one in a slot of an imported algorithm is refused by name where the
+/// import is read.
+#[test]
+fn kotlin_still_refuses_an_optional_byte_string_in_the_slot_of_a_call_by_name() {
+    let written = "optional&lt;bytes&gt;";
+    let algorithm = slots("", written, written, written);
+    let machine = r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0" initial="idle" datamodel="sce-static" name="slot_call">
   <sce:import kind="algorithm" src="slot_probe.scxml" as="Probe"/>
@@ -537,18 +591,20 @@ fn kotlin_still_refuses_an_optional_enum_or_bytes_in_the_slot_of_a_call_by_name(
   </state>
 </scxml>
 "#;
-        let (ok, out, _) = run_kotlin(
-            "check",
-            &[
-                ("slot_probe.scxml", &algorithm),
-                ("slot_call.scxml", machine),
-            ],
-            "slot_call.scxml",
-        );
-        assert!(!ok, "a call that crosses `{named}` is refused:\n{out}");
-        assert!(
-            out.contains(named),
-            "refused naming the type of the slot:\n{out}"
-        );
-    }
+    let (ok, out, _) = run_kotlin(
+        "check",
+        &[
+            ("slot_probe.scxml", &algorithm),
+            ("slot_call.scxml", machine),
+        ],
+        "slot_call.scxml",
+    );
+    assert!(
+        !ok,
+        "a call that crosses `optional<bytes>` is refused:\n{out}"
+    );
+    assert!(
+        out.contains("optional<bytes>"),
+        "refused naming the type of the slot:\n{out}"
+    );
 }

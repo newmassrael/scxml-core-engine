@@ -921,12 +921,17 @@ documents, not observed from a backend.
      is held past the bound its schema declares, in the Interpreter's lowering too, which wrote
      such a field unbounded. A statechart's call copies a record's optional text as it is and
      its optional value of an enum by the declared name of its variant where it is present
-     (`AdapterSpec::record_field_crossing` through `optional_map`). Kept refused by name: an
-     optional value of an enum or a byte string in the slot of an imported algorithm that a
-     statechart calls (`value_signature`), since the enum judge reads a call's slots as the
-     enum they take and not as one that may be absent, and a byte string an algorithm holds is
-     not the one a statechart's variable holds on every backend; an algorithm's call of
-     another with an optional value of an enum keeps its refusal of an enum argument too.
+     (`AdapterSpec::optional_enum_crossing` through `optional_map`), and so does an optional
+     value of an enum in a slot of an imported algorithm (`value_signature` names it as
+     `StaticSlot::Optional` over the statechart's alias of the enum; the enum judge's
+     `CallEnums` carries `EnumSlot { alias, optional }`, so an argument of such a parameter is
+     `null`, a value of the enum or an optional value of it, and a call that returns one is an
+     optional value of the enum). A record put into an optional record local, or returned as
+     one, by its name is the local itself, since a bare record name is no expression. Kept
+     refused by name: an optional byte string in the slot of an imported algorithm that a
+     statechart calls (`value_signature`), since a byte string an algorithm holds is not the
+     one a statechart's variable holds on every backend; an algorithm's call of another with
+     an optional value of an enum keeps its refusal of a variant as the argument.
      Tests: `a_kotlin_algorithm_holds_every_optional_element`.
 10. **The edges left refused by name**: a child session's optional variable as a `<param>` (with
     the shape of `InvokeParams` it needs), a host action's optional argument, a host-run

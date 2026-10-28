@@ -241,11 +241,14 @@ impl StaticSlot {
     }
 
     /// The alias the statechart imports the enum under, for a slot that holds a
-    /// value of one: a scalar argument or return that crosses by its declared
-    /// name, which the machine's type and the algorithm's spell apart.
+    /// value of one, or an optional value of one (docs/adr/0055): an argument or
+    /// return that crosses by its declared name, which the machine's type and the
+    /// algorithm's spell apart.
     pub fn enum_alias(&self) -> Option<&str> {
         match self {
-            Self::Scalar(SceType::Enum(reference)) => Some(reference.alias.as_str()),
+            Self::Scalar(SceType::Enum(reference)) | Self::Optional(SceType::Enum(reference)) => {
+                Some(reference.alias.as_str())
+            }
             _ => None,
         }
     }
@@ -1195,7 +1198,15 @@ impl StaticScope {
             .state_call(name)
             .map_or(name, |call| call.alias.as_str());
         if let Some(value) = self.value_callee(alias).and_then(|c| c.value.as_ref()) {
-            let held = |slot: &StaticSlot| slot.enum_alias().map(str::to_string);
+            // A slot of a value of an enum, or of an optional value of one
+            // (docs/adr/0055), which an argument and the call are held to.
+            let held = |slot: &StaticSlot| {
+                slot.enum_alias()
+                    .map(|alias| crate::forge::static_enum::EnumSlot {
+                        alias: alias.to_string(),
+                        optional: matches!(slot, StaticSlot::Optional(_)),
+                    })
+            };
             return Some(crate::forge::static_enum::CallEnums {
                 callee: alias.to_string(),
                 params: value.params.iter().map(held).collect(),
@@ -1209,10 +1220,13 @@ impl StaticScope {
             .iter()
             .find(|c| c.alias == alias && !c.kind.is_algorithm())?;
         let held = |ty: &SceType| match ty {
-            SceType::Enum(reference) => Some(reference.alias.clone()),
+            SceType::Enum(reference) => Some(crate::forge::static_enum::EnumSlot::present(
+                reference.alias.clone(),
+            )),
             _ => None,
         };
-        let params: Vec<Option<String>> = callee.params.iter().map(held).collect();
+        let params: Vec<Option<crate::forge::static_enum::EnumSlot>> =
+            callee.params.iter().map(held).collect();
         let ret = callee.ret.as_ref().and_then(held);
         (ret.is_some() || params.iter().any(Option::is_some)).then(|| {
             crate::forge::static_enum::CallEnums {

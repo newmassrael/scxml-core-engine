@@ -29274,6 +29274,26 @@ fn lower_algorithm_stmt(
                 out.push_str(&format!("{pad}{statement}\n"));
                 return Ok(());
             }
+            // A record put whole into an optional record local, by its name: a bare
+            // record name is no expression ("a record used as a value"), so it is
+            // the local itself, which Kotlin holds as the immutable data class it is.
+            if optional_records.contains_key(target.trim())
+                && (records.contains_key(rhs.trim()) || optional_records.contains_key(rhs.trim()))
+            {
+                if lang != Language::Kotlin {
+                    return Err(crate::forge::static_lowering::optional_not_lowered(
+                        &format!("`{}`, an optional record of an algorithm", target.trim()),
+                        lang.canonical_name(),
+                    )
+                    .into());
+                }
+                out.push_str(&format!(
+                    "{pad}{} = {}\n",
+                    l.local_id(target.trim()),
+                    l.local_id(rhs.trim())
+                ));
+                return Ok(());
+            }
             // SCE_FORGE.md §4.12: a record is updated a field at a time. A
             // whole-record assignment has no v1 meaning (there is no record
             // expression to assign from), and Kotlin's data class fields are
@@ -30269,6 +30289,17 @@ fn lower_algorithm_stmt(
                         Language::Swift => no_swift_emitter("lower_algorithm_stmt"),
                     };
                     channel.value(pad, &value, true)
+                }
+                // A record returned as the optional record the signature declares, by
+                // its name: the local itself, as a record put into an optional record
+                // is (a bare record name is no expression).
+                Some(rhs)
+                    if matches!(
+                        return_ty,
+                        InferredType::Optional(crate::forge::types::OptionalElem::Record)
+                    ) && records.contains_key(rhs.trim()) =>
+                {
+                    channel.value(pad, &l.local_id(rhs.trim()), false)
                 }
                 Some(rhs) => {
                     // Coerce to the function's declared return type so

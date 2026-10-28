@@ -618,34 +618,53 @@ impl AdapterSpec<'_> {
         match &field.sce_type {
             // The present value of an optional enum crosses by the same declared
             // name, mapped where it is present and absent where it is absent
-            // (docs/adr/0055, step 9): the type of the value on the side it leaves,
-            // which the map is bound to, is the machine's own for the enum going to
-            // the algorithm and the enum document's coming back.
+            // (docs/adr/0055, step 9).
             FieldType::Optional {
-                elem: SceType::Enum(reference),
-            } => {
-                let model = self.enums.get(&reference.alias)?;
-                let machine_type = target.enum_type(self.machine, &reference.alias)?;
-                let leaving = match crossing {
-                    Crossing::ToAlgorithm => machine_type.clone(),
-                    Crossing::FromAlgorithm => {
-                        crate::forge::generator::enum_qualified_type(&model.name, self.lang?)
-                    }
-                };
-                // Asked once before it is bound, so a target with no spelling of
-                // the crossing refuses the adapter rather than write an empty one.
-                target.enum_crossing(&machine_type, model, "v", crossing)?;
-                target.optional_map(value, &leaving, &|present| {
-                    target
-                        .enum_crossing(&machine_type, model, present, crossing)
-                        .unwrap_or_default()
-                })
-            }
+                elem: ty @ SceType::Enum(_),
+            } => self.optional_enum_crossing(target, ty, value, crossing),
             FieldType::Scalar(SceType::Enum(reference)) => {
                 self.enum_crossing(target, &reference.alias, value, crossing)
             }
             FieldType::Scalar(_) | FieldType::Optional { .. } => Some(text(value)),
         }
+    }
+
+    /// `value`, an optional value of the enum `ty` names, as the other side's optional
+    /// value of the variant of the same declared name where it is present
+    /// ([`Self::enum_crossing`] applied through [`StaticTarget::optional_map`]), and
+    /// absent where it is absent (docs/adr/0055). `None` for a `ty` that is no enum
+    /// and for a target with no spelling of the mapping or of the optional type, which
+    /// refuses the call by name.
+    fn optional_enum_crossing(
+        &self,
+        target: &dyn StaticTarget,
+        ty: &SceType,
+        value: &str,
+        crossing: Crossing,
+    ) -> Option<String> {
+        let SceType::Enum(reference) = ty else {
+            return None;
+        };
+        let model = self.enums.get(&reference.alias)?;
+        let machine_type = target.enum_type(self.machine, &reference.alias)?;
+        // The type of the value on the side it leaves, which the map is bound to: the
+        // machine's own for the enum going to the algorithm, and the enum document's
+        // coming back (a target that spells a map without naming the type ignores it).
+        let leaving = match (crossing, self.lang) {
+            (Crossing::FromAlgorithm, Some(lang)) => {
+                crate::forge::generator::enum_qualified_type(&model.name, lang)
+            }
+            _ => machine_type.clone(),
+        };
+        // The variant mapping is asked once for its spelling before it is bound, so a
+        // target with no spelling of the crossing refuses the adapter rather than
+        // write an empty one.
+        target.enum_crossing(&machine_type, model, "v", crossing)?;
+        target.optional_map(value, &leaving, &|present| {
+            target
+                .enum_crossing(&machine_type, model, present, crossing)
+                .unwrap_or_default()
+        })
     }
 }
 
@@ -1980,6 +1999,18 @@ impl StaticTarget for KotlinTarget {
                     declarations.push(format!("{name}: {}", self.scalar_type(ty)));
                     arguments.push(name);
                 }
+                // An optional value of an enum is the machine's `T?` over its own enum
+                // class, and crosses where it is present by the declared name of its
+                // variant (docs/adr/0055).
+                AdapterParam::Optional(ty) if matches!(ty, SceType::Enum(_)) => {
+                    declarations.push(format!("{name}: {}", spec.optional_type(self, ty)?));
+                    arguments.push(spec.optional_enum_crossing(
+                        self,
+                        ty,
+                        &name,
+                        Crossing::ToAlgorithm,
+                    )?);
+                }
                 // `T?` on both sides (docs/adr/0055).
                 AdapterParam::Optional(ty) => {
                     declarations.push(format!("{name}: {}", spec.optional_type(self, ty)?));
@@ -2044,6 +2075,10 @@ impl StaticTarget for KotlinTarget {
                 StaticSlot::Scalar(ty) if plain_scalar(ty) => {
                     (self.scalar_type(ty), from.to_string())
                 }
+                StaticSlot::Optional(ty) if matches!(ty, SceType::Enum(_)) => (
+                    spec.optional_type(self, ty)?,
+                    spec.optional_enum_crossing(self, ty, from, Crossing::FromAlgorithm)?,
+                ),
                 StaticSlot::Optional(ty) => (spec.optional_type(self, ty)?, from.to_string()),
                 // The machine's record is built where the algorithm's answer is
                 // present, and an absent one stays `null` (docs/adr/0055, step 9).
