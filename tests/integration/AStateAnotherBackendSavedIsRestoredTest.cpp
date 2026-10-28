@@ -19,6 +19,7 @@
 #include "static_invoke_sm.h"
 #include "static_invoke_tree_sm.h"
 #include "static_list_sm.h"
+#include "static_optional_record_sm.h"
 #include "static_optional_sm.h"
 #include "static_record_sm.h"
 #include "static_schema_pending_sm.h"
@@ -74,6 +75,7 @@ const std::map<std::string, Restorer> &machines() {
         {"static_invoke_tree", restoredAndSavedAgain<G::static_invoke_tree::static_invoke_tree>},
         {"static_list", restoredAndSavedAgain<G::static_list::static_list>},
         {"static_optional", restoredAndSavedAgain<G::static_optional::static_optional>},
+        {"static_optional_record", restoredAndSavedAgain<G::static_optional_record::static_optional_record>},
         {"static_record", restoredAndSavedAgain<G::static_record::static_record>},
         {"static_schema_pending", restoredAndSavedAgain<G::static_schema_pending::static_schema_pending>},
         {"static_schema_revision", restoredAndSavedAgain<G::static_schema_revision::static_schema_revision>},

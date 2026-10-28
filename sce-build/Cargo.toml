@@ -989,6 +989,15 @@ name = "an_optional_record_is_spelled_by_generated_python"
 path = "tests/an_optional_record_is_spelled_by_generated_python.rs"
 required-features = ["cli"]
 
+# What generated C++ spells for an optional record and for an algorithm's optional
+# text, enum and record (docs/adr/0055, step 9): the variable, the write through the
+# present record, the adapters and the slots. It runs `sce-codegen generate`, so it
+# carries the `cli` gate.
+[[test]]
+name = "an_optional_record_is_spelled_by_the_cpp_backend"
+path = "tests/an_optional_record_is_spelled_by_the_cpp_backend.rs"
+required-features = ["cli"]
+
 [[test]]
 name = "a_statechart_calls_the_forge_kinds_that_are_functions"
 path = "tests/a_statechart_calls_the_forge_kinds_that_are_functions.rs"

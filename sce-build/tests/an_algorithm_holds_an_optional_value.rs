@@ -263,6 +263,12 @@ fn every_backend_refuses_an_algorithms_optional_slot_it_does_not_spell_by_name()
                 .replace("  <sce:signature>", &format!("{imports}  <sce:signature>"))
                 .replace("<sce:return expr=\"held\"/>", "<sce:return expr=\"null\"/>");
             for (lang, args) in every_backend() {
+                // C++ spells every element but a byte string, which an algorithm holds
+                // as a view, a buffer or a vector by the slot (docs/adr/0055, step 9):
+                // what it emits is held by `an_optional_record_is_spelled_by_the_cpp_backend`.
+                if lang == "cpp" && !written.contains("bytes") {
+                    continue;
+                }
                 let (ok, out, written_text) = run_probe(
                     &args,
                     &text,

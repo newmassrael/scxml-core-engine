@@ -524,9 +524,6 @@ sce_add_static_scenario_suite(
     TARGET static_datamodel_generated_cpp_test
     SCENARIOS ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/scenarios
     FIXTURES ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel
-    # The optional record (docs/adr/0055, step 9): the generator refuses it for C++ by
-    # name until C++'s own step, which takes this line off.
-    NOT_YET_LOWERED static_optional_record
 )
 # The machines of the target's other tests that no scenario replays: a BasicHTTP
 # send, whose request a scenario has no word for; the hybrid invokes held to which

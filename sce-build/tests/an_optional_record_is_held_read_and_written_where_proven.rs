@@ -89,9 +89,16 @@ fn run(args: &[&str], documents: &[(&str, &str)], file: &str) -> (bool, String, 
     )
 }
 
-/// The `generate` arguments of each backend that emits a statechart's machine.
+/// The backends whose own step of docs/adr/0055 lowers an optional record, and which
+/// [`every_backend`] leaves out: what they emit is held by their own tests
+/// (`an_optional_record_is_spelled_by_the_cpp_backend`).
+const LOWERS_AN_OPTIONAL_RECORD: [&str; 1] = ["cpp"];
+
+/// The `generate` arguments of each backend that emits a statechart's machine and
+/// does not lower an optional record yet.
 fn every_backend() -> Vec<Vec<&'static str>> {
     sce_build::forge::codegen_matrix::emitting(sce_build::forge::model::ForgeKind::Statechart)
+        .filter(|language| !LOWERS_AN_OPTIONAL_RECORD.contains(&language.canonical_name()))
         .map(|language| {
             let mut args = vec!["generate", "-l", language.canonical_name()];
             if language == sce_build::generator::Language::Go {

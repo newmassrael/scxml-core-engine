@@ -611,11 +611,36 @@ impl AdapterSpec<'_> {
         crossing: Crossing,
         text: impl FnOnce(&str) -> String,
     ) -> Option<String> {
-        match field.sce_type.present_type() {
-            SceType::Enum(reference) => {
+        match &field.sce_type {
+            // The present value of an optional enum crosses by the same declared
+            // name, mapped where it is present and absent where it is absent
+            // (docs/adr/0055, step 9): the type of the value on the side it leaves,
+            // which the map is bound to, is the machine's own for the enum going to
+            // the algorithm and the enum document's coming back.
+            FieldType::Optional {
+                elem: SceType::Enum(reference),
+            } => {
+                let model = self.enums.get(&reference.alias)?;
+                let machine_type = target.enum_type(self.machine, &reference.alias)?;
+                let leaving = match crossing {
+                    Crossing::ToAlgorithm => machine_type.clone(),
+                    Crossing::FromAlgorithm => {
+                        crate::forge::generator::enum_qualified_type(&model.name, self.lang?)
+                    }
+                };
+                // Asked once before it is bound, so a target with no spelling of
+                // the crossing refuses the adapter rather than write an empty one.
+                target.enum_crossing(&machine_type, model, "v", crossing)?;
+                target.optional_map(value, &leaving, &|present| {
+                    target
+                        .enum_crossing(&machine_type, model, present, crossing)
+                        .unwrap_or_default()
+                })
+            }
+            FieldType::Scalar(SceType::Enum(reference)) => {
                 self.enum_crossing(target, &reference.alias, value, crossing)
             }
-            _ => Some(text(value)),
+            FieldType::Scalar(_) | FieldType::Optional { .. } => Some(text(value)),
         }
     }
 }
@@ -6114,11 +6139,31 @@ impl StaticTarget for CppTarget {
             wire(CPP_PRESENT)
         ))
     }
-    fn state_argument(&self, _machine: &str, _arg: &StateArg, held: &str) -> String {
-        held.to_string()
+    // The literal `null` handed to an optional record is the absent value the slot's
+    // type has (docs/adr/0055, step 9), which the adapter's `std::optional` takes
+    // as it takes the variable that holds one.
+    fn state_argument(&self, _machine: &str, arg: &StateArg, held: &str) -> String {
+        if arg.code == 'n' {
+            "std::nullopt".to_string()
+        } else {
+            held.to_string()
+        }
     }
     fn state_adapter_name(&self, _machine: &str, _callee: &StaticCallee, coded: &str) -> String {
         format!("call_{coded}")
+    }
+    // The element is read by the checked read an algorithm's index is, which records
+    // an index outside the list as the failure every statement of the machine ends
+    // its block at, and answers the element by value.
+    fn record_at(&self, list: &str, index: &str) -> Option<String> {
+        Some(format!(
+            "SCE::Forge::Checked::at(sce_failure_, {list}, {index})"
+        ))
+    }
+    // The present value is read through `std::optional`'s own `*`, as an expression
+    // reads it where a test proves it present.
+    fn assign_present_field(&self, target: &str, field: &str, value: &str) -> Option<String> {
+        Some(format!("(*{target}).{field} = {value};"))
     }
     // The machine's list is the `std::vector` the adapter answers, counted by its
     // `size()` as a byte string is.
@@ -6285,6 +6330,45 @@ impl StaticTarget for CppTarget {
                         Crossing::ToAlgorithm,
                     )?);
                 }
+                // An optional record (docs/adr/0055, step 9): the algorithm takes a
+                // `std::optional` of its own record type. An optional record variable,
+                // a record variable and `null` are held as the machine's own
+                // `std::optional` (a record converts to one), and the present record
+                // is mapped where there is one; a payload and a loop's item are
+                // records, lifted into the present value.
+                AdapterParam::State {
+                    slot: StaticSlot::OptionalRecord(alias),
+                    code,
+                } => {
+                    let algorithm = algorithm_record(alias)?;
+                    let machine = machine_record(alias);
+                    let present = |value: &str| {
+                        record_of(alias, algorithm.clone(), value, Crossing::ToAlgorithm)
+                    };
+                    if matches!(*code, 'v' | 'n') {
+                        // Asked once before it is bound, so a record this target
+                        // cannot cross refuses the adapter.
+                        present(CPP_PRESENT)?;
+                        declarations
+                            .push(format!("const {} &{name}", self.optional_type(&machine)?));
+                        arguments.push(self.optional_map(&name, &machine, &|held| {
+                            present(held).unwrap_or_default()
+                        })?);
+                    } else {
+                        let held = if *code == 'p' {
+                            let event = spec.payload_events.get(alias)?;
+                            format!(
+                                "{}{}Payload",
+                                spec.machine,
+                                filters::to_event_variant(event.to_string())
+                            )
+                        } else {
+                            machine
+                        };
+                        declarations.push(format!("const {held} &{name}"));
+                        arguments.push(self.optional_some(&algorithm, &present(&name)?)?);
+                    }
+                }
                 AdapterParam::State {
                     slot: StaticSlot::ScalarList(ty),
                     ..
@@ -6316,6 +6400,7 @@ impl StaticTarget for CppTarget {
             }
             StaticSlot::Scalar(ty) if plain_scalar(ty) => self.scalar_type(ty),
             StaticSlot::Optional(ty) => spec.optional_type(self, ty)?,
+            StaticSlot::OptionalRecord(alias) => self.optional_type(&machine_record(alias))?,
             StaticSlot::Record(alias) => machine_record(alias),
             StaticSlot::ScalarList(ty) if plain_scalar(ty) => self.list_type(ty),
             StaticSlot::RecordList(alias) => self.record_list_type(&machine_record(alias)),
@@ -6330,9 +6415,17 @@ impl StaticTarget for CppTarget {
                 StaticSlot::Scalar(_) | StaticSlot::ScalarList(_) | StaticSlot::Optional(_) => {
                     from.to_string()
                 }
-                // An optional record is held by no generated backend yet
-                // (docs/adr/0055, step 9): the type of the result above refused it.
-                StaticSlot::OptionalRecord(_) => return None,
+                // The machine's own record, made of the algorithm's where there is
+                // one, and absent where it is absent (docs/adr/0055, step 9).
+                StaticSlot::OptionalRecord(alias) => {
+                    let algorithm = algorithm_record(alias)?;
+                    let machine = machine_record(alias);
+                    let present = |value: &str| {
+                        record_of(alias, machine.clone(), value, Crossing::FromAlgorithm)
+                    };
+                    present(CPP_PRESENT)?;
+                    self.optional_map(from, &algorithm, &|held| present(held).unwrap_or_default())?
+                }
                 StaticSlot::Record(alias) => {
                     record_of(alias, machine_record(alias), from, Crossing::FromAlgorithm)?
                 }

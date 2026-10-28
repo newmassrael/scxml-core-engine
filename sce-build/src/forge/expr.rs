@@ -179,7 +179,9 @@ impl ExprTarget {
             // record by name until its step of docs/adr/0055 spells one.
             ExprTarget::Rust => false,
             ExprTarget::Kotlin => false,
-            ExprTarget::Cpp => false,
+            // C++: `std::optional<Record>`, whose present record `x.value` reads as
+            // `(*x)` and over which the member is read ([`cpp_optional`]).
+            ExprTarget::Cpp => true,
             ExprTarget::Go => false,
             ExprTarget::C => false,
         }

@@ -6,13 +6,15 @@
     `saveAt`, `judge` and `restoreAt` of a machine spell it: a record's or an enum's own
     (`<Type>ToSaved` / `<Type>FromSaved`, emitted with the type by the static lowering), and
     every other type's by the runtime's `SCE::Saved` functions
-    (`sce/include/saved/SavedValues.h`), named for the `sce:type`. The C++ twin of the
+    (`sce/include/saved/SavedValues.h`), named for the `sce:type`. A value that may be
+    absent is null or its present value as its own functions write it, an enum's and a
+    record's included (docs/adr/0055, section 4). The C++ twin of the
     `saved_write` and `saved_read` macros of `python/saved_functions.py.jinja2`.
 #}
 
 {#- The variable `field`, held by the policy `source`, as the JSON value a saved state holds. -#}
 {% macro write(field, source) -%}
-{%- if field.saved_kind == "optional" and field.saved_elem == "enum" -%}
+{%- if field.saved_kind == "optional" and (field.saved_elem == "enum" or field.saved_elem == "record") -%}
 ::SCE::Saved::savedWriteOptional({{ source }}.{{ field.name }}, {{ field.saved_type }}ToSaved)
 {%- elif field.saved_kind == "optional" -%}
 ::SCE::Saved::savedWriteOptional({{ source }}.{{ field.name }}, ::SCE::Saved::savedWrite{{ field.saved_type | capitalize }})
@@ -31,7 +33,7 @@
     it as, or the refusal naming it: held to the bound the machine keeps, which a restored
     value must not be the first to exceed. -#}
 {% macro read(field, raw) -%}
-{%- if field.saved_kind == "optional" and field.saved_elem == "enum" -%}
+{%- if field.saved_kind == "optional" and (field.saved_elem == "enum" or field.saved_elem == "record") -%}
 ::SCE::Saved::savedReadOptional({{ raw }}, "{{ field.id | escape_cpp }}", {{ field.saved_type }}FromSaved)
 {%- elif field.saved_kind == "optional" and field.saved_type == "bytes" -%}
 ::SCE::Saved::savedReadOptional({{ raw }}, "{{ field.id | escape_cpp }}", ::SCE::Saved::savedBoundedBytes({{ field.bound if field.bound is not none else 2147483647 }}u))
