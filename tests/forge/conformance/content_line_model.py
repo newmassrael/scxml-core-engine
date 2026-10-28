@@ -142,7 +142,11 @@ def load(path: Path = RESOURCE):
         size = data.attrib.get(SCE + "max-size")
         count = data.attrib.get(SCE + "max-count")
         values = data.attrib.get(SCE + "max-values")
-        type_ = data.attrib[SCE + "type"]
+        written = data.attrib[SCE + "type"]
+        # An entry of a bare type must be present and `optional<T>` may be absent
+        # (docs/adr/0055, section 8): the type says it, and no `sce:required` does.
+        optional = written.startswith("optional<") and written.endswith(">")
+        type_ = written[len("optional<") : -1] if optional else written
         entries.append(
             Entry(
                 id=data.attrib["id"],
@@ -150,7 +154,7 @@ def load(path: Path = RESOURCE):
                 param=data.attrib.get(SCE + "param"),
                 type=type_,
                 text=data.attrib.get(SCE + "value") == "text",
-                required=data.attrib.get(SCE + "required") == "true",
+                required=not optional,
                 max_size=int(size) if size else None,
                 max_count=int(count) if count else None,
                 separator=data.attrib.get(SCE + "separator"),

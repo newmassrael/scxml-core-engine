@@ -1408,5 +1408,14 @@ name = "codec_roles_cli"
 path = "tests/codec_roles_cli.rs"
 required-features = ["cli"]
 
+# A CBOR or content-line codec document declares the format it is written in
+# (docs/adr/0055, section 8): format 1 is refused with its rewrite, and
+# `sce-codegen codec-format` prints the document so rewritten. It runs
+# `sce-codegen`, so it carries the `cli` gate.
+[[test]]
+name = "a_codec_declares_the_format_it_is_written_in"
+path = "tests/a_codec_declares_the_format_it_is_written_in.rs"
+required-features = ["cli"]
+
 [lints]
 workspace = true

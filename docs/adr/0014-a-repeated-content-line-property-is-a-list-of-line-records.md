@@ -2,6 +2,9 @@
 
 - Status: Accepted, implemented in all six backends (2026-10-09)
 - Date: 2026-10-09
+- Amended by: ADR 0055 section 8: `sce:required="true"` below is codec format 1, which is refused;
+  in format 2 (`sce:codec-format="2"`) the bare type of an entry is what `sce:required="true"` was,
+  and `optional<T>` what its absence was
 - Scope: the `codec` kind's `sce:encoding="content-line"` (`SCE_FORGE.md` §4.6.4), `sce-build`
   (`forge/parser.rs`, `forge/model.rs`, `forge/content_line_codec.rs`), the runtime and the generator
   of each of the six backends, `apis/forge-ast.v1.schema.json`, the conformance corpus

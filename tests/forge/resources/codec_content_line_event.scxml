@@ -17,21 +17,21 @@
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0"
-       sce:kind="codec" sce:encoding="content-line" sce:component="VEVENT"
+       sce:kind="codec" sce:encoding="content-line" sce:codec-format="2" sce:component="VEVENT"
        name="codec_content_line_event">
   <datamodel>
     <data id="raw" sce:type="bytes" sce:direction="in"/>
-    <data id="uid" sce:type="string" sce:property="UID" sce:required="true" sce:max-size="24"/>
-    <data id="dtstart" sce:type="string" sce:property="DTSTART" sce:required="true" sce:max-size="20"/>
-    <data id="dtstartTzid" sce:type="string" sce:property="DTSTART" sce:param="TZID" sce:required="true" sce:max-size="24"/>
-    <data id="summary" sce:type="string" sce:property="SUMMARY" sce:value="text" sce:max-size="24"/>
-    <data id="description" sce:type="string" sce:property="DESCRIPTION" sce:value="text" sce:max-size="160"/>
-    <data id="organizer" sce:type="string" sce:property="ORGANIZER" sce:max-size="40"/>
-    <data id="organizerCn" sce:type="string" sce:property="ORGANIZER" sce:param="CN" sce:max-size="24"/>
-    <data id="rrule" sce:type="string" sce:property="RRULE" sce:max-size="40"/>
-    <data id="exdate" sce:type="string" sce:property="EXDATE" sce:max-count="3" sce:max-size="20"/>
-    <data id="sequence" sce:type="uint16" sce:property="SEQUENCE"/>
-    <data id="priority" sce:type="int32" sce:property="PRIORITY"/>
-    <data id="allDay" sce:type="bool" sce:property="X-ALL-DAY"/>
+    <data id="uid" sce:type="string" sce:property="UID" sce:max-size="24"/>
+    <data id="dtstart" sce:type="string" sce:property="DTSTART" sce:max-size="20"/>
+    <data id="dtstartTzid" sce:type="string" sce:property="DTSTART" sce:param="TZID" sce:max-size="24"/>
+    <data id="summary" sce:type="optional&lt;string&gt;" sce:property="SUMMARY" sce:value="text" sce:max-size="24"/>
+    <data id="description" sce:type="optional&lt;string&gt;" sce:property="DESCRIPTION" sce:value="text" sce:max-size="160"/>
+    <data id="organizer" sce:type="optional&lt;string&gt;" sce:property="ORGANIZER" sce:max-size="40"/>
+    <data id="organizerCn" sce:type="optional&lt;string&gt;" sce:property="ORGANIZER" sce:param="CN" sce:max-size="24"/>
+    <data id="rrule" sce:type="optional&lt;string&gt;" sce:property="RRULE" sce:max-size="40"/>
+    <data id="exdate" sce:type="optional&lt;string&gt;" sce:property="EXDATE" sce:max-count="3" sce:max-size="20"/>
+    <data id="sequence" sce:type="optional&lt;uint16&gt;" sce:property="SEQUENCE"/>
+    <data id="priority" sce:type="optional&lt;int32&gt;" sce:property="PRIORITY"/>
+    <data id="allDay" sce:type="optional&lt;bool&gt;" sce:property="X-ALL-DAY"/>
   </datamodel>
 </scxml>

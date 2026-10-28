@@ -2,6 +2,8 @@
 
 - Status: Accepted
 - Date: 2026-10-10
+- Amended by: ADR 0055 section 8: an entry that may be absent is `optional<enum:<alias>>`, and one
+  that must be present the bare `enum:<alias>`, in a document that declares `sce:codec-format="2"`
 - Scope: the `codec` kind's `sce:encoding="content-line"` (`SCE_FORGE.md` §4.6.4) and the `enum`
   kind's `<sce:variant>` (`SCE_FORGE.md` §4.3), `sce-build` (`forge/parser.rs`, `forge/model.rs`,
   `forge/content_line_codec.rs`, `forge/enum_naming.rs`), the runtime and the generator of each of

@@ -2,6 +2,10 @@
 
 - Status: Accepted
 - Date: 2026-10-08
+- Amended by: ADR 0055 section 8: the spelling of absence below (`sce:required="true"` on an entry
+  that must be present, nothing on one that may be absent) is codec format 1, which is refused;
+  a document declares `sce:codec-format="2"`, and a bare `sce:type` is required where
+  `optional<T>` is optional
 - Scope: the `codec` kind (`SCE_FORGE.md` §4.6), `sce-build` (`forge/parser.rs`, `forge/model.rs`,
   the generator of each of the six backends), the conformance corpus
 - Related: `SCE_FORGE.md` §4.6.1 (`sce:encoding="cbor"`, the precedent this follows),
