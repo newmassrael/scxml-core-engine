@@ -162,6 +162,7 @@ fn every_fixture_is_lowered_or_refused_by_name() {
         "static_invoke",
         "static_invoke_params",
         "static_invoke_string",
+        "static_invoke_optional",
         "static_invoke_hybrid",
         "static_invoke_hybrid_saved",
     ] {
@@ -439,6 +440,35 @@ fn an_inline_child_is_lowered_where_it_stands_and_its_bound_is_carried() {
     assert!(
         lowered.contains(r#"<param name="title" expr="SceStatic.bounded(lengthy, 4)"/>"#),
         "a string the child bounds is handed through the bound: {lowered}"
+    );
+}
+
+/// A child's variable of `optional<T>` is handed the whole optional value its
+/// `<param>` computes (docs/adr/0055, step 10): an optional value as it is, held
+/// through the bound the child declares for its text; a value of `T` as the value,
+/// which the Interpreter's optional is, held through the same bound; and `??` as
+/// the library's call.
+#[test]
+fn a_childs_optional_variable_is_handed_the_optional_value_and_its_bound() {
+    let lowered = lowered_fixture("static_invoke_optional");
+    assert_eq!(
+        lowered
+            .matches(r#"initial="waiting" datamodel="ecmascript""#)
+            .count(),
+        6,
+        "each of the six children is an ecmascript document: {lowered}"
+    );
+    assert!(
+        lowered.contains(r#"<param name="label" expr="SceStatic.bounded(lengthy, 4)"/>"#),
+        "a text of the parent's handed to a child's optional text is held to its bound: {lowered}"
+    );
+    assert!(
+        lowered.contains("SceStatic.mapPresent(label, "),
+        "an optional text is handed with its present value held to the child's bound: {lowered}"
+    );
+    assert!(
+        lowered.contains("SceStatic.otherwise(size, "),
+        "`size ?? 0` is the library's call: {lowered}"
     );
 }
 

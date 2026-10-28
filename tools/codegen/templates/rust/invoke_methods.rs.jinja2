@@ -229,7 +229,7 @@
 {% for param in seeds %}
 {% if param.native_seed and param.native_fails %}
                     match (|| -> Result<_, sce_forge_runtime::algorithm::AlgorithmError> { Ok({{ param.native_seed }}) })() {
-                        Ok(value) => seed.{{ param.name | to_snake_case }} = Some(value),
+                        Ok(value) => seed.{{ param.name | to_snake_case }} = {% if param.native_seed_optional %}value{% else %}Some(value){% endif %},
                         Err(_) => {
                             // W3C SCXML 5.7.1: report the failure and leave the value out.
                             ::sce_rust_runtime::sce_log_error!("invoke param '{{ param.name | escape_rust }}' overflowed or failed");
@@ -239,7 +239,7 @@
                         }
                     }
 {% elif param.native_seed %}
-                    seed.{{ param.name | to_snake_case }} = Some({{ param.native_seed }});
+                    seed.{{ param.name | to_snake_case }} = {% if param.native_seed_optional %}{{ param.native_seed }}{% else %}Some({{ param.native_seed }}){% endif %};
 {% endif %}
 {% endfor %}
                     child_policy.accept_params(seed);

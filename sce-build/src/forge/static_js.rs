@@ -852,17 +852,18 @@ fn unsupported_hybrid_invoke(info: &HybridInvokeInfo, state: &str) -> Option<Str
     })
 }
 
-/// The first name of `namelist` that lands in a string `declared` bounds. A
-/// `namelist` name is handed to a child by the Interpreter as it holds it, with
-/// no expression to carry the bound the child declared for a string.
+/// The first name of `namelist` that lands in a string `declared` bounds, or in
+/// an optional string it bounds (docs/adr/0055, step 10). A `namelist` name is
+/// handed to a child by the Interpreter as it holds it, with no expression to
+/// carry the bound the child declared for a string.
 fn bounded_namelist_name<'a>(namelist: &'a str, declared: &[Variable]) -> Option<&'a str> {
     namelist.split_whitespace().find(|name| {
         declared.iter().find(|v| v.id == *name).is_some_and(|v| {
-            v.capacity.is_some()
-                && matches!(
-                    v.value_type.as_ref().and_then(|t| t.scalar()),
-                    Some(SceType::String)
-                )
+            let held = v.value_type.as_ref().and_then(|t| {
+                t.scalar()
+                    .or_else(|| t.optional_elem().and_then(|elem| elem.scalar()))
+            });
+            v.capacity.is_some() && matches!(held, Some(SceType::String))
         })
     })
 }

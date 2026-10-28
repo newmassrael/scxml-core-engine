@@ -565,11 +565,13 @@ struct {{ model.name }}Policy {
 {% endif %}
 {% endfor %}
 {# A parent's `<param>` and `namelist` hand values to a child's top-level
-   `<data>` of a scalar type (§scxml-6.4.1). A list, a record, an enum and bytes
-   are not seeded; the static judge refuses a value handed to one. #}
+   `<data>` of a scalar type, or of an optional scalar (§scxml-6.4.1,
+   docs/adr/0055). A list, a record, an enum and bytes are not seeded; the
+   static judge refuses a value handed to one. The slot of an optional variable
+   is its own optional type, so an absent slot is a value not handed. #}
 {% set ns_seed = namespace(any=false) %}
 {% for field in static_fields %}
-{% if field.saved_kind == 'scalar' and field.saved_type != 'bytes' %}
+{% if field.seeded %}
 {% set ns_seed.any = true %}
 {% endif %}
 {% endfor %}
@@ -580,7 +582,9 @@ struct {{ model.name }}Policy {
     /// value its `<data>` gave it.
     struct InvokeParams {
 {% for field in static_fields %}
-{% if field.saved_kind == 'scalar' and field.saved_type != 'bytes' %}
+{% if field.seeded and field.saved_kind == 'optional' %}
+        {{ field.ty }} {{ field.name }};
+{% elif field.seeded %}
         std::optional<{{ field.ty }}> {{ field.name }};
 {% endif %}
 {% endfor %}
@@ -590,7 +594,7 @@ struct {{ model.name }}Policy {
     /// the ones its `<data>` gave. Called before it initializes.
     void acceptParams(const InvokeParams &params) {
 {% for field in static_fields %}
-{% if field.saved_kind == 'scalar' and field.saved_type != 'bytes' %}
+{% if field.seeded %}
         if (params.{{ field.name }}) {
             {{ field.name }} = *params.{{ field.name }};
         }

@@ -75,6 +75,10 @@
     candidate the same arguments: each is evaluated and left out (§scxml-6.4.3),
     and one that cannot be evaluated costs `error.execution` all the same,
     because an argument is the invoke's whatever the child keeps.
+
+    The slot of a child variable declared `optional<T>` is the optional type
+    itself (docs/adr/0055, step 10): its seed is that whole value
+    (`Param::native_seed_optional`), and absent is a value not handed.
 #}
 {% macro seed_static_child(seeds, unkept, slot, model) %}
                         {% set ns_seeded = namespace(any=false) %}
@@ -90,7 +94,11 @@
                                 {% if param.native_fails %}
                                 SCE::Forge::AlgorithmFailure sce_failure_;
                                 {% endif %}
+                                {% if param.native_seed_optional %}
+                                decltype(seed.v_{{ param.name | to_snake_case }}) seedValue = {{ param.native_seed }};
+                                {% else %}
                                 typename decltype(seed.v_{{ param.name | to_snake_case }})::value_type seedValue = {{ param.native_seed }};
+                                {% endif %}
                                 {% if param.native_fails %}
                                 if (SCE_EXPECT_FALSE(sce_failure_.failed())) {
                                     SCE_LOG_ERROR("Invoke param '{{ param.name | escape_cpp }}' overflowed or failed");

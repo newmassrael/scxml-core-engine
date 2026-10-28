@@ -1,0 +1,163 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15, "Child sessions";
+  docs/adr/0055, step 10): an <invoke type="scxml"> hands a child's variable of
+  `optional<T>` the whole optional value its <param> computes (W3C SCXML 6.4.1).
+  A value of `T` is present, `null` is absent, and an optional variable of this
+  machine is handed as it is. A value not handed is the child's own start, so a
+  child whose optional variable starts at `null` takes an absent value as it takes
+  none, and one that starts at a value takes only a value that is never absent.
+
+  Six children, each ending when it holds what it is waiting for:
+
+    given     `size` and `label` start at `null`; handed this machine's own optional
+              `size` (7) and `label` ('abc'); ends on 7 and 'abc'
+    lifted    the same two variables, handed values of `T`, 5 and 'xy', which are
+              present; ends on 5 and 'xy'
+    absent    handed `nosize`, an optional variable that is absent, and the literal
+              `null`; it ends on either variable being present, so it never ends
+    replaced  `size` starts at 3 and is handed `size ?? 0`, a value that is never
+              absent, 7; ends on 7
+    over      `label` is bounded to 4 bytes and starts at 'ab'; handed `lengthy`, which
+              holds 'abcdefgh' (8 bytes), past the bound: the value is left out and
+              `error.execution` is raised, and the child still starts, holding its
+              own 'ab', on which it ends
+    fits      `label` is bounded to 4 bytes and starts at `null`; handed 'wxyz' (4
+              bytes), which fits; ends on 'wxyz'
+
+  `done.invoke.<id>` counts each child that ended in `completed` — 1, 10, 1000,
+  10000 and 100000 — and `absent`, which would add 100, never does. A child handed a
+  value past its bound that took it anyway would hold 'abcdefgh' and never end, and
+  one handed a stale or absent value where a present one is meant would wait for
+  ever: the run is over at `completed` 111011 and `errors` 1.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="running" datamodel="sce-static" name="static_invoke_optional">
+  <datamodel>
+    <data id="size" sce:type="optional&lt;int32&gt;" expr="7"/>
+    <data id="label" sce:type="optional&lt;string&gt;" sce:capacity="8" expr="'abc'"/>
+    <data id="nosize" sce:type="optional&lt;int32&gt;" expr="null"/>
+    <data id="lengthy" sce:type="string" sce:capacity="8" expr="'abcdefgh'"/>
+    <data id="completed" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="errors" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="running">
+    <invoke type="scxml" id="given">
+      <param name="size" expr="size"/>
+      <param name="label" expr="label"/>
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+               version="1.0" initial="waiting" datamodel="sce-static">
+          <datamodel>
+            <data id="size" sce:type="optional&lt;int32&gt;" expr="null"/>
+            <data id="label" sce:type="optional&lt;string&gt;" sce:capacity="8" expr="null"/>
+          </datamodel>
+          <state id="waiting">
+            <transition cond="size !== null &amp;&amp; size.value === 7 &amp;&amp; label !== null &amp;&amp; label.value === 'abc'" target="leaf"/>
+          </state>
+          <final id="leaf"/>
+        </scxml>
+      </content>
+    </invoke>
+    <invoke type="scxml" id="lifted">
+      <param name="size" expr="5"/>
+      <param name="label" expr="'xy'"/>
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+               version="1.0" initial="waiting" datamodel="sce-static">
+          <datamodel>
+            <data id="size" sce:type="optional&lt;int32&gt;" expr="null"/>
+            <data id="label" sce:type="optional&lt;string&gt;" sce:capacity="8" expr="null"/>
+          </datamodel>
+          <state id="waiting">
+            <transition cond="size !== null &amp;&amp; size.value === 5 &amp;&amp; label !== null &amp;&amp; label.value === 'xy'" target="leaf"/>
+          </state>
+          <final id="leaf"/>
+        </scxml>
+      </content>
+    </invoke>
+    <invoke type="scxml" id="absent">
+      <param name="size" expr="nosize"/>
+      <param name="label" expr="null"/>
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+               version="1.0" initial="waiting" datamodel="sce-static">
+          <datamodel>
+            <data id="size" sce:type="optional&lt;int32&gt;" expr="null"/>
+            <data id="label" sce:type="optional&lt;string&gt;" sce:capacity="8" expr="null"/>
+          </datamodel>
+          <state id="waiting">
+            <transition cond="size !== null || label !== null" target="leaf"/>
+          </state>
+          <final id="leaf"/>
+        </scxml>
+      </content>
+    </invoke>
+    <invoke type="scxml" id="replaced">
+      <param name="size" expr="size ?? 0"/>
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+               version="1.0" initial="waiting" datamodel="sce-static">
+          <datamodel>
+            <data id="size" sce:type="optional&lt;int32&gt;" expr="3"/>
+          </datamodel>
+          <state id="waiting">
+            <transition cond="size !== null &amp;&amp; size.value === 7" target="leaf"/>
+          </state>
+          <final id="leaf"/>
+        </scxml>
+      </content>
+    </invoke>
+    <invoke type="scxml" id="over">
+      <param name="label" expr="lengthy"/>
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+               version="1.0" initial="waiting" datamodel="sce-static">
+          <datamodel>
+            <data id="label" sce:type="optional&lt;string&gt;" sce:capacity="4" expr="'ab'"/>
+          </datamodel>
+          <state id="waiting">
+            <transition cond="label !== null &amp;&amp; label.value === 'ab'" target="leaf"/>
+          </state>
+          <final id="leaf"/>
+        </scxml>
+      </content>
+    </invoke>
+    <invoke type="scxml" id="fits">
+      <param name="label" expr="'wxyz'"/>
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+               version="1.0" initial="waiting" datamodel="sce-static">
+          <datamodel>
+            <data id="label" sce:type="optional&lt;string&gt;" sce:capacity="4" expr="null"/>
+          </datamodel>
+          <state id="waiting">
+            <transition cond="label !== null &amp;&amp; label.value === 'wxyz'" target="leaf"/>
+          </state>
+          <final id="leaf"/>
+        </scxml>
+      </content>
+    </invoke>
+    <transition event="done.invoke.given">
+      <assign location="completed" expr="completed + 1"/>
+    </transition>
+    <transition event="done.invoke.lifted">
+      <assign location="completed" expr="completed + 10"/>
+    </transition>
+    <transition event="done.invoke.absent">
+      <assign location="completed" expr="completed + 100"/>
+    </transition>
+    <transition event="done.invoke.replaced">
+      <assign location="completed" expr="completed + 1000"/>
+    </transition>
+    <transition event="done.invoke.over">
+      <assign location="completed" expr="completed + 10000"/>
+    </transition>
+    <transition event="done.invoke.fits">
+      <assign location="completed" expr="completed + 100000"/>
+    </transition>
+    <transition event="error.execution">
+      <assign location="errors" expr="errors + 1"/>
+    </transition>
+  </state>
+</scxml>

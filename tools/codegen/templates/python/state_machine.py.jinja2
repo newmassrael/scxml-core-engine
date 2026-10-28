@@ -339,11 +339,13 @@ def _sce_log_name(value):
 
 {% endif %}
 {# A parent's `<param>` and `namelist` hand values to a child's top-level
-   `<data>` of a scalar type (§scxml-6.4.1). A list, a record, an enum and bytes
-   are not seeded; the static judge refuses a value handed to one. #}
+   `<data>` of a scalar type, or of an optional scalar (§scxml-6.4.1,
+   docs/adr/0055). A list, a record, an enum and bytes are not seeded; the
+   static judge refuses a value handed to one. The slot of an optional variable
+   is its own optional type, so a slot left `None` is a value not handed. #}
 {% set ns_seed = namespace(any=false) %}
 {% for field in static_fields %}
-{% if field.saved_kind == 'scalar' and field.saved_type != 'bytes' %}
+{% if field.seeded %}
 {% set ns_seed.any = true %}
 {% endif %}
 {% endfor %}
@@ -355,7 +357,9 @@ class {{ machine_name }}InvokeParams:
     value its `<data>` gave it."""
 
 {% for field in static_fields %}
-{% if field.saved_kind == 'scalar' and field.saved_type != 'bytes' %}
+{% if field.seeded and field.saved_kind == 'optional' %}
+    {{ field.name }}: {{ field.ty }} = None
+{% elif field.seeded %}
     {{ field.name }}: Optional[{{ field.ty }}] = None
 {% endif %}
 {% endfor %}
@@ -497,7 +501,7 @@ class {{ machine_name }}Policy(StatePolicy[{{ machine_name }}State, {{ machine_n
         """Give this machine the values `params` carries, in place of the ones
         its `<data>` gave. Called before it initializes (§scxml-6.4.1)."""
 {% for field in static_fields %}
-{% if field.saved_kind == 'scalar' and field.saved_type != 'bytes' %}
+{% if field.seeded %}
         if params.{{ field.name }} is not None:
             self.{{ field.name }} = params.{{ field.name }}
 {% endif %}

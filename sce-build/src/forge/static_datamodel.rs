@@ -558,30 +558,80 @@ pub(crate) fn argument_written(
 
 /// The type a value handed to the child's variable `var` is held to
 /// (§scxml-6.4.1), or `None` for a variable no value can be handed to — a
-/// list, a record, an enum or bytes. The one rule the judge and the lowering of
-/// a child's arguments share.
+/// list, a record, an enum or bytes, and an optional value of an enum, bytes or
+/// a record. A variable of `optional<T>` over a bool, a number or a text is
+/// handed an `optional<T>` (docs/adr/0055, step 10): a value of `T` is present,
+/// `null` is absent, and an optional value of the invoking machine is handed as
+/// it is. The one rule the judge and the lowering of a child's arguments share.
 pub(crate) fn seed_slot(var: &Variable) -> Option<InferredType> {
-    match var.value_type.as_ref()?.scalar()? {
-        crate::forge::model::SceType::Bytes | crate::forge::model::SceType::Enum(_) => None,
-        scalar => Some(InferredType::from_sce_type(scalar)),
+    let value_type = var.value_type.as_ref()?;
+    let optional = value_type.optional_elem();
+    let held = match optional {
+        Some(elem) => elem.scalar()?,
+        None => value_type.scalar()?,
+    };
+    if matches!(
+        held,
+        crate::forge::model::SceType::Bytes | crate::forge::model::SceType::Enum(_)
+    ) {
+        return None;
     }
+    Some(match optional {
+        Some(elem) => InferredType::Optional(crate::forge::types::OptionalElem::of_value(elem)),
+        None => InferredType::from_sce_type(held),
+    })
 }
 
-/// The rule that refuses a `<param>` handed to the child's variable `var` when
-/// it holds an optional value (docs/adr/0055), `whose` naming the child as a
-/// refusal does (`the child's`); `None` for any other variable. The arguments
-/// a child is started with already spell a name that is not handed as absent,
-/// so an optional variable needs a second absence inside the first, and no
-/// step has decided its shape: refused by name until one does.
-fn optional_child_variable(var: &Variable, whose: &str) -> Option<String> {
+/// The refusal of a `<param>` handed to the child's variable `var`, which
+/// [`seed_slot`] answers no type for, `whose` naming the child as a refusal does
+/// (`the child's`).
+fn unseedable_variable(var: &Variable, whose: &str) -> String {
+    let declared = var
+        .value_type
+        .as_ref()
+        .map(crate::forge::model::AlgorithmValueType::as_attr)
+        .unwrap_or_default();
+    format!(
+        "{whose} `{}` is {declared}, and a value is handed only to a bool, a string, an \
+         integer or a real, or to an optional value of one of them: a list, a record, an \
+         enum, bytes and an optional value of an enum, bytes or a record are not seeded",
+        var.id
+    )
+}
+
+/// Whether the child's variable `var` starts absent, `expr="null"`: the state a
+/// variable of `optional<T>` that is not handed a value is in
+/// (docs/adr/0055, section 2).
+fn starts_absent(var: &Variable) -> bool {
+    is_null_literal(&var.expr)
+}
+
+/// The rule that refuses a `<param>` whose value may be absent (of type `ty`),
+/// handed to the child's optional variable `var` when `var` starts at a value
+/// (docs/adr/0055, step 10); `None` for any other variable or value. What a
+/// child is started with spells a variable not handed as absent, so an absent
+/// value stands for no value handed, and the child keeps the one its `<data>`
+/// gave it: the same state as "handed absent" only where the variable starts
+/// absent. Where it starts at a value, the value handed must be one that is
+/// never absent, and the refusal names the two ways to write it.
+fn absent_handed_to_a_present_start(
+    var: &Variable,
+    ty: InferredType,
+    whose: &str,
+) -> Option<String> {
     let value_type = var.value_type.as_ref()?;
     value_type.optional_elem()?;
+    if starts_absent(var) || !(ty.is_optional() || ty == InferredType::Null) {
+        return None;
+    }
     Some(format!(
-        "{whose} `{}` is {}, which a <param> hands no value to yet: a child's arguments spell \
-         a name not handed as absent, and a value that may be absent needs a second absence \
-         inside that one. Leave it to its own initial value, and send it the value in an event",
+        "{whose} `{}` is {} and starts at `{}`, and a <param> hands a name not handed as \
+         absent: a value that may be absent would leave the child that start, which is no \
+         value handed. Start it at `null`, or hand it a value that is never absent (a value \
+         of the element, or `<value> ?? <default>`)",
         var.id,
-        value_type.as_attr()
+        value_type.as_attr(),
+        var.expr.trim()
     ))
 }
 
@@ -3824,7 +3874,10 @@ impl<'a> Judge<'a> {
     /// value must be of that variable's type — the check an `<assign>` to it
     /// would get. A name the child does not declare would be dropped, as would
     /// a value handed to a list, a record, an enum or bytes, so each is refused
-    /// where it is written rather than accepted and never delivered.
+    /// where it is written rather than accepted and never delivered. A variable
+    /// of `optional<T>` over a bool, a number or a text is handed an optional
+    /// value ([`seed_slot`]); one that starts at a value takes no value that may
+    /// be absent ([`absent_handed_to_a_present_start`]).
     fn child_arguments(
         &self,
         ctx: &TypeCtx<'_>,
@@ -3852,17 +3905,13 @@ impl<'a> Judge<'a> {
                     param.name
                 )));
             };
-            if let Some(rule) = optional_child_variable(variable, "the child's") {
+            let Some(slot) = seed_slot(variable) else {
+                return Err(refuse(&unseedable_variable(variable, "the child's")));
+            };
+            let ty = self.expr(ctx, written, spelling, Expected::Slot(slot))?;
+            if let Some(rule) = absent_handed_to_a_present_start(variable, ty, "the child's") {
                 return Err(refuse(&rule));
             }
-            let Some(slot) = seed_slot(variable) else {
-                return Err(refuse(&format!(
-                    "the child's `{}` is a list, a record, an enum or bytes, and a value is \
-                     handed only to a bool, a string, an integer or a real",
-                    param.name
-                )));
-            };
-            self.expr(ctx, written, spelling, Expected::Slot(slot))?;
         }
         Ok(())
     }
@@ -4002,20 +4051,14 @@ impl<'a> Judge<'a> {
                 let Some(variable) = candidate_variable(candidate, &param.name) else {
                     continue;
                 };
-                if let Some(rule) = optional_child_variable(
-                    variable,
-                    &format!("the candidate `{}`'s", candidate.stem),
-                ) {
+                let whose = format!("the candidate `{}`'s", candidate.stem);
+                let Some(slot) = seed_slot(variable) else {
+                    return Err(refuse(&unseedable_variable(variable, &whose)));
+                };
+                let ty = self.expr(ctx, written, spelling, Expected::Slot(slot))?;
+                if let Some(rule) = absent_handed_to_a_present_start(variable, ty, &whose) {
                     return Err(refuse(&rule));
                 }
-                let Some(slot) = seed_slot(variable) else {
-                    return Err(refuse(&format!(
-                        "the candidate `{}`'s `{}` is a list, a record, an enum or bytes, and a \
-                         value is handed only to a bool, a string, an integer or a real",
-                        candidate.stem, param.name
-                    )));
-                };
-                self.expr(ctx, written, spelling, Expected::Slot(slot))?;
             }
             // A candidate that declares no such variable evaluates the value
             // and leaves it out, so it must be one that can be evaluated to a
@@ -4190,5 +4233,86 @@ impl<'a> Judge<'a> {
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::forge::model::{AlgorithmValueType, OptionalElemType, SceType};
+    use crate::forge::types::OptionalElem;
+
+    /// A child's top-level `<data>` of `value_type`, starting at `expr`.
+    fn variable(value_type: AlgorithmValueType, expr: &str) -> Variable {
+        Variable {
+            id: "x".to_string(),
+            expr: expr.to_string(),
+            value_type: Some(value_type),
+            ..Variable::default()
+        }
+    }
+
+    fn optional(elem: OptionalElemType) -> AlgorithmValueType {
+        AlgorithmValueType::Optional { elem }
+    }
+
+    /// A value is handed to a bool, a number or a text, and to an optional value of
+    /// one of them, which takes the optional value (docs/adr/0055, step 10); a byte
+    /// string, an enum, a record and a list take none, nor does an optional one of
+    /// the first three.
+    #[test]
+    fn a_child_variable_is_handed_a_value_of_its_own_optional_type() {
+        let slot = |value_type| seed_slot(&variable(value_type, "null"));
+        assert_eq!(
+            slot(optional(OptionalElemType::Scalar(SceType::Int64))),
+            Some(InferredType::Optional(OptionalElem::of(&SceType::Int64)))
+        );
+        assert_eq!(
+            slot(optional(OptionalElemType::Scalar(SceType::String))),
+            Some(InferredType::Optional(OptionalElem::of(&SceType::String)))
+        );
+        assert_eq!(
+            slot(optional(OptionalElemType::Scalar(SceType::Bool))),
+            Some(InferredType::Optional(OptionalElem::of(&SceType::Bool)))
+        );
+        assert_eq!(
+            slot(AlgorithmValueType::Scalar(SceType::Int64)),
+            Some(InferredType::from_sce_type(&SceType::Int64))
+        );
+        assert_eq!(
+            slot(optional(OptionalElemType::Scalar(SceType::Bytes))),
+            None
+        );
+        assert_eq!(
+            slot(optional(OptionalElemType::Record {
+                alias: "Item".to_string()
+            })),
+            None
+        );
+        assert_eq!(slot(AlgorithmValueType::Scalar(SceType::Bytes)), None);
+    }
+
+    /// A value that may be absent stands for no value handed, so a child whose
+    /// optional variable starts at a value is refused it, and one that starts at
+    /// `null` takes it; a value that is never absent is taken by both.
+    #[test]
+    fn an_absent_value_is_handed_only_to_a_variable_that_starts_absent() {
+        let int64 = || optional(OptionalElemType::Scalar(SceType::Int64));
+        let maybe = InferredType::Optional(OptionalElem::of(&SceType::Int64));
+        let rule = |var: &Variable, ty| absent_handed_to_a_present_start(var, ty, "the child's");
+        let present_start = variable(int64(), "3");
+        let absent_start = variable(int64(), "null");
+        let refusal = rule(&present_start, maybe).expect("an optional value is refused");
+        assert!(refusal.contains("starts at `3`"), "{refusal}");
+        assert!(
+            rule(&present_start, InferredType::Null).is_some(),
+            "`null` is an absent value"
+        );
+        assert!(rule(&absent_start, maybe).is_none());
+        assert!(rule(&absent_start, InferredType::Null).is_none());
+        assert!(rule(&present_start, InferredType::from_sce_type(&SceType::Int64)).is_none());
+        // A variable that is not optional has no start to keep apart from absence.
+        let plain = variable(AlgorithmValueType::Scalar(SceType::Int64), "3");
+        assert!(rule(&plain, maybe).is_none());
     }
 }

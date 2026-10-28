@@ -86,6 +86,15 @@ pub struct StaticField {
     /// target whose byte buffer can be written into hands out
     /// (docs/adr/0005, decision 2).
     pub holds_bytes: bool,
+    /// A parent's `<param>` or `namelist` may hand this variable a value
+    /// (§scxml-6.4.1): a bool, a number or a text, and an optional value of one
+    /// of them. A list, a record, an enum and bytes are not seeded, nor is an
+    /// optional value of an enum, bytes or a record; the static judge refuses a
+    /// value handed to one (the statechart judge's `seed_slot` is the one rule
+    /// the judge and the lowering share). The child's `InvokeParams` carries one
+    /// slot for each, and the slot of an optional variable is the optional type
+    /// itself, so a seed that is absent is a value not handed.
+    pub seeded: bool,
 }
 
 /// What lowering a `sce-static` machine produced beyond the rewritten model.
@@ -3633,8 +3642,7 @@ pub(crate) fn optional_not_lowered(what: &str, lang: &str) -> GenerateError {
 /// ([`StaticTarget::lowers_optional_record`]): a variable of one, or a call of
 /// an imported algorithm that takes or returns one. `None` for a document that
 /// holds none. The rest of what a later step lowers is refused where it is
-/// judged: a child session's optional variable as a `<param>`, a typed
-/// request's optional field.
+/// judged: a host action's optional argument, a typed request's optional field.
 fn optional_record_not_lowered(scope: &StaticScope, lang: &str) -> Option<GenerateError> {
     use crate::forge::model::AlgorithmValueType;
     if let Some(variable) = scope.variables.iter().find(|v| {
@@ -4120,9 +4128,11 @@ pub fn lower(
             })
         })
     });
-    let optional_import = (holds_an_optional_value(model) || calls_with_an_optional_slot)
-        .then(|| target.optional_import())
-        .flatten();
+    let optional_import = (holds_an_optional_value(model)
+        || calls_with_an_optional_slot
+        || starts_a_child_with_an_optional_value(model))
+    .then(|| target.optional_import())
+    .flatten();
     let imports: Vec<String> = scope
         .callees
         .iter()
@@ -4304,6 +4314,7 @@ pub fn lower(
                     saved_elem: None,
                     reader: None,
                     holds_bytes: holds_bytes(schema),
+                    seeded: false,
                 });
                 continue;
             }
@@ -4360,6 +4371,7 @@ pub fn lower(
                     saved_elem: None,
                     reader: None,
                     holds_bytes: holds,
+                    seeded: false,
                 });
                 continue;
             }
@@ -4402,6 +4414,7 @@ pub fn lower(
                     saved_elem: Some("record"),
                     reader: None,
                     holds_bytes: holds_bytes(&place.schema),
+                    seeded: false,
                 });
                 continue;
             }
@@ -4464,6 +4477,7 @@ pub fn lower(
                     }),
                     reader: None,
                     holds_bytes: false,
+                    seeded: crate::forge::static_datamodel::seed_slot(var).is_some(),
                 });
                 continue;
             }
@@ -4506,6 +4520,7 @@ pub fn lower(
                     saved_elem: None,
                     reader: None,
                     holds_bytes: false,
+                    seeded: false,
                 });
                 continue;
             }
@@ -4549,6 +4564,7 @@ pub fn lower(
                 saved_elem: None,
                 reader: None,
                 holds_bytes: false,
+                seeded: crate::forge::static_datamodel::seed_slot(var).is_some(),
             });
         }
     }
@@ -5817,6 +5833,34 @@ fn holds_an_optional_value(model: &SCXMLModel) -> bool {
             .values()
             .chain(model.imported_records.values())
             .any(|schema| schema.first_optional_field().is_some())
+}
+
+/// Whether an `<invoke type="scxml">` of the document starts a child, or a
+/// candidate of a hybrid one, that declares an optional variable: what the
+/// `<param>` handing it a value writes is the target's optional type
+/// (docs/adr/0055, step 10), so the machine whose unit imports the optional
+/// type by a line of its own needs the line.
+fn starts_a_child_with_an_optional_value(model: &SCXMLModel) -> bool {
+    let optional = |variables: &Option<Vec<crate::model::Variable>>| {
+        variables.iter().flatten().any(|v| {
+            v.value_type
+                .as_ref()
+                .and_then(crate::forge::model::AlgorithmValueType::optional_elem)
+                .is_some()
+        })
+    };
+    model
+        .states
+        .values()
+        .flat_map(|state| state.invokes.iter())
+        .any(|invoke| match invoke {
+            crate::model::Invoke::Scxml(info) => optional(&info.common.child_static_variables),
+            crate::model::Invoke::Hybrid(info) => info
+                .candidates
+                .iter()
+                .any(|candidate| optional(&candidate.child_static_variables)),
+            crate::model::Invoke::MeshRpc(_) | crate::model::Invoke::Unsupported(_) => false,
+        })
 }
 
 /// Whether the document makes a delayed `<send>` that, when it comes due, is
@@ -13024,27 +13068,28 @@ fn lower_action(
     Ok(lower_nested(action, ctx, renames, rewrites)? || reads_payload)
 }
 
-/// An `<assign>` to `place`, an optional variable or an optional field of a
-/// record variable (docs/adr/0055), in place: the one rule every target writes
-/// the whole value of an optional place by. The literal `null` is the absent
-/// value ([`StaticTarget::optional_none`]); an optional value is written as it
-/// is, its present text held to the place's bound ([`StaticTarget::optional_map`]);
-/// a value of `T` is lowered into the place's element — so the narrowing of an
-/// integer and the bound of a text are the element's, as a write of a place of
-/// `T` is held to them — and lifted ([`StaticTarget::optional_some`]). What
-/// inside an expression is absent, lifted, tested, read or compared is the
-/// emitter's ([`crate::forge::expr::OptionalForm`]).
-fn lower_optional_assign(
-    action: &mut Action,
+/// The whole value `expr` gives `place`, an optional variable or an optional
+/// field of a record variable, or a child's optional variable a `<param>` hands
+/// a value (docs/adr/0055): the one rule every target writes the whole value of
+/// an optional place by, `construct` naming where it is written in a refusal.
+/// The literal `null` is the absent value ([`StaticTarget::optional_none`]); an
+/// optional value is written as it is, its present text held to the place's
+/// bound ([`StaticTarget::optional_map`]); a value of `T` is lowered into the
+/// place's element — so the narrowing of an integer and the bound of a text are
+/// the element's, as a write of a place of `T` is held to them — and lifted
+/// ([`StaticTarget::optional_some`]). What inside an expression is absent,
+/// lifted, tested, read or compared is the emitter's
+/// ([`crate::forge::expr::OptionalForm`]).
+fn optional_whole_value(
+    expr: &str,
     place: &OptionalPlace,
     ctx: &crate::forge::types::TypeCtx<'_>,
     renames: &HashMap<&str, &str>,
     rewrites: &Rewrites<'_>,
-) -> Result<(), GenerateError> {
+    construct: &str,
+) -> Result<Receiving, GenerateError> {
     let target = rewrites.target;
     let lang = target.name();
-    let location = action.location.trim().to_string();
-    let construct = format!("<assign location='{location}'>");
     let lower = |text: &str, slot: InferredType| {
         rewrites.owned(text, ctx, renames, slot).map_err(|r| {
             GenerateError::unsupported(format!("`{text}` has no {lang} lowering: {}", r.error))
@@ -13063,53 +13108,69 @@ fn lower_optional_assign(
         }
         (_, None) => value.to_string(),
     };
-    let value = if is_null_literal(&action.expr) {
-        Receiving {
-            text: absent_value(target, &place.present, &construct)?,
+    if is_null_literal(expr) {
+        return Ok(Receiving {
+            text: absent_value(target, &place.present, construct)?,
             can_fail: false,
+        });
+    }
+    // Typed as it is lowered: a call of an algorithm that takes a record or
+    // a list is its adapter's, which answers the optional value the algorithm
+    // returns.
+    let written = crate::forge::expr::infer_expr_type(&rewrites.as_lowered(expr), ctx)
+        .unwrap_or(InferredType::Unknown);
+    if written.is_optional() {
+        // The judge admits an optional value of another width; no target
+        // spells the narrowing of a present value inside one yet.
+        if written != optional {
+            return Err(GenerateError::unsupported(format!(
+                "{construct}: `{}` is {}, written to {}: an optional value of another \
+                 element has no {lang} lowering yet (docs/adr/0055)",
+                expr.trim(),
+                written.describe(),
+                optional.describe()
+            )));
         }
-    } else {
-        // Typed as it is lowered: a call of an algorithm that takes a record or
-        // a list is its adapter's, which answers the optional value the algorithm
-        // returns.
-        let written = crate::forge::expr::infer_expr_type(&rewrites.as_lowered(&action.expr), ctx)
-            .unwrap_or(InferredType::Unknown);
-        if written.is_optional() {
-            // The judge admits an optional value of another width; no target
-            // spells the narrowing of a present value inside one yet.
-            if written != optional {
-                return Err(GenerateError::unsupported(format!(
-                    "{construct}: `{}` is {}, written to {}: an optional value of another \
-                     element has no {lang} lowering yet (docs/adr/0055)",
-                    action.expr.trim(),
-                    written.describe(),
-                    optional.describe()
-                )));
-            }
-            let value = lower(&action.expr, optional)?;
-            if place.bound.is_some() {
-                Receiving {
-                    text: target
-                        .optional_map(&value.text, &place.present, &held)
-                        .ok_or_else(|| optional_not_lowered(&construct, lang))?,
-                    can_fail: true,
-                }
-            } else {
-                value
+        let value = lower(expr, optional)?;
+        return Ok(if place.bound.is_some() {
+            Receiving {
+                text: target
+                    .optional_map(&value.text, &place.present, &held)
+                    .ok_or_else(|| optional_not_lowered(construct, lang))?,
+                can_fail: true,
             }
         } else {
-            let value = lower(&action.expr, InferredType::from_sce_type(&place.elem))?;
-            let (text, can_fail) = if place.bound.is_some() {
-                (held(&value.text), true)
-            } else {
-                (value.text, value.can_fail)
-            };
-            Receiving {
-                text: present_value(target, &place.present, &text, &construct)?,
-                can_fail,
-            }
-        }
+            value
+        });
+    }
+    let value = lower(expr, InferredType::from_sce_type(&place.elem))?;
+    let (text, can_fail) = if place.bound.is_some() {
+        (held(&value.text), true)
+    } else {
+        (value.text, value.can_fail)
     };
+    Ok(Receiving {
+        text: present_value(target, &place.present, &text, construct)?,
+        can_fail,
+    })
+}
+
+/// An `<assign>` to `place`, an optional variable or an optional field of a
+/// record variable (docs/adr/0055), in place: the whole value it gives the
+/// place is [`optional_whole_value`]'s, written by the target's own statement,
+/// and a value that can fail is received where its failure is.
+fn lower_optional_assign(
+    action: &mut Action,
+    place: &OptionalPlace,
+    ctx: &crate::forge::types::TypeCtx<'_>,
+    renames: &HashMap<&str, &str>,
+    rewrites: &Rewrites<'_>,
+) -> Result<(), GenerateError> {
+    let target = rewrites.target;
+    let location = action.location.trim().to_string();
+    let construct = format!("<assign location='{location}'>");
+    let optional = InferredType::Optional(crate::forge::types::OptionalElem::of(&place.elem));
+    let value = optional_whole_value(&action.expr, place, ctx, renames, rewrites, &construct)?;
     let record_field = field_location(&location, rewrites);
     // A target that rewrites the document itself writes a record's field as an
     // `<assign>` of the whole record, changed in that field.
@@ -13653,7 +13714,8 @@ fn lower_child_arguments(
 
 /// Lower one argument an `<invoke>` hands a child to the value of the child's
 /// `variable` of the same name (§scxml-6.4.1): `Param::native_seed`, the type of
-/// the variable it lands in, and whether it can fail.
+/// the variable it lands in, and whether it can fail. A variable of `optional<T>`
+/// takes the whole optional value, flagged `Param::native_seed_optional`.
 fn lower_child_argument(
     param: &mut crate::model::Param,
     variable: Option<&crate::model::Variable>,
@@ -13674,6 +13736,38 @@ fn lower_child_argument(
             param.name
         ))
     };
+    // A child's variable of `optional<T>` is handed the whole optional value
+    // (docs/adr/0055, step 10), by the rule an `<assign>` to it writes one by:
+    // the literal `null` is absent, a value of `T` is lifted into its element,
+    // and a text is held to the bound the child declared. Absent is a value not
+    // handed, which is the child's own start: the judge held a variable that
+    // starts at a value to a value that is never absent.
+    let optional = variable
+        .filter(|v| crate::forge::static_datamodel::seed_slot(v).is_some())
+        .and_then(|v| {
+            let elem = v.value_type.as_ref()?.optional_elem()?.scalar()?;
+            Some((elem, v.capacity))
+        });
+    if let Some((elem, capacity)) = optional {
+        let bound = matches!(elem, SceType::String)
+            .then_some(capacity)
+            .flatten();
+        let place = OptionalPlace {
+            elem: elem.clone(),
+            present: optional_present(target, rewrites.machine, elem, bound),
+            bound,
+        };
+        let construct = format!("<param name=\"{}\"> `{written}`", param.name);
+        let value = optional_whole_value(&written, &place, ctx, renames, rewrites, &construct)?;
+        rewrites.note(&written, spelling.as_ref(), &value.text);
+        param.native_seed_type = target
+            .optional_type(&place.present)
+            .ok_or_else(|| optional_not_lowered(&construct, lang))?;
+        param.native_seed = value.text;
+        param.native_seed_optional = true;
+        param.native_fails = value.can_fail;
+        return Ok(());
+    }
     let (Some(slot), Some(held)) = (
         variable.and_then(crate::forge::static_datamodel::seed_slot),
         variable

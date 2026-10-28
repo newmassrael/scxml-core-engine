@@ -672,11 +672,13 @@ impl{{ policy_generics_decl }} {{ machine_name }}Persist for Engine<{{ machine_n
 {{ host_invoker_interface }}
 {% endif %}
 {# §scxml-6.4.1: a variable a parent may hand a value to — a bool, a string, an
-   integer or a real. A list, a record, an enum and bytes are not seeded; the
-   static judge refuses a value handed to one. #}
+   integer or a real, or an optional value of one of them (docs/adr/0055). A
+   list, a record, an enum and bytes are not seeded; the static judge refuses a
+   value handed to one. The slot of an optional variable is its own optional
+   type, so a slot left `None` is a value not handed. #}
 {% set ns_seed = namespace(any=false) %}
 {% for field in static_fields %}
-{% if field.saved_kind == 'scalar' and field.saved_type != 'bytes' %}
+{% if field.seeded %}
 {% set ns_seed.any = true %}
 {% endif %}
 {% endfor %}
@@ -687,7 +689,9 @@ impl{{ policy_generics_decl }} {{ machine_name }}Persist for Engine<{{ machine_n
 #[derive(Default)]
 pub struct {{ machine_name }}InvokeParams {
 {% for field in static_fields %}
-{% if field.saved_kind == 'scalar' and field.saved_type != 'bytes' %}
+{% if field.seeded and field.saved_kind == 'optional' %}
+    pub {{ field.name }}: {{ field.ty }},
+{% elif field.seeded %}
     pub {{ field.name }}: Option<{{ field.ty }}>,
 {% endif %}
 {% endfor %}
@@ -1183,7 +1187,11 @@ impl{{ policy_generics_decl }} {{ machine_name }}Policy{{ policy_generics_use }}
     /// the ones its `<data>` gave. Called before it initializes.
     pub fn accept_params(&mut self, params: {{ machine_name }}InvokeParams) {
 {% for field in static_fields %}
-{% if field.saved_kind == 'scalar' and field.saved_type != 'bytes' %}
+{% if field.seeded and field.saved_kind == 'optional' %}
+        if params.{{ field.name }}.is_some() {
+            self.{{ field.name }} = params.{{ field.name }};
+        }
+{% elif field.seeded %}
         if let Some(value) = params.{{ field.name }} {
             self.{{ field.name }} = value;
         }

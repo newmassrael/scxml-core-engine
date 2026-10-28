@@ -60,7 +60,7 @@
 					sceValue := {{ param.native_seed }}
 {% if param.native_fails %}
 					if !sceFailure.Failed() {
-						seed.V{{ param.name | to_pascal_case }} = &sceValue
+						seed.V{{ param.name | to_pascal_case }} = {% if param.native_seed_optional %}sceValue{% else %}&sceValue{% endif %}
 					} else {
 						// §scxml-5.7.1: a value that failed is reported and the
 						// child still starts, one value short.
@@ -69,7 +69,7 @@
 {% endif %}
 					}
 {% else %}
-					seed.V{{ param.name | to_pascal_case }} = &sceValue
+					seed.V{{ param.name | to_pascal_case }} = {% if param.native_seed_optional %}sceValue{% else %}&sceValue{% endif %}
 {% endif %}
 				}
 {% endif %}

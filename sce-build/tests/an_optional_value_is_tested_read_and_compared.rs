@@ -487,31 +487,6 @@ fn a_carrier_of_text_refuses_an_optional_value_naming_the_default() {
     );
 }
 
-/// A child's optional variable takes no `<param>` yet, refused by name.
-#[test]
-fn a_childs_optional_variable_takes_no_param_yet() {
-    const CHILD: &str = r#"<?xml version="1.0"?>
-<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
-       version="1.0" initial="busy" datamodel="sce-static">
-  <datamodel><data id="due" sce:type="optional&lt;int64&gt;" expr="null"/></datamodel>
-  <state id="busy"><transition event="finish" target="end"/></state>
-  <final id="end"/>
-</scxml>
-"#;
-    refused(
-        &machine(
-            r#"<state id="idle">
-    <invoke type="scxml" id="child" src="child.scxml"><param name="due" expr="count"/></invoke>
-    <transition event="done.invoke.child" target="done"/>
-  </state>
-  <final id="done"/>"#,
-        ),
-        &[("child.scxml", CHILD)],
-        DATAMODEL_RULE,
-        "hands no value to yet",
-    );
-}
-
 /// A `<log>` takes an optional value as it is.
 #[test]
 fn a_log_takes_an_optional_value() {

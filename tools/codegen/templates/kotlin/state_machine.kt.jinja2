@@ -216,11 +216,13 @@ class {{ machine_name }}StateMachine(
 {% endif %}
 {% endfor %}
 {# §scxml-6.4.1: a variable a parent may hand a value to — a bool, a string, an
-   integer or a real. A list, a record, an enum and bytes are not seeded; the
-   static judge refuses a value handed to one. #}
+   integer or a real, or an optional value of one of them (docs/adr/0055). A
+   list, a record, an enum and bytes are not seeded; the static judge refuses a
+   value handed to one. The slot of an optional variable is its own type, which
+   already ends in `?`, so a slot left `null` is a value not handed. #}
 {% set ns_seed = namespace(any=false) %}
 {% for field in static_fields %}
-{% if field.saved_kind == 'scalar' and field.saved_type != 'bytes' %}
+{% if field.seeded %}
 {% set ns_seed.any = true %}
 {% endif %}
 {% endfor %}
@@ -233,7 +235,9 @@ class {{ machine_name }}StateMachine(
      */
     class InvokeParams {
 {% for field in static_fields %}
-{% if field.saved_kind == 'scalar' and field.saved_type != 'bytes' %}
+{% if field.seeded and field.saved_kind == 'optional' %}
+        var {{ field.id | to_camel_case }}: {{ field.ty }} = null
+{% elif field.seeded %}
         var {{ field.id | to_camel_case }}: {{ field.ty }}? = null
 {% endif %}
 {% endfor %}
@@ -242,7 +246,7 @@ class {{ machine_name }}StateMachine(
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
     fun acceptParams(params: InvokeParams) {
 {% for field in static_fields %}
-{% if field.saved_kind == 'scalar' and field.saved_type != 'bytes' %}
+{% if field.seeded %}
         params.{{ field.id | to_camel_case }}?.let { {{ field.name }} = it }
 {% endif %}
 {% endfor %}

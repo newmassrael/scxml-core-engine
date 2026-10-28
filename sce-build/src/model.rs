@@ -1252,6 +1252,15 @@ pub struct Param {
     #[serde(default, skip_serializing_if = "String::is_empty")]
     #[cfg_attr(test, schemars(skip))]
     pub native_seed_type: String,
+    /// Codegen-internal: whether [`Self::native_seed`] is the whole optional
+    /// value of a child variable declared `optional<T>` (docs/adr/0055, step
+    /// 10), of the backend's one optional type, and not a value of the type the
+    /// child's `InvokeParams` slot wraps in an optional of its own. The slot of
+    /// such a variable is the optional type itself, so a seed that is absent is
+    /// a value not handed. `false` for every other param.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(test, schemars(skip))]
+    pub native_seed_optional: bool,
     /// Codegen-internal: whether [`Self::native_value`] or
     /// [`Self::native_seed`] can fail — a checked integer operation. Then it
     /// is not an expression but one that must run where its failure is

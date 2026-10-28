@@ -1066,11 +1066,13 @@ func (p *{{ machine_name }}Policy) {{ field.reader }}() {{ field.ty }} {
 {% endif %}
 {% endfor %}
 {# A parent's `<param>` and `namelist` hand values to a child's top-level
-   `<data>` of a scalar type (§scxml-6.4.1). A list, a record, an enum and bytes
-   are not seeded; the static judge refuses a value handed to one. #}
+   `<data>` of a scalar type, or of an optional scalar (§scxml-6.4.1,
+   docs/adr/0055). A list, a record, an enum and bytes are not seeded; the
+   static judge refuses a value handed to one. The slot of an optional variable
+   is its own optional type, so an absent slot is a value not handed. #}
 {% set ns_seed = namespace(any=false) %}
 {% for field in static_fields %}
-{% if field.saved_kind == 'scalar' and field.saved_type != 'bytes' %}
+{% if field.seeded %}
 {% set ns_seed.any = true %}
 {% endif %}
 {% endfor %}
@@ -1078,10 +1080,13 @@ func (p *{{ machine_name }}Policy) {{ field.reader }}() {{ field.ty }} {
 
 // {{ machine_name }}InvokeParams holds the values a parent's `<param>` and
 // `namelist` give this machine's variables before it starts (§scxml-6.4.1). A
-// variable left nil keeps the value its `<data>` gave it.
+// variable left nil, or absent for an optional one, keeps the value its `<data>`
+// gave it.
 type {{ machine_name }}InvokeParams struct {
 {% for field in static_fields %}
-{% if field.saved_kind == 'scalar' and field.saved_type != 'bytes' %}
+{% if field.seeded and field.saved_kind == 'optional' %}
+	V{{ field.id | to_pascal_case }} {{ field.ty }}
+{% elif field.seeded %}
 	V{{ field.id | to_pascal_case }} *{{ field.ty }}
 {% endif %}
 {% endfor %}
@@ -1091,7 +1096,11 @@ type {{ machine_name }}InvokeParams struct {
 // ones its `<data>` gave. Called before it initializes (§scxml-6.4.1).
 func (p *{{ machine_name }}Policy) AcceptParams(params {{ machine_name }}InvokeParams) {
 {% for field in static_fields %}
-{% if field.saved_kind == 'scalar' and field.saved_type != 'bytes' %}
+{% if field.seeded and field.saved_kind == 'optional' %}
+	if params.V{{ field.id | to_pascal_case }}.IsPresent() {
+		p.{{ field.name }} = params.V{{ field.id | to_pascal_case }}
+	}
+{% elif field.seeded %}
 	if params.V{{ field.id | to_pascal_case }} != nil {
 		p.{{ field.name }} = *params.V{{ field.id | to_pascal_case }}
 	}
