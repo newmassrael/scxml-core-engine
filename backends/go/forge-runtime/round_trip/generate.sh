@@ -4,7 +4,8 @@
 #
 # RFC variant-default-uniformity (go half) — regenerate the
 # 3 default-marker fixtures used by the round-trip property test
-# (default_round_trip_test.go). Mirrors the conformance harness'
+# (default_round_trip_test.go), and the two codecs the optional-field test
+# (optional_field_test.go) reads. Mirrors the conformance harness'
 # generate.sh shape (backends/go/forge-runtime/conformance/generate.sh) but
 # narrowed to the RFC-dedicated fixtures, which live outside the
 # numerical-conformance manifest because their purpose is contract
@@ -40,6 +41,10 @@ FIXTURES=(
     codec_default_marker_arm_a
     codec_default_marker_arm_b
     codec_variant_default_marker
+    # The two codecs optional_field_test.go reads an absent value through: a
+    # field gated by sce:present-if and an optional<T> entry of a CBOR map.
+    codec_present_if_basic
+    codec_cbor_map
 )
 
 for fixture in "${FIXTURES[@]}"; do
