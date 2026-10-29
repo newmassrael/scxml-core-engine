@@ -158,6 +158,42 @@ for fixture in "${BROADCAST_LOG_FIXTURES[@]}"; do
 done
 rm -rf "$BROADCAST_LOG_STAGE"
 
+# The logs over elements whose codec asks its caller for what its wire form does
+# not carry (ADR 0062, "Caller inputs are part of the element"): a flag input,
+# and a variant whose tag the caller gives. The six documents are shared by every
+# backend's conformance lane, so they are in
+# tests/forge/conformance/broadcast_log_context/ and not in the resources, whose
+# documents the generated trees' source hash reads. They are generated as one set,
+# like the logs above, and each file is moved into the package that is named like
+# it. broadcast_log_context_generated_test.go compiles them against the runtime and
+# uses the two logs.
+BROADCAST_LOG_CONTEXT_DIR="$REPO_ROOT/tests/forge/conformance/broadcast_log_context"
+BROADCAST_LOG_CONTEXT_FIXTURES=(
+    broadcast_log_conformance_flagged_event
+    broadcast_log_conformance_flagged
+    broadcast_log_conformance_choice_small
+    broadcast_log_conformance_choice_large
+    broadcast_log_conformance_choice
+    broadcast_log_conformance_chosen
+)
+rm -rf "$BROADCAST_LOG_STAGE"
+mkdir -p "$BROADCAST_LOG_STAGE"
+broadcast_log_context_documents=()
+for fixture in "${BROADCAST_LOG_CONTEXT_FIXTURES[@]}"; do
+    broadcast_log_context_documents+=(--forge "$BROADCAST_LOG_CONTEXT_DIR/$fixture.scxml")
+done
+"$SCE_CODEGEN" orchestrate \
+    "${broadcast_log_context_documents[@]}" \
+    --language go \
+    --output-dir "$BROADCAST_LOG_STAGE" \
+    --go-module-prefix "$GO_MODULE_PREFIX" >/dev/null
+for fixture in "${BROADCAST_LOG_CONTEXT_FIXTURES[@]}"; do
+    pkg_dir="$OUT_DIR/$fixture"
+    mkdir -p "$pkg_dir"
+    mv "$BROADCAST_LOG_STAGE/$fixture.go" "$pkg_dir/$fixture.go"
+done
+rm -rf "$BROADCAST_LOG_STAGE"
+
 # Render the test harness itself from the shared template.
 "$SCE_CODEGEN" generate-conformance \
     --language go \
