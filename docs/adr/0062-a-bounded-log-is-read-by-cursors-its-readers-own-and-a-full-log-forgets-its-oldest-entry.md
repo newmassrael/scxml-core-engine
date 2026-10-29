@@ -557,7 +557,10 @@ access to report a race on, and a run would read as a watch that is not one.
 What Miri sees was measured and not assumed. Each order of the protocol was weakened by hand, one at a time, in the Rust
 source (the `.cases` file's own edits), and the test run under `cargo +nightly-2026-10-08 miri test -p sce-forge-runtime
 --test broadcast_log_threads` with `MIRIFLAGS=-Zmiri-many-seeds=0..8` on one build machine; the unmodified source passed
-the same command twice.
+the same command. The measurement was made twice. The first time was on the algorithm as `broadcast_log.rs` held it; the
+algorithm then moved, once, into `broadcast_log_core.rs` and became generic over the width of the stamp (the narrow row),
+so the table below is the second measurement, on the core, with the same edits at their new lines. The symptom of one
+weakening changed with the move (the release fence, below) and the verdict did not.
 
 | weakened | Miri | what it reported |
 |---|---|---|
@@ -566,9 +569,9 @@ the same command twice.
 | first stamp loaded relaxed | caught | a lag that skipped nothing |
 | head loaded relaxed in `read` | caught | a lag that skipped nothing |
 | second stamp loaded relaxed | caught | a lag that skipped nothing |
-| release fence removed | caught | a torn copy that passed validation |
+| release fence removed | caught | a lag that skipped nothing (a torn copy that passed validation, before the move to the core) |
 | acquire fence removed | caught | a torn copy that passed validation |
-| any written stamp accepted | caught | an item that is not the entry at the cursor |
+| any written stamp accepted | caught | a torn copy: an item that is not one whole entry |
 | window one entry too wide | caught | an item outside the window |
 | done stamp stored relaxed | not caught | (not observable, see the casefile) |
 | `head` reload after a mismatch loaded relaxed | not caught | (not observable, see the casefile) |
@@ -996,16 +999,26 @@ reads out of `forge-runtime/src/lib.rs`, as for the 64-bit row.
   crate's own documents and reads them back on the host, through `publisher()`, `split()` and a `static`.
 - **The Miri gate and the thread tests.** `broadcast_log_threads.rs` and the unit tests of `broadcast_log::` are written against
   the names of the 64-bit row, which are unchanged (the alias, `publisher()`, `reader_oldest()`, `head()`, `RETENTION`).
-  `reader_oldest()` now reads the last slot's stamp before the head, which the first thread test tolerates by
-  construction: it takes `start` from the cursor it got, and a reader opened on a stale stamp is simply lapped by the first
-  read. The gate's filter `--lib broadcast_log::` selects the 64-bit row's tests and not `broadcast_log_core::` or
-  `broadcast_log_narrow::`; widening it to `broadcast_log` would put the generic and narrow unit tests under Miri.
-- **Not run.** The change was written with nothing built and nothing model-checked: not the unit tests, loom, TLC, the
-  generation tests, the conformance crate, clippy, the mutation round, or the builds of the runtime for
-  `thumbv6m-none-eabi` and `thumbv7em-none-eabihf`. The generic code is type-checked there only as far as the
-  `no_std` gate builds it; nothing instantiates it for a load-and-store target. The first thing to read is TLC on the two
-  refused configurations and loom on `outside_the_bound_a_later_lap_is_mistaken_for_the_readers_own`: if either passes,
-  the model is not able to say no.
+  `reader_oldest()` of the narrow row reads the last slot's stamp before the head, because a count modulo `2^w` cannot tell
+  a young log from one that wrapped. The 64-bit row does not: it takes the head less the retention, no lower than 0, with
+  one load. The first version of the core asked the last slot in both rows, and the wide loom model
+  `two_readers_each_hold_their_own_cursor` went from 0.6 s to 187 s, because the load added schedules to a three-thread
+  model that opens two readers; no outcome of the 64-bit row depended on it. It is asked only where a count can wrap now,
+  and the model is back to 0.6 s. The first thread test tolerates the narrow behaviour by construction: it takes `start`
+  from the cursor it got, and a reader opened on a stale stamp is simply lapped by the first read. The gate's Miri filter is
+  `--lib broadcast_log`, so the generic and narrow unit tests run under Miri with the 64-bit row's.
+- **Run on the merged tree (2026-10-29).** Clippy over the workspace; the runtime's unit tests (28); the generation tests
+  (101); the conformance crate (13: the 64-bit, narrow and ownership logs); loom (the 3 wide models and the 5 narrow ones,
+  the `#[should_panic]` model panicking as it must); and TLC. The three configurations that hold finish with no violation
+  (301,380, 28,722 and 331,516 distinct states); the two refused ones finish with their counterexample, a later lap read as
+  the reader's own when the bound is dropped, and slot continuity broken when the slots do not divide `2^w`.
+  **Not run:** the mutation round of the narrow casefile (CI's), and the builds of the runtime for `thumbv6m-none-eabi`
+  and `thumbv7em-none-eabihf` (`scripts/gate nostd-mcu`). The generic code is type-checked there only as far as that gate
+  builds it; nothing instantiates it for a load-and-store target.
+- **A fact outside this change.** `scripts/formal/check.sh` pins the TLC release by SHA-256, and the build machines' copy
+  of the same release, fetched from the same URL, has a different one (`fc6878c6...` against the pinned `15d103b7...`), so
+  the script refuses it there. The run above used a copy that matches the pin. A lane that fetches it afresh would refuse
+  it the same way.
 
 ### What is still undone
 
