@@ -23,8 +23,20 @@
 # same entry the other backends' logs hold.
 #
 # Operations (from `{{ runtime_dep }}`, typed here over the element):
+{% if context.present %}
+#   publish(publisher, element{% if context.flags %}, flags{% endif %}{% if context.has_tag %}, tag{% endif %}) -> int         the entry's sequence number
+{% else %}
 #   publish(publisher, element) -> int         the entry's sequence number
+{% endif %}
 #   read(log, reader) -> {{ pascal }}Read         an item, nothing new, or how many were missed
+{% if context.present %}
+#
+# The element's codec asks its caller for {% if context.flags %}{{ context.flags | length }} flag input(s){% endif %}{% if context.flags and context.has_tag %} and {% endif %}{% if context.has_tag %}a variant tag{% endif %}. Those are
+# part of the entry: `publish` takes them, the log stores them in the entry's context
+# words beside the bytes, and an item returns them, so every reader decodes an entry
+# under what it was published under (ADR 0062 section 4).
+#
+{% endif %}
 # A reader is `log.reader_oldest()`, `log.reader_head()` or `log.reader_at(n)`
 # and owns its cursor; the publisher is `log.publisher()`, taken once, and
 # `release()` gives its place back.
@@ -51,10 +63,22 @@ SLOTS: Final[int] = RETENTION + 1
 # document when this module was generated.
 MAX_ENCODED_BYTES: Final[int] = {{ max_bytes }}
 
+{% if context.present %}
+# The words of an entry that hold what the element's codec asks its caller for
+# (ADR 0062 section 4): {% if context.flags %}the flag inputs, one bit each in the order of the
+# codec's signature{% endif %}{% if context.flags and context.has_tag %}, and then {% endif %}{% if context.has_tag %}one word that holds the variant's tag{% endif %}.
+CONTEXT_WORDS: Final[int] = {{ context.context_words }}
+
+# The 64-bit words an entry holds: one for the length of the encoded element,
+# `CONTEXT_WORDS` for its context, then as many as `MAX_ENCODED_BYTES` bytes take
+# at eight to a word, that is `1 + CONTEXT_WORDS + ceil(MAX_ENCODED_BYTES / 8)`.
+WORDS: Final[int] = 1 + CONTEXT_WORDS + (MAX_ENCODED_BYTES + 7) // 8
+{% else %}
 # The 64-bit words an entry holds: one for the length of the encoded element,
 # then as many as `MAX_ENCODED_BYTES` bytes take at eight to a word, that is
 # `1 + ceil(MAX_ENCODED_BYTES / 8)`.
 WORDS: Final[int] = 1 + (MAX_ENCODED_BYTES + 7) // 8
+{% endif %}
 
 # What the document requires of publish and read (`<sce:progress>`).
 DECLARED_PROGRESS: Final[str] = "{{ declared_progress }}"
@@ -69,12 +93,39 @@ def new_{{ snake }}() -> {{ pascal }}:
     return runtime.BroadcastLog(WORDS, SLOTS)
 
 
+{% if context.flags %}
+@dataclass(frozen=True)
+class {{ pascal }}Flags:
+    """The flag inputs the element's codec takes from its caller, which the log
+    stores with each entry: what ``publish`` was given is what a reader gets back,
+    and what the entry is decoded under."""
+
+{% for flag in context.flags %}
+    {{ flag.snake }}: bool = False
+{% endfor %}
+
+
+{% endif %}
 @dataclass(frozen=True)
 class {{ pascal }}Item:
+{% if context.present %}
+    """The entry ``seq``, decoded, with what it was published under; the reader
+    now holds ``seq + 1``."""
+
+    seq: int
+    element: {{ element_pascal }}
+{% if context.flags %}
+    flags: {{ pascal }}Flags
+{% endif %}
+{% if context.has_tag %}
+    tag: int
+{% endif %}
+{% else %}
     """The entry ``seq``, decoded; the reader now holds ``seq + 1``."""
 
     seq: int
     element: {{ element_pascal }}
+{% endif %}
 
 
 # What a typed read found: the runtime's three answers, with the entry decoded.
@@ -85,7 +136,11 @@ class {{ pascal }}Item:
 {{ pascal }}Read = Union[{{ pascal }}Item, runtime.Empty, runtime.Lagged]
 
 
+{% if context.present %}
+def publish(publisher: runtime.Publisher, element: {{ element_pascal }}{% if context.flags %}, flags: {{ pascal }}Flags{% endif %}{% if context.has_tag %}, tag: int{% endif %}) -> int:
+{% else %}
 def publish(publisher: runtime.Publisher, element: {{ element_pascal }}) -> int:
+{% endif %}
     """Publish ``element``: encode it into a buffer of ``MAX_ENCODED_BYTES``
     bytes, pack its length and its bytes into ``WORDS`` words, and hand them to
     the runtime, which never refuses and holds the lock for a number of steps
@@ -95,13 +150,39 @@ def publish(publisher: runtime.Publisher, element: {{ element_pascal }}) -> int:
     An element that encodes to more than ``MAX_ENCODED_BYTES`` bytes is refused
     by the codec (``BufferOverflow`` from the bounded sink) and nothing is
     published: an entry is never a truncated element.
+{% if context.present %}
+
+    What the element's codec asks its caller for is given here: {% if context.flags %}``flags`` are its flag inputs{% endif %}{% if context.flags and context.has_tag %}, and {% endif %}{% if context.has_tag %}``tag`` is the variant tag its decode takes{% endif %}.
+    They are encoded under here and stored in the entry's context words, so that
+    every reader decodes the entry under what it was published under. The log
+    does not check that {% if context.has_tag %}``tag`` is the tag of the arm ``element`` holds{% else %}the flags agree with ``element``{% endif %}; the publisher gives what it
+    knows, as every caller of this codec does.
+{% if context.has_tag %}
+
+    A ``tag`` that is not one byte (0 to 255) is a ``ValueError`` and nothing is
+    published: the entry stores the tag as one byte.
+{% endif %}
+{% endif %}
     """
+{% if context.has_tag %}
+    if not 0 <= tag <= 0xFF:
+        raise ValueError(f"the tag {tag} is not one byte: an entry stores the variant's tag as one byte")
+{% endif %}
     buffer = bytearray(MAX_ENCODED_BYTES)
     sink = runtime_codec.MemoryviewSink(memoryview(buffer))
-    element.encode(sink)
+    element.encode(sink{% for flag in context.flags %}, int(flags.{{ flag.snake }}){% endfor %})
     length = sink.position()
-    padded = bytes(buffer[:length]).ljust(8 * (WORDS - 1), b"\x00")
+    padded = bytes(buffer[:length]).ljust(8 * (WORDS - {{ context.payload_start }}), b"\x00")
     entry = [length]
+{% if context.present %}
+    entry.extend([0] * CONTEXT_WORDS)
+{% for flag in context.flags %}
+    entry[1 + {{ flag.word }}] |= int(flags.{{ flag.snake }}) << {{ flag.shift }}
+{% endfor %}
+{% if context.has_tag %}
+    entry[1 + {{ context.tag_word }}] = tag
+{% endif %}
+{% endif %}
     entry.extend(int.from_bytes(padded[at : at + 8], "little") for at in range(0, len(padded), 8))
     return publisher.publish(entry)
 
@@ -122,8 +203,20 @@ def read(log: {{ pascal }}, reader: runtime.Reader) -> {{ pascal }}Read:
     stored = entry[0]
     if stored > MAX_ENCODED_BYTES:
         raise runtime_codec.LengthOutOfRange(f"the entry {found.seq} stores {stored} bytes and an entry holds at most {MAX_ENCODED_BYTES}")
-    packed = b"".join(word.to_bytes(8, "little") for word in entry[1:])
-    element = {{ element_pascal }}.decode(runtime_codec.SceCursor(packed[:stored]))
+{% if context.flags %}
+    # What the entry was published under: the context words are written by `publish`
+    # alone and a copy that was torn is never decoded, so a flag is a bit.
+    flags = {{ pascal }}Flags(
+{% for flag in context.flags %}
+        {{ flag.snake }}=bool((entry[1 + {{ flag.word }}] >> {{ flag.shift }}) & 1),
+{% endfor %}
+    )
+{% endif %}
+{% if context.has_tag %}
+    tag = entry[1 + {{ context.tag_word }}] & 0xFF
+{% endif %}
+    packed = b"".join(word.to_bytes(8, "little") for word in entry[{{ context.payload_start }}:])
+    element = {{ element_pascal }}.decode(runtime_codec.SceCursor(packed[:stored]){% for flag in context.flags %}, int(flags.{{ flag.snake }}){% endfor %}{% if context.has_tag %}, tag{% endif %})
     if element is None:
         raise runtime_codec.CodecError(f"the entry {found.seq} is {stored} bytes that its element's codec does not decode")
-    return {{ pascal }}Item(found.seq, element)
+    return {{ pascal }}Item(found.seq, element{% if context.flags %}, flags{% endif %}{% if context.has_tag %}, tag{% endif %})

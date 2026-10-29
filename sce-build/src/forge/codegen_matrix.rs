@@ -354,7 +354,8 @@ pub const BROADCAST_LOG_BACKENDS: &[Language] = &[
 /// language whose template does not store the context refuses an element that
 /// has one ([`crate::BroadcastLogElementFacts::refusal_for`]) and never lowers it
 /// to a module that calls the codec without the arguments it needs.
-pub const BROADCAST_LOG_CONTEXT_BACKENDS: &[Language] = &[Language::Rust, Language::Kotlin];
+pub const BROADCAST_LOG_CONTEXT_BACKENDS: &[Language] =
+    &[Language::Rust, Language::Kotlin, Language::Python];
 
 /// Whether the broadcast-log template of `lang` stores the context of an element
 /// ([`BROADCAST_LOG_CONTEXT_BACKENDS`]).

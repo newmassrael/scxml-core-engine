@@ -21417,6 +21417,13 @@ fn render_broadcast_log_cpp(
 /// element that encodes to more is refused by the codec and nothing is
 /// published. Python has no stamp to narrow, so
 /// [`judge_broadcast_log_stamp`] is not asked anything here.
+///
+/// What the element's codec asks its caller for (its flag inputs, and the tag of
+/// a variant that has none of its own) is stored in context words between the
+/// length word and the bytes ([`broadcast_log_context_value`], over 64-bit
+/// words), taken by `publish` and returned in the item (ADR 0062 section 4).
+/// An element with no caller input has no context word and the module it always
+/// had.
 fn render_broadcast_log_python(
     env: &minijinja::Environment<'_>,
     m: &crate::forge::model::BroadcastLogModel,
@@ -21445,6 +21452,7 @@ fn render_broadcast_log_python(
         producers => inputs.producers,
         declared_progress => inputs.declared_progress,
         runtime_dep => "sce_forge_runtime.broadcast_log",
+        context => broadcast_log_context_value(&inputs.element, 64),
     };
     tmpl.render(ctx).map_err(|e| {
         ForgeError::from(GenerateError::TemplateRender(format!(
