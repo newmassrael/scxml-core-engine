@@ -69,6 +69,16 @@ class BufferOverflow(CodecError):
     growable :class:`BytearraySink` is effectively infallible."""
 
 
+class LengthOutOfRange(CodecError):
+    """Raised when a length that was stored, and not computed from a value,
+    is above the bound it must respect. The typed ``read`` of a generated
+    ``sce:kind="broadcast-log"`` module (ADR 0062) raises it for an entry whose
+    length word is above the largest encoded size of the log's element: the
+    module wrote no such length, so the entry is not one it published, and the
+    bytes the length would cut are never taken. Mirrors the Rust runtime's
+    ``CodecError::LengthOutOfRange``."""
+
+
 class PresentIfMismatch(CodecError):
     """Raised by an encode when a field gated by a chain-membership
     ``sce:present-if`` (``<chain>.has(<value>)``) was given while the

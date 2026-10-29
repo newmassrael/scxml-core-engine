@@ -1,0 +1,129 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{{ sce_map.source_marker(source_location, "python", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
+
+# SCE Forge: Auto-generated from Extended SCXML (sce:kind="broadcast-log")
+# Runtime: {{ runtime_dep }}
+# Do not edit — regenerate from the source SCXML file.
+#
+# ADR 0062 broadcast-log — a bounded log that one execution context appends
+# to and any number of readers read, each by a cursor of its own. The document
+# states the contract (element type `{{ element_type }}`, {{ producers }} producer,
+# `{{ declared_progress }}`, the last {{ retention }} entries retained) and names no algorithm;
+# the algorithm is the runtime's, and Python has no compare-and-swap primitive
+# and no fence, so it is one ring under one lock and gives `blocking`, which is
+# why a document that declares more is refused for this backend
+# (`broadcast-log/progress-unreachable-on-backend`).
+#
+# An entry is the element's wire bytes, never a value: the log stores the
+# bytes the element document's codec writes, packed into 64-bit words (one
+# word for the length, then the bytes, eight to a word, little-endian), the
+# same entry the other backends' logs hold.
+#
+# Operations (from `{{ runtime_dep }}`, typed here over the element):
+#   publish(publisher, element) -> int         the entry's sequence number
+#   read(log, reader) -> {{ pascal }}Read         an item, nothing new, or how many were missed
+# A reader is `log.reader_oldest()`, `log.reader_head()` or `log.reader_at(n)`
+# and owns its cursor; the publisher is `log.publisher()`, taken once, and
+# `release()` gives its place back.
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Final, Union
+
+from sce_forge_runtime import broadcast_log as runtime
+from sce_forge_runtime import codec as runtime_codec
+
+{{ element_import_stmt }}
+
+# The entries a reader may rely on (`<sce:retention>`): the last `RETENTION`
+# published.
+RETENTION: Final[int] = {{ retention }}
+
+# The slots the log keeps: one more than the retention, because the slot being
+# overwritten is in flux and cannot be promised to a reader.
+SLOTS: Final[int] = RETENTION + 1
+
+# The most bytes the element `{{ element_type }}` encodes to, read from its
+# document when this module was generated.
+MAX_ENCODED_BYTES: Final[int] = {{ max_bytes }}
+
+# The 64-bit words an entry holds: one for the length of the encoded element,
+# then as many as `MAX_ENCODED_BYTES` bytes take at eight to a word, that is
+# `1 + ceil(MAX_ENCODED_BYTES / 8)`.
+WORDS: Final[int] = 1 + (MAX_ENCODED_BYTES + 7) // 8
+
+# What the document requires of publish and read (`<sce:progress>`).
+DECLARED_PROGRESS: Final[str] = "{{ declared_progress }}"
+
+# The log: `SLOTS` slots of `WORDS` words, kept under one lock. It allocates its
+# storage when it is built and never again.
+{{ pascal }} = runtime.BroadcastLog
+
+
+def new_{{ snake }}() -> {{ pascal }}:
+    """An empty log that retains the last ``RETENTION`` entries of ``WORDS`` words."""
+    return runtime.BroadcastLog(WORDS, SLOTS)
+
+
+@dataclass(frozen=True)
+class {{ pascal }}Item:
+    """The entry ``seq``, decoded; the reader now holds ``seq + 1``."""
+
+    seq: int
+    element: {{ element_pascal }}
+
+
+# What a typed read found: the runtime's three answers, with the entry decoded.
+# ``runtime.Empty`` says the reader is at the head and nothing newer is
+# published; ``runtime.Lagged`` says the reader had fallen behind the window and
+# missed ``skipped`` (at least one) entries, and that it now holds the oldest
+# entry retained.
+{{ pascal }}Read = Union[{{ pascal }}Item, runtime.Empty, runtime.Lagged]
+
+
+def publish(publisher: runtime.Publisher, element: {{ element_pascal }}) -> int:
+    """Publish ``element``: encode it into a buffer of ``MAX_ENCODED_BYTES``
+    bytes, pack its length and its bytes into ``WORDS`` words, and hand them to
+    the runtime, which never refuses and holds the lock for a number of steps
+    that depends on the width of an entry alone. Returns the sequence number the
+    entry took.
+
+    An element that encodes to more than ``MAX_ENCODED_BYTES`` bytes is refused
+    by the codec (``BufferOverflow`` from the bounded sink) and nothing is
+    published: an entry is never a truncated element.
+    """
+    buffer = bytearray(MAX_ENCODED_BYTES)
+    sink = runtime_codec.MemoryviewSink(memoryview(buffer))
+    element.encode(sink)
+    length = sink.position()
+    padded = bytes(buffer[:length]).ljust(8 * (WORDS - 1), b"\x00")
+    entry = [length]
+    entry.extend(int.from_bytes(padded[at : at + 8], "little") for at in range(0, len(padded), 8))
+    return publisher.publish(entry)
+
+
+def read(log: {{ pascal }}, reader: runtime.Reader) -> {{ pascal }}Read:
+    """Read the entry at ``reader``'s cursor and decode it. The runtime answers
+    ``Item`` only for an entry it copied whole, so what is decoded is what was
+    published.
+
+    A stored length above ``MAX_ENCODED_BYTES`` is not a length this log wrote:
+    it is ``LengthOutOfRange`` and the bytes it would cut are never taken. The
+    reader has moved past that entry either way.
+    """
+    entry = [0] * WORDS
+    found = log.read(reader, entry)
+    if not isinstance(found, runtime.Item):
+        return found
+    stored = entry[0]
+    if stored > MAX_ENCODED_BYTES:
+        raise runtime_codec.LengthOutOfRange(f"the entry {found.seq} stores {stored} bytes and an entry holds at most {MAX_ENCODED_BYTES}")
+    packed = b"".join(word.to_bytes(8, "little") for word in entry[1:])
+    element = {{ element_pascal }}.decode(runtime_codec.SceCursor(packed[:stored]))
+    if element is None:
+        raise runtime_codec.CodecError(f"the entry {found.seq} is {stored} bytes that its element's codec does not decode")
+    return {{ pascal }}Item(found.seq, element)

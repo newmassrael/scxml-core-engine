@@ -386,12 +386,12 @@ const ACCEPTED: &[(Language, &str, Why)] = &[
         Why::NotYet("no host Mesh core for this backend; the E5 extension opened Rust and Kotlin"),
     ),
     // The kind matrix: a broadcast log's runtime row has landed on every backend
-    // but Swift, and the template that stores a document's element over it on
-    // Rust alone (ADR 0062, order of landing).
+    // but Swift, and the template that stores a document's element over it only
+    // on the backends of `BROADCAST_LOG_BACKENDS` (ADR 0062, order of landing):
+    // a backend that has it has no row here.
     (Language::Cpp, "forge kind `broadcast-log`", Why::NotYet(BROADCAST_LOG_NO_TEMPLATE)),
     (Language::Kotlin, "forge kind `broadcast-log`", Why::NotYet(BROADCAST_LOG_NO_TEMPLATE)),
     (Language::Go, "forge kind `broadcast-log`", Why::NotYet(BROADCAST_LOG_NO_TEMPLATE)),
-    (Language::Python, "forge kind `broadcast-log`", Why::NotYet(BROADCAST_LOG_NO_TEMPLATE)),
     (Language::C11, "forge kind `broadcast-log`", Why::NotYet(BROADCAST_LOG_NO_TEMPLATE)),
     // Swift, which is decided at every site that decides per backend and writes a
     // statechart in part. Every entry below closes as its emitter grows, and the

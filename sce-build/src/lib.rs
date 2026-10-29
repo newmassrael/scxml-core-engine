@@ -3644,13 +3644,19 @@ impl BroadcastLogElementFacts {
             // The decoded form is `<'a>` over the cursor's buffer and has no
             // `Owned` mirror for a string or byte-string entry.
             Language::Rust => self.cbor_text_or_bytes_entry,
+            // Every value a Python decode returns owns what it holds, so a CBOR
+            // text or byte-string entry is held and never refused. The log gives
+            // the decode a `bytes` (not a `memoryview`), and the generated CBOR
+            // codec reads an entry through `sce_forge_runtime.cbor`, whose
+            // `read_text` decodes to a `str` and whose `read_bytes` copies
+            // (`bytes(c.peek_slice(n))`); a plain codec's byte field is
+            // `bytes(raw)`, also a copy. Nothing the log's buffer owns outlives
+            // the call, so there is no view to refuse.
+            Language::Python => false,
             // No template has landed for these, so none has decided yet.
-            Language::Cpp
-            | Language::Kotlin
-            | Language::Go
-            | Language::Python
-            | Language::C11
-            | Language::Swift => false,
+            Language::Cpp | Language::Kotlin | Language::Go | Language::C11 | Language::Swift => {
+                false
+            }
         };
         borrows.then(|| {
             "a CBOR map with a string or byte string entry decodes to a value that borrows \

@@ -334,7 +334,7 @@ pub const fn template_ships(kind: ForgeKind, lang: Language) -> bool {
 /// derived from it, so the two cannot disagree, and every test that holds the
 /// kind to the backends that ship it reads it, so a landing is this one line and
 /// the files that make it true.
-pub const BROADCAST_LOG_BACKENDS: &[Language] = &[Language::Rust];
+pub const BROADCAST_LOG_BACKENDS: &[Language] = &[Language::Rust, Language::Python];
 
 /// Whether `lang` is in `list`, as a `const fn` can ask it. Compared by
 /// discriminant: `Language` derives `PartialEq`, which is not callable in a

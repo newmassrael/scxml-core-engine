@@ -1545,9 +1545,10 @@ fn a_cbor_entry_that_borrows_is_refused_only_where_the_decoded_form_borrows() {
         .refusal_for(Language::Rust)
         .expect("Rust decodes a CBOR string to a borrowed view");
     assert!(why.contains("a CBOR map with a string"), "{why}");
-    // The other languages have no template yet, so none has decided that its
-    // decoded form borrows; the change that gives one its template says which it is
-    // in the arm of `refusal_for`.
+    // Python's decoded values own their bytes (its arm of `refusal_for` says why),
+    // so it holds the element. The other languages have no template yet, so none
+    // has decided that its decoded form borrows; the change that gives one its
+    // template says which it is in its arm of `refusal_for`.
     for language in Language::ALL
         .iter()
         .copied()
@@ -1631,6 +1632,322 @@ fn a_deploy_key_naming_an_undeclared_limit_is_refused_with_the_limits_there_are(
     assert!(
         detail.contains("declared limits today: other_limit"),
         "{detail}"
+    );
+}
+
+// --- Python generates the log over its runtime row ---
+
+/// The log `event_ring` declaring the progress the Python backend can give: one
+/// ring under one lock, which is `blocking` and no more.
+fn blocking_ring() -> String {
+    simple_doc(
+        "event_ring",
+        "one",
+        "blocking",
+        r#"<sce:retention entries="7"/>"#,
+    )
+}
+
+/// The generated Python of the log `event_ring`, out of the outputs of a set
+/// that generated.
+fn generated_python_log(outputs: Vec<(String, sce_build::generator::GeneratedOutput)>) -> String {
+    outputs
+        .into_iter()
+        .flat_map(|(_, output)| output.files)
+        .find(|(file, _)| file == "event_ring.py")
+        .map(|(_, code)| code)
+        .expect("the set generated the log's module")
+}
+
+/// The generated Python of the single document `xml`, compiled with `options`.
+fn compile_single_python(
+    xml: &str,
+    options: &ForgeCompileOptions,
+) -> Result<String, Located<ForgeError>> {
+    compile_forge_with_imports(
+        xml,
+        label("event_ring"),
+        Language::Python,
+        Path::new("."),
+        options,
+    )
+    .map(|output| {
+        output
+            .files
+            .into_iter()
+            .find(|(file, _)| file == "event_ring.py")
+            .map(|(_, code)| code)
+            .expect("the log's module")
+    })
+}
+
+/// The detail of the refusal `language` gives the single document `xml` under
+/// `options`, which must be a `generate/invalid-config` one.
+fn single_refusal(language: Language, xml: &str, options: &ForgeCompileOptions) -> String {
+    let located =
+        compile_forge_with_imports(xml, label("event_ring"), language, Path::new("."), options)
+            .err()
+            .unwrap_or_else(|| panic!("{language:?}: the document is refused"));
+    invalid_config(located)
+}
+
+#[test]
+fn python_generates_a_log_over_the_runtime_sized_from_its_element() {
+    // The element is one `uint32`, so it encodes to 4 bytes; an entry is then
+    // 1 + ceil(4 / 8) = 1 + (4 + 7) // 8 = 1 + 1 = 2 words, which the module
+    // computes and does not restate.
+    let xml = blocking_ring();
+    let codec = codec_doc("event_record");
+    let code = generated_python_log(
+        compile_documents(
+            Language::Python,
+            &[("event_ring.scxml", &xml), ("event_record.scxml", &codec)],
+        )
+        .expect("python generates a broadcast log"),
+    );
+    assert_holds(
+        &code,
+        &[
+            r#"# SCE Forge: Auto-generated from Extended SCXML (sce:kind="broadcast-log")"#,
+            "# Runtime: sce_forge_runtime.broadcast_log",
+            "from sce_forge_runtime import broadcast_log as runtime",
+            "from sce_forge_runtime import codec as runtime_codec",
+            "from .event_record import EventRecord",
+            "RETENTION: Final[int] = 7",
+            "SLOTS: Final[int] = RETENTION + 1",
+            "MAX_ENCODED_BYTES: Final[int] = 4",
+            "WORDS: Final[int] = 1 + (MAX_ENCODED_BYTES + 7) // 8",
+            r#"DECLARED_PROGRESS: Final[str] = "blocking""#,
+            "EventRing = runtime.BroadcastLog",
+            "def new_event_ring() -> EventRing:",
+            "return runtime.BroadcastLog(WORDS, SLOTS)",
+            "class EventRingItem:",
+            "element: EventRecord",
+            "EventRingRead = Union[EventRingItem, runtime.Empty, runtime.Lagged]",
+            "def publish(publisher: runtime.Publisher, element: EventRecord) -> int:",
+            "sink = runtime_codec.MemoryviewSink(memoryview(buffer))",
+            "element.encode(sink)",
+            r#"padded = bytes(buffer[:length]).ljust(8 * (WORDS - 1), b"\x00")"#,
+            "return publisher.publish(entry)",
+            "def read(log: EventRing, reader: runtime.Reader) -> EventRingRead:",
+            "if not isinstance(found, runtime.Item):",
+            "element = EventRecord.decode(runtime_codec.SceCursor(packed[:stored]))",
+            "return EventRingItem(found.seq, element)",
+        ],
+    );
+    // A stored length above the bound is refused before any bytes are cut by it.
+    let length_check = code
+        .find("if stored > MAX_ENCODED_BYTES:")
+        .expect("the stored length is checked against the bound");
+    let refusal = code[length_check..]
+        .find("raise runtime_codec.LengthOutOfRange(")
+        .expect("a length above the bound is a codec error");
+    let cut = code[length_check..]
+        .find("packed[:stored]")
+        .expect("the entry's bytes are cut by the length");
+    assert!(
+        refusal < cut,
+        "the refusal comes before the cut the length makes:\n{code}"
+    );
+    // Python's decode returns values that own their bytes, so there is no owned
+    // mirror to name and no copy to make.
+    assert!(!code.contains("Owned"), "{code}");
+}
+
+#[test]
+fn python_sizes_an_entry_from_an_element_with_a_payload() {
+    // A one-byte head and a payload of at most 64 bytes: 1 + 64 = 65 bytes, so
+    // an entry is 1 + ceil(65 / 8) = 1 + (65 + 7) // 8 = 1 + 9 = 10 words.
+    let xml = blocking_ring();
+    let codec = codec_with("event_record", "", BOUNDED_FIELDS);
+    let code = generated_python_log(
+        compile_documents(
+            Language::Python,
+            &[("event_ring.scxml", &xml), ("event_record.scxml", &codec)],
+        )
+        .expect("python generates a broadcast log over a payload element"),
+    );
+    assert_holds(
+        &code,
+        &[
+            "MAX_ENCODED_BYTES: Final[int] = 65",
+            "from .event_record import EventRecord",
+        ],
+    );
+}
+
+#[test]
+fn a_progress_python_cannot_give_is_refused_for_a_document_set_on_the_progress_row() {
+    let xml = event_ring();
+    let codec = codec_doc("event_record");
+    let located = compile_documents(
+        Language::Python,
+        &[("event_ring.scxml", &xml), ("event_record.scxml", &codec)],
+    )
+    .err()
+    .unwrap_or_else(|| {
+        panic!("python gives blocking at most, so a set declaring wait-free is refused")
+    });
+    assert!(
+        row_text(&located, &xml).contains("<sce:progress>"),
+        "the refusal is placed on the progress row"
+    );
+    match generate_error(located) {
+        GenerateError::BroadcastLogProgressUnreachableOnBackend {
+            log_name,
+            declared,
+            reachable,
+            language,
+            ..
+        } => {
+            assert_eq!(log_name, "event_ring");
+            assert_eq!(declared, "wait-free");
+            assert_eq!(reachable, "blocking");
+            assert_eq!(language, "python");
+        }
+        other => panic!("expected BroadcastLogProgressUnreachableOnBackend, got {other:?}"),
+    }
+}
+
+#[test]
+fn a_cbor_text_entry_is_held_by_python_because_its_decoded_value_owns_its_bytes() {
+    // The element Rust refuses (a string entry decodes to a view of the buffer):
+    // Python's decode copies, so the log holds it.
+    let xml = blocking_ring();
+    let codec = cbor_codec_with(
+        r#"<data id="note" sce:type="string" sce:key="1" sce:max-size="16" sce:direction="out"/>"#,
+    );
+    let code = generated_python_log(
+        compile_documents(
+            Language::Python,
+            &[("event_ring.scxml", &xml), ("event_record.scxml", &codec)],
+        )
+        .expect("a map with a text entry owns its bytes in Python, so python generates the log"),
+    );
+    assert_holds(
+        &code,
+        &[
+            "from .event_record import EventRecord",
+            "element = EventRecord.decode(runtime_codec.SceCursor(packed[:stored]))",
+        ],
+    );
+}
+
+#[test]
+fn what_a_caller_must_give_is_refused_for_python_by_name() {
+    let xml = blocking_ring();
+    let codec = flag_input_codec();
+    let located = compile_documents(
+        Language::Python,
+        &[("event_ring.scxml", &xml), ("event_record.scxml", &codec)],
+    )
+    .err()
+    .unwrap_or_else(|| panic!("a log has no flag input to give, so the set is refused"));
+    assert!(
+        row_text(&located, &xml).contains("<sce:element-type>event_record<"),
+        "the refusal is placed on the element-type row"
+    );
+    let detail = invalid_config(located);
+    assert!(
+        detail.contains("the element 'event_record' cannot be stored by the Python template"),
+        "{detail}"
+    );
+    assert!(detail.contains("flag input(s) S"), "{detail}");
+}
+
+#[test]
+fn a_resolved_retention_and_size_become_the_python_modules_constants() {
+    // 9 bytes encode to 1 + (9 + 7) // 8 = 1 + 2 = 3 words, computed by the
+    // module from the constant below.
+    let code = compile_single_python(
+        &simple_doc("event_ring", "one", "blocking", DEPLOY_KEY_RETENTION),
+        &resolution_options(Some(15), 9, BroadcastLogElementFacts::default()),
+    )
+    .expect("a resolved log generates");
+    assert_holds(
+        &code,
+        &[
+            "RETENTION: Final[int] = 15",
+            "SLOTS: Final[int] = RETENTION + 1",
+            "MAX_ENCODED_BYTES: Final[int] = 9",
+        ],
+    );
+
+    // A literal retention is the document's, whatever the resolution says.
+    let code = compile_single_python(
+        &blocking_ring(),
+        &resolution_options(Some(99), 4, BroadcastLogElementFacts::default()),
+    )
+    .expect("a literal needs no resolution of its own");
+    assert!(code.contains("RETENTION: Final[int] = 7"), "{code}");
+    assert!(!code.contains("= 99"), "{code}");
+}
+
+#[test]
+fn a_deploy_key_retention_is_read_from_the_target_machines_limits_for_python() {
+    // The element is one `uint32`: 4 bytes.
+    let xml = simple_doc("event_ring", "one", "blocking", DEPLOY_KEY_RETENTION);
+    let codec = codec_doc("event_record");
+    let cfg = deploy_with_limits("          event_retention: 15");
+    let options = ForgeCompileOptions {
+        target_machine: Some("mcu_node".to_string()),
+        ..ForgeCompileOptions::default()
+    };
+    let code = generated_python_log(
+        compile_documents_with(
+            Language::Python,
+            &[("event_ring.scxml", &xml), ("event_record.scxml", &codec)],
+            &options,
+            Some(&cfg),
+        )
+        .expect("the deploy resolves the key"),
+    );
+    assert_holds(
+        &code,
+        &[
+            "RETENTION: Final[int] = 15",
+            "MAX_ENCODED_BYTES: Final[int] = 4",
+        ],
+    );
+}
+
+#[test]
+fn the_refusals_before_a_template_is_read_are_one_text_for_rust_and_python() {
+    // `blocking` is within the ceiling of both languages, so neither refuses the
+    // progress and each reaches the checks that are the same for every
+    // language: no resolution at all, a deploy key nothing resolved, a
+    // retention of 0, and an element the language cannot hold (the one place
+    // the language's name is written).
+    let xml = simple_doc("event_ring", "one", "blocking", DEPLOY_KEY_RETENTION);
+    let tag = BroadcastLogElementFacts {
+        caller_variant_tag: true,
+        ..BroadcastLogElementFacts::default()
+    };
+    let details: Vec<Vec<String>> = [(Language::Rust, "Rust"), (Language::Python, "Python")]
+        .into_iter()
+        .map(|(language, name)| {
+            vec![
+                single_refusal(language, &xml, &ForgeCompileOptions::default()),
+                single_refusal(
+                    language,
+                    &xml,
+                    &resolution_options(None, 4, BroadcastLogElementFacts::default()),
+                ),
+                single_refusal(
+                    language,
+                    &xml,
+                    &resolution_options(Some(0), 4, BroadcastLogElementFacts::default()),
+                ),
+                single_refusal(language, &xml, &resolution_options(Some(3), 4, tag.clone()))
+                    .replace(name, "<language>"),
+            ]
+        })
+        .collect();
+    assert_eq!(details[0], details[1]);
+    assert!(
+        details[0][3].contains("cannot be stored by the <language> template"),
+        "{}",
+        details[0][3]
     );
 }
 

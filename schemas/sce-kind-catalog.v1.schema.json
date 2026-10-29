@@ -95,7 +95,7 @@
           "type": "boolean"
         },
         "backends": {
-          "description": "The backends that emit the kind, by the wire spelling the manifest's languages use. Empty for a declaration (role variability), which emits nothing on any backend: the documents that import it read it. A backend that has not yet landed a kind's runtime row (broadcast-log, on every backend but rust) is not listed: generating the kind there is refused by name.",
+          "description": "The backends that emit the kind, by the wire spelling the manifest's languages use. Empty for a declaration (role variability), which emits nothing on any backend: the documents that import it read it. A backend that has not yet landed a kind's runtime row (broadcast-log, until the codegen matrix lists the backend) is not listed: generating the kind there is refused by name.",
           "type": "array",
           "uniqueItems": true,
           "items": { "enum": ["rust", "cpp", "kotlin", "go", "python", "c11", "swift"] }

@@ -1743,7 +1743,8 @@ pub fn generate_cpp_with_imports_and_externs(
         ForgeDocument::Queue(m) => render_queue_cpp(&env, m, imports, options)?,
         // ADR 0062: a broadcast log is parsed and checked on every backend, and
         // lowered by the ones whose runtime row and template have landed
-        // (Rust's, [`render_broadcast_log_rust`]); every other dispatch refuses
+        // (`codegen_matrix::BROADCAST_LOG_BACKENDS` lists them, and each has its
+        // own `render_broadcast_log_<language>`); every other dispatch refuses
         // it by name ([`refuse_broadcast_log`]). `codegen_matrix::check` lets it
         // through to here, since only the dispatcher has the document.
         ForgeDocument::BroadcastLog(m) => {
@@ -20954,34 +20955,62 @@ fn refuse_broadcast_log(
     })
 }
 
-/// Render a `<sce:kind="broadcast-log">` document for the Rust backend (ADR
-/// 0062). The generated module names the log type over
-/// `sce_forge_runtime::broadcast_log`, sized from three numbers the document
-/// alone does not give and the build resolved
-/// ([`crate::BroadcastLogResolution`]): the retention, the element's largest
-/// encoded size, and whether the template can hold the element. It states them
-/// and the contract as constants, and gives typed `publish` and `read` functions
-/// over the element's generated type, which store and recover the element's wire
-/// bytes.
+/// What the render of a broadcast log reads of the build, once every refusal the
+/// languages share has been judged ([`resolve_broadcast_log_render_inputs`]).
+struct BroadcastLogRenderInputs {
+    /// The retention, in entries: the document's literal, or the deploy limit its
+    /// key resolved to. Never 0.
+    retention: u32,
+    /// The most bytes any value of the element encodes to.
+    max_bytes: u64,
+    /// The producer cardinality, as the document spells it.
+    producers: &'static str,
+    /// The progress the document requires, as it spells it.
+    declared_progress: &'static str,
+}
+
+/// The name a language's broadcast-log template goes by in a refusal. Every
+/// language is written out, so that one added to
+/// [`crate::generator::Language`] is named here and not given another's name.
+fn broadcast_log_template_label(language: crate::generator::Language) -> &'static str {
+    match language {
+        crate::generator::Language::Rust => "Rust",
+        crate::generator::Language::Cpp => "C++",
+        crate::generator::Language::Kotlin => "Kotlin",
+        crate::generator::Language::Go => "Go",
+        crate::generator::Language::Python => "Python",
+        crate::generator::Language::C11 => "C11",
+        crate::generator::Language::Swift => "Swift",
+    }
+}
+
+/// Everything the render of a broadcast log for `language` decides before it
+/// writes a line, in the one order every language gives it: the declared
+/// progress the language cannot keep
+/// ([`judge_broadcast_log_progress_on_backend`]), a build that resolved no
+/// numbers for the log, an element the language's template cannot hold
+/// ([`crate::BroadcastLogElementFacts::refusal_for`]), a retention that is a
+/// deploy key nothing resolved, and a retention that resolves to nothing. Each
+/// refusal after the first is [`GenerateError::InvalidConfig`], placed on the
+/// row that wrote the thing refused where there is one, and names the log.
+///
+/// This is the one place those refusals are written, so a language's renderer
+/// cannot answer a document differently from another's: what differs per language
+/// is the verdict on the element's shape, which `refusal_for` states in an arm of
+/// its own, and the template that writes the module.
 ///
 /// A resolution that is missing is refused, never guessed: only the
 /// document-set compile has the element document and the deploy, so a
-/// single-document compile of a log is refused naming what is missing
-/// ([`GenerateError::InvalidConfig`]), as a queue's deploy-key capacity is.
-///
-/// The stamp is 64 bits, which the runtime row keeps wherever it exists, so
-/// [`judge_broadcast_log_stamp`] is not asked anything here: it judges the
-/// obligations of a stamp narrower than that (a wrap bound and a retention one
-/// less than a power of two), and no Rust row keeps one.
-fn render_broadcast_log_rust(
-    env: &minijinja::Environment<'_>,
+/// single-document compile of a log is refused naming what is missing, as a
+/// queue's deploy-key capacity is.
+fn resolve_broadcast_log_render_inputs(
     m: &crate::forge::model::BroadcastLogModel,
-    _imports: &[ImportContext],
+    language: crate::generator::Language,
     options: &crate::ForgeCompileOptions,
-) -> Result<String, ForgeError> {
+) -> Result<BroadcastLogRenderInputs, ForgeError> {
     use crate::forge::model::{CapacitySource, QueueCardinality};
 
-    judge_broadcast_log_progress_on_backend(m, crate::generator::Language::Rust)?;
+    judge_broadcast_log_progress_on_backend(m, language)?;
     let Some(resolution) = options
         .broadcast_log_resolutions
         .as_ref()
@@ -21000,18 +21029,16 @@ fn render_broadcast_log_rust(
         ))
         .into());
     };
-    if let Some(why) = resolution
-        .element
-        .refusal_for(crate::generator::Language::Rust)
-    {
+    if let Some(why) = resolution.element.refusal_for(language) {
         return Err(ForgeError::from(GenerateError::InvalidConfig(format!(
-            "broadcast-log '{name}': the element '{element}' cannot be stored by the Rust \
+            "broadcast-log '{name}': the element '{element}' cannot be stored by the {template} \
              template: {why}. ADR 0062 section 4: a log stores the bytes of the element's wire \
              form, and its typed publish and read call the element's encode with a sink and \
              its decode with a cursor alone. This document is valid and is refused rather than \
              lowered to a log that could not read back what it stores.",
             name = m.name,
             element = m.element_type,
+            template = broadcast_log_template_label(language),
         )))
         .at_line(m.element_type_line));
     }
@@ -21040,17 +21067,49 @@ fn render_broadcast_log_rust(
         )))
         .at_line(m.retention_line));
     }
+    Ok(BroadcastLogRenderInputs {
+        retention,
+        max_bytes: resolution.element_max_bytes,
+        producers: match m.producers {
+            QueueCardinality::One => "one",
+            QueueCardinality::Many => "many",
+        },
+        declared_progress: queue_progress_word(m.progress),
+    })
+}
 
+/// Render a `<sce:kind="broadcast-log">` document for the Rust backend (ADR
+/// 0062). The generated module names the log type over
+/// `sce_forge_runtime::broadcast_log`, sized from three numbers the document
+/// alone does not give and the build resolved
+/// ([`crate::BroadcastLogResolution`]): the retention, the element's largest
+/// encoded size, and whether the template can hold the element. It states them
+/// and the contract as constants, and gives typed `publish` and `read` functions
+/// over the element's generated type, which store and recover the element's wire
+/// bytes.
+///
+/// What is refused before the template is read, and why a missing resolution is
+/// refused and never guessed, is
+/// [`resolve_broadcast_log_render_inputs`]'s, which every language's renderer
+/// asks first.
+///
+/// The stamp is 64 bits, which the runtime row keeps wherever it exists, so
+/// [`judge_broadcast_log_stamp`] is not asked anything here: it judges the
+/// obligations of a stamp narrower than that (a wrap bound and a retention one
+/// less than a power of two), and no Rust row keeps one.
+fn render_broadcast_log_rust(
+    env: &minijinja::Environment<'_>,
+    m: &crate::forge::model::BroadcastLogModel,
+    _imports: &[ImportContext],
+    options: &crate::ForgeCompileOptions,
+) -> Result<String, ForgeError> {
+    let inputs = resolve_broadcast_log_render_inputs(m, crate::generator::Language::Rust, options)?;
     let tmpl = env.get_template("broadcast_log.rs.jinja2").map_err(|e| {
         ForgeError::from(GenerateError::TemplateLoad(format!(
             "broadcast_log.rs.jinja2 (rust): {e}"
         )))
     })?;
     let element = rust_stored_element(&m.element_type, options);
-    let producers = match m.producers {
-        QueueCardinality::One => "one",
-        QueueCardinality::Many => "many",
-    };
     let ctx = minijinja::context! {
         pascal => filters::to_pascal_case(m.name.clone()),
         element_type => &m.element_type,
@@ -21059,15 +21118,69 @@ fn render_broadcast_log_rust(
         element_import => element.import,
         element_stored => element.stored,
         element_borrowed => element.borrowed,
-        retention => retention,
-        max_bytes => resolution.element_max_bytes,
-        producers => producers,
-        declared_progress => queue_progress_word(m.progress),
+        retention => inputs.retention,
+        max_bytes => inputs.max_bytes,
+        producers => inputs.producers,
+        declared_progress => inputs.declared_progress,
         runtime_dep => "sce_forge_runtime::broadcast_log",
     };
     tmpl.render(ctx).map_err(|e| {
         ForgeError::from(GenerateError::TemplateRender(format!(
             "broadcast_log.rs.jinja2 (rust): {e}"
+        )))
+    })
+}
+
+/// Render a `<sce:kind="broadcast-log">` document for the Python backend (ADR
+/// 0062). The generated module names the log type of
+/// `sce_forge_runtime.broadcast_log` (one ring under one lock, which gives
+/// `blocking`: a document that declares more is refused first, by
+/// [`resolve_broadcast_log_render_inputs`]), sized from the numbers the build
+/// resolved ([`crate::BroadcastLogResolution`]). It states the retention, the
+/// element's largest encoded size, the words an entry holds and the contract as
+/// constants, and gives typed `publish` and `read` functions over the element's
+/// generated class, which store and recover the element's wire bytes as the
+/// 64-bit words the runtime holds.
+///
+/// The runtime stores words and not bytes, so the module packs an encoded
+/// element into one length word and the bytes after it, eight to a word,
+/// little-endian, the entry every backend's log holds. An element's `encode`
+/// writes through the bounded `MemoryviewSink` of `MAX_ENCODED_BYTES`, so an
+/// element that encodes to more is refused by the codec and nothing is
+/// published. Python has no stamp to narrow, so
+/// [`judge_broadcast_log_stamp`] is not asked anything here.
+fn render_broadcast_log_python(
+    env: &minijinja::Environment<'_>,
+    m: &crate::forge::model::BroadcastLogModel,
+    _imports: &[ImportContext],
+    options: &crate::ForgeCompileOptions,
+) -> Result<String, ForgeError> {
+    let inputs =
+        resolve_broadcast_log_render_inputs(m, crate::generator::Language::Python, options)?;
+    let tmpl = env.get_template("broadcast_log.py.jinja2").map_err(|e| {
+        ForgeError::from(GenerateError::TemplateLoad(format!(
+            "broadcast_log.py.jinja2 (python): {e}"
+        )))
+    })?;
+    let element_pascal = filters::to_pascal_case(m.element_type.clone());
+    let element_snake = filters::to_snake_case(m.element_type.clone());
+    let ctx = minijinja::context! {
+        pascal => filters::to_pascal_case(m.name.clone()),
+        snake => filters::to_snake_case(m.name.clone()),
+        element_type => &m.element_type,
+        // Python uses relative-package imports (`from .<snake> import
+        // <Pascal>`), the shape the codec import resolver and the queue emit.
+        element_import_stmt => format!("from .{element_snake} import {element_pascal}"),
+        element_pascal => element_pascal,
+        retention => inputs.retention,
+        max_bytes => inputs.max_bytes,
+        producers => inputs.producers,
+        declared_progress => inputs.declared_progress,
+        runtime_dep => "sce_forge_runtime.broadcast_log",
+    };
+    tmpl.render(ctx).map_err(|e| {
+        ForgeError::from(GenerateError::TemplateRender(format!(
+            "broadcast_log.py.jinja2 (python): {e}"
         )))
     })
 }
@@ -23395,10 +23508,11 @@ pub fn generate_python_with_imports(
         }
         // Queue kind: see cpp dispatch.
         ForgeDocument::Queue(m) => render_queue_python(&env, m, imports, options)?,
-        // Broadcast log: see cpp dispatch.
-        ForgeDocument::BroadcastLog(m) => {
-            return Err(refuse_broadcast_log(m, crate::generator::Language::Python))
-        }
+        // Broadcast log: see cpp dispatch. Python's forge runtime has the row
+        // (`sce_forge_runtime.broadcast_log`, one ring under one lock), so the
+        // document is lowered over it by [`render_broadcast_log_python`], which
+        // reads the numbers the document-set compile resolved.
+        ForgeDocument::BroadcastLog(m) => render_broadcast_log_python(&env, m, imports, options)?,
         // Feature model: see cpp dispatch.
         ForgeDocument::FeatureModel(_) => return Ok(GeneratedOutput::default()),
     };
