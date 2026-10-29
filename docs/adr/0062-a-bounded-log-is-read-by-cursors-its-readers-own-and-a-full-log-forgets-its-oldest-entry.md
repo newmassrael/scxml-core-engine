@@ -698,10 +698,54 @@ runner would let CI judge it, and is not built.
   row's own test and history judgement. The change was written with nothing built: neither the renderer, the template,
   the new tests nor the Python test have been compiled or run.
 
+### What step 7 landed for Kotlin (2026-10-29)
+
+- **The kind is generated for Kotlin.** `sce-codegen` writes `<Name>.kt` for a `broadcast-log` document from
+  `tools/codegen/templates/forge/kotlin/broadcast_log.kt.jinja2`, through `render_broadcast_log_kotlin`, and
+  `BROADCAST_LOG_BACKENDS` lists Kotlin, so the matrix answers `Emit` for it. The file, in package
+  `com.sce.generated.<log>` as the queue's is, states `RETENTION`, `SLOTS = RETENTION + 1`, `MAX_ENCODED_BYTES`,
+  `WORDS = 1 + (MAX_ENCODED_BYTES + 7) / 8` (one length word, then the bytes, eight to a word, little-endian) and
+  `DECLARED_PROGRESS` as `Int` and `String` constants; names the log as an alias of the runtime's `BroadcastLog` and its
+  publisher as an alias of `BroadcastLog.Publisher`; and gives `new<Log>()` and typed `publish(publisher, element)` and
+  `read(log, reader)` over the element's generated class.
+- **One resolution, asked first.** `render_broadcast_log_kotlin` calls `resolve_broadcast_log_render_inputs`, as the Rust and
+  Python renderers do, and repeats none of what it refuses. What is Kotlin's own is the width of its integers: the runtime
+  takes its slot and word counts as `Int`, so a retention above 2147483646 (its `SLOTS` would not fit) and an element that
+  encodes to more than 2147483640 bytes (`MAX_ENCODED_BYTES + 7` would wrap) are refused by name as `generate/invalid-config`
+  on the row that wrote them, after the shared checks.
+- **Kotlin's decoded CBOR owns its bytes, so the element Rust refuses is held.** `Cbor.readText` builds a new `String` with
+  `decodeToString`, and `Cbor.readBytes` and `Cbor.readBytesExact` copy out of the cursor through `SceCursor.peekSlice`
+  (`copyOfRange`); a non-CBOR codec's `bytes` payload is the same copy. A decoded value outlives the buffer a read decodes it
+  from, so a log hands it back with no owned mirror to build. This is Kotlin's arm of `BroadcastLogElementFacts::refusal_for`,
+  which returns `None` for the CBOR fact; the refusals that hold for every language stay (flag inputs and a variant's tag
+  taken from the caller).
+- **Bytes in, bytes out.** `publish` encodes through a `ByteArraySink` over a buffer of `MAX_ENCODED_BYTES` bytes, so an
+  element that encodes to more is refused by the sink (`CodecError.BufferOverflow`) and nothing is published, and the
+  sequence has no gap where it was; it returns `Published(seq)` or `Refused(error)`, never a thrown exception. `read` calls
+  the runtime's `read` and decodes only on an item, which the runtime returns after the copy was validated against the
+  slot, so a torn copy is `Lagged` and never decoded. A stored length above `MAX_ENCODED_BYTES`, or a word with its top bit
+  set (the length is unsigned in the contract and a `Long` here), or bytes that do not decode, is `Unreadable(seq, why)` and
+  never an index out of range; the reader has moved past that entry either way. A Kotlin `read` allocates the runtime's
+  result, the entry buffer, the decoded element and the typed result; the horizon is the signed `Long`'s.
+- **Tests.** `sce-build/tests/broadcast_log_kind.rs` holds the renderer (the constants with their computed values, the
+  packing and unpacking, the stored-length refusal placed before any buffer is sized by it, the CBOR element Rust refuses, the
+  caller-input refusal, the two integer bounds on both sides of their edge, the deploy key read from the machine's limits, and
+  the shared refusals read as one text for Rust, Kotlin and Python); the tests that took C++ as the language with no template
+  now read the list. `BroadcastLogGeneratedTest` in the Kotlin forge runtime's `jvmTest` compiles what the generator writes for
+  a log with a literal retention over a three-byte element and a log over a record with a payload of at most eight bytes, both
+  generated as one document set by the new `generateBroadcastLogFixtures` task of `build.gradle.kts` (`sce-codegen
+  orchestrate`, since a lone `generate` has no element document to read the size from), and on one thread reads the entries
+  back whole and in order, tells a lapped reader how many it missed, keeps two readers' cursors apart, refuses a record past
+  the bound without publishing, and refuses a stored length above the bound and bytes that do not decode.
+  `tests/forge/resources/broadcast_log_conformance_recent_records.scxml` is the one document added; it moves the `source-hash`
+  line of the Go round-trip tree.
+- **Not run.** The change was written with nothing built: neither the renderer, the template, the new tests nor the Kotlin
+  conformance test have been compiled or run, and no mutation case covers the generated file.
+
 ### What is still undone
 
-- **The generated code for the other languages.** Rust's template landed (step 6b), and Python's (step 7). The C11, C++,
-  Go and Kotlin templates, and generated tests that regenerate and build them, are next, one language at a time; each is
+- **The generated code for the other languages.** Rust's template landed (step 6b), and Python's and Kotlin's (step 7). The
+  C11, C++ and Go templates, and generated tests that regenerate and build them, are next, one language at a time; each is
   refused by name (`broadcast-log/runtime-missing`) until its change flips the matrix, and each reads the same
   `BroadcastLogResolution`.
   Swift stays refused until it has a forge runtime. The rows with a narrower stamp, and the form for a target with only loads
