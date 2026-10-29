@@ -781,22 +781,6 @@ fn unbounded_reason(
     }
 }
 
-/// The codes of the refusal `result` is, which must be one.
-fn refusal_codes(
-    result: Result<Vec<(String, sce_build::generator::GeneratedOutput)>, Located<ForgeError>>,
-) -> Vec<DiagnosticCode> {
-    result
-        .err()
-        .unwrap_or_else(|| {
-            panic!("the language has no broadcast-log row yet, so the set is refused")
-        })
-        .error
-        .to_diagnostics()
-        .iter()
-        .map(|d| d.code)
-        .collect()
-}
-
 const UNBOUNDED_FIELDS: &str = r#"<data id="head" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
     <data id="payload" sce:type="bytes" sce:byte="1" sce:bit-size="tail"/>"#;
 
@@ -912,29 +896,83 @@ fn an_element_that_embeds_a_codec_with_no_bound_is_refused_through_the_embed() {
     assert!(reason.contains("'blob'"), "{reason}");
 }
 
-#[test]
-fn an_element_whose_every_field_is_bounded_is_not_refused_for_its_size() {
-    // Reached the missing runtime instead: the one refusal a valid document
-    // has on a language that has no row yet (C++ has none).
-    let xml = event_ring();
-    for (name, codec) in [
-        ("a fixed record", codec_doc("event_record")),
-        (
-            "a payload with a max-size",
-            codec_with("event_record", "", BOUNDED_FIELDS),
-        ),
-    ] {
-        let codes = refusal_codes(compile_documents(
-            Language::Cpp,
-            &[("event_ring.scxml", &xml), ("event_record.scxml", &codec)],
-        ));
-        assert!(
-            matches!(
+/// Whether the language's broadcast-log template has landed
+/// ([`BROADCAST_LOG_BACKENDS`]).
+fn has_landed(language: Language) -> bool {
+    BROADCAST_LOG_BACKENDS.contains(&language)
+}
+
+/// The languages a document set can be compiled for: every one with an emitter
+/// for a codec, which Swift has not.
+fn set_languages() -> impl Iterator<Item = Language> {
+    Language::ALL
+        .iter()
+        .copied()
+        .filter(|language| *language != Language::Swift)
+}
+
+/// What a valid set that no size refusal touches comes to on `language`: the
+/// generated log where its template has landed, and the one refusal a valid
+/// document has where it has not, the missing runtime. The document declares
+/// `wait-free`, so a language whose ceiling is lower (Python) refuses the
+/// progress first, which is no size refusal either.
+fn assert_valid_set_is_not_refused_for_its_size(
+    language: Language,
+    result: Result<Vec<(String, sce_build::generator::GeneratedOutput)>, Located<ForgeError>>,
+    what: &str,
+) {
+    let wire = language_wire_name(language);
+    let (ceiling, _) = broadcast_log_progress_ceiling(language);
+    let codes: Vec<DiagnosticCode> = match result {
+        Ok(_) => {
+            assert!(
+                has_landed(language),
+                "{wire}: {what}: generated with no template"
+            );
+            return;
+        }
+        Err(located) => located
+            .error
+            .to_diagnostics()
+            .iter()
+            .map(|d| d.code)
+            .collect(),
+    };
+    let as_expected = if ceiling < QueueProgress::WaitFree {
+        matches!(
+            codes.as_slice(),
+            [DiagnosticCode::BroadcastLogProgressUnreachableOnBackend]
+        )
+    } else {
+        !has_landed(language)
+            && matches!(
                 codes.as_slice(),
                 [DiagnosticCode::BroadcastLogRuntimeMissing]
+            )
+    };
+    assert!(as_expected, "{wire}: {what}: {codes:?}");
+}
+
+#[test]
+fn an_element_whose_every_field_is_bounded_is_not_refused_for_its_size() {
+    let xml = event_ring();
+    for language in set_languages() {
+        for (name, codec) in [
+            ("a fixed record", codec_doc("event_record")),
+            (
+                "a payload with a max-size",
+                codec_with("event_record", "", BOUNDED_FIELDS),
             ),
-            "{name}: {codes:?}"
-        );
+        ] {
+            assert_valid_set_is_not_refused_for_its_size(
+                language,
+                compile_documents(
+                    language,
+                    &[("event_ring.scxml", &xml), ("event_record.scxml", &codec)],
+                ),
+                name,
+            );
+        }
     }
 }
 
@@ -954,21 +992,20 @@ fn an_element_that_embeds_a_bounded_codec_is_not_refused_for_its_size() {
         "",
         r#"<data id="blob" sce:type="bytes" sce:byte="0" sce:bit-size="tail" sce:max-size="16"/>"#,
     );
-    let codes = refusal_codes(compile_documents(
-        Language::Cpp,
-        &[
-            ("event_ring.scxml", &xml),
-            ("event_record.scxml", &parent),
-            ("payload_body.scxml", &body),
-        ],
-    ));
-    assert!(
-        matches!(
-            codes.as_slice(),
-            [DiagnosticCode::BroadcastLogRuntimeMissing]
-        ),
-        "{codes:?}"
-    );
+    for language in set_languages() {
+        assert_valid_set_is_not_refused_for_its_size(
+            language,
+            compile_documents(
+                language,
+                &[
+                    ("event_ring.scxml", &xml),
+                    ("event_record.scxml", &parent),
+                    ("payload_body.scxml", &body),
+                ],
+            ),
+            "an embedded bounded codec",
+        );
+    }
 }
 
 // --- Generation: a language with no row refuses by name, Rust generates ---
@@ -1077,11 +1114,13 @@ fn a_progress_the_python_backend_cannot_give_is_refused_before_the_missing_runti
         other => panic!("expected BroadcastLogProgressUnreachableOnBackend, got {other:?}"),
     }
 
-    // A backend that can give it and has no row yet (C++) reaches the missing
-    // runtime instead.
-    let located = compile_forge_from_string(&xml, label("event_ring"), Language::Cpp)
+    // A backend that can give it and has no row (Swift, which has no forge runtime
+    // and is the one language the list of landed templates never holds) reaches the
+    // missing runtime instead.
+    assert!(!has_landed(Language::Swift));
+    let located = compile_forge_from_string(&xml, label("event_ring"), Language::Swift)
         .err()
-        .unwrap_or_else(|| panic!("c++ has no row yet, so it refuses the document"));
+        .unwrap_or_else(|| panic!("swift has no row, so it refuses the document"));
     assert!(matches!(
         generate_error(located),
         GenerateError::BroadcastLogRuntimeMissing { .. }
@@ -1545,8 +1584,9 @@ fn a_cbor_entry_that_borrows_is_refused_only_where_the_decoded_form_borrows() {
         .refusal_for(Language::Rust)
         .expect("Rust decodes a CBOR string to a borrowed view");
     assert!(why.contains("a CBOR map with a string"), "{why}");
-    // Python's decoded values own their bytes (its arm of `refusal_for` says why),
-    // so it holds the element. The other languages have no template yet, so none
+    // Python's and Kotlin's decoded values own their bytes (their arms of
+    // `refusal_for` say why), so each holds the element. The other languages have
+    // no template yet, so none
     // has decided that its decoded form borrows; the change that gives one its
     // template says which it is in its arm of `refusal_for`.
     for language in Language::ALL
@@ -1912,8 +1952,8 @@ fn a_deploy_key_retention_is_read_from_the_target_machines_limits_for_python() {
 }
 
 #[test]
-fn the_refusals_before_a_template_is_read_are_one_text_for_rust_and_python() {
-    // `blocking` is within the ceiling of both languages, so neither refuses the
+fn the_refusals_before_a_template_is_read_are_one_text_for_rust_kotlin_and_python() {
+    // `blocking` is within the ceiling of every language, so none refuses the
     // progress and each reaches the checks that are the same for every
     // language: no resolution at all, a deploy key nothing resolved, a
     // retention of 0, and an element the language cannot hold (the one place
@@ -1923,31 +1963,315 @@ fn the_refusals_before_a_template_is_read_are_one_text_for_rust_and_python() {
         caller_variant_tag: true,
         ..BroadcastLogElementFacts::default()
     };
-    let details: Vec<Vec<String>> = [(Language::Rust, "Rust"), (Language::Python, "Python")]
-        .into_iter()
-        .map(|(language, name)| {
-            vec![
-                single_refusal(language, &xml, &ForgeCompileOptions::default()),
-                single_refusal(
-                    language,
-                    &xml,
-                    &resolution_options(None, 4, BroadcastLogElementFacts::default()),
-                ),
-                single_refusal(
-                    language,
-                    &xml,
-                    &resolution_options(Some(0), 4, BroadcastLogElementFacts::default()),
-                ),
-                single_refusal(language, &xml, &resolution_options(Some(3), 4, tag.clone()))
-                    .replace(name, "<language>"),
-            ]
-        })
-        .collect();
-    assert_eq!(details[0], details[1]);
+    let details: Vec<Vec<String>> = [
+        (Language::Rust, "Rust"),
+        (Language::Kotlin, "Kotlin"),
+        (Language::Python, "Python"),
+    ]
+    .into_iter()
+    .map(|(language, name)| {
+        vec![
+            single_refusal(language, &xml, &ForgeCompileOptions::default()),
+            single_refusal(
+                language,
+                &xml,
+                &resolution_options(None, 4, BroadcastLogElementFacts::default()),
+            ),
+            single_refusal(
+                language,
+                &xml,
+                &resolution_options(Some(0), 4, BroadcastLogElementFacts::default()),
+            ),
+            single_refusal(language, &xml, &resolution_options(Some(3), 4, tag.clone()))
+                .replace(name, "<language>"),
+        ]
+    })
+    .collect();
+    assert_eq!(details[0], details[1], "Rust and Kotlin");
+    assert_eq!(details[0], details[2], "Rust and Python");
     assert!(
         details[0][3].contains("cannot be stored by the <language> template"),
         "{}",
         details[0][3]
+    );
+}
+
+// --- Kotlin generates the log over its runtime row ---
+
+/// The generated Kotlin of the log `event_ring`, out of the outputs of a set that
+/// generated.
+fn generated_kotlin_log(outputs: Vec<(String, sce_build::generator::GeneratedOutput)>) -> String {
+    outputs
+        .into_iter()
+        .flat_map(|(_, output)| output.files)
+        .find(|(file, _)| file == "EventRing.kt")
+        .map(|(_, code)| code)
+        .expect("the set generated the log's file")
+}
+
+/// The generated Kotlin of the single document `xml`, compiled with `options`.
+fn compile_single_kotlin(
+    xml: &str,
+    options: &ForgeCompileOptions,
+) -> Result<String, Located<ForgeError>> {
+    compile_forge_with_imports(
+        xml,
+        label("event_ring"),
+        Language::Kotlin,
+        Path::new("."),
+        options,
+    )
+    .map(|output| {
+        output
+            .files
+            .into_iter()
+            .find(|(file, _)| file == "EventRing.kt")
+            .map(|(_, code)| code)
+            .expect("the log's file")
+    })
+}
+
+#[test]
+fn kotlin_generates_a_log_over_the_runtime_sized_from_its_element() {
+    // The element is one `uint32`, so it encodes to 4 bytes; a slot is then
+    // 1 + (4 + 7) / 8 = 1 + 11 / 8 = 1 + 1 = 2 words (integer division), which the
+    // file computes and does not restate.
+    let xml = event_ring();
+    let codec = codec_doc("event_record");
+    let code = generated_kotlin_log(
+        compile_documents(
+            Language::Kotlin,
+            &[("event_ring.scxml", &xml), ("event_record.scxml", &codec)],
+        )
+        .expect("kotlin generates a broadcast log"),
+    );
+    assert_holds(
+        &code,
+        &[
+            r#"// SCE Forge: Auto-generated from Extended SCXML (sce:kind="broadcast-log")"#,
+            "// Runtime: com.sce.forge.runtime.broadcastlog",
+            "package com.sce.generated.event_ring",
+            "import com.sce.forge.runtime.ByteArraySink",
+            "import com.sce.forge.runtime.CodecError",
+            "import com.sce.forge.runtime.SceCursor",
+            "import com.sce.forge.runtime.broadcastlog.BroadcastLog",
+            "import com.sce.forge.runtime.broadcastlog.Read as RuntimeRead",
+            "import com.sce.forge.runtime.broadcastlog.Reader",
+            "import com.sce.generated.event_record.EventRecord",
+            "const val RETENTION: Int = 7",
+            "const val SLOTS: Int = RETENTION + 1",
+            "const val MAX_ENCODED_BYTES: Int = 4",
+            "const val WORDS: Int = 1 + (MAX_ENCODED_BYTES + 7) / 8",
+            r#"const val DECLARED_PROGRESS: String = "wait-free""#,
+            "typealias EventRing = BroadcastLog",
+            "typealias EventRingPublisher = BroadcastLog.Publisher",
+            "fun newEventRing(): EventRing = BroadcastLog(WORDS, SLOTS)",
+            "sealed interface EventRingPublish {",
+            "data class Published(val seq: Long) : EventRingPublish",
+            "data class Refused(val error: CodecError) : EventRingPublish",
+            "sealed interface EventRingRead {",
+            "data class Item(val seq: Long, val element: EventRecord) : EventRingRead",
+            "data object Empty : EventRingRead",
+            "data class Lagged(val skipped: Long) : EventRingRead",
+            "data class Unreadable(val seq: Long, val why: String) : EventRingRead",
+            "fun publish(publisher: EventRingPublisher, element: EventRecord): EventRingPublish {",
+            "val refused = element.encode(sink)",
+            "fun read(log: EventRing, reader: Reader): EventRingRead {",
+            "is RuntimeRead.Item -> decodeEntry(found.seq, entry)",
+            "RuntimeRead.Empty -> EventRingRead.Empty",
+            "is RuntimeRead.Lagged -> EventRingRead.Lagged(found.skipped)",
+            "val element = EventRecord.decode(SceCursor(bytes))",
+        ],
+    );
+    // The length is the first word and the bytes follow it, eight to a word,
+    // little-endian: the packing and the unpacking are the same formula read in
+    // the two directions.
+    assert_holds(
+        &code,
+        &[
+            "entry[0] = length.toLong()",
+            "val word = 1 + index / 8",
+            "(bytes[index].toLong() and 0xFFL) shl (8 * (index % 8))",
+            "bytes[index] = (entry[1 + index / 8] ushr (8 * (index % 8))).toByte()",
+        ],
+    );
+    // A stored length above the bound is refused before any buffer is sized or
+    // indexed by it.
+    let length_check = code
+        .find("if (stored < 0L || stored > MAX_ENCODED_BYTES.toLong()) {")
+        .expect("the stored length is checked against the bound, as a signed word");
+    let refusal = code[length_check..]
+        .find("return EventRingRead.Unreadable(seq, \"the stored length")
+        .expect("a length above the bound is an unreadable entry");
+    let buffer = code[length_check..]
+        .find("ByteArray(length)")
+        .expect("the entry's bytes are held in a buffer the length sizes");
+    assert!(
+        refusal < buffer,
+        "the refusal comes before the buffer the length sizes:\n{code}"
+    );
+    assert!(
+        !code.contains("!!"),
+        "the file asserts nothing it could refuse:\n{code}"
+    );
+}
+
+#[test]
+fn kotlin_holds_the_cbor_element_that_rust_refuses_for_borrowing_its_buffer() {
+    // A Kotlin text or byte-string entry is a `String` or a `ByteArray` of its own
+    // (`Cbor.readText` decodes into a new string, `Cbor.readBytes` copies out of the
+    // cursor), so the element outlives the buffer a read decodes it from and the
+    // log holds it; Rust's decodes to a view of that buffer and refuses it.
+    let xml = event_ring();
+    let codec = cbor_codec_with(
+        r#"<data id="note" sce:type="string" sce:key="1" sce:max-size="16" sce:direction="out"/>"#,
+    );
+    let code = generated_kotlin_log(
+        compile_documents(
+            Language::Kotlin,
+            &[("event_ring.scxml", &xml), ("event_record.scxml", &codec)],
+        )
+        .expect("a map with a string entry owns its text in Kotlin, so kotlin generates the log"),
+    );
+    assert_holds(
+        &code,
+        &[
+            "import com.sce.generated.event_record.EventRecord",
+            "const val MAX_ENCODED_BYTES: Int = ",
+        ],
+    );
+    let located = compile_documents(
+        Language::Rust,
+        &[("event_ring.scxml", &xml), ("event_record.scxml", &codec)],
+    )
+    .err()
+    .unwrap_or_else(|| panic!("the same map borrows its buffer in Rust, so rust refuses it"));
+    assert!(
+        invalid_config(located).contains("a CBOR map with a string"),
+        "rust names the borrow"
+    );
+}
+
+#[test]
+fn what_a_caller_must_give_is_refused_for_kotlin_by_name() {
+    let xml = event_ring();
+    let codec = flag_input_codec();
+    let located = compile_documents(
+        Language::Kotlin,
+        &[("event_ring.scxml", &xml), ("event_record.scxml", &codec)],
+    )
+    .err()
+    .unwrap_or_else(|| panic!("a log has no flag input to give, so the set is refused"));
+    assert!(
+        row_text(&located, &xml).contains("<sce:element-type>event_record<"),
+        "the refusal is placed on the element-type row"
+    );
+    let detail = invalid_config(located);
+    assert!(
+        detail.contains("the element 'event_record' cannot be stored by the Kotlin template"),
+        "{detail}"
+    );
+    assert!(detail.contains("flag input(s) S"), "{detail}");
+}
+
+#[test]
+fn kotlin_refuses_a_retention_of_nothing_and_one_whose_slots_overflow_an_int() {
+    let xml = deploy_key_ring();
+    let located = compile_single_kotlin(
+        &xml,
+        &resolution_options(Some(0), 4, BroadcastLogElementFacts::default()),
+    )
+    .err()
+    .unwrap_or_else(|| panic!("a log retains at least one entry"));
+    assert!(
+        row_text(&located, &xml).contains("<sce:retention"),
+        "the refusal is placed on the retention row"
+    );
+    assert!(invalid_config(located).contains("the retention resolves to 0"));
+
+    // i32::MAX = 2^31 - 1 = 2147483647. SLOTS = retention + 1 must fit an Int, so
+    // the retention is at most 2147483646 (SLOTS = 2147483647) and 2147483647 is
+    // refused (SLOTS = 2147483648).
+    let code = compile_single_kotlin(
+        &xml,
+        &resolution_options(Some(2_147_483_646), 4, BroadcastLogElementFacts::default()),
+    )
+    .expect("2147483646 + 1 = 2147483647 slots fit an Int");
+    assert!(
+        code.contains("const val RETENTION: Int = 2147483646"),
+        "{code}"
+    );
+    let located = compile_single_kotlin(
+        &xml,
+        &resolution_options(Some(2_147_483_647), 4, BroadcastLogElementFacts::default()),
+    )
+    .err()
+    .unwrap_or_else(|| panic!("2147483647 + 1 slots do not fit an Int"));
+    assert!(
+        row_text(&located, &xml).contains("<sce:retention"),
+        "the refusal is placed on the retention row"
+    );
+    let detail = invalid_config(located);
+    assert!(detail.contains("the retention 2147483647"), "{detail}");
+    assert!(detail.contains("at most 2147483646 entries"), "{detail}");
+}
+
+#[test]
+fn kotlin_refuses_an_element_whose_words_would_overflow_an_int() {
+    // WORDS = 1 + (MAX_ENCODED_BYTES + 7) / 8 is computed in an Int, so the sum must
+    // not wrap: the largest size is i32::MAX - 7 = 2147483647 - 7 = 2147483640
+    // (2147483640 + 7 = 2147483647 fits), and 2147483641 is refused
+    // (2147483641 + 7 = 2147483648 does not).
+    let xml = event_ring();
+    let code = compile_single_kotlin(
+        &xml,
+        &resolution_options(None, 2_147_483_640, BroadcastLogElementFacts::default()),
+    )
+    .expect("2147483640 + 7 = 2147483647 fits an Int");
+    assert!(
+        code.contains("const val MAX_ENCODED_BYTES: Int = 2147483640"),
+        "{code}"
+    );
+    let located = compile_single_kotlin(
+        &xml,
+        &resolution_options(None, 2_147_483_641, BroadcastLogElementFacts::default()),
+    )
+    .err()
+    .unwrap_or_else(|| panic!("2147483641 + 7 wraps an Int"));
+    assert!(
+        row_text(&located, &xml).contains("<sce:element-type>event_record<"),
+        "the refusal is placed on the element-type row"
+    );
+    let detail = invalid_config(located);
+    assert!(detail.contains("as many as 2147483641 bytes"), "{detail}");
+    assert!(detail.contains("at most 2147483640"), "{detail}");
+}
+
+#[test]
+fn a_deploy_key_retention_is_read_from_the_target_machines_limits_for_kotlin() {
+    // The element is one `uint32`: 4 bytes.
+    let xml = deploy_key_ring();
+    let codec = codec_doc("event_record");
+    let cfg = deploy_with_limits("          event_retention: 15");
+    let options = ForgeCompileOptions {
+        target_machine: Some("mcu_node".to_string()),
+        ..ForgeCompileOptions::default()
+    };
+    let code = generated_kotlin_log(
+        compile_documents_with(
+            Language::Kotlin,
+            &[("event_ring.scxml", &xml), ("event_record.scxml", &codec)],
+            &options,
+            Some(&cfg),
+        )
+        .expect("the deploy resolves the key"),
+    );
+    assert_holds(
+        &code,
+        &[
+            "const val RETENTION: Int = 15",
+            "const val MAX_ENCODED_BYTES: Int = 4",
+        ],
     );
 }
 

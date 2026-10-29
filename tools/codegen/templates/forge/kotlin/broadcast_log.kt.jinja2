@@ -1,0 +1,188 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{{ sce_map.source_marker(source_location, "kotlin", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
+
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="broadcast-log")
+// Runtime: {{ runtime_dep }}
+// Do not edit — regenerate from the source SCXML file.
+//
+// ADR 0062 broadcast-log — a bounded log that one execution context appends
+// to and any number of readers read, each by a cursor of its own. The document
+// states the contract (element type `{{ element_type }}`, {{ producers }} producer,
+// `{{ declared_progress }}`, the last {{ retention }} entries retained) and names no algorithm;
+// the algorithm is the runtime's sequence-locked ring.
+//
+// An entry is the element's wire bytes, never a value: the log stores the
+// bytes the element document's codec writes, so a copy that was torn is thrown
+// away unread, and the element a reader gets is a value of its own, decoded
+// from a buffer only that read holds.
+//
+// Operations (from `{{ runtime_dep }}`, typed here over the element):
+//   publish(publisher, element): {{ pascal }}Publish   wait-free; the entry's sequence number, or why the element was refused
+//   read(log, reader): {{ pascal }}Read                wait-free; an item, nothing new, how many were missed, or an entry that does not decode
+// A reader is `log.readerOldest()`, `log.readerHead()` or `log.readerAt(n)`
+// and owns its cursor; the publisher is `log.publisher()`, taken once and
+// given back with `release()`.
+//
+// Kotlin's sequence numbers are the signed `Long`'s: the log stops at the
+// runtime's `HORIZON`, which is half of what the languages with an unsigned
+// counter reach, and a read allocates the small result object it returns.
+
+@file:Suppress(
+    "ClassName",
+    "FunctionName",
+    "PropertyName",
+    "MemberVisibilityCanBePrivate",
+    "RemoveRedundantQualifierName",
+    "unused",
+)
+
+package {{ snake | kotlin_forge_package }}
+
+import com.sce.forge.runtime.ByteArraySink
+import com.sce.forge.runtime.CodecError
+import com.sce.forge.runtime.SceCursor
+import com.sce.forge.runtime.broadcastlog.BroadcastLog
+import com.sce.forge.runtime.broadcastlog.Read as RuntimeRead
+import com.sce.forge.runtime.broadcastlog.Reader
+import {{ element_snake | kotlin_forge_package }}.{{ element_pascal }}
+
+/**
+ * The entries a reader may rely on (`<sce:retention>`): the last [RETENTION]
+ * published.
+ */
+const val RETENTION: Int = {{ retention }}
+
+/**
+ * The slots the log keeps: one more than the retention, because the slot being
+ * overwritten is in flux and cannot be promised to a reader.
+ */
+const val SLOTS: Int = RETENTION + 1
+
+/**
+ * The most bytes the element `{{ element_type }}` encodes to, read from its
+ * document when this file was generated.
+ */
+const val MAX_ENCODED_BYTES: Int = {{ max_bytes }}
+
+/**
+ * The 64-bit words an entry holds: one for the length of the encoded element,
+ * then as many as [MAX_ENCODED_BYTES] bytes take at eight to a word, that is
+ * `1 + ceil(MAX_ENCODED_BYTES / 8)`.
+ */
+const val WORDS: Int = 1 + (MAX_ENCODED_BYTES + 7) / 8
+
+/** What the document requires of publish and read (`<sce:progress>`). */
+const val DECLARED_PROGRESS: String = "{{ declared_progress }}"
+
+/**
+ * The log: [SLOTS] slots of [WORDS] words. It allocates its storage once, when
+ * it is built, and never again.
+ */
+typealias {{ pascal }} = BroadcastLog
+
+/** The publishing side of the log, taken once with `publisher()`. */
+typealias {{ pascal }}Publisher = BroadcastLog.Publisher
+
+/** An empty log of [RETENTION] entries. */
+fun new{{ pascal }}(): {{ pascal }} = BroadcastLog(WORDS, SLOTS)
+
+/** What a typed publish did. */
+sealed interface {{ pascal }}Publish {
+    /** The element was stored as the entry [seq]. */
+    data class Published(val seq: Long) : {{ pascal }}Publish
+
+    /**
+     * The element's codec refused to write it, and nothing was published. An
+     * element that encodes to more than [MAX_ENCODED_BYTES] bytes is refused
+     * with `CodecError.BufferOverflow` by the bounded sink: an entry is never a
+     * truncated element.
+     */
+    data class Refused(val error: CodecError) : {{ pascal }}Publish
+}
+
+/** What a typed read found: the runtime's three answers, with the entry decoded. */
+sealed interface {{ pascal }}Read {
+    /** The entry [seq], decoded; the reader now holds `seq + 1`. */
+    data class Item(val seq: Long, val element: {{ element_pascal }}) : {{ pascal }}Read
+
+    /** The reader is at the head: nothing newer is published. */
+    data object Empty : {{ pascal }}Read
+
+    /**
+     * The reader had fallen behind the window and missed [skipped] (at least
+     * one) entries; it now holds the oldest entry retained.
+     */
+    data class Lagged(val skipped: Long) : {{ pascal }}Read
+
+    /**
+     * The entry [seq] was copied whole, and is not a value this log wrote: its
+     * stored length is above [MAX_ENCODED_BYTES], or its bytes do not decode as
+     * a `{{ element_pascal }}`. The reader has moved past it either way.
+     */
+    data class Unreadable(val seq: Long, val why: String) : {{ pascal }}Read
+}
+
+/**
+ * Publish [element]: encode it into a buffer of [MAX_ENCODED_BYTES] bytes, pack
+ * its length and its bytes (little-endian, eight to a word) into [WORDS] words,
+ * and hand them to the runtime, which never refuses and never waits.
+ *
+ * An element that encodes to more than [MAX_ENCODED_BYTES] bytes is refused by
+ * the codec and nothing is published ([{{ pascal }}Publish.Refused]). Past the
+ * runtime's horizon of entries the runtime throws `IllegalStateException`,
+ * which no run reaches in practice.
+ */
+fun publish(publisher: {{ pascal }}Publisher, element: {{ element_pascal }}): {{ pascal }}Publish {
+    val bytes = ByteArray(MAX_ENCODED_BYTES)
+    val sink = ByteArraySink(bytes)
+    val refused = element.encode(sink)
+    if (refused != null) {
+        return {{ pascal }}Publish.Refused(refused)
+    }
+    val length = sink.position()
+    val entry = LongArray(WORDS)
+    entry[0] = length.toLong()
+    for (index in 0 until length) {
+        val word = 1 + index / 8
+        entry[word] = entry[word] or ((bytes[index].toLong() and 0xFFL) shl (8 * (index % 8)))
+    }
+    return {{ pascal }}Publish.Published(publisher.publish(entry))
+}
+
+/**
+ * Read the entry at [reader]'s cursor and decode it. The runtime answers an item
+ * only after the copy it made was checked against the slot, which is what makes
+ * decoding it safe: a torn copy is a lag and is never decoded.
+ *
+ * A stored length above [MAX_ENCODED_BYTES] is not a length this log wrote, and
+ * is [{{ pascal }}Read.Unreadable] and never an index out of range.
+ */
+fun read(log: {{ pascal }}, reader: Reader): {{ pascal }}Read {
+    val entry = LongArray(WORDS)
+    return when (val found = log.read(reader, entry)) {
+        is RuntimeRead.Item -> decodeEntry(found.seq, entry)
+        RuntimeRead.Empty -> {{ pascal }}Read.Empty
+        is RuntimeRead.Lagged -> {{ pascal }}Read.Lagged(found.skipped)
+    }
+}
+
+/** The entry [seq], whose words the runtime copied whole into [entry]. */
+private fun decodeEntry(seq: Long, entry: LongArray): {{ pascal }}Read {
+    val stored = entry[0]
+    // The word is a signed Long here and an unsigned length in the contract, so a
+    // negative one is a length above the bound.
+    if (stored < 0L || stored > MAX_ENCODED_BYTES.toLong()) {
+        return {{ pascal }}Read.Unreadable(seq, "the stored length $stored is above the $MAX_ENCODED_BYTES bytes this log holds")
+    }
+    val length = stored.toInt()
+    val bytes = ByteArray(length)
+    for (index in 0 until length) {
+        bytes[index] = (entry[1 + index / 8] ushr (8 * (index % 8))).toByte()
+    }
+    val element = {{ element_pascal }}.decode(SceCursor(bytes))
+        ?: return {{ pascal }}Read.Unreadable(seq, "the stored bytes do not decode as a {{ element_pascal }}")
+    return {{ pascal }}Read.Item(seq, element)
+}

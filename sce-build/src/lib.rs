@@ -3653,10 +3653,16 @@ impl BroadcastLogElementFacts {
             // `bytes(raw)`, also a copy. Nothing the log's buffer owns outlives
             // the call, so there is no view to refuse.
             Language::Python => false,
+            // A Kotlin decode returns values that own what they hold, so a CBOR
+            // text or byte-string entry is held and never refused:
+            // `Cbor.readText` builds a new `String` with `decodeToString`, and
+            // `Cbor.readBytes` and `Cbor.readBytesExact` take a copy through
+            // `SceCursor.peekSlice`, which is `copyOfRange`; a plain codec's
+            // `bytes` payload is the same copy. Nothing points into the buffer
+            // a read decodes from, so there is no view to refuse.
+            Language::Kotlin => false,
             // No template has landed for these, so none has decided yet.
-            Language::Cpp | Language::Kotlin | Language::Go | Language::C11 | Language::Swift => {
-                false
-            }
+            Language::Cpp | Language::Go | Language::C11 | Language::Swift => false,
         };
         borrows.then(|| {
             "a CBOR map with a string or byte string entry decodes to a value that borrows \

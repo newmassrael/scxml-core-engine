@@ -390,7 +390,6 @@ const ACCEPTED: &[(Language, &str, Why)] = &[
     // on the backends of `BROADCAST_LOG_BACKENDS` (ADR 0062, order of landing):
     // a backend that has it has no row here.
     (Language::Cpp, "forge kind `broadcast-log`", Why::NotYet(BROADCAST_LOG_NO_TEMPLATE)),
-    (Language::Kotlin, "forge kind `broadcast-log`", Why::NotYet(BROADCAST_LOG_NO_TEMPLATE)),
     (Language::Go, "forge kind `broadcast-log`", Why::NotYet(BROADCAST_LOG_NO_TEMPLATE)),
     (Language::C11, "forge kind `broadcast-log`", Why::NotYet(BROADCAST_LOG_NO_TEMPLATE)),
     // Swift, which is decided at every site that decides per backend and writes a

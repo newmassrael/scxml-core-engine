@@ -19584,10 +19584,11 @@ pub fn generate_kotlin_with_imports(
         }
         // Queue kind: see cpp dispatch.
         ForgeDocument::Queue(m) => render_queue_kotlin(&env, m, imports, options)?,
-        // Broadcast log: see cpp dispatch.
-        ForgeDocument::BroadcastLog(m) => {
-            return Err(refuse_broadcast_log(m, crate::generator::Language::Kotlin))
-        }
+        // Broadcast log: see cpp dispatch. Kotlin's forge runtime has the row
+        // (`com.sce.forge.runtime.broadcastlog`), so the document is lowered over
+        // it by [`render_broadcast_log_kotlin`], which reads the numbers the
+        // document-set compile resolved.
+        ForgeDocument::BroadcastLog(m) => render_broadcast_log_kotlin(&env, m, imports, options)?,
         // Feature model: see cpp dispatch.
         ForgeDocument::FeatureModel(_) => return Ok(GeneratedOutput::default()),
     };
@@ -21181,6 +21182,87 @@ fn render_broadcast_log_python(
     tmpl.render(ctx).map_err(|e| {
         ForgeError::from(GenerateError::TemplateRender(format!(
             "broadcast_log.py.jinja2 (python): {e}"
+        )))
+    })
+}
+
+/// Render a `<sce:kind="broadcast-log">` document for the Kotlin backend (ADR
+/// 0062). The generated file defines the log's constants, the log over
+/// `com.sce.forge.runtime.broadcastlog.BroadcastLog` and typed `publish` and
+/// `read` over the element's generated class, from the numbers the build
+/// resolved ([`crate::BroadcastLogResolution`]). What is refused before the
+/// template is read is [`resolve_broadcast_log_render_inputs`]'s, which every
+/// language's renderer asks first.
+///
+/// What is Kotlin's own is the width of its integers. The runtime's constructor
+/// takes the words an entry holds and the slots as `Int`, and the constants are
+/// `Int`s that the file computes (`SLOTS = RETENTION + 1`,
+/// `WORDS = 1 + (MAX_ENCODED_BYTES + 7) / 8`), so a retention or an element size
+/// that would overflow either sum is refused here by name instead of being written
+/// as a literal the compiler would refuse or, worse, as a sum that wrapped.
+///
+/// The element is stored as its wire bytes, so what the template needs of the
+/// element's class is the codec's own `encode(SceSink)` and the companion's
+/// `decode(SceCursor)`, which every Kotlin codec that is not given an input by its
+/// caller has (the shared resolution refuses the others). The stamp is the
+/// runtime's 64-bit one, so [`judge_broadcast_log_stamp`] is not asked anything.
+fn render_broadcast_log_kotlin(
+    env: &minijinja::Environment<'_>,
+    m: &crate::forge::model::BroadcastLogModel,
+    _imports: &[ImportContext],
+    options: &crate::ForgeCompileOptions,
+) -> Result<String, ForgeError> {
+    let inputs =
+        resolve_broadcast_log_render_inputs(m, crate::generator::Language::Kotlin, options)?;
+    // `SLOTS = RETENTION + 1` is an `Int`.
+    if inputs.retention >= i32::MAX as u32 {
+        return Err(ForgeError::from(GenerateError::InvalidConfig(format!(
+            "broadcast-log '{name}': the retention {retention} does not leave room for its \
+             retention + 1 slots in a Kotlin Int (at most {limit} entries). The runtime takes \
+             its slot count as an Int.",
+            name = m.name,
+            retention = inputs.retention,
+            limit = i32::MAX - 1,
+        )))
+        .at_line(m.retention_line));
+    }
+    // `WORDS = 1 + (MAX_ENCODED_BYTES + 7) / 8` is an `Int` computed from a sum
+    // that must not wrap, and the buffer an element is encoded into is a
+    // `ByteArray`, which an `Int` sizes.
+    let largest_encoded = i32::MAX as u64 - 7;
+    if inputs.max_bytes > largest_encoded {
+        return Err(ForgeError::from(GenerateError::InvalidConfig(format!(
+            "broadcast-log '{name}': the element '{element}' encodes to as many as {bytes} bytes, \
+             and a Kotlin log holds at most {limit}: its words are counted in an Int, and an \
+             entry is encoded into a ByteArray.",
+            name = m.name,
+            element = m.element_type,
+            bytes = inputs.max_bytes,
+            limit = largest_encoded,
+        )))
+        .at_line(m.element_type_line));
+    }
+
+    let tmpl = env.get_template("broadcast_log.kt.jinja2").map_err(|e| {
+        ForgeError::from(GenerateError::TemplateLoad(format!(
+            "broadcast_log.kt.jinja2 (kotlin): {e}"
+        )))
+    })?;
+    let ctx = minijinja::context! {
+        pascal => filters::to_pascal_case(m.name.clone()),
+        snake => filters::to_snake_case(m.name.clone()),
+        element_type => &m.element_type,
+        element_pascal => filters::to_pascal_case(m.element_type.clone()),
+        element_snake => filters::to_snake_case(m.element_type.clone()),
+        retention => inputs.retention,
+        max_bytes => inputs.max_bytes,
+        producers => inputs.producers,
+        declared_progress => inputs.declared_progress,
+        runtime_dep => "com.sce.forge.runtime.broadcastlog",
+    };
+    tmpl.render(ctx).map_err(|e| {
+        ForgeError::from(GenerateError::TemplateRender(format!(
+            "broadcast_log.kt.jinja2 (kotlin): {e}"
         )))
     })
 }
