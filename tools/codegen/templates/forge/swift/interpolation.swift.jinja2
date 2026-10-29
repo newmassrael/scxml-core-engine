@@ -1,0 +1,50 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{{ sce_map.source_marker(source_location, "swift", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
+
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="interpolation")
+// Runtime: {{ runtime_dep }}
+// Do not edit — regenerate from the source SCXML file.
+//
+// A table interpolated between its breakpoints: a static function of the caseless enum
+// `{{ struct_name }}`, a file of the module that calls it. A call is qualified by the enum
+// (`{{ struct_name }}.{{ member_symbol }}(…)`), which a member of the calling type cannot hide as
+// it would hide a free function of the same name. An input outside an axis answers the value at
+// the nearer end. The runtime is named by its module, so a document named for one of its types
+// cannot hide it.
+
+import SceForgeRuntime
+
+public enum {{ struct_name }} {
+{% for axis in axes %}
+    private static let {{ axis.var_name }}: [Double] = [{% for bp in axis.breakpoints %}{{ bp }}{% if not loop.last %}, {% endif %}{% endfor %}]
+{% endfor %}
+{% if is_bilinear %}
+    private static let sceValues: [[Double]] = [
+{% for r in range(rows) %}
+        [{% for c in range(cols) %}{{ values[r * cols + c] }}{% if not loop.last %}, {% endif %}{% endfor %}]{% if not loop.last %},{% endif %}
+
+{% endfor %}
+    ]
+{% else %}
+    private static let sceValues: [Double] = [{% for v in values %}{{ v }}{% if not loop.last %}, {% endif %}{% endfor %}]
+{% endif %}
+
+    public static func {{ member_symbol }}({{ params }}) -> {{ output_type }} {
+{# Each input is read under the name the signature declared it with
+   (`input_local`), not as the author wrote it. #}
+{% if is_bilinear %}
+        {{ output_type }}(SceForgeRuntime.Interpolation.bilinear(
+            {{ axes[0].var_name }}, {{ axes[1].var_name }}, sceValues,
+            Double({{ axes[0].input_local }}), Double({{ axes[1].input_local }})
+        ))
+{% else %}
+        {{ output_type }}(SceForgeRuntime.Interpolation.linear(
+            {{ axes[0].var_name }}, sceValues,
+            Double({{ axes[0].input_local }})
+        ))
+{% endif %}
+    }
+}

@@ -22,9 +22,9 @@ public enum {{ struct_name }} {
 
     public static func {{ func_name }}(_ {{ input_id }}: {{ input_type }}) -> {{ value_type }}{% if on_miss_error %}?{% endif %} {
 {% if on_miss_error %}
-        Lookup.find(sceKeys, sceValues, {{ input_id }})
+        SceForgeRuntime.Lookup.find(sceKeys, sceValues, {{ input_id }})
 {% else %}
-        Lookup.find(sceKeys, sceValues, {{ input_id }}) ?? {{ default_literal }}
+        SceForgeRuntime.Lookup.find(sceKeys, sceValues, {{ input_id }}) ?? {{ default_literal }}
 {% endif %}
     }
 }

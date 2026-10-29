@@ -24404,6 +24404,9 @@ pub fn generate_swift_with_imports(
         // spells or refuses by name where it reads it.
         ForgeDocument::Condition(_) => None,
         ForgeDocument::Lookup(m) => swift_lookup_unlowered(m).map(|c| swift_lookup_refusal(m, &c)),
+        ForgeDocument::Interpolation(m) => {
+            swift_interpolation_unlowered(m).map(|c| swift_interpolation_refusal(m, &c))
+        }
         _ => {
             return match crate::forge::codegen_matrix::lookup(doc.kind(), Language::Swift) {
                 crate::forge::codegen_matrix::EmitOutcome::Declaration => {
@@ -24431,6 +24434,7 @@ pub fn generate_swift_with_imports(
         ForgeDocument::Enum(m) => render_enum(&env, m, imports, Language::Swift)?,
         ForgeDocument::Condition(m) => render_condition(&env, m, imports, Language::Swift)?,
         ForgeDocument::Lookup(m) => render_lookup(&env, m, imports, Language::Swift)?,
+        ForgeDocument::Interpolation(m) => render_interpolation(&env, m, imports, Language::Swift)?,
         _ => unreachable!("every other kind returned above"),
     };
     Ok(GeneratedOutput {
@@ -24711,6 +24715,31 @@ fn swift_algorithm_unlowered(m: &AlgorithmModel, imports: &[SwiftImport]) -> Opt
 pub(crate) fn swift_lookup_unlowered(m: &LookupModel) -> Option<String> {
     m.output_is_string()
         .then(|| "an output that answers a name (`type=\"string\"`)".to_string())
+}
+
+/// What of the interpolation `m` the Swift backend does not lower yet, described for a refusal
+/// by name (`generate/unsupported-feature`): an out-of-range policy other than `clamp`.
+///
+/// Every backend's table clamps an input outside its axis whatever policy the document asks for
+/// (no template reads `out_of_bounds`), so a document that asks for `extrapolate` or `error`
+/// is answered with the clamp it did not ask for. Swift does not repeat that: it writes what the
+/// document says or refuses it by name.
+pub(crate) fn swift_interpolation_unlowered(m: &InterpolationModel) -> Option<String> {
+    (m.out_of_bounds != OutOfBounds::Clamp).then(|| {
+        format!(
+            "an out-of-range policy of `{}` (`sce:out-of-bounds`)",
+            m.out_of_bounds.as_str()
+        )
+    })
+}
+
+/// The refusal of the interpolation `m` for the Swift construct `construct` it holds
+/// ([`swift_interpolation_unlowered`]).
+fn swift_interpolation_refusal(m: &InterpolationModel, construct: &str) -> String {
+    format!(
+        "interpolation '{}': {construct} has no Swift lowering yet",
+        m.name
+    )
 }
 
 /// The refusal of the lookup `m` for the Swift construct `construct` it holds
@@ -29039,7 +29068,11 @@ fn render_interpolation(
                 | crate::generator::Language::C11 => {
                     format!("AXIS_{}", a.input_id.to_uppercase())
                 }
-                crate::generator::Language::Swift => no_swift_emitter("render_interpolation"),
+                // A private member of the caseless enum the function is a member of,
+                // under the generator's own prefix, like the Go tables.
+                crate::generator::Language::Swift => {
+                    format!("sceAxis{}", filters::to_pascal_case(a.input_id.clone()))
+                }
             };
             serde_json::json!({
                 "input_id": a.input_id,
@@ -33951,8 +33984,10 @@ pub(crate) fn forge_interpolation_symbol(language: crate::generator::Language) -
         | crate::generator::Language::Cpp
         | crate::generator::Language::Kotlin
         | crate::generator::Language::Python
-        | crate::generator::Language::C11 => "lookup".to_string(),
-        crate::generator::Language::Swift => no_swift_emitter("forge_interpolation_symbol"),
+        | crate::generator::Language::C11
+        // A static function of the caseless enum the document's `<Pascal>` names
+        // (`interpolation.swift.jinja2`), which the enum's own name qualifies.
+        | crate::generator::Language::Swift => "lookup".to_string(),
     }
 }
 
