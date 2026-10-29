@@ -207,6 +207,106 @@ time from its parsed model, so the Interpreter and the AOT engine share the algo
 through a template. That is the end state of the Zero Duplication rule. Each of those moves changes a different
 runtime and needs its own measurement, so this ADR decides only their direction.
 
+## Amendment (2026-10-30): what the implementation decided, and what it measured
+
+The decisions above held. Building them settled the points below, which a reader of the code
+would otherwise have to reconstruct.
+
+**The tables (decision 2).**
+
+- The rows are as small as the numbering allows, since a program holds one table per machine.
+  A state's children are not stored: in a pre-order numbering the first child is the next id
+  and each further child the id after the previous child's subtree (`DocumentTables::children`
+  walks them). An absent parent, initial transition or source is the one number no document
+  reaches, behind `StateRow::new` / `TransitionRow::new` and accessors that return `Option`. A
+  target is one `u16` whose top bit says it names a `<history>` (`Target`, read as `Named`).
+  So a table numbers at most 2^15 states, histories and transitions (`MAX_IDS`); the generator
+  refuses a document past it, and `DocumentTables::check` holds hand-written rows to it.
+- The tables are a `const`, not a `static`: `StatePolicy::TABLES` is an associated constant
+  that refers to them, which a `static` cannot be on the crate's MSRV (1.75).
+- A `HistoryId` is the history's position in the sorted order of history ids, which is the
+  order the generated `History` enum declares them in.
+- The bounds the buffers are sized by are not in the tables. The generator writes them into
+  the types it emits (the `Workspace`, the `RunStore`, the configuration's `BoundedVec`), and
+  the runtime reads none of them.
+
+**Sets of states are bit vectors (decision 2, refined).** The Alternatives below set the
+bitset representation aside as "a choice of representation" to be made inside the tables
+later. It was made, and measured, in this series:
+
+- The configuration, what each `<history>` recorded, and every set a microstep builds (the
+  states to exit, the states to enter, the states entered by default, a transition's effective
+  targets) are bit vectors over `StateId` (`helpers::state_set`).
+- Because a state's number is its document position, reading a set in ascending order is entry
+  order and in descending order exit order. Nothing is sorted. A set holds each state once by
+  what it is, and a subtree is one range of bits. findLCCA asks only whether the first and the
+  last of the effective targets lie below an ancestor.
+- The quadratic ancestor tables the Alternatives warned of are not needed: the pre-order
+  ranges answer `isDescendant` in two comparisons.
+- The exit set of a transition that targets a `<history>` is still computed when it is taken.
+  A history's record is a set of the document's states, kept by the run store.
+- One observable consequence: `Engine::get_active_states` and `Engine::history_value` list
+  states in document order, for every machine, where they used to list them in the order
+  they were added. SCXML defines a configuration as a set, with no order, and document order is
+  the order the appendix enters it in.
+
+**The behaviour (decision 3).** The trait the procedures call is `helpers::microstep::Behaviour`:
+
+- `store()`: the run store, which the procedures read and write themselves.
+- `first_enabled_transition(StateId, EventId)`.
+- `exit_state`, `execute_transition_content`, `enter_state(StateId, is_default_entry)` and
+  `execute_history_default_content`.
+
+The procedures that only read take the store, `RunStoreRef`, and no behaviour. A state already
+in the configuration is not entered again: its `onentry` is not run twice when two transitions
+of one microstep both lead into it.
+
+**The engine (decision 5).** The main event loop is one copy for every program: `engine::Turn`,
+over `&mut dyn MainLoop`. What the loop decides on — whether the run goes on, where it ended,
+the macrostep's microsteps and refusal, the error chain's depth, the external-event budget — is
+a non-generic `LoopState` the loop reads directly; the truncation report is a hook only with the
+`macrostep-diagnostics` feature (ADR 0053).
+
+The queues, the scheduler and the typed diagnostics stay in `Engine<P>`, as decision 5 left
+them. Moving the queues alone to event numbers was built and measured, and reverted: on the
+probe image it cost 156 bytes (a ring buffer that does not carry its capacity) and 140 bytes
+(numbered entries on the existing deque). Converting at the queue's two ends costs more than
+the sharing saves while the code on both sides still speaks the machine's types. That move
+pays only as part of the whole engine speaking numbers, which is a change of a different size;
+it is ADR 0065's to decide.
+
+**The gate (decision 7)**, in `scripts/gates/nostd-mcu.sh` and `footprint.budget`:
+
+- It holds three figures in both directions: one more machine (image of two minus image of one,
+  `.text` plus `.rodata`); the shared core's `.text` by module path; and the absence of a probe
+  machine's type in any core symbol.
+- The stack tool resolves a call through a trait object to every implementation its caller may
+  reach (`--dyn`, class-hierarchy analysis), so the stack is read off the two-machine image,
+  where those calls are indirect.
+
+**Measured** (`thumbv7em-none-eabihf`, `opt-level = "z"`, fat LTO, rustc 1.99.1; `.text` plus
+`.rodata` of the probe staticlib, without the macrostep report):
+
+| | one machine | two machines | one more machine |
+|---|---|---|---|
+| 49e40c9a72 (before this ADR) | 189,949 | 192,814 | 2,865 |
+| this series | 191,993 | 193,665 | 1,672 |
+
+- The shared core is 5,346 bytes of `.text` in 37 symbols.
+- The image of one machine is larger by 2,044 bytes: the algorithm written for any document
+  rather than specialised to one, and the tables. From the third machine on, the image is
+  smaller, by about 1,190 bytes for each further machine.
+- The worst-case stack is 1,232 bytes (was 1,056 on the one-machine image). The core's frames
+  are functions of their own now, not inlined into each machine's `Engine`.
+
+The probe's second machine is a three-state flat machine, the smallest a document can be.
+The acceptance (step 6) is the consumer's image, where each machine is larger and uses more of
+the engine.
+
+**Citations.** The ledger binds a `§scxml-*` citation to the file and the symbol that encloses
+it. Code that moved kept its citations only where the enclosing function kept its name, and the
+new modules (`tables`, `state_set`, `run_store`) carry none.
+
 ## Alternatives considered
 
 - **An opt-in feature or `cfg` that switches the procedures to dynamic dispatch** (the request as written). Rejected
