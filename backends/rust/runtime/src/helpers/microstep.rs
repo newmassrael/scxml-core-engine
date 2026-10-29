@@ -394,7 +394,7 @@ pub fn select_transitions(
             }
         }
         // Document order is the order of the ids.
-        atomic_states.sort_unstable();
+        sort_in_document_order(&mut atomic_states);
 
         for &atomic in atomic_states.iter() {
             // §scxml-D-selectTransitions: the atomic state first, then its proper
@@ -803,7 +803,16 @@ pub fn exit_interpreter(
 /// document order among the rest, which together are exactly reverse document
 /// order — descending ids.
 fn sort_in_exit_order(states: &mut [StateId]) {
-    states.sort_unstable_by(|a, b| b.cmp(a));
+    crate::stable_sort_by(states, |a, b| b.cmp(a));
+}
+
+/// Ascending ids, which is document order. Through the crate's
+/// [`stable_sort_by`](crate::stable_sort_by), an insertion sort on a bare-metal
+/// build: every list sorted here is a set of states of one configuration, and
+/// the library's `sort_unstable` put about 2.2 KB of code into a `thumbv7em`
+/// image for lists that short (measured).
+fn sort_in_document_order(states: &mut [StateId]) {
+    crate::stable_sort_by(states, |a, b| a.cmp(b));
 }
 
 /// Appendix D's executeTransitionContent.
@@ -980,7 +989,7 @@ pub fn compute_entry_set<'a>(
     // §scxml-D-enterStates: states are entered in entryOrder — ancestors before
     // descendants, document order between the rest, which is exactly document
     // order, because that is a pre-order walk: ascending ids.
-    entry.states_to_enter.sort_unstable();
+    sort_in_document_order(&mut entry.states_to_enter);
     entry
 }
 

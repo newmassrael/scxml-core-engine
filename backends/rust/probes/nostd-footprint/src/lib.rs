@@ -85,6 +85,24 @@ pub extern "C" fn sce_footprint_process_event() -> bool {
 /// leaving this out is how the two configurations are weighed against each
 /// other, and an entry point that called an accessor the build does not have
 /// would just be a build error dressed as a measurement.
+/// A second machine of a different document, driven the way the first is, with
+/// the `second-machine` feature only (docs/adr/0064, decision 7). The gate
+/// weighs the image with and without it: the difference is what one more
+/// machine costs, and the code the machines share is in both.
+#[cfg(feature = "second-machine")]
+#[no_mangle]
+pub extern "C" fn sce_footprint_second_machine() -> bool {
+    use sce_nostd_queue_size_machine::{EventQueueCapacityProbeEvent, EventQueueCapacityProbePolicy};
+    let Ok(policy) = EventQueueCapacityProbePolicy::new_with_session_id(PROBE_SESSION_ID) else {
+        return false;
+    };
+    let mut engine = Engine::new(policy);
+    engine.initialize();
+    engine.step();
+    engine.process_event(EventQueueCapacityProbeEvent::Stop);
+    engine.is_running()
+}
+
 #[cfg(feature = "macrostep-diagnostics")]
 #[no_mangle]
 pub extern "C" fn sce_footprint_diagnostics() -> u32 {

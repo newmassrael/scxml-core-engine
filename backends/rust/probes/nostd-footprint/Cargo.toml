@@ -42,6 +42,9 @@ crate-type = ["staticlib"]
 [dependencies]
 sce-rust-runtime = { path = "../../runtime", default-features = false }
 sce-nostd-build-probe = { path = "../nostd-build" }
+# The second machine of the image, linked only with `second-machine`. A
+# different document from the first, so nothing of one can stand for the other.
+sce-nostd-queue-size-machine = { path = "../nostd-queue-size/machine", optional = true }
 
 [features]
 # A pass-through so the gate can weigh the same engine twice — once reporting
@@ -52,6 +55,12 @@ sce-nostd-build-probe = { path = "../nostd-build" }
 # a crate gets, and the build with it is the one a crate that reads the
 # counters asks for.
 macrostep-diagnostics = ["sce-rust-runtime/macrostep-diagnostics"]
+# A second machine in the same image (docs/adr/0064, decision 7). What an image
+# pays for one more machine is the image with two minus the image with one; the
+# code every machine shares is in both and cancels, so this is the figure a
+# consumer multiplies by its machine count, whatever the inliner attributes to
+# which symbol.
+second-machine = ["dep:sce-nostd-queue-size-machine"]
 
 # Release, because a debug build measures the inliner's day off. The consumer
 # reports on `--release`, and a footprint compared across two profiles is two
