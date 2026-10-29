@@ -99,6 +99,7 @@ paths = [
     # left the set: §synth-5-A 44 -> 42 citing files, 5-B 233 -> 143, 5-J-5
     # 25 -> 23, and go.mod / conformance/doc.go / conformance/generate.sh carry
     # 0 citations each.
+    "backends/go/forge-runtime/broadcastlog",
     "backends/go/forge-runtime/codec",
     "backends/go/forge-runtime/filter",
     "backends/go/forge-runtime/forge",

@@ -5784,14 +5784,6 @@
           "kind": "implements"
         },
         {
-          "file": "docs/formal/BroadcastLog.tla",
-          "kind": "references"
-        },
-        {
-          "file": "docs/formal/BroadcastLogWrapped.tla",
-          "kind": "references"
-        },
-        {
           "file": "sce-build/src/forge/error.rs",
           "kind": "references"
         },
@@ -5829,18 +5821,6 @@
         },
         {
           "file": "scripts/formal/check.sh",
-          "kind": "references"
-        },
-        {
-          "file": "docs/adr/0062-a-bounded-log-is-read-by-cursors-its-readers-own-and-a-full-log-forgets-its-oldest-entry.md",
-          "kind": "references"
-        },
-        {
-          "file": "docs/SCE_ACCEPTED_SUBSET.md",
-          "kind": "references"
-        },
-        {
-          "file": "SCE_FORGE.md",
           "kind": "references"
         },
         {
@@ -5889,10 +5869,6 @@
         },
         {
           "file": "backends/go/forge-runtime/broadcastlog/history_test.go",
-          "kind": "references"
-        },
-        {
-          "file": "backends/go/forge-runtime/conformance/broadcast_log_generated_test.go",
           "kind": "references"
         },
         {
@@ -7519,6 +7495,42 @@
       "target_kind": "section",
       "target_id": "synth-5-S",
       "reason": "a binding needs the file to cite the section; none of these files did"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-S",
+      "reason": "the synth workspace does not scan this path, so the cite is not a witness the gate can read"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-S",
+      "reason": "the synth workspace does not scan this path, so the cite is not a witness the gate can read"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-S",
+      "reason": "the synth workspace does not scan this path, so the cite is not a witness the gate can read"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-S",
+      "reason": "the synth workspace does not scan this path, so the cite is not a witness the gate can read"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-S",
+      "reason": "the synth workspace does not scan this path, so the cite is not a witness the gate can read"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-S",
+      "reason": "the synth workspace does not scan this path, so the cite is not a witness the gate can read"
     }
   ],
   "frames": {},
