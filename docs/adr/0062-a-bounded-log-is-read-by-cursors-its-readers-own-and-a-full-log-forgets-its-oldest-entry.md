@@ -42,7 +42,7 @@ specifications under one name needs the bolt-on validator that marks a category 
 |---|---|
 | tokio `sync::broadcast` | The same contract in a widely used library: a send into a full channel overwrites the oldest value, a receiver that missed one gets `RecvError::Lagged(n)` with the count skipped, and its position moves to the oldest value still held (checked 2026-10-28 in the module documentation: with capacity 2, sending 10, 20, 30 makes the first `recv` return `Lagged(1)`, then 20 and 30). That is `Lagged{skipped}` and the resume rule of §2. Whether its implementation is lock-free was not checked |
 | LMAX Disruptor (2011) | The ring of pre-allocated entries addressed by a sequence number, and the account of why it beats a bounded queue. Its multi-producer sequencer and gating sequences are the designs §8 declines for now |
-| Seqlock (Lameter 2005; Boehm 2012; WG21 P1478) | The read protocol of §4 and its correctness under a language memory model |
+| Seqlock (the Linux kernel's `seqlock.rst`; Boehm 2012; WG21 P1478) | The read protocol of §4 and its correctness under a language memory model |
 | Logs as an abstraction (Kreps 2013; Kleppmann 2017) | Position-addressed, read-does-not-remove, per-reader offsets |
 | Operating-system trace buffers with an overwrite mode (the Linux tracing ring buffer; the `perf` mmap buffer) | Established practice outside the consumer's domain. Named from memory and not checked in this revision |
 
@@ -69,9 +69,15 @@ the oldest is forgotten).
   the gating condition under which it is revisited.
 
 The consequence is a fixed boundary: `queue` is the cell `consumed once x refuse`, completely, and gains no attribute;
-a document that writes `sce:on-full` on a queue writes an attribute no reader reads, which is the case
-`validation/sce-attribute-unread` exists for (the step that adds the kind confirms that check covers kind documents,
-and adds a hint naming `broadcast-log` if it can carry one).
+a document that writes `sce:on-full` on a queue writes an attribute nothing reads. **Confirmed on 2026-10-29** against
+the built `sce-codegen check`: on the root of a `queue` document it is refused as `validation/unknown-sce-attribute`
+(a name no document of the tree uses), and on `<sce:bounded>` the schema refuses it (`The attribute ... is not
+allowed`); the same document without it passes. The first is held by
+`an_overflow_policy_written_on_a_queue_or_a_broadcast_log_is_refused` for both kinds. The refusal carries no hint
+naming `broadcast-log`, and none is added: the check that refuses it is generic (its reads are the list of what a
+parser takes, and its header disclaims a table of which attribute belongs to which kind), and a name-to-kind table in
+it would be that list kept a second time. The kind's name is found where the kinds are listed (`SCE_FORGE.md`, the
+acceptance document and RFC §5.S).
 
 ### 2. The abstract data type
 
@@ -141,7 +147,7 @@ document learns the contract from the document. `<sce:retention>` is a count wri
 | `broadcast-log/progress-unreachable-on-backend` | the backend's ceiling is lower (Python is `blocking`) |
 | `broadcast-log/wrap-bound-unstated`, `.../wrap-bound-below-deploy-minimum` | the stamp is narrower than 64 bits and the deploy states no sufficient wrap bound (§4) |
 | `broadcast-log/slots-not-a-divisor-of-the-stamp-space` | the stamp is narrower than 64 bits and `retention + 1` is not a power of two (§4) |
-| `broadcast-log/runtime-missing` | the language has no template over its runtime row yet (every language but Rust, since step 6b) |
+| `broadcast-log/runtime-missing` | the language has no template over its runtime row yet (Swift alone, since step 7) |
 
 ### 4. The algorithm: one producer, a stamped ring, and a seqlock read
 
@@ -172,9 +178,9 @@ read(r):               // returns Item / Empty / Lagged, a bounded number of ste
   return Lagged{skipped = (h' - R) - r}
 ```
 
-This is the sequence lock (Lameter, "Effective synchronization on Linux/NUMA systems", Gelato Federation Meeting 2005)
-in the form Boehm showed correct under the C++11 model (Boehm, "Can seqlocks get along with programming language memory
-models?", MSPC 2012): the payload words are *atomic* loads and stores with relaxed order, so there is no data race,
+This is the sequence lock (the Linux kernel's, `Documentation/locking/seqlock.rst`; see References) in the form Boehm
+showed correct under the C++11 model (Boehm, "Can seqlocks get along with programming language memory models?", MSPC
+2012): the payload words are *atomic* loads and stores with relaxed order, so there is no data race,
 and the two fences carry the ordering. The standard's own answer to the same problem is WG21 P1478 (Boehm, "Byte-wise
 atomic memcpy", revised from R0, 2019, to R6, 2020; renamed `atomic_load_per_byte_memcpy`), whose stated first use is the
 seqlock reader and whose semantics is a per-byte relaxed atomic load loop followed by a fence: the protocol above is that
@@ -1022,24 +1028,27 @@ reads out of `forge-runtime/src/lib.rs`, as for the 64-bit row.
 
 ### What is still undone
 
-- **The generated code for the other languages.** Every backend but Swift has its template: Rust's (step 6b), and Python's,
-  Kotlin's, Go's, C11's and C++'s (step 7). Swift is refused by name (`broadcast-log/runtime-missing`) until it has a forge
-  runtime. The narrow rows of the other languages, which each template will need on a target without 64-bit atomics, are
-  not built: Rust's are (see "What the narrow and load/store-only rows landed").
+What was undone and is now done, as of 2026-10-29: the RFC section (§5.S of `docs/spec/synth/rfc-sce-protocol-synthesis.md`,
+with its ledger section `§synth-5-S` and the bindings of every file of the kind, added through the Mnemosyne CLI); the
+References, each checked against its venue (see References, which also withdraws one citation that was wrong); the
+check that `sce:on-full` on a queue is refused (§1); the specialised checker's first run (on the merged tree, its 9 unit
+tests, the 10 of the differential file and the 11 of the format file pass); and the narrow rows' loom, TLC, unit,
+generation and conformance runs and their ARMv6-M and ARMv7-M builds (see their section).
+
+What is left:
+
+- **Swift** is refused by name (`broadcast-log/runtime-missing`) until it has a forge runtime. The narrow rows of the
+  languages other than Rust, which each template will need on a target without 64-bit atomics, are not built: Rust's are.
 - **Generated mutation coverage** of the Rust template and its renderer, in the existing `.cases` form.
 - **Element forms the Rust template refuses**: a codec that takes flag inputs or a variant tag from its caller, and a CBOR map
   with a string or byte-string entry. A typed diagnostic for an unresolved deploy limit.
-- **The specialised checker, run.** It landed (see its section) and was written with nothing built: its unit tests, the
-  differential test and the command's `--method` flag have not been compiled or run, so the first run is the check of
-  every number and of the claim that the whole differential file fits about ten seconds in a debug build. The stress runs
-  of the six rows still write short histories, a limit the general search imposed and the specialised checker does not;
-  lengthening them is a change to each recorder, with a round of CI to read after it. No mutation case guards
-  `specialised.rs` yet.
-- **Running what the narrow rows' change was written without**: loom, TLC, the unit and generation tests, the ARMv6-M and
-  ARMv7-M builds of the runtime, and the casefile's mutation round. None was run (see the section above).
+- **The stress runs of the six rows** still write short histories, a limit the general search imposed and the specialised
+  checker does not; lengthening them is a change to each recorder, with a round of CI to read after it. No mutation
+  case guards `specialised.rs` yet.
+- **Rounds only CI can judge**: the casefile of the narrow row's mutation round, and the nine Rust cases after the
+  strengthened window assertion, neither read yet; and the Miri measurement, which CI cannot repeat because the
+  mutation selector passes its arguments to `cargo test` and a Miri runner for `scripts/mutate` is not built.
 - **The differential run against the downstream consumer's own ring** (section 6, layer 5), which needs that ring's cases.
-- **The new RFC section** beside §synth-5-P, and a round of CI that judges the nine Rust cases after the strengthened
-  window assertion (the next round has not been read).
 
 ## Consequences
 
@@ -1065,12 +1074,48 @@ Checked on 2026-10-28 against a web search (title, venue and year as listed; the
   for exchanging data between concurrent threads", LMAX technical paper, 2011. Confirmed through secondary sources; the
   paper was not opened.
 
-Cited from memory and **not yet checked**; each is verified against its venue before this ADR is accepted:
-Herlihy and Wing (TOPLAS 12(3), 1990); Wing and Gong (JPDC 17(1-2), 1993); Batty, Dodds and Gotsman (POPL 2013);
-Abadi and Lamport (TCS 82(2), 1991); Lamport, *Specifying Systems* (2002); Kokologiannakis, Lahav, Sagonas and
-Vafeiadis (POPL 2018) and the GenMC tool paper (CAV 2021); Lameter (Gelato 2005); Kreps (LinkedIn Engineering, 2013);
-Kleppmann (O'Reilly, 2017); Abdulla and Jonsson (Information and Computation 127(2), 1996); Cécé, Finkel and Iyer
-(Information and Computation 124(1), 1996).
+Checked on 2026-10-29 against a web search (author, title, venue, volume and pages as listed; the abstract or the
+bibliographic record was read, not the full text):
+
+- M. P. Herlihy and J. M. Wing, "Linearizability: A correctness condition for concurrent objects", ACM TOPLAS 12(3),
+  July 1990, pp. 463-492.
+- J. M. Wing and C. Gong, "Testing and verifying concurrent objects", Journal of Parallel and Distributed Computing
+  17(1-2), 1993, pp. 164-182. The exhaustive search over the sequential histories consistent with a concurrent one is the
+  algorithm `check_general` implements; the specialised checker replaces it for this kind alone.
+- M. Batty, M. Dodds and A. Gotsman, "Library abstraction for C/C++ concurrency", POPL 2013, pp. 235-248. Restricted to
+  the sequentially consistent fragment its criterion implies linearizability, and not the reverse: the grounds on which
+  section 5 states the criterion for the sequentially consistent model and leaves the weak-memory statement to the
+  layers that run under it.
+- M. Abadi and L. Lamport, "The existence of refinement mappings", Theoretical Computer Science 82(2), May 1991,
+  pp. 253-284.
+- L. Lamport, *Specifying Systems: The TLA+ Language and Tools for Hardware and Software Engineers*, Addison-Wesley,
+  2002 (first printing July 2002).
+- M. Kokologiannakis, O. Lahav, K. Sagonas and V. Vafeiadis, "Effective stateless model checking for C/C++
+  concurrency", PACMPL 2 (POPL), article 17, January 2018; M. Kokologiannakis and V. Vafeiadis, "GenMC: A model checker
+  for weak memory models", CAV 2021 (the project page lists RC11, IMM and LKMM as its models).
+- P. A. Abdulla and B. Jonsson, "Verifying programs with unreliable channels", Information and Computation 127(2),
+  1996, pp. 91-101; G. Cece, A. Finkel and S. P. Iyer, "Unreliable channels are easier to verify than perfect
+  channels", Information and Computation 124(1), 1996, pp. 20-31. Both treat unbounded lossy FIFO channels, which is the
+  sense in which a log is a lossy channel whose loss is reported to the reader; the log's capacity is bounded, which
+  neither paper assumes.
+- J. Kreps, "The Log: What every software engineer should know about real-time data's unifying abstraction", LinkedIn
+  Engineering, 16 December 2013. The post defines the log as an append-only sequence of entries each numbered in
+  sequence, read left to right.
+- M. Kleppmann, *Designing Data-Intensive Applications*, O'Reilly, March 2017, chapter 11 "Stream Processing". The
+  chapter's log-based brokers let several consumers read independently, and retention is decoupled from consumption.
+- The Linux kernel, `Documentation/locking/seqlock.rst` ("Sequence counters and sequential locks"). It states that the
+  mechanism cannot protect data that contains pointers, because the writer can invalidate one the reader is following;
+  the slot of a `broadcast-log` holds words and no pointer, which is what §4 relies on.
+
+**A citation that was wrong and is withdrawn.** Earlier revisions of this ADR cited "Lameter 2005" as a source of the
+seqlock. The Gelato 2005 paper of that name ("Effective synchronization on Linux/NUMA systems") is about hierarchical
+backoff locks, not sequence locks, and the table of prior art no longer cites it. The seqlock is credited in the
+literature to Hemminger, after earlier work by Arcangeli, and its documentation is the kernel's file listed above.
+
+**P1478 (byte-wise atomic memcpy)**, status as found on 2026-10-29: the WG21 record has it voted into the Concurrency
+TS version 2 working paper at the Kona meeting in 2022 (revision R8, mailing of December 2022). Whether the C++
+standard itself has adopted it, and under which function names, was not found; this ADR relies on the Rust and C++
+runtimes' own word-by-word relaxed atomic copies and does not depend on the answer.
 
 No IETF RFC defines this structure; none was found.
 
