@@ -122,6 +122,42 @@ for fixture in "${QUEUE_FIXTURES[@]}"; do
         --go-module-prefix "$GO_MODULE_PREFIX" >/dev/null
 done
 
+# The broadcast-log kind's fixtures (ADR 0062): three logs and the two elements
+# they store. A log is generated from its document SET and never alone, because a
+# slot is sized from the element document's largest encoded size, which only the
+# set compile reads (a single-document `generate` of a log is refused, naming
+# what is missing). `orchestrate` compiles the set and writes every file into one
+# directory, and a Go package is a directory, so the set is written to a staging
+# directory under the tree and each file is moved into the package that is named
+# like it, the layout `generate` gives the fixtures above. They assert no
+# numerical oracle value, so the catalog does not list them;
+# broadcast_log_generated_test.go compiles them against the runtime and uses the
+# logs.
+BROADCAST_LOG_FIXTURES=(
+    broadcast_log_conformance_event
+    broadcast_log_conformance_record
+    broadcast_log_conformance_literal
+    broadcast_log_conformance_bounded
+)
+BROADCAST_LOG_STAGE="$OUT_DIR/.broadcast-log-stage"
+rm -rf "$BROADCAST_LOG_STAGE"
+mkdir -p "$BROADCAST_LOG_STAGE"
+broadcast_log_documents=()
+for fixture in "${BROADCAST_LOG_FIXTURES[@]}"; do
+    broadcast_log_documents+=(--forge "$RESOURCE_DIR/$fixture.scxml")
+done
+"$SCE_CODEGEN" orchestrate \
+    "${broadcast_log_documents[@]}" \
+    --language go \
+    --output-dir "$BROADCAST_LOG_STAGE" \
+    --go-module-prefix "$GO_MODULE_PREFIX" >/dev/null
+for fixture in "${BROADCAST_LOG_FIXTURES[@]}"; do
+    pkg_dir="$OUT_DIR/$fixture"
+    mkdir -p "$pkg_dir"
+    mv "$BROADCAST_LOG_STAGE/$fixture.go" "$pkg_dir/$fixture.go"
+done
+rm -rf "$BROADCAST_LOG_STAGE"
+
 # Render the test harness itself from the shared template.
 "$SCE_CODEGEN" generate-conformance \
     --language go \

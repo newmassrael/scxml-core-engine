@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ADR 0062 (broadcast-log kind): one producer, wait-free, a retention of two
+  written as a constant, over the record whose payload is a view of its buffer
+  and holds at most eight bytes. The largest the element encodes to is 1 + 8 =
+  9 bytes, so an entry is one length word and two words of bytes, and a slot is
+  three. The Go conformance package generates it beside the logs over the other
+  two elements: it is the log whose retention needs no deploy file, over the
+  one element a payload past the bound can be offered to.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://sce.dev/ext sce-forge.xsd"
+       sce:kind="broadcast-log"
+       name="broadcast_log_conformance_bounded"
+       version="1.0">
+  <sce:element-type>broadcast_log_conformance_record</sce:element-type>
+  <sce:producers>one</sce:producers>
+  <sce:progress>wait-free</sce:progress>
+  <sce:retention entries="2"/>
+</scxml>
