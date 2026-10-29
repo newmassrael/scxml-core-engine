@@ -429,7 +429,6 @@ const ACCEPTED: &[(Language, &str, Why)] = &[
     ),
     // What the emitters carry, once they exist.
     (Language::Swift, "sce-static data model", Why::NotYet(SWIFT_STATIC_IN_PART)),
-    (Language::Swift, "may-fail algorithm bodies", Why::NotYet(SWIFT_NO_FORGE)),
     (Language::Swift, "CBOR codec", Why::NotYet(SWIFT_NO_FORGE)),
     (Language::Swift, "content-line codec", Why::NotYet(SWIFT_NO_FORGE)),
     (

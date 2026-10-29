@@ -215,8 +215,8 @@ fn an_algorithm_a_backend_writes_in_part_is_generated_and_the_rest_is_refused_by
 
         // A construct it does not lower is refused by the construct, naming the backend.
         let unlowered = lowered.replace(
-            r#"<sce:if cond="out > 9"><sce:assign target="out" expr="9"/></sce:if>"#,
-            r#"<sce:while cond="out > 9" max-iter="10"><sce:assign target="out" expr="out - 1"/></sce:while>"#,
+            "<sce:signature>",
+            "<sce:const name=\"LIMIT\" type=\"uint8\" init=\"9\"/>\n  <sce:signature>",
         );
         assert_ne!(unlowered, lowered, "the replacement did not apply");
         let error = compile_forge_from_string(&unlowered, label, language)
@@ -224,7 +224,7 @@ fn an_algorithm_a_backend_writes_in_part_is_generated_and_the_rest_is_refused_by
             .unwrap_or_else(|| panic!("{language:?} generated an algorithm it does not lower"));
         let text = format!("{error:?}");
         assert!(
-            text.contains(&format!("{language:?}")) && text.contains("<sce:while>"),
+            text.contains(&format!("{language:?}")) && text.contains("<sce:const"),
             "{language:?}: the refusal names neither the backend nor the construct: {text}"
         );
     }

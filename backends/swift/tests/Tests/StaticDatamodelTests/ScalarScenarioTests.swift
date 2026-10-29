@@ -314,6 +314,24 @@ private func recordCall() -> Machine {
     )
 }
 
+private func syncClient() -> Machine {
+    let policy = SyncClientPolicy()
+    return drive(
+        policy,
+        variables: [
+            "byToken": { .bool(policy.byToken) },
+            "fullListing": { .bool(policy.fullListing) },
+            "outcome": { integer(policy.outcome) },
+            "retryAt": { integer(policy.retryAt) },
+            "deleted": { integer(policy.deleted) },
+            "uploaded": { integer(policy.uploaded) },
+            "discarded": { integer(policy.discarded) },
+            "pages": { integer(policy.pages) },
+            "refusals": { integer(policy.refusals) },
+        ]
+    )
+}
+
 private func listCall() -> Machine {
     let policy = StaticListCallPolicy()
     return drive(
@@ -741,6 +759,13 @@ private func recordBytes() -> Machine {
 // declares and back by field, for a record the machine holds and for an event's payload.
 @Test func aRecordIsHandedToAnImportedAlgorithmAndTakenBackWhole() {
     replay("static_record_call", recordCall())
+}
+
+// A sync run composed of the standard sync rules, each an imported algorithm that may
+// fail, called from a guard or an assignment: a failure is thrown by the algorithm,
+// recorded by the machine, and ends its block as error.execution.
+@Test func aSyncRunIsComposedOfTheStandardSyncRules() {
+    replay("sync_client", syncClient())
 }
 
 // A list the machine keeps is handed to an imported algorithm to be read, a list of
