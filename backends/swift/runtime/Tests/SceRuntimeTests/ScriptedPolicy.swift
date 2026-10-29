@@ -47,9 +47,13 @@ struct FlatTransition {
 /// A policy for a flat machine whose behavior the test scripts: what each state's
 /// `<onentry>` and `<onexit>` do, and which transitions it has. Everything the
 /// document would otherwise fix is a closure the test owns.
-final class ScriptedPolicy: StatePolicy {
+final class ScriptedPolicy: InvocablePolicy {
     typealias State = FlatState
     typealias Event = FlatEvent
+
+    /// What a parent gives the session it invokes (`InvokedSession`).
+    var parentEventQueue: ParentEventQueue?
+    var sessionID = ""
 
     var transitions: [FlatState: [FlatTransition]] = [:]
     var onEntry: [FlatState: (Engine<ScriptedPolicy>) -> Void] = [:]
