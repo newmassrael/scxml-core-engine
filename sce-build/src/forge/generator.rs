@@ -23647,9 +23647,8 @@ fn swift_algorithm_refusal(m: &AlgorithmModel, construct: &str) -> String {
 /// `<sce:assign>`, `<sce:if>` and `<sce:return>`. Each construct past
 /// those is named here until its spelling is written, which is what
 /// [`crate::forge::codegen_matrix::ships_in_part`] promises of an in-part backend:
-/// what it does not write is refused, never emitted wrong. A `may-fail` signature is
-/// refused by the list every backend that lowers one is on
-/// (`reject_may_fail_in_unsupported_lang`).
+/// what it does not write is refused, never emitted wrong. A `may-fail` signature
+/// is lowered: the function `throws`, and each integer operation is checked.
 fn swift_algorithm_unlowered(m: &AlgorithmModel, imports: &[SwiftImport]) -> Option<String> {
     // A number, a `bool` or a string; a byte string is held in `[UInt8]`, whose
     // view, buffer and owned forms are not spelled yet. A record is the struct of
@@ -23693,7 +23692,9 @@ fn swift_algorithm_unlowered(m: &AlgorithmModel, imports: &[SwiftImport]) -> Opt
             AlgorithmStmt::Var { .. }
             | AlgorithmStmt::RecordVar { .. }
             | AlgorithmStmt::Assign { .. }
-            | AlgorithmStmt::Return { .. } => None,
+            | AlgorithmStmt::Return { .. }
+            // A precondition of a may-fail body, thrown as `AlgorithmError.precondition`.
+            | AlgorithmStmt::Require { .. } => None,
             AlgorithmStmt::If {
                 then_body,
                 else_body,
@@ -23704,7 +23705,7 @@ fn swift_algorithm_unlowered(m: &AlgorithmModel, imports: &[SwiftImport]) -> Opt
                 "the record <sce:var name=\"{name}\"> built from a call"
             )),
             AlgorithmStmt::Append { .. } => Some("an <sce:append>".to_string()),
-            AlgorithmStmt::While { .. } => Some("an <sce:while>".to_string()),
+            AlgorithmStmt::While { body, .. } => unlowered(body, reserved),
             // Over a `list<T>` parameter, the one list a body holds that is lowered
             // (a byte string and a bounded collection are refused where they are
             // declared); its item is a local, named as written.
@@ -23713,7 +23714,6 @@ fn swift_algorithm_unlowered(m: &AlgorithmModel, imports: &[SwiftImport]) -> Opt
             )),
             AlgorithmStmt::Foreach { body, .. } => unlowered(body, reserved),
             AlgorithmStmt::Call { .. } => Some("an <sce:call>".to_string()),
-            AlgorithmStmt::Require { .. } => Some("an <sce:require>".to_string()),
         })
     }
     // An import of an event schema is the unit a record of it is typed by, which the
@@ -31238,7 +31238,8 @@ fn lower_algorithm_stmt(
                 | Language::Cpp
                 | Language::Kotlin
                 | Language::Go
-                | Language::C11 => {
+                | Language::C11
+                | Language::Swift => {
                     let negated = format!("!({cond_lowered})");
                     let (header_open, block_close, if_indent) =
                         channel.braced_if_header(pad, &negated, indent);
@@ -31249,7 +31250,6 @@ fn lower_algorithm_stmt(
                     out.push_str(&format!("{if_pad}}}\n"));
                     out.push_str(&block_close);
                 }
-                Language::Swift => no_swift_emitter("lower_algorithm_stmt"),
             }
         }
         AlgorithmStmt::While {
@@ -31285,13 +31285,18 @@ fn lower_algorithm_stmt(
                 | Language::Cpp
                 | Language::Kotlin
                 | Language::Go
-                | Language::C11 => {
+                | Language::C11
+                | Language::Swift => {
                     // Go has no `while` keyword — `for cond { }` is the
                     // sole condition-only loop form. Cpp/C11/Kotlin all
-                    // accept `while (cond) { }`; Rust drops the paren
-                    // wrap under `unused_parens`.
+                    // accept `while (cond) { }`; Rust and Swift drop the
+                    // paren wrap (`unused_parens`, and Swift's own style).
                     let header_open = match lang {
                         Language::Rust => format!("{pad}while {cond_lowered} {{\n"),
+                        Language::Swift if channel.checks_conditions() => {
+                            channel.swift_while_header(pad, &cond_lowered, indent)
+                        }
+                        Language::Swift => format!("{pad}while {cond_lowered} {{\n"),
                         Language::Go if channel.checks_conditions() => {
                             channel.go_for_header(pad, &cond_lowered, indent)
                         }
@@ -31302,14 +31307,12 @@ fn lower_algorithm_stmt(
                         Language::Cpp | Language::Kotlin | Language::Python | Language::C11 => {
                             format!("{pad}while ({cond_lowered}) {{\n")
                         }
-                        Language::Swift => no_swift_emitter("lower_algorithm_stmt"),
                     };
                     out.push_str(&header_open);
                     let inner_pad = "    ".repeat(indent + 1);
                     lower_algorithm_block(body, ctx, &inner_pad, indent + 1, &in_body, out)?;
                     out.push_str(&format!("{pad}}}\n"));
                 }
-                Language::Swift => no_swift_emitter("lower_algorithm_stmt"),
             }
         }
         AlgorithmStmt::Foreach {
@@ -33094,7 +33097,11 @@ impl ReturnChannel<'_> {
     /// rather than leaving the expression that failed.
     fn records_failures(&self) -> bool {
         use crate::generator::Language;
-        self.may_fail && matches!(self.lang, Language::Cpp | Language::C11 | Language::Go)
+        self.may_fail
+            && matches!(
+                self.lang,
+                Language::Cpp | Language::C11 | Language::Go | Language::Swift
+            )
     }
 
     /// C11's statement returning the buffer `local` whose append ran past its
@@ -33161,6 +33168,19 @@ impl ReturnChannel<'_> {
                 ty = self.value_type,
                 check = self.check(&format!("{pad}    ")),
             ),
+            // Computed into a local first, because computing it can fail: the
+            // failure is thrown in its place, and the value is returned only when
+            // none is recorded. A block of its own, so two returns of a body do not
+            // declare the local twice.
+            Language::Swift if self.may_fail => format!(
+                "{pad}do {{\n\
+                 {pad}    let sceReturned: {ty} = {value}\n\
+                 {check}\
+                 {pad}    return sceReturned\n\
+                 {pad}}}\n",
+                ty = self.value_type,
+                check = self.check(&format!("{pad}    ")),
+            ),
             Language::Python | Language::Kotlin | Language::Go | Language::Swift => {
                 format!("{pad}return {value}\n")
             }
@@ -33188,7 +33208,12 @@ impl ReturnChannel<'_> {
                  {pad}    return sceValue, sceFailure.Err()\n\
                  {pad}}}\n"
             ),
-            // Swift is not on `MAY_FAIL_BACKENDS`: its body records no failure.
+            // The body's `Failure`, thrown once a statement leaves one in it: the
+            // runtime's checked helpers record a failure and yield 0, so the value of
+            // the statement that failed is never read.
+            Language::Swift if self.may_fail => {
+                format!("{pad}try sceFailure.throwIfFailed()\n")
+            }
             Language::Rust
             | Language::Cpp
             | Language::Kotlin
@@ -33240,6 +33265,22 @@ impl ReturnChannel<'_> {
         )
     }
 
+    /// The Swift `if` head for `cond` and the brace it leaves open: the condition is
+    /// computed in a `do` block of its own for the reason [`Self::c11_if_header`]
+    /// gives, a failure in it is thrown, and only a value decides which branch runs.
+    fn swift_if_header(&self, pad: &str, cond: &str, depth: usize) -> (String, String) {
+        (
+            format!(
+                "{pad}do {{\n\
+                 {pad}    let sceCond{depth} = {cond}\n\
+                 {check}\
+                 {pad}    if sceCond{depth} {{\n",
+                check = self.check(&format!("{pad}    ")),
+            ),
+            format!("{pad}}}\n"),
+        )
+    }
+
     /// The C++ `if` header for `cond`, computed before the branch: a failure
     /// in it is returned, and only a value decides which branch runs. The
     /// name carries the nesting depth, so an inner `if` does not shadow it.
@@ -33261,6 +33302,18 @@ impl ReturnChannel<'_> {
              {pad}    const bool sce_cond{depth}_ = {cond};\n\
              {check}\
              {pad}    if (!sce_cond{depth}_) break;\n",
+            check = self.check(&format!("{pad}    ")),
+        )
+    }
+
+    /// The Swift loop head for `cond`, computed at the top of every pass for the
+    /// reason [`Self::cpp_if_header`] gives; the caller closes the `while`.
+    fn swift_while_header(&self, pad: &str, cond: &str, depth: usize) -> String {
+        format!(
+            "{pad}while true {{\n\
+             {pad}    let sceCond{depth} = {cond}\n\
+             {check}\
+             {pad}    if !sceCond{depth} {{ break }}\n",
             check = self.check(&format!("{pad}    ")),
         )
     }
@@ -33294,6 +33347,13 @@ impl ReturnChannel<'_> {
             }
             Language::Go if self.checks_conditions() => {
                 (self.go_if_header(pad, cond, indent), String::new(), indent)
+            }
+            // Swift has no `if` initializer either: the condition is computed in a
+            // block of its own, so two `if`s of one scope do not declare it twice,
+            // and the `if` sits one level in.
+            Language::Swift if self.checks_conditions() => {
+                let (open, close) = self.swift_if_header(pad, cond, indent);
+                (open, close, indent + 1)
             }
             Language::Cpp | Language::Kotlin | Language::Go | Language::Python | Language::C11 => {
                 (format!("{pad}if ({cond}) {{\n"), String::new(), indent)
@@ -33329,7 +33389,7 @@ impl ReturnChannel<'_> {
             Language::Python => format!(
                 "{pad}raise sce_algorithm.AlgorithmFailure(sce_algorithm.AlgorithmError.PRECONDITION)\n"
             ),
-            Language::Swift => no_swift_emitter("ReturnChannel::precondition_failed"),
+            Language::Swift => format!("{pad}throw AlgorithmError.precondition\n"),
         }
     }
 }
@@ -33349,6 +33409,7 @@ const MAY_FAIL_BACKENDS: &[crate::generator::Language] = &[
     crate::generator::Language::C11,
     crate::generator::Language::Go,
     crate::generator::Language::Python,
+    crate::generator::Language::Swift,
 ];
 
 /// Whether `lang` lowers a `may-fail` algorithm — the question the
@@ -34509,7 +34570,8 @@ fn render_algorithm(
         Language::C11 if may_fail && !returns_buffer => c11_result_name.clone(),
         // Named, so a failure returns the value's zero (`ReturnChannel::check`).
         Language::Go if may_fail => format!("(sceValue {return_type}, sceErr error)"),
-        // Swift is not on `MAY_FAIL_BACKENDS`, so its return is never wrapped.
+        // A may-fail Swift algorithm `throws` its failure, so its return is the value
+        // itself and never wrapped.
         Language::Rust
         | Language::Cpp
         | Language::Kotlin
@@ -34802,10 +34864,13 @@ fn render_algorithm(
     // module is imported is read off the body that names it.
     let python_uses_runtime = lang == Language::Python && body.contains("sce_algorithm.");
     // Swift's forge runtime is named the same way: a real turned into an integer
-    // is `Real.round`/`Real.floor` of `SceForgeRuntime`, which saturates.
+    // is `Real.round`/`Real.floor` of `SceForgeRuntime`, which saturates. A body that
+    // may fail names the runtime's `Failure` and its checked helpers whatever it holds.
     ctx.insert(
         "swift_uses_forge_runtime".into(),
-        (lang == Language::Swift && body.contains("Real.")).into(),
+        (lang == Language::Swift
+            && (may_fail || body.contains("Real.") || body.contains("Checked.")))
+        .into(),
     );
     ctx.insert("body".into(), body.into());
     ctx.insert("may_fail".into(), may_fail.into());
