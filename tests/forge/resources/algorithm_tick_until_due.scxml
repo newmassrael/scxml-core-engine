@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SCE_FORGE.md §3.4.2 (docs/adr/0063) — how many ticks remain of `period`
+  since `last` on a 32-bit tick counter that wraps.
+
+  The ticks that passed are the difference modulo 2^32; what remains is the
+  period less them, held at 0 once the period is over. A checked or a
+  wrapping subtraction of the passed ticks from the period would answer a
+  huge number for an overdue sample (now 5000, last 100, period 1000); the
+  saturating one answers 0.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://sce.dev/ext sce-forge.xsd"
+       sce:kind="algorithm"
+       version="1.0">
+  <sce:signature>
+    <sce:param name="now" type="uint32"/>
+    <sce:param name="last" type="uint32"/>
+    <sce:param name="period" type="uint32"/>
+    <sce:return type="uint32"/>
+  </sce:signature>
+  <sce:body>
+    <sce:return expr="saturatingSub(period, wrappingSub(now, last))"/>
+  </sce:body>
+</scxml>

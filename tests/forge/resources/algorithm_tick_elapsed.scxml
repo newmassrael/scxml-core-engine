@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SCE_FORGE.md §3.4.2 (docs/adr/0063) — whether `timeout` ticks have passed
+  since `last` on a 32-bit tick counter that wraps.
+
+  `now - last` as written is the checked subtraction, which fails exactly
+  when the counter went round: the case this function exists for. The
+  difference modulo 2^32 is the number of ticks that passed, provided fewer
+  than 2^32 did (RFC 1982's serial-number premise), so the predicate is a
+  plain bool and cannot fail.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://sce.dev/ext sce-forge.xsd"
+       sce:kind="algorithm"
+       version="1.0">
+  <sce:signature>
+    <sce:param name="now" type="uint32"/>
+    <sce:param name="last" type="uint32"/>
+    <sce:param name="timeout" type="uint32"/>
+    <sce:return type="bool"/>
+  </sce:signature>
+  <sce:body>
+    <sce:return expr="wrappingSub(now, last) &gt;= timeout"/>
+  </sce:body>
+</scxml>

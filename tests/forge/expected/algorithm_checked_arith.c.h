@@ -14,7 +14,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
-#include "sce/forge/algorithm.h"  /* checked arithmetic, SCE_FORGE.md §3.4.1 */
+#include "sce/forge/algorithm.h"  /* integer operations, SCE_FORGE.md §3.4.1 and §3.4.2 */
 typedef struct {
     int32_t value;
     bool ok;

@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SCE_FORGE.md §3.4.2 (docs/adr/0063) — a table built at code-generation
+  time from wrapping arithmetic.
+
+  LCG_TABLE[i] is the i-th state of the linear congruential generator
+  x' = 1664525 x + 1013904223 (mod 2^32) from x = 12345 (Numerical Recipes'
+  constants). Each step leaves uint32 after the first, so a checked product
+  could not build the table; the fold computes each wrapping operation to
+  its definition, and every backend emits the same literals. The body reads
+  one entry, its index masked into the table.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://sce.dev/ext sce-forge.xsd"
+       sce:kind="algorithm"
+       version="1.0">
+  <sce:signature>
+    <sce:param name="n" type="uint8"/>
+    <sce:return type="uint32"/>
+  </sce:signature>
+  <sce:const name="LCG_TABLE" type="array&lt;u32, 16&gt;" sce:compute-at="build">
+    <sce:fold range="0..16" as="i" elem-type="uint32">
+      <sce:var name="x" type="uint32" init="12345"/>
+      <sce:var name="k" type="uint32" init="0"/>
+      <sce:while cond="k &lt; i" max-iter="16">
+        <sce:assign target="x" expr="wrappingAdd(wrappingMul(x, 1664525), 1013904223)"/>
+        <sce:assign target="k" expr="k + 1"/>
+      </sce:while>
+      <sce:yield expr="x"/>
+    </sce:fold>
+  </sce:const>
+  <sce:body>
+    <sce:return expr="LCG_TABLE[n &amp; 15]"/>
+  </sce:body>
+</scxml>

@@ -484,6 +484,54 @@ fn forge_c11_algorithm_checked_arith() {
     );
 }
 
+// ── SCE_FORGE.md §3.4.2: wrapping and saturating operations (docs/adr/0063) ──
+// `algorithm_tick_until_due` does not declare may-fail, so it returns a plain
+// value on every backend, and each operation is its runtime's row: Rust's
+// standard library, every other backend's forge runtime, which a file names
+// and so includes or imports whatever its kind.
+
+#[test]
+fn forge_rust_algorithm_tick_until_due() {
+    assert_standalone_forge_rust("algorithm_tick_until_due", "algorithm_tick_until_due.rs");
+}
+
+#[test]
+fn forge_kotlin_algorithm_tick_until_due() {
+    assert_standalone_forge_kotlin("algorithm_tick_until_due", "AlgorithmTickUntilDue.kt");
+}
+
+#[test]
+fn forge_cpp_algorithm_tick_until_due() {
+    assert_standalone_forge("algorithm_tick_until_due", "algorithm_tick_until_due.h");
+}
+
+#[test]
+fn forge_go_algorithm_tick_until_due() {
+    assert_standalone_forge_lang(
+        "algorithm_tick_until_due",
+        "algorithm_tick_until_due.go",
+        sce_build::generator::Language::Go,
+    );
+}
+
+#[test]
+fn forge_python_algorithm_tick_until_due() {
+    assert_standalone_forge_lang(
+        "algorithm_tick_until_due",
+        "algorithm_tick_until_due.py",
+        sce_build::generator::Language::Python,
+    );
+}
+
+#[test]
+fn forge_c11_algorithm_tick_until_due() {
+    assert_standalone_forge_lang(
+        "algorithm_tick_until_due",
+        "algorithm_tick_until_due.c.h",
+        sce_build::generator::Language::C11,
+    );
+}
+
 // ── Item C7 wildcard keyexpr: bytes-view random index + `len` builtin ──
 // `algorithm_bytes_equal` exercises `a[i]`/`b[i]` (bytes-view
 // index) and `len(a)`/`len(b)` (length builtin) on all six

@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SCE_FORGE.md §3.4.2 (docs/adr/0063) — the wrapping and saturating
+  operations of int8, one per `op`, in a body that does not declare
+  may-fail:
+
+    op 0  wrappingAdd(x, y)     op 4  saturatingAdd(x, y)
+    op 1  wrappingSub(x, y)     op 5  saturatingSub(x, y)
+    op 2  wrappingMul(x, y)     op 6  saturatingMul(x, y)
+    op 3  wrappingNeg(x)        op 7  saturatingNeg(x)
+
+  The conformance harnesses carry no int8 argument, so the operands
+  arrive as int32 and are stored into int8 locals where a guard proves
+  they fit; the operations are made on those locals, at 8 bits. An operand
+  outside int8 answers 0.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://sce.dev/ext sce-forge.xsd"
+       sce:kind="algorithm"
+       version="1.0">
+  <sce:signature>
+    <sce:param name="a" type="int32"/>
+    <sce:param name="b" type="int32"/>
+    <sce:param name="op" type="uint8"/>
+    <sce:return type="int32"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="r" type="int8" init="0"/>
+    <sce:if cond="a &gt;= -128 &amp;&amp; a &lt;= 127 &amp;&amp; b &gt;= -128 &amp;&amp; b &lt;= 127">
+      <sce:var name="x" type="int8" init="a"/>
+      <sce:var name="y" type="int8" init="b"/>
+      <sce:if cond="op === 0">
+        <sce:assign target="r" expr="wrappingAdd(x, y)"/>
+      </sce:if>
+      <sce:if cond="op === 1">
+        <sce:assign target="r" expr="wrappingSub(x, y)"/>
+      </sce:if>
+      <sce:if cond="op === 2">
+        <sce:assign target="r" expr="wrappingMul(x, y)"/>
+      </sce:if>
+      <sce:if cond="op === 3">
+        <sce:assign target="r" expr="wrappingNeg(x)"/>
+      </sce:if>
+      <sce:if cond="op === 4">
+        <sce:assign target="r" expr="saturatingAdd(x, y)"/>
+      </sce:if>
+      <sce:if cond="op === 5">
+        <sce:assign target="r" expr="saturatingSub(x, y)"/>
+      </sce:if>
+      <sce:if cond="op === 6">
+        <sce:assign target="r" expr="saturatingMul(x, y)"/>
+      </sce:if>
+      <sce:if cond="op === 7">
+        <sce:assign target="r" expr="saturatingNeg(x)"/>
+      </sce:if>
+    </sce:if>
+    <sce:return expr="r"/>
+  </sce:body>
+</scxml>

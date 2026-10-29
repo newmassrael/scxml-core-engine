@@ -295,6 +295,69 @@ def checked_narrow(x: int, y: int):
     return ("ok", wide)
 
 
+# ── Wrapping and saturating operations (SCE_FORGE.md 3.4.2) ───────────────
+#
+# docs/adr/0063 defines each one as the exact result in Z brought into the
+# type: modulo 2^W into [m, M] for wrapping, clamped to [m, M] for saturating.
+# Python's integers are exact, so the model is the definition itself and
+# shares no overflow test with any backend's runtime.
+
+
+def ring_range(signed: bool, bits: int):
+    """The [m, M] of an integer type."""
+    if signed:
+        half = 2 ** (bits - 1)
+        return -half, half - 1
+    return 0, 2**bits - 1
+
+
+def total_arith(signed: bool, bits: int, guarded: bool):
+    """algorithm_total_arith_<type>: op 0..3 wrapping add, sub, mul, neg; 4..6
+    saturating add, sub, mul; 7 saturating neg of a signed type; any other op
+    0. A `guarded` document takes its operands as int32 and answers 0 for one
+    its type does not hold."""
+    lo, hi = ring_range(signed, bits)
+
+    def wrap(e: int) -> int:
+        return (e - lo) % (hi - lo + 1) + lo
+
+    def saturate(e: int) -> int:
+        return max(lo, min(hi, e))
+
+    def model(a: int, b: int, op: int):
+        if guarded and not (fits(a, lo, hi) and fits(b, lo, hi)):
+            return ("ok", 0)
+        exact = {0: a + b, 1: a - b, 2: a * b, 3: -a, 4: a + b, 5: a - b, 6: a * b, 7: -a}
+        if op <= 3:
+            return ("ok", wrap(exact[op]))
+        if op <= 6 or (op == 7 and signed):
+            return ("ok", saturate(exact[op]))
+        return ("ok", 0)
+
+    return model
+
+
+def tick_elapsed(now: int, last: int, timeout: int):
+    """algorithm_tick_elapsed: the ticks since `last` on a counter that wraps
+    at 2^32, at least `timeout`."""
+    return ("ok", (now - last) % 2**32 >= timeout)
+
+
+def tick_until_due(now: int, last: int, period: int):
+    """algorithm_tick_until_due: what remains of `period` since `last`, held
+    at 0 once it is over."""
+    return ("ok", max(0, period - (now - last) % 2**32))
+
+
+def lcg_table(n: int):
+    """algorithm_lcg_table: the (n mod 16)-th state of x' = 1664525 x +
+    1013904223 (mod 2^32) from 12345."""
+    x = 12345
+    for _ in range(n % 16):
+        x = (1664525 * x + 1013904223) % 2**32
+    return ("ok", x)
+
+
 # ── The civil calendar (sce:std/time) ─────────────────────────────────────
 #
 # The proleptic Gregorian calendar, the way Python's own library does it, so
@@ -547,6 +610,62 @@ def narrow_args(rng: SplitMix64):
     else:
         x = rng.between(I64_MIN, I64_MAX)
     return [x, y]
+
+
+def total_arith_args(signed: bool, bits: int, guarded: bool):
+    """Arguments for one `algorithm_total_arith_<type>`: mostly the type's own
+    edges, where a wrap or a saturation starts — m, M, their neighbours, 0,
+    ±1, and the square roots of the bounds, whose products cross them — and
+    sometimes any value of the type, an op the document does not define, or,
+    for a guarded document, an operand its type does not hold."""
+    lo, hi = ring_range(signed, bits)
+    root = 2 ** ((bits - 1) // 2 if signed else bits // 2)
+    edges = {lo, lo + 1, hi - 1, hi, 0, 1, 2, root - 1, root, root + 1}
+    if signed:
+        edges |= {-1, -2, -root, -root - 1}
+    edges = sorted(e for e in edges if fits(e, lo, hi))
+    defined = 8 if signed else 7
+
+    def value(rng: SplitMix64) -> int:
+        kind = rng.below(10)
+        if kind < 5:
+            return rng.pick(edges)
+        if kind < 7:
+            return rng.between(max(lo, -300), min(hi, 300))
+        return rng.between(lo, hi)
+
+    def generate(rng: SplitMix64):
+        op = rng.between(0, defined - 1) if rng.below(10) else rng.pick([defined, 9, 200, U8_MAX])
+        a, b = value(rng), value(rng)
+        if guarded and rng.below(8) == 0:
+            outside = rng.pick([lo - 1, hi + 1, I32_MIN, I32_MAX])
+            if rng.below(2):
+                a = outside
+            else:
+                b = outside
+        return [a, b, op]
+
+    return generate
+
+
+TICK_EDGES = [0, 1, 2, 5, 100, 1000, 2**31 - 1, 2**31, U32_MAX - 1, U32_MAX]
+
+
+def tick_args(rng: SplitMix64):
+    """A counter reading `now`, the `last` one, and a bound: half the time
+    `now` is a few ticks either side of `last + bound`, wrapped, which is
+    where the answer changes; the rest any readings at all."""
+    last = rng.pick(TICK_EDGES) if rng.below(2) else rng.between(0, U32_MAX)
+    bound = rng.pick(TICK_EDGES) if rng.below(2) else rng.between(0, U32_MAX)
+    if rng.below(2):
+        now = (last + bound + rng.between(-3, 3)) % 2**32
+    else:
+        now = rng.pick(TICK_EDGES) if rng.below(2) else rng.between(0, U32_MAX)
+    return [now, last, bound]
+
+
+def lcg_args(rng: SplitMix64):
+    return [rng.between(0, U8_MAX)]
 
 
 YEAR_EDGES = sorted(
@@ -3921,6 +4040,27 @@ FIXTURES = {
         500,
         0xE110_0054,
     ),
+    **{
+        f"algorithm_total_arith_{'i' if signed else 'u'}{bits}": (
+            (lambda model: lambda args: model(*args))(total_arith(signed, bits, bits < 32 and signed)),
+            total_arith_args(signed, bits, bits < 32 and signed),
+            400,
+            seed,
+        )
+        for signed, bits, seed in [
+            (False, 8, 0xE110_0063),
+            (False, 16, 0xE110_0064),
+            (False, 32, 0xE110_0065),
+            (False, 64, 0xE110_0066),
+            (True, 8, 0xE110_0067),
+            (True, 16, 0xE110_0068),
+            (True, 32, 0xE110_0069),
+            (True, 64, 0xE110_006A),
+        ]
+    },
+    "algorithm_tick_elapsed": (lambda args: tick_elapsed(*args), tick_args, 300, 0xE110_006B),
+    "algorithm_tick_until_due": (lambda args: tick_until_due(*args), tick_args, 300, 0xE110_006C),
+    "algorithm_lcg_table": (lambda args: lcg_table(*args), lcg_args, 100, 0xE110_006D),
 }
 
 #: Further streams of cases for a fixture above, each with a seed of its own, so a

@@ -1086,6 +1086,169 @@
       }
     },
     {
+      "name": "algorithm_total_arith_u8",
+      "kind": "algorithm",
+      "ref_section": "pure_functions",
+      "function": "algorithm_total_arith_u8",
+      "args": [
+        "u8",
+        "u8",
+        "u8"
+      ],
+      "output": {
+        "type": "u8",
+        "compare": "equality"
+      }
+    },
+    {
+      "name": "algorithm_total_arith_u16",
+      "kind": "algorithm",
+      "ref_section": "pure_functions",
+      "function": "algorithm_total_arith_u16",
+      "args": [
+        "u16",
+        "u16",
+        "u8"
+      ],
+      "output": {
+        "type": "u16",
+        "compare": "equality"
+      }
+    },
+    {
+      "name": "algorithm_total_arith_u32",
+      "kind": "algorithm",
+      "ref_section": "pure_functions",
+      "function": "algorithm_total_arith_u32",
+      "args": [
+        "u32",
+        "u32",
+        "u8"
+      ],
+      "output": {
+        "type": "u32",
+        "compare": "equality"
+      }
+    },
+    {
+      "name": "algorithm_total_arith_u64",
+      "kind": "algorithm",
+      "ref_section": "pure_functions",
+      "function": "algorithm_total_arith_u64",
+      "args": [
+        "u64",
+        "u64",
+        "u8"
+      ],
+      "output": {
+        "type": "u64",
+        "compare": "equality"
+      }
+    },
+    {
+      "name": "algorithm_total_arith_i8",
+      "kind": "algorithm",
+      "ref_section": "pure_functions",
+      "function": "algorithm_total_arith_i8",
+      "args": [
+        "i32",
+        "i32",
+        "u8"
+      ],
+      "output": {
+        "type": "i32",
+        "compare": "equality"
+      }
+    },
+    {
+      "name": "algorithm_total_arith_i16",
+      "kind": "algorithm",
+      "ref_section": "pure_functions",
+      "function": "algorithm_total_arith_i16",
+      "args": [
+        "i32",
+        "i32",
+        "u8"
+      ],
+      "output": {
+        "type": "i32",
+        "compare": "equality"
+      }
+    },
+    {
+      "name": "algorithm_total_arith_i32",
+      "kind": "algorithm",
+      "ref_section": "pure_functions",
+      "function": "algorithm_total_arith_i32",
+      "args": [
+        "i32",
+        "i32",
+        "u8"
+      ],
+      "output": {
+        "type": "i32",
+        "compare": "equality"
+      }
+    },
+    {
+      "name": "algorithm_total_arith_i64",
+      "kind": "algorithm",
+      "ref_section": "pure_functions",
+      "function": "algorithm_total_arith_i64",
+      "args": [
+        "i64",
+        "i64",
+        "u8"
+      ],
+      "output": {
+        "type": "i64",
+        "compare": "equality"
+      }
+    },
+    {
+      "name": "algorithm_tick_elapsed",
+      "kind": "algorithm",
+      "ref_section": "pure_functions",
+      "function": "algorithm_tick_elapsed",
+      "args": [
+        "u32",
+        "u32",
+        "u32"
+      ],
+      "output": {
+        "type": "bool",
+        "compare": "equality"
+      }
+    },
+    {
+      "name": "algorithm_tick_until_due",
+      "kind": "algorithm",
+      "ref_section": "pure_functions",
+      "function": "algorithm_tick_until_due",
+      "args": [
+        "u32",
+        "u32",
+        "u32"
+      ],
+      "output": {
+        "type": "u32",
+        "compare": "equality"
+      }
+    },
+    {
+      "name": "algorithm_lcg_table",
+      "kind": "algorithm",
+      "ref_section": "pure_functions",
+      "function": "algorithm_lcg_table",
+      "args": [
+        "u8"
+      ],
+      "output": {
+        "type": "u32",
+        "compare": "equality"
+      }
+    },
+    {
       "name": "algorithm_checked_call",
       "kind": "algorithm",
       "ref_section": "pure_functions",

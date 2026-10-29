@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SCE_FORGE.md §3.4.2 (docs/adr/0063) — the wrapping and saturating
+  operations of uint8, one per `op`, in a body that does not declare
+  may-fail:
+
+    op 0  wrappingAdd(a, b)     op 4  saturatingAdd(a, b)
+    op 1  wrappingSub(a, b)     op 5  saturatingSub(a, b)
+    op 2  wrappingMul(a, b)     op 6  saturatingMul(a, b)
+    op 3  wrappingNeg(a)
+
+  The narrowest width, which every backend but Rust, Go and Swift computes
+  in a wider type and must bring back.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://sce.dev/ext sce-forge.xsd"
+       sce:kind="algorithm"
+       version="1.0">
+  <sce:signature>
+    <sce:param name="a" type="uint8"/>
+    <sce:param name="b" type="uint8"/>
+    <sce:param name="op" type="uint8"/>
+    <sce:return type="uint8"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="r" type="uint8" init="0"/>
+    <sce:if cond="op === 0">
+      <sce:assign target="r" expr="wrappingAdd(a, b)"/>
+    </sce:if>
+    <sce:if cond="op === 1">
+      <sce:assign target="r" expr="wrappingSub(a, b)"/>
+    </sce:if>
+    <sce:if cond="op === 2">
+      <sce:assign target="r" expr="wrappingMul(a, b)"/>
+    </sce:if>
+    <sce:if cond="op === 3">
+      <sce:assign target="r" expr="wrappingNeg(a)"/>
+    </sce:if>
+    <sce:if cond="op === 4">
+      <sce:assign target="r" expr="saturatingAdd(a, b)"/>
+    </sce:if>
+    <sce:if cond="op === 5">
+      <sce:assign target="r" expr="saturatingSub(a, b)"/>
+    </sce:if>
+    <sce:if cond="op === 6">
+      <sce:assign target="r" expr="saturatingMul(a, b)"/>
+    </sce:if>
+    <sce:return expr="r"/>
+  </sce:body>
+</scxml>
