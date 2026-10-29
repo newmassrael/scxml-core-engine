@@ -6349,6 +6349,65 @@ fn every_scenario_is_replayed_on_every_backend_that_lowers_its_machine() {
     }
 }
 
+/// The C++ driver collects the machines of the scenarios itself, and not the
+/// algorithms they call: a machine includes the header its own generation names and
+/// does not generate it, so each algorithm a scenario's machine imports is registered
+/// by hand in `tests/CMakeLists.txt`. One a machine imports and the list lacks is a
+/// build that stops at the missing header, which two machines landed in unseen until a
+/// hosted run read it.
+#[test]
+fn every_algorithm_a_scenario_machine_imports_is_built_by_the_cpp_driver() {
+    let root = repo_root();
+    let fixtures = root.join("sce-build/tests/fixtures/static_datamodel");
+    let cmake = std::fs::read_to_string(root.join("tests/CMakeLists.txt")).expect("tests/CMake");
+    // A name the file spells alone, as a list's entry or as `algorithm_<name>.scxml`.
+    let words: std::collections::HashSet<&str> = cmake
+        .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+        .collect();
+    let mut checked = 0;
+    for entry in std::fs::read_dir(fixtures.join("scenarios")).expect("the scenarios directory") {
+        let scenario = entry.expect("an entry").path();
+        if scenario.extension().is_none_or(|e| e != "json") {
+            continue;
+        }
+        let value: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&scenario).expect("a scenario"))
+                .expect("a scenario is JSON");
+        let machine = value["machine"]
+            .as_str()
+            .expect("a scenario names its machine");
+        // A statechart of the standard library has no fixture to read imports from.
+        if machine.starts_with(sce_build::forge::stdlib::SCHEME) {
+            continue;
+        }
+        let text = std::fs::read_to_string(fixtures.join(format!("{machine}.scxml")))
+            .unwrap_or_else(|_| panic!("{}: no fixture {machine}.scxml", scenario.display()));
+        for line in text.lines().filter(|l| l.contains(r#"kind="algorithm""#)) {
+            let Some(source) = line
+                .split(r#"src=""#)
+                .nth(1)
+                .and_then(|rest| rest.split('"').next())
+            else {
+                continue;
+            };
+            // A library algorithm is built into the generated unit, not beside it.
+            let Some(name) = source
+                .strip_prefix("algorithm_")
+                .and_then(|n| n.strip_suffix(".scxml"))
+            else {
+                continue;
+            };
+            checked += 1;
+            assert!(
+                words.contains(name) || words.contains(format!("algorithm_{name}").as_str()),
+                "{machine} imports {source}, which tests/CMakeLists.txt does not build for \
+                 the C++ driver: add `{name}` to the algorithms registered beside its siblings"
+            );
+        }
+    }
+    assert!(checked > 0, "no imported algorithm to judge");
+}
+
 /// The generated Kotlin machine extends the engine, so a variable held under the
 /// author's bare name hides whatever the engine already calls by it: a variable
 /// named `clock` was a machine that did not compile, in a document every other
