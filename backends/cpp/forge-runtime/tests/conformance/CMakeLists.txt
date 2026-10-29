@@ -316,6 +316,20 @@ target_include_directories(span_runtime_test PRIVATE "${RUNTIME_INCLUDE_DIR}")
 target_compile_options(span_runtime_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
 add_test(NAME span_runtime COMMAND span_runtime_test)
 
+# The runtime's wrapping and saturating integer helpers on their own
+# (sce/forge/algorithm.h, docs/adr/0063) against their definition, at C++17,
+# the standard the interface is for, and under the same blanket -Werror with the
+# conversion warnings a bare-metal consumer builds with: the helpers convert only
+# where they say so. The call shape the generator writes is evaluated at compile
+# time there too. What a generated algorithm does with them is the conformance
+# fixtures' (docs/adr/0063, section 9).
+add_executable(total_arith_runtime_test "${CMAKE_CURRENT_SOURCE_DIR}/total_arith_runtime_test.cpp")
+set_target_properties(total_arith_runtime_test PROPERTIES CXX_STANDARD 17)
+target_include_directories(total_arith_runtime_test PRIVATE "${RUNTIME_INCLUDE_DIR}")
+target_compile_options(total_arith_runtime_test PRIVATE
+    -Wall -Wextra -Wpedantic -Werror -Wconversion -Wsign-conversion)
+add_test(NAME total_arith_runtime COMMAND total_arith_runtime_test)
+
 # The runtime's queues on their own (sce/forge/queue.h, RFC §synth-5-P), under
 # the same blanket -Werror: the contract scenarios the Rust arm runs
 # (tests/forge/conformance/queue_contract.json), the properties those do not

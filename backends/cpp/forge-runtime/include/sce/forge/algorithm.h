@@ -13,6 +13,11 @@
 // failure. No helper executes an operation the language leaves undefined:
 // a division by zero and a signed overflow are refused before they happen,
 // and no exception is thrown (the embedded profile has none).
+//
+// An operation the author names as wrapping or saturating (`wrappingSub(a, b)`,
+// `saturatingSub(a, b)`; docs/adr/0063) has a value on every input, in a
+// `may-fail` body or not, and is lowered to the `Wrapping` and `Saturating`
+// helpers, which take no failure record.
 
 #pragma once
 
@@ -341,4 +346,180 @@ template <typename T, typename S> constexpr T narrow(AlgorithmFailure &f, S v) n
 }
 
 }  // namespace Checked
+
+// The wrapping and saturating families (docs/adr/0063, section 1). For a type
+// `T` of width W that holds [m, M], and e the exact integer result of `add`,
+// `sub`, `mul` or `neg`:
+//
+//   wrapping    the r in [m, M] with r = e (mod 2^W): two's complement for a
+//               signed `T`;
+//   saturating  max(m, min(M, e)).
+//
+// Both have a value on every input, so neither takes a failure record, and
+// neither executes an operation the language leaves undefined or
+// implementation-defined on any input at C++17, the standard the interface
+// compiles at (docs/adr/0059): `std::uint16_t` is promoted to `int`, where
+// 65535 * 65535 overflows, and a conversion of a value a signed type cannot
+// hold is implementation-defined before C++20.
+
+namespace Detail {
+
+/// Whether `T` is one of the eight integer types a document declares, which
+/// are the types the two families are defined for.
+template <typename T>
+constexpr bool kFixedWidthInteger =
+    std::is_same_v<T, std::int8_t> || std::is_same_v<T, std::int16_t> || std::is_same_v<T, std::int32_t> ||
+    std::is_same_v<T, std::int64_t> || std::is_same_v<T, std::uint8_t> || std::is_same_v<T, std::uint16_t> ||
+    std::is_same_v<T, std::uint32_t> || std::is_same_v<T, std::uint64_t>;
+
+/// The unsigned type an operation of `T`'s width is computed in: `T`'s own
+/// unsigned type, or `unsigned int` where that one would be promoted to `int`.
+/// It holds every value of the width, is never promoted, and its arithmetic is
+/// reduced modulo a power of two no smaller than 2^W.
+template <typename T> using Ring = std::common_type_t<unsigned int, std::make_unsigned_t<T>>;
+
+/// `a`'s two's-complement pattern, held in its ring. A conversion to an
+/// unsigned type is defined modulo 2^W for every value, at every standard.
+template <typename T> constexpr Ring<T> toRing(T a) noexcept {
+    return static_cast<Ring<T>>(static_cast<std::make_unsigned_t<T>>(a));
+}
+
+/// The `T` whose two's-complement pattern is `r` reduced modulo 2^W. The
+/// conversion to the unsigned type of the width is the reduction; for a
+/// signed `T`, a pattern p above M stands for p - 2^W, which is
+/// -(UMAX - p) - 1, and every step of that is in range.
+template <typename T> constexpr T fromRing(Ring<T> r) noexcept {
+    using U = std::make_unsigned_t<T>;
+    const U bits = static_cast<U>(r);
+    if constexpr (std::is_unsigned_v<T>) {
+        return bits;
+    } else {
+        if (bits <= static_cast<U>(std::numeric_limits<T>::max())) {
+            return static_cast<T>(bits);
+        }
+        return static_cast<T>(-static_cast<T>(static_cast<U>(std::numeric_limits<U>::max() - bits)) - 1);
+    }
+}
+
+}  // namespace Detail
+
+/// The wrapping family: an operation of `T` reduced modulo 2^W. A signed type
+/// and the unsigned type of its width are one ring with two sets of
+/// representatives, so each operation is made on the operands' patterns.
+namespace Wrapping {
+
+template <typename T> constexpr T add(T a, T b) noexcept {
+    static_assert(Detail::kFixedWidthInteger<T>, "wrapping arithmetic is defined for the fixed-width integer types");
+    return Detail::fromRing<T>(Detail::toRing(a) + Detail::toRing(b));
+}
+
+template <typename T> constexpr T sub(T a, T b) noexcept {
+    static_assert(Detail::kFixedWidthInteger<T>, "wrapping arithmetic is defined for the fixed-width integer types");
+    return Detail::fromRing<T>(Detail::toRing(a) - Detail::toRing(b));
+}
+
+template <typename T> constexpr T mul(T a, T b) noexcept {
+    static_assert(Detail::kFixedWidthInteger<T>, "wrapping arithmetic is defined for the fixed-width integer types");
+    return Detail::fromRing<T>(Detail::toRing(a) * Detail::toRing(b));
+}
+
+template <typename T> constexpr T neg(T a) noexcept {
+    static_assert(Detail::kFixedWidthInteger<T>, "wrapping arithmetic is defined for the fixed-width integer types");
+    return Detail::fromRing<T>(Detail::Ring<T>{0} - Detail::toRing(a));
+}
+
+}  // namespace Wrapping
+
+/// The saturating family: an operation of `T` held to [m, M]. Each operation
+/// tests its operands against the bounds before it runs (CERT INT32-C;
+/// Hacker's Delight, section 2-13), so no width needs a wider type, and answers
+/// the bound the exact result passed instead of failing. Each bound expression
+/// is in range on the branch that evaluates it, a division by an operand is
+/// made only where the operand is not 0, and no division is `MIN / -1`.
+namespace Saturating {
+
+template <typename T> constexpr T add(T a, T b) noexcept {
+    static_assert(Detail::kFixedWidthInteger<T>, "saturating arithmetic is defined for the fixed-width integer types");
+    if constexpr (std::is_signed_v<T>) {
+        constexpr T kMax = std::numeric_limits<T>::max();
+        constexpr T kMin = std::numeric_limits<T>::min();
+        if (b > 0 && a > kMax - b) {
+            return kMax;
+        }
+        if (b < 0 && a < kMin - b) {
+            return kMin;
+        }
+        return static_cast<T>(a + b);
+    } else {
+        // An unsigned sum wraps exactly when it comes out below an operand.
+        const T sum = Wrapping::add<T>(a, b);
+        if (sum < a) {
+            return std::numeric_limits<T>::max();
+        }
+        return sum;
+    }
+}
+
+template <typename T> constexpr T sub(T a, T b) noexcept {
+    static_assert(Detail::kFixedWidthInteger<T>, "saturating arithmetic is defined for the fixed-width integer types");
+    if constexpr (std::is_signed_v<T>) {
+        constexpr T kMax = std::numeric_limits<T>::max();
+        constexpr T kMin = std::numeric_limits<T>::min();
+        if (b < 0 && a > kMax + b) {
+            return kMax;
+        }
+        if (b > 0 && a < kMin + b) {
+            return kMin;
+        }
+        return static_cast<T>(a - b);
+    } else {
+        if (b > a) {
+            return T{0};
+        }
+        return Wrapping::sub<T>(a, b);
+    }
+}
+
+template <typename T> constexpr T mul(T a, T b) noexcept {
+    static_assert(Detail::kFixedWidthInteger<T>, "saturating arithmetic is defined for the fixed-width integer types");
+    constexpr T kMax = std::numeric_limits<T>::max();
+    if (a == 0 || b == 0) {
+        return T{0};
+    }
+    if constexpr (std::is_signed_v<T>) {
+        constexpr T kMin = std::numeric_limits<T>::min();
+        bool past = false;
+        if (a > 0) {
+            past = b > 0 ? a > kMax / b : b < kMin / a;
+        } else {
+            past = b > 0 ? a < kMin / b : b < kMax / a;
+        }
+        // A product past a bound has the sign of the operands' product.
+        if (past && (a > 0) == (b > 0)) {
+            return kMax;
+        }
+        if (past) {
+            return kMin;
+        }
+        return static_cast<T>(a * b);
+    } else {
+        if (b > kMax / a) {
+            return kMax;
+        }
+        return Wrapping::mul<T>(a, b);
+    }
+}
+
+/// A signed type's only: of an unsigned value it would be 0 for every input,
+/// and the generator refuses it where it is written.
+template <typename T> constexpr T neg(T a) noexcept {
+    static_assert(Detail::kFixedWidthInteger<T>, "saturating arithmetic is defined for the fixed-width integer types");
+    static_assert(std::is_signed_v<T>, "a saturating negation is defined for a signed type only");
+    if (a == std::numeric_limits<T>::min()) {
+        return std::numeric_limits<T>::max();
+    }
+    return static_cast<T>(-a);
+}
+
+}  // namespace Saturating
 }  // namespace SCE::Forge
