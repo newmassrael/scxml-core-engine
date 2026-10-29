@@ -1232,6 +1232,55 @@ reads out of `forge-runtime/src/lib.rs`, as for the 64-bit row.
   status is not `SCE_FORGE_CODEC_OK`, so which status it answers is not pinned. No generated tree moves: no `.scxml` of the
   fixtures or the standard library changed.
 
+### What the caller inputs landed for C++ (2026-10-29)
+
+- **The slot.** `tools/codegen/templates/forge/cpp/broadcast_log.h.jinja2` reads the `context` value that `broadcast_log_context_value`
+  computes for every language, and `render_broadcast_log_cpp` passes it over 64-bit words. An element whose codec asks its caller
+  for flag inputs or a variant tag has the entry `[length][context words][payload words]`: the header then states
+  `CONTEXT_WORDS` and `WORDS = 1 + CONTEXT_WORDS + ceil(MAX_ENCODED_BYTES / 8)` as `std::size_t` constants, flag `i` is bit
+  `i % 64` of context word `i / 64` (written with `std::uint64_t{1} << n`, so the 64th bit is a plain bit of a `std::uint64_t`),
+  a caller-tag variant adds one word after the flag words that holds the tag, and the bytes start at word `1 + CONTEXT_WORDS`.
+  An element with no caller input has no `CONTEXT_WORDS`, and its header, constants and signatures are the ones it always had
+  (a test pins the lines). The C++ words are a `std::size_t` count, so the renderer has no 32-bit refusal to count the context
+  words into, unlike the C11 one. C++ is in `BROADCAST_LOG_CONTEXT_BACKENDS`, so `refusal_for` no longer refuses it for a flag
+  input or a tag; with it, only Swift still refuses an element of this kind (`broadcast-log/runtime-missing`), and Rust a CBOR
+  text or byte-string entry.
+- **The typed API.** A struct `<Log>Flags` holds the flags as `bool` members in the codec's order. `publish(publisher, element,
+  flags, tag)` takes `const <Log>Flags &flags` and `std::uint8_t tag` where the element has them, passes each flag to
+  `element.encode(sink, ...)` as the `std::uint8_t` 1 or 0 (through one `flag_input(bool)` of the log's namespace, so the value
+  the codec encodes under and the bit stored are one value) and stores the same bits. `read` takes the bits back out of the
+  entry, passes them, flags then tag, to `<Element>::decode(cursor, ...)`, and returns them in `Item::flags` and `Item::tag`,
+  after the element. The result alternatives `Empty`, `Lagged` and `Malformed` are unchanged: a malformed entry carries no flags
+  or tag here, where the C11 result reports what its codec refused under. The length check and the bounds are unchanged.
+- **A difference from Rust that the log does not hide.** The Rust codec refuses a flag that disagrees with the field it gates
+  (`PresentIfMismatch`, from its source-based `encode`). The C++ codec does not for a field gated on a flag input, as the C
+  one does not: its generated `encode` of a gated fixed field writes the field whenever the field's `std::optional` holds a
+  value and takes the flag parameter only to silence an unused-parameter warning (read for a gated fixed field, which is what the
+  shared document has; the other gated shapes were not each read; the check that returns `CodecError::PresentIfMismatch`,
+  `present_if_chain_encode_prologue`, is written only for chain-membership predicates). The log judges nothing either and stores
+  what it was given. `the_flag_that_was_stored_decides_how_an_entry_is_read_and_the_log_does_not_judge_it` pins this in the
+  lane test and turns red at the first `publish` the day the C++ codec refuses the disagreement, which is the better end state
+  and a change to the codec generator, not to the log. Nothing here was changed in the codec.
+- **Tests.** `sce-build/tests/broadcast_log_kind.rs`: the C++ refusal of a flag input is now an acceptance test with five shapes
+  pinned (a flag input from the real codec, flags with a tag, a tag alone, 65 flags where flag 63 closes the first context word
+  and flag 64 opens the second, and an element with no caller input keeping the lines it had), and the C++ test of the CBOR
+  element no longer expects a tag to be refused. There is no test of a 32-bit limit, because C++ has none. The registry-driven
+  tests follow the list. `backends/cpp/forge-runtime/tests/conformance/broadcast_log_context_generated_test.cpp` (ctest
+  `broadcast_log_context_generated`) compiles, under `-Wall -Wextra -Wpedantic -Werror` at C++20, the headers
+  `sce-codegen orchestrate` writes for the six documents of `tests/forge/conformance/broadcast_log_context/` in one set, and
+  checks the constants (as `static_assert`s), the words of an entry read through the runtime (the context word between the
+  length and the bytes), a reader getting back the flag and the tag, two readers decoding under the same flag, a lapped reader
+  resuming at an entry with its own flag, and the behaviour above. The variant's elements are made by the codec's own `decode`
+  under the arm's tag, and read back by encoding them again, so the test names nothing of the variant's internals. For a value
+  present under a clear flag the test reads the entry's words through the runtime and does not decode it, because whether the
+  C++ `decode` leaves trailing bytes unread was not read.
+- **Not run.** Nothing was built or run: neither the renderer, the template, the sce-build tests, the generated headers nor the
+  C++ test have been compiled or executed, and `clang-format` was run on the C++ test but not on the generated header. The
+  least certain points are the exact text of the generated header the new assertions quote, the C++ spelling of the element
+  types and the optional member (`std::optional<std::uint16_t> value`) the test builds on, how the variant's `decode` selects
+  the default arm under tag 0, and whether `orchestrate --language cpp` resolves the documents' relative imports from their
+  own directory. No generated tree moves: no `.scxml` of the fixtures or the standard library changed.
+
 ### What is still undone
 
 What was undone and is now done, as of 2026-10-29: the RFC section (§5.S of `docs/spec/synth/rfc-sce-protocol-synthesis.md`,
@@ -1246,8 +1295,9 @@ What is left:
 - **Swift** is refused by name (`broadcast-log/runtime-missing`) until it has a forge runtime. The narrow rows of the
   languages other than Rust, which each template will need on a target without 64-bit atomics, are not built: Rust's are.
 - **Generated mutation coverage** of the Rust template and its renderer, in the existing `.cases` form.
-- **Element forms the Rust template refuses**: a codec that takes flag inputs or a variant tag from its caller, and a CBOR map
-  with a string or byte-string entry. A typed diagnostic for an unresolved deploy limit.
+- **Element forms the Rust template refuses**: a CBOR map with a string or byte-string entry (a codec that takes flag inputs or
+  a variant tag from its caller is stored with the entry by every template that ships, section 4). A typed diagnostic for an
+  unresolved deploy limit.
 - **The stress runs of the six rows** still write short histories, a limit the general search imposed and the specialised
   checker does not; lengthening them is a change to each recorder, with a round of CI to read after it.
 - **Rounds only CI can judge**: the casefile of the narrow row's mutation round, and the nine Rust cases after the

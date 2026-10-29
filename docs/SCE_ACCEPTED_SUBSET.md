@@ -514,13 +514,16 @@ same numbers and whose typed `publish` and `read` call the element codec's
 count. The C++ backend lowers it to a header `<name>.h` over `sce/forge/broadcast_log.h`
 with the same constants and typed `publish` and `read` (the answers are a `Published`
 struct and a `std::variant`). Swift has no forge runtime, so generating a log there is
-refused by name (`broadcast-log/runtime-missing`). The templates call the element's
-`encode` with a sink and its `decode` with a cursor and nothing else, so an element
-whose codec takes flag inputs or a variant tag from its caller is refused naming the
-element (`generate/invalid-config`) on every language that lowers the kind, and so is,
-on Rust, a CBOR map with a string or byte-string entry (whose decoded form borrows its
-buffer and has no owned mirror). Python, Kotlin, Go, C11 and C++ hold that element:
-their decoded values own their bytes. A
+refused by name (`broadcast-log/runtime-missing`). An element whose codec takes flag
+inputs or a variant's tag from its caller is held on every language that lowers the
+kind: the entry stores them in context words between its length word and its bytes
+(one bit a flag input, 64 to a word, and one word for the tag), `publish` takes them
+and `read` returns them with the item, so each reader decodes an entry under what it
+was published under; an element that asks for neither has the entry and the
+signatures it always had. What is refused, naming the element
+(`generate/invalid-config`), is on Rust a CBOR map with a string or byte-string entry
+(whose decoded form borrows its buffer and has no owned mirror). Python, Kotlin, Go,
+C11 and C++ hold that element: their decoded values own their bytes. A
 document is refused when `producers` is
 `many` (`broadcast-log/producers-many-unsupported`), when its
 `<sce:element-type>` names no codec or procedure of the build
