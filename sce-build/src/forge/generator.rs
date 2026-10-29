@@ -1746,10 +1746,10 @@ pub fn generate_cpp_with_imports_and_externs(
         // (`codegen_matrix::BROADCAST_LOG_BACKENDS` lists them, and each has its
         // own `render_broadcast_log_<language>`); every other dispatch refuses
         // it by name ([`refuse_broadcast_log`]). `codegen_matrix::check` lets it
-        // through to here, since only the dispatcher has the document.
-        ForgeDocument::BroadcastLog(m) => {
-            return Err(refuse_broadcast_log(m, crate::generator::Language::Cpp))
-        }
+        // through to here, since only the dispatcher has the document. C++'s
+        // renders over `sce/forge/broadcast_log.h` and reads the numbers the
+        // document-set compile resolved into `options.broadcast_log_resolutions`.
+        ForgeDocument::BroadcastLog(m) => render_broadcast_log_cpp(&env, m, imports, options)?,
         // A declaration writes no file (`KindClass::Declaration`).
         ForgeDocument::FeatureModel(_) => return Ok(GeneratedOutput::default()),
     };

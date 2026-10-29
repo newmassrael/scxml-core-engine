@@ -385,11 +385,6 @@ const ACCEPTED: &[(Language, &str, Why)] = &[
         "host Mesh core over `zenoh_inbox`",
         Why::NotYet("no host Mesh core for this backend; the E5 extension opened Rust and Kotlin"),
     ),
-    // The kind matrix: a broadcast log's runtime row has landed on every backend
-    // but Swift, and the template that stores a document's element over it only
-    // on the backends of `BROADCAST_LOG_BACKENDS` (ADR 0062, order of landing):
-    // a backend that has it has no row here.
-    (Language::Cpp, "forge kind `broadcast-log`", Why::NotYet(BROADCAST_LOG_NO_TEMPLATE)),
     // Swift, which is decided at every site that decides per backend and writes a
     // statechart in part. Every entry below closes as its emitter grows, and the
     // stale check removes it then; the list is what is left of the backend.
@@ -479,11 +474,6 @@ const SWIFT_NO_EMITTER: &str =
 const SWIFT_STATIC_IN_PART: &str =
     "Swift lowers the scalar variables, guards and executable content of a sce-static machine; \
      its payloads, enums, records, lists, optionals, sends and invokes are built after them";
-
-/// The runtime row of a broadcast log has landed on this backend; the template
-/// that stores a document's element over it is written after Rust's.
-const BROADCAST_LOG_NO_TEMPLATE: &str =
-    "its runtime row has landed (ADR 0062), and the template that stores a document's element over it is written after Rust's";
 
 /// Swift's Forge emitters are built after its statechart emitter and runtime.
 const SWIFT_NO_FORGE: &str =
