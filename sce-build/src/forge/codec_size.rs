@@ -617,10 +617,11 @@ mod tests {
 
     #[test]
     fn a_content_line_component_is_the_bound_its_c11_renderer_carries() {
-        // BEGIN:VEVENT CRLF and END:VEVENT CRLF: 2 * 5 + 6 + 4 + 4 = 24.
+        // BEGIN:VEVENT CRLF and END:VEVENT CRLF: 2 * 6 + 6 + 4 + 4 = 26, for the
+        // six letters of VEVENT.
         //   UID      logical 3 + 1 + 8 (the string)   = 12; physical 12 + 2 + 3 * 1 = 17
         //   SEQUENCE logical 8 + 1 + 20 (an integer)  = 29; physical 29 + 2 + 3 * 1 = 34
-        // 24 + 17 + 34 = 75.
+        // 26 + 17 + 34 = 77.
         let xml = codec_xml(
             CONTENT_LINE_ATTRS,
             "",
@@ -628,7 +629,7 @@ mod tests {
     <data id="uid" sce:type="string" sce:property="UID" sce:max-size="8"/>
     <data id="seq" sce:type="optional&lt;uint16&gt;" sce:property="SEQUENCE"/>"#,
         );
-        assert_eq!(largest_encoded_bytes(&sized(&xml, Vec::new())), Ok(75));
+        assert_eq!(largest_encoded_bytes(&sized(&xml, Vec::new())), Ok(77));
     }
 
     fn enum_entry_xml() -> String {
@@ -642,12 +643,13 @@ mod tests {
 
     #[test]
     fn a_content_line_enum_is_written_as_its_longest_text() {
-        // 24 for the component, then STATUS: logical 6 + 1 + 12 (the longest
-        // text) = 19; physical 19 + 2 + 3 * 1 = 24. 24 + 24 = 48.
+        // 26 for the component (see the test above), then STATUS: logical
+        // 6 + 1 + 12 (the longest text) = 19; physical 19 + 2 + 3 * 1 = 24.
+        // 26 + 24 = 50.
         let imports = vec![("lifecycle", SizedImport::Enum { longest_text: 12 })];
         assert_eq!(
             largest_encoded_bytes(&sized(&enum_entry_xml(), imports)),
-            Ok(48)
+            Ok(50)
         );
     }
 
