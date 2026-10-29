@@ -438,6 +438,7 @@ pub const fn ships_in_part(kind: ForgeKind, lang: Language) -> bool {
             | (ForgeKind::Interpolation, Language::Swift)
             | (ForgeKind::Filter, Language::Swift)
             | (ForgeKind::Transform, Language::Swift)
+            | (ForgeKind::Validator, Language::Swift)
     )
 }
 

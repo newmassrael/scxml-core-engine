@@ -19369,6 +19369,10 @@ fn render_validator(
             if matches!(lang, Language::Kotlin) {
                 obj.insert("default".into(), kotlin_default_value(&ty_str).into());
             }
+            // What the kept value is before a first check: the zero of its type.
+            if matches!(lang, Language::Swift) {
+                obj.insert("default".into(), swift_zero_value(&roc.sce_type).into());
+            }
             serde_json::Value::Object(obj)
         })
         .collect();
@@ -19460,7 +19464,9 @@ fn render_validator(
             Language::Rust | Language::Python => Some(format!("self.{}", imp.member_name)),
             Language::Go => Some(format!("{GO_FORGE_RECEIVER}.{}", imp.member_name)),
             Language::Kotlin | Language::C11 => None,
-            Language::Swift => no_swift_emitter("render_validator"),
+            // A validator that holds an import's state is refused before it is rendered
+            // ([`swift_validator_unlowered`]).
+            Language::Swift => unreachable!("refused by swift_validator_unlowered"),
         };
         if let Some(exp) = alias_expansion {
             owned_renames.insert(imp.alias.as_str(), exp);
@@ -19670,7 +19676,8 @@ pub(crate) fn validator_check_call(
         Language::Go => format!("{namespace}.New{pascal}().Validate"),
         Language::Python => format!("{namespace}.{pascal}().validate"),
         Language::C11 => c11_validate_function(document_name),
-        Language::Swift => no_swift_emitter("validator_check_call"),
+        // The class is a type of the module the caller is in, so nothing qualifies it.
+        Language::Swift => format!("{pascal}().validate"),
     }
 }
 
@@ -24425,6 +24432,9 @@ pub fn generate_swift_with_imports(
         ForgeDocument::Transform(m) => {
             swift_transform_unlowered(m).map(|c| swift_transform_refusal(m, &c))
         }
+        ForgeDocument::Validator(m) => {
+            swift_validator_unlowered(imports).map(|c| swift_validator_refusal(m, &c))
+        }
         _ => {
             return match crate::forge::codegen_matrix::lookup(doc.kind(), Language::Swift) {
                 crate::forge::codegen_matrix::EmitOutcome::Declaration => {
@@ -24455,6 +24465,7 @@ pub fn generate_swift_with_imports(
         ForgeDocument::Interpolation(m) => render_interpolation(&env, m, imports, Language::Swift)?,
         ForgeDocument::Filter(m) => render_filter(&env, m, imports, Language::Swift)?,
         ForgeDocument::Transform(m) => render_transform(&env, m, imports, Language::Swift)?,
+        ForgeDocument::Validator(m) => render_validator(&env, m, imports, Language::Swift)?,
         _ => unreachable!("every other kind returned above"),
     };
     Ok(GeneratedOutput {
@@ -24735,6 +24746,29 @@ fn swift_algorithm_unlowered(m: &AlgorithmModel, imports: &[SwiftImport]) -> Opt
 pub(crate) fn swift_lookup_unlowered(m: &LookupModel) -> Option<String> {
     m.output_is_string()
         .then(|| "an output that answers a name (`type=\"string\"`)".to_string())
+}
+
+/// What of a validator the Swift backend does not lower yet, described for a refusal by name
+/// (`generate/unsupported-feature`): an import of another kind, whose unit the validator
+/// calls (a stateless kind) or holds a member of (a kind that keeps state). A validator over
+/// its own inputs, with range, rate-of-change and plausibility rules, is lowered.
+pub(crate) fn swift_validator_unlowered(imports: &[ImportContext]) -> Option<String> {
+    imports.first().map(|import| {
+        format!(
+            "the <sce:import as=\"{}\">, an import of {} that a validator composes",
+            import.alias,
+            import.kind.as_str()
+        )
+    })
+}
+
+/// The refusal of the validator `m` for the Swift construct `construct` it holds
+/// ([`swift_validator_unlowered`]).
+fn swift_validator_refusal(m: &ValidatorModel, construct: &str) -> String {
+    format!(
+        "validator '{}': {construct} has no Swift lowering yet",
+        m.name
+    )
 }
 
 /// What of the transform `m` the Swift backend does not lower yet, described for a refusal by
@@ -28983,7 +29017,11 @@ impl LangCtx {
             crate::generator::Language::Cpp | crate::generator::Language::Go => {
                 format!("prev{}", filters::to_pascal_case(self.local_id(id)))
             }
-            crate::generator::Language::Swift => no_swift_emitter("LangCtx::prev_name"),
+            // A member of the class the method reads bare, under the generator's own
+            // prefix, as Kotlin's is.
+            crate::generator::Language::Swift => {
+                format!("scePrev{}", filters::to_pascal_case(id.to_string()))
+            }
         }
     }
 }
@@ -34155,10 +34193,13 @@ impl StatelessFunction {
                         format!("{pascal}::{base}")
                     }
                     generator::Language::Kotlin => format!("{pascal}.{base}"),
+                    // Swift's unit is itself the wrapper: a caseless enum `<Pascal>`, which
+                    // the import's `namespace` already names, so the call-base is `lookup`
+                    // and [`Self::qualified_call`] qualifies it (`<Pascal>.lookup`).
                     generator::Language::Go
                     | generator::Language::Python
-                    | generator::Language::C11 => base,
-                    generator::Language::Swift => no_swift_emitter("StatelessFunction::symbol"),
+                    | generator::Language::C11
+                    | generator::Language::Swift => base,
                 }
             }
             // The algorithm kind's definition equals its discovery name (no wrapper

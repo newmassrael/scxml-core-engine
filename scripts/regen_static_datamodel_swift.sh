@@ -142,7 +142,7 @@ done
 # it, so a construct Swift gains the lowering of is held to the compiler before a machine
 # reaches it. A kind Swift gains is added here, to the one list. Derived, and a refusal by
 # name (status 7) is listed, as the machines' are.
-UNIT_KINDS='(algorithm|condition|lookup|interpolation|filter|transform)'
+UNIT_KINDS='(algorithm|condition|lookup|interpolation|filter|transform|validator)'
 mapfile -t ALGORITHM_CANDIDATES < <(
     {
         grep -lE "sce:kind=\"$UNIT_KINDS\"" "$INPUT_ROOT"/*.scxml
