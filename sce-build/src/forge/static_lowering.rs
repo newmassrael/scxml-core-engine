@@ -12016,65 +12016,14 @@ impl StaticTarget for SwiftTarget {
     fn enum_variant(&self, ty: &str, enum_name: &str, variant: &str) -> String {
         crate::forge::enum_naming::variant_ref(Language::Swift, ty, enum_name, variant)
     }
-    // An `Int`-style enum over the enum document's own carrier, each case holding the
-    // number the document declares for it. `declaredName` answers the name the
-    // document gives a value — what a `<log>` shows and what a host compares to a
-    // scenario.
+    // The enum the enum document is written as, under the machine's own name for it
+    // (`crate::forge::generator::swift_enum_declaration`, which the unit of the
+    // document is declared by too).
     fn enum_def(&self, ty: &str, alias: &str, model: &EnumModel) -> String {
-        let case_of = |variant: &str| {
-            crate::forge::enum_naming::variant_ident(Language::Swift, &model.name, variant)
-        };
-        let carrier = crate::forge::generator::swift_type(&model.underlying_type);
-        let cases: String = model
-            .variants
-            .iter()
-            .map(|v| format!("    case {} = {}\n", case_of(&v.name), v.value))
-            .collect();
-        let names: String = model
-            .variants
-            .iter()
-            .map(|v| {
-                format!(
-                    "        case .{}: return \"{}\"\n",
-                    case_of(&v.name),
-                    filters::escape_swift(v.name.clone())
-                )
-            })
-            .collect();
-        let reads: String = model
-            .variants
-            .iter()
-            .map(|v| {
-                format!(
-                    "        case \"{}\": self = .{}\n",
-                    filters::escape_swift(v.name.clone()),
-                    case_of(&v.name)
-                )
-            })
-            .collect();
-        format!(
-            "/// SCE Accepted Subset §2.15: an `enum:{alias}` datamodel value.\n\
-             public enum {ty}: {carrier}, CaseIterable, Sendable {{\n{cases}\n\
-             \x20   /// The name the enum document declares for the value.\n\
-             \x20   public var declaredName: String {{\n\
-             \x20       switch self {{\n{names}\x20       }}\n\
-             \x20   }}\n\n\
-             \x20   /// The number the enum document declares for the value.\n\
-             \x20   public static func toUnderlying(_ value: {ty}) -> {carrier} {{\n\
-             \x20       value.rawValue\n\
-             \x20   }}\n\n\
-             \x20   /// The variant that declares `raw`, and nil for a number no variant declares.\n\
-             \x20   public static func fromUnderlying(_ raw: {carrier}) -> {ty}? {{\n\
-             \x20       {ty}(rawValue: raw)\n\
-             \x20   }}\n\n\
-             \x20   /// The variant the enum document gives `name`, and nil for a name it does not\n\
-             \x20   /// declare.\n\
-             \x20   public init?(declaredName: String) {{\n\
-             \x20       switch declaredName {{\n{reads}\
-             \x20       default: return nil\n\
-             \x20       }}\n\
-             \x20   }}\n\
-             }}"
+        crate::forge::generator::swift_enum_declaration(
+            ty,
+            &format!("/// SCE Accepted Subset §2.15: an `enum:{alias}` datamodel value."),
+            model,
         )
     }
     fn enum_number_symbols(&self, ty: &str, _model: &EnumModel) -> (String, String) {

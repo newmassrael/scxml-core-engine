@@ -2664,7 +2664,7 @@ fn render_enum(
     // knows it — leaving a second copy here is how the two drift.
 
     let underlying_type: String = match lang {
-        Language::Swift => no_swift_emitter("render_enum"),
+        Language::Swift => swift_type(&m.underlying_type).to_string(),
         Language::Cpp => cpp_type(&m.underlying_type).to_string(),
         Language::C11 => c_type(&m.underlying_type).to_string(),
         Language::Rust => rust_type(&m.underlying_type).to_string(),
@@ -2696,8 +2696,8 @@ fn render_enum(
                 | Language::Cpp
                 | Language::Go
                 | Language::Python
-                | Language::C11 => value_text,
-                Language::Swift => no_swift_emitter("render_enum"),
+                | Language::C11
+                | Language::Swift => value_text,
             };
             // `declared` is the variant's name as the document wrote it
             // (`sce:variant name`), which every backend returns from its
@@ -2735,7 +2735,7 @@ fn render_enum(
     };
 
     let mut ctx = l.base_context(&m.name);
-    ctx.insert("enum_name".into(), enum_name.into());
+    ctx.insert("enum_name".into(), enum_name.as_str().into());
     ctx.insert("underlying_type".into(), underlying_type.into());
     ctx.insert("sce_underlying_name".into(), sce_underlying_name.into());
     ctx.insert("variants".into(), serde_json::json!(variants));
@@ -2757,6 +2757,18 @@ fn render_enum(
     if matches!(lang, Language::C11) {
         ctx.insert("c11_declaration".into(), c11_enum_declaration(m).into());
     }
+    // ... and Swift's, which a machine's file declares under its own name.
+    if matches!(lang, Language::Swift) {
+        ctx.insert(
+            "swift_declaration".into(),
+            swift_enum_declaration(
+                &enum_name,
+                &format!("/// The enum `{}` (sce:kind=\"enum\").", m.name),
+                m,
+            )
+            .into(),
+        );
+    }
     l.insert_imports(&mut ctx, imports);
 
     if matches!(l.lang, crate::generator::Language::Rust) {
@@ -2774,6 +2786,78 @@ fn render_enum(
     }
 
     l.render(env, "enum", ctx)
+}
+
+/// The Swift declaration of the closed enum `model` as the type `ty`, under the doc
+/// comment `doc`: an `Int`-style enum over the enum document's own carrier, each case
+/// holding the number the document declares for it. `declaredName` answers the name
+/// the document gives a value — what a `<log>` shows and what a host compares to a
+/// scenario — and `init?(declaredName:)` is its inverse.
+///
+/// One text for the unit an enum document is written as and for the enum a
+/// `sce-static` machine's file declares under its own name
+/// ([`crate::forge::static_lowering`]), so a value is spelled, named and converted the
+/// same wherever it is held.
+pub(crate) fn swift_enum_declaration(ty: &str, doc: &str, model: &EnumModel) -> String {
+    let case_of = |variant: &str| {
+        crate::forge::enum_naming::variant_ident(
+            crate::generator::Language::Swift,
+            &model.name,
+            variant,
+        )
+    };
+    let carrier = swift_type(&model.underlying_type);
+    let cases: String = model
+        .variants
+        .iter()
+        .map(|v| format!("    case {} = {}\n", case_of(&v.name), v.value))
+        .collect();
+    let names: String = model
+        .variants
+        .iter()
+        .map(|v| {
+            format!(
+                "        case .{}: return \"{}\"\n",
+                case_of(&v.name),
+                filters::escape_swift(v.name.clone())
+            )
+        })
+        .collect();
+    let reads: String = model
+        .variants
+        .iter()
+        .map(|v| {
+            format!(
+                "        case \"{}\": self = .{}\n",
+                filters::escape_swift(v.name.clone()),
+                case_of(&v.name)
+            )
+        })
+        .collect();
+    format!(
+        "{doc}\n\
+         public enum {ty}: {carrier}, CaseIterable, Sendable {{\n{cases}\n\
+         \x20   /// The name the enum document declares for the value.\n\
+         \x20   public var declaredName: String {{\n\
+         \x20       switch self {{\n{names}\x20       }}\n\
+         \x20   }}\n\n\
+         \x20   /// The number the enum document declares for the value.\n\
+         \x20   public static func toUnderlying(_ value: {ty}) -> {carrier} {{\n\
+         \x20       value.rawValue\n\
+         \x20   }}\n\n\
+         \x20   /// The variant that declares `raw`, and nil for a number no variant declares.\n\
+         \x20   public static func fromUnderlying(_ raw: {carrier}) -> {ty}? {{\n\
+         \x20       {ty}(rawValue: raw)\n\
+         \x20   }}\n\n\
+         \x20   /// The variant the enum document gives `name`, and nil for a name it does not\n\
+         \x20   /// declare.\n\
+         \x20   public init?(declaredName: String) {{\n\
+         \x20       switch declaredName {{\n{reads}\
+         \x20       default: return nil\n\
+         \x20       }}\n\
+         \x20   }}\n\
+         }}"
+    )
 }
 
 // ── EventSchema rendering (unified across backends) ──
@@ -2855,7 +2939,8 @@ pub(crate) fn enum_qualified_type(enum_name: &str, lang: crate::generator::Langu
     let pascal = filters::to_pascal_case(enum_name.to_string());
     let snake = filters::to_snake_case(enum_name.to_string());
     match lang {
-        Language::Swift => no_swift_emitter("enum_qualified_type"),
+        // A file of the module that names it: the enum, bare.
+        Language::Swift => pascal,
         Language::Cpp => format!("SCE::Generated::{pascal}::{pascal}"),
         Language::Rust => format!("{snake}::{pascal}"),
         // The `import com.sce.generated.<snake>.*` wildcard an import writes
@@ -2925,7 +3010,14 @@ pub(crate) fn enum_number_symbols(
                 format!("{prefix}_{from}"),
             )
         }
-        Language::Swift => no_swift_emitter("enum_number_symbols"),
+        // Static members of the enum, called with the one argument: the carrier a
+        // value holds, and the variant a number declares or nil, which a caller that
+        // may fail reads through `Checked.found`. A closed enum only: an open one is
+        // refused by name ([`swift_enum_unlowered`]).
+        Language::Swift => (
+            format!("{qualified}.toUnderlying"),
+            format!("{qualified}.fromUnderlying"),
+        ),
     }
 }
 
@@ -24074,8 +24166,8 @@ pub fn generate_swift(
 ///
 /// Swift emits no kind whole yet ([`crate::forge::codegen_matrix::template_ships`]
 /// is `false` for every kind). It writes an algorithm
-/// ([`swift_algorithm_unlowered`]) and an event schema
-/// ([`swift_event_schema_unlowered`]) in part
+/// ([`swift_algorithm_unlowered`]), an event schema
+/// ([`swift_event_schema_unlowered`]) and an enum ([`swift_enum_unlowered`]) in part
 /// ([`crate::forge::codegen_matrix::ships_in_part`]), refusing by name what each
 /// holds past what is lowered, and a declaration, which writes no file; every
 /// other kind is `codegen/generic-kind-backend-emit-missing`, except a kind that is
@@ -24101,6 +24193,7 @@ pub fn generate_swift_with_imports(
             swift_event_schema_unlowered(m, imports.first().map(|i| i.alias.as_str()))
                 .map(|c| swift_event_schema_refusal(m, &c))
         }
+        ForgeDocument::Enum(m) => swift_enum_unlowered(m).map(|c| swift_enum_refusal(m, &c)),
         _ => {
             return match crate::forge::codegen_matrix::lookup(doc.kind(), Language::Swift) {
                 crate::forge::codegen_matrix::EmitOutcome::Declaration => {
@@ -24125,6 +24218,7 @@ pub fn generate_swift_with_imports(
             render_algorithm(&env, m, imports, Language::Swift, options)?
         }
         ForgeDocument::EventSchema(m) => render_event_schema(&env, m, imports, Language::Swift)?,
+        ForgeDocument::Enum(m) => render_enum(&env, m, imports, Language::Swift)?,
         _ => unreachable!("every other kind returned above"),
     };
     Ok(GeneratedOutput {
@@ -24367,6 +24461,28 @@ fn swift_algorithm_unlowered(m: &AlgorithmModel, imports: &[SwiftImport]) -> Opt
         return Some(format!("a <sce:return> of {}", ret.as_attr()));
     }
     unlowered(&m.body, &reserved)
+}
+
+/// What of the enum `m` the Swift backend does not lower yet, described for a refusal
+/// by name (`generate/unsupported-feature`): an open enum, whose value no variant
+/// declares and which a Swift enum cannot hold, and a variant whose Swift name is a
+/// word the language reserves.
+fn swift_enum_unlowered(m: &EnumModel) -> Option<String> {
+    use crate::generator::Language;
+    if !m.strict_variants {
+        return Some("an open enum (`sce:strict-variants=\"false\"`)".to_string());
+    }
+    m.variants.iter().find_map(|v| {
+        let ident = crate::forge::enum_naming::variant_ident(Language::Swift, &m.name, &v.name);
+        crate::reader_names::is_reserved_word(Language::Swift, &ident)
+            .then(|| format!("the variant `{}`, a name Swift reserves,", v.name))
+    })
+}
+
+/// The refusal of the enum `m` for the Swift construct `construct` it holds
+/// ([`swift_enum_unlowered`]).
+fn swift_enum_refusal(m: &EnumModel, construct: &str) -> String {
+    format!("enum '{}': {construct} has no Swift lowering yet", m.name)
 }
 
 /// The refusal of the event schema `m` for the Swift construct `construct` it holds

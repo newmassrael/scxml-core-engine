@@ -251,8 +251,8 @@ pub const fn template_ships(kind: ForgeKind, lang: Language) -> bool {
         // — `generator.rs::render_enum` lowers `EnumModel` to a typed
         // backend-native enum. Matches the
         // §synth-5-J-4 Generic-class contract; matrix dispatch lets every
-        // `(Enum, lang)` pair through to the per-language render arm. Swift
-        // has no emitter yet.
+        // `(Enum, lang)` pair through to the per-language render arm. Swift writes
+        // the kind in part ([`ships_in_part`]): a closed enum.
         ForgeKind::Enum => match lang {
             Language::Rust
             | Language::Cpp
@@ -397,13 +397,16 @@ pub const fn awaits_runtime(kind: ForgeKind, lang: Language) -> bool {
 /// not yet), its algorithm a body of scalars
 /// (`forge::generator::swift_algorithm_unlowered` names each construct past
 /// those), and its event schema a struct of scalar fields
-/// (`forge::generator::swift_event_schema_unlowered` names each field past those).
+/// (`forge::generator::swift_event_schema_unlowered` names each field past those), and
+/// its enum a closed one (`forge::generator::swift_enum_unlowered` names an open enum
+/// and a variant named for a reserved word).
 pub const fn ships_in_part(kind: ForgeKind, lang: Language) -> bool {
     matches!(
         (kind, lang),
         (ForgeKind::Statechart, Language::Swift)
             | (ForgeKind::Algorithm, Language::Swift)
             | (ForgeKind::EventSchema, Language::Swift)
+            | (ForgeKind::Enum, Language::Swift)
     )
 }
 

@@ -162,11 +162,13 @@ fi
 # is handed to an algorithm in, which an algorithm of the target names whichever
 # directory its schema is in. Derived for the reason the machines are, and a refusal by
 # name (status 7) is listed, not skipped: a schema of a field Swift does not lower yet
-# is one more thing standing between it and the rest of the fixtures.
+# is one more thing standing between it and the rest of the fixtures. The enums are
+# swept with them: the type a field of a record or a value of an algorithm holds a
+# variant in is a unit of the same target, written for what it is.
 mapfile -t SCHEMA_CANDIDATES < <(
     {
-        grep -l 'sce:kind="event-schema"' "$INPUT_ROOT"/*.scxml
-        grep -rl 'sce:kind="event-schema"' stdlib --include='*.scxml' | sed 's|^stdlib/|sce:std/|'
+        grep -lE 'sce:kind="(event-schema|enum)"' "$INPUT_ROOT"/*.scxml
+        grep -rlE 'sce:kind="(event-schema|enum)"' stdlib --include='*.scxml' | sed 's|^stdlib/|sce:std/|'
     } | LC_ALL=C sort -u
 )
 SCHEMAS=()
