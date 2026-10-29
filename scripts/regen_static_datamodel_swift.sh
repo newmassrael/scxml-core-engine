@@ -97,8 +97,9 @@ fi
 # calls is generated beside the machines, a file of the same SwiftPM target, as
 # scripts/regen_static_datamodel_go.sh generates each as a package of its own. An
 # algorithm is the one kind a Swift machine calls, and one that imports a document
-# is refused where the machine imports it (`StaticCallee::unlowered_by`), so the
-# algorithms the machines name directly are all there is to generate.
+# other than an event schema is refused where the machine imports it
+# (`StaticCallee::unlowered_by`), so the algorithms the machines name directly are
+# generated, and then every other algorithm the generator lowers (below).
 
 # The file a document named as the generator takes it is read from.
 document_file() {
@@ -126,21 +127,53 @@ for source in "${SOURCES[@]}"; do
         ALGORITHMS+=("$algorithm")
     done < <(algorithms_of "$source")
 done
+# The algorithms the fixture directory and the standard library declare, whether or not a
+# machine the Swift backend lowers calls one: an algorithm is compiled for what it is,
+# not for who happens to call it, so a construct Swift gains the lowering of is held
+# to the compiler before a machine reaches it. Derived, and a refusal by name (status
+# 7) is listed, as the machines' are.
+mapfile -t ALGORITHM_CANDIDATES < <(
+    {
+        grep -l 'sce:kind="algorithm"' "$INPUT_ROOT"/*.scxml
+        grep -rl 'sce:kind="algorithm"' stdlib --include='*.scxml' | sed 's|^stdlib/|sce:std/|'
+    } | LC_ALL=C sort -u
+)
+ALGORITHMS_REFUSED=()
+for candidate in "${ALGORITHM_CANDIDATES[@]}"; do
+    status=0
+    verdict="$("$CODEGEN" check -l swift --error-format=json "$(document_file "$candidate")" 2>&1)" || status=$?
+    case "$status" in
+        0) ALGORITHMS+=("$candidate") ;;
+        7)
+            ALGORITHMS_REFUSED+=("$(basename "$candidate" .scxml): $(printf '%s' "$verdict" | grep -o '"message":"[^"]*"' | head -n 1 | cut -c1-170)")
+            ;;
+        *)
+            echo "error: sce-codegen check -l swift $candidate failed with status $status" >&2
+            exit 1
+            ;;
+    esac
+done
 if [ "${#ALGORITHMS[@]}" -gt 0 ]; then
     mapfile -t ALGORITHMS < <(printf '%s\n' "${ALGORITHMS[@]}" | LC_ALL=C sort -u)
 fi
 
-# The event schemas the fixture directory declares that the generator lowers for Swift,
-# each a unit of the same SwiftPM target: the struct a record is handed to an algorithm
-# in. Derived for the reason the machines are, and a refusal by name (status 7) is
-# listed, not skipped: a schema of a field Swift does not lower yet is one more thing
-# standing between it and the rest of the fixtures.
-mapfile -t SCHEMA_CANDIDATES < <(grep -l 'sce:kind="event-schema"' "$INPUT_ROOT"/*.scxml | LC_ALL=C sort)
+# The event schemas the fixture directory and the standard library declare that the
+# generator lowers for Swift, each a unit of the same SwiftPM target: the struct a record
+# is handed to an algorithm in, which an algorithm of the target names whichever
+# directory its schema is in. Derived for the reason the machines are, and a refusal by
+# name (status 7) is listed, not skipped: a schema of a field Swift does not lower yet
+# is one more thing standing between it and the rest of the fixtures.
+mapfile -t SCHEMA_CANDIDATES < <(
+    {
+        grep -l 'sce:kind="event-schema"' "$INPUT_ROOT"/*.scxml
+        grep -rl 'sce:kind="event-schema"' stdlib --include='*.scxml' | sed 's|^stdlib/|sce:std/|'
+    } | LC_ALL=C sort -u
+)
 SCHEMAS=()
 SCHEMAS_REFUSED=()
 for source in "${SCHEMA_CANDIDATES[@]}"; do
     status=0
-    verdict="$("$CODEGEN" check -l swift --error-format=json "$source" 2>&1)" || status=$?
+    verdict="$("$CODEGEN" check -l swift --error-format=json "$(document_file "$source")" 2>&1)" || status=$?
     case "$status" in
         0) SCHEMAS+=("$source") ;;
         7)
@@ -194,6 +227,10 @@ echo "Regenerated: ${MACHINES[*]}, the algorithms ${UNITS[*]:-none} and the even
 if [ "${#REFUSED[@]}" -gt 0 ]; then
     echo "Not lowered yet (${#REFUSED[@]}), refused by name:"
     printf '  %s\n' "${REFUSED[@]}"
+fi
+if [ "${#ALGORITHMS_REFUSED[@]}" -gt 0 ]; then
+    echo "Algorithms not lowered yet (${#ALGORITHMS_REFUSED[@]}), refused by name:"
+    printf '  %s\n' "${ALGORITHMS_REFUSED[@]}"
 fi
 if [ "${#SCHEMAS_REFUSED[@]}" -gt 0 ]; then
     echo "Event schemas not lowered yet (${#SCHEMAS_REFUSED[@]}), refused by name:"

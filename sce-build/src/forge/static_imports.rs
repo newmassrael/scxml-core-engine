@@ -548,9 +548,15 @@ pub(crate) fn resolve(
             },
             value,
             line: import.line,
+            // The schema an import of the algorithm names is read where the algorithm
+            // is, as its own generation reads it.
             unlowered_by: crate::forge::generator::unlowered_in_part(
                 &parsed.document,
                 &parsed.imports,
+                &|imp| {
+                    let (_, fields) = record_schema(&parsed.imports, callee_base, &imp.alias)?;
+                    Some(fields.into_iter().map(|f| (f.id, f.ty)).collect())
+                },
             ),
         });
     }
@@ -741,6 +747,11 @@ fn function_callee(
         list_return: None,
         list_refusal: None,
         value: None,
-        unlowered_by: crate::forge::generator::unlowered_in_part(document, &parsed.imports),
+        // Only an algorithm is written in part for a language, and this is not one.
+        unlowered_by: crate::forge::generator::unlowered_in_part(
+            document,
+            &parsed.imports,
+            &|_| None,
+        ),
     })
 }

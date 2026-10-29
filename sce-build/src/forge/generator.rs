@@ -737,11 +737,17 @@ pub(crate) fn resolve_imports(
     lang: &crate::generator::Language,
     options: &crate::ForgeCompileOptions,
 ) -> Result<Vec<ImportContext>, ForgeError> {
-    // A backend that emits nothing yet has no import identity to compute: the
-    // first import is where the document asks it for one, so that is where the
-    // one refusal every kind gets for it is raised, before an identity is read.
+    // A backend that emits no kind whole has an import identity only for a kind it
+    // writes in part: for any other the first import is where the document asks it
+    // for one, so that is where the one refusal every kind gets for it is raised,
+    // before an identity is read. What an import of a kind it does write in part
+    // names is refused where its renderer reads the imports
+    // (`swift_algorithm_unlowered`).
     if !crate::forge::codegen_matrix::emits_anything(*lang) {
-        if let Some(imp) = imports.first() {
+        if let Some(imp) = imports
+            .iter()
+            .find(|imp| !crate::forge::codegen_matrix::ships_in_part(imp.kind, *lang))
+        {
             return Err(crate::forge::codegen_matrix::emit_missing(imp.kind, *lang).into());
         }
     }
@@ -1038,14 +1044,14 @@ fn resolve_single_import(
     // Alias-derived instance field name: Cpp / C11 suffix the alias with
     // `_`; Go exports a PascalCase field; the rest use the bare alias.
     let member_name = match lang {
-        crate::generator::Language::Swift => no_swift_emitter("resolve_single_import"),
         crate::generator::Language::Cpp | crate::generator::Language::C11 => {
             format!("{}_", imp.alias)
         }
         crate::generator::Language::Go => filters::to_pascal_case(imp.alias.to_string()),
         crate::generator::Language::Kotlin
         | crate::generator::Language::Rust
-        | crate::generator::Language::Python => imp.alias.clone(),
+        | crate::generator::Language::Python
+        | crate::generator::Language::Swift => imp.alias.clone(),
     };
 
     // Go-only per-kind init expression for the procedure's `newPolicy()`
@@ -23389,13 +23395,14 @@ pub fn generate_swift_with_imports(
         return Err(refuse_broadcast_log(m, Language::Swift));
     }
     crate::forge::codegen_matrix::check(doc.kind(), Language::Swift)?;
-    let first_import = imports.first().map(|i| i.alias.as_str());
     let refused = match doc {
         ForgeDocument::Algorithm(m) => {
-            swift_algorithm_unlowered(m, first_import).map(|c| swift_algorithm_refusal(m, &c))
+            swift_algorithm_unlowered(m, &swift_imports_of_context(imports))
+                .map(|c| swift_algorithm_refusal(m, &c))
         }
         ForgeDocument::EventSchema(m) => {
-            swift_event_schema_unlowered(m, first_import).map(|c| swift_event_schema_refusal(m, &c))
+            swift_event_schema_unlowered(m, imports.first().map(|i| i.alias.as_str()))
+                .map(|c| swift_event_schema_refusal(m, &c))
         }
         _ => {
             return match crate::forge::codegen_matrix::lookup(doc.kind(), Language::Swift) {
@@ -23436,10 +23443,13 @@ pub fn generate_swift_with_imports(
 /// ([`crate::forge::codegen_matrix::ships_in_part`]) refuses of `doc`, whose own
 /// imports are `imports`: the refusal its generation would answer, so a document
 /// that calls `doc` is refused for that backend by the same reason
-/// ([`crate::forge::type_ctx::StaticCallee::unlowered_by`]).
+/// ([`crate::forge::type_ctx::StaticCallee::unlowered_by`]). `schema_fields` reads
+/// the `(id, type)` fields of the event schema an import of `doc` names, which the
+/// callee's own generation reads from the imports it resolved.
 pub(crate) fn unlowered_in_part(
     doc: &ForgeDocument,
     imports: &[ForgeImport],
+    schema_fields: &dyn Fn(&ForgeImport) -> Option<Vec<(String, FieldType)>>,
 ) -> Vec<(crate::generator::Language, String)> {
     use crate::generator::Language;
     Language::ALL
@@ -23452,7 +23462,14 @@ pub(crate) fn unlowered_in_part(
                 // part, are never a callee.
                 Language::Swift => match doc {
                     ForgeDocument::Algorithm(m) => {
-                        swift_algorithm_unlowered(m, imports.first().map(|i| i.alias.as_str()))
+                        let views: Vec<SwiftImport> = imports
+                            .iter()
+                            .map(|imp| SwiftImport {
+                                alias: imp.alias.clone(),
+                                schema_fields: schema_fields(imp),
+                            })
+                            .collect();
+                        swift_algorithm_unlowered(m, &views)
                             .map(|construct| swift_algorithm_refusal(m, &construct))
                     }
                     _ => None,
@@ -23481,22 +23498,28 @@ fn swift_algorithm_refusal(m: &AlgorithmModel, construct: &str) -> String {
 
 /// What of the algorithm `m` the Swift backend does not lower yet, described for a
 /// refusal by name (`generate/unsupported-feature`) before [`render_algorithm`]
-/// reaches a helper that has no Swift spelling; `first_import` is the alias of the
-/// first document `m` imports, if it imports any.
+/// reaches a helper that has no Swift spelling; `imports` are the documents `m`
+/// imports.
 ///
-/// Swift lowers a body of scalars: parameters and a return of a number, a `bool` or
-/// a string, and locals of the same, written by `<sce:var>`, `<sce:assign>`,
-/// `<sce:if>` and `<sce:return>`. Each construct past those is named here until its
-/// spelling is written, which is what [`crate::forge::codegen_matrix::ships_in_part`]
-/// promises of an in-part backend: what it does not write is refused, never
-/// emitted wrong. A `may-fail` signature is refused by the list every backend that
-/// lowers one is on (`reject_may_fail_in_unsupported_lang`), and a statechart calls
-/// no `may-fail` algorithm at all.
-fn swift_algorithm_unlowered(m: &AlgorithmModel, first_import: Option<&str>) -> Option<String> {
+/// Swift lowers a body of scalars and records: parameters and a return of a number,
+/// a `bool`, a string or a record of an event schema the Swift backend writes
+/// ([`swift_event_schema_unlowered`]), and locals of the same, written by
+/// `<sce:var>`, `<sce:assign>`, `<sce:if>` and `<sce:return>`. Each construct past
+/// those is named here until its spelling is written, which is what
+/// [`crate::forge::codegen_matrix::ships_in_part`] promises of an in-part backend:
+/// what it does not write is refused, never emitted wrong. A `may-fail` signature is
+/// refused by the list every backend that lowers one is on
+/// (`reject_may_fail_in_unsupported_lang`).
+fn swift_algorithm_unlowered(m: &AlgorithmModel, imports: &[SwiftImport]) -> Option<String> {
     // A number, a `bool` or a string; a byte string is held in `[UInt8]`, whose
-    // view, buffer and owned forms are not spelled yet.
-    fn lowered(ty: Option<&SceType>) -> bool {
-        ty.is_some_and(|ty| !matches!(ty, SceType::Bytes | SceType::Enum(_)))
+    // view, buffer and owned forms are not spelled yet. A record is the struct of
+    // its schema's unit, which the check of the imports below has already held to
+    // fields Swift writes.
+    fn lowered(ty: &AlgorithmValueType) -> bool {
+        ty.record_alias().is_some()
+            || ty
+                .scalar()
+                .is_some_and(|ty| !matches!(ty, SceType::Bytes | SceType::Enum(_)))
     }
     // A parameter and a local are named as the author wrote them, so one Swift
     // reserves cannot be either.
@@ -23508,13 +23531,19 @@ fn swift_algorithm_unlowered(m: &AlgorithmModel, first_import: Option<&str>) -> 
     };
     fn unlowered(stmts: &[AlgorithmStmt], reserved: &dyn Fn(&str) -> bool) -> Option<String> {
         stmts.iter().find_map(|s| match s {
-            AlgorithmStmt::Var { name, sce_type, .. } if !lowered(sce_type.scalar()) => Some(
-                format!("the <sce:var name=\"{name}\"> of {}", sce_type.as_attr()),
-            ),
-            AlgorithmStmt::Var { name, .. } if reserved(name) => Some(format!(
-                "the <sce:var name=\"{name}\">, a name Swift reserves,"
+            AlgorithmStmt::Var { name, sce_type, .. } if !lowered(sce_type) => Some(format!(
+                "the <sce:var name=\"{name}\"> of {}",
+                sce_type.as_attr()
             )),
+            AlgorithmStmt::Var { name, .. } | AlgorithmStmt::RecordVar { name, .. }
+                if reserved(name) =>
+            {
+                Some(format!(
+                    "the <sce:var name=\"{name}\">, a name Swift reserves,"
+                ))
+            }
             AlgorithmStmt::Var { .. }
+            | AlgorithmStmt::RecordVar { .. }
             | AlgorithmStmt::Assign { .. }
             | AlgorithmStmt::Return { .. } => None,
             AlgorithmStmt::If {
@@ -23523,9 +23552,9 @@ fn swift_algorithm_unlowered(m: &AlgorithmModel, first_import: Option<&str>) -> 
                 ..
             } => unlowered(then_body, reserved)
                 .or_else(|| else_body.as_deref().and_then(|b| unlowered(b, reserved))),
-            AlgorithmStmt::RecordVar { name, .. } | AlgorithmStmt::RecordFromCall { name, .. } => {
-                Some(format!("the record <sce:var name=\"{name}\">"))
-            }
+            AlgorithmStmt::RecordFromCall { name, .. } => Some(format!(
+                "the record <sce:var name=\"{name}\"> built from a call"
+            )),
             AlgorithmStmt::Append { .. } => Some("an <sce:append>".to_string()),
             AlgorithmStmt::While { .. } => Some("an <sce:while>".to_string()),
             AlgorithmStmt::Foreach { .. } => Some("an <sce:foreach>".to_string()),
@@ -23533,8 +23562,23 @@ fn swift_algorithm_unlowered(m: &AlgorithmModel, first_import: Option<&str>) -> 
             AlgorithmStmt::Require { .. } => Some("an <sce:require>".to_string()),
         })
     }
-    if let Some(alias) = first_import {
-        return Some(format!("the <sce:import as=\"{alias}\">"));
+    // An import of an event schema is the unit a record of it is typed by, which the
+    // Swift backend writes when the schema's fields are ones it lowers; an import of
+    // any other kind has no Swift unit.
+    for import in imports {
+        match &import.schema_fields {
+            None => return Some(format!("the <sce:import as=\"{}\">", import.alias)),
+            Some(fields) => {
+                if let Some(why) =
+                    swift_schema_fields_unlowered(fields.iter().map(|(id, ty)| (id.as_str(), ty)))
+                {
+                    return Some(format!(
+                        "the <sce:import as=\"{}\">, a schema with {why}",
+                        import.alias
+                    ));
+                }
+            }
+        }
     }
     if let Some(c) = m.consts.first() {
         return Some(format!("the <sce:const name=\"{}\">", c.name));
@@ -23542,12 +23586,7 @@ fn swift_algorithm_unlowered(m: &AlgorithmModel, first_import: Option<&str>) -> 
     if !m.test_vectors.is_empty() {
         return Some("a <sce:test-vector>".to_string());
     }
-    if let Some(p) = m
-        .signature
-        .params
-        .iter()
-        .find(|p| !lowered(p.sce_type.scalar()))
-    {
+    if let Some(p) = m.signature.params.iter().find(|p| !lowered(&p.sce_type)) {
         return Some(format!(
             "the <sce:param name=\"{}\"> of {}",
             p.name,
@@ -23560,12 +23599,7 @@ fn swift_algorithm_unlowered(m: &AlgorithmModel, first_import: Option<&str>) -> 
             p.name
         ));
     }
-    if let Some(ret) = m
-        .signature
-        .return_type
-        .as_ref()
-        .filter(|t| !lowered(t.scalar()))
-    {
+    if let Some(ret) = m.signature.return_type.as_ref().filter(|t| !lowered(t)) {
         return Some(format!("a <sce:return> of {}", ret.as_attr()));
     }
     unlowered(&m.body, &reserved)
@@ -23596,17 +23630,57 @@ fn swift_event_schema_unlowered(
     if let Some(alias) = first_import {
         return Some(format!("the <sce:import as=\"{alias}\">"));
     }
-    m.fields.iter().find_map(|f| {
-        if matches!(f.sce_type, FieldType::Optional { .. }) {
-            Some(format!("the optional field `{}`", f.id))
-        } else if matches!(f.sce_type.present_type(), SceType::Enum(_)) {
-            Some(format!("the field `{}` of an enum", f.id))
-        } else if crate::reader_names::is_reserved_word(crate::generator::Language::Swift, &f.id) {
-            Some(format!("the field `{}`, a name Swift reserves,", f.id))
+    swift_schema_fields_unlowered(m.fields.iter().map(|f| (f.id.as_str(), &f.sce_type)))
+}
+
+/// What of the fields `(id, type)` of an event schema the Swift backend does not
+/// lower yet, described for a refusal: the one answer for the unit a schema is
+/// written as ([`swift_event_schema_unlowered`]) and for an algorithm that holds a
+/// record of it ([`swift_algorithm_unlowered`]), so an algorithm is never written
+/// against a payload type the schema's own generation refuses.
+fn swift_schema_fields_unlowered<'a>(
+    mut fields: impl Iterator<Item = (&'a str, &'a FieldType)>,
+) -> Option<String> {
+    fields.find_map(|(id, ty)| {
+        if matches!(ty, FieldType::Optional { .. }) {
+            Some(format!("the optional field `{id}`"))
+        } else if matches!(ty.present_type(), SceType::Enum(_)) {
+            Some(format!("the field `{id}` of an enum"))
+        } else if crate::reader_names::is_reserved_word(crate::generator::Language::Swift, id) {
+            Some(format!("the field `{id}`, a name Swift reserves,"))
         } else {
             None
         }
     })
+}
+
+/// One import of an algorithm, as the Swift lowering reads it: the alias it is
+/// brought in by and, when it names an event schema, that schema's fields. Built from
+/// the imports a generation resolved ([`swift_imports_of_context`]) and from the ones
+/// a statechart reads of a callee ([`unlowered_in_part`]), which hold a schema in two
+/// shapes.
+pub(crate) struct SwiftImport {
+    pub alias: String,
+    /// The schema's `(id, type)` fields in declaration order; `None` for an import of
+    /// any other kind, which the Swift backend writes no unit for yet.
+    pub schema_fields: Option<Vec<(String, FieldType)>>,
+}
+
+/// The imports a generation resolved, as the Swift lowering reads them.
+fn swift_imports_of_context(imports: &[ImportContext]) -> Vec<SwiftImport> {
+    imports
+        .iter()
+        .map(|imp| SwiftImport {
+            alias: imp.alias.clone(),
+            schema_fields: imp.record.as_ref().map(|record| {
+                record
+                    .fields
+                    .iter()
+                    .map(|f| (f.id.clone(), f.ty.clone()))
+                    .collect()
+            }),
+        })
+        .collect()
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -28583,8 +28657,10 @@ fn record_text_operand(lang: crate::generator::Language, member: &str) -> String
     match lang {
         Language::Rust => format!("{member}.as_str()"),
         Language::C11 => format!("{member}.data"),
-        Language::Cpp | Language::Go | Language::Python | Language::Kotlin => member.to_string(),
-        Language::Swift => no_swift_emitter("record_text_operand"),
+        // A `String`, compared by value as the language's own `==` does.
+        Language::Cpp | Language::Go | Language::Python | Language::Kotlin | Language::Swift => {
+            member.to_string()
+        }
     }
 }
 
@@ -28959,8 +29035,12 @@ fn lower_text_write(
                     "{}({literal})",
                     crate::forge::static_lowering::c_string_storage_of(bound)
                 ),
-                Language::Cpp | Language::Go | Language::Python | Language::Kotlin => literal,
-                Language::Swift => no_swift_emitter("lower_text_write"),
+                // The language's own `String`: the bound was judged at build time.
+                Language::Cpp
+                | Language::Go
+                | Language::Python
+                | Language::Kotlin
+                | Language::Swift => literal,
             }
         }
         TextSource::Field { record, field } => {
@@ -28977,8 +29057,11 @@ fn lower_text_write(
                     "{}({member}.data)",
                     crate::forge::static_lowering::c_string_storage_of(bound)
                 ),
-                Language::Cpp | Language::Go | Language::Python | Language::Kotlin => member,
-                Language::Swift => no_swift_emitter("lower_text_write"),
+                Language::Cpp
+                | Language::Go
+                | Language::Python
+                | Language::Kotlin
+                | Language::Swift => member,
             }
         }
         // `null`: Kotlin's and Python's absent value. Every other backend was refused
@@ -30332,7 +30415,17 @@ fn lower_algorithm_stmt(
                 Language::Go => format!("{pad}{local} := {ty}{{{}}}\n", joined(": ")),
                 Language::Python => format!("{pad}{local} = {ty}({})\n", joined("=")),
                 Language::Kotlin => format!("{pad}var {local} = {ty}({})\n", joined(" = ")),
-                Language::Swift => no_swift_emitter("lower_algorithm_stmt"),
+                // The struct's own memberwise `init`, labelled by field in the
+                // schema's order; `var` only where a field is written afterwards, as
+                // a scalar local is.
+                Language::Swift => {
+                    let keyword = if assigned.contains(name.as_str()) {
+                        "var"
+                    } else {
+                        "let"
+                    };
+                    format!("{pad}{keyword} {local}: {ty} = {ty}({})\n", joined(": "))
+                }
             };
             out.push_str(&line);
         }
@@ -30625,11 +30718,13 @@ fn lower_algorithm_stmt(
                     Language::Kotlin => {
                         format!("{pad}{local} = {local}.copy({member} = {value})\n")
                     }
-                    Language::Python => format!("{pad}{local}.{member} = {value}\n"),
+                    // A struct local, a `var` where it is written, and its field in place.
+                    Language::Python | Language::Swift => {
+                        format!("{pad}{local}.{member} = {value}\n")
+                    }
                     Language::Rust | Language::Cpp | Language::C11 | Language::Go => {
                         format!("{pad}{local}.{member} = {value};\n")
                     }
-                    Language::Swift => no_swift_emitter("lower_algorithm_stmt"),
                 });
                 return Ok(());
             }
@@ -34157,7 +34252,8 @@ fn render_algorithm(
             | Language::Kotlin
             | Language::Go
             | Language::Python
-            | Language::C11,
+            | Language::C11
+            | Language::Swift,
         ) if return_record.is_some() => return_record
             .map(|record| record.qualified_type.clone())
             .expect("guarded by the arm"),
@@ -34200,9 +34296,9 @@ fn render_algorithm(
                 Language::Swift => no_swift_emitter("render_algorithm"),
             }
         }
-        // Swift: a list, a record, an optional value and a byte string are refused
-        // before this ([`swift_algorithm_unlowered`]), so a value it returns is a
-        // number, a `bool` or a string.
+        // Swift: a list, an optional value and a byte string are refused before this
+        // ([`swift_algorithm_unlowered`]), and a record is the arm above, so a value
+        // it returns here is a number, a `bool` or a string.
         (
             Some(t),
             Language::Rust
