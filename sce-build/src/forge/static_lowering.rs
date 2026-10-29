@@ -11685,9 +11685,9 @@ impl StaticTarget for SwiftTarget {
     // A function of the machine's file that takes the machine's values, builds the
     // algorithm's from them, calls it, and builds the machine's own from what it
     // returns. It spells what an algorithm over numbers, truth values and records of
-    // those is called with; a list, a value that may be absent, a value of an enum and
-    // a call that may fail return `None`, which refuses the call by name until each
-    // is spelled.
+    // those, and a list of them handed in, is called with; a list taken back, a value
+    // that may be absent, a value of an enum and a call that may fail return `None`,
+    // which refuses the call by name until each is spelled.
     fn state_adapter(&self, spec: &AdapterSpec<'_>) -> Option<String> {
         use crate::forge::generator::{event_schema_field_ident, event_schema_payload_type};
         let value = spec.callee.value.as_ref()?;
@@ -11756,6 +11756,27 @@ impl StaticTarget for SwiftTarget {
                 } => {
                     declarations.push(format!("_ {name}: {}", held_record(alias, *code)?));
                     arguments.push(to_algorithm(alias, &name)?);
+                }
+                // A list of numbers or truth values is an `Array` of the same element
+                // on both sides, so it crosses as it is.
+                AdapterParam::State {
+                    slot: StaticSlot::ScalarList(ty),
+                    ..
+                } if plain_scalar(ty) => {
+                    declarations.push(format!("_ {name}: {}", self.list_type(ty)));
+                    arguments.push(name);
+                }
+                // A list of records is mapped element by element into the schema's
+                // struct, the machine's own staying as it was.
+                AdapterParam::State {
+                    slot: StaticSlot::RecordList(alias),
+                    ..
+                } => {
+                    declarations.push(format!(
+                        "_ {name}: {}",
+                        self.record_list_type(&machine_record(alias))
+                    ));
+                    arguments.push(format!("{name}.map {{ {} }}", to_algorithm(alias, "$0")?));
                 }
                 _ => return None,
             }

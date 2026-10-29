@@ -23642,8 +23642,9 @@ fn swift_algorithm_refusal(m: &AlgorithmModel, construct: &str) -> String {
 ///
 /// Swift lowers a body of scalars and records: parameters and a return of a number,
 /// a `bool`, a string or a record of an event schema the Swift backend writes
-/// ([`swift_event_schema_unlowered`]), and locals of the same, written by
-/// `<sce:var>`, `<sce:assign>`, `<sce:if>` and `<sce:return>`. Each construct past
+/// ([`swift_event_schema_unlowered`]), a `list<T>` of those as a read-only parameter
+/// that `<sce:foreach>` walks, and locals of the same, written by `<sce:var>`,
+/// `<sce:assign>`, `<sce:if>` and `<sce:return>`. Each construct past
 /// those is named here until its spelling is written, which is what
 /// [`crate::forge::codegen_matrix::ships_in_part`] promises of an in-part backend:
 /// what it does not write is refused, never emitted wrong. A `may-fail` signature is
@@ -23659,6 +23660,14 @@ fn swift_algorithm_unlowered(m: &AlgorithmModel, imports: &[SwiftImport]) -> Opt
             || ty
                 .scalar()
                 .is_some_and(|ty| !matches!(ty, SceType::Bytes | SceType::Enum(_)))
+    }
+    // A `list<T>` read-only parameter is an `Array` of the element, of the same
+    // elements a value is: a list a body builds or returns is not lowered yet.
+    fn lowered_list(ty: &AlgorithmValueType) -> bool {
+        ty.list_elem().is_some_and(|elem| match elem {
+            ListElemType::Scalar(ty) => !matches!(ty, SceType::Bytes | SceType::Enum(_)),
+            ListElemType::Record { .. } => true,
+        })
     }
     // A parameter and a local are named as the author wrote them, so one Swift
     // reserves cannot be either.
@@ -23696,7 +23705,13 @@ fn swift_algorithm_unlowered(m: &AlgorithmModel, imports: &[SwiftImport]) -> Opt
             )),
             AlgorithmStmt::Append { .. } => Some("an <sce:append>".to_string()),
             AlgorithmStmt::While { .. } => Some("an <sce:while>".to_string()),
-            AlgorithmStmt::Foreach { .. } => Some("an <sce:foreach>".to_string()),
+            // Over a `list<T>` parameter, the one list a body holds that is lowered
+            // (a byte string and a bounded collection are refused where they are
+            // declared); its item is a local, named as written.
+            AlgorithmStmt::Foreach { item, .. } if reserved(item) => Some(format!(
+                "the <sce:foreach item=\"{item}\">, a name Swift reserves,"
+            )),
+            AlgorithmStmt::Foreach { body, .. } => unlowered(body, reserved),
             AlgorithmStmt::Call { .. } => Some("an <sce:call>".to_string()),
             AlgorithmStmt::Require { .. } => Some("an <sce:require>".to_string()),
         })
@@ -23725,7 +23740,12 @@ fn swift_algorithm_unlowered(m: &AlgorithmModel, imports: &[SwiftImport]) -> Opt
     if !m.test_vectors.is_empty() {
         return Some("a <sce:test-vector>".to_string());
     }
-    if let Some(p) = m.signature.params.iter().find(|p| !lowered(&p.sce_type)) {
+    if let Some(p) = m
+        .signature
+        .params
+        .iter()
+        .find(|p| !lowered(&p.sce_type) && !lowered_list(&p.sce_type))
+    {
         return Some(format!(
             "the <sce:param name=\"{}\"> of {}",
             p.name,
@@ -29719,7 +29739,9 @@ impl<'a> ListSpelling<'a> {
             Language::Python => format!("list[{t}]"),
             Language::Kotlin if self.is_record() => format!("List<{t}>"),
             Language::Kotlin => self.kotlin_array_type().to_string(),
-            Language::Swift => no_swift_emitter("ListSpelling::param_type"),
+            // An `Array`, a value: the callee reads the caller's elements and cannot
+            // write through them.
+            Language::Swift => format!("[{t}]"),
         }
     }
 
@@ -31610,7 +31632,9 @@ fn lower_algorithm_stmt(
                     Language::Kotlin => format!("{pad}for ({it} in {src_lowered}) {{\n"),
                     Language::Go => format!("{pad}for _, {it} := range {src_lowered} {{\n"),
                     Language::Python => format!("{pad}for {it} in {src_lowered}:\n"),
-                    Language::Swift => no_swift_emitter("lower_algorithm_stmt"),
+                    // The loop walks the array as it was handed over, an immutable
+                    // value, so the body cannot move it; the item is a constant.
+                    Language::Swift => format!("{pad}for {it} in {src_lowered} {{\n"),
                 };
                 out.push_str(&header);
                 let inner_indent = indent + 1;
