@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ADR 0062 (broadcast-log kind): one producer, wait-free, a retention of two
+  written as a constant, so a slot is three, over the record whose payload runs
+  to the end of the frame and holds at most eight bytes, so an entry is one
+  length word and two words of bytes. A record shorter than its bound is stored
+  with its own length, and a record longer than the bound is refused by the
+  codec's bounded sink. The Kotlin conformance test generates it as a document
+  set with the record and runs the typed functions over it.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://sce.dev/ext sce-forge.xsd"
+       sce:kind="broadcast-log"
+       name="broadcast_log_conformance_recent_records"
+       version="1.0">
+  <sce:element-type>broadcast_log_conformance_record</sce:element-type>
+  <sce:producers>one</sce:producers>
+  <sce:progress>wait-free</sce:progress>
+  <sce:retention entries="2"/>
+</scxml>

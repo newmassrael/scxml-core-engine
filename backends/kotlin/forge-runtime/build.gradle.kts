@@ -252,6 +252,78 @@ val generateQueueFixtures by tasks.registering(GenerateFixtures::class) {
     outputDir.set(layout.buildDirectory.dir("generated/queue/kotlin"))
 }
 
+// The broadcast log kind's fixtures (ADR 0062). A log's file is written from a
+// document SET and not from one document: a slot is sized from the largest
+// number of bytes the element document's codec encodes to, which only the set
+// compile reads from that document, so a lone `generate` of a log is refused
+// for want of it. One `orchestrate` run generates every document named here
+// together, the elements with the logs that store them.
+// BroadcastLogGeneratedTest compiles what the generator writes for each log
+// against the runtime and runs publish and read over it.
+abstract class GenerateFixtureSet : DefaultTask() {
+    @get:InputFile
+    @get:PathSensitive(PathSensitivity.ABSOLUTE)
+    abstract val sceCodegen: RegularFileProperty
+
+    @get:InputDirectory
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val resourceDir: DirectoryProperty
+
+    // The documents under resourceDir this task generates as one set, by name
+    // without the extension.
+    @get:Input
+    abstract val fixtures: ListProperty<String>
+
+    @get:OutputDirectory
+    abstract val outputDir: DirectoryProperty
+
+    @get:Inject
+    abstract val execOperations: ExecOperations
+
+    @TaskAction
+    fun generate() {
+        val bin = sceCodegen.get().asFile
+        if (!bin.canExecute()) {
+            throw GradleException(
+                "sce-codegen binary not found or not executable at ${bin.absolutePath}. " +
+                "Build it first: " +
+                "`cargo build --bin sce-codegen --features cli -p sce-build`",
+            )
+        }
+        val res = resourceDir.get().asFile
+        val out = outputDir.get().asFile
+        out.deleteRecursively()
+        out.mkdirs()
+        val arguments = mutableListOf(bin.absolutePath, "orchestrate")
+        for (fixture in fixtures.get()) {
+            arguments.add("--forge")
+            arguments.add(res.resolve("$fixture.scxml").absolutePath)
+        }
+        arguments.addAll(listOf("--language", "kotlin", "--output-dir", out.absolutePath))
+        execOperations.exec {
+            commandLine(arguments)
+        }
+    }
+}
+
+// Each log comes after its element, which the log imports: one with a literal
+// retention over a three-byte record of scalars, and one over a record whose
+// payload is at most eight bytes.
+val generateBroadcastLogFixtures by tasks.registering(GenerateFixtureSet::class) {
+    dependsOn(":buildSceCodegen")
+    sceCodegen.set(rootProject.layout.projectDirectory.file(sceCodegenRelative))
+    resourceDir.set(rootProject.layout.projectDirectory.dir("tests/forge/resources"))
+    fixtures.set(
+        listOf(
+            "broadcast_log_conformance_event",
+            "broadcast_log_conformance_literal",
+            "broadcast_log_conformance_record",
+            "broadcast_log_conformance_recent_records",
+        ),
+    )
+    outputDir.set(layout.buildDirectory.dir("generated/broadcast_log/kotlin"))
+}
+
 kotlin {
     jvmToolchain(17)
     jvm()
@@ -274,6 +346,7 @@ kotlin {
             kotlin.srcDir(generateForgeFixtures.map { it.outputDir })
             kotlin.srcDir(generateRoundTripFixtures.map { it.outputDir })
             kotlin.srcDir(generateQueueFixtures.map { it.outputDir })
+            kotlin.srcDir(generateBroadcastLogFixtures.map { it.outputDir })
         }
     }
 }
