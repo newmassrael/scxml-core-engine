@@ -152,8 +152,8 @@ impl ExprTarget {
             ExprTarget::Rust => true,
             // C11: `sce_optional_<elem>_t` of `sce/forge/optional.h` ([`c_optional`]).
             ExprTarget::C => true,
-            // Swift: not yet; its step of the optional value writes `T?`.
-            ExprTarget::Swift => false,
+            // Swift: `T?` ([`swift::swift_optional_form`]).
+            ExprTarget::Swift => true,
         }
     }
 
@@ -193,8 +193,10 @@ impl ExprTarget {
             // `.value` is the struct, and over which `.f` reads a field
             // ([`c_present_read`]).
             ExprTarget::C => true,
-            // Swift: not yet; its step of the optional value writes `T?`.
-            ExprTarget::Swift => false,
+            // Swift: a record is a struct, `T?` over it holds it or `nil`, and
+            // `x.value.f` is the member of the record `SceOptional.proven(x)` reads
+            // ([`swift::swift_optional_form`]).
+            ExprTarget::Swift => true,
         }
     }
 

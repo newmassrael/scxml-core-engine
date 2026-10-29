@@ -6018,16 +6018,27 @@ fn validate_and_enrich_imports(
                             max_size: f.max_size,
                             limit: f.limit.clone(),
                             // The schema's own enum imports are written relative to it.
-                            swift_enum_unlowered: match (language, f.sce_type.present_type()) {
-                                (
-                                    generator::Language::Swift,
-                                    forge::model::SceType::Enum(reference),
-                                ) => forge::static_imports::swift_enum_field_unlowered(
-                                    &parsed.imports,
-                                    source.path.parent().unwrap_or(base_dir),
-                                    &reference.alias,
-                                ),
-                                _ => None,
+                            swift_enum_unlowered: match language {
+                                // Swift holds the field in the unit of the enum, written
+                                // only for an enum it lowers.
+                                generator::Language::Swift => match f.sce_type.present_type() {
+                                    forge::model::SceType::Enum(reference) => {
+                                        forge::static_imports::swift_enum_field_unlowered(
+                                            &parsed.imports,
+                                            source.path.parent().unwrap_or(base_dir),
+                                            &reference.alias,
+                                        )
+                                    }
+                                    _ => None,
+                                },
+                                // The others write every enum, and name no unit that may
+                                // be missing.
+                                generator::Language::Rust
+                                | generator::Language::Cpp
+                                | generator::Language::Kotlin
+                                | generator::Language::Go
+                                | generator::Language::Python
+                                | generator::Language::C11 => None,
                             },
                         })
                         .collect(),

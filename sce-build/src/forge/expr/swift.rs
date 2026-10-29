@@ -145,7 +145,9 @@ fn binop(op: BinOp) -> &'static str {
         BinOp::BitXor => "^",
         BinOp::Shl => "<<",
         BinOp::Shr | BinOp::UShr => ">>",
-        BinOp::Coalesce => unreachable!("{COALESCE_NOT_SPELLED}"),
+        // Swift's own `??`, the one a read with a default is written as
+        // ([`swift_optional_form`]).
+        BinOp::Coalesce => "??",
     }
 }
 
@@ -252,12 +254,69 @@ fn length_of(measured: &TypedExpr) -> Result<String, Refusal> {
     })
 }
 
+/// A construct of an optional value (docs/adr/0055, section 2) as Swift spells it over
+/// `T?`: a test is `== nil` and `!= nil`, a read of a value proven present is
+/// `SceOptional.proven(x)` (which fails loudly where the proof was wrong, as it is
+/// never expected to be), a read with a default is `??`, and equality is `==` over the
+/// two optional values, a plain one lifted by Swift where it is a number, a `bool` or a
+/// value of an enum. A text is compared by the bytes it holds (a `String`'s own `==` is
+/// canonical equivalence, which no other backend means), so an equality of optional
+/// texts is refused by name until it is spelled over `utf8`.
+fn swift_optional_form(form: OptionalForm<'_>, whole: &TypedExpr) -> Result<String, Refusal> {
+    Ok(match form {
+        OptionalForm::Test { subject, present } => {
+            let (op, spelled) = if present {
+                (BinOp::StrictNeq, "!=")
+            } else {
+                (BinOp::StrictEq, "==")
+            };
+            let tested = emit(subject, InferredType::Unknown)?;
+            format!("{} {spelled} nil", swift_operand(subject, op, true, tested))
+        }
+        OptionalForm::Proven { subject } => format!(
+            "SceOptional.proven({})",
+            emit(subject, InferredType::Unknown)?
+        ),
+        OptionalForm::Otherwise { value, fallback } => {
+            let read = emit(value, InferredType::Unknown)?;
+            let default = emit(fallback, whole.ty)?;
+            format!(
+                "{} ?? {}",
+                swift_operand(value, BinOp::Coalesce, true, read),
+                swift_operand(fallback, BinOp::Coalesce, false, default)
+            )
+        }
+        OptionalForm::Equality { left, right, equal } => {
+            let present_of = |ty: InferredType| match ty {
+                InferredType::Optional(elem) => elem.present(),
+                other => other,
+            };
+            if present_of(left.ty) == InferredType::Str || present_of(right.ty) == InferredType::Str
+            {
+                return Err(unsupported(
+                    "an equality of optional texts (compared by the bytes they hold)",
+                    whole,
+                ));
+            }
+            let op = if equal {
+                BinOp::StrictEq
+            } else {
+                BinOp::StrictNeq
+            };
+            format!(
+                "{} {} {}",
+                swift_operand(left, op, true, emit(left, InferredType::Unknown)?),
+                binop(op),
+                swift_operand(right, op, false, emit(right, InferredType::Unknown)?)
+            )
+        }
+        OptionalForm::Constant(answer) => answer.to_string(),
+    })
+}
+
 fn emit_node(expr: &TypedExpr) -> Result<String, Refusal> {
-    if optional_form(expr).is_some() {
-        return Err(unsupported(
-            "an optional value has no Swift lowering yet (docs/adr/0055)",
-            expr,
-        ));
+    if let Some(form) = optional_form(expr) {
+        return swift_optional_form(form, expr);
     }
     Ok(match &expr.kind {
         ExprKind::NumberLit(n) => portable_number_literal(n),

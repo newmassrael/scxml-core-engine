@@ -679,7 +679,11 @@ pub(crate) fn algorithm_optional_spelled(
                         | OptionalElemType::Record { .. }
                 )
         }
-        Language::Swift => number_or_bool,
+        // `T?` over the type of the present value: a number, a `bool`, a text, a value
+        // of an enum (the unit of its document) and a record (the struct of its
+        // schema) are each one, as a plain Swift value. A byte string is none: an
+        // algorithm holds it in no Swift slot yet ([`swift_algorithm_unlowered`]).
+        Language::Swift => !matches!(elem, OptionalElemType::Scalar(SceType::Bytes)),
     }
 }
 
@@ -3233,12 +3237,13 @@ fn render_event_schema(
             let spelled = |plain: std::borrow::Cow<'static, str>| {
                 held.clone().map_or(plain, std::borrow::Cow::Owned)
             };
-            // An optional field is refused before this
-            // ([`swift_event_schema_unlowered`]), so the zero is a scalar's, or an
-            // enum's first case: the unit of the enum the schema imports names it.
-            let swift_zero = match f.sce_type.present_type() {
-                SceType::Enum(_) => format!("{resolved}.allCases[0]"),
-                present => swift_zero_value(present).to_string(),
+            // A field that may be absent is at nothing until written, whatever its
+            // element is. Any other is at the zero of its type, or an enum's first
+            // case: the unit of the enum the schema imports names it.
+            let swift_zero = match (&f.sce_type, f.sce_type.present_type()) {
+                (FieldType::Optional { .. }, _) => "nil".to_string(),
+                (FieldType::Scalar(_), SceType::Enum(_)) => format!("{resolved}.allCases[0]"),
+                (FieldType::Scalar(_), present) => swift_zero_value(present).to_string(),
             };
             Ok(serde_json::json!({
                 "id": f.id,
@@ -24443,8 +24448,15 @@ fn swift_algorithm_unlowered(m: &AlgorithmModel, imports: &[SwiftImport]) -> Opt
     // the struct of its schema's unit, which the check of the imports below has
     // already held to fields Swift writes, and an enum is the unit of its document,
     // which that check has held to one Swift writes.
+    //
+    // A value that may be absent is the `T?` over one of those, where
+    // [`algorithm_optional_spelled`] says Swift spells the element.
     fn lowered(ty: &AlgorithmValueType) -> bool {
-        ty.record_alias().is_some() || ty.scalar().is_some_and(|ty| !matches!(ty, SceType::Bytes))
+        ty.record_alias().is_some()
+            || ty.scalar().is_some_and(|ty| !matches!(ty, SceType::Bytes))
+            || ty.optional_elem().is_some_and(|elem| {
+                algorithm_optional_spelled(crate::generator::Language::Swift, elem)
+            })
     }
     // A `list<T>` is an `Array` of the element, of the same elements a value is: a
     // parameter, a buffer local a body appends to, and the list it returns.
@@ -24661,7 +24673,17 @@ fn swift_schema_fields_unlowered<'a>(
     mut fields: impl Iterator<Item = (&'a str, &'a FieldType, Option<String>)>,
 ) -> Option<String> {
     fields.find_map(|(id, ty, enum_unlowered)| {
-        if matches!(ty, FieldType::Optional { .. }) {
+        // A field that may be absent is the `T?` over one of the types a field holds,
+        // where Swift spells the element ([`algorithm_optional_spelled`]): every one
+        // but a byte string.
+        if matches!(
+            ty,
+            FieldType::Optional { elem }
+                if !algorithm_optional_spelled(
+                    crate::generator::Language::Swift,
+                    &OptionalElemType::Scalar(elem.clone()),
+                )
+        ) {
             Some(format!("the optional field `{id}`"))
         } else if let (SceType::Enum(_), Some(why)) = (ty.present_type(), enum_unlowered) {
             Some(format!("the field `{id}` of an enum with {why}"))
@@ -27720,7 +27742,9 @@ pub(crate) fn optional_of(lang: crate::generator::Language, present: &str) -> Op
         Language::Cpp => Some(format!("std::optional<{present}>")),
         Language::Go => Some(format!("optional.Of[{present}]")),
         Language::Python => Some(format!("Optional[{present}]")),
-        Language::C11 | Language::Swift => None,
+        // `T?` over the type the present value is held in (docs/adr/0055, section 5).
+        Language::Swift => Some(format!("{present}?")),
+        Language::C11 => None,
     }
 }
 
@@ -29825,6 +29849,25 @@ fn optional_record_member(
 
 /// A record `local` handed on as a value the receiver may keep — an argument
 /// to another algorithm, an element appended to a list, a returned borrow.
+/// The caseless enums `SceForgeRuntime` declares, which a body names to reach what they
+/// hold (`Real.round`, `Checked.add`, `SceOptional.proven`). A body that names one is
+/// a file that imports the runtime. The one list, so a name the runtime gains is added
+/// here and not at each place a body is read for the runtime it uses.
+const SWIFT_FORGE_RUNTIME_ENUMS: &[&str] = &["Real", "Checked", "SceOptional"];
+
+/// What ends a statement of an algorithm's body in `lang`: nothing in the languages
+/// that end it with the line (Kotlin, Python, Swift), a `;` in the rest. The one rule a
+/// body's assignment, call and local initializer all read, so a language that joins
+/// the first group is joined at every one of them at once and not at the ones
+/// remembered.
+fn statement_terminator(lang: crate::generator::Language) -> &'static str {
+    use crate::generator::Language;
+    match lang {
+        Language::Kotlin | Language::Python | Language::Swift => "",
+        Language::Rust | Language::Cpp | Language::Go | Language::C11 => ";",
+    }
+}
+
 /// A Rust record that holds text is not `Copy`, and the body reads the record
 /// again after it is passed, so what is handed on is a clone; every other
 /// backend copies a record by assignment or holds it as an immutable value.
@@ -29849,8 +29892,9 @@ fn owned_record(lang: crate::generator::Language, local: &str, holds_text: bool)
 ///
 /// The other backends hold a record by value, so the name is the copy: Go lifts a
 /// record into `optional.Some` and hands an optional record over as it is, C++'s
-/// `std::optional<R>` takes either by assignment, and Kotlin's data class is
-/// immutable. Rust and C11 spell the lift in their own places
+/// `std::optional<R>` takes either by assignment, Kotlin's data class is immutable,
+/// and Swift's struct is a value that a `T?` takes a copy of. Rust and C11 spell the
+/// lift in their own places
 /// ([`optional_record_lift`], [`c11_whole_optional`]). `None` for `null`, any other
 /// value and a place of any other type.
 fn record_copied_into_optional_record(
@@ -29872,8 +29916,10 @@ fn record_copied_into_optional_record(
     match ctx.lang {
         Language::Python => Some(format!("sce_algorithm.copied({local})")),
         Language::Go if is_record => Some(format!("optional.Some({local})")),
-        Language::Go | Language::Cpp | Language::Kotlin => Some(local),
-        Language::Rust | Language::C11 | Language::Swift => None,
+        // A struct is a value, and Swift lifts a `T` into a `T?` where one is wanted,
+        // so the record's name is the optional record that holds a copy of it.
+        Language::Go | Language::Cpp | Language::Kotlin | Language::Swift => Some(local),
+        Language::Rust | Language::C11 => None,
     }
 }
 
@@ -31837,11 +31883,7 @@ fn lower_algorithm_stmt(
             // A record put into an optional record, by its name, is spelled where a
             // record is no operand of the expression layer.
             if let Some(copied) = record_copied_into_optional_record(ctx, lhs_ty, rhs) {
-                let semi = if matches!(lang, Language::Kotlin | Language::Python) {
-                    ""
-                } else {
-                    ";"
-                };
+                let semi = statement_terminator(lang);
                 out.push_str(&format!("{pad}{lhs} = {copied}{semi}\n"));
                 return Ok(());
             }
@@ -31869,11 +31911,7 @@ fn lower_algorithm_stmt(
                     }
                 },
             };
-            let semi = if matches!(lang, Language::Kotlin | Language::Python | Language::Swift) {
-                ""
-            } else {
-                ";"
-            };
+            let semi = statement_terminator(lang);
             out.push_str(&format!("{pad}{lhs} = {rhs_lowered}{semi}\n"));
         }
         AlgorithmStmt::Append {
@@ -32849,11 +32887,7 @@ fn lower_algorithm_stmt(
                     collection_method_call(lang, imp, method, &lowered_args)
                 }
             };
-            let semi = if matches!(lang, Language::Kotlin | Language::Python | Language::Swift) {
-                ""
-            } else {
-                ";"
-            };
+            let semi = statement_terminator(lang);
             out.push_str(&format!("{pad}{call}{semi}\n"));
         }
     }
@@ -35411,7 +35445,8 @@ fn render_algorithm(
             | Language::Kotlin
             | Language::Go
             | Language::Python
-            | Language::C11,
+            | Language::C11
+            | Language::Swift,
         ) if return_optional.is_some() => return_optional.clone().expect("guarded by the arm"),
         (
             Some(SceType::Bytes),
@@ -35443,9 +35478,9 @@ fn render_algorithm(
                 Language::Swift => no_swift_emitter("render_algorithm"),
             }
         }
-        // Swift: a list, an optional value and a byte string are refused before this
-        // ([`swift_algorithm_unlowered`]), and a record is the arm above, so a value
-        // it returns here is a number, a `bool` or a string.
+        // Swift: a byte string is refused before this ([`swift_algorithm_unlowered`]);
+        // a list, a record and an optional value are the arms above, so a value it
+        // returns here is a number, a `bool`, a string or a value of an enum.
         (
             Some(t),
             Language::Rust
@@ -35784,12 +35819,16 @@ fn render_algorithm(
     // module is imported is read off the body that names it.
     let python_uses_runtime = lang == Language::Python && body.contains("sce_algorithm.");
     // Swift's forge runtime is named the same way: a real turned into an integer
-    // is `Real.round`/`Real.floor` of `SceForgeRuntime`, which saturates. A body that
-    // may fail names the runtime's `Failure` and its checked helpers whatever it holds.
+    // is `Real.round`/`Real.floor` of `SceForgeRuntime`, which saturates, and a value
+    // proven present is read by its `SceOptional.proven`. A body that may fail names the
+    // runtime's `Failure` and its checked helpers whatever it holds.
     ctx.insert(
         "swift_uses_forge_runtime".into(),
         (lang == Language::Swift
-            && (may_fail || body.contains("Real.") || body.contains("Checked.")))
+            && (may_fail
+                || SWIFT_FORGE_RUNTIME_ENUMS
+                    .iter()
+                    .any(|name| body.contains(&format!("{name}.")))))
         .into(),
     );
     ctx.insert("body".into(), body.into());
