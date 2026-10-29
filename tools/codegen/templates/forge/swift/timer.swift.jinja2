@@ -1,0 +1,79 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{{ sce_map.source_marker(source_location, "swift", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
+
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="timer")
+// Shape: a single timer per document with an event-driven reset, a state-exit cancel and a
+// fire event, as the timer section of the Protocol-Synthesis RFC defines it.
+// Runtime: {{ runtime_dep }}
+// Do not edit — regenerate from the source SCXML file.
+//
+// The handler is held weakly. A state class that owns this timer is the usual handler, and a
+// handler held strongly by the timer's callback, which the host's clock holds, would be a
+// cycle nothing breaks: the timer fires into a handler that is gone, which is no fire at all.
+
+import SceForgeRuntime
+
+/// The object a timer fires into. The state class implements the fire method and hands an
+/// instance to `{{ struct_name }}`.
+public protocol {{ struct_name }}Handler: AnyObject {
+    func fire{{ callback_pascal }}()
+}
+
+public final class {{ struct_name }} {
+    /// The period configured at compile time from `<sce:period>`, in microseconds, which covers
+    /// microsecond ticks and minute-scale watchdogs in one type.
+    public static let periodUs: Int64 = {{ period_us }}
+
+    /// The period in milliseconds, which is what the clock is asked for.
+    public static let periodMs: Int64 = {{ period_ms }}
+{% if reset_on_event %}
+
+    /// The event `<sce:reset-on>` names.
+    public static let resetOnEvent = "{{ reset_on_event }}"
+{% endif %}
+{% if cancel_on_state_exit %}
+
+    /// The state `<sce:cancel-on>` names.
+    public static let cancelOnStateExit = "{{ cancel_on_state_exit }}"
+{% endif %}
+
+    private weak var handler: ({{ struct_name }}Handler)?
+    private let timer: SceForgeRuntime.ForgeTimer
+
+    public init(handler: {{ struct_name }}Handler, timer: SceForgeRuntime.ForgeTimer) {
+        self.handler = handler
+        self.timer = timer
+    }
+
+    /// Starts the periodic timer at `periodMs`.
+    public func start() {
+        // The callback holds the handler and not this object, so the clock fires whether or not
+        // this object is still held, and stops firing when the handler is gone.
+        timer.startPeriodic(intervalMs: Self.periodMs) { [weak handler = self.handler] in
+            handler?.fire{{ callback_pascal }}()
+        }
+    }
+
+    /// Cancels the timer. Idempotent per the runtime contract.
+    public func cancel() {
+        timer.cancel()
+    }
+{% if reset_on_event %}
+
+    /// `<sce:reset-on event="{{ reset_on_event }}"/>` consumer hook.
+    public func onReset{{ reset_handler_pascal }}() {
+        cancel()
+        start()
+    }
+{% endif %}
+{% if cancel_on_state_exit %}
+
+    /// `<sce:cancel-on state-exit="{{ cancel_on_state_exit }}"/>` consumer hook.
+    public func onCancel{{ cancel_state_pascal }}Exit() {
+        cancel()
+    }
+{% endif %}
+}

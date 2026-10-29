@@ -24435,6 +24435,9 @@ pub fn generate_swift_with_imports(
         ForgeDocument::Validator(m) => {
             swift_validator_unlowered(imports).map(|c| swift_validator_refusal(m, &c))
         }
+        // A timer is a period, a fire event and two optional hooks over the runtime's
+        // clock, none of which depends on a type Swift has yet to spell.
+        ForgeDocument::Timer(_) => None,
         _ => {
             return match crate::forge::codegen_matrix::lookup(doc.kind(), Language::Swift) {
                 crate::forge::codegen_matrix::EmitOutcome::Declaration => {
@@ -24466,6 +24469,7 @@ pub fn generate_swift_with_imports(
         ForgeDocument::Filter(m) => render_filter(&env, m, imports, Language::Swift)?,
         ForgeDocument::Transform(m) => render_transform(&env, m, imports, Language::Swift)?,
         ForgeDocument::Validator(m) => render_validator(&env, m, imports, Language::Swift)?,
+        ForgeDocument::Timer(m) => render_timer(&env, m, imports, Language::Swift)?,
         _ => unreachable!("every other kind returned above"),
     };
     Ok(GeneratedOutput {
