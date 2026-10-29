@@ -291,27 +291,46 @@ func RemUint32(f *Failure, a, b uint32) uint32 { return remN(f, a, b, 0, math.Ma
 func NegUint32(f *Failure, a uint32) uint32    { return negN(f, a, 0, math.MaxUint32) }
 
 // 64 bits have no wider type to compute in, so each operation tests its
-// operands against the bounds before it runs (CERT INT32-C / INT30-C).
+// operands against the bounds before it runs (CERT INT32-C / INT30-C). The
+// test says on which side of its type's range the exact result lies, which
+// the checked family reads as an overflow and the saturating family
+// (total.go) as the bound to answer.
 
-func AddInt64(f *Failure, a, b int64) int64 {
-	if (b > 0 && a > math.MaxInt64-b) || (b < 0 && a < math.MinInt64-b) {
-		f.Fail(Overflow)
-		return 0
+// side is where the exact result of an operation lies against the range of
+// its type: below it, inside it, or above it.
+type side int8
+
+const (
+	belowRange side = -1
+	inRange    side = 0
+	aboveRange side = 1
+)
+
+func addInt64Side(a, b int64) side {
+	switch {
+	case b > 0 && a > math.MaxInt64-b:
+		return aboveRange
+	case b < 0 && a < math.MinInt64-b:
+		return belowRange
 	}
-	return a + b
+	return inRange
 }
 
-func SubInt64(f *Failure, a, b int64) int64 {
-	if (b < 0 && a > math.MaxInt64+b) || (b > 0 && a < math.MinInt64+b) {
-		f.Fail(Overflow)
-		return 0
+func subInt64Side(a, b int64) side {
+	switch {
+	case b < 0 && a > math.MaxInt64+b:
+		return aboveRange
+	case b > 0 && a < math.MinInt64+b:
+		return belowRange
 	}
-	return a - b
+	return inRange
 }
 
-func MulInt64(f *Failure, a, b int64) int64 {
+// A product past either bound lies above the range when its operands have
+// the same sign, and below it otherwise.
+func mulInt64Side(a, b int64) side {
 	if a == 0 || b == 0 {
-		return 0
+		return inRange
 	}
 	var overflow bool
 	if a > 0 {
@@ -327,7 +346,54 @@ func MulInt64(f *Failure, a, b int64) int64 {
 			overflow = b < math.MaxInt64/a
 		}
 	}
-	if overflow {
+	switch {
+	case !overflow:
+		return inRange
+	case (a > 0) == (b > 0):
+		return aboveRange
+	}
+	return belowRange
+}
+
+func addUint64Side(a, b uint64) side {
+	if a > math.MaxUint64-b {
+		return aboveRange
+	}
+	return inRange
+}
+
+func subUint64Side(a, b uint64) side {
+	if b > a {
+		return belowRange
+	}
+	return inRange
+}
+
+func mulUint64Side(a, b uint64) side {
+	if a != 0 && b > math.MaxUint64/a {
+		return aboveRange
+	}
+	return inRange
+}
+
+func AddInt64(f *Failure, a, b int64) int64 {
+	if addInt64Side(a, b) != inRange {
+		f.Fail(Overflow)
+		return 0
+	}
+	return a + b
+}
+
+func SubInt64(f *Failure, a, b int64) int64 {
+	if subInt64Side(a, b) != inRange {
+		f.Fail(Overflow)
+		return 0
+	}
+	return a - b
+}
+
+func MulInt64(f *Failure, a, b int64) int64 {
+	if mulInt64Side(a, b) != inRange {
 		f.Fail(Overflow)
 		return 0
 	}
@@ -367,7 +433,7 @@ func NegInt64(f *Failure, a int64) int64 {
 }
 
 func AddUint64(f *Failure, a, b uint64) uint64 {
-	if a > math.MaxUint64-b {
+	if addUint64Side(a, b) != inRange {
 		f.Fail(Overflow)
 		return 0
 	}
@@ -375,7 +441,7 @@ func AddUint64(f *Failure, a, b uint64) uint64 {
 }
 
 func SubUint64(f *Failure, a, b uint64) uint64 {
-	if b > a {
+	if subUint64Side(a, b) != inRange {
 		f.Fail(Overflow)
 		return 0
 	}
@@ -383,7 +449,7 @@ func SubUint64(f *Failure, a, b uint64) uint64 {
 }
 
 func MulUint64(f *Failure, a, b uint64) uint64 {
-	if a != 0 && b > math.MaxUint64/a {
+	if mulUint64Side(a, b) != inRange {
 		f.Fail(Overflow)
 		return 0
 	}

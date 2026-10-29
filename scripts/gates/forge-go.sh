@@ -25,6 +25,12 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
     || sce_gate_fail "Go forge conformance"
 ( cd backends/go/forge-runtime && go test ./round_trip/ -count=1 ) \
     || sce_gate_fail "Go forge round-trip"
+# The runtime's own integer rows: the checked operations of SCE_FORGE.md
+# §3.4.1 and the wrapping and saturating ones of §3.4.2 (docs/adr/0063). The
+# conformance suite reaches them only through what the generator emits, and no
+# other step ran this package's tests.
+( cd backends/go/forge-runtime && go test ./algorithm/ -count=1 ) \
+    || sce_gate_fail "Go forge runtime integer operations"
 
 # The queue kind's Go arm (SCE Protocol-Synthesis RFC §synth-5-P). Go has no
 # tool for the memory-model layer, so its evidence is the race detector over
