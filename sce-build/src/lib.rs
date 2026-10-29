@@ -3680,8 +3680,17 @@ impl BroadcastLogElementFacts {
             // from the template, not assumed: no entry kind there holds a
             // pointer into the cursor.
             Language::C11 => false,
-            // No template has landed for these, so none has decided yet.
-            Language::Cpp | Language::Swift => false,
+            // The decoded form owns its bytes: the CBOR reader of the C++ runtime
+            // returns a text entry as a `std::string` and a byte-string entry as
+            // a `std::vector<std::uint8_t>` (`sce/forge/cbor.h`, `read_text`,
+            // `read_bytes`, `read_bytes_exact`), and the codec's struct holds
+            // those types, so the value outlives the buffer it was read from and
+            // a log's `read` hands it back as it decoded it. The other codec
+            // encodings own theirs as well: a `bytes` field is a
+            // `std::vector<uint8_t>` and a string a `std::string`.
+            Language::Cpp => false,
+            // No template has landed for this one, so it has not decided yet.
+            Language::Swift => false,
         };
         borrows.then(|| {
             "a CBOR map with a string or byte string entry decodes to a value that borrows \

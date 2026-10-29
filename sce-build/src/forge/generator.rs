@@ -21132,6 +21132,52 @@ fn render_broadcast_log_rust(
     })
 }
 
+/// Render a `<sce:kind="broadcast-log">` document for the C++ backend (ADR
+/// 0062). The generated header names the log type over `sce/forge/broadcast_log.h`
+/// and states what [`render_broadcast_log_rust`]'s module states, from the same
+/// numbers read the same way ([`resolve_broadcast_log_render_inputs`], which
+/// every language's renderer asks first): the retention, the slots
+/// (`retention + 1`), the element's largest encoded size, the words an entry holds
+/// and the declared progress. It gives typed `publish` and `read` functions over
+/// the element codec's generated type, which store and recover the element's wire
+/// bytes, with the answers a C++ caller reads as sum types and not as the
+/// runtime's untyped words.
+///
+/// The header includes the element's own (`<element>.h`, as a queue's does), so a
+/// log is generated from a document set that holds the element's document, the
+/// route that gives the size.
+fn render_broadcast_log_cpp(
+    env: &minijinja::Environment<'_>,
+    m: &crate::forge::model::BroadcastLogModel,
+    _imports: &[ImportContext],
+    options: &crate::ForgeCompileOptions,
+) -> Result<String, ForgeError> {
+    let inputs = resolve_broadcast_log_render_inputs(m, crate::generator::Language::Cpp, options)?;
+    let tmpl = env.get_template("broadcast_log.h.jinja2").map_err(|e| {
+        ForgeError::from(GenerateError::TemplateLoad(format!(
+            "broadcast_log.h.jinja2 (cpp): {e}"
+        )))
+    })?;
+    let ctx = minijinja::context! {
+        pascal => filters::to_pascal_case(m.name.clone()),
+        namespace => filters::to_pascal_case(m.name.clone()),
+        guard => format!("SCE_FORGE_{}_H", to_upper_snake(&m.name)),
+        element_type => &m.element_type,
+        element_pascal => filters::to_pascal_case(m.element_type.clone()),
+        element_snake => filters::to_snake_case(m.element_type.clone()),
+        retention => inputs.retention,
+        max_bytes => inputs.max_bytes,
+        producers => inputs.producers,
+        declared_progress => inputs.declared_progress,
+        runtime_dep => "sce/forge/broadcast_log.h",
+    };
+    tmpl.render(ctx).map_err(|e| {
+        ForgeError::from(GenerateError::TemplateRender(format!(
+            "broadcast_log.h.jinja2 (cpp): {e}"
+        )))
+    })
+}
+
 /// Render a `<sce:kind="broadcast-log">` document for the Python backend (ADR
 /// 0062). The generated module names the log type of
 /// `sce_forge_runtime.broadcast_log` (one ring under one lock, which gives
