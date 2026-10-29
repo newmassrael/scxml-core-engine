@@ -6,9 +6,10 @@
 # The bounded broadcast log of ADR 0062 hands each entry from the one publisher
 # to any number of readers through a sequence-lock: a stamp that carries the
 # entry's sequence number, relaxed atomic words between two fences, and a head
-# index. Every order in `publish` and `read` is a decision the protocol needs, and
-# the TLA+ model (`docs/formal/BroadcastLog.tla`) cannot check them, because it is
-# sequentially consistent. The oracle is the loom models in
+# index. Each order the protocol needs is a decision the TLA+ model
+# (`docs/formal/BroadcastLog.tla`) cannot check, because it is sequentially
+# consistent. Two orders the code keeps are not needed and have no case, each with
+# its reason where it would stand. The oracle is the loom models in
 # `backends/rust/forge-runtime/tests/loom_broadcast_log.rs`, which explore every
 # interleaving and every outcome the memory model allows, so a weakened order is
 # not something they might sample but something they must reach.
@@ -30,7 +31,7 @@ mutation_tests -p sce-forge-runtime --release --target-dir target/loom --config 
 mutation_targets backends/rust/forge-runtime/src/broadcast_log.rs
 mutation_oracles backends/rust/forge-runtime/tests/loom_broadcast_log.rs
 
-# ── The publisher's four orders ────────────────────────────────────
+# ── The publisher's three needed orders ────────────────────────────
 
 # A reader that sees this stamp and reloads `head` must find the head the previous
 # publish stored.
@@ -48,11 +49,15 @@ edit("backends/rust/forge-runtime/src/broadcast_log.rs",
      r'''        /* no release fence */''')
 PY
 
-mutation_case "the publisher stores the done stamp without releasing the words" <<'PY'
-edit("backends/rust/forge-runtime/src/broadcast_log.rs",
-     r'''slot.stamp.store(done(n), Ordering::Release);''',
-     r'''slot.stamp.store(done(n), Ordering::Relaxed);''')
-PY
+# Not a case: the done stamp's release order. The first round of CI found a relaxed
+# done stamp survived all three models, and it is not observable. The words of an
+# entry reach a reader through the release store of `head` and the acquire load that
+# opens `read`, which is the case below; and a reader that learns of a later lap
+# from a done stamp is ordered after the `head` store that ended the publish before
+# by the release fence, which every store after it carries to an acquire load that
+# reads it. Nothing reads a slot's words by way of the done stamp alone. The code
+# keeps the release: it costs nothing the protocol notices and it is the order a
+# reader of the slot alone would need.
 
 mutation_case "the publisher moves the head without releasing the slot" <<'PY'
 edit("backends/rust/forge-runtime/src/broadcast_log.rs",
@@ -60,7 +65,7 @@ edit("backends/rust/forge-runtime/src/broadcast_log.rs",
      r'''self.log.head.0.store(n + 1, Ordering::Relaxed);''')
 PY
 
-# ── The reader's five orders ───────────────────────────────────────
+# ── The reader's four needed orders ─────────────────────────────────
 
 mutation_case "a reader loads the head without acquiring the slot behind it" <<'PY'
 edit("backends/rust/forge-runtime/src/broadcast_log.rs",
@@ -90,13 +95,14 @@ edit("backends/rust/forge-runtime/src/broadcast_log.rs",
      r'''if slot.stamp.load(Ordering::Relaxed) == first {''')
 PY
 
-mutation_case "a lagging reader reloads the head without acquiring" <<'PY'
-edit("backends/rust/forge-runtime/src/broadcast_log.rs",
-     r'''        // published through `r + RETENTION` and `head` shows it.
-        let h = self.head.0.load(Ordering::Acquire);''',
-     r'''        // published through `r + RETENTION` and `head` shows it.
-        let h = self.head.0.load(Ordering::Relaxed);''')
-PY
+# Not a case: the acquire order of the reload of `head` after a mismatch. It
+# survived the first round of CI and is not observable. Nothing is read after the
+# reload: the cursor moves to the oldest retained entry and the lag is counted from
+# the value alone. The value is no lower than the one the reader needs because the
+# stamp it just saw (an acquire load, the cases above) orders it after the `head`
+# store that ended the publish before the lap, and a load of one location cannot
+# return a value older than one that is ordered before it. The code keeps the
+# acquire, as it is the order every other load of `head` has.
 
 # ── What the stamp and the window mean ─────────────────────────────
 

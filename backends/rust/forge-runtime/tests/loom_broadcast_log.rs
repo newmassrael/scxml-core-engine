@@ -53,17 +53,25 @@ mod models {
     }
 
     /// One read, held to the specification of ADR 0062 section 2: the cursor
-    /// moves exactly as the answer says, an item is the whole entry at the cursor,
-    /// and a lag skipped at least one entry and put the cursor at or before the
-    /// head.
+    /// moves exactly as the answer says, an item is the whole entry at the cursor
+    /// and one the window holds, and a lag skipped at least one entry and put the
+    /// cursor at or before the head.
     fn read_and_check(log: &Log, reader: &mut Reader) -> Read {
         let before = reader.cursor();
         let lost_before = reader.lost();
+        // The head only grows, so the head the read linearizes at is no lower than
+        // this one, and an entry more than `RETENTION` behind it is outside the
+        // window at that point whatever the publisher does meanwhile.
+        let head_before = log.head();
         let mut out = [u64::MAX; 2];
         let answer = log.read(reader, &mut out);
         match answer {
             Read::Item { seq } => {
                 assert_eq!(seq, before, "an item is the entry at the cursor");
+                assert!(
+                    seq + Log::RETENTION >= head_before,
+                    "an item is one the window holds: entry {seq}, head {head_before}"
+                );
                 assert_eq!(out, entry(seq), "an item is one whole entry, not a mix");
                 assert_eq!(reader.cursor(), seq + 1);
                 assert_eq!(reader.lost(), lost_before);

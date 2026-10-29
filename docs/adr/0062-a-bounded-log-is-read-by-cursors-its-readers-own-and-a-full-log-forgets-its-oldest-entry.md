@@ -372,10 +372,14 @@ Each step is green on its own, and the last two are the ones that need the consu
 - **The memory-model check found two faults in this ADR's first protocol** (see "Orders the memory model adds"), both
   of which the sequentially consistent TLA+ model had passed. With both fixed the three loom models pass under three
   preemptions. That bound is the other loom models' and what is established is "no violation within it".
-- **Eleven mutation cases** (`sce-build/tests/mutations/a_broadcast_log_orders_every_slot_hand_over.cases`): one per
-  order and fence of `publish` and `read`, a lap-blind stamp, and a window one entry too wide. Their anchors all apply
-  (`scripts/mutate --check`). Whether the models kill each of them is judged by the mutation round in CI and has not been
-  read; only the two orders above are known to be caught, by the faults they were.
+- **Nine mutation cases** (`sce-build/tests/mutations/a_broadcast_log_orders_every_slot_hand_over.cases`): one per
+  order and fence the protocol needs, a lap-blind stamp, and a window one entry too wide. The first round of CI (2026-10-28)
+  ran eleven and caught eight. Three survived, and none was a fault of the code. A window one entry too wide survived
+  because the loom models checked that an item was the whole entry at the cursor and never that the window held it, which a
+  unit test did check; the models now assert it against the head loaded before the read. The other two, the done stamp
+  stored relaxed and the reload of `head` after a mismatch loaded relaxed, are not observable: the words of an entry reach a
+  reader through `head`, and the value a reload needs is ordered by the stamp the reader just saw, so the casefile no longer
+  claims them and says why where they stood. The code keeps both orders.
 - **Real threads, judged.** `backends/rust/forge-conformance/tests/forge_broadcast_log.rs` runs one publisher and one or
   two readers on threads over logs of two to four slots, readers opened at the oldest, at the head and at the first
   entry, eight recordings a shape, and judges each recording in process and again, as files, by `sce-codegen
@@ -454,7 +458,8 @@ once on the build machine. Every recorded run was judged by `sce-codegen check-b
 - **The specialised checker** of section 5 and its differential test.
 - **The narrow-stamp row and the load/store-only row** of section 4.
 - **The differential run against the downstream consumer's own ring** (section 6, layer 5), which needs that ring's cases.
-- **The new RFC section** beside §synth-5-P, and the mutation round of CI over the eleven Rust cases.
+- **The new RFC section** beside §synth-5-P, and a round of CI that judges the nine Rust cases after the strengthened
+  window assertion (the next round has not been read).
 
 ## Consequences
 
