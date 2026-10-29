@@ -36,8 +36,8 @@
        Kotlin: `ULong?` + `MutableList<CodecZenohLocator>?`
        Go:     `*uint64` + `[]CodecZenohLocator` (slice nilness)
        Python: `Optional[int]` + `Optional[List[CodecZenohLocator]]`
-       C11:    `uint64_t num_locators` + `codec_zenoh_locator_t locators[max]; size_t locators_len`
-               (carrier-bit-as-truth — wire presence is parent.L) -->
+       C11:    `sce_optional_uint64_t num_locators` + the optional value of
+               `locators` (`present`, `value.data[max]`, `value.len`) for parent.L -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
        sce:kind="codec" sce:default-endian="big" name="codec_zenoh_hello">

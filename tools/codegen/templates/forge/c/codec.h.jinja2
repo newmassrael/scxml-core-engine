@@ -44,6 +44,9 @@
 #include <sce/portability.h>
 {% endif %}
 #include "sce/forge/codec.h"
+{% if fields | selectattr('c_gated_optional') | list %}
+#include "sce/forge/optional.h"  /* a field gated by `sce:present-if`, docs/adr/0055 */
+{% endif %}
 {% if all_imports %}
 {% for imp in all_imports %}
 {{ imp.include_stmt }}
@@ -93,6 +96,16 @@ typedef struct {
 } {{ variant.c_body_typedef }};
 
 {% endif %}
+{# A field gated by `sce:present-if` is held in the struct `sce/forge/optional.h`
+   declares for its element (docs/adr/0055, step 14), so a machine that includes
+   this codec and holds a value of the same type declares it once. A number or a
+   `bool` is declared by the runtime and asks for nothing here. #}
+{% for field in fields %}
+{% if field.c_optional_decl %}
+{{ field.c_optional_decl }}
+
+{% endif %}
+{% endfor %}
 typedef struct {
 {% if has_no_fields %}
     /* RFC §synth-5-B empty body — C11 §6.7.2.1 requires a struct to
@@ -101,7 +114,10 @@ typedef struct {
     char _reserved;
 {% else %}
 {% for field in fields %}
-{% if field.is_repeat %}
+{% if field.c_gated_optional %}
+    /* `sce:present-if`: an optional value (`present`, `value`), docs/adr/0055 step 14 */
+    {{ field.c_type }} {{ field.id }};
+{% elif field.is_repeat %}
     /* RFC §synth-5-B B2 repeat: fixed array of {{ field.repeat_body_type }} elements (max {{ field.max_count }}) */
     {{ field.repeat_body_type }} {{ field.id }}[{{ field.max_count }}];
 {% if field.c_emit_len_member %}

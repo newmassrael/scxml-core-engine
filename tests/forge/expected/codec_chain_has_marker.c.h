@@ -13,24 +13,48 @@
 #include <string.h>
 
 #include "sce/forge/codec.h"
+#include "sce/forge/optional.h"  /* a field gated by `sce:present-if`, docs/adr/0055 */
 #include "codec_zenoh_ext_entry.h"
 #include "codec_chain_has_marker_slice.h"
 
 #define CODEC_CHAIN_HAS_MARKER_MIN_BYTES 1
 #define CODEC_CHAIN_HAS_MARKER_MAX_BYTES 1511
 
+#ifndef SCE_OPTIONAL_BYTES_256
+#define SCE_OPTIONAL_BYTES_256
+#ifndef SCE_STATIC_BYTES_256
+#define SCE_STATIC_BYTES_256
+/* SCE Accepted Subset §2.15: a `bytes` of at most 256 bytes. */
+typedef struct {
+    uint8_t data[256];
+    size_t len;
+} sce_static_bytes_256_t;
+
+static inline sce_static_bytes_256_t sce_static_bytes_256_of(sce_forge_bytes_view_t bytes) {
+    sce_static_bytes_256_t value = { { 0 }, 0 };
+    for (size_t i = 0; i < bytes.len && i < 256u; ++i) {
+        value.data[i] = bytes.data[i];
+    }
+    value.len = bytes.len < 256u ? bytes.len : 256u;
+    return value;
+}
+#endif
+/* docs/adr/0055: a value of `sce_static_bytes_256_t` that may be absent. */
+SCE_OPTIONAL_DECLARE_BYTES(256)
+#endif
+
 typedef struct {
     uint8_t header;
-    /* RFC §synth-5-B B3 tlv-chain: fixed array of codec_zenoh_ext_entry_t entries (max-depth 4, on-overflow=reject) */
-    codec_zenoh_ext_entry_t extensions[4];
-    size_t  extensions_len;
-    uint64_t payload_len;
-    /* variable-length payload (sce:bit-size="length-ref", sce:max-size="256") */
-    uint8_t payload[256];
-    uint32_t slice_count;
-    /* RFC §synth-5-B B2 repeat: fixed array of codec_chain_has_marker_slice_t elements (max 4) */
-    codec_chain_has_marker_slice_t slices[4];
-    size_t  slices_len;
+    /* `sce:present-if`: an optional value (`present`, `value`), docs/adr/0055 step 14 */
+    struct { bool present; struct { codec_zenoh_ext_entry_t data[4]; size_t len; } value; } extensions;
+    /* `sce:present-if`: an optional value (`present`, `value`), docs/adr/0055 step 14 */
+    sce_optional_uint64_t payload_len;
+    /* `sce:present-if`: an optional value (`present`, `value`), docs/adr/0055 step 14 */
+    sce_optional_bytes_256_t payload;
+    /* `sce:present-if`: an optional value (`present`, `value`), docs/adr/0055 step 14 */
+    sce_optional_uint32_t slice_count;
+    /* `sce:present-if`: an optional value (`present`, `value`), docs/adr/0055 step 14 */
+    struct { bool present; struct { codec_chain_has_marker_slice_t data[4]; size_t len; } value; } slices;
 } codec_chain_has_marker_t;
 
 /* Decode the next frame from `cursor`. Returns SCE_FORGE_CODEC_OK on
@@ -57,24 +81,25 @@ static inline sce_forge_codec_status_t codec_chain_has_marker_decode(sce_forge_c
         out->header = raw[0];
         if (!sce_forge_cursor_advance(cursor, 1)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
     }
-    out->extensions_len = 0;
+    memset(&out->extensions, 0, sizeof out->extensions);
         if ((out->header & 0x80) != 0) {
+            out->extensions.present = true;
             bool _more = false;
             for (size_t _i = 0; _i < 4; ++_i) {
                 if (sce_forge_cursor_remaining(cursor) == 0) break;
-                sce_forge_codec_status_t _st = codec_zenoh_ext_entry_decode(cursor, &out->extensions[out->extensions_len]);
+                sce_forge_codec_status_t _st = codec_zenoh_ext_entry_decode(cursor, &out->extensions.value.data[out->extensions.value.len]);
                 if (_st != SCE_FORGE_CODEC_OK) return _st;
-                size_t _just = out->extensions_len;
-                out->extensions_len++;
-                _more = codec_zenoh_ext_entry_z(&out->extensions[_just]);
+                size_t _just = out->extensions.value.len;
+                out->extensions.value.len++;
+                _more = codec_zenoh_ext_entry_z(&out->extensions.value.data[_just]);
                 if (!_more) break;
             }
             if (_more && sce_forge_cursor_remaining(cursor) == 0) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
             if (_more) return SCE_FORGE_CODEC_TLV_CHAIN_OVERFLOW;
         }
     bool _has_extensions_18 = false;
-    for (size_t _i = 0; _i < out->extensions_len; ++_i) {
-        if (((uint64_t)(out->extensions[_i].header) & 127ULL) == 18ULL) {
+    for (size_t _i = 0; _i < out->extensions.value.len; ++_i) {
+        if (((uint64_t)(out->extensions.value.data[_i].header) & 127ULL) == 18ULL) {
             _has_extensions_18 = true;
             break;
         }
@@ -85,20 +110,22 @@ static inline sce_forge_codec_status_t codec_chain_has_marker_decode(sce_forge_c
         sce_forge_codec_status_t _vle_st = sce_forge_cursor_read_vle_u64(cursor, &_v);
         if (_vle_st != SCE_FORGE_CODEC_OK) return _vle_st;
     }
-        out->payload_len = _v;
+        out->payload_len = sce_optional_uint64_some(_v);
     } else {
-        out->payload_len = 0;
+        out->payload_len = sce_optional_uint64_none();
     }
     if (!_has_extensions_18) {
-        size_t _n = (size_t)out->payload_len;
+        size_t _n = (size_t)out->payload_len.value;
         if (_n > 256) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
         const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);
         if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
-        memcpy(out->payload, raw, _n);
-        out->payload_len = _n;
+        out->payload = sce_optional_bytes_256_none();
+        memcpy(out->payload.value.data, raw, _n);
+        out->payload.value.len = _n;
+        out->payload.present = true;
         if (!sce_forge_cursor_advance(cursor, _n)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
     } else {
-        out->payload_len = 0;
+        out->payload = sce_optional_bytes_256_none();
     }
     if (_has_extensions_18) {
         uint32_t _v;
@@ -106,20 +133,22 @@ static inline sce_forge_codec_status_t codec_chain_has_marker_decode(sce_forge_c
         sce_forge_codec_status_t _vle_st = sce_forge_cursor_read_vle_u32(cursor, &_v);
         if (_vle_st != SCE_FORGE_CODEC_OK) return _vle_st;
     }
-        out->slice_count = _v;
+        out->slice_count = sce_optional_uint32_some(_v);
     } else {
-        out->slice_count = 0;
+        out->slice_count = sce_optional_uint32_none();
     }
     if (_has_extensions_18) {
-        size_t _n = (size_t)out->slice_count;
+        size_t _n = (size_t)out->slice_count.value;
         if (_n > 4) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
+        memset(&out->slices, 0, sizeof out->slices);
         for (size_t _i = 0; _i < _n; ++_i) {
-            sce_forge_codec_status_t _st = codec_chain_has_marker_slice_decode(cursor, &out->slices[_i]);
+            sce_forge_codec_status_t _st = codec_chain_has_marker_slice_decode(cursor, &out->slices.value.data[_i]);
             if (_st != SCE_FORGE_CODEC_OK) return _st;
         }
-        out->slices_len = _n;
+        out->slices.value.len = _n;
+        out->slices.present = true;
     } else {
-        out->slices_len = 0;
+        memset(&out->slices, 0, sizeof out->slices);
     }
     return SCE_FORGE_CODEC_OK;
 }
@@ -132,12 +161,24 @@ static inline sce_forge_codec_status_t codec_chain_has_marker_decode(sce_forge_c
  * for coalesced-send paths. */
 static inline sce_forge_codec_status_t codec_chain_has_marker_encode(const codec_chain_has_marker_t *self, sce_forge_writer_t *w) {
     bool _has_extensions_18 = false;
-    for (size_t _i = 0; _i < self->extensions_len; ++_i) {
-        if (((uint64_t)(self->extensions[_i].header) & 127ULL) == 18ULL) {
+    for (size_t _i = 0; _i < self->extensions.value.len; ++_i) {
+        if (((uint64_t)(self->extensions.value.data[_i].header) & 127ULL) == 18ULL) {
             _has_extensions_18 = true;
             break;
         }
     }
+    if (!_has_extensions_18) {
+        if (!self->payload_len.present) return SCE_FORGE_CODEC_PRESENT_IF_MISMATCH;
+    } else if (self->payload_len.present) return SCE_FORGE_CODEC_PRESENT_IF_MISMATCH;
+    if (!_has_extensions_18) {
+        if (!self->payload.present) return SCE_FORGE_CODEC_PRESENT_IF_MISMATCH;
+    } else if (self->payload.present) return SCE_FORGE_CODEC_PRESENT_IF_MISMATCH;
+    if (_has_extensions_18) {
+        if (!self->slice_count.present) return SCE_FORGE_CODEC_PRESENT_IF_MISMATCH;
+    } else if (self->slice_count.present) return SCE_FORGE_CODEC_PRESENT_IF_MISMATCH;
+    if (_has_extensions_18) {
+        if (!self->slices.present) return SCE_FORGE_CODEC_PRESENT_IF_MISMATCH;
+    } else if (self->slices.present) return SCE_FORGE_CODEC_PRESENT_IF_MISMATCH;
     /* Streaming cursor encode (SSOT selection: `needs_streaming`).
      * Mirrors the streaming decode: every field appends its own bytes in
      * declaration order through the per-field encode blocks, so a gated
@@ -148,25 +189,25 @@ static inline sce_forge_codec_status_t codec_chain_has_marker_encode(const codec
      * route to their dedicated helpers; everything else uses
      * `present_if_encode_block`. */
     SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->header));
-    if ((self->header & 0x80) != 0) {
-        for (size_t _ti = 0; _ti < self->extensions_len; ++_ti) {
-            SCE_FORGE_TRY_WRITE(codec_zenoh_ext_entry_encode(&self->extensions[_ti], w));
+    if (self->extensions.present) {
+        for (size_t _ti = 0; _ti < self->extensions.value.len; ++_ti) {
+            SCE_FORGE_TRY_WRITE(codec_zenoh_ext_entry_encode(&self->extensions.value.data[_ti], w));
         }
     }
-    if (!_has_extensions_18) {
-    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_vle_u64(w, (uint64_t)(self->payload_len)));
+    if (self->payload_len.present) {
+    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_vle_u64(w, (uint64_t)(self->payload_len.value)));
     }
-    if (!_has_extensions_18) {
-        size_t _n = self->payload_len;
-        if (_n > self->payload_len) _n = self->payload_len;
-        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_bytes(w, self->payload, _n));
+    if (self->payload.present) {
+        size_t _n = self->payload.value.len;
+        if (_n > self->payload_len.value) _n = self->payload_len.value;
+        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_bytes(w, self->payload.value.data, _n));
     }
-    if (_has_extensions_18) {
-    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_vle_u32(w, (uint32_t)(self->slice_count)));
+    if (self->slice_count.present) {
+    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_vle_u32(w, (uint32_t)(self->slice_count.value)));
     }
-    if (_has_extensions_18) {
-        for (size_t _ri = 0; _ri < self->slices_len; ++_ri) {
-            SCE_FORGE_TRY_WRITE(codec_chain_has_marker_slice_encode(&self->slices[_ri], w));
+    if (self->slices.present) {
+        for (size_t _ri = 0; _ri < self->slices.value.len; ++_ri) {
+            SCE_FORGE_TRY_WRITE(codec_chain_has_marker_slice_encode(&self->slices.value.data[_ri], w));
         }
     }
     return SCE_FORGE_CODEC_OK;

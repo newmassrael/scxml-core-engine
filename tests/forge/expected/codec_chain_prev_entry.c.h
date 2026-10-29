@@ -12,15 +12,19 @@
 #include <stddef.h>
 
 #include "sce/forge/codec.h"
+#include "sce/forge/optional.h"  /* a field gated by `sce:present-if`, docs/adr/0055 */
 
 #define CODEC_CHAIN_PREV_ENTRY_MIN_BYTES 5
 #define CODEC_CHAIN_PREV_ENTRY_MAX_BYTES 5
 
 typedef struct {
     uint8_t header;
-    uint8_t short_value;
-    uint16_t long_value;
-    uint8_t tag;
+    /* `sce:present-if`: an optional value (`present`, `value`), docs/adr/0055 step 14 */
+    sce_optional_uint8_t short_value;
+    /* `sce:present-if`: an optional value (`present`, `value`), docs/adr/0055 step 14 */
+    sce_optional_uint16_t long_value;
+    /* `sce:present-if`: an optional value (`present`, `value`), docs/adr/0055 step 14 */
+    sce_optional_uint8_t tag;
 } codec_chain_prev_entry_t;
 
 /* Decode the next frame from `cursor`. Returns SCE_FORGE_CODEC_OK on
@@ -55,26 +59,26 @@ static inline sce_forge_codec_status_t codec_chain_prev_entry_decode(sce_forge_c
     if ((after_marker & 0x01) == 0) {
         const uint8_t *raw = sce_forge_cursor_peek(cursor, 1);
         if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
-        out->short_value = (uint8_t)(raw[0]);
+        out->short_value = sce_optional_uint8_some((uint8_t)(raw[0]));
         if (!sce_forge_cursor_advance(cursor, 1)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
     } else {
-        out->short_value = 0;
+        out->short_value = sce_optional_uint8_none();
     }
     if ((after_marker & 0x01) != 0) {
         const uint8_t *raw = sce_forge_cursor_peek(cursor, 2);
         if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
-        out->long_value = (uint16_t)(((uint16_t)raw[0] << 8) | raw[1]);
+        out->long_value = sce_optional_uint16_some((uint16_t)(((uint16_t)raw[0] << 8) | raw[1]));
         if (!sce_forge_cursor_advance(cursor, 2)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
     } else {
-        out->long_value = 0;
+        out->long_value = sce_optional_uint16_none();
     }
     if ((tagged & 0x01) != 0) {
         const uint8_t *raw = sce_forge_cursor_peek(cursor, 1);
         if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
-        out->tag = (uint8_t)(raw[0]);
+        out->tag = sce_optional_uint8_some((uint8_t)(raw[0]));
         if (!sce_forge_cursor_advance(cursor, 1)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
     } else {
-        out->tag = 0;
+        out->tag = sce_optional_uint8_none();
     }
     return SCE_FORGE_CODEC_OK;
 }
@@ -99,15 +103,15 @@ static inline sce_forge_codec_status_t codec_chain_prev_entry_encode(const codec
      * route to their dedicated helpers; everything else uses
      * `present_if_encode_block`. */
     SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->header));
-    if ((after_marker & 0x01) == 0) {
-        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->short_value));
+    if (self->short_value.present) {
+        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->short_value.value));
     }
-    if ((after_marker & 0x01) != 0) {
-        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)((self->long_value >> 8) & 0xFF)));
-        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)(self->long_value & 0xFF)));
+    if (self->long_value.present) {
+        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)((self->long_value.value >> 8) & 0xFF)));
+        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)(self->long_value.value & 0xFF)));
     }
-    if ((tagged & 0x01) != 0) {
-        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->tag));
+    if (self->tag.present) {
+        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->tag.value));
     }
     return SCE_FORGE_CODEC_OK;
 }

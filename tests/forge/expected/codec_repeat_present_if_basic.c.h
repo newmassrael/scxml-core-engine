@@ -13,6 +13,7 @@
 #include <string.h>
 
 #include "sce/forge/codec.h"
+#include "sce/forge/optional.h"  /* a field gated by `sce:present-if`, docs/adr/0055 */
 #include "codec_repeat_elem.h"
 
 #define CODEC_REPEAT_PRESENT_IF_BASIC_MIN_BYTES 2
@@ -20,10 +21,10 @@
 
 typedef struct {
     uint8_t carrier;
-    uint8_t num_elems;
-    /* RFC §synth-5-B B2 repeat: fixed array of codec_repeat_elem_t elements (max 32) */
-    codec_repeat_elem_t elems[32];
-    size_t  elems_len;
+    /* `sce:present-if`: an optional value (`present`, `value`), docs/adr/0055 step 14 */
+    sce_optional_uint8_t num_elems;
+    /* `sce:present-if`: an optional value (`present`, `value`), docs/adr/0055 step 14 */
+    struct { bool present; struct { codec_repeat_elem_t data[32]; size_t len; } value; } elems;
 } codec_repeat_present_if_basic_t;
 
 /* Decode the next frame from `cursor`. Returns SCE_FORGE_CODEC_OK on
@@ -53,21 +54,23 @@ static inline sce_forge_codec_status_t codec_repeat_present_if_basic_decode(sce_
     if ((out->carrier & 0x01) != 0) {
         const uint8_t *raw = sce_forge_cursor_peek(cursor, 1);
         if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
-        out->num_elems = (uint8_t)(raw[0]);
+        out->num_elems = sce_optional_uint8_some((uint8_t)(raw[0]));
         if (!sce_forge_cursor_advance(cursor, 1)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
     } else {
-        out->num_elems = 0;
+        out->num_elems = sce_optional_uint8_none();
     }
     if ((out->carrier & 0x01) != 0) {
-        size_t _n = (size_t)out->num_elems;
+        size_t _n = (size_t)out->num_elems.value;
         if (_n > 32) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
+        memset(&out->elems, 0, sizeof out->elems);
         for (size_t _i = 0; _i < _n; ++_i) {
-            sce_forge_codec_status_t _st = codec_repeat_elem_decode(cursor, &out->elems[_i]);
+            sce_forge_codec_status_t _st = codec_repeat_elem_decode(cursor, &out->elems.value.data[_i]);
             if (_st != SCE_FORGE_CODEC_OK) return _st;
         }
-        out->elems_len = _n;
+        out->elems.value.len = _n;
+        out->elems.present = true;
     } else {
-        out->elems_len = 0;
+        memset(&out->elems, 0, sizeof out->elems);
     }
     return SCE_FORGE_CODEC_OK;
 }
@@ -89,12 +92,12 @@ static inline sce_forge_codec_status_t codec_repeat_present_if_basic_encode(cons
      * route to their dedicated helpers; everything else uses
      * `present_if_encode_block`. */
     SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->carrier));
-    if ((self->carrier & 0x01) != 0) {
-        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->num_elems));
+    if (self->num_elems.present) {
+        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->num_elems.value));
     }
-    if ((self->carrier & 0x01) != 0) {
-        for (size_t _ri = 0; _ri < self->elems_len; ++_ri) {
-            SCE_FORGE_TRY_WRITE(codec_repeat_elem_encode(&self->elems[_ri], w));
+    if (self->elems.present) {
+        for (size_t _ri = 0; _ri < self->elems.value.len; ++_ri) {
+            SCE_FORGE_TRY_WRITE(codec_repeat_elem_encode(&self->elems.value.data[_ri], w));
         }
     }
     return SCE_FORGE_CODEC_OK;

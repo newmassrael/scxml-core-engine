@@ -12,14 +12,17 @@
 #include <stddef.h>
 
 #include "sce/forge/codec.h"
+#include "sce/forge/optional.h"  /* a field gated by `sce:present-if`, docs/adr/0055 */
 
 #define CODEC_INIT_SYN_BODY_MIN_BYTES 4
 #define CODEC_INIT_SYN_BODY_MAX_BYTES 4
 
 typedef struct {
     uint8_t version;
-    uint8_t sn_res;
-    uint16_t batch_size;
+    /* `sce:present-if`: an optional value (`present`, `value`), docs/adr/0055 step 14 */
+    sce_optional_uint8_t sn_res;
+    /* `sce:present-if`: an optional value (`present`, `value`), docs/adr/0055 step 14 */
+    sce_optional_uint16_t batch_size;
 } codec_init_syn_body_t;
 
 /* Decode the next frame from `cursor`. Returns SCE_FORGE_CODEC_OK on
@@ -53,18 +56,18 @@ static inline sce_forge_codec_status_t codec_init_syn_body_decode(sce_forge_curs
     if ((s & 0x01) != 0) {
         const uint8_t *raw = sce_forge_cursor_peek(cursor, 1);
         if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
-        out->sn_res = (uint8_t)(raw[0]);
+        out->sn_res = sce_optional_uint8_some((uint8_t)(raw[0]));
         if (!sce_forge_cursor_advance(cursor, 1)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
     } else {
-        out->sn_res = 0;
+        out->sn_res = sce_optional_uint8_none();
     }
     if ((s & 0x01) != 0) {
         const uint8_t *raw = sce_forge_cursor_peek(cursor, 2);
         if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
-        out->batch_size = (uint16_t)(((uint16_t)raw[0] << 8) | raw[1]);
+        out->batch_size = sce_optional_uint16_some((uint16_t)(((uint16_t)raw[0] << 8) | raw[1]));
         if (!sce_forge_cursor_advance(cursor, 2)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
     } else {
-        out->batch_size = 0;
+        out->batch_size = sce_optional_uint16_none();
     }
     return SCE_FORGE_CODEC_OK;
 }
@@ -88,12 +91,12 @@ static inline sce_forge_codec_status_t codec_init_syn_body_encode(const codec_in
      * route to their dedicated helpers; everything else uses
      * `present_if_encode_block`. */
     SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->version));
-    if ((s & 0x01) != 0) {
-        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->sn_res));
+    if (self->sn_res.present) {
+        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->sn_res.value));
     }
-    if ((s & 0x01) != 0) {
-        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)((self->batch_size >> 8) & 0xFF)));
-        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)(self->batch_size & 0xFF)));
+    if (self->batch_size.present) {
+        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)((self->batch_size.value >> 8) & 0xFF)));
+        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)(self->batch_size.value & 0xFF)));
     }
     return SCE_FORGE_CODEC_OK;
 }

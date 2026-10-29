@@ -13,6 +13,7 @@
 #include <string.h>
 
 #include "sce/forge/codec.h"
+#include "sce/forge/optional.h"  /* a field gated by `sce:present-if`, docs/adr/0055 */
 #include "codec_chain_flag_entry.h"
 
 #define CODEC_CHAIN_FLAG_FORWARD_MIN_BYTES 1
@@ -20,9 +21,8 @@
 
 typedef struct {
     uint8_t head;
-    /* RFC §synth-5-B B3 tlv-chain: fixed array of codec_chain_flag_entry_t entries (max-depth 4, on-overflow=reject) */
-    codec_chain_flag_entry_t entries[4];
-    size_t  entries_len;
+    /* `sce:present-if`: an optional value (`present`, `value`), docs/adr/0055 step 14 */
+    struct { bool present; struct { codec_chain_flag_entry_t data[4]; size_t len; } value; } entries;
 } codec_chain_flag_forward_t;
 
 /* Decode the next frame from `cursor`. Returns SCE_FORGE_CODEC_OK on
@@ -53,16 +53,17 @@ static inline sce_forge_codec_status_t codec_chain_flag_forward_decode(sce_forge
         out->head = raw[0];
         if (!sce_forge_cursor_advance(cursor, 1)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
     }
-    out->entries_len = 0;
+    memset(&out->entries, 0, sizeof out->entries);
         if ((out->head & 0x01) != 0) {
+            out->entries.present = true;
             bool _more = false;
             for (size_t _i = 0; _i < 4; ++_i) {
                 if (sce_forge_cursor_remaining(cursor) == 0) break;
-                sce_forge_codec_status_t _st = codec_chain_flag_entry_decode(cursor, &out->entries[out->entries_len], wide);
+                sce_forge_codec_status_t _st = codec_chain_flag_entry_decode(cursor, &out->entries.value.data[out->entries.value.len], wide);
                 if (_st != SCE_FORGE_CODEC_OK) return _st;
-                size_t _just = out->entries_len;
-                out->entries_len++;
-                _more = codec_chain_flag_entry_z(&out->entries[_just]);
+                size_t _just = out->entries.value.len;
+                out->entries.value.len++;
+                _more = codec_chain_flag_entry_z(&out->entries.value.data[_just]);
                 if (!_more) break;
             }
             if (_more && sce_forge_cursor_remaining(cursor) == 0) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
@@ -90,9 +91,9 @@ static inline sce_forge_codec_status_t codec_chain_flag_forward_encode(const cod
      * route to their dedicated helpers; everything else uses
      * `present_if_encode_block`. */
     SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->head));
-    if ((self->head & 0x01) != 0) {
-        for (size_t _ti = 0; _ti < self->entries_len; ++_ti) {
-            SCE_FORGE_TRY_WRITE(codec_chain_flag_entry_encode(&self->entries[_ti], w, wide));
+    if (self->entries.present) {
+        for (size_t _ti = 0; _ti < self->entries.value.len; ++_ti) {
+            SCE_FORGE_TRY_WRITE(codec_chain_flag_entry_encode(&self->entries.value.data[_ti], w, wide));
         }
     }
     return SCE_FORGE_CODEC_OK;

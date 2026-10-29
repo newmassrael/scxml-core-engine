@@ -13,16 +13,39 @@
 #include <string.h>
 
 #include "sce/forge/codec.h"
+#include "sce/forge/optional.h"  /* a field gated by `sce:present-if`, docs/adr/0055 */
 
 #define CODEC_EXT_ENCODING_INFO_MIN_BYTES 2
 #define CODEC_EXT_ENCODING_INFO_MAX_BYTES 71
 
+#ifndef SCE_OPTIONAL_BYTES_64
+#define SCE_OPTIONAL_BYTES_64
+#ifndef SCE_STATIC_BYTES_64
+#define SCE_STATIC_BYTES_64
+/* SCE Accepted Subset §2.15: a `bytes` of at most 64 bytes. */
+typedef struct {
+    uint8_t data[64];
+    size_t len;
+} sce_static_bytes_64_t;
+
+static inline sce_static_bytes_64_t sce_static_bytes_64_of(sce_forge_bytes_view_t bytes) {
+    sce_static_bytes_64_t value = { { 0 }, 0 };
+    for (size_t i = 0; i < bytes.len && i < 64u; ++i) {
+        value.data[i] = bytes.data[i];
+    }
+    value.len = bytes.len < 64u ? bytes.len : 64u;
+    return value;
+}
+#endif
+/* docs/adr/0055: a value of `sce_static_bytes_64_t` that may be absent. */
+SCE_OPTIONAL_DECLARE_BYTES(64)
+#endif
+
 typedef struct {
     uint32_t combined_id;
     uint8_t schema_size;
-    /* variable-length payload (sce:bit-size="length-ref", sce:max-size="64") */
-    uint8_t schema[64];
-    size_t  schema_len;
+    /* `sce:present-if`: an optional value (`present`, `value`), docs/adr/0055 step 14 */
+    sce_optional_bytes_64_t schema;
 } codec_ext_encoding_info_t;
 
 /* Decode the next frame from `cursor`. Returns SCE_FORGE_CODEC_OK on
@@ -60,11 +83,13 @@ static inline sce_forge_codec_status_t codec_ext_encoding_info_decode(sce_forge_
         if (_n > 64) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
         const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);
         if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
-        memcpy(out->schema, raw, _n);
-        out->schema_len = _n;
+        out->schema = sce_optional_bytes_64_none();
+        memcpy(out->schema.value.data, raw, _n);
+        out->schema.value.len = _n;
+        out->schema.present = true;
         if (!sce_forge_cursor_advance(cursor, _n)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
     } else {
-        out->schema_len = 0;
+        out->schema = sce_optional_bytes_64_none();
     }
     return SCE_FORGE_CODEC_OK;
 }
@@ -87,10 +112,10 @@ static inline sce_forge_codec_status_t codec_ext_encoding_info_encode(const code
      * `present_if_encode_block`. */
     SCE_FORGE_TRY_WRITE(sce_forge_writer_write_vle_u32(w, (uint32_t)(self->combined_id)));
     SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->schema_size));
-    if ((self->combined_id & 0x00000001) != 0) {
-        size_t _n = self->schema_len;
+    if (self->schema.present) {
+        size_t _n = self->schema.value.len;
         if (_n > self->schema_size) _n = self->schema_size;
-        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_bytes(w, self->schema, _n));
+        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_bytes(w, self->schema.value.data, _n));
     }
     return SCE_FORGE_CODEC_OK;
 }

@@ -13,6 +13,7 @@
 #include <string.h>
 
 #include "sce/forge/codec.h"
+#include "sce/forge/optional.h"  /* a field gated by `sce:present-if`, docs/adr/0055 */
 #include "codec_chain_has_tagged_entry.h"
 
 #define CODEC_CHAIN_HAS_TAGGED_MIN_BYTES 5
@@ -23,8 +24,10 @@ typedef struct {
     /* RFC §synth-5-B B3 tlv-chain: fixed array of codec_chain_has_tagged_entry_t entries (max-depth 3, on-overflow=reject) */
     codec_chain_has_tagged_entry_t entries[3];
     size_t  entries_len;
-    uint8_t priority;
-    uint16_t checksum;
+    /* `sce:present-if`: an optional value (`present`, `value`), docs/adr/0055 step 14 */
+    sce_optional_uint8_t priority;
+    /* `sce:present-if`: an optional value (`present`, `value`), docs/adr/0055 step 14 */
+    sce_optional_uint16_t checksum;
 } codec_chain_has_tagged_t;
 
 /* Decode the next frame from `cursor`. Returns SCE_FORGE_CODEC_OK on
@@ -83,18 +86,18 @@ static inline sce_forge_codec_status_t codec_chain_has_tagged_decode(sce_forge_c
     if (_has_entries_7 || (out->header & 0x01) != 0) {
         const uint8_t *raw = sce_forge_cursor_peek(cursor, 1);
         if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
-        out->priority = (uint8_t)(raw[0]);
+        out->priority = sce_optional_uint8_some((uint8_t)(raw[0]));
         if (!sce_forge_cursor_advance(cursor, 1)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
     } else {
-        out->priority = 0;
+        out->priority = sce_optional_uint8_none();
     }
     if (!_has_entries_9) {
         const uint8_t *raw = sce_forge_cursor_peek(cursor, 2);
         if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
-        out->checksum = (uint16_t)(((uint16_t)raw[0] << 8) | raw[1]);
+        out->checksum = sce_optional_uint16_some((uint16_t)(((uint16_t)raw[0] << 8) | raw[1]));
         if (!sce_forge_cursor_advance(cursor, 2)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
     } else {
-        out->checksum = 0;
+        out->checksum = sce_optional_uint16_none();
     }
     return SCE_FORGE_CODEC_OK;
 }
@@ -120,6 +123,12 @@ static inline sce_forge_codec_status_t codec_chain_has_tagged_encode(const codec
             break;
         }
     }
+    if (_has_entries_7 || (self->header & 0x01) != 0) {
+        if (!self->priority.present) return SCE_FORGE_CODEC_PRESENT_IF_MISMATCH;
+    } else if (self->priority.present) return SCE_FORGE_CODEC_PRESENT_IF_MISMATCH;
+    if (!_has_entries_9) {
+        if (!self->checksum.present) return SCE_FORGE_CODEC_PRESENT_IF_MISMATCH;
+    } else if (self->checksum.present) return SCE_FORGE_CODEC_PRESENT_IF_MISMATCH;
     /* Streaming cursor encode (SSOT selection: `needs_streaming`).
      * Mirrors the streaming decode: every field appends its own bytes in
      * declaration order through the per-field encode blocks, so a gated
@@ -133,12 +142,12 @@ static inline sce_forge_codec_status_t codec_chain_has_tagged_encode(const codec
     for (size_t _ti = 0; _ti < self->entries_len; ++_ti) {
         SCE_FORGE_TRY_WRITE(codec_chain_has_tagged_entry_encode(&self->entries[_ti], w));
     }
-    if (_has_entries_7 || (self->header & 0x01) != 0) {
-        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->priority));
+    if (self->priority.present) {
+        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->priority.value));
     }
-    if (!_has_entries_9) {
-        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)((self->checksum >> 8) & 0xFF)));
-        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)(self->checksum & 0xFF)));
+    if (self->checksum.present) {
+        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)((self->checksum.value >> 8) & 0xFF)));
+        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)(self->checksum.value & 0xFF)));
     }
     return SCE_FORGE_CODEC_OK;
 }

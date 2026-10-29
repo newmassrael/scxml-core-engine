@@ -13,15 +13,38 @@
 #include <string.h>
 
 #include "sce/forge/codec.h"
+#include "sce/forge/optional.h"  /* a field gated by `sce:present-if`, docs/adr/0055 */
 
 #define CODEC_PRESENT_IF_TAIL_MIN_BYTES 1
 #define CODEC_PRESENT_IF_TAIL_MAX_BYTES 65
 
+#ifndef SCE_OPTIONAL_BYTES_64
+#define SCE_OPTIONAL_BYTES_64
+#ifndef SCE_STATIC_BYTES_64
+#define SCE_STATIC_BYTES_64
+/* SCE Accepted Subset §2.15: a `bytes` of at most 64 bytes. */
+typedef struct {
+    uint8_t data[64];
+    size_t len;
+} sce_static_bytes_64_t;
+
+static inline sce_static_bytes_64_t sce_static_bytes_64_of(sce_forge_bytes_view_t bytes) {
+    sce_static_bytes_64_t value = { { 0 }, 0 };
+    for (size_t i = 0; i < bytes.len && i < 64u; ++i) {
+        value.data[i] = bytes.data[i];
+    }
+    value.len = bytes.len < 64u ? bytes.len : 64u;
+    return value;
+}
+#endif
+/* docs/adr/0055: a value of `sce_static_bytes_64_t` that may be absent. */
+SCE_OPTIONAL_DECLARE_BYTES(64)
+#endif
+
 typedef struct {
     uint8_t flags;
-    /* variable-length payload (sce:bit-size="tail", sce:max-size="64") */
-    uint8_t payload[64];
-    size_t  payload_len;
+    /* `sce:present-if`: an optional value (`present`, `value`), docs/adr/0055 step 14 */
+    sce_optional_bytes_64_t payload;
 } codec_present_if_tail_t;
 
 /* Decode the next frame from `cursor`. Returns SCE_FORGE_CODEC_OK on
@@ -53,11 +76,13 @@ static inline sce_forge_codec_status_t codec_present_if_tail_decode(sce_forge_cu
         if (_n > 64) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
         const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);
         if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
-        memcpy(out->payload, raw, _n);
-        out->payload_len = _n;
+        out->payload = sce_optional_bytes_64_none();
+        memcpy(out->payload.value.data, raw, _n);
+        out->payload.value.len = _n;
+        out->payload.present = true;
         if (!sce_forge_cursor_advance(cursor, _n)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
     } else {
-        out->payload_len = 0;
+        out->payload = sce_optional_bytes_64_none();
     }
     return SCE_FORGE_CODEC_OK;
 }
@@ -79,8 +104,8 @@ static inline sce_forge_codec_status_t codec_present_if_tail_encode(const codec_
      * route to their dedicated helpers; everything else uses
      * `present_if_encode_block`. */
     SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->flags));
-    if ((self->flags & 0x01) != 0) {
-        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_bytes(w, self->payload, self->payload_len));
+    if (self->payload.present) {
+        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_bytes(w, self->payload.value.data, self->payload.value.len));
     }
     return SCE_FORGE_CODEC_OK;
 }

@@ -7367,11 +7367,13 @@ fn render_codec(
                             | crate::generator::Language::Python => l
                                 .optional_of(&bare)
                                 .expect("these backends wrap the present type"),
-                            // C11 carrier-bit-as-truth: wire presence is
-                            // the parent flag, not the C-side `_len`.
-                            // Bare body_type (template renders the
-                            // `T elems[MAX]; size_t elems_len;` pair).
-                            crate::generator::Language::C11 => bare.clone(),
+                            // C11: the optional value of the list, whose
+                            // presence is its own and not the length's: a
+                            // list that was on the wire and empty is a value.
+                            crate::generator::Language::C11 => {
+                                obj.insert("c_gated_optional".into(), true.into());
+                                c11_gated_list_member(&body_type, max_count)
+                            }
                         }
                     } else {
                         bare.clone()
@@ -7455,7 +7457,6 @@ fn render_codec(
                             "repeat_encode_block".into(),
                             repeat_streaming_encode_block(
                                 f,
-                                &m.fields,
                                 &body_encoder,
                                 &repeat_thread.encode_arg,
                                 lang,
@@ -7567,9 +7568,15 @@ fn render_codec(
                         // C11 emits a fixed-buffer + length pair via the
                         // codec template (mirrors repeat shape); the
                         // single c_type slot holds the body_type for
-                        // shape symmetry. Gated chains use `_len = 0`
-                        // on absent (carrier-bit-as-truth contract).
-                        (crate::generator::Language::C11, _) => body_type.clone(),
+                        // shape symmetry. A gated chain is the optional
+                        // value of that list (as a gated repeat is), so an
+                        // empty chain that was on the wire and a chain that
+                        // was not stay two values.
+                        (crate::generator::Language::C11, false) => body_type.clone(),
+                        (crate::generator::Language::C11, true) => {
+                            obj.insert("c_gated_optional".into(), true.into());
+                            c11_gated_list_member(&body_type, *max_depth)
+                        }
                     };
                     obj.insert(type_key.into(), wrapped.into());
                     // The entry codec's `<sce:flag-input>`s are bound where the
@@ -7679,7 +7686,6 @@ fn render_codec(
                                 &body_encoder,
                                 &entry_thread.encode_arg,
                                 &entry_binds,
-                                &m.fields,
                                 lang,
                             )
                         } else {
@@ -7768,7 +7774,11 @@ fn render_codec(
                             | crate::generator::Language::Python => l
                                 .optional_of(&body_type)
                                 .expect("these backends wrap the present type"),
-                            crate::generator::Language::C11 => body_type.clone(),
+                            // C11: the optional value of the body.
+                            crate::generator::Language::C11 => {
+                                obj.insert("c_gated_optional".into(), true.into());
+                                c11_gated_body_member(&body_type)
+                            }
                         }
                     } else {
                         body_type_ty.clone()
@@ -7832,7 +7842,6 @@ fn render_codec(
                                 &body_type,
                                 &body_encoder,
                                 &embed_thread.encode_arg,
-                                &m.fields,
                                 lang,
                             )
                             .into(),
@@ -8219,10 +8228,21 @@ fn render_codec(
                         | crate::generator::Language::Python => l
                             .optional_of(&inner)
                             .expect("these backends wrap the present type"),
-                        // C11 has no nullable wrapper — the gated field
-                        // stays as plain `T` and presence is encoded by
-                        // the carrier flag bit (set on the struct member).
-                        crate::generator::Language::C11 => inner.to_string(),
+                        // C11 holds a gated field in the struct
+                        // `sce/forge/optional.h` declares for its element,
+                        // which a statechart's variable of the same type is
+                        // held in too (docs/adr/0055, step 14): a number or
+                        // an enum in its own, a byte string or a text in the
+                        // one over the bytes and their length.
+                        crate::generator::Language::C11 => {
+                            let held = match &f.sce_type {
+                                SceType::Bytes | SceType::String => c11_gated_bytes_optional(f),
+                                scalar => l.c11_codec_optional(scalar, None),
+                            };
+                            obj.insert("c_gated_optional".into(), true.into());
+                            obj.insert("c_optional_decl".into(), held.declaration.clone().into());
+                            held.type_name
+                        }
                     };
                     obj.insert(type_key.into(), wrapped.into());
                     // Default for the gated optional in languages that
@@ -11567,7 +11587,6 @@ fn repeat_streaming_decode_stmt(ctx: RepeatDecode<'_>) -> String {
 /// contract: the encoder writes whatever the struct holds).
 fn repeat_streaming_encode_block(
     field: &CodecField,
-    fields: &[CodecField],
     body_encoder: &str,
     encode_arg: &str,
     lang: crate::generator::Language,
@@ -11579,15 +11598,8 @@ fn repeat_streaming_encode_block(
     // encode body wraps in a per-language predicate test that reads
     // through the wrapped storage shape (Option<Vec> / std::optional
     // / MutableList? / Optional[List] / optional.Of[[]T] / C11 carrier-bit).
-    if let Some(pred) = &field.present_if {
-        return repeat_streaming_encode_block_gated(
-            field,
-            fields,
-            pred,
-            body_encoder,
-            encode_arg,
-            lang,
-        );
+    if field.present_if.is_some() {
+        return repeat_streaming_encode_block_gated(field, body_encoder, encode_arg, lang);
     }
     match lang {
         Language::Swift => no_swift_emitter("repeat_streaming_encode_block"),
@@ -11912,10 +11924,15 @@ fn embed_streaming_decode_stmt(
                          if (_st != SCE_FORGE_CODEC_OK) return _st;\n    \
                      }}"
                 ),
+                // A gated embed is the optional value of the body: present
+                // under the gate, with the body decoded into its `value`, and
+                // the absent value, every byte zero, otherwise.
                 (Some(test), None) => format!(
-                    "if ({test}) {{\n        \
-                         sce_forge_codec_status_t _st = {body_decoder}(cursor, &out->{id_snake}{thread_arg});\n        \
-                         if (_st != SCE_FORGE_CODEC_OK) return _st;\n    \
+                    "memset(&out->{id_snake}, 0, sizeof out->{id_snake});\n    \
+                     if ({test}) {{\n        \
+                         sce_forge_codec_status_t _st = {body_decoder}(cursor, &out->{id_snake}.value{thread_arg});\n        \
+                         if (_st != SCE_FORGE_CODEC_OK) return _st;\n        \
+                         out->{id_snake}.present = true;\n    \
                      }}"
                 ),
                 (None, Some(sibling)) => format!(
@@ -11930,14 +11947,16 @@ fn embed_streaming_decode_stmt(
                      }}"
                 ),
                 (Some(test), Some(sibling)) => format!(
-                    "if ({test}) {{\n        \
+                    "memset(&out->{id_snake}, 0, sizeof out->{id_snake});\n    \
+                     if ({test}) {{\n        \
                          size_t _len = (size_t)({sibling});\n        \
                          const uint8_t *_raw = sce_forge_cursor_peek(cursor, _len);\n        \
                          if (_raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n        \
                          sce_forge_cursor_t _inner = sce_forge_cursor_init(_raw, _len);\n        \
-                         sce_forge_codec_status_t _st = {body_decoder}(&_inner, &out->{id_snake}{thread_arg});\n        \
+                         sce_forge_codec_status_t _st = {body_decoder}(&_inner, &out->{id_snake}.value{thread_arg});\n        \
                          if (_st != SCE_FORGE_CODEC_OK) return _st;\n        \
-                         if (!sce_forge_cursor_advance(cursor, _len)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n    \
+                         if (!sce_forge_cursor_advance(cursor, _len)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n        \
+                         out->{id_snake}.present = true;\n    \
                      }}"
                 ),
             }
@@ -12001,7 +12020,6 @@ fn embed_streaming_encode_block(
     body_type: &str,
     body_encoder: &str,
     thread_arg: &str,
-    fields: &[CodecField],
     lang: crate::generator::Language,
 ) -> String {
     use crate::generator::Language;
@@ -12024,18 +12042,8 @@ fn embed_streaming_encode_block(
     // wrapper matches the four other gated-field encoders and
     // eliminates the bug class entirely.
     //
-    // C11 keeps the carrier-flag test because it has no Optional
-    // wrapper; presence on the wire is encoded *purely* through
-    // the carrier flag bit (`out-><K>` at decode, `self-><K>` at
-    // encode) per the RFC §synth-5-B gated-embed C11 contract.
-    let test_lit_c11 = if matches!(lang, Language::C11) {
-        field
-            .present_if
-            .as_ref()
-            .map(|p| present_if_test_literal_encode(fields, p, lang))
-    } else {
-        None
-    };
+    // C11 holds a gated embed in the optional value of its body, so it tests
+    // that the value is present, as every other backend does.
     let has_present_if = field.present_if.is_some();
     let thread_arg_norm = thread_arg.trim_start_matches(", ");
     match lang {
@@ -12128,15 +12136,18 @@ fn embed_streaming_encode_block(
             // whatever value the caller initialised it to (typically
             // zero — generated code zero-inits the parent struct
             // before decode).
-            match &test_lit_c11 {
-                None => format!(
-                    "    SCE_FORGE_TRY_WRITE({body_encoder}(&self->{id_snake}, w{thread_arg}));"
-                ),
-                Some(test) => format!(
-                    "    if ({test}) {{\n        \
-                         SCE_FORGE_TRY_WRITE({body_encoder}(&self->{id_snake}, w{thread_arg}));\n    \
+            // A gated embed is the optional value of the body: written where
+            // it is present, from the value it holds.
+            if has_present_if {
+                format!(
+                    "    if (self->{id_snake}.present) {{\n        \
+                         SCE_FORGE_TRY_WRITE({body_encoder}(&self->{id_snake}.value, w{thread_arg}));\n    \
                      }}"
-                ),
+                )
+            } else {
+                format!(
+                    "    SCE_FORGE_TRY_WRITE({body_encoder}(&self->{id_snake}, w{thread_arg}));"
+                )
             }
         }
         Language::Python => {
@@ -12901,25 +12912,27 @@ fn repeat_streaming_decode_stmt_gated(ctx: RepeatDecodeGated<'_>) -> String {
                  }}"
             )
         }
-        // C11: carrier-bit-as-truth — wrap the whole decode body in
-        // `if (test) { ... }` so wire bytes are consumed only when
-        // the gate is on. `out-><id>_len` initialises to 0 in the
-        // sub-block to keep the absent state observable as
-        // "elems_len == 0", matching the encode-side gate.
+        // C11: the member is the optional value of the list — wrap the whole
+        // decode body in `if (test) { ... }` so wire bytes are consumed only
+        // when the gate is on, and the list is present there, empty or not.
+        // The count is read through the value it holds where its own field is
+        // gated, and the absent value is every byte zero.
         (Language::C11, CountRef::LengthField(len_field)) => {
             let id_snake = filters::to_snake_case(id.to_string());
-            let len_snake = filters::to_snake_case(len_field.clone());
+            let count = c11_length_sibling_member(len_field, fields);
             format!(
                 "if ({test}) {{\n        \
-                     size_t _n = (size_t)out->{len_snake};\n        \
+                     size_t _n = (size_t)out->{count};\n        \
                      if (_n > {max_count}) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n        \
+                     memset(&out->{id_snake}, 0, sizeof out->{id_snake});\n        \
                      for (size_t _i = 0; _i < _n; ++_i) {{\n            \
-                         sce_forge_codec_status_t _st = {body_decoder}(cursor, &out->{id_snake}[_i]{decode_arg});\n            \
+                         sce_forge_codec_status_t _st = {body_decoder}(cursor, &out->{id_snake}.value.data[_i]{decode_arg});\n            \
                          if (_st != SCE_FORGE_CODEC_OK) return _st;\n        \
                      }}\n        \
-                     out->{id_snake}_len = _n;\n    \
+                     out->{id_snake}.value.len = _n;\n        \
+                     out->{id_snake}.present = true;\n    \
                  }} else {{\n        \
-                     out->{id_snake}_len = 0;\n    \
+                     memset(&out->{id_snake}, 0, sizeof out->{id_snake});\n    \
                  }}"
             )
         }
@@ -12927,15 +12940,16 @@ fn repeat_streaming_decode_stmt_gated(ctx: RepeatDecodeGated<'_>) -> String {
             let id_snake = filters::to_snake_case(id.to_string());
             format!(
                 "if ({test}) {{\n        \
-                     out->{id_snake}_len = 0;\n        \
+                     memset(&out->{id_snake}, 0, sizeof out->{id_snake});\n        \
+                     out->{id_snake}.present = true;\n        \
                      while (sce_forge_cursor_remaining(cursor) > 0) {{\n            \
-                         if (out->{id_snake}_len >= {max_count}) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n            \
-                         sce_forge_codec_status_t _st = {body_decoder}(cursor, &out->{id_snake}[out->{id_snake}_len]{decode_arg});\n            \
+                         if (out->{id_snake}.value.len >= {max_count}) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n            \
+                         sce_forge_codec_status_t _st = {body_decoder}(cursor, &out->{id_snake}.value.data[out->{id_snake}.value.len]{decode_arg});\n            \
                          if (_st != SCE_FORGE_CODEC_OK) return _st;\n            \
-                         out->{id_snake}_len++;\n        \
+                         out->{id_snake}.value.len++;\n        \
                      }}\n    \
                  }} else {{\n        \
-                     out->{id_snake}_len = 0;\n    \
+                     memset(&out->{id_snake}, 0, sizeof out->{id_snake});\n    \
                  }}"
             )
         }
@@ -12984,8 +12998,6 @@ fn repeat_streaming_decode_stmt_gated(ctx: RepeatDecodeGated<'_>) -> String {
 /// <op> 0` directly.
 fn repeat_streaming_encode_block_gated(
     field: &CodecField,
-    fields: &[CodecField],
-    pred: &PresentIfPredicate,
     body_encoder: &str,
     encode_arg: &str,
     lang: crate::generator::Language,
@@ -13030,15 +13042,13 @@ fn repeat_streaming_encode_block_gated(
         // length-ref equivalent). Reads `self->carrier` for Local
         // scope, bare `parent_flags` for Parent scope.
         Language::C11 => {
-            // The encode-site predicate, whatever its form: a carrier bit
-            // (`self->carrier`), a flag-input parameter, a chain-membership
-            // local, and the `||` of them.
-            let test = present_if_test_literal_encode(fields, pred, lang);
+            // The member is the optional value of the list: written where it
+            // is present, an empty list as no entries.
             let id_snake = filters::to_snake_case(id.to_string());
             format!(
-                "    if ({test}) {{\n        \
-                     for (size_t _ri = 0; _ri < self->{id_snake}_len; ++_ri) {{\n            \
-                         SCE_FORGE_TRY_WRITE({body_encoder}(&self->{id_snake}[_ri], w{encode_arg}));\n        \
+                "    if (self->{id_snake}.present) {{\n        \
+                     for (size_t _ri = 0; _ri < self->{id_snake}.value.len; ++_ri) {{\n            \
+                         SCE_FORGE_TRY_WRITE({body_encoder}(&self->{id_snake}.value.data[_ri], w{encode_arg}));\n        \
                      }}\n    \
                  }}"
             )
@@ -13979,24 +13989,29 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
             let overflow_check =
                 tlv_chain_guard(lang, on_overflow, entry_flag_acc.is_some(), "            ");
             let entry_struct_snake = body_decoder.strip_suffix("_decode").unwrap_or(body_decoder);
+            // The member is the optional value of the chain: present under the
+            // gate, holding the entries read (none, where the chain was on the
+            // wire and empty), and the absent value, every byte zero, otherwise.
+            let data = format!("out->{id_snake}.value.data");
+            let len = format!("out->{id_snake}.value.len");
             let body = match (&entry_flag_acc, entry_binds.is_empty()) {
                 (None, true) => format!(
                     "                if (sce_forge_cursor_remaining(cursor) == 0) break;\n                \
-                     sce_forge_codec_status_t _st = {body_decoder}(cursor, &out->{id_snake}[out->{id_snake}_len]{decode_arg});\n                \
+                     sce_forge_codec_status_t _st = {body_decoder}(cursor, &{data}[{len}]{decode_arg});\n                \
                      if (_st != SCE_FORGE_CODEC_OK) return _st;\n                \
-                     out->{id_snake}_len++;\n            "
+                     {len}++;\n            "
                 ),
                 (acc, _) => {
                     let indent = "                ";
-                    let entry = format!("out->{id_snake}[_just]");
+                    let entry = format!("{data}[_just]");
                     let mut lines = vec![
                         "if (sce_forge_cursor_remaining(cursor) == 0) break;".to_string(),
                         format!(
-                            "sce_forge_codec_status_t _st = {body_decoder}(cursor, &out->{id_snake}[out->{id_snake}_len]{decode_arg});"
+                            "sce_forge_codec_status_t _st = {body_decoder}(cursor, &{data}[{len}]{decode_arg});"
                         ),
                         "if (_st != SCE_FORGE_CODEC_OK) return _st;".to_string(),
-                        format!("size_t _just = out->{id_snake}_len;"),
-                        format!("out->{id_snake}_len++;"),
+                        format!("size_t _just = {len};"),
+                        format!("{len}++;"),
                     ];
                     if let Some(acc) = acc {
                         lines.push(format!("_more = {entry_struct_snake}_{acc}(&{entry});"));
@@ -14010,8 +14025,9 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
             };
             let more_decl = more_decl_line(lang, &entry_flag_acc, entry_binds, "            ");
             format!(
-                "out->{id_snake}_len = 0;\n        \
+                "memset(&out->{id_snake}, 0, sizeof out->{id_snake});\n        \
                  if ({test}) {{\n            \
+                     out->{id_snake}.present = true;\n            \
                      {more_decl}for (size_t _i = 0; _i < {max_depth}; ++_i) {{\n{body}\
                      }}{overflow_check}\n        \
                  }}"
@@ -14076,17 +14092,11 @@ fn tlv_chain_streaming_encode_block_gated(
     encode_arg: &str,
     // See `tlv_chain_streaming_encode_block`.
     entry_binds: &ChainEntryBinds,
-    fields: &[CodecField],
     lang: crate::generator::Language,
 ) -> String {
     use crate::generator::Language;
     let id_owned = codec_field_local_name(&field.id, lang);
     let id = id_owned.as_str();
-    let pred = field
-        .present_if
-        .as_ref()
-        .expect("tlv_chain_streaming_encode_block_gated: caller guarantees present_if is Some");
-    let test = present_if_test_literal_encode(fields, pred, lang);
     match lang {
         Language::Swift => no_swift_emitter("tlv_chain_streaming_encode_block_gated"),
         Language::Rust => unreachable!("a Rust codec's encode is its source's (ADR 0058)"),
@@ -14132,15 +14142,15 @@ fn tlv_chain_streaming_encode_block_gated(
         Language::C11 => {
             let id_snake = filters::to_snake_case(id.to_string());
             let decls = entry_binds.decls(lang, "        ");
-            let entry = format!("self->{id_snake}[_ti]");
+            let entry = format!("self->{id_snake}.value.data[_ti]");
             let updates = chain_encode_updates(entry_binds, field, &entry, lang, "            ");
-            // C11 carrier-bit-as-truth: same loop body as plain
-            // (walks `_len` entries), but wrap in a presence test
-            // so absent gates skip the write entirely.
+            // The member is the optional value of the chain: the same loop body
+            // as a plain chain's (it walks the entries it holds), wrapped in a
+            // test that the value is present so an absent one writes nothing.
             format!(
-                "    if ({test}) {{\n        \
-                     {decls}for (size_t _ti = 0; _ti < self->{id_snake}_len; ++_ti) {{\n            \
-                         SCE_FORGE_TRY_WRITE({body_encoder}(&self->{id_snake}[_ti], w{encode_arg}));{updates}\n        \
+                "    if (self->{id_snake}.present) {{\n        \
+                     {decls}for (size_t _ti = 0; _ti < self->{id_snake}.value.len; ++_ti) {{\n            \
+                         SCE_FORGE_TRY_WRITE({body_encoder}(&{entry}, w{encode_arg}));{updates}\n        \
                      }}\n    \
                  }}"
             )
@@ -14752,22 +14762,21 @@ fn present_if_decode_fixed(
             let id_snake = filters::to_snake_case(id.to_string());
             let test = present_if_test_literal(fields, p, lang);
             let c_ty = l.type_name(&field.sce_type);
-            // The absent branch leaves the member holding a value of its
-            // own type. For a number that is the carrier's zero, which
-            // C11 has always written here; for an enum it is not, since
-            // a closed set does not hold a value it never declared.
-            let absent = match &field.sce_type {
-                SceType::Enum(r) => l.enum_default_expr(&r.alias),
-                _ => "0".to_string(),
-            };
+            // The member is the optional value of its type: present under
+            // the gate, with the value read off the wire, and the absent
+            // value (every byte zero) otherwise, which also leaves the
+            // struct fully initialized whichever arm fires.
+            let held = l.c11_codec_optional(&field.sce_type, None);
+            let some = held.some(&format!("({c_ty})({body8})"));
+            let none = held.none();
             format!(
                 "if ({test}) {{\n        \
                      const uint8_t *raw = sce_forge_cursor_peek(cursor, {n});\n        \
                      if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n        \
-                     {conv8}out->{id_snake} = ({c_ty})({body8});\n        \
+                     {conv8}out->{id_snake} = {some};\n        \
                      if (!sce_forge_cursor_advance(cursor, {n})) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n    \
                  }} else {{\n        \
-                     out->{id_snake} = {absent};\n    \
+                     out->{id_snake} = {none};\n    \
                  }}"
             )
         }
@@ -14955,21 +14964,27 @@ fn present_if_decode_tail(
                  }}"
             )
         }
+        // The member is the optional value of the bytes: present under the
+        // gate, holding what the tail read, and the absent value (every byte
+        // zero) otherwise.
         (Language::C11, Some(p)) => {
             let id_snake = filters::to_snake_case(id.to_string());
             let max_size = crate::forge::limits::resolve_bytes_max(field.max_size);
             let test = present_if_test_literal(fields, p, lang);
+            let none = c11_gated_bytes_optional(field).none();
             format!(
                 "if ({test}) {{\n        \
                      size_t _n = sce_forge_cursor_remaining(cursor);\n        \
                      if (_n > {max_size}) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n        \
                      const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);\n        \
                      if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n        \
-                     memcpy(out->{id_snake}, raw, _n);\n        \
-                     out->{id_snake}_len = _n;\n        \
+                     out->{id_snake} = {none};\n        \
+                     memcpy(out->{id_snake}.value.data, raw, _n);\n        \
+                     out->{id_snake}.value.len = _n;\n        \
+                     out->{id_snake}.present = true;\n        \
                      if (!sce_forge_cursor_advance(cursor, _n)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n    \
                  }} else {{\n        \
-                     out->{id_snake}_len = 0;\n    \
+                     out->{id_snake} = {none};\n    \
                  }}"
             )
         }
@@ -15190,21 +15205,27 @@ fn present_if_decode_length_ref(
                  }}"
             )
         }
+        // The member is the optional value of the bytes: its length is the
+        // value's own, and the sibling that carries the length on the wire is a
+        // member of its own, read where the bytes are.
         (Language::C11, Some(p)) => {
             let id_snake = filters::to_snake_case(id.to_string());
             let max_size = crate::forge::limits::resolve_bytes_max(field.max_size);
             let test = present_if_test_literal(fields, p, lang);
+            let none = c11_gated_bytes_optional(field).none();
             format!(
                 "if ({test}) {{\n        \
                      size_t _n = {n_c11};\n        \
                      if (_n > {max_size}) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n        \
                      const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);\n        \
                      if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n        \
-                     memcpy(out->{id_snake}, raw, _n);\n        \
-                     out->{id_snake}_len = _n;\n        \
+                     out->{id_snake} = {none};\n        \
+                     memcpy(out->{id_snake}.value.data, raw, _n);\n        \
+                     out->{id_snake}.value.len = _n;\n        \
+                     out->{id_snake}.present = true;\n        \
                      if (!sce_forge_cursor_advance(cursor, _n)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n    \
                  }} else {{\n        \
-                     out->{id_snake}_len = 0;\n    \
+                     out->{id_snake} = {none};\n    \
                  }}"
             )
         }
@@ -15467,15 +15488,14 @@ fn present_if_decode_string_length_ref(
             )
         }
         (Language::C11, Some(p)) => {
-            // Gated String C11 mirrors the gated
-            // Bytes C11 arm in `present_if_decode_length_ref`: carrier-
-            // bit-as-truth (no Optional wrapper around `char[N]`); when
-            // the predicate fires off the `<id>_len = 0` clamp marks
-            // the field absent uniformly with the bytes shape.
+            // Gated String C11 mirrors the gated Bytes C11 arm in
+            // `present_if_decode_length_ref`: the member is the optional value
+            // of the UTF-8 bytes, validated before they are copied.
             let id_snake = filters::to_snake_case(id.to_string());
             let max_size = crate::forge::limits::resolve_bytes_max(field.max_size);
             let n_c11 = compute_n_c11(len_field, fields, sibling_gated, arith);
             let test = present_if_test_literal(fields, p, lang);
+            let none = c11_gated_bytes_optional(field).none();
             format!(
                 "if ({test}) {{\n        \
                      size_t _n = {n_c11};\n        \
@@ -15483,11 +15503,13 @@ fn present_if_decode_string_length_ref(
                      const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);\n        \
                      if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n        \
                      if (!sce_forge_is_valid_utf8(raw, _n)) return SCE_FORGE_CODEC_INVALID_UTF8;\n        \
-                     memcpy(out->{id_snake}, raw, _n);\n        \
-                     out->{id_snake}_len = _n;\n        \
+                     out->{id_snake} = {none};\n        \
+                     memcpy(out->{id_snake}.value.data, raw, _n);\n        \
+                     out->{id_snake}.value.len = _n;\n        \
+                     out->{id_snake}.present = true;\n        \
                      if (!sce_forge_cursor_advance(cursor, _n)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n    \
                  }} else {{\n        \
-                     out->{id_snake}_len = 0;\n    \
+                     out->{id_snake} = {none};\n    \
                  }}"
             )
         }
@@ -15671,10 +15693,24 @@ fn compute_n_c11(
 /// we strip the cast when `arith == 0` AND len_field is plain.
 fn compute_n_c11_encode(len_field: &str, fields: &[CodecField], arith: i32) -> String {
     if arith == 0 && dotted_length_field(len_field).is_none() {
-        let len_snake = filters::to_snake_case(len_field.to_string());
-        format!("self->{len_snake}")
+        format!("self->{}", c11_length_sibling_member(len_field, fields))
     } else {
         compute_n_c11_with_prefix(len_field, fields, false, arith, "self")
+    }
+}
+
+/// The member of the struct a C11 length sibling is read through: the sibling's
+/// own, or the value it holds where it is gated by `sce:present-if`, which C11
+/// holds in the optional value of its number (docs/adr/0055, step 14).
+fn c11_length_sibling_member(len_field: &str, fields: &[CodecField]) -> String {
+    let len_snake = filters::to_snake_case(len_field.to_string());
+    let gated = fields
+        .iter()
+        .any(|f| f.id == len_field && f.present_if.is_some());
+    if gated {
+        format!("{len_snake}.value")
+    } else {
+        len_snake
     }
 }
 
@@ -15685,17 +15721,20 @@ fn compute_n_c11_with_prefix(
     arith: i32,
     struct_prefix: &str,
 ) -> String {
-    // C11 has no Option wrapper — sibling field is always-bound on the
-    // struct (gated absent branch zero-writes via the present-if-fixed
-    // helper). Read through `<prefix>->...` regardless of sibling_gated.
+    // The sibling is always bound on the struct: a gated one holds the absent
+    // value where it was not read, and the field it measures is gated by the same
+    // predicate, so it is read through its value where it is present. The other
+    // backends say the same through `sibling_gated`, which C11 asks the field list.
     let _ = sibling_gated;
     let base = if let Some((c, f)) = dotted_length_field(len_field) {
         let (shift, mask) = dotted_length_resolve(c, f, fields);
         let c_id = filters::to_snake_case(c.to_string());
         format!("(size_t)(({struct_prefix}->{c_id} >> {shift}) & 0x{mask:X})")
     } else {
-        let len_snake = filters::to_snake_case(len_field.to_string());
-        format!("(size_t){struct_prefix}->{len_snake}")
+        format!(
+            "(size_t){struct_prefix}->{}",
+            c11_length_sibling_member(len_field, fields)
+        )
     };
     apply_arith_c11(&base, arith)
 }
@@ -15850,18 +15889,21 @@ fn present_if_decode_vle(
         // C11: vle_decode_stmt emits a typed-local declaration plus
         // a `read_vle_uN(cursor, &local)` block. For gating we want
         // to write into the struct member, not redeclare; route
-        // through a `_v` local then assign. Carrier bit is presence
-        // source; absent branch zero-writes to keep the struct fully
-        // initialized.
+        // through a `_v` local then assign it as the present value of
+        // the optional member. The absent branch writes the absent
+        // value, which keeps the struct fully initialized.
         Language::C11 => {
             let id_snake = filters::to_snake_case(id.to_string());
             let inner = vle_decode_stmt(&body_id, width_bits, lang);
+            let held = c11_number_optional(field);
+            let some = held.some(&body_id);
+            let none = held.none();
             format!(
                 "if ({test}) {{\n        \
                      {inner}\n        \
-                     out->{id_snake} = {body_id};\n    \
+                     out->{id_snake} = {some};\n    \
                  }} else {{\n        \
-                     out->{id_snake} = 0;\n    \
+                     out->{id_snake} = {none};\n    \
                  }}"
             )
         }
@@ -15898,10 +15940,10 @@ fn present_if_streaming_encode_block(
 ) -> String {
     let lang = l.lang;
     match &field.bit_size {
-        BitSize::Fixed { bits } => present_if_encode_fixed(l, field, fields, default_endian, *bits),
-        BitSize::Tail => present_if_encode_tail(field, fields, lang),
+        BitSize::Fixed { bits } => present_if_encode_fixed(l, field, default_endian, *bits),
+        BitSize::Tail => present_if_encode_tail(field, lang),
         BitSize::LengthRef => present_if_encode_length_ref(field, fields, lang),
-        BitSize::Vle { width_bits } => present_if_encode_vle(field, fields, lang, *width_bits),
+        BitSize::Vle { width_bits } => present_if_encode_vle(field, lang, *width_bits),
         // Repeat / TLV-chain / Embed fields render via their dedicated
         // streaming encode helpers through the template's per-field
         // dispatch; this helper is still called eagerly for every
@@ -15918,7 +15960,6 @@ fn present_if_streaming_encode_block(
 fn present_if_encode_fixed(
     l: &LangCtx,
     field: &CodecField,
-    fields: &[CodecField],
     default_endian: Endian,
     bits: u32,
 ) -> String {
@@ -15973,26 +16014,14 @@ fn present_if_encode_fixed(
         }
         (Language::C11, false) => streaming_fixed_field_encode_c11(l, field, default_endian, n),
         (Language::C11, true) => {
-            // C11: presence is encoded by the carrier flag bit on the
-            // struct member (no nullable wrapper), so the encode site
-            // tests `(self-><carrier> & mask) <op> 0` directly. Inner
-            // body emits the same byte appends as the non-gated form
-            // — they read from `self-><id>` either way; the only
-            // difference is the surrounding gate. Negation flips
-            // the comparison polarity to `== 0` while leaving the mask
-            // unchanged. Disjunction chains compose
-            // via `present_if_test_literal_encode` which walks the
-            // `or_with` tail and joins clauses with `||` (each clause
-            // reads through `self->` for Local scope, `parent_flags`
-            // for Parent scope — uniform with other 4 C11 encode arms).
-            let p = field
-                .present_if
-                .as_ref()
-                .expect("gated arm requires predicate");
-            let test = present_if_test_literal_encode(fields, p, Language::C11);
+            // C11: the member is the optional value of its type, so the
+            // encode site tests that value is present, as every other
+            // backend's does, and reads the value through it. The carrier
+            // flag bit is a field of its own, written as the caller holds it.
+            let id_snake = filters::to_snake_case(id.to_string());
             let inner = streaming_fixed_field_encode_c11_inner(l, field, default_endian, n);
             format!(
-                "    if ({test}) {{\n\
+                "    if (self->{id_snake}.present) {{\n\
                  {inner}\
                  \n    }}"
             )
@@ -16019,11 +16048,7 @@ fn present_if_encode_fixed(
 /// RFC §synth-5-B item B2 present-if + Tail bit-size encode: append all bytes
 /// of the field's bytes-typed value when the predicate / optional
 /// check passes; otherwise append nothing.
-fn present_if_encode_tail(
-    field: &CodecField,
-    fields: &[CodecField],
-    lang: crate::generator::Language,
-) -> String {
+fn present_if_encode_tail(field: &CodecField, lang: crate::generator::Language) -> String {
     use crate::generator::Language;
     let id_owned = codec_field_local_name(&field.id, lang);
     let id = id_owned.as_str();
@@ -16075,22 +16100,12 @@ fn present_if_encode_tail(
             )
         }
         (Language::C11, true) => {
-            // C11 has no nullable wrapper — the carrier flag bit is
-            // the source of truth for presence. Test the predicate
-            // directly on the struct member via
-            // `present_if_test_literal_encode` which composes the
-            // disjunction chain and post-processes
-            // C11 Local-scope `out->` → `self->`. Negation flips
-            // each clause's `!=` to `==` independently.
+            // The member is the optional value of the bytes: written where it
+            // is present, from the bytes and the length it holds.
             let id_snake = filters::to_snake_case(id.to_string());
-            let p = field
-                .present_if
-                .as_ref()
-                .expect("gated arm requires predicate");
-            let test = present_if_test_literal_encode(fields, p, Language::C11);
             format!(
-                "    if ({test}) {{\n        \
-                     SCE_FORGE_TRY_WRITE(sce_forge_writer_write_bytes(w, self->{id_snake}, self->{id_snake}_len));\n    \
+                "    if (self->{id_snake}.present) {{\n        \
+                     SCE_FORGE_TRY_WRITE(sce_forge_writer_write_bytes(w, self->{id_snake}.value.data, self->{id_snake}.value.len));\n    \
                  }}"
             )
         }
@@ -16117,7 +16132,6 @@ fn present_if_encode_tail(
 /// String-bearing codec's signature to `Result<...>`).
 fn present_if_encode_string_length_ref(
     field: &CodecField,
-    fields: &[CodecField],
     lang: crate::generator::Language,
 ) -> String {
     use crate::generator::Language;
@@ -16216,23 +16230,14 @@ fn present_if_encode_string_length_ref(
                 "    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_bytes(w, (const uint8_t*)self->{id_snake}, self->{id_snake}_len));"
             )
         }
-        // Gated String encode on C11: gate the
-        // memcpy loop on the same predicate the decode arm tests
-        // (carrier-bit-as-truth — no Optional wrapper). When the gate
-        // fires off, `<id>_len` should already be 0 (decode side
-        // clears it; author keeps it consistent on encode). Predicate
-        // resolves through `present_if_test_literal_encode` which
-        // emits `(self->carrier & 0xMASK) != 0` for Local carriers and
-        // `(parent_flags & 0xMASK) != 0` for Parent carriers, with
-        // `==` op when the predicate is negated. Disjunction
-        // chains compose via the wrapper (walks
-        // `or_with` tail; joins with `||`).
-        (Language::C11, Some(p)) => {
+        // Gated String encode on C11: the member is the optional value of the
+        // UTF-8 bytes, written where it is present, from the bytes and the
+        // length it holds.
+        (Language::C11, Some(_)) => {
             let id_snake = filters::to_snake_case(id.to_string());
-            let test = present_if_test_literal_encode(fields, p, lang);
             format!(
-                "    if ({test}) {{\n        \
-                     SCE_FORGE_TRY_WRITE(sce_forge_writer_write_bytes(w, (const uint8_t*)self->{id_snake}, self->{id_snake}_len));\n    \
+                "    if (self->{id_snake}.present) {{\n        \
+                     SCE_FORGE_TRY_WRITE(sce_forge_writer_write_bytes(w, self->{id_snake}.value.data, self->{id_snake}.value.len));\n    \
                  }}"
             )
         }
@@ -16267,7 +16272,7 @@ fn present_if_encode_length_ref(
     // `Result<Vec<u8>, EncodeError>` surfacing on every String-bearing
     // codec).
     if field.is_string() {
-        return present_if_encode_string_length_ref(field, fields, lang);
+        return present_if_encode_string_length_ref(field, lang);
     }
     match (lang, field.present_if.is_some()) {
         (Language::Swift, _) => no_swift_emitter("present_if_encode_length_ref"),
@@ -16325,21 +16330,17 @@ fn present_if_encode_length_ref(
         }
         (Language::C11, true) => {
             let id_snake = filters::to_snake_case(id.to_string());
-            let p = field
-                .present_if
-                .as_ref()
-                .expect("gated arm requires predicate");
-            // RFC §synth-5-B: length-arith adjusts the upper
-            // bound. Sibling-gated has no effect on C11 encode (no
-            // Optional wrapper). Disjunction chains
-            // compose via `present_if_test_literal_encode`.
+            // RFC §synth-5-B: length-arith adjusts the upper bound, which is
+            // the sibling's value (the value it holds where the sibling is
+            // gated itself). The member is the optional value of the bytes,
+            // written where it is present, from the bytes and the length it
+            // holds.
             let upper = compute_n_c11_encode(len_field, fields, field.length_arith.unwrap_or(0));
-            let test = present_if_test_literal_encode(fields, p, Language::C11);
             format!(
-                "    if ({test}) {{\n        \
-                     size_t _n = self->{id_snake}_len;\n        \
+                "    if (self->{id_snake}.present) {{\n        \
+                     size_t _n = self->{id_snake}.value.len;\n        \
                      if (_n > {upper}) _n = {upper};\n        \
-                     SCE_FORGE_TRY_WRITE(sce_forge_writer_write_bytes(w, self->{id_snake}, _n));\n    \
+                     SCE_FORGE_TRY_WRITE(sce_forge_writer_write_bytes(w, self->{id_snake}.value.data, _n));\n    \
                  }}"
             )
         }
@@ -16362,7 +16363,6 @@ fn present_if_encode_length_ref(
 /// to `vle_encode_block` (same shape as the has_vle_fields branch).
 fn present_if_encode_vle(
     field: &CodecField,
-    fields: &[CodecField],
     lang: crate::generator::Language,
     width_bits: u32,
 ) -> String {
@@ -16397,7 +16397,6 @@ fn present_if_encode_vle(
         };
         return vle_encode_block(&value_expr, width_bits, lang);
     }
-    let p = field.present_if.as_ref().expect("guarded by branch above");
     match lang {
         Language::Swift => no_swift_emitter("present_if_encode_vle"),
         Language::Rust => unreachable!("a Rust codec's encode is its source's (ADR 0058)"),
@@ -16429,16 +16428,13 @@ fn present_if_encode_vle(
             )
         }
         Language::C11 => {
-            // C11 has no nullable wrapper — the carrier bit is the
-            // presence source. The VLE encode loop reads the field
-            // directly from `self-><id>` which is always present.
-            // Disjunction chains compose via
-            // `present_if_test_literal_encode`.
+            // The member is the optional value of its number: the encode
+            // site tests that it is present and the VLE loop reads the
+            // value it holds, as every other backend's does.
             let id_snake = filters::to_snake_case(id.to_string());
-            let test = present_if_test_literal_encode(fields, p, Language::C11);
-            let inner = vle_encode_block(&format!("self->{id_snake}"), width_bits, lang);
+            let inner = vle_encode_block(&format!("self->{id_snake}.value"), width_bits, lang);
             format!(
-                "    if ({test}) {{\n\
+                "    if (self->{id_snake}.present) {{\n\
                  {inner}\n    \
                  }}"
             )
@@ -16722,10 +16718,9 @@ fn streaming_fixed_field_encode_c11(
         .join("\n")
 }
 
-/// C11 encode inner body — same per-byte writes as the non-gated form
-/// but indented one extra level so they sit inside the carrier-bit
-/// gate. C11 has no nullable wrapper so reads go through `self-><id>`
-/// in both gated and non-gated paths; only the indentation differs.
+/// C11 encode inner body of a gated field — the same per-byte writes as the
+/// non-gated form, indented one extra level so they sit inside the presence
+/// test, and reading the value the optional member holds (`self-><id>.value`).
 fn streaming_fixed_field_encode_c11_inner(
     l: &LangCtx,
     field: &CodecField,
@@ -16734,7 +16729,7 @@ fn streaming_fixed_field_encode_c11_inner(
 ) -> String {
     let id_snake = filters::to_snake_case(field.id.clone());
     let endian = field.effective_endian(default_endian);
-    let source = l.codec_carrier_expr(&field.sce_type, &format!("self->{id_snake}"));
+    let source = l.codec_carrier_expr(&field.sce_type, &format!("self->{id_snake}.value"));
     if n == 1 {
         return format!("        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, {source}));");
     }
@@ -17598,14 +17593,20 @@ fn chain_has_decl_lines(
             }]
         }
         Language::C11 => {
-            // The chain is a fixed array and its length; an absent gated
-            // chain has length 0.
+            // The chain is a fixed array and its length; a gated chain is the
+            // optional value of that pair, and an absent one has no entries
+            // (every byte of it zero).
             let base = if encode { "self->" } else { "out->" };
             let list = format!("{base}{id}");
-            let found = test(&format!("{list}[_i]"));
+            let (data, len) = if gated {
+                (format!("{list}.value.data"), format!("{list}.value.len"))
+            } else {
+                (list.clone(), format!("{list}_len"))
+            };
+            let found = test(&format!("{data}[_i]"));
             vec![
                 format!("bool {has} = false;"),
-                format!("for (size_t _i = 0; _i < {list}_len; ++_i) {{"),
+                format!("for (size_t _i = 0; _i < {len}; ++_i) {{"),
                 format!("    if ({found}) {{"),
                 format!("        {has} = true;"),
                 "        break;".to_string(),
@@ -17663,7 +17664,10 @@ fn gated_field_presence(field: &CodecField, lang: crate::generator::Language) ->
             format!("self.{id} is not None"),
             format!("self.{id} is None"),
         ),
-        Language::C11 => unreachable!("C11 has no wrapper that says a field was given"),
+        Language::C11 => (
+            format!("self->{id}.present"),
+            format!("!self->{id}.present"),
+        ),
         Language::Swift => no_swift_emitter("gated_field_presence"),
     }
 }
@@ -17710,7 +17714,11 @@ fn present_if_mismatch_check(
             format!("elif {given}:"),
             format!("    {refuse}"),
         ],
-        Language::C11 => unreachable!("C11 has no wrapper that says a field was given"),
+        Language::C11 => vec![
+            format!("if ({test}) {{"),
+            format!("    if ({absent}) {refuse}"),
+            format!("}} else if ({given}) {refuse}"),
+        ],
         Language::Swift => no_swift_emitter("present_if_mismatch_check"),
     }
 }
@@ -17725,16 +17733,15 @@ fn present_if_mismatch_stmt(field_id: &str, lang: crate::generator::Language) ->
         Language::Kotlin => "return CodecError.PresentIfMismatch".to_string(),
         Language::Go => "return codec.ErrPresentIfMismatch".to_string(),
         Language::Python => format!("raise PresentIfMismatch(\"{field_id}\")"),
-        Language::C11 => unreachable!("C11 has no wrapper that says a field was given"),
+        Language::C11 => "return SCE_FORGE_CODEC_PRESENT_IF_MISMATCH;".to_string(),
         Language::Swift => no_swift_emitter("present_if_mismatch_stmt"),
     }
 }
 
 /// What a chain-membership predicate asks of the top of `encode`: the boolean
-/// locals it reads, bound from the value being encoded, and — on every
-/// backend that carries presence in a wrapper — the check that each field
-/// gated on such a predicate is given exactly when the predicate says it
-/// belongs on the wire.
+/// locals it reads, bound from the value being encoded, and the check that
+/// each field gated on such a predicate is given exactly when the predicate
+/// says it belongs on the wire.
 ///
 /// The check is the whole point of an encoder reading the predicate. A
 /// message whose chain says "a slice list follows" and whose payload field is
@@ -17742,9 +17749,8 @@ fn present_if_mismatch_stmt(field_id: &str, lang: crate::generator::Language) ->
 /// whichever the encoder wrote, the peer would read the other. It is refused
 /// before the first byte is written, so a refusal leaves the sink untouched.
 ///
-/// C11 has no wrapper, so a field's presence there IS the predicate: it only
-/// declares the locals, and the field's own encode block gates on them, as it
-/// does on a flag.
+/// C11 holds a gated field in the optional value of its element, so it makes the
+/// same check and refuses with `SCE_FORGE_CODEC_PRESENT_IF_MISMATCH`.
 ///
 /// Returns the text (each line indented and newline-terminated, empty when no
 /// predicate of the codec reads a chain) and whether `encode` can now refuse
@@ -17770,28 +17776,25 @@ fn present_if_chain_encode_prologue(
     if lines.is_empty() {
         return (String::new(), false);
     }
-    let checked = !matches!(lang, crate::generator::Language::C11);
-    if checked {
-        for field in fields {
-            let Some(pred) = field.present_if.as_ref() else {
-                continue;
-            };
-            if !present_if_has_chain_clause(pred) {
-                continue;
-            }
-            let test = present_if_test_literal_encode(fields, pred, lang);
-            let (given, absent) = gated_field_presence(field, lang);
-            let refuse = present_if_mismatch_stmt(&field.id, lang);
-            lines.extend(present_if_mismatch_check(
-                &test, &given, &absent, &refuse, lang,
-            ));
+    for field in fields {
+        let Some(pred) = field.present_if.as_ref() else {
+            continue;
+        };
+        if !present_if_has_chain_clause(pred) {
+            continue;
         }
+        let test = present_if_test_literal_encode(fields, pred, lang);
+        let (given, absent) = gated_field_presence(field, lang);
+        let refuse = present_if_mismatch_stmt(&field.id, lang);
+        lines.extend(present_if_mismatch_check(
+            &test, &given, &absent, &refuse, lang,
+        ));
     }
     let text = lines
         .iter()
         .map(|line| format!("{indent}{line}\n"))
         .collect::<String>();
-    (text, checked)
+    (text, true)
 }
 
 /// `decode_stmt`, followed by one boolean local per identifier a later
@@ -26619,6 +26622,77 @@ pub(crate) struct C11Optional {
     pub(crate) declaration: String,
 }
 
+/// The member a C11 codec holds a field in that `sce:present-if` gates and whose
+/// value is a list of at most `max` bodies: an optional value of the shape
+/// `sce/forge/optional.h` gives every one (`present` and `value`), over the bodies
+/// and their count. It is a member of its own and no named type, since the list
+/// is no element a statechart's variable holds, so no two codecs of one program
+/// can disagree about a name.
+fn c11_gated_list_member(body_type: &str, max: u32) -> String {
+    format!("struct {{ bool present; struct {{ {body_type} data[{max}]; size_t len; }} value; }}")
+}
+
+/// [`c11_gated_list_member`] for a field whose value is one body, the codec an
+/// embed holds.
+fn c11_gated_body_member(body_type: &str) -> String {
+    format!("struct {{ bool present; {body_type} value; }}")
+}
+
+/// The optional value of the element `present`, held in the type `held` in C11,
+/// and what the header declares first for it, with `alias` written before the
+/// declaration where the element is an enum ([`LangCtx::c11_codec_optional`]).
+fn c11_optional_declared(held: &str, present: &SceType, alias: &str) -> C11Optional {
+    use crate::forge::static_lowering as lowering;
+    let type_name = lowering::c11_optional_type(held)
+        .expect("every element a codec holds has an optional type in C11");
+    let declaration = lowering::target_for(crate::generator::Language::C11)
+        .and_then(|target| target.optional_def(held, present))
+        .map(|declared| format!("{alias}{declared}"))
+        .unwrap_or_default();
+    C11Optional {
+        type_name,
+        declaration,
+    }
+}
+
+/// The optional value a C11 codec holds a field in that `sce:present-if` gates and
+/// whose value is a byte string or a text: the struct of `sce_static_bytes_<N>_t`,
+/// the bytes and the length of the value, over the bound the field is held to. A
+/// text is held as its UTF-8 bytes and their length, as an ungated one is: the
+/// buffer is not NUL-terminated, so a text of the whole bound is a value.
+fn c11_gated_bytes_optional(field: &CodecField) -> C11Optional {
+    let bound = crate::forge::limits::resolve_bytes_max(field.max_size);
+    c11_optional_declared(
+        &crate::forge::static_lowering::c_bytes_storage_type(bound),
+        &SceType::Bytes,
+        "",
+    )
+}
+
+/// The optional value of a number or a `bool`, which `sce/forge/optional.h`
+/// declares itself ([`LangCtx::c11_codec_optional`] for the other elements): what a
+/// variable-width field is held in, which is always a number.
+fn c11_number_optional(field: &CodecField) -> C11Optional {
+    let held = c_type(&field.sce_type);
+    C11Optional {
+        type_name: crate::forge::static_lowering::c11_optional_type(held)
+            .expect("every number has an optional type in C11"),
+        declaration: String::new(),
+    }
+}
+
+impl C11Optional {
+    /// The constructor of a present value, `sce_optional_<elem>_some(value)`.
+    pub(crate) fn some(&self, value: &str) -> String {
+        format!("{}_some({value})", self.type_name.trim_end_matches("_t"))
+    }
+
+    /// The constructor of the absent value, `sce_optional_<elem>_none()`.
+    pub(crate) fn none(&self) -> String {
+        format!("{}_none()", self.type_name.trim_end_matches("_t"))
+    }
+}
+
 /// The type a Go codec holds a value that may be absent in, over `present`:
 /// [`optional_of`] for Go, which is also what a statechart's variable of the
 /// type is, so a value a codec decodes is taken whole by one that holds it.
@@ -26966,16 +27040,7 @@ impl LangCtx {
             }
             scalar => c_type(scalar).to_string(),
         };
-        let type_name = lowering::c11_optional_type(&held)
-            .expect("every element a codec holds has an optional type in C11");
-        let declaration = lowering::target_for(crate::generator::Language::C11)
-            .and_then(|target| target.optional_def(&held, present))
-            .map(|declared| format!("{alias}{declared}"))
-            .unwrap_or_default();
-        C11Optional {
-            type_name,
-            declaration,
-        }
+        c11_optional_declared(&held, present, &alias)
     }
 
     /// Parameter type for function signatures (uses references/borrows for

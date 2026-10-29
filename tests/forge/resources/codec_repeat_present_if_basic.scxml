@@ -25,9 +25,9 @@
        Kotlin: `MutableList<CodecRepeatElem>?`
        Go:     `[]CodecRepeatElem` (slice nilness encodes presence)
        Python: `Optional[List[CodecRepeatElem]]`
-       C11:    `codec_repeat_elem_t elems[max]; size_t elems_len`
-               (carrier-bit-as-truth — wire presence is the carrier
-                flag, not the C-side `_len`)
+       C11:    `struct { bool present; struct { codec_repeat_elem_t data[max];
+               size_t len; } value; } elems` (the optional value of the list:
+               on the wire and empty is a value, not on the wire is not one)
 
      Round-trip oracles:
        has_list=0:    [0x00]

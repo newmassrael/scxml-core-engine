@@ -15179,9 +15179,12 @@ int main(void) {{
             continue;
         }}
         if (f->sliced) {{
-            expect(v.slices_len == 1 && v.slice_count == 1, f->name, "slices missing");
+            expect(v.slices.present && v.slices.value.len == 1 && v.slice_count.present &&
+                       v.slice_count.value == 1,
+                   f->name, "slices missing");
         }} else {{
-            expect(v.slices_len == 0 && v.slice_count == 0, f->name, "slices without a marker");
+            expect(!v.slices.present && v.slices.value.len == 0 && !v.slice_count.present,
+                   f->name, "slices without a marker");
         }}
         uint8_t out[2048];
         size_t out_len = 0;
@@ -15740,9 +15743,16 @@ static void expect(int ok, const char *what) {
     }
 }
 
-/* An absent optional entry value is 0 in a C struct that was zeroed first. */
+/* A field gated by `sce:present-if` is the optional value of its element
+ * (`present`, `value`). A zero expected stands for an absent one: no entry of
+ * these fixtures carries the value zero. */
+static int held(bool present, unsigned long long value, unsigned long long want) {
+    return want == 0 ? !present : present && value == want;
+}
+
 static int entry_is(const codec_chain_flag_entry_t *e, uint8_t header, uint8_t s, uint16_t l) {
-    return e->header == header && e->short_value == s && e->long_value == l;
+    return e->header == header && held(e->short_value.present, e->short_value.value, s) &&
+           held(e->long_value.present, e->long_value.value, l);
 }
 
 static int carrier_decode(const uint8_t *bytes, size_t len, codec_chain_flag_carrier_t *v) {
@@ -15797,8 +15807,9 @@ int main(void) {
            "carrier wide round trip");
 
     expect(forward_decode(FWD_NARROW, sizeof FWD_NARROW, 0, &f), "forward narrow decode");
-    expect(f.entries_len == 2 && entry_is(&f.entries[0], 0x83, 0x11, 0) &&
-               entry_is(&f.entries[1], 0x05, 0x22, 0),
+    expect(f.entries.present && f.entries.value.len == 2 &&
+               entry_is(&f.entries.value.data[0], 0x83, 0x11, 0) &&
+               entry_is(&f.entries.value.data[1], 0x05, 0x22, 0),
            "forward narrow");
     expect(codec_chain_flag_forward_encode_to_buf(&f, out, sizeof out, &out_len, 0) ==
                    SCE_FORGE_CODEC_OK &&
@@ -15806,8 +15817,9 @@ int main(void) {
            "forward narrow round trip");
 
     expect(forward_decode(WIDE, sizeof WIDE, 1, &f), "forward wide decode");
-    expect(f.entries_len == 2 && entry_is(&f.entries[0], 0x83, 0, 0x1234) &&
-               entry_is(&f.entries[1], 0x05, 0, 0xABCD),
+    expect(f.entries.present && f.entries.value.len == 2 &&
+               entry_is(&f.entries.value.data[0], 0x83, 0, 0x1234) &&
+               entry_is(&f.entries.value.data[1], 0x05, 0, 0xABCD),
            "forward wide");
     expect(codec_chain_flag_forward_encode_to_buf(&f, out, sizeof out, &out_len, 1) ==
                    SCE_FORGE_CODEC_OK &&
@@ -15817,11 +15829,14 @@ int main(void) {
     /* The same bytes under the other answer: the caller's value reached the
      * entries, and they are not read as wide. */
     expect(forward_decode(WIDE, sizeof WIDE, 0, &f), "forward flag decode");
-    expect(f.entries_len >= 1 && f.entries[0].long_value == 0 && f.entries[0].short_value == 0x12,
+    expect(f.entries.present && f.entries.value.len >= 1 &&
+               !f.entries.value.data[0].long_value.present &&
+               held(f.entries.value.data[0].short_value.present,
+                    f.entries.value.data[0].short_value.value, 0x12),
            "forward flag ignored");
 
     expect(forward_decode(FWD_ABSENT, sizeof FWD_ABSENT, 1, &f), "forward absent decode");
-    expect(f.entries_len == 0, "forward chain without its gate");
+    expect(!f.entries.present && f.entries.value.len == 0, "forward chain without its gate");
     expect(codec_chain_flag_forward_encode_to_buf(&f, out, sizeof out, &out_len, 1) ==
                    SCE_FORGE_CODEC_OK &&
                out_len == sizeof FWD_ABSENT && memcmp(out, FWD_ABSENT, sizeof FWD_ABSENT) == 0,
@@ -15847,8 +15862,9 @@ int main(void) {
            "repeat wide round trip");
 
     expect(gated_decode(GATED_NARROW, sizeof GATED_NARROW, &g), "gated repeat narrow decode");
-    expect(g.entries_len == 2 && entry_is(&g.entries[0], 0x83, 0x11, 0) &&
-               entry_is(&g.entries[1], 0x05, 0x22, 0),
+    expect(g.entries.present && g.entries.value.len == 2 &&
+               entry_is(&g.entries.value.data[0], 0x83, 0x11, 0) &&
+               entry_is(&g.entries.value.data[1], 0x05, 0x22, 0),
            "gated repeat narrow");
     expect(codec_repeat_flag_gated_encode_to_buf(&g, out, sizeof out, &out_len) ==
                    SCE_FORGE_CODEC_OK &&
@@ -15857,8 +15873,9 @@ int main(void) {
            "gated repeat narrow round trip");
 
     expect(gated_decode(GATED_WIDE, sizeof GATED_WIDE, &g), "gated repeat wide decode");
-    expect(g.entries_len == 2 && entry_is(&g.entries[0], 0x83, 0, 0x1234) &&
-               entry_is(&g.entries[1], 0x05, 0, 0xABCD),
+    expect(g.entries.present && g.entries.value.len == 2 &&
+               entry_is(&g.entries.value.data[0], 0x83, 0, 0x1234) &&
+               entry_is(&g.entries.value.data[1], 0x05, 0, 0xABCD),
            "gated repeat wide");
     expect(codec_repeat_flag_gated_encode_to_buf(&g, out, sizeof out, &out_len) ==
                    SCE_FORGE_CODEC_OK &&
@@ -15866,7 +15883,7 @@ int main(void) {
            "gated repeat wide round trip");
 
     expect(gated_decode(GATED_ABSENT, sizeof GATED_ABSENT, &g), "gated repeat absent decode");
-    expect(g.entries_len == 0, "gated repeat without its gate");
+    expect(!g.entries.present && g.entries.value.len == 0, "gated repeat without its gate");
     expect(codec_repeat_flag_gated_encode_to_buf(&g, out, sizeof out, &out_len) ==
                    SCE_FORGE_CODEC_OK &&
                out_len == sizeof GATED_ABSENT &&
@@ -16588,10 +16605,18 @@ static void expect(int ok, const char *what) {
     }
 }
 
-/* An absent optional entry value is 0 in a C struct that was zeroed first. */
+/* A field gated by `sce:present-if` is the optional value of its element
+ * (`present`, `value`). A zero expected stands for an absent one: no entry of
+ * these fixtures carries the value zero. */
+static int held(bool present, unsigned long long value, unsigned long long want) {
+    return want == 0 ? !present : present && value == want;
+}
+
 static int entry_is(const codec_chain_prev_entry_t *e, uint8_t header, uint8_t s, uint16_t l,
                     uint8_t tag) {
-    return e->header == header && e->short_value == s && e->long_value == l && e->tag == tag;
+    return e->header == header && held(e->short_value.present, e->short_value.value, s) &&
+           held(e->long_value.present, e->long_value.value, l) &&
+           held(e->tag.present, e->tag.value, tag);
 }
 
 static int carrier_decode(const uint8_t *bytes, size_t len, codec_chain_prev_carrier_t *v) {
@@ -16689,26 +16714,29 @@ int main(void) {
     expect(carrier_round_trips(&c, ONLY, sizeof ONLY), "the marker alone round trip");
 
     expect(gated_decode(G_AFTER, sizeof G_AFTER, &g), "gated after the marker decode");
-    expect(g.entries_len == 2 && entry_is(&g.entries[0], 0x84, 0x11, 0, 0) &&
-               entry_is(&g.entries[1], 0x03, 0, 0x1234, 0),
+    expect(g.entries.present && g.entries.value.len == 2 &&
+               entry_is(&g.entries.value.data[0], 0x84, 0x11, 0, 0) &&
+               entry_is(&g.entries.value.data[1], 0x03, 0, 0x1234, 0),
            "gated after the marker");
     expect(gated_round_trips(&g, G_AFTER, sizeof G_AFTER), "gated after the marker round trip");
 
     expect(gated_decode(G_MIDDLE, sizeof G_MIDDLE, &g), "gated marker with Z set decode");
-    expect(g.entries_len == 3 && entry_is(&g.entries[0], 0x83, 0x11, 0, 0) &&
-               entry_is(&g.entries[1], 0x84, 0x22, 0, 0) &&
-               entry_is(&g.entries[2], 0x03, 0, 0x1234, 0),
+    expect(g.entries.present && g.entries.value.len == 3 &&
+               entry_is(&g.entries.value.data[0], 0x83, 0x11, 0, 0) &&
+               entry_is(&g.entries.value.data[1], 0x84, 0x22, 0, 0) &&
+               entry_is(&g.entries.value.data[2], 0x03, 0, 0x1234, 0),
            "gated marker with Z set");
     expect(gated_round_trips(&g, G_MIDDLE, sizeof G_MIDDLE), "gated marker with Z set round trip");
 
     expect(gated_decode(G_TAGGED, sizeof G_TAGGED, &g), "gated tagged decode");
-    expect(g.entries_len == 2 && entry_is(&g.entries[0], 0x84, 0x11, 0, 0xA1) &&
-               entry_is(&g.entries[1], 0x03, 0, 0x1234, 0xA2),
+    expect(g.entries.present && g.entries.value.len == 2 &&
+               entry_is(&g.entries.value.data[0], 0x84, 0x11, 0, 0xA1) &&
+               entry_is(&g.entries.value.data[1], 0x03, 0, 0x1234, 0xA2),
            "gated tagged");
     expect(gated_round_trips(&g, G_TAGGED, sizeof G_TAGGED), "gated tagged round trip");
 
     expect(gated_decode(G_ABSENT, sizeof G_ABSENT, &g), "gated absent decode");
-    expect(g.entries_len == 0, "gated chain without its gate");
+    expect(!g.entries.present && g.entries.value.len == 0, "gated chain without its gate");
     expect(gated_round_trips(&g, G_ABSENT, sizeof G_ABSENT), "gated absent round trip");
 
     /* A chain that ends with the frame is told the same, with no flag to end on. */
@@ -16732,22 +16760,24 @@ int main(void) {
     expect(tail_round_trips(&t, TAGGED, sizeof TAGGED), "tail tagged round trip");
 
     expect(tail_gated_decode(G_AFTER, sizeof G_AFTER, &tg), "tail gated after the marker decode");
-    expect(tg.entries_len == 2 && entry_is(&tg.entries[0], 0x84, 0x11, 0, 0) &&
-               entry_is(&tg.entries[1], 0x03, 0, 0x1234, 0),
+    expect(tg.entries.present && tg.entries.value.len == 2 &&
+               entry_is(&tg.entries.value.data[0], 0x84, 0x11, 0, 0) &&
+               entry_is(&tg.entries.value.data[1], 0x03, 0, 0x1234, 0),
            "tail gated after the marker");
     expect(tail_gated_round_trips(&tg, G_AFTER, sizeof G_AFTER),
            "tail gated after the marker round trip");
 
     expect(tail_gated_decode(G_MIDDLE, sizeof G_MIDDLE, &tg), "tail gated marker with Z set decode");
-    expect(tg.entries_len == 3 && entry_is(&tg.entries[0], 0x83, 0x11, 0, 0) &&
-               entry_is(&tg.entries[1], 0x84, 0x22, 0, 0) &&
-               entry_is(&tg.entries[2], 0x03, 0, 0x1234, 0),
+    expect(tg.entries.present && tg.entries.value.len == 3 &&
+               entry_is(&tg.entries.value.data[0], 0x83, 0x11, 0, 0) &&
+               entry_is(&tg.entries.value.data[1], 0x84, 0x22, 0, 0) &&
+               entry_is(&tg.entries.value.data[2], 0x03, 0, 0x1234, 0),
            "tail gated marker with Z set");
     expect(tail_gated_round_trips(&tg, G_MIDDLE, sizeof G_MIDDLE),
            "tail gated marker with Z set round trip");
 
     expect(tail_gated_decode(G_ABSENT, sizeof G_ABSENT, &tg), "tail gated absent decode");
-    expect(tg.entries_len == 0, "tail gated chain without its gate");
+    expect(!tg.entries.present && tg.entries.value.len == 0, "tail gated chain without its gate");
     expect(tail_gated_round_trips(&tg, G_ABSENT, sizeof G_ABSENT),
            "tail gated absent round trip");
 

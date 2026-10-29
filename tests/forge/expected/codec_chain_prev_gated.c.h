@@ -13,6 +13,7 @@
 #include <string.h>
 
 #include "sce/forge/codec.h"
+#include "sce/forge/optional.h"  /* a field gated by `sce:present-if`, docs/adr/0055 */
 #include "codec_chain_prev_entry.h"
 
 #define CODEC_CHAIN_PREV_GATED_MIN_BYTES 1
@@ -20,9 +21,8 @@
 
 typedef struct {
     uint8_t head;
-    /* RFC §synth-5-B B3 tlv-chain: fixed array of codec_chain_prev_entry_t entries (max-depth 4, on-overflow=reject) */
-    codec_chain_prev_entry_t entries[4];
-    size_t  entries_len;
+    /* `sce:present-if`: an optional value (`present`, `value`), docs/adr/0055 step 14 */
+    struct { bool present; struct { codec_chain_prev_entry_t data[4]; size_t len; } value; } entries;
 } codec_chain_prev_gated_t;
 
 /* Decode the next frame from `cursor`. Returns SCE_FORGE_CODEC_OK on
@@ -49,18 +49,19 @@ static inline sce_forge_codec_status_t codec_chain_prev_gated_decode(sce_forge_c
         out->head = raw[0];
         if (!sce_forge_cursor_advance(cursor, 1)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
     }
-    out->entries_len = 0;
+    memset(&out->entries, 0, sizeof out->entries);
         if ((out->head & 0x02) != 0) {
+            out->entries.present = true;
             uint8_t _prev_entries_after_marker = 0;
             bool _more = false;
             for (size_t _i = 0; _i < 4; ++_i) {
                 if (sce_forge_cursor_remaining(cursor) == 0) break;
-                sce_forge_codec_status_t _st = codec_chain_prev_entry_decode(cursor, &out->entries[out->entries_len], _prev_entries_after_marker, (uint8_t)((out->head >> 0) & 0x1));
+                sce_forge_codec_status_t _st = codec_chain_prev_entry_decode(cursor, &out->entries.value.data[out->entries.value.len], _prev_entries_after_marker, (uint8_t)((out->head >> 0) & 0x1));
                 if (_st != SCE_FORGE_CODEC_OK) return _st;
-                size_t _just = out->entries_len;
-                out->entries_len++;
-                _more = codec_chain_prev_entry_z(&out->entries[_just]);
-                _prev_entries_after_marker = (uint8_t)((((uint64_t)(out->entries[_just].header) & 127ULL) == 4ULL) ? 1 : 0);
+                size_t _just = out->entries.value.len;
+                out->entries.value.len++;
+                _more = codec_chain_prev_entry_z(&out->entries.value.data[_just]);
+                _prev_entries_after_marker = (uint8_t)((((uint64_t)(out->entries.value.data[_just].header) & 127ULL) == 4ULL) ? 1 : 0);
                 if (!_more) break;
             }
             if (_more && sce_forge_cursor_remaining(cursor) == 0) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
@@ -86,11 +87,11 @@ static inline sce_forge_codec_status_t codec_chain_prev_gated_encode(const codec
      * route to their dedicated helpers; everything else uses
      * `present_if_encode_block`. */
     SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->head));
-    if ((self->head & 0x02) != 0) {
+    if (self->entries.present) {
         uint8_t _prev_entries_after_marker = 0;
-        for (size_t _ti = 0; _ti < self->entries_len; ++_ti) {
-            SCE_FORGE_TRY_WRITE(codec_chain_prev_entry_encode(&self->entries[_ti], w, _prev_entries_after_marker, (uint8_t)((self->head >> 0) & 0x1)));
-            _prev_entries_after_marker = (uint8_t)((((uint64_t)(self->entries[_ti].header) & 127ULL) == 4ULL) ? 1 : 0);
+        for (size_t _ti = 0; _ti < self->entries.value.len; ++_ti) {
+            SCE_FORGE_TRY_WRITE(codec_chain_prev_entry_encode(&self->entries.value.data[_ti], w, _prev_entries_after_marker, (uint8_t)((self->head >> 0) & 0x1)));
+            _prev_entries_after_marker = (uint8_t)((((uint64_t)(self->entries.value.data[_ti].header) & 127ULL) == 4ULL) ? 1 : 0);
         }
     }
     return SCE_FORGE_CODEC_OK;

@@ -13,16 +13,39 @@
 #include <string.h>
 
 #include "sce/forge/codec.h"
+#include "sce/forge/optional.h"  /* a field gated by `sce:present-if`, docs/adr/0055 */
 
 #define CODEC_ZENOH_SCOUT_MIN_BYTES 2
 #define CODEC_ZENOH_SCOUT_MAX_BYTES 18
 
+#ifndef SCE_OPTIONAL_BYTES_16
+#define SCE_OPTIONAL_BYTES_16
+#ifndef SCE_STATIC_BYTES_16
+#define SCE_STATIC_BYTES_16
+/* SCE Accepted Subset §2.15: a `bytes` of at most 16 bytes. */
+typedef struct {
+    uint8_t data[16];
+    size_t len;
+} sce_static_bytes_16_t;
+
+static inline sce_static_bytes_16_t sce_static_bytes_16_of(sce_forge_bytes_view_t bytes) {
+    sce_static_bytes_16_t value = { { 0 }, 0 };
+    for (size_t i = 0; i < bytes.len && i < 16u; ++i) {
+        value.data[i] = bytes.data[i];
+    }
+    value.len = bytes.len < 16u ? bytes.len : 16u;
+    return value;
+}
+#endif
+/* docs/adr/0055: a value of `sce_static_bytes_16_t` that may be absent. */
+SCE_OPTIONAL_DECLARE_BYTES(16)
+#endif
+
 typedef struct {
     uint8_t version;
     uint8_t cbyte;
-    /* variable-length payload (sce:bit-size="length-ref", sce:max-size="16") */
-    uint8_t zid[16];
-    size_t  zid_len;
+    /* `sce:present-if`: an optional value (`present`, `value`), docs/adr/0055 step 14 */
+    sce_optional_bytes_16_t zid;
 } codec_zenoh_scout_t;
 
 /* Decode the next frame from `cursor`. Returns SCE_FORGE_CODEC_OK on
@@ -60,11 +83,13 @@ static inline sce_forge_codec_status_t codec_zenoh_scout_decode(sce_forge_cursor
         if (_n > 16) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
         const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);
         if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
-        memcpy(out->zid, raw, _n);
-        out->zid_len = _n;
+        out->zid = sce_optional_bytes_16_none();
+        memcpy(out->zid.value.data, raw, _n);
+        out->zid.value.len = _n;
+        out->zid.present = true;
         if (!sce_forge_cursor_advance(cursor, _n)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
     } else {
-        out->zid_len = 0;
+        out->zid = sce_optional_bytes_16_none();
     }
     return SCE_FORGE_CODEC_OK;
 }
@@ -87,10 +112,10 @@ static inline sce_forge_codec_status_t codec_zenoh_scout_encode(const codec_zeno
      * `present_if_encode_block`. */
     SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->version));
     SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->cbyte));
-    if ((self->cbyte & 0x08) != 0) {
-        size_t _n = self->zid_len;
+    if (self->zid.present) {
+        size_t _n = self->zid.value.len;
         if (_n > (size_t)((int64_t)(size_t)((self->cbyte >> 4) & 0xF) + 1)) _n = (size_t)((int64_t)(size_t)((self->cbyte >> 4) & 0xF) + 1);
-        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_bytes(w, self->zid, _n));
+        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_bytes(w, self->zid.value.data, _n));
     }
     return SCE_FORGE_CODEC_OK;
 }

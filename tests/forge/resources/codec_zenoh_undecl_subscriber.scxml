@@ -41,8 +41,8 @@
        Kotlin: `UInt` + `CodecZenohDeclExtKeyexpr?`
        Go:     `uint32` + `*CodecZenohDeclExtKeyexpr`
        Python: `int` + `Optional[CodecZenohDeclExtKeyexpr]`
-       C11:    `uint32_t id` + `codec_zenoh_decl_ext_keyexpr_t ext_keyexpr`
-               (carrier-bit-as-truth — wire presence is parent.Z) -->
+       C11:    `uint32_t id` + the optional value of `ext_keyexpr` (`present`,
+               `value` a `codec_zenoh_decl_ext_keyexpr_t`) for parent.Z -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
        sce:kind="codec" sce:default-endian="big" name="codec_zenoh_undecl_subscriber">

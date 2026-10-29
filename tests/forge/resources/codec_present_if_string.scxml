@@ -33,8 +33,8 @@
        Kotlin: `UByte?` + `String?`
        Go:     `*uint8` + `*string` (pointer nilness encodes presence)
        Python: `Optional[int]` + `Optional[str]`
-       C11:    `uint8_t text_len` + `char text[33]; size_t text_len`
-               (carrier-bit-as-truth — wire presence is carrier.has_text)
+       C11:    `sce_optional_uint8_t text_len` + `sce_optional_bytes_32_t text`
+               (the optional value of the UTF-8 bytes, `value.len` their length)
 
      Round-trip oracles (documentary; primitive demos do not yet ship
      `<sce:test-vector>` rows per codec_repeat_present_if_basic +

@@ -13,9 +13,33 @@
 #include <string.h>
 
 #include "sce/forge/codec.h"
+#include "sce/forge/optional.h"  /* a field gated by `sce:present-if`, docs/adr/0055 */
 
 #define CODEC_ZENOH_INIT_BODY_MIN_BYTES 6
 #define CODEC_ZENOH_INIT_BODY_MAX_BYTES 159
+
+#ifndef SCE_OPTIONAL_BYTES_128
+#define SCE_OPTIONAL_BYTES_128
+#ifndef SCE_STATIC_BYTES_128
+#define SCE_STATIC_BYTES_128
+/* SCE Accepted Subset §2.15: a `bytes` of at most 128 bytes. */
+typedef struct {
+    uint8_t data[128];
+    size_t len;
+} sce_static_bytes_128_t;
+
+static inline sce_static_bytes_128_t sce_static_bytes_128_of(sce_forge_bytes_view_t bytes) {
+    sce_static_bytes_128_t value = { { 0 }, 0 };
+    for (size_t i = 0; i < bytes.len && i < 128u; ++i) {
+        value.data[i] = bytes.data[i];
+    }
+    value.len = bytes.len < 128u ? bytes.len : 128u;
+    return value;
+}
+#endif
+/* docs/adr/0055: a value of `sce_static_bytes_128_t` that may be absent. */
+SCE_OPTIONAL_DECLARE_BYTES(128)
+#endif
 
 typedef struct {
     uint8_t version;
@@ -23,11 +47,14 @@ typedef struct {
     /* variable-length payload (sce:bit-size="length-ref", sce:max-size="16") */
     uint8_t zid[16];
     size_t  zid_len;
-    uint8_t sn_res;
-    uint16_t batch_size;
-    uint64_t cookie_len;
-    /* variable-length payload (sce:bit-size="length-ref", sce:max-size="128") */
-    uint8_t cookie[128];
+    /* `sce:present-if`: an optional value (`present`, `value`), docs/adr/0055 step 14 */
+    sce_optional_uint8_t sn_res;
+    /* `sce:present-if`: an optional value (`present`, `value`), docs/adr/0055 step 14 */
+    sce_optional_uint16_t batch_size;
+    /* `sce:present-if`: an optional value (`present`, `value`), docs/adr/0055 step 14 */
+    sce_optional_uint64_t cookie_len;
+    /* `sce:present-if`: an optional value (`present`, `value`), docs/adr/0055 step 14 */
+    sce_optional_bytes_128_t cookie;
 } codec_zenoh_init_body_t;
 
 /* Decode the next frame from `cursor`. Returns SCE_FORGE_CODEC_OK on
@@ -77,18 +104,18 @@ static inline sce_forge_codec_status_t codec_zenoh_init_body_decode(sce_forge_cu
     if ((s & 0x01) != 0) {
         const uint8_t *raw = sce_forge_cursor_peek(cursor, 1);
         if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
-        out->sn_res = (uint8_t)(raw[0]);
+        out->sn_res = sce_optional_uint8_some((uint8_t)(raw[0]));
         if (!sce_forge_cursor_advance(cursor, 1)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
     } else {
-        out->sn_res = 0;
+        out->sn_res = sce_optional_uint8_none();
     }
     if ((s & 0x01) != 0) {
         const uint8_t *raw = sce_forge_cursor_peek(cursor, 2);
         if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
-        out->batch_size = (uint16_t)(raw[0] | ((uint16_t)raw[1] << 8));
+        out->batch_size = sce_optional_uint16_some((uint16_t)(raw[0] | ((uint16_t)raw[1] << 8)));
         if (!sce_forge_cursor_advance(cursor, 2)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
     } else {
-        out->batch_size = 0;
+        out->batch_size = sce_optional_uint16_none();
     }
     if ((a & 0x01) != 0) {
         uint64_t _v;
@@ -96,20 +123,22 @@ static inline sce_forge_codec_status_t codec_zenoh_init_body_decode(sce_forge_cu
         sce_forge_codec_status_t _vle_st = sce_forge_cursor_read_vle_u64(cursor, &_v);
         if (_vle_st != SCE_FORGE_CODEC_OK) return _vle_st;
     }
-        out->cookie_len = _v;
+        out->cookie_len = sce_optional_uint64_some(_v);
     } else {
-        out->cookie_len = 0;
+        out->cookie_len = sce_optional_uint64_none();
     }
     if ((a & 0x01) != 0) {
-        size_t _n = (size_t)out->cookie_len;
+        size_t _n = (size_t)out->cookie_len.value;
         if (_n > 128) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
         const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);
         if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
-        memcpy(out->cookie, raw, _n);
-        out->cookie_len = _n;
+        out->cookie = sce_optional_bytes_128_none();
+        memcpy(out->cookie.value.data, raw, _n);
+        out->cookie.value.len = _n;
+        out->cookie.present = true;
         if (!sce_forge_cursor_advance(cursor, _n)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
     } else {
-        out->cookie_len = 0;
+        out->cookie = sce_optional_bytes_128_none();
     }
     return SCE_FORGE_CODEC_OK;
 }
@@ -140,20 +169,20 @@ static inline sce_forge_codec_status_t codec_zenoh_init_body_encode(const codec_
         if (_n > (size_t)((int64_t)(size_t)((self->cbyte >> 4) & 0xF) + 1)) _n = (size_t)((int64_t)(size_t)((self->cbyte >> 4) & 0xF) + 1);
         SCE_FORGE_TRY_WRITE(sce_forge_writer_write_bytes(w, self->zid, _n));
     }
-    if ((s & 0x01) != 0) {
-        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->sn_res));
+    if (self->sn_res.present) {
+        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->sn_res.value));
     }
-    if ((s & 0x01) != 0) {
-        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)(self->batch_size & 0xFF)));
-        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)((self->batch_size >> 8) & 0xFF)));
+    if (self->batch_size.present) {
+        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)(self->batch_size.value & 0xFF)));
+        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)((self->batch_size.value >> 8) & 0xFF)));
     }
-    if ((a & 0x01) != 0) {
-    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_vle_u64(w, (uint64_t)(self->cookie_len)));
+    if (self->cookie_len.present) {
+    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_vle_u64(w, (uint64_t)(self->cookie_len.value)));
     }
-    if ((a & 0x01) != 0) {
-        size_t _n = self->cookie_len;
-        if (_n > self->cookie_len) _n = self->cookie_len;
-        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_bytes(w, self->cookie, _n));
+    if (self->cookie.present) {
+        size_t _n = self->cookie.value.len;
+        if (_n > self->cookie_len.value) _n = self->cookie_len.value;
+        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_bytes(w, self->cookie.value.data, _n));
     }
     return SCE_FORGE_CODEC_OK;
 }

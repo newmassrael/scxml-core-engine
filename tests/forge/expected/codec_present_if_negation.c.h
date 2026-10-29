@@ -12,13 +12,15 @@
 #include <stddef.h>
 
 #include "sce/forge/codec.h"
+#include "sce/forge/optional.h"  /* a field gated by `sce:present-if`, docs/adr/0055 */
 
 #define CODEC_PRESENT_IF_NEGATION_MIN_BYTES 3
 #define CODEC_PRESENT_IF_NEGATION_MAX_BYTES 3
 
 typedef struct {
     uint8_t flags;
-    uint16_t seq;
+    /* `sce:present-if`: an optional value (`present`, `value`), docs/adr/0055 step 14 */
+    sce_optional_uint16_t seq;
 } codec_present_if_negation_t;
 
 /* Decode the next frame from `cursor`. Returns SCE_FORGE_CODEC_OK on
@@ -48,10 +50,10 @@ static inline sce_forge_codec_status_t codec_present_if_negation_decode(sce_forg
     if ((out->flags & 0x01) == 0) {
         const uint8_t *raw = sce_forge_cursor_peek(cursor, 2);
         if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
-        out->seq = (uint16_t)(((uint16_t)raw[0] << 8) | raw[1]);
+        out->seq = sce_optional_uint16_some((uint16_t)(((uint16_t)raw[0] << 8) | raw[1]));
         if (!sce_forge_cursor_advance(cursor, 2)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
     } else {
-        out->seq = 0;
+        out->seq = sce_optional_uint16_none();
     }
     return SCE_FORGE_CODEC_OK;
 }
@@ -73,9 +75,9 @@ static inline sce_forge_codec_status_t codec_present_if_negation_encode(const co
      * route to their dedicated helpers; everything else uses
      * `present_if_encode_block`. */
     SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->flags));
-    if ((self->flags & 0x01) == 0) {
-        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)((self->seq >> 8) & 0xFF)));
-        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)(self->seq & 0xFF)));
+    if (self->seq.present) {
+        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)((self->seq.value >> 8) & 0xFF)));
+        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)(self->seq.value & 0xFF)));
     }
     return SCE_FORGE_CODEC_OK;
 }

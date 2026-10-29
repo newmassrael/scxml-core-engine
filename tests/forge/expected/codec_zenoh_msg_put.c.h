@@ -13,6 +13,7 @@
 #include <string.h>
 
 #include "sce/forge/codec.h"
+#include "sce/forge/optional.h"  /* a field gated by `sce:present-if`, docs/adr/0055 */
 #include "codec_zenoh_timestamp.h"
 #include "codec_zenoh_encoding.h"
 #include "codec_zenoh_ext_entry.h"
@@ -22,13 +23,12 @@
 
 typedef struct {
     uint8_t header;
-    /* RFC §synth-5-B embed: nested codec_zenoh_timestamp_t struct (no length prefix on the wire) */
-    codec_zenoh_timestamp_t timestamp;
-    /* RFC §synth-5-B embed: nested codec_zenoh_encoding_t struct (no length prefix on the wire) */
-    codec_zenoh_encoding_t encoding;
-    /* RFC §synth-5-B B3 tlv-chain: fixed array of codec_zenoh_ext_entry_t entries (max-depth 8, on-overflow=reject) */
-    codec_zenoh_ext_entry_t extensions[8];
-    size_t  extensions_len;
+    /* `sce:present-if`: an optional value (`present`, `value`), docs/adr/0055 step 14 */
+    struct { bool present; codec_zenoh_timestamp_t value; } timestamp;
+    /* `sce:present-if`: an optional value (`present`, `value`), docs/adr/0055 step 14 */
+    struct { bool present; codec_zenoh_encoding_t value; } encoding;
+    /* `sce:present-if`: an optional value (`present`, `value`), docs/adr/0055 step 14 */
+    struct { bool present; struct { codec_zenoh_ext_entry_t data[8]; size_t len; } value; } extensions;
     uint64_t payload_len;
     /* variable-length payload (sce:bit-size="length-ref", sce:max-size="256") */
     uint8_t payload[256];
@@ -71,24 +71,29 @@ static inline sce_forge_codec_status_t codec_zenoh_msg_put_decode(sce_forge_curs
         out->header = raw[0];
         if (!sce_forge_cursor_advance(cursor, 1)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
     }
+    memset(&out->timestamp, 0, sizeof out->timestamp);
     if ((out->header & 0x20) != 0) {
-        sce_forge_codec_status_t _st = codec_zenoh_timestamp_decode(cursor, &out->timestamp);
+        sce_forge_codec_status_t _st = codec_zenoh_timestamp_decode(cursor, &out->timestamp.value);
         if (_st != SCE_FORGE_CODEC_OK) return _st;
+        out->timestamp.present = true;
     }
+    memset(&out->encoding, 0, sizeof out->encoding);
     if ((out->header & 0x40) != 0) {
-        sce_forge_codec_status_t _st = codec_zenoh_encoding_decode(cursor, &out->encoding);
+        sce_forge_codec_status_t _st = codec_zenoh_encoding_decode(cursor, &out->encoding.value);
         if (_st != SCE_FORGE_CODEC_OK) return _st;
+        out->encoding.present = true;
     }
-    out->extensions_len = 0;
+    memset(&out->extensions, 0, sizeof out->extensions);
         if ((out->header & 0x80) != 0) {
+            out->extensions.present = true;
             bool _more = false;
             for (size_t _i = 0; _i < 8; ++_i) {
                 if (sce_forge_cursor_remaining(cursor) == 0) break;
-                sce_forge_codec_status_t _st = codec_zenoh_ext_entry_decode(cursor, &out->extensions[out->extensions_len]);
+                sce_forge_codec_status_t _st = codec_zenoh_ext_entry_decode(cursor, &out->extensions.value.data[out->extensions.value.len]);
                 if (_st != SCE_FORGE_CODEC_OK) return _st;
-                size_t _just = out->extensions_len;
-                out->extensions_len++;
-                _more = codec_zenoh_ext_entry_z(&out->extensions[_just]);
+                size_t _just = out->extensions.value.len;
+                out->extensions.value.len++;
+                _more = codec_zenoh_ext_entry_z(&out->extensions.value.data[_just]);
                 if (!_more) break;
             }
             if (_more && sce_forge_cursor_remaining(cursor) == 0) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
@@ -129,15 +134,15 @@ static inline sce_forge_codec_status_t codec_zenoh_msg_put_encode(const codec_ze
      * route to their dedicated helpers; everything else uses
      * `present_if_encode_block`. */
     SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->header));
-    if ((self->header & 0x20) != 0) {
-        SCE_FORGE_TRY_WRITE(codec_zenoh_timestamp_encode(&self->timestamp, w));
+    if (self->timestamp.present) {
+        SCE_FORGE_TRY_WRITE(codec_zenoh_timestamp_encode(&self->timestamp.value, w));
     }
-    if ((self->header & 0x40) != 0) {
-        SCE_FORGE_TRY_WRITE(codec_zenoh_encoding_encode(&self->encoding, w));
+    if (self->encoding.present) {
+        SCE_FORGE_TRY_WRITE(codec_zenoh_encoding_encode(&self->encoding.value, w));
     }
-    if ((self->header & 0x80) != 0) {
-        for (size_t _ti = 0; _ti < self->extensions_len; ++_ti) {
-            SCE_FORGE_TRY_WRITE(codec_zenoh_ext_entry_encode(&self->extensions[_ti], w));
+    if (self->extensions.present) {
+        for (size_t _ti = 0; _ti < self->extensions.value.len; ++_ti) {
+            SCE_FORGE_TRY_WRITE(codec_zenoh_ext_entry_encode(&self->extensions.value.data[_ti], w));
         }
     }
     SCE_FORGE_TRY_WRITE(sce_forge_writer_write_vle_u64(w, (uint64_t)(self->payload_len)));

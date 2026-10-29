@@ -13,19 +13,40 @@
 #include <string.h>
 
 #include "sce/forge/codec.h"
+#include "sce/forge/optional.h"  /* a field gated by `sce:present-if`, docs/adr/0055 */
 
 #define CODEC_PRESENT_IF_STRING_MIN_BYTES 2
 #define CODEC_PRESENT_IF_STRING_MAX_BYTES 34
 
+#ifndef SCE_OPTIONAL_BYTES_32
+#define SCE_OPTIONAL_BYTES_32
+#ifndef SCE_STATIC_BYTES_32
+#define SCE_STATIC_BYTES_32
+/* SCE Accepted Subset §2.15: a `bytes` of at most 32 bytes. */
+typedef struct {
+    uint8_t data[32];
+    size_t len;
+} sce_static_bytes_32_t;
+
+static inline sce_static_bytes_32_t sce_static_bytes_32_of(sce_forge_bytes_view_t bytes) {
+    sce_static_bytes_32_t value = { { 0 }, 0 };
+    for (size_t i = 0; i < bytes.len && i < 32u; ++i) {
+        value.data[i] = bytes.data[i];
+    }
+    value.len = bytes.len < 32u ? bytes.len : 32u;
+    return value;
+}
+#endif
+/* docs/adr/0055: a value of `sce_static_bytes_32_t` that may be absent. */
+SCE_OPTIONAL_DECLARE_BYTES(32)
+#endif
+
 typedef struct {
     uint8_t carrier;
-    uint8_t text_len;
-    /* RFC §synth-5-B sce:type="string" payload (sce:max-size="32").
-     * `char[N] + size_t len` parallels the bytes pair (uint8_t[N] + len)
-     * but the host-language type signals UTF-8 text storage; the C
-     * string is NOT NUL-terminated — payloads of exactly `max_size`
-     * bytes are valid wire input. */
-    char    text[32];
+    /* `sce:present-if`: an optional value (`present`, `value`), docs/adr/0055 step 14 */
+    sce_optional_uint8_t text_len;
+    /* `sce:present-if`: an optional value (`present`, `value`), docs/adr/0055 step 14 */
+    sce_optional_bytes_32_t text;
 } codec_present_if_string_t;
 
 /* Decode the next frame from `cursor`. Returns SCE_FORGE_CODEC_OK on
@@ -55,22 +76,24 @@ static inline sce_forge_codec_status_t codec_present_if_string_decode(sce_forge_
     if ((out->carrier & 0x01) != 0) {
         const uint8_t *raw = sce_forge_cursor_peek(cursor, 1);
         if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
-        out->text_len = (uint8_t)(raw[0]);
+        out->text_len = sce_optional_uint8_some((uint8_t)(raw[0]));
         if (!sce_forge_cursor_advance(cursor, 1)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
     } else {
-        out->text_len = 0;
+        out->text_len = sce_optional_uint8_none();
     }
     if ((out->carrier & 0x01) != 0) {
-        size_t _n = (size_t)out->text_len;
+        size_t _n = (size_t)out->text_len.value;
         if (_n > 32) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
         const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);
         if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
         if (!sce_forge_is_valid_utf8(raw, _n)) return SCE_FORGE_CODEC_INVALID_UTF8;
-        memcpy(out->text, raw, _n);
-        out->text_len = _n;
+        out->text = sce_optional_bytes_32_none();
+        memcpy(out->text.value.data, raw, _n);
+        out->text.value.len = _n;
+        out->text.present = true;
         if (!sce_forge_cursor_advance(cursor, _n)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
     } else {
-        out->text_len = 0;
+        out->text = sce_optional_bytes_32_none();
     }
     return SCE_FORGE_CODEC_OK;
 }
@@ -92,11 +115,11 @@ static inline sce_forge_codec_status_t codec_present_if_string_encode(const code
      * route to their dedicated helpers; everything else uses
      * `present_if_encode_block`. */
     SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->carrier));
-    if ((self->carrier & 0x01) != 0) {
-        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->text_len));
+    if (self->text_len.present) {
+        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->text_len.value));
     }
-    if ((self->carrier & 0x01) != 0) {
-        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_bytes(w, (const uint8_t*)self->text, self->text_len));
+    if (self->text.present) {
+        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_bytes(w, self->text.value.data, self->text.value.len));
     }
     return SCE_FORGE_CODEC_OK;
 }

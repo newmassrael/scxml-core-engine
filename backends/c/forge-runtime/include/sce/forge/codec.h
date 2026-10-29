@@ -110,6 +110,12 @@ typedef enum {
      * UTF-8, an integer or `bool` out of its type, a parameter of more values
      * than one, a `"` in a parameter value. */
     SCE_FORGE_CODEC_LINE_BAD_VALUE = 17,
+    /* On encode, a field gated by `sce:present-if` on a chain-membership predicate
+     * is given where the chain says it is not on the wire, or left out where it is:
+     * two contradictory descriptions of one wire. Nothing is written. Mirrors the
+     * typed `CodecError::PresentIfMismatch` of Rust and `codec.ErrPresentIfMismatch`
+     * of Go. */
+    SCE_FORGE_CODEC_PRESENT_IF_MISMATCH = 18,
 } sce_forge_codec_status_t;
 
 /* Read-only cursor over a borrowed input buffer. Decode bodies bind a

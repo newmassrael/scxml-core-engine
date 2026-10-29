@@ -13,6 +13,7 @@
 #include <string.h>
 
 #include "sce/forge/codec.h"
+#include "sce/forge/optional.h"  /* a field gated by `sce:present-if`, docs/adr/0055 */
 #include "codec_zenoh_locator.h"
 
 #define CODEC_ZENOH_HELLO_MIN_BYTES 2
@@ -24,10 +25,10 @@ typedef struct {
     /* variable-length payload (sce:bit-size="length-ref", sce:max-size="16") */
     uint8_t zid[16];
     size_t  zid_len;
-    uint64_t num_locators;
-    /* RFC §synth-5-B B2 repeat: fixed array of codec_zenoh_locator_t elements (max 64) */
-    codec_zenoh_locator_t locators[64];
-    size_t  locators_len;
+    /* `sce:present-if`: an optional value (`present`, `value`), docs/adr/0055 step 14 */
+    sce_optional_uint64_t num_locators;
+    /* `sce:present-if`: an optional value (`present`, `value`), docs/adr/0055 step 14 */
+    struct { bool present; struct { codec_zenoh_locator_t data[64]; size_t len; } value; } locators;
 } codec_zenoh_hello_t;
 
 /* Decode the next frame from `cursor`. Returns SCE_FORGE_CODEC_OK on
@@ -79,20 +80,22 @@ static inline sce_forge_codec_status_t codec_zenoh_hello_decode(sce_forge_cursor
         sce_forge_codec_status_t _vle_st = sce_forge_cursor_read_vle_u64(cursor, &_v);
         if (_vle_st != SCE_FORGE_CODEC_OK) return _vle_st;
     }
-        out->num_locators = _v;
+        out->num_locators = sce_optional_uint64_some(_v);
     } else {
-        out->num_locators = 0;
+        out->num_locators = sce_optional_uint64_none();
     }
     if ((l & 0x01) != 0) {
-        size_t _n = (size_t)out->num_locators;
+        size_t _n = (size_t)out->num_locators.value;
         if (_n > 64) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
+        memset(&out->locators, 0, sizeof out->locators);
         for (size_t _i = 0; _i < _n; ++_i) {
-            sce_forge_codec_status_t _st = codec_zenoh_locator_decode(cursor, &out->locators[_i]);
+            sce_forge_codec_status_t _st = codec_zenoh_locator_decode(cursor, &out->locators.value.data[_i]);
             if (_st != SCE_FORGE_CODEC_OK) return _st;
         }
-        out->locators_len = _n;
+        out->locators.value.len = _n;
+        out->locators.present = true;
     } else {
-        out->locators_len = 0;
+        memset(&out->locators, 0, sizeof out->locators);
     }
     return SCE_FORGE_CODEC_OK;
 }
@@ -122,12 +125,12 @@ static inline sce_forge_codec_status_t codec_zenoh_hello_encode(const codec_zeno
         if (_n > (size_t)((int64_t)(size_t)((self->cbyte >> 4) & 0xF) + 1)) _n = (size_t)((int64_t)(size_t)((self->cbyte >> 4) & 0xF) + 1);
         SCE_FORGE_TRY_WRITE(sce_forge_writer_write_bytes(w, self->zid, _n));
     }
-    if ((l & 0x01) != 0) {
-    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_vle_u64(w, (uint64_t)(self->num_locators)));
+    if (self->num_locators.present) {
+    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_vle_u64(w, (uint64_t)(self->num_locators.value)));
     }
-    if ((l & 0x01) != 0) {
-        for (size_t _ri = 0; _ri < self->locators_len; ++_ri) {
-            SCE_FORGE_TRY_WRITE(codec_zenoh_locator_encode(&self->locators[_ri], w));
+    if (self->locators.present) {
+        for (size_t _ri = 0; _ri < self->locators.value.len; ++_ri) {
+            SCE_FORGE_TRY_WRITE(codec_zenoh_locator_encode(&self->locators.value.data[_ri], w));
         }
     }
     return SCE_FORGE_CODEC_OK;

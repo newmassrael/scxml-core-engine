@@ -13,6 +13,7 @@
 #include <string.h>
 
 #include "sce/forge/codec.h"
+#include "sce/forge/optional.h"  /* a field gated by `sce:present-if`, docs/adr/0055 */
 #include "codec_zenoh_ext_entry.h"
 #include "codec_zenoh_reply.h"
 #include "codec_zenoh_err.h"
@@ -41,20 +42,39 @@ typedef struct {
     } arm;
 } codec_zenoh_response_variant_t;
 
+#ifndef SCE_OPTIONAL_BYTES_256
+#define SCE_OPTIONAL_BYTES_256
+#ifndef SCE_STATIC_BYTES_256
+#define SCE_STATIC_BYTES_256
+/* SCE Accepted Subset §2.15: a `bytes` of at most 256 bytes. */
+typedef struct {
+    uint8_t data[256];
+    size_t len;
+} sce_static_bytes_256_t;
+
+static inline sce_static_bytes_256_t sce_static_bytes_256_of(sce_forge_bytes_view_t bytes) {
+    sce_static_bytes_256_t value = { { 0 }, 0 };
+    for (size_t i = 0; i < bytes.len && i < 256u; ++i) {
+        value.data[i] = bytes.data[i];
+    }
+    value.len = bytes.len < 256u ? bytes.len : 256u;
+    return value;
+}
+#endif
+/* docs/adr/0055: a value of `sce_static_bytes_256_t` that may be absent. */
+SCE_OPTIONAL_DECLARE_BYTES(256)
+#endif
+
 typedef struct {
     uint8_t header;
     uint64_t request_id;
     uint32_t key_id;
-    uint64_t suffix_len;
-    /* RFC §synth-5-B sce:type="string" payload (sce:max-size="256").
-     * `char[N] + size_t len` parallels the bytes pair (uint8_t[N] + len)
-     * but the host-language type signals UTF-8 text storage; the C
-     * string is NOT NUL-terminated — payloads of exactly `max_size`
-     * bytes are valid wire input. */
-    char    suffix[256];
-    /* RFC §synth-5-B B3 tlv-chain: fixed array of codec_zenoh_ext_entry_t entries (max-depth 4, on-overflow=reject) */
-    codec_zenoh_ext_entry_t extensions[4];
-    size_t  extensions_len;
+    /* `sce:present-if`: an optional value (`present`, `value`), docs/adr/0055 step 14 */
+    sce_optional_uint64_t suffix_len;
+    /* `sce:present-if`: an optional value (`present`, `value`), docs/adr/0055 step 14 */
+    sce_optional_bytes_256_t suffix;
+    /* `sce:present-if`: an optional value (`present`, `value`), docs/adr/0055 step 14 */
+    struct { bool present; struct { codec_zenoh_ext_entry_t data[4]; size_t len; } value; } extensions;
     codec_zenoh_response_variant_t body;
 } codec_zenoh_response_t;
 
@@ -110,32 +130,35 @@ static inline sce_forge_codec_status_t codec_zenoh_response_decode(sce_forge_cur
         sce_forge_codec_status_t _vle_st = sce_forge_cursor_read_vle_u64(cursor, &_v);
         if (_vle_st != SCE_FORGE_CODEC_OK) return _vle_st;
     }
-        out->suffix_len = _v;
+        out->suffix_len = sce_optional_uint64_some(_v);
     } else {
-        out->suffix_len = 0;
+        out->suffix_len = sce_optional_uint64_none();
     }
     if ((out->header & 0x20) != 0) {
-        size_t _n = (size_t)out->suffix_len;
+        size_t _n = (size_t)out->suffix_len.value;
         if (_n > 256) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
         const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);
         if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
         if (!sce_forge_is_valid_utf8(raw, _n)) return SCE_FORGE_CODEC_INVALID_UTF8;
-        memcpy(out->suffix, raw, _n);
-        out->suffix_len = _n;
+        out->suffix = sce_optional_bytes_256_none();
+        memcpy(out->suffix.value.data, raw, _n);
+        out->suffix.value.len = _n;
+        out->suffix.present = true;
         if (!sce_forge_cursor_advance(cursor, _n)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
     } else {
-        out->suffix_len = 0;
+        out->suffix = sce_optional_bytes_256_none();
     }
-    out->extensions_len = 0;
+    memset(&out->extensions, 0, sizeof out->extensions);
         if ((out->header & 0x80) != 0) {
+            out->extensions.present = true;
             bool _more = false;
             for (size_t _i = 0; _i < 4; ++_i) {
                 if (sce_forge_cursor_remaining(cursor) == 0) break;
-                sce_forge_codec_status_t _st = codec_zenoh_ext_entry_decode(cursor, &out->extensions[out->extensions_len]);
+                sce_forge_codec_status_t _st = codec_zenoh_ext_entry_decode(cursor, &out->extensions.value.data[out->extensions.value.len]);
                 if (_st != SCE_FORGE_CODEC_OK) return _st;
-                size_t _just = out->extensions_len;
-                out->extensions_len++;
-                _more = codec_zenoh_ext_entry_z(&out->extensions[_just]);
+                size_t _just = out->extensions.value.len;
+                out->extensions.value.len++;
+                _more = codec_zenoh_ext_entry_z(&out->extensions.value.data[_just]);
                 if (!_more) break;
             }
             if (_more && sce_forge_cursor_remaining(cursor) == 0) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
@@ -188,15 +211,15 @@ static inline sce_forge_codec_status_t codec_zenoh_response_encode(const codec_z
     SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->header));
     SCE_FORGE_TRY_WRITE(sce_forge_writer_write_vle_u64(w, (uint64_t)(self->request_id)));
     SCE_FORGE_TRY_WRITE(sce_forge_writer_write_vle_u32(w, (uint32_t)(self->key_id)));
-    if ((self->header & 0x20) != 0) {
-    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_vle_u64(w, (uint64_t)(self->suffix_len)));
+    if (self->suffix_len.present) {
+    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_vle_u64(w, (uint64_t)(self->suffix_len.value)));
     }
-    if ((self->header & 0x20) != 0) {
-        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_bytes(w, (const uint8_t*)self->suffix, self->suffix_len));
+    if (self->suffix.present) {
+        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_bytes(w, self->suffix.value.data, self->suffix.value.len));
     }
-    if ((self->header & 0x80) != 0) {
-        for (size_t _ti = 0; _ti < self->extensions_len; ++_ti) {
-            SCE_FORGE_TRY_WRITE(codec_zenoh_ext_entry_encode(&self->extensions[_ti], w));
+    if (self->extensions.present) {
+        for (size_t _ti = 0; _ti < self->extensions.value.len; ++_ti) {
+            SCE_FORGE_TRY_WRITE(codec_zenoh_ext_entry_encode(&self->extensions.value.data[_ti], w));
         }
     }
     /* Append the active arm body's encoded bytes via the same writer. */

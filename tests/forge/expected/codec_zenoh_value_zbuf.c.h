@@ -13,20 +13,45 @@
 #include <string.h>
 
 #include "sce/forge/codec.h"
+#include "sce/forge/optional.h"  /* a field gated by `sce:present-if`, docs/adr/0055 */
 #include "codec_zenoh_value_slice.h"
 
 #define CODEC_ZENOH_VALUE_ZBUF_MIN_BYTES 0
 #define CODEC_ZENOH_VALUE_ZBUF_MAX_BYTES 163
 
+#ifndef SCE_OPTIONAL_BYTES_32
+#define SCE_OPTIONAL_BYTES_32
+#ifndef SCE_STATIC_BYTES_32
+#define SCE_STATIC_BYTES_32
+/* SCE Accepted Subset §2.15: a `bytes` of at most 32 bytes. */
+typedef struct {
+    uint8_t data[32];
+    size_t len;
+} sce_static_bytes_32_t;
+
+static inline sce_static_bytes_32_t sce_static_bytes_32_of(sce_forge_bytes_view_t bytes) {
+    sce_static_bytes_32_t value = { { 0 }, 0 };
+    for (size_t i = 0; i < bytes.len && i < 32u; ++i) {
+        value.data[i] = bytes.data[i];
+    }
+    value.len = bytes.len < 32u ? bytes.len : 32u;
+    return value;
+}
+#endif
+/* docs/adr/0055: a value of `sce_static_bytes_32_t` that may be absent. */
+SCE_OPTIONAL_DECLARE_BYTES(32)
+#endif
+
 typedef struct {
     uint64_t value_len;
-    /* variable-length payload (sce:bit-size="length-ref", sce:max-size="32") */
-    uint8_t value[32];
-    uint64_t encoding;
-    uint64_t slice_count;
-    /* RFC §synth-5-B B2 repeat: fixed array of codec_zenoh_value_slice_t elements (max 4) */
-    codec_zenoh_value_slice_t slices[4];
-    size_t  slices_len;
+    /* `sce:present-if`: an optional value (`present`, `value`), docs/adr/0055 step 14 */
+    sce_optional_bytes_32_t value;
+    /* `sce:present-if`: an optional value (`present`, `value`), docs/adr/0055 step 14 */
+    sce_optional_uint64_t encoding;
+    /* `sce:present-if`: an optional value (`present`, `value`), docs/adr/0055 step 14 */
+    sce_optional_uint64_t slice_count;
+    /* `sce:present-if`: an optional value (`present`, `value`), docs/adr/0055 step 14 */
+    struct { bool present; struct { codec_zenoh_value_slice_t data[4]; size_t len; } value; } slices;
 } codec_zenoh_value_zbuf_t;
 
 /* Decode the next frame from `cursor`. Returns SCE_FORGE_CODEC_OK on
@@ -62,11 +87,13 @@ static inline sce_forge_codec_status_t codec_zenoh_value_zbuf_decode(sce_forge_c
         if (_n > 32) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
         const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);
         if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
-        memcpy(out->value, raw, _n);
-        out->value_len = _n;
+        out->value = sce_optional_bytes_32_none();
+        memcpy(out->value.value.data, raw, _n);
+        out->value.value.len = _n;
+        out->value.present = true;
         if (!sce_forge_cursor_advance(cursor, _n)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
     } else {
-        out->value_len = 0;
+        out->value = sce_optional_bytes_32_none();
     }
     if ((after_shm & 0x01) != 0) {
         uint64_t _v;
@@ -74,9 +101,9 @@ static inline sce_forge_codec_status_t codec_zenoh_value_zbuf_decode(sce_forge_c
         sce_forge_codec_status_t _vle_st = sce_forge_cursor_read_vle_u64(cursor, &_v);
         if (_vle_st != SCE_FORGE_CODEC_OK) return _vle_st;
     }
-        out->encoding = _v;
+        out->encoding = sce_optional_uint64_some(_v);
     } else {
-        out->encoding = 0;
+        out->encoding = sce_optional_uint64_none();
     }
     if ((after_shm & 0x01) != 0) {
         uint64_t _v;
@@ -84,20 +111,22 @@ static inline sce_forge_codec_status_t codec_zenoh_value_zbuf_decode(sce_forge_c
         sce_forge_codec_status_t _vle_st = sce_forge_cursor_read_vle_u64(cursor, &_v);
         if (_vle_st != SCE_FORGE_CODEC_OK) return _vle_st;
     }
-        out->slice_count = _v;
+        out->slice_count = sce_optional_uint64_some(_v);
     } else {
-        out->slice_count = 0;
+        out->slice_count = sce_optional_uint64_none();
     }
     if ((after_shm & 0x01) != 0) {
-        size_t _n = (size_t)out->slice_count;
+        size_t _n = (size_t)out->slice_count.value;
         if (_n > 4) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
+        memset(&out->slices, 0, sizeof out->slices);
         for (size_t _i = 0; _i < _n; ++_i) {
-            sce_forge_codec_status_t _st = codec_zenoh_value_slice_decode(cursor, &out->slices[_i]);
+            sce_forge_codec_status_t _st = codec_zenoh_value_slice_decode(cursor, &out->slices.value.data[_i]);
             if (_st != SCE_FORGE_CODEC_OK) return _st;
         }
-        out->slices_len = _n;
+        out->slices.value.len = _n;
+        out->slices.present = true;
     } else {
-        out->slices_len = 0;
+        memset(&out->slices, 0, sizeof out->slices);
     }
     return SCE_FORGE_CODEC_OK;
 }
@@ -121,20 +150,20 @@ static inline sce_forge_codec_status_t codec_zenoh_value_zbuf_encode(const codec
      * route to their dedicated helpers; everything else uses
      * `present_if_encode_block`. */
     SCE_FORGE_TRY_WRITE(sce_forge_writer_write_vle_u64(w, (uint64_t)(self->value_len)));
-    if ((after_shm & 0x01) == 0) {
-        size_t _n = self->value_len;
+    if (self->value.present) {
+        size_t _n = self->value.value.len;
         if (_n > self->value_len) _n = self->value_len;
-        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_bytes(w, self->value, _n));
+        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_bytes(w, self->value.value.data, _n));
     }
-    if ((after_shm & 0x01) != 0) {
-    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_vle_u64(w, (uint64_t)(self->encoding)));
+    if (self->encoding.present) {
+    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_vle_u64(w, (uint64_t)(self->encoding.value)));
     }
-    if ((after_shm & 0x01) != 0) {
-    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_vle_u64(w, (uint64_t)(self->slice_count)));
+    if (self->slice_count.present) {
+    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_vle_u64(w, (uint64_t)(self->slice_count.value)));
     }
-    if ((after_shm & 0x01) != 0) {
-        for (size_t _ri = 0; _ri < self->slices_len; ++_ri) {
-            SCE_FORGE_TRY_WRITE(codec_zenoh_value_slice_encode(&self->slices[_ri], w));
+    if (self->slices.present) {
+        for (size_t _ri = 0; _ri < self->slices.value.len; ++_ri) {
+            SCE_FORGE_TRY_WRITE(codec_zenoh_value_slice_encode(&self->slices.value.data[_ri], w));
         }
     }
     return SCE_FORGE_CODEC_OK;

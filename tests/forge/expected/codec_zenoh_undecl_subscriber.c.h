@@ -12,6 +12,7 @@
 #include <stddef.h>
 
 #include "sce/forge/codec.h"
+#include "sce/forge/optional.h"  /* a field gated by `sce:present-if`, docs/adr/0055 */
 #include "codec_zenoh_decl_ext_keyexpr.h"
 
 #define CODEC_ZENOH_UNDECL_SUBSCRIBER_MIN_BYTES 0
@@ -19,8 +20,8 @@
 
 typedef struct {
     uint32_t id;
-    /* RFC §synth-5-B embed: nested codec_zenoh_decl_ext_keyexpr_t struct (no length prefix on the wire) */
-    codec_zenoh_decl_ext_keyexpr_t ext_keyexpr;
+    /* `sce:present-if`: an optional value (`present`, `value`), docs/adr/0055 step 14 */
+    struct { bool present; codec_zenoh_decl_ext_keyexpr_t value; } ext_keyexpr;
 } codec_zenoh_undecl_subscriber_t;
 
 /* Decode the next frame from `cursor`. Returns SCE_FORGE_CODEC_OK on
@@ -51,9 +52,11 @@ static inline sce_forge_codec_status_t codec_zenoh_undecl_subscriber_decode(sce_
         if (_vle_st != SCE_FORGE_CODEC_OK) return _vle_st;
     }
     out->id = id;
+    memset(&out->ext_keyexpr, 0, sizeof out->ext_keyexpr);
     if ((z & 0x01) != 0) {
-        sce_forge_codec_status_t _st = codec_zenoh_decl_ext_keyexpr_decode(cursor, &out->ext_keyexpr);
+        sce_forge_codec_status_t _st = codec_zenoh_decl_ext_keyexpr_decode(cursor, &out->ext_keyexpr.value);
         if (_st != SCE_FORGE_CODEC_OK) return _st;
+        out->ext_keyexpr.present = true;
     }
     return SCE_FORGE_CODEC_OK;
 }
@@ -77,8 +80,8 @@ static inline sce_forge_codec_status_t codec_zenoh_undecl_subscriber_encode(cons
      * route to their dedicated helpers; everything else uses
      * `present_if_encode_block`. */
     SCE_FORGE_TRY_WRITE(sce_forge_writer_write_vle_u32(w, (uint32_t)(self->id)));
-    if ((z & 0x01) != 0) {
-        SCE_FORGE_TRY_WRITE(codec_zenoh_decl_ext_keyexpr_encode(&self->ext_keyexpr, w));
+    if (self->ext_keyexpr.present) {
+        SCE_FORGE_TRY_WRITE(codec_zenoh_decl_ext_keyexpr_encode(&self->ext_keyexpr.value, w));
     }
     return SCE_FORGE_CODEC_OK;
 }

@@ -13,6 +13,7 @@
 #include <string.h>
 
 #include "sce/forge/codec.h"
+#include "sce/forge/optional.h"  /* a field gated by `sce:present-if`, docs/adr/0055 */
 #include "codec_zenoh_ext_entry.h"
 #include "codec_zenoh_interest_body.h"
 
@@ -22,11 +23,10 @@
 typedef struct {
     uint8_t header;
     uint64_t id;
-    /* RFC §synth-5-B embed: nested codec_zenoh_interest_body_t struct (no length prefix on the wire) */
-    codec_zenoh_interest_body_t body;
-    /* RFC §synth-5-B B3 tlv-chain: fixed array of codec_zenoh_ext_entry_t entries (max-depth 4, on-overflow=reject) */
-    codec_zenoh_ext_entry_t extensions[4];
-    size_t  extensions_len;
+    /* `sce:present-if`: an optional value (`present`, `value`), docs/adr/0055 step 14 */
+    struct { bool present; codec_zenoh_interest_body_t value; } body;
+    /* `sce:present-if`: an optional value (`present`, `value`), docs/adr/0055 step 14 */
+    struct { bool present; struct { codec_zenoh_ext_entry_t data[4]; size_t len; } value; } extensions;
 } codec_zenoh_interest_t;
 
 /* RFC variant-default-uniformity (C11): designated-initializer
@@ -72,20 +72,23 @@ static inline sce_forge_codec_status_t codec_zenoh_interest_decode(sce_forge_cur
         if (_vle_st != SCE_FORGE_CODEC_OK) return _vle_st;
     }
     out->id = id;
+    memset(&out->body, 0, sizeof out->body);
     if ((out->header & 0x20) != 0 || (out->header & 0x40) != 0) {
-        sce_forge_codec_status_t _st = codec_zenoh_interest_body_decode(cursor, &out->body);
+        sce_forge_codec_status_t _st = codec_zenoh_interest_body_decode(cursor, &out->body.value);
         if (_st != SCE_FORGE_CODEC_OK) return _st;
+        out->body.present = true;
     }
-    out->extensions_len = 0;
+    memset(&out->extensions, 0, sizeof out->extensions);
         if ((out->header & 0x80) != 0) {
+            out->extensions.present = true;
             bool _more = false;
             for (size_t _i = 0; _i < 4; ++_i) {
                 if (sce_forge_cursor_remaining(cursor) == 0) break;
-                sce_forge_codec_status_t _st = codec_zenoh_ext_entry_decode(cursor, &out->extensions[out->extensions_len]);
+                sce_forge_codec_status_t _st = codec_zenoh_ext_entry_decode(cursor, &out->extensions.value.data[out->extensions.value.len]);
                 if (_st != SCE_FORGE_CODEC_OK) return _st;
-                size_t _just = out->extensions_len;
-                out->extensions_len++;
-                _more = codec_zenoh_ext_entry_z(&out->extensions[_just]);
+                size_t _just = out->extensions.value.len;
+                out->extensions.value.len++;
+                _more = codec_zenoh_ext_entry_z(&out->extensions.value.data[_just]);
                 if (!_more) break;
             }
             if (_more && sce_forge_cursor_remaining(cursor) == 0) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
@@ -112,12 +115,12 @@ static inline sce_forge_codec_status_t codec_zenoh_interest_encode(const codec_z
      * `present_if_encode_block`. */
     SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->header));
     SCE_FORGE_TRY_WRITE(sce_forge_writer_write_vle_u64(w, (uint64_t)(self->id)));
-    if ((self->header & 0x20) != 0 || (self->header & 0x40) != 0) {
-        SCE_FORGE_TRY_WRITE(codec_zenoh_interest_body_encode(&self->body, w));
+    if (self->body.present) {
+        SCE_FORGE_TRY_WRITE(codec_zenoh_interest_body_encode(&self->body.value, w));
     }
-    if ((self->header & 0x80) != 0) {
-        for (size_t _ti = 0; _ti < self->extensions_len; ++_ti) {
-            SCE_FORGE_TRY_WRITE(codec_zenoh_ext_entry_encode(&self->extensions[_ti], w));
+    if (self->extensions.present) {
+        for (size_t _ti = 0; _ti < self->extensions.value.len; ++_ti) {
+            SCE_FORGE_TRY_WRITE(codec_zenoh_ext_entry_encode(&self->extensions.value.data[_ti], w));
         }
     }
     return SCE_FORGE_CODEC_OK;

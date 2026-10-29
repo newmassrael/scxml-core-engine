@@ -13,20 +13,45 @@
 #include <string.h>
 
 #include "sce/forge/codec.h"
+#include "sce/forge/optional.h"  /* a field gated by `sce:present-if`, docs/adr/0055 */
 #include "codec_zenoh_ext_entry.h"
 
 #define CODEC_ZENOH_QUERY_MIN_BYTES 2
 #define CODEC_ZENOH_QUERY_MAX_BYTES 603
 
+#ifndef SCE_OPTIONAL_BYTES_256
+#define SCE_OPTIONAL_BYTES_256
+#ifndef SCE_STATIC_BYTES_256
+#define SCE_STATIC_BYTES_256
+/* SCE Accepted Subset §2.15: a `bytes` of at most 256 bytes. */
+typedef struct {
+    uint8_t data[256];
+    size_t len;
+} sce_static_bytes_256_t;
+
+static inline sce_static_bytes_256_t sce_static_bytes_256_of(sce_forge_bytes_view_t bytes) {
+    sce_static_bytes_256_t value = { { 0 }, 0 };
+    for (size_t i = 0; i < bytes.len && i < 256u; ++i) {
+        value.data[i] = bytes.data[i];
+    }
+    value.len = bytes.len < 256u ? bytes.len : 256u;
+    return value;
+}
+#endif
+/* docs/adr/0055: a value of `sce_static_bytes_256_t` that may be absent. */
+SCE_OPTIONAL_DECLARE_BYTES(256)
+#endif
+
 typedef struct {
     uint8_t header;
-    uint8_t consolidation;
-    uint64_t parameters_len;
-    /* variable-length payload (sce:bit-size="length-ref", sce:max-size="256") */
-    uint8_t parameters[256];
-    /* RFC §synth-5-B B3 tlv-chain: fixed array of codec_zenoh_ext_entry_t entries (max-depth 8, on-overflow=reject) */
-    codec_zenoh_ext_entry_t extensions[8];
-    size_t  extensions_len;
+    /* `sce:present-if`: an optional value (`present`, `value`), docs/adr/0055 step 14 */
+    sce_optional_uint8_t consolidation;
+    /* `sce:present-if`: an optional value (`present`, `value`), docs/adr/0055 step 14 */
+    sce_optional_uint64_t parameters_len;
+    /* `sce:present-if`: an optional value (`present`, `value`), docs/adr/0055 step 14 */
+    sce_optional_bytes_256_t parameters;
+    /* `sce:present-if`: an optional value (`present`, `value`), docs/adr/0055 step 14 */
+    struct { bool present; struct { codec_zenoh_ext_entry_t data[8]; size_t len; } value; } extensions;
 } codec_zenoh_query_t;
 
 /* RFC variant-default-uniformity (C11): designated-initializer
@@ -69,10 +94,10 @@ static inline sce_forge_codec_status_t codec_zenoh_query_decode(sce_forge_cursor
     if ((out->header & 0x20) != 0) {
         const uint8_t *raw = sce_forge_cursor_peek(cursor, 1);
         if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
-        out->consolidation = (uint8_t)(raw[0]);
+        out->consolidation = sce_optional_uint8_some((uint8_t)(raw[0]));
         if (!sce_forge_cursor_advance(cursor, 1)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
     } else {
-        out->consolidation = 0;
+        out->consolidation = sce_optional_uint8_none();
     }
     if ((out->header & 0x40) != 0) {
         uint64_t _v;
@@ -80,28 +105,31 @@ static inline sce_forge_codec_status_t codec_zenoh_query_decode(sce_forge_cursor
         sce_forge_codec_status_t _vle_st = sce_forge_cursor_read_vle_u64(cursor, &_v);
         if (_vle_st != SCE_FORGE_CODEC_OK) return _vle_st;
     }
-        out->parameters_len = _v;
+        out->parameters_len = sce_optional_uint64_some(_v);
     } else {
-        out->parameters_len = 0;
+        out->parameters_len = sce_optional_uint64_none();
     }
     if ((out->header & 0x40) != 0) {
-        size_t _n = (size_t)out->parameters_len;
+        size_t _n = (size_t)out->parameters_len.value;
         if (_n > 256) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
         const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);
         if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
-        memcpy(out->parameters, raw, _n);
-        out->parameters_len = _n;
+        out->parameters = sce_optional_bytes_256_none();
+        memcpy(out->parameters.value.data, raw, _n);
+        out->parameters.value.len = _n;
+        out->parameters.present = true;
         if (!sce_forge_cursor_advance(cursor, _n)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
     } else {
-        out->parameters_len = 0;
+        out->parameters = sce_optional_bytes_256_none();
     }
-    out->extensions_len = 0;
+    memset(&out->extensions, 0, sizeof out->extensions);
         if ((out->header & 0x80) != 0) {
+            out->extensions.present = true;
             for (size_t _i = 0; _i < 8; ++_i) {
                 if (sce_forge_cursor_remaining(cursor) == 0) break;
-                sce_forge_codec_status_t _st = codec_zenoh_ext_entry_decode(cursor, &out->extensions[out->extensions_len]);
+                sce_forge_codec_status_t _st = codec_zenoh_ext_entry_decode(cursor, &out->extensions.value.data[out->extensions.value.len]);
                 if (_st != SCE_FORGE_CODEC_OK) return _st;
-                out->extensions_len++;
+                out->extensions.value.len++;
             }
             if (sce_forge_cursor_remaining(cursor) > 0) return SCE_FORGE_CODEC_TLV_CHAIN_OVERFLOW;
         }
@@ -125,20 +153,20 @@ static inline sce_forge_codec_status_t codec_zenoh_query_encode(const codec_zeno
      * route to their dedicated helpers; everything else uses
      * `present_if_encode_block`. */
     SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->header));
-    if ((self->header & 0x20) != 0) {
-        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->consolidation));
+    if (self->consolidation.present) {
+        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->consolidation.value));
     }
-    if ((self->header & 0x40) != 0) {
-    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_vle_u64(w, (uint64_t)(self->parameters_len)));
+    if (self->parameters_len.present) {
+    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_vle_u64(w, (uint64_t)(self->parameters_len.value)));
     }
-    if ((self->header & 0x40) != 0) {
-        size_t _n = self->parameters_len;
-        if (_n > self->parameters_len) _n = self->parameters_len;
-        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_bytes(w, self->parameters, _n));
+    if (self->parameters.present) {
+        size_t _n = self->parameters.value.len;
+        if (_n > self->parameters_len.value) _n = self->parameters_len.value;
+        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_bytes(w, self->parameters.value.data, _n));
     }
-    if ((self->header & 0x80) != 0) {
-        for (size_t _ti = 0; _ti < self->extensions_len; ++_ti) {
-            SCE_FORGE_TRY_WRITE(codec_zenoh_ext_entry_encode(&self->extensions[_ti], w));
+    if (self->extensions.present) {
+        for (size_t _ti = 0; _ti < self->extensions.value.len; ++_ti) {
+            SCE_FORGE_TRY_WRITE(codec_zenoh_ext_entry_encode(&self->extensions.value.data[_ti], w));
         }
     }
     return SCE_FORGE_CODEC_OK;

@@ -13,6 +13,7 @@
 #include <string.h>
 
 #include "sce/forge/codec.h"
+#include "sce/forge/optional.h"  /* a field gated by `sce:present-if`, docs/adr/0055 */
 #include "codec_origin_leaf.h"
 
 #define CODEC_ORIGIN_ENVELOPE_MIN_BYTES 4
@@ -30,8 +31,8 @@ typedef struct {
     uint8_t m;
     /* RFC §synth-5-B embed: nested codec_origin_leaf_t struct (no length prefix on the wire) */
     codec_origin_leaf_t required;
-    /* RFC §synth-5-B embed: nested codec_origin_leaf_t struct (no length prefix on the wire) */
-    codec_origin_leaf_t optional;
+    /* `sce:present-if`: an optional value (`present`, `value`), docs/adr/0055 step 14 */
+    struct { bool present; codec_origin_leaf_t value; } optional;
     /* RFC §synth-5-B B2 repeat: fixed array of codec_origin_leaf_t elements (max 3) */
     codec_origin_leaf_t items[3];
     size_t  items_len;
@@ -87,9 +88,11 @@ static inline sce_forge_codec_status_t codec_origin_envelope_decode(sce_forge_cu
         sce_forge_codec_status_t _st = codec_origin_leaf_decode(cursor, &out->required);
         if (_st != SCE_FORGE_CODEC_OK) return _st;
     }
+    memset(&out->optional, 0, sizeof out->optional);
     if ((out->hdr & 0x01) != 0) {
-        sce_forge_codec_status_t _st = codec_origin_leaf_decode(cursor, &out->optional);
+        sce_forge_codec_status_t _st = codec_origin_leaf_decode(cursor, &out->optional.value);
         if (_st != SCE_FORGE_CODEC_OK) return _st;
+        out->optional.present = true;
     }
     {
         size_t _n = (size_t)out->m;
@@ -124,8 +127,8 @@ static inline sce_forge_codec_status_t codec_origin_envelope_encode(const codec_
     SCE_FORGE_TRY_WRITE(sce_forge_writer_write_bytes(w, (const uint8_t*)self->note, self->note_len));
     SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->m));
     SCE_FORGE_TRY_WRITE(codec_origin_leaf_encode(&self->required, w));
-    if ((self->hdr & 0x01) != 0) {
-        SCE_FORGE_TRY_WRITE(codec_origin_leaf_encode(&self->optional, w));
+    if (self->optional.present) {
+        SCE_FORGE_TRY_WRITE(codec_origin_leaf_encode(&self->optional.value, w));
     }
     for (size_t _ri = 0; _ri < self->items_len; ++_ri) {
         SCE_FORGE_TRY_WRITE(codec_origin_leaf_encode(&self->items[_ri], w));

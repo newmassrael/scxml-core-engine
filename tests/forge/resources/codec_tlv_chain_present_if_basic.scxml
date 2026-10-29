@@ -24,8 +24,8 @@
      lift; the gated-list host wrap shape mirrors the repeat primitive's gated
      repeat verbatim (Rust `Option<Vec<T>>` / Cpp `std::optional<
      std::vector<T>>` / Kotlin `MutableList<T>?` / Go bare `[]T`
-     slice nilness / Python `Optional[List[T]]` / C11 carrier-bit-
-     as-truth + `_len = 0` on absent).
+     slice nilness / Python `Optional[List[T]]` / C11 the optional value
+     of the entries and their count: `present`, `value.data`, `value.len`).
 
      Round-trip oracle (Rust runtime smoke):
        Empty chain (has_chain=0):

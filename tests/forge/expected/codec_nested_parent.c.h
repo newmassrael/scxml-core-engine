@@ -13,6 +13,7 @@
 #include <string.h>
 
 #include "sce/forge/codec.h"
+#include "sce/forge/optional.h"  /* a field gated by `sce:present-if`, docs/adr/0055 */
 #include "codec_nested_body.h"
 
 #define CODEC_NESTED_PARENT_MIN_BYTES 2
@@ -23,8 +24,8 @@ typedef struct {
     uint8_t m;
     /* RFC §synth-5-B embed: nested codec_nested_body_t struct (no length prefix on the wire) */
     codec_nested_body_t required_body;
-    /* RFC §synth-5-B embed: nested codec_nested_body_t struct (no length prefix on the wire) */
-    codec_nested_body_t optional_body;
+    /* `sce:present-if`: an optional value (`present`, `value`), docs/adr/0055 step 14 */
+    struct { bool present; codec_nested_body_t value; } optional_body;
     /* RFC §synth-5-B B2 repeat: fixed array of codec_nested_body_t elements (max 4) */
     codec_nested_body_t body_list[4];
     size_t  body_list_len;
@@ -64,9 +65,11 @@ static inline sce_forge_codec_status_t codec_nested_parent_decode(sce_forge_curs
         sce_forge_codec_status_t _st = codec_nested_body_decode(cursor, &out->required_body);
         if (_st != SCE_FORGE_CODEC_OK) return _st;
     }
+    memset(&out->optional_body, 0, sizeof out->optional_body);
     if ((out->hdr & 0x01) != 0) {
-        sce_forge_codec_status_t _st = codec_nested_body_decode(cursor, &out->optional_body);
+        sce_forge_codec_status_t _st = codec_nested_body_decode(cursor, &out->optional_body.value);
         if (_st != SCE_FORGE_CODEC_OK) return _st;
+        out->optional_body.present = true;
     }
     {
         size_t _n = (size_t)out->m;
@@ -99,8 +102,8 @@ static inline sce_forge_codec_status_t codec_nested_parent_encode(const codec_ne
     SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->hdr));
     SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->m));
     SCE_FORGE_TRY_WRITE(codec_nested_body_encode(&self->required_body, w));
-    if ((self->hdr & 0x01) != 0) {
-        SCE_FORGE_TRY_WRITE(codec_nested_body_encode(&self->optional_body, w));
+    if (self->optional_body.present) {
+        SCE_FORGE_TRY_WRITE(codec_nested_body_encode(&self->optional_body.value, w));
     }
     for (size_t _ri = 0; _ri < self->body_list_len; ++_ri) {
         SCE_FORGE_TRY_WRITE(codec_nested_body_encode(&self->body_list[_ri], w));

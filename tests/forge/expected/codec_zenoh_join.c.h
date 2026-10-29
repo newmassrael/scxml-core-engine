@@ -13,6 +13,7 @@
 #include <string.h>
 
 #include "sce/forge/codec.h"
+#include "sce/forge/optional.h"  /* a field gated by `sce:present-if`, docs/adr/0055 */
 
 #define CODEC_ZENOH_JOIN_MIN_BYTES 6
 #define CODEC_ZENOH_JOIN_MAX_BYTES 49
@@ -23,8 +24,10 @@ typedef struct {
     /* variable-length payload (sce:bit-size="length-ref", sce:max-size="16") */
     uint8_t zid[16];
     size_t  zid_len;
-    uint8_t sn_res;
-    uint16_t batch_size;
+    /* `sce:present-if`: an optional value (`present`, `value`), docs/adr/0055 step 14 */
+    sce_optional_uint8_t sn_res;
+    /* `sce:present-if`: an optional value (`present`, `value`), docs/adr/0055 step 14 */
+    sce_optional_uint16_t batch_size;
     uint64_t lease;
     uint64_t next_sn_reliable;
     uint64_t next_sn_best_effort;
@@ -76,18 +79,18 @@ static inline sce_forge_codec_status_t codec_zenoh_join_decode(sce_forge_cursor_
     if ((s & 0x01) != 0) {
         const uint8_t *raw = sce_forge_cursor_peek(cursor, 1);
         if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
-        out->sn_res = (uint8_t)(raw[0]);
+        out->sn_res = sce_optional_uint8_some((uint8_t)(raw[0]));
         if (!sce_forge_cursor_advance(cursor, 1)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
     } else {
-        out->sn_res = 0;
+        out->sn_res = sce_optional_uint8_none();
     }
     if ((s & 0x01) != 0) {
         const uint8_t *raw = sce_forge_cursor_peek(cursor, 2);
         if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
-        out->batch_size = (uint16_t)(raw[0] | ((uint16_t)raw[1] << 8));
+        out->batch_size = sce_optional_uint16_some((uint16_t)(raw[0] | ((uint16_t)raw[1] << 8)));
         if (!sce_forge_cursor_advance(cursor, 2)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
     } else {
-        out->batch_size = 0;
+        out->batch_size = sce_optional_uint16_none();
     }
     uint64_t lease;
     {
@@ -135,12 +138,12 @@ static inline sce_forge_codec_status_t codec_zenoh_join_encode(const codec_zenoh
         if (_n > (size_t)((int64_t)(size_t)((self->cbyte >> 4) & 0xF) + 1)) _n = (size_t)((int64_t)(size_t)((self->cbyte >> 4) & 0xF) + 1);
         SCE_FORGE_TRY_WRITE(sce_forge_writer_write_bytes(w, self->zid, _n));
     }
-    if ((s & 0x01) != 0) {
-        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->sn_res));
+    if (self->sn_res.present) {
+        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->sn_res.value));
     }
-    if ((s & 0x01) != 0) {
-        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)(self->batch_size & 0xFF)));
-        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)((self->batch_size >> 8) & 0xFF)));
+    if (self->batch_size.present) {
+        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)(self->batch_size.value & 0xFF)));
+        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)((self->batch_size.value >> 8) & 0xFF)));
     }
     SCE_FORGE_TRY_WRITE(sce_forge_writer_write_vle_u64(w, (uint64_t)(self->lease)));
     SCE_FORGE_TRY_WRITE(sce_forge_writer_write_vle_u64(w, (uint64_t)(self->next_sn_reliable)));

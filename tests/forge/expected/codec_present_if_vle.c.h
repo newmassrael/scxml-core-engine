@@ -12,13 +12,15 @@
 #include <stddef.h>
 
 #include "sce/forge/codec.h"
+#include "sce/forge/optional.h"  /* a field gated by `sce:present-if`, docs/adr/0055 */
 
 #define CODEC_PRESENT_IF_VLE_MIN_BYTES 1
 #define CODEC_PRESENT_IF_VLE_MAX_BYTES 10
 
 typedef struct {
     uint8_t flags;
-    uint64_t optional_id;
+    /* `sce:present-if`: an optional value (`present`, `value`), docs/adr/0055 step 14 */
+    sce_optional_uint64_t optional_id;
 } codec_present_if_vle_t;
 
 /* Decode the next frame from `cursor`. Returns SCE_FORGE_CODEC_OK on
@@ -51,9 +53,9 @@ static inline sce_forge_codec_status_t codec_present_if_vle_decode(sce_forge_cur
         sce_forge_codec_status_t _vle_st = sce_forge_cursor_read_vle_u64(cursor, &_v);
         if (_vle_st != SCE_FORGE_CODEC_OK) return _vle_st;
     }
-        out->optional_id = _v;
+        out->optional_id = sce_optional_uint64_some(_v);
     } else {
-        out->optional_id = 0;
+        out->optional_id = sce_optional_uint64_none();
     }
     return SCE_FORGE_CODEC_OK;
 }
@@ -75,8 +77,8 @@ static inline sce_forge_codec_status_t codec_present_if_vle_encode(const codec_p
      * route to their dedicated helpers; everything else uses
      * `present_if_encode_block`. */
     SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->flags));
-    if ((self->flags & 0x01) != 0) {
-    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_vle_u64(w, (uint64_t)(self->optional_id)));
+    if (self->optional_id.present) {
+    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_vle_u64(w, (uint64_t)(self->optional_id.value)));
     }
     return SCE_FORGE_CODEC_OK;
 }

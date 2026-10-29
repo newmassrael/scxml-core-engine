@@ -13,19 +13,40 @@
 #include <string.h>
 
 #include "sce/forge/codec.h"
+#include "sce/forge/optional.h"  /* a field gated by `sce:present-if`, docs/adr/0055 */
 
 #define CODEC_ZENOH_WIREEXPR_MIN_BYTES 0
 #define CODEC_ZENOH_WIREEXPR_MAX_BYTES 146
 
+#ifndef SCE_OPTIONAL_BYTES_128
+#define SCE_OPTIONAL_BYTES_128
+#ifndef SCE_STATIC_BYTES_128
+#define SCE_STATIC_BYTES_128
+/* SCE Accepted Subset §2.15: a `bytes` of at most 128 bytes. */
+typedef struct {
+    uint8_t data[128];
+    size_t len;
+} sce_static_bytes_128_t;
+
+static inline sce_static_bytes_128_t sce_static_bytes_128_of(sce_forge_bytes_view_t bytes) {
+    sce_static_bytes_128_t value = { { 0 }, 0 };
+    for (size_t i = 0; i < bytes.len && i < 128u; ++i) {
+        value.data[i] = bytes.data[i];
+    }
+    value.len = bytes.len < 128u ? bytes.len : 128u;
+    return value;
+}
+#endif
+/* docs/adr/0055: a value of `sce_static_bytes_128_t` that may be absent. */
+SCE_OPTIONAL_DECLARE_BYTES(128)
+#endif
+
 typedef struct {
     uint64_t id;
-    uint64_t suffix_len;
-    /* RFC §synth-5-B sce:type="string" payload (sce:max-size="128").
-     * `char[N] + size_t len` parallels the bytes pair (uint8_t[N] + len)
-     * but the host-language type signals UTF-8 text storage; the C
-     * string is NOT NUL-terminated — payloads of exactly `max_size`
-     * bytes are valid wire input. */
-    char    suffix[128];
+    /* `sce:present-if`: an optional value (`present`, `value`), docs/adr/0055 step 14 */
+    sce_optional_uint64_t suffix_len;
+    /* `sce:present-if`: an optional value (`present`, `value`), docs/adr/0055 step 14 */
+    sce_optional_bytes_128_t suffix;
 } codec_zenoh_wireexpr_t;
 
 /* Decode the next frame from `cursor`. Returns SCE_FORGE_CODEC_OK on
@@ -62,21 +83,23 @@ static inline sce_forge_codec_status_t codec_zenoh_wireexpr_decode(sce_forge_cur
         sce_forge_codec_status_t _vle_st = sce_forge_cursor_read_vle_u64(cursor, &_v);
         if (_vle_st != SCE_FORGE_CODEC_OK) return _vle_st;
     }
-        out->suffix_len = _v;
+        out->suffix_len = sce_optional_uint64_some(_v);
     } else {
-        out->suffix_len = 0;
+        out->suffix_len = sce_optional_uint64_none();
     }
     if ((n & 0x01) != 0) {
-        size_t _n = (size_t)out->suffix_len;
+        size_t _n = (size_t)out->suffix_len.value;
         if (_n > 128) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
         const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);
         if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
         if (!sce_forge_is_valid_utf8(raw, _n)) return SCE_FORGE_CODEC_INVALID_UTF8;
-        memcpy(out->suffix, raw, _n);
-        out->suffix_len = _n;
+        out->suffix = sce_optional_bytes_128_none();
+        memcpy(out->suffix.value.data, raw, _n);
+        out->suffix.value.len = _n;
+        out->suffix.present = true;
         if (!sce_forge_cursor_advance(cursor, _n)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
     } else {
-        out->suffix_len = 0;
+        out->suffix = sce_optional_bytes_128_none();
     }
     return SCE_FORGE_CODEC_OK;
 }
@@ -100,11 +123,11 @@ static inline sce_forge_codec_status_t codec_zenoh_wireexpr_encode(const codec_z
      * route to their dedicated helpers; everything else uses
      * `present_if_encode_block`. */
     SCE_FORGE_TRY_WRITE(sce_forge_writer_write_vle_u64(w, (uint64_t)(self->id)));
-    if ((n & 0x01) != 0) {
-    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_vle_u64(w, (uint64_t)(self->suffix_len)));
+    if (self->suffix_len.present) {
+    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_vle_u64(w, (uint64_t)(self->suffix_len.value)));
     }
-    if ((n & 0x01) != 0) {
-        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_bytes(w, (const uint8_t*)self->suffix, self->suffix_len));
+    if (self->suffix.present) {
+        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_bytes(w, self->suffix.value.data, self->suffix.value.len));
     }
     return SCE_FORGE_CODEC_OK;
 }

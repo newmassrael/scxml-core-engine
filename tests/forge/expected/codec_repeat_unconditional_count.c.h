@@ -13,6 +13,7 @@
 #include <string.h>
 
 #include "sce/forge/codec.h"
+#include "sce/forge/optional.h"  /* a field gated by `sce:present-if`, docs/adr/0055 */
 #include "codec_repeat_elem.h"
 
 #define CODEC_REPEAT_UNCONDITIONAL_COUNT_MIN_BYTES 2
@@ -23,9 +24,8 @@ typedef struct {
     uint8_t links_len;
     /* RFC §synth-5-B B2 repeat: fixed array of codec_repeat_elem_t elements (max 64) */
     codec_repeat_elem_t links[64];
-    /* RFC §synth-5-B B2 repeat: fixed array of codec_repeat_elem_t elements (max 64) */
-    codec_repeat_elem_t weights[64];
-    size_t  weights_len;
+    /* `sce:present-if`: an optional value (`present`, `value`), docs/adr/0055 step 14 */
+    struct { bool present; struct { codec_repeat_elem_t data[64]; size_t len; } value; } weights;
 } codec_repeat_unconditional_count_t;
 
 /* Decode the next frame from `cursor`. Returns SCE_FORGE_CODEC_OK on
@@ -70,13 +70,15 @@ static inline sce_forge_codec_status_t codec_repeat_unconditional_count_decode(s
     if ((out->options & 0x01) != 0) {
         size_t _n = (size_t)out->links_len;
         if (_n > 64) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
+        memset(&out->weights, 0, sizeof out->weights);
         for (size_t _i = 0; _i < _n; ++_i) {
-            sce_forge_codec_status_t _st = codec_repeat_elem_decode(cursor, &out->weights[_i]);
+            sce_forge_codec_status_t _st = codec_repeat_elem_decode(cursor, &out->weights.value.data[_i]);
             if (_st != SCE_FORGE_CODEC_OK) return _st;
         }
-        out->weights_len = _n;
+        out->weights.value.len = _n;
+        out->weights.present = true;
     } else {
-        out->weights_len = 0;
+        memset(&out->weights, 0, sizeof out->weights);
     }
     return SCE_FORGE_CODEC_OK;
 }
@@ -102,9 +104,9 @@ static inline sce_forge_codec_status_t codec_repeat_unconditional_count_encode(c
     for (size_t _ri = 0; _ri < self->links_len; ++_ri) {
         SCE_FORGE_TRY_WRITE(codec_repeat_elem_encode(&self->links[_ri], w));
     }
-    if ((self->options & 0x01) != 0) {
-        for (size_t _ri = 0; _ri < self->weights_len; ++_ri) {
-            SCE_FORGE_TRY_WRITE(codec_repeat_elem_encode(&self->weights[_ri], w));
+    if (self->weights.present) {
+        for (size_t _ri = 0; _ri < self->weights.value.len; ++_ri) {
+            SCE_FORGE_TRY_WRITE(codec_repeat_elem_encode(&self->weights.value.data[_ri], w));
         }
     }
     return SCE_FORGE_CODEC_OK;

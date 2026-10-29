@@ -12,6 +12,7 @@
 #include <stddef.h>
 
 #include "sce/forge/codec.h"
+#include "sce/forge/optional.h"  /* a field gated by `sce:present-if`, docs/adr/0055 */
 #include "codec_zenoh_wireexpr.h"
 
 #define CODEC_ZENOH_DECL_QUERYABLE_MIN_BYTES 3
@@ -21,8 +22,10 @@ typedef struct {
     uint32_t id;
     /* RFC §synth-5-B embed: nested codec_zenoh_wireexpr_t struct (no length prefix on the wire) */
     codec_zenoh_wireexpr_t wireexpr;
-    uint8_t ext_type;
-    uint64_t ext_value;
+    /* `sce:present-if`: an optional value (`present`, `value`), docs/adr/0055 step 14 */
+    sce_optional_uint8_t ext_type;
+    /* `sce:present-if`: an optional value (`present`, `value`), docs/adr/0055 step 14 */
+    sce_optional_uint64_t ext_value;
 } codec_zenoh_decl_queryable_t;
 
 /* Decode the next frame from `cursor`. Returns SCE_FORGE_CODEC_OK on
@@ -61,10 +64,10 @@ static inline sce_forge_codec_status_t codec_zenoh_decl_queryable_decode(sce_for
     if ((z & 0x01) != 0) {
         const uint8_t *raw = sce_forge_cursor_peek(cursor, 1);
         if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
-        out->ext_type = (uint8_t)(raw[0]);
+        out->ext_type = sce_optional_uint8_some((uint8_t)(raw[0]));
         if (!sce_forge_cursor_advance(cursor, 1)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
     } else {
-        out->ext_type = 0;
+        out->ext_type = sce_optional_uint8_none();
     }
     if ((z & 0x01) != 0) {
         uint64_t _v;
@@ -72,9 +75,9 @@ static inline sce_forge_codec_status_t codec_zenoh_decl_queryable_decode(sce_for
         sce_forge_codec_status_t _vle_st = sce_forge_cursor_read_vle_u64(cursor, &_v);
         if (_vle_st != SCE_FORGE_CODEC_OK) return _vle_st;
     }
-        out->ext_value = _v;
+        out->ext_value = sce_optional_uint64_some(_v);
     } else {
-        out->ext_value = 0;
+        out->ext_value = sce_optional_uint64_none();
     }
     return SCE_FORGE_CODEC_OK;
 }
@@ -100,11 +103,11 @@ static inline sce_forge_codec_status_t codec_zenoh_decl_queryable_encode(const c
      * `present_if_encode_block`. */
     SCE_FORGE_TRY_WRITE(sce_forge_writer_write_vle_u32(w, (uint32_t)(self->id)));
     SCE_FORGE_TRY_WRITE(codec_zenoh_wireexpr_encode(&self->wireexpr, w, n));
-    if ((z & 0x01) != 0) {
-        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->ext_type));
+    if (self->ext_type.present) {
+        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->ext_type.value));
     }
-    if ((z & 0x01) != 0) {
-    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_vle_u64(w, (uint64_t)(self->ext_value)));
+    if (self->ext_value.present) {
+    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_vle_u64(w, (uint64_t)(self->ext_value.value)));
     }
     return SCE_FORGE_CODEC_OK;
 }

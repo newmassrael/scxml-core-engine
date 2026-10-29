@@ -13,16 +13,40 @@
 #include <string.h>
 
 #include "sce/forge/codec.h"
+#include "sce/forge/optional.h"  /* a field gated by `sce:present-if`, docs/adr/0055 */
 
 #define CODEC_INIT_COOKIE_BODY_MIN_BYTES 1
 #define CODEC_INIT_COOKIE_BODY_MAX_BYTES 68
 
+#ifndef SCE_OPTIONAL_BYTES_64
+#define SCE_OPTIONAL_BYTES_64
+#ifndef SCE_STATIC_BYTES_64
+#define SCE_STATIC_BYTES_64
+/* SCE Accepted Subset §2.15: a `bytes` of at most 64 bytes. */
+typedef struct {
+    uint8_t data[64];
+    size_t len;
+} sce_static_bytes_64_t;
+
+static inline sce_static_bytes_64_t sce_static_bytes_64_of(sce_forge_bytes_view_t bytes) {
+    sce_static_bytes_64_t value = { { 0 }, 0 };
+    for (size_t i = 0; i < bytes.len && i < 64u; ++i) {
+        value.data[i] = bytes.data[i];
+    }
+    value.len = bytes.len < 64u ? bytes.len : 64u;
+    return value;
+}
+#endif
+/* docs/adr/0055: a value of `sce_static_bytes_64_t` that may be absent. */
+SCE_OPTIONAL_DECLARE_BYTES(64)
+#endif
+
 typedef struct {
     uint8_t version;
-    uint16_t cookie_size;
-    /* variable-length payload (sce:bit-size="length-ref", sce:max-size="64") */
-    uint8_t cookie[64];
-    size_t  cookie_len;
+    /* `sce:present-if`: an optional value (`present`, `value`), docs/adr/0055 step 14 */
+    sce_optional_uint16_t cookie_size;
+    /* `sce:present-if`: an optional value (`present`, `value`), docs/adr/0055 step 14 */
+    sce_optional_bytes_64_t cookie;
 } codec_init_cookie_body_t;
 
 /* Decode the next frame from `cursor`. Returns SCE_FORGE_CODEC_OK on
@@ -59,20 +83,22 @@ static inline sce_forge_codec_status_t codec_init_cookie_body_decode(sce_forge_c
         sce_forge_codec_status_t _vle_st = sce_forge_cursor_read_vle_u16(cursor, &_v);
         if (_vle_st != SCE_FORGE_CODEC_OK) return _vle_st;
     }
-        out->cookie_size = _v;
+        out->cookie_size = sce_optional_uint16_some(_v);
     } else {
-        out->cookie_size = 0;
+        out->cookie_size = sce_optional_uint16_none();
     }
     if ((a & 0x01) != 0) {
-        size_t _n = (size_t)out->cookie_size;
+        size_t _n = (size_t)out->cookie_size.value;
         if (_n > 64) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
         const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);
         if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
-        memcpy(out->cookie, raw, _n);
-        out->cookie_len = _n;
+        out->cookie = sce_optional_bytes_64_none();
+        memcpy(out->cookie.value.data, raw, _n);
+        out->cookie.value.len = _n;
+        out->cookie.present = true;
         if (!sce_forge_cursor_advance(cursor, _n)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
     } else {
-        out->cookie_len = 0;
+        out->cookie = sce_optional_bytes_64_none();
     }
     return SCE_FORGE_CODEC_OK;
 }
@@ -96,13 +122,13 @@ static inline sce_forge_codec_status_t codec_init_cookie_body_encode(const codec
      * route to their dedicated helpers; everything else uses
      * `present_if_encode_block`. */
     SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->version));
-    if ((a & 0x01) != 0) {
-    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_vle_u16(w, (uint16_t)(self->cookie_size)));
+    if (self->cookie_size.present) {
+    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_vle_u16(w, (uint16_t)(self->cookie_size.value)));
     }
-    if ((a & 0x01) != 0) {
-        size_t _n = self->cookie_len;
-        if (_n > self->cookie_size) _n = self->cookie_size;
-        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_bytes(w, self->cookie, _n));
+    if (self->cookie.present) {
+        size_t _n = self->cookie.value.len;
+        if (_n > self->cookie_size.value) _n = self->cookie_size.value;
+        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_bytes(w, self->cookie.value.data, _n));
     }
     return SCE_FORGE_CODEC_OK;
 }

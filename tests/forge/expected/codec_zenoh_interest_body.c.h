@@ -12,6 +12,7 @@
 #include <stddef.h>
 
 #include "sce/forge/codec.h"
+#include "sce/forge/optional.h"  /* a field gated by `sce:present-if`, docs/adr/0055 */
 #include "codec_zenoh_wireexpr.h"
 
 #define CODEC_ZENOH_INTEREST_BODY_MIN_BYTES 1
@@ -19,8 +20,8 @@
 
 typedef struct {
     uint8_t header;
-    /* RFC §synth-5-B embed: nested codec_zenoh_wireexpr_t struct (no length prefix on the wire) */
-    codec_zenoh_wireexpr_t keyexpr;
+    /* `sce:present-if`: an optional value (`present`, `value`), docs/adr/0055 step 14 */
+    struct { bool present; codec_zenoh_wireexpr_t value; } keyexpr;
 } codec_zenoh_interest_body_t;
 
 /* Decode the next frame from `cursor`. Returns SCE_FORGE_CODEC_OK on
@@ -47,9 +48,11 @@ static inline sce_forge_codec_status_t codec_zenoh_interest_body_decode(sce_forg
         out->header = raw[0];
         if (!sce_forge_cursor_advance(cursor, 1)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
     }
+    memset(&out->keyexpr, 0, sizeof out->keyexpr);
     if ((out->header & 0x10) != 0) {
-        sce_forge_codec_status_t _st = codec_zenoh_wireexpr_decode(cursor, &out->keyexpr, (uint8_t)((out->header >> 5) & 0x1));
+        sce_forge_codec_status_t _st = codec_zenoh_wireexpr_decode(cursor, &out->keyexpr.value, (uint8_t)((out->header >> 5) & 0x1));
         if (_st != SCE_FORGE_CODEC_OK) return _st;
+        out->keyexpr.present = true;
     }
     return SCE_FORGE_CODEC_OK;
 }
@@ -71,8 +74,8 @@ static inline sce_forge_codec_status_t codec_zenoh_interest_body_encode(const co
      * route to their dedicated helpers; everything else uses
      * `present_if_encode_block`. */
     SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->header));
-    if ((self->header & 0x10) != 0) {
-        SCE_FORGE_TRY_WRITE(codec_zenoh_wireexpr_encode(&self->keyexpr, w, (uint8_t)((self->header >> 5) & 0x1)));
+    if (self->keyexpr.present) {
+        SCE_FORGE_TRY_WRITE(codec_zenoh_wireexpr_encode(&self->keyexpr.value, w, (uint8_t)((self->header >> 5) & 0x1)));
     }
     return SCE_FORGE_CODEC_OK;
 }

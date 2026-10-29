@@ -1371,10 +1371,9 @@ documents, not observed from a backend.
     a line record keep their counts. The generators hand each template the member each entry is
     reached by (`value_ref`, `data_ref`, `len_ref`, `present_ref`), so a template names none by
     spelling `<name>_present`; the conformance harness reads `present` and `value` of what it
-    decodes and builds. A positional codec's gated field is not a `<name>_present` member: C11 holds
-    it as the plain type, its presence the carrier flag bit the codec's own contract names, and that
-    contract is unchanged here; whether an array, a repeat or an embed a flag gates is held as an optional value
-    is not decided by this step. Tests: `sce-build/tests/a_c11_codec_holds_what_may_be_absent_in_the_optional_type.rs`,
+    decodes and builds. A positional codec's gated field is not a `<name>_present` member either, and
+    since the owner's answer 8 it is no longer the plain type with the carrier flag bit as its presence
+    (see "A positional codec's gated field on C11", below). Tests: `sce-build/tests/a_c11_codec_holds_what_may_be_absent_in_the_optional_type.rs`,
     `a_c11_codec_entry_is_held_in_the_type_a_statechart_variable_of_its_type_is` in
     `forge::generator`, the C11 conformance harness over `codec_cbor_map` and the content-line
     fixtures, which builds the headers and replays the vectors, and
@@ -1388,6 +1387,42 @@ A gated sibling named by `sce:length-from` of an embedded codec is refused where
 embed's decode reads its length sibling as the number it is, which a gated field is not wherever it is
 held as an optional value, and an absent length bounds nothing. Test:
 `sce-build/tests/a_codec_embed_is_bounded_by_a_length_every_frame_carries.rs`.
+
+**A positional codec's gated field on C11** (the owner's answer 8, a supplement to step 14, not a
+step of its own). C11 held a field gated by `sce:present-if` as the plain type, its presence the
+carrier flag bit, so a gated list or byte string that was on the wire and empty and one that was not
+were both `len == 0`, the distinction Go's step 13 made. It now holds one in the optional value of
+its element, as every other backend does, and the wire bytes, the carrier flag contract and the
+documents' grammar are unchanged (`optional<list<T>>` is still refused in a document):
+
+- *The member.* A number or an enum is the struct `sce/forge/optional.h` declares for it
+  (`sce_optional_<elem>_t`, `LangCtx::c11_codec_optional`), which a statechart's variable of the
+  same type is held in; a byte string or a text is the struct over `sce_static_bytes_<N>_t`, the
+  bytes (`value.data`, not NUL-terminated, so a text of the whole bound is a value) and their length
+  (`value.len`); a list, a TLV chain and an embedded codec are a member of the same shape that names
+  no type, `struct { bool present; struct { T data[N]; size_t len; } value; }` and
+  `struct { bool present; T value; }`, since a list is no element a statechart's variable holds and
+  two codecs of one program then cannot disagree about a name.
+- *The decoder fills `present` from the predicate.* The gate is the predicate as before, so a
+  carrier flag, a flag-input and a chain-membership clause read what they read; under it the value
+  is read and `present` set, and otherwise the absent value (every byte zero) is written, which also
+  leaves the struct fully initialized. A length or a count a field reads from a gated sibling is read
+  through the value that sibling holds.
+- *The encoder is driven by `present`,* as every other backend's is, and the carrier flag is a field
+  written as the caller holds it. A chain-membership predicate that contradicts a gated field is
+  refused before the first byte is written, as on every other backend, with
+  `SCE_FORGE_CODEC_PRESENT_IF_MISMATCH` (18) of `sce/forge/codec.h`.
+- *The cost.* A C program that set only the flag bit and a plain member must now set `present` too,
+  and one that read `<id>_len` of a gated field reads `<id>.value.len`: the generated C headers of a
+  codec with a gated field change shape, which `pre-release` admits (SCE_WIRE_CONTRACTS.md).
+
+Tests: `sce-build/tests/a_c11_codec_holds_a_gated_field_in_the_optional_type.rs` (the text of each
+layout, and a driver compiled `-std=c11 -Wall -Wextra -Werror` that tells a value that is absent
+from one that is present and zero or empty, for a number, a byte string and a list, through decode
+and encode), the C drivers of `forge_conformance.rs` (`a_chain_tells_its_entries_what_came_before_them_on_every_runnable_backend`,
+`a_masked_identifier_finds_the_marker_on_every_runnable_backend`,
+`entries_are_handed_the_flag_their_import_binds_on_every_runnable_backend`), and the regenerated
+goldens `tests/forge/expected/codec_*.c.h`.
 
 There is no step 15. The step the first accepted text listed there, "the end of the codec
 transition", which removed two temporary refusals, is withdrawn: the refusal of format 1 is
@@ -1500,3 +1535,7 @@ after 12 and the C11 step.
 7. **No failing read**: `x.value` only where narrowing proves presence, refused when the document
    is built everywhere else, with `??` as the read with a default and no run-time path for an
    absent read (sections 2 and 3). This changed the proposal.
+8. **A positional codec's gated field on C11** (2026-10-29): held in the optional value of its
+   element, as on every other backend, so that a list or a byte string on the wire and empty is told
+   from one that is not; the wire bytes and the carrier flag contract stay, and the grammar is not
+   widened (step 14, "A positional codec's gated field on C11"). There is no step 15 for it.
