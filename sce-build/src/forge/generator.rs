@@ -24578,9 +24578,12 @@ fn swift_algorithm_unlowered(m: &AlgorithmModel, imports: &[SwiftImport]) -> Opt
                 ..
             } => unlowered(then_body, reserved)
                 .or_else(|| else_body.as_deref().and_then(|b| unlowered(b, reserved))),
-            AlgorithmStmt::RecordFromCall { name, .. } => Some(format!(
-                "the record <sce:var name=\"{name}\"> built from a call"
+            // A record received whole from a call of an algorithm that returns one, the
+            // callee held to one written for Swift by the check of the imports below.
+            AlgorithmStmt::RecordFromCall { name, .. } if reserved(name) => Some(format!(
+                "the <sce:var name=\"{name}\">, a name Swift reserves,"
             )),
+            AlgorithmStmt::RecordFromCall { .. } => None,
             AlgorithmStmt::While { body, .. } => unlowered(body, reserved),
             // Over a `list<T>` parameter, the one list a body holds that is lowered
             // (a byte string and a bounded collection are refused where they are
@@ -31711,7 +31714,16 @@ fn lower_algorithm_stmt(
                 Language::Go => format!("{pad}{local} := {value}\n"),
                 Language::Python => format!("{pad}{local} = {value}\n"),
                 Language::Kotlin => format!("{pad}var {local}: {ty} = {value}\n"),
-                Language::Swift => no_swift_emitter("lower_algorithm_stmt"),
+                // `var` only where a field is written afterwards, as a record built
+                // from its fields is.
+                Language::Swift => {
+                    let keyword = if assigned.contains(name.as_str()) {
+                        "var"
+                    } else {
+                        "let"
+                    };
+                    format!("{pad}{keyword} {local}: {ty} = {value}\n")
+                }
             };
             out.push_str(&line);
         }

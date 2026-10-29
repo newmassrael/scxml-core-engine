@@ -9793,6 +9793,12 @@ pub(crate) fn pass_failure_on(
             None if ty == InferredType::Unknown => {
                 format!("Checked.takeCase(sceFailure, {{ try {call} }})")
             }
+            // A record and a list name no zero here, and the type the place holds
+            // it in does: `SceDefault`, which the unit of a record and an `Array`
+            // conform to.
+            None if matches!(ty, InferredType::Record(_) | InferredType::List(_)) => {
+                format!("Checked.takeDefault(sceFailure, {{ try {call} }})")
+            }
             None => {
                 return Err(ExprError::UnsupportedConstruct {
                     construct: format!("a may-fail call returning {}", ty.describe()),

@@ -12234,8 +12234,10 @@ impl StaticTarget for SwiftTarget {
     fn assign(&self, target: &str, value: &str) -> String {
         format!("{target} = {value}")
     }
-    fn list_within(&self, _value: &str, _capacity: u32, _symbol: &str, _elem: &SceType) -> String {
-        unreachable!("refused by SwiftTarget::unsupported")
+    // An algorithm's list is an `Array` of its element, which is the machine's own, held to the
+    // variable's bound by the one function the adapters hold a list to it with.
+    fn list_within(&self, value: &str, capacity: u32, _symbol: &str, _elem: &SceType) -> String {
+        format!("Checked.within(sceFailure, {value}, capacity: {capacity})")
     }
     // The count is the engine's the action is handed.
     fn fresh_send_id(&self) -> String {
