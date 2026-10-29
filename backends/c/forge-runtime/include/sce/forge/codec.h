@@ -116,6 +116,12 @@ typedef enum {
      * typed `CodecError::PresentIfMismatch` of Rust and `codec.ErrPresentIfMismatch`
      * of Go. */
     SCE_FORGE_CODEC_PRESENT_IF_MISMATCH = 18,
+    /* On encode, a byte string, a text, a list or a TLV chain holds more than its
+     * declared bound (`sce:max-size`, `sce:max-count`, `max-depth`): the member's
+     * array cannot hold that many, and a frame of fewer would not be the value
+     * given. Nothing is written. Mirrors the typed `CodecError::LengthOutOfRange`
+     * of Rust, `codec.ErrLengthOutOfRange` of Go and `LengthOutOfRange` of Python. */
+    SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE = 19,
 } sce_forge_codec_status_t;
 
 /* Read-only cursor over a borrowed input buffer. Decode bodies bind a
@@ -366,6 +372,16 @@ static inline sce_forge_codec_status_t sce_forge_writer_write_u64_be(sce_forge_w
     uint8_t buf[8] = {(uint8_t)(v >> 56), (uint8_t)(v >> 48), (uint8_t)(v >> 40), (uint8_t)(v >> 32),
                       (uint8_t)(v >> 24), (uint8_t)(v >> 16), (uint8_t)(v >> 8),  (uint8_t)v};
     return sce_forge_writer_write_bytes(w, buf, 8);
+}
+
+/* True when `len` is at most `bound`. A generated encode asks it of each length
+ * its struct holds beside an array of `bound` members, before the first byte is
+ * written. A function rather than a comparison written at the call site: the
+ * member that holds the length may be of a type narrower than `bound`, and a
+ * comparison the type already decides is a warning under -Wtype-limits. A
+ * signed length that is negative is a huge `size_t` here, so it is above. */
+static inline bool sce_forge_length_within_bound(size_t len, size_t bound) {
+    return len <= bound;
 }
 
 /* Generated codec emit helper: propagate writer status or continue.

@@ -389,6 +389,18 @@ static inline sce_forge_codec_status_t {{ c_encode_func }}(const {{ c_struct_typ
 {{ parent_tag_derivation_block }}
 {% endif %}
 {% if present_if_encode_prologue %}{{ present_if_encode_prologue }}{% endif %}
+{% if fields | selectattr('c_over_bound_cond') | list %}
+    /* A byte string, text, list or chain above the bound of the array that
+     * holds it is refused before the first byte is written: the array cannot
+     * hold that many, and a frame of fewer is not the value given. */
+{% for field in fields %}
+{% if field.c_over_bound_cond %}
+    if ({{ field.c_over_bound_cond }}) {
+        return SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE;
+    }
+{% endif %}
+{% endfor %}
+{% endif %}
 {% if has_no_fields %}
     /* RFC §synth-5-B empty body — zero-byte payload. */
     (void)self;
@@ -475,9 +487,7 @@ static inline sce_forge_codec_status_t {{ c_encode_func }}(const {{ c_struct_typ
         SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, 0));
     }
 {% endif %}
-    if (self->{{ field.id }}_len <= {{ field.max_size }}) {
-        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_bytes(w, {% if field.is_string %}(const uint8_t*)self->{{ field.id }}{% else %}self->{{ field.id }}{% endif %}, self->{{ field.id }}_len));
-    }
+    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_bytes(w, {% if field.is_string %}(const uint8_t*)self->{{ field.id }}{% else %}self->{{ field.id }}{% endif %}, self->{{ field.id }}_len));
 {% endif %}
 {% endfor %}
     return SCE_FORGE_CODEC_OK;

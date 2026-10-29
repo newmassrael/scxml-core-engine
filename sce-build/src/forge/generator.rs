@@ -7263,6 +7263,16 @@ fn render_codec(
                 obj.insert("dma_burst_align".into(), n.into());
             }
             obj.insert("byte_off".into(), f.byte_offset.into());
+            // C11 holds a byte string, a text, a list and a TLV chain in an
+            // array of the declared bound beside a length the caller sets, so
+            // its encode asks that the length is within the bound before the
+            // first byte is written. The condition is rendered once here and
+            // the template emits it for every encode shape.
+            if matches!(lang, crate::generator::Language::C11) {
+                if let Some(cond) = c11_over_bound_condition(&l.codec_field_id(&f.id), f) {
+                    obj.insert("c_over_bound_cond".into(), cond.into());
+                }
+            }
             if f.is_variable_length() {
                 if let BitSize::Vle { width_bits } = &f.bit_size {
                     obj.insert("vle_width_bits".into(), (*width_bits).into());
@@ -27477,6 +27487,33 @@ pub(crate) struct C11Optional {
 /// can disagree about a name.
 fn c11_gated_list_member(body_type: &str, max: u32) -> String {
     format!("struct {{ bool present; struct {{ {body_type} data[{max}]; size_t len; }} value; }}")
+}
+
+/// The condition, in C, under which a C11 codec's encode refuses `field`: its
+/// length is above the bound of the array that holds it. `id` is the member's
+/// name. A byte string or a text holds `sce:max-size`, a list `sce:max-count` and
+/// a TLV chain `max-depth`, each as `<id>[bound]` beside `<id>_len`, or as the
+/// optional value of that pair where the field is gated by `sce:present-if`, in
+/// which case an absent field has no length to refuse. A field that holds no
+/// array (a number, an embedded body) has no such condition.
+fn c11_over_bound_condition(id: &str, field: &CodecField) -> Option<String> {
+    let bound = match &field.bit_size {
+        BitSize::Tail | BitSize::LengthRef => {
+            crate::forge::limits::resolve_bytes_max(field.max_size)
+        }
+        BitSize::Repeat { .. } => crate::forge::limits::resolve_max_count(field.max_count),
+        BitSize::TlvChain { max_depth, .. } => *max_depth,
+        BitSize::Fixed { .. } | BitSize::Vle { .. } | BitSize::Embed => return None,
+    };
+    if field.present_if.is_some() {
+        Some(format!(
+            "self->{id}.present && !sce_forge_length_within_bound(self->{id}.value.len, {bound})"
+        ))
+    } else {
+        Some(format!(
+            "!sce_forge_length_within_bound(self->{id}_len, {bound})"
+        ))
+    }
 }
 
 /// [`c11_gated_list_member`] for a field whose value is one body, the codec an
