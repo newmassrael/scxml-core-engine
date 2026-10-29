@@ -30,7 +30,10 @@ use sce_build::forge::model::{
 };
 use sce_build::forge::parser::parse_forge;
 use sce_build::generator::Language;
-use sce_build::{compile_forge_from_string, DocumentLabel, ForgeCompileOptions};
+use sce_build::mesh::deploy::{parse_deploy_str, DeployConfig};
+use sce_build::{
+    compile_forge_from_string, resolve_broadcast_log_retention, DocumentLabel, ForgeCompileOptions,
+};
 
 fn label(name: &'static str) -> DocumentLabel<'static> {
     DocumentLabel {
@@ -511,6 +514,106 @@ fn a_narrow_stamp_needs_the_delay_the_design_relies_on_and_a_bound_that_covers_i
     // A delay the bound covers, exactly and below, is met.
     judge_broadcast_log_stamp(&m, 7, 32, Some(bound)).expect("the bound covers the delay");
     judge_broadcast_log_stamp(&m, 7, 32, Some(1)).expect("the bound covers the delay");
+}
+
+// --- The retention a deploy key names ---
+
+/// A deploy file with one machine, `mcu_node`, holding the limits written (each
+/// line indented ten spaces, under `limits:`).
+fn deploy_with_limits(limits: &str) -> DeployConfig {
+    parse_deploy_str(&format!(
+        r##"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      mcu_node:
+        source: mcu_node.scxml
+        limits:
+{limits}
+"##
+    ))
+    .expect("deploy parses")
+}
+
+fn deploy_key_model(key: &str) -> (BroadcastLogModel, String) {
+    let xml = simple_doc(
+        "event_ring",
+        "one",
+        "wait-free",
+        &format!(r#"<sce:retention source="deploy" key="{key}"/>"#),
+    );
+    let m = parse(&xml, "event_ring").expect("a deploy-key retention parses");
+    (m, xml)
+}
+
+#[test]
+fn a_literal_retention_resolves_to_itself_whatever_the_deploy_says() {
+    let m = model(r#"<sce:retention entries="7"/>"#);
+    let cfg = deploy_with_limits("          event_retention: 99");
+    let resolved = resolve_broadcast_log_retention(&m, &cfg, "mcu_node", ".scxml-fixture")
+        .expect("a literal needs no limit");
+    assert_eq!(resolved, Some(7));
+}
+
+#[test]
+fn a_deploy_key_resolves_to_the_limit_of_the_target_machine() {
+    let (m, _) = deploy_key_model("machines.mcu_node.limits.event_retention");
+    let cfg = deploy_with_limits("          event_retention: 31\n          other_limit: 4");
+    let resolved = resolve_broadcast_log_retention(&m, &cfg, "mcu_node", ".scxml-fixture")
+        .expect("the limit is declared");
+    assert_eq!(resolved, Some(31));
+}
+
+#[test]
+fn a_key_for_another_machine_or_of_another_shape_is_left_to_that_machines_own_compile() {
+    let cfg = deploy_with_limits("          event_retention: 31");
+    for key in [
+        // Another machine of the deploy, and one the deploy does not hold.
+        "machines.other_node.limits.event_retention",
+        "machines.ghost_node.limits.event_retention",
+        // Not `machines.<machine>.limits.<limit>`.
+        "limits.event_retention",
+        "machines.mcu_node.event_retention",
+    ] {
+        let (m, _) = deploy_key_model(key);
+        let resolved = resolve_broadcast_log_retention(&m, &cfg, "mcu_node", ".scxml-fixture")
+            .unwrap_or_else(|e| panic!("{key}: {:?}", e.error));
+        assert_eq!(resolved, None, "{key}");
+    }
+}
+
+#[test]
+fn a_machine_the_deploy_does_not_hold_resolves_a_key_naming_it_to_nothing() {
+    let (m, _) = deploy_key_model("machines.ghost_node.limits.event_retention");
+    let cfg = deploy_with_limits("          event_retention: 31");
+    let resolved = resolve_broadcast_log_retention(&m, &cfg, "ghost_node", ".scxml-fixture")
+        .expect("an unknown machine is not an undeclared limit");
+    assert_eq!(resolved, None);
+}
+
+#[test]
+fn a_limit_the_machine_does_not_declare_is_refused_with_the_limits_it_does() {
+    let (m, xml) = deploy_key_model("machines.mcu_node.limits.event_retention");
+    // Declared in the other order than they are listed, so the sort shows.
+    let cfg = deploy_with_limits("          beta: 2\n          alpha: 1");
+    let located = resolve_broadcast_log_retention(&m, &cfg, "mcu_node", ".scxml-fixture")
+        .expect_err("the key names a limit the machine lacks");
+    assert!(
+        row_text(&located, &xml).contains("<sce:retention"),
+        "the refusal is placed on the retention row"
+    );
+    match generate_error(located) {
+        GenerateError::InvalidConfig(detail) => {
+            assert!(detail.contains("broadcast-log 'event_ring'"), "{detail}");
+            assert!(
+                detail.contains("machines.mcu_node.limits.event_retention"),
+                "{detail}"
+            );
+            assert!(detail.contains("alpha, beta"), "{detail}");
+        }
+        other => panic!("expected InvalidConfig, got {other:?}"),
+    }
 }
 
 // --- Cross-document: the element type ---

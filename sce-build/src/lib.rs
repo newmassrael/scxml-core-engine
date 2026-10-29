@@ -3402,14 +3402,29 @@ pub struct ForgeCompileOptions {
     /// the render layer raises [`forge::error::GenerateError::InvalidConfig`]
     /// naming the queue and the key rather than guessing a number.
     pub queue_resolutions: Option<std::collections::HashMap<String, QueueResolution>>,
+    /// ADR 0062 — the three build-time numbers a broadcast log's generated
+    /// module is written from and its document alone does not give: the
+    /// retention (a literal, or what a deploy key resolved to), the largest
+    /// number of bytes its element encodes to, and whether the element can be
+    /// held at all. Keyed by log name. Populated only by the document-set
+    /// compile ([`compile_scxml_with_imports`]), which holds the element
+    /// document (the size is read from it) and, with a deploy and
+    /// [`Self::target_machine`], the machine a deploy key resolves against;
+    /// `None` on every single-document path, which holds neither. When `None`
+    /// the render layer raises [`forge::error::GenerateError::InvalidConfig`]
+    /// naming the log and what is missing rather than guessing a number.
+    pub broadcast_log_resolutions:
+        Option<std::collections::HashMap<String, BroadcastLogResolution>>,
     /// SCE Protocol-Synthesis RFC §synth-5-P — the machine of the deploy a
     /// document set is generated for. A document-set compile that is given a
     /// deploy and this name resolves every queue document in the set against
     /// that machine (its `limits:`, `platform.atomic_rmw_width`,
     /// `platform.core_count` and `queues.<q>.min_wrap_ops`) into
-    /// `queue_resolutions` before it renders; without it a set resolves no
-    /// queue, as before. Single-document callers resolve one queue
-    /// themselves ([`compile_forge_with_deploy`], the command line's
+    /// `queue_resolutions` before it renders, and every broadcast log's
+    /// deploy-key retention into `broadcast_log_resolutions`; without it a
+    /// set resolves no queue, as before, and no deploy-key retention.
+    /// Single-document callers resolve one queue themselves
+    /// ([`compile_forge_with_deploy`], the command line's
     /// `generate --deploy --target-machine`) and leave this `None`.
     pub target_machine: Option<String>,
     /// SCE Protocol-Synthesis RFC §synth-5-C lines 802-833 + §synth-5-M lines 2771-2828
@@ -3552,6 +3567,32 @@ pub struct QueueResolution {
     /// `machines.<m>.queues.<q>.placement`: where each side runs. `None` when
     /// the deploy states none, in which case the placement checks are silent.
     pub placement: Option<mesh::deploy::QueuePlacement>,
+}
+
+/// ADR 0062 — what a broadcast log's generated module needs of the build and its
+/// document does not say. The document-set compile reads each from where it is:
+/// the element's size from the element document, the retention from the
+/// document or from the deploy, and the element's shape from its codec.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BroadcastLogResolution {
+    /// The retention, in entries. A literal `<sce:retention entries="N"/>` is
+    /// carried through; a `source="deploy"` key resolves to the limit
+    /// `machines.<machine>.limits.<limit>` of the target machine. `None` for a
+    /// deploy key the set cannot resolve: it was compiled with no deploy or no
+    /// target machine, or the key names another machine than the one compiled
+    /// (the document was written for that machine, and its own compile
+    /// resolves it).
+    pub retention: Option<u32>,
+    /// The most bytes any value of the element encodes to
+    /// ([`forge::codec_size::largest_encoded_bytes`]): what a slot's words are
+    /// sized from.
+    pub element_max_bytes: u64,
+    /// Why the Rust template cannot hold this element, or `None` when it can:
+    /// its `encode` or `decode` takes an input from the caller that a log has
+    /// none to give (flag inputs, a variant's tag), or the form it decodes to
+    /// borrows the buffer it was read from and has no owned form to copy it
+    /// into.
+    pub element_unsupported: Option<String>,
 }
 
 /// Compile a forge SCXML with cross-file import resolution, validation,
@@ -4414,7 +4455,7 @@ fn compile_document_set(
     // form, so its element type resolves against the same candidates (ADR
     // 0062 §3), and that form must have a largest size (ADR 0062 §4), read
     // through the element documents' own imports.
-    validate_broadcast_log_cross_refs(
+    let broadcast_log_elements = validate_broadcast_log_cross_refs(
         &broadcast_logs_for_xref,
         &element_type_candidates,
         &element_import_sources,
@@ -4746,17 +4787,36 @@ fn compile_document_set(
         }
         _ => None,
     };
+    // ADR 0062: every broadcast log in the set resolves here, where its element
+    // document is in hand (the largest encoded size is read from it) and, with a
+    // deploy and the machine the set is generated for, where a deploy-key
+    // retention can be read. The element size is resolved for every set; the
+    // retention only from a literal or that deploy.
+    let broadcast_log_resolutions_override = if broadcast_logs_for_xref.is_empty() {
+        None
+    } else {
+        Some(resolve_broadcast_logs(
+            &broadcast_logs_for_xref,
+            &broadcast_log_elements,
+            deploy,
+            options.target_machine.as_deref(),
+        )?)
+    };
     let needs_override = !bc_resolutions.is_empty()
         || listener_links_override.is_some()
         || !element_type_field_schemas.is_empty()
         || !element_type_owned_mirrors.is_empty()
-        || queue_resolutions_override.is_some();
+        || queue_resolutions_override.is_some()
+        || broadcast_log_resolutions_override.is_some();
     let bc_options_override = if !needs_override {
         None
     } else {
         let mut overridden = options.clone();
         if let Some(resolved) = queue_resolutions_override {
             overridden.queue_resolutions = Some(resolved);
+        }
+        if let Some(resolved) = broadcast_log_resolutions_override {
+            overridden.broadcast_log_resolutions = Some(resolved);
         }
         if !bc_resolutions.is_empty() {
             overridden.bounded_collection_resolutions = Some(bc_resolutions);
@@ -6501,6 +6561,165 @@ pub fn resolve_queue_deploy_limits(
     })
 }
 
+/// ADR 0062 §3 — resolve a broadcast log's `<sce:retention>` for `machine_name`,
+/// as [`resolve_queue_deploy_limits`] resolves a queue's capacity.
+///
+/// The retention takes a capacity's two forms: a literal is carried through, and
+/// a deploy key `machines.<machine>.limits.<limit>` is read from that machine's
+/// `limits:`. A key that does not have that shape, or whose machine segment is
+/// another machine, resolves to `None`: the document was written for another
+/// machine and its own compile resolves it. A key that names this machine and a
+/// limit it does not declare is refused, naming the declared limits. A limit
+/// that is not a number is refused where the deploy file is read (`limits:` maps
+/// a name to a `u32`), so it never reaches here, as it never reaches the queue's
+/// resolution.
+///
+/// The refusal is a [`forge::error::GenerateError::InvalidConfig`] placed on the
+/// retention row: it is the one refusal of this resolution, and a typed code for
+/// it (the queue has `queue/deploy-limit-unresolved`) is not added for one
+/// caller.
+pub fn resolve_broadcast_log_retention(
+    log: &forge::model::BroadcastLogModel,
+    cfg: &mesh::deploy::DeployConfig,
+    machine_name: &str,
+    diagnostic_label: &str,
+) -> Result<Option<u32>, forge::error::Located<forge::error::ForgeError>> {
+    use forge::error::{ForgeError, GenerateError, Located};
+    use forge::model::CapacitySource;
+
+    let key = match &log.retention {
+        CapacitySource::CompileConst { value } => return Ok(Some(*value)),
+        CapacitySource::DeployKey { key } => key,
+    };
+    let Some((machine_segment, limit)) = parse_bounded_collection_deploy_key(key) else {
+        return Ok(None);
+    };
+    if machine_segment != machine_name {
+        return Ok(None);
+    }
+    let Some(machine) = cfg
+        .device_for_machine(machine_name)
+        .and_then(|device| device.machines.get(machine_name))
+    else {
+        return Ok(None);
+    };
+    match machine.limits.get(limit) {
+        Some(value) => Ok(Some(*value)),
+        None => {
+            let mut candidates: Vec<String> = machine.limits.keys().cloned().collect();
+            candidates.sort();
+            Err(Located::new(
+                ForgeError::from(GenerateError::InvalidConfig(format!(
+                    "broadcast-log '{name}': <sce:retention source=\"deploy\" key=\"{key}\"/> \
+                     references limit '{limit}' on machine '{machine_name}', but deploy.yaml \
+                     does not declare `machines.{machine_name}.limits.{limit}`. ADR 0062 §3: a \
+                     retention written as a deploy key resolves at codegen time to a constant \
+                     from `machines.<machine>.limits.<limit>:`, as a queue's capacity does; an \
+                     unresolved limit blocks emission. Repair: declare `{limit}: <count>` under \
+                     `machines.{machine_name}.limits:` in deploy.yaml (declared limits today: \
+                     {declared}), or write the retention with `entries=\"N\"`.",
+                    name = log.name,
+                    declared = forge::error::joined_or_none(&candidates),
+                ))),
+                diagnostic_label,
+                log.retention_line,
+                None,
+            ))
+        }
+    }
+}
+
+/// What the document-set compile learns of a broadcast log's element: the
+/// number its slots are sized from, and whether the Rust template can hold it.
+struct BroadcastLogElement {
+    max_bytes: u64,
+    unsupported: Option<String>,
+}
+
+/// Why the Rust template cannot store `codec` as a broadcast log's element, or
+/// `None` when it can. A log's typed `publish` and `read` call the element's
+/// `encode(sink)` and `decode(cursor)` and nothing else, so an element whose
+/// signature asks the caller for more, or whose decoded form cannot outlive
+/// the buffer it is read from, is refused by name where the element is in hand.
+fn broadcast_log_element_unsupported(codec: &forge::model::CodecModel) -> Option<String> {
+    if !codec.flag_inputs.is_empty() {
+        let names: Vec<&str> = codec
+            .flag_inputs
+            .iter()
+            .map(|input| input.name.as_str())
+            .collect();
+        return Some(format!(
+            "its encode and decode take the flag input(s) {} from the caller, and a log has none to give",
+            names.join(", ")
+        ));
+    }
+    if codec
+        .variant
+        .as_ref()
+        .is_some_and(|variant| variant.tag_field.is_none())
+    {
+        return Some(
+            "its decode takes the variant's tag from the caller, and a log has none to give"
+                .to_string(),
+        );
+    }
+    if codec.encoding == forge::model::CodecEncoding::Cbor
+        && codec.cbor_entries.iter().any(|entry| {
+            matches!(
+                entry.present_type(),
+                forge::model::SceType::String | forge::model::SceType::Bytes
+            )
+        })
+    {
+        return Some(
+            "a CBOR map with a string or byte string entry decodes to a value that borrows \
+             the buffer it was read from, and has no owned form to copy it into"
+                .to_string(),
+        );
+    }
+    None
+}
+
+/// Resolve every broadcast log of a document set into what its render needs
+/// ([`BroadcastLogResolution`]): the element's facts read in
+/// [`validate_broadcast_log_cross_refs`], and the retention, from the
+/// document or, when the set is given a deploy and a target machine, from that
+/// deploy ([`resolve_broadcast_log_retention`]).
+fn resolve_broadcast_logs(
+    logs: &[(String, forge::model::BroadcastLogModel)],
+    elements: &std::collections::HashMap<String, BroadcastLogElement>,
+    deploy: Option<&mesh::deploy::DeployConfig>,
+    target_machine: Option<&str>,
+) -> Result<
+    std::collections::HashMap<String, BroadcastLogResolution>,
+    forge::error::Located<forge::error::ForgeError>,
+> {
+    let mut resolved = std::collections::HashMap::new();
+    for (diag_label, log) in logs {
+        let Some(element) = elements.get(&log.name) else {
+            continue;
+        };
+        let retention = match (deploy, target_machine) {
+            (Some(cfg), Some(machine)) => {
+                resolve_broadcast_log_retention(log, cfg, machine, diag_label)?
+            }
+            _ => match &log.retention {
+                forge::model::CapacitySource::CompileConst { value } => Some(*value),
+                forge::model::CapacitySource::DeployKey { .. } => None,
+            },
+        };
+        resolved.insert(
+            log.name.clone(),
+            BroadcastLogResolution {
+                retention,
+                element_max_bytes: element.max_bytes,
+                element_unsupported: element.unsupported.clone(),
+            },
+        );
+    }
+    Ok(resolved)
+}
+
 /// SCE Protocol-Synthesis RFC §synth-5-L — look up `field` on the
 /// resolved element-type [`forge::model::ForgeDocument`] and return
 /// the abstract [`forge::model::SceType`] of that field. Each
@@ -7063,6 +7282,11 @@ fn validate_queue_cross_refs(
 /// `element_import_sources` is each element document's own imports and directory,
 /// which the size of an embedded body, a list entry or a variant arm is read
 /// through.
+///
+/// What it reads is returned, by log name, so that the number is computed once
+/// and the render is handed the very number the refusal judged: the largest
+/// encoded size, and why the Rust template cannot hold the element, if it cannot
+/// ([`broadcast_log_element_unsupported`]).
 fn validate_broadcast_log_cross_refs(
     logs: &[(String, forge::model::BroadcastLogModel)],
     element_type_candidates: &std::collections::HashMap<String, forge::model::ForgeDocument>,
@@ -7070,12 +7294,16 @@ fn validate_broadcast_log_cross_refs(
         String,
         (Vec<forge::model::ForgeImport>, PathBuf),
     >,
-) -> Result<(), forge::error::Located<forge::error::ForgeError>> {
+) -> Result<
+    std::collections::HashMap<String, BroadcastLogElement>,
+    forge::error::Located<forge::error::ForgeError>,
+> {
     use forge::error::{Located, ValidationError};
 
     let mut element_type_names: Vec<String> = element_type_candidates.keys().cloned().collect();
     element_type_names.sort();
 
+    let mut elements = std::collections::HashMap::new();
     for (diag_label, log) in logs {
         let Some(element) = element_type_candidates.get(log.element_type.as_str()) else {
             return Err(Located::new(
@@ -7090,7 +7318,7 @@ fn validate_broadcast_log_cross_refs(
                 None,
             ));
         };
-        let bound = match element {
+        let (bound, unsupported) = match element {
             forge::model::ForgeDocument::Codec(codec) => {
                 // A codec with no recorded sources has no imports to resolve.
                 let (imports, base_dir) = element_import_sources
@@ -7099,26 +7327,43 @@ fn validate_broadcast_log_cross_refs(
                         (imports.as_slice(), base_dir.as_path())
                     });
                 let sized = sized_codec(codec, imports, base_dir, &mut HashSet::new());
-                forge::codec_size::largest_encoded_bytes(&sized)
+                (
+                    forge::codec_size::largest_encoded_bytes(&sized),
+                    broadcast_log_element_unsupported(codec),
+                )
             }
-            other => Err(forge::codec_size::Unbounded::no_wire_form(other.kind())),
-        };
-        if let Err(unbounded) = bound {
-            return Err(Located::new(
-                ValidationError::BroadcastLogElementSizeUnbounded {
-                    log_name: log.name.clone(),
-                    element_type: log.element_type.clone(),
-                    element_kind: element.kind().to_string(),
-                    reason: unbounded.to_string(),
-                }
-                .into(),
-                diag_label.clone(),
-                log.element_type_line,
+            other => (
+                Err(forge::codec_size::Unbounded::no_wire_form(other.kind())),
                 None,
-            ));
+            ),
+        };
+        match bound {
+            Ok(max_bytes) => {
+                elements.insert(
+                    log.name.clone(),
+                    BroadcastLogElement {
+                        max_bytes,
+                        unsupported,
+                    },
+                );
+            }
+            Err(unbounded) => {
+                return Err(Located::new(
+                    ValidationError::BroadcastLogElementSizeUnbounded {
+                        log_name: log.name.clone(),
+                        element_type: log.element_type.clone(),
+                        element_kind: element.kind().to_string(),
+                        reason: unbounded.to_string(),
+                    }
+                    .into(),
+                    diag_label.clone(),
+                    log.element_type_line,
+                    None,
+                ));
+            }
         }
     }
-    Ok(())
+    Ok(elements)
 }
 
 /// RFC §synth-5-P *Migration* (the worker) — the queue a worker names as its
