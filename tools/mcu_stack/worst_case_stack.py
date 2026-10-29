@@ -17,7 +17,12 @@ call across functions is relocated and named). Two things are not static and are
 rather than guessed at:
 
 - an indirect call (`blx rN`) has no callee to follow, so a root that reaches one fails the
-  run, naming the function it was made in;
+  run, naming the function it was made in — unless the caller states what it may call. A
+  call through a trait object is resolved the way class-hierarchy analysis resolves a
+  virtual call: to every implementation of the trait, the worst of them taken
+  (`--dyn caller=callees`, the caller a substring of the calling functions' names, the
+  callees a regular expression over the implementations'). A call through a pointer the host
+  installed is taken to need a stated number of bytes (`--indirect`);
 - a recursion is bounded only by a number the caller states for a function of the cycle
   (`--recursion name=levels`), which for Appendix D's walks is the document's depth; a cycle
   no stated function is in is refused as unbounded.
@@ -174,13 +179,27 @@ class Refusal(Exception):
 
 
 class Analysis:
-    def __init__(self, functions, recursion, ignored, assumed, indirect):
+    def __init__(self, functions, recursion, ignored, assumed, indirect, dispatch=()):
         self.functions = functions
         self.recursion = recursion
         self.ignored = [re.compile(p) for p in ignored]
         self.assumed = assumed
         self.indirect = indirect
+        # (caller substring, the implementations it may reach through a trait object)
+        self.dispatch = [
+            (caller, [name for name in functions if re.search(callees, name)])
+            for caller, callees in dispatch
+        ]
         self.memo = {}
+
+    def dyn_callees(self, name):
+        """The implementations `name` may call through a trait object: every function a
+        stated caller pattern it matches reaches."""
+        found = []
+        for caller, callees in self.dispatch:
+            if caller in name:
+                found.extend(callees)
+        return list(dict.fromkeys(found))
 
     def assumption_of(self, name):
         for key, extra in self.assumed.items():
@@ -215,16 +234,18 @@ class Analysis:
             # need, and the gate says in its output that this is an assumption.
             return function.frame + extra, [f"{name} [{function.frame} + {extra} assumed]"]
         allowance = 0
+        dyn_callees = self.dyn_callees(name) if function.indirect_calls else []
         if function.indirect_calls:
             allowed = self.indirect_allowance(name)
-            if allowed is None:
+            if allowed is None and not dyn_callees:
                 raise Refusal(
                     f"{name} makes {function.indirect_calls} indirect call(s), which have no callee "
-                    f"to follow: state what the callee may need with --indirect"
+                    f"to follow: state what the callee may need with --indirect, or what it may "
+                    f"call through a trait object with --dyn"
                 )
             # The callee is the host's (a clock it installed, say): what it may need is the
             # budget's to state.
-            allowance = allowed
+            allowance = allowed or 0
         bound = self.bound_of(name)
         if name in stack:
             # The function is being re-entered. That ends only if some function of the cycle
@@ -247,7 +268,9 @@ class Analysis:
             inner_budgets[bound[0]] = levels - 1
 
         best, chain = allowance, ([f"(indirect callee, {allowance} assumed)"] if allowance else [])
-        for callee in dict.fromkeys(function.callees):
+        # A trait object's call is followed into every implementation it may reach, exactly
+        # as a direct call is followed into its one callee.
+        for callee in list(dict.fromkeys(function.callees)) + dyn_callees:
             if callee == name and bound is None:
                 continue
             if self.ignored_callee(callee):
@@ -270,6 +293,17 @@ def parse_recursion(items):
     return recursion
 
 
+def parse_dispatch(items):
+    dispatch = []
+    for item in items:
+        caller, _, callees = item.partition("=")
+        if not caller or not callees:
+            raise SystemExit(f"--dyn wants caller=callees, got {item!r}")
+        re.compile(callees)
+        dispatch.append((caller, callees))
+    return dispatch
+
+
 def main(argv):
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("disassembly", help="objdump -d -r -C --no-show-raw-insn output, or - for stdin")
@@ -287,6 +321,10 @@ def main(argv):
                              "that is a function the host installed (its clock reading), which an "
                              "inlining may have put in any function; without it an indirect call "
                              "fails the run")
+    parser.add_argument("--dyn", action="append", default=[],
+                        help="caller=callees: the functions whose names contain `caller` call "
+                             "through a trait object, and may reach every function whose name "
+                             "matches the regular expression `callees` (repeatable)")
     parser.add_argument("--ignore-callee", action="append", default=list(DEFAULT_IGNORED_CALLEES),
                         help="a regex of callees not followed (panic entry points)")
     parser.add_argument("--min-functions", type=int, default=50,
@@ -313,6 +351,7 @@ def main(argv):
         args.ignore_callee,
         parse_recursion(args.assume),
         args.indirect,
+        parse_dispatch(args.dyn),
     )
     worst_bytes, worst_root, worst_chain = -1, None, []
     for root in sorted(roots):

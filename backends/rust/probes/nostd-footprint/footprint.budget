@@ -1,60 +1,61 @@
-# What one machine costs an MCU image, in bytes, and how far it may drift.
+# What a machine costs an MCU image, what the program pays once, in bytes, and
+# how far each may drift.
 #
 # Read by `scripts/gates/nostd-mcu.sh`. Every figure here is MEASURED, on
 # `thumbv7em-none-eabihf` with the toolchain named in MEASURED_WITH, from the
-# staticlib `backends/rust/probes/nostd-footprint` produces — summing the
-# `.text` sizes of every symbol `nm -C` reports whose name contains
-# MACHINE_SYMBOLS.
+# staticlib `backends/rust/probes/nostd-footprint` produces: linked with one
+# machine (`ParallelHistoryProbePolicy`, a `<parallel>` with two `<history>`)
+# and with a second, different one (the queue-size probe's flat machine, the
+# probe's `second-machine` feature).
 #
-# WHY A BUDGET AND NOT A TREND. A downstream bare-metal consumer measured this
-# growing 60-198 bytes per instantiation across two SCE pins and filed it
-# (2026-08-21) because nothing on our side could see it: the MCU gate compiled
-# but linked nothing, so no gate in this repository had ever weighed a section.
-# A budget is what turns "the engine got bigger" from a consumer's bug report
-# into our own red.
+# WHY A BUDGET AND NOT A TREND. A downstream bare-metal consumer measured the
+# engine growing 60-198 bytes per instantiation across two SCE pins and filed
+# it (2026-08-21) because nothing on our side could see it: the MCU gate
+# compiled but linked nothing, so no gate in this repository had ever weighed a
+# section. A budget is what turns "the engine got bigger" from a consumer's bug
+# report into our own red.
 #
-# RE-PINNING IS A DECISION, NOT A CHORE. When a change legitimately grows what
-# a machine costs, move TOTAL_BYTES and say in the commit message what the
-# bytes bought. The gate fails on a DROP as well, which is not pedantry: the
-# first shape of this probe emitted LLVM bitcode instead of machine code and
-# `nm` reported zero symbols, so a one-sided gate would have passed forever on
-# an empty measurement. A number that falls without a reason means the
-# instrument stopped seeing, and that is the failure this file exists to
-# prevent.
-
-# Which symbols are the machine's: every one whose demangled name carries the
-# probe machine's crate. That is the runtime's generic code monomorphised for
-# it — `Engine<P>`, the `EngineHost<P>` adapter, Appendix D's transcription in
-# `helpers::microstep` instantiated over that adapter, the event queue over its
-# event type — and the policy generated for it. It is what an image pays AGAIN
-# for every machine it holds, which is the number a consumer multiplies by
-# their machine count. Code the runtime carries once per image whatever it
-# holds (`is_error_event`, the string helpers) is not in it.
+# RE-PINNING IS A DECISION, NOT A CHORE. When a change legitimately moves a
+# figure, move it and say in the commit message what the bytes bought. The gate
+# fails on a DROP as well, which is not pedantry: the first shape of this probe
+# emitted LLVM bitcode instead of machine code and `nm` reported zero symbols,
+# so a one-sided gate would have passed forever on an empty measurement. A
+# number that falls without a reason means the instrument stopped seeing, and
+# that is the failure this file exists to prevent.
 #
-# WHY NOT `Engine<..>` ALONE, which is what this file weighed until the Rust
-# backend moved onto Appendix D (2026-09-24). Where the microstep's code lives
-# — the runtime or the template — is a choice this repository makes and
-# remakes, and an instrument that weighs one side reads a MOVE as a change.
-# That move, measured on both sides of it with one toolchain:
+# WHAT IS WEIGHED, AND WHY NOT THE MACHINE'S SYMBOLS. Until 2026-10-30 this file
+# summed the `.text` of every symbol whose name carried the probe machine's
+# crate: the runtime's generic code monomorphised for it and the policy
+# generated for it. Appendix D now runs once per program over a document's
+# tables (docs/adr/0064): the algorithm's code is the runtime's, compiled once,
+# and carries no machine's name, while what a machine brings is moving from code
+# to `.rodata` (its tables). That instrument would have read the move as a
+# shrink, the mistake it had already recorded once for 2026-09-24 when the
+# microstep moved between the template and the runtime. So the gate links two
+# different machines and holds three figures:
 #
-#                      Engine<..>   per machine   (diagnostics on)
-#   before (fb30b83e)     1702          5858
-#   after                 2318          4976
+#   1. MACHINE_BYTES — the image with two machines minus the image with one,
+#      `.text` plus `.rodata`: what one more machine costs, the number a
+#      consumer multiplies by its machine count;
+#   2. CORE_BYTES — the `.text` of the shared core, the symbols whose own path
+#      is in CORE_SYMBOLS, read off the two-machine image (with one machine LTO
+#      inlines the core into its only caller): what the program pays once;
+#   3. no core symbol carries a type of MACHINE_TYPES: the core is not
+#      instantiated per machine. The compiler guarantees this for the core's
+#      non-generic functions; the check is what fails if a generic parameter is
+#      ever added back to one of them.
 #
-# `Engine<..>` alone would have called a 15% shrink a 36% growth. It had also
-# never seen most of what a machine cost: 4156 of those 5858 bytes were in no
-# symbol it weighed, among them the microstep itself, generated into every
-# policy as `execute_microstep`, `try_transition_in_state`,
-# `remove_conflicting_transitions` and `compute_exit_set` (1812 bytes).
+# The last figures of the old instrument, for the record: 5590 bytes over 40
+# symbols with the report, 5538 without (rustc 1.99.1, 2026-10-22). Their
+# history — exitInterpreter (+94), the session id (+88), the enabled set sized
+# to the document (+98), the strings a `<send>` stopped building (-134, -84),
+# the walks that stopped recursing (+474) — is in this file's log.
 #
-# ⚠ The pattern relies on the v0 symbol-mangling scheme, which the toolchain
-# above emits by default: a v0 name carries its concrete generic arguments, so
-# `enter_states::<EngineHost<ParallelHistoryProbePolicy>>` names the machine.
-# Under the legacy scheme it does not, and the set collapses — measured with
-# `-C symbol-mangling-version=legacy` on the same tree: 3 symbols and 100
-# bytes, against 36 and 4976. MIN_SYMBOLS is what makes that a red rather than
-# a smaller number. It is a literal substring, not a regular expression.
-MACHINE_SYMBOLS='sce_nostd_build_probe::'
+# ⚠ The patterns rely on the v0 symbol-mangling scheme, which the toolchain
+# below emits by default: a v0 name carries its concrete generic arguments, so a
+# core function instantiated for a machine names it. Under the legacy scheme it
+# does not, and check 3 could not see one. MIN_CORE_SYMBOLS is what makes a
+# blind instrument a red rather than a smaller number.
 
 # The toolchain the figures below were measured with. Not enforced: the lane
 # installs whatever `stable` is on the day, and a toolchain that inlines
@@ -63,151 +64,62 @@ MACHINE_SYMBOLS='sce_nostd_build_probe::'
 # says so, and a re-pin names the toolchain it was taken on.
 MEASURED_WITH='rustc 1.99.1 (58cf8f9c3 2026-10-13)'
 
-# Sum of every machine symbol in the staticlib with the macrostep report: the
-# probe built with its `macrostep-diagnostics` feature, which turns on the
-# runtime's feature of that name. That is the build a bare-metal crate gets
-# when it asks for the report, and it is the same code this figure weighed
-# before 2026-10-21, when the report was in every build that did not name
-# `no_macrostep_diagnostics` (docs/adr/0053, amendment of 2026-10-21). Only
-# the way the gate asks for the build changed, so the figure is expected to
-# hold; it was not re-measured when the feature was renamed.
-#
-# 4976 -> 5070 (2026-09-26): what the bytes bought is W3C SCXML Appendix D's
-# exitInterpreter, which the engine had skipped — a run that ends in a
-# top-level <final> or is stopped now exits every state it is still in, and
-# `get_active_states` answers empty afterwards. The procedure first landed
-# inline in `Engine` at 5182, over the band; moved into `helpers::microstep`
-# beside exitStates, sharing that procedure's exitOrder sort instead of
-# carrying a second copy, it costs these 94.
-#
-# 5070 -> 5236 (2026-10-21), on rustc 1.99.1: what the bytes bought is a
-# session id a no_std machine is built under (docs/adr/0045, the owner's
-# answer on the root session id). With no source of randomness the host gives
-# the id at construction, `new_with_session_id`, which holds it to the NMTOKEN
-# rule and refuses an empty or malformed one there rather than at a save: one
-# more machine symbol, 88 bytes. The rest is not this change: the tree just
-# before it measured 5148 (38 symbols) on the same toolchain, inside the band
-# of the old pin.
-#
-# 5236 -> 5334 (2026-10-22), on rustc 1.99.1: what the bytes bought is main
-# stack. A consumer's bare-metal client measured three `Engine<P>` frames of
-# about 520-550 bytes each on its deepest call chain, and they were three copies
-# of a buffer sized for 32 enabled transitions. The enabled set is now sized to
-# the bound the configuration imposes (16; ADR 0056 then made it the document's
-# own), `removeConflictingTransitions` filters it in place, the microstep enters
-# from the enabled transitions with no buffer of their entry view, and
-# `complete_macrostep` has a frame of its own.
-# On this machine the static frames from `step` down to `enter_entry_set` went
-# from 1932 to 668 bytes (disassembly, thumbv7em, opt-level s). The code that
-# pays for it is the in-place filter, the separate call, and one more machine
-# symbol (40, was 39).
-#
-# 5334 -> 5200 (2026-10-22): a generated `<send>` no longer builds a string for the id it
-# names or for the origin it stamps. They were buffers of the runtime's string bound
-# (`heapless::String<256>`) made to be cloned into metadata that the bare-metal profile
-# elides, or dropped; the id is text now, borrowed, and the engine builds the one string it
-# keeps. What the bytes were: the clones, and the copy of 256 bytes behind each.
-#
-# 5200 -> 5674 (2026-10-22): what the bytes bought is no recursion. Appendix D's entry walk,
-# the effective targets and the completion check ran by recursion, and the stack gate below had
-# to state how deep each went; they run over an explicit stack of steps now
-# (`helpers::microstep::WalkStep`, ADR 0056), in the order the calls would have run, so the
-# worst-case stack is a sum of frames and no depth is assumed. The loop that interprets the
-# steps (`walk_entry` 776 bytes, `effective_target_states_on` 248) is larger than the small
-# functions it replaces; the figure moved by 474 here and by 478 without the report.
-#
-# 5674 -> 5590 (2026-10-22): what the bytes were is a string no document needed, twice. A
-# delayed `<send>` named its id and was handed one back, an owned `SceString` built to be
-# dropped; and a document that cancels kept each send's id in a buffer of the string bound
-# (256 bytes) that was copied into the scheduler's entry and again into the scheduler. The
-# generated send hands its id over and takes none back (`Engine::schedule_event_as`), and
-# the scheduler's key is the document's own size, `SendIdString<N>` with `N` the longest id
-# the document sends under (`sce_build::send_id_bound`): nine bytes for this probe. The
-# figure moved by -84 here and by -88 without the report.
-TOTAL_BYTES=5590
+# The shared core, by the path of its own symbols (an awk extended regular
+# expression over the demangled name): Appendix D's procedures
+# (`helpers::microstep`), the document's tables (`helpers::tables`), the sets of
+# states and the run store (`helpers::state_set`, `helpers::run_store`), and the
+# main event loop (`engine::Turn`). A machine's implementation of the core's
+# traits names the trait inside its `<.. as ..>` and is not matched.
+CORE_SYMBOLS='^<?sce_rust_runtime::(helpers::(microstep|state_set|run_store|tables)::|engine::Turn[>:])'
 
-# The same sum without the macrostep REPORT, the bound left in place: the probe
-# built with no feature, so the runtime has none either. That is the build a
-# bare-metal crate that writes `default-features = false` gets, and the same
-# code this figure weighed before 2026-10-21 with the opt-out
-# `no_macrostep_diagnostics`, which the runtime no longer has: what was an
-# opt-out is now the absence of `macrostep-diagnostics`. The figure is expected
-# to hold for the reason the one above is.
-#
-# The difference — 52 bytes per machine at the 2026-10-21 re-pin on rustc
-# 1.99.1, the same before and after the session id; 28 at the exitInterpreter
-# re-pin on rustc 1.98.1, and 24 before that moved inlining around it — is the
-# number that feature is worth,
-# and it is here rather than in a commit message because it is the answer to a
-# question a consumer asked: whether gating the diagnostics would recover what
-# two commits cost their image. Measuring both ways is also what keeps each
-# configuration from rotting — a feature nothing builds is a feature that
-# stops compiling and nobody learns until a consumer sets it.
-#
-# It was 44 when the feature was offered and 48 just before the microstep moved
-# into the runtime. The two places that refuse a macrostep now share one
-# `refuse_macrostep`, which holds the report's only log call; before, each
-# carried its own.
-#
-# WHAT THE REPORT WAS A FRACTION OF, measured at four pins in this same tree at
-# one fixed path (`7f94b580` -> `7db6aebc` -> `e0fdd46b` -> `a8026fd6`), as
-# `Engine<..>` sums — the metric of the time, not comparable with the figures
-# above:
-#
-#   1072 -> 1418 -> 1418 -> 1666 bytes, i.e. +594 per instantiation over the
-#   two commits that landed the macrostep ceiling (37a47335a3, e00d4eee04).
-#
-# So the report was 44 of 594 — **7%** — and the other 550 is the bound: the
-# per-microstep budget and the guard that stops a refused chain being handed a
-# second one. There is no version of this engine that both terminates and does
-# not pay that. The figure is on `thumbv7em-none-eabihf` at `opt-level = "z"`;
-# a consumer on another target or profile should expect the RATIO to hold and
-# the absolutes not to.
-#
-# The report's `sce_log_error!` calls are inside the feature gate as well, and
-# measured zero when there were two of them (2026-08-21): the sum was
-# identical with and without them, because the format arguments live in
-# `.rodata` and the call is a handful of instructions the linker folds
-# elsewhere. A downstream consumer reached the same conclusion from the other
-# end — with `lto = true` and no logger installed, their image had already
-# discarded every `log::` call before we asked them to try.
-#
-# 5042 -> 5184 (2026-10-21), on rustc 1.99.1: the same 88-byte constructor as
-# TOTAL_BYTES above; the tree just before it measured 5096 (38 symbols).
-#
-# 5184 -> 5288 (2026-10-22), on rustc 1.99.1: the stack change of TOTAL_BYTES
-# above; the figure with the report moved by 98 and this one by 104.
-#
-# 5288 -> 5148 (2026-10-22): the strings a `<send>` no longer builds, as above; the figure
-# with the report moved by 134 and this one by 140.
-#
-# 5148 -> 5626 (2026-10-22): the walks of Appendix D no longer recurse, as above; the figure
-# with the report moved by 474 and this one by 478.
-#
-# 5626 -> 5538 (2026-10-22): the two strings a delayed send no longer builds, as above; the
-# figure with the report moved by -84 and this one by -88.
-TOTAL_BYTES_NO_DIAGNOSTICS=5538
+# The probe machines' crates (an extended regular expression): a core symbol
+# that names either was instantiated for that machine.
+MACHINE_TYPES='sce_nostd_build_probe::|sce_nostd_queue_size_machine::'
 
-# Drift allowed either way before the gate speaks, in BYTES. Wide enough that
-# an unrelated inlining decision does not cry wolf, tight enough that one more
-# copy of a cold path (the 2026-08-21 report's ~170 B per instantiation) does.
+# What one more machine costs with the macrostep report: the probe built with
+# its `macrostep-diagnostics` feature, which turns on the runtime's feature of
+# that name — the build a bare-metal crate gets when it asks for the report.
 #
-# It was 8 PERCENT while this file weighed `Engine<..>` alone: ±133 bytes of
-# the 1666 it held then. What it encodes is a byte count, and a percentage of a
-# figure that tripled would have let the cold path through (8% of 4976 is
-# ±398). So the band is that one, carried over in bytes.
+# 1774 (2026-10-30), on rustc 1.99.1: images of 192221 and 193995 bytes. Before
+# Appendix D ran over tables the same measurement would have been the second
+# machine's whole copy of the algorithm; at 49e40c9a72, without the report, it
+# was 2865 (see below).
+MACHINE_BYTES=1774
+
+# The same without the report, the bound left in place: the build a bare-metal
+# crate that writes `default-features = false` gets (docs/adr/0053).
+#
+# 1672 (2026-10-30), on rustc 1.99.1: images of 191993 and 193665 bytes. At
+# 49e40c9a72, the tree before Appendix D ran over tables, the same two images
+# measured 189949 and 192814: 2865 for the second machine. The 1193 bytes the
+# second machine no longer costs are its copy of the algorithm; the image of
+# one machine grew by 2044, which is the algorithm written for any document
+# rather than specialised to one, and the tables. The image is smaller from the
+# third machine on.
+MACHINE_BYTES_NO_DIAGNOSTICS=1672
+
+# What the program pays once, with the report: the core's `.text`.
+#
+# 5356 over 38 symbols (2026-10-30), on rustc 1.99.1.
+CORE_BYTES=5356
+
+# The same without the report.
+#
+# 5346 over 37 symbols (2026-10-30), on rustc 1.99.1.
+CORE_BYTES_NO_DIAGNOSTICS=5346
+
+# Drift allowed either way before the gate speaks, in BYTES, for each figure.
+# Wide enough that an unrelated inlining decision does not cry wolf, tight
+# enough that one more copy of a cold path (the 2026-08-21 report's ~170 B per
+# instantiation) does. Carried over from the instrument this file held before,
+# where it was the 8% of the then 1666-byte figure it started as.
 TOLERANCE_BYTES=133
 
-# The instrument's own floor. Below this the probe is not measuring the machine
-# at all — a renamed crate, a bitcode staticlib, a driver that stopped driving,
-# a toolchain that mangles without generic arguments — and every byte figure
-# above it is meaningless. The set held 36 symbols at the last re-pin and 35
-# before it, across a change that moved half its bytes between the runtime and
-# the policy (38 after the exitInterpreter re-pin); the legacy scheme leaves 3,
-# and the bitcode staticlib left none.
-# The floor sits between, with room for a refactor to move the count by a
-# dozen.
-MIN_SYMBOLS=24
+# The instrument's own floor: below this many core symbols the probe is not
+# measuring the core at all — a moved module, a bitcode staticlib, a driver
+# that stopped driving. 37 and 38 at the 2026-10-30 pin; the floor leaves room
+# for a refactor to fold a dozen of them together.
+MIN_CORE_SYMBOLS=24
 
 # ── The worst-case stack ────────────────────────────────────────────────────
 #
@@ -221,53 +133,45 @@ MIN_SYMBOLS=24
 # WHAT IT IS NOT. Static, and the probe's own profile (`opt-level = "z"`, fat LTO): inlining
 # moves a frame from one function to its caller, so the number is a property of this build and
 # a consumer's own profile will differ; what it holds is that the engine's chain does not grow
-# unseen. A policy's entry actions are inlined into `enter_entry_set` by LTO, so a frame there
-# is the generated policy's and not the runtime's: it was the longest chain until a delayed
-# send stopped building strings (see the 1056 entry below), and is a chain this figure still
-# holds, since one that grows past the runtime's own moves it.
+# unseen. It is read off the two-machine image, where the core reaches each machine through a
+# trait object and the calls are indirect.
 #
-# WHAT IS NOT STATIC IS STATED HERE, AND PRINTED BY THE GATE. A function reached through a
-# pointer the host gave the engine (its clock reading, which an inlining may have put in any
-# function) is taken to need STACK_INDIRECT_BYTES; the formatting machinery calls whatever
-# `Display` it is handed, so `core::fmt::write` is taken to need STACK_ASSUME below its own
-# frame. There is no recursion to bound: Appendix D's walks (the entry set, the effective
-# targets, the completion check) run over an explicit stack of steps, so nothing of the
-# document's depth is stated here. An indirect call or a cycle this file does not account for
-# fails the run, so none is assumed away.
+# WHAT IS NOT STATIC IS STATED HERE, AND PRINTED BY THE GATE. A call through a trait object is
+# followed into every implementation the caller may reach (STACK_DYN, `caller=callees`), the
+# way class-hierarchy analysis resolves a virtual call: Appendix D's procedures reach the
+# machines' `Behaviour` hooks, the main loop their `MainLoop` and `Behaviour` hooks. A function
+# reached through a pointer the host gave the engine (its clock reading, which an inlining may
+# have put in any function) is taken to need STACK_INDIRECT_BYTES; the formatting machinery
+# calls whatever `Display` it is handed, so `core::fmt::write` is taken to need STACK_ASSUME
+# below its own frame. There is no recursion to bound: Appendix D's walks run over an explicit
+# stack of steps. An indirect call or a cycle this file does not account for fails the run, so
+# none is assumed away.
 #
 # 1776 (2026-10-22), on rustc 1.99.1, both configurations: `initialize` through the main loop,
 # `complete_macrostep`, `take_event`, `microstep` and `enter_entry_set` to a `Vec<u8, 256>`
 # clone and `memcpy`. The tolerance is the footprint's, in kind: wide enough for an inlining
 # decision, narrow enough that one more buffer in a frame of that chain trips it.
 #
-# 1776 -> 1584 (2026-10-22): the generated `<send>` stopped building strings (see
-# TOTAL_BYTES), which took the policy's entry actions out of the worst chain: it is now the
-# recursion of Appendix D's entry walk, `add_descendant_states_to_enter` through
-# `add_ancestor_states_to_enter` and `add_region_defaults`, taken to the six levels
-# STACK_RECURSION states. That is the stated bound and not what the probe machine reaches
-# (it is four levels deep), so the figure now holds the runtime's own walk and the policy's
-# chain stays under it; a policy chain that grows past it moves the figure again.
+# 1776 -> 1584 -> 1616 -> 1056 (2026-10-22): the generated `<send>` stopped building strings,
+# the walks of Appendix D stopped recursing, and a delayed send stopped copying an id of the
+# string bound; the chain the figure held became the runtime's own, `initialize` (232 bytes,
+# the walks' stack and the entry set) through the main loop, `take_event`, `select_transitions`
+# (224), `remove_conflicting_transitions`, `compute_exit_set` and `effective_target_states`.
 #
-# 1584 -> 1616 (2026-10-22): the recursion is gone (see TOTAL_BYTES), so no depth is stated in
-# this file and the figure is a sum of frames and nothing else. The chain it holds is the
-# policy's entry actions again: `initialize` through the main loop, `complete_macrostep`,
-# `take_event`, `microstep`, `enter_entry_set` (600 bytes, the policy's code inlined into it),
-# `sce_string_from_str` (280) and `memcpy`. The recursion had stood above it by 80 bytes. The
-# figure moved by 32 because `initialize` now holds the walks' stack with the entry set, 240
-# bytes where it held 136.
-#
-# 1616 -> 1056 (2026-10-22): the 608 bytes of `enter_entry_set` were two copies of a string no
-# document needed (see TOTAL_BYTES): the id a delayed send was handed back (a buffer of the
-# string bound) and the scheduler entry a cancel key of that size made 272 bytes, built in the
-# frame and copied into the scheduler. With the id handed over and the key the document's own
-# size, the policy's entry actions are no longer the longest chain; it is the runtime's own:
-# `initialize` (232 bytes, the walks' stack and the entry set) through the main loop,
-# `take_event`, `select_transitions` (224), `remove_conflicting_transitions`, `compute_exit_set`
-# and `effective_target_states` (128).
+# 1056 -> 1232 (2026-10-30): Appendix D runs once per program over tables (docs/adr/0064), and
+# the figure is now read off the two-machine image, where the core is not inlined into the
+# machine's `Engine`. The chain is `initialize` (240) through the machine's
+# `run_main_event_loop` (232, the workspace of bit vectors the whole call lends), the shared
+# `Turn::run_main_event_loop` (40), `take_event`, `take_microstep` (272), `enter_states` (296),
+# `walk_entry` (104) and a set's search. What the bytes bought: the core's frames are functions
+# of their own, called once per program, instead of a copy inlined into every machine.
 STACK_ROOTS='Engine<sce_nostd_build_probe::ParallelHistoryProbePolicy>>::step Engine<sce_nostd_build_probe::ParallelHistoryProbePolicy>>::initialize Engine<sce_nostd_build_probe::ParallelHistoryProbePolicy>>::process_event'
 STACK_RECURSION=''
 STACK_ASSUME='core::fmt::write=256'
 STACK_INDIRECT_BYTES=64
+# Space-separated `caller=callees` pairs; `\s` rather than a space inside a pattern, since the
+# list is split on whitespace.
+STACK_DYN='sce_rust_runtime::helpers::microstep::=\sas\ssce_rust_runtime::helpers::microstep::Behaviour>:: sce_rust_runtime::engine::Turn=\sas\ssce_rust_runtime::(engine::MainLoop|helpers::microstep::Behaviour)>::'
 STACK_MIN_FUNCTIONS=200
-STACK_BYTES=1056
+STACK_BYTES=1232
 STACK_TOLERANCE_BYTES=256
