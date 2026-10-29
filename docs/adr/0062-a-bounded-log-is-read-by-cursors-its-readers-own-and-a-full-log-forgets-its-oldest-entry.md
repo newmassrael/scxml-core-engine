@@ -657,6 +657,14 @@ runner would let CI judge it, and is not built.
 - **Not run.** The change was written with nothing built: the module, its unit tests, the differential test and the command
   have not been compiled or run, and neither the running time of the differential file (the aim is about ten seconds in a
   debug build) nor the counts it asserts have been observed.
+- **Mutation cases.** `sce-build/tests/mutations/a_specialised_broadcast_history_check_holds_both_conditions.cases` holds
+  40 cases on `specialised.rs` and on the fall-back of `check` to the general search, and names nine mutants that are not
+  cases, each with its reason (an equivalent, a tie that no test reads, a loop that never ends). The cases mutate the
+  decisions the proof leans on: which end of a publish bounds each side of a window, each strict or non-strict
+  comparison of (I) and (II), the order of the sweep, each closed form of `A(x)` with its window arithmetic and its
+  edge of `u64`, and the declines. Each case says which test should turn red; most are held by a history built by
+  hand, and eight are reached only by the seeded generator of the differential test and say so. The casefile was
+  written with nothing built, and its first round is for CI to judge.
 
 ### What step 7 landed for Python (2026-10-29)
 
@@ -1043,10 +1051,9 @@ What is left:
 - **Element forms the Rust template refuses**: a codec that takes flag inputs or a variant tag from its caller, and a CBOR map
   with a string or byte-string entry. A typed diagnostic for an unresolved deploy limit.
 - **The stress runs of the six rows** still write short histories, a limit the general search imposed and the specialised
-  checker does not; lengthening them is a change to each recorder, with a round of CI to read after it. No mutation
-  case guards `specialised.rs` yet.
+  checker does not; lengthening them is a change to each recorder, with a round of CI to read after it.
 - **Rounds only CI can judge**: the casefile of the narrow row's mutation round, and the nine Rust cases after the
-  strengthened window assertion, neither read yet; and the Miri measurement, which CI cannot repeat because the
+  strengthened window assertion, neither read yet; the first round of the specialised checker's casefile; and the Miri measurement, which CI cannot repeat because the
   mutation selector passes its arguments to `cargo test` and a Miri runner for `scripts/mutate` is not built.
 - **The differential run against the downstream consumer's own ring** (section 6, layer 5), which needs that ring's cases.
 
