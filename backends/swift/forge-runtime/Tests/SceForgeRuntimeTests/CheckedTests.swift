@@ -203,6 +203,32 @@ private struct Row: SceDefault, Equatable {
     #expect(g.error == .outOfRange)
 }
 
+// A call of a machine's adapter, which answers a record, a list or a number whose type
+// the call's expression cannot name, is its value or the type's own zero with the
+// failure recorded: the value of a record that has none, an empty list, a 0.
+@Test func takeDefaultAnswersTheZeroOfTheTypeAndRecordsTheFailure() {
+    func adapter<T>(_ value: T, fails: Bool) throws -> T {
+        if fails {
+            throw AlgorithmError.overflow
+        }
+        return value
+    }
+    let f = Failure()
+    #expect(Checked.takeDefault(f) { try adapter(Row(id: 4), fails: false) } == Row(id: 4))
+    #expect(Checked.takeDefault(f) { try adapter([UInt8(1), 2], fails: false) } == [1, 2])
+    #expect(Checked.takeDefault(f) { try adapter(UInt32(9), fails: false) } == 9)
+    #expect(!f.failed)
+    #expect(Checked.takeDefault(f) { try adapter(Row(id: 4), fails: true) } == Row())
+    #expect(f.error == .overflow)
+    let g = Failure()
+    #expect(Checked.takeDefault(g) { try adapter([Row(id: 1)], fails: true) } == [])
+    #expect(g.error == .overflow)
+    let h = Failure()
+    #expect(Checked.takeDefault(h) { try adapter(Int32(-3), fails: true) } == 0)
+    #expect(Checked.takeDefault(h) { try adapter("text", fails: true) } == "")
+    #expect(Checked.takeDefault(h) { try adapter(true, fails: true) } == false)
+}
+
 private enum Level: UInt8, CaseIterable {
     case low = 0
     case high = 7

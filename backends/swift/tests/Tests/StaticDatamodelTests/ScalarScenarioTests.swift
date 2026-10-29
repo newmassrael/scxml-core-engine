@@ -332,6 +332,56 @@ private func syncClient() -> Machine {
     )
 }
 
+// A running total as a scenario writes it: its count and sum, in the schema's order.
+private func totalled(_ count: UInt32, _ sum: Int32) -> JSONValue {
+    .object([
+        (key: "count", value: integer(count)),
+        (key: "sum", value: integer(sum)),
+    ])
+}
+
+private func stateAlgorithm() -> Machine {
+    let policy = StaticStateAlgorithmPolicy()
+    return drive(
+        policy,
+        variables: [
+            "entries": { .array(policy.entries.map { entry($0.id, $0.amount) }) },
+            "total": { totalled(policy.total.count, policy.total.sum) },
+            "last": { entry(policy.last.id, policy.last.amount) },
+            "ids": { integers(policy.ids) },
+            "idsum": { integer(policy.idsum) },
+            "large": { integer(policy.large) },
+            "refusals": { integer(policy.refusals) },
+        ]
+    )
+}
+
+// A text slot as a scenario writes it: its slot, version and text, in the schema's
+// order. The version is 64 bits wide, so it is the text of its digits, exactly.
+private func textSlot(_ slot: UInt32, _ version: Int64, _ text: String) -> JSONValue {
+    .object([
+        (key: "slot", value: integer(slot)),
+        (key: "version", value: .text(String(version))),
+        (key: "text", value: .text(text)),
+    ])
+}
+
+private func textRecord() -> Machine {
+    let policy = StaticTextRecordPolicy()
+    return drive(
+        policy,
+        variables: [
+            "slots": { .array(policy.slots.map { textSlot($0.slot, $0.version, $0.text) }) },
+            "held": { textSlot(policy.held.slot, policy.held.version, policy.held.text) },
+            "incoming": {
+                textSlot(policy.incoming.slot, policy.incoming.version, policy.incoming.text)
+            },
+            "known": { integer(policy.known) },
+            "refusals": { integer(policy.refusals) },
+        ]
+    )
+}
+
 private func listCall() -> Machine {
     let policy = StaticListCallPolicy()
     return drive(
@@ -773,6 +823,20 @@ private func recordBytes() -> Machine {
 // algorithm cannot write the list it was given.
 @Test func aListIsHandedToAnImportedAlgorithmToBeRead() {
     replay("static_list_call", listCall())
+}
+
+// A list and a record the machine keeps are handed to imported algorithms that may
+// fail, and the list or record each answers is taken back whole: the adapter throws
+// what the algorithm throws, the machine records it, and the block ends as
+// error.execution where an id sum does not fit its width.
+@Test func aListAndARecordAreHandedToAlgorithmsThatMayFail() {
+    replay("static_state_algorithm", stateAlgorithm())
+}
+
+// A record with text and a list of them are handed to the standard text-slot rules,
+// two of which answer a record and a list and one of which only reads.
+@Test func aTextSlotIsHandedToTheStandardTextRules() {
+    replay("static_text_record", textRecord())
 }
 
 // A record is taken into a list by name, and the list holds a copy of it: a record
