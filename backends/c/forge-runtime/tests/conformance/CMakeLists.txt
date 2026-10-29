@@ -708,3 +708,106 @@ sce_queue_refusal(queue_generate_c_segmented_without_atomics "no read-modify-wri
 # The segmented queues need the target's atomic width stated, as an SCQ row does.
 sce_queue_refusal(queue_generate_c_segmented_without_a_target "atomic_rmw_width"
     "${QUEUE_C_DOCS_DIR}/queue_c_segmented.scxml")
+
+# ---------------------------------------------------------------------------
+# The headers the generator writes for a broadcast log, compiled and used
+# (ADR 0062)
+# ---------------------------------------------------------------------------
+#
+# A log is generated from its document SET and not one document at a time, because
+# a slot is sized from the element document's largest encoded size, which only the
+# set compile reads (and a retention written as a deploy key resolves only against a
+# deploy and the machine it is generated for). So `orchestrate` is the command, over
+# the element documents and the logs together.
+#
+# One set is the documents every other backend compiles, untouched: two elements
+# and two logs, the second log's retention the deploy limit `event_retention` of
+# machine `mcu_node`. The other is derived from them in the build tree, as the
+# queue's variants are: a log over `codec_cbor_map`, a CBOR map with a text and byte
+# strings, to hold what a log of the literal document does not reach (an element a
+# codec refuses, and values that own their bytes). The derived set is copied beside
+# its log because `orchestrate` reads the documents of one set from one directory.
+set(BLOG_C_DOCS_DIR "${CMAKE_CURRENT_BINARY_DIR}/broadcast_log_documents")
+set(BLOG_C_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/broadcast_log_headers")
+file(MAKE_DIRECTORY "${BLOG_C_DOCS_DIR}" "${BLOG_C_GENERATED_DIR}")
+
+set(BLOG_C_DEPLOY "${BLOG_C_DOCS_DIR}/deploy.yaml")
+file(WRITE "${BLOG_C_DEPLOY}" [=[
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      mcu_node:
+        source: mcu_node.scxml
+        limits:
+          event_retention: 5
+]=])
+
+set(BLOG_C_RESOURCE_SET
+    broadcast_log_conformance_event
+    broadcast_log_conformance_record
+    broadcast_log_conformance_literal
+    broadcast_log_conformance_deployed)
+set(BLOG_C_RESOURCE_ARGS "")
+set(BLOG_C_RESOURCE_DEPENDS "")
+set(BLOG_C_RESOURCE_HEADERS "")
+foreach(_document IN LISTS BLOG_C_RESOURCE_SET)
+    list(APPEND BLOG_C_RESOURCE_ARGS --forge "${RESOURCE_DIR}/${_document}.scxml")
+    list(APPEND BLOG_C_RESOURCE_DEPENDS "${RESOURCE_DIR}/${_document}.scxml")
+    list(APPEND BLOG_C_RESOURCE_HEADERS "${BLOG_C_GENERATED_DIR}/${_document}.h")
+endforeach()
+add_custom_command(
+    OUTPUT ${BLOG_C_RESOURCE_HEADERS}
+    COMMAND "${SCE_CODEGEN}" orchestrate ${BLOG_C_RESOURCE_ARGS}
+            --language c11 --output-dir "${BLOG_C_GENERATED_DIR}"
+            --deploy "${BLOG_C_DEPLOY}" --target-machine mcu_node
+    DEPENDS ${BLOG_C_RESOURCE_DEPENDS} "${BLOG_C_DEPLOY}" "${SCE_CODEGEN}"
+    COMMENT "Generating C11 broadcast logs and their elements"
+    VERBATIM)
+
+# The derived set: the literal document with its name and its element replaced.
+configure_file("${RESOURCE_DIR}/codec_cbor_map.scxml" "${BLOG_C_DOCS_DIR}/codec_cbor_map.scxml" COPYONLY)
+file(READ "${RESOURCE_DIR}/broadcast_log_conformance_literal.scxml" _blog_text)
+string(REPLACE "name=\"broadcast_log_conformance_literal\"" "name=\"broadcast_log_c_cbor\"" _blog_text "${_blog_text}")
+string(REPLACE "<sce:element-type>broadcast_log_conformance_event</sce:element-type>"
+       "<sce:element-type>codec_cbor_map</sce:element-type>" _blog_text "${_blog_text}")
+file(WRITE "${BLOG_C_DOCS_DIR}/broadcast_log_c_cbor.scxml" "${_blog_text}")
+set(BLOG_C_CBOR_HEADERS
+    "${BLOG_C_GENERATED_DIR}/codec_cbor_map.h"
+    "${BLOG_C_GENERATED_DIR}/broadcast_log_c_cbor.h")
+add_custom_command(
+    OUTPUT ${BLOG_C_CBOR_HEADERS}
+    COMMAND "${SCE_CODEGEN}" orchestrate
+            --forge "${BLOG_C_DOCS_DIR}/codec_cbor_map.scxml"
+            --forge "${BLOG_C_DOCS_DIR}/broadcast_log_c_cbor.scxml"
+            --language c11 --output-dir "${BLOG_C_GENERATED_DIR}"
+    DEPENDS "${BLOG_C_DOCS_DIR}/codec_cbor_map.scxml" "${BLOG_C_DOCS_DIR}/broadcast_log_c_cbor.scxml"
+            "${SCE_CODEGEN}"
+    COMMENT "Generating C11 broadcast log over a CBOR element"
+    VERBATIM)
+add_custom_target(generate_broadcast_log_headers_c
+    DEPENDS ${BLOG_C_RESOURCE_HEADERS} ${BLOG_C_CBOR_HEADERS})
+
+add_executable(broadcast_log_generated_test_c "${CMAKE_CURRENT_SOURCE_DIR}/broadcast_log_generated_test.c")
+add_dependencies(broadcast_log_generated_test_c generate_broadcast_log_headers_c)
+target_include_directories(broadcast_log_generated_test_c PRIVATE "${BLOG_C_GENERATED_DIR}")
+target_compile_options(broadcast_log_generated_test_c PRIVATE -Wall -Wextra -Wpedantic -Werror)
+target_link_libraries(broadcast_log_generated_test_c PRIVATE sce_queue_host_intrinsics)
+add_test(NAME broadcast_log_generated_c COMMAND broadcast_log_generated_test_c)
+
+# What the generator refuses is as much its contract as what it writes. One
+# document handed to `generate` has no element document to read the size from and
+# no deploy to read a retention from, so it is refused naming what is missing and
+# is never given a guessed number.
+add_test(NAME broadcast_log_generate_c_single_document
+    COMMAND "${SCE_CODEGEN}" generate "${RESOURCE_DIR}/broadcast_log_conformance_literal.scxml"
+            --language c11 --output-dir "${CMAKE_CURRENT_BINARY_DIR}/broadcast_log_refused")
+set_tests_properties(broadcast_log_generate_c_single_document PROPERTIES
+    PASS_REGULAR_EXPRESSION "ForgeCompileOptions::broadcast_log_resolutions")
+# The same log with its element document beside it is a set, which `check` judges as
+# `orchestrate` does: no refusal.
+add_test(NAME broadcast_log_check_c_set
+    COMMAND "${SCE_CODEGEN}" check
+            --forge "${RESOURCE_DIR}/broadcast_log_conformance_event.scxml"
+            --forge "${RESOURCE_DIR}/broadcast_log_conformance_literal.scxml"
+            --language c11)
