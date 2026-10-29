@@ -329,13 +329,21 @@ fn main() {
     // carry (ADR 0062, "Caller inputs are part of the element"): one flag input,
     // and a variant whose tag the caller gives. The log stores each in a context
     // word of the entry, so these compile the typed `publish` and `read` that carry
-    // them and show a reader gets back what the publisher gave.
+    // them and show a reader gets back what the publisher gave. Their documents are
+    // shared by every backend's conformance lane, so they are in
+    // `tests/forge/conformance/broadcast_log_context/` and not in the resources (the
+    // source hash of a tree generated from the resources reads every document there).
+    let context_fixtures = Path::new(&manifest_dir)
+        .join("../../../tests/forge/conformance/broadcast_log_context")
+        .canonicalize()
+        .expect("canonicalize tests/forge/conformance/broadcast_log_context");
+    println!("cargo:rerun-if-changed={}", context_fixtures.display());
     generate_broadcast_log_set(
         &[
             "broadcast_log_conformance_flagged_event",
             "broadcast_log_conformance_flagged",
         ]
-        .map(|name| source_fixtures.join(format!("{name}.scxml"))),
+        .map(|name| context_fixtures.join(format!("{name}.scxml"))),
         BROADCAST_LOG_DEPLOY,
         &out_dir,
     );
@@ -346,7 +354,7 @@ fn main() {
             "broadcast_log_conformance_choice",
             "broadcast_log_conformance_chosen",
         ]
-        .map(|name| source_fixtures.join(format!("{name}.scxml"))),
+        .map(|name| context_fixtures.join(format!("{name}.scxml"))),
         BROADCAST_LOG_DEPLOY,
         &out_dir,
     );
