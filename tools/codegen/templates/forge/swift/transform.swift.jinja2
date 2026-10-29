@@ -1,0 +1,39 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{{ sce_map.source_marker(source_location, "swift", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
+
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="transform")
+// Runtime: {{ runtime_dep }}
+// Do not edit — regenerate from the source SCXML file.
+//
+// A formula per output: a static function of the caseless enum `{{ struct_name }}` for each, a
+// file of the module that calls them. A call is qualified by the enum
+// (`{{ struct_name }}.<function>(…)`), which a member of the calling type cannot hide as it would
+// hide a free function of the same name. An output that reads another output calls its function.
+{% if swift_uses_forge_runtime %}
+
+import SceForgeRuntime
+{% endif %}
+
+public enum {{ struct_name }} {
+{% for func in functions %}
+
+{% if func.param_quantities or func.output_quantity %}
+    /// Physical-quantity annotations.
+{% if func.param_quantities %}
+    /// Inputs:
+{% for pq in func.param_quantities %}
+    ///   * `{{ pq.id }}` carries unit `{{ pq.unit }}` (physical = raw * {{ pq.scale_repr }} + {{ pq.offset_repr }}).
+{% endfor %}
+{% endif %}
+{% if func.output_quantity %}
+    /// Output unit: `{{ func.output_quantity.unit }}` (physical = raw * {{ func.output_quantity.scale_repr }} + {{ func.output_quantity.offset_repr }}).
+{% endif %}
+{% endif %}
+    public static func {{ func.name }}({{ func.params }}) -> {{ func.ret_type }} {
+        {{ func.expr }}
+    }
+{% endfor %}
+}

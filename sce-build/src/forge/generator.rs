@@ -2084,6 +2084,18 @@ fn render_transform(
         .collect::<Result<_, ForgeError>>()?;
 
     let mut ctx = l.base_context(&m.name);
+    // A Swift unit names the forge runtime only where an expression does.
+    ctx.insert(
+        "swift_uses_forge_runtime".into(),
+        (lang == Language::Swift
+            && functions.iter().any(|f| {
+                let expr = f["expr"].as_str().unwrap_or_default();
+                SWIFT_FORGE_RUNTIME_ENUMS
+                    .iter()
+                    .any(|name| expr.contains(&format!("{name}.")))
+            }))
+        .into(),
+    );
     ctx.insert("functions".into(), serde_json::json!(functions));
     // The name this module gives each part of the document's surface, keyed
     // by the id the document wrote, from the same calls the definitions above
@@ -24410,6 +24422,9 @@ pub fn generate_swift_with_imports(
         // A filter is one of three runtime classes over scalars, which the unit holds as
         // a member and converts its input for.
         ForgeDocument::Filter(_) => None,
+        ForgeDocument::Transform(m) => {
+            swift_transform_unlowered(m).map(|c| swift_transform_refusal(m, &c))
+        }
         _ => {
             return match crate::forge::codegen_matrix::lookup(doc.kind(), Language::Swift) {
                 crate::forge::codegen_matrix::EmitOutcome::Declaration => {
@@ -24439,6 +24454,7 @@ pub fn generate_swift_with_imports(
         ForgeDocument::Lookup(m) => render_lookup(&env, m, imports, Language::Swift)?,
         ForgeDocument::Interpolation(m) => render_interpolation(&env, m, imports, Language::Swift)?,
         ForgeDocument::Filter(m) => render_filter(&env, m, imports, Language::Swift)?,
+        ForgeDocument::Transform(m) => render_transform(&env, m, imports, Language::Swift)?,
         _ => unreachable!("every other kind returned above"),
     };
     Ok(GeneratedOutput {
@@ -24719,6 +24735,24 @@ fn swift_algorithm_unlowered(m: &AlgorithmModel, imports: &[SwiftImport]) -> Opt
 pub(crate) fn swift_lookup_unlowered(m: &LookupModel) -> Option<String> {
     m.output_is_string()
         .then(|| "an output that answers a name (`type=\"string\"`)".to_string())
+}
+
+/// What of the transform `m` the Swift backend does not lower yet, described for a refusal by
+/// name (`generate/unsupported-feature`): a value read through `previous()`, which a transform
+/// keeps from one activation to the next in a holder object, which a Swift unit has not spelled.
+/// A transform of pure output functions is lowered.
+pub(crate) fn swift_transform_unlowered(m: &TransformModel) -> Option<String> {
+    (!crate::forge::previous_value::cells(m).is_empty())
+        .then(|| "a value read through `previous()`, which a holder keeps".to_string())
+}
+
+/// The refusal of the transform `m` for the Swift construct `construct` it holds
+/// ([`swift_transform_unlowered`]).
+fn swift_transform_refusal(m: &TransformModel, construct: &str) -> String {
+    format!(
+        "transform '{}': {construct} has no Swift lowering yet",
+        m.name
+    )
 }
 
 /// What of the interpolation `m` the Swift backend does not lower yet, described for a refusal
@@ -33445,13 +33479,14 @@ pub(crate) fn forge_transform_symbol(
     use crate::generator::Language;
     match language {
         Language::Go => format!("Compute{}", filters::to_pascal_case(output_id.to_string())),
-        Language::Cpp | Language::Kotlin => {
+        // Swift's is a static function of the caseless enum the document's `<Pascal>`
+        // names (`transform.swift.jinja2`), lowerCamelCase as Kotlin's.
+        Language::Cpp | Language::Kotlin | Language::Swift => {
             format!("compute{}", filters::to_pascal_case(output_id.to_string()))
         }
         Language::Rust | Language::Python | Language::C11 => {
             format!("compute_{}", filters::to_snake_case(output_id.to_string()))
         }
-        Language::Swift => no_swift_emitter("forge_transform_symbol"),
     }
 }
 
@@ -33969,8 +34004,8 @@ pub(crate) fn forge_transform_output_field(
         crate::generator::Language::Rust
         | crate::generator::Language::Cpp
         | crate::generator::Language::Kotlin
-        | crate::generator::Language::C11 => forge_local_id(output_id, language),
-        crate::generator::Language::Swift => no_swift_emitter("forge_transform_output_field"),
+        | crate::generator::Language::C11
+        | crate::generator::Language::Swift => forge_local_id(output_id, language),
     }
 }
 
