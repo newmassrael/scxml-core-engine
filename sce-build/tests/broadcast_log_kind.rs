@@ -3032,25 +3032,173 @@ fn a_cbor_text_entry_is_held_by_python_because_its_decoded_value_owns_its_bytes(
 }
 
 #[test]
-fn what_a_caller_must_give_is_refused_for_python_by_name() {
+fn python_stores_the_flag_inputs_an_element_asks_its_caller_for() {
+    // The codec `event_record` takes the flag input `S` from its caller on `encode` and
+    // `decode`. The log stores it in a context word of the entry, takes it on `publish`
+    // as a bool, and gives it back with the item, so that every reader decodes the entry
+    // under what it was published under. The element is a `uint8` and an optional
+    // `uint8`: 2 bytes, an entry of 1 length word, 1 context word and 1 word of bytes.
     let xml = blocking_ring();
     let codec = flag_input_codec();
-    let located = compile_documents(
-        Language::Python,
-        &[("event_ring.scxml", &xml), ("event_record.scxml", &codec)],
+    let code = generated_python_log(
+        compile_documents(
+            Language::Python,
+            &[("event_ring.scxml", &xml), ("event_record.scxml", &codec)],
+        )
+        .expect("a log stores the flag input its element asks for"),
+    );
+    assert_holds(
+        &code,
+        &[
+            "MAX_ENCODED_BYTES: Final[int] = 2",
+            "CONTEXT_WORDS: Final[int] = 1",
+            "WORDS: Final[int] = 1 + CONTEXT_WORDS + (MAX_ENCODED_BYTES + 7) // 8",
+            "class EventRingFlags:",
+            "s: bool = False",
+            "flags: EventRingFlags\n",
+            "def publish(publisher: runtime.Publisher, element: EventRecord, flags: EventRingFlags) -> int:",
+            "element.encode(sink, int(flags.s))",
+            r#"padded = bytes(buffer[:length]).ljust(8 * (WORDS - 2), b"\x00")"#,
+            "entry.extend([0] * CONTEXT_WORDS)",
+            "entry[1 + 0] |= int(flags.s) << 0",
+            "s=bool((entry[1 + 0] >> 0) & 1),",
+            r#"for word in entry[2:])"#,
+            "element = EventRecord.decode(runtime_codec.SceCursor(packed[:stored]), int(flags.s))",
+            "return EventRingItem(found.seq, element, flags)",
+        ],
+    );
+    assert!(
+        !code.contains("tag: int"),
+        "the element has no tag:\n{code}"
+    );
+    assert!(
+        !code.contains("ValueError"),
+        "a flag is a bool and has no range to refuse:\n{code}"
+    );
+}
+
+#[test]
+fn python_stores_the_flags_and_the_tag_of_an_element_in_context_words_of_their_own() {
+    // Two flag inputs fit one word; the tag takes the next. The bytes follow the
+    // length word and the two context words, so they start at word 3.
+    let facts = BroadcastLogElementFacts {
+        caller_flag_inputs: vec!["S".to_string(), "T".to_string()],
+        caller_variant_tag: true,
+        ..BroadcastLogElementFacts::default()
+    };
+    let code = compile_single_python(&blocking_ring(), &resolution_options(None, 4, facts))
+        .expect("a log stores the flags and the tag its element asks for");
+    assert_holds(
+        &code,
+        &[
+            "CONTEXT_WORDS: Final[int] = 2",
+            "WORDS: Final[int] = 1 + CONTEXT_WORDS + (MAX_ENCODED_BYTES + 7) // 8",
+            "s: bool = False",
+            "t: bool = False",
+            "flags: EventRingFlags\n    tag: int\n",
+            "def publish(publisher: runtime.Publisher, element: EventRecord, flags: EventRingFlags, tag: int) -> int:",
+            "if not 0 <= tag <= 0xFF:",
+            "raise ValueError(",
+            "element.encode(sink, int(flags.s), int(flags.t))",
+            r#"padded = bytes(buffer[:length]).ljust(8 * (WORDS - 3), b"\x00")"#,
+            "entry[1 + 0] |= int(flags.s) << 0",
+            "entry[1 + 0] |= int(flags.t) << 1",
+            "entry[1 + 1] = tag",
+            "for word in entry[3:])",
+            "s=bool((entry[1 + 0] >> 0) & 1),",
+            "t=bool((entry[1 + 0] >> 1) & 1),",
+            "tag = entry[1 + 1] & 0xFF",
+            "element = EventRecord.decode(runtime_codec.SceCursor(packed[:stored]), int(flags.s), int(flags.t), tag)",
+            "return EventRingItem(found.seq, element, flags, tag)",
+        ],
+    );
+    // The tag is validated before the codec is asked anything, so a refused tag
+    // publishes nothing and writes no byte.
+    let checked_at = code
+        .find("if not 0 <= tag <= 0xFF:")
+        .expect("the tag is checked");
+    let encoded_at = code
+        .find("element.encode(")
+        .expect("the element is encoded");
+    assert!(
+        checked_at < encoded_at,
+        "the tag is checked before the encode:\n{code}"
+    );
+}
+
+#[test]
+fn python_takes_a_tag_alone_as_one_context_word_and_the_signature_takes_no_flags() {
+    let facts = BroadcastLogElementFacts {
+        caller_variant_tag: true,
+        ..BroadcastLogElementFacts::default()
+    };
+    let code = compile_single_python(&blocking_ring(), &resolution_options(None, 4, facts))
+        .expect("a log stores the tag its element asks for");
+    assert_holds(
+        &code,
+        &[
+            "CONTEXT_WORDS: Final[int] = 1",
+            "def publish(publisher: runtime.Publisher, element: EventRecord, tag: int) -> int:",
+            "element.encode(sink)",
+            r#"padded = bytes(buffer[:length]).ljust(8 * (WORDS - 2), b"\x00")"#,
+            "entry[1 + 0] = tag",
+            "for word in entry[2:])",
+            "tag = entry[1 + 0] & 0xFF",
+            "element = EventRecord.decode(runtime_codec.SceCursor(packed[:stored]), tag)",
+            "return EventRingItem(found.seq, element, tag)",
+        ],
+    );
+    assert!(
+        !code.contains("Flags"),
+        "the element has no flag input:\n{code}"
+    );
+}
+
+#[test]
+fn python_keeps_sixty_four_flags_to_a_word_and_starts_the_next_word_at_the_sixty_fifth() {
+    // Python's words are 64 bits: flag 63 is the last bit of the first context word and
+    // flag 64 the first bit of the second.
+    let facts = BroadcastLogElementFacts {
+        caller_flag_inputs: (0..65).map(|index| format!("f{index}")).collect(),
+        ..BroadcastLogElementFacts::default()
+    };
+    let code = compile_single_python(&blocking_ring(), &resolution_options(None, 4, facts))
+        .expect("a log stores 65 flag inputs");
+    assert_holds(
+        &code,
+        &[
+            "CONTEXT_WORDS: Final[int] = 2",
+            "entry[1 + 0] |= int(flags.f0) << 0",
+            "entry[1 + 0] |= int(flags.f63) << 63",
+            "entry[1 + 1] |= int(flags.f64) << 0",
+            "f64=bool((entry[1 + 1] >> 0) & 1),",
+            "for word in entry[3:])",
+        ],
+    );
+}
+
+#[test]
+fn a_python_element_with_no_caller_input_has_the_entry_and_the_signatures_it_always_had() {
+    let code = compile_single_python(
+        &blocking_ring(),
+        &resolution_options(None, 4, BroadcastLogElementFacts::default()),
     )
-    .err()
-    .unwrap_or_else(|| panic!("a log has no flag input to give, so the set is refused"));
-    assert!(
-        row_text(&located, &xml).contains("<sce:element-type>event_record<"),
-        "the refusal is placed on the element-type row"
+    .expect("an element with no caller input is generated");
+    assert!(!code.contains("CONTEXT_WORDS"), "{code}");
+    assert!(!code.contains("Flags"), "{code}");
+    assert!(!code.contains("ValueError"), "{code}");
+    assert_holds(
+        &code,
+        &[
+            "WORDS: Final[int] = 1 + (MAX_ENCODED_BYTES + 7) // 8",
+            "def publish(publisher: runtime.Publisher, element: EventRecord) -> int:",
+            "element.encode(sink)",
+            r#"padded = bytes(buffer[:length]).ljust(8 * (WORDS - 1), b"\x00")"#,
+            r#"packed = b"".join(word.to_bytes(8, "little") for word in entry[1:])"#,
+            "element = EventRecord.decode(runtime_codec.SceCursor(packed[:stored]))",
+            "return EventRingItem(found.seq, element)",
+        ],
     );
-    let detail = invalid_config(located);
-    assert!(
-        detail.contains("the element 'event_record' cannot be stored by the Python template"),
-        "{detail}"
-    );
-    assert!(detail.contains("flag input(s) S"), "{detail}");
 }
 
 #[test]
