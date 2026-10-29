@@ -475,10 +475,15 @@ pub use event::{EventMetadata, EventType, EventWithMetadata};
 pub use hal::{Hal, NoOpHal, StdHal};
 pub use helpers::configuration::ConfigurationRejection;
 pub use helpers::event_queue::{EventQueueLike, EventQueueManager};
-/// What a generated policy's transition and target tables are made of — the
-/// types Appendix D's procedures read, named at the crate root because every
-/// generated machine spells them.
-pub use helpers::microstep::{EnabledTransition, EntryTarget, NoHistory, WalkStep};
+/// What a generated policy's tables and buffers are made of — the types
+/// Appendix D's procedures read, named at the crate root because every
+/// generated machine spells them (docs/adr/0064).
+pub use helpers::microstep::{state_scratch, Workspace};
+pub use helpers::run_store::RunStore;
+pub use helpers::tables::{
+    DocumentTables, EventId, HistoryId, HistoryRow, NoHistory, Span, StateId, StateKind, StateRow,
+    Target, TransitionId, TransitionRow,
+};
 #[cfg(feature = "std")]
 pub use host_processor::{
     is_reserved_type, mesh_event_metadata, parse_host_invoke_deadline_ms, request_bytes_field,
@@ -506,7 +511,7 @@ pub use log;
 /// below carries the same name for `std` builds, which is why this one is
 /// spelled from the module that defines it rather than added to that list.
 pub use payload_reading::PayloadReading;
-pub use policy::{ConstStatePolicy, PolicyDocument, StatePolicy};
+pub use policy::{ConstStatePolicy, StatePolicy};
 pub use sched_send_id::{ElidedSendId, ScheduledSendIdLike};
 #[cfg(feature = "std")]
 pub use scripting::{IScriptEngine, ScriptError, ScriptResult, ScriptValue, SetCurrentEventArgs};

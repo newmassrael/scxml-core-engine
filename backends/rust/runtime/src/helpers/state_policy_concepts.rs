@@ -26,7 +26,6 @@
 //! - `StatePolicy::HAS_PARALLEL_STATES`
 //! - `StatePolicy::HAS_AUTOFORWARD`
 //! - `StatePolicy::HAS_CHILD_TICK`
-//! - `StatePolicy::HAS_ACTIVE_STATES`
 //!
 //! The engine branches on these constants via `if P::HAS_X { ... }`. Rust's const
 //! propagation eliminates the dead branch entirely — no runtime cost, matching C++
@@ -61,11 +60,6 @@ pub const fn has_invoke_support<P: StatePolicy>() -> bool {
 /// C++ `SCE::Core::HasFinalizeTrait<StatePolicy, EventWithMetadata, Engine>` equivalent.
 pub const fn has_finalize<P: StatePolicy>() -> bool {
     P::HAS_FINALIZE
-}
-
-/// C++ `SCE::Core::HasActiveStatesTrait<StatePolicy>` equivalent.
-pub const fn has_active_states<P: StatePolicy>() -> bool {
-    P::HAS_ACTIVE_STATES
 }
 
 /// C++ `SCE::Core::HasAutoforwardTrait<StatePolicy, Engine>` equivalent.

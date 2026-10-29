@@ -3,8 +3,8 @@
 
 //! W3C SCXML Appendix D's microstep — which transitions an event selects,
 //! which of them survive preemption, which states they exit and in which
-//! order, the order their content runs in, which states they enter — written
-//! once for every machine this crate runs.
+//! order, the order their content runs in, which states they enter — compiled
+//! once for every program, whatever machines it holds (docs/adr/0064).
 //!
 //! The procedures are transcribed rather than paraphrased, one function per
 //! procedure and under the appendix's names, so a reader can hold this file
@@ -14,383 +14,354 @@
 //! `ConflictResolutionHelper.h`, `ParallelCompletionHelper.h`), which answers
 //! the same questions the same way.
 //!
-//! What differs between machines is injected. [`Document`] describes the
-//! document — its structure, and what each `<history>` recorded. [`Run`] is the
-//! running machine: its configuration, which of a state's transitions an event
-//! enables, and what exiting a state, running a transition's content and
-//! entering a state DO. Nothing here knows how a machine stores either, so a
-//! table written by hand answers them as well as a machine's own code does.
+//! No function here is generic over a machine. The document reaches them as
+//! its tables ([`DocumentTables`]), its states, histories, transitions and
+//! events as numbers, and the running machine as one object-safe trait,
+//! [`Behaviour`]: its configuration and history records, which of a state's
+//! transitions an event enables, and what exiting a state, running a
+//! transition's content and entering a state DO. So a program that holds two
+//! machines holds one copy of this module.
 //!
 //! # Capacity
 //!
-//! Every collection here is bounded by the document, and the document says how
-//! much ([`helpers::hierarchy`](super::hierarchy)): the buffers are the
-//! [`Document`]'s associated types, spelled by the generator with the capacity
-//! its state tree needs. A configuration, an exit set, an entry set and a list
-//! of effective targets are all sets of states that are, or are about to be,
-//! active, so they are of the configuration's [`Configuration`](Document::Configuration)
-//! type; the enabled transitions are of its [`EnabledSet`](Document::EnabledSet),
-//! one at most per atomic state. No capacity constant is introduced here.
+//! Every set a procedure builds is a [`SliceVec`] over the [`Scratch`] the
+//! caller lends: the machine's [`Workspace`], one buffer of each kind, of the
+//! size the generator read from the document's tree (docs/adr/0056). A
+//! procedure takes what it needs from the front of the scratch and hands the
+//! rest to the procedures it calls, so the most a microstep holds at once is a
+//! sum the generator can write: [`state_scratch`] states, the enabled set, the
+//! walk's steps and the history defaults. No capacity constant is introduced
+//! here, and a push past a buffer's end stops the program with the generator's
+//! name on it.
 
-use core::fmt::Debug;
+use crate::helpers::tables::{
+    DocumentTables, EventId, HistoryId, StateId, StateKind, Target, TransitionId,
+};
 
-use crate::helpers::hierarchy::Bounded;
-use crate::{stable_sort_by, stable_sort_by_key, BoundedPush};
+// ════════════════════════════════════════════════════════════════════════
+// Buffers
+// ════════════════════════════════════════════════════════════════════════
 
-/// One token of a target list, as the document wrote it.
+/// The states the scratch of a document whose configurations hold at most
+/// `max_configuration` states must have room for.
 ///
-/// A transition's `target`, a state's initial transition, and a `<history>`
-/// element's default transition all name either states or `<history>`
-/// pseudo-states. A history is not a state — it is never in a configuration —
-/// so the two kinds are kept apart rather than folded into one identifier: the
-/// entry procedures dereference a history (to what it recorded, or to its
-/// default) and add a state.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum EntryTarget<S, H> {
-    /// A `<state>`, `<parallel>` or `<final>`.
-    State(S),
-    /// A `<history>` pseudo-state.
-    History(H),
+/// Three sets of the configuration's size are live at once on the longest path
+/// of a microstep: exitStates holds the configuration it started from and the
+/// states it exits while it computes one transition's effective targets, and
+/// the entry set holds the states to enter and the states entered by default
+/// while it computes the same. The generator writes the workspace's size as a
+/// call of this function, so the rule is stated once.
+pub const fn state_scratch(max_configuration: usize) -> usize {
+    3 * max_configuration
 }
+
+/// A buffer of a fixed capacity over borrowed slots: what a procedure builds a
+/// set of states, of transitions or of steps in.
+#[derive(Debug)]
+pub struct SliceVec<'a, T> {
+    slots: &'a mut [T],
+    len: usize,
+}
+
+impl<'a, T: Copy + PartialEq> SliceVec<'a, T> {
+    /// An empty buffer over `slots`.
+    pub fn new(slots: &'a mut [T]) -> Self {
+        Self { slots, len: 0 }
+    }
+
+    /// Add `item` at the end.
+    #[inline]
+    pub fn push(&mut self, item: T) {
+        let Some(slot) = self.slots.get_mut(self.len) else {
+            workspace_too_small()
+        };
+        *slot = item;
+        self.len += 1;
+    }
+
+    /// Add `item` at the end unless it is already held.
+    #[inline]
+    pub fn add_once(&mut self, item: T) {
+        if !self.contains(&item) {
+            self.push(item);
+        }
+    }
+
+    /// Remove the last item.
+    #[inline]
+    pub fn pop(&mut self) -> Option<T> {
+        if self.len == 0 {
+            return None;
+        }
+        self.len -= 1;
+        Some(self.slots[self.len])
+    }
+
+    /// Keep the first `len` items.
+    #[inline]
+    pub fn truncate(&mut self, len: usize) {
+        self.len = self.len.min(len);
+    }
+
+    /// Remove every item.
+    #[inline]
+    pub fn clear(&mut self) {
+        self.len = 0;
+    }
+}
+
+impl<T> core::ops::Deref for SliceVec<'_, T> {
+    type Target = [T];
+
+    #[inline]
+    fn deref(&self) -> &[T] {
+        &self.slots[..self.len]
+    }
+}
+
+impl<T> core::ops::DerefMut for SliceVec<'_, T> {
+    #[inline]
+    fn deref_mut(&mut self) -> &mut [T] {
+        &mut self.slots[..self.len]
+    }
+}
+
+/// A push past the end of a buffer: the generator sized the workspace below
+/// what the document needs. No formatted message, so a bare-metal image does
+/// not carry the formatting machinery for a branch a correct generator never
+/// reaches.
+#[cold]
+#[inline(never)]
+fn workspace_too_small() -> ! {
+    panic!("a microstep buffer is full: sce-codegen sized the machine's workspace too small")
+}
+
+/// The buffers a microstep borrows, each a slice of the machine's
+/// [`Workspace`].
+#[derive(Debug)]
+pub struct Scratch<'a> {
+    /// Sets of states.
+    pub states: &'a mut [StateId],
+    /// The steps of the walks.
+    pub walk: &'a mut [WalkStep],
+    /// The history default content an entry set owes.
+    pub history_defaults: &'a mut [(StateId, HistoryId)],
+}
+
+impl<'a> Scratch<'a> {
+    /// The same buffers, for a call that returns them.
+    #[inline]
+    pub fn reborrow(&mut self) -> Scratch<'_> {
+        Scratch {
+            states: &mut *self.states,
+            walk: &mut *self.walk,
+            history_defaults: &mut *self.history_defaults,
+        }
+    }
+
+    /// A buffer of `count` states from the front, and the rest.
+    #[inline]
+    fn take_states(self, count: usize) -> (SliceVec<'a, StateId>, Scratch<'a>) {
+        if count > self.states.len() {
+            workspace_too_small()
+        }
+        let (taken, states) = self.states.split_at_mut(count);
+        let rest = Scratch {
+            states,
+            walk: self.walk,
+            history_defaults: self.history_defaults,
+        };
+        (SliceVec::new(taken), rest)
+    }
+}
+
+/// A machine's buffers for one call into this module, sized by its document:
+/// `STATES` is [`state_scratch`] of its configuration bound, `ENABLED` the most
+/// transitions a selection enables, `WALK` the most steps the walks owe and
+/// `DEFAULTS` the most history default transitions a microstep owes. The
+/// generated policy spells its own as `StatePolicy::Workspace`.
+///
+/// A local of the call that runs a macrostep, never a field of the engine, so
+/// it costs stack only while a macrostep runs (docs/adr/0056 §4).
+#[derive(Debug, Clone)]
+pub struct Workspace<
+    const STATES: usize,
+    const ENABLED: usize,
+    const WALK: usize,
+    const DEFAULTS: usize,
+> {
+    states: [StateId; STATES],
+    enabled: [TransitionId; ENABLED],
+    walk: [WalkStep; WALK],
+    history_defaults: [(StateId, HistoryId); DEFAULTS],
+}
+
+impl<const STATES: usize, const ENABLED: usize, const WALK: usize, const DEFAULTS: usize>
+    Workspace<STATES, ENABLED, WALK, DEFAULTS>
+{
+    /// Empty buffers.
+    pub const fn new() -> Self {
+        Self {
+            states: [StateId(0); STATES],
+            enabled: [TransitionId(0); ENABLED],
+            walk: [WalkStep::Descendants(Target::State(StateId(0))); WALK],
+            history_defaults: [(StateId(0), HistoryId(0)); DEFAULTS],
+        }
+    }
+}
+
+impl<const STATES: usize, const ENABLED: usize, const WALK: usize, const DEFAULTS: usize> Default
+    for Workspace<STATES, ENABLED, WALK, DEFAULTS>
+{
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// A [`Workspace`] of any size, as the engine lends it.
+pub trait Buffers {
+    /// The buffer of the enabled set, and the scratch for everything else.
+    fn split(&mut self) -> (SliceVec<'_, TransitionId>, Scratch<'_>);
+}
+
+impl<const STATES: usize, const ENABLED: usize, const WALK: usize, const DEFAULTS: usize> Buffers
+    for Workspace<STATES, ENABLED, WALK, DEFAULTS>
+{
+    #[inline]
+    fn split(&mut self) -> (SliceVec<'_, TransitionId>, Scratch<'_>) {
+        (
+            SliceVec::new(&mut self.enabled),
+            Scratch {
+                states: &mut self.states,
+                walk: &mut self.walk,
+                history_defaults: &mut self.history_defaults,
+            },
+        )
+    }
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// The machine
+// ════════════════════════════════════════════════════════════════════════
+
+/// The running machine, as the procedures drive it.
+///
+/// Object-safe, and called as `&mut dyn Behaviour`, so the procedures are one
+/// copy for every machine. The engine implements it once for each machine, as
+/// the conversion between these numbers and the machine's own types.
+pub trait Behaviour {
+    /// The active states, in the order they were added.
+    fn configuration(&self) -> &[StateId];
+
+    /// Add `state` to the configuration; `false` when it was already there.
+    fn add_to_configuration(&mut self, state: StateId) -> bool;
+
+    /// Remove `state` from the configuration.
+    fn remove_from_configuration(&mut self, state: StateId);
+
+    /// What `history` recorded when its parent was last exited; `None` before
+    /// that ever happened.
+    fn history_value(&self, history: HistoryId) -> Option<&[StateId]>;
+
+    /// Keep `states` as what `history` recorded.
+    fn record_history(&mut self, history: HistoryId, states: &[StateId]);
+
+    /// This state's first transition, in document order, that the event
+    /// enables and whose guard holds; for the machine's "no event", its first
+    /// eventless transition whose guard holds. The only place a guard is
+    /// evaluated.
+    fn first_enabled_transition(&mut self, state: StateId, event: EventId) -> Option<TransitionId>;
+
+    /// Run the state's onexit and cancel its invocations. The procedure removes
+    /// it from the configuration afterwards.
+    fn exit_state(&mut self, state: StateId);
+
+    /// Run one transition's executable content.
+    fn execute_transition_content(&mut self, transition: TransitionId);
+
+    /// Schedule the state's invocations, run its onentry, then its initial
+    /// transition's content when `is_default_entry`; for a `<final>`, what the
+    /// appendix does on entering one. The procedure has added it to the
+    /// configuration already.
+    fn enter_state(&mut self, state: StateId, is_default_entry: bool);
+
+    /// Run a `<history>`'s default transition content.
+    fn execute_history_default_content(&mut self, history: HistoryId);
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// The walks' steps
+// ════════════════════════════════════════════════════════════════════════
 
 /// A list of targets the entry walk goes through twice, as Appendix D's
 /// addDescendantStatesToEnter does: every descendant first, then every ancestor.
 ///
-/// Named by the state or the `<history>` it belongs to and read from the
-/// [`Document`] at each step, so a step of the walk holds an index and not a
-/// slice.
+/// Named by the state or the `<history>` it belongs to and read from the tables
+/// at each step, so a step of the walk holds an index and not a slice.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Listed<S, H> {
+pub enum Listed {
     /// A compound state's initial transition targets.
-    Initial(S),
+    Initial(StateId),
     /// The states a `<history>` recorded.
-    Recorded(H),
+    Recorded(HistoryId),
     /// The targets of a `<history>`'s default transition.
-    Defaults(H),
+    Defaults(HistoryId),
 }
 
 /// One step a walk over the document still owes: Appendix D writes the entry set
-/// (addDescendantStatesToEnter, addAncestorStatesToEnter), the effective targets
-/// (getEffectiveTargetStates) and the completion check (isInFinalState) as
-/// recursions, and a bare-metal program cannot say how deep a recursion goes
-/// without assuming it. Each is run here over a stack of these steps instead, in
-/// the order the recursion would have run them, so the stack a call needs is a
-/// number of the document ([`Document::Walk`]) and the machine's worst-case
-/// stack is the sum of its frames, with nothing stated beyond them.
+/// (addDescendantStatesToEnter, addAncestorStatesToEnter) and the effective
+/// targets (getEffectiveTargetStates) as recursions, and a bare-metal program
+/// cannot say how deep a recursion goes without assuming it. Each is run here
+/// over a stack of these steps instead, in the order the recursion would have
+/// run them, so the stack a call needs is a number of the document and the
+/// machine's worst-case stack is the sum of its frames, with nothing stated
+/// beyond them.
 ///
 /// A step that has more to do after the step it spawns puts itself back first,
 /// with its next index, so a stack holds one step for each level the recursion
 /// would have been at, and never a list of siblings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum WalkStep<S, H> {
+pub enum WalkStep {
     /// addDescendantStatesToEnter(target).
-    Descendants(EntryTarget<S, H>),
+    Descendants(Target),
     /// addAncestorStatesToEnter(target, stop): the ancestors of `target` below
     /// `stop` (`None`: up to the `<scxml>` element).
-    Ancestors(EntryTarget<S, H>, Option<S>),
+    Ancestors(Target, Option<StateId>),
     /// What is left of an addAncestorStatesToEnter loop: `from` is the next
     /// ancestor to enter.
     AncestorsFrom {
         /// The next ancestor to enter.
-        from: S,
+        from: StateId,
         /// The state the loop ends below.
-        stop: Option<S>,
+        stop: Option<StateId>,
     },
     /// The regions of a `<parallel>` from child `index` on, each entered by
     /// default unless the entry set already goes into it.
     Regions {
         /// The `<parallel>`.
-        parallel: S,
+        parallel: StateId,
         /// The next child to look at.
         index: u16,
     },
     /// A list of targets, in the pass `ancestors` names, from `index` on.
     Listed {
         /// Whose list it is.
-        source: Listed<S, H>,
+        source: Listed,
         /// The next target of the list.
         index: u16,
         /// Whether this is the ancestors pass (the descendants pass otherwise).
         ancestors: bool,
     },
     /// One target of getEffectiveTargetStates.
-    EffectiveTarget(EntryTarget<S, H>),
+    EffectiveTarget(Target),
     /// What is left of the default transition targets of a `<history>` that
     /// recorded nothing, from `index` on.
     EffectiveDefaults {
         /// The `<history>`.
-        history: H,
+        history: HistoryId,
         /// The next target of its default transition.
         index: u16,
     },
-    /// What is left of isInFinalState for a `<parallel>`: its children from
-    /// `index` on must each be in a final state.
-    Final {
-        /// The `<parallel>`.
-        parallel: S,
-        /// The next child to look at.
-        index: u16,
-    },
-}
-
-/// The history type of a document that declares no `<history>`.
-///
-/// Uninhabited, so no target list can name one and every procedure that would
-/// dereference one is statically unreachable — a document without histories
-/// pays nothing for the history half of the entry procedures.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum NoHistory {}
-
-/// A transition selection enabled: one member of Appendix D's
-/// `enabledTransitions`.
-///
-/// What the microstep reads of it — its source, its target list as written,
-/// whether it is internal — plus the index its source state knows it by, so the
-/// machine that owns its executable content can run it. A transition with no
-/// targets exits and enters nothing and only runs its content.
-///
-/// The target list is `'static` because it is the document's: a generated
-/// machine hands out slices of its own static tables, and a transition is a
-/// fact about the document, not about the run.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct EnabledTransition<S: 'static, H: 'static> {
-    /// The state whose transition this is.
-    pub source: S,
-    /// The target list as written — empty for a targetless transition.
-    pub targets: &'static [EntryTarget<S, H>],
-    /// The position of this transition among its source's own transitions.
-    pub transition_index: usize,
-    /// Whether the transition has executable content to run.
-    pub has_actions: bool,
-    /// Whether the transition was written `type="internal"`.
-    pub is_internal: bool,
-}
-
-impl<S: Copy + 'static, H: Copy + 'static> EnabledTransition<S, H> {
-    /// §scxml-D-computeExitSet guards the whole computation with `if
-    /// t.target`: a transition without targets exits and enters nothing.
-    pub fn is_targetless(&self) -> bool {
-        self.targets.is_empty()
-    }
-
-    /// The same transition as the entry procedures read it.
-    pub fn entry_transition(&self) -> EntryTransition<S, H> {
-        EntryTransition {
-            source: Some(self.source),
-            targets: self.targets,
-            is_internal: self.is_internal,
-        }
-    }
-}
-
-/// The part of a transition the entry procedures read.
-///
-/// `source` is `None` for the document's own initial transition, whose source
-/// is the `<scxml>` element — which has no state identifier here, and whose
-/// domain is the whole document.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct EntryTransition<S: 'static, H: 'static> {
-    /// The transition's source state, or `None` for the `<scxml>` element.
-    pub source: Option<S>,
-    /// The target list as written.
-    pub targets: &'static [EntryTarget<S, H>],
-    /// Whether the transition was written `type="internal"`.
-    pub is_internal: bool,
-}
-
-/// What a microstep enters: the appendix's three out-parameters.
-///
-/// `states_to_enter` is already sorted into entry order, so a machine enters it
-/// front to back. `states_for_default_entry` answers whether a state's initial
-/// transition content runs; `default_history_content` whether, and whose,
-/// `<history>` default transition content runs after that state's own entry.
-///
-/// Generic over its two buffers and not over the [`Document`] that sized them,
-/// so it is named by `EntrySet<D::Configuration, D::HistoryDefaults>`: a
-/// document that borrows (the engine's, which holds the engine it reads) would
-/// otherwise keep that borrow alive in the set it hands back.
-#[derive(Debug, Clone)]
-pub struct EntrySet<C, X> {
-    /// The states to enter, in entry order.
-    pub states_to_enter: C,
-    /// The compound states whose initial state is entered by default.
-    pub states_for_default_entry: C,
-    /// Keyed by the history's parent, as the appendix keys it: the content
-    /// runs when that parent is entered.
-    pub default_history_content: X,
-}
-
-/// The entry set of a document `D`: its buffers are the ones `D` sized.
-pub type EntrySetOf<D> = EntrySet<<D as Document>::Configuration, <D as Document>::HistoryDefaults>;
-
-impl<C: Default, X: Default> EntrySet<C, X> {
-    fn new() -> Self {
-        Self {
-            states_to_enter: C::default(),
-            states_for_default_entry: C::default(),
-            default_history_content: X::default(),
-        }
-    }
-}
-
-impl<C, X> EntrySet<C, X> {
-    /// Whether `state` is entered by this microstep.
-    pub fn contains<S: PartialEq>(&self, state: S) -> bool
-    where
-        C: Bounded<S>,
-    {
-        self.states_to_enter.contains(&state)
-    }
-
-    /// Whether `state`'s initial state is entered by default, so its initial
-    /// transition's executable content runs.
-    pub fn is_default_entry<S: PartialEq>(&self, state: S) -> bool
-    where
-        C: Bounded<S>,
-    {
-        self.states_for_default_entry.contains(&state)
-    }
-
-    /// The `<history>` whose default transition content runs after `state` is
-    /// entered, if a history of `state` was taken with nothing recorded.
-    pub fn default_history_content_of<S: PartialEq + Copy, H: Copy>(&self, state: S) -> Option<H>
-    where
-        X: Bounded<(S, H)>,
-    {
-        self.default_history_content
-            .iter()
-            .find(|(parent, _)| *parent == state)
-            .map(|&(_, history)| history)
-    }
-}
-
-/// The document, as the entry and exit procedures read it.
-///
-/// Structure only, plus the one piece of run-time state the entry procedures
-/// need: what each `<history>` recorded. A document whose `<history>` defaults
-/// name one another in a cycle has no entry set — dereferencing never reaches a
-/// state — so it must be refused before anything here runs; the procedures
-/// assume a legal document.
-///
-/// It also says how much room the procedures need, since only the document
-/// knows: the buffers they build are its associated types, and the walks up its
-/// hierarchy are held to its depth. A generated machine gets all four from its
-/// state tree ([`helpers::hierarchy`](super::hierarchy)); a hand-written table
-/// states the bounds of its own.
-pub trait Document {
-    /// A state identifier.
-    type State: Copy + Eq + Debug + 'static;
-    /// A `<history>` identifier — [`NoHistory`] for a document with none.
-    type History: Copy + Eq + Debug + 'static;
-
-    /// A set of states that are, or are about to be, in one configuration: the
-    /// configuration itself, an exit set, an entry set, a list of effective
-    /// targets, a history's record. Its capacity is the most states one
-    /// configuration of this document holds.
-    type Configuration: Bounded<Self::State>;
-
-    /// The transitions one selection enables, at most one from each atomic state
-    /// of a configuration.
-    type EnabledSet: Bounded<EnabledTransition<Self::State, Self::History>>;
-
-    /// What a microstep owes the default transition of each `<history>` it took
-    /// with nothing recorded, one pair for each parent: at most the number of
-    /// states that have a `<history>`.
-    type HistoryDefaults: Bounded<(Self::State, Self::History)>;
-
-    /// The stack the walks of this module run over instead of recursing
-    /// ([`WalkStep`]). Its capacity is what the document's tree needs: three
-    /// steps for each level of the tree, one for each `<history>`, and three more
-    /// for the steps one step puts down at once, which is
-    /// `3 * MAX_DEPTH + histories + 3` (`sce_build::microstep_bounds`). A
-    /// document without a `<history>` and one level deep needs six.
-    type Walk: Bounded<WalkStep<Self::State, Self::History>>;
-
-    /// How many levels the deepest state sits at, counting itself — the number of
-    /// steps that always reach the `<scxml>` element from any state. A walk up the
-    /// hierarchy that has not got there by then is walking a cycle.
-    const MAX_DEPTH: usize;
-
-    /// The state's parent; `None` when its parent is the `<scxml>` element.
-    fn parent_of(&self, state: Self::State) -> Option<Self::State>;
-
-    /// Whether the state is a `<state>` with child states. A `<parallel>`
-    /// answers `false`: this is the appendix's `isCompoundState`, and with
-    /// the `<scxml>` element (`None`) the set `findLCCA` chooses a domain from.
-    fn is_compound(&self, state: Self::State) -> bool;
-
-    /// Whether the state is a `<parallel>`.
-    fn is_parallel(&self, state: Self::State) -> bool;
-
-    /// Whether the state is a `<final>` element — not whether it is IN a final
-    /// state; that is [`is_in_final_state`].
-    fn is_final(&self, state: Self::State) -> bool;
-
-    /// §scxml-D-getChildStates: the state's `<state>`, `<parallel>` and
-    /// `<final>` children, in document order.
-    fn child_states(&self, state: Self::State) -> &'static [Self::State];
-
-    /// A compound state's initial transition target, as written — the first
-    /// child state when the document names none.
-    fn initial_targets(
-        &self,
-        state: Self::State,
-    ) -> &'static [EntryTarget<Self::State, Self::History>];
-
-    /// The state a `<history>` is declared in.
-    fn history_parent(&self, history: Self::History) -> Self::State;
-
-    /// What the history recorded when its parent was last exited; `None`
-    /// before that ever happened.
-    fn history_value(&self, history: Self::History) -> Option<&[Self::State]>;
-
-    /// A `<history>`'s default transition target, as written.
-    fn history_default_targets(
-        &self,
-        history: Self::History,
-    ) -> &'static [EntryTarget<Self::State, Self::History>];
-
-    /// The state's position in document order, which is also entry order.
-    fn document_order(&self, state: Self::State) -> u32;
-}
-
-/// The running machine, as the microstep drives it.
-pub trait Run: Document {
-    /// An event, including the machine's own "no event" for an eventless
-    /// selection; this module only hands it back.
-    type Event: Copy;
-
-    /// The active states, in any order.
-    fn configuration(&self) -> Self::Configuration;
-
-    /// This state's first transition, in document order, that the event
-    /// enables and whose guard holds; for the machine's "no event", its first
-    /// eventless transition whose guard holds. The only place a guard is
-    /// evaluated.
-    fn first_enabled_transition(
-        &mut self,
-        state: Self::State,
-        event: Self::Event,
-    ) -> Option<EnabledTransition<Self::State, Self::History>>;
-
-    /// Record this state's histories from the configuration as it stood before
-    /// the microstep's first exit, run its onexit, cancel its invocations,
-    /// remove it from the configuration.
-    fn exit_state(&mut self, state: Self::State, configuration_before_exit: &[Self::State]);
-
-    /// Run one transition's executable content.
-    fn execute_transition_content(
-        &mut self,
-        transition: &EnabledTransition<Self::State, Self::History>,
-    );
-
-    /// Add the state to the configuration and schedule its invocations, run its
-    /// onentry, then its initial transition's content when `is_default_entry`;
-    /// for a `<final>`, what the appendix does on entering one.
-    fn enter_state(&mut self, state: Self::State, is_default_entry: bool);
-
-    /// Run a `<history>`'s default transition content.
-    fn execute_history_default_content(&mut self, history: Self::History);
 }
 
 // ════════════════════════════════════════════════════════════════════════
@@ -400,43 +371,50 @@ pub trait Run: Document {
 /// Appendix D's selectTransitions, or its selectEventlessTransitions when
 /// `event` is the machine's "no event".
 ///
-/// Returns the optimal enabled transition set, in selection order.
-pub fn select_transitions<R: Run>(run: &mut R, event: R::Event) -> R::EnabledSet {
-    let configuration = run.configuration();
-
-    let mut atomic_states = R::Configuration::default();
-    for &state in configuration.iter() {
-        if !run.is_compound(state) && !run.is_parallel(state) {
-            atomic_states.push_bounded(state);
-        }
+/// Leaves the optimal enabled transition set in `enabled`, in selection order.
+pub fn select_transitions(
+    tables: &DocumentTables,
+    machine: &mut dyn Behaviour,
+    event: EventId,
+    enabled: &mut SliceVec<'_, TransitionId>,
+    scratch: Scratch<'_>,
+) {
+    enabled.clear();
+    let capacity = usize::from(tables.max_configuration);
+    let (mut configuration, mut rest) = scratch.take_states(capacity);
+    for &state in machine.configuration() {
+        configuration.push(state);
     }
-    stable_sort_by_key(&mut atomic_states, |&state| run.document_order(state));
 
-    let mut enabled = R::EnabledSet::default();
-    for &atomic in atomic_states.iter() {
-        // §scxml-D-selectTransitions: the atomic state first, then its proper
-        // ancestors, and the first enabled transition in document order ends
-        // the walk for this atomic state. The set is ORDERED and a set: two
-        // atomic states under one ancestor both reach its transition, and it is
-        // one transition, taken once. With the machine's "no event" this is
-        // §scxml-D-selectEventlessTransitions, the same walk over transitions
-        // that have no event.
-        let mut current = Some(atomic);
-        while let Some(state) = current {
-            if let Some(found) = run.first_enabled_transition(state, event) {
-                let seen = enabled.iter().any(|t| {
-                    t.source == found.source && t.transition_index == found.transition_index
-                });
-                if !seen {
-                    enabled.push_bounded(found);
-                }
-                break;
+    {
+        let (mut atomic_states, _) = rest.reborrow().take_states(capacity);
+        for &state in configuration.iter() {
+            if tables.is_atomic(state) {
+                atomic_states.push(state);
             }
-            current = run.parent_of(state);
+        }
+        // Document order is the order of the ids.
+        atomic_states.sort_unstable();
+
+        for &atomic in atomic_states.iter() {
+            // §scxml-D-selectTransitions: the atomic state first, then its proper
+            // ancestors, and the first enabled transition in document order ends
+            // the walk for this atomic state. The set is ORDERED and a set: two
+            // atomic states under one ancestor both reach its transition, and it is
+            // one transition, taken once. With the machine's "no event" this is
+            // §scxml-D-selectEventlessTransitions, the same walk over transitions
+            // that have no event.
+            let mut current = Some(atomic);
+            while let Some(state) = current {
+                if let Some(found) = machine.first_enabled_transition(state, event) {
+                    enabled.add_once(found);
+                    break;
+                }
+                current = tables.parent(state);
+            }
         }
     }
-    remove_conflicting_transitions(run, &mut enabled, &configuration);
-    enabled
+    remove_conflicting_transitions(tables, &*machine, enabled, &configuration, rest);
 }
 
 /// Appendix D's removeConflictingTransitions, over `enabled` itself: what
@@ -450,30 +428,33 @@ pub fn select_transitions<R: Run>(run: &mut R, event: R::Event) -> R::EnabledSet
 /// from, so the filtered set is never a second buffer beside the first. A
 /// candidate is read before the slot a kept one is written to, which is never
 /// past it.
-pub fn remove_conflicting_transitions<D: Document>(
-    doc: &D,
-    enabled: &mut D::EnabledSet,
-    configuration: &[D::State],
+pub fn remove_conflicting_transitions(
+    tables: &DocumentTables,
+    machine: &dyn Behaviour,
+    enabled: &mut SliceVec<'_, TransitionId>,
+    configuration: &[StateId],
+    mut scratch: Scratch<'_>,
 ) {
     let mut kept = 0;
     for candidate in 0..enabled.len() {
         let t1 = enabled[candidate];
-        // A kept transition's exit set is computed again for each later one
+        // A kept transition's exit set is asked for again for each later one
         // held against it rather than stored beside it: on an MCU the stack a
         // stored set per transition costs is scarcer than the cycles, and the
-        // sets are read off the one configuration the selection saw, so the
-        // answer is the same either way.
-        let t1_exit = compute_exit_set(doc, &t1, configuration);
-        let conflicts = |t2: &EnabledTransition<D::State, D::History>| {
-            intersects(&t1_exit, &compute_exit_set(doc, t2, configuration))
+        // answer is read off the one configuration the selection saw.
+        let t1_exits = compute_exit_set(tables, machine, t1, scratch.reborrow());
+        let mut conflicts = |t2: TransitionId| {
+            let t2_exits = compute_exit_set(tables, machine, t2, scratch.reborrow());
+            t1_exits.meets(tables, t2_exits, configuration)
         };
+        let t1_source = tables.transition(t1).source;
         // §scxml-D-removeConflictingTransitions: t1 is preempted by any kept
         // transition it conflicts with whose source it does not descend from.
         // A transition that exits nothing — a targetless one — conflicts with
         // nothing and can never be preempted.
         let preempted = enabled[..kept]
             .iter()
-            .any(|t2| conflicts(t2) && !is_descendant(doc, t1.source, t2.source));
+            .any(|&t2| conflicts(t2) && !descends(tables, t1_source, tables.transition(t2).source));
         if preempted {
             continue;
         }
@@ -482,7 +463,7 @@ pub fn remove_conflicting_transitions<D: Document>(
         let mut surviving = 0;
         for index in 0..kept {
             let t2 = enabled[index];
-            if !conflicts(&t2) {
+            if !conflicts(t2) {
                 enabled[surviving] = t2;
                 surviving += 1;
             }
@@ -493,63 +474,140 @@ pub fn remove_conflicting_transitions<D: Document>(
     enabled.truncate(kept);
 }
 
+/// Whether `state` lies strictly below `ancestor`, both sources of transitions:
+/// the `<scxml>` element (`None`) is below nothing.
+fn descends(tables: &DocumentTables, state: Option<StateId>, ancestor: Option<StateId>) -> bool {
+    match (state, ancestor) {
+        (Some(state), Some(ancestor)) => tables.is_descendant(state, ancestor),
+        _ => false,
+    }
+}
+
 // ════════════════════════════════════════════════════════════════════════
 // Domains and exit sets
 // ════════════════════════════════════════════════════════════════════════
 
-/// Appendix D's getEffectiveTargetStates, over a target list.
-///
-/// Returns the states the list stands for, histories dereferenced — to what
-/// each recorded or, before its parent was ever exited, to its default — each
-/// state once and in the order first named. The domain, and so the exit set,
-/// is a question about these.
-pub fn effective_target_states<D: Document>(
-    doc: &D,
-    targets: &[EntryTarget<D::State, D::History>],
-) -> D::Configuration {
-    let mut stack = D::Walk::default();
-    effective_target_states_on(doc, targets, &mut stack)
+/// Which active states a transition exits: Appendix D's computeExitSet for
+/// one transition, before it is read off a configuration.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExitScope {
+    /// None: the transition has no targets.
+    Nothing,
+    /// Every active state: the domain is the `<scxml>` element.
+    All,
+    /// Every active proper descendant of the domain.
+    Below(StateId),
 }
 
-/// [`effective_target_states`] over a stack the caller lends, so a caller that
-/// already holds one does not put a second on the call stack.
-fn effective_target_states_on<D: Document>(
-    doc: &D,
-    targets: &[EntryTarget<D::State, D::History>],
-    stack: &mut D::Walk,
-) -> D::Configuration {
-    let mut effective = D::Configuration::default();
-    for &target in targets {
-        stack.push_bounded(WalkStep::EffectiveTarget(target));
-        while let Some(&step) = stack.last() {
-            stack.truncate(stack.len() - 1);
-            match step {
-                WalkStep::EffectiveTarget(EntryTarget::State(state)) => {
-                    add_once(&mut effective, state);
+impl ExitScope {
+    /// Whether a transition of this scope exits `state` when it is active.
+    #[inline]
+    pub fn contains(self, tables: &DocumentTables, state: StateId) -> bool {
+        match self {
+            ExitScope::Nothing => false,
+            ExitScope::All => true,
+            ExitScope::Below(domain) => tables.is_descendant(state, domain),
+        }
+    }
+
+    /// Whether the exit sets of two transitions, read off `configuration`,
+    /// share a state.
+    ///
+    /// A subtree is a range of ids, and two ranges of one tree are nested or
+    /// apart, so the states both scopes exit are the states the narrower one
+    /// exits, or none.
+    pub fn meets(
+        self,
+        tables: &DocumentTables,
+        other: ExitScope,
+        configuration: &[StateId],
+    ) -> bool {
+        let common = match (self, other) {
+            (ExitScope::Nothing, _) | (_, ExitScope::Nothing) => return false,
+            (ExitScope::All, scope) | (scope, ExitScope::All) => scope,
+            (ExitScope::Below(a), ExitScope::Below(b)) => {
+                if a == b || tables.is_descendant(b, a) {
+                    ExitScope::Below(b)
+                } else if tables.is_descendant(a, b) {
+                    ExitScope::Below(a)
+                } else {
+                    return false;
                 }
+            }
+        };
+        configuration
+            .iter()
+            .any(|&state| common.contains(tables, state))
+    }
+}
+
+/// Appendix D's computeExitSet for one transition, as the scope a
+/// configuration is read through: the active proper descendants of its domain.
+pub fn compute_exit_set(
+    tables: &DocumentTables,
+    machine: &dyn Behaviour,
+    transition: TransitionId,
+    scratch: Scratch<'_>,
+) -> ExitScope {
+    let row = tables.transition(transition);
+    let targets = tables.targets(transition);
+    // §scxml-D-computeExitSet: the appendix guards the whole computation with
+    // `if t.target`, so a transition without one exits nothing at all and can
+    // therefore never be preempted.
+    if targets.is_empty() {
+        return ExitScope::Nothing;
+    }
+    let (mut effective, rest) = scratch.take_states(usize::from(tables.max_configuration));
+    effective_target_states_on(tables, machine, targets, &mut effective, rest);
+    match transition_domain(tables, row.source, &effective, row.internal) {
+        Some(domain) => ExitScope::Below(domain),
+        None => ExitScope::All,
+    }
+}
+
+/// Appendix D's getEffectiveTargetStates, over a target list, into `effective`,
+/// on the walk stack of the scratch the caller lends.
+///
+/// The states the list stands for, histories dereferenced — to what each
+/// recorded or, before its parent was ever exited, to its default — each state
+/// once and in the order first named. The domain, and so the exit set, is a
+/// question about these.
+pub fn effective_target_states_on(
+    tables: &DocumentTables,
+    machine: &dyn Behaviour,
+    targets: &[Target],
+    effective: &mut SliceVec<'_, StateId>,
+    scratch: Scratch<'_>,
+) {
+    effective.clear();
+    let mut stack = SliceVec::new(scratch.walk);
+    for &target in targets {
+        stack.push(WalkStep::EffectiveTarget(target));
+        while let Some(step) = stack.pop() {
+            match step {
+                WalkStep::EffectiveTarget(Target::State(state)) => effective.add_once(state),
                 // §scxml-D-getEffectiveTargetStates: a history stands for the
                 // configuration it recorded, and before its parent was ever
                 // exited for the targets of its default transition — which may
                 // name histories themselves, so those are walked in turn.
-                WalkStep::EffectiveTarget(EntryTarget::History(history)) => {
-                    match doc.history_value(history) {
+                WalkStep::EffectiveTarget(Target::History(history)) => {
+                    match machine.history_value(history) {
                         Some(recorded) if !recorded.is_empty() => {
                             for &state in recorded {
-                                add_once(&mut effective, state);
+                                effective.add_once(state);
                             }
                         }
-                        _ => stack.push_bounded(WalkStep::EffectiveDefaults { history, index: 0 }),
+                        _ => stack.push(WalkStep::EffectiveDefaults { history, index: 0 }),
                     }
                 }
                 WalkStep::EffectiveDefaults { history, index } => {
-                    if let Some(&next) =
-                        doc.history_default_targets(history).get(usize::from(index))
-                    {
-                        stack.push_bounded(WalkStep::EffectiveDefaults {
+                    let defaults = tables.targets(tables.history(history).default);
+                    if let Some(&next) = defaults.get(usize::from(index)) {
+                        stack.push(WalkStep::EffectiveDefaults {
                             history,
                             index: index + 1,
                         });
-                        stack.push_bounded(WalkStep::EffectiveTarget(next));
+                        stack.push(WalkStep::EffectiveTarget(next));
                     }
                 }
                 // The walk puts down steps of its own kind only. No message: a
@@ -559,7 +617,6 @@ fn effective_target_states_on<D: Document>(
             }
         }
     }
-    effective
 }
 
 /// Appendix D's getTransitionDomain, for a transition that has targets.
@@ -568,12 +625,12 @@ fn effective_target_states_on<D: Document>(
 /// state deep inside its parent is a target that deep. Returns the domain, or
 /// `None` when it is the `<scxml>` element — always so for the document's
 /// initial transition (`source` `None`).
-pub fn transition_domain<D: Document>(
-    doc: &D,
-    source: Option<D::State>,
-    targets: &[D::State],
+pub fn transition_domain(
+    tables: &DocumentTables,
+    source: Option<StateId>,
+    targets: &[StateId],
     is_internal: bool,
-) -> Option<D::State> {
+) -> Option<StateId> {
     let source = source?;
     debug_assert!(
         !targets.is_empty(),
@@ -586,12 +643,12 @@ pub fn transition_domain<D: Document>(
     // same as exiting nothing: a transition rooted at one of those descendants
     // exits it too, and the appendix expects the two to be found in conflict.
     if is_internal
-        && doc.is_compound(source)
-        && targets.iter().all(|&t| is_descendant(doc, t, source))
+        && tables.is_compound(source)
+        && targets.iter().all(|&t| tables.is_descendant(t, source))
     {
         return Some(source);
     }
-    find_lcca(doc, source, targets)
+    find_lcca(tables, source, targets)
 }
 
 /// Appendix D's findLCCA over `[head] + tail`: the first proper ancestor of
@@ -599,152 +656,119 @@ pub fn transition_domain<D: Document>(
 /// contains every state of `tail`.
 ///
 /// Asked of the source and EVERY target at once: combining pairwise answers
-/// can only widen the domain.
-fn find_lcca<D: Document>(doc: &D, head: D::State, tail: &[D::State]) -> Option<D::State> {
+/// can only widen the domain. A parent's id is below its child's, so the walk
+/// up ends.
+fn find_lcca(tables: &DocumentTables, head: StateId, tail: &[StateId]) -> Option<StateId> {
     let mut current = head;
-    for _ in 0..D::MAX_DEPTH {
-        let ancestor = doc.parent_of(current)?;
+    loop {
+        let ancestor = tables.parent(current)?;
         // §scxml-D-findLCCA filters the ancestors with
         // isCompoundStateOrScxmlElement: a `<parallel>` is never a domain.
-        if doc.is_compound(ancestor)
+        if tables.is_compound(ancestor)
             && tail
                 .iter()
-                .all(|&state| is_descendant(doc, state, ancestor))
+                .all(|&state| tables.is_descendant(state, ancestor))
         {
             return Some(ancestor);
         }
         current = ancestor;
     }
-    panic!(
-        "find_lcca: cyclic parent relationship detected walking from {:?}",
-        head
-    );
-}
-
-/// Appendix D's computeExitSet, for one transition: the active proper
-/// descendants of its domain.
-///
-/// Returned in the configuration's own order.
-pub fn compute_exit_set<D: Document>(
-    doc: &D,
-    transition: &EnabledTransition<D::State, D::History>,
-    configuration: &[D::State],
-) -> D::Configuration {
-    let mut exit_set = D::Configuration::default();
-
-    // §scxml-D-computeExitSet: the appendix guards the whole computation with
-    // `if t.target`, so a transition without one exits nothing at all and can
-    // therefore never be preempted.
-    if transition.is_targetless() {
-        return exit_set;
-    }
-
-    let targets = effective_target_states(doc, transition.targets);
-    let domain = transition_domain(
-        doc,
-        Some(transition.source),
-        &targets,
-        transition.is_internal,
-    );
-    for &state in configuration {
-        let exits = match domain {
-            // The domain itself is not exited; everything active below it is.
-            Some(domain) => is_descendant(doc, state, domain),
-            // The domain is the `<scxml>` element and every active state is a
-            // descendant of it — the sibling regions of an enclosing
-            // `<parallel>` included.
-            None => true,
-        };
-        if exits {
-            exit_set.push_bounded(state);
-        }
-    }
-    exit_set
-}
-
-/// Appendix D's computeExitSet over the microstep's transitions, in exitOrder —
-/// the states exitStates exits.
-pub fn compute_states_to_exit<D: Document>(
-    doc: &D,
-    transitions: &[EnabledTransition<D::State, D::History>],
-    configuration: &[D::State],
-) -> D::Configuration {
-    // §scxml-D-computeExitSet takes the microstep's whole transition list and
-    // unions the exit sets; §scxml-D-exitStates exits that union in exitOrder —
-    // descendants before their ancestors and reverse document order among the
-    // rest, which together are exactly reverse document order.
-    let mut states_to_exit = D::Configuration::default();
-    for transition in transitions {
-        for &state in compute_exit_set(doc, transition, configuration).iter() {
-            add_once(&mut states_to_exit, state);
-        }
-    }
-    sort_in_exit_order(doc, &mut states_to_exit);
-    states_to_exit
-}
-
-/// Appendix D's exitOrder: descendants before their ancestors and reverse
-/// document order among the rest, which together are exactly reverse document
-/// order. The one sort both exitStates and exitInterpreter exit by.
-fn sort_in_exit_order<D: Document>(doc: &D, states: &mut [D::State]) {
-    stable_sort_by(states, |a, b| {
-        doc.document_order(*b).cmp(&doc.document_order(*a))
-    });
 }
 
 // ════════════════════════════════════════════════════════════════════════
 // The microstep
 // ════════════════════════════════════════════════════════════════════════
 
+/// What a microstep or an entry into a configuration did, as the engine reports
+/// it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Entered {
+    /// How many states the entry set held.
+    pub states: usize,
+    /// The atomic state the last targeted transition brought the machine
+    /// into; `None` when nothing was entered.
+    pub current: Option<StateId>,
+}
+
 /// Appendix D's microstep: exit, run the transitions' content, enter.
-///
-/// Returns what was entered — the entry set, `states_to_enter` in entry order.
-pub fn microstep<R: Run>(
-    run: &mut R,
-    transitions: &[EnabledTransition<R::State, R::History>],
-) -> EntrySetOf<R> {
+pub fn microstep(
+    tables: &DocumentTables,
+    machine: &mut dyn Behaviour,
+    transitions: &[TransitionId],
+    mut scratch: Scratch<'_>,
+) -> Entered {
     // §scxml-D-microstepProcedure: every exit, then every transition's
     // content, then every entry — for the whole set at once, which is what lets
     // the regions of a `<parallel>` each take their own transition in one step.
-    exit_states(run, transitions);
-    execute_transition_content(run, transitions);
-    // Each transition is read as the entry procedures read it, one at a time as
-    // it is reached, and never gathered into a list of those: that list was a
-    // buffer of the enabled bound on the stack of the deepest call chain, the
-    // stack the entered states' own `<onentry>` code then ran on top of.
-    let entry = entry_set_of_enabled(run, transitions);
-    enter_entry_set(run, &entry);
-    entry
+    exit_states(tables, machine, transitions, scratch.reborrow());
+    execute_transition_content(tables, machine, transitions);
+    enter_states(tables, machine, transitions, scratch)
 }
 
-/// The entry set of the transitions a selection enabled, in entry order.
-///
-/// Apart from [`microstep`] so that the walks' stack is gone before the entered
-/// states' own `<onentry>` code runs: that code is on the stack of the deepest
-/// call chain, and a frame that held the walks' buffer would be under it.
-#[inline(never)]
-fn entry_set_of_enabled<R: Run>(
-    run: &R,
-    transitions: &[EnabledTransition<R::State, R::History>],
-) -> EntrySetOf<R> {
-    let mut entry = EntrySet::new();
-    let mut stack = R::Walk::default();
-    for transition in transitions {
-        add_transition_to_entry_set(run, &transition.entry_transition(), &mut stack, &mut entry);
+/// Appendix D's computeExitSet over the microstep's transitions, in exitOrder —
+/// the states exitStates exits — read off `configuration` into `states_to_exit`.
+pub fn compute_states_to_exit(
+    tables: &DocumentTables,
+    machine: &dyn Behaviour,
+    transitions: &[TransitionId],
+    configuration: &[StateId],
+    states_to_exit: &mut SliceVec<'_, StateId>,
+    mut scratch: Scratch<'_>,
+) {
+    states_to_exit.clear();
+    // §scxml-D-computeExitSet takes the microstep's whole transition list and
+    // unions the exit sets; §scxml-D-exitStates exits that union in exitOrder —
+    // descendants before their ancestors and reverse document order among the
+    // rest, which together are exactly reverse document order.
+    for &transition in transitions {
+        let scope = compute_exit_set(tables, machine, transition, scratch.reborrow());
+        for &state in configuration {
+            if scope.contains(tables, state) {
+                states_to_exit.add_once(state);
+            }
+        }
     }
-    sort_in_entry_order(run, &mut entry);
-    entry
+    sort_in_exit_order(states_to_exit);
 }
 
 /// Appendix D's exitStates.
-pub fn exit_states<R: Run>(run: &mut R, transitions: &[EnabledTransition<R::State, R::History>]) {
-    // §scxml-D-exitStates: the union of the transitions' exit sets, exited in
-    // exitOrder. Every history is recorded from the configuration as it stood
-    // BEFORE the first exit, which is the snapshot each exit is handed.
-    let configuration = run.configuration();
-    let states_to_exit = compute_states_to_exit(run, transitions, &configuration);
+pub fn exit_states(
+    tables: &DocumentTables,
+    machine: &mut dyn Behaviour,
+    transitions: &[TransitionId],
+    scratch: Scratch<'_>,
+) {
+    let capacity = usize::from(tables.max_configuration);
+    let (mut configuration, rest) = scratch.take_states(capacity);
+    for &state in machine.configuration() {
+        configuration.push(state);
+    }
+    let (mut states_to_exit, mut rest) = rest.take_states(capacity);
+    compute_states_to_exit(
+        tables,
+        &*machine,
+        transitions,
+        &configuration,
+        &mut states_to_exit,
+        rest.reborrow(),
+    );
+
+    // §scxml-D-exitStates: every history of every state exited is recorded
+    // from the configuration as it stood before the first exit.
+    let (mut recorded, _) = rest.take_states(capacity);
     for &state in states_to_exit.iter() {
-        run.exit_state(state, &configuration);
+        for (index, history) in tables.histories.iter().enumerate() {
+            if history.parent == state {
+                recorded_history(tables, state, history.deep, &configuration, &mut recorded);
+                machine.record_history(HistoryId(index as u16), &recorded);
+            }
+        }
+    }
+    for &state in states_to_exit.iter() {
+        // §scxml-D-exitStates: onexit, then cancelInvoke, then
+        // configuration.delete(s), so `In(s)` inside s's own handler is true.
+        machine.exit_state(state);
+        machine.remove_from_configuration(state);
     }
 }
 
@@ -758,158 +782,260 @@ pub fn exit_states<R: Run>(run: &mut R, transitions: &[EnabledTransition<R::Stat
 ///
 /// Reached two ways, the two the procedure names: the main event loop ends
 /// because the run entered a top-level `<final>`, or the host stops a run that
-/// has not ended. The list is sorted in place and is also the configuration
-/// each exit records history from — that reads it as a set, so its order is
-/// free, and one list rather than a copy is bytes every machine pays for.
-pub fn exit_interpreter<R: Run>(run: &mut R) {
-    let mut states_to_exit = run.configuration();
-    sort_in_exit_order(run, &mut states_to_exit);
+/// has not ended. No history is recorded: the run is over.
+pub fn exit_interpreter(
+    tables: &DocumentTables,
+    machine: &mut dyn Behaviour,
+    scratch: Scratch<'_>,
+) {
+    let (mut states_to_exit, _) = scratch.take_states(usize::from(tables.max_configuration));
+    for &state in machine.configuration() {
+        states_to_exit.push(state);
+    }
+    sort_in_exit_order(&mut states_to_exit);
     for &state in states_to_exit.iter() {
-        run.exit_state(state, &states_to_exit);
+        machine.exit_state(state);
+        machine.remove_from_configuration(state);
     }
 }
 
+/// Appendix D's exitOrder: descendants before their ancestors and reverse
+/// document order among the rest, which together are exactly reverse document
+/// order — descending ids.
+fn sort_in_exit_order(states: &mut [StateId]) {
+    states.sort_unstable_by(|a, b| b.cmp(a));
+}
+
 /// Appendix D's executeTransitionContent.
-pub fn execute_transition_content<R: Run>(
-    run: &mut R,
-    transitions: &[EnabledTransition<R::State, R::History>],
+pub fn execute_transition_content(
+    tables: &DocumentTables,
+    machine: &mut dyn Behaviour,
+    transitions: &[TransitionId],
 ) {
     // §scxml-D-executeTransitionContent: in the order the transitions were
     // selected, which is not their sources' document order once an ancestor's
     // transition is reached from a later region.
-    for transition in transitions {
-        if transition.has_actions {
-            run.execute_transition_content(transition);
+    for &transition in transitions {
+        if tables.transition(transition).has_content {
+            machine.execute_transition_content(transition);
         }
     }
 }
 
-/// Appendix D's enterStates.
-///
-/// Also the whole of the appendix's entry into the initial configuration
-/// (§scxml-D-interpret): hand it the document's initial transition, whose
-/// source is the `<scxml>` element (`source` `None`).
-pub fn enter_states<R: Run>(
-    run: &mut R,
-    transitions: &[EntryTransition<R::State, R::History>],
-) -> EntrySetOf<R> {
-    let entry = compute_entry_set(run, transitions);
-    enter_entry_set(run, &entry);
-    entry
+/// Appendix D's enterStates, for the transitions a selection enabled or for
+/// the document's initial transition alone, which is the whole of the
+/// appendix's entry into the initial configuration (§scxml-D-interpret).
+pub fn enter_states(
+    tables: &DocumentTables,
+    machine: &mut dyn Behaviour,
+    transitions: &[TransitionId],
+    mut scratch: Scratch<'_>,
+) -> Entered {
+    let entered = {
+        let entry = compute_entry_set(tables, &*machine, transitions, scratch.reborrow());
+        enter_entry_set(tables, machine, &entry);
+        entry.states_to_enter.len()
+    };
+    Entered {
+        states: entered,
+        current: if entered == 0 {
+            None
+        } else {
+            current_state(tables, &*machine, transitions, scratch)
+        },
+    }
 }
 
 /// The second half of Appendix D's enterStates: every state of an entry set
-/// entered, in entry order. The set is lent, not passed on, so a caller that
-/// hands it back holds one copy of it and not two.
-fn enter_entry_set<R: Run>(run: &mut R, entry: &EntrySetOf<R>) {
+/// entered, in entry order.
+fn enter_entry_set(tables: &DocumentTables, machine: &mut dyn Behaviour, entry: &EntrySet<'_>) {
     for &state in entry.states_to_enter.iter() {
-        // §scxml-D-enterStates: onentry, then the initial transition's content
-        // if and only if this state's initial state is being entered by
-        // default, then a history's default content owed to it.
-        run.enter_state(state, entry.is_default_entry(state));
+        // §scxml-D-enterStates: configuration.add(s), then onentry, then the
+        // initial transition's content if and only if this state's initial
+        // state is being entered by default, then a history's default content
+        // owed to it. A state already active is not entered twice.
+        if machine.add_to_configuration(state) {
+            machine.enter_state(state, entry.states_for_default_entry.contains(&state));
+        }
         if let Some(history) = entry.default_history_content_of(state) {
-            run.execute_history_default_content(history);
+            machine.execute_history_default_content(history);
         }
     }
+    debug_assert!(
+        machine.configuration().len() <= usize::from(tables.max_configuration),
+        "the configuration holds more states than the document's tree allows: \
+         sce-codegen bounded it too small"
+    );
+}
+
+/// The atomic state the last targeted transition of `transitions` brought the
+/// machine into: the first state it names, dereferenced, then down through the
+/// configuration to an atomic state, taking the first active region of a
+/// `<parallel>` in document order. The answer every backend gives as the
+/// machine's current state.
+fn current_state(
+    tables: &DocumentTables,
+    machine: &dyn Behaviour,
+    transitions: &[TransitionId],
+    scratch: Scratch<'_>,
+) -> Option<StateId> {
+    let (mut effective, mut rest) = scratch.take_states(usize::from(tables.max_configuration));
+    let mut current = None;
+    for &transition in transitions.iter().rev() {
+        effective_target_states_on(
+            tables,
+            machine,
+            tables.targets(transition),
+            &mut effective,
+            rest.reborrow(),
+        );
+        if let Some(&first) = effective.first() {
+            current = Some(first);
+            break;
+        }
+    }
+    let mut current = current?;
+    let configuration = machine.configuration();
+    // The configuration is what the microstep entered, so a descent through it
+    // cannot disagree with what happened. A compound state with no active child
+    // is not a configuration this can repair, so the descent stops there.
+    while !tables.is_atomic(current) {
+        match tables
+            .child_states(current)
+            .iter()
+            .find(|child| configuration.contains(child))
+        {
+            Some(&child) => current = child,
+            None => break,
+        }
+    }
+    Some(current)
 }
 
 // ════════════════════════════════════════════════════════════════════════
 // The entry set
 // ════════════════════════════════════════════════════════════════════════
 
+/// What a microstep enters: the appendix's three out-parameters.
+///
+/// `states_to_enter` is sorted into entry order, so a machine enters it front to
+/// back. `states_for_default_entry` answers whether a state's initial
+/// transition content runs; `default_history_content` whether, and whose,
+/// `<history>` default transition content runs after that state's own entry.
+#[derive(Debug)]
+pub struct EntrySet<'a> {
+    /// The states to enter, in entry order.
+    pub states_to_enter: SliceVec<'a, StateId>,
+    /// The compound states whose initial state is entered by default.
+    pub states_for_default_entry: SliceVec<'a, StateId>,
+    /// Keyed by the history's parent, as the appendix keys it: the content
+    /// runs when that parent is entered.
+    pub default_history_content: SliceVec<'a, (StateId, HistoryId)>,
+}
+
+impl EntrySet<'_> {
+    /// The `<history>` whose default transition content runs after `state` is
+    /// entered, if a history of `state` was taken with nothing recorded.
+    pub fn default_history_content_of(&self, state: StateId) -> Option<HistoryId> {
+        self.default_history_content
+            .iter()
+            .find(|(parent, _)| *parent == state)
+            .map(|&(_, history)| history)
+    }
+}
+
 /// Appendix D's computeEntrySet.
 ///
 /// `transitions` are the microstep's, in the order they were selected; a
 /// transition without targets enters nothing. Returns the entry set,
 /// `states_to_enter` sorted into entry order.
-pub fn compute_entry_set<D: Document>(
-    doc: &D,
-    transitions: &[EntryTransition<D::State, D::History>],
-) -> EntrySetOf<D> {
-    let mut entry = EntrySet::new();
+pub fn compute_entry_set<'a>(
+    tables: &DocumentTables,
+    machine: &dyn Behaviour,
+    transitions: &[TransitionId],
+    scratch: Scratch<'a>,
+) -> EntrySet<'a> {
+    let capacity = usize::from(tables.max_configuration);
+    let (states_to_enter, rest) = scratch.take_states(capacity);
+    let (states_for_default_entry, rest) = rest.take_states(capacity);
+    let (mut effective, rest) = rest.take_states(capacity);
+    let mut entry = EntrySet {
+        states_to_enter,
+        states_for_default_entry,
+        default_history_content: SliceVec::new(rest.history_defaults),
+    };
     // One stack for the whole entry set: the walks run one after another, so
     // one stack of the document's size serves them all.
-    let mut stack = D::Walk::default();
-    for transition in transitions {
-        add_transition_to_entry_set(doc, transition, &mut stack, &mut entry);
+    let mut stack = SliceVec::new(rest.walk);
+    for &transition in transitions {
+        add_transition_to_entry_set(
+            tables,
+            machine,
+            transition,
+            &mut stack,
+            &mut effective,
+            &mut entry,
+        );
     }
-    sort_in_entry_order(doc, &mut entry);
+    // §scxml-D-enterStates: states are entered in entryOrder — ancestors before
+    // descendants, document order between the rest, which is exactly document
+    // order, because that is a pre-order walk: ascending ids.
+    entry.states_to_enter.sort_unstable();
     entry
 }
 
 /// One transition's part of Appendix D's computeEntrySet: what it adds to the
 /// entry set, before the set is put into entry order.
-fn add_transition_to_entry_set<D: Document>(
-    doc: &D,
-    transition: &EntryTransition<D::State, D::History>,
-    stack: &mut D::Walk,
-    entry: &mut EntrySetOf<D>,
+fn add_transition_to_entry_set(
+    tables: &DocumentTables,
+    machine: &dyn Behaviour,
+    transition: TransitionId,
+    stack: &mut SliceVec<'_, WalkStep>,
+    effective: &mut SliceVec<'_, StateId>,
+    entry: &mut EntrySet<'_>,
 ) {
+    let row = tables.transition(transition);
+    let targets = tables.targets(transition);
     // §scxml-D-computeEntrySet: first every target with its default
     // descendants, then the ancestors that are entered inside the domain —
     // ancestors outside it were never exited. The order matters for a
     // target SET: the regions of a `<parallel>` that another target already
     // descends into must be seen as taken before the ancestor walk fills
     // the rest with defaults.
-    for &target in transition.targets {
-        walk_entry(doc, WalkStep::Descendants(target), stack, entry);
+    for &target in targets {
+        walk_entry(tables, machine, WalkStep::Descendants(target), stack, entry);
     }
-    let effective = effective_target_states_on(doc, transition.targets, stack);
+    let walk = Scratch {
+        states: &mut [],
+        walk: stack.slots_mut(),
+        history_defaults: &mut [],
+    };
+    effective_target_states_on(tables, machine, targets, effective, walk);
     if effective.is_empty() {
         return;
     }
-    let domain = transition_domain(doc, transition.source, &effective, transition.is_internal);
+    let domain = transition_domain(tables, row.source, effective, row.internal);
     for &state in effective.iter() {
         walk_entry(
-            doc,
-            WalkStep::Ancestors(EntryTarget::State(state), domain),
+            tables,
+            machine,
+            WalkStep::Ancestors(Target::State(state), domain),
             stack,
             entry,
         );
     }
 }
 
-/// §scxml-D-enterStates: states are entered in entryOrder — ancestors before
-/// descendants, document order between the rest, which is exactly document
-/// order, because that is a pre-order walk.
-fn sort_in_entry_order<D: Document>(doc: &D, entry: &mut EntrySetOf<D>) {
-    stable_sort_by_key(&mut entry.states_to_enter, |&state| {
-        doc.document_order(state)
-    });
-}
-
-/// Appendix D's addDescendantStatesToEnter.
-///
-/// Adds `target` and every descendant entering it enters: a history's recorded
-/// or default configuration, a compound state's initial state(s), every region
-/// of a `<parallel>` not already on the set.
-pub fn add_descendant_states_to_enter<D: Document>(
-    doc: &D,
-    target: EntryTarget<D::State, D::History>,
-    entry: &mut EntrySetOf<D>,
-) {
-    let mut stack = D::Walk::default();
-    walk_entry(doc, WalkStep::Descendants(target), &mut stack, entry);
-}
-
-/// Appendix D's addAncestorStatesToEnter.
-///
-/// Adds the proper ancestors of `target` up to, not including, `ancestor`
-/// (`None`: up to the `<scxml>` element), filling in the regions of every
-/// `<parallel>` among them.
-pub fn add_ancestor_states_to_enter<D: Document>(
-    doc: &D,
-    target: EntryTarget<D::State, D::History>,
-    ancestor: Option<D::State>,
-    entry: &mut EntrySetOf<D>,
-) {
-    let mut stack = D::Walk::default();
-    walk_entry(
-        doc,
-        WalkStep::Ancestors(target, ancestor),
-        &mut stack,
-        entry,
-    );
+impl<T> SliceVec<'_, T> {
+    /// Every slot, for a walk that empties the buffer before it returns and
+    /// lends its slots to another walk in between.
+    fn slots_mut(&mut self) -> &mut [T] {
+        debug_assert!(
+            self.len == 0,
+            "a walk lends its stack only while it is empty"
+        );
+        self.slots
+    }
 }
 
 /// Runs the entry-set procedures from `first` to the end over `stack`, which is
@@ -922,43 +1048,45 @@ pub fn add_ancestor_states_to_enter<D: Document>(
 /// run in exactly the order the calls would have: that order is not incidental,
 /// since the regions of a `<parallel>` are judged against what the entry set
 /// holds when each is reached.
-fn walk_entry<D: Document>(
-    doc: &D,
-    first: WalkStep<D::State, D::History>,
-    stack: &mut D::Walk,
-    entry: &mut EntrySetOf<D>,
+fn walk_entry(
+    tables: &DocumentTables,
+    machine: &dyn Behaviour,
+    first: WalkStep,
+    stack: &mut SliceVec<'_, WalkStep>,
+    entry: &mut EntrySet<'_>,
 ) {
-    stack.push_bounded(first);
-    while let Some(&step) = stack.last() {
-        stack.truncate(stack.len() - 1);
+    stack.push(first);
+    while let Some(step) = stack.pop() {
         match step {
-            WalkStep::Descendants(EntryTarget::State(state)) => {
-                add_once(&mut entry.states_to_enter, state);
-                if doc.is_compound(state) {
-                    // §scxml-D-addDescendantStatesToEnter: a compound state
-                    // entered as a target is entered by DEFAULT — the one
-                    // condition under which its initial transition's content
-                    // runs. Its initial transition names the child or children
-                    // it enters (§scxml-3.3), possibly several and possibly deep
-                    // (§scxml-3.6).
-                    add_once(&mut entry.states_for_default_entry, state);
-                    stack.push_bounded(WalkStep::Listed {
-                        source: Listed::Initial(state),
-                        index: 0,
-                        ancestors: false,
-                    });
-                } else if doc.is_parallel(state) {
-                    stack.push_bounded(WalkStep::Regions {
+            WalkStep::Descendants(Target::State(state)) => {
+                entry.states_to_enter.add_once(state);
+                match tables.state(state).kind {
+                    StateKind::Compound => {
+                        // §scxml-D-addDescendantStatesToEnter: a compound state
+                        // entered as a target is entered by DEFAULT — the one
+                        // condition under which its initial transition's content
+                        // runs. Its initial transition names the child or children
+                        // it enters (§scxml-3.3), possibly several and possibly deep
+                        // (§scxml-3.6).
+                        entry.states_for_default_entry.add_once(state);
+                        stack.push(WalkStep::Listed {
+                            source: Listed::Initial(state),
+                            index: 0,
+                            ancestors: false,
+                        });
+                    }
+                    StateKind::Parallel => stack.push(WalkStep::Regions {
                         parallel: state,
                         index: 0,
-                    });
+                    }),
+                    StateKind::Atomic | StateKind::Final => {}
                 }
             }
-            WalkStep::Descendants(EntryTarget::History(history)) => {
+            WalkStep::Descendants(Target::History(history)) => {
                 // §scxml-3.10: a transition to a history behaves as a transition
                 // to the configuration it stored, or — before its parent was ever
                 // visited — to its default stored configuration.
-                let source = match doc.history_value(history) {
+                let source = match machine.history_value(history) {
                     // §scxml-D-addDescendantStatesToEnter: a history that has
                     // recorded a configuration enters it, and the ancestors
                     // between it and the history's parent — a deep history
@@ -972,13 +1100,13 @@ fn walk_entry<D: Document>(
                         // parent replacing it.
                         set_default_history_content(
                             &mut entry.default_history_content,
-                            doc.history_parent(history),
+                            tables.history(history).parent,
                             history,
                         );
                         Listed::Defaults(history)
                     }
                 };
-                stack.push_bounded(WalkStep::Listed {
+                stack.push(WalkStep::Listed {
                     source,
                     index: 0,
                     ancestors: false,
@@ -989,21 +1117,21 @@ fn walk_entry<D: Document>(
                 index,
                 ancestors,
             } => {
-                if let Some(target) = listed_target(doc, source, index) {
+                if let Some(target) = listed_target(tables, machine, source, index) {
                     // The rest of the list resumes once this target is done.
-                    stack.push_bounded(WalkStep::Listed {
+                    stack.push(WalkStep::Listed {
                         source,
                         index: index + 1,
                         ancestors,
                     });
-                    stack.push_bounded(if ancestors {
-                        WalkStep::Ancestors(target, listed_stop(doc, source))
+                    stack.push(if ancestors {
+                        WalkStep::Ancestors(target, Some(listed_stop(tables, source)))
                     } else {
                         WalkStep::Descendants(target)
                     });
                 } else if !ancestors {
                     // Every descendant is in; now the ancestors of each.
-                    stack.push_bounded(WalkStep::Listed {
+                    stack.push(WalkStep::Listed {
                         source,
                         index: 0,
                         ancestors: true,
@@ -1011,8 +1139,8 @@ fn walk_entry<D: Document>(
                 }
             }
             WalkStep::Ancestors(target, stop) => {
-                if let Some(first) = first_proper_ancestor(doc, target, stop) {
-                    stack.push_bounded(WalkStep::AncestorsFrom { from: first, stop });
+                if let Some(first) = first_proper_ancestor(tables, target, stop) {
+                    stack.push(WalkStep::AncestorsFrom { from: first, stop });
                 }
             }
             WalkStep::AncestorsFrom { from, stop } => {
@@ -1020,14 +1148,14 @@ fn walk_entry<D: Document>(
                 // WITHOUT its default initial state — the set already holds the
                 // descendant it leads to. A `<parallel>` still gives its other
                 // regions their defaults, because all of them are entered.
-                add_once(&mut entry.states_to_enter, from);
-                if let Some(next) = doc.parent_of(from).filter(|&next| Some(next) != stop) {
-                    stack.push_bounded(WalkStep::AncestorsFrom { from: next, stop });
+                entry.states_to_enter.add_once(from);
+                if let Some(next) = tables.parent(from).filter(|&next| Some(next) != stop) {
+                    stack.push(WalkStep::AncestorsFrom { from: next, stop });
                 }
-                if doc.is_parallel(from) {
+                if tables.is_parallel(from) {
                     // Above the step that resumes the walk up, so the regions
                     // are done before the next ancestor is entered.
-                    stack.push_bounded(WalkStep::Regions {
+                    stack.push(WalkStep::Regions {
                         parallel: from,
                         index: 0,
                     });
@@ -1037,22 +1165,22 @@ fn walk_entry<D: Document>(
                 // §scxml-3.4: every child of an active `<parallel>` is active, so
                 // a region nothing on the set descends into is entered by
                 // default.
-                let children = doc.child_states(parallel);
+                let children = tables.child_states(parallel);
                 let mut next = usize::from(index);
                 while let Some(&child) = children.get(next) {
                     next += 1;
                     let taken = entry
                         .states_to_enter
                         .iter()
-                        .any(|&state| is_descendant(doc, state, child));
+                        .any(|&state| tables.is_descendant(state, child));
                     if !taken {
                         if next < children.len() {
-                            stack.push_bounded(WalkStep::Regions {
+                            stack.push(WalkStep::Regions {
                                 parallel,
                                 index: next as u16,
                             });
                         }
-                        stack.push_bounded(WalkStep::Descendants(EntryTarget::State(child)));
+                        stack.push(WalkStep::Descendants(Target::State(child)));
                         break;
                     }
                 }
@@ -1065,29 +1193,36 @@ fn walk_entry<D: Document>(
 }
 
 /// The `index`th target of `source`'s list, or `None` once the list has ended.
-fn listed_target<D: Document>(
-    doc: &D,
-    source: Listed<D::State, D::History>,
+fn listed_target(
+    tables: &DocumentTables,
+    machine: &dyn Behaviour,
+    source: Listed,
     index: u16,
-) -> Option<EntryTarget<D::State, D::History>> {
+) -> Option<Target> {
     let index = usize::from(index);
     match source {
-        Listed::Initial(state) => doc.initial_targets(state).get(index).copied(),
-        Listed::Recorded(history) => doc
+        Listed::Initial(state) => {
+            let initial = tables.state(state).initial?;
+            tables.targets(initial).get(index).copied()
+        }
+        Listed::Recorded(history) => machine
             .history_value(history)
             .and_then(|recorded| recorded.get(index))
-            .map(|&state| EntryTarget::State(state)),
-        Listed::Defaults(history) => doc.history_default_targets(history).get(index).copied(),
+            .map(|&state| Target::State(state)),
+        Listed::Defaults(history) => tables
+            .targets(tables.history(history).default)
+            .get(index)
+            .copied(),
     }
 }
 
 /// The state the ancestors of `source`'s targets are entered up to, not
 /// including it: the compound state itself for its initial targets, the
 /// `<history>`'s parent for a history's.
-fn listed_stop<D: Document>(doc: &D, source: Listed<D::State, D::History>) -> Option<D::State> {
+fn listed_stop(tables: &DocumentTables, source: Listed) -> StateId {
     match source {
-        Listed::Initial(state) => Some(state),
-        Listed::Recorded(history) | Listed::Defaults(history) => Some(doc.history_parent(history)),
+        Listed::Initial(state) => state,
+        Listed::Recorded(history) | Listed::Defaults(history) => tables.history(history).parent,
     }
 }
 
@@ -1099,41 +1234,31 @@ fn listed_stop<D: Document>(doc: &D, source: Listed<D::State, D::History>) -> Op
 /// ancestor. `stop` `None` is the `<scxml>` element, which is above every
 /// state and is never entered, so it is not in the list. The rest of the list
 /// is each one's parent in turn, which [`WalkStep::AncestorsFrom`] reads off the
-/// document as it goes: this walk is what says the list is not empty, and that
-/// `stop` is on the way up.
-fn first_proper_ancestor<D: Document>(
-    doc: &D,
-    target: EntryTarget<D::State, D::History>,
-    stop: Option<D::State>,
-) -> Option<D::State> {
+/// tables as it goes.
+fn first_proper_ancestor(
+    tables: &DocumentTables,
+    target: Target,
+    stop: Option<StateId>,
+) -> Option<StateId> {
     let first = match target {
-        EntryTarget::State(state) => doc.parent_of(state),
-        EntryTarget::History(history) => Some(doc.history_parent(history)),
+        Target::State(state) => tables.parent(state),
+        Target::History(history) => Some(tables.history(history).parent),
     }?;
-    let mut current = Some(first);
-    for _ in 0..D::MAX_DEPTH {
-        let Some(state) = current else {
-            // §scxml-D-getProperAncestors: `stop` is the state's parent, the
-            // state itself, or one of its descendants — none of which the walk
-            // can meet — so the answer is the empty set.
-            return if stop.is_none() { Some(first) } else { None };
-        };
-        if stop == Some(state) {
-            // The first ancestor is `stop` itself: nothing lies between.
-            return if state == first { None } else { Some(first) };
-        }
-        current = doc.parent_of(state);
+    match stop {
+        None => Some(first),
+        // §scxml-D-getProperAncestors: when `stop` is the first ancestor
+        // itself, nothing lies between; when it is not above `first` at all —
+        // the state's parent, the state itself, or one of its descendants — the
+        // answer is the empty set.
+        Some(stop) if tables.is_descendant(first, stop) => Some(first),
+        Some(_) => None,
     }
-    panic!(
-        "first_proper_ancestor: cyclic parent relationship detected walking from {:?}",
-        target
-    );
 }
 
-fn set_default_history_content<S: PartialEq, H, X: Bounded<(S, H)>>(
-    content: &mut X,
-    parent: S,
-    history: H,
+fn set_default_history_content(
+    content: &mut SliceVec<'_, (StateId, HistoryId)>,
+    parent: StateId,
+    history: HistoryId,
 ) {
     for slot in content.iter_mut() {
         if slot.0 == parent {
@@ -1141,7 +1266,7 @@ fn set_default_history_content<S: PartialEq, H, X: Bounded<(S, H)>>(
             return;
         }
     }
-    content.push_bounded((parent, history));
+    content.push((parent, history));
 }
 
 // ════════════════════════════════════════════════════════════════════════
@@ -1150,32 +1275,32 @@ fn set_default_history_content<S: PartialEq, H, X: Bounded<(S, H)>>(
 
 /// Appendix D's exitStates, its history half: what a `<history>` of `parent`
 /// records as `parent` is exited — for a deep history the active atomic states
-/// below `parent`, for a shallow one its active children.
+/// below `parent`, for a shallow one its active children — into `recorded`.
 ///
 /// Read off `configuration_before_exit`, the configuration as it stood before
 /// the microstep's first exit: the appendix records every history before it
 /// exits any state, so every history of one microstep reads the same
-/// configuration. Returned in that configuration's order.
-pub fn recorded_history<D: Document>(
-    doc: &D,
-    parent: D::State,
+/// configuration. In that configuration's order.
+pub fn recorded_history(
+    tables: &DocumentTables,
+    parent: StateId,
     deep: bool,
-    configuration_before_exit: &[D::State],
-) -> D::Configuration {
-    let mut recorded = D::Configuration::default();
+    configuration_before_exit: &[StateId],
+    recorded: &mut SliceVec<'_, StateId>,
+) {
+    recorded.clear();
     for &state in configuration_before_exit {
         let records = if deep {
             // §scxml-D-exitStates: `isAtomicState(s0) and isDescendant(s0, s)`.
-            !doc.is_compound(state) && !doc.is_parallel(state) && is_descendant(doc, state, parent)
+            tables.is_atomic(state) && tables.is_descendant(state, parent)
         } else {
             // §scxml-D-exitStates: `s0.parent == s`.
-            doc.parent_of(state) == Some(parent)
+            tables.parent(state) == Some(parent)
         };
         if records {
-            recorded.push_bounded(state);
+            recorded.push(state);
         }
     }
-    recorded
 }
 
 // ════════════════════════════════════════════════════════════════════════
@@ -1186,85 +1311,43 @@ pub fn recorded_history<D: Document>(
 /// of its `<final>` children is active; a `<parallel>` when EVERY one of its
 /// child states is — asked of each region in turn, so a region that is itself a
 /// `<parallel>` counts only once all of ITS regions do. Nothing else ever is.
-pub fn is_in_final_state<D: Document>(
-    doc: &D,
-    state: D::State,
-    configuration: &[D::State],
+///
+/// The question is asked of the states a chain of `<parallel>`s leads to from
+/// `state`, and a subtree is a range of ids, so this is one pass over the range
+/// that skips the subtree of every state it has answered for: no stack.
+pub fn is_in_final_state(
+    tables: &DocumentTables,
+    state: StateId,
+    configuration: &[StateId],
 ) -> bool {
-    // The question is asked of a compound state directly. A `<parallel>` is in a
-    // final state when every region is, so the regions that are themselves
-    // `<parallel>`s are walked in turn, over a stack and not a call: the answer
-    // is `false` as soon as one region is not.
-    if doc.is_compound(state) {
-        return in_final_child(doc, state, configuration);
+    match tables.state(state).kind {
+        StateKind::Compound => return in_final_child(tables, state, configuration),
+        StateKind::Parallel => {}
+        StateKind::Atomic | StateKind::Final => return false,
     }
-    if !doc.is_parallel(state) {
-        return false;
-    }
-    let mut stack = D::Walk::default();
-    stack.push_bounded(WalkStep::Final {
-        parallel: state,
-        index: 0,
-    });
-    while let Some(&step) = stack.last() {
-        stack.truncate(stack.len() - 1);
-        let WalkStep::Final { parallel, index } = step else {
-            // The walk puts down steps of its own kind only; see
-            // `effective_target_states_on` for why there is no message.
-            unreachable!()
-        };
-        let Some(&region) = doc.child_states(parallel).get(usize::from(index)) else {
-            continue;
-        };
-        stack.push_bounded(WalkStep::Final {
-            parallel,
-            index: index + 1,
-        });
-        if doc.is_compound(region) {
-            if !in_final_child(doc, region, configuration) {
-                return false;
+    let last = tables.state(state).last_descendant;
+    let mut next = state.0 + 1;
+    while next <= last.0 {
+        let region = StateId(next);
+        match tables.state(region).kind {
+            // A nested `<parallel>`: its own regions are the next ids.
+            StateKind::Parallel => next += 1,
+            StateKind::Compound => {
+                if !in_final_child(tables, region, configuration) {
+                    return false;
+                }
+                next = tables.state(region).last_descendant.0 + 1;
             }
-        } else if doc.is_parallel(region) {
-            stack.push_bounded(WalkStep::Final {
-                parallel: region,
-                index: 0,
-            });
-        } else {
-            return false;
+            StateKind::Atomic | StateKind::Final => return false,
         }
     }
     true
 }
 
 /// Whether one of the `<final>` children of the compound state `state` is active.
-fn in_final_child<D: Document>(doc: &D, state: D::State, configuration: &[D::State]) -> bool {
-    doc.child_states(state)
+fn in_final_child(tables: &DocumentTables, state: StateId, configuration: &[StateId]) -> bool {
+    tables
+        .child_states(state)
         .iter()
-        .any(|&child| doc.is_final(child) && configuration.contains(&child))
-}
-
-/// Appendix D's isDescendant: whether `state` lies strictly below `ancestor`.
-pub fn is_descendant<D: Document>(doc: &D, state: D::State, ancestor: D::State) -> bool {
-    let mut current = state;
-    for _ in 0..D::MAX_DEPTH {
-        match doc.parent_of(current) {
-            None => return false,
-            Some(parent) if parent == ancestor => return true,
-            Some(parent) => current = parent,
-        }
-    }
-    panic!(
-        "is_descendant: cyclic parent relationship detected walking from {:?}",
-        state
-    );
-}
-
-fn intersects<S: PartialEq>(a: &[S], b: &[S]) -> bool {
-    a.iter().any(|state| b.contains(state))
-}
-
-fn add_once<S: Copy + PartialEq + Debug, B: Bounded<S>>(set: &mut B, state: S) {
-    if !set.contains(&state) {
-        set.push_bounded(state);
-    }
+        .any(|&child| tables.is_final(child) && configuration.contains(&child))
 }

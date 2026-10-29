@@ -70,8 +70,10 @@ use crate::event::{EventMetadata, EventType, EventWithMetadata};
 use crate::hal::Hal;
 use crate::helpers::configuration::ConfigurationRejection;
 use crate::helpers::event_queue::EventQueueLike;
-use crate::helpers::microstep::{self, EnabledTransition, EntryTarget, EntryTransition};
+use crate::helpers::microstep::{self, Behaviour, Buffers, Entered};
+use crate::helpers::run_store::RunStorage;
 use crate::helpers::state_policy_concepts as concepts;
+use crate::helpers::tables::{EventId, HistoryId, StateId, TransitionId};
 use crate::helpers::unique_id_generator::AUTO_SEND_ID_MAX_LEN;
 use crate::sched_send_id::ScheduledSendIdLike;
 // The HTTP module is the `http-send` feature (docs/adr/0053), which asks for
@@ -888,6 +890,17 @@ pub(crate) enum EventOutcome {
     Taken,
 }
 
+/// What one eventless selection of the macrostep's inner loop came to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Eventless {
+    /// No eventless transition is enabled.
+    NoneEnabled,
+    /// One was, and its microstep was taken.
+    Taken,
+    /// One was, past the macrostep's budget, and the microstep was refused.
+    Refused,
+}
+
 /// How a host-run invocation ended, when the host reports it (§scxml-6.4):
 /// which of `done.invoke` and `error.invoke` the document receives.
 #[cfg(feature = "std")]
@@ -961,6 +974,9 @@ pub struct Engine<P: StatePolicy> {
     pub(crate) policy: P,
     /// Currently active state (or deepest active state for parallel machines).
     pub(crate) current_state: P::State,
+    /// The configuration and what each `<history>` recorded, as Appendix D's
+    /// procedures read and write them (docs/adr/0064).
+    pub(crate) run_store: P::RunStore,
     /// W3C SCXML Appendix D: Internal event queue (high priority, `<raise>` + targetless sends).
     ///
     /// The concrete (per-machine, no_std-sized) queue type is supplied by the
@@ -1210,6 +1226,7 @@ macro_rules! engine_initial_fields {
     ) => {
         $consumer! {
             current_state: $state,
+            run_store: <P::RunStore as RunStorage>::EMPTY,
             policy: $policy,
             internal_queue: $queue,
             external_queue: $queue,
@@ -1573,17 +1590,8 @@ impl<P: StatePolicy> Engine<P> {
     }
 
     /// Execute the policy's `execute_exit_actions` for one state.
-    ///
-    /// The `configuration_before_exit` slice is borrowed from the caller's
-    /// stack and does not interact with the split borrow.
-    pub(crate) fn execute_on_exit(
-        &mut self,
-        state: P::State,
-        configuration_before_exit: &[P::State],
-    ) {
-        self.with_policy(|policy, engine| {
-            policy.execute_exit_actions(state, engine, configuration_before_exit)
-        });
+    pub(crate) fn execute_on_exit(&mut self, state: P::State) {
+        self.with_policy(|policy, engine| policy.execute_exit_actions(state, engine));
     }
 
     /// Appendix D's exitInterpreter (§scxml-D-exitInterpreter): exit every
@@ -1598,7 +1606,9 @@ impl<P: StatePolicy> Engine<P> {
         if self.interpreter_exited {
             return;
         }
-        microstep::exit_interpreter(&mut EngineHost { engine: self });
+        let mut workspace = P::Workspace::default();
+        let (_, scratch) = workspace.split();
+        microstep::exit_interpreter(P::TABLES, &mut EngineHost { engine: self }, scratch);
         self.interpreter_exited = true;
         self.is_running = false;
     }
@@ -1669,12 +1679,13 @@ impl<P: StatePolicy> Engine<P> {
         // element, entered by the same procedure every microstep enters by.
         // It may name several states and a `<history>`, so it is a target
         // list, not a leaf to walk down to.
-        let initial = [EntryTransition {
-            source: None,
-            targets: P::get_document_initial_targets(),
-            is_internal: false,
-        }];
-        self.enter_states(&initial);
+        debug_assert_eq!(
+            P::TABLES.check(),
+            Ok(()),
+            "the generated tables break a rule Appendix D's procedures assume"
+        );
+        self.run_store.view_mut().set_configuration(&[]);
+        self.enter_states(&[P::TABLES.initial]);
 
         // §scxml-D-mainEventLoop: hand over to the outer loop. The macrostep
         // completes on eventless transitions and internal events, then the
@@ -1786,11 +1797,11 @@ impl<P: StatePolicy> Engine<P> {
             None
         };
 
-        // §scxml-3.4: a machine that keeps its own active set is handed it back.
-        // The condition is the one the generator emits `set_active_states`
-        // under, so a policy reached here has the override.
-        if concepts::has_active_states::<P>() {
-            self.policy.set_active_states(configuration);
+        // §scxml-3.4: the configuration is the engine's, kept as numbers.
+        let mut store = self.run_store.view_mut();
+        store.set_configuration(&[]);
+        for &state in configuration {
+            store.add(P::state_id(state));
         }
 
         self.is_running = true;
@@ -2455,44 +2466,59 @@ impl<P: StatePolicy> Engine<P> {
     }
 
     /// §scxml-3.11: Full list of active states — the configuration Appendix
-    /// D's procedures read, and what history recording and In() see.
-    ///
-    /// Non-parallel machines: returns the hierarchy `[leaf, parent, grandparent, ..., root]`.
-    /// Parallel machines: returns the union of all active regions via
-    /// [`StatePolicy::get_active_states`].
+    /// D's procedures read, and what history recording and In() see — in the
+    /// order the states were entered, for every machine alike.
     ///
     /// SCE Protocol-Synthesis RFC §synth-5-J-2: returns the document's own
     /// [`Configuration`](StatePolicy::Configuration), which is a `Vec<P::State>`
-    /// under std (ABI-preserving) and a `heapless::Vec<P::State, N>` under no_std
-    /// with `N` the most states one configuration of the document holds
-    /// ([`MAX_CONFIGURATION`](StatePolicy::MAX_CONFIGURATION)), on BOTH
-    /// branches: the policy's own set is a `Configuration` too. The policy branch
-    /// used to be gated to `!no_std`, from when the policy's set was a heap
-    /// `Vec`. That was harmless while a `<parallel>` machine's microstep read
-    /// the policy's set directly; now that the selection reads THIS, the gate
-    /// would hand an MCU build the ancestor chain of one region, and the other
-    /// regions would never be offered an event.
+    /// under std and a `heapless::Vec<P::State, N>` under no_std with `N` the
+    /// most states one configuration of the document holds. The engine keeps
+    /// the configuration as numbers (docs/adr/0064); this is it in the
+    /// machine's own states.
     pub fn get_active_states(&self) -> P::Configuration {
-        if concepts::has_active_states::<P>() {
-            return self.policy.get_active_states();
-        }
-        // §scxml-D-exitInterpreter: a run that has ended has no configuration.
-        // (A policy that keeps its own active set emptied it state by state
-        // above; this one derives the set from `current_state`, which still
-        // names the final, so the answer has to be given here.)
-        if self.interpreter_exited {
-            return P::Configuration::default();
-        }
-        // Walk from the current state up to the root. The chain is at most the
-        // document's depth, which its configuration bound covers: a state's
-        // ancestors are in every configuration it is in.
         let mut active = P::Configuration::default();
-        let mut current = Some(self.current_state);
-        while let Some(state) = current {
-            active.push_bounded(state);
-            current = P::get_parent(state);
+        for &state in self.run_store.view().configuration() {
+            active.push_bounded(P::state_of(state));
         }
         active
+    }
+
+    /// What `history` recorded when its parent was last exited, in the order it
+    /// was recorded; `None` before that ever happened.
+    #[cfg(feature = "std")]
+    pub fn history_value(&self, history: P::History) -> Option<Vec<P::State>> {
+        let recorded = self
+            .run_store
+            .view()
+            .history_value(P::TABLES, P::history_id(history))?;
+        Some(recorded.iter().map(|&state| P::state_of(state)).collect())
+    }
+
+    /// Make `states` what `history` recorded, for a restore that has checked
+    /// them against the document (`saved_state::restore_history`, a plain code
+    /// span: that module does not exist on the no_std docs profile).
+    pub fn set_history_value(&mut self, history: P::History, states: &[P::State]) {
+        self.run_store.view_mut().record_history_from(
+            P::TABLES,
+            P::history_id(history),
+            states.iter().map(|&state| P::state_id(state)),
+        );
+    }
+
+    /// Whether `state` is in the configuration: what the generated `In()`
+    /// predicate asks.
+    pub fn is_active(&self, state: P::State) -> bool {
+        self.run_store.view().is_active(P::state_id(state))
+    }
+
+    /// Appendix D's isInFinalState for `state` over the configuration: what a
+    /// generated `<final>` asks of the `<parallel>` it may complete.
+    pub fn is_state_in_final_state(&self, state: P::State) -> bool {
+        microstep::is_in_final_state(
+            P::TABLES,
+            P::state_id(state),
+            self.run_store.view().configuration(),
+        )
     }
 
     /// §scxml-3.7: Whether this session has ended — that is, whether the run
@@ -4919,20 +4945,10 @@ impl<P: StatePolicy> Engine<P> {
         // `<final>`; this engine keeps `is_running` for the host's `stop()` and
         // asks the configuration for the other half.
         while self.is_running && !self.is_in_final_state() && !self.macrostep_truncated {
-            let enabled = self.select_transitions(P::null_event());
-            if !enabled.is_empty() {
-                if self.macrostep_microsteps_taken == MAX_MACROSTEP_MICROSTEPS {
-                    // The chain is still going one microstep past the budget,
-                    // so this is the case the specification calls a macrostep
-                    // that does not terminate. Refuse the microstep rather than
-                    // take it, and publish the refusal: the configuration left
-                    // behind is not a stable one and only the count says so.
-                    self.refuse_macrostep(self.current_state);
-                    return;
-                }
-                self.macrostep_microsteps_taken += 1;
-                self.microstep(&enabled);
-                continue;
+            match self.take_eventless_transitions() {
+                Eventless::Taken => continue,
+                Eventless::Refused => return,
+                Eventless::NoneEnabled => {}
             }
 
             if !self.internal_queue.has_events() {
@@ -4955,6 +4971,33 @@ impl<P: StatePolicy> Engine<P> {
             };
             self.take_internal_event(event_with_meta);
         }
+    }
+
+    /// §scxml-D-mainEventLoop: one turn of the inner loop on eventless
+    /// transitions — select them, and take the microstep they select unless the
+    /// macrostep's budget is spent.
+    // Its own frame, so its workspace is gone before the internal-event branch
+    // of the loop takes one of its own.
+    #[inline(never)]
+    fn take_eventless_transitions(&mut self) -> Eventless {
+        let mut workspace = P::Workspace::default();
+        let (mut enabled, mut scratch) = workspace.split();
+        self.select_transitions(P::null_event(), &mut enabled, scratch.reborrow());
+        if enabled.is_empty() {
+            return Eventless::NoneEnabled;
+        }
+        if self.macrostep_microsteps_taken == MAX_MACROSTEP_MICROSTEPS {
+            // The chain is still going one microstep past the budget, so this is
+            // the case the specification calls a macrostep that does not
+            // terminate. Refuse the microstep rather than take it, and publish
+            // the refusal: the configuration left behind is not a stable one and
+            // only the count says so.
+            self.refuse_macrostep(self.current_state);
+            return Eventless::Refused;
+        }
+        self.macrostep_microsteps_taken += 1;
+        self.microstep(&enabled, scratch);
+        Eventless::Taken
     }
 
     /// Stop the macrostep now in progress at [`MAX_MACROSTEP_MICROSTEPS`], from
@@ -5209,238 +5252,134 @@ impl<P: StatePolicy> Engine<P> {
 
     /// Appendix D's selectTransitions, or its selectEventlessTransitions for
     /// the null event: the optimal enabled transition set, in selection order.
-    fn select_transitions(&mut self, event: P::Event) -> P::EnabledSet {
+    fn select_transitions(
+        &mut self,
+        event: P::Event,
+        enabled: &mut microstep::SliceVec<'_, TransitionId>,
+        scratch: microstep::Scratch<'_>,
+    ) {
         // §scxml-5.10: the event whose transitions are about to be selected is
         // the `_event` their guards read — bound before the first guard runs.
         self.with_policy(|policy, engine| policy.bind_current_event(event, engine));
-        let enabled = microstep::select_transitions(&mut EngineHost { engine: self }, event);
-        debug_assert!(
-            enabled.len() <= P::MAX_ENABLED,
-            "a selection enabled {} transitions, past the {} the document's tree allows: \
-             the generator bounded it too small",
-            enabled.len(),
-            P::MAX_ENABLED
+        microstep::select_transitions(
+            P::TABLES,
+            &mut EngineHost { engine: self },
+            P::event_id(event),
+            enabled,
+            scratch,
         );
-        enabled
     }
 
     /// Appendix D's microstep: exit, run the transitions' content, enter.
-    fn microstep(&mut self, transitions: &[EnabledTransition<P::State, P::History>]) {
-        let entry = microstep::microstep(&mut EngineHost { engine: self }, transitions);
-        self.witness_configuration_bound(entry.states_to_enter.len());
-        let targets = transitions.iter().map(|t| t.targets);
-        self.settle_current_state(targets, &entry.states_to_enter);
+    fn microstep(&mut self, transitions: &[TransitionId], scratch: microstep::Scratch<'_>) {
+        let entered = microstep::microstep(
+            P::TABLES,
+            &mut EngineHost { engine: self },
+            transitions,
+            scratch,
+        );
+        self.settle_current_state(entered);
     }
 
     /// Appendix D's enterStates — for the document's initial transition, the
     /// whole of §scxml-D-interpret's entry into the initial configuration.
-    fn enter_states(&mut self, transitions: &[EntryTransition<P::State, P::History>]) {
-        let entry = microstep::enter_states(&mut EngineHost { engine: self }, transitions);
-        self.witness_configuration_bound(entry.states_to_enter.len());
-        let targets = transitions.iter().map(|t| t.targets);
-        self.settle_current_state(targets, &entry.states_to_enter);
+    fn enter_states(&mut self, transitions: &[TransitionId]) {
+        let mut workspace = P::Workspace::default();
+        let (_, scratch) = workspace.split();
+        let entered = microstep::enter_states(
+            P::TABLES,
+            &mut EngineHost { engine: self },
+            transitions,
+            scratch,
+        );
+        self.settle_current_state(entered);
     }
 
-    /// In a debug build, hold the configuration and the set of states a microstep
-    /// entered to the bound the generator read from the document's tree.
+    /// Point `current_state` at the atomic state the last targeted transition
+    /// brought the machine into ([`Entered::current`]). A microstep of
+    /// targetless transitions entered nothing and moves nothing.
     ///
-    /// The bound sizes every buffer of the microstep on a bare-metal build, where
-    /// a push past it panics; a `std` build grows its buffers and would never say
-    /// the bound was wrong. This is what says so, on every microstep of every
-    /// machine a debug build runs, so the conformance corpus is the evidence that
-    /// the bound is an upper bound and not an estimate.
-    fn witness_configuration_bound(&self, entered: usize) {
-        debug_assert!(
-            entered <= P::MAX_CONFIGURATION,
-            "a microstep entered {entered} states, past the {} the document's tree allows \
-             in one configuration: the generator bounded it too small",
-            P::MAX_CONFIGURATION
-        );
-        debug_assert!(
-            self.get_active_states().len() <= P::MAX_CONFIGURATION,
-            "the configuration holds {} states, past the {} the document's tree allows: \
-             the generator bounded it too small",
-            self.get_active_states().len(),
-            P::MAX_CONFIGURATION
-        );
+    /// Every buffer of the microstep is the size the generator read from the
+    /// document's tree, in both profiles, and a push past one stops the program
+    /// with the generator's name on it: the conformance corpus is the evidence
+    /// that each bound is an upper bound and not an estimate.
+    fn settle_current_state(&mut self, entered: Entered) {
+        if let Some(current) = entered.current {
+            self.current_state = P::state_of(current);
+        }
     }
 
     /// Offer one event to the configuration and take the microstep it
     /// selects.
+    // Its own frame, so its workspace is not under the eventless branch's.
+    #[inline(never)]
     fn take_event(&mut self, event: P::Event) -> EventOutcome {
-        let enabled = self.select_transitions(event);
+        let mut workspace = P::Workspace::default();
+        let (mut enabled, mut scratch) = workspace.split();
+        self.select_transitions(event, &mut enabled, scratch.reborrow());
         if enabled.is_empty() {
             return EventOutcome::Discarded;
         }
-        self.microstep(&enabled);
+        self.microstep(&enabled, scratch);
         EventOutcome::Taken
-    }
-
-    /// Point `current_state` at the atomic state the last transition brought
-    /// the machine into.
-    ///
-    /// Without a `<parallel>` the configuration is one chain and the entry set
-    /// ends on its atomic state. With one, `current_state` is the first state
-    /// the last targeted transition names, dereferenced, then down through the
-    /// configuration to an atomic state — the answer every backend gives. A
-    /// microstep of targetless transitions entered nothing and moves nothing.
-    ///
-    /// `targets` are the target lists as written, in selection order — the
-    /// microstep's enabled set, or the initial transition.
-    fn settle_current_state<'t>(
-        &mut self,
-        targets: impl DoubleEndedIterator<Item = &'t [EntryTarget<P::State, P::History>]>,
-        entered: &[P::State],
-    ) {
-        let Some(&deepest) = entered.last() else {
-            return;
-        };
-        if !P::HAS_PARALLEL_STATES {
-            self.current_state = deepest;
-            return;
-        }
-        for written in targets.rev() {
-            let effective =
-                microstep::effective_target_states(&EngineHost { engine: self }, written);
-            if let Some(&first) = effective.first() {
-                self.current_state = first;
-                self.resolve_current_state_to_leaf();
-                return;
-            }
-        }
-    }
-
-    /// Settle `current_state` on an atomic state.
-    ///
-    /// A transition may target a compound state, or a `<parallel>`, and
-    /// [`get_current_state`](Self::get_current_state) must still name the
-    /// atomic state the machine is *in* rather than one it is *within*.
-    ///
-    /// The descent reads the CONFIGURATION rather than recomputing initial or
-    /// history children: the configuration is what the microstep actually
-    /// entered, so a descent through it cannot disagree with what happened.
-    /// Under a `<parallel>` it takes the first region in document order, so the
-    /// answer does not depend on the order states happened to become active.
-    fn resolve_current_state_to_leaf(&mut self) {
-        let active = self.get_active_states();
-        // A region holds one atomic state, so this descends once per level; the
-        // bound is the document's own depth, so a parent chain that loops is
-        // reported rather than walked forever.
-        for _ in 0..P::MAX_DEPTH {
-            if !P::is_compound_state(self.current_state)
-                && !P::is_parallel_state(self.current_state)
-            {
-                return;
-            }
-            // A compound state with no active child is not a configuration this
-            // can repair, so it is left as it is rather than guessed at.
-            let Some(&child) = P::get_child_states(self.current_state)
-                .iter()
-                .find(|child| active.contains(child))
-            else {
-                return;
-            };
-            self.current_state = child;
-        }
-        sce_log_error!(
-            "Engine::resolve_current_state_to_leaf: exceeded {} descents from a compound state — \
-             the parent chain does not terminate",
-            P::MAX_DEPTH
-        );
     }
 }
 
-/// This engine as [`helpers::microstep`](crate::helpers::microstep) reads it —
-/// that module's traits state what each member answers.
+/// This engine as [`helpers::microstep`](crate::helpers::microstep) drives it:
+/// the one place the numbers the procedures speak in become this machine's
+/// own states, histories and events, and back.
 ///
 /// The document is the policy's static tables; the history values and the
-/// configuration are run-time state, which is why this holds the engine. Every
-/// hook is dispatched through [`Engine::with_policy`].
+/// configuration are the engine's run store. Every hook is dispatched through
+/// [`Engine::with_policy`].
 struct EngineHost<'e, P: StatePolicy> {
     engine: &'e mut Engine<P>,
 }
 
-impl<P: StatePolicy> microstep::Document for EngineHost<'_, P> {
-    type State = P::State;
-    type History = P::History;
-    type Configuration = P::Configuration;
-    type EnabledSet = P::EnabledSet;
-    type HistoryDefaults = P::HistoryDefaults;
-    type Walk = P::EntryWalk;
-    const MAX_DEPTH: usize = P::MAX_DEPTH;
-
-    fn parent_of(&self, state: P::State) -> Option<P::State> {
-        P::get_parent(state)
+impl<P: StatePolicy> Behaviour for EngineHost<'_, P> {
+    fn configuration(&self) -> &[StateId] {
+        self.engine.run_store.view().configuration()
     }
 
-    fn is_compound(&self, state: P::State) -> bool {
-        P::is_compound_state(state)
+    fn add_to_configuration(&mut self, state: StateId) -> bool {
+        self.engine.run_store.view_mut().add(state)
     }
 
-    fn is_parallel(&self, state: P::State) -> bool {
-        P::is_parallel_state(state)
+    fn remove_from_configuration(&mut self, state: StateId) {
+        self.engine.run_store.view_mut().remove(state);
     }
 
-    fn is_final(&self, state: P::State) -> bool {
-        P::is_final_state(state)
+    fn history_value(&self, history: HistoryId) -> Option<&[StateId]> {
+        self.engine
+            .run_store
+            .view()
+            .history_value(P::TABLES, history)
     }
 
-    fn child_states(&self, state: P::State) -> &'static [P::State] {
-        P::get_child_states(state)
+    fn record_history(&mut self, history: HistoryId, states: &[StateId]) {
+        self.engine
+            .run_store
+            .view_mut()
+            .record_history(P::TABLES, history, states);
     }
 
-    fn initial_targets(&self, state: P::State) -> &'static [EntryTarget<P::State, P::History>] {
-        P::get_initial_targets(state)
-    }
-
-    fn history_parent(&self, history: P::History) -> P::State {
-        P::get_history_parent(history)
-    }
-
-    fn history_value(&self, history: P::History) -> Option<&[P::State]> {
-        self.engine.policy.history_value(history)
-    }
-
-    fn history_default_targets(
-        &self,
-        history: P::History,
-    ) -> &'static [EntryTarget<P::State, P::History>] {
-        P::get_history_default_targets(history)
-    }
-
-    fn document_order(&self, state: P::State) -> u32 {
-        P::get_document_order(state)
-    }
-}
-
-impl<P: StatePolicy> microstep::Run for EngineHost<'_, P> {
-    type Event = P::Event;
-
-    fn configuration(&self) -> P::Configuration {
-        self.engine.get_active_states()
-    }
-
-    fn first_enabled_transition(
-        &mut self,
-        state: P::State,
-        event: P::Event,
-    ) -> Option<EnabledTransition<P::State, P::History>> {
+    fn first_enabled_transition(&mut self, state: StateId, event: EventId) -> Option<TransitionId> {
+        let (state, event) = (P::state_of(state), P::EVENTS[usize::from(event.0)]);
         self.engine
             .with_policy(|policy, engine| policy.first_enabled_transition(state, event, engine))
     }
 
-    fn exit_state(&mut self, state: P::State, configuration_before_exit: &[P::State]) {
-        self.engine
-            .execute_on_exit(state, configuration_before_exit);
+    fn exit_state(&mut self, state: StateId) {
+        self.engine.execute_on_exit(P::state_of(state));
     }
 
-    fn execute_transition_content(&mut self, transition: &EnabledTransition<P::State, P::History>) {
-        let (source, index) = (transition.source, transition.transition_index);
+    fn execute_transition_content(&mut self, transition: TransitionId) {
         self.engine
-            .with_policy(|policy, engine| policy.execute_transition_content(source, index, engine));
+            .with_policy(|policy, engine| policy.execute_transition_content(transition, engine));
     }
 
-    fn enter_state(&mut self, state: P::State, is_default_entry: bool) {
+    fn enter_state(&mut self, state: StateId, is_default_entry: bool) {
+        let state = P::state_of(state);
         self.engine.with_policy(|policy, engine| {
             policy.execute_entry_actions(state, engine, is_default_entry)
         });
@@ -5453,7 +5392,8 @@ impl<P: StatePolicy> microstep::Run for EngineHost<'_, P> {
         }
     }
 
-    fn execute_history_default_content(&mut self, history: P::History) {
+    fn execute_history_default_content(&mut self, history: HistoryId) {
+        let history = P::HISTORIES[history.index()];
         self.engine
             .with_policy(|policy, engine| policy.execute_history_default_content(history, engine));
     }

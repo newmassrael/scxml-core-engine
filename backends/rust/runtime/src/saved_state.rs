@@ -1964,18 +1964,18 @@ pub struct HistoryDecl<H> {
     pub deep: bool,
 }
 
-/// What each of `declared` has recorded in `policy`, as a saved state holds it:
+/// What each of `declared` has recorded in `engine`, as a saved state holds it:
 /// state ids in document order — the order one machine writes is every
 /// backend's — keyed by the history's id and ordered by it. A history that has
 /// recorded nothing is left out.
 pub fn save_history<P: StatePolicy>(
-    policy: &P,
+    engine: &Engine<P>,
     declared: &[HistoryDecl<P::History>],
 ) -> Vec<(String, Vec<String>)> {
     let mut saved: Vec<(String, Vec<String>)> = declared
         .iter()
         .filter_map(|decl| {
-            let mut states = policy.history_value(decl.history)?.to_vec();
+            let mut states = engine.history_value(decl.history)?;
             states.sort_by_key(|s| P::get_document_order(*s));
             Some((
                 decl.id.to_string(),

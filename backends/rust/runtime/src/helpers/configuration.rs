@@ -197,8 +197,9 @@ fn check_child_arity<P: StatePolicy>(
     if P::is_parallel_state(state) {
         // §scxml-3.4: every region, simultaneously — a `<parallel>`'s
         // regions are exactly its child states.
-        let regions = P::get_child_states(state);
+        let regions = P::TABLES.child_states(P::state_id(state));
         for &region in regions {
+            let region = P::state_of(region);
             if !configuration.contains(&region) {
                 return Err(ConfigurationRejection::ParallelRegionMissing {
                     parallel: state,
@@ -320,7 +321,7 @@ pub fn validate_history<P: StatePolicy>(
 
     if deep {
         for &state in recorded {
-            if !P::get_child_states(state).is_empty() {
+            if !P::TABLES.child_states(P::state_id(state)).is_empty() {
                 return Err(HistoryRejection::NotAtomic { state });
             }
         }

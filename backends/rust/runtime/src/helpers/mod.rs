@@ -99,11 +99,13 @@ pub mod logger;
 // one of the document's `Bounded` associated types, which the no_std profile
 // sizes to the document.
 pub mod microstep;
+pub mod run_store;
 pub mod scxml_constants;
 pub mod send;
 // docs/adr/0045: ungated — a `no_std` machine is given its session id too, and
 // holds it to the same rule with nothing allocated.
 pub mod session_id;
 pub mod state_policy_concepts;
+pub mod tables;
 pub mod unique_id_generator;
 pub mod url_encoding;

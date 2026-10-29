@@ -50,7 +50,9 @@ use crate::event::{EventMetadata, EventWithMetadata};
 use crate::hal::Hal;
 use crate::helpers::event_queue::EventQueueLike;
 use crate::helpers::hierarchy::Bounded;
-use crate::helpers::microstep::{Document, EnabledTransition, EntryTarget};
+use crate::helpers::microstep::Buffers;
+use crate::helpers::run_store::RunStorage;
+use crate::helpers::tables::{DocumentTables, EventId, HistoryId, StateId, TransitionId};
 use crate::Engine;
 
 /// The contract that generated state machine policies must satisfy.
@@ -155,62 +157,51 @@ pub trait StatePolicy: Sized + 'static {
     type ScheduledSendId: crate::ScheduledSendIdLike;
 
     // ──────────────────────────────────────────────
-    // What the document's state tree bounds
+    // The document, as Appendix D's procedures read it (docs/adr/0064)
     //
-    // The generator reads the tree and writes all seven, so every buffer of the
-    // microstep is the size this document needs and no larger. Like the
-    // associated types above they have no default: a default could only be the
-    // guess the generator exists to replace.
+    // The procedures are compiled once for every program, so the document
+    // reaches them as tables and its states, histories and events as numbers.
+    // The generator writes all of these; like the associated types above they
+    // have no default.
     // ──────────────────────────────────────────────
 
-    /// A set of states that are, or are about to be, in one configuration (§scxml-3.4):
-    /// the configuration the engine publishes, and the exit set, entry set, list of
-    /// effective targets and history record Appendix D's procedures build from it.
-    ///
-    /// Spelled `BoundedVec<State, N>` with `N` = [`MAX_CONFIGURATION`](StatePolicy::MAX_CONFIGURATION),
-    /// which is a `Vec` under std (so the same emission compiles on both runtime
-    /// profiles) and a `heapless::Vec` of exactly that capacity without it.
+    /// The document's tables: its states in document order, its histories, its
+    /// transitions and the bounds its buffers are sized by.
+    const TABLES: &'static DocumentTables;
+
+    /// The states, by [`StateId`]: `STATES[state_id(s).index()] == s`.
+    const STATES: &'static [Self::State];
+
+    /// The histories, by [`HistoryId`]; empty for a document with none.
+    const HISTORIES: &'static [Self::History];
+
+    /// The events, by [`EventId`]: `EVENTS[event_id(e).index()] == e`.
+    const EVENTS: &'static [Self::Event];
+
+    /// The number of `state` in [`TABLES`](StatePolicy::TABLES): its position in
+    /// document order. The generated state enum's discriminant.
+    fn state_id(state: Self::State) -> StateId;
+
+    /// The number of `history` in [`TABLES`](StatePolicy::TABLES).
+    fn history_id(history: Self::History) -> HistoryId;
+
+    /// The number of `event`. The generated event enum's discriminant.
+    fn event_id(event: Self::Event) -> EventId;
+
+    /// The buffers one call into Appendix D's procedures borrows, of the sizes
+    /// this document needs (docs/adr/0056): `Workspace<STATES, ENABLED, WALK,
+    /// DEFAULTS>`.
+    type Workspace: Buffers + Default;
+
+    /// The configuration and history records the engine keeps, of the sizes
+    /// this document needs: `RunStore<CONFIGURATION, RECORDS, HISTORIES>`.
+    type RunStore: RunStorage;
+
+    /// The configuration as [`Engine::get_active_states`] returns it (§scxml-3.4):
+    /// `BoundedVec<State, N>` with `N` the most states one configuration holds,
+    /// a `Vec` under std and a `heapless::Vec` of exactly that capacity without
+    /// it.
     type Configuration: Bounded<Self::State>;
-
-    /// The transitions one selection enables (§scxml-D-selectTransitions): at most
-    /// one from each atomic state of a configuration.
-    ///
-    /// Spelled `BoundedVec<EnabledTransition<State, History>, N>` with `N` =
-    /// [`MAX_ENABLED`](StatePolicy::MAX_ENABLED).
-    type EnabledSet: Bounded<EnabledTransition<Self::State, Self::History>>;
-
-    /// What a microstep owes the default transition of each `<history>` it took
-    /// with nothing recorded, one pair for each parent that has a `<history>`.
-    ///
-    /// Spelled `BoundedVec<(State, History), N>`, `N` the number of such parents;
-    /// empty — capacity 0 — for a document with no `<history>`.
-    type HistoryDefaults: Bounded<(Self::State, Self::History)>;
-
-    /// The stack the entry procedures, the effective targets and the completion
-    /// check of Appendix D run over instead of recursing
-    /// ([`WalkStep`](crate::helpers::microstep::WalkStep)), so the worst-case stack of
-    /// a call is the sum of the frames on it and no depth is assumed.
-    ///
-    /// Spelled `BoundedVec<WalkStep<State, History>, N>` with `N` = three steps
-    /// for each level of the document's tree, one for each `<history>`, and three
-    /// more for the steps one step puts down at once
-    /// (`sce_build::microstep_bounds`).
-    type EntryWalk: Bounded<crate::helpers::microstep::WalkStep<Self::State, Self::History>>;
-
-    /// The most states one configuration of this document holds (§scxml-3.4): the
-    /// states on one root-to-leaf path with, for each `<parallel>` on it, every
-    /// region's own largest.
-    const MAX_CONFIGURATION: usize;
-
-    /// The most transitions one selection can enable: one for each atomic state of
-    /// the largest configuration (§scxml-D-selectTransitions).
-    const MAX_ENABLED: usize;
-
-    /// How many levels the deepest state, or `<history>` (which sits one below its
-    /// parent), is at, the `<scxml>` element's child being at 1. Every walk up the
-    /// hierarchy reaches the `<scxml>` element in at most that many steps, so one
-    /// that has not is walking a cycle.
-    const MAX_DEPTH: usize;
 
     // ──────────────────────────────────────────────
     // Feature flags (C++ `static constexpr bool HAS_...`)
@@ -279,9 +270,6 @@ pub trait StatePolicy: Sized + 'static {
     /// Whether the document autoforward child events to any invokes (§scxml-6.4.1).
     const HAS_AUTOFORWARD: bool = false;
 
-    /// Whether the policy exposes `activeStates_` tracking (required for parallel states).
-    const HAS_ACTIVE_STATES: bool = false;
-
     /// Whether the policy supports child-tick for nested invokes.
     const HAS_CHILD_TICK: bool = false;
 
@@ -296,60 +284,52 @@ pub trait StatePolicy: Sized + 'static {
     /// The state the engine names before [`Engine::initialize`] enters the
     /// initial configuration, and the state enum's `Default` (§scxml-3.2).
     ///
-    /// Not what `initialize` enters: that is the document's initial transition,
-    /// [`get_document_initial_targets`](StatePolicy::get_document_initial_targets),
-    /// which may name several states and a `<history>`.
+    /// Not what `initialize` enters: that is the document's initial transition
+    /// (§scxml-3.2), the row [`DocumentTables::initial`] names, which may name
+    /// several states and a `<history>`.
     fn initial_state() -> Self::State;
 
+    /// The state numbered `id`.
+    fn state_of(id: StateId) -> Self::State {
+        Self::STATES[id.index()]
+    }
+
     /// Whether `state` is a `<final>` state (§scxml-3.7).
-    fn is_final_state(state: Self::State) -> bool;
+    fn is_final_state(state: Self::State) -> bool {
+        Self::TABLES.is_final(Self::state_id(state))
+    }
 
     /// The parent of `state` in the document hierarchy, or `None` if it's a root child.
-    fn get_parent(state: Self::State) -> Option<Self::State>;
+    fn get_parent(state: Self::State) -> Option<Self::State> {
+        Self::TABLES
+            .parent(Self::state_id(state))
+            .map(Self::state_of)
+    }
 
     /// Whether `state` is a compound state: a `<state>` with child states
     /// (§scxml-3.3). A `<parallel>` answers `false` — this is Appendix D's
     /// `isCompoundState`, and it decides which ancestors can be a transition's
     /// domain.
-    fn is_compound_state(state: Self::State) -> bool;
-
-    /// Whether `state` is a `<parallel>` state (§scxml-3.4).
-    ///
-    /// Only meaningful when `HAS_PARALLEL_STATES` is `true`; the default returns `false`.
-    fn is_parallel_state(_state: Self::State) -> bool {
-        false
+    fn is_compound_state(state: Self::State) -> bool {
+        Self::TABLES.is_compound(Self::state_id(state))
     }
 
-    /// §scxml-D-getChildStates: `state`'s `<state>`, `<parallel>` and `<final>`
-    /// children, in document order — for a `<parallel>`, its regions.
-    fn get_child_states(state: Self::State) -> &'static [Self::State];
-
-    /// §scxml-3.3: a compound state's initial transition target, as written —
-    /// one entry per token of `initial` or of the `<initial>` element's
-    /// transition, or the first child state when the document names none.
-    /// Empty for every state that is not compound.
-    fn get_initial_targets(
-        state: Self::State,
-    ) -> &'static [EntryTarget<Self::State, Self::History>];
-
-    /// §scxml-3.2: the target of the document's own initial transition, as
-    /// written — what [`Engine::initialize`] enters, from the `<scxml>`
-    /// element.
-    fn get_document_initial_targets() -> &'static [EntryTarget<Self::State, Self::History>];
+    /// Whether `state` is a `<parallel>` state (§scxml-3.4).
+    fn is_parallel_state(state: Self::State) -> bool {
+        Self::TABLES.is_parallel(Self::state_id(state))
+    }
 
     /// §scxml-3.10: the state a `<history>` is declared in.
-    fn get_history_parent(history: Self::History) -> Self::State;
+    fn get_history_parent(history: Self::History) -> Self::State {
+        Self::state_of(Self::TABLES.history(Self::history_id(history)).parent)
+    }
 
-    /// §scxml-3.10.2: a `<history>`'s default transition target, as written —
-    /// its default stored state configuration.
-    fn get_history_default_targets(
-        history: Self::History,
-    ) -> &'static [EntryTarget<Self::State, Self::History>];
-
-    /// Document order index of `state` (W3C SCXML Appendix D).
+    /// Document order index of `state` (W3C SCXML Appendix D): its number.
     ///
     /// Document order is also entry order, and its reverse is exit order.
-    fn get_document_order(state: Self::State) -> u32;
+    fn get_document_order(state: Self::State) -> u32 {
+        u32::from(Self::state_id(state).0)
+    }
 
     /// Human-readable name of `event` (e.g., `"error.execution"`, `"done.state.s1"`).
     ///
@@ -447,14 +427,6 @@ pub trait StatePolicy: Sized + 'static {
     fn null_event() -> Self::Event;
 
     // ──────────────────────────────────────────────
-    // Run-time state the entry procedures read
-    // ──────────────────────────────────────────────
-
-    /// §scxml-3.10: what `history` recorded when its parent was last exited;
-    /// `None` before that ever happened.
-    fn history_value(&self, history: Self::History) -> Option<&[Self::State]>;
-
-    // ──────────────────────────────────────────────
     // Instance methods — generated executable content
     //
     // These mirror C++ policy methods that take `Engine&` as a parameter.
@@ -481,29 +453,27 @@ pub trait StatePolicy: Sized + 'static {
     ///
     /// Ports C++ `firstEnabledTransition(State, Event, Engine&)`. The only
     /// place a guard is evaluated. The engine walks the atomic states and
-    /// their ancestors and keeps the ordered set.
+    /// their ancestors and keeps the ordered set. The answer is the
+    /// transition's row in [`TABLES`](StatePolicy::TABLES), which holds its
+    /// source, targets and type.
     fn first_enabled_transition(
         &mut self,
         state: Self::State,
         event: Self::Event,
         engine: &mut Engine<Self>,
-    ) -> Option<EnabledTransition<Self::State, Self::History>>;
+    ) -> Option<TransitionId>;
 
     /// Execute one transition's executable content (§scxml-3.13 — run between
     /// the microstep's exits and its entries).
     ///
-    /// `transition_index` is the one `first_enabled_transition` reported for
-    /// `source`. Ports C++ `executeTransitionActions(State, int, Engine&)`.
-    fn execute_transition_content(
-        &mut self,
-        source: Self::State,
-        transition_index: usize,
-        engine: &mut Engine<Self>,
-    );
+    /// `transition` is one `first_enabled_transition` reported, and one whose
+    /// row says it has content. Ports C++ `executeTransitionActions(State, int,
+    /// Engine&)`.
+    fn execute_transition_content(&mut self, transition: TransitionId, engine: &mut Engine<Self>);
 
-    /// Enter `state` (§scxml-3.8): add it to the configuration, run its
-    /// `<onentry>`, and its initial transition's content when
-    /// `is_default_entry`.
+    /// Enter `state` (§scxml-3.8): run its `<onentry>`, and its initial
+    /// transition's content when `is_default_entry`. The engine has added it to
+    /// the configuration already.
     ///
     /// Ports C++ `executeEntryActions(State, Engine&, bool)`. May:
     /// - raise internal events via `engine.raise(...)`
@@ -525,21 +495,15 @@ pub trait StatePolicy: Sized + 'static {
         is_default_entry: bool,
     );
 
-    /// Exit `state` (§scxml-3.9): record its histories, run its `<onexit>`,
-    /// cancel its invocations, remove it from the configuration.
+    /// Exit `state` (§scxml-3.9): run its `<onexit>` and cancel its
+    /// invocations. The engine has recorded its histories already (§scxml-3.10)
+    /// and removes it from the configuration afterwards.
     ///
     /// Ports C++ `executeExitActions(State, Engine&, const vector<State>&)`.
     /// One state, and nothing below it: the engine's Appendix D exit set
     /// already holds every active descendant, in exit order, ahead of this
-    /// state. `configuration_before_exit` is the configuration as it stood
-    /// before the microstep's first exit, which every history of the microstep
-    /// is recorded from (§scxml-3.10).
-    fn execute_exit_actions(
-        &mut self,
-        state: Self::State,
-        engine: &mut Engine<Self>,
-        configuration_before_exit: &[Self::State],
-    );
+    /// state.
+    fn execute_exit_actions(&mut self, state: Self::State, engine: &mut Engine<Self>);
 
     /// §scxml-3.10.2: a `<history>`'s default transition content, run after
     /// its parent's onentry (and after the parent's own initial content) when
@@ -755,46 +719,6 @@ pub trait StatePolicy: Sized + 'static {
         Ok(())
     }
 
-    /// Get active states for parallel state machines (§scxml-3.4).
-    ///
-    /// Generated only when `HAS_ACTIVE_STATES` is `true`.
-    ///
-    /// SCE Protocol-Synthesis RFC §synth-5-J-2: returns the document's own
-    /// [`Configuration`](StatePolicy::Configuration) — a `Vec` under std, a
-    /// `heapless::Vec` of exactly
-    /// [`MAX_CONFIGURATION`](StatePolicy::MAX_CONFIGURATION) under no_std. The
-    /// default no-op returns an empty one.
-    fn get_active_states(&self) -> Self::Configuration {
-        Default::default()
-    }
-
-    /// Put the active state set back (§scxml-3.4), for
-    /// [`Engine::enter_at`](crate::Engine::enter_at).
-    ///
-    /// Generated wherever [`get_active_states`](Self::get_active_states) is, and
-    /// for the same reason: a machine that keeps its own active set is the only
-    /// machine that can be handed one. `enter_at` calls this exactly when
-    /// [`has_active_states`](crate::helpers::state_policy_concepts::has_active_states)
-    /// holds, which is the same condition the generator emits both under.
-    ///
-    /// The default is a tripwire rather than a no-op, unlike its reading
-    /// sibling. The sibling's empty chain is a truthful answer for a machine
-    /// with no parallel regions — there is no active set beyond the hierarchy
-    /// walk. Silently discarding a *write* has no such reading: the caller
-    /// would be told the configuration was restored while the policy still held
-    /// the one it was constructed with, which is the "looks fine, is elsewhere"
-    /// outcome `enter_at` exists to refuse. Reaching it means the policy
-    /// declares `HAS_ACTIVE_STATES` without generating this override, so it is a
-    /// generator defect and says so — the same discipline as
-    /// [`BoundedPush::push_bounded`](crate::BoundedPush::push_bounded)'s capacity
-    /// tripwire.
-    fn set_active_states(&mut self, _states: &[Self::State]) {
-        panic!(
-            "policy declares HAS_ACTIVE_STATES but did not generate set_active_states \
-             (generator bug): Engine::enter_at cannot restore this machine's active set"
-        );
-    }
-
     /// Forward external events to autoforward children (§scxml-6.4.1).
     ///
     /// Generated only when `HAS_AUTOFORWARD` is `true`.
@@ -970,71 +894,4 @@ pub trait ConstStatePolicy: StatePolicy {
     /// An empty [`StatePolicy::EventQueue`], as a constant: what
     /// `EventQueue::default()` returns.
     const EMPTY_EVENT_QUEUE: Self::EventQueue;
-}
-
-/// A policy, as the document Appendix D's procedures read: its static tables
-/// are the structure, and its recorded histories are the one piece of run-time
-/// state the entry procedures need.
-///
-/// A borrow of the policy alone, never of the engine holding it, so a
-/// generated hook — which runs with the engine borrowed mutably — can hand
-/// [`helpers::microstep`](crate::helpers::microstep) its own `self`: the
-/// completion check a generated `<final>` makes for the `<parallel>` it may
-/// complete (`is_in_final_state`) asks the transcription through this. A
-/// wrapper rather than an implementation on every policy, because the two
-/// traits name their associated types alike and a generated policy spelling
-/// `Self::State` must keep meaning exactly one of them.
-pub struct PolicyDocument<'p, P: StatePolicy>(pub &'p P);
-
-impl<P: StatePolicy> Document for PolicyDocument<'_, P> {
-    type State = P::State;
-    type History = P::History;
-    type Configuration = P::Configuration;
-    type EnabledSet = P::EnabledSet;
-    type HistoryDefaults = P::HistoryDefaults;
-    type Walk = P::EntryWalk;
-    const MAX_DEPTH: usize = P::MAX_DEPTH;
-
-    fn parent_of(&self, state: P::State) -> Option<P::State> {
-        P::get_parent(state)
-    }
-
-    fn is_compound(&self, state: P::State) -> bool {
-        P::is_compound_state(state)
-    }
-
-    fn is_parallel(&self, state: P::State) -> bool {
-        P::is_parallel_state(state)
-    }
-
-    fn is_final(&self, state: P::State) -> bool {
-        P::is_final_state(state)
-    }
-
-    fn child_states(&self, state: P::State) -> &'static [P::State] {
-        P::get_child_states(state)
-    }
-
-    fn initial_targets(&self, state: P::State) -> &'static [EntryTarget<P::State, P::History>] {
-        P::get_initial_targets(state)
-    }
-
-    fn history_parent(&self, history: P::History) -> P::State {
-        P::get_history_parent(history)
-    }
-
-    fn history_value(&self, history: P::History) -> Option<&[P::State]> {
-        self.0.history_value(history)
-    }
-
-    fn history_default_targets(
-        &self,
-        history: P::History,
-    ) -> &'static [EntryTarget<P::State, P::History>] {
-        P::get_history_default_targets(history)
-    }
-
-    fn document_order(&self, state: P::State) -> u32 {
-        P::get_document_order(state)
-    }
 }
