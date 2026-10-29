@@ -45,6 +45,7 @@ let package = Package(
             dependencies: [
                 "StaticDatamodelMachines",
                 .product(name: "SceRuntime", package: "runtime"),
+                .product(name: "SceForgeRuntime", package: "forge-runtime"),
             ]
         ),
     ]
