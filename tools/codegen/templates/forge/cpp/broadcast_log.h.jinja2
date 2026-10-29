@@ -20,12 +20,19 @@
 // when it is overwritten, and a copy that was torn is thrown away unread.
 //
 // Operations (from `SCE::Forge::Broadcast`, typed here over the element):
-//   publish(publisher, element) -> Published   wait-free; the entry's sequence number,
+//   publish(publisher, element{% if context.flags %}, flags{% endif %}{% if context.has_tag %}, tag{% endif %}) -> Published   wait-free; the entry's sequence number,
 //                                              or the codec's refusal of the element
 //   read(log, reader)           -> Read        wait-free; an item, nothing new, how many
 //                                              were missed, or an entry that is no element
 // A reader is `log.reader_oldest()`, `log.reader_head()` or `log.reader_at(n)`
 // and owns its cursor; the publisher is `log.publisher()`, taken once.
+{% if context.present %}
+//
+// The element's codec asks its caller for {% if context.flags %}{{ context.flags | length }} flag input(s){% endif %}{% if context.flags and context.has_tag %} and {% endif %}{% if context.has_tag %}a variant tag{% endif %}. Those are
+// part of the entry: `publish` takes them, the log stores them in the entry's context
+// words beside the bytes, and the item `read` returns holds them, so every reader
+// decodes an entry under what it was published under (ADR 0062 section 4).
+{% endif %}
 
 #pragma once
 #ifndef {{ guard }}
@@ -65,10 +72,22 @@ inline constexpr std::size_t SLOTS = RETENTION + 1;
 /// document when this header was generated.
 inline constexpr std::size_t MAX_ENCODED_BYTES = {{ max_bytes }};
 
+{% if context.present %}
+/// The words of an entry that hold what the element's codec asks its caller for
+/// (ADR 0062 section 4): {% if context.flags %}the flag inputs, one bit each in the order of the
+/// codec's signature{% endif %}{% if context.flags and context.has_tag %}, and then {% endif %}{% if context.has_tag %}one word that holds the variant's tag{% endif %}.
+inline constexpr std::size_t CONTEXT_WORDS = {{ context.context_words }};
+
+/// The 64-bit words an entry holds: one for the length of the encoded element,
+/// `CONTEXT_WORDS` for its context, then as many as `MAX_ENCODED_BYTES` bytes take
+/// at eight to a word, that is `1 + CONTEXT_WORDS + ceil(MAX_ENCODED_BYTES / 8)`.
+inline constexpr std::size_t WORDS = 1 + CONTEXT_WORDS + (MAX_ENCODED_BYTES + 7) / 8;
+{% else %}
 /// The 64-bit words an entry holds: one for the length of the encoded element,
 /// then as many as `MAX_ENCODED_BYTES` bytes take at eight to a word, that is
 /// `1 + ceil(MAX_ENCODED_BYTES / 8)`.
 inline constexpr std::size_t WORDS = 1 + (MAX_ENCODED_BYTES + 7) / 8;
+{% endif %}
 
 /// What the document requires of publish and read (`<sce:progress>`).
 inline constexpr std::string_view DECLARED_PROGRESS = "{{ declared_progress }}";
@@ -101,11 +120,42 @@ struct {{ pascal }}Published {
     }
 };
 
+{% if context.flags %}
+/// The flag inputs the element's codec takes from its caller, which the log stores
+/// with each entry: what `publish` was given is what a reader gets back, and what
+/// the entry is decoded under.
+struct {{ pascal }}Flags {
+{% for flag in context.flags %}
+    bool {{ flag.snake }} = false;
+{% endfor %}
+};
+
+/// A flag input as the codec takes it: one bit, in a byte that is 1 or 0.
+[[nodiscard]] constexpr std::uint8_t flag_input(bool on) noexcept {
+    return on ? std::uint8_t{1} : std::uint8_t{0};
+}
+
+{% endif %}
+{% if context.present %}
+/// The entry `seq`, decoded, with what it was published under; the reader now
+/// holds `seq + 1`.
+struct {{ pascal }}Item {
+    std::uint64_t seq;
+    {{ element_pascal }}Type element;
+{% if context.flags %}
+    {{ pascal }}Flags flags;
+{% endif %}
+{% if context.has_tag %}
+    std::uint8_t tag;
+{% endif %}
+};
+{% else %}
 /// The entry `seq`, decoded; the reader now holds `seq + 1`.
 struct {{ pascal }}Item {
     std::uint64_t seq;
     {{ element_pascal }}Type element;
 };
+{% endif %}
 
 /// The reader is at the head: nothing newer is published.
 struct {{ pascal }}Empty {};
@@ -135,20 +185,36 @@ using {{ pascal }}Read = std::variant<{{ pascal }}Item, {{ pascal }}Empty, {{ pa
 /// An element that encodes to more than `MAX_ENCODED_BYTES` bytes is refused by
 /// the codec (`CodecError::BufferOverflow` from the bounded sink) and nothing is
 /// published: an entry is never a truncated element.
-[[nodiscard]] inline {{ pascal }}Published publish({{ pascal }}Publisher &publisher, const {{ element_pascal }}Type &element) noexcept {
+{% if context.present %}
+///
+/// {% if context.flags %}`flags` are what the element's codec takes from its caller as flag inputs{% endif %}{% if context.flags and context.has_tag %}, and {% endif %}{% if context.has_tag %}`tag` is the variant tag its decode takes{% endif %}:
+/// they are encoded under here and stored in the entry's context words (after the
+/// length word, before the bytes), so that every reader decodes the entry under what
+/// it was published under. The log does not check that
+/// {% if context.has_tag %}`tag` is the tag of the arm `element` holds{% else %}the flags agree with `element`{% endif %}; the publisher gives what it knows, as every caller of this codec does.
+{% endif %}
+[[nodiscard]] inline {{ pascal }}Published publish({{ pascal }}Publisher &publisher, const {{ element_pascal }}Type &element{% if context.flags %}, const {{ pascal }}Flags &flags{% endif %}{% if context.has_tag %}, std::uint8_t tag{% endif %}) noexcept {
     // A whole number of words, so the buffer is never empty even for an element
     // that encodes to nothing. The sink is bounded by `MAX_ENCODED_BYTES`, not by
     // the buffer, and that bound is what refuses a longer element.
     std::array<std::uint8_t, WORDS * 8> bytes{};
     ::SCE::Forge::SpanSink sink(bytes.data(), MAX_ENCODED_BYTES);
-    if (const std::optional<::SCE::Forge::CodecError> refused = element.encode(sink)) {
+    if (const std::optional<::SCE::Forge::CodecError> refused = element.encode(sink{% for flag in context.flags %}, flag_input(flags.{{ flag.snake }}){% endfor %})) {
         return {{ pascal }}Published{refused, ::SCE::Forge::Broadcast::kNoSequence};
     }
     const std::size_t length = sink.position();
     {{ pascal }}::Entry entry{};
     entry[0] = static_cast<std::uint64_t>(length);
+{% for flag in context.flags %}
+    if (flags.{{ flag.snake }}) {
+        entry[1 + {{ flag.word }}] |= std::uint64_t{1} << {{ flag.shift }};
+    }
+{% endfor %}
+{% if context.has_tag %}
+    entry[1 + {{ context.tag_word }}] = static_cast<std::uint64_t>(tag);
+{% endif %}
     for (std::size_t index = 0; index < length; ++index) {
-        entry[1 + index / 8] |= static_cast<std::uint64_t>(bytes[index]) << (8 * (index % 8));
+        entry[{{ context.payload_start }} + index / 8] |= static_cast<std::uint64_t>(bytes[index]) << (8 * (index % 8));
     }
     return {{ pascal }}Published{std::nullopt, publisher.publish(entry)};
 }
@@ -156,6 +222,11 @@ using {{ pascal }}Read = std::variant<{{ pascal }}Item, {{ pascal }}Empty, {{ pa
 /// Read the entry at `reader`'s cursor and decode it. The runtime answers an item
 /// only after the copy it made was checked against the slot, which is what makes
 /// decoding it safe: a torn copy is `Lagged`, never decoded.
+{% if context.present %}
+///
+/// The context the entry was published with is read from its context words, handed
+/// to the codec's decode ({% if context.flags %}the flag inputs{% endif %}{% if context.flags and context.has_tag %}, then {% endif %}{% if context.has_tag %}the tag{% endif %}) and returned in the item.
+{% endif %}
 ///
 /// A stored length above `MAX_ENCODED_BYTES` is not a length this log wrote, and
 /// is `Malformed` and never a copy out of bounds. The reader has moved past that
@@ -176,14 +247,28 @@ using {{ pascal }}Read = std::variant<{{ pascal }}Item, {{ pascal }}Empty, {{ pa
     const auto length = static_cast<std::size_t>(stored);
     std::array<std::uint8_t, WORDS * 8> bytes{};
     for (std::size_t index = 0; index < length; ++index) {
-        bytes[index] = static_cast<std::uint8_t>(entry[1 + index / 8] >> (8 * (index % 8)));
+        bytes[index] = static_cast<std::uint8_t>(entry[{{ context.payload_start }} + index / 8] >> (8 * (index % 8)));
     }
+{% if context.present %}
+    // What the entry was published under: the context words are written by the typed
+    // publish alone and a torn copy is never decoded, so a flag is a bit and the tag
+    // a byte.
+{% endif %}
+{% if context.flags %}
+    {{ pascal }}Flags flags{};
+{% for flag in context.flags %}
+    flags.{{ flag.snake }} = ((entry[1 + {{ flag.word }}] >> {{ flag.shift }}) & std::uint64_t{1}) != 0;
+{% endfor %}
+{% endif %}
+{% if context.has_tag %}
+    const auto tag = static_cast<std::uint8_t>(entry[1 + {{ context.tag_word }}] & std::uint64_t{0xFF});
+{% endif %}
     ::SCE::Forge::SceCursor cursor(bytes.data(), length);
-    std::optional<{{ element_pascal }}Type> element = {{ element_pascal }}Type::decode(cursor);
+    std::optional<{{ element_pascal }}Type> element = {{ element_pascal }}Type::decode(cursor{% for flag in context.flags %}, flag_input(flags.{{ flag.snake }}){% endfor %}{% if context.has_tag %}, tag{% endif %});
     if (!element) {
         return {{ pascal }}Malformed{answer.seq};
     }
-    return {{ pascal }}Item{answer.seq, std::move(*element)};
+    return {{ pascal }}Item{answer.seq, std::move(*element){% if context.flags %}, flags{% endif %}{% if context.has_tag %}, tag{% endif %}};
 }
 
 }  // namespace SCE::Generated::{{ namespace }}

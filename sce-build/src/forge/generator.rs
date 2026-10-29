@@ -21367,6 +21367,17 @@ fn render_broadcast_log_rust(
 /// The header includes the element's own (`<element>.h`, as a queue's does), so a
 /// log is generated from a document set that holds the element's document, the
 /// route that gives the size.
+///
+/// What the element's codec asks its caller for (its flag inputs, `std::uint8_t`
+/// each on `encode` and `decode`, and the tag of a variant that has none of its
+/// own, the `std::uint8_t` that follows the flags on `decode`) is stored in
+/// context words between the length word and the bytes
+/// ([`broadcast_log_context_value`], over 64-bit words), taken by `publish` as a
+/// struct of `bool`s and a tag, and returned in the item (ADR 0062 section 4). The
+/// header then states `CONTEXT_WORDS` and
+/// `WORDS = 1 + CONTEXT_WORDS + ceil(MAX_ENCODED_BYTES / 8)`; an element with no
+/// caller input has no context word and the header it always had. The words are
+/// a `std::size_t` count, so there is no 32-bit limit on them to refuse here.
 fn render_broadcast_log_cpp(
     env: &minijinja::Environment<'_>,
     m: &crate::forge::model::BroadcastLogModel,
@@ -21391,6 +21402,7 @@ fn render_broadcast_log_cpp(
         producers => inputs.producers,
         declared_progress => inputs.declared_progress,
         runtime_dep => "sce/forge/broadcast_log.h",
+        context => broadcast_log_context_value(&inputs.element, 64),
     };
     tmpl.render(ctx).map_err(|e| {
         ForgeError::from(GenerateError::TemplateRender(format!(
