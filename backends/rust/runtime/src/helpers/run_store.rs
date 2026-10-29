@@ -93,6 +93,21 @@ pub struct RunStoreRef<'a> {
 }
 
 impl<'a> RunStoreRef<'a> {
+    /// A store kept in slices of the caller's own: the active states, the
+    /// record slots of every history at the spans the tables give them, and
+    /// how many states each history recorded, `None` before it ever did.
+    pub fn new(
+        configuration: &'a [StateId],
+        records: &'a [StateId],
+        record_lens: &'a [Option<u16>],
+    ) -> Self {
+        Self {
+            configuration,
+            records,
+            record_lens,
+        }
+    }
+
     /// The active states, in the order they were added.
     #[inline]
     pub fn configuration(self) -> &'a [StateId] {
@@ -127,7 +142,24 @@ pub struct RunStoreMut<'a> {
     record_lens: &'a mut [Option<u16>],
 }
 
-impl RunStoreMut<'_> {
+impl<'a> RunStoreMut<'a> {
+    /// A store kept in slices of the caller's own, as [`RunStoreRef::new`]
+    /// reads them; the configuration is the first `configuration_len` slots of
+    /// `configuration`.
+    pub fn new(
+        configuration: &'a mut [StateId],
+        configuration_len: &'a mut u16,
+        records: &'a mut [StateId],
+        record_lens: &'a mut [Option<u16>],
+    ) -> Self {
+        Self {
+            configuration,
+            configuration_len,
+            records,
+            record_lens,
+        }
+    }
+
     /// The store, to read.
     #[inline]
     pub fn as_ref(&self) -> RunStoreRef<'_> {

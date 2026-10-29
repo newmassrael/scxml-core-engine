@@ -71,9 +71,9 @@ use crate::hal::Hal;
 use crate::helpers::configuration::ConfigurationRejection;
 use crate::helpers::event_queue::EventQueueLike;
 use crate::helpers::microstep::{self, Behaviour, Buffers, Entered};
-use crate::helpers::run_store::RunStorage;
+use crate::helpers::run_store::{RunStorage, RunStoreMut};
 use crate::helpers::state_policy_concepts as concepts;
-use crate::helpers::tables::{EventId, HistoryId, StateId, TransitionId};
+use crate::helpers::tables::{DocumentTables, EventId, HistoryId, StateId, TransitionId};
 use crate::helpers::unique_id_generator::AUTO_SEND_ID_MAX_LEN;
 use crate::sched_send_id::ScheduledSendIdLike;
 // The HTTP module is the `http-send` feature (docs/adr/0053), which asks for
@@ -985,12 +985,10 @@ pub struct Engine<P: StatePolicy> {
     pub(crate) internal_queue: P::EventQueue,
     /// W3C SCXML Appendix D: External event queue (low priority, external sends).
     pub(crate) external_queue: P::EventQueue,
-    /// Whether the engine is currently running (set false by `stop()` and final state).
-    pub(crate) is_running: bool,
-    /// §scxml-D-enterStates: the top-level `<final>` the run ended in — set
-    /// on entering it, cleared when a run starts. See
-    /// [`terminal_state`](Self::terminal_state).
-    pub(crate) terminal_state: Option<P::State>,
+    /// What the main event loop decides on — whether the run goes on, where it
+    /// ended, the budgets — as plain numbers, so the loop compiled once for
+    /// every program reads it directly (docs/adr/0064).
+    pub(crate) main_loop: LoopState,
     /// §scxml-D-exitInterpreter has run for this run: the configuration is
     /// empty. `current_state` still names the state the run was last in (the
     /// type has no "none"), so [`get_active_states`](Self::get_active_states)
@@ -1128,9 +1126,6 @@ pub struct Engine<P: StatePolicy> {
     /// answers five hundred separate failures cleanly never sets it twice in a
     /// row, and one whose error handler fails sets it on every link.
     pub(crate) handling_error_event: bool,
-    /// How many links the current error chain has, reset the moment the drain
-    /// does anything else — see [`error_cascade_events`](Self::error_cascade_events).
-    pub(crate) error_cascade_depth: u32,
     /// `error.*` events refused because the chain that raised them had reached
     /// [`MAX_ERROR_CASCADE_DEPTH`] — see
     /// [`error_cascade_events`](Self::error_cascade_events).
@@ -1152,12 +1147,6 @@ pub struct Engine<P: StatePolicy> {
     /// `last_truncated_macrostep_state`.
     #[cfg(feature = "macrostep-diagnostics")]
     pub(crate) last_truncated_macrostep_state: Option<P::State>,
-    /// External events one invocation of the main event loop may take — see
-    /// [`max_external_events_per_call`](Self::max_external_events_per_call).
-    ///
-    /// Present on every profile: it is the BOUND, not the report, so it does
-    /// not wait for the `macrostep-diagnostics` feature.
-    pub(crate) max_external_events_per_call: u32,
     /// Invocations of the main event loop this engine handed back with an
     /// external event still queued — see
     /// [`truncated_event_chains`](Self::truncated_event_chains).
@@ -1171,24 +1160,6 @@ pub struct Engine<P: StatePolicy> {
     /// that way — see [`last_truncated_event`](Self::last_truncated_event).
     #[cfg(feature = "macrostep-diagnostics")]
     pub(crate) last_truncated_event: Option<P::Event>,
-    /// Microsteps taken by the macrostep now in progress, against
-    /// [`MAX_MACROSTEP_MICROSTEPS`].
-    ///
-    /// A field rather than a local, for the reason Appendix D's loop is one loop:
-    /// the eventless branch and the internal-event branch take turns inside a
-    /// single macrostep, so a counter that lives in either one alone is reset by
-    /// the other and bounds nothing. Cleared where a macrostep begins, which is
-    /// the external dequeue.
-    pub(crate) macrostep_microsteps_taken: usize,
-    /// Whether the macrostep now in progress has already been stopped at
-    /// [`MAX_MACROSTEP_MICROSTEPS`].
-    ///
-    /// Every host call runs §scxml-D-mainEventLoop again, so without this the
-    /// ceiling is not a ceiling: each call would re-enter the inner loop with
-    /// the chain it just refused, walk it to the budget again, and count each
-    /// refusal separately. Cleared where the algorithm's main event loop starts
-    /// a macrostep, which is the external dequeue.
-    pub(crate) macrostep_truncated: bool,
     /// §scxml-5.5 + 6.3.1: Donedata payload evaluated on top-level `<final>`,
     /// lifted onto `done.invoke.<id>._event.data` by the invoking parent.
     ///
@@ -1230,8 +1201,7 @@ macro_rules! engine_initial_fields {
             policy: $policy,
             internal_queue: $queue,
             external_queue: $queue,
-            is_running: false,
-            terminal_state: None,
+            main_loop: LoopState::NEW,
             interpreter_exited: false,
             current_event_from_external_queue: false,
             #[cfg(feature = "std")]
@@ -1266,20 +1236,16 @@ macro_rules! engine_initial_fields {
             unhandled_error_events: 0,
             last_unhandled_error: None,
             handling_error_event: false,
-            error_cascade_depth: 0,
             error_cascade_events: 0,
             last_error_cascade_event: None,
             #[cfg(feature = "macrostep-diagnostics")]
             truncated_macrosteps: 0,
             #[cfg(feature = "macrostep-diagnostics")]
             last_truncated_macrostep_state: None,
-            max_external_events_per_call: MAX_EXTERNAL_EVENTS_PER_CALL,
             #[cfg(feature = "macrostep-diagnostics")]
             truncated_event_chains: 0,
             #[cfg(feature = "macrostep-diagnostics")]
             last_truncated_event: None,
-            macrostep_microsteps_taken: 0,
-            macrostep_truncated: false,
             donedata_at_final: SceString::new(),
             auto_send_seq: 0,
         }
@@ -1617,7 +1583,7 @@ impl<P: StatePolicy> Engine<P> {
         }
         microstep::exit_interpreter(P::TABLES, &mut EngineHost { engine: self }, scratch);
         self.interpreter_exited = true;
-        self.is_running = false;
+        self.main_loop.is_running = false;
     }
 
     /// Execute the policy's `initialize_data_model`.
@@ -1670,8 +1636,8 @@ impl<P: StatePolicy> Engine<P> {
     }
 
     fn initialize_in_turn(&mut self) {
-        self.is_running = true;
-        self.terminal_state = None;
+        self.main_loop.is_running = true;
+        self.main_loop.terminal_state = None;
         self.interpreter_exited = false;
         #[cfg(feature = "std")]
         self.late_bound_states.clear();
@@ -1798,11 +1764,12 @@ impl<P: StatePolicy> Engine<P> {
         }
         // A configuration restored AT a top-level `<final>` is a run that has
         // already ended there; any other is still running.
-        self.terminal_state = if P::is_final_state(current) && P::get_parent(current).is_none() {
-            Some(current)
-        } else {
-            None
-        };
+        self.main_loop.terminal_state =
+            if P::is_final_state(current) && P::get_parent(current).is_none() {
+                Some(P::state_id(current))
+            } else {
+                None
+            };
 
         // §scxml-3.4: the configuration is the engine's, kept as numbers.
         let mut store = self.run_store.view_mut();
@@ -1811,7 +1778,7 @@ impl<P: StatePolicy> Engine<P> {
             store.add(P::state_id(state));
         }
 
-        self.is_running = true;
+        self.main_loop.is_running = true;
         Ok(())
     }
 
@@ -1907,7 +1874,7 @@ impl<P: StatePolicy> Engine<P> {
         // clock whatever the engine's lifecycle says, and the count exists to
         // find hosts that never call it at all.
         self.tick_has_run = true;
-        if !self.is_running {
+        if !self.main_loop.is_running {
             return;
         }
         if self.is_in_final_state() {
@@ -1966,7 +1933,7 @@ impl<P: StatePolicy> Engine<P> {
             }
             if let Some((due, head)) = self.scheduler.next_ready_at_with_event(now) {
                 if due == now {
-                    if popped_due_at_reading >= self.max_external_events_per_call {
+                    if popped_due_at_reading >= self.main_loop.max_external_events_per_call {
                         let head = head.copied();
                         self.record_truncated_event_chain(head);
                         break;
@@ -2037,7 +2004,7 @@ impl<P: StatePolicy> Engine<P> {
             // The macrostep this event drives may `<cancel>` a later one, so
             // the queue is re-consulted after it rather than before.
             self.run_main_event_loop();
-            if !self.is_running || self.is_in_final_state() {
+            if !self.main_loop.is_running || self.is_in_final_state() {
                 break;
             }
         }
@@ -2059,15 +2026,15 @@ impl<P: StatePolicy> Engine<P> {
     /// ended — every active state's `<onexit>` runs, innermost first, and the
     /// configuration ends empty. A run that already ended has been exited.
     pub fn stop(&mut self) {
-        if self.is_running {
+        if self.main_loop.is_running {
             self.exit_interpreter();
         }
-        self.is_running = false;
+        self.main_loop.is_running = false;
     }
 
     /// Whether the engine is running (not stopped or awaiting completion).
     pub fn is_running(&self) -> bool {
-        self.is_running
+        self.main_loop.is_running
     }
 
     /// How many macrosteps ran on a scheduler-driven machine before any
@@ -2438,7 +2405,7 @@ impl<P: StatePolicy> Engine<P> {
     /// The most external events one invocation of the main event loop may take.
     /// Present on every profile: it is the bound, not the report.
     pub fn max_external_events_per_call(&self) -> u32 {
-        self.max_external_events_per_call
+        self.main_loop.max_external_events_per_call
     }
 
     /// Let a host choose the budget of one invocation. A host that hands the
@@ -2450,7 +2417,7 @@ impl<P: StatePolicy> Engine<P> {
     /// run, not a stricter one. The contract refuses it, and here the type does:
     /// a [`NonZeroU32`](core::num::NonZeroU32) cannot hold it.
     pub fn set_max_external_events_per_call(&mut self, limit: core::num::NonZeroU32) {
-        self.max_external_events_per_call = limit.get();
+        self.main_loop.max_external_events_per_call = limit.get();
     }
 
     /// Whether the macrostep the last host call drove was stopped at
@@ -2464,7 +2431,7 @@ impl<P: StatePolicy> Engine<P> {
     /// the configuration a stopped macrostep left for a stable one (the
     /// Kotlin snapshot's `truncated`).
     pub fn last_macrostep_truncated(&self) -> bool {
-        self.macrostep_truncated
+        self.main_loop.macrostep_truncated
     }
 
     /// Current active (leaf) state.
@@ -2541,7 +2508,7 @@ impl<P: StatePolicy> Engine<P> {
     /// invoked child. The same answer as
     /// [`terminal_state`](Self::terminal_state)`().is_some()`.
     pub fn is_in_final_state(&self) -> bool {
-        self.terminal_state.is_some()
+        self.main_loop.terminal_state.is_some()
     }
 
     /// The top-level `<final>` the run ended in (§scxml-D-enterStates), or
@@ -2552,7 +2519,7 @@ impl<P: StatePolicy> Engine<P> {
     /// holds afterwards — Appendix D's exitInterpreter leaves the
     /// configuration empty.
     pub fn terminal_state(&self) -> Option<P::State> {
-        self.terminal_state
+        self.main_loop.terminal_state.map(P::state_of)
     }
 
     /// Appendix D's `s.isFirstEntry`, taken (§scxml-D-enterStates).
@@ -2636,8 +2603,9 @@ impl<P: StatePolicy> Engine<P> {
         if self.handling_error_event
             && crate::helpers::event_matching::is_error_event(P::get_event_name(event.event))
         {
-            self.error_cascade_depth = self.error_cascade_depth.saturating_add(1);
-            if self.error_cascade_depth >= MAX_ERROR_CASCADE_DEPTH {
+            self.main_loop.error_cascade_depth =
+                self.main_loop.error_cascade_depth.saturating_add(1);
+            if self.main_loop.error_cascade_depth >= MAX_ERROR_CASCADE_DEPTH {
                 self.error_cascade_events = self.error_cascade_events.saturating_add(1);
                 self.last_error_cascade_event = Some(event.event);
                 if self.error_cascade_events == 1 {
@@ -2924,7 +2892,7 @@ impl<P: StatePolicy> Engine<P> {
     ///
     /// Matches C++ `processEvent(Event)`.
     pub fn process_event(&mut self, event: P::Event) {
-        if !self.is_running {
+        if !self.main_loop.is_running {
             // Refused rather than queued, so the drain in
             // `run_main_event_loop` never sees it — which is why the count is
             // taken here as well as there. See
@@ -2940,7 +2908,7 @@ impl<P: StatePolicy> Engine<P> {
     ///
     /// Matches C++ `processEvent(Event, const EventMetadata&)`.
     pub fn process_event_with_meta(&mut self, event: P::Event, metadata: EventMetadata) {
-        if !self.is_running {
+        if !self.main_loop.is_running {
             // Same refusal as `process_event`, same reason it is counted here.
             self.note_unseen_event(event);
             return;
@@ -3483,7 +3451,7 @@ impl<P: StatePolicy> Engine<P> {
     /// If the engine has already been initialized.
     pub fn set_clock(&mut self, clock: SceClock) {
         assert!(
-            !self.is_running,
+            !self.main_loop.is_running,
             "Engine::set_clock must be called before initialize(): this engine has \
              already armed its entry configuration against the previous clock, and \
              deadlines from two clocks do not compare"
@@ -4760,7 +4728,7 @@ impl<P: StatePolicy> Engine<P> {
     ))]
     pub fn run_until_completion(&mut self, timeout: Duration, poll_interval: Duration) -> bool {
         // W3C SCXML: if already stopped but reached final state during initialize(), return true
-        if !self.is_running {
+        if !self.main_loop.is_running {
             return self.is_in_final_state();
         }
 
@@ -4816,8 +4784,14 @@ impl<P: StatePolicy> Engine<P> {
         // One workspace for the whole loop: every microstep it takes borrows it
         // in turn, and it is gone when the call returns (docs/adr/0056 §4).
         let mut workspace = P::Workspace::default();
-        let (mut enabled, scratch) = workspace.split();
-        run_main_event_loop(&mut EngineHost { engine: self }, &mut enabled, scratch);
+        let (enabled, scratch) = workspace.split();
+        Turn {
+            host: &mut EngineHost { engine: self },
+            tables: P::TABLES,
+            enabled,
+            scratch,
+        }
+        .run_main_event_loop();
     }
 
     /// Say that a call was handed back with work still waiting: the count, and
@@ -4831,20 +4805,6 @@ impl<P: StatePolicy> Engine<P> {
         }
         #[cfg(not(feature = "macrostep-diagnostics"))]
         let _ = head;
-    }
-
-    /// Stop the macrostep now in progress at [`MAX_MACROSTEP_MICROSTEPS`], from
-    /// whichever branch of the inner loop found the budget spent, naming
-    /// `stopped_in` — the state the machine is standing in, which is on the
-    /// walk that cannot end, rather than one the refused microstep would have
-    /// entered.
-    fn refuse_macrostep(&mut self, stopped_in: P::State) {
-        self.record_truncated_macrostep(stopped_in);
-        #[cfg(feature = "macrostep-diagnostics")]
-        sce_log_error!(
-            "Engine::complete_macrostep: macrostep still going after {} microsteps; stopped",
-            MAX_MACROSTEP_MICROSTEPS
-        );
     }
 
     /// §scxml-D-mainEventLoop: take one event off the internal queue and bind it
@@ -4963,8 +4923,8 @@ impl<P: StatePolicy> Engine<P> {
         // looked at the event the host sent to get it out. The refused events
         // stay queued either way — this is where the budget that drains them
         // comes back.
-        self.macrostep_truncated = false;
-        self.macrostep_microsteps_taken = 0;
+        self.main_loop.macrostep_truncated = false;
+        self.main_loop.macrostep_microsteps_taken = 0;
         // §scxml-5.10.1: this event came off the external queue.
         self.current_event_from_external_queue = true;
         {
@@ -5052,31 +5012,27 @@ impl<P: StatePolicy> Engine<P> {
         self.policy.clear_event_metadata();
     }
 
-    /// Publish a macrostep this engine stopped short, from whichever branch of
-    /// Appendix D's inner loop ran out of budget.
+    /// Publish a macrostep the main loop stopped short at
+    /// [`MAX_MACROSTEP_MICROSTEPS`], from whichever branch of Appendix D's inner
+    /// loop ran out of budget, naming the state the machine is standing in —
+    /// on the walk that cannot end, rather than one the refused microstep would
+    /// have entered.
     ///
-    /// One function, two callers, for the reason the budget is one number: a
-    /// host reads a macrostep that did not reach a stable configuration, and
-    /// the branch it died in is a detail of the document, not of the contract.
-    /// Two copies of this would be two chances for one of them to stop setting
-    /// the flag that keeps the same chain from being handed a second budget.
-    ///
-    /// `macrostep_truncated` is set on BOTH sides of the feature gate below,
-    /// and that is the line between the bound and its report. The flag is what
-    /// stops the drain re-entering a chain it already refused — remove it and
-    /// the engine spins. The counter and the state snapshot are what a host
-    /// READS, and they are kept only with the `macrostep-diagnostics` feature,
-    /// which `default` carries and a bare-metal crate asks for when it reads
-    /// them (see this crate's Cargo.toml for why it is in `default`).
-    pub(crate) fn record_truncated_macrostep(&mut self, state: P::State) {
-        #[cfg(feature = "macrostep-diagnostics")]
-        {
-            self.truncated_macrosteps = self.truncated_macrosteps.saturating_add(1);
-            self.last_truncated_macrostep_state = Some(state);
-        }
-        #[cfg(not(feature = "macrostep-diagnostics"))]
-        let _ = state;
-        self.macrostep_truncated = true;
+    /// The report only. The bound is [`LoopState::macrostep_truncated`], which
+    /// the loop sets itself in every profile: it is what stops the drain
+    /// re-entering a chain it already refused — without it the engine spins.
+    /// The counter and the state snapshot are what a host READS, and they are
+    /// kept only with the `macrostep-diagnostics` feature, which `default`
+    /// carries and a bare-metal crate asks for when it reads them (see this
+    /// crate's Cargo.toml for why it is in `default`).
+    #[cfg(feature = "macrostep-diagnostics")]
+    fn report_truncated_macrostep(&mut self) {
+        self.truncated_macrosteps = self.truncated_macrosteps.saturating_add(1);
+        self.last_truncated_macrostep_state = Some(self.current_state);
+        sce_log_error!(
+            "Engine::complete_macrostep: macrostep still going after {} microsteps; stopped",
+            MAX_MACROSTEP_MICROSTEPS
+        );
     }
 
     // ════════════════════════════════════════
@@ -5138,30 +5094,8 @@ struct EngineHost<'e, P: StatePolicy> {
 }
 
 impl<P: StatePolicy> Behaviour for EngineHost<'_, P> {
-    fn configuration(&self) -> &[StateId] {
-        self.engine.run_store.view().configuration()
-    }
-
-    fn add_to_configuration(&mut self, state: StateId) -> bool {
-        self.engine.run_store.view_mut().add(state)
-    }
-
-    fn remove_from_configuration(&mut self, state: StateId) {
-        self.engine.run_store.view_mut().remove(state);
-    }
-
-    fn history_value(&self, history: HistoryId) -> Option<&[StateId]> {
-        self.engine
-            .run_store
-            .view()
-            .history_value(P::TABLES, history)
-    }
-
-    fn record_history(&mut self, history: HistoryId, states: &[StateId]) {
-        self.engine
-            .run_store
-            .view_mut()
-            .record_history(P::TABLES, history, states);
+    fn store(&mut self) -> RunStoreMut<'_> {
+        self.engine.run_store.view_mut()
     }
 
     fn first_enabled_transition(&mut self, state: StateId, event: EventId) -> Option<TransitionId> {
@@ -5179,8 +5113,8 @@ impl<P: StatePolicy> Behaviour for EngineHost<'_, P> {
             .with_policy(|policy, engine| policy.execute_transition_content(transition, engine));
     }
 
-    fn enter_state(&mut self, state: StateId, is_default_entry: bool) {
-        let state = P::state_of(state);
+    fn enter_state(&mut self, id: StateId, is_default_entry: bool) {
+        let state = P::state_of(id);
         self.engine.with_policy(|policy, engine| {
             policy.execute_entry_actions(state, engine, is_default_entry)
         });
@@ -5188,8 +5122,9 @@ impl<P: StatePolicy> Behaviour for EngineHost<'_, P> {
         // element ends the run. Recorded as the run's terminal state, so
         // "where did it end" is a fact the engine keeps rather than a reading
         // of the configuration.
-        if P::is_final_state(state) && P::get_parent(state).is_none() {
-            self.engine.terminal_state = Some(state);
+        let row = P::TABLES.state(id);
+        if row.kind == crate::helpers::tables::StateKind::Final && row.parent.is_none() {
+            self.engine.main_loop.terminal_state = Some(id);
         }
     }
 
@@ -5209,6 +5144,64 @@ impl<P: StatePolicy> Behaviour for EngineHost<'_, P> {
 // types can do — take a typed event off its queue and bind it as `_event`,
 // count it, start its invocations — is the hooks `EngineHost` implements.
 // ════════════════════════════════════════
+
+/// What the main event loop reads and writes as it runs, the same for every
+/// machine: a field of the engine, which the loop holds through
+/// [`MainLoop::state`] and not through a hook per question.
+#[derive(Debug, Clone)]
+pub(crate) struct LoopState {
+    /// Whether the engine is running: set when a run starts, cleared by
+    /// `stop()`.
+    pub(crate) is_running: bool,
+    /// The top-level `<final>` the run ended in, as Appendix D's enterStates
+    /// ends a run — set on entering it, cleared when a run starts. See
+    /// [`Engine::terminal_state`].
+    pub(crate) terminal_state: Option<StateId>,
+    /// Microsteps taken by the macrostep now in progress, against
+    /// [`MAX_MACROSTEP_MICROSTEPS`].
+    ///
+    /// A field rather than a local, for the reason Appendix D's loop is one loop:
+    /// the eventless branch and the internal-event branch take turns inside a
+    /// single macrostep, so a counter that lives in either one alone is reset by
+    /// the other and bounds nothing. Cleared where a macrostep begins, which is
+    /// the external dequeue.
+    pub(crate) macrostep_microsteps_taken: usize,
+    /// Whether the macrostep now in progress has already been stopped at
+    /// [`MAX_MACROSTEP_MICROSTEPS`].
+    ///
+    /// Every host call runs §scxml-D-mainEventLoop again, so without this the
+    /// ceiling is not a ceiling: each call would re-enter the inner loop with
+    /// the chain it just refused, walk it to the budget again, and count each
+    /// refusal separately. Cleared where the algorithm's main event loop starts
+    /// a macrostep, which is the external dequeue.
+    pub(crate) macrostep_truncated: bool,
+    /// How many links the current error chain has, reset the moment the drain
+    /// does anything else — see [`Engine::error_cascade_events`].
+    pub(crate) error_cascade_depth: u32,
+    /// External events one invocation of the main event loop may take — see
+    /// [`Engine::max_external_events_per_call`].
+    ///
+    /// Present on every profile: it is the BOUND, not the report, so it does
+    /// not wait for the `macrostep-diagnostics` feature.
+    pub(crate) max_external_events_per_call: u32,
+}
+
+impl LoopState {
+    /// A run not yet started.
+    pub(crate) const NEW: Self = Self {
+        is_running: false,
+        terminal_state: None,
+        macrostep_microsteps_taken: 0,
+        macrostep_truncated: false,
+        error_cascade_depth: 0,
+        max_external_events_per_call: MAX_EXTERNAL_EVENTS_PER_CALL,
+    };
+
+    /// Whether the run goes on: started, not stopped, not ended in a final.
+    pub(crate) fn goes_on(&self) -> bool {
+        self.is_running && self.terminal_state.is_none()
+    }
+}
 
 /// An event a hook took off a queue and bound as `_event`, as the loop offers
 /// it to the configuration.
@@ -5239,28 +5232,17 @@ pub(crate) enum ExternalEvent {
 trait MainLoop {
     /// The same engine as Appendix D's procedures drive it.
     fn behaviour(&mut self) -> &mut dyn Behaviour;
-    /// The document's tables.
-    fn tables(&self) -> &'static crate::helpers::tables::DocumentTables;
+    /// What the loop decides on, which it reads and writes itself.
+    fn state(&mut self) -> &mut LoopState;
     /// The machine's "no event", which selects eventless transitions.
     fn null_event(&self) -> EventId;
     /// Bind `event` as the `_event` the guards of the coming selection read.
     fn bind_current_event(&mut self, event: EventId);
     /// Point the current state where a microstep or an entry left it.
     fn settle(&mut self, entered: Entered);
-    /// Whether the run goes on: started, not stopped, not ended in a final.
-    fn is_running(&self) -> bool;
-    /// Whether the run entered a top-level `<final>`.
-    fn is_in_final_state(&self) -> bool;
-    /// Whether this macrostep was stopped at its budget.
-    fn macrostep_truncated(&self) -> bool;
-    /// The microsteps this macrostep has taken.
-    fn microsteps_taken(&self) -> usize;
-    /// Count one more microstep of this macrostep.
-    fn count_microstep(&mut self);
-    /// Stop this macrostep at its budget, and say so.
-    fn refuse_macrostep(&mut self);
-    /// The internal queue emptied: the error chain, if any, is over.
-    fn end_error_cascade(&mut self);
+    /// Publish the macrostep the loop just stopped at its budget.
+    #[cfg(feature = "macrostep-diagnostics")]
+    fn report_truncated_macrostep(&mut self);
     /// Whether an internal event waits.
     fn has_internal_event(&self) -> bool;
     /// Take the next internal event and bind it.
@@ -5269,10 +5251,9 @@ trait MainLoop {
     fn end_internal_event(&mut self, taken: TakenEvent, outcome: EventOutcome);
     /// Whether an external event waits.
     fn has_external_event(&self) -> bool;
-    /// How many external events one call of the loop may take.
-    fn external_budget(&self) -> u32;
-    /// The call is handed back with external events still queued.
-    fn record_truncated_event_chain(&mut self);
+    /// Publish that the call is handed back with external events still queued.
+    #[cfg(feature = "macrostep-diagnostics")]
+    fn report_truncated_event_chain(&mut self);
     /// Take the next external event and bind it.
     fn process_next_external_event(&mut self) -> ExternalEvent;
     /// What an external event came to.
@@ -5289,8 +5270,8 @@ impl<P: StatePolicy> MainLoop for EngineHost<'_, P> {
         self
     }
 
-    fn tables(&self) -> &'static crate::helpers::tables::DocumentTables {
-        P::TABLES
+    fn state(&mut self) -> &mut LoopState {
+        &mut self.engine.main_loop
     }
 
     fn null_event(&self) -> EventId {
@@ -5307,33 +5288,9 @@ impl<P: StatePolicy> MainLoop for EngineHost<'_, P> {
         self.engine.settle_current_state(entered);
     }
 
-    fn is_running(&self) -> bool {
-        self.engine.is_running
-    }
-
-    fn is_in_final_state(&self) -> bool {
-        self.engine.is_in_final_state()
-    }
-
-    fn macrostep_truncated(&self) -> bool {
-        self.engine.macrostep_truncated
-    }
-
-    fn microsteps_taken(&self) -> usize {
-        self.engine.macrostep_microsteps_taken
-    }
-
-    fn count_microstep(&mut self) {
-        self.engine.macrostep_microsteps_taken += 1;
-    }
-
-    fn refuse_macrostep(&mut self) {
-        let stopped_in = self.engine.current_state;
-        self.engine.refuse_macrostep(stopped_in);
-    }
-
-    fn end_error_cascade(&mut self) {
-        self.engine.error_cascade_depth = 0;
+    #[cfg(feature = "macrostep-diagnostics")]
+    fn report_truncated_macrostep(&mut self) {
+        self.engine.report_truncated_macrostep();
     }
 
     fn has_internal_event(&self) -> bool {
@@ -5352,11 +5309,8 @@ impl<P: StatePolicy> MainLoop for EngineHost<'_, P> {
         self.engine.external_queue.has_events()
     }
 
-    fn external_budget(&self) -> u32 {
-        self.engine.max_external_events_per_call
-    }
-
-    fn record_truncated_event_chain(&mut self) {
+    #[cfg(feature = "macrostep-diagnostics")]
+    fn report_truncated_event_chain(&mut self) {
         let head = self
             .engine
             .external_queue
@@ -5388,230 +5342,255 @@ impl<P: StatePolicy> MainLoop for EngineHost<'_, P> {
 
     fn end_run(&mut self, scratch: microstep::Scratch<'_>) {
         self.engine.record_unseen_external_events();
-        if self.engine.is_in_final_state() {
+        if self.engine.main_loop.terminal_state.is_some() {
             self.engine.exit_interpreter_on(scratch);
         }
     }
 }
 
-/// §scxml-D-mainEventLoop, for any machine: complete the macrostep, start the
-/// invocations it entered, take one external event, and again, until the run
-/// ends, the external queue is empty, or the call's budget of external events
-/// is spent.
-fn run_main_event_loop(
-    host: &mut dyn MainLoop,
-    enabled: &mut microstep::SliceVec<'_, TransitionId>,
-    mut scratch: microstep::Scratch<'_>,
-) {
-    // External events this invocation has taken off the queue, against
-    // `max_external_events_per_call`. A local, because the budget is one
-    // invocation's: a cut leaves the queue as it is and the next invocation
-    // gets a budget of its own (ARCHITECTURE.md "External-Event Budget").
-    let mut taken: u32 = 0;
-    loop {
-        // §scxml-D-mainEventLoop: complete the macrostep on eventless
-        // transitions and internal events alone.
-        complete_macrostep(host, enabled, scratch.reborrow());
+/// One call of the main event loop: the engine it drives, the document it
+/// reads, and the buffers the call lends every microstep it takes. Held by
+/// the procedures below through one pointer, so what they share is not handed
+/// from call to call.
+struct Turn<'a> {
+    host: &'a mut dyn MainLoop,
+    tables: &'static DocumentTables,
+    enabled: microstep::SliceVec<'a, TransitionId>,
+    scratch: microstep::Scratch<'a>,
+}
 
-        if !host.is_running() || host.is_in_final_state() {
-            // §scxml-D-mainEventLoop ends here, and whatever the host put
-            // on the external queue ends with it. That is the clause: a
-            // machine that has reached a top-level final state exits the
-            // interpreter, and events that arrive afterwards are not
-            // processed. Saying nothing about it is not the clause.
+impl Turn<'_> {
+    /// §scxml-D-mainEventLoop, for any machine: complete the macrostep, start
+    /// the invocations it entered, take one external event, and again, until
+    /// the run ends, the external queue is empty, or the call's budget of
+    /// external events is spent.
+    fn run_main_event_loop(&mut self) {
+        // External events this invocation has taken off the queue, against
+        // `max_external_events_per_call`. A local, because the budget is one
+        // invocation's: a cut leaves the queue as it is and the next invocation
+        // gets a budget of its own (ARCHITECTURE.md "External-Event Budget").
+        let mut taken: u32 = 0;
+        loop {
+            // §scxml-D-mainEventLoop: complete the macrostep on eventless
+            // transitions and internal events alone.
+            self.complete_macrostep();
+
+            if !self.host.state().goes_on() {
+                // §scxml-D-mainEventLoop ends here, and whatever the host put
+                // on the external queue ends with it. That is the clause: a
+                // machine that has reached a top-level final state exits the
+                // interpreter, and events that arrive afterwards are not
+                // processed. Saying nothing about it is not the clause.
+                //
+                // The host cannot tell this outcome from the two it already
+                // has. `discarded_external_events` counts an event that WAS
+                // dequeued and matched nothing; a guard that evaluated false
+                // leaves no count at all. All three leave the configuration
+                // alone, so "I sent it and nothing happened" has three
+                // explanations and the host could distinguish none of them —
+                // measured 2026-08-22 against a consumer that spent four
+                // attempts rewriting a guard that was never evaluated.
+                //
+                // §scxml-D-exitInterpreter: the loop is over because the run
+                // entered a top-level final, so every state still active is
+                // exited now — before the completion callback tells a parent.
+                self.host.end_run(self.scratch.reborrow());
+                break;
+            }
+
+            // §scxml-6.4: invokes for states entered during this macrostep.
+            self.host.start_pending_invokes();
+
+            // §scxml-D-mainEventLoop: invoking may have raised internal error
+            // events (and a child that completed synchronously may already
+            // have raised `done.invoke`); handle them before touching the
+            // external queue.
             //
-            // The host cannot tell this outcome from the two it already
-            // has. `discarded_external_events` counts an event that WAS
-            // dequeued and matched nothing; a guard that evaluated false
-            // leaves no count at all. All three leave the configuration
-            // alone, so "I sent it and nothing happened" has three
-            // explanations and the host could distinguish none of them —
-            // measured 2026-08-22 against a consumer that spent four
-            // attempts rewriting a guard that was never evaluated.
-            //
-            // §scxml-D-exitInterpreter: the loop is over because the run
-            // entered a top-level final, so every state still active is
-            // exited now — before the completion callback tells a parent.
-            host.end_run(scratch);
-            break;
-        }
+            // Not when this macrostep was already stopped at the ceiling: the
+            // queue is non-empty *because* the drain refused it, so looping
+            // back is a spin that takes no microstep, logs nothing, and never
+            // ends. Falling through to the external dequeue instead is what
+            // keeps a machine inside an endless chain reachable at all — the
+            // event that rescues it is on that queue, and the clause's
+            // internal-first priority would otherwise hold it behind a chain
+            // that never ends.
+            if !self.host.state().macrostep_truncated && self.host.has_internal_event() {
+                continue;
+            }
 
-        // §scxml-6.4: invokes for states entered during this macrostep.
-        host.start_pending_invokes();
-
-        // §scxml-D-mainEventLoop: invoking may have raised internal error
-        // events (and a child that completed synchronously may already
-        // have raised `done.invoke`); handle them before touching the
-        // external queue.
-        //
-        // Not when this macrostep was already stopped at the ceiling: the
-        // queue is non-empty *because* the drain refused it, so looping
-        // back is a spin that takes no microstep, logs nothing, and never
-        // ends. Falling through to the external dequeue instead is what
-        // keeps a machine inside an endless chain reachable at all — the
-        // event that rescues it is on that queue, and the clause's
-        // internal-first priority would otherwise hold it behind a chain
-        // that never ends.
-        if !host.macrostep_truncated() && host.has_internal_event() {
-            continue;
-        }
-
-        if !host.has_external_event() {
-            break;
-        }
-        // Every macrostep this loop runs ends, so `MAX_MACROSTEP_MICROSTEPS`
-        // bounds none of this: a machine that sends itself an external event
-        // on every one never empties the queue. Past the budget the queue is
-        // left exactly as it is and the call hands back, counted.
-        if taken >= host.external_budget() {
-            host.record_truncated_event_chain();
-            break;
-        }
-        taken += 1;
-        match host.process_next_external_event() {
-            ExternalEvent::Empty => break,
-            #[cfg(feature = "std")]
-            ExternalEvent::Refused => {}
-            ExternalEvent::Taken(event) => {
-                let outcome = take_event(host, event.event, enabled, scratch.reborrow());
-                host.end_external_event(event, outcome);
+            if !self.host.has_external_event() {
+                break;
+            }
+            // Every macrostep this loop runs ends, so `MAX_MACROSTEP_MICROSTEPS`
+            // bounds none of this: a machine that sends itself an external event
+            // on every one never empties the queue. Past the budget the queue is
+            // left exactly as it is and the call hands back, counted.
+            if taken >= self.host.state().max_external_events_per_call {
+                #[cfg(feature = "macrostep-diagnostics")]
+                self.host.report_truncated_event_chain();
+                break;
+            }
+            taken += 1;
+            match self.host.process_next_external_event() {
+                ExternalEvent::Empty => break,
+                #[cfg(feature = "std")]
+                ExternalEvent::Refused => {}
+                ExternalEvent::Taken(event) => {
+                    let outcome = self.take_event(event.event);
+                    self.host.end_external_event(event, outcome);
+                }
             }
         }
     }
-}
 
-/// §scxml-D-mainEventLoop's inner loop: take microsteps on eventless
-/// transitions and internal events until nothing is enabled by NULL and the
-/// internal queue is empty — the stable configuration a macrostep ends in —
-/// or until the macrostep's budget is spent.
-///
-/// ```text
-/// while running and not macrostepDone:
-///     enabledTransitions = selectEventlessTransitions()
-///     if enabledTransitions.isEmpty():
-///         if internalQueue.isEmpty():
-///             macrostepDone = true
-///         else:
-///             internalEvent = internalQueue.dequeue()
-///             datamodel["_event"] = internalEvent
-///             enabledTransitions = selectTransitions(internalEvent)
-///     if not enabledTransitions.isEmpty():
-///         microstep(enabledTransitions.toList())
-/// ```
-///
-/// Eventless transitions are selected again after EVERY microstep, whatever
-/// took it. A targetless transition that only ran content can enable one as
-/// surely as a transition that entered a state, and the internal event
-/// queued behind it waits until that has been asked.
-///
-/// One budget for both branches — see [`MAX_MACROSTEP_MICROSTEPS`]. A
-/// `<raise>` answered by a transition that raises again is a macrostep that
-/// never ends, exactly as a cyclic eventless transition is; until
-/// 2026-08-20 the internal branch had no ceiling in any of the seven
-/// engines here, so that document did not return at all.
-fn complete_macrostep(
-    host: &mut dyn MainLoop,
-    enabled: &mut microstep::SliceVec<'_, TransitionId>,
-    mut scratch: microstep::Scratch<'_>,
-) {
-    // §scxml-D-enterStates sets `running = false` on entering a top-level
-    // `<final>`; this engine keeps `is_running` for the host's `stop()` and
-    // asks the configuration for the other half.
-    while host.is_running() && !host.is_in_final_state() && !host.macrostep_truncated() {
-        match take_eventless_transitions(host, enabled, scratch.reborrow()) {
-            Eventless::Taken => continue,
-            Eventless::Refused => return,
-            Eventless::NoneEnabled => {}
+    /// §scxml-D-mainEventLoop's inner loop: take microsteps on eventless
+    /// transitions and internal events until nothing is enabled by NULL and the
+    /// internal queue is empty — the stable configuration a macrostep ends in —
+    /// or until the macrostep's budget is spent.
+    ///
+    /// ```text
+    /// while running and not macrostepDone:
+    ///     enabledTransitions = selectEventlessTransitions()
+    ///     if enabledTransitions.isEmpty():
+    ///         if internalQueue.isEmpty():
+    ///             macrostepDone = true
+    ///         else:
+    ///             internalEvent = internalQueue.dequeue()
+    ///             datamodel["_event"] = internalEvent
+    ///             enabledTransitions = selectTransitions(internalEvent)
+    ///     if not enabledTransitions.isEmpty():
+    ///         microstep(enabledTransitions.toList())
+    /// ```
+    ///
+    /// Eventless transitions are selected again after EVERY microstep, whatever
+    /// took it. A targetless transition that only ran content can enable one as
+    /// surely as a transition that entered a state, and the internal event
+    /// queued behind it waits until that has been asked.
+    ///
+    /// One budget for both branches — see [`MAX_MACROSTEP_MICROSTEPS`]. A
+    /// `<raise>` answered by a transition that raises again is a macrostep that
+    /// never ends, exactly as a cyclic eventless transition is; until
+    /// 2026-08-20 the internal branch had no ceiling in any of the seven
+    /// engines here, so that document did not return at all.
+    fn complete_macrostep(&mut self) {
+        // §scxml-D-enterStates sets `running = false` on entering a top-level
+        // `<final>`; this engine keeps `is_running` for the host's `stop()` and
+        // the final it entered for the other half.
+        loop {
+            let state = self.host.state();
+            if !state.goes_on() || state.macrostep_truncated {
+                return;
+            }
+            match self.take_eventless_transitions() {
+                Eventless::Taken => continue,
+                Eventless::Refused => return,
+                Eventless::NoneEnabled => {}
+            }
+
+            if !self.host.has_internal_event() {
+                // The queue emptied, so the chain — refused or merely finished —
+                // is over. A machine whose next macrostep starts a new one
+                // starts it from zero, and the count of what was refused stays
+                // where the host reads it.
+                self.host.state().error_cascade_depth = 0;
+                return;
+            }
+            if self.refuse_spent_macrostep() {
+                // Work is still queued one microstep past the budget. Refuse the
+                // microstep rather than take it: the event stays on the queue,
+                // which is where the next macrostep will find it.
+                return;
+            }
+            let Some(event) = self.host.take_internal_event() else {
+                return;
+            };
+            let outcome = self.take_event(event.event);
+            if outcome == EventOutcome::Taken {
+                // Appendix D: the loop turn that selects nothing takes no
+                // microstep, so it spends no budget. Only a turn that answered
+                // the event moved the machine, and only those are what a
+                // ceiling on microsteps can be counted in.
+                self.host.state().macrostep_microsteps_taken += 1;
+            }
+            self.host.end_internal_event(event, outcome);
         }
+    }
 
-        if !host.has_internal_event() {
-            // The queue emptied, so the chain — refused or merely finished —
-            // is over. A machine whose next macrostep starts a new one
-            // starts it from zero, and the count of what was refused stays
-            // where the host reads it.
-            host.end_error_cascade();
-            return;
+    /// With this macrostep's budget of [`MAX_MACROSTEP_MICROSTEPS`] spent, stop
+    /// it, say so, and answer `true`: the next microstep must not be taken.
+    ///
+    /// The one place a macrostep is refused, for both branches of the inner loop,
+    /// for the reason the budget is one number: a host reads a macrostep that did
+    /// not reach a stable configuration, and the branch it died in is a detail of
+    /// the document.
+    fn refuse_spent_macrostep(&mut self) -> bool {
+        let state = self.host.state();
+        if state.macrostep_microsteps_taken < MAX_MACROSTEP_MICROSTEPS {
+            return false;
         }
-        if host.microsteps_taken() == MAX_MACROSTEP_MICROSTEPS {
-            // Work is still queued one microstep past the budget. Refuse the
-            // microstep rather than take it: the event stays on the queue,
-            // which is where the next macrostep will find it.
-            host.refuse_macrostep();
-            return;
+        state.macrostep_truncated = true;
+        #[cfg(feature = "macrostep-diagnostics")]
+        self.host.report_truncated_macrostep();
+        true
+    }
+
+    /// §scxml-D-mainEventLoop: one turn of the inner loop on eventless
+    /// transitions — select them, and take the microstep they select unless the
+    /// macrostep's budget is spent.
+    fn take_eventless_transitions(&mut self) -> Eventless {
+        let null_event = self.host.null_event();
+        self.select_transitions(null_event);
+        if self.enabled.is_empty() {
+            return Eventless::NoneEnabled;
         }
-        let Some(event) = host.take_internal_event() else {
-            return;
-        };
-        let outcome = take_event(host, event.event, enabled, scratch.reborrow());
-        if outcome == EventOutcome::Taken {
-            // Appendix D: the loop turn that selects nothing takes no
-            // microstep, so it spends no budget. Only a turn that answered
-            // the event moved the machine, and only those are what a
-            // ceiling on microsteps can be counted in.
-            host.count_microstep();
+        if self.refuse_spent_macrostep() {
+            // The chain is still going one microstep past the budget, so this is
+            // the case the specification calls a macrostep that does not
+            // terminate. Refuse the microstep rather than take it, and publish
+            // the refusal: the configuration left behind is not a stable one and
+            // only the count says so.
+            return Eventless::Refused;
         }
-        host.end_internal_event(event, outcome);
+        self.host.state().macrostep_microsteps_taken += 1;
+        self.take_microstep();
+        Eventless::Taken
     }
-}
 
-/// §scxml-D-mainEventLoop: one turn of the inner loop on eventless
-/// transitions — select them, and take the microstep they select unless the
-/// macrostep's budget is spent.
-fn take_eventless_transitions(
-    host: &mut dyn MainLoop,
-    enabled: &mut microstep::SliceVec<'_, TransitionId>,
-    mut scratch: microstep::Scratch<'_>,
-) -> Eventless {
-    let null_event = host.null_event();
-    select_transitions(host, null_event, enabled, scratch.reborrow());
-    if enabled.is_empty() {
-        return Eventless::NoneEnabled;
+    /// Appendix D's selectTransitions, or its selectEventlessTransitions for the
+    /// null event: the optimal enabled transition set, in selection order, left in
+    /// `enabled`.
+    fn select_transitions(&mut self, event: EventId) {
+        // §scxml-5.10: the event whose transitions are about to be selected is
+        // the `_event` their guards read — bound before the first guard runs.
+        self.host.bind_current_event(event);
+        microstep::select_transitions(
+            self.tables,
+            self.host.behaviour(),
+            event,
+            &mut self.enabled,
+            self.scratch.reborrow(),
+        );
     }
-    if host.microsteps_taken() == MAX_MACROSTEP_MICROSTEPS {
-        // The chain is still going one microstep past the budget, so this is
-        // the case the specification calls a macrostep that does not
-        // terminate. Refuse the microstep rather than take it, and publish
-        // the refusal: the configuration left behind is not a stable one and
-        // only the count says so.
-        host.refuse_macrostep();
-        return Eventless::Refused;
-    }
-    host.count_microstep();
-    let tables = host.tables();
-    let entered = microstep::microstep(tables, host.behaviour(), enabled, scratch);
-    host.settle(entered);
-    Eventless::Taken
-}
 
-/// Appendix D's selectTransitions, or its selectEventlessTransitions for the
-/// null event: the optimal enabled transition set, in selection order, left in
-/// `enabled`.
-fn select_transitions(
-    host: &mut dyn MainLoop,
-    event: EventId,
-    enabled: &mut microstep::SliceVec<'_, TransitionId>,
-    scratch: microstep::Scratch<'_>,
-) {
-    // §scxml-5.10: the event whose transitions are about to be selected is
-    // the `_event` their guards read — bound before the first guard runs.
-    host.bind_current_event(event);
-    let tables = host.tables();
-    microstep::select_transitions(tables, host.behaviour(), event, enabled, scratch);
-}
-
-/// Offer one event to the configuration and take the microstep it selects.
-fn take_event(
-    host: &mut dyn MainLoop,
-    event: EventId,
-    enabled: &mut microstep::SliceVec<'_, TransitionId>,
-    mut scratch: microstep::Scratch<'_>,
-) -> EventOutcome {
-    select_transitions(host, event, enabled, scratch.reborrow());
-    if enabled.is_empty() {
-        return EventOutcome::Discarded;
+    /// Appendix D's microstep over the enabled set, and the current state it
+    /// leaves the machine in.
+    fn take_microstep(&mut self) {
+        let entered = microstep::microstep(
+            self.tables,
+            self.host.behaviour(),
+            &self.enabled,
+            self.scratch.reborrow(),
+        );
+        self.host.settle(entered);
     }
-    let tables = host.tables();
-    let entered = microstep::microstep(tables, host.behaviour(), enabled, scratch);
-    host.settle(entered);
-    EventOutcome::Taken
+
+    /// Offer one event to the configuration and take the microstep it selects.
+    fn take_event(&mut self, event: EventId) -> EventOutcome {
+        self.select_transitions(event);
+        if self.enabled.is_empty() {
+            return EventOutcome::Discarded;
+        }
+        self.take_microstep();
+        EventOutcome::Taken
+    }
 }

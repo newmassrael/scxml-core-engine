@@ -16,11 +16,12 @@
 //!
 //! No function here is generic over a machine. The document reaches them as
 //! its tables ([`DocumentTables`]), its states, histories, transitions and
-//! events as numbers, and the running machine as one object-safe trait,
-//! [`Behaviour`]: its configuration and history records, which of a state's
-//! transitions an event enables, and what exiting a state, running a
-//! transition's content and entering a state DO. So a program that holds two
-//! machines holds one copy of this module.
+//! events as numbers, its configuration and history records as a run store of
+//! numbers ([`RunStoreRef`], [`RunStoreMut`]), and the running machine as one
+//! object-safe trait, [`Behaviour`]: which of a state's transitions an event
+//! enables, and what exiting a state, running a transition's content and
+//! entering a state DO. So a program that holds two machines holds one copy of
+//! this module. A procedure that only reads takes the store alone.
 //!
 //! # Capacity
 //!
@@ -34,6 +35,7 @@
 //! here, and a push past a buffer's end stops the program with the generator's
 //! name on it.
 
+use crate::helpers::run_store::{RunStoreMut, RunStoreRef};
 use crate::helpers::tables::{
     DocumentTables, EventId, HistoryId, StateId, StateKind, Target, TransitionId,
 };
@@ -250,21 +252,10 @@ impl<const STATES: usize, const ENABLED: usize, const WALK: usize, const DEFAULT
 /// copy for every machine. The engine implements it once for each machine, as
 /// the conversion between these numbers and the machine's own types.
 pub trait Behaviour {
-    /// The active states, in the order they were added.
-    fn configuration(&self) -> &[StateId];
-
-    /// Add `state` to the configuration; `false` when it was already there.
-    fn add_to_configuration(&mut self, state: StateId) -> bool;
-
-    /// Remove `state` from the configuration.
-    fn remove_from_configuration(&mut self, state: StateId);
-
-    /// What `history` recorded when its parent was last exited; `None` before
-    /// that ever happened.
-    fn history_value(&self, history: HistoryId) -> Option<&[StateId]>;
-
-    /// Keep `states` as what `history` recorded.
-    fn record_history(&mut self, history: HistoryId, states: &[StateId]);
+    /// The machine's configuration and history records, which the procedures
+    /// read and write themselves: they are numbers, the same for every machine,
+    /// so nothing about keeping them is the machine's own.
+    fn store(&mut self) -> RunStoreMut<'_>;
 
     /// This state's first transition, in document order, that the event
     /// enables and whose guard holds; for the machine's "no event", its first
@@ -382,7 +373,7 @@ pub fn select_transitions(
     enabled.clear();
     let capacity = usize::from(tables.max_configuration);
     let (mut configuration, mut rest) = scratch.take_states(capacity);
-    for &state in machine.configuration() {
+    for &state in machine.store().as_ref().configuration() {
         configuration.push(state);
     }
 
@@ -414,7 +405,8 @@ pub fn select_transitions(
             }
         }
     }
-    remove_conflicting_transitions(tables, &*machine, enabled, &configuration, rest);
+    let store = machine.store();
+    remove_conflicting_transitions(tables, store.as_ref(), enabled, &configuration, rest);
 }
 
 /// Appendix D's removeConflictingTransitions, over `enabled` itself: what
@@ -430,7 +422,7 @@ pub fn select_transitions(
 /// past it.
 pub fn remove_conflicting_transitions(
     tables: &DocumentTables,
-    machine: &dyn Behaviour,
+    store: RunStoreRef<'_>,
     enabled: &mut SliceVec<'_, TransitionId>,
     configuration: &[StateId],
     mut scratch: Scratch<'_>,
@@ -442,9 +434,9 @@ pub fn remove_conflicting_transitions(
         // held against it rather than stored beside it: on an MCU the stack a
         // stored set per transition costs is scarcer than the cycles, and the
         // answer is read off the one configuration the selection saw.
-        let t1_exits = compute_exit_set(tables, machine, t1, scratch.reborrow());
+        let t1_exits = compute_exit_set(tables, store, t1, scratch.reborrow());
         let mut conflicts = |t2: TransitionId| {
-            let t2_exits = compute_exit_set(tables, machine, t2, scratch.reborrow());
+            let t2_exits = compute_exit_set(tables, store, t2, scratch.reborrow());
             t1_exits.meets(tables, t2_exits, configuration)
         };
         let t1_source = tables.transition(t1).source;
@@ -545,7 +537,7 @@ impl ExitScope {
 /// configuration is read through: the active proper descendants of its domain.
 pub fn compute_exit_set(
     tables: &DocumentTables,
-    machine: &dyn Behaviour,
+    store: RunStoreRef<'_>,
     transition: TransitionId,
     scratch: Scratch<'_>,
 ) -> ExitScope {
@@ -558,7 +550,7 @@ pub fn compute_exit_set(
         return ExitScope::Nothing;
     }
     let (mut effective, rest) = scratch.take_states(usize::from(tables.max_configuration));
-    effective_target_states_on(tables, machine, targets, &mut effective, rest);
+    effective_target_states_on(tables, store, targets, &mut effective, rest);
     match transition_domain(tables, row.source, &effective, row.internal) {
         Some(domain) => ExitScope::Below(domain),
         None => ExitScope::All,
@@ -574,7 +566,7 @@ pub fn compute_exit_set(
 /// question about these.
 pub fn effective_target_states_on(
     tables: &DocumentTables,
-    machine: &dyn Behaviour,
+    store: RunStoreRef<'_>,
     targets: &[Target],
     effective: &mut SliceVec<'_, StateId>,
     scratch: Scratch<'_>,
@@ -591,7 +583,7 @@ pub fn effective_target_states_on(
                 // exited for the targets of its default transition — which may
                 // name histories themselves, so those are walked in turn.
                 WalkStep::EffectiveTarget(Target::History(history)) => {
-                    match machine.history_value(history) {
+                    match store.history_value(tables, history) {
                         Some(recorded) if !recorded.is_empty() => {
                             for &state in recorded {
                                 effective.add_once(state);
@@ -709,7 +701,7 @@ pub fn microstep(
 /// the states exitStates exits — read off `configuration` into `states_to_exit`.
 pub fn compute_states_to_exit(
     tables: &DocumentTables,
-    machine: &dyn Behaviour,
+    store: RunStoreRef<'_>,
     transitions: &[TransitionId],
     configuration: &[StateId],
     states_to_exit: &mut SliceVec<'_, StateId>,
@@ -721,7 +713,7 @@ pub fn compute_states_to_exit(
     // descendants before their ancestors and reverse document order among the
     // rest, which together are exactly reverse document order.
     for &transition in transitions {
-        let scope = compute_exit_set(tables, machine, transition, scratch.reborrow());
+        let scope = compute_exit_set(tables, store, transition, scratch.reborrow());
         for &state in configuration {
             if scope.contains(tables, state) {
                 states_to_exit.add_once(state);
@@ -740,13 +732,14 @@ pub fn exit_states(
 ) {
     let capacity = usize::from(tables.max_configuration);
     let (mut configuration, rest) = scratch.take_states(capacity);
-    for &state in machine.configuration() {
+    let mut store = machine.store();
+    for &state in store.as_ref().configuration() {
         configuration.push(state);
     }
     let (mut states_to_exit, mut rest) = rest.take_states(capacity);
     compute_states_to_exit(
         tables,
-        &*machine,
+        store.as_ref(),
         transitions,
         &configuration,
         &mut states_to_exit,
@@ -760,7 +753,7 @@ pub fn exit_states(
         for (index, history) in tables.histories.iter().enumerate() {
             if history.parent == state {
                 recorded_history(tables, state, history.deep, &configuration, &mut recorded);
-                machine.record_history(HistoryId(index as u16), &recorded);
+                store.record_history(tables, HistoryId(index as u16), &recorded);
             }
         }
     }
@@ -768,7 +761,7 @@ pub fn exit_states(
         // §scxml-D-exitStates: onexit, then cancelInvoke, then
         // configuration.delete(s), so `In(s)` inside s's own handler is true.
         machine.exit_state(state);
-        machine.remove_from_configuration(state);
+        machine.store().remove(state);
     }
 }
 
@@ -789,13 +782,13 @@ pub fn exit_interpreter(
     scratch: Scratch<'_>,
 ) {
     let (mut states_to_exit, _) = scratch.take_states(usize::from(tables.max_configuration));
-    for &state in machine.configuration() {
+    for &state in machine.store().as_ref().configuration() {
         states_to_exit.push(state);
     }
     sort_in_exit_order(&mut states_to_exit);
     for &state in states_to_exit.iter() {
         machine.exit_state(state);
-        machine.remove_from_configuration(state);
+        machine.store().remove(state);
     }
 }
 
@@ -841,7 +834,12 @@ pub fn enter_states(
     mut scratch: Scratch<'_>,
 ) -> Entered {
     let entered = {
-        let entry = compute_entry_set(tables, &*machine, transitions, scratch.reborrow());
+        let entry = compute_entry_set(
+            tables,
+            machine.store().as_ref(),
+            transitions,
+            scratch.reborrow(),
+        );
         enter_entry_set(tables, machine, &entry);
         entry.states_to_enter.len()
     };
@@ -850,7 +848,7 @@ pub fn enter_states(
         current: if entered == 0 {
             None
         } else {
-            current_state(tables, &*machine, transitions, scratch)
+            current_state(tables, machine.store().as_ref(), transitions, scratch)
         },
     }
 }
@@ -863,7 +861,7 @@ fn enter_entry_set(tables: &DocumentTables, machine: &mut dyn Behaviour, entry: 
         // initial transition's content if and only if this state's initial
         // state is being entered by default, then a history's default content
         // owed to it. A state already active is not entered twice.
-        if machine.add_to_configuration(state) {
+        if machine.store().add(state) {
             machine.enter_state(state, entry.states_for_default_entry.contains(&state));
         }
         if let Some(history) = entry.default_history_content_of(state) {
@@ -871,7 +869,7 @@ fn enter_entry_set(tables: &DocumentTables, machine: &mut dyn Behaviour, entry: 
         }
     }
     debug_assert!(
-        machine.configuration().len() <= usize::from(tables.max_configuration),
+        machine.store().as_ref().configuration().len() <= usize::from(tables.max_configuration),
         "the configuration holds more states than the document's tree allows: \
          sce-codegen bounded it too small"
     );
@@ -884,7 +882,7 @@ fn enter_entry_set(tables: &DocumentTables, machine: &mut dyn Behaviour, entry: 
 /// machine's current state.
 fn current_state(
     tables: &DocumentTables,
-    machine: &dyn Behaviour,
+    store: RunStoreRef<'_>,
     transitions: &[TransitionId],
     scratch: Scratch<'_>,
 ) -> Option<StateId> {
@@ -893,7 +891,7 @@ fn current_state(
     for &transition in transitions.iter().rev() {
         effective_target_states_on(
             tables,
-            machine,
+            store,
             tables.targets(transition),
             &mut effective,
             rest.reborrow(),
@@ -904,7 +902,7 @@ fn current_state(
         }
     }
     let mut current = current?;
-    let configuration = machine.configuration();
+    let configuration = store.configuration();
     // The configuration is what the microstep entered, so a descent through it
     // cannot disagree with what happened. A compound state with no active child
     // is not a configuration this can repair, so the descent stops there.
@@ -960,7 +958,7 @@ impl EntrySet<'_> {
 /// `states_to_enter` sorted into entry order.
 pub fn compute_entry_set<'a>(
     tables: &DocumentTables,
-    machine: &dyn Behaviour,
+    store: RunStoreRef<'_>,
     transitions: &[TransitionId],
     scratch: Scratch<'a>,
 ) -> EntrySet<'a> {
@@ -979,7 +977,7 @@ pub fn compute_entry_set<'a>(
     for &transition in transitions {
         add_transition_to_entry_set(
             tables,
-            machine,
+            store,
             transition,
             &mut stack,
             &mut effective,
@@ -997,7 +995,7 @@ pub fn compute_entry_set<'a>(
 /// entry set, before the set is put into entry order.
 fn add_transition_to_entry_set(
     tables: &DocumentTables,
-    machine: &dyn Behaviour,
+    store: RunStoreRef<'_>,
     transition: TransitionId,
     stack: &mut SliceVec<'_, WalkStep>,
     effective: &mut SliceVec<'_, StateId>,
@@ -1012,14 +1010,14 @@ fn add_transition_to_entry_set(
     // descends into must be seen as taken before the ancestor walk fills
     // the rest with defaults.
     for &target in targets {
-        walk_entry(tables, machine, WalkStep::Descendants(target), stack, entry);
+        walk_entry(tables, store, WalkStep::Descendants(target), stack, entry);
     }
     let walk = Scratch {
         states: &mut [],
         walk: stack.slots_mut(),
         history_defaults: &mut [],
     };
-    effective_target_states_on(tables, machine, targets, effective, walk);
+    effective_target_states_on(tables, store, targets, effective, walk);
     if effective.is_empty() {
         return;
     }
@@ -1027,7 +1025,7 @@ fn add_transition_to_entry_set(
     for &state in effective.iter() {
         walk_entry(
             tables,
-            machine,
+            store,
             WalkStep::Ancestors(Target::State(state), domain),
             stack,
             entry,
@@ -1059,7 +1057,7 @@ impl<T> SliceVec<'_, T> {
 /// holds when each is reached.
 fn walk_entry(
     tables: &DocumentTables,
-    machine: &dyn Behaviour,
+    store: RunStoreRef<'_>,
     first: WalkStep,
     stack: &mut SliceVec<'_, WalkStep>,
     entry: &mut EntrySet<'_>,
@@ -1095,7 +1093,7 @@ fn walk_entry(
                 // §scxml-3.10: a transition to a history behaves as a transition
                 // to the configuration it stored, or — before its parent was ever
                 // visited — to its default stored configuration.
-                let source = match machine.history_value(history) {
+                let source = match store.history_value(tables, history) {
                     // §scxml-D-addDescendantStatesToEnter: a history that has
                     // recorded a configuration enters it, and the ancestors
                     // between it and the history's parent — a deep history
@@ -1126,7 +1124,7 @@ fn walk_entry(
                 index,
                 ancestors,
             } => {
-                if let Some(target) = listed_target(tables, machine, source, index) {
+                if let Some(target) = listed_target(tables, store, source, index) {
                     // The rest of the list resumes once this target is done.
                     stack.push(WalkStep::Listed {
                         source,
@@ -1204,7 +1202,7 @@ fn walk_entry(
 /// The `index`th target of `source`'s list, or `None` once the list has ended.
 fn listed_target(
     tables: &DocumentTables,
-    machine: &dyn Behaviour,
+    store: RunStoreRef<'_>,
     source: Listed,
     index: u16,
 ) -> Option<Target> {
@@ -1214,8 +1212,8 @@ fn listed_target(
             let initial = tables.state(state).initial?;
             tables.targets(initial).get(index).copied()
         }
-        Listed::Recorded(history) => machine
-            .history_value(history)
+        Listed::Recorded(history) => store
+            .history_value(tables, history)
             .and_then(|recorded| recorded.get(index))
             .map(|&state| Target::State(state)),
         Listed::Defaults(history) => tables

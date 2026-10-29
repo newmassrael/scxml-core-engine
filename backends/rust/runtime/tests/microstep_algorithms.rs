@@ -6,13 +6,13 @@
 //
 // The procedures are compiled once for every program (docs/adr/0064): a
 // document reaches them as its tables (`DocumentTables`), its states,
-// histories, transitions and events as numbers, and the running machine as one
-// `Behaviour`. So each document here is written as lists, built into tables the
-// way the generator builds them — states numbered in document order, a subtree
-// the range of ids up to its last descendant, the initial and history default
-// transitions rows of the transitions table — and run by a machine that keeps
-// its configuration and history records in plain `Vec`s and records what it was
-// asked to do.
+// histories, transitions and events as numbers, its configuration and history
+// records as a run store, and the running machine as one `Behaviour`. So each
+// document here is written as lists, built into tables the way the generator
+// builds them — states numbered in document order, a subtree the range of ids
+// up to its last descendant, the initial and history default transitions rows
+// of the transitions table — and run by a machine that keeps its run store in
+// slices of its own and records what it was asked to do.
 //
 // Each case states the answer the appendix computes, worked from the
 // pseudo-code, and asks the transcription for it. The entry-set and completion
@@ -55,6 +55,7 @@ use sce_rust_runtime::helpers::microstep::{
     is_in_final_state, microstep, select_transitions, transition_domain, Behaviour, Buffers,
     Entered, ExitScope, Scratch, SliceVec, WalkStep,
 };
+use sce_rust_runtime::helpers::run_store::{RunStoreMut, RunStoreRef};
 use sce_rust_runtime::{
     state_scratch, DocumentTables, EventId, HistoryId, HistoryRow, Span, StateId, StateKind,
     StateRow, Target, TransitionId, TransitionRow, Workspace,
@@ -604,15 +605,34 @@ fn sources(transitions: &[TransitionId]) -> Vec<(St, usize)> {
     transitions.iter().copied().map(label).collect()
 }
 
-/// The document above, running: a configuration, what its histories recorded,
-/// and a record of what the procedures asked the machine to do.
-#[derive(Default)]
+/// The document above, running: its run store — a configuration and what its
+/// histories recorded, in slices of its own — and a record of what the
+/// procedures asked the machine to do.
 struct Chart {
-    configuration: Vec<StateId>,
-    recorded: [Option<Vec<StateId>>; 2],
+    configuration: [StateId; 8],
+    configuration_len: u16,
+    records: Vec<StateId>,
+    record_lens: [Option<u16>; 2],
     log: Vec<String>,
     /// For each exit, whether the state was still active when it ran.
     exited_while_active: Vec<bool>,
+    /// What each history held when the microstep's first exit ran, by
+    /// [`H`]; `None` until a state is exited.
+    recorded_at_first_exit: Option<[Option<Vec<St>>; 2]>,
+}
+
+impl Default for Chart {
+    fn default() -> Self {
+        Chart {
+            configuration: [StateId(0); 8],
+            configuration_len: 0,
+            records: vec![StateId(0); usize::from(chart_tables().history_records)],
+            record_lens: [None; 2],
+            log: Vec::new(),
+            exited_while_active: Vec::new(),
+            recorded_at_first_exit: None,
+        }
+    }
 }
 
 impl Chart {
@@ -622,44 +642,46 @@ impl Chart {
     }
 
     fn at(states: &[St]) -> Self {
-        Chart {
-            configuration: ids(states),
-            ..Chart::default()
-        }
+        let mut chart = Chart::default();
+        chart.set_configuration(states);
+        chart
+    }
+
+    fn set_configuration(&mut self, states: &[St]) {
+        self.store().set_configuration(&ids(states));
     }
 
     /// The machine, with `history` having recorded `states`.
     fn recording(mut self, history: H, states: &[St]) -> Self {
-        self.recorded[hid(history).index()] = Some(ids(states));
+        self.store()
+            .record_history(chart_tables(), hid(history), &ids(states));
         self
+    }
+
+    fn view(&self) -> RunStoreRef<'_> {
+        RunStoreRef::new(self.configuration(), &self.records, &self.record_lens)
+    }
+
+    fn configuration(&self) -> &[StateId] {
+        &self.configuration[..usize::from(self.configuration_len)]
+    }
+
+    /// What `history` recorded, `None` before it ever did.
+    fn recorded(&self, history: H) -> Option<Vec<St>> {
+        self.view()
+            .history_value(chart_tables(), hid(history))
+            .map(chain)
     }
 }
 
 impl Behaviour for Chart {
-    fn configuration(&self) -> &[StateId] {
-        &self.configuration
-    }
-
-    fn add_to_configuration(&mut self, state: StateId) -> bool {
-        if self.configuration.contains(&state) {
-            return false;
-        }
-        self.configuration.push(state);
-        true
-    }
-
-    fn remove_from_configuration(&mut self, state: StateId) {
-        self.configuration.retain(|&s| s != state);
-    }
-
-    fn history_value(&self, history: HistoryId) -> Option<&[StateId]> {
-        self.recorded[history.index()].as_deref()
-    }
-
-    fn record_history(&mut self, history: HistoryId, states: &[StateId]) {
-        self.log
-            .push(format!("record {:?} {:?}", hist(history), chain(states)));
-        self.recorded[history.index()] = Some(states.to_vec());
+    fn store(&mut self) -> RunStoreMut<'_> {
+        RunStoreMut::new(
+            &mut self.configuration,
+            &mut self.configuration_len,
+            &mut self.records,
+            &mut self.record_lens,
+        )
     }
 
     fn first_enabled_transition(&mut self, state: StateId, event: EventId) -> Option<TransitionId> {
@@ -670,8 +692,10 @@ impl Behaviour for Chart {
     }
 
     fn exit_state(&mut self, state: StateId) {
-        self.exited_while_active
-            .push(self.configuration.contains(&state));
+        if self.recorded_at_first_exit.is_none() {
+            self.recorded_at_first_exit = Some([self.recorded(H::Hb), self.recorded(H::Hs)]);
+        }
+        self.exited_while_active.push(self.view().is_active(state));
         self.log.push(format!("exit {:?}", st(state)));
     }
 
@@ -713,7 +737,7 @@ impl Entry {
 fn entry_set(chart: &Chart, transitions: &[TransitionId]) -> Entry {
     let mut workspace = ChartWorkspace::new();
     let (_, scratch) = workspace.split();
-    let entry = compute_entry_set(chart_tables(), chart, transitions, scratch);
+    let entry = compute_entry_set(chart_tables(), chart.view(), transitions, scratch);
     Entry {
         states_to_enter: chain(&entry.states_to_enter),
         states_for_default_entry: chain(&entry.states_for_default_entry),
@@ -734,7 +758,13 @@ fn effective(chart: &Chart, list: &[Tg]) -> Vec<St> {
     let (_, scratch) = workspace.split();
     let mut slots = [StateId(0); 8];
     let mut out = SliceVec::new(&mut slots);
-    effective_target_states_on(chart_tables(), chart, &to_targets(list), &mut out, scratch);
+    effective_target_states_on(
+        chart_tables(),
+        chart.view(),
+        &to_targets(list),
+        &mut out,
+        scratch,
+    );
     chain(&out)
 }
 
@@ -743,9 +773,9 @@ fn effective(chart: &Chart, list: &[Tg]) -> Vec<St> {
 fn exit_set(chart: &Chart, transition: TransitionId) -> (ExitScope, Vec<St>) {
     let mut workspace = ChartWorkspace::new();
     let (_, scratch) = workspace.split();
-    let scope = compute_exit_set(chart_tables(), chart, transition, scratch);
+    let scope = compute_exit_set(chart_tables(), chart.view(), transition, scratch);
     let exited: Vec<StateId> = chart
-        .configuration
+        .configuration()
         .iter()
         .copied()
         .filter(|&state| scope.contains(chart_tables(), state))
@@ -998,7 +1028,7 @@ fn an_external_transition_leaving_a_parallel_exits_every_region() {
     // up from the source alone could name.
     let (scope, exited) = exit_set(&chart, row(St::P, 0));
     assert_eq!(scope, ExitScope::All);
-    assert_eq!(sorted(exited), sorted(chain(&chart.configuration)));
+    assert_eq!(sorted(exited), sorted(chain(chart.configuration())));
 }
 
 #[test]
@@ -1034,9 +1064,9 @@ fn the_states_to_exit_come_out_in_reverse_document_order() {
     let mut exited = SliceVec::new(&mut slots);
     compute_states_to_exit(
         chart_tables(),
-        &chart,
+        chart.view(),
         &[row(St::P, 0)],
-        &chart.configuration,
+        chart.configuration(),
         &mut exited,
         scratch,
     );
@@ -1098,7 +1128,7 @@ fn a_transition_reached_from_two_regions_is_selected_once() {
     // is still one element of the set.
     let taken = select(&mut chart, Ev::K);
     assert_eq!(sources(&taken), vec![(St::A1, 3), (St::B1, 2), (St::P, 3)]);
-    chart.configuration = ids(&[St::S, St::P, St::R1, St::A2, St::R2, St::B2, St::R3, St::C1]);
+    chart.set_configuration(&[St::S, St::P, St::R1, St::A2, St::R2, St::B2, St::R3, St::C1]);
     assert_eq!(sources(&select(&mut chart, Ev::K)), vec![(St::P, 3)]);
 }
 
@@ -1134,7 +1164,7 @@ fn a_microstep_exits_then_runs_content_in_selection_order_then_enters() {
         ]
     );
     assert_eq!(
-        sorted(chain(&chart.configuration)),
+        sorted(chain(chart.configuration())),
         vec![St::S, St::P, St::R1, St::A2, St::R2, St::B2, St::R3, St::C1]
     );
     // The last transition with targets is `b1 -> b2`: the targetless one after
@@ -1163,9 +1193,12 @@ fn a_history_is_recorded_before_the_first_exit_and_restored_by_the_entries() {
     // `b1` is exited before `r2` — and the entries of the same microstep read
     // what it recorded, so `b1` comes back and no default content runs.
     assert_eq!(
+        chart.recorded_at_first_exit,
+        Some([Some(vec![St::B1]), None])
+    );
+    assert_eq!(
         chart.log,
         vec![
-            "record Hb [B1]",
             "exit C1",
             "exit R3",
             "exit B1",
@@ -1182,7 +1215,7 @@ fn a_history_is_recorded_before_the_first_exit_and_restored_by_the_entries() {
             "enter C1",
         ]
     );
-    assert_eq!(chart.recorded[hid(H::Hs).index()], None);
+    assert_eq!(chart.recorded(H::Hs), None);
     assert_eq!(entered.states, 7);
     assert_eq!(entered.current.map(st), Some(St::B1));
 }
@@ -1961,11 +1994,18 @@ fn random_document(rng: &mut Rng) -> RandomDocument {
         records.push(match rng.below(3) {
             0 => None,
             1 => Some(Vec::new()),
-            _ => Some(
-                (0..1 + rng.below(3))
-                    .map(|_| number[pick(rng, &inside)])
-                    .collect(),
-            ),
+            // Distinct states, as a record is a set of active states: a run
+            // store holds no more of them than the parent has descendants.
+            _ => {
+                let mut recorded: Vec<StateId> = Vec::new();
+                for _ in 0..1 + rng.below(3) {
+                    let state = number[pick(rng, &inside)];
+                    if !recorded.contains(&state) {
+                        recorded.push(state);
+                    }
+                }
+                Some(recorded)
+            }
         });
         history_deep.push(rng.chance(2));
         // A default transition may name a later history whose parent is this
@@ -2064,62 +2104,34 @@ fn random_transition(rng: &mut Rng, states: usize, histories: usize) -> Written 
     }
 }
 
-fn reads_only() -> ! {
-    unreachable!(
-        "a procedure that only reads the document and the records asked the machine to act"
-    )
+/// A random document's run as the procedures under test read it: what its
+/// histories recorded, laid out as a run store keeps it, each at the span the
+/// tables give that history. They read the configuration they are handed, so
+/// the store holds none.
+struct Recorded {
+    records: Vec<StateId>,
+    record_lens: Vec<Option<u16>>,
 }
 
-/// A random document's run as the procedures under test see it: what its
-/// histories recorded. They read the configuration they are handed and run
-/// nothing, so every other hook is unreachable.
-struct Recorded<'a> {
-    records: &'a [Option<Vec<StateId>>],
-}
-
-impl Behaviour for Recorded<'_> {
-    fn configuration(&self) -> &[StateId] {
-        reads_only()
+impl Recorded {
+    fn of(doc: &RandomDocument) -> Self {
+        let mut records = vec![StateId(0); usize::from(doc.tables.history_records)];
+        let mut record_lens = vec![None; doc.histories()];
+        for (index, recorded) in doc.records.iter().enumerate() {
+            if let Some(states) = recorded {
+                let span = doc.tables.history(HistoryId(index as u16)).record;
+                records[usize::from(span.start)..][..states.len()].copy_from_slice(states);
+                record_lens[index] = Some(states.len() as u16);
+            }
+        }
+        Recorded {
+            records,
+            record_lens,
+        }
     }
 
-    fn add_to_configuration(&mut self, _state: StateId) -> bool {
-        reads_only()
-    }
-
-    fn remove_from_configuration(&mut self, _state: StateId) {
-        reads_only()
-    }
-
-    fn history_value(&self, history: HistoryId) -> Option<&[StateId]> {
-        self.records[history.index()].as_deref()
-    }
-
-    fn record_history(&mut self, _history: HistoryId, _states: &[StateId]) {
-        reads_only()
-    }
-
-    fn first_enabled_transition(
-        &mut self,
-        _state: StateId,
-        _event: EventId,
-    ) -> Option<TransitionId> {
-        reads_only()
-    }
-
-    fn exit_state(&mut self, _state: StateId) {
-        reads_only()
-    }
-
-    fn execute_transition_content(&mut self, _transition: TransitionId) {
-        reads_only()
-    }
-
-    fn enter_state(&mut self, _state: StateId, _is_default_entry: bool) {
-        reads_only()
-    }
-
-    fn execute_history_default_content(&mut self, _history: HistoryId) {
-        reads_only()
+    fn view(&self) -> RunStoreRef<'_> {
+        RunStoreRef::new(&[], &self.records, &self.record_lens)
     }
 }
 
@@ -2187,9 +2199,7 @@ fn the_stack_walks_answer_as_the_recursion_they_replace_for_any_document() {
         let _seed = Seed(seed);
         let mut rng = Rng(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1);
         let doc = random_document(&mut rng);
-        let machine = Recorded {
-            records: &doc.records,
-        };
+        let recorded = Recorded::of(&doc);
         let mut lent = Lent::for_document(&doc);
 
         for round in 0..ROUNDS {
@@ -2201,7 +2211,7 @@ fn the_stack_walks_answer_as_the_recursion_they_replace_for_any_document() {
             for transitions in [&[first][..], &[first, second][..]] {
                 let (states_to_enter, mut states_for_default_entry, mut default_history_content) = {
                     let entry =
-                        compute_entry_set(doc.tables, &machine, transitions, lent.scratch());
+                        compute_entry_set(doc.tables, recorded.view(), transitions, lent.scratch());
                     (
                         entry.states_to_enter.to_vec(),
                         entry.states_for_default_entry.to_vec(),
@@ -2239,7 +2249,13 @@ fn the_stack_walks_answer_as_the_recursion_they_replace_for_any_document() {
             let targets = doc.tables.targets(first);
             let walked = {
                 let (mut effective, scratch) = lent.split();
-                effective_target_states_on(doc.tables, &machine, targets, &mut effective, scratch);
+                effective_target_states_on(
+                    doc.tables,
+                    recorded.view(),
+                    targets,
+                    &mut effective,
+                    scratch,
+                );
                 effective.to_vec()
             };
             assert_eq!(
@@ -2282,9 +2298,7 @@ fn two_exit_scopes_meet_exactly_when_the_exit_sets_listed_off_a_configuration_in
         let _seed = Seed(seed);
         let mut rng = Rng(seed.wrapping_mul(0xD1B5_4A32_D192_ED03) | 1);
         let doc = random_document(&mut rng);
-        let machine = Recorded {
-            records: &doc.records,
-        };
+        let recorded = Recorded::of(&doc);
         let mut lent = Lent::for_document(&doc);
 
         for _ in 0..4 {
@@ -2297,7 +2311,7 @@ fn two_exit_scopes_meet_exactly_when_the_exit_sets_listed_off_a_configuration_in
             for round in 0..ROUNDS {
                 let pair = [TransitionId(2 * round), TransitionId(2 * round + 1)];
                 let scopes = pair.map(|transition| {
-                    compute_exit_set(doc.tables, &machine, transition, lent.scratch())
+                    compute_exit_set(doc.tables, recorded.view(), transition, lent.scratch())
                 });
                 let listed = pair.map(|transition| {
                     reference::exit_set(&doc.plain, &doc.records, transition, &configuration)
@@ -2347,7 +2361,7 @@ fn two_exit_scopes_meet_exactly_when_the_exit_sets_listed_off_a_configuration_in
                     let (mut states_to_exit, scratch) = lent.split();
                     compute_states_to_exit(
                         doc.tables,
-                        &machine,
+                        recorded.view(),
                         &pair,
                         &configuration,
                         &mut states_to_exit,
