@@ -232,28 +232,25 @@ fn an_algorithm_a_backend_writes_in_part_is_generated_and_the_rest_is_refused_by
 
 #[test]
 fn a_forge_document_is_refused_through_the_string_entry() {
-    // A kind no backend of this list writes, in whole or in part: an interpolation.
+    // A kind no backend of this list writes, in whole or in part: a filter.
     let document = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
-          version="1.0" sce:kind="interpolation" name="engine_limit">
+          version="1.0" sce:kind="filter" name="smooth_signal">
   <datamodel>
-    <data id="rpm" sce:type="uint16" sce:direction="in"/>
-    <data id="limit" sce:type="float64" sce:direction="out"
-          sce:interpolation="linear" sce:out-of-bounds="clamp"
-          sce:axis-rpm="0 1000 2000">
-      100.0 150.0 120.0
-    </data>
+    <data id="rawSignal" sce:type="float64" sce:direction="in"/>
+    <data id="smoothed" sce:type="float64" sce:direction="out"
+          sce:filter="low-pass" sce:alpha="0.1"/>
   </datamodel></scxml>"#;
     for language in backends_with_no_emitter() {
         let error = compile_forge_from_string(
             document,
             DocumentLabel {
-                identifier: "engine_limit",
-                diagnostic_label: "engine_limit.scxml",
+                identifier: "smooth_signal",
+                diagnostic_label: "smooth_signal.scxml",
             },
             language,
         )
         .err()
-        .unwrap_or_else(|| panic!("{language:?} generated an interpolation it has no emitter for"));
+        .unwrap_or_else(|| panic!("{language:?} generated a filter it has no emitter for"));
         let text = format!("{error:?}");
         assert!(
             text.contains(language_wire_name(language)),
