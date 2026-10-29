@@ -20,11 +20,18 @@
 // from a buffer only that read holds.
 //
 // Operations (from `{{ runtime_dep }}`, typed here over the element):
-//   publish(publisher, element): {{ pascal }}Publish   wait-free; the entry's sequence number, or why the element was refused
+//   publish(publisher, element{% if context.flags %}, flags{% endif %}{% if context.has_tag %}, tag{% endif %}): {{ pascal }}Publish   wait-free; the entry's sequence number, or why the element was refused
 //   read(log, reader): {{ pascal }}Read                wait-free; an item, nothing new, how many were missed, or an entry that does not decode
 // A reader is `log.readerOldest()`, `log.readerHead()` or `log.readerAt(n)`
 // and owns its cursor; the publisher is `log.publisher()`, taken once and
 // given back with `release()`.
+{% if context.present %}
+//
+// The element's codec asks its caller for {% if context.flags %}{{ context.flags | length }} flag input(s){% endif %}{% if context.flags and context.has_tag %} and {% endif %}{% if context.has_tag %}a variant tag{% endif %}. Those are
+// part of the entry: `publish` takes them, the log stores them in the entry's context
+// words beside the bytes, and an `Item` returns them, so every reader decodes an entry
+// under what it was published under (ADR 0062 section 4).
+{% endif %}
 //
 // Kotlin's sequence numbers are the signed `Long`'s: the log stops at the
 // runtime's `HORIZON`, which is half of what the languages with an unsigned
@@ -67,12 +74,28 @@ const val SLOTS: Int = RETENTION + 1
  */
 const val MAX_ENCODED_BYTES: Int = {{ max_bytes }}
 
+{% if context.present %}
+/**
+ * The words of an entry that hold what the element's codec asks its caller for
+ * (ADR 0062 section 4): {% if context.flags %}the flag inputs, one bit each in the order of the
+ * codec's signature{% endif %}{% if context.flags and context.has_tag %}, and then {% endif %}{% if context.has_tag %}one word that holds the variant's tag{% endif %}.
+ */
+const val CONTEXT_WORDS: Int = {{ context.context_words }}
+
+/**
+ * The 64-bit words an entry holds: one for the length of the encoded element,
+ * [CONTEXT_WORDS] for its context, then as many as [MAX_ENCODED_BYTES] bytes take
+ * at eight to a word, that is `1 + CONTEXT_WORDS + ceil(MAX_ENCODED_BYTES / 8)`.
+ */
+const val WORDS: Int = 1 + CONTEXT_WORDS + (MAX_ENCODED_BYTES + 7) / 8
+{% else %}
 /**
  * The 64-bit words an entry holds: one for the length of the encoded element,
  * then as many as [MAX_ENCODED_BYTES] bytes take at eight to a word, that is
  * `1 + ceil(MAX_ENCODED_BYTES / 8)`.
  */
 const val WORDS: Int = 1 + (MAX_ENCODED_BYTES + 7) / 8
+{% endif %}
 
 /** What the document requires of publish and read (`<sce:progress>`). */
 const val DECLARED_PROGRESS: String = "{{ declared_progress }}"
@@ -89,6 +112,19 @@ typealias {{ pascal }}Publisher = BroadcastLog.Publisher
 /** An empty log of [RETENTION] entries. */
 fun new{{ pascal }}(): {{ pascal }} = BroadcastLog(WORDS, SLOTS)
 
+{% if context.flags %}
+/**
+ * The flag inputs the element's codec takes from its caller, which the log stores
+ * with each entry: what `publish` was given is what a reader gets back, and what
+ * the entry is decoded under.
+ */
+data class {{ pascal }}Flags(
+{% for flag in context.flags %}
+    val {{ flag.camel }}: Boolean{{ "," if not loop.last else "" }}
+{% endfor %}
+)
+
+{% endif %}
 /** What a typed publish did. */
 sealed interface {{ pascal }}Publish {
     /** The element was stored as the entry [seq]. */
@@ -105,8 +141,25 @@ sealed interface {{ pascal }}Publish {
 
 /** What a typed read found: the runtime's three answers, with the entry decoded. */
 sealed interface {{ pascal }}Read {
+{% if context.present %}
+    /**
+     * The entry [seq], decoded, with what it was published under; the reader now
+     * holds `seq + 1`.
+     */
+    data class Item(
+        val seq: Long,
+        val element: {{ element_pascal }},
+{% if context.flags %}
+        val flags: {{ pascal }}Flags{{ "," if context.has_tag else "" }}
+{% endif %}
+{% if context.has_tag %}
+        val tag: UByte
+{% endif %}
+    ) : {{ pascal }}Read
+{% else %}
     /** The entry [seq], decoded; the reader now holds `seq + 1`. */
     data class Item(val seq: Long, val element: {{ element_pascal }}) : {{ pascal }}Read
+{% endif %}
 
     /** The reader is at the head: nothing newer is published. */
     data object Empty : {{ pascal }}Read
@@ -134,19 +187,32 @@ sealed interface {{ pascal }}Read {
  * the codec and nothing is published ([{{ pascal }}Publish.Refused]). Past the
  * runtime's horizon of entries the runtime throws `IllegalStateException`,
  * which no run reaches in practice.
+{% if context.present %}
+ *
+ * {% if context.flags %}[flags] are what the element's codec takes from its caller as flag inputs{% endif %}{% if context.flags and context.has_tag %}, and {% endif %}{% if context.has_tag %}[tag] is the variant tag its decode takes{% endif %}:
+ * they are encoded under here and stored in the entry's context words, so that every
+ * reader decodes the entry under what it was published under. The log does not check that
+ * {% if context.has_tag %}[tag] is the tag of the arm [element] holds{% else %}the flags agree with [element]{% endif %}; the publisher gives what it knows, as every caller of this codec does.
+{% endif %}
  */
-fun publish(publisher: {{ pascal }}Publisher, element: {{ element_pascal }}): {{ pascal }}Publish {
+fun publish(publisher: {{ pascal }}Publisher, element: {{ element_pascal }}{% if context.flags %}, flags: {{ pascal }}Flags{% endif %}{% if context.has_tag %}, tag: UByte{% endif %}): {{ pascal }}Publish {
     val bytes = ByteArray(MAX_ENCODED_BYTES)
     val sink = ByteArraySink(bytes)
-    val refused = element.encode(sink)
+    val refused = element.encode(sink{% for flag in context.flags %}, flagInput(flags.{{ flag.camel }}){% endfor %})
     if (refused != null) {
         return {{ pascal }}Publish.Refused(refused)
     }
     val length = sink.position()
     val entry = LongArray(WORDS)
     entry[0] = length.toLong()
+{% for flag in context.flags %}
+    entry[1 + {{ flag.word }}] = entry[1 + {{ flag.word }}] or ((if (flags.{{ flag.camel }}) 1L else 0L) shl {{ flag.shift }})
+{% endfor %}
+{% if context.has_tag %}
+    entry[1 + {{ context.tag_word }}] = tag.toLong()
+{% endif %}
     for (index in 0 until length) {
-        val word = 1 + index / 8
+        val word = {{ context.payload_start }} + index / 8
         entry[word] = entry[word] or ((bytes[index].toLong() and 0xFFL) shl (8 * (index % 8)))
     }
     return {{ pascal }}Publish.Published(publisher.publish(entry))
@@ -169,6 +235,11 @@ fun read(log: {{ pascal }}, reader: Reader): {{ pascal }}Read {
     }
 }
 
+{% if context.flags %}
+/** A flag input as the codec takes it: one bit, in a byte that is 1 or 0. */
+private fun flagInput(on: Boolean): UByte = if (on) 1.toUByte() else 0.toUByte()
+
+{% endif %}
 /** The entry [seq], whose words the runtime copied whole into [entry]. */
 private fun decodeEntry(seq: Long, entry: LongArray): {{ pascal }}Read {
     val stored = entry[0]
@@ -180,9 +251,34 @@ private fun decodeEntry(seq: Long, entry: LongArray): {{ pascal }}Read {
     val length = stored.toInt()
     val bytes = ByteArray(length)
     for (index in 0 until length) {
-        bytes[index] = (entry[1 + index / 8] ushr (8 * (index % 8))).toByte()
+        bytes[index] = (entry[{{ context.payload_start }} + index / 8] ushr (8 * (index % 8))).toByte()
     }
-    val element = {{ element_pascal }}.decode(SceCursor(bytes))
+{% if context.flags %}
+    // What the entry was published under: the context words are written by `publish`
+    // alone and a torn copy is never decoded, so a flag is a bit and the tag a byte.
+    val flags = {{ pascal }}Flags(
+{% for flag in context.flags %}
+        {{ flag.camel }} = ((entry[1 + {{ flag.word }}] ushr {{ flag.shift }}) and 1L) == 1L{{ "," if not loop.last else "" }}
+{% endfor %}
+    )
+{% endif %}
+{% if context.has_tag %}
+    val tag = entry[1 + {{ context.tag_word }}].toUByte()
+{% endif %}
+    val element = {{ element_pascal }}.decode(SceCursor(bytes){% for flag in context.flags %}, flagInput(flags.{{ flag.camel }}){% endfor %}{% if context.has_tag %}, tag{% endif %})
         ?: return {{ pascal }}Read.Unreadable(seq, "the stored bytes do not decode as a {{ element_pascal }}")
+{% if context.present %}
+    return {{ pascal }}Read.Item(
+        seq,
+        element,
+{% if context.flags %}
+        flags{{ "," if context.has_tag else "" }}
+{% endif %}
+{% if context.has_tag %}
+        tag,
+{% endif %}
+    )
+{% else %}
     return {{ pascal }}Read.Item(seq, element)
+{% endif %}
 }

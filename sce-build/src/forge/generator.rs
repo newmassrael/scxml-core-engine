@@ -21470,9 +21470,14 @@ fn render_broadcast_log_python(
 ///
 /// The element is stored as its wire bytes, so what the template needs of the
 /// element's class is the codec's own `encode(SceSink)` and the companion's
-/// `decode(SceCursor)`, which every Kotlin codec that is not given an input by its
-/// caller has (the shared resolution refuses the others). The stamp is the
-/// runtime's 64-bit one, so [`judge_broadcast_log_stamp`] is not asked anything.
+/// `decode(SceCursor)`. A codec that asks its caller for more (single-bit flag
+/// inputs, each an `UByte` that follows the sink or the cursor, and for a variant
+/// with no tag field a `tag: UByte` that follows the flags on `decode`) has that
+/// stored with the entry: the template gets it as `context`
+/// ([`broadcast_log_context_value`], over the 64-bit words a Kotlin `LongArray`
+/// holds), takes it on `publish` as booleans and a tag, and returns it with the
+/// item. The stamp is the runtime's 64-bit one, so [`judge_broadcast_log_stamp`]
+/// is not asked anything.
 fn render_broadcast_log_kotlin(
     env: &minijinja::Environment<'_>,
     m: &crate::forge::model::BroadcastLogModel,
@@ -21526,6 +21531,7 @@ fn render_broadcast_log_kotlin(
         producers => inputs.producers,
         declared_progress => inputs.declared_progress,
         runtime_dep => "com.sce.forge.runtime.broadcastlog",
+        context => broadcast_log_context_value(&inputs.element, 64),
     };
     tmpl.render(ctx).map_err(|e| {
         ForgeError::from(GenerateError::TemplateRender(format!(
