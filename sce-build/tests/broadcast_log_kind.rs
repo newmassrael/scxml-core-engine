@@ -2383,47 +2383,245 @@ fn c11_refuses_what_the_shared_judgement_refuses_in_the_shared_words() {
     assert!(row_text(&located, &xml).contains("<sce:retention"));
     assert!(invalid_config(located).contains("the retention resolves to 0"));
 
-    // An element the template cannot hold, on the element-type row, naming C11.
+    // No element is left that the C11 template cannot hold: a flag input and a
+    // variant's tag are stored with the entry, and a CBOR text entry is copied into
+    // the struct, so the facts that name them are accepted and generate a header.
     let element_xml = event_ring();
-    let facts = BroadcastLogElementFacts {
-        caller_variant_tag: true,
-        ..BroadcastLogElementFacts::default()
-    };
-    let located = compile_single_c(&element_xml, &resolution_options(None, 4, facts))
-        .err()
-        .unwrap_or_else(|| panic!("an element the template cannot hold is refused"));
-    assert!(row_text(&located, &element_xml).contains("<sce:element-type>event_record<"));
-    let detail = invalid_config(located);
-    assert!(
-        detail.contains("the element 'event_record' cannot be stored by the C11 template"),
-        "{detail}"
+    for facts in [
+        BroadcastLogElementFacts {
+            caller_variant_tag: true,
+            ..BroadcastLogElementFacts::default()
+        },
+        BroadcastLogElementFacts {
+            caller_flag_inputs: vec!["S".to_string()],
+            ..BroadcastLogElementFacts::default()
+        },
+        BroadcastLogElementFacts {
+            cbor_text_or_bytes_entry: true,
+            ..BroadcastLogElementFacts::default()
+        },
+    ] {
+        compile_single_c(&element_xml, &resolution_options(None, 4, facts.clone()))
+            .unwrap_or_else(|located| panic!("C11 holds {facts:?}, got {located:?}"));
+    }
+}
+
+#[test]
+fn c11_stores_the_flag_inputs_an_element_asks_its_caller_for() {
+    // The codec `event_record` takes the flag input `S` from its caller on `encode` and
+    // `decode`, as a `uint8_t` after the writer or the cursor. The log stores it in a
+    // context word of the entry, takes it on `publish` as a `bool` of a struct, and gives
+    // it back in the read result, so that every reader decodes the entry under what it was
+    // published under. The element is a `uint8` and an optional `uint8`: 2 bytes, an entry
+    // of 1 length word, 1 context word and 1 word of bytes.
+    let xml = event_ring();
+    let codec = flag_input_codec();
+    let code = generated_c_log(
+        compile_documents(
+            Language::C11,
+            &[("event_ring.scxml", &xml), ("event_record.scxml", &codec)],
+        )
+        .expect("a log stores the flag input its element asks for"),
+    );
+    assert_holds(
+        &code,
+        &[
+            "#include <stdbool.h>",
+            "#define EVENT_RING_MAX_ENCODED_BYTES ((size_t)2u)",
+            "#define EVENT_RING_CONTEXT_WORDS ((uint32_t)1u)",
+            "((uint32_t)(1u + EVENT_RING_CONTEXT_WORDS + EVENT_RING_MAX_ENCODED_BYTES / 8u + \
+             (EVENT_RING_MAX_ENCODED_BYTES % 8u != 0u ? 1u : 0u)))",
+            "typedef struct {\n    bool s;\n} event_ring_flags_t;",
+            "static inline uint8_t event_ring_flag_input(bool on)",
+            "    event_ring_flags_t flags;\n} event_ring_read_result_t;",
+            "static inline event_ring_publish_result_t event_ring_publish(event_ring_publisher_t \
+             *publisher, const event_record_t *element, const event_ring_flags_t *flags)",
+            "event_record_encode_to_buf(element, bytes, EVENT_RING_MAX_ENCODED_BYTES, &length, \
+             event_ring_flag_input(flags->s))",
+            "if (flags->s) {\n        entry[1u + 0u] |= UINT64_C(1) << 0u;\n    }",
+            "entry[2u + index / 8u] |= (uint64_t)bytes[index] << (8u * (index % 8u));",
+            "result.flags.s = false;",
+            "bytes[index] = (uint8_t)(entry[2u + index / 8u] >> (8u * (index % 8u)));",
+            "result.flags.s = ((entry[1u + 0u] >> 0u) & UINT64_C(1)) != 0u;",
+            "event_record_decode(&cursor, out, event_ring_flag_input(result.flags.s))",
+        ],
     );
     assert!(
-        detail.contains("its decode takes the variant's tag from the caller"),
-        "{detail}"
+        !code.contains("uint8_t tag") && !code.contains("result.tag"),
+        "the element has no tag:\n{code}"
+    );
+    // The flag is stored before the bytes are packed, and the bits are read back before
+    // the decode that is given them.
+    let stored = code
+        .find("if (flags->s) {")
+        .expect("the flag is stored in the entry");
+    let packed = code
+        .find("entry[2u + index / 8u] |=")
+        .expect("the bytes are packed");
+    assert!(stored < packed, "the flag word comes first:\n{code}");
+    let read_back = code
+        .find("result.flags.s = ((entry[")
+        .expect("the flag is read back from the entry");
+    let decoded = code
+        .find("event_record_decode(&cursor, out")
+        .expect("the element is decoded");
+    assert!(
+        read_back < decoded,
+        "the decode is given the flag stored with the entry:\n{code}"
     );
 }
 
 #[test]
-fn c11_refuses_an_element_whose_codec_asks_the_caller_for_a_flag() {
-    let xml = event_ring();
-    let codec = flag_input_codec();
-    let located = compile_documents(
-        Language::C11,
-        &[("event_ring.scxml", &xml), ("event_record.scxml", &codec)],
+fn c11_stores_the_flags_and_the_tag_of_an_element_in_context_words_of_their_own() {
+    // Two flag inputs fit one word; the tag takes the next. The bytes follow the
+    // length word and the two context words, so they start at word 3. The codec takes
+    // the flags and then the tag on `decode`, and only the flags on `encode`.
+    let facts = BroadcastLogElementFacts {
+        caller_flag_inputs: vec!["S".to_string(), "T".to_string()],
+        caller_variant_tag: true,
+        ..BroadcastLogElementFacts::default()
+    };
+    let code = compile_single_c(&event_ring(), &resolution_options(None, 4, facts))
+        .expect("a log stores the flags and the tag its element asks for");
+    assert_holds(
+        &code,
+        &[
+            "#define EVENT_RING_CONTEXT_WORDS ((uint32_t)2u)",
+            "((uint32_t)(1u + EVENT_RING_CONTEXT_WORDS + EVENT_RING_MAX_ENCODED_BYTES / 8u + \
+             (EVENT_RING_MAX_ENCODED_BYTES % 8u != 0u ? 1u : 0u)))",
+            "typedef struct {\n    bool s;\n    bool t;\n} event_ring_flags_t;",
+            "    event_ring_flags_t flags;\n",
+            "    uint8_t tag;\n} event_ring_read_result_t;",
+            "static inline event_ring_publish_result_t event_ring_publish(event_ring_publisher_t \
+             *publisher, const event_record_t *element, const event_ring_flags_t *flags, \
+             uint8_t tag)",
+            "event_record_encode_to_buf(element, bytes, EVENT_RING_MAX_ENCODED_BYTES, &length, \
+             event_ring_flag_input(flags->s), event_ring_flag_input(flags->t))",
+            "if (flags->s) {\n        entry[1u + 0u] |= UINT64_C(1) << 0u;\n    }",
+            "if (flags->t) {\n        entry[1u + 0u] |= UINT64_C(1) << 1u;\n    }",
+            "entry[1u + 1u] = (uint64_t)tag;",
+            "entry[3u + index / 8u] |= (uint64_t)bytes[index] << (8u * (index % 8u));",
+            "result.flags.s = false;",
+            "result.flags.t = false;",
+            "result.tag = 0u;",
+            "bytes[index] = (uint8_t)(entry[3u + index / 8u] >> (8u * (index % 8u)));",
+            "result.flags.s = ((entry[1u + 0u] >> 0u) & UINT64_C(1)) != 0u;",
+            "result.flags.t = ((entry[1u + 0u] >> 1u) & UINT64_C(1)) != 0u;",
+            "result.tag = (uint8_t)(entry[1u + 1u] & UINT64_C(0xFF));",
+            "event_record_decode(&cursor, out, event_ring_flag_input(result.flags.s), \
+             event_ring_flag_input(result.flags.t), result.tag)",
+        ],
+    );
+}
+
+#[test]
+fn c11_takes_a_tag_alone_as_one_context_word_and_the_signature_takes_no_flags() {
+    let facts = BroadcastLogElementFacts {
+        caller_variant_tag: true,
+        ..BroadcastLogElementFacts::default()
+    };
+    let code = compile_single_c(&event_ring(), &resolution_options(None, 4, facts))
+        .expect("a log stores the tag its element asks for");
+    assert_holds(
+        &code,
+        &[
+            "#define EVENT_RING_CONTEXT_WORDS ((uint32_t)1u)",
+            "    uint8_t tag;\n} event_ring_read_result_t;",
+            "static inline event_ring_publish_result_t event_ring_publish(event_ring_publisher_t \
+             *publisher, const event_record_t *element, uint8_t tag)",
+            "event_record_encode_to_buf(element, bytes, EVENT_RING_MAX_ENCODED_BYTES, &length);",
+            "entry[1u + 0u] = (uint64_t)tag;",
+            "entry[2u + index / 8u] |= (uint64_t)bytes[index] << (8u * (index % 8u));",
+            "result.tag = (uint8_t)(entry[1u + 0u] & UINT64_C(0xFF));",
+            "event_record_decode(&cursor, out, result.tag)",
+        ],
+    );
+    assert!(
+        !code.contains("flags") && !code.contains("stdbool"),
+        "the element has no flag input:\n{code}"
+    );
+}
+
+#[test]
+fn c11_keeps_sixty_four_flags_to_a_word_and_starts_the_next_word_at_the_sixty_fifth() {
+    // C11's context words are `uint64_t`: flag 63 is the last bit of the first context
+    // word (written with `UINT64_C(1) << 63u`, which a `uint64_t` holds whole) and flag
+    // 64 the first bit of the second.
+    let facts = BroadcastLogElementFacts {
+        caller_flag_inputs: (0..65).map(|index| format!("f{index}")).collect(),
+        ..BroadcastLogElementFacts::default()
+    };
+    let code = compile_single_c(&event_ring(), &resolution_options(None, 4, facts))
+        .expect("a log stores 65 flag inputs");
+    assert_holds(
+        &code,
+        &[
+            "#define EVENT_RING_CONTEXT_WORDS ((uint32_t)2u)",
+            "    bool f0;\n",
+            "    bool f64;\n} event_ring_flags_t;",
+            "if (flags->f0) {\n        entry[1u + 0u] |= UINT64_C(1) << 0u;\n    }",
+            "if (flags->f63) {\n        entry[1u + 0u] |= UINT64_C(1) << 63u;\n    }",
+            "if (flags->f64) {\n        entry[1u + 1u] |= UINT64_C(1) << 0u;\n    }",
+            "result.flags.f63 = ((entry[1u + 0u] >> 63u) & UINT64_C(1)) != 0u;",
+            "result.flags.f64 = ((entry[1u + 1u] >> 0u) & UINT64_C(1)) != 0u;",
+            "entry[3u + index / 8u] |= (uint64_t)bytes[index] << (8u * (index % 8u));",
+        ],
+    );
+}
+
+#[test]
+fn a_c11_element_with_no_caller_input_has_the_entry_and_the_signatures_it_always_had() {
+    let code = compile_single_c(
+        &event_ring(),
+        &resolution_options(None, 4, BroadcastLogElementFacts::default()),
+    )
+    .expect("an element with no caller input is generated");
+    assert!(!code.contains("CONTEXT_WORDS"), "{code}");
+    assert!(!code.contains("flags"), "{code}");
+    assert!(!code.contains("stdbool"), "{code}");
+    assert!(!code.contains("result.tag"), "{code}");
+    assert_holds(
+        &code,
+        &[
+            "((uint32_t)(1u + EVENT_RING_MAX_ENCODED_BYTES / 8u + \
+             (EVENT_RING_MAX_ENCODED_BYTES % 8u != 0u ? 1u : 0u)))",
+            "static inline event_ring_publish_result_t event_ring_publish(event_ring_publisher_t \
+             *publisher, const event_record_t *element)",
+            "event_record_encode_to_buf(element, bytes, EVENT_RING_MAX_ENCODED_BYTES, &length);",
+            "entry[1u + index / 8u] |= (uint64_t)bytes[index] << (8u * (index % 8u));",
+            "bytes[index] = (uint8_t)(entry[1u + index / 8u] >> (8u * (index % 8u)));",
+            "event_record_decode(&cursor, out);",
+            "    sce_forge_codec_status_t codec_status;\n} event_ring_read_result_t;",
+        ],
+    );
+}
+
+#[test]
+fn c11_counts_the_context_words_in_the_words_it_refuses_past_32_bits() {
+    // words = 1 + context + ceil(bytes / 8) must be at most 4294967295. With one
+    // context word the most bytes that fit are 8 * (4294967295 - 2) = 34359738344;
+    // one more byte needs a word more, 4294967296.
+    let facts = BroadcastLogElementFacts {
+        caller_variant_tag: true,
+        ..BroadcastLogElementFacts::default()
+    };
+    let element_xml = event_ring();
+    compile_single_c(
+        &element_xml,
+        &resolution_options(None, 34_359_738_344, facts.clone()),
+    )
+    .expect("the widest entry with one context word generates");
+    let located = compile_single_c(
+        &element_xml,
+        &resolution_options(None, 34_359_738_345, facts),
     )
     .err()
-    .unwrap_or_else(|| panic!("a log has no flag input to give, so the set is refused"));
-    assert!(
-        row_text(&located, &xml).contains("<sce:element-type>event_record<"),
-        "the refusal is placed on the element-type row"
-    );
+    .unwrap_or_else(|| panic!("one byte more than 32 bits of words hold is refused"));
     let detail = invalid_config(located);
     assert!(
-        detail.contains("the element 'event_record' cannot be stored by the C11 template"),
+        detail.contains("which is 4294967296 64-bit words"),
         "{detail}"
     );
-    assert!(detail.contains("flag input(s) S"), "{detail}");
 }
 
 #[test]
