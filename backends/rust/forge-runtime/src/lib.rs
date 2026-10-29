@@ -21,11 +21,23 @@
 extern crate alloc;
 
 pub mod algorithm;
-/// The bounded broadcast log (ADR 0062): one publisher, any number of readers,
-/// the oldest entry forgotten when full. Its stamps are 64-bit atomics, so a
-/// target without them has no such module, as it has no SCQ.
+/// The bounded broadcast log (ADR 0062), 64-bit row: one publisher, any number of
+/// readers, the oldest entry forgotten when full. Its stamps are 64-bit atomics, so
+/// a target without them has no such module, as it has no SCQ; the row for those
+/// is [`broadcast_log_narrow`].
 #[cfg(all(target_has_atomic = "64", target_has_atomic = "8"))]
 pub mod broadcast_log;
+/// The bounded broadcast log's one implementation (ADR 0062), generic over the
+/// width of the atomics it keeps its stamps in: the two rows below are its
+/// instantiations. Absent where a pointer is 16 bits, whose cell cannot hold a
+/// word of it.
+#[cfg(any(target_pointer_width = "32", target_pointer_width = "64"))]
+pub mod broadcast_log_core;
+/// The bounded broadcast log, narrow row: a 32-bit stamp in pointer-width atomics,
+/// for a target without 64-bit atomics, with loads and stores alone where the
+/// target has no swap (ADR 0062 section 4, "Stamp width").
+#[cfg(any(target_pointer_width = "32", target_pointer_width = "64"))]
+pub mod broadcast_log_narrow;
 pub mod cbor;
 pub mod codec;
 pub mod content_line;

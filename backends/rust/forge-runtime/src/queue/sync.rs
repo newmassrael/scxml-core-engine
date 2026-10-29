@@ -37,8 +37,13 @@ pub(crate) use core::sync::atomic::AtomicU32;
 pub(crate) use core::sync::atomic::{AtomicI64, AtomicU64};
 
 /// The fences of the broadcast log's sequence-lock read (ADR 0062 section 4),
-/// present where its 64-bit stamp is.
-#[cfg(all(not(loom), target_has_atomic = "64"))]
+/// present wherever the log is: on every target whose pointer is at least 32 bits,
+/// with loads and stores alone as well as with compare-and-swap, because a fence
+/// needs no read-modify-write instruction.
+#[cfg(all(
+    not(loom),
+    any(target_pointer_width = "32", target_pointer_width = "64")
+))]
 pub(crate) use core::sync::atomic::fence;
 
 #[cfg(loom)]

@@ -3,16 +3,22 @@
 # Run with
 # `scripts/mutate sce-build/tests/mutations/a_broadcast_log_orders_every_slot_hand_over.cases`.
 #
-# The bounded broadcast log of ADR 0062 hands each entry from the one publisher
-# to any number of readers through a sequence-lock: a stamp that carries the
-# entry's sequence number, relaxed atomic words between two fences, and a head
-# index. Each order the protocol needs is a decision the TLA+ model
-# (`docs/formal/BroadcastLog.tla`) cannot check, because it is sequentially
-# consistent. Two orders the code keeps are not needed and have no case, each with
-# its reason where it would stand. The oracle is the loom models in
-# `backends/rust/forge-runtime/tests/loom_broadcast_log.rs`, which explore every
-# interleaving and every outcome the memory model allows, so a weakened order is
-# not something they might sample but something they must reach.
+# The bounded broadcast log of ADR 0062 hands each entry from the one publisher to
+# any number of readers through a sequence-lock: a stamp that carries the entry's
+# sequence number, relaxed atomic words between two fences, and a head index. Each
+# order the protocol needs is a decision the TLA+ model (`docs/formal/BroadcastLog.tla`)
+# cannot check, because it is sequentially consistent. Two orders the code keeps are not
+# needed and have no case, each with its reason where it would stand. The oracle is the
+# loom models in `backends/rust/forge-runtime/tests/loom_broadcast_log.rs`, which
+# explore every interleaving and every outcome the memory model allows, so a weakened
+# order is not something they might sample but something they must reach.
+#
+# The protocol is written once, generic over the width of the stamp, in
+# `broadcast_log_core.rs`; the 64-bit row these models run is its instantiation over
+# `Wide`. The narrow row's own decisions (the head read modulo the stamp space, the
+# truncation of the stamp, the test for a young log) are in the casefile
+# `a_narrow_broadcast_log_reads_its_head_modulo_the_stamp_space.cases`, which runs the
+# models over a stamp of three bits.
 #
 # Two of the cases are not hypothetical: the first version of the log stored the
 # `busy` stamp relaxed and loaded the second stamp relaxed, and each was found by
@@ -28,7 +34,7 @@
 # INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_tests -p sce-forge-runtime --release --target-dir target/loom --config 'build.rustflags=["--cfg","loom"]' --test loom_broadcast_log
-mutation_targets backends/rust/forge-runtime/src/broadcast_log.rs
+mutation_targets backends/rust/forge-runtime/src/broadcast_log_core.rs
 mutation_oracles backends/rust/forge-runtime/tests/loom_broadcast_log.rs
 
 # ── The publisher's three needed orders ────────────────────────────
@@ -36,15 +42,17 @@ mutation_oracles backends/rust/forge-runtime/tests/loom_broadcast_log.rs
 # A reader that sees this stamp and reloads `head` must find the head the previous
 # publish stored.
 mutation_case "the publisher stores the busy stamp without releasing the head before it" <<'PY'
-edit("backends/rust/forge-runtime/src/broadcast_log.rs",
-     r'''slot.stamp.store(busy(n), Ordering::Release);''',
-     r'''slot.stamp.store(busy(n), Ordering::Relaxed);''')
+edit("backends/rust/forge-runtime/src/broadcast_log_core.rs",
+     r'''            BroadcastLog::<W, SLOTS, L>::busy(n),
+            Ordering::Release,''',
+     r'''            BroadcastLog::<W, SLOTS, L>::busy(n),
+            Ordering::Relaxed,''')
 PY
 
 # Without the fence the busy stamp may reach a reader after the words it guards, and
 # a copy that mixes two entries then validates.
 mutation_case "the publisher writes the words without a release fence after the busy stamp" <<'PY'
-edit("backends/rust/forge-runtime/src/broadcast_log.rs",
+edit("backends/rust/forge-runtime/src/broadcast_log_core.rs",
      r'''        fence(Ordering::Release);''',
      r'''        /* no release fence */''')
 PY
@@ -60,29 +68,29 @@ PY
 # reader of the slot alone would need.
 
 mutation_case "the publisher moves the head without releasing the slot" <<'PY'
-edit("backends/rust/forge-runtime/src/broadcast_log.rs",
-     r'''self.log.head.0.store(n + 1, Ordering::Release);''',
-     r'''self.log.head.0.store(n + 1, Ordering::Relaxed);''')
+edit("backends/rust/forge-runtime/src/broadcast_log_core.rs",
+     r'''L::store(&self.log.head.0, next, Ordering::Release);''',
+     r'''L::store(&self.log.head.0, next, Ordering::Relaxed);''')
 PY
 
 # ── The reader's four needed orders ─────────────────────────────────
 
 mutation_case "a reader loads the head without acquiring the slot behind it" <<'PY'
-edit("backends/rust/forge-runtime/src/broadcast_log.rs",
-     r'''        let h = self.head.0.load(Ordering::Acquire);
-        debug_assert!(r <= h, "a reader's cursor never passes the head");''',
-     r'''        let h = self.head.0.load(Ordering::Relaxed);
-        debug_assert!(r <= h, "a reader's cursor never passes the head");''')
+edit("backends/rust/forge-runtime/src/broadcast_log_core.rs",
+     r'''        let head = L::load(&self.head.0, Ordering::Acquire);
+        let behind = Self::distance(head, r);''',
+     r'''        let head = L::load(&self.head.0, Ordering::Relaxed);
+        let behind = Self::distance(head, r);''')
 PY
 
 mutation_case "a reader loads the first stamp without acquiring" <<'PY'
-edit("backends/rust/forge-runtime/src/broadcast_log.rs",
-     r'''let first = slot.stamp.load(Ordering::Acquire);''',
-     r'''let first = slot.stamp.load(Ordering::Relaxed);''')
+edit("backends/rust/forge-runtime/src/broadcast_log_core.rs",
+     r'''let first = L::load(&slot.stamp, Ordering::Acquire);''',
+     r'''let first = L::load(&slot.stamp, Ordering::Relaxed);''')
 PY
 
 mutation_case "a reader copies the words without an acquire fence before the second stamp" <<'PY'
-edit("backends/rust/forge-runtime/src/broadcast_log.rs",
+edit("backends/rust/forge-runtime/src/broadcast_log_core.rs",
      r'''            fence(Ordering::Acquire);''',
      r'''            /* no acquire fence */''')
 PY
@@ -90,9 +98,9 @@ PY
 # The load that decides whether the copy was overwritten is also the one a lap
 # is read from; a fence orders only the reads before it.
 mutation_case "a reader loads the second stamp without acquiring" <<'PY'
-edit("backends/rust/forge-runtime/src/broadcast_log.rs",
-     r'''if slot.stamp.load(Ordering::Acquire) == first {''',
-     r'''if slot.stamp.load(Ordering::Relaxed) == first {''')
+edit("backends/rust/forge-runtime/src/broadcast_log_core.rs",
+     r'''if L::load(&slot.stamp, Ordering::Acquire) == first {''',
+     r'''if L::load(&slot.stamp, Ordering::Relaxed) == first {''')
 PY
 
 # Not a case: the acquire order of the reload of `head` after a mismatch. It
@@ -109,15 +117,15 @@ PY
 # A stamp compared as a flag cannot tell the entry the reader wants from the one a
 # later lap wrote into the same slot.
 mutation_case "a reader accepts any written stamp instead of the sequence it wants" <<'PY'
-edit("backends/rust/forge-runtime/src/broadcast_log.rs",
-     r'''        if first == done(r) {''',
-     r'''        if first != 0 {''')
+edit("backends/rust/forge-runtime/src/broadcast_log_core.rs",
+     r'''        if first == Self::done(r) {''',
+     r'''        if first != L::UNWRITTEN {''')
 PY
 
 # `RETENTION + 1` slots mean an entry `SLOTS` behind the head is outside the
 # window; one more slot's worth is read as retained while it is being overwritten.
 mutation_case "a reader reads an entry a whole ring behind the head as retained" <<'PY'
-edit("backends/rust/forge-runtime/src/broadcast_log.rs",
-     r'''        if h - r >= SLOTS as u64 {''',
-     r'''        if h - r > SLOTS as u64 {''')
+edit("backends/rust/forge-runtime/src/broadcast_log_core.rs",
+     r'''        if behind >= SLOTS as u64 {''',
+     r'''        if behind > SLOTS as u64 {''')
 PY
