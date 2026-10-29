@@ -25,6 +25,10 @@
 # conformance crate compiles, which declare `wait-free`; deriving them keeps one
 # set of log documents in the tree, and the documents themselves are what the
 # refusal test hands the generator unchanged.
+#
+# The logs over an element whose codec asks its caller for a flag or a tag are
+# the second class below. Their documents are shared by every backend's
+# conformance lane, in tests/forge/conformance/broadcast_log_context/.
 
 from __future__ import annotations
 
@@ -43,10 +47,26 @@ from sce_forge_runtime.codec import BufferOverflow, CodecError, LengthOutOfRange
 
 REPO_ROOT = _sce_codegen.REPO_ROOT
 RESOURCE_DIR = REPO_ROOT / "tests" / "forge" / "resources"
+# The documents of the logs over an element that asks its caller for what its wire
+# form does not carry (ADR 0062, "Caller inputs are part of the element"). Every
+# backend's conformance lane reads these same files.
+CONTEXT_DIR = REPO_ROOT / "tests" / "forge" / "conformance" / "broadcast_log_context"
 PACKAGE = "_broadcast_log_generated"
+CONTEXT_PACKAGE = "_broadcast_log_context_generated"
 
 ELEMENTS = ("broadcast_log_conformance_event", "broadcast_log_conformance_record")
 LOGS = ("broadcast_log_conformance_literal", "broadcast_log_conformance_deployed")
+# The log over a codec with one flag input: the element, then the log.
+FLAGGED_SET = ("broadcast_log_conformance_flagged_event", "broadcast_log_conformance_flagged")
+# The log over a variant whose tag the caller gives: the two arms, the variant
+# that imports them, then the log.
+CHOSEN_SET = (
+    "broadcast_log_conformance_choice_small",
+    "broadcast_log_conformance_choice_large",
+    "broadcast_log_conformance_choice",
+    "broadcast_log_conformance_chosen",
+)
+CONTEXT_LOGS = ("broadcast_log_conformance_flagged", "broadcast_log_conformance_chosen")
 
 # The deploy the set is generated for: machine `mcu_node`, whose limit
 # `event_retention` is the retention of `broadcast_log_conformance_deployed`.
@@ -74,15 +94,15 @@ def _orchestrate(
     return subprocess.run(command, capture_output=True, text=True)
 
 
-def _copy(name: str, directory: Path) -> Path:
+def _copy(name: str, directory: Path, source: Path = RESOURCE_DIR) -> Path:
     path = directory / f"{name}.scxml"
-    path.write_text((RESOURCE_DIR / f"{name}.scxml").read_text())
+    path.write_text((source / f"{name}.scxml").read_text())
     return path
 
 
-def _blocking(name: str, directory: Path) -> Path:
+def _blocking(name: str, directory: Path, source: Path = RESOURCE_DIR) -> Path:
     """The conformance log, declaring the progress this backend can give."""
-    text = (RESOURCE_DIR / f"{name}.scxml").read_text()
+    text = (source / f"{name}.scxml").read_text()
     declared = "<sce:progress>wait-free</sce:progress>"
     assert declared in text, f"{name} no longer declares wait-free: derive it from what it declares"
     path = directory / f"{name}.scxml"
@@ -315,6 +335,242 @@ class TestGeneratedBroadcastLogs(unittest.TestCase):
             said = done.stdout + done.stderr
             self.assertIn("cannot be met on the python backend", said)
             self.assertIn("<sce:progress>wait-free</sce:progress>", said)
+
+
+class TestGeneratedBroadcastLogContext(unittest.TestCase):
+    """A log over an element whose codec asks its caller for what its wire form does
+    not carry (ADR 0062 section 4, "Caller inputs are part of the element").
+
+    The log stores each in the entry beside the bytes, ``publish`` takes it and the
+    item returns it, so a reader decodes an entry under what it was published under
+    and not under whatever it happens to hold. Two sets: a codec with one flag input
+    that gates a field, and a variant whose wire form has no tag, so the caller gives
+    the tag that selects the arm on decode.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.codegen = _sce_codegen.require()
+        cls._tmp = tempfile.TemporaryDirectory()
+        sources = Path(cls._tmp.name) / "sources"
+        out = Path(cls._tmp.name) / "out"
+        sources.mkdir()
+        out.mkdir()
+        for names in (FLAGGED_SET, CHOSEN_SET):
+            documents = [
+                _blocking(name, sources, CONTEXT_DIR) if name in CONTEXT_LOGS else _copy(name, sources, CONTEXT_DIR)
+                for name in names
+            ]
+            done = _orchestrate(cls.codegen, documents, out, None)
+            assert done.returncode == 0, f"orchestrate {names}: {done.stdout}{done.stderr}"
+        package = types.ModuleType(CONTEXT_PACKAGE)
+        package.__path__ = [str(out)]
+        sys.modules[CONTEXT_PACKAGE] = package
+        importlib.invalidate_caches()
+
+        def load(name: str) -> types.ModuleType:
+            return importlib.import_module(f"{CONTEXT_PACKAGE}.{name}")
+
+        cls.flagged_event = load("broadcast_log_conformance_flagged_event")
+        cls.flagged = load("broadcast_log_conformance_flagged")
+        cls.choice_small = load("broadcast_log_conformance_choice_small")
+        cls.choice_large = load("broadcast_log_conformance_choice_large")
+        cls.choice = load("broadcast_log_conformance_choice")
+        cls.chosen = load("broadcast_log_conformance_chosen")
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        cls._tmp.cleanup()
+
+    # The elements, the flag and the items, spelled the way the generator names them.
+
+    def make_event(self, sensor_id: int, value: Optional[int]) -> Any:
+        return self.flagged_event.BroadcastLogConformanceFlaggedEvent(sensor_id=sensor_id, value=value)
+
+    def flags(self, has_value: bool) -> Any:
+        return self.flagged.BroadcastLogConformanceFlaggedFlags(has_value=has_value)
+
+    def flagged_item(self, seq: int, element: Any, has_value: bool) -> Any:
+        return self.flagged.BroadcastLogConformanceFlaggedItem(seq, element, self.flags(has_value))
+
+    def small(self, payload: int) -> Any:
+        arm = self.choice_small.BroadcastLogConformanceChoiceSmall(payload=payload)
+        body = self.choice.BroadcastLogConformanceChoiceVariant(
+            kind="BroadcastLogConformanceChoiceSmall", broadcast_log_conformance_choice_small=arm
+        )
+        return self.choice.BroadcastLogConformanceChoice(body=body)
+
+    def large(self, payload: int) -> Any:
+        arm = self.choice_large.BroadcastLogConformanceChoiceLarge(payload=payload)
+        body = self.choice.BroadcastLogConformanceChoiceVariant(
+            kind="BroadcastLogConformanceChoiceLarge", broadcast_log_conformance_choice_large=arm
+        )
+        return self.choice.BroadcastLogConformanceChoice(body=body)
+
+    def chosen_item(self, seq: int, element: Any, tag: int) -> Any:
+        return self.chosen.BroadcastLogConformanceChosenItem(seq, element, tag)
+
+    # The slot.
+
+    def test_an_entry_holds_its_context_words_between_the_length_and_the_bytes(self) -> None:
+        # The flagged element is an 8-bit id and a gated 16-bit value: at most 3 bytes.
+        # One length word, one context word (one flag), one word of bytes.
+        self.assertEqual(3, self.flagged.MAX_ENCODED_BYTES)
+        self.assertEqual(1, self.flagged.CONTEXT_WORDS)
+        self.assertEqual(3, self.flagged.WORDS)
+        self.assertEqual(3, self.flagged.RETENTION)
+        self.assertEqual("blocking", self.flagged.DECLARED_PROGRESS)
+        # The choice is the larger of its arms, two bytes; the tag is one context word.
+        self.assertEqual(2, self.chosen.MAX_ENCODED_BYTES)
+        self.assertEqual(1, self.chosen.CONTEXT_WORDS)
+        self.assertEqual(3, self.chosen.WORDS)
+        for module, new in (
+            (self.flagged, self.flagged.new_broadcast_log_conformance_flagged),
+            (self.chosen, self.chosen.new_broadcast_log_conformance_chosen),
+        ):
+            log = new()
+            self.assertEqual((module.WORDS, module.SLOTS), (log.words, log.slots))
+
+    def test_the_context_is_in_the_word_after_the_length_and_the_bytes_follow_it(self) -> None:
+        module = self.flagged
+        log = module.new_broadcast_log_conformance_flagged()
+        publisher = log.publisher()
+        module.publish(publisher, self.make_event(1, 0x0203), self.flags(True))
+        module.publish(publisher, self.make_event(2, None), self.flags(False))
+
+        reader = log.reader_oldest()
+        words = [0] * module.WORDS
+        log.read(reader, words)
+        # Three bytes: 01 03 02 (the id, then the value little-endian). The flag is
+        # bit 0 of the context word.
+        self.assertEqual([3, 1, 0x020301], words)
+        log.read(reader, words)
+        # One byte, under a flag that is not set.
+        self.assertEqual([1, 0, 0x02], words)
+
+        module = self.chosen
+        log = module.new_broadcast_log_conformance_chosen()
+        publisher = log.publisher()
+        module.publish(publisher, self.small(9), 1)
+        module.publish(publisher, self.large(0x0102), 0)
+        reader = log.reader_oldest()
+        log.read(reader, words)
+        # The tag is the context word, and the arm's own byte is all the bytes hold.
+        self.assertEqual([1, 1, 9], words)
+        log.read(reader, words)
+        self.assertEqual([2, 0, 0x0102], words)
+
+    # A flag the codec takes from its caller.
+
+    def test_a_reader_gets_back_the_flag_an_entry_was_published_under(self) -> None:
+        module = self.flagged
+        log = module.new_broadcast_log_conformance_flagged()
+        publisher = log.publisher()
+        reader = log.reader_oldest()
+        self.assertEqual(Empty(), module.read(log, reader))
+
+        # The same element shape, published under each answer of the flag: the value is
+        # on the wire under True and absent under False, so the two frames are three
+        # bytes and one, and neither can be decoded under the other's flag.
+        sent = [(self.make_event(1, 0x0203), True), (self.make_event(2, None), False)]
+        for n, (element, has_value) in enumerate(sent):
+            self.assertEqual(n, module.publish(publisher, element, self.flags(has_value)))
+        for n, (element, has_value) in enumerate(sent):
+            self.assertEqual(
+                self.flagged_item(n, element, has_value),
+                module.read(log, reader),
+                f"entry {n} comes back whole, with the flag it was published under",
+            )
+        self.assertEqual(Empty(), module.read(log, reader))
+
+    def test_every_reader_of_an_entry_decodes_it_under_the_same_flag(self) -> None:
+        module = self.flagged
+        log = module.new_broadcast_log_conformance_flagged()
+        publisher = log.publisher()
+        early = log.reader_oldest()
+        late = log.reader_oldest()
+        module.publish(publisher, self.make_event(5, 500), self.flags(True))
+        module.publish(publisher, self.make_event(6, None), self.flags(False))
+        for reader in (early, late):
+            self.assertEqual(self.flagged_item(0, self.make_event(5, 500), True), module.read(log, reader))
+            self.assertEqual(self.flagged_item(1, self.make_event(6, None), False), module.read(log, reader))
+
+    def test_a_reader_the_publisher_laps_resumes_at_an_entry_with_the_flag_it_was_published_under(self) -> None:
+        module = self.flagged
+        log = module.new_broadcast_log_conformance_flagged()
+        publisher = log.publisher()
+        slow = log.reader_oldest()
+        # Five entries into a log that retains three: the window is [2, 5). The flag
+        # alternates, so a flag that stayed with the wrong slot would show.
+        sent = [(self.make_event(n + 1, 100 + n if n % 2 == 0 else None), n % 2 == 0) for n in range(5)]
+        for element, has_value in sent:
+            module.publish(publisher, element, self.flags(has_value))
+        self.assertEqual(Lagged(2), module.read(log, slow))
+        for n in range(2, 5):
+            element, has_value = sent[n]
+            self.assertEqual(self.flagged_item(n, element, has_value), module.read(log, slow))
+        self.assertEqual(Empty(), module.read(log, slow))
+
+    def test_the_flag_that_was_stored_decides_how_an_entry_is_read_and_the_log_does_not_judge_it(self) -> None:
+        # This backend's codec does not check a flag against the field it gates when it
+        # encodes (the Rust codec does, and refuses with `PresentIfMismatch`), and the
+        # log does not either: the publisher gives what it knows. What a reader sees is
+        # then the entry decoded under the flag that was stored. A codec that refused a
+        # disagreement would raise from the first `publish` here, and this test would
+        # turn red there.
+        module = self.flagged
+        log = module.new_broadcast_log_conformance_flagged()
+        publisher = log.publisher()
+        reader = log.reader_oldest()
+
+        # The value is there and the flag says it is not: the three bytes are stored under
+        # a flag that reads one, so the reader gets the element without its value.
+        module.publish(publisher, self.make_event(7, 1), self.flags(False))
+        self.assertEqual(self.flagged_item(0, self.make_event(7, None), False), module.read(log, reader))
+
+        # The value is absent and the flag says it is there: the one byte stored is too
+        # few for the value the flag promises, which the codec does not decode.
+        module.publish(publisher, self.make_event(8, None), self.flags(True))
+        with self.assertRaises(CodecError) as raised:
+            module.read(log, reader)
+        self.assertIs(CodecError, type(raised.exception), "the length was within the bound, so it is not that error")
+        self.assertEqual(2, reader.cursor, "the reader moved past the entry")
+
+    # The tag of a variant that has none of its own.
+
+    def test_a_reader_gets_back_the_tag_an_entry_was_published_under(self) -> None:
+        module = self.chosen
+        log = module.new_broadcast_log_conformance_chosen()
+        publisher = log.publisher()
+        reader = log.reader_oldest()
+        self.assertEqual(Empty(), module.read(log, reader))
+
+        # The wire form of an arm carries no tag, so the two arms' bytes are the arm's
+        # own and which arm a frame is comes from the tag stored beside it.
+        sent = [(self.small(9), 1), (self.large(0x0102), 0), (self.small(255), 1)]
+        for n, (element, tag) in enumerate(sent):
+            self.assertEqual(n, module.publish(publisher, element, tag))
+        for n, (element, tag) in enumerate(sent):
+            self.assertEqual(
+                self.chosen_item(n, element, tag),
+                module.read(log, reader),
+                f"entry {n} comes back as the arm it was published as",
+            )
+        self.assertEqual(Empty(), module.read(log, reader))
+
+    def test_a_tag_that_is_not_one_byte_is_refused_and_nothing_is_published(self) -> None:
+        module = self.chosen
+        log = module.new_broadcast_log_conformance_chosen()
+        publisher = log.publisher()
+        for tag in (256, -1):
+            with self.subTest(tag=tag):
+                with self.assertRaises(ValueError):
+                    module.publish(publisher, self.small(1), tag)
+                self.assertEqual(0, log.head(), "a refused tag publishes nothing")
+        # The refusals took no sequence number: the next entry is the first.
+        self.assertEqual(0, module.publish(publisher, self.small(1), 1))
+        reader = log.reader_oldest()
+        self.assertEqual(self.chosen_item(0, self.small(1), 1), module.read(log, reader))
 
 
 if __name__ == "__main__":
