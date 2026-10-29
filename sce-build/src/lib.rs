@@ -3671,8 +3671,17 @@ impl BroadcastLogElementFacts {
             // typed read gives every entry a buffer of its own and nothing else
             // writes it, so the alias keeps that buffer alive and stays valid.
             Language::Go => false,
+            // The decoded struct owns its bytes: a CBOR text entry is a
+            // `char name[N]` and a byte-string entry a `uint8_t name[N]`, each
+            // with its length beside it (`codec_cbor.h.jinja2`), and
+            // `sce_forge_cbor_read_text` and `sce_forge_cbor_read_bytes` copy
+            // into them, so the value outlives the buffer it was read from and
+            // a log can hand it back after its own stack buffer is gone. Read
+            // from the template, not assumed: no entry kind there holds a
+            // pointer into the cursor.
+            Language::C11 => false,
             // No template has landed for these, so none has decided yet.
-            Language::Cpp | Language::C11 | Language::Swift => false,
+            Language::Cpp | Language::Swift => false,
         };
         borrows.then(|| {
             "a CBOR map with a string or byte string entry decodes to a value that borrows \

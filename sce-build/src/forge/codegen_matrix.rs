@@ -339,6 +339,7 @@ pub const BROADCAST_LOG_BACKENDS: &[Language] = &[
     Language::Kotlin,
     Language::Python,
     Language::Go,
+    Language::C11,
 ];
 
 /// Whether `lang` is in `list`, as a `const fn` can ask it. Compared by

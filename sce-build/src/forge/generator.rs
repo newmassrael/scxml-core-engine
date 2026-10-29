@@ -21267,6 +21267,91 @@ fn render_broadcast_log_kotlin(
     })
 }
 
+/// Render a `<sce:kind="broadcast-log">` document for the C11 backend (ADR
+/// 0062). The generated header names the log type over the runtime's `sce_blog_t`
+/// (`sce/forge/broadcast_log.h`), with its storage laid out statically in the
+/// type, sized from the numbers [`resolve_broadcast_log_render_inputs`] reads:
+/// the retention and the element's largest encoded size. It states them and the
+/// contract as macros, and gives typed `publish` and `read` functions over the
+/// element's generated struct, which encode it with the codec's own
+/// `<element>_encode_to_buf` into a buffer of that size, store its length and
+/// bytes in the entry's words, and decode them with `<element>_decode`.
+///
+/// What is refused before the template is read is
+/// [`resolve_broadcast_log_render_inputs`]'s, which every language's renderer
+/// asks first. What it adds is what the runtime counts in 32 bits (a log's slots
+/// and an entry's words): refused here, where the numbers are, and not left to
+/// wrap in the header.
+///
+/// What the header leaves to the compiler is arithmetic over those two numbers
+/// (`WORDS = 1 + ceil(MAX_ENCODED_BYTES / 8)`, `SLOTS = RETENTION + 1`), so the
+/// slot width, the storage and the buffer cannot disagree.
+///
+/// The stamp is 64 bits, as in every row of the runtime, so
+/// [`judge_broadcast_log_stamp`] is not asked anything here (see
+/// [`render_broadcast_log_rust`]). The header uses the platform's `sce_atomic_*`
+/// symbols, which the deploy's `platform.atomic_rmw_width` does not gate for a
+/// log as it does for a queue.
+fn render_broadcast_log_c(
+    env: &minijinja::Environment<'_>,
+    m: &crate::forge::model::BroadcastLogModel,
+    _imports: &[ImportContext],
+    options: &crate::ForgeCompileOptions,
+) -> Result<String, ForgeError> {
+    let inputs = resolve_broadcast_log_render_inputs(m, crate::generator::Language::C11, options)?;
+    if u64::from(inputs.retention) + 1 > u64::from(u32::MAX) {
+        return Err(ForgeError::from(GenerateError::InvalidConfig(format!(
+            "broadcast-log '{name}': the retention resolves to {retention}, and the C11 runtime \
+             counts a log's slots in 32 bits: a log keeps retention + 1 slots, and at most {max} \
+             are possible. Declare a retention of at most {limit}.",
+            name = m.name,
+            retention = inputs.retention,
+            max = u32::MAX,
+            limit = u32::MAX - 1,
+        )))
+        .at_line(m.retention_line));
+    }
+    // One word for the length, then the element's bytes at eight to a word: the
+    // arithmetic the header repeats in `WORDS`, here to refuse what a 32-bit
+    // count of words cannot hold.
+    let words = 1 + inputs.max_bytes.div_ceil(8);
+    if words > u64::from(u32::MAX) {
+        return Err(ForgeError::from(GenerateError::InvalidConfig(format!(
+            "broadcast-log '{name}': the element '{element}' encodes to at most {bytes} bytes, \
+             which is {words} 64-bit words an entry, and the C11 runtime counts the words of an \
+             entry in 32 bits (at most {max}).",
+            name = m.name,
+            element = m.element_type,
+            bytes = inputs.max_bytes,
+            max = u32::MAX,
+        )))
+        .at_line(m.element_type_line));
+    }
+    let tmpl = env.get_template("broadcast_log.h.jinja2").map_err(|e| {
+        ForgeError::from(GenerateError::TemplateLoad(format!(
+            "broadcast_log.h.jinja2 (c11): {e}"
+        )))
+    })?;
+    let upper_name = to_upper_snake(&m.name);
+    let guard = format!("SCE_FORGE_{upper_name}_H");
+    let ctx = minijinja::context! {
+        snake => filters::to_snake_case(m.name.clone()),
+        guard => guard,
+        upper_name => upper_name,
+        element_snake => filters::to_snake_case(m.element_type.clone()),
+        retention => inputs.retention,
+        max_bytes => inputs.max_bytes,
+        producers => inputs.producers,
+        declared_progress => inputs.declared_progress,
+        runtime_dep => "sce/forge/broadcast_log.h",
+    };
+    tmpl.render(ctx).map_err(|e| {
+        ForgeError::from(GenerateError::TemplateRender(format!(
+            "broadcast_log.h.jinja2 (c11): {e}"
+        )))
+    })
+}
+
 /// Judge a broadcast log against the stamp a language's row keeps (ADR 0062 §4):
 /// the obligations of a stamp narrower than 64 bits, which the document alone
 /// cannot discharge.
@@ -24279,10 +24364,10 @@ pub fn generate_c11_with_imports_and_externs(
         }
         // Queue kind: see cpp dispatch.
         ForgeDocument::Queue(m) => render_queue_c(&env, m, imports, options)?,
-        // Broadcast log: see cpp dispatch.
-        ForgeDocument::BroadcastLog(m) => {
-            return Err(refuse_broadcast_log(m, crate::generator::Language::C11))
-        }
+        // ADR 0062: C11's forge runtime has the broadcast-log row
+        // (`sce/forge/broadcast_log.h`), so the document is lowered over it, from
+        // the resolution the document-set compile made (see the Rust dispatch).
+        ForgeDocument::BroadcastLog(m) => render_broadcast_log_c(&env, m, imports, options)?,
         // Feature model: see cpp dispatch.
         ForgeDocument::FeatureModel(_) => return Ok(GeneratedOutput::default()),
     };

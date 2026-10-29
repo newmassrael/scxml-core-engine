@@ -1635,6 +1635,144 @@ fn go_resolution_options(
     }
 }
 
+// --- C11 generates the log over its runtime row ---
+
+/// The generated C header of the log `event_ring`, out of the outputs of a set
+/// that generated.
+fn generated_c_log(outputs: Vec<(String, sce_build::generator::GeneratedOutput)>) -> String {
+    outputs
+        .into_iter()
+        .flat_map(|(_, output)| output.files)
+        .find(|(file, _)| file == "event_ring.h")
+        .map(|(_, code)| code)
+        .expect("the set generated the log's header")
+}
+
+/// The single document `event_ring` generated for C11 with `options`.
+fn compile_single_c(
+    xml: &str,
+    options: &ForgeCompileOptions,
+) -> Result<String, Located<ForgeError>> {
+    compile_single_as(Language::C11, "event_ring.h", xml, options)
+}
+
+#[test]
+fn c11_generates_a_log_over_the_runtime_sized_from_its_element() {
+    // The element is one `uint32`, so it encodes to 4 bytes; with a retention of
+    // 7 the header computes 7 + 1 = 8 slots and 1 + ceil(4 / 8) = 1 + 1 = 2 words
+    // an entry, and does not restate either.
+    let xml = event_ring();
+    let codec = codec_doc("event_record");
+    let outputs = compile_documents(
+        Language::C11,
+        &[("event_ring.scxml", &xml), ("event_record.scxml", &codec)],
+    )
+    .expect("c11 generates a broadcast log");
+    let files: Vec<String> = outputs
+        .iter()
+        .flat_map(|(_, output)| output.files.iter().map(|(file, _)| file.clone()))
+        .collect();
+    assert!(
+        files.iter().any(|file| file == "event_record.h"),
+        "the element's header is generated beside the log's: {files:?}"
+    );
+    let code = generated_c_log(outputs);
+    assert_holds(
+        &code,
+        &[
+            r#"/* SCE Forge: Auto-generated from Extended SCXML (sce:kind="broadcast-log") */"#,
+            "/* Runtime: sce/forge/broadcast_log.h */",
+            "#ifndef SCE_FORGE_EVENT_RING_H",
+            "#include <sce/forge/broadcast_log.h>",
+            "#include <sce/forge/codec.h>",
+            "#include \"event_record.h\"",
+            "#define EVENT_RING_RETENTION ((uint32_t)7u)",
+            "#define EVENT_RING_SLOTS ((uint32_t)(EVENT_RING_RETENTION + 1u))",
+            "#define EVENT_RING_MAX_ENCODED_BYTES ((size_t)4u)",
+            "((uint32_t)(1u + EVENT_RING_MAX_ENCODED_BYTES / 8u + \
+             (EVENT_RING_MAX_ENCODED_BYTES % 8u != 0u ? 1u : 0u)))",
+            "(EVENT_RING_MAX_ENCODED_BYTES > 0u ? EVENT_RING_MAX_ENCODED_BYTES : 1u)",
+            r#"#define EVENT_RING_DECLARED_PROGRESS "wait-free""#,
+            "typedef struct event_ring {",
+            "sce_blog_t core;",
+            "uint64_t storage[SCE_BLOG_STORAGE_WORDS(EVENT_RING_SLOTS, EVENT_RING_WORDS)];",
+            "} event_ring_t;",
+            "typedef sce_blog_publisher_t event_ring_publisher_t;",
+            "typedef sce_blog_reader_t event_ring_reader_t;",
+            "static inline int event_ring_init(event_ring_t *log)",
+            "sce_blog_init(&log->core, log->storage, EVENT_RING_SLOTS, EVENT_RING_WORDS)",
+            "static inline event_ring_publish_result_t event_ring_publish(event_ring_publisher_t \
+             *publisher, const event_record_t *element)",
+            "event_record_encode_to_buf(element, bytes, EVENT_RING_MAX_ENCODED_BYTES, &length)",
+            "seq = sce_blog_publish(publisher, entry);",
+            "static inline event_ring_read_result_t event_ring_read(const event_ring_t *log, \
+             event_ring_reader_t *reader, event_record_t *out)",
+            "found = sce_blog_read(&log->core, reader, entry);",
+            "event_record_decode(&cursor, out)",
+            "EVENT_RING_PUBLISH_OK = 0,",
+            "EVENT_RING_PUBLISH_ENCODE_FAILED = 1,",
+            "EVENT_RING_PUBLISH_HORIZON = 2",
+            "EVENT_RING_READ_ITEM = 0,",
+            "EVENT_RING_READ_EMPTY = 1,",
+            "EVENT_RING_READ_LAGGED = 2,",
+            "EVENT_RING_READ_BAD_LENGTH = 3,",
+            "EVENT_RING_READ_DECODE_FAILED = 4",
+        ],
+    );
+    // The codec's own result decides a publish: nothing reaches the runtime's
+    // publish when the element did not encode.
+    let encode = code
+        .find("event_record_encode_to_buf(")
+        .expect("the element is encoded");
+    let refused = code[encode..]
+        .find("result.status = EVENT_RING_PUBLISH_ENCODE_FAILED;")
+        .expect("an element the codec refuses is a failed publish");
+    let publish = code[encode..]
+        .find("sce_blog_publish(publisher, entry)")
+        .expect("the entry is published");
+    assert!(
+        refused < publish,
+        "the refusal comes before the runtime's publish:\n{code}"
+    );
+    // A stored length above the bound is refused before any byte is copied by it.
+    let length_check = code
+        .find("if (stored > (uint64_t)EVENT_RING_MAX_ENCODED_BYTES) {")
+        .expect("the stored length is checked against the bound");
+    let bad_length = code[length_check..]
+        .find("result.status = EVENT_RING_READ_BAD_LENGTH;")
+        .expect("a length above the bound is a refusal");
+    let copy = code[length_check..]
+        .find("bytes[index] = (uint8_t)(entry[1u + index / 8u]")
+        .expect("the entry's bytes are cut by the length");
+    assert!(
+        bad_length < copy,
+        "the refusal comes before the copy the length bounds:\n{code}"
+    );
+    // The element is decoded only once the runtime has answered with an item,
+    // which it does after the copy was checked against the slot.
+    let empty = code
+        .find("if (found.status == SCE_BLOG_EMPTY) {")
+        .expect("an empty read is answered");
+    let lagged = code
+        .find("if (found.status == SCE_BLOG_LAGGED) {")
+        .expect("a lagged read is answered");
+    let decode = code
+        .find("event_record_decode(&cursor, out)")
+        .expect("the element is decoded");
+    assert!(
+        empty < decode && lagged < decode,
+        "decoding comes after the two answers that carry no entry:\n{code}"
+    );
+    // A no-allocation, no-abort header: nothing allocates, aborts or asserts on
+    // data. Its only assertions are the compile-time ones.
+    for forbidden in ["malloc", "calloc", "abort", "assert(", "<stdlib.h>"] {
+        assert!(
+            !code.contains(forbidden),
+            "the generated header must not use `{forbidden}`:\n{code}"
+        );
+    }
+}
+
 #[test]
 fn go_generates_a_log_over_the_runtime_sized_from_its_element() {
     // The element is one `uint32`, so it encodes to 4 bytes; a slot is then
@@ -1826,6 +1964,60 @@ fn a_go_single_document_with_no_resolution_is_refused_as_every_language_is() {
 }
 
 #[test]
+fn c11_states_an_element_that_encodes_to_nothing_with_a_buffer_and_no_packing() {
+    // An element of no bytes keeps one length word and has nothing to pack: the
+    // header still gives it a buffer to point at and writes no loop over bytes
+    // that a one-word entry has no room for.
+    let code = compile_single_c(
+        &event_ring(),
+        &resolution_options(None, 0, BroadcastLogElementFacts::default()),
+    )
+    .expect("a log of an empty element generates");
+    assert_holds(
+        &code,
+        &[
+            "#define EVENT_RING_MAX_ENCODED_BYTES ((size_t)0u)",
+            "uint8_t bytes[EVENT_RING_BUFFER_BYTES] = {0};",
+        ],
+    );
+    assert!(
+        !code.contains("for (size_t index"),
+        "no byte is packed or unpacked:\n{code}"
+    );
+}
+
+#[test]
+fn c11_packs_and_unpacks_the_bytes_of_an_element_that_has_some() {
+    let code = compile_single_c(
+        &event_ring(),
+        &resolution_options(None, 9, BroadcastLogElementFacts::default()),
+    )
+    .expect("a log of a nine-byte element generates");
+    assert_holds(
+        &code,
+        &[
+            "#define EVENT_RING_MAX_ENCODED_BYTES ((size_t)9u)",
+            "entry[1u + index / 8u] |= (uint64_t)bytes[index] << (8u * (index % 8u));",
+            "bytes[index] = (uint8_t)(entry[1u + index / 8u] >> (8u * (index % 8u)));",
+        ],
+    );
+}
+
+#[test]
+fn c11_refuses_a_single_document_with_no_resolution_naming_what_is_missing() {
+    let located = compile_single_c(&event_ring(), &ForgeCompileOptions::default())
+        .err()
+        .unwrap_or_else(|| panic!("no number is guessed, so a log with no resolution is refused"));
+    let detail = invalid_config(located);
+    assert!(detail.contains("broadcast-log 'event_ring'"), "{detail}");
+    assert!(detail.contains("the element 'event_record'"), "{detail}");
+    assert!(
+        detail.contains("ForgeCompileOptions::broadcast_log_resolutions"),
+        "{detail}"
+    );
+}
+
+#[test]
 fn a_resolved_retention_and_size_become_the_go_packages_constants() {
     // 9 bytes encode to words of 1 + (9 + 7) / 8 = 1 + 2 = 3, computed by the
     // package from the constant below.
@@ -1866,6 +2058,225 @@ fn a_go_element_the_template_cannot_hold_is_refused_in_the_words_every_language_
         detail.contains("cannot be stored by the Go template: its decode takes the variant's tag"),
         "{detail}"
     );
+}
+
+#[test]
+fn c11_refuses_what_the_shared_judgement_refuses_in_the_shared_words() {
+    // An unresolved deploy key, on the retention row.
+    let xml = deploy_key_ring();
+    let located = compile_single_c(
+        &xml,
+        &resolution_options(None, 4, BroadcastLogElementFacts::default()),
+    )
+    .err()
+    .unwrap_or_else(|| panic!("an unresolved retention is not guessed"));
+    assert!(row_text(&located, &xml).contains("<sce:retention"));
+    assert!(invalid_config(located).contains("target machine"));
+
+    // A retention of nothing, on the retention row.
+    let located = compile_single_c(
+        &xml,
+        &resolution_options(Some(0), 4, BroadcastLogElementFacts::default()),
+    )
+    .err()
+    .unwrap_or_else(|| panic!("a log retains at least one entry"));
+    assert!(row_text(&located, &xml).contains("<sce:retention"));
+    assert!(invalid_config(located).contains("the retention resolves to 0"));
+
+    // An element the template cannot hold, on the element-type row, naming C11.
+    let element_xml = event_ring();
+    let facts = BroadcastLogElementFacts {
+        caller_variant_tag: true,
+        ..BroadcastLogElementFacts::default()
+    };
+    let located = compile_single_c(&element_xml, &resolution_options(None, 4, facts))
+        .err()
+        .unwrap_or_else(|| panic!("an element the template cannot hold is refused"));
+    assert!(row_text(&located, &element_xml).contains("<sce:element-type>event_record<"));
+    let detail = invalid_config(located);
+    assert!(
+        detail.contains("the element 'event_record' cannot be stored by the C11 template"),
+        "{detail}"
+    );
+    assert!(
+        detail.contains("its decode takes the variant's tag from the caller"),
+        "{detail}"
+    );
+}
+
+#[test]
+fn c11_refuses_an_element_whose_codec_asks_the_caller_for_a_flag() {
+    let xml = event_ring();
+    let codec = flag_input_codec();
+    let located = compile_documents(
+        Language::C11,
+        &[("event_ring.scxml", &xml), ("event_record.scxml", &codec)],
+    )
+    .err()
+    .unwrap_or_else(|| panic!("a log has no flag input to give, so the set is refused"));
+    assert!(
+        row_text(&located, &xml).contains("<sce:element-type>event_record<"),
+        "the refusal is placed on the element-type row"
+    );
+    let detail = invalid_config(located);
+    assert!(
+        detail.contains("the element 'event_record' cannot be stored by the C11 template"),
+        "{detail}"
+    );
+    assert!(detail.contains("flag input(s) S"), "{detail}");
+}
+
+#[test]
+fn c11_holds_a_cbor_element_with_text_because_its_struct_owns_the_bytes() {
+    // The C codec copies a CBOR text entry into a `char name[N]` of the struct, so
+    // the decoded value outlives the buffer it was read from: the log holds an
+    // element the Rust template refuses (its decoded form borrows the buffer).
+    let facts = BroadcastLogElementFacts {
+        cbor_text_or_bytes_entry: true,
+        ..BroadcastLogElementFacts::default()
+    };
+    assert_eq!(facts.refusal_for(Language::C11), None);
+    assert!(facts.refusal_for(Language::Rust).is_some());
+
+    let xml = event_ring();
+    let borrowing = cbor_codec_with(
+        r#"<data id="note" sce:type="string" sce:key="1" sce:max-size="16" sce:direction="out"/>"#,
+    );
+    let code = generated_c_log(
+        compile_documents(
+            Language::C11,
+            &[
+                ("event_ring.scxml", &xml),
+                ("event_record.scxml", &borrowing),
+            ],
+        )
+        .expect("c11 generates a log over an element that holds text"),
+    );
+    assert_holds(&code, &["#include \"event_record.h\""]);
+}
+
+#[test]
+fn c11_counts_slots_and_words_in_32_bits_and_refuses_what_does_not_fit() {
+    // slots = retention + 1 must be at most u32::MAX = 4294967295, so the largest
+    // retention is 4294967294 (4294967294 + 1 = 4294967295) and 4294967295 is one
+    // too many (4294967295 + 1 = 4294967296).
+    let xml = deploy_key_ring();
+    let code = compile_single_c(
+        &xml,
+        &resolution_options(Some(4_294_967_294), 4, BroadcastLogElementFacts::default()),
+    )
+    .expect("the largest retention the runtime can count generates");
+    assert!(
+        code.contains("#define EVENT_RING_RETENTION ((uint32_t)4294967294u)"),
+        "{code}"
+    );
+    let located = compile_single_c(
+        &xml,
+        &resolution_options(Some(4_294_967_295), 4, BroadcastLogElementFacts::default()),
+    )
+    .err()
+    .unwrap_or_else(|| panic!("one slot more than 32 bits count is refused"));
+    assert!(
+        row_text(&located, &xml).contains("<sce:retention"),
+        "the refusal is placed on the retention row"
+    );
+    let detail = invalid_config(located);
+    assert!(
+        detail.contains("the retention resolves to 4294967295"),
+        "{detail}"
+    );
+    assert!(
+        detail.contains("counts a log's slots in 32 bits"),
+        "{detail}"
+    );
+    assert!(
+        detail.contains("Declare a retention of at most 4294967294"),
+        "{detail}"
+    );
+
+    // words = 1 + ceil(bytes / 8) must be at most 4294967295. The most bytes that
+    // fit are 8 * (4294967295 - 1) = 8 * 4294967294 = 34359738352 (a whole number
+    // of words); one more byte needs a word more, 4294967296, which does not.
+    let element_xml = event_ring();
+    let code = compile_single_c(
+        &element_xml,
+        &resolution_options(None, 34_359_738_352, BroadcastLogElementFacts::default()),
+    )
+    .expect("the widest entry the runtime can count generates");
+    assert!(
+        code.contains("#define EVENT_RING_MAX_ENCODED_BYTES ((size_t)34359738352u)"),
+        "{code}"
+    );
+    let located = compile_single_c(
+        &element_xml,
+        &resolution_options(None, 34_359_738_353, BroadcastLogElementFacts::default()),
+    )
+    .err()
+    .unwrap_or_else(|| panic!("one byte more than 32 bits of words hold is refused"));
+    assert!(
+        row_text(&located, &element_xml).contains("<sce:element-type>event_record<"),
+        "the refusal is placed on the element-type row"
+    );
+    let detail = invalid_config(located);
+    assert!(
+        detail.contains("encodes to at most 34359738353 bytes"),
+        "{detail}"
+    );
+    assert!(
+        detail.contains("which is 4294967296 64-bit words"),
+        "{detail}"
+    );
+}
+
+#[test]
+fn c11_reads_a_deploy_key_retention_from_the_target_machines_limits() {
+    // The element is one `uint32`: 4 bytes.
+    let xml = deploy_key_ring();
+    let codec = codec_doc("event_record");
+    let cfg = deploy_with_limits("          event_retention: 15");
+    let options = ForgeCompileOptions {
+        target_machine: Some("mcu_node".to_string()),
+        ..ForgeCompileOptions::default()
+    };
+    let code = generated_c_log(
+        compile_documents_with(
+            Language::C11,
+            &[("event_ring.scxml", &xml), ("event_record.scxml", &codec)],
+            &options,
+            Some(&cfg),
+        )
+        .expect("the deploy resolves the key"),
+    );
+    assert_holds(
+        &code,
+        &[
+            "#define EVENT_RING_RETENTION ((uint32_t)15u)",
+            "#define EVENT_RING_MAX_ENCODED_BYTES ((size_t)4u)",
+        ],
+    );
+}
+
+#[test]
+fn c11_and_rust_refuse_one_log_with_one_message() {
+    // The two renderers judge a log through one function, so the refusal of a log
+    // that neither can generate differs only in the name of the language.
+    let facts = BroadcastLogElementFacts {
+        caller_flag_inputs: vec!["S".to_string()],
+        ..BroadcastLogElementFacts::default()
+    };
+    let xml = event_ring();
+    let options = resolution_options(None, 4, facts);
+    let rust = invalid_config(
+        compile_single(&xml, &options)
+            .err()
+            .unwrap_or_else(|| panic!("rust refuses the element")),
+    );
+    let c = invalid_config(
+        compile_single_c(&xml, &options)
+            .err()
+            .unwrap_or_else(|| panic!("c11 refuses the element")),
+    );
+    assert_eq!(rust.replace("Rust", "C11"), c);
 }
 
 // --- The set resolves a deploy key against the machine it is generated for ---
