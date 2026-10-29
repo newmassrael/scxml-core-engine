@@ -777,7 +777,7 @@ public final class StaticRecordEnumPolicy: StatePolicy {
                 sceBlock: do {
 
 
-                if (({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.atDefault(sceFailure, self.vSeen, 0).layout; if sceFailure.failed { return true }; self.vShown.layout = sceValue; return false }()) || ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt8 = Checked.atDefault(sceFailure, self.vSeen, 0).zoom; if sceFailure.failed { return true }; self.vShown.zoom = sceValue; return false }())) {
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.atDefault(sceFailure, self.vSeen, 0); if sceFailure.failed { return true }; self.vShown = sceValue; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -787,7 +787,7 @@ public final class StaticRecordEnumPolicy: StatePolicy {
                 sceBlock: do {
 
 
-                if (({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.atDefault(sceFailure, self.vSeen, Checked.sub(sceFailure, UInt32(truncatingIfNeeded: self.vSeen.count), 1)).layout; if sceFailure.failed { return true }; self.vShown.layout = sceValue; return false }()) || ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt8 = Checked.atDefault(sceFailure, self.vSeen, Checked.sub(sceFailure, UInt32(truncatingIfNeeded: self.vSeen.count), 1)).zoom; if sceFailure.failed { return true }; self.vShown.zoom = sceValue; return false }())) {
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.atDefault(sceFailure, self.vSeen, Checked.sub(sceFailure, UInt32(truncatingIfNeeded: self.vSeen.count), 1)); if sceFailure.failed { return true }; self.vShown = sceValue; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

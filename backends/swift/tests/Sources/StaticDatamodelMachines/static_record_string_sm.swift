@@ -890,7 +890,7 @@ public final class StaticRecordStringPolicy: StatePolicy {
                 sceBlock: do {
 
 
-                if (({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt8 = Checked.atDefault(sceFailure, self.vLabels, 0).sensor; if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticRecordStringEvent.errorExecution, message: "<assign location='last.sensor'>: an integer operation overflowed or failed")); return true }; self.vLast.sensor = sceValue; return false }()) || ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, Checked.atDefault(sceFailure, self.vLabels, 0).label, capacity: 8); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticRecordStringEvent.errorExecution, message: "<assign location='last.label'>: an integer operation overflowed or failed")); return true }; self.vLast.label = sceValue; return false }())) {
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.atDefault(sceFailure, self.vLabels, 0); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticRecordStringEvent.errorExecution, message: "<assign location='last'>: an integer operation overflowed or failed")); return true }; self.vLast = sceValue; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -900,7 +900,7 @@ public final class StaticRecordStringPolicy: StatePolicy {
                 sceBlock: do {
 
 
-                if (({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt8 = Checked.atDefault(sceFailure, self.vLabels, Checked.sub(sceFailure, UInt32(truncatingIfNeeded: self.vLabels.count), 1)).sensor; if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticRecordStringEvent.errorExecution, message: "<assign location='last.sensor'>: an integer operation overflowed or failed")); return true }; self.vLast.sensor = sceValue; return false }()) || ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, Checked.atDefault(sceFailure, self.vLabels, Checked.sub(sceFailure, UInt32(truncatingIfNeeded: self.vLabels.count), 1)).label, capacity: 8); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticRecordStringEvent.errorExecution, message: "<assign location='last.label'>: an integer operation overflowed or failed")); return true }; self.vLast.label = sceValue; return false }())) {
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.atDefault(sceFailure, self.vLabels, Checked.sub(sceFailure, UInt32(truncatingIfNeeded: self.vLabels.count), 1)); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticRecordStringEvent.errorExecution, message: "<assign location='last'>: an integer operation overflowed or failed")); return true }; self.vLast = sceValue; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
