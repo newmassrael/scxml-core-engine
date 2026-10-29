@@ -293,6 +293,27 @@ private func day(_ year: UInt16, _ month: UInt8, _ dayOfMonth: UInt8) -> JSONVal
     ])
 }
 
+// A ledger line as a scenario writes it: its id and amount, in the schema's order.
+private func entry(_ id: UInt32, _ amount: Int32) -> JSONValue {
+    .object([
+        (key: "id", value: integer(id)),
+        (key: "amount", value: integer(amount)),
+    ])
+}
+
+private func recordCall() -> Machine {
+    let policy = StaticRecordCallPolicy()
+    return drive(
+        policy,
+        variables: [
+            "best": { entry(policy.best.id, policy.best.amount) },
+            "large": { integer(policy.large) },
+            "debts": { integer(policy.debts) },
+            "peaks": { integer(policy.peaks) },
+        ]
+    )
+}
+
 private func recordFields() -> Machine {
     let policy = StaticRecordFieldsPolicy()
     return drive(
@@ -700,6 +721,13 @@ private func recordBytes() -> Machine {
 // module, generated from the same document.
 @Test func aGuardCallsAnImportedAlgorithmWithTheRecordsFields() {
     replay("static_record", record())
+}
+
+// A record is handed to an imported algorithm and the record it answers is taken back
+// whole: the machine's own struct crosses to the one the algorithm's schema unit
+// declares and back by field, for a record the machine holds and for an event's payload.
+@Test func aRecordIsHandedToAnImportedAlgorithmAndTakenBackWhole() {
+    replay("static_record_call", recordCall())
 }
 
 // A record is taken into a list by name, and the list holds a copy of it: a record

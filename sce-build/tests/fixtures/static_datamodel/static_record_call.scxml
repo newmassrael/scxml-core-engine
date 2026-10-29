@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15, "State an algorithm
+  takes and gives back"): a statechart hands an imported algorithm a record and holds
+  the record it gives back, with nothing that can fail and no list in the call.
+
+  A ledger keeps the largest line it has seen in `best`. `Larger` takes the record the
+  statechart holds and the one the event brought (`_event.data`) and answers the line of
+  the larger amount (two records in, a record out), which `best` takes whole. `AmountOf`
+  is asked of the line an event brought, and of the line `best` holds (a record in, a
+  number out), in guards.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="open" datamodel="sce-static" name="static_record_call">
+  <sce:import kind="event-schema" src="schema_entry.scxml" as="Entry"/>
+  <sce:import kind="algorithm" src="algorithm_ledger_larger.scxml" as="Larger"/>
+  <sce:import kind="algorithm" src="algorithm_ledger_amount.scxml" as="AmountOf"/>
+  <datamodel>
+    <data id="best" sce:type="record:Entry" sce:direction="out">
+      <sce:set name="id" expr="0"/>
+      <sce:set name="amount" expr="0"/>
+    </data>
+    <data id="large" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="debts" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="peaks" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="open">
+    <transition event="ledger.entry" type="internal">
+      <assign location="best" expr="Larger(best, _event.data)"/>
+      <if cond="AmountOf(_event.data) &gt; 100">
+        <assign location="large" expr="large + 1"/>
+      </if>
+      <if cond="AmountOf(_event.data) &lt; 0">
+        <assign location="debts" expr="debts + 1"/>
+      </if>
+      <if cond="AmountOf(best) &gt; 200">
+        <assign location="peaks" expr="peaks + 1"/>
+      </if>
+    </transition>
+  </state>
+</scxml>

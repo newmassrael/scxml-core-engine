@@ -1,0 +1,32 @@
+{
+  "machine": "static_record_call",
+  "about": "A ledger that keeps the largest line it has seen, in a record handed to an imported algorithm and taken back whole. Each line of an event goes to Larger with the line held: the held line is replaced only by a line of a strictly larger amount, so a tie keeps the first. AmountOf is asked of the event's line (counted as large above 100 and as a debt below 0) and of the line the machine holds after the step (counted as a peak above 200). Expected values are derived from the document, not observed from a backend.",
+  "steps": [
+    { "note": "the held line starts at id 0, amount 0",
+      "expect": { "state": "open", "variables": { "best": { "id": 0, "amount": 0 }, "large": 0, "debts": 0, "peaks": 0 } } },
+
+    { "note": "50 beats 0; not above 100, not below 0, held 50 is not above 200",
+      "event": "ledger.entry", "data": { "id": 1, "amount": 50 },
+      "expect": { "variables": { "best": { "id": 1, "amount": 50 }, "large": 0, "debts": 0, "peaks": 0 } } },
+
+    { "note": "-30 does not beat 50: the held line stays, and the event's line is a debt",
+      "event": "ledger.entry", "data": { "id": 2, "amount": -30 },
+      "expect": { "variables": { "best": { "id": 1, "amount": 50 }, "large": 0, "debts": 1, "peaks": 0 } } },
+
+    { "note": "250 beats 50: large, and the held 250 is above 200",
+      "event": "ledger.entry", "data": { "id": 3, "amount": 250 },
+      "expect": { "variables": { "best": { "id": 3, "amount": 250 }, "large": 1, "debts": 1, "peaks": 1 } } },
+
+    { "note": "a tie keeps the first line: id 3 stays, id 4 is not held",
+      "event": "ledger.entry", "data": { "id": 4, "amount": 250 },
+      "expect": { "variables": { "best": { "id": 3, "amount": 250 }, "large": 2, "debts": 1, "peaks": 2 } } },
+
+    { "note": "a debt again; the held line is still above 200",
+      "event": "ledger.entry", "data": { "id": 5, "amount": -9 },
+      "expect": { "variables": { "best": { "id": 3, "amount": 250 }, "large": 2, "debts": 2, "peaks": 3 } } },
+
+    { "note": "251 beats 250 by one",
+      "event": "ledger.entry", "data": { "id": 6, "amount": 251 },
+      "expect": { "variables": { "best": { "id": 6, "amount": 251 }, "large": 3, "debts": 2, "peaks": 4 } } }
+  ]
+}

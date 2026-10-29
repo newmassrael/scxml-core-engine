@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The ledger line of the larger amount: two records in, one record out. The first line
+  is kept when the amounts are equal. A statechart that keeps the largest line it has
+  seen asks for the line, and holds it in one step.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm"
+       name="ledger_larger"
+       version="1.0">
+  <sce:import kind="event-schema" src="schema_entry.scxml" as="Entry"/>
+  <sce:signature>
+    <sce:param name="a" type="record:Entry"/>
+    <sce:param name="b" type="record:Entry"/>
+    <sce:return type="record:Entry"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="out" type="record:Entry">
+      <sce:set name="id" expr="a.id"/>
+      <sce:set name="amount" expr="a.amount"/>
+    </sce:var>
+    <sce:if cond="b.amount &gt; a.amount">
+      <sce:assign target="out.id" expr="b.id"/>
+      <sce:assign target="out.amount" expr="b.amount"/>
+    </sce:if>
+    <sce:return expr="out"/>
+  </sce:body>
+</scxml>
