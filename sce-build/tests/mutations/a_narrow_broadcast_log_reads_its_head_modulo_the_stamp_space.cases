@@ -1,0 +1,134 @@
+# Mutation cases for "a narrow broadcast log reads its head modulo the stamp space".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_narrow_broadcast_log_reads_its_head_modulo_the_stamp_space.cases`.
+#
+# The narrow row of the bounded broadcast log (ADR 0062, "Stamp width") keeps a stamp
+# narrower than 64 bits, so its count wraps. It is the one implementation of the
+# 64-bit row (`broadcast_log_core.rs`) over a stamp of `w` bits, and what makes it
+# right across the wrap is arithmetic: the head a reader loads is a count modulo
+# `2^w` and the reader takes its distance from its own cursor modulo `2^w`; the
+# cursor and the sequence numbers are counts modulo `2^w`; the stamp is the count
+# truncated to `w` bits; and the log tells a young log from one that has wrapped by a
+# stamp no protocol write equals. The memory orders are the other casefile's
+# (`a_broadcast_log_orders_every_slot_hand_over.cases`), which the 64-bit models
+# kill; the decisions here are the ones the 64-bit models cannot see, because a
+# 64-bit count never wraps.
+#
+# The oracle is the loom models over a stamp of THREE bits
+# (`backends/rust/forge-runtime/tests/loom_broadcast_log_narrow.rs`): a 32-bit stamp
+# does not wrap in a model, so a mutant of the wrap would pass against one. The
+# models start from a log that has already published six or seven entries, so a few
+# more cross the head's wrap (at 8) and the stamps' repeat (at 4 entries), and they
+# hold every answer to the exact specification through a count of what the publisher
+# has published.
+#
+# Cases that are not observable by these models are not claimed; each has its
+# reason where it would stand:
+#
+# - The slot-count check of `BroadcastLog::new` (a power of two, at most half the
+#   stamp space). It is a compile-time refusal, and the models use a size it
+#   accepts, so removing it changes no run. Its oracle is the TLA+ configuration
+#   `docs/formal/BroadcastLogWrapped_non_divisor.cfg`, in which TLC finds the
+#   reader of a log whose slot count does not divide the stamp space reading the
+#   wrong slot after the wrap (`scripts/formal/check.sh`).
+# - The slot index itself. For a slot count that divides the stamp space, the index
+#   of a reader's cursor, of the same cursor a lap on, and of the publisher's count
+#   are one number, so no change of the form "index from another lap" is a change
+#   at all; only a slot count that does not divide breaks it, which the models
+#   cannot build (the case above).
+# - The lap added to a lag counted from a head that has wrapped
+#   (`BroadcastLog::lagged`). It is reached only by a reader a whole stamp space
+#   behind during a mismatch, outside the bound the models keep; the unit test
+#   `a_head_that_wrapped_during_a_mismatch_still_gives_a_lag_of_at_least_one`
+#   holds it.
+# - The position a reader opened at a given sequence number takes
+#   (`BroadcastLog::reader_at`). The models open at the head and at the oldest;
+#   the unit test `a_position_is_read_modulo_the_stamp_space_and_one_ahead_is_the_head`
+#   holds it.
+#
+# The models build only under `--cfg loom`; the cfg goes in as a cargo `--config`, as
+# in the other casefile, and the build has the target directory of its own.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-forge-runtime --release --target-dir target/loom --config 'build.rustflags=["--cfg","loom"]' --test loom_broadcast_log_narrow
+mutation_targets backends/rust/forge-runtime/src/broadcast_log_core.rs
+mutation_oracles backends/rust/forge-runtime/tests/loom_broadcast_log_narrow.rs
+
+# ── The head is extended against the cursor, modulo the stamp space ─────
+
+# A distance taken without the reduction is a huge number as soon as the head's
+# residue is below the cursor's, which is the first read after the head wraps.
+mutation_case "a reader takes its distance from the head without reducing it to the stamp space" <<'PY'
+edit("backends/rust/forge-runtime/src/broadcast_log_core.rs",
+     r'''        head.wrapping_sub(cursor) & Self::MASK''',
+     r'''        head.wrapping_sub(cursor)''')
+PY
+
+# A distance that stops at zero reads a head that has wrapped as no entries at all.
+mutation_case "a reader reads a head below its cursor as the cursor's own place" <<'PY'
+edit("backends/rust/forge-runtime/src/broadcast_log_core.rs",
+     r'''        head.wrapping_sub(cursor) & Self::MASK''',
+     r'''        head.saturating_sub(cursor) & Self::MASK''')
+PY
+
+# ── The cursor and the sequence numbers are counts modulo the stamp space ──
+
+mutation_case "a reader moves its cursor past the stamp space without reducing it" <<'PY'
+edit("backends/rust/forge-runtime/src/broadcast_log_core.rs",
+     r'''        cursor.wrapping_add(by) & Self::MASK''',
+     r'''        cursor.wrapping_add(by)''')
+PY
+
+# ── The stamp is the count truncated to the stamp's width ────────────────
+
+# A stamp space of half the size reads every residue modulo 4 where the log's
+# sequence numbers are modulo 8.
+mutation_case "the stamp space is half the width the stamp has" <<'PY'
+edit("backends/rust/forge-runtime/src/broadcast_log_core.rs",
+     r'''        (1u64 << L::BITS) - 1''',
+     r'''        (1u64 << (L::BITS - 1)) - 1''')
+PY
+
+# A done stamp that keeps the bit above the stamp is a wider stamp than the log
+# declares: it does not repeat after half the space, so a reader held for that long is
+# never shown a later lap as its own. A safer log is not a fault the positive models
+# can show; the one model that notices is the one that holds a reader outside the
+# bound and requires it to be fooled (`outside_the_bound_a_later_lap_is_mistaken_for_
+# the_readers_own`), which then passes without a panic and fails. That the bound is
+# needed, and that it is the stamp's truncation that makes it so, is what this case
+# keeps.
+mutation_case "the done stamp is not truncated to the stamp's width" <<'PY'
+edit("backends/rust/forge-runtime/src/broadcast_log_core.rs",
+     r'''        n.wrapping_mul(2).wrapping_add(2) & Self::MASK''',
+     r'''        n.wrapping_mul(2).wrapping_add(2)''')
+PY
+
+# ── A young log is told from one that wrapped by the last slot's stamp ──────
+
+# Read the other way, a log that has published nothing is a log that has wrapped, and
+# the reader opened at the oldest is put R behind a head of 0.
+mutation_case "the oldest reader takes a written last slot for an unwritten one" <<'PY'
+edit("backends/rust/forge-runtime/src/broadcast_log_core.rs",
+     r'''== L::UNWRITTEN;''',
+     r'''!= L::UNWRITTEN;''')
+PY
+
+# Unwritten as 0 is a stamp the protocol writes: done(n) of the entry 3 mod 4 is 0
+# over a stamp of three bits. The model that opens a reader at the oldest while the
+# publisher writes the seventh entry into the last slot sees it read as unwritten.
+mutation_case "an unwritten slot's stamp is one the protocol writes into the last slot" <<'PY'
+edit("backends/rust/forge-runtime/src/broadcast_log_core.rs",
+     r'''    const UNWRITTEN: u64 = 1;''',
+     r'''    const UNWRITTEN: u64 = 0;''')
+PY
+
+# A reader opened at the oldest of a log that has wrapped is RETENTION behind the head,
+# modulo the stamp space.
+mutation_case "the oldest reader of a log that has wrapped is placed at the head" <<'PY'
+edit("backends/rust/forge-runtime/src/broadcast_log_core.rs",
+     r'''            Self::distance(self.head(), Self::RETENTION)''',
+     r'''            self.head()''')
+PY

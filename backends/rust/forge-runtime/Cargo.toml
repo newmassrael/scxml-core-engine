@@ -73,6 +73,13 @@ name = "loom_broadcast_log"
 path = "tests/loom_broadcast_log.rs"
 test = false
 
+# The narrow row's models (ADR 0062, "Stamp width"): the same log over a stamp of
+# three bits, so that its wrap is reached, run the same way.
+[[test]]
+name = "loom_broadcast_log_narrow"
+path = "tests/loom_broadcast_log_narrow.rs"
+test = false
+
 [[test]]
 name = "loom_queue_scq"
 path = "tests/loom_queue_scq.rs"

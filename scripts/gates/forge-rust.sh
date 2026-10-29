@@ -76,6 +76,7 @@ cargo test --release -p sce-forge-runtime --target-dir target/loom \
     --config 'build.rustflags=["--cfg","loom"]' \
     --test loom_queue_spsc --test loom_queue_scq --test loom_queue_lscq \
     --test loom_queue_lscq_race --test loom_broadcast_log \
+    --test loom_broadcast_log_narrow \
     || sce_gate_fail "Rust forge queue and broadcast-log loom models"
 
 # The queue runtime under Miri and ThreadSanitizer (RFC §synth-5-P,
