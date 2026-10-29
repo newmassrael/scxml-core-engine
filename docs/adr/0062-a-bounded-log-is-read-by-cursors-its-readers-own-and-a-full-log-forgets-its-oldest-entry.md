@@ -1187,6 +1187,51 @@ reads out of `forge-runtime/src/lib.rs`, as for the 64-bit row.
   fields, `SensorId`, and the `optional.Of[uint16]` field), and whether `orchestrate` resolves the documents' relative
   imports from their own directory.
 
+### What the caller inputs landed for C11 (2026-10-29)
+
+- **The slot.** `tools/codegen/templates/forge/c/broadcast_log.h.jinja2` reads the `context` value that `broadcast_log_context_value`
+  computes for every language, and `render_broadcast_log_c` passes it over 64-bit words. An element whose codec asks its caller
+  for flag inputs or a variant tag has the entry `[length][context words][payload words]`: the header then states
+  `<LOG>_CONTEXT_WORDS` and `<LOG>_WORDS = 1 + CONTEXT_WORDS + ceil(MAX_ENCODED_BYTES / 8)`, flag `i` is bit `i % 64` of context
+  word `i / 64` (written with `UINT64_C(1) << n`, so the 64th bit is a plain bit of a `uint64_t`), a caller-tag variant adds one
+  word after the flag words that holds the tag, and the bytes start at word `1 + CONTEXT_WORDS`. An element with no caller input
+  has no `CONTEXT_WORDS`, and its header, constants and signatures are the ones it always had (a test pins the lines).
+  `render_broadcast_log_c` counts the context words in the entry's words it refuses past 32 bits, which the runtime counts in.
+  C11 is in `BROADCAST_LOG_CONTEXT_BACKENDS`, so `refusal_for` no longer refuses it for a flag input or a tag.
+- **The typed API.** A struct `<log>_flags_t` holds the flags as `bool` members in the codec's order. `<log>_publish(publisher,
+  element, flags, tag)` takes `const <log>_flags_t *flags` and `uint8_t tag` where the element has them, passes each flag to
+  `<element>_encode_to_buf` as the `uint8_t` 1 or 0 (through one `<log>_flag_input(bool)`, so the value the codec encodes under
+  and the bit stored are one value) and stores the same bits. `<log>_read` fills `result.flags` and `result.tag`, turns the
+  stored bits back into the `uint8_t`s it passes, flags then tag, to `<element>_decode`, and sets them before the decode, so a
+  `READ_DECODE_FAILED` result also says what the codec refused under. The status enums, the length check and the bounds are
+  unchanged.
+- **A difference from Rust that the log does not hide.** The Rust codec refuses a flag that disagrees with the field it gates
+  (`PresentIfMismatch`, from its source-based `encode`). The C codec does not for a field gated on a flag input: its generated
+  `encode` writes a gated field whenever the field's optional value is present, and never reads the flag (read for a gated fixed
+  field, which is what the shared document has; the other gated shapes were not each read; the check that returns
+  `SCE_FORGE_CODEC_PRESENT_IF_MISMATCH`, `present_if_chain_encode_prologue`, is written only for chain-membership predicates).
+  The log judges nothing either and stores what it was given: a present value published under a clear flag is stored with its
+  bytes and reads back without the value, and an absent value published under a set flag is stored and refused at `read` by the
+  codec. `the_flag_that_was_stored_decides_how_an_entry_is_read_and_the_log_does_not_judge_it` pins this and turns red at the
+  first `publish` the day the C codec refuses the disagreement, which is the better end state and a change to the codec
+  generator, not to the log. Nothing here was changed in the codec.
+- **Tests.** `sce-build/tests/broadcast_log_kind.rs`: the C11 refusals of a flag input and of a tag are now acceptance tests, and
+  five shapes are pinned (a flag input from the real codec, flags with a tag, a tag alone, 65 flags where flag 63 closes the
+  first context word and flag 64 opens the second, and an element with no caller input keeping the lines it had); one more holds
+  that the context words count in the 32-bit limit on an entry's words. The registry-driven tests follow the list.
+  `backends/c/forge-runtime/tests/conformance/broadcast_log_context_generated_test.c` (ctest `broadcast_log_context_generated_c`)
+  compiles, under `-Wall -Wextra -Wpedantic -Werror`, the headers `sce-codegen orchestrate` writes for the six documents of
+  `tests/forge/conformance/broadcast_log_context/` in one set, and checks the constants, the words of an entry read through the
+  runtime (the context word between the length and the bytes), a reader getting back the flag and the tag, two readers decoding
+  under the same flag, a lapped reader resuming at an entry with its own flag, and the behaviour above. The variant's elements
+  are made by the codec's own `decode` under the arm's tag, and read back by encoding them again, so the test names nothing of
+  the variant struct's internals.
+- **Not run.** Nothing was built or run: neither the renderer, the template, the sce-build tests, the generated headers nor the C
+  test have been compiled or executed, and `clang-format` was run on the C test but not on the generated header. The least
+  certain points are the exact text of the generated header the new assertions quote, the status the codec answers a short
+  entry with (the test asserts only that it is not `SCE_FORGE_CODEC_OK`), and whether `orchestrate` resolves the documents'
+  relative imports from their own directory. No generated tree moves: no `.scxml` of the fixtures or the standard library changed.
+
 ### What is still undone
 
 What was undone and is now done, as of 2026-10-29: the RFC section (§5.S of `docs/spec/synth/rfc-sce-protocol-synthesis.md`,
