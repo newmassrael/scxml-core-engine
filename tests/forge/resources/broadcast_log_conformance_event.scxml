@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ADR 0062 (broadcast-log kind): the element the literal-retention conformance
+  log hands to its readers. Scalars only, a sensor id at byte 0 and a 16-bit
+  value at bytes 1 and 2, so it encodes to exactly three bytes and the
+  generated struct carries no borrow: it is its own stored form. The Rust
+  conformance crate compiles what the generator emits for the log over it.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="little" name="broadcast_log_conformance_event">
+  <datamodel>
+    <data id="sensor_id" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <data id="value" sce:type="uint16" sce:byte="1" sce:bit-size="16"/>
+  </datamodel>
+</scxml>

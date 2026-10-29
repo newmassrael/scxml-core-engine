@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ADR 0062 (broadcast-log kind): the element the deploy-retention conformance
+  log hands to its readers. A one-byte tag and a payload that runs to the end
+  of the frame and holds at most eight bytes, so the largest it encodes to is
+  1 + 8 = 9 bytes. The payload is a view of the buffer the record was decoded
+  from, so the log stores the bytes and hands the record back as its owned
+  mirror. The Rust conformance crate compiles what the generator emits for the
+  log over it, and offers it a payload longer than the bound.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="broadcast_log_conformance_record">
+  <datamodel>
+    <data id="tag" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <data id="payload" sce:type="bytes" sce:byte="1" sce:bit-size="tail" sce:max-size="8"/>
+  </datamodel>
+</scxml>

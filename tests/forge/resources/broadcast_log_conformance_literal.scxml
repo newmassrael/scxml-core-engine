@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ADR 0062 (broadcast-log kind): one producer, wait-free, a retention of three
+  written as a constant, so a slot is four. The element is three bytes, so an
+  entry is one length word and one word of bytes. The Rust conformance crate
+  compiles what the generator emits for it and reads the log: the entries in
+  order, a reader the publisher laps, two readers with cursors of their own.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://sce.dev/ext sce-forge.xsd"
+       sce:kind="broadcast-log"
+       name="broadcast_log_conformance_literal"
+       version="1.0">
+  <sce:element-type>broadcast_log_conformance_event</sce:element-type>
+  <sce:producers>one</sce:producers>
+  <sce:progress>wait-free</sce:progress>
+  <sce:retention entries="3"/>
+</scxml>

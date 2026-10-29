@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ADR 0062 (broadcast-log kind): a broadcast log whose retention is a deploy
+  limit and not a constant, over an element whose payload is a view of its
+  buffer. The Rust conformance crate generates it from a document set with a
+  deploy that gives machine mcu_node the limit event_retention: the retention
+  is that number, and the element's largest encoded size is read from the
+  element document, which is what the slot is sized from.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://sce.dev/ext sce-forge.xsd"
+       sce:kind="broadcast-log"
+       name="broadcast_log_conformance_deployed"
+       version="1.0">
+  <sce:element-type>broadcast_log_conformance_record</sce:element-type>
+  <sce:producers>one</sce:producers>
+  <sce:progress>wait-free</sce:progress>
+  <sce:retention source="deploy" key="machines.mcu_node.limits.event_retention"/>
+</scxml>

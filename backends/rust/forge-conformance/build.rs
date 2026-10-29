@@ -277,6 +277,25 @@ fn main() {
     codec_modules.sort();
     codec_modules.dedup();
     write_source_sweeps(&out_dir, &codec_modules, &sweeps);
+
+    // Step 8: broadcast-log kind (ADR 0062). The generator's output for a log is a
+    // module that names the runtime's log over the element codec's struct and
+    // stores the element's wire bytes; until it is compiled, nothing shows that
+    // the names it writes are the names the runtime has, or that the bytes it
+    // packs read back. Unlike the queue's, a log is generated from its document
+    // SET, because a slot is sized from the element document's largest encoded
+    // size, which only the set compile reads. The second log's retention is a
+    // deploy key, resolved against `BROADCAST_LOG_DEPLOY`.
+    generate_broadcast_log_set(
+        &[
+            "broadcast_log_conformance_event",
+            "broadcast_log_conformance_record",
+            "broadcast_log_conformance_literal",
+            "broadcast_log_conformance_deployed",
+        ],
+        &resource_dir,
+        &out_dir,
+    );
 }
 
 /// Frames a codec's document gives as its wire oracle in a comment, for a codec
@@ -543,6 +562,64 @@ fn generate_stripped_fixtures(
         });
     }
     generated
+}
+
+/// The deploy the broadcast-log set is generated for: machine `mcu_node`, whose
+/// limit `event_retention` is the retention of
+/// `broadcast_log_conformance_deployed`.
+const BROADCAST_LOG_DEPLOY: &str = r#"
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      mcu_node:
+        source: mcu_node.scxml
+        limits:
+          event_retention: 5
+"#;
+
+/// Generate the documents `names` to Rust as one document set, for the machine
+/// of [`BROADCAST_LOG_DEPLOY`], into `OUT_DIR`, stripping the inner attributes
+/// so each result can be `include!()`-ed inside a parent `mod {}`.
+///
+/// A set and not one document at a time, because a broadcast log's generated
+/// module is written from numbers its document does not give: the largest
+/// encoded size of its element, read from the element document, and a retention
+/// that is a deploy key. Only the set compile resolves them
+/// (`ForgeCompileOptions::broadcast_log_resolutions`).
+fn generate_broadcast_log_set(names: &[&str], resource_dir: &Path, out_dir: &str) {
+    let paths: Vec<std::path::PathBuf> = names
+        .iter()
+        .map(|name| resource_dir.join(format!("{name}.scxml")))
+        .collect();
+    let documents: Vec<&Path> = paths.iter().map(std::path::PathBuf::as_path).collect();
+    let deploy = sce_build::mesh::deploy::parse_deploy_str(BROADCAST_LOG_DEPLOY)
+        .unwrap_or_else(|e| panic!("parse the broadcast-log deploy: {e:?}"));
+    let options = ForgeCompileOptions {
+        target_machine: Some("mcu_node".to_string()),
+        ..ForgeCompileOptions::default()
+    };
+    let outputs = sce_build::compile_scxml_with_imports(
+        &[],
+        &documents,
+        &sce_build::find_template_dir_for(Language::Rust),
+        Language::Rust,
+        &options,
+        Some(&deploy),
+    )
+    .unwrap_or_else(|e| panic!("sce-build codegen failed for the broadcast-log set: {e}"));
+    for (basename, output) in outputs {
+        // The deploy's own artifacts (a scheduler, a session runtime) are named
+        // after the machine and not after a document; they are not this test's.
+        if !basename.ends_with(".scxml") {
+            continue;
+        }
+        for (filename, code) in &output.files {
+            let target = Path::new(out_dir).join(filename);
+            std::fs::write(&target, strip_inner_attributes(code))
+                .unwrap_or_else(|e| panic!("write {}: {e}", target.display()));
+        }
+    }
 }
 
 /// What `generate_stripped_fixtures` generated for one fixture: its document,
