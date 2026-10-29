@@ -645,7 +645,17 @@ fn render_c(
         .map_or(0, |longest| longest + 1);
     ctx.insert("enum_word_cap".into(), word_cap.into());
     ctx.insert("entries".into(), entries.into());
-    ctx.insert("max_encoded_bytes".into(), max_encoded_bytes(&l, m).into());
+    ctx.insert(
+        "max_encoded_bytes".into(),
+        max_encoded_bytes_with(m, &|alias: &str| {
+            l.enum_texts(alias)
+                .iter()
+                .map(|row| row.text.len() as u64)
+                .max()
+                .unwrap_or(0)
+        })
+        .into(),
+    );
     l.render(env, "codec_content_line", ctx)
 }
 
@@ -654,14 +664,12 @@ fn render_c(
 /// as the text of a variant, so the longest of its texts (docs/adr/0015) —
 /// without it a codec whose enum has a long text would be handed a buffer too
 /// small for it, which `…_MAX_BYTES` promises never happens.
-fn value_width(l: &LangCtx, entry: &ContentLineEntry) -> u64 {
+///
+/// `longest_text` answers, for the alias of an enum the codec imports, the
+/// length in bytes of the longest text of its variants.
+fn value_width(longest_text: &dyn Fn(&str) -> u64, entry: &ContentLineEntry) -> u64 {
     match entry.present_type() {
-        SceType::Enum(r) => l
-            .enum_texts(&r.alias)
-            .iter()
-            .map(|row| row.text.len() as u64)
-            .max()
-            .unwrap_or(0),
+        SceType::Enum(r) => longest_text(&r.alias),
         _ => u64::from(entry.max_size.unwrap_or(0)),
     }
 }
@@ -671,7 +679,14 @@ fn value_width(l: &LangCtx, entry: &ContentLineEntry) -> u64 {
 /// largest — a TEXT with every character escaped, a list full — and every
 /// logical line cut as often as a cut can fall (a line carries at least 71
 /// payload octets between cuts, the widest unit being four).
-fn max_encoded_bytes(l: &LangCtx, m: &CodecModel) -> u64 {
+///
+/// The texts of an enum do not depend on the language a codec is rendered for
+/// (an enum document gives each variant one wire text), so the bound is taken
+/// over `longest_text`, the lookup of the longest text of an imported enum, and
+/// not over a language's import table. The C11 renderer and the build-wide
+/// pass that judges a broadcast log's element
+/// ([`crate::forge::codec_size`]) both read this one function.
+pub(crate) fn max_encoded_bytes_with(m: &CodecModel, longest_text: &dyn Fn(&str) -> u64) -> u64 {
     let Some(model) = m.content_line.as_ref() else {
         return 0;
     };
@@ -687,11 +702,11 @@ fn max_encoded_bytes(l: &LangCtx, m: &CodecModel) -> u64 {
         {
             // `;` + name + `=` + the quotes + the value.
             let name = param.param.as_deref().map_or(0, str::len) as u64;
-            logical += 1 + name + 1 + 2 + value_width(l, param);
+            logical += 1 + name + 1 + 2 + value_width(longest_text, param);
         }
         let value = match entry.present_type() {
             // An enum's text is letters, digits and hyphens: nothing is escaped.
-            SceType::Enum(_) => value_width(l, entry),
+            SceType::Enum(_) => value_width(longest_text, entry),
             SceType::String => {
                 // A line that holds a list carries every value at its bound and a
                 // separator between each (docs/adr/0014); the separator is not

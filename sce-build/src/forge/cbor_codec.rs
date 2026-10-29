@@ -381,7 +381,12 @@ fn render_c(
 /// The most bytes `m` encodes to: its map head and, for every entry, its key
 /// and the longest value its declaration admits — a bound C11 callers size
 /// an `encode_to_buf` buffer by.
-fn max_encoded_bytes(m: &CodecModel) -> u64 {
+///
+/// A string or byte string with neither `sce:length` nor `sce:max-size` counts
+/// as empty here; the build-wide pass that judges a broadcast log's element
+/// ([`crate::forge::codec_size`]) refuses such an entry before it asks, so the
+/// bound it reports is never taken over a missing declaration.
+pub(crate) fn max_encoded_bytes(m: &CodecModel) -> u64 {
     // The length of a head carrying `value`, in its shortest form.
     fn head(value: u64) -> u64 {
         match value {
