@@ -6012,6 +6012,16 @@ fn validate_and_enrich_imports(
                     algorithm_record_slots(am, &parsed.imports, &callee_base, *language);
                 ctx.enum_slots =
                     algorithm_enum_slots(am, &parsed.imports, &callee_base, &own_enums);
+                // A Swift caller names the unit the callee is written as, which is
+                // written only when the callee is lowered for Swift, itself read through
+                // the algorithms it calls.
+                if *language == generator::Language::Swift {
+                    ctx.swift_unlowered = forge::static_imports::swift_callee_unlowered(
+                        &doc,
+                        &parsed.imports,
+                        &callee_base,
+                    );
+                }
             }
             // Whether the imported transform keeps state is recorded here,
             // where its model is in hand, and judged once the importing

@@ -133,6 +133,62 @@ fn record_schema(
     ))
 }
 
+/// How many algorithms deep a callee's refusal is read through the algorithms it calls
+/// in turn: past it the callee is refused, where a cycle of imports would otherwise be
+/// read without end.
+const CALLEE_DEPTH: usize = 16;
+
+/// What of the algorithm `document` (whose own imports are `imports`, written relative
+/// to `base_dir`) the Swift backend does not write, as the clause a caller's refusal
+/// names it by — `holds a <sce:return> of …` — or `None` when it writes all of it.
+/// The algorithm is read through the algorithms it calls, each of which is a unit the
+/// Swift backend must write for the call to name one.
+pub(crate) fn swift_callee_unlowered(
+    document: &ForgeDocument,
+    imports: &[ForgeImport],
+    base_dir: &Path,
+) -> Option<String> {
+    swift_callee_unlowered_at(document, imports, base_dir, 0)
+}
+
+fn swift_callee_unlowered_at(
+    document: &ForgeDocument,
+    imports: &[ForgeImport],
+    base_dir: &Path,
+    depth: usize,
+) -> Option<String> {
+    let ForgeDocument::Algorithm(algorithm) = document else {
+        return None;
+    };
+    if depth >= CALLEE_DEPTH {
+        return Some("calls algorithms nested too deeply to read".to_string());
+    }
+    crate::forge::generator::swift_unlowered_construct(
+        algorithm,
+        imports,
+        &|imp| {
+            let (_, fields) = record_schema(imports, base_dir, &imp.alias)?;
+            Some(fields.into_iter().map(|f| (f.id, f.ty)).collect())
+        },
+        &|imp| swift_imported_algorithm_unlowered(imp, base_dir, depth + 1),
+    )
+    .map(|construct| format!("holds {construct}"))
+}
+
+/// [`swift_callee_unlowered`] of the algorithm `import` names, found relative to
+/// `base_dir`, `depth` algorithms down; `None` for one that cannot be read, which the
+/// resolution of the import has already refused.
+pub(crate) fn swift_imported_algorithm_unlowered(
+    import: &ForgeImport,
+    base_dir: &Path,
+    depth: usize,
+) -> Option<String> {
+    let source = crate::forge::import_source::ImportSource::read(base_dir, import).ok()?;
+    let parsed = source.parse().ok()??;
+    let callee_base = source.path.parent().unwrap_or(base_dir);
+    swift_callee_unlowered_at(&parsed.document, &parsed.imports, callee_base, depth)
+}
+
 /// The alias `model` imports each event-schema under, by the document's identity —
 /// what a record slot of an imported algorithm is named by in the statechart.
 fn own_record_aliases(model: &SCXMLModel, base_dir: &Path) -> HashMap<RecordId, String> {
@@ -557,6 +613,8 @@ pub(crate) fn resolve(
                     let (_, fields) = record_schema(&parsed.imports, callee_base, &imp.alias)?;
                     Some(fields.into_iter().map(|f| (f.id, f.ty)).collect())
                 },
+                // The algorithms it calls in turn are read where it is.
+                &|imp| swift_imported_algorithm_unlowered(imp, callee_base, 1),
             ),
         });
     }
@@ -751,6 +809,7 @@ fn function_callee(
         unlowered_by: crate::forge::generator::unlowered_in_part(
             document,
             &parsed.imports,
+            &|_| None,
             &|_| None,
         ),
     })

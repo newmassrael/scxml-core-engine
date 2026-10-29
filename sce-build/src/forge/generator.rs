@@ -138,6 +138,13 @@ pub struct ImportContext {
     #[serde(skip)]
     pub may_fail: bool,
 
+    /// For an imported algorithm, when the generation is for Swift: what of it the
+    /// Swift backend does not write (`None` when it writes all of it), read where the
+    /// algorithm is and through the algorithms it calls in turn. A caller is refused
+    /// for it, since the unit its call names is not written.
+    #[serde(skip)]
+    pub swift_unlowered: Option<String>,
+
     /// For stateful kinds: member fields exposed to user expressions as
     /// `alias_.field_name` (or equivalent member access syntax). Each entry
     /// maps a field name (as seen in the user's SCXML expression) to its
@@ -1092,6 +1099,7 @@ fn resolve_single_import(
         host_only: None,
         record_slots: None,
         may_fail: false,
+        swift_unlowered: None,
         member_field_types: Vec::new(),
         member_method_sigs: Vec::new(),
         go_init_expr,
@@ -24124,11 +24132,14 @@ pub fn generate_swift_with_imports(
 /// that calls `doc` is refused for that backend by the same reason
 /// ([`crate::forge::type_ctx::StaticCallee::unlowered_by`]). `schema_fields` reads
 /// the `(id, type)` fields of the event schema an import of `doc` names, which the
-/// callee's own generation reads from the imports it resolved.
+/// callee's own generation reads from the imports it resolved, and
+/// `algorithm_unlowered` what of the algorithm an import of `doc` names the Swift
+/// backend does not write, which the caller's unit would name a unit for.
 pub(crate) fn unlowered_in_part(
     doc: &ForgeDocument,
     imports: &[ForgeImport],
     schema_fields: &dyn Fn(&ForgeImport) -> Option<SchemaFields>,
+    algorithm_unlowered: &dyn Fn(&ForgeImport) -> Option<String>,
 ) -> Vec<(crate::generator::Language, String)> {
     use crate::generator::Language;
     Language::ALL
@@ -24141,14 +24152,7 @@ pub(crate) fn unlowered_in_part(
                 // part, are never a callee.
                 Language::Swift => match doc {
                     ForgeDocument::Algorithm(m) => {
-                        let views: Vec<SwiftImport> = imports
-                            .iter()
-                            .map(|imp| SwiftImport {
-                                alias: imp.alias.clone(),
-                                schema_fields: schema_fields(imp),
-                            })
-                            .collect();
-                        swift_algorithm_unlowered(m, &views)
+                        swift_unlowered_construct(m, imports, schema_fields, algorithm_unlowered)
                             .map(|construct| swift_algorithm_refusal(m, &construct))
                     }
                     _ => None,
@@ -24164,6 +24168,31 @@ pub(crate) fn unlowered_in_part(
             construct.map(|why| (lang, why))
         })
         .collect()
+}
+
+/// The construct of the algorithm `m`, whose own imports are `imports`, that the Swift
+/// backend does not write ([`swift_algorithm_unlowered`]), with what each import names
+/// read by the callbacks of [`unlowered_in_part`].
+pub(crate) fn swift_unlowered_construct(
+    m: &AlgorithmModel,
+    imports: &[ForgeImport],
+    schema_fields: &dyn Fn(&ForgeImport) -> Option<SchemaFields>,
+    algorithm_unlowered: &dyn Fn(&ForgeImport) -> Option<String>,
+) -> Option<String> {
+    let views: Vec<SwiftImport> = imports
+        .iter()
+        .map(|imp| SwiftImport {
+            alias: imp.alias.clone(),
+            kind: match (imp.kind, schema_fields(imp)) {
+                (_, Some(fields)) => SwiftImportKind::Schema(fields),
+                (ForgeKind::Algorithm, None) => SwiftImportKind::Algorithm {
+                    unlowered: algorithm_unlowered(imp),
+                },
+                _ => SwiftImportKind::Other,
+            },
+        })
+        .collect();
+    swift_algorithm_unlowered(m, &views)
 }
 
 /// The refusal of the algorithm `m` for the Swift construct `construct` it holds
@@ -24259,16 +24288,31 @@ fn swift_algorithm_unlowered(m: &AlgorithmModel, imports: &[SwiftImport]) -> Opt
                 "the <sce:foreach item=\"{item}\">, a name Swift reserves,"
             )),
             AlgorithmStmt::Foreach { body, .. } => unlowered(body, reserved),
-            AlgorithmStmt::Call { .. } => Some("an <sce:call>".to_string()),
+            // A call of an imported algorithm, which the check of the imports below
+            // has held to one written for Swift.
+            AlgorithmStmt::Call { .. } => None,
         })
     }
     // An import of an event schema is the unit a record of it is typed by, which the
     // Swift backend writes when the schema's fields are ones it lowers; an import of
-    // any other kind has no Swift unit.
+    // an algorithm is a call of the unit that algorithm is written as, which exists
+    // when the callee is written for Swift; an import of any other kind has no Swift
+    // unit.
     for import in imports {
-        match &import.schema_fields {
-            None => return Some(format!("the <sce:import as=\"{}\">", import.alias)),
-            Some(fields) => {
+        match &import.kind {
+            SwiftImportKind::Other => {
+                return Some(format!("the <sce:import as=\"{}\">", import.alias))
+            }
+            SwiftImportKind::Algorithm {
+                unlowered: Some(why),
+            } => {
+                return Some(format!(
+                    "the <sce:import as=\"{}\">, an algorithm that {why}",
+                    import.alias
+                ))
+            }
+            SwiftImportKind::Algorithm { unlowered: None } => {}
+            SwiftImportKind::Schema(fields) => {
                 if let Some(why) =
                     swift_schema_fields_unlowered(fields.iter().map(|(id, ty)| (id.as_str(), ty)))
                 {
@@ -24365,15 +24409,25 @@ fn swift_schema_fields_unlowered<'a>(
 }
 
 /// One import of an algorithm, as the Swift lowering reads it: the alias it is
-/// brought in by and, when it names an event schema, that schema's fields. Built from
-/// the imports a generation resolved ([`swift_imports_of_context`]) and from the ones
-/// a statechart reads of a callee ([`unlowered_in_part`]), which hold a schema in two
-/// shapes.
+/// brought in by and what it names. Built from the imports a generation resolved
+/// ([`swift_imports_of_context`]) and from the ones a statechart reads of a callee
+/// ([`unlowered_in_part`]), which hold a schema in two shapes.
 pub(crate) struct SwiftImport {
     pub alias: String,
-    /// The schema's fields; `None` for an import of any other kind, which the Swift
-    /// backend writes no unit for yet.
-    pub schema_fields: Option<SchemaFields>,
+    pub kind: SwiftImportKind,
+}
+
+/// What an import of an algorithm names, as far as the Swift backend writes it.
+pub(crate) enum SwiftImportKind {
+    /// An event schema, with its fields: the unit a record of it is typed by.
+    Schema(SchemaFields),
+    /// An algorithm, called as a static member of the enum its own unit declares. The
+    /// unit exists only when the callee is itself written for Swift, so `unlowered`
+    /// says what of the callee is not (`None` when all of it is): a caller is refused
+    /// for that, not left to name a unit nothing writes.
+    Algorithm { unlowered: Option<String> },
+    /// Any other kind, for which the Swift backend writes no unit yet.
+    Other,
 }
 
 /// The `(id, type)` fields of an event schema, in declaration order.
@@ -24385,13 +24439,19 @@ fn swift_imports_of_context(imports: &[ImportContext]) -> Vec<SwiftImport> {
         .iter()
         .map(|imp| SwiftImport {
             alias: imp.alias.clone(),
-            schema_fields: imp.record.as_ref().map(|record| {
-                record
-                    .fields
-                    .iter()
-                    .map(|f| (f.id.clone(), f.ty.clone()))
-                    .collect()
-            }),
+            kind: match &imp.record {
+                Some(record) => SwiftImportKind::Schema(
+                    record
+                        .fields
+                        .iter()
+                        .map(|f| (f.id.clone(), f.ty.clone()))
+                        .collect(),
+                ),
+                None if imp.kind == "algorithm" => SwiftImportKind::Algorithm {
+                    unlowered: imp.swift_unlowered.clone(),
+                },
+                None => SwiftImportKind::Other,
+            },
         })
         .collect()
 }
@@ -32488,7 +32548,7 @@ fn lower_algorithm_stmt(
                     collection_method_call(lang, imp, method, &lowered_args)
                 }
             };
-            let semi = if matches!(lang, Language::Kotlin | Language::Python) {
+            let semi = if matches!(lang, Language::Kotlin | Language::Python | Language::Swift) {
                 ""
             } else {
                 ";"
@@ -37035,6 +37095,7 @@ mod tests {
             host_only: None,
             record_slots: None,
             may_fail: false,
+            swift_unlowered: None,
             member_field_types: Vec::new(),
             member_method_sigs: Vec::new(),
             go_init_expr: String::new(),
@@ -37919,6 +37980,7 @@ mod tests {
                 host_only: None,
                 record_slots: None,
                 may_fail: false,
+                swift_unlowered: None,
                 member_field_types: Vec::new(),
                 member_method_sigs: Vec::new(),
                 go_init_expr: String::new(),
@@ -37971,6 +38033,7 @@ mod tests {
                 host_only: None,
                 record_slots: None,
                 may_fail: false,
+                swift_unlowered: None,
                 member_field_types: Vec::new(),
                 member_method_sigs: Vec::new(),
                 go_init_expr: String::new(),

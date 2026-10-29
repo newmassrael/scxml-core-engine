@@ -208,11 +208,24 @@ sce_generated_tree_clear --recursive "$GENERATED_DIR"
 for machine in "${MACHINES[@]}"; do
     cp "$TMP/$machine"/*_sm.swift "$GENERATED_DIR/"
 done
+# A unit is named for its document, and the units are files of one SwiftPM target, so
+# two documents of one name (a fixture and a standard algorithm both called
+# `days_in_month`) would be one file that holds whichever was copied last, and a caller
+# of the other would be compiled against the wrong function. That is a defect of the
+# documents, not something to order: one of them needs another name
+# (`a_fixture_algorithm_is_named_apart_from_the_standard_library`).
+declare -A UNIT_FROM=()
 UNITS=()
 for i in "${!ALGORITHMS[@]}"; do
     for generated in "$TMP/algorithm_$i"/*.swift; do
+        unit="$(basename "$generated" .swift)"
+        if [ -n "${UNIT_FROM[$unit]:-}" ]; then
+            echo "error: ${UNIT_FROM[$unit]} and ${ALGORITHMS[$i]} are both written as $unit; one of them needs another name" >&2
+            exit 1
+        fi
         cp "$generated" "$GENERATED_DIR/"
-        UNITS+=("$(basename "$generated" .swift)")
+        UNIT_FROM[$unit]="${ALGORITHMS[$i]}"
+        UNITS+=("$unit")
     done
 done
 SCHEMA_UNITS=()
