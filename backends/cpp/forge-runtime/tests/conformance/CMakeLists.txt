@@ -499,6 +499,55 @@ target_compile_options(broadcast_log_generated_test PRIVATE -Wall -Wextra -Wpeda
 target_link_libraries(broadcast_log_generated_test PRIVATE Threads::Threads)
 add_test(NAME broadcast_log_generated COMMAND broadcast_log_generated_test)
 
+# The logs over an element whose codec asks its caller for what its wire form does
+# not carry (ADR 0062 section 4, "Caller inputs are part of the element"): one over a
+# codec with a flag input, one over a variant that has no tag of its own. The six
+# documents are the ones every backend's conformance lane reads, in one set, in the
+# order that puts what a document imports before it; `orchestrate` reads a set from
+# the one directory they are in. The headers go to a directory of their own, so the
+# names of these six do not meet the other logs' in `GENERATED_DIR`.
+set(BLOG_CONTEXT_DIR "${REPO_ROOT}/tests/forge/conformance/broadcast_log_context")
+set(BLOG_CONTEXT_CPP_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/broadcast_log_context_headers")
+file(MAKE_DIRECTORY "${BLOG_CONTEXT_CPP_GENERATED_DIR}")
+set(BLOG_CONTEXT_CPP_SET
+    broadcast_log_conformance_flagged_event
+    broadcast_log_conformance_flagged
+    broadcast_log_conformance_choice_small
+    broadcast_log_conformance_choice_large
+    broadcast_log_conformance_choice
+    broadcast_log_conformance_chosen)
+set(BLOG_CONTEXT_CPP_ARGS "")
+set(BLOG_CONTEXT_CPP_DEPENDS "")
+set(BLOG_CONTEXT_CPP_HEADERS "")
+foreach(_document IN LISTS BLOG_CONTEXT_CPP_SET)
+    list(APPEND BLOG_CONTEXT_CPP_ARGS --forge "${BLOG_CONTEXT_DIR}/${_document}.scxml")
+    list(APPEND BLOG_CONTEXT_CPP_DEPENDS "${BLOG_CONTEXT_DIR}/${_document}.scxml")
+    list(APPEND BLOG_CONTEXT_CPP_HEADERS "${BLOG_CONTEXT_CPP_GENERATED_DIR}/${_document}.h")
+endforeach()
+add_custom_command(
+    OUTPUT ${BLOG_CONTEXT_CPP_HEADERS}
+    COMMAND "${SCE_CODEGEN}" orchestrate ${BLOG_CONTEXT_CPP_ARGS}
+            --language cpp --output-dir "${BLOG_CONTEXT_CPP_GENERATED_DIR}"
+    DEPENDS ${BLOG_CONTEXT_CPP_DEPENDS} "${SCE_CODEGEN}"
+    COMMENT "Generating C++ broadcast logs over elements that ask their caller for inputs"
+    VERBATIM
+)
+add_custom_target(generate_broadcast_log_context_headers_cpp DEPENDS ${BLOG_CONTEXT_CPP_HEADERS})
+
+add_executable(broadcast_log_context_generated_test
+    "${CMAKE_CURRENT_SOURCE_DIR}/broadcast_log_context_generated_test.cpp")
+add_dependencies(broadcast_log_context_generated_test generate_broadcast_log_context_headers_cpp)
+# SCE's own source, as `broadcast_log_generated_test` is; the generated headers it
+# includes are held to C++17 by the gate (docs/adr/0059, section 7).
+target_compile_features(broadcast_log_context_generated_test PRIVATE cxx_std_20)
+target_include_directories(broadcast_log_context_generated_test PRIVATE
+    "${RUNTIME_INCLUDE_DIR}"
+    "${BLOG_CONTEXT_CPP_GENERATED_DIR}"
+)
+target_compile_options(broadcast_log_context_generated_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+target_link_libraries(broadcast_log_context_generated_test PRIVATE Threads::Threads)
+add_test(NAME broadcast_log_context_generated COMMAND broadcast_log_context_generated_test)
+
 # The log on real threads, written as histories and judged by the command every
 # backend's broadcast-log histories are judged by (verification layer 3). The
 # recorder writes one history per run; the second test hands the files to
