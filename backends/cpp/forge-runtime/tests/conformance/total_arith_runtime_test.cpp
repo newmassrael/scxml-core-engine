@@ -444,6 +444,22 @@ void theSignedWidthsWrapAndSaturateAtTheirBounds() {
     EXPECT(Saturating::neg<int64_t>(-1), 1);
 }
 
+// The CHECKED product of two uint32 values (SCE_FORGE.md §3.4.1), which the
+// total family sits beside: (2^32 - 1)^2 passes INT64_MAX, so a product made in
+// std::int64_t would overflow, undefined, inside the helper meant to report it.
+// Made in std::uint64_t, it is reported.
+void aCheckedUint32ProductPastInt64IsReported() {
+    SCE::Forge::AlgorithmFailure f;
+    EXPECT(SCE::Forge::Checked::mul<std::uint32_t>(f, 65535u, 65537u), 4294967295u);
+    EXPECT(f.failed(), false);
+    EXPECT(SCE::Forge::Checked::mul<std::uint32_t>(f, 65536u, 65536u), 0u);
+    EXPECT(f.failed(), true);
+    SCE::Forge::AlgorithmFailure g;
+    EXPECT(SCE::Forge::Checked::mul<std::uint32_t>(g, 4294967295u, 4294967295u), 0u);
+    EXPECT(g.failed(), true);
+    EXPECT(g.error() == SCE::Forge::AlgorithmError::Overflow, true);
+}
+
 }  // namespace
 
 int main() {
@@ -451,6 +467,7 @@ int main() {
     theBoundsOf16And32BitsMeetTheDefinition();
     theUnsignedWidthsWrapAndSaturateAtTheirBounds();
     theSignedWidthsWrapAndSaturateAtTheirBounds();
+    aCheckedUint32ProductPastInt64IsReported();
     if (failures != 0) {
         std::fprintf(stderr, "%d failure(s)\n", failures);
         return 1;

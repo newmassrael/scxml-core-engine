@@ -222,7 +222,17 @@ template <typename T> constexpr T sub(AlgorithmFailure &f, T a, T b) noexcept {
 
 template <typename T> constexpr T mul(AlgorithmFailure &f, T a, T b) noexcept {
     static_assert(std::is_integral_v<T>, "checked arithmetic is integer arithmetic");
-    if constexpr (Detail::kNarrow<T>) {
+    if constexpr (Detail::kNarrow<T> && !Detail::kSigned<T> && sizeof(T) == 4) {
+        // (2^32 - 1)^2 passes INT64_MAX, so in `std::int64_t` this product
+        // would be the overflow the helper reports, and undefined; it fits
+        // `std::uint64_t`, where it is made instead.
+        const std::uint64_t product = static_cast<std::uint64_t>(a) * static_cast<std::uint64_t>(b);
+        if (product > std::numeric_limits<T>::max()) {
+            f.fail(AlgorithmError::Overflow);
+            return T{};
+        }
+        return static_cast<T>(product);
+    } else if constexpr (Detail::kNarrow<T>) {
         return Detail::fit<T>(f, static_cast<std::int64_t>(a) * static_cast<std::int64_t>(b));
     } else {
         if (a == 0 || b == 0) {

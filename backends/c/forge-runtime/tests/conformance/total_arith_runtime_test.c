@@ -459,12 +459,29 @@ static void a_tick_counter_that_wraps_is_read_across_the_wrap(void) {
     EXPECT_U(sce_forge_wrapping_sub_u32(0, UINT32_MAX), 1);
 }
 
+/* The CHECKED product of two uint32 values (SCE_FORGE.md §3.4.1), which the
+ * total family sits beside: (2^32 - 1)^2 passes INT64_MAX, so a product made
+ * in int64_t would overflow, undefined, inside the helper meant to report it.
+ * Made in uint64_t, it is reported. */
+static void a_checked_uint32_product_past_int64_is_reported(void) {
+    sce_forge_algorithm_failure_t f = {false, SCE_FORGE_ALGORITHM_OVERFLOW};
+    EXPECT_U(sce_forge_checked_mul_u32(&f, 65535, 65537), UINT32_MAX);
+    EXPECT_U(f.failed, false);
+    EXPECT_U(sce_forge_checked_mul_u32(&f, 65536, 65536), 0);
+    EXPECT_U(f.failed, true);
+    sce_forge_algorithm_failure_t g = {false, SCE_FORGE_ALGORITHM_OVERFLOW};
+    EXPECT_U(sce_forge_checked_mul_u32(&g, UINT32_MAX, UINT32_MAX), 0);
+    EXPECT_U(g.failed, true);
+    EXPECT_U(g.error == SCE_FORGE_ALGORITHM_OVERFLOW, true);
+}
+
 int main(void) {
     every_8_bit_pair_meets_the_definition();
     the_bounds_of_16_and_32_bits_meet_the_definition();
     the_unsigned_widths_wrap_and_saturate_at_their_bounds();
     the_signed_widths_wrap_and_saturate_at_their_bounds();
     a_tick_counter_that_wraps_is_read_across_the_wrap();
+    a_checked_uint32_product_past_int64_is_reported();
     if (failures != 0) {
         fprintf(stderr, "%d failure(s)\n", failures);
         return 1;

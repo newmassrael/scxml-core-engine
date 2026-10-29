@@ -116,10 +116,14 @@ static inline sce_forge_bytes_view_t sce_forge_bounded_bytes(sce_forge_algorithm
 
 /*
  * Every width up to 32 bits computes exactly in `int64_t`, where none of
- * these operations can overflow, and is then held to its own range.
- * Division truncates toward zero and `%` takes the dividend's sign, as C99
- * defines both. A remainder whose quotient overflows has no value either:
- * `MIN % -1` fails as `MIN / -1` does, on every backend.
+ * these operations can overflow, and is then held to its own range, with one
+ * exception: the product of two `uint32_t` values reaches (2^32 - 1)^2, past
+ * INT64_MAX, so it is made in `uint64_t` instead (`sce_forge_checked_mul_u32`
+ * below), where it fits; in `int64_t` it would be the very overflow the helper
+ * exists to report, and undefined. Division truncates toward zero and `%`
+ * takes the dividend's sign, as C99 defines both. A remainder whose quotient
+ * overflows has no value either: `MIN % -1` fails as `MIN / -1` does, on
+ * every backend.
  */
 #define SCE_FORGE_CHECKED_NARROW(SUFFIX, T, LO, HI)                                                                    \
     static inline T sce_forge_checked_fit_##SUFFIX(sce_forge_algorithm_failure_t *f, int64_t v) {                      \
@@ -134,9 +138,6 @@ static inline sce_forge_bytes_view_t sce_forge_bounded_bytes(sce_forge_algorithm
     }                                                                                                                  \
     static inline T sce_forge_checked_sub_##SUFFIX(sce_forge_algorithm_failure_t *f, T a, T b) {                       \
         return sce_forge_checked_fit_##SUFFIX(f, (int64_t)a - (int64_t)b);                                             \
-    }                                                                                                                  \
-    static inline T sce_forge_checked_mul_##SUFFIX(sce_forge_algorithm_failure_t *f, T a, T b) {                       \
-        return sce_forge_checked_fit_##SUFFIX(f, (int64_t)a * (int64_t)b);                                             \
     }                                                                                                                  \
     static inline T sce_forge_checked_div_##SUFFIX(sce_forge_algorithm_failure_t *f, T a, T b) {                       \
         if (b == 0) {                                                                                                  \
@@ -168,6 +169,30 @@ SCE_FORGE_CHECKED_NARROW(u16, uint16_t, 0, UINT16_MAX)
 SCE_FORGE_CHECKED_NARROW(u32, uint32_t, 0, UINT32_MAX)
 
 #undef SCE_FORGE_CHECKED_NARROW
+
+/* The product of two values of a width whose every product `int64_t` holds. */
+#define SCE_FORGE_CHECKED_NARROW_MUL(SUFFIX, T)                                                                        \
+    static inline T sce_forge_checked_mul_##SUFFIX(sce_forge_algorithm_failure_t *f, T a, T b) {                       \
+        return sce_forge_checked_fit_##SUFFIX(f, (int64_t)a * (int64_t)b);                                             \
+    }
+
+SCE_FORGE_CHECKED_NARROW_MUL(i8, int8_t)
+SCE_FORGE_CHECKED_NARROW_MUL(i16, int16_t)
+SCE_FORGE_CHECKED_NARROW_MUL(i32, int32_t)
+SCE_FORGE_CHECKED_NARROW_MUL(u8, uint8_t)
+SCE_FORGE_CHECKED_NARROW_MUL(u16, uint16_t)
+
+#undef SCE_FORGE_CHECKED_NARROW_MUL
+
+/* (2^32 - 1)^2 passes INT64_MAX and fits UINT64_MAX: made in `uint64_t`. */
+static inline uint32_t sce_forge_checked_mul_u32(sce_forge_algorithm_failure_t *f, uint32_t a, uint32_t b) {
+    uint64_t product = (uint64_t)a * (uint64_t)b;
+    if (product > UINT32_MAX) {
+        sce_forge_algorithm_fail(f, SCE_FORGE_ALGORITHM_OVERFLOW);
+        return 0;
+    }
+    return (uint32_t)product;
+}
 
 /*
  * 64 bits have no wider type to compute in, so each operation tests its
