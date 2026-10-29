@@ -23449,7 +23449,7 @@ pub fn generate_swift_with_imports(
 pub(crate) fn unlowered_in_part(
     doc: &ForgeDocument,
     imports: &[ForgeImport],
-    schema_fields: &dyn Fn(&ForgeImport) -> Option<Vec<(String, FieldType)>>,
+    schema_fields: &dyn Fn(&ForgeImport) -> Option<SchemaFields>,
 ) -> Vec<(crate::generator::Language, String)> {
     use crate::generator::Language;
     Language::ALL
@@ -23661,10 +23661,13 @@ fn swift_schema_fields_unlowered<'a>(
 /// shapes.
 pub(crate) struct SwiftImport {
     pub alias: String,
-    /// The schema's `(id, type)` fields in declaration order; `None` for an import of
-    /// any other kind, which the Swift backend writes no unit for yet.
-    pub schema_fields: Option<Vec<(String, FieldType)>>,
+    /// The schema's fields; `None` for an import of any other kind, which the Swift
+    /// backend writes no unit for yet.
+    pub schema_fields: Option<SchemaFields>,
 }
+
+/// The `(id, type)` fields of an event schema, in declaration order.
+pub(crate) type SchemaFields = Vec<(String, FieldType)>;
 
 /// The imports a generation resolved, as the Swift lowering reads them.
 fn swift_imports_of_context(imports: &[ImportContext]) -> Vec<SwiftImport> {
