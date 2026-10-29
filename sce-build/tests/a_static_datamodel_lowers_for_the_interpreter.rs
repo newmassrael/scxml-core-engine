@@ -279,7 +279,7 @@ fn an_imported_algorithm_travels_in_the_document_and_is_called_by_its_name() {
         .expect("the library is installed");
     assert!(
         installer.contains(
-            "SceStatic.algorithms.days_in_month = function (year, month) { var days = 31;"
+            "SceStatic.algorithms.month_length = function (year, month) { var days = 31;"
         ),
         "the algorithm is installed beside the library: {installer}"
     );
@@ -289,7 +289,7 @@ fn an_imported_algorithm_travels_in_the_document_and_is_called_by_its_name() {
         .find_map(|n| n.attribute("cond"))
         .expect("the guard that calls it");
     assert_eq!(
-        guard, "shown.dayOfMonth < SceStatic.algorithms.days_in_month(shown.year, shown.month)",
+        guard, "shown.dayOfMonth < SceStatic.algorithms.month_length(shown.year, shown.month)",
         "the call reads the record's fields, and fails as an expression of the document does"
     );
 

@@ -538,12 +538,12 @@ endforeach()
 
 # The algorithms those machines call. A machine includes the header its own
 # generation names and does not generate it, so each is generated beside the
-# machines: static_record's days_in_month, and the standard sync rules
+# machines: static_record's month_length, and the standard sync rules
 # sync_client is composed of, by their library names.
 sce_add_algorithm(
     TARGET static_datamodel_generated_cpp_test
     SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/algorithm_days_in_month.scxml
-    HEADER days_in_month.h
+    HEADER month_length.h
 )
 # static_list_assign's `day_run`, whose list a list variable takes whole.
 sce_add_algorithm(

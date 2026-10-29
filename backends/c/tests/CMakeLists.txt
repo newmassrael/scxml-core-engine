@@ -2747,17 +2747,17 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     )
     # A guard over two fields of the record calls an algorithm of the fixtures'
     # own, whose header is generated once beside the machines that include it.
-    set(_DAYS_IN_MONTH_HEADER "${SCE_C_INTEGRATION_GENERATED_DIR}/days_in_month.h")
-    set(_DAYS_IN_MONTH_SOURCE
+    set(_MONTH_LENGTH_HEADER "${SCE_C_INTEGRATION_GENERATED_DIR}/month_length.h")
+    set(_MONTH_LENGTH_SOURCE
         "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/algorithm_days_in_month.scxml")
     add_custom_command(
-        OUTPUT "${_DAYS_IN_MONTH_HEADER}"
-        COMMAND "${SCE_CODEGEN}" generate "${_DAYS_IN_MONTH_SOURCE}"
+        OUTPUT "${_MONTH_LENGTH_HEADER}"
+        COMMAND "${SCE_CODEGEN}" generate "${_MONTH_LENGTH_SOURCE}"
                 -l c11 -o "${SCE_C_INTEGRATION_GENERATED_DIR}"
-                --write-deps "${_DAYS_IN_MONTH_HEADER}.d"
-        DEPENDS "${_DAYS_IN_MONTH_SOURCE}" "${SCE_CODEGEN}"
-        DEPFILE "${_DAYS_IN_MONTH_HEADER}.d"
-        COMMENT "Generating C11 algorithm: days_in_month.h"
+                --write-deps "${_MONTH_LENGTH_HEADER}.d"
+        DEPENDS "${_MONTH_LENGTH_SOURCE}" "${SCE_CODEGEN}"
+        DEPFILE "${_MONTH_LENGTH_HEADER}.d"
+        COMMENT "Generating C11 algorithm: month_length.h"
         VERBATIM
     )
     sce_generate_static_integration_c_test(static_record
@@ -3217,7 +3217,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         ${INTEGRATION_C_TEST_static_wire_wide_SOURCES}
         ${INTEGRATION_C_TEST_static_wire_enum_SOURCES}
         ${INTEGRATION_C_TEST_static_record_SOURCES}
-        ${_DAYS_IN_MONTH_HEADER}
+        ${_MONTH_LENGTH_HEADER}
         ${INTEGRATION_C_TEST_static_payload_SOURCES}
         ${INTEGRATION_C_TEST_static_payload_enum_SOURCES}
         ${INTEGRATION_C_TEST_static_payload_relay_SOURCES}
@@ -3326,7 +3326,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
             "${SCE_C_INTEGRATION_GENERATED_DIR}/schema_item_pick.h"
             "${SCE_C_INTEGRATION_GENERATED_DIR}/item_pick_first.h"
             ${INTEGRATION_C_TEST_static_record_SOURCES}
-            ${_DAYS_IN_MONTH_HEADER}
+            ${_MONTH_LENGTH_HEADER}
             ${INTEGRATION_C_TEST_static_schema_pending_SOURCES}
             ${INTEGRATION_C_TEST_static_schema_revision_SOURCES}
             ${INTEGRATION_C_TEST_static_send_idlocation_SOURCES}

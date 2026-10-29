@@ -4,11 +4,17 @@
   algorithm static_record.scxml imports and calls from a guard
   (docs/SCE_ACCEPTED_SUBSET.md §2.15), so a calendar screen steps its shown
   day no further than the month allows.
+
+  Its name is `month_length`, not the `days_in_month` of the standard library
+  (stdlib/time/days_in_month.scxml): the unit a document is written as is named for
+  the document, and a backend whose units share one namespace (a SwiftPM target) holds
+  one of a name. `a_fixture_algorithm_is_named_apart_from_the_standard_library` keeps
+  the two apart.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
        sce:kind="algorithm"
-       name="days_in_month"
+       name="month_length"
        version="1.0">
   <sce:signature>
     <sce:param name="year" type="uint16"/>
