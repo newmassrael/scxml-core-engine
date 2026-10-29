@@ -224,28 +224,25 @@ public object SceChecked {
     public fun rem(a: UInt, b: UInt): UInt = rem(a.toLong(), b.toLong(), 0L, U32_MAX).toUInt()
     public fun neg(a: UInt): UInt = neg(a.toLong(), 0L, U32_MAX).toUInt()
 
-    // 64 bits have no wider type to compute in, so each operation detects its
-    // own overflow from the wrapped result.
+    // 64 bits have no wider type to compute in, so each operation asks [Range64]
+    // on which side of its type's range its exact result lies.
+    private fun inRange(side: RangeSide) {
+        if (side != RangeSide.Inside) fail(AlgorithmError.Overflow)
+    }
+
     public fun add(a: Long, b: Long): Long {
-        val r = a + b
-        if (((a xor r) and (b xor r)) < 0L) fail(AlgorithmError.Overflow)
-        return r
+        inRange(Range64.add(a, b))
+        return a + b
     }
 
     public fun sub(a: Long, b: Long): Long {
-        val r = a - b
-        if (((a xor b) and (a xor r)) < 0L) fail(AlgorithmError.Overflow)
-        return r
+        inRange(Range64.sub(a, b))
+        return a - b
     }
 
     public fun mul(a: Long, b: Long): Long {
-        if (a == 0L || b == 0L) return 0L
-        if ((a == -1L && b == Long.MIN_VALUE) || (b == -1L && a == Long.MIN_VALUE)) {
-            fail(AlgorithmError.Overflow)
-        }
-        val r = a * b
-        if (r / b != a) fail(AlgorithmError.Overflow)
-        return r
+        inRange(Range64.mul(a, b))
+        return a * b
     }
 
     public fun div(a: Long, b: Long): Long {
@@ -265,21 +262,18 @@ public object SceChecked {
     }
 
     public fun add(a: ULong, b: ULong): ULong {
-        val r = a + b
-        if (r < a) fail(AlgorithmError.Overflow)
-        return r
+        inRange(Range64.add(a, b))
+        return a + b
     }
 
     public fun sub(a: ULong, b: ULong): ULong {
-        if (b > a) fail(AlgorithmError.Overflow)
+        inRange(Range64.sub(a, b))
         return a - b
     }
 
     public fun mul(a: ULong, b: ULong): ULong {
-        if (a == 0uL || b == 0uL) return 0uL
-        val r = a * b
-        if (r / b != a) fail(AlgorithmError.Overflow)
-        return r
+        inRange(Range64.mul(a, b))
+        return a * b
     }
 
     public fun div(a: ULong, b: ULong): ULong {
@@ -356,4 +350,60 @@ public object SceChecked {
     // A `list<T>` variable of a `sce-static` machine is an immutable `List`, which
     // reads the same way: below 0 or not below the size is the same failure.
     public fun <T> at(xs: List<T>, i: Long): T = xs[inside(i, xs.size)]
+}
+
+/** Where the exact result of an integer operation lies against the range of its type. */
+internal enum class RangeSide { Below, Inside, Above }
+
+/**
+ * The bound tests of the 64-bit operations, which have no wider type to compute
+ * in: each says on which side of `Long`'s or `ULong`'s range the exact result
+ * lies, from the operands or from the wrapped result (Warren, Hacker's Delight,
+ * section 2-13). [SceChecked] fails outside the range and [SceSaturating] answers
+ * the bound the result passed, so both read the one test.
+ */
+internal object Range64 {
+    // A sum past either bound has operands of one sign, and lies on their side.
+    fun add(a: Long, b: Long): RangeSide {
+        val r = a + b
+        return when {
+            ((a xor r) and (b xor r)) >= 0L -> RangeSide.Inside
+            a < 0L -> RangeSide.Below
+            else -> RangeSide.Above
+        }
+    }
+
+    // A difference past either bound has operands of opposite signs, and lies
+    // on the minuend's side.
+    fun sub(a: Long, b: Long): RangeSide {
+        val r = a - b
+        return when {
+            ((a xor b) and (a xor r)) >= 0L -> RangeSide.Inside
+            a < 0L -> RangeSide.Below
+            else -> RangeSide.Above
+        }
+    }
+
+    // A product past either bound lies above the range when its operands have
+    // one sign, and below it otherwise. `MIN * -1` is tested by name: its
+    // wrapped result is `MIN`, and `MIN / -1` is `MIN` again, so the division
+    // that tests every other product does not see it.
+    fun mul(a: Long, b: Long): RangeSide {
+        if (a == 0L || b == 0L) return RangeSide.Inside
+        val overflow = (a == -1L && b == Long.MIN_VALUE) ||
+            (b == -1L && a == Long.MIN_VALUE) ||
+            (a * b) / b != a
+        return when {
+            !overflow -> RangeSide.Inside
+            (a < 0L) == (b < 0L) -> RangeSide.Above
+            else -> RangeSide.Below
+        }
+    }
+
+    fun add(a: ULong, b: ULong): RangeSide = if (a + b < a) RangeSide.Above else RangeSide.Inside
+
+    fun sub(a: ULong, b: ULong): RangeSide = if (b > a) RangeSide.Below else RangeSide.Inside
+
+    fun mul(a: ULong, b: ULong): RangeSide =
+        if (a != 0uL && b != 0uL && (a * b) / b != a) RangeSide.Above else RangeSide.Inside
 }
