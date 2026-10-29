@@ -5160,6 +5160,27 @@ fn swift_payload_reader(
     f: &SchemaField,
     static_enums: &[crate::forge::static_lowering::StaticEnumType],
 ) -> String {
+    let present = swift_payload_present_reader(f, static_enums);
+    match &f.sce_type {
+        FieldType::Scalar(_) => present,
+        // An optional field (docs/adr/0055, section 4) is absent where the delivery
+        // carries `null`, refused where it lacks the key, and otherwise read as a
+        // field of `T` is (`PayloadFields.optional`). The closure's own `fields` is
+        // the one the present reader names.
+        FieldType::Optional { .. } => {
+            format!(
+                "try fields.optional(\"{}\") {{ fields in {present} }}",
+                f.id
+            )
+        }
+    }
+}
+
+/// [`swift_payload_reader`] of the present value of `f`.
+fn swift_payload_present_reader(
+    f: &SchemaField,
+    static_enums: &[crate::forge::static_lowering::StaticEnumType],
+) -> String {
     let id = &f.id;
     match f.sce_type.present_type() {
         // An enum is the machine's own, lifted from the variant's declared name; a name
@@ -5196,6 +5217,28 @@ fn swift_payload_reader(
 /// the wire the script engine binds `_event.data` from.
 fn swift_payload_pair(f: &SchemaField) -> String {
     let id = &f.id;
+    // An optional field is written as `null` where it is absent and as its present
+    // value's wire value where it is present, the key always written
+    // (docs/adr/0055, section 4; `optionalJSON`).
+    if let FieldType::Optional { .. } = &f.sce_type {
+        let wire = match f.sce_type.present_type() {
+            SceType::Enum(_) => "WireValue.text($0.declaredName)",
+            SceType::Uint64 => "WireValue.unsigned64($0)",
+            SceType::Int64 => "WireValue.signed64($0)",
+            SceType::Uint8
+            | SceType::Uint16
+            | SceType::Uint32
+            | SceType::Int8
+            | SceType::Int16
+            | SceType::Int32 => "WireValue.integer(Int64($0))",
+            SceType::Float32 => "WireValue.real(Double($0))",
+            SceType::Float64 => "WireValue.real($0)",
+            SceType::Bool => "WireValue.truth($0)",
+            SceType::String => "WireValue.text($0)",
+            SceType::Bytes => "WireValue.bytes($0)",
+        };
+        return format!(".raw(\"{id}\", json: optionalJSON({id}) {{ {wire}.json }})");
+    }
     match f.sce_type.present_type() {
         // The name the enum document declares for the value.
         SceType::Enum(_) => format!(".text(\"{id}\", {id}.declaredName)"),
@@ -5262,6 +5305,12 @@ pub fn build_swift_event_payload(
                     swift_type(present).to_string(),
                     swift_zero_value(present).to_string(),
                 ),
+            };
+            // A field that may be absent is the optional type over its present
+            // value's, and holds nothing yet as absent (docs/adr/0055).
+            let (ty, zero) = match &f.sce_type {
+                FieldType::Optional { .. } => (format!("{ty}?"), "nil".to_string()),
+                FieldType::Scalar(_) => (ty, zero),
             };
             field_lines.push_str(&format!("    var {}: {ty} = {zero}\n", f.id));
             reads.push_str(&format!(
@@ -37003,8 +37052,8 @@ mod tests {
     use crate::forge::model::{ForgeKind, SceType};
 
     /// Each backend spells an optional value by one type over its present
-    /// value's (docs/adr/0055, section 5); C11 declares one per element in its
-    /// own step, and Swift has no emitter.
+    /// value's (docs/adr/0055, section 5), `T?` in Kotlin and Swift; C11 is the one
+    /// that declares a struct per element in its own step instead.
     #[test]
     fn an_optional_value_is_one_type_over_its_present_one() {
         use crate::generator::Language;
@@ -37014,8 +37063,8 @@ mod tests {
         assert_eq!(spelled(Language::Cpp).as_deref(), Some("std::optional<T>"));
         assert_eq!(spelled(Language::Go).as_deref(), Some("optional.Of[T]"));
         assert_eq!(spelled(Language::Python).as_deref(), Some("Optional[T]"));
+        assert_eq!(spelled(Language::Swift).as_deref(), Some("T?"));
         assert_eq!(spelled(Language::C11), None);
-        assert_eq!(spelled(Language::Swift), None);
     }
 
     /// A C11 codec holds an entry that may be absent in the struct

@@ -9780,6 +9780,11 @@ pub(crate) fn pass_failure_on(
         ExprTarget::Swift if symbol.starts_with(SWIFT_STATE_ADAPTER_PREFIX) => {
             format!("Checked.takeDefault(sceFailure, {{ try {call} }})")
         }
+        // A call that answers a value that may be absent stands at the absence where it
+        // failed, the one value of the type `T?` that needs no `T` to name it.
+        ExprTarget::Swift if ty.is_optional() => {
+            format!("Checked.take(sceFailure, fallback: nil, {{ try {call} }})")
+        }
         ExprTarget::Swift => match swift::zero_of(ty.strip_quantity()) {
             Some(zero) => format!("Checked.take(sceFailure, fallback: {zero}, {{ try {call} }})"),
             // A value the lattice does not type is a variant of an enum, whose zero is

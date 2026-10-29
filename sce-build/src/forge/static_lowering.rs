@@ -568,6 +568,28 @@ fn enum_crossing_function_names(ty: &str) -> (String, String) {
     (format!("{ty}ToDocument"), format!("{ty}FromDocument"))
 }
 
+/// Why a field of an event schema cannot be a property of the struct Swift holds a
+/// record, or the payload of an event, in: a name Swift reserves, or a field that may
+/// be absent over an element Swift does not spell (a byte string). `None` for a field
+/// it writes. The one answer for a record a machine holds and for an event's payload,
+/// which are the same struct of the same fields.
+fn swift_field_unwritten(field: &crate::forge::model::SchemaField) -> Option<&'static str> {
+    if matches!(
+        &field.sce_type,
+        FieldType::Optional { elem }
+            if !crate::forge::generator::algorithm_optional_spelled(
+                Language::Swift,
+                &crate::forge::model::OptionalElemType::Scalar(elem.clone()),
+            )
+    ) {
+        Some("an optional byte string")
+    } else if crate::reader_names::is_reserved_word(Language::Swift, &field.id) {
+        Some("a name Swift reserves")
+    } else {
+        None
+    }
+}
+
 /// Whether `ty` is a number or a truth value (see [`plain_schema`]).
 pub(crate) fn plain_scalar(ty: &SceType) -> bool {
     !matches!(ty, SceType::Enum(_) | SceType::String | SceType::Bytes)
@@ -1795,6 +1817,11 @@ pub trait StaticTarget {
 /// document's variable or local is spelled as, since a variable is a property
 /// named `v<PascalCase>` and a local keeps the author's spelling.
 const KOTLIN_PRESENT: &str = "scePresent";
+
+/// What the closure of a Swift `Optional.map` names the present value it is given: an
+/// argument of its own, since a closure that has arguments cannot read the `$0` of the
+/// one it is written in.
+const SWIFT_PRESENT: &str = "scePresent";
 
 /// Kotlin: a variable is a property of the machine class, a record an
 /// immutable data class replaced field by field, a list an immutable `List`,
@@ -11682,6 +11709,48 @@ impl StaticTarget for SwiftTarget {
     fn state_adapter_name(&self, _machine: &str, _callee: &StaticCallee, coded: &str) -> String {
         format!("{}{coded}", crate::forge::expr::SWIFT_STATE_ADAPTER_PREFIX)
     }
+    // `T?` (docs/adr/0055, section 5): the type is the default spelling
+    // ([`crate::forge::generator::optional_of`]), absent is `nil` and a present value
+    // is the `T` itself, which Swift lifts into a `T?` wherever one is wanted.
+    fn optional_none(&self, _present: &str) -> Option<String> {
+        Some("nil".to_string())
+    }
+    fn optional_some(&self, _present: &str, value: &str) -> Option<String> {
+        Some(value.to_string())
+    }
+    // The element is read by the runtime's checked read of a list of values with a zero,
+    // which records an index outside the list as the failure the statement ends at and
+    // answers the record at its zero: the machine's record is `SceDefault`, and a list of
+    // records is an `Array` of the machine's own struct, so the element is the record
+    // whole, and a copy of it as a struct is ([`Self::record_copy`]).
+    fn record_at(&self, list: &str, index: &str) -> Option<String> {
+        Some(format!("Checked.atDefault(sceFailure, {list}, {index})"))
+    }
+    // A record is a struct, a value held inside the optional, so a field of the present
+    // one is written by taking the record out by the one function a proven read is spelled
+    // with, changing the copy and putting it back, in a block of its own so two such writes
+    // of one body do not declare the copy twice. A write that has proven the value present
+    // never names a value that is not there ([`SceOptional.proven`]).
+    fn assign_present_field(&self, target: &str, field: &str, value: &str) -> Option<String> {
+        Some(format!(
+            "do {{ var sceRecord = SceOptional.proven({target}); sceRecord.{field} = {value}; \
+             {target} = sceRecord }}"
+        ))
+    }
+    // `Optional.map`, over a closure with an argument of its own: the present value is
+    // bound where the value is present, and a statement that fails inside it records the
+    // failure in the one `sceFailure` of the block, as every expression of it does.
+    fn optional_map(
+        &self,
+        value: &str,
+        _present: &str,
+        map: &dyn Fn(&str) -> String,
+    ) -> Option<String> {
+        Some(format!(
+            "({value}).map {{ ({SWIFT_PRESENT}) in {} }}",
+            map(SWIFT_PRESENT)
+        ))
+    }
     // What an adapter gave back as a list: held to the bound of the variable that
     // takes it, which a list the algorithm built may exceed (an `Array` grows).
     fn state_list_within(&self, _adapter: &str, value: &str, capacity: u32) -> String {
@@ -11769,12 +11838,42 @@ impl StaticTarget for SwiftTarget {
                     declarations.push(format!("_ {name}: {}", self.scalar_type(ty)));
                     arguments.push(name);
                 }
+                // A value that may be absent, of a value of an enum: the machine's own
+                // `T?`, crossing where it is present by the declared name of its variant
+                // (docs/adr/0055).
+                AdapterParam::Optional(ty) if matches!(ty, SceType::Enum(_)) => {
+                    declarations.push(format!("_ {name}: {}", spec.optional_type(self, ty)?));
+                    arguments.push(spec.optional_enum_crossing(
+                        self,
+                        ty,
+                        &name,
+                        Crossing::ToAlgorithm,
+                    )?);
+                }
+                // ... of a number or a `bool`: `T?` on both sides, handed on as it is.
+                AdapterParam::Optional(ty) => {
+                    declarations.push(format!("_ {name}: {}", spec.optional_type(self, ty)?));
+                    arguments.push(name);
+                }
                 AdapterParam::State {
                     slot: StaticSlot::Record(alias),
                     code,
                 } => {
                     declarations.push(format!("_ {name}: {}", held_record(alias, *code)?));
                     arguments.push(to_algorithm(alias, &name)?);
+                }
+                // ... of a record: the algorithm's struct is built where the machine's is
+                // present, and an absent one stays `nil`.
+                AdapterParam::State {
+                    slot: StaticSlot::OptionalRecord(alias),
+                    code,
+                } => {
+                    to_algorithm(alias, SWIFT_PRESENT)?;
+                    let held = held_record(alias, *code)?;
+                    declarations.push(format!("_ {name}: {}", self.optional_type(&held)?));
+                    arguments.push(self.optional_map(&name, &held, &|present| {
+                        to_algorithm(alias, present).unwrap_or_default()
+                    })?);
                 }
                 // A list of numbers or truth values is an `Array` of the same element
                 // on both sides, so it crosses as it is.
@@ -11807,6 +11906,28 @@ impl StaticTarget for SwiftTarget {
                 spec.enum_crossing(self, &reference.alias, "r", Crossing::FromAlgorithm)?,
             ),
             StaticSlot::Scalar(ty) if plain_scalar(ty) => (self.scalar_type(ty), "r".to_string()),
+            // A value that may be absent, of a value of an enum: the variant of the same
+            // declared name where it is present, absent where it is absent
+            // (docs/adr/0055).
+            StaticSlot::Optional(ty) if matches!(ty, SceType::Enum(_)) => (
+                spec.optional_type(self, ty)?,
+                spec.optional_enum_crossing(self, ty, "r", Crossing::FromAlgorithm)?,
+            ),
+            // ... of a number or a `bool`: `T?` on both sides, handed on as it is.
+            StaticSlot::Optional(ty) => (spec.optional_type(self, ty)?, "r".to_string()),
+            // ... of a record: the machine's record is built where the algorithm's answer
+            // is present, and an absent one stays `nil`.
+            StaticSlot::OptionalRecord(alias) => {
+                // Asked once for its spelling before it is bound, so a record Swift
+                // cannot cross refuses the adapter by name and never writes an empty one.
+                from_algorithm(alias, SWIFT_PRESENT)?;
+                (
+                    self.optional_type(&machine_record(alias))?,
+                    self.optional_map("r", &machine_record(alias), &|present| {
+                        from_algorithm(alias, present).unwrap_or_default()
+                    })?,
+                )
+            }
             StaticSlot::Record(alias) => (machine_record(alias), from_algorithm(alias, "r")?),
             // An `Array` of numbers or truth values is the same on both sides.
             StaticSlot::ScalarList(ty) if plain_scalar(ty) => (self.list_type(ty), "r".to_string()),
@@ -11832,8 +11953,8 @@ impl StaticTarget for SwiftTarget {
         ))
     }
     fn unsupported(&self, model: &SCXMLModel, scope: &StaticScope) -> Option<String> {
-        // A scalar of a number, a bool or a string; an enum, a record, a list, a
-        // byte string and an optional value are not spelled yet.
+        // A scalar of a number, a bool, a string or an enum, a record, and a value that
+        // may be absent over one of those; a list of byte strings is not spelled yet.
         if let Some(var) = scope.variables.iter().find(|v| {
             !v.value_type.as_ref().is_some_and(|t| {
                 t.scalar().is_some()
@@ -11844,26 +11965,28 @@ impl StaticTarget for SwiftTarget {
                         elem.scalar()
                             .is_none_or(|ty| !matches!(ty, SceType::Enum(_) | SceType::Bytes))
                     })
+                    // `T?` over the element Swift spells ([`algorithm_optional_spelled`]).
+                    || t.optional_elem().is_some_and(|elem| {
+                        crate::forge::generator::algorithm_optional_spelled(Language::Swift, elem)
+                    })
             })
         }) {
             return Some(format!(
-                "<data id=\"{}\"> of a list of enums, of byte strings or an optional type",
+                "<data id=\"{}\"> of a list of enums, of byte strings or an optional byte string",
                 var.id
             ));
         }
         // A record's field is named as the author wrote it, so one Swift reserves cannot
-        // be a field, and an optional field is not spelled yet.
-        if let Some((alias, field)) = model
+        // be a field, and a field that may be absent is `T?` over an element Swift spells
+        // ([`swift_field_unwritten`]).
+        if let Some((alias, field, why)) = model
             .imported_records
             .iter()
             .flat_map(|(alias, schema)| schema.fields.iter().map(move |field| (alias, field)))
-            .find(|(_, field)| {
-                matches!(field.sce_type, FieldType::Optional { .. })
-                    || crate::reader_names::is_reserved_word(Language::Swift, &field.id)
-            })
+            .find_map(|(alias, field)| swift_field_unwritten(field).map(|why| (alias, field, why)))
         {
             return Some(format!(
-                "the field `{}` of the record `{alias}`, an optional value or a name Swift reserves",
+                "the field `{}` of the record `{alias}`, {why}",
                 field.id
             ));
         }
@@ -11884,20 +12007,19 @@ impl StaticTarget for SwiftTarget {
             ));
         }
         // An event's typed payload is read through a struct of its schema's fields, each
-        // named as the author wrote it: one Swift reserves cannot be a property, and an
-        // optional field is not spelled yet.
-        if let Some((schema, field)) = model
+        // named as the author wrote it: one Swift reserves cannot be a property, and a
+        // field that may be absent is `T?` over an element Swift spells, the same
+        // struct a record is ([`swift_field_unwritten`]).
+        if let Some((schema, field, why)) = model
             .imported_event_schemas
             .values()
             .flat_map(|schema| schema.fields.iter().map(move |field| (schema, field)))
-            .find(|(_, field)| {
-                matches!(field.sce_type, FieldType::Optional { .. })
-                    || crate::reader_names::is_reserved_word(Language::Swift, &field.id)
+            .find_map(|(schema, field)| {
+                swift_field_unwritten(field).map(|why| (schema, field, why))
             })
         {
             return Some(format!(
-                "the field `{}` of the event schema `{}`, an optional value or a name Swift \
-                 reserves",
+                "the field `{}` of the event schema `{}`, {why}",
                 field.id, schema.name
             ));
         }
@@ -11967,23 +12089,36 @@ impl StaticTarget for SwiftTarget {
         schema: &EventSchemaModel,
         enum_types: &std::collections::BTreeMap<String, String>,
     ) -> String {
+        // A field of the present type, spelled as the machine holds it.
+        let present_of =
+            |field: &crate::forge::model::SchemaField| match field.sce_type.present_type() {
+                SceType::Enum(reference) => enum_types[&reference.alias].clone(),
+                other => crate::forge::generator::swift_type(other).to_string(),
+            };
+        // A field that may be absent is the optional type over its present value's
+        // (docs/adr/0055), the type an expression reads it as.
+        let held_of = |field: &crate::forge::model::SchemaField| {
+            let present = present_of(field);
+            match &field.sce_type {
+                FieldType::Optional { .. } => self
+                    .optional_type(&present)
+                    .expect("Swift spells an optional value"),
+                FieldType::Scalar(_) => present,
+            }
+        };
         // Every field has a value at its zero, so the record is `SceDefault`: the value
         // that stands where a checked read of a list element that is not there has none
-        // to answer, and the one `init()` a record is built whole from.
+        // to answer, and the one `init()` a record is built whole from. The zero of a
+        // field that may be absent is its absence.
         let fields: String = schema
             .fields
             .iter()
             .map(|field| {
-                let (held, zero) = match field.sce_type.present_type() {
-                    SceType::Enum(reference) => {
-                        let held = enum_types[&reference.alias].clone();
-                        let zero = format!("{held}.allCases[0]");
-                        (held, zero)
-                    }
-                    other => (
-                        crate::forge::generator::swift_type(other).to_string(),
-                        crate::forge::generator::swift_zero_value(other).to_string(),
-                    ),
+                let held = held_of(field);
+                let zero = match (&field.sce_type, field.sce_type.present_type()) {
+                    (FieldType::Optional { .. }, _) => "nil".to_string(),
+                    (_, SceType::Enum(_)) => format!("{held}.allCases[0]"),
+                    (_, other) => crate::forge::generator::swift_zero_value(other).to_string(),
                 };
                 format!(
                     "    public var {}: {held} = {zero}\n",
@@ -11999,13 +12134,7 @@ impl StaticTarget for SwiftTarget {
             params = schema
                 .fields
                 .iter()
-                .map(|f| {
-                    let held = match f.sce_type.present_type() {
-                        SceType::Enum(reference) => enum_types[&reference.alias].clone(),
-                        other => crate::forge::generator::swift_type(other).to_string(),
-                    };
-                    format!("{}: {held}", self.record_field(&f.id))
-                })
+                .map(|f| format!("{}: {}", self.record_field(&f.id), held_of(f)))
                 .collect::<Vec<_>>()
                 .join(", "),
             assigns = schema
@@ -12300,6 +12429,17 @@ impl StaticTarget for SwiftTarget {
     // The byte string the runtime writes as its Latin-1 text.
     fn wire_bytes(&self, value: &str) -> Option<String> {
         Some(format!(".bytes({value})"))
+    }
+    // `WireValue.null`, which the runtime writes as JSON `null`, where the value is
+    // absent.
+    fn wire_optional(
+        &self,
+        value: &str,
+        present: &str,
+        wire: &dyn Fn(&str) -> String,
+    ) -> Option<String> {
+        let wired = self.optional_map(value, present, wire)?;
+        Some(format!("{wired} ?? WireValue.null"))
     }
 }
 
