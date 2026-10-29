@@ -770,6 +770,23 @@ impl Analysis<'_, '_> {
         let own = type_range(node.ty);
         match &node.kind {
             ExprKind::NumberLit(text) => integer_literal(text).or(own),
+            // A leading minus is part of the literal (SCE_FORGE.md §3.4): `-128`
+            // is a value, though untyped, so a guard against it bounds what it
+            // compares, as one against `127` does.
+            ExprKind::Unary {
+                op: UnaryOp::Neg,
+                operand,
+            } if is_integer_literal(node) => {
+                let ExprKind::NumberLit(text) = &operand.kind else {
+                    unreachable!("an integer literal's operand is its number");
+                };
+                integer_literal(text)
+                    .map(|v| Interval {
+                        lo: -v.hi,
+                        hi: -v.lo,
+                    })
+                    .or(own)
+            }
             ExprKind::Ident(name) | ExprKind::Raw(name) => env.vars.get(name).copied().or(own),
             ExprKind::Member { .. } => member_key(node)
                 .and_then(|k| env.vars.get(&k).copied())
@@ -1915,6 +1932,30 @@ mod tests {
         assert_eq!(
             analyse(&[("x", SceType::Int8)], &[], &body),
             vec![("-x".to_string(), HazardKind::Overflow)]
+        );
+    }
+
+    /// A guard against a negative literal bounds the value it compares: the
+    /// minus is part of the literal, so `x >= -128` is as much a bound as
+    /// `x <= 127`, and an `int32` they enclose fits an `int8`.
+    #[test]
+    fn a_guard_against_a_negative_literal_bounds_its_value() {
+        let i8t = AlgorithmValueType::Scalar(SceType::Int8);
+        let body = [
+            if_(
+                "x >= -128 && x <= 127",
+                vec![var("w", i8t.clone(), "x"), ret("w")],
+            ),
+            ret("0"),
+        ];
+        assert!(analyse(&[("x", SceType::Int32)], &[("w", SceType::Int8)], &body).is_empty());
+        let loose = [
+            if_("x >= -129 && x <= 127", vec![var("w", i8t, "x"), ret("w")]),
+            ret("0"),
+        ];
+        assert_eq!(
+            analyse(&[("x", SceType::Int32)], &[("w", SceType::Int8)], &loose),
+            vec![("x".to_string(), HazardKind::DoesNotFit)]
         );
     }
 
