@@ -2049,25 +2049,186 @@ fn an_element_that_views_its_buffer_is_decoded_from_a_buffer_of_its_own() {
 }
 
 #[test]
-fn an_element_whose_signature_asks_the_caller_for_more_is_refused_by_name_for_go() {
+fn go_stores_the_flag_inputs_an_element_asks_its_caller_for() {
+    // The codec `event_record` takes the flag input `S` from its caller on `Encode` and
+    // `Decode`, as a `byte` after the sink and the cursor. The log stores it in a context
+    // word of the entry, takes it on `Publish` as a bool, and gives it back in the item,
+    // so that every reader decodes the entry under what it was published under. The
+    // element is a `uint8` and an optional `uint8`: 2 bytes, an entry of 1 length word,
+    // 1 context word and 1 word of bytes.
     let xml = event_ring();
     let codec = flag_input_codec();
-    let located = compile_documents(
+    let code = generated_go_log(
+        compile_documents(
+            Language::Go,
+            &[("event_ring.scxml", &xml), ("event_record.scxml", &codec)],
+        )
+        .expect("a log stores the flag input its element asks for"),
+    );
+    assert_holds(
+        &code,
+        &[
+            "const MaxEncodedBytes = 2",
+            "const ContextWords = 1",
+            "const Words = 1 + ContextWords + (MaxEncodedBytes+7)/8",
+            "type EventRingFlags struct {",
+            "\tS bool",
+            "type EventRingItem struct {",
+            "\tElement *sce_event_record.EventRecord",
+            "\tFlags   EventRingFlags",
+            "func flagInput(on bool) byte {",
+            "func Publish(publisher *broadcastlog.Publisher, element *sce_event_record.EventRecord, flags EventRingFlags) (uint64, error) {",
+            "if err := element.Encode(sink, flagInput(flags.S)); err != nil {",
+            "if flags.S {",
+            "entry[1+0] |= uint64(1) << 0",
+            "entry[2+index/8] |= uint64(value) << (8 * (index % 8))",
+            "func Read(log *EventRing, reader *broadcastlog.Reader) (broadcastlog.Read, *EventRingItem, error) {",
+            "encoded[index] = byte(entry[2+index/8] >> (8 * (index % 8)))",
+            "S: (entry[1+0]>>0)&1 == 1,",
+            "element, err := sce_event_record.DecodeEventRecord(&cursor, flagInput(flags.S))",
+            "return answer, &EventRingItem{",
+            "Element: element,",
+            "Flags:   flags,",
+        ],
+    );
+    assert!(!code.contains("Tag"), "the element has no tag:\n{code}");
+}
+
+#[test]
+fn go_stores_the_flags_and_the_tag_of_an_element_in_context_words_of_their_own() {
+    // Two flag inputs fit one word; the tag takes the next. The bytes follow the
+    // length word and the two context words, so they start at word 3. The codec takes
+    // the flags and then the tag on `Decode`, and only the flags on `Encode`.
+    let facts = BroadcastLogElementFacts {
+        caller_flag_inputs: vec!["S".to_string(), "T".to_string()],
+        caller_variant_tag: true,
+        ..BroadcastLogElementFacts::default()
+    };
+    let code = compile_single_as(
         Language::Go,
-        &[("event_ring.scxml", &xml), ("event_record.scxml", &codec)],
+        "event_ring.go",
+        &event_ring(),
+        &go_resolution_options(None, 4, facts),
     )
-    .err()
-    .unwrap_or_else(|| panic!("a log has no flag input to give, so the set is refused"));
-    assert!(
-        row_text(&located, &xml).contains("<sce:element-type>event_record<"),
-        "the refusal is placed on the element-type row"
+    .expect("a log stores the flags and the tag its element asks for");
+    assert_holds(
+        &code,
+        &[
+            "const ContextWords = 2",
+            "const Words = 1 + ContextWords + (MaxEncodedBytes+7)/8",
+            "\tS bool",
+            "\tT bool",
+            "\tFlags   EventRingFlags",
+            "\tTag     byte",
+            "func Publish(publisher *broadcastlog.Publisher, element *sce_event_record.EventRecord, flags EventRingFlags, tag byte) (uint64, error) {",
+            "if err := element.Encode(sink, flagInput(flags.S), flagInput(flags.T)); err != nil {",
+            "entry[1+0] |= uint64(1) << 0",
+            "entry[1+0] |= uint64(1) << 1",
+            "entry[1+1] = uint64(tag)",
+            "entry[3+index/8] |= uint64(value) << (8 * (index % 8))",
+            "encoded[index] = byte(entry[3+index/8] >> (8 * (index % 8)))",
+            "S: (entry[1+0]>>0)&1 == 1,",
+            "T: (entry[1+0]>>1)&1 == 1,",
+            "tag := byte(entry[1+1])",
+            "element, err := sce_event_record.DecodeEventRecord(&cursor, flagInput(flags.S), flagInput(flags.T), tag)",
+            "Flags:   flags,",
+            "Tag:     tag,",
+        ],
     );
-    let detail = invalid_config(located);
-    assert!(
-        detail.contains("the element 'event_record' cannot be stored by the Go template"),
-        "{detail}"
+}
+
+#[test]
+fn go_takes_a_tag_alone_as_one_context_word_and_the_signature_takes_no_flags() {
+    let facts = BroadcastLogElementFacts {
+        caller_variant_tag: true,
+        ..BroadcastLogElementFacts::default()
+    };
+    let code = compile_single_as(
+        Language::Go,
+        "event_ring.go",
+        &event_ring(),
+        &go_resolution_options(None, 4, facts),
+    )
+    .expect("a log stores the tag its element asks for");
+    assert_holds(
+        &code,
+        &[
+            "const ContextWords = 1",
+            "func Publish(publisher *broadcastlog.Publisher, element *sce_event_record.EventRecord, tag byte) (uint64, error) {",
+            "\tTag     byte",
+            "if err := element.Encode(sink); err != nil {",
+            "entry[1+0] = uint64(tag)",
+            "entry[2+index/8] |= uint64(value) << (8 * (index % 8))",
+            "tag := byte(entry[1+0])",
+            "element, err := sce_event_record.DecodeEventRecord(&cursor, tag)",
+            "Tag:     tag,",
+        ],
     );
-    assert!(detail.contains("flag input(s) S"), "{detail}");
+    assert!(
+        !code.contains("Flags"),
+        "the element has no flag input:\n{code}"
+    );
+    assert!(
+        !code.contains("flagInput"),
+        "no flag is converted for the codec:\n{code}"
+    );
+}
+
+#[test]
+fn go_keeps_sixty_four_flags_to_a_word_and_starts_the_next_word_at_the_sixty_fifth() {
+    // Go's words are 64 bits: flag 63 is the last bit of the first context word and
+    // flag 64 the first bit of the second; the bytes then start at word 3.
+    let facts = BroadcastLogElementFacts {
+        caller_flag_inputs: (0..65).map(|index| format!("f{index}")).collect(),
+        ..BroadcastLogElementFacts::default()
+    };
+    let code = compile_single_as(
+        Language::Go,
+        "event_ring.go",
+        &event_ring(),
+        &go_resolution_options(None, 4, facts),
+    )
+    .expect("a log stores 65 flag inputs");
+    assert_holds(
+        &code,
+        &[
+            "const ContextWords = 2",
+            "entry[1+0] |= uint64(1) << 0",
+            "entry[1+0] |= uint64(1) << 63",
+            "entry[1+1] |= uint64(1) << 0",
+            "F63: (entry[1+0]>>63)&1 == 1,",
+            "F64: (entry[1+1]>>0)&1 == 1,",
+            "entry[3+index/8] |= uint64(value) << (8 * (index % 8))",
+        ],
+    );
+}
+
+#[test]
+fn a_go_element_with_no_caller_input_has_the_entry_and_the_signatures_it_always_had() {
+    let code = compile_single_as(
+        Language::Go,
+        "event_ring.go",
+        &event_ring(),
+        &go_resolution_options(None, 4, BroadcastLogElementFacts::default()),
+    )
+    .expect("an element with no caller input is generated");
+    assert!(!code.contains("ContextWords"), "{code}");
+    assert!(!code.contains("Flags"), "{code}");
+    assert!(!code.contains("EventRingItem"), "{code}");
+    assert!(!code.contains("flagInput"), "{code}");
+    assert_holds(
+        &code,
+        &[
+            "const Words = 1 + (MaxEncodedBytes+7)/8",
+            "func Publish(publisher *broadcastlog.Publisher, element *sce_event_record.EventRecord) (uint64, error) {",
+            "if err := element.Encode(sink); err != nil {",
+            "entry[1+index/8] |= uint64(value) << (8 * (index % 8))",
+            "func Read(log *EventRing, reader *broadcastlog.Reader) (broadcastlog.Read, *sce_event_record.EventRecord, error) {",
+            "encoded[index] = byte(entry[1+index/8] >> (8 * (index % 8)))",
+            "element, err := sce_event_record.DecodeEventRecord(&cursor)",
+            "return answer, element, nil",
+        ],
+    );
 }
 
 #[test]
@@ -2196,32 +2357,6 @@ fn a_resolved_retention_and_size_become_the_go_packages_constants() {
     assert_holds(
         &code,
         &["const Retention = 15", "const MaxEncodedBytes = 9"],
-    );
-}
-
-#[test]
-fn a_go_element_the_template_cannot_hold_is_refused_in_the_words_every_language_uses() {
-    let xml = event_ring();
-    let facts = BroadcastLogElementFacts {
-        caller_variant_tag: true,
-        ..BroadcastLogElementFacts::default()
-    };
-    let located = compile_single_as(
-        Language::Go,
-        "event_ring.go",
-        &xml,
-        &go_resolution_options(None, 4, facts),
-    )
-    .err()
-    .unwrap_or_else(|| panic!("an element the template cannot hold is refused"));
-    assert!(
-        row_text(&located, &xml).contains("<sce:element-type>"),
-        "the refusal is placed on the element-type row"
-    );
-    let detail = invalid_config(located);
-    assert!(
-        detail.contains("cannot be stored by the Go template: its decode takes the variant's tag"),
-        "{detail}"
     );
 }
 
