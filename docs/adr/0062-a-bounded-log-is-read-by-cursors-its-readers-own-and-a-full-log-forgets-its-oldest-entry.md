@@ -1097,10 +1097,11 @@ reads out of `forge-runtime/src/lib.rs`, as for the 64-bit row.
   Kotlin publisher that gives a flag the element contradicts is therefore not refused, and the entry reads back decoded under
   the stored flag. No Kotlin test asserts the refusal the Rust test does, because the code does not do it; closing it is a
   change to the Kotlin codec generator, and moves its goldens and every generated Kotlin tree that has a flag-gated field.
-- **Not run.** The change was written with nothing built: the renderer, the template, the new tests, the Gradle task and the
-  Kotlin conformance test have been neither compiled nor run. The least certain points are the exact text of the generated
-  file that the new assertions quote, the arm and class names the conformance test takes from the Kotlin codec generator for a
-  variant with no tag field, and whether `orchestrate` resolves the documents' relative imports from their own directory.
+- **Run (2026-10-29, build machines).** `cargo test -p sce-build --features cli --test broadcast_log_kind` passed 114
+  tests with Kotlin, Python and Rust registered, the workspace clippy with `-D warnings` was clean, and
+  `scripts/gates/forge-kotlin.sh` ended `BUILD SUCCESSFUL` after running `generateBroadcastLogContextFixtures`, compiling
+  `BroadcastLogContextGeneratedTest` and running `jvmTest`. The Kotlin lane does not print a per-test count, so the six
+  tests of that file are known to have compiled and the task to have passed, and no more than that.
 
 ### What the caller inputs landed for Python (2026-10-29)
 
@@ -1134,8 +1135,10 @@ reads out of `forge-runtime/src/lib.rs`, as for the 64-bit row.
   `sce-codegen orchestrate`, and checks the constants, the words of an entry, that a reader gets back the flag and the
   tag, that every reader decodes under the same flag, that a lapped reader resumes at an entry with its own flag, the
   behaviour above, and the refusal of a tag that is not one byte.
-- **Not run.** Nothing was built or run: neither the renderer, the template, the sce-build tests nor the Python tests. No
-  generated tree moves, because no `.scxml` of the fixtures or the standard library changed.
+- **Run (2026-10-29, build machines).** The sce-build tests passed as listed in the Kotlin section, and
+  `scripts/gates/forge-python.sh` ended with every `unittest` arm `OK`, the broadcast-log arm (45 tests, which includes
+  `test_broadcast_log_generated`) among them. No generated tree moves, because no `.scxml` of the fixtures or the standard
+  library changed.
 
 ### What is still undone
 
