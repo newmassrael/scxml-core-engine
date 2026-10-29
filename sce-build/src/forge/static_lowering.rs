@@ -11667,6 +11667,112 @@ impl StaticTarget for SwiftTarget {
             .is_algorithm()
             .then(|| generated_callee(Language::Swift, callee, None))
     }
+    // A call that hands an algorithm a record, or takes one back, goes through an
+    // adapter of the machine's file: the machine holds a record in a struct of its own
+    // (`record_type`) and the algorithm in the one its schema's unit declares, and the
+    // adapter copies one into the other by field.
+    fn lowers_state_calls(&self) -> bool {
+        true
+    }
+    fn state_argument(&self, _machine: &str, _arg: &StateArg, held: &str) -> String {
+        held.to_string()
+    }
+    // A function of the file, `private` to it: two machines of one module that call
+    // one algorithm the same way each declare theirs, in their own types.
+    fn state_adapter_name(&self, _machine: &str, _callee: &StaticCallee, coded: &str) -> String {
+        format!("call_{coded}")
+    }
+    // A function of the machine's file that takes the machine's values, builds the
+    // algorithm's from them, calls it, and builds the machine's own from what it
+    // returns. It spells what an algorithm over numbers, truth values and records of
+    // those is called with; a list, a value that may be absent, a value of an enum and
+    // a call that may fail return `None`, which refuses the call by name until each
+    // is spelled.
+    fn state_adapter(&self, spec: &AdapterSpec<'_>) -> Option<String> {
+        use crate::forge::generator::{event_schema_field_ident, event_schema_payload_type};
+        let value = spec.callee.value.as_ref()?;
+        if spec.callee.may_fail {
+            return None;
+        }
+        let machine_record = |alias: &str| self.record_type(spec.machine, alias);
+        // A record of `ty` built from `from`, a machine record, a payload or the
+        // algorithm's record, field by field, by the label each initializer names it
+        // under.
+        let record_of =
+            |alias: &str, ty: String, from: &str, crossing: Crossing| -> Option<String> {
+                let schema = plain_schema(spec, alias)?;
+                let fields = schema
+                    .fields
+                    .iter()
+                    .map(|f| {
+                        let field = event_schema_field_ident(&f.id, Language::Swift);
+                        spec.record_field_crossing(
+                            self,
+                            f,
+                            &format!("{from}.{field}"),
+                            crossing,
+                            str::to_string,
+                        )
+                        .map(|value| format!("{field}: {value}"))
+                    })
+                    .collect::<Option<Vec<String>>>()?;
+                Some(format!("{ty}({})", fields.join(", ")))
+            };
+        let to_algorithm = |alias: &str, from: &str| -> Option<String> {
+            let ty = plain_schema(spec, alias)
+                .map(|schema| event_schema_payload_type(&schema.name, Language::Swift))?;
+            record_of(alias, ty, from, Crossing::ToAlgorithm)
+        };
+        let from_algorithm = |alias: &str, from: &str| -> Option<String> {
+            record_of(alias, machine_record(alias), from, Crossing::FromAlgorithm)
+        };
+        // The type the machine holds the record of `alias` in as the argument is held
+        // as `code`: the payload struct of the event the transition is on for `p`
+        // (`build_swift_event_payload`), the machine's own record type for any other.
+        let held_record = |alias: &str, code: char| -> Option<String> {
+            if code == 'p' {
+                let event = spec.payload_events.get(alias)?;
+                Some(format!(
+                    "{}{}Payload",
+                    spec.machine,
+                    filters::to_event_variant(event.to_string())
+                ))
+            } else {
+                Some(machine_record(alias))
+            }
+        };
+        let mut declarations = Vec::new();
+        let mut arguments = Vec::new();
+        for (index, param) in spec.params.iter().enumerate() {
+            let name = format!("p{index}");
+            match param {
+                AdapterParam::Scalar(ty) if plain_scalar(ty) => {
+                    declarations.push(format!("_ {name}: {}", self.scalar_type(ty)));
+                    arguments.push(name);
+                }
+                AdapterParam::State {
+                    slot: StaticSlot::Record(alias),
+                    code,
+                } => {
+                    declarations.push(format!("_ {name}: {}", held_record(alias, *code)?));
+                    arguments.push(to_algorithm(alias, &name)?);
+                }
+                _ => return None,
+            }
+        }
+        let (returned_type, returned) = match value.ret.as_ref()? {
+            StaticSlot::Scalar(ty) if plain_scalar(ty) => (self.scalar_type(ty), "r".to_string()),
+            StaticSlot::Record(alias) => (machine_record(alias), from_algorithm(alias, "r")?),
+            _ => return None,
+        };
+        Some(format!(
+            "private func {}({}) -> {returned_type} {{\n    let r = {}({})\n    return {returned}\n}}",
+            spec.name,
+            declarations.join(", "),
+            spec.call,
+            arguments.join(", ")
+        ))
+    }
     fn unsupported(&self, model: &SCXMLModel, scope: &StaticScope) -> Option<String> {
         // A scalar of a number, a bool or a string; an enum, a record, a list, a
         // byte string and an optional value are not spelled yet.

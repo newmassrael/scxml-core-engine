@@ -137,6 +137,14 @@ public enum {{ machine_name }}Event: Int, Hashable, Sendable {
 {% if event_payload_active %}
 {{ event_payload_defs }}
 {% endif %}
+{% if static_adapter_defs %}
+// ======================================================================
+// SCE Accepted Subset §2.15: the calls of an algorithm over a record
+// ======================================================================
+
+{{ static_adapter_defs }}
+
+{% endif %}
 // ======================================================================
 // Policy
 // ======================================================================
