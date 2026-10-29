@@ -10,6 +10,7 @@ package forge_call_weight
 
 import (
 	"github.com/newmassrael/sce-forge-runtime/lookup"
+	"github.com/newmassrael/sce-forge-runtime/optional"
 	sce_forge_call_status "github.com/newmassrael/sce-go-tests/integration/static_datamodel/forge_call_status"
 	sce_forge_call_level "github.com/newmassrael/sce-go-tests/integration/static_datamodel/forge_call_level"
 )
@@ -17,7 +18,7 @@ import (
 var sceKeys = [2]sce_forge_call_status.ForgeCallStatus{ sce_forge_call_status.ForgeCallStatusOpen, sce_forge_call_status.ForgeCallStatusHeld }
 var sceValues = [2]sce_forge_call_level.ForgeCallLevel{ sce_forge_call_level.ForgeCallLevelLight, sce_forge_call_level.ForgeCallLevelHeavy }
 
-// LookupWeight returns the value paired with status, or (zero, false) on miss.
-func LookupWeight(status sce_forge_call_status.ForgeCallStatus) (sce_forge_call_level.ForgeCallLevel, bool) {
-	return lookup.Lookup(sceKeys[:], sceValues[:], status)
+// LookupWeight returns the value paired with status, or the absent value on miss.
+func LookupWeight(status sce_forge_call_status.ForgeCallStatus) optional.Of[sce_forge_call_level.ForgeCallLevel] {
+	return lookup.Find(sceKeys[:], sceValues[:], status)
 }

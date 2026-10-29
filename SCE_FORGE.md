@@ -673,7 +673,7 @@ The enum path is used when the output values are symbolic (state names, status c
 
 **`on_miss` policy.** The conformance manifest declares an orthogonal miss-handling policy, implemented in every per-language fragment:
 
-- **`on_miss = "error"`** — generated function returns the language's optional type (`Option<V>`, `std::optional<V>`, `*V`, `V?`, `Optional[V]`). Fixtures must hit a key on every input (happy-path only). Callers are expected to `.unwrap()` / `.expect()` / `?: error()` at the call site.
+- **`on_miss = "error"`** — generated function returns the language's optional type (`Option<V>`, `std::optional<V>`, `optional.Of[V]` of the Go forge runtime's `optional` package, `V?`, `Optional[V]`). Fixtures must hit a key on every input (happy-path only). Callers are expected to `.unwrap()` / `.expect()` / `?: error()` at the call site.
 - **`on_miss = "default"`** — generated function returns the raw value with a fallback supplied by `sce:default`. Fixtures may include miss inputs that exercise the fallback path.
 
 Policy selection is independent of output type, so the four combinations (`string|numeric` × `error|default`) are all valid codegen targets.

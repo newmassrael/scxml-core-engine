@@ -10,12 +10,13 @@ package forge_call_code
 
 import (
 	"github.com/newmassrael/sce-forge-runtime/lookup"
+	"github.com/newmassrael/sce-forge-runtime/optional"
 )
 
 var sceKeys = [2]uint8{ 1, 2 }
 var sceValues = [2]int32{ 100, 200 }
 
-// LookupCode returns the value paired with gear, or (zero, false) on miss.
-func LookupCode(gear uint8) (int32, bool) {
-	return lookup.Lookup(sceKeys[:], sceValues[:], gear)
+// LookupCode returns the value paired with gear, or the absent value on miss.
+func LookupCode(gear uint8) optional.Of[int32] {
+	return lookup.Find(sceKeys[:], sceValues[:], gear)
 }

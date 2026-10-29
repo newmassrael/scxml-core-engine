@@ -2,8 +2,8 @@
 {# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
 
 {% if f.output.type != "string" %}
-{# Lookup kind — finite key→value mapping. on_miss=error generates (V, bool)
-   (false on miss is a hard failure since happy-path fixtures hit every key);
+{# Lookup kind — finite key→value mapping. on_miss=error generates optional.Of[V]
+   (absent on miss is a hard failure since happy-path fixtures hit every key);
    on_miss=default generates raw V via fallback. #}
 	cases := ref.pureCases(t, "{{ f.ref_section }}", "{{ f.name }}")
 	for _, c := range cases {
@@ -14,7 +14,7 @@
 		var expected {{ f.output.type | go_type }}
 		unmarshalOrFatal(t, c.Expected, &expected, "{{ f.name }} expected")
 {% if f.on_miss == "error" %}
-		actual, ok := {{ f.name }}.{{ f.function }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %})
+		actual, ok := {{ f.name }}.{{ f.function }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %}).Get()
 		if !ok {
 			t.Fatalf("{{ f.name }}: happy-path lookup miss")
 		}

@@ -46,9 +46,14 @@ func {{ func_name }}({{ input_id }} {{ input_type }}) {{ enum_name }} {
 {% else %}
 
 {# The enum a key or a value is a variant of is imported beside the runtime's
-   lookup, as the string-output table imports it. #}
+   lookup, as the string-output table imports it. A lookup whose miss is an
+   error answers the forge runtime's optional (docs/adr/0055 section 5), so it
+   imports that package too. #}
 import (
 	"github.com/newmassrael/sce-forge-runtime/lookup"
+{% if on_miss_error %}
+	"github.com/newmassrael/sce-forge-runtime/optional"
+{% endif %}
 {% for stmt in lookup_enum_imports %}
 {{ stmt }}
 {% endfor %}
@@ -59,10 +64,10 @@ import (
 var sceKeys = [{{ n }}]{{ input_type }}{ {{ keys_literal | join(", ") }} }
 var sceValues = [{{ n }}]{{ value_type }}{ {{ values_literal | join(", ") }} }
 
-// {{ func_name }} returns the value paired with {{ input_id }}, or {% if on_miss_error %}(zero, false) on miss{% else %}{{ default_literal }} on miss{% endif %}.
-func {{ func_name }}({{ input_id }} {{ input_type }}) {% if on_miss_error %}({{ value_type }}, bool){% else %}{{ value_type }}{% endif %} {
+// {{ func_name }} returns the value paired with {{ input_id }}, or {% if on_miss_error %}the absent value on miss{% else %}{{ default_literal }} on miss{% endif %}.
+func {{ func_name }}({{ input_id }} {{ input_type }}) {% if on_miss_error %}optional.Of[{{ value_type }}]{% else %}{{ value_type }}{% endif %} {
 {% if on_miss_error %}
-	return lookup.Lookup(sceKeys[:], sceValues[:], {{ input_id }})
+	return lookup.Find(sceKeys[:], sceValues[:], {{ input_id }})
 {% else %}
 	if v, ok := lookup.Lookup(sceKeys[:], sceValues[:], {{ input_id }}); ok {
 		return v

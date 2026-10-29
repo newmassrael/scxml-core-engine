@@ -1219,7 +1219,7 @@ pub struct LookupEntry {
 /// by symbolic dispatch (gear positions, engine status, etc.).
 ///
 /// `Error`: partial function — the generated `lookup(x)` returns
-/// `Option<V>` / `std::optional<V>` / `(V, bool)` / `V?` depending on the
+/// `Option<V>` / `std::optional<V>` / `optional.Of[V]` / `V?` depending on the
 /// target language. Callers must handle the miss case explicitly. Used by
 /// numeric data tables where an unknown key is a bug, not a fallback case.
 #[derive(Debug, Clone, Serialize)]

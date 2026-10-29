@@ -231,7 +231,7 @@ fn each_backend_calls_the_function_each_documents_generation_emits() {
                 ".ComputeOffset(",
                 ".NewForgeCallRange().Validate(",
                 ").Valid",
-                "scealgorithm.TakeOutcome(&sceFailure, scealgorithm.Found(",
+                "scealgorithm.TakeOutcome(&sceFailure, scealgorithm.FoundOptional(",
             ][..],
         ),
         (

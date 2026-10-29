@@ -14,7 +14,11 @@
 // and an overflow — which Go would silently wrap — is refused too.
 package algorithm
 
-import "math"
+import (
+	"math"
+
+	"github.com/newmassrael/sce-forge-runtime/optional"
+)
 
 // Error is why a may-fail algorithm has no value to return.
 type Error int
@@ -184,6 +188,15 @@ func Found[T any](value T, ok bool) Outcome[T] {
 		return Outcome[T]{Value: value, Err: OutOfRange}
 	}
 	return Outcome[T]{Value: value}
+}
+
+// FoundOptional is Found for a reading that answers the forge runtime's
+// optional (`optional.Of`, docs/adr/0055 section 5): the value where it is
+// present, and an OutOfRange failure where it is absent. It is what a lookup
+// whose miss is an error answers, so the call that reads one is an Outcome as
+// any call that may fail is.
+func FoundOptional[T any](o optional.Of[T]) Outcome[T] {
+	return Found(o.Get())
 }
 
 // TakeOutcome is Take for an Outcome: the value, or its zero with the failure

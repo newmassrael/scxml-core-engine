@@ -1326,6 +1326,18 @@ documents, not observed from a backend.
     present `false` or zero told from absence, for a gated field and a CBOR entry), the JSON test of
     `backends/go/forge-runtime/optional`, and the Go drivers of `forge_conformance.rs` that read
     gated fields (`marker_go_program`, `chain_flag_go_program`, `chain_prev_go_program`).
+    **A Go lookup whose miss is an error answers `optional.Of[V]`** (the owner's answer 2, applied to
+    the one Go surface of an optional it had left): the generated function was `(V, bool)`, and
+    `SCE_FORGE.md` named `*V`, which disagreed with each other and with this section. The table calls
+    `lookup.Find` of the Go forge runtime (a hit is `Some`, a miss `None`, so a value that is the
+    zero of its type is a present value), and a statechart or an algorithm that calls it reads the
+    answer through `scealgorithm.FoundOptional`, which turns an absent value into the `out-of-range`
+    failure as `scealgorithm.Found` does for the value and flag an enum's `FromUnderlying` answers
+    (`expr::lookup_found_wrapper`). A lookup whose miss is a default is unchanged. Tests:
+    `tests/forge/expected/lookup_*.go`, `a_statechart_calls_the_forge_kinds_that_are_functions`, and
+    the tests of `lookup.Find` and `FoundOptional` in the Go forge runtime. Left as it is: an enum's
+    `FromUnderlying` of a closed set, which answers a value and a flag, is a conversion of a number
+    and not a value that may be absent; whether it too answers `optional.Of` is not decided here.
 14. **C11 codecs on `sce_optional_<elem>_t`** (implemented): the same for C11's `<name>_present` members. Tests:
     the C11 conformance cases, unchanged in their bytes.
     As built, an entry that may be absent is the struct `sce/forge/optional.h` declares for its

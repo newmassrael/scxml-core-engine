@@ -5463,7 +5463,7 @@
       ]
     },
     "MissPolicy": {
-      "description": "Miss-handling policy for `sce:kind=\"lookup\"`. Captured from the `sce:on-miss` attribute on the mapping `<data>` element, with `sce:default` implied as `Default`. These are two orthogonal codegen strategies, not two different kinds — see SCE_FORGE.md Section 4.9.\n\n`Default(fallback)`: total function — every input produces an output, and the fallback string is the value returned when no entry key matches. Used by symbolic dispatch (gear positions, engine status, etc.).\n\n`Error`: partial function — the generated `lookup(x)` returns `Option<V>` / `std::optional<V>` / `(V, bool)` / `V?` depending on the target language. Callers must handle the miss case explicitly. Used by numeric data tables where an unknown key is a bug, not a fallback case.",
+      "description": "Miss-handling policy for `sce:kind=\"lookup\"`. Captured from the `sce:on-miss` attribute on the mapping `<data>` element, with `sce:default` implied as `Default`. These are two orthogonal codegen strategies, not two different kinds — see SCE_FORGE.md Section 4.9.\n\n`Default(fallback)`: total function — every input produces an output, and the fallback string is the value returned when no entry key matches. Used by symbolic dispatch (gear positions, engine status, etc.).\n\n`Error`: partial function — the generated `lookup(x)` returns `Option<V>` / `std::optional<V>` / `optional.Of[V]` / `V?` depending on the target language. Callers must handle the miss case explicitly. Used by numeric data tables where an unknown key is a bug, not a fallback case.",
       "oneOf": [
         {
           "properties": {

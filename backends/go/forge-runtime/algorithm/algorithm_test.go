@@ -7,6 +7,8 @@ import (
 	"bytes"
 	"math"
 	"testing"
+
+	"github.com/newmassrael/sce-forge-runtime/optional"
 )
 
 // Each failure the contract names is reported by its contract name, and every
@@ -184,6 +186,37 @@ func TestAByteStringIsHeldToItsBytes(t *testing.T) {
 		}
 		if c.fail && f.Err().Error() != "capacity-exceeded" {
 			t.Errorf("Bounded(%v, %d) failed with %v, want capacity-exceeded", c.value, c.capacity, f.Err())
+		}
+	}
+}
+
+// A reading that found a value is the value, and one that found none is an
+// out-of-range failure, whether it answers a value and a flag or the forge
+// runtime's optional. A present zero is a value, not a miss.
+func TestAReadingThatFoundNothingIsOutOfRange(t *testing.T) {
+	cases := []struct {
+		name    string
+		outcome Outcome[int32]
+		want    int32
+		missed  bool
+	}{
+		{"found", Found(int32(7), true), 7, false},
+		{"missed", Found(int32(0), false), 0, true},
+		{"found optional", FoundOptional(optional.Some(int32(7))), 7, false},
+		{"found a zero optional", FoundOptional(optional.Some(int32(0))), 0, false},
+		{"missed optional", FoundOptional(optional.None[int32]()), 0, true},
+	}
+	for _, c := range cases {
+		var f Failure
+		got := TakeOutcome(&f, c.outcome)
+		if f.Failed() != c.missed {
+			t.Errorf("%s: failed %v, want %v", c.name, f.Failed(), c.missed)
+		}
+		if c.missed && f.Err() != OutOfRange {
+			t.Errorf("%s: failed with %v, want out-of-range", c.name, f.Err())
+		}
+		if got != c.want {
+			t.Errorf("%s: value %d, want %d", c.name, got, c.want)
 		}
 	}
 }

@@ -1347,7 +1347,7 @@ func (p *StaticForgeCallsPolicy) ExecuteTransitionContent(source StaticForgeCall
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.TakeOutcome(&sceFailure, scealgorithm.Found(sce_forge_call_code.LookupCode(p.vGear))); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticForgeCallsEventErrorExecution, "<assign location='code'>: an integer operation overflowed or failed")); return true }; p.vCode = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.TakeOutcome(&sceFailure, scealgorithm.FoundOptional(sce_forge_call_code.LookupCode(p.vGear))); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticForgeCallsEventErrorExecution, "<assign location='code'>: an integer operation overflowed or failed")); return true }; p.vCode = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1407,7 +1407,7 @@ func (p *StaticForgeCallsPolicy) ExecuteTransitionContent(source StaticForgeCall
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := StaticForgeCallsLevelEnumFromDocument(scealgorithm.TakeOutcome(&sceFailure, scealgorithm.Found(sce_forge_call_weight.LookupWeight(StaticForgeCallsStatusEnumToDocument(p.vPhase))))); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticForgeCallsEventErrorExecution, "<assign location='weight'>: an integer operation overflowed or failed")); return true }; p.vWeight = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := StaticForgeCallsLevelEnumFromDocument(scealgorithm.TakeOutcome(&sceFailure, scealgorithm.FoundOptional(sce_forge_call_weight.LookupWeight(StaticForgeCallsStatusEnumToDocument(p.vPhase))))); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticForgeCallsEventErrorExecution, "<assign location='weight'>: an integer operation overflowed or failed")); return true }; p.vWeight = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

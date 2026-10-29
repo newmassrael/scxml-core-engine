@@ -6,8 +6,13 @@
 //
 // A lookup is a finite discrete mapping — unlike interpolation there is no
 // continuity assumption. Lookup[K, V] returns (value, true) iff needle equals
-// one of the keys exactly; otherwise (zero, false).
+// one of the keys exactly; otherwise (zero, false). Find answers the same
+// reading as the forge runtime's optional, which is what a lookup whose miss
+// is an error answers (docs/adr/0055 section 5): a present value on a hit and
+// the absent value on a miss.
 package lookup
+
+import "github.com/newmassrael/sce-forge-runtime/optional"
 
 // Lookup performs exact-match lookup over parallel key/value slices. It
 // returns (values[i], true) at the first index where keys[i] == needle, and
@@ -21,4 +26,13 @@ func Lookup[K comparable, V any](keys []K, values []V, needle K) (V, bool) {
 	}
 	var zero V
 	return zero, false
+}
+
+// Find is Lookup answered as an optional: the value paired with needle,
+// present, or the absent value where no key equals it.
+func Find[K comparable, V any](keys []K, values []V, needle K) optional.Of[V] {
+	if v, ok := Lookup(keys, values, needle); ok {
+		return optional.Some(v)
+	}
+	return optional.None[V]()
 }

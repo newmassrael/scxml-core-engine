@@ -22742,6 +22742,7 @@ const GO_RUNTIME_PACKAGES: &[&str] = &[
     "interpolation",
     "lookup",
     "observer",
+    "optional",
     "testing",
     "timer",
 ];
@@ -36160,7 +36161,14 @@ mod tests {
 
     #[test]
     fn go_escape_a_package_the_body_names_and_the_generators_own_prefix() {
-        for name in ["math", "strconv", "lookup", "filter", "interpolation"] {
+        for name in [
+            "math",
+            "strconv",
+            "lookup",
+            "filter",
+            "interpolation",
+            "optional",
+        ] {
             assert_eq!(go_local_spelling(name), format!("{name}_"), "{name}");
         }
         for name in [
