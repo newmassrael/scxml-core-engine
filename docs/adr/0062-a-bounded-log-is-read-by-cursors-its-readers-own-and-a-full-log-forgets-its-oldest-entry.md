@@ -1102,6 +1102,41 @@ reads out of `forge-runtime/src/lib.rs`, as for the 64-bit row.
   file that the new assertions quote, the arm and class names the conformance test takes from the Kotlin codec generator for a
   variant with no tag field, and whether `orchestrate` resolves the documents' relative imports from their own directory.
 
+### What the caller inputs landed for Python (2026-10-29)
+
+- **The slot.** An element whose codec asks its caller for flag inputs or a variant tag has the entry
+  `[length][context words][payload words]` in the Python module as in the Rust one (section 4, "Caller inputs are part of
+  the element"). `broadcast_log_context_value` hands the template the layout over 64-bit words, and `render_broadcast_log_python`
+  passes it as `context`. The module then states `CONTEXT_WORDS` and `WORDS = 1 + CONTEXT_WORDS + (MAX_ENCODED_BYTES + 7) // 8`;
+  flag `i` is bit `i % 64` of context word `i // 64`, and a caller-tag variant adds one word after the flag words that holds
+  the tag. An element with no caller input has no `CONTEXT_WORDS`, and its module, constants and signatures are exactly what
+  they were (a test pins the lines). Python is in `BROADCAST_LOG_CONTEXT_BACKENDS`, so `refusal_for` no longer refuses it
+  for a flag input or a tag.
+- **The typed API.** A frozen dataclass `<Pascal>Flags` holds the flags as `bool` fields in the codec's order. `publish`
+  takes `flags` and `tag` where the element has them (`publish(publisher, element, flags, tag)`), passes `int(flag)` to
+  `encode` and stores the same value, and `read` returns them in the item (`<Pascal>Item(seq, element, flags, tag)`), after
+  turning the stored bits back into `bool` and passing them, then the tag, to `decode`. A tag outside 0 to 255 is a
+  `ValueError` before the codec is asked anything, because the entry stores the tag as one byte and Python has no `u8` to
+  refuse it; nothing is published.
+- **A difference from Rust that the log does not hide.** The Rust codec refuses a flag that disagrees with the field it gates
+  (`PresentIfMismatch`, from its source-based `encode`). The Python codec's `encode` does not: it writes a gated field when
+  the value is not `None` and never reads the flag, and the log, which does not judge the publisher's flags either, stores
+  what it was given. A value published under a flag that says it is absent is stored with its bytes and read back without
+  the value; a value published as absent under a flag that says it is there is stored and raises `CodecError` at `read`.
+  `test_the_flag_that_was_stored_decides_how_an_entry_is_read_and_the_log_does_not_judge_it` pins this and turns red on the
+  first `publish` the day the Python codec refuses the disagreement, which is the better end state and a change to the
+  codec generator and not to the log.
+- **Tests.** `sce-build/tests/broadcast_log_kind.rs` holds the Python module for flags alone, for flags and a tag, for a tag
+  alone, for 65 flags (flag 63 closes the first context word, flag 64 opens the second), and for an element with no caller
+  input; the refusal test for Python is now one of acceptance, and the registry-driven tests follow the list.
+  `backends/python/forge-runtime/tests/test_broadcast_log_generated.py` generates the logs over the shared documents in
+  `tests/forge/conformance/broadcast_log_context/` (a flag-input codec and a caller-tag variant with its two arms) through
+  `sce-codegen orchestrate`, and checks the constants, the words of an entry, that a reader gets back the flag and the
+  tag, that every reader decodes under the same flag, that a lapped reader resumes at an entry with its own flag, the
+  behaviour above, and the refusal of a tag that is not one byte.
+- **Not run.** Nothing was built or run: neither the renderer, the template, the sce-build tests nor the Python tests. No
+  generated tree moves, because no `.scxml` of the fixtures or the standard library changed.
+
 ### What is still undone
 
 What was undone and is now done, as of 2026-10-29: the RFC section (§5.S of `docs/spec/synth/rfc-sce-protocol-synthesis.md`,
