@@ -11689,12 +11689,12 @@ impl StaticTarget for SwiftTarget {
     }
     // A function of the machine's file that takes the machine's values, builds the
     // algorithm's from them, calls it, and builds the machine's own from what it
-    // returns. It spells what an algorithm over numbers, truth values, records of
-    // those and lists of them, handed in or taken back, is called with. An algorithm
-    // that may fail is called with `try` and the adapter `throws` what it throws, which
-    // the call of the adapter records (`Checked.takeDefault`). A value that may be
-    // absent and a value of an enum return `None`, which refuses the call by name
-    // until each is spelled.
+    // returns. It spells what an algorithm over numbers, truth values, values of an
+    // enum (which cross as the variant of the same declared name), records of those and
+    // lists of them, handed in or taken back, is called with. An algorithm that may
+    // fail is called with `try` and the adapter `throws` what it throws, which the call
+    // of the adapter records (`Checked.takeDefault`). A value that may be absent
+    // returns `None`, which refuses the call by name until it is spelled.
     fn state_adapter(&self, spec: &AdapterSpec<'_>) -> Option<String> {
         use crate::forge::generator::{event_schema_field_ident, event_schema_payload_type};
         let value = spec.callee.value.as_ref()?;
@@ -11750,6 +11750,21 @@ impl StaticTarget for SwiftTarget {
         for (index, param) in spec.params.iter().enumerate() {
             let name = format!("p{index}");
             match param {
+                // The machine holds a value of an enum in its own enum, and the
+                // algorithm in the unit of the enum document: it crosses as the variant
+                // of the same declared name.
+                AdapterParam::Scalar(SceType::Enum(reference)) => {
+                    declarations.push(format!(
+                        "_ {name}: {}",
+                        self.enum_type(spec.machine, &reference.alias)?
+                    ));
+                    arguments.push(spec.enum_crossing(
+                        self,
+                        &reference.alias,
+                        &name,
+                        Crossing::ToAlgorithm,
+                    )?);
+                }
                 AdapterParam::Scalar(ty) if plain_scalar(ty) => {
                     declarations.push(format!("_ {name}: {}", self.scalar_type(ty)));
                     arguments.push(name);
@@ -11786,6 +11801,11 @@ impl StaticTarget for SwiftTarget {
             }
         }
         let (returned_type, returned) = match value.ret.as_ref()? {
+            // The variant of the same declared name in the machine's own enum.
+            StaticSlot::Scalar(SceType::Enum(reference)) => (
+                self.enum_type(spec.machine, &reference.alias)?,
+                spec.enum_crossing(self, &reference.alias, "r", Crossing::FromAlgorithm)?,
+            ),
             StaticSlot::Scalar(ty) if plain_scalar(ty) => (self.scalar_type(ty), "r".to_string()),
             StaticSlot::Record(alias) => (machine_record(alias), from_algorithm(alias, "r")?),
             // An `Array` of numbers or truth values is the same on both sides.
@@ -12028,6 +12048,34 @@ impl StaticTarget for SwiftTarget {
     }
     fn enum_number_symbols(&self, ty: &str, _model: &EnumModel) -> (String, String) {
         (format!("{ty}.toUnderlying"), format!("{ty}.fromUnderlying"))
+    }
+    // Both types are enums of the same declared variants, so a `switch` over every one
+    // of them is total. It is written as a closure called where it stands, since Swift
+    // has no `switch` that is an expression in every place a value is wanted (an
+    // argument, the body of a `map`).
+    fn enum_crossing(
+        &self,
+        machine_type: &str,
+        model: &EnumModel,
+        value: &str,
+        crossing: Crossing,
+    ) -> Option<String> {
+        let document = crate::forge::generator::enum_qualified_type(&model.name, Language::Swift);
+        let (from_type, into) = match crossing {
+            Crossing::ToAlgorithm => (machine_type, document.as_str()),
+            Crossing::FromAlgorithm => (document.as_str(), machine_type),
+        };
+        let arms: Vec<String> = enum_variant_pairs(Language::Swift, machine_type, model, crossing)
+            .into_iter()
+            .map(|(from, to)| format!("case {from}: return {to}"))
+            .collect();
+        // The value is an argument of the closure, not read inside it: it may be a
+        // member of the `$0` of a `map` this crossing is written in, which a closure
+        // with arguments of its own cannot name.
+        Some(format!(
+            "{{ (sceValue: {from_type}) -> {into} in switch sceValue {{ {} }} }}({value})",
+            arms.join("; ")
+        ))
     }
     // An `Array` of the element: a value, so a host that reads one holds a copy and
     // cannot write through it into what the machine keeps.
