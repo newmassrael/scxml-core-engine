@@ -1179,13 +1179,12 @@ reads out of `forge-runtime/src/lib.rs`, as for the 64-bit row.
   `broadcast_log_context_generated_test.go` compiles the two logs over them: the constants, the words of an entry as the
   runtime holds them, a reader getting back the flag and the tag, two readers decoding every entry under the same flag, a
   lapped reader resuming at an entry with its own flag, and the two behaviours above.
-- **Not run.** Nothing was built or run: neither the renderer, the template, the sce-build tests, `generate.sh` nor the Go
-  tests. No generated tree moves, because no `.scxml` of the fixtures or the standard library changed; the shared documents
-  are new inputs of the Go lane only through `tests/forge/**`, which the lane's filter already covers. The least certain
-  points are the exact text of the generated package that the new sce-build assertions quote (the struct field alignment
-  and the `Flags:   flags,` lines), the Go names the conformance test takes from the codec generator (the variant's arm
-  fields, `SensorId`, and the `optional.Of[uint16]` field), and whether `orchestrate` resolves the documents' relative
-  imports from their own directory.
+- **Run (2026-10-29, build machines).** `cargo test -p sce-build --features cli --test broadcast_log_kind` passed 122
+  tests with the six languages registered so far, the workspace clippy with `-D warnings` was clean, and
+  `scripts/gates/forge-go.sh` ended with the `conformance`, `round_trip` and `queue` packages `ok` and no `FAIL` line. The
+  lane prints no per-test count, so that the nine `TestBroadcastLogContext` tests ran is known from the package passing and
+  not from a count. No generated tree moves, because no `.scxml` of the fixtures or the standard library changed; the shared
+  documents are new inputs of the Go lane only through `tests/forge/**`, which the lane's filter already covers.
 
 ### What the caller inputs landed for C11 (2026-10-29)
 
@@ -1226,11 +1225,12 @@ reads out of `forge-runtime/src/lib.rs`, as for the 64-bit row.
   under the same flag, a lapped reader resuming at an entry with its own flag, and the behaviour above. The variant's elements
   are made by the codec's own `decode` under the arm's tag, and read back by encoding them again, so the test names nothing of
   the variant struct's internals.
-- **Not run.** Nothing was built or run: neither the renderer, the template, the sce-build tests, the generated headers nor the C
-  test have been compiled or executed, and `clang-format` was run on the C test but not on the generated header. The least
-  certain points are the exact text of the generated header the new assertions quote, the status the codec answers a short
-  entry with (the test asserts only that it is not `SCE_FORGE_CODEC_OK`), and whether `orchestrate` resolves the documents'
-  relative imports from their own directory. No generated tree moves: no `.scxml` of the fixtures or the standard library changed.
+- **Run (2026-10-29, build machines).** The sce-build tests passed as listed in the Go section, and
+  `scripts/gates/forge-c11.sh` ended with every one of its 28 ctest tests passed, `broadcast_log_context_generated_c`
+  (built with `-Werror`) and the older `broadcast_log_generated_c`, which exercises the no-context path, among them.
+  `clang-format` was run on the C test and not on the generated header. The short-entry case asserts only that the codec's
+  status is not `SCE_FORGE_CODEC_OK`, so which status it answers is not pinned. No generated tree moves: no `.scxml` of the
+  fixtures or the standard library changed.
 
 ### What is still undone
 
