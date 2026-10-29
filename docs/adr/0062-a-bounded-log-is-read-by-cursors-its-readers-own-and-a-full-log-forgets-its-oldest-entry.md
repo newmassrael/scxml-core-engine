@@ -1140,6 +1140,53 @@ reads out of `forge-runtime/src/lib.rs`, as for the 64-bit row.
   `test_broadcast_log_generated`) among them. No generated tree moves, because no `.scxml` of the fixtures or the standard
   library changed.
 
+### What the caller inputs landed for Go (2026-10-29)
+
+- **The slot.** An element whose codec asks its caller for flag inputs or a variant tag has the entry
+  `[length][context words][payload words]` in the Go package as in the Rust one (section 4, "Caller inputs are part of the
+  element"). `broadcast_log_context_value` hands the template the layout over 64-bit words and `render_broadcast_log_go`
+  passes it as `context`. The package then states `ContextWords` and `Words = 1 + ContextWords + (MaxEncodedBytes+7)/8`; flag
+  `i` is bit `i % 64` of context word `i / 64` in the `[Words]uint64` the runtime copies, the tag is one more word after the
+  flag words, and the bytes start at word `1 + ContextWords`. An element with no caller input has no `ContextWords`, and its
+  package, constants and signatures are what they were (a test pins the lines). `Language::Go` is in
+  `BROADCAST_LOG_CONTEXT_BACKENDS`, so `refusal_for` no longer refuses a Go log for a flag input or a tag.
+- **The typed API.** `<Log>Flags` is a struct of `bool`s named as the codec names its flags (PascalCase, exported). `Publish`
+  takes `flags` and `tag` where the element has them (`Publish(publisher, &element, flags, tag)`), the tag as the `byte` the
+  codec's `Decode` takes, so Go has no out-of-range tag to refuse. A flag crosses to the codec through one unexported
+  `flagInput(bool) byte` (1 or 0), so the value the codec encodes under and the bit stored are the one `bool`, and `Read` passes
+  the stored bits, through the same conversion, to `Decode` ahead of the tag. Go's `Read` already returned the element
+  beside the runtime's answer, which carries the sequence number, so an element with a caller input has `Read` return a
+  `*<Log>Item{Element, Flags, Tag}` in the element's place (`Flags` and `Tag` only where the element has them), and an element
+  with none keeps `(broadcastlog.Read, *Element, error)`. The log does not derive the tag from the value: the publisher
+  gives it.
+- **What the Go codec does with a flag the element contradicts.** Nothing: the generated `Encode` of a field gated on a flag
+  input tests the optional field (`IsPresent()`) and never reads the flag parameter (only the chain-membership gates are
+  checked, `ErrPresentIfMismatch`), and `Decode` reads the field under `(flag & mask) != 0`. So a Go publisher that gives a
+  flag the element contradicts is not refused, by the codec or by the log (which does not judge flags either): a value
+  published under a flag that says it is absent is stored with its bytes and reads back without the value, and a value
+  published as absent under a flag that says it is there is stored and `Read` returns the codec's error for the short
+  frame. The Rust codec refuses the disagreement (`PresentIfMismatch`, from its source form); Kotlin and Python do not,
+  as above. `TestBroadcastLogContextTheFlagThatWasStoredDecidesHowAnEntryIsReadAndTheLogDoesNotJudgeIt` pins the Go
+  behaviour and turns red on the first `Publish` the day the Go codec refuses the disagreement, which is the better end
+  state and a change to the codec generator and not to the log (it moves the goldens and every generated Go tree with a
+  flag-gated field). A tag that selects no arm is the codec's `codec.ErrNeedMoreBytes` at `Read` (the variant has no
+  catch-all arm), which a test also pins.
+- **Tests.** `sce-build/tests/broadcast_log_kind.rs` holds the Go package for flags alone, for flags and a tag, for a tag
+  alone, for 65 flags (flag 63 closes the first context word, flag 64 opens the second) and for an element with no caller
+  input; the two Go refusal tests (a flag input, a tag) are replaced by those, and the registry-driven tests follow the
+  list. `backends/go/forge-runtime/conformance/generate.sh` generates the six documents of
+  `tests/forge/conformance/broadcast_log_context/` as one set through `sce-codegen orchestrate`, and
+  `broadcast_log_context_generated_test.go` compiles the two logs over them: the constants, the words of an entry as the
+  runtime holds them, a reader getting back the flag and the tag, two readers decoding every entry under the same flag, a
+  lapped reader resuming at an entry with its own flag, and the two behaviours above.
+- **Not run.** Nothing was built or run: neither the renderer, the template, the sce-build tests, `generate.sh` nor the Go
+  tests. No generated tree moves, because no `.scxml` of the fixtures or the standard library changed; the shared documents
+  are new inputs of the Go lane only through `tests/forge/**`, which the lane's filter already covers. The least certain
+  points are the exact text of the generated package that the new sce-build assertions quote (the struct field alignment
+  and the `Flags:   flags,` lines), the Go names the conformance test takes from the codec generator (the variant's arm
+  fields, `SensorId`, and the `optional.Of[uint16]` field), and whether `orchestrate` resolves the documents' relative
+  imports from their own directory.
+
 ### What is still undone
 
 What was undone and is now done, as of 2026-10-29: the RFC section (§5.S of `docs/spec/synth/rfc-sce-protocol-synthesis.md`,
