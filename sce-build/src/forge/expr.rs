@@ -9423,6 +9423,13 @@ fn is_pure_reference(expr: &TypedExpr) -> bool {
 /// `sce_<snake_case document name>`, and this has a capital after `sce`.
 pub(crate) const STATE_ADAPTER_PREFIX: &str = "sceAdapt_";
 
+/// What the name of the adapter a Swift statechart declares for such a call begins
+/// with ([`STATE_ADAPTER_PREFIX`] is Go's). An adapter is a `private` function of the
+/// machine's file, called by its bare name, and a generated algorithm is called
+/// through the enum that holds it (`Pascal.camel(…)`), so a bare name that begins with
+/// this is an adapter, whose answer is a type the lattice does not name.
+pub(crate) const SWIFT_STATE_ADAPTER_PREFIX: &str = "call_";
+
 /// `call` — a call to a `may-fail` algorithm, spelled `symbol(args)` in
 /// `target` — as the calling `may-fail` body passes its failure on and keeps
 /// its value of type `ty` (SCE_FORGE.md §3.4.1). ONE spelling for the
@@ -9467,6 +9474,12 @@ pub(crate) fn pass_failure_on(
         // The callee throws its failure; `Checked.take` records it in the body's
         // `sceFailure` under the callee's own name, which the statement around it
         // throws, and answers the zero of the value's type in its place.
+        // A call of an adapter a statechart declares for an algorithm that takes or
+        // returns a record or a list answers in the statechart's own types, which this
+        // layer cannot spell: the answer's type names its own zero (`SceDefault`).
+        ExprTarget::Swift if symbol.starts_with(SWIFT_STATE_ADAPTER_PREFIX) => {
+            format!("Checked.takeDefault(sceFailure, {{ try {call} }})")
+        }
         ExprTarget::Swift => match swift::zero_of(ty.strip_quantity()) {
             Some(zero) => format!("Checked.take(sceFailure, fallback: {zero}, {{ try {call} }})"),
             // A value the lattice does not type is a variant of an enum, whose zero is

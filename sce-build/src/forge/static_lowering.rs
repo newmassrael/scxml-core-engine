@@ -11680,20 +11680,24 @@ impl StaticTarget for SwiftTarget {
     // A function of the file, `private` to it: two machines of one module that call
     // one algorithm the same way each declare theirs, in their own types.
     fn state_adapter_name(&self, _machine: &str, _callee: &StaticCallee, coded: &str) -> String {
-        format!("call_{coded}")
+        format!("{}{coded}", crate::forge::expr::SWIFT_STATE_ADAPTER_PREFIX)
+    }
+    // What an adapter gave back as a list: held to the bound of the variable that
+    // takes it, which a list the algorithm built may exceed (an `Array` grows).
+    fn state_list_within(&self, _adapter: &str, value: &str, capacity: u32) -> String {
+        format!("Checked.within(sceFailure, {value}, capacity: {capacity})")
     }
     // A function of the machine's file that takes the machine's values, builds the
     // algorithm's from them, calls it, and builds the machine's own from what it
-    // returns. It spells what an algorithm over numbers, truth values and records of
-    // those, and a list of them handed in, is called with; a list taken back, a value
-    // that may be absent, a value of an enum and a call that may fail return `None`,
-    // which refuses the call by name until each is spelled.
+    // returns. It spells what an algorithm over numbers, truth values, records of
+    // those and lists of them, handed in or taken back, is called with. An algorithm
+    // that may fail is called with `try` and the adapter `throws` what it throws, which
+    // the call of the adapter records (`Checked.takeDefault`). A value that may be
+    // absent and a value of an enum return `None`, which refuses the call by name
+    // until each is spelled.
     fn state_adapter(&self, spec: &AdapterSpec<'_>) -> Option<String> {
         use crate::forge::generator::{event_schema_field_ident, event_schema_payload_type};
         let value = spec.callee.value.as_ref()?;
-        if spec.callee.may_fail {
-            return None;
-        }
         let machine_record = |alias: &str| self.record_type(spec.machine, alias);
         // A record of `ty` built from `from`, a machine record, a payload or the
         // algorithm's record, field by field, by the label each initializer names it
@@ -11784,10 +11788,23 @@ impl StaticTarget for SwiftTarget {
         let (returned_type, returned) = match value.ret.as_ref()? {
             StaticSlot::Scalar(ty) if plain_scalar(ty) => (self.scalar_type(ty), "r".to_string()),
             StaticSlot::Record(alias) => (machine_record(alias), from_algorithm(alias, "r")?),
+            // An `Array` of numbers or truth values is the same on both sides.
+            StaticSlot::ScalarList(ty) if plain_scalar(ty) => (self.list_type(ty), "r".to_string()),
+            // A list of records is mapped element by element into the machine's own
+            // struct, the algorithm's staying as it was.
+            StaticSlot::RecordList(alias) => (
+                self.record_list_type(&machine_record(alias)),
+                format!("r.map {{ {} }}", from_algorithm(alias, "$0")?),
+            ),
             _ => return None,
         };
+        let (throws, attempt) = if spec.callee.may_fail {
+            (" throws", "try ")
+        } else {
+            ("", "")
+        };
         Some(format!(
-            "private func {}({}) -> {returned_type} {{\n    let r = {}({})\n    return {returned}\n}}",
+            "private func {}({}){throws} -> {returned_type} {{\n    let r = {attempt}{}({})\n    return {returned}\n}}",
             spec.name,
             declarations.join(", "),
             spec.call,

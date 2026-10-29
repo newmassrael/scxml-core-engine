@@ -99,6 +99,23 @@ public protocol SceDefault {
     init()
 }
 
+// The values a machine's adapter answers where a call that may fail has no value to
+// give: the zero of every type a variable holds, which `init()` of each already is.
+extension Int8: SceDefault {}
+extension Int16: SceDefault {}
+extension Int32: SceDefault {}
+extension Int64: SceDefault {}
+extension UInt8: SceDefault {}
+extension UInt16: SceDefault {}
+extension UInt32: SceDefault {}
+extension UInt64: SceDefault {}
+extension Float: SceDefault {}
+extension Double: SceDefault {}
+extension Bool: SceDefault {}
+extension String: SceDefault {}
+/// The empty list, whatever it holds.
+extension Array: SceDefault {}
+
 /// The checked integer operations, by the width of the type they are called at.
 public enum Checked {
     /// `a + b` at the width of `T`, or 0 and an overflow.
@@ -285,6 +302,23 @@ public enum Checked {
         } catch {
             preconditionFailure(
                 "Checked.takeCase: a may-fail reading threw an error that is not an AlgorithmError: \(error)"
+            )
+        }
+    }
+
+    /// `take` of a call that answers a value of a type with a zero (`SceDefault`): a
+    /// record, a list, a number, a string. The call is a machine's adapter of an
+    /// algorithm that takes or returns a record or a list, whose type the expression
+    /// that calls it cannot name, so the type names its own zero.
+    public static func takeDefault<T: SceDefault>(_ f: Failure, _ call: () throws -> T) -> T {
+        do {
+            return try call()
+        } catch let error as AlgorithmError {
+            f.fail(error)
+            return T()
+        } catch {
+            preconditionFailure(
+                "Checked.takeDefault: a may-fail algorithm threw an error that is not an AlgorithmError: \(error)"
             )
         }
     }
