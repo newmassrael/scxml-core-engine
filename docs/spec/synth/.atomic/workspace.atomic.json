@@ -5701,7 +5701,269 @@
       "title": "New kind: `broadcast-log`",
       "parent_doc": "synth",
       "parent_section": "synth-5",
-      "decision_status": "active"
+      "decision_status": "active",
+      "bindings": [
+        {
+          "file": "backends/c/forge-runtime/include/sce/forge/broadcast_log.h",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/cpp/forge-runtime/include/sce/forge/broadcast_log.h",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/forge-runtime/broadcastlog/broadcastlog.go",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/forge-runtime/src/commonMain/kotlin/com/sce/forge/runtime/broadcastlog/BroadcastLog.kt",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/forge-runtime/src/commonMain/kotlin/com/sce/forge/runtime/broadcastlog/Log.kt",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/python/forge-runtime/sce_forge_runtime/broadcast_log.py",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/forge-runtime/src/broadcast_log.rs",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/forge-runtime/src/broadcast_log_core.rs",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/forge-runtime/src/broadcast_log_narrow.rs",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/broadcast_history.rs",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/broadcast_history/specialised.rs",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/codec_size.rs",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/parser.rs",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "kind": "implements"
+        },
+        {
+          "file": "tools/codegen/templates/forge/c/broadcast_log.h.jinja2",
+          "kind": "implements"
+        },
+        {
+          "file": "tools/codegen/templates/forge/cpp/broadcast_log.h.jinja2",
+          "kind": "implements"
+        },
+        {
+          "file": "tools/codegen/templates/forge/go/broadcast_log.go.jinja2",
+          "kind": "implements"
+        },
+        {
+          "file": "tools/codegen/templates/forge/kotlin/broadcast_log.kt.jinja2",
+          "kind": "implements"
+        },
+        {
+          "file": "tools/codegen/templates/forge/python/broadcast_log.py.jinja2",
+          "kind": "implements"
+        },
+        {
+          "file": "tools/codegen/templates/forge/rust/broadcast_log.rs.jinja2",
+          "kind": "implements"
+        },
+        {
+          "file": "docs/formal/BroadcastLog.tla",
+          "kind": "references"
+        },
+        {
+          "file": "docs/formal/BroadcastLogWrapped.tla",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/error.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/codegen_matrix.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/bin/sce_codegen.rs",
+          "kind": "references"
+        },
+        {
+          "file": "schemas/sce-forge-ext.xsd",
+          "kind": "references"
+        },
+        {
+          "file": "scripts/gates/forge-rust.sh",
+          "kind": "references"
+        },
+        {
+          "file": "scripts/gates/forge-go.sh",
+          "kind": "references"
+        },
+        {
+          "file": "scripts/gates/forge-kotlin.sh",
+          "kind": "references"
+        },
+        {
+          "file": "scripts/gates/forge-python.sh",
+          "kind": "references"
+        },
+        {
+          "file": "scripts/formal/check.sh",
+          "kind": "references"
+        },
+        {
+          "file": "docs/adr/0062-a-bounded-log-is-read-by-cursors-its-readers-own-and-a-full-log-forgets-its-oldest-entry.md",
+          "kind": "references"
+        },
+        {
+          "file": "docs/SCE_ACCEPTED_SUBSET.md",
+          "kind": "references"
+        },
+        {
+          "file": "SCE_FORGE.md",
+          "kind": "references"
+        },
+        {
+          "file": "backends/c/forge-runtime/tests/conformance/broadcast_log_generated_test.c",
+          "kind": "references"
+        },
+        {
+          "file": "backends/c/forge-runtime/tests/conformance/broadcast_log_history_recorder.c",
+          "kind": "references"
+        },
+        {
+          "file": "backends/c/forge-runtime/tests/conformance/broadcast_log_runtime_test.c",
+          "kind": "references"
+        },
+        {
+          "file": "backends/c/forge-runtime/tests/genmc/broadcast_log_slot_reuse.c",
+          "kind": "references"
+        },
+        {
+          "file": "backends/c/forge-runtime/tests/genmc/broadcast_log_two_readers.c",
+          "kind": "references"
+        },
+        {
+          "file": "backends/cpp/forge-runtime/tests/conformance/broadcast_log_generated_test.cpp",
+          "kind": "references"
+        },
+        {
+          "file": "backends/cpp/forge-runtime/tests/conformance/broadcast_log_history_recorder.cpp",
+          "kind": "references"
+        },
+        {
+          "file": "backends/cpp/forge-runtime/tests/conformance/broadcast_log_runtime_test.cpp",
+          "kind": "references"
+        },
+        {
+          "file": "backends/cpp/forge-runtime/tests/genmc/broadcast_log_slot_reuse.cpp",
+          "kind": "references"
+        },
+        {
+          "file": "backends/cpp/forge-runtime/tests/genmc/broadcast_log_two_readers.cpp",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/forge-runtime/broadcastlog/contract_test.go",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/forge-runtime/broadcastlog/history_test.go",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/forge-runtime/conformance/broadcast_log_generated_test.go",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/forge-runtime/src/jvmTest/kotlin/com/sce/forge/runtime/broadcastlog/BroadcastLogContractTest.kt",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/forge-runtime/src/jvmTest/kotlin/com/sce/forge/runtime/broadcastlog/BroadcastLogGeneratedTest.kt",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/forge-runtime/src/jvmTest/kotlin/com/sce/forge/runtime/broadcastlog/BroadcastLogHistoryTest.kt",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/forge-runtime/src/jvmTest/kotlin/com/sce/forge/runtime/broadcastlog/BroadcastLogLincheckTest.kt",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/forge-runtime/src/jvmTest/kotlin/com/sce/forge/runtime/broadcastlog/BroadcastLogRuntimeTest.kt",
+          "kind": "references"
+        },
+        {
+          "file": "backends/python/forge-runtime/tests/test_broadcast_log_generated.py",
+          "kind": "references"
+        },
+        {
+          "file": "backends/python/forge-runtime/tests/test_broadcast_log_history.py",
+          "kind": "references"
+        },
+        {
+          "file": "backends/python/forge-runtime/tests/test_broadcast_log_runtime.py",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/forge-conformance/tests/forge_broadcast_log.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/forge-conformance/tests/forge_broadcast_log_generated.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/forge-runtime/tests/broadcast_log_threads.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/forge-runtime/tests/loom_broadcast_log.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/forge-runtime/tests/loom_broadcast_log_narrow.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/broadcast_history_differential.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/broadcast_history_format.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/broadcast_log_kind.rs",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/conformance/check_broadcast_histories.cmake",
+          "kind": "references"
+        }
+      ]
     },
     "synth-6": {
       "title": "Cross-cutting concerns",
