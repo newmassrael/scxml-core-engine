@@ -57,6 +57,7 @@ class AHostResultMayHoldAValueThatIsAbsentTest {
     private data class Answer(
         val answered: Int = 0,
         val rowsSeen: Int = 0,
+        val totalSeen: ULong = 0uL,
         val atPresent: Boolean = false,
         val atValue: Long = 0L,
         val labelPresent: Boolean = false,
@@ -68,6 +69,7 @@ class AHostResultMayHoldAValueThatIsAbsentTest {
     private fun read(sm: StatechartHostInvokerOptionalStateMachine) = Answer(
         answered = sm.answered.toInt(),
         rowsSeen = sm.rowsSeen.toInt(),
+        totalSeen = sm.totalSeen,
         atPresent = sm.atPresent,
         atValue = sm.atValue,
         labelPresent = sm.labelPresent,
@@ -105,18 +107,19 @@ class AHostResultMayHoldAValueThatIsAbsentTest {
     /** Every field that may be absent is: the machine reads three absent values and the count every answer carries. */
     @Test
     fun anAbsentFieldIsReadAsAbsent() {
-        val got = complete(StatechartHostInvokerOptionalLookupResult(rows = 3u, at = null, label = null, hit = null))
-        assertEquals(Answer(answered = 1, rowsSeen = 3), got, "an all-absent answer")
+        val got = complete(StatechartHostInvokerOptionalLookupResult(rows = 3u, total = 30uL, at = null, label = null, hit = null))
+        assertEquals(Answer(answered = 1, rowsSeen = 3, totalSeen = 30uL), got, "an all-absent answer")
     }
 
     /** Every field is present: the machine reads each value. */
     @Test
     fun aPresentFieldIsReadAsItsValue() {
-        val got = complete(StatechartHostInvokerOptionalLookupResult(rows = 4u, at = 41L, label = "ab", hit = true))
+        val got = complete(StatechartHostInvokerOptionalLookupResult(rows = 4u, total = 40uL, at = 41L, label = "ab", hit = true))
         assertEquals(
             Answer(
                 answered = 1,
                 rowsSeen = 4,
+                totalSeen = 40uL,
                 atPresent = true,
                 atValue = 41L,
                 labelPresent = true,
@@ -132,7 +135,7 @@ class AHostResultMayHoldAValueThatIsAbsentTest {
     /** A zero, an empty text and a false flag are values, not absences: each is present, and is read as itself. */
     @Test
     fun aZeroAnEmptyTextAndAFalseFlagAreValuesAndNotAbsences() {
-        val got = complete(StatechartHostInvokerOptionalLookupResult(rows = 1u, at = 0L, label = "", hit = false))
+        val got = complete(StatechartHostInvokerOptionalLookupResult(rows = 1u, total = 0uL, at = 0L, label = "", hit = false))
         assertEquals(
             Answer(answered = 1, rowsSeen = 1, atPresent = true, labelPresent = true, hitKnown = true),
             got,
@@ -143,9 +146,17 @@ class AHostResultMayHoldAValueThatIsAbsentTest {
     /** Each field is independent: a day with no label and a flag. */
     @Test
     fun eachFieldIsAbsentOrPresentOnItsOwn() {
-        val got = complete(StatechartHostInvokerOptionalLookupResult(rows = 2u, at = 7L, label = null, hit = true))
+        val got = complete(StatechartHostInvokerOptionalLookupResult(rows = 2u, total = 20uL, at = 7L, label = null, hit = true))
         assertEquals(
-            Answer(answered = 1, rowsSeen = 2, atPresent = true, atValue = 7L, hitKnown = true, hitTrue = true),
+            Answer(
+                answered = 1,
+                rowsSeen = 2,
+                totalSeen = 20uL,
+                atPresent = true,
+                atValue = 7L,
+                hitKnown = true,
+                hitTrue = true,
+            ),
             got,
             "a mixed answer",
         )
@@ -154,15 +165,75 @@ class AHostResultMayHoldAValueThatIsAbsentTest {
     /**
      * The record's JSON writes the key of every field, `null` where the value is
      * absent, in the order the schema declares them. The day is absent in both, so
-     * that what is held is the key, the `null` and the other values' own spelling,
-     * not how a 64-bit integer is written.
+     * that what is held is the key, the `null` and the other values' own spelling;
+     * how a present 64-bit integer is written is held by the case after it.
      */
     @Test
     fun theRecordIsWrittenWithNullForAnAbsentValue() {
-        val absent = StatechartHostInvokerOptionalLookupResult(rows = 3u, at = null, label = null, hit = null)
-        assertEquals("""{"rows":3,"at":null,"label":null,"hit":null}""", absent.wire())
-        val mixed = StatechartHostInvokerOptionalLookupResult(rows = 3u, at = null, label = "ab", hit = false)
-        assertEquals("""{"rows":3,"at":null,"label":"ab","hit":false}""", mixed.wire())
+        val absent = StatechartHostInvokerOptionalLookupResult(rows = 3u, total = 5uL, at = null, label = null, hit = null)
+        assertEquals("""{"rows":3,"total":"5","at":null,"label":null,"hit":null}""", absent.wire())
+        val mixed = StatechartHostInvokerOptionalLookupResult(rows = 3u, total = 5uL, at = null, label = "ab", hit = false)
+        assertEquals("""{"rows":3,"total":"5","at":null,"label":"ab","hit":false}""", mixed.wire())
+    }
+
+    /**
+     * A 64-bit integer, signed or not, is written as the text of its digits, a
+     * JSON string, and a smaller integer stays a bare number: the day and the total
+     * here are past 2^53 - 1, where a bare number would lose its low digits.
+     */
+    @Test
+    fun aSixtyFourBitIntegerIsWrittenAsTheTextOfItsDigits() {
+        val record = StatechartHostInvokerOptionalLookupResult(
+            rows = 1u,
+            total = 18446744073709551615uL,
+            at = 9007199254740993L,
+            label = null,
+            hit = null,
+        )
+        assertEquals(
+            """{"rows":1,"total":"18446744073709551615","at":"9007199254740993","label":null,"hit":null}""",
+            record.wire(),
+        )
+    }
+
+    /** A day and a total past 2^53 - 1 cross the typed interface unchanged: 2^53 + 1 and the largest unsigned. */
+    @Test
+    fun aSixtyFourBitIntegerPastTheExactDoubleRangeIsPublishedExactly() {
+        val got = complete(
+            StatechartHostInvokerOptionalLookupResult(
+                rows = 1u,
+                total = 18446744073709551615uL,
+                at = 9007199254740993L,
+                label = null,
+                hit = null,
+            ),
+        )
+        assertEquals(
+            Answer(
+                answered = 1,
+                rowsSeen = 1,
+                totalSeen = 18446744073709551615uL,
+                atPresent = true,
+                atValue = 9007199254740993L,
+            ),
+            got,
+            "a day and a total past 2^53 - 1",
+        )
+    }
+
+    /** The extremes of a signed 64-bit day, each its own completion, are published exactly. */
+    @Test
+    fun theSignedSixtyFourBitExtremesArePublishedExactly() {
+        for (day in listOf(Long.MIN_VALUE, Long.MAX_VALUE)) {
+            val got = complete(
+                StatechartHostInvokerOptionalLookupResult(rows = 1u, total = 0uL, at = day, label = null, hit = null),
+            )
+            assertEquals(
+                Answer(answered = 1, rowsSeen = 1, atPresent = true, atValue = day),
+                got,
+                "the day $day",
+            )
+        }
     }
 
     /**
@@ -175,7 +246,7 @@ class AHostResultMayHoldAValueThatIsAbsentTest {
     fun aCompletionThatLeavesAKeyOutIsRefused() {
         asking { sm, token ->
             assertTrue(
-                sm.completeHostInvoke(declaredType, "lookup", token, """{"rows":1,"label":null,"hit":null}"""),
+                sm.completeHostInvoke(declaredType, "lookup", token, """{"rows":1,"total":"2","label":null,"hit":null}"""),
                 "a running invocation's completion was refused",
             )
             sm.tick()

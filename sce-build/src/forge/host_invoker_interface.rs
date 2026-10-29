@@ -444,13 +444,14 @@ type {name} struct {{\n{fields}}}\n\n",
                     .fields
                     .iter()
                     .map(|f| {
-                        // How a present value `held` of the field is written.
+                        // How a present value `held` of the field is written: as
+                        // the payload an inject seam writes it, so a 64-bit
+                        // integer crosses as the text of its digits.
                         let present = |held: &str| {
-                            if matches!(f.sce_type.present_type(), SceType::Bytes) {
-                                format!("sce.BytesAsPayloadText({held})")
-                            } else {
-                                held.to_string()
-                            }
+                            crate::forge::generator::go_payload_wire_value(
+                                f.sce_type.present_type(),
+                                held,
+                            )
                         };
                         let held = format!("r.{}", exported(&f.id));
                         let value = match &f.sce_type {
@@ -632,22 +633,22 @@ pub fn render_python(model: &SCXMLModel) -> String {
                     .fields
                     .iter()
                     .map(|f| {
-                        // JSON has no byte string, so a `bytes` field rides
-                        // as its byte-exact Latin-1 text. An absent optional
+                        // A field rides as an inject seam writes it: a `bytes`
+                        // field as its byte-exact Latin-1 text and a 64-bit
+                        // integer as the text of its digits. An absent optional
                         // field is the `None` it is, which `json.dumps` writes
                         // as `null` (docs/adr/0055, section 4).
                         let optional = matches!(f.sce_type, FieldType::Optional { .. });
-                        if matches!(f.sce_type.present_type(), SceType::Bytes) {
-                            if optional {
-                                format!(
-                                    "\"{0}\": None if self.{0} is None else self.{0}.decode(\"latin-1\")",
-                                    f.id
-                                )
-                            } else {
-                                format!("\"{0}\": self.{0}.decode(\"latin-1\")", f.id)
+                        let held = format!("self.{}", f.id);
+                        match crate::forge::generator::python_payload_wire_value(
+                            f.sce_type.present_type(),
+                            &held,
+                        ) {
+                            Some(text) if optional => {
+                                format!("\"{0}\": None if {held} is None else {text}", f.id)
                             }
-                        } else {
-                            format!("\"{0}\": self.{0}", f.id)
+                            Some(text) => format!("\"{0}\": {text}", f.id),
+                            None => format!("\"{0}\": {held}", f.id),
                         }
                     })
                     .collect();
@@ -1024,29 +1025,11 @@ pub fn render_cpp(model: &SCXMLModel) -> CppHostInvokerInterface {
                 let items: Vec<String> = schema
                     .fields
                     .iter()
-                    .map(|f| {
-                        let present = format!(
-                            "::SCE::Common::EventPayloadFields::field(\"{0}\", {1})",
-                            f.id,
-                            // An optional field is read through `*`, the value it
-                            // holds when present.
-                            if matches!(f.sce_type, FieldType::Optional { .. }) {
-                                format!("*{}", f.id)
-                            } else {
-                                f.id.clone()
-                            }
-                        );
-                        match &f.sce_type {
-                            FieldType::Scalar(_) => present,
-                            // An absent value is `null`, its key written all the
-                            // same (docs/adr/0055, section 4).
-                            FieldType::Optional { .. } => format!(
-                                "({0}.has_value() ? {present} : \
-                                 ::SCE::Common::EventPayloadFields::absent(\"{0}\"))",
-                                f.id
-                            ),
-                        }
-                    })
+                    // The item an inject seam writes for the same field, so a
+                    // 64-bit integer crosses as the text of its digits and an
+                    // absent value as `null`, its key written all the same
+                    // (docs/adr/0055, section 4).
+                    .map(crate::forge::generator::cpp_payload_data_item)
                     .collect();
                 format!(
                     "\n    /// The JSON `done.invoke.{id}` carries this record as.\n    \

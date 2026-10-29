@@ -1,10 +1,10 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d2a16315bda3b311baf737203d9e9fa84cdbea31907669fbc8b60f205f09fef9
+// source-hash: 30a4d2a43649b94d4023aae2dd597f2cb5c56349b715cba31e1e7b288f7c348a
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/host_processor/statechart_host_invoker_optional.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: statechart_host_invoker_optional.scxml:36 :: _machine
+// SCE-MAP: statechart_host_invoker_optional.scxml:38 :: _machine
 
 package com.sce.integration.statechart_host_invoker_optional
 
@@ -42,7 +42,7 @@ sealed interface StatechartHostInvokerOptionalEvent : Event {
 // StatechartHostInvokerOptionalDoneInvokeLookupPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `done.invoke.lookup`. Consumers inject it via the `raiseDoneInvokeLookup` seam
 // on the machine — they never name this class directly.
-data class StatechartHostInvokerOptionalDoneInvokeLookupPayload(val rows: UByte, val at: Long?, val label: String?, val hit: Boolean?)
+data class StatechartHostInvokerOptionalDoneInvokeLookupPayload(val rows: UByte, val total: ULong, val at: Long?, val label: String?, val hit: Boolean?)
 
 
 // --- State Machine (W3C SCXML) ---
@@ -51,12 +51,13 @@ data class StatechartHostInvokerOptionalDoneInvokeLookupPayload(val rows: UByte,
 /** `sce:result`: the record the host completes `<invoke id="lookup">` with (SCE Accepted Subset §2.12). */
 data class StatechartHostInvokerOptionalLookupResult(
     val rows: UByte,
+    val total: ULong,
     val at: Long?,
     val label: String?,
     val hit: Boolean?,
 ) {
     /** The JSON `done.invoke.lookup` carries this record as. */
-    fun wire(): String = EventPayload.encode(mapOf("rows" to rows, "at" to at, "label" to label, "hit" to hit))
+    fun wire(): String = EventPayload.encode(mapOf("rows" to rows, "total" to total, "at" to at, "label" to label, "hit" to hit))
 }
 
 /**
@@ -108,6 +109,11 @@ class StatechartHostInvokerOptionalStateMachine(
 
     /** What the published `rows_seen` holds. */
     val rowsSeen: UByte get() = vRowsSeen
+    /** W3C SCXML 5.2: the `total_seen` datamodel variable, published (`sce:direction="out"`). */
+    private var vTotalSeen: ULong = 0.toULong()
+
+    /** What the published `total_seen` holds. */
+    val totalSeen: ULong get() = vTotalSeen
     /** W3C SCXML 5.2: the `at_present` datamodel variable, published (`sce:direction="out"`). */
     private var vAtPresent: Boolean = false
 
@@ -150,6 +156,7 @@ class StatechartHostInvokerOptionalStateMachine(
         var hit: Boolean? = null
         var answered: UByte? = null
         var rowsSeen: UByte? = null
+        var totalSeen: ULong? = null
         var atPresent: Boolean? = null
         var atValue: Long? = null
         var labelPresent: Boolean? = null
@@ -165,6 +172,7 @@ class StatechartHostInvokerOptionalStateMachine(
         params.hit?.let { vHit = it }
         params.answered?.let { vAnswered = it }
         params.rowsSeen?.let { vRowsSeen = it }
+        params.totalSeen?.let { vTotalSeen = it }
         params.atPresent?.let { vAtPresent = it }
         params.atValue?.let { vAtValue = it }
         params.labelPresent?.let { vLabelPresent = it }
@@ -177,6 +185,7 @@ class StatechartHostInvokerOptionalStateMachine(
     data class Data(
         val answered: UByte,
         val rowsSeen: UByte,
+        val totalSeen: ULong,
         val atPresent: Boolean,
         val atValue: Long,
         val labelPresent: Boolean,
@@ -201,6 +210,7 @@ class StatechartHostInvokerOptionalStateMachine(
     private fun currentData(): Data = Data(
         answered = vAnswered,
         rowsSeen = vRowsSeen,
+        totalSeen = vTotalSeen,
         atPresent = vAtPresent,
         atValue = vAtValue,
         labelPresent = vLabelPresent,
@@ -236,10 +246,10 @@ class StatechartHostInvokerOptionalStateMachine(
      * later revision added at its default.
      */
     val savedShape: SavedShape = SavedShape(
-        first = "c17bcc6f983205f0e7b4f229d29e6652ab75ac153a4e27f397b78dba183d4fb4",
-        revised = "0aeeff757f0470f02484f9f28d5b4ba1a105ea1f3e2c07ba2e9c27caadf0bce8",
-        format2First = "c17bcc6f983205f0e7b4f229d29e6652ab75ac153a4e27f397b78dba183d4fb4",
-        format2Revised = "0aeeff757f0470f02484f9f28d5b4ba1a105ea1f3e2c07ba2e9c27caadf0bce8",
+        first = "215f8f7773ef0b4faa01faac01fab1e5588f7a039736bfa1577aa9e16ac84f99",
+        revised = "a4380b325483055654bfe0eb91b7aa8dfa0ae8bc7a9c7dbf2af667525727a907",
+        format2First = "215f8f7773ef0b4faa01faac01fab1e5588f7a039736bfa1577aa9e16ac84f99",
+        format2Revised = "a4380b325483055654bfe0eb91b7aa8dfa0ae8bc7a9c7dbf2af667525727a907",
         records = listOf(
         ),
         enums = listOf(
@@ -265,6 +275,7 @@ class StatechartHostInvokerOptionalStateMachine(
             "hit" to SavedValues.optional(vHit) { SavedValues.of(it) },
             "answered" to SavedValues.of(vAnswered),
             "rows_seen" to SavedValues.of(vRowsSeen),
+            "total_seen" to SavedValues.of(vTotalSeen),
             "at_present" to SavedValues.of(vAtPresent),
             "at_value" to SavedValues.of(vAtValue),
             "label_present" to SavedValues.of(vLabelPresent),
@@ -303,23 +314,25 @@ class StatechartHostInvokerOptionalStateMachine(
         val saved3 = SavedValues.optional(savedGrown.variable("hit"), "hit") { e, w -> SavedValues.bool(e, w) }
         val saved4 = SavedValues.uint8(savedGrown.variable("answered"), "answered")
         val saved5 = SavedValues.uint8(savedGrown.variable("rows_seen"), "rows_seen")
-        val saved6 = SavedValues.bool(savedGrown.variable("at_present"), "at_present")
-        val saved7 = SavedValues.int64(savedGrown.variable("at_value"), "at_value")
-        val saved8 = SavedValues.bool(savedGrown.variable("label_present"), "label_present")
-        val saved9 = SavedValues.string(savedGrown.variable("label_value"), "label_value", 16)
-        val saved10 = SavedValues.bool(savedGrown.variable("hit_known"), "hit_known")
-        val saved11 = SavedValues.bool(savedGrown.variable("hit_true"), "hit_true")
+        val saved6 = SavedValues.uint64(savedGrown.variable("total_seen"), "total_seen")
+        val saved7 = SavedValues.bool(savedGrown.variable("at_present"), "at_present")
+        val saved8 = SavedValues.int64(savedGrown.variable("at_value"), "at_value")
+        val saved9 = SavedValues.bool(savedGrown.variable("label_present"), "label_present")
+        val saved10 = SavedValues.string(savedGrown.variable("label_value"), "label_value", 16)
+        val saved11 = SavedValues.bool(savedGrown.variable("hit_known"), "hit_known")
+        val saved12 = SavedValues.bool(savedGrown.variable("hit_true"), "hit_true")
         vAt = saved1
         vLabel = saved2
         vHit = saved3
         vAnswered = saved4
         vRowsSeen = saved5
-        vAtPresent = saved6
-        vAtValue = saved7
-        vLabelPresent = saved8
-        vLabelValue = saved9
-        vHitKnown = saved10
-        vHitTrue = saved11
+        vTotalSeen = saved6
+        vAtPresent = saved7
+        vAtValue = saved8
+        vLabelPresent = saved9
+        vLabelValue = saved10
+        vHitKnown = saved11
+        vHitTrue = saved12
         enterSaved(savedGrown, wallNowMs)
     }
 
@@ -338,6 +351,7 @@ class StatechartHostInvokerOptionalStateMachine(
         SavedValues.optional(savedGrown.variable("hit"), "hit") { e, w -> SavedValues.bool(e, w) }
         SavedValues.uint8(savedGrown.variable("answered"), "answered")
         SavedValues.uint8(savedGrown.variable("rows_seen"), "rows_seen")
+        SavedValues.uint64(savedGrown.variable("total_seen"), "total_seen")
         SavedValues.bool(savedGrown.variable("at_present"), "at_present")
         SavedValues.int64(savedGrown.variable("at_value"), "at_value")
         SavedValues.bool(savedGrown.variable("label_present"), "label_present")
@@ -377,7 +391,7 @@ class StatechartHostInvokerOptionalStateMachine(
                 // fields out of `data`, which every other producer fills.
                 if (event == StatechartHostInvokerOptionalEvent.Done.Invoke.Lookup) {
                     val fields = EventPayload.decode(metadata.data)
-                    pendingDoneInvokeLookupPayload = StatechartHostInvokerOptionalDoneInvokeLookupPayload(fields.uint8("rows"), fields.optional("at") { _ -> fields.int64("at") }, fields.optional("label") { _ -> fields.string("label") }, fields.optional("hit") { _ -> fields.boolean("hit") })
+                    pendingDoneInvokeLookupPayload = StatechartHostInvokerOptionalDoneInvokeLookupPayload(fields.uint8("rows"), fields.uint64("total"), fields.optional("at") { _ -> fields.int64("at") }, fields.optional("label") { _ -> fields.string("label") }, fields.optional("hit") { _ -> fields.boolean("hit") })
                 }
             }
         }
@@ -538,11 +552,11 @@ class StatechartHostInvokerOptionalStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: statechart_host_invoker_optional.scxml:36 :: _machine
+    // SCE-MAP: statechart_host_invoker_optional.scxml:38 :: _machine
     override fun onEntry(state: StatechartHostInvokerOptionalState, isDefaultEntry: Boolean) {
         when (state) {
             is StatechartHostInvokerOptionalState.Asking -> {
-                // SCE-MAP: statechart_host_invoker_optional.scxml:58 :: asking :: _state_body
+                // SCE-MAP: statechart_host_invoker_optional.scxml:61 :: asking :: _state_body
                 // W3C SCXML 6.4.1: the host declared this `type`, so the
                 // deferred closure STARTS the invocation rather than refusing
                 // it. Deferred like its sibling so §scxml-6.4 ordering holds —
@@ -582,17 +596,17 @@ class StatechartHostInvokerOptionalStateMachine(
                 }
             }
             is StatechartHostInvokerOptionalState.Idle -> {
-                // SCE-MAP: statechart_host_invoker_optional.scxml:54 :: idle :: _state_body
+                // SCE-MAP: statechart_host_invoker_optional.scxml:57 :: idle :: _state_body
             }
         }
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: statechart_host_invoker_optional.scxml:36 :: _machine
+    // SCE-MAP: statechart_host_invoker_optional.scxml:38 :: _machine
     override fun onExit(state: StatechartHostInvokerOptionalState) {
         when (state) {
             is StatechartHostInvokerOptionalState.Asking -> {
-                // SCE-MAP: statechart_host_invoker_optional.scxml:58 :: asking :: _state_body
+                // SCE-MAP: statechart_host_invoker_optional.scxml:61 :: asking :: _state_body
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
                 cancelPendingInvokesForState(state)
                 // W3C SCXML 6.4: the host's invocation ends with the state
@@ -602,19 +616,19 @@ class StatechartHostInvokerOptionalStateMachine(
                 cancelHostInvoke("x-sce-host", "lookup")
             }
             is StatechartHostInvokerOptionalState.Idle -> {
-                // SCE-MAP: statechart_host_invoker_optional.scxml:54 :: idle :: _state_body
+                // SCE-MAP: statechart_host_invoker_optional.scxml:57 :: idle :: _state_body
             }
         }
     }
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: statechart_host_invoker_optional.scxml:36 :: _machine
+    // SCE-MAP: statechart_host_invoker_optional.scxml:38 :: _machine
     override fun executeTransitionContent(source: StatechartHostInvokerOptionalState, transitionIndex: Int) {
         when (source) {
         is StatechartHostInvokerOptionalState.Asking -> when (transitionIndex) {
             0 -> {
-                // SCE-MAP: statechart_host_invoker_optional.scxml:60 :: asking :: _transition_0
+                // SCE-MAP: statechart_host_invoker_optional.scxml:63 :: asking :: _transition_0
                 if (pendingDoneInvokeLookupPayload == null) {
                     return
                 }
@@ -628,6 +642,8 @@ class StatechartHostInvokerOptionalStateMachine(
             vHit = pendingDoneInvokeLookupPayload!!.hit
 
             vRowsSeen = pendingDoneInvokeLookupPayload!!.rows
+
+            vTotalSeen = pendingDoneInvokeLookupPayload!!.total
 
             vAtPresent = vAt != null
 

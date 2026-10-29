@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d2a16315bda3b311baf737203d9e9fa84cdbea31907669fbc8b60f205f09fef9
+// source-hash: 30a4d2a43649b94d4023aae2dd597f2cb5c56349b715cba31e1e7b288f7c348a
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -20,7 +20,7 @@
 // entry/exit actions, and event processing.
 
 
-// SCE-MAP: statechart_host_invoker_optional.scxml:36 :: _machine
+// SCE-MAP: statechart_host_invoker_optional.scxml:38 :: _machine
 
 package statechart_host_invoker_optional
 
@@ -191,6 +191,7 @@ const (
 // the `StatechartHostInvokerOptionalRaiseDoneInvokeLookup` seam below (fields are unexported by design).
 type StatechartHostInvokerOptionalDoneInvokeLookupPayload struct {
 	rows uint8
+	total uint64
 	at optional.Of[int64]
 	label optional.Of[string]
 	hit optional.Of[bool]
@@ -203,12 +204,12 @@ type StatechartHostInvokerOptionalDoneInvokeLookupPayload struct {
 // this machine names when every record schema it holds is in its first
 // revision (docs/adr/0045, section 2). The generator computes it once, so it is
 // the text every backend's constant is.
-const StatechartHostInvokerOptionalSavedShapeFormat2 = "c17bcc6f983205f0e7b4f229d29e6652ab75ac153a4e27f397b78dba183d4fb4"
+const StatechartHostInvokerOptionalSavedShapeFormat2 = "215f8f7773ef0b4faa01faac01fab1e5588f7a039736bfa1577aa9e16ac84f99"
 
 // StatechartHostInvokerOptionalSavedShapeFormat2Revised is the shape a format-2 saved state
 // of this machine names when it names a later revision of a record schema or
 // an enum.
-const StatechartHostInvokerOptionalSavedShapeFormat2Revised = "0aeeff757f0470f02484f9f28d5b4ba1a105ea1f3e2c07ba2e9c27caadf0bce8"
+const StatechartHostInvokerOptionalSavedShapeFormat2Revised = "a4380b325483055654bfe0eb91b7aa8dfa0ae8bc7a9c7dbf2af667525727a907"
 
 // StatechartHostInvokerOptionalSavedEnumKeys names each enum a value of a saved state of
 // this machine is of, by its document (docs/adr/0044): the key `revisions`
@@ -223,10 +224,10 @@ var StatechartHostInvokerOptionalSavedEnumKeys = [...]string{}
 // one saved at an earlier revision of a record schema is read with each field a
 // later revision added at its default.
 var StatechartHostInvokerOptionalSavedShape = sce.SavedShape{
-	First:          "c17bcc6f983205f0e7b4f229d29e6652ab75ac153a4e27f397b78dba183d4fb4",
-	Revised:        "0aeeff757f0470f02484f9f28d5b4ba1a105ea1f3e2c07ba2e9c27caadf0bce8",
-	Format2First:   "c17bcc6f983205f0e7b4f229d29e6652ab75ac153a4e27f397b78dba183d4fb4",
-	Format2Revised: "0aeeff757f0470f02484f9f28d5b4ba1a105ea1f3e2c07ba2e9c27caadf0bce8",
+	First:          "215f8f7773ef0b4faa01faac01fab1e5588f7a039736bfa1577aa9e16ac84f99",
+	Revised:        "a4380b325483055654bfe0eb91b7aa8dfa0ae8bc7a9c7dbf2af667525727a907",
+	Format2First:   "215f8f7773ef0b4faa01faac01fab1e5588f7a039736bfa1577aa9e16ac84f99",
+	Format2Revised: "a4380b325483055654bfe0eb91b7aa8dfa0ae8bc7a9c7dbf2af667525727a907",
 	Records: []sce.RecordLineage{
 	},
 	Enums: []sce.EnumLineage{
@@ -260,6 +261,7 @@ func StatechartHostInvokerOptionalSaveAt(engine *sce.Engine[StatechartHostInvoke
 	variables.Set("hit", optional.Wire(p.vHit, sce.SavedWriteBool))
 	variables.Set("answered", sce.SavedWriteUint8(p.vAnswered))
 	variables.Set("rows_seen", sce.SavedWriteUint8(p.vRowsSeen))
+	variables.Set("total_seen", sce.SavedWriteUint64(p.vTotalSeen))
 	variables.Set("at_present", sce.SavedWriteBool(p.vAtPresent))
 	variables.Set("at_value", sce.SavedWriteInt64(p.vAtValue))
 	variables.Set("label_present", sce.SavedWriteBool(p.vLabelPresent))
@@ -312,6 +314,11 @@ func StatechartHostInvokerOptionalJudge(saved *sce.SavedState) error {
 	if raw, err := grown.Variable("rows_seen"); err != nil {
 		return err
 	} else if _, err := sce.SavedReadUint8(raw, "rows_seen"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("total_seen"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint64(raw, "total_seen"); err != nil {
 		return err
 	}
 	if raw, err := grown.Variable("at_present"); err != nil {
@@ -411,51 +418,59 @@ func StatechartHostInvokerOptionalRestoreAt(policy *StatechartHostInvokerOptiona
 	if err != nil {
 		return nil, err
 	}
-	raw6, err := grown.Variable("at_present")
+	raw6, err := grown.Variable("total_seen")
 	if err != nil {
 		return nil, err
 	}
-	read6, err := sce.SavedReadBool(raw6, "at_present")
+	read6, err := sce.SavedReadUint64(raw6, "total_seen")
 	if err != nil {
 		return nil, err
 	}
-	raw7, err := grown.Variable("at_value")
+	raw7, err := grown.Variable("at_present")
 	if err != nil {
 		return nil, err
 	}
-	read7, err := sce.SavedReadInt64(raw7, "at_value")
+	read7, err := sce.SavedReadBool(raw7, "at_present")
 	if err != nil {
 		return nil, err
 	}
-	raw8, err := grown.Variable("label_present")
+	raw8, err := grown.Variable("at_value")
 	if err != nil {
 		return nil, err
 	}
-	read8, err := sce.SavedReadBool(raw8, "label_present")
+	read8, err := sce.SavedReadInt64(raw8, "at_value")
 	if err != nil {
 		return nil, err
 	}
-	raw9, err := grown.Variable("label_value")
+	raw9, err := grown.Variable("label_present")
 	if err != nil {
 		return nil, err
 	}
-	read9, err := sce.SavedReadBoundedString(raw9, "label_value", 16)
+	read9, err := sce.SavedReadBool(raw9, "label_present")
 	if err != nil {
 		return nil, err
 	}
-	raw10, err := grown.Variable("hit_known")
+	raw10, err := grown.Variable("label_value")
 	if err != nil {
 		return nil, err
 	}
-	read10, err := sce.SavedReadBool(raw10, "hit_known")
+	read10, err := sce.SavedReadBoundedString(raw10, "label_value", 16)
 	if err != nil {
 		return nil, err
 	}
-	raw11, err := grown.Variable("hit_true")
+	raw11, err := grown.Variable("hit_known")
 	if err != nil {
 		return nil, err
 	}
-	read11, err := sce.SavedReadBool(raw11, "hit_true")
+	read11, err := sce.SavedReadBool(raw11, "hit_known")
+	if err != nil {
+		return nil, err
+	}
+	raw12, err := grown.Variable("hit_true")
+	if err != nil {
+		return nil, err
+	}
+	read12, err := sce.SavedReadBool(raw12, "hit_true")
 	if err != nil {
 		return nil, err
 	}
@@ -467,12 +482,13 @@ func StatechartHostInvokerOptionalRestoreAt(policy *StatechartHostInvokerOptiona
 	policy.vHit = read3
 	policy.vAnswered = read4
 	policy.vRowsSeen = read5
-	policy.vAtPresent = read6
-	policy.vAtValue = read7
-	policy.vLabelPresent = read8
-	policy.vLabelValue = read9
-	policy.vHitKnown = read10
-	policy.vHitTrue = read11
+	policy.vTotalSeen = read6
+	policy.vAtPresent = read7
+	policy.vAtValue = read8
+	policy.vLabelPresent = read9
+	policy.vLabelValue = read10
+	policy.vHitKnown = read11
+	policy.vHitTrue = read12
 	for _, recorded := range history {
 		policy.SetHistoryValue(recorded.History, recorded.States)
 	}
@@ -560,6 +576,7 @@ func (p *StatechartHostInvokerOptionalPolicy) SetHistoryValue(history sce.Histor
 // with (SCE Accepted Subset §2.12).
 type StatechartHostInvokerOptionalLookupResult struct {
 	Rows uint8
+	Total uint64
 	At optional.Of[int64]
 	Label optional.Of[string]
 	Hit optional.Of[bool]
@@ -567,7 +584,7 @@ type StatechartHostInvokerOptionalLookupResult struct {
 
 // Wire is the JSON `done.invoke.lookup` carries this record as.
 func (r StatechartHostInvokerOptionalLookupResult) Wire() string {
-	return sce.PayloadJSON(sce.Pair("rows", r.Rows), sce.Pair("at", optional.Wire(r.At, func(v int64) any { return v })), sce.Pair("label", optional.Wire(r.Label, func(v string) any { return v })), sce.Pair("hit", optional.Wire(r.Hit, func(v bool) any { return v })))
+	return sce.PayloadJSON(sce.Pair("rows", r.Rows), sce.Pair("total", sce.Uint64PayloadText(r.Total)), sce.Pair("at", optional.Wire(r.At, func(v int64) any { return sce.Int64PayloadText(v) })), sce.Pair("label", optional.Wire(r.Label, func(v string) any { return v })), sce.Pair("hit", optional.Wire(r.Hit, func(v bool) any { return v })))
 }
 
 // StatechartHostInvokerOptionalXSceHostInvoker is the host side of this document's typed
@@ -645,6 +662,8 @@ type StatechartHostInvokerOptionalPolicy struct {
 	vAnswered uint8
 	// W3C SCXML 5.2: the `rows_seen` datamodel variable, published (`sce:direction="out"`).
 	vRowsSeen uint8
+	// W3C SCXML 5.2: the `total_seen` datamodel variable, published (`sce:direction="out"`).
+	vTotalSeen uint64
 	// W3C SCXML 5.2: the `at_present` datamodel variable, published (`sce:direction="out"`).
 	vAtPresent bool
 	// W3C SCXML 5.2: the `at_value` datamodel variable, published (`sce:direction="out"`).
@@ -680,6 +699,7 @@ func NewStatechartHostInvokerOptionalPolicy() StatechartHostInvokerOptionalPolic
 		vHit: optional.None[bool](),
 		vAnswered: 0,
 		vRowsSeen: 0,
+		vTotalSeen: 0,
 		vAtPresent: false,
 		vAtValue: 0,
 		vLabelPresent: false,
@@ -701,6 +721,12 @@ func (p *StatechartHostInvokerOptionalPolicy) Answered() uint8 {
 // variable holds now (W3C SCXML 5.2). Only the machine writes it.
 func (p *StatechartHostInvokerOptionalPolicy) RowsSeen() uint8 {
 	return p.vRowsSeen
+}
+
+// TotalSeen reports what the published `total_seen` datamodel
+// variable holds now (W3C SCXML 5.2). Only the machine writes it.
+func (p *StatechartHostInvokerOptionalPolicy) TotalSeen() uint64 {
+	return p.vTotalSeen
 }
 
 // AtPresent reports what the published `at_present` datamodel
@@ -749,6 +775,7 @@ type StatechartHostInvokerOptionalInvokeParams struct {
 	VHit optional.Of[bool]
 	VAnswered *uint8
 	VRowsSeen *uint8
+	VTotalSeen *uint64
 	VAtPresent *bool
 	VAtValue *int64
 	VLabelPresent *bool
@@ -774,6 +801,9 @@ func (p *StatechartHostInvokerOptionalPolicy) AcceptParams(params StatechartHost
 	}
 	if params.VRowsSeen != nil {
 		p.vRowsSeen = *params.VRowsSeen
+	}
+	if params.VTotalSeen != nil {
+		p.vTotalSeen = *params.VTotalSeen
 	}
 	if params.VAtPresent != nil {
 		p.vAtPresent = *params.VAtPresent
@@ -1151,6 +1181,9 @@ func (p *StatechartHostInvokerOptionalPolicy) LiftTypedPayload(event StatechartH
 		if payload.rows, err = sce.PayloadUnsigned[uint8](fields, "rows"); err != nil {
 			return err
 		}
+		if payload.total, err = sce.PayloadUnsigned64(fields, "total"); err != nil {
+			return err
+		}
 		if payload.at, err = optional.Lift(fields, "at", func() (int64, error) { return sce.PayloadSigned64(fields, "at") }); err != nil {
 			return err
 		}
@@ -1182,11 +1215,11 @@ func (p *StatechartHostInvokerOptionalPolicy) ClearEventMetadata() {
 // ExecuteEntryActions enters one state (W3C SCXML 3.8): adds it to the
 // configuration, runs its <onentry>, and its <initial> transition's content when
 // its initial state is entered by default.
-//line statechart_host_invoker_optional.scxml:36
+//line statechart_host_invoker_optional.scxml:38
 func (p *StatechartHostInvokerOptionalPolicy) ExecuteEntryActions(state StatechartHostInvokerOptionalState, engine *sce.Engine[StatechartHostInvokerOptionalState, StatechartHostInvokerOptionalEvent], isDefaultEntry bool) {
 	switch state {
 	case StatechartHostInvokerOptionalStateAsking:
-//line statechart_host_invoker_optional.scxml:58
+//line statechart_host_invoker_optional.scxml:61
 		// W3C SCXML 6.4.1: `type` names no processor this platform implements.
 		// Defer only — the error.execution raise happens in
 		// ExecutePendingInvokes, so §scxml-6.4 ordering holds and
@@ -1209,7 +1242,7 @@ func (p *StatechartHostInvokerOptionalPolicy) ExecuteEntryActions(state Statecha
 // <initial> content) when the history was taken with nothing recorded. The
 // engine asks for it by the entry set's defaultHistoryContent answer; a history
 // that restored what it recorded runs nothing.
-//line statechart_host_invoker_optional.scxml:36
+//line statechart_host_invoker_optional.scxml:38
 func (p *StatechartHostInvokerOptionalPolicy) ExecuteHistoryDefaultContent(history sce.HistoryID, engine *sce.Engine[StatechartHostInvokerOptionalState, StatechartHostInvokerOptionalEvent]) {
 	// W3C SCXML 3.10.2: no <history> in this document has default content.
 }
@@ -1217,7 +1250,7 @@ func (p *StatechartHostInvokerOptionalPolicy) ExecuteHistoryDefaultContent(histo
 // ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
 // runs its <onexit>, cancels its invocations and removes it from the
 // configuration — §scxml-D-exitStates's order.
-//line statechart_host_invoker_optional.scxml:36
+//line statechart_host_invoker_optional.scxml:38
 func (p *StatechartHostInvokerOptionalPolicy) ExecuteExitActions(state StatechartHostInvokerOptionalState, engine *sce.Engine[StatechartHostInvokerOptionalState, StatechartHostInvokerOptionalEvent], configurationBeforeExit []StatechartHostInvokerOptionalState) {
 	// §scxml-D-exitStates orders one state's exit as onexit, then
 	// cancelInvoke, then configuration.delete(s), so `In(s)` inside s's own
@@ -1245,7 +1278,7 @@ func (p *StatechartHostInvokerOptionalPolicy) ExecuteExitActions(state Statechar
 // BindCurrentEvent binds the event whose transitions are about to be selected as
 // the _event their guards read (W3C SCXML 5.10) — before the first guard runs,
 // and not for an eventless selection, which has no event of its own.
-//line statechart_host_invoker_optional.scxml:36
+//line statechart_host_invoker_optional.scxml:38
 func (p *StatechartHostInvokerOptionalPolicy) BindCurrentEvent(event StatechartHostInvokerOptionalEvent, engine *sce.Engine[StatechartHostInvokerOptionalState, StatechartHostInvokerOptionalEvent]) {
 	// This document's guards never read _event, so there is nothing to bind.
 }
@@ -1255,7 +1288,7 @@ func (p *StatechartHostInvokerOptionalPolicy) BindCurrentEvent(event StatechartH
 // that event enables and whose guard holds. The engine walks the atomic states
 // and their ancestors and keeps the ordered set; the null event asks for
 // eventless transitions.
-//line statechart_host_invoker_optional.scxml:36
+//line statechart_host_invoker_optional.scxml:38
 func (p *StatechartHostInvokerOptionalPolicy) FirstEnabledTransition(state StatechartHostInvokerOptionalState, event StatechartHostInvokerOptionalEvent, engine *sce.Engine[StatechartHostInvokerOptionalState, StatechartHostInvokerOptionalEvent]) (sce.EnabledTransition[StatechartHostInvokerOptionalState, sce.HistoryID], bool) {
 	switch state {
 	case StatechartHostInvokerOptionalStateAsking:
@@ -1288,13 +1321,13 @@ func (p *StatechartHostInvokerOptionalPolicy) FirstEnabledTransition(state State
 
 // ExecuteTransitionContent runs one transition's executable content (W3C SCXML
 // 3.13), between the microstep's exits and its entries.
-//line statechart_host_invoker_optional.scxml:36
+//line statechart_host_invoker_optional.scxml:38
 func (p *StatechartHostInvokerOptionalPolicy) ExecuteTransitionContent(source StatechartHostInvokerOptionalState, transitionIndex int, engine *sce.Engine[StatechartHostInvokerOptionalState, StatechartHostInvokerOptionalEvent]) {
 	switch source {
 	case StatechartHostInvokerOptionalStateAsking:
 		switch transitionIndex {
 		case 0:
-//line statechart_host_invoker_optional.scxml:60
+//line statechart_host_invoker_optional.scxml:63
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StatechartHostInvokerOptionalPayloadTagDoneInvokeLookup {
@@ -1317,6 +1350,10 @@ func (p *StatechartHostInvokerOptionalPolicy) ExecuteTransitionContent(source St
 
 
 	p.vRowsSeen = p.pendingDoneInvokeLookupPayload.rows
+
+
+
+	p.vTotalSeen = p.pendingDoneInvokeLookupPayload.total
 
 
 

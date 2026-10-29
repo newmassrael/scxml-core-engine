@@ -3615,7 +3615,11 @@ canonical whole number (`"007"`, `"-0"`, `"1.5"`, `"+3"`), a minus sign on an
 unsigned field, and a value past the width are refused as a field of another type
 is (`error.execution`), on every engine, so one payload gives one field wherever it
 is read. A host that raises a typed event (`raise<Event>`) writes the same text
-into the data beside the typed carrier. The Interpreter's data model holds an
+into the data beside the typed carrier, and a host that completes a typed
+`<invoke>` (`sce:result`) writes it in the record it hands the generated
+interface: every backend's record writes a present `int64` or `uint64` field, an
+optional one included, as the digits, so a day or a total past 2^53 - 1 reaches
+the machine as it was sent. The Interpreter's data model holds an
 integer only where a Number holds it exactly, so a value past 2^53 - 1 is a value
 inside the expressions that compute with it there (a remainder, a comparison) and
 not one a variable keeps; `scenarios/static_wire_wide.json` holds the rest on every

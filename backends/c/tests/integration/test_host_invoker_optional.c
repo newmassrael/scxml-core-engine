@@ -19,7 +19,8 @@
 // each field where a test proves it present. What these hold apart is the three
 // states a field has — absent, present and zero or empty, and present — which a
 // sentinel could not: `""` is a label, `false` is a flag that was answered, and `0`
-// is a day.
+// is a day. The record's two 64-bit fields, `at` and `total`, are written as the
+// text of their digits, so a value past 2^53 - 1 reaches the machine exactly.
 //
 // Fixture: sce-build/tests/fixtures/host_processor/statechart_host_invoker_optional.scxml
 // (the same document the other channels drive), generated WITH
@@ -96,6 +97,7 @@ static bool boot_asking(statechart_host_invoker_optional_t *sm,
 typedef struct {
     unsigned answered;
     unsigned rows_seen;
+    uint64_t total_seen;
     bool at_present;
     int64_t at_value;
     bool label_present;
@@ -108,6 +110,7 @@ static int expect_answer(const char *what, const statechart_host_invoker_optiona
     int bad = 0;
     const unsigned answered = (unsigned)statechart_host_invoker_optional_get_answered(sm);
     const unsigned rows_seen = (unsigned)statechart_host_invoker_optional_get_rows_seen(sm);
+    const uint64_t total_seen = statechart_host_invoker_optional_get_total_seen(sm);
     const bool at_present = statechart_host_invoker_optional_get_at_present(sm);
     const int64_t at_value = statechart_host_invoker_optional_get_at_value(sm);
     const bool label_present = statechart_host_invoker_optional_get_label_present(sm);
@@ -120,6 +123,11 @@ static int expect_answer(const char *what, const statechart_host_invoker_optiona
     }
     if (rows_seen != want->rows_seen) {
         (void)fprintf(stderr, "FAIL [%s]: rows_seen is %u, want %u\n", what, rows_seen, want->rows_seen);
+        bad = 1;
+    }
+    if (total_seen != want->total_seen) {
+        (void)fprintf(stderr, "FAIL [%s]: total_seen is %llu, want %llu\n", what, (unsigned long long)total_seen,
+                      (unsigned long long)want->total_seen);
         bad = 1;
     }
     if (at_present != want->at_present) {
@@ -180,10 +188,11 @@ static int an_absent_field_is_read_as_absent(void) {
     statechart_host_invoker_optional_lookup_result_t result;
     memset(&result, 0, sizeof(result));
     result.rows = 3;
+    result.total = 30;
     result.at = sce_optional_int64_none();
     result.label = sce_optional_string_16_none();
     result.hit = sce_optional_bool_none();
-    const answer_t want = {1u, 3u, false, 0, false, "", false, false};
+    const answer_t want = {1u, 3u, 30u, false, 0, false, "", false, false};
     return complete_and_expect("all absent", &result, &want);
 }
 
@@ -192,10 +201,11 @@ static int a_present_field_is_read_as_its_value(void) {
     statechart_host_invoker_optional_lookup_result_t result;
     memset(&result, 0, sizeof(result));
     result.rows = 4;
+    result.total = 40;
     result.at = sce_optional_int64_some(41);
     result.label = sce_optional_string_16_some(sce_static_string_16_of("ab"));
     result.hit = sce_optional_bool_some(true);
-    const answer_t want = {1u, 4u, true, 41, true, "ab", true, true};
+    const answer_t want = {1u, 4u, 40u, true, 41, true, "ab", true, true};
     return complete_and_expect("all present", &result, &want);
 }
 
@@ -205,10 +215,11 @@ static int a_zero_an_empty_text_and_a_false_flag_are_values_and_not_absences(voi
     statechart_host_invoker_optional_lookup_result_t result;
     memset(&result, 0, sizeof(result));
     result.rows = 1;
+    result.total = 0;
     result.at = sce_optional_int64_some(0);
     result.label = sce_optional_string_16_some(sce_static_string_16_of(""));
     result.hit = sce_optional_bool_some(false);
-    const answer_t want = {1u, 1u, true, 0, true, "", true, false};
+    const answer_t want = {1u, 1u, 0u, true, 0, true, "", true, false};
     return complete_and_expect("zero, empty, false", &result, &want);
 }
 
@@ -217,11 +228,73 @@ static int each_field_is_absent_or_present_on_its_own(void) {
     statechart_host_invoker_optional_lookup_result_t result;
     memset(&result, 0, sizeof(result));
     result.rows = 2;
+    result.total = 20;
     result.at = sce_optional_int64_some(7);
     result.label = sce_optional_string_16_none();
     result.hit = sce_optional_bool_some(true);
-    const answer_t want = {1u, 2u, true, 7, false, "", true, true};
+    const answer_t want = {1u, 2u, 20u, true, 7, false, "", true, true};
     return complete_and_expect("mixed", &result, &want);
+}
+
+// A 64-bit integer crosses as the text of its digits, so 2^53 + 1, the first
+// integer a double cannot hold, and the largest uint64 both reach the machine as
+// they were.
+static int a_64_bit_value_past_2_pow_53_arrives_exactly(void) {
+    statechart_host_invoker_optional_lookup_result_t result;
+    memset(&result, 0, sizeof(result));
+    result.rows = 1;
+    result.total = UINT64_MAX;
+    result.at = sce_optional_int64_some(INT64_C(9007199254740993));
+    result.label = sce_optional_string_16_none();
+    result.hit = sce_optional_bool_none();
+    const answer_t want = {1u, 1u, UINT64_MAX, true, INT64_C(9007199254740993), false, "", false, false};
+    return complete_and_expect("2^53 + 1 and the largest uint64", &result, &want);
+}
+
+// The two ends of the int64 range are each published exactly, beside a uint64 that
+// is past the int64 range.
+static int the_int64_extremes_arrive_exactly(void) {
+    statechart_host_invoker_optional_lookup_result_t result;
+    memset(&result, 0, sizeof(result));
+    result.rows = 1;
+    result.total = UINT64_C(9223372036854775808);
+    result.at = sce_optional_int64_some(INT64_MIN);
+    result.label = sce_optional_string_16_none();
+    result.hit = sce_optional_bool_none();
+    const answer_t lowest = {1u, 1u, UINT64_C(9223372036854775808), true, INT64_MIN, false, "", false, false};
+    int bad = complete_and_expect("the lowest int64", &result, &lowest);
+    result.at = sce_optional_int64_some(INT64_MAX);
+    const answer_t highest = {1u, 1u, UINT64_C(9223372036854775808), true, INT64_MAX, false, "", false, false};
+    bad |= complete_and_expect("the highest int64", &result, &highest);
+    return bad;
+}
+
+// The text the typed completion writes for a record is a JSON in which `rows` is a
+// bare number and `total` and `at` are quoted digits. The writer is a static
+// function of the generated source, so the text cannot be read back from it: this
+// hands the engine that exact text through the untyped completion, and the machine
+// publishes the very values the typed completion of the same record publishes.
+static int the_wire_text_of_a_64_bit_field_is_its_quoted_digits(void) {
+    static statechart_host_invoker_optional_t sm;
+    statechart_host_invoker_optional_x_sce_host_invoker_t table;
+    lookup_host_t host;
+    if (!boot_asking(&sm, &table, &host)) {
+        statechart_host_invoker_optional_destroy(&sm);
+        return 1;
+    }
+    int bad = 0;
+    if (!statechart_host_invoker_optional_complete_host_invoke(
+            &sm, DECLARED_TYPE, "lookup", host.token,
+            "{\"rows\":1,\"total\":\"18446744073709551615\",\"at\":\"9007199254740993\",\"label\":null,"
+            "\"hit\":null}")) {
+        (void)fprintf(stderr, "FAIL: a running invocation's completion was refused\n");
+        bad = 1;
+    }
+    statechart_host_invoker_optional_step(&sm);
+    const answer_t want = {1u, 1u, UINT64_MAX, true, INT64_C(9007199254740993), false, "", false, false};
+    bad |= expect_answer("quoted digits", &sm, &want);
+    statechart_host_invoker_optional_destroy(&sm);
+    return bad;
 }
 
 // A key left out is not an absent value: every field of the first revision of a
@@ -237,8 +310,8 @@ static int a_completion_that_leaves_a_key_out_is_refused(void) {
         return 1;
     }
     int bad = 0;
-    if (!statechart_host_invoker_optional_complete_host_invoke(&sm, DECLARED_TYPE, "lookup", host.token,
-                                                               "{\"rows\":1,\"label\":null,\"hit\":null}")) {
+    if (!statechart_host_invoker_optional_complete_host_invoke(
+            &sm, DECLARED_TYPE, "lookup", host.token, "{\"rows\":1,\"total\":\"1\",\"label\":null,\"hit\":null}")) {
         (void)fprintf(stderr, "FAIL: a running invocation's completion was refused\n");
         bad = 1;
     }
@@ -257,6 +330,9 @@ int main(void) {
     bad |= a_present_field_is_read_as_its_value();
     bad |= a_zero_an_empty_text_and_a_false_flag_are_values_and_not_absences();
     bad |= each_field_is_absent_or_present_on_its_own();
+    bad |= a_64_bit_value_past_2_pow_53_arrives_exactly();
+    bad |= the_int64_extremes_arrive_exactly();
+    bad |= the_wire_text_of_a_64_bit_field_is_its_quoted_digits();
     bad |= a_completion_that_leaves_a_key_out_is_refused();
     if (bad != 0) {
         return 1;

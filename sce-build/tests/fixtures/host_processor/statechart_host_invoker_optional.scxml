@@ -20,6 +20,8 @@
     answered         completions read, counted last: a delivery that does not
                      fit the record writes nothing here
     rows_seen        the count every answer carries
+    total_seen       the 64-bit total every answer carries, which crosses as
+                     the text of its digits and so arrives exact past 2^53 - 1
     at_present       whether the day came, `at_value` the day (0 when absent)
     label_present    whether the label came, `label_value` the label
     hit_known        whether the flag came, `hit_true` whether it was true
@@ -43,6 +45,7 @@
     <data id="hit" sce:type="optional&lt;bool&gt;" expr="null"/>
     <data id="answered" sce:type="uint8" expr="0" sce:direction="out"/>
     <data id="rows_seen" sce:type="uint8" expr="0" sce:direction="out"/>
+    <data id="total_seen" sce:type="uint64" expr="0" sce:direction="out"/>
     <data id="at_present" sce:type="bool" expr="false" sce:direction="out"/>
     <data id="at_value" sce:type="int64" expr="0" sce:direction="out"/>
     <data id="label_present" sce:type="bool" expr="false" sce:direction="out"/>
@@ -62,6 +65,7 @@
       <assign location="label" expr="_event.data.label"/>
       <assign location="hit" expr="_event.data.hit"/>
       <assign location="rows_seen" expr="_event.data.rows"/>
+      <assign location="total_seen" expr="_event.data.total"/>
       <assign location="at_present" expr="at !== null"/>
       <assign location="at_value" expr="at !== null ? at.value : 0"/>
       <assign location="label_present" expr="label !== null"/>

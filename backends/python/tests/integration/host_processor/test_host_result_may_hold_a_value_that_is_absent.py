@@ -58,6 +58,7 @@ class _Answer:
 
     answered: int = 0
     rows_seen: int = 0
+    total_seen: int = 0
     at_present: bool = False
     at_value: int = 0
     label_present: bool = False
@@ -71,6 +72,7 @@ def _read(engine) -> _Answer:
     return _Answer(
         answered=policy.v_answered,
         rows_seen=policy.v_rows_seen,
+        total_seen=policy.v_total_seen,
         at_present=policy.v_at_present,
         at_value=policy.v_at_value,
         label_present=policy.v_label_present,
@@ -108,16 +110,17 @@ def _complete(result) -> _Answer:
 def test_an_absent_field_is_read_as_absent() -> None:
     """Every field that may be absent is: the machine reads three absent values
     and the count every answer carries."""
-    got = _complete(_sm.LookupResult(rows=3, at=None, label=None, hit=None))
-    assert got == _Answer(answered=1, rows_seen=3), "an all-absent answer"
+    got = _complete(_sm.LookupResult(rows=3, total=5, at=None, label=None, hit=None))
+    assert got == _Answer(answered=1, rows_seen=3, total_seen=5), "an all-absent answer"
 
 
 def test_a_present_field_is_read_as_its_value() -> None:
     """Every field is present: the machine reads each value."""
-    got = _complete(_sm.LookupResult(rows=4, at=41, label="ab", hit=True))
+    got = _complete(_sm.LookupResult(rows=4, total=5, at=41, label="ab", hit=True))
     assert got == _Answer(
         answered=1,
         rows_seen=4,
+        total_seen=5,
         at_present=True,
         at_value=41,
         label_present=True,
@@ -130,17 +133,28 @@ def test_a_present_field_is_read_as_its_value() -> None:
 def test_a_zero_an_empty_text_and_a_false_flag_are_values_and_not_absences() -> None:
     """A zero, an empty text and a false flag are values, not absences: each is
     present, and is read as itself."""
-    got = _complete(_sm.LookupResult(rows=1, at=0, label="", hit=False))
+    got = _complete(_sm.LookupResult(rows=1, total=0, at=0, label="", hit=False))
     assert got == _Answer(
-        answered=1, rows_seen=1, at_present=True, label_present=True, hit_known=True
+        answered=1,
+        rows_seen=1,
+        total_seen=0,
+        at_present=True,
+        label_present=True,
+        hit_known=True,
     ), "zero, empty and false are present"
 
 
 def test_each_field_is_absent_or_present_on_its_own() -> None:
     """Each field is independent: a day with no label and a flag."""
-    got = _complete(_sm.LookupResult(rows=2, at=7, label=None, hit=True))
+    got = _complete(_sm.LookupResult(rows=2, total=5, at=7, label=None, hit=True))
     assert got == _Answer(
-        answered=1, rows_seen=2, at_present=True, at_value=7, hit_known=True, hit_true=True
+        answered=1,
+        rows_seen=2,
+        total_seen=5,
+        at_present=True,
+        at_value=7,
+        hit_known=True,
+        hit_true=True,
     ), "a mixed answer"
 
 
@@ -148,11 +162,11 @@ def test_the_record_is_written_with_null_for_an_absent_value() -> None:
     """The record's JSON writes the key of every field, ``null`` where the value
     is absent, in the order the schema declares them. The day is absent in both,
     so that what is held is the key, the ``null`` and the other values' own
-    spelling, not how a 64-bit integer is written."""
-    absent = _sm.LookupResult(rows=3, at=None, label=None, hit=None)
-    assert absent.wire() == '{"rows":3,"at":null,"label":null,"hit":null}'
-    mixed = _sm.LookupResult(rows=3, at=None, label="ab", hit=False)
-    assert mixed.wire() == '{"rows":3,"at":null,"label":"ab","hit":false}'
+    spelling; the total is a 64-bit integer, written as the text of its digits."""
+    absent = _sm.LookupResult(rows=3, total=5, at=None, label=None, hit=None)
+    assert absent.wire() == '{"rows":3,"total":"5","at":null,"label":null,"hit":null}'
+    mixed = _sm.LookupResult(rows=3, total=5, at=None, label="ab", hit=False)
+    assert mixed.wire() == '{"rows":3,"total":"5","at":null,"label":"ab","hit":false}'
 
 
 def test_a_completion_that_leaves_a_key_out_is_refused() -> None:
@@ -162,7 +176,44 @@ def test_a_completion_that_leaves_a_key_out_is_refused() -> None:
     payload the data does not fit is, and the machine reads no answer."""
     engine, token = _asking()
     assert engine.complete_host_invoke(
-        DECLARED_TYPE, "lookup", token, '{"rows":1,"label":null,"hit":null}'
+        DECLARED_TYPE, "lookup", token, '{"rows":1,"total":"0","label":null,"hit":null}'
     ), "a running invocation's completion was refused"
     engine.advance_time(0)
     assert _read(engine).answered == 0, "a record without `at` was read as an answer"
+
+
+def test_a_64_bit_value_past_2_to_the_53_reaches_the_machine_exactly() -> None:
+    """A day of 2^53 + 1 and the largest uint64 total cross as the text of their
+    digits, so the machine publishes exactly the values the host handed in, which
+    a double could not hold."""
+    got = _complete(
+        _sm.LookupResult(
+            rows=1, total=18446744073709551615, at=9007199254740993, label=None, hit=None
+        )
+    )
+    assert got.answered == 1, "the completion was read as one answer"
+    assert got.at_present, "the day came"
+    assert got.at_value == 9007199254740993, "the day past 2^53 - 1 is exact"
+    assert got.total_seen == 18446744073709551615, "the largest uint64 is exact"
+
+
+def test_the_int64_extremes_are_published_exactly() -> None:
+    """The smallest and the largest int64 day each reach the machine as
+    themselves."""
+    for day in (-9223372036854775808, 9223372036854775807):
+        got = _complete(_sm.LookupResult(rows=1, total=0, at=day, label=None, hit=None))
+        assert got.answered == 1, f"the day {day} was read as one answer"
+        assert got.at_present, f"the day {day} came"
+        assert got.at_value == day, f"the day {day} is exact"
+
+
+def test_the_record_writes_a_64_bit_field_as_the_text_of_its_digits() -> None:
+    """The total and the day are quoted digit strings in the record's JSON while
+    the count, which is not 64-bit, stays a bare number."""
+    record = _sm.LookupResult(
+        rows=1, total=18446744073709551615, at=9007199254740993, label=None, hit=None
+    )
+    assert record.wire() == (
+        '{"rows":1,"total":"18446744073709551615","at":"9007199254740993",'
+        '"label":null,"hit":null}'
+    )

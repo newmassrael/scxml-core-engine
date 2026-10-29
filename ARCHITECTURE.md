@@ -758,7 +758,10 @@ bits, so no engine's float parser is the one deciding), checked against Node's
 
 A 64-bit integer (`int64`, `uint64`) is not written as a JSON number at all: it
 crosses as the text of its digits, a JSON string (`"9007199254740993"`), in a
-`<param>`, a `<donedata>` pair and the `data` a typed `raise<Event>` writes. A
+`<param>`, a `<donedata>` pair, the `data` a typed `raise<Event>` writes and the
+record a host completes a typed `<invoke>` with (`sce:result`; the generated
+record's `wire()` of each backend, which share the spelling an inject seam
+writes a payload field with). A
 reader that takes a JSON number through a double carries one past 2^53 - 1 with
 its low bits wrong and no error, so no number could be written for it that every
 engine reads alike. A typed field of those widths is read from the digits, or from

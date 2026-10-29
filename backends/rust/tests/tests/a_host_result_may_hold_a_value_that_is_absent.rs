@@ -67,6 +67,7 @@ fn asking() -> (Engine<Policy>, u64) {
 struct Answer {
     answered: u8,
     rows_seen: u8,
+    total_seen: u64,
     at_present: bool,
     at_value: i64,
     label_present: bool,
@@ -80,6 +81,7 @@ fn read(engine: &Engine<Policy>) -> Answer {
     Answer {
         answered: policy.answered(),
         rows_seen: policy.rows_seen(),
+        total_seen: policy.total_seen(),
         at_present: policy.at_present(),
         at_value: policy.at_value(),
         label_present: policy.label_present(),
@@ -107,6 +109,7 @@ fn complete(result: LookupResult) -> Answer {
 fn an_absent_field_is_read_as_absent() {
     let got = complete(LookupResult {
         rows: 3,
+        total: 5,
         at: None,
         label: None,
         hit: None,
@@ -116,6 +119,7 @@ fn an_absent_field_is_read_as_absent() {
         Answer {
             answered: 1,
             rows_seen: 3,
+            total_seen: 5,
             ..Answer::default()
         },
         "an all-absent answer"
@@ -127,6 +131,7 @@ fn an_absent_field_is_read_as_absent() {
 fn a_present_field_is_read_as_its_value() {
     let got = complete(LookupResult {
         rows: 4,
+        total: 40,
         at: Some(41),
         label: Some("ab".to_string()),
         hit: Some(true),
@@ -136,6 +141,7 @@ fn a_present_field_is_read_as_its_value() {
         Answer {
             answered: 1,
             rows_seen: 4,
+            total_seen: 40,
             at_present: true,
             at_value: 41,
             label_present: true,
@@ -153,6 +159,7 @@ fn a_present_field_is_read_as_its_value() {
 fn a_zero_an_empty_text_and_a_false_flag_are_values_and_not_absences() {
     let got = complete(LookupResult {
         rows: 1,
+        total: 0,
         at: Some(0),
         label: Some(String::new()),
         hit: Some(false),
@@ -176,6 +183,7 @@ fn a_zero_an_empty_text_and_a_false_flag_are_values_and_not_absences() {
 fn each_field_is_absent_or_present_on_its_own() {
     let got = complete(LookupResult {
         rows: 2,
+        total: 9,
         at: Some(7),
         label: None,
         hit: Some(true),
@@ -185,6 +193,7 @@ fn each_field_is_absent_or_present_on_its_own() {
         Answer {
             answered: 1,
             rows_seen: 2,
+            total_seen: 9,
             at_present: true,
             at_value: 7,
             hit_known: true,
@@ -196,31 +205,87 @@ fn each_field_is_absent_or_present_on_its_own() {
 }
 
 /// The record's JSON writes the key of every field, `null` where the value is
-/// absent, in the order the schema declares them. The day is absent in both, so
-/// that what is held is the key, the `null` and the other values' own spelling,
-/// not how a 64-bit integer is written.
+/// absent, in the order the schema declares them. A 64-bit integer is written as
+/// the text of its digits (`total` is one whether or not a value is absent), so
+/// the day being absent in both leaves what is held here the key, the `null` and
+/// the other values' own spelling.
 #[test]
 fn the_record_is_written_with_null_for_an_absent_value() {
     let absent = LookupResult {
         rows: 3,
+        total: 5,
         at: None,
         label: None,
         hit: None,
     };
     assert_eq!(
         absent.wire().as_str(),
-        r#"{"rows":3, "at":null, "label":null, "hit":null}"#
+        r#"{"rows":3, "total":"5", "at":null, "label":null, "hit":null}"#
     );
     let mixed = LookupResult {
         rows: 3,
+        total: 5,
         at: None,
         label: Some("ab".to_string()),
         hit: Some(false),
     };
     assert_eq!(
         mixed.wire().as_str(),
-        r#"{"rows":3, "at":null, "label":"ab", "hit":false}"#
+        r#"{"rows":3, "total":"5", "at":null, "label":"ab", "hit":false}"#
     );
+}
+
+/// A 64-bit integer crosses as the text of its digits, so the record the host
+/// completes with is read exactly past 2^53 - 1, where a JSON number held in a
+/// double is not: the first integer a double cannot hold, and the greatest value
+/// of each width.
+#[test]
+fn a_64_bit_field_crosses_as_the_text_of_its_digits() {
+    let wide = LookupResult {
+        rows: 1,
+        total: u64::MAX,
+        at: Some(9_007_199_254_740_993),
+        label: None,
+        hit: None,
+    };
+    assert_eq!(
+        wide.wire().as_str(),
+        r#"{"rows":1, "total":"18446744073709551615", "at":"9007199254740993", "label":null, "hit":null}"#
+    );
+    for (name, total, at) in [
+        (
+            "the first integer a double cannot hold",
+            9_007_199_254_740_993_u64,
+            9_007_199_254_740_993_i64,
+        ),
+        ("the greatest of each width", u64::MAX, i64::MAX),
+        ("the least signed value", 0, i64::MIN),
+        (
+            "the greatest integer a double holds exactly",
+            9_007_199_254_740_991,
+            -9_007_199_254_740_991,
+        ),
+    ] {
+        let got = complete(LookupResult {
+            rows: 1,
+            total,
+            at: Some(at),
+            label: None,
+            hit: None,
+        });
+        assert_eq!(
+            got,
+            Answer {
+                answered: 1,
+                rows_seen: 1,
+                total_seen: total,
+                at_present: true,
+                at_value: at,
+                ..Answer::default()
+            },
+            "{name}"
+        );
+    }
 }
 
 /// A key left out is not an absent value: every field of the first revision of a
@@ -235,7 +300,7 @@ fn a_completion_that_leaves_a_key_out_is_refused() {
             DECLARED_TYPE,
             "lookup",
             token,
-            r#"{"rows":1,"label":null,"hit":null}"#
+            r#"{"rows":1,"total":"0","label":null,"hit":null}"#
         ),
         "a running invocation's completion was refused"
     );

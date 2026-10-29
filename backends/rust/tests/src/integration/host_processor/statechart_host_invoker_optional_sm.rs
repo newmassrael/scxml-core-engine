@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d2a16315bda3b311baf737203d9e9fa84cdbea31907669fbc8b60f205f09fef9
+// source-hash: 30a4d2a43649b94d4023aae2dd597f2cb5c56349b715cba31e1e7b288f7c348a
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -78,8 +78,8 @@
 // closure; this one suspicious-category lint reads the `match` of a constant
 // default as a hand-written `unwrap_or_default`.
 #![allow(clippy::manual_unwrap_or_default)]
-#![doc = "SCE-MAP: statechart_host_invoker_optional.scxml:36 :: _machine"]
-// SCE-MAP: statechart_host_invoker_optional.scxml:36 :: _machine
+#![doc = "SCE-MAP: statechart_host_invoker_optional.scxml:38 :: _machine"]
+// SCE-MAP: statechart_host_invoker_optional.scxml:38 :: _machine
 
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
@@ -147,6 +147,7 @@ impl StatechartHostInvokerOptionalEvent {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct StatechartHostInvokerOptionalDoneInvokeLookupPayload {
     pub rows: u8,
+    pub total: u64,
     pub at: Option<i64>,
     pub label: Option<::sce_rust_runtime::SceString>,
     pub hit: Option<bool>,
@@ -170,6 +171,7 @@ pub enum StatechartHostInvokerOptionalPayload {
 pub struct StatechartHostInvokerOptionalData {
     pub answered: u8,
     pub rows_seen: u8,
+    pub total_seen: u64,
     pub at_present: bool,
     pub at_value: i64,
     pub label_present: bool,
@@ -207,6 +209,7 @@ impl StatechartHostInvokerOptionalObserve for Engine<StatechartHostInvokerOption
             data: StatechartHostInvokerOptionalData {
                 answered: policy.answered,
                 rows_seen: policy.rows_seen,
+                total_seen: policy.total_seen,
                 at_present: policy.at_present,
                 at_value: policy.at_value,
                 label_present: policy.label_present,
@@ -323,10 +326,10 @@ impl StatechartHostInvokerOptionalPersist for Engine<StatechartHostInvokerOption
 
     const SHAPE: ::sce_rust_runtime::saved_state::SavedShape =
         ::sce_rust_runtime::saved_state::SavedShape {
-            first: "c17bcc6f983205f0e7b4f229d29e6652ab75ac153a4e27f397b78dba183d4fb4",
-            revised: "0aeeff757f0470f02484f9f28d5b4ba1a105ea1f3e2c07ba2e9c27caadf0bce8",
-            format2_first: "c17bcc6f983205f0e7b4f229d29e6652ab75ac153a4e27f397b78dba183d4fb4",
-            format2_revised: "0aeeff757f0470f02484f9f28d5b4ba1a105ea1f3e2c07ba2e9c27caadf0bce8",
+            first: "215f8f7773ef0b4faa01faac01fab1e5588f7a039736bfa1577aa9e16ac84f99",
+            revised: "a4380b325483055654bfe0eb91b7aa8dfa0ae8bc7a9c7dbf2af667525727a907",
+            format2_first: "215f8f7773ef0b4faa01faac01fab1e5588f7a039736bfa1577aa9e16ac84f99",
+            format2_revised: "a4380b325483055654bfe0eb91b7aa8dfa0ae8bc7a9c7dbf2af667525727a907",
             records: &[],
             enums: &[],
         };
@@ -366,6 +369,10 @@ impl StatechartHostInvokerOptionalPersist for Engine<StatechartHostInvokerOption
                 (
                     "rows_seen".to_string(),
                     ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.rows_seen),
+                ),
+                (
+                    "total_seen".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.total_seen),
                 ),
                 (
                     "at_present".to_string(),
@@ -424,6 +431,10 @@ impl StatechartHostInvokerOptionalPersist for Engine<StatechartHostInvokerOption
         let _: u8 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("rows_seen")?,
             "rows_seen",
+        )?;
+        let _: u64 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("total_seen")?,
+            "total_seen",
         )?;
         let _: bool = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("at_present")?,
@@ -486,6 +497,10 @@ impl StatechartHostInvokerOptionalPersist for Engine<StatechartHostInvokerOption
             saved.variable("rows_seen")?,
             "rows_seen",
         )?;
+        policy.total_seen = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("total_seen")?,
+            "total_seen",
+        )?;
         policy.at_present = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("at_present")?,
             "at_present",
@@ -521,6 +536,7 @@ impl StatechartHostInvokerOptionalPersist for Engine<StatechartHostInvokerOption
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct StatechartHostInvokerOptionalLookupResult {
     pub rows: u8,
+    pub total: u64,
     pub at: Option<i64>,
     pub label: Option<::sce_rust_runtime::SceString>,
     pub hit: Option<bool>,
@@ -530,8 +546,9 @@ impl StatechartHostInvokerOptionalLookupResult {
     /// The JSON `done.invoke.lookup` carries this record as.
     pub fn wire(&self) -> ::sce_rust_runtime::SceString {
         ::sce_rust_runtime::payload_wire(format_args!(
-            "{{\"rows\":{}, \"at\":{}, \"label\":{}, \"hit\":{}}}",
+            "{{\"rows\":{}, \"total\":\"{}\", \"at\":{}, \"label\":{}, \"hit\":{}}}",
             self.rows,
+            self.total,
             ::sce_rust_runtime::event_payload::optional_json(
                 self.at.as_ref(),
                 |sce_present| format!("\"{}\"", sce_present)
@@ -624,6 +641,7 @@ pub struct StatechartHostInvokerOptionalInvokeParams {
     pub hit: Option<bool>,
     pub answered: Option<u8>,
     pub rows_seen: Option<u8>,
+    pub total_seen: Option<u64>,
     pub at_present: Option<bool>,
     pub at_value: Option<i64>,
     pub label_present: Option<bool>,
@@ -651,6 +669,8 @@ pub struct StatechartHostInvokerOptionalPolicy {
     answered: u8,
     /// W3C SCXML 5.2: the `rows_seen` datamodel variable, published (`sce:direction="out"`).
     rows_seen: u8,
+    /// W3C SCXML 5.2: the `total_seen` datamodel variable, published (`sce:direction="out"`).
+    total_seen: u64,
     /// W3C SCXML 5.2: the `at_present` datamodel variable, published (`sce:direction="out"`).
     at_present: bool,
     /// W3C SCXML 5.2: the `at_value` datamodel variable, published (`sce:direction="out"`).
@@ -696,6 +716,7 @@ impl StatechartHostInvokerOptionalPolicy {
         let hit: Option<bool> = None;
         let answered: u8 = 0;
         let rows_seen: u8 = 0;
+        let total_seen: u64 = 0;
         let at_present: bool = false;
         let at_value: i64 = 0;
         let label_present: bool = false;
@@ -709,6 +730,7 @@ impl StatechartHostInvokerOptionalPolicy {
             hit,
             answered,
             rows_seen,
+            total_seen,
             at_present,
             at_value,
             label_present,
@@ -780,6 +802,9 @@ impl StatechartHostInvokerOptionalPolicy {
         if let Some(value) = params.rows_seen {
             self.rows_seen = value;
         }
+        if let Some(value) = params.total_seen {
+            self.total_seen = value;
+        }
         if let Some(value) = params.at_present {
             self.at_present = value;
         }
@@ -810,6 +835,12 @@ impl StatechartHostInvokerOptionalPolicy {
     /// holds now. Only the machine writes it.
     pub fn rows_seen(&self) -> u8 {
         self.rows_seen
+    }
+
+    /// W3C SCXML 5.2: what the published `total_seen` datamodel variable
+    /// holds now. Only the machine writes it.
+    pub fn total_seen(&self) -> u64 {
+        self.total_seen
     }
 
     /// W3C SCXML 5.2: what the published `at_present` datamodel variable
@@ -1189,6 +1220,7 @@ impl StatePolicy for StatechartHostInvokerOptionalPolicy {
                 self.pending_payload = StatechartHostInvokerOptionalPayload::DoneInvokeLookup(
                     StatechartHostInvokerOptionalDoneInvokeLookupPayload {
                         rows: fields.unsigned::<u8>("rows")?,
+                        total: fields.unsigned64("total")?,
                         at: fields.optional("at", |fields| Ok(fields.signed64("at")?))?,
                         label: fields.optional("label", |fields| Ok(fields.text("label")?))?,
                         hit: fields.optional("hit", |fields| Ok(fields.truth("hit")?))?,
@@ -1205,8 +1237,8 @@ impl StatePolicy for StatechartHostInvokerOptionalPolicy {
     // ======================================================================
 
     // W3C SCXML 3.7: Execute <onentry> actions for a state
-    #[doc = "SCE-MAP: statechart_host_invoker_optional.scxml:36 :: _machine"]
-    // SCE-MAP: statechart_host_invoker_optional.scxml:36 :: _machine
+    #[doc = "SCE-MAP: statechart_host_invoker_optional.scxml:38 :: _machine"]
+    // SCE-MAP: statechart_host_invoker_optional.scxml:38 :: _machine
     fn execute_entry_actions(
         &mut self,
         state: Self::State,
@@ -1215,7 +1247,7 @@ impl StatePolicy for StatechartHostInvokerOptionalPolicy {
     ) {
         match state {
             StatechartHostInvokerOptionalState::Asking => {
-                // SCE-MAP: statechart_host_invoker_optional.scxml:58 :: asking :: _state_body
+                // SCE-MAP: statechart_host_invoker_optional.scxml:61 :: asking :: _state_body
                 // §scxml-6.4.1: `type` names an invoker the HOST declared to
                 // this build. Deferred exactly like the refused arm above and
                 // for the same reason — §scxml-6.4 orders invokes after the
@@ -1246,8 +1278,8 @@ impl StatePolicy for StatechartHostInvokerOptionalPolicy {
     // recorded runs nothing.
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
-    #[doc = "SCE-MAP: statechart_host_invoker_optional.scxml:36 :: _machine"]
-    // SCE-MAP: statechart_host_invoker_optional.scxml:36 :: _machine
+    #[doc = "SCE-MAP: statechart_host_invoker_optional.scxml:38 :: _machine"]
+    // SCE-MAP: statechart_host_invoker_optional.scxml:38 :: _machine
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
@@ -1285,8 +1317,8 @@ impl StatePolicy for StatechartHostInvokerOptionalPolicy {
     // the first of `state`'s own transitions, in document order, that `event`
     // enables. The engine walks the atomic states and their ancestors and
     // keeps the ordered set. `Event::Null` asks for eventless transitions.
-    #[doc = "SCE-MAP: statechart_host_invoker_optional.scxml:36 :: _machine"]
-    // SCE-MAP: statechart_host_invoker_optional.scxml:36 :: _machine
+    #[doc = "SCE-MAP: statechart_host_invoker_optional.scxml:38 :: _machine"]
+    // SCE-MAP: statechart_host_invoker_optional.scxml:38 :: _machine
     fn first_enabled_transition(
         &mut self,
         state: Self::State,
@@ -1332,8 +1364,8 @@ impl StatePolicy for StatechartHostInvokerOptionalPolicy {
 
     // W3C SCXML 3.13: a transition's executable content, run by the engine
     // between the microstep's exits and its entries.
-    #[doc = "SCE-MAP: statechart_host_invoker_optional.scxml:36 :: _machine"]
-    // SCE-MAP: statechart_host_invoker_optional.scxml:36 :: _machine
+    #[doc = "SCE-MAP: statechart_host_invoker_optional.scxml:38 :: _machine"]
+    // SCE-MAP: statechart_host_invoker_optional.scxml:38 :: _machine
     fn execute_transition_content(
         &mut self,
         source: Self::State,
@@ -1344,7 +1376,7 @@ impl StatePolicy for StatechartHostInvokerOptionalPolicy {
             StatechartHostInvokerOptionalState::Asking => {
                 match transition_index {
                     0 => {
-                        // SCE-MAP: statechart_host_invoker_optional.scxml:60 :: asking :: _transition_0
+                        // SCE-MAP: statechart_host_invoker_optional.scxml:63 :: asking :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
                         let ev = match &self.pending_payload {
                             StatechartHostInvokerOptionalPayload::DoneInvokeLookup(ev) => {
@@ -1377,6 +1409,9 @@ impl StatePolicy for StatechartHostInvokerOptionalPolicy {
 
                             // W3C SCXML 5.3: <assign location="rows_seen">
                             self.rows_seen = ev.rows;
+
+                            // W3C SCXML 5.3: <assign location="total_seen">
+                            self.total_seen = ev.total;
 
                             // W3C SCXML 5.3: <assign location="at_present">
                             self.at_present = self.at.is_some();

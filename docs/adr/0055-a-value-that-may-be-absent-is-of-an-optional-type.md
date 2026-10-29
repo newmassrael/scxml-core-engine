@@ -299,7 +299,18 @@ set reaches the lowering, which writes a proven read without any failure plumbin
 **On the event wire (`_event.data`), an absent value is JSON `null` and a present one is the
 JSON `T` already writes** (a 64-bit integer as the text of its digits, an enum as its variant's
 declared name). A missing key keeps the one meaning ADR 0044 gave it — the sender's revision does
-not have the field — and `null` is the one spelling of absence. So:
+not have the field — and `null` is the one spelling of absence.
+
+*The text of its digits is a JSON string* (`"9007199254740993"`), the form the 64-bit contract
+fixes (ARCHITECTURE.md, "JSON Number Text"), never a bare number: a reader that takes a number
+through a double refuses one past 2^53 - 1, so a present `optional<int64>` is the quoted digits
+and an absent one `null`. This holds for the record a host completes a typed `<invoke>` with as
+for every other payload. Go, Python and C++ wrote that record's 64-bit fields as bare numbers
+(read from each generator on 2026-10-29), which is a number past 2^53 - 1 for a day of 2^53 + 1
+or a total of the greatest `uint64`, and the contract has every reader refuse one as
+`error.execution`. They now write the fields through the spelling their inject seams use
+(`go_payload_wire_value`, `python_payload_wire_value`, `cpp_payload_data_item`), as Rust, Kotlin
+and C11 always did; the tests of step 10 hold each backend to it. So:
 
 | The delivery | A field of `optional<T>` of the first revision | One a later revision added (`sce:since`) |
 |---|---|---|

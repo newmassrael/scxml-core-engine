@@ -47,6 +47,16 @@ const UNBOUNDED_ANSWER: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
   </datamodel>
 </scxml>"#;
 
+/// A record holding a 64-bit integer that never is absent beside one that may be.
+const WIDE_ANSWER: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       name="answer" sce:kind="event-schema" sce:event-name="answer.record">
+  <datamodel>
+    <data id="total" sce:type="uint64" sce:direction="in"/>
+    <data id="due" sce:type="optional&lt;int64&gt;" sce:direction="in"/>
+  </datamodel>
+</scxml>"#;
+
 /// A machine of the data model `datamodel` whose one state runs a host invoke
 /// completing with the record, named `probe` as the file is. `outcome` counts
 /// the completions, which is all the machine does with one.
@@ -223,8 +233,9 @@ fn python_holds_an_absent_field_as_an_optional_and_writes_it_as_null() {
         "blob: Optional[bytes]",
         "id: int\n",
         // A `None` is what `json.dumps` writes as `null`; a byte string is
-        // written as its Latin-1 text only when it is present.
-        "\"due\": self.due",
+        // written as its Latin-1 text, and a 64-bit integer as the text of its
+        // digits, only when it is present.
+        "\"due\": None if self.due is None else str(self.due)",
         "None if self.blob is None else self.blob.decode(\"latin-1\")",
     ] {
         assert!(
@@ -314,6 +325,85 @@ fn c11_holds_an_absent_field_in_the_struct_of_its_element_and_includes_it() {
             );
         }
     }
+}
+
+/// A 64-bit integer crosses as the text of its digits (ARCHITECTURE.md, "JSON
+/// Number Text"), in a record the host completes an invoke with as in every other
+/// payload: a reader that takes a JSON number through a double carries one past
+/// 2^53 - 1 with its low bits wrong, and every engine refuses such a number. Each
+/// backend's record writer spells a present `uint64` and `int64` so, and a
+/// present optional one too; the Kotlin writer hands the integer to the encoder
+/// that quotes it (`EventPayload.literal`), and its runtime test pins the text.
+#[test]
+fn every_backend_writes_a_64_bit_result_field_as_the_text_of_its_digits() {
+    let wide = |language: &str, datamodel: &str| {
+        let (ok, said, written) = run("generate", language, &machine(datamodel), WIDE_ANSWER);
+        assert!(
+            ok,
+            "{language} generates a 64-bit result field ({datamodel}):\n{said}"
+        );
+        written
+    };
+    let holds = |text: &str, needles: &[&str], what: &str| {
+        for needle in needles {
+            assert!(text.contains(needle), "{what} holds `{needle}`:\n{text}");
+        }
+    };
+    for datamodel in ["ecmascript", "sce-static"] {
+        let written = wide("rust", datamodel);
+        holds(
+            file(&written, "_sm.rs"),
+            &[
+                "\\\"total\\\":\\\"{}\\\"",
+                "|sce_present| format!(\"\\\"{}\\\"\", sce_present)",
+            ],
+            &format!("the Rust record ({datamodel})"),
+        );
+        let written = wide("go", datamodel);
+        holds(
+            file(&written, "_sm.go"),
+            &[
+                "sce.Uint64PayloadText(r.Total)",
+                "func(v int64) any { return sce.Int64PayloadText(v) }",
+            ],
+            &format!("the Go record ({datamodel})"),
+        );
+        let written = wide("c11", datamodel);
+        holds(
+            file(&written, "_sm.c"),
+            // A field that is never absent is written through the format of the
+            // record, an optional one through the wire writer.
+            &[
+                "\\\"total\\\":\\\"%llu\\\"",
+                "sce_forge_wire_wide_int(result->due.value)",
+            ],
+            &format!("the C11 record ({datamodel})"),
+        );
+    }
+    let written = wide("python", "ecmascript");
+    holds(
+        file(&written, "_sm.py"),
+        &[
+            "\"total\": str(self.total)",
+            "\"due\": None if self.due is None else str(self.due)",
+        ],
+        "the Python record",
+    );
+    let written = wide("cpp", "ecmascript");
+    holds(
+        file(&written, "_sm.h"),
+        &[
+            "field(\"total\", ::std::to_string(total))",
+            "field(\"due\", ::std::to_string(*due))",
+        ],
+        "the C++ record",
+    );
+    let written = wide("kotlin", "ecmascript");
+    holds(
+        file(&written, "Sm.kt"),
+        &["\"total\" to total", "\"due\" to due"],
+        "the Kotlin record",
+    );
 }
 
 /// A text with no `sce:max-size` has no buffer for the C11 struct that holds an

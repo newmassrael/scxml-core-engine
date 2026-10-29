@@ -4713,6 +4713,46 @@ fn go_payload_present_reader(
     }
 }
 
+/// The Python expression that spells `value`, a present value of the schema type
+/// `ty`, at the form it crosses the wire in, where that is not the value itself:
+/// shared by an inject seam's `data` and the record a host completes an `<invoke>`
+/// with, so the two cannot write one value two ways. `None` for a value
+/// `json.dumps` writes as it is.
+///
+/// ⚠ JSON has no byte string, and `json.dumps` REFUSES one, so a `bytes` field
+/// rides the wire as its byte-exact Latin-1 text (the lift reads it back the same
+/// way). An enum rides as the name its document declares for the value, and a
+/// 64-bit integer as the text of its digits (ARCHITECTURE.md, "JSON Number
+/// Text"): a number past 2^53 - 1 is refused by a reader on every engine.
+pub(crate) fn python_payload_wire_value(ty: &SceType, value: &str) -> Option<String> {
+    match ty {
+        SceType::Bytes => Some(format!("{value}.decode(\"latin-1\")")),
+        SceType::Enum(_) => Some(format!("{value}.sce_name")),
+        SceType::Uint64 | SceType::Int64 => Some(format!("str({value})")),
+        _ => None,
+    }
+}
+
+/// The Go expression that spells `value`, a present value of the schema type
+/// `ty`, at the form it crosses the wire in: the one spelling of a payload field
+/// shared by an inject seam's `Data` and the record a host completes an
+/// `<invoke>` with, so the two cannot write one value two ways.
+///
+/// A 64-bit integer crosses as the text of its digits (ARCHITECTURE.md, "JSON
+/// Number Text"): a reader that takes a JSON number through a double carries one
+/// past 2^53 - 1 with its low bits wrong, so a number past that is refused.
+pub(crate) fn go_payload_wire_value(ty: &SceType, value: &str) -> String {
+    match ty {
+        SceType::Bytes => format!("sce.BytesAsPayloadText({value})"),
+        // The name the enum document declares for the value, which is what
+        // the enum's `String` answers.
+        SceType::Enum(_) => format!("{value}.String()"),
+        SceType::Uint64 => format!("sce.Uint64PayloadText({value})"),
+        SceType::Int64 => format!("sce.Int64PayloadText({value})"),
+        _ => value.to_string(),
+    }
+}
+
 /// The Go expression that spells one EventSchema field for the inject seam's
 /// `Data`, the wire the script engine binds `_event.data` from.
 ///
@@ -4722,16 +4762,7 @@ fn go_payload_data_value(
     f: &SchemaField,
     static_enums: &[crate::forge::static_lowering::StaticEnumType],
 ) -> String {
-    let present = |value: &str| match f.sce_type.present_type() {
-        SceType::Bytes => format!("sce.BytesAsPayloadText({value})"),
-        // The name the enum document declares for the value, which is what
-        // the enum's `String` answers.
-        SceType::Enum(_) => format!("{value}.String()"),
-        // A 64-bit integer crosses as the text of its digits.
-        SceType::Uint64 => format!("sce.Uint64PayloadText({value})"),
-        SceType::Int64 => format!("sce.Int64PayloadText({value})"),
-        _ => value.to_string(),
-    };
+    let present = |value: &str| go_payload_wire_value(f.sce_type.present_type(), value);
     match &f.sce_type {
         FieldType::Scalar(_) => present(&f.id),
         // An optional field is written as `null` where it is absent: the key is
@@ -5345,7 +5376,7 @@ payload.{id} = held;\n            \
 /// is named by its id: a present value at the spelling its type deserves, and an
 /// optional one (docs/adr/0055) as `null` where it is absent, the key always
 /// written.
-fn cpp_payload_data_item(f: &SchemaField) -> String {
+pub(crate) fn cpp_payload_data_item(f: &SchemaField) -> String {
     let id = &f.id;
     // An enum rides as the name its document declares for the value, which the
     // enum's `sceLogName` answers; a 64-bit integer as the text of its digits.
@@ -6127,15 +6158,10 @@ pub fn build_python_event_payload(
             // lift reads it back the same way). Printable ASCII — what a bytes
             // guard compares — is the same characters either way.
             let value = held(&f.id);
-            let written = if matches!(present, SceType::Bytes) {
-                present_or_none(&format!("{value}.decode(\"latin-1\")"))
-            } else if matches!(present, SceType::Enum(_)) {
-                // An enum rides as the name its document declares for the value.
-                present_or_none(&format!("{value}.sce_name"))
-            } else if single {
+            let written = if single {
                 present_or_none(&format!("_as_single({value})"))
-            } else if wide {
-                present_or_none(&format!("str({value})"))
+            } else if let Some(text) = python_payload_wire_value(present, &value) {
+                present_or_none(&text)
             } else {
                 // A present value is written as it is, and an absent one as the
                 // `None` it is, which `json.dumps` writes as `null`.

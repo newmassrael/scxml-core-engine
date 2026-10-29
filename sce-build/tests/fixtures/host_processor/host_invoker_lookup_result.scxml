@@ -12,6 +12,10 @@
   is a field every completion carries. There is no sentinel day, no empty text
   that stands for "no label" and no second field saying whether `at` is
   meaningful.
+
+  `at` (int64) and `total` (uint64) are 64-bit: the record's JSON carries each
+  as the text of its digits, as every other payload does (ARCHITECTURE.md,
+  "JSON Number Text"), so a value past 2^53 - 1 reaches the machine exactly.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
@@ -20,6 +24,7 @@
        sce:event-name="lookup.result">
   <datamodel>
     <data id="rows" sce:type="uint8" sce:direction="in"/>
+    <data id="total" sce:type="uint64" sce:direction="in"/>
     <data id="at" sce:type="optional&lt;int64&gt;" sce:direction="in"/>
     <data id="label" sce:type="optional&lt;string&gt;" sce:max-size="16" sce:direction="in"/>
     <data id="hit" sce:type="optional&lt;bool&gt;" sce:direction="in"/>

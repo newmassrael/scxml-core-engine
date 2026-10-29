@@ -21,6 +21,7 @@
 package statechart_host_invoker_optional
 
 import (
+	"math"
 	"testing"
 
 	"github.com/newmassrael/sce-forge-runtime/optional"
@@ -83,6 +84,7 @@ func (s started) ask(t *testing.T) uint64 {
 type answer struct {
 	answered     uint8
 	rowsSeen     uint8
+	totalSeen    uint64
 	atPresent    bool
 	atValue      int64
 	labelPresent bool
@@ -96,6 +98,7 @@ func (s started) read() answer {
 	return answer{
 		answered:     p.Answered(),
 		rowsSeen:     p.RowsSeen(),
+		totalSeen:    p.TotalSeen(),
 		atPresent:    p.AtPresent(),
 		atValue:      p.AtValue(),
 		labelPresent: p.LabelPresent(),
@@ -123,11 +126,12 @@ func complete(t *testing.T, result StatechartHostInvokerOptionalLookupResult) an
 func TestAnAbsentFieldIsReadAsAbsent(t *testing.T) {
 	got := complete(t, StatechartHostInvokerOptionalLookupResult{
 		Rows:  3,
+		Total: 5,
 		At:    optional.None[int64](),
 		Label: optional.None[string](),
 		Hit:   optional.None[bool](),
 	})
-	want := answer{answered: 1, rowsSeen: 3}
+	want := answer{answered: 1, rowsSeen: 3, totalSeen: 5}
 	if got != want {
 		t.Errorf("an all-absent answer: got %+v, want %+v", got, want)
 	}
@@ -137,12 +141,13 @@ func TestAnAbsentFieldIsReadAsAbsent(t *testing.T) {
 func TestAPresentFieldIsReadAsItsValue(t *testing.T) {
 	got := complete(t, StatechartHostInvokerOptionalLookupResult{
 		Rows:  4,
+		Total: 40,
 		At:    optional.Some[int64](41),
 		Label: optional.Some("ab"),
 		Hit:   optional.Some(true),
 	})
 	want := answer{
-		answered: 1, rowsSeen: 4,
+		answered: 1, rowsSeen: 4, totalSeen: 40,
 		atPresent: true, atValue: 41,
 		labelPresent: true, labelValue: "ab",
 		hitKnown: true, hitTrue: true,
@@ -157,12 +162,13 @@ func TestAPresentFieldIsReadAsItsValue(t *testing.T) {
 func TestAZeroAnEmptyTextAndAFalseFlagAreValuesAndNotAbsences(t *testing.T) {
 	got := complete(t, StatechartHostInvokerOptionalLookupResult{
 		Rows:  1,
+		Total: 0,
 		At:    optional.Some[int64](0),
 		Label: optional.Some(""),
 		Hit:   optional.Some(false),
 	})
 	want := answer{
-		answered: 1, rowsSeen: 1,
+		answered: 1, rowsSeen: 1, totalSeen: 0,
 		atPresent: true, atValue: 0,
 		labelPresent: true, labelValue: "",
 		hitKnown: true, hitTrue: false,
@@ -176,12 +182,13 @@ func TestAZeroAnEmptyTextAndAFalseFlagAreValuesAndNotAbsences(t *testing.T) {
 func TestEachFieldIsAbsentOrPresentOnItsOwn(t *testing.T) {
 	got := complete(t, StatechartHostInvokerOptionalLookupResult{
 		Rows:  2,
+		Total: 9,
 		At:    optional.Some[int64](7),
 		Label: optional.None[string](),
 		Hit:   optional.Some(true),
 	})
 	want := answer{
-		answered: 1, rowsSeen: 2,
+		answered: 1, rowsSeen: 2, totalSeen: 9,
 		atPresent: true, atValue: 7,
 		hitKnown: true, hitTrue: true,
 	}
@@ -191,27 +198,70 @@ func TestEachFieldIsAbsentOrPresentOnItsOwn(t *testing.T) {
 }
 
 // The record's JSON writes the key of every field, `null` where the value is
-// absent, in the order the schema declares them. The day is absent in both, so
-// that what is held is the key, the `null` and the other values' own spelling,
-// not how a 64-bit integer is written.
+// absent, in the order the schema declares them. A 64-bit integer is written as
+// the text of its digits (`total` is one whether or not a value is absent), so
+// the day being absent in both leaves what is held here the key, the `null` and
+// the other values' own spelling.
 func TestTheRecordIsWrittenWithNullForAnAbsentValue(t *testing.T) {
 	absent := StatechartHostInvokerOptionalLookupResult{
 		Rows:  3,
+		Total: 5,
 		At:    optional.None[int64](),
 		Label: optional.None[string](),
 		Hit:   optional.None[bool](),
 	}
-	if got, want := absent.Wire(), `{"rows":3,"at":null,"label":null,"hit":null}`; got != want {
+	if got, want := absent.Wire(), `{"rows":3,"total":"5","at":null,"label":null,"hit":null}`; got != want {
 		t.Errorf("an all-absent record is %s, want %s", got, want)
 	}
 	mixed := StatechartHostInvokerOptionalLookupResult{
 		Rows:  3,
+		Total: 5,
 		At:    optional.None[int64](),
 		Label: optional.Some("ab"),
 		Hit:   optional.Some(false),
 	}
-	if got, want := mixed.Wire(), `{"rows":3,"at":null,"label":"ab","hit":false}`; got != want {
+	if got, want := mixed.Wire(), `{"rows":3,"total":"5","at":null,"label":"ab","hit":false}`; got != want {
 		t.Errorf("a record with a label and a false flag is %s, want %s", got, want)
+	}
+}
+
+// A 64-bit integer crosses as the text of its digits, so the record the host
+// completes with is read exactly past 2^53 - 1, where a JSON number held in a
+// double is not: the first integer a double cannot hold, and the greatest value
+// of each width.
+func TestA64BitFieldCrossesAsTheTextOfItsDigits(t *testing.T) {
+	wide := StatechartHostInvokerOptionalLookupResult{
+		Rows:  1,
+		Total: math.MaxUint64,
+		At:    optional.Some[int64](9007199254740993),
+		Label: optional.None[string](),
+		Hit:   optional.None[bool](),
+	}
+	want := `{"rows":1,"total":"18446744073709551615","at":"9007199254740993","label":null,"hit":null}`
+	if got := wide.Wire(); got != want {
+		t.Errorf("a record past 2^53 - 1 is %s, want %s", got, want)
+	}
+	for _, c := range []struct {
+		name  string
+		total uint64
+		at    int64
+	}{
+		{"the first integer a double cannot hold", 9007199254740993, 9007199254740993},
+		{"the greatest of each width", math.MaxUint64, math.MaxInt64},
+		{"the least signed value", 0, math.MinInt64},
+		{"the greatest integer a double holds exactly", 9007199254740991, -9007199254740991},
+	} {
+		got := complete(t, StatechartHostInvokerOptionalLookupResult{
+			Rows:  1,
+			Total: c.total,
+			At:    optional.Some(c.at),
+			Label: optional.None[string](),
+			Hit:   optional.None[bool](),
+		})
+		want := answer{answered: 1, rowsSeen: 1, totalSeen: c.total, atPresent: true, atValue: c.at}
+		if got != want {
+			t.Errorf("%s: got %+v, want %+v", c.name, got, want)
+		}
 	}
 }
 
@@ -222,7 +272,7 @@ func TestTheRecordIsWrittenWithNullForAnAbsentValue(t *testing.T) {
 func TestACompletionThatLeavesAKeyOutIsRefused(t *testing.T) {
 	s := newStarted()
 	token := s.ask(t)
-	data := `{"rows":1,"label":null,"hit":null}`
+	data := `{"rows":1,"total":"0","label":null,"hit":null}`
 	if !s.engine.CompleteHostInvoke(declaredType, "lookup", token, data) {
 		t.Fatal("a running invocation's completion was refused")
 	}
