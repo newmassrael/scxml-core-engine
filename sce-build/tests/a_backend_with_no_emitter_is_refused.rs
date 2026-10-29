@@ -232,24 +232,25 @@ fn an_algorithm_a_backend_writes_in_part_is_generated_and_the_rest_is_refused_by
 
 #[test]
 fn a_forge_document_is_refused_through_the_string_entry() {
-    // A kind no backend of this list writes, in whole or in part: a validator.
+    // A kind no backend of this list writes, in whole or in part: a timer.
     let document = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
-          version="1.0" sce:kind="validator" name="level_range">
-  <datamodel>
-    <data id="level" sce:type="int32" sce:direction="in" sce:range-max="30"/>
-    <data id="valid" sce:type="bool" sce:direction="out"/>
-  </datamodel></scxml>"#;
+       version="1.0" sce:kind="timer" name="diag_scheduler">
+  <sce:period>2s</sce:period>
+  <sce:reset-on event="diag.heartbeat"/>
+  <sce:cancel-on state-exit="diag.idle"/>
+  <sce:fire-event>diag.tick</sce:fire-event>
+</scxml>"#;
     for language in backends_with_no_emitter() {
         let error = compile_forge_from_string(
             document,
             DocumentLabel {
-                identifier: "level_range",
-                diagnostic_label: "level_range.scxml",
+                identifier: "diag_scheduler",
+                diagnostic_label: "diag_scheduler.scxml",
             },
             language,
         )
         .err()
-        .unwrap_or_else(|| panic!("{language:?} generated a validator it has no emitter for"));
+        .unwrap_or_else(|| panic!("{language:?} generated a timer it has no emitter for"));
         let text = format!("{error:?}");
         assert!(
             text.contains(language_wire_name(language)),
