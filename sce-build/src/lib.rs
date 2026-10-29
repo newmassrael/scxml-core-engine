@@ -3661,8 +3661,18 @@ impl BroadcastLogElementFacts {
             // `bytes` payload is the same copy. Nothing points into the buffer
             // a read decodes from, so there is no view to refuse.
             Language::Kotlin => false,
+            // Go's decoded struct owns what it read of a CBOR entry: the
+            // runtime's `CborReadText` and `CborReadBytes` copy the payload out of
+            // the cursor's buffer (`cborReadPayload` appends into a fresh slice,
+            // and a `string` is a copy by the language), so a text or byte-string
+            // entry holds no view of the buffer and nothing is left to copy it
+            // into. A positional `bytes` field of a non-CBOR codec does alias the
+            // cursor's buffer (`raw[off:]`), which is not this fact's shape: the
+            // typed read gives every entry a buffer of its own and nothing else
+            // writes it, so the alias keeps that buffer alive and stays valid.
+            Language::Go => false,
             // No template has landed for these, so none has decided yet.
-            Language::Cpp | Language::Go | Language::C11 | Language::Swift => false,
+            Language::Cpp | Language::C11 | Language::Swift => false,
         };
         borrows.then(|| {
             "a CBOR map with a string or byte string entry decodes to a value that borrows \

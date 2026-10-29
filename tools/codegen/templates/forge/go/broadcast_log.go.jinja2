@@ -1,0 +1,125 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{{ sce_map.source_marker(source_location, "go", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
+
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="broadcast-log")
+// Runtime: {{ runtime_dep }}
+// Do not edit — regenerate from the source SCXML file.
+//
+// ADR 0062 broadcast-log: a bounded log that one goroutine appends to and any
+// number of readers read, each by a cursor of its own. The document states the
+// contract (element type `{{ element_type }}`, {{ producers }} producer,
+// `{{ declared_progress }}`, the last {{ retention }} entries retained) and names no
+// algorithm; the algorithm is the runtime's sequence-locked ring, and the
+// memory ordering is part of it, not a choice.
+//
+// An entry is the element's wire bytes, never a value: the log stores the bytes
+// the element document's codec writes, so a slot holds no reference the
+// collector must follow, and a copy that was torn is thrown away unread.
+//
+// Operations (from `broadcastlog`, typed here over the element):
+//   Publish(publisher, &element) (uint64, error)
+//                          wait-free; the entry's sequence number
+//   Read(log, &reader) (broadcastlog.Read, *Element, error)
+//                          wait-free; the element is set only when the answer is
+//                          broadcastlog.ReadItem, and the answer says whether
+//                          that was an item, nothing new, or how many were missed
+// A reader is `log.ReaderOldest()`, `log.ReaderHead()` or `log.ReaderAt(n)` and
+// owns its cursor; the publisher is `log.Publisher()`, taken once.
+
+package {{ package }}
+
+import (
+	"github.com/newmassrael/sce-forge-runtime/broadcastlog"
+	"github.com/newmassrael/sce-forge-runtime/codec"
+{{ element_import_stmt }}
+)
+
+// Retention is the entries a reader may rely on (`<sce:retention>`): the last
+// Retention published.
+const Retention = {{ retention }}
+
+// Slots is the slots the log keeps: one more than the retention, because the
+// slot being overwritten is in flux and cannot be promised to a reader.
+const Slots = Retention + 1
+
+// MaxEncodedBytes is the most bytes the element `{{ element_type }}` encodes to,
+// read from its document when this package was generated.
+const MaxEncodedBytes = {{ max_bytes }}
+
+// Words is the 64-bit words an entry holds: one for the length of the encoded
+// element, then as many as MaxEncodedBytes bytes take at eight to a word, that is
+// 1 + ceil(MaxEncodedBytes / 8).
+const Words = 1 + (MaxEncodedBytes+7)/8
+
+// DeclaredProgress is what the document requires of publish and read
+// (`<sce:progress>`).
+const DeclaredProgress = "{{ declared_progress }}"
+
+// {{ pascal }} is the log: Slots slots of Words words. Its storage is allocated
+// when the log is built and never again.
+type {{ pascal }} = broadcastlog.Log
+
+// New{{ pascal }} returns an empty log of Retention entries of the element's size.
+func New{{ pascal }}() *{{ pascal }} {
+	return broadcastlog.New(Words, Slots)
+}
+
+// Publish publishes element: it encodes it into a buffer of MaxEncodedBytes
+// bytes, packs the length and the bytes (little-endian, eight to a word) into
+// Words words, and hands them to the runtime, which never refuses and never
+// waits. It returns the sequence number the entry took.
+//
+// An element that encodes to more than MaxEncodedBytes bytes is refused by the
+// codec (codec.ErrBufferOverflow from the bounded sink) and nothing is
+// published: an entry is never a truncated element.
+func Publish(publisher *broadcastlog.Publisher, element *{{ element_qualified }}) (uint64, error) {
+	var buffer [MaxEncodedBytes]byte
+	sink := codec.NewBoundedSink(buffer[:])
+	if err := element.Encode(sink); err != nil {
+		return 0, err
+	}
+	length := sink.Position()
+	var entry [Words]uint64
+	entry[0] = uint64(length)
+	for index, value := range buffer[:length] {
+		entry[1+index/8] |= uint64(value) << (8 * (index % 8))
+	}
+	return publisher.Publish(entry[:]), nil
+}
+
+// Read reads the entry at reader's cursor and decodes it. The runtime answers
+// ReadItem only after the copy it made was checked against the slot, which is
+// what makes decoding it safe: a torn copy is ReadLagged, never decoded. The
+// element is returned only for ReadItem, and is nil for every other answer.
+//
+// A stored length above MaxEncodedBytes is not a length this log wrote, and is
+// codec.ErrLengthOutOfRange and never an out-of-range slice. The reader has
+// moved past that entry either way.
+//
+// Every entry is decoded from a buffer of its own, which nothing else writes, so
+// a field of the element that is a view of the bytes it was decoded from stays
+// valid for as long as the element is held.
+func Read(log *{{ pascal }}, reader *broadcastlog.Reader) (broadcastlog.Read, *{{ element_qualified }}, error) {
+	var entry [Words]uint64
+	answer := log.Read(reader, entry[:])
+	if answer.Kind != broadcastlog.ReadItem {
+		return answer, nil, nil
+	}
+	stored := entry[0]
+	if stored > MaxEncodedBytes {
+		return answer, nil, codec.ErrLengthOutOfRange
+	}
+	encoded := make([]byte, int(stored))
+	for index := range encoded {
+		encoded[index] = byte(entry[1+index/8] >> (8 * (index % 8)))
+	}
+	cursor := codec.NewSceCursor(encoded)
+	element, err := {{ element_decode }}(&cursor)
+	if err != nil {
+		return answer, nil, err
+	}
+	return answer, element, nil
+}

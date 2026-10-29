@@ -21957,8 +21957,24 @@ fn go_element_import_statement(
     element_snake: &str,
     options: &crate::ForgeCompileOptions,
 ) -> Result<String, ForgeError> {
+    go_element_import_path(kind, document, element_type, element_snake, options)
+        .map(|path| format!("\t\"{path}\""))
+}
+
+/// The import path of the element document's package: the module prefix and the
+/// package directory, which is the snake-cased name of the document. The one
+/// place the path is spelled, for the statement above and for a file that
+/// imports the package under an alias ([`go_package_alias`]). A missing prefix is
+/// refused as [`go_element_import_statement`] describes.
+fn go_element_import_path(
+    kind: &str,
+    document: &str,
+    element_type: &str,
+    element_snake: &str,
+    options: &crate::ForgeCompileOptions,
+) -> Result<String, ForgeError> {
     match normalized_go_prefix(options) {
-        Some(prefix) if !prefix.is_empty() => Ok(format!("\t\"{prefix}/{element_snake}\"")),
+        Some(prefix) if !prefix.is_empty() => Ok(format!("{prefix}/{element_snake}")),
         _ => Err(ForgeError::from(GenerateError::InvalidConfig(format!(
             "{kind} '{document}': <sce:element-type \
              name=\"{element_type}\"/> on the Go backend requires \
@@ -22102,6 +22118,68 @@ fn render_queue_go_unsupported(
         )))
     })?;
     Ok(Some((format!("{snake}_unsupported.go"), code)))
+}
+
+/// Render a `<sce:kind="broadcast-log">` document for the Go backend (ADR 0062).
+/// The generated package names the log type over `sce-forge-runtime/broadcastlog`,
+/// sized from three numbers the document alone does not give and the build
+/// resolved ([`crate::BroadcastLogResolution`]): the retention, the element's
+/// largest encoded size, and whether the template can hold the element. It
+/// states them and the contract as constants, and gives typed `Publish` and
+/// `Read` functions over the element package's generated struct, which store and
+/// recover the element's wire bytes.
+///
+/// Every refusal that precedes the write is the one every language's render
+/// gives, from one function ([`resolve_broadcast_log_render_inputs`]); what is
+/// Go's own is the verdict on the element's shape
+/// ([`crate::BroadcastLogElementFacts::refusal_for`]) and the module prefix the
+/// element's package is imported by.
+///
+/// The element's package is imported under [`go_package_alias`], because the
+/// typed functions reach it in their bodies, where a local of the package's own
+/// name (a codec called `cursor`) would hide it. The stamp is 64 bits and Go's
+/// atomics are sequentially consistent, so [`judge_broadcast_log_stamp`] is not
+/// asked anything here, as for Rust.
+fn render_broadcast_log_go(
+    env: &minijinja::Environment<'_>,
+    m: &crate::forge::model::BroadcastLogModel,
+    _imports: &[ImportContext],
+    options: &crate::ForgeCompileOptions,
+) -> Result<String, ForgeError> {
+    let inputs = resolve_broadcast_log_render_inputs(m, crate::generator::Language::Go, options)?;
+    let element_snake = filters::to_snake_case(m.element_type.clone());
+    let element_pascal = filters::to_pascal_case(m.element_type.clone());
+    let element_path = go_element_import_path(
+        "broadcast-log",
+        &m.name,
+        &m.element_type,
+        &element_snake,
+        options,
+    )?;
+    let element_alias = go_package_alias(&element_snake);
+    let tmpl = env.get_template("broadcast_log.go.jinja2").map_err(|e| {
+        ForgeError::from(GenerateError::TemplateLoad(format!(
+            "broadcast_log.go.jinja2 (go): {e}"
+        )))
+    })?;
+    let ctx = minijinja::context! {
+        pascal => filters::to_pascal_case(m.name.clone()),
+        package => filters::to_snake_case(m.name.clone()),
+        element_type => &m.element_type,
+        element_import_stmt => format!("\t{element_alias} \"{element_path}\""),
+        element_qualified => format!("{element_alias}.{element_pascal}"),
+        element_decode => format!("{element_alias}.Decode{element_pascal}"),
+        retention => inputs.retention,
+        max_bytes => inputs.max_bytes,
+        producers => inputs.producers,
+        declared_progress => inputs.declared_progress,
+        runtime_dep => "github.com/newmassrael/sce-forge-runtime/broadcastlog",
+    };
+    tmpl.render(ctx).map_err(|e| {
+        ForgeError::from(GenerateError::TemplateRender(format!(
+            "broadcast_log.go.jinja2 (go): {e}"
+        )))
+    })
 }
 
 /// Render a `<sce:kind="bounded-collection">` document for the Rust
@@ -23366,10 +23444,12 @@ pub fn generate_go_with_imports(
         // Queue kind: see cpp dispatch. Go's runtime has the same two rows
         // (`sce-forge-runtime/queue`).
         ForgeDocument::Queue(m) => render_queue_go(&env, m, imports, options)?,
-        // Broadcast log: see cpp dispatch.
-        ForgeDocument::BroadcastLog(m) => {
-            return Err(refuse_broadcast_log(m, crate::generator::Language::Go))
-        }
+        // ADR 0062: Go's forge runtime has the broadcast-log row
+        // (`sce-forge-runtime/broadcastlog`), so the document is lowered over it.
+        // The resolved retention and element size ride
+        // `options.broadcast_log_resolutions`, populated by the document-set
+        // compile ([`compile_scxml_with_imports`]).
+        ForgeDocument::BroadcastLog(m) => render_broadcast_log_go(&env, m, imports, options)?,
         // Feature model: see cpp dispatch.
         ForgeDocument::FeatureModel(_) => return Ok(GeneratedOutput::default()),
     };

@@ -73,6 +73,14 @@ var ErrPresentIfMismatch = errors.New("sce/codec: present-if mismatch")
 // the ErrInvalidUTF8 convention).
 var ErrUndeclaredEnumValue = errors.New("sce/codec: undeclared enum value")
 
+// ErrLengthOutOfRange is returned when a length read from storage is above
+// the bound the reader was written for. The typed read of a generated
+// broadcast log returns it for an entry whose stored length exceeds the
+// element's largest encoded size: such a length is not one the log wrote, and
+// it is refused before any slice is cut by it. Mirrors the Rust runtime's
+// `CodecError::LengthOutOfRange`.
+var ErrLengthOutOfRange = errors.New("sce/codec: length out of range")
+
 // SceCursor is a read-only cursor over a borrowed input slice. Decode
 // bodies use PeekSlice to bounds-check + read fixed-offset bytes
 // positionally, then Advance after the construction succeeds.
