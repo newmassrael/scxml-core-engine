@@ -102,6 +102,20 @@ MIRIFLAGS="-Zmiri-many-seeds=0..8" \
     cargo "+$QUEUE_SANITIZER_NIGHTLY" miri test -p sce-forge-runtime \
     --test queue_threads \
     || sce_gate_fail "Rust forge queue threads under Miri"
+# The bounded broadcast log (ADR 0062 section 6, layer 5), under Miri alone. Every
+# access to one of its slots is an atomic one, so ThreadSanitizer has no plain
+# access to find a race on and would report nothing about a weakened order: it is
+# not run on the log, and the header of `broadcast_log_threads.rs` says why. Miri
+# is, with the same pinned nightly and several seeds for the same reason. Which
+# weakened orders it sees is measured and recorded in the ADR ("What the thread
+# tests under Miri establish"); this runs the unmodified runtime and fails on an
+# undefined access or a broken contract, not on a mutant.
+cargo "+$QUEUE_SANITIZER_NIGHTLY" miri test -p sce-forge-runtime --lib broadcast_log:: \
+    || sce_gate_fail "Rust forge broadcast log unit tests under Miri"
+MIRIFLAGS="-Zmiri-many-seeds=0..8" \
+    cargo "+$QUEUE_SANITIZER_NIGHTLY" miri test -p sce-forge-runtime \
+    --test broadcast_log_threads \
+    || sce_gate_fail "Rust forge broadcast log threads under Miri"
 # `-Zbuild-std` because ThreadSanitizer needs the standard library
 # instrumented too, or every use of a std lock or channel reads as a race. Its
 # own target directory, so the flag does not invalidate the ordinary build.

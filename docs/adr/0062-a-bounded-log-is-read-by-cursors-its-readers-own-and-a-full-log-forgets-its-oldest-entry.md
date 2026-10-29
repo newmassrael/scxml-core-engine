@@ -542,6 +542,42 @@ once on the build machine. Every recorded run was judged by `sce-codegen check-b
   conformance crate have been compiled or run. The generated module has no mutation case of its own, and no loom or
   ThreadSanitizer model reaches it: the nine Rust cases and the loom models are of the runtime row it calls.
 
+### What the thread tests under Miri establish (2026-10-29)
+
+`backends/rust/forge-runtime/tests/broadcast_log_threads.rs` runs one publisher against two readers on real threads, a
+stopped reader, and two threads asking for the publisher, asserting the contract of section 2 on every read (whole
+entry, entry at the cursor, entry the window holds, cursor moves as the answer says, a lag skips at least one). The gate
+(`scripts/gates/forge-rust.sh`) runs it, and the runtime's unit tests, under Miri with the pinned nightly and eight seeds.
+It does not run it under ThreadSanitizer, on purpose: every access to a slot is atomic, so the sanitizer has no plain
+access to report a race on, and a run would read as a watch that is not one.
+
+What Miri sees was measured and not assumed. Each order of the protocol was weakened by hand, one at a time, in the Rust
+source (the `.cases` file's own edits), and the test run under `cargo +nightly-2026-10-08 miri test -p sce-forge-runtime
+--test broadcast_log_threads` with `MIRIFLAGS=-Zmiri-many-seeds=0..8` on one build machine; the unmodified source passed
+the same command twice.
+
+| weakened | Miri | what it reported |
+|---|---|---|
+| busy stamp stored relaxed | caught | a lag that skipped nothing |
+| head stored relaxed | caught | a lag that skipped nothing |
+| first stamp loaded relaxed | caught | a lag that skipped nothing |
+| head loaded relaxed in `read` | caught | a lag that skipped nothing |
+| second stamp loaded relaxed | caught | a lag that skipped nothing |
+| release fence removed | caught | a torn copy that passed validation |
+| acquire fence removed | caught | a torn copy that passed validation |
+| any written stamp accepted | caught | an item that is not the entry at the cursor |
+| window one entry too wide | caught | an item outside the window |
+| done stamp stored relaxed | not caught | (not observable, see the casefile) |
+| `head` reload after a mismatch loaded relaxed | not caught | (not observable, see the casefile) |
+
+The two that are not caught are the two the casefile does not claim, and a second tool failing to see them is evidence
+for the argument that they are not observable and not a proof of it. What the table does not say: it is one machine, one
+nightly, eight seeds and one run each, and Miri's emulation of weak memory does not produce every outcome the memory model
+allows (it does not reorder a load before an earlier store, for one). A caught mutant shows Miri can see that fault on
+those schedules; an order that were not caught would not be shown safe. The mutation round of CI cannot repeat this
+measurement: the selector hands its arguments to `cargo test`, and Miri is `cargo miri test`. Giving the selector a Miri
+runner would let CI judge it, and is not built.
+
 ### What is still undone
 
 - **The generated code for the other languages.** Rust's template landed (step 6b). The C11, C++, Go, Kotlin and Python
