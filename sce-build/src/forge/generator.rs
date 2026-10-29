@@ -24407,6 +24407,9 @@ pub fn generate_swift_with_imports(
         ForgeDocument::Interpolation(m) => {
             swift_interpolation_unlowered(m).map(|c| swift_interpolation_refusal(m, &c))
         }
+        // A filter is one of three runtime classes over scalars, which the unit holds as
+        // a member and converts its input for.
+        ForgeDocument::Filter(_) => None,
         _ => {
             return match crate::forge::codegen_matrix::lookup(doc.kind(), Language::Swift) {
                 crate::forge::codegen_matrix::EmitOutcome::Declaration => {
@@ -24435,6 +24438,7 @@ pub fn generate_swift_with_imports(
         ForgeDocument::Condition(m) => render_condition(&env, m, imports, Language::Swift)?,
         ForgeDocument::Lookup(m) => render_lookup(&env, m, imports, Language::Swift)?,
         ForgeDocument::Interpolation(m) => render_interpolation(&env, m, imports, Language::Swift)?,
+        ForgeDocument::Filter(m) => render_filter(&env, m, imports, Language::Swift)?,
         _ => unreachable!("every other kind returned above"),
     };
     Ok(GeneratedOutput {
@@ -28997,7 +29001,7 @@ fn render_filter(
         crate::generator::Language::Cpp => cpp_local_spelling(&m.input.id),
         crate::generator::Language::Kotlin => kotlin_local_spelling(&m.input.id),
         crate::generator::Language::Python | crate::generator::Language::C11 => m.input.id.clone(),
-        crate::generator::Language::Swift => no_swift_emitter("render_filter"),
+        crate::generator::Language::Swift => l.local_id(&m.input.id),
     };
     ctx.insert("input_id".into(), input_id_emit.into());
     ctx.insert("input_type".into(), l.type_name(&m.input.sce_type).into());

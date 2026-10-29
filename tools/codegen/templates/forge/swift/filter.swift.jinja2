@@ -1,0 +1,40 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{{ sce_map.source_marker(source_location, "swift", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
+
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="filter")
+// Runtime: {{ runtime_dep }}
+// Do not edit — regenerate from the source SCXML file.
+//
+// A signal filter: a class whose `update` reads one sample and answers the filtered one, and
+// whose `reset` forgets what it has seen. It holds its history, so each holder of one instance
+// shares it. The runtime's filter is named by its module, so a document named for one of the
+// runtime's classes (`moving_average`) cannot hide it.
+
+import SceForgeRuntime
+
+public final class {{ struct_name }} {
+{% if filter_type == "moving_average" %}
+    private let sceImpl = SceForgeRuntime.MovingAverage(window: {{ window }})
+{% elif filter_type == "low_pass" %}
+    private let sceImpl = SceForgeRuntime.LowPass(alpha: {{ alpha }})
+{% elif filter_type == "debounce" %}
+    private let sceImpl = SceForgeRuntime.Debounce<{{ output_type }}>(window: {{ window }})
+{% endif %}
+
+    public init() {}
+
+    public func update(_ {{ input_id }}: {{ input_type }}) -> {{ output_type }} {
+{% if filter_type == "debounce" %}
+        sceImpl.update({{ output_type }}({{ input_id }}))
+{% else %}
+        {{ output_type }}(sceImpl.update(Double({{ input_id }})))
+{% endif %}
+    }
+
+    public func reset() {
+        sceImpl.reset()
+    }
+}
