@@ -110,8 +110,11 @@ MIRIFLAGS="-Zmiri-many-seeds=0..8" \
 # is, with the same pinned nightly and several seeds for the same reason. Which
 # weakened orders it sees is measured and recorded in the ADR ("What the thread
 # tests under Miri establish"); this runs the unmodified runtime and fails on an
-# undefined access or a broken contract, not on a mutant.
-cargo "+$QUEUE_SANITIZER_NIGHTLY" miri test -p sce-forge-runtime --lib broadcast_log:: \
+# undefined access or a broken contract, not on a mutant. The filter is not
+# `broadcast_log::`: the algorithm is written once in `broadcast_log_core`, over the
+# width of the stamp, and the filter must reach its unit tests and the narrow row's
+# as well as the 64-bit alias's.
+cargo "+$QUEUE_SANITIZER_NIGHTLY" miri test -p sce-forge-runtime --lib broadcast_log \
     || sce_gate_fail "Rust forge broadcast log unit tests under Miri"
 MIRIFLAGS="-Zmiri-many-seeds=0..8" \
     cargo "+$QUEUE_SANITIZER_NIGHTLY" miri test -p sce-forge-runtime \
