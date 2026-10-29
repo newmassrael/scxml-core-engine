@@ -1483,10 +1483,11 @@ no typed interpretation or are explicitly excluded:
   which judges attribute values — measured 2026-09-24, an expression
   compared with `99999999999999999999999` checked clean.
 
-### §3.4.1 The forge expression vocabulary — four names
+### §3.4.1 The forge expression vocabulary — twelve names
 
-A forge expression (`expr=` on an `sce:kind` document's `<data>`) may call
-exactly four names without the document registering them:
+A forge expression (`expr=` on an `sce:kind` document's `<data>`, and every
+expression of a `datamodel="sce-static"` statechart) may call exactly twelve
+names without the document registering them:
 
 | Name | What it does |
 |---|---|
@@ -1494,6 +1495,13 @@ exactly four names without the document registering them:
 | `eq(a, b)` | bytes comparison |
 | `round(x)` | nearest whole number, **half away from zero** |
 | `floor(x)` | largest whole number not greater than `x`, **toward −∞** |
+| `wrappingAdd(a, b)`, `wrappingSub(a, b)`, `wrappingMul(a, b)`, `wrappingNeg(a)` | the exact result modulo 2^W of the operands' one integer type (docs/adr/0063) |
+| `saturatingAdd(a, b)`, `saturatingSub(a, b)`, `saturatingMul(a, b)`, `saturatingNeg(a)` | the exact result held to that type's bounds; `saturatingNeg` of a signed type only |
+
+The last eight never fail, so they raise no `error.execution` in a
+`sce-static` machine and need no `may-fail` in an algorithm. Their typing
+rules (one declared integer type, a literal taking it, no operation of
+literals alone) and their lowering are SCE_FORGE.md §3.4.2.
 
 **And, in a transform's output expressions only, `previous(x)`** — the
 value field `x` of the same document held at the end of the previous

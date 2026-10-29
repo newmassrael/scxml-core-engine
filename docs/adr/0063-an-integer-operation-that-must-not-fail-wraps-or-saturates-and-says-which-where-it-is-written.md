@@ -77,7 +77,7 @@ fail, which is what the family exists to avoid. Their one overflow (signed `MIN 
 
 Shifts and bitwise operations keep their present meaning (they wrap at their width).
 
-### 2. The surface: seven names of the expression vocabulary
+### 2. The surface: eight names of the expression vocabulary
 
 | Name | Operands | Value |
 |---|---|---|
@@ -169,16 +169,18 @@ in the same commit if so.
 
 ### 6. The build-time fold
 
-`forge::const_fold` evaluates the seven names as their definitions say: exactly in `i128`, or in `u128` for an
+`forge::const_fold` evaluates the eight names as their definitions say: exactly in `i128`, or in `u128` for an
 unsigned 64-bit product, then reduced into `T`. A `<sce:const>` table may therefore be built with wrapping arithmetic
 (a linear congruential generator's sequence, an FNV-1a basis), which today it can build only from shifts.
 `algorithm/const-integer-failure` is never raised by one of them.
 
 ### 7. The node
 
-The parser turns a call of one of the seven names into one node, `ExprKind::Total { op: TotalOp, rule: OverflowRule,
-left, right }` (`TotalOp`: `Add`, `Sub`, `Mul`, `Neg`; `OverflowRule`: `Wrapping`, `Saturating`), rather than leaving a
-`Call` that each pass recognises by name. Every walk of the tree matches every node kind (`TypedExpr::children`), so
+The parser turns a call of one of the eight names into one node, `ExprKind::Total { op: RingOp, rule: OverflowRule,
+left, right }` (`RingOp`: `Add`, `Sub`, `Mul`, `Neg`, the operations ℤ is closed under; `OverflowRule`: `Wrapping`,
+`Saturating`), rather than leaving a `Call` that each pass recognises by name. The algebra itself, its names, the
+reductions and the interval images, is one module (`forge::ring_ops`) that the parser, the fold and the analysis all
+read. Every walk of the tree matches every node kind (`TypedExpr::children`), so
 a new kind is decided by every pass and every emitter or fails to compile. A call by name would reach, for example,
 the build-time fold as a call, which the fold refuses, and the import resolver as a function the document does not
 declare. The node is not `ExprKind::Checked` with a third rule: `Checked` is a rewrite the pipeline applies to the
@@ -213,7 +215,7 @@ new limit.
 ### 9. Conformance
 
 - `algorithm_total_arith_{u8,u16,u32,u64,i8,i16,i32,i64}`: one fixture per type, `(a: T, b: T, op: uint8) -> T`, each
-  `op` one of the seven operations (six for an unsigned `T`), with **no `may-fail`**, so each backend's plain return
+  `op` one of the eight operations (seven for an unsigned `T`), with **no `may-fail`**, so each backend's plain return
   type is part of what passes. The cases are each type's `m`, `M`, 0, 1, −1 and their neighbours in every pair the
   operation makes distinct: the wrap point, the saturation point on each side, and, for `mul`, a product past `2^W` but
   within `2^(2W)`. That last case is the one that separates computing in the type from computing in `int` in C. The
@@ -231,10 +233,11 @@ new limit.
 ## Order of landing
 
 1. This ADR.
-2. The node, its parse, typing and refusals; the analysis and the fold; SCE_FORGE.md §3.4.2 and the subset's
-   vocabulary. Every emitter refuses the node by name (`generate/unsupported-feature`) until its own step.
-3. One commit per target, each with its runtime row and the runtime's own tests: Rust, C++, C11, Go, Kotlin, Python,
-   Swift, the Interpreter.
+2. The node, its parse, typing and refusals; the analysis and the fold; the Rust lowering, which needs no runtime
+   row; SCE_FORGE.md §3.4.2 and the subset's vocabulary. Every other emitter refuses the node by name
+   (`expression/unsupported-construct`) until its own step.
+3. One commit per target, each with its runtime row, the runtime's own tests, and the include or import its files
+   need wherever the text names the row: C++, C11, Go, Kotlin, Python, Swift, the Interpreter.
 4. The conformance fixtures of section 9, on every backend at once.
 5. The reservation of the vocabulary's names (section 4), after measuring what a colliding declaration does today.
 

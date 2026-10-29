@@ -225,8 +225,10 @@ fn find_unit_mismatch(ast: &TypedExpr) -> Option<UnitMismatch> {
         // which runs over typed numeric expressions).
         ExprKind::BytesView { source, .. } => find_unit_mismatch(source),
         // A `may-fail` algorithm's checked operation, written just before
-        // emission; recurse into its operands.
-        ExprKind::Checked { left, right, .. } => {
+        // emission, or a wrapping or saturating one; recurse into its
+        // operands. A total operation's operands are integers, never
+        // quantities, so a mismatch can only be inside one.
+        ExprKind::Checked { left, right, .. } | ExprKind::Total { left, right, .. } => {
             find_unit_mismatch(left).or_else(|| right.as_deref().and_then(find_unit_mismatch))
         }
         // Leaves carry no nested arithmetic.

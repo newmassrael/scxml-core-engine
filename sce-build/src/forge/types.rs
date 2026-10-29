@@ -507,8 +507,10 @@ impl InferredType {
     /// The least and greatest value of a declared integer width, or `None`
     /// for any other type — the bounds the integer arithmetic contract
     /// (SCE_FORGE.md §3.4.1) checks an operation against. A `Quantity`
-    /// answers for its integer base. Every width SCE declares fits in `i128`
-    /// with room for the product of two of its values.
+    /// answers for its integer base. Every width SCE declares fits in `i128`,
+    /// and so does the product of two of its values but for two `uint64`
+    /// ones (`(2^64 − 1)^2` passes `i128::MAX`), which a caller computes
+    /// checked or as an unsigned 128-bit product.
     pub(crate) fn int_bounds(self) -> Option<(i128, i128)> {
         match self.strip_quantity() {
             Self::Int { signed, bits } if bits > 0 && bits <= 64 => Some(if signed {

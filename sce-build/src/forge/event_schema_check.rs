@@ -732,6 +732,11 @@ fn cond_references_event_data(expr: &TypedExpr) -> bool {
             cond_references_event_data(left)
                 || right.as_deref().is_some_and(cond_references_event_data)
         }
+        // A wrapping or saturating operation reads what its operands read.
+        ExprKind::Total { left, right, .. } => {
+            cond_references_event_data(left)
+                || right.as_deref().is_some_and(cond_references_event_data)
+        }
         ExprKind::Ident(_)
         | ExprKind::Raw(_)
         | ExprKind::NumberLit(_)
@@ -775,7 +780,7 @@ fn cond_is_pure_typed_payload(expr: &TypedExpr) -> bool {
         // and cannot reach this statechart-side predicate; recurse
         // transparently to stay exhaustive.
         ExprKind::BytesView { source, .. } => cond_is_pure_typed_payload(source),
-        ExprKind::Checked { left, right, .. } => {
+        ExprKind::Checked { left, right, .. } | ExprKind::Total { left, right, .. } => {
             cond_is_pure_typed_payload(left)
                 && right.as_deref().is_none_or(cond_is_pure_typed_payload)
         }
@@ -1085,8 +1090,9 @@ fn walk_for_event_data_refs(
                 diag_label,
             )?;
         }
-        // A `may-fail` algorithm's checked operation; recurse transparently.
-        ExprKind::Checked { left, right, .. } => {
+        // A `may-fail` algorithm's checked operation, or a wrapping or
+        // saturating one; recurse transparently.
+        ExprKind::Checked { left, right, .. } | ExprKind::Total { left, right, .. } => {
             for operand in std::iter::once(&**left).chain(right.as_deref()) {
                 walk_for_event_data_refs(
                     operand,

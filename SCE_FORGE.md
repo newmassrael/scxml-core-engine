@@ -413,6 +413,23 @@ A backend lowers `may-fail` in the commit that teaches it the checked lowering; 
 
 **At build time.** A `<sce:const>` folded at build time follows the same contract, with the values it actually meets rather than a proof: each expression of the fold is typed as the emitters type it, an integer operation that overflows its width or divides as the contract forbids refuses the build (`algorithm/const-integer-failure`, on the `<sce:const>` row, naming the operation and the operands it met — `i * 2` at `128 * 2`), and a value is stored in a local, an element or the iter variable only if its type holds it. A build-time value has no caller to hand a failure to, so `may-fail` does not apply to it. Bitwise operations and shifts are outside the contract and wrap at their width, which is what a CRC table's shifted-out bits rely on. Conformance: `algorithm_const_integer_failure`.
 
+#### 3.4.2 Wrapping and saturating operations
+
+`+ - *` and unary `-` are the checked operations of §3.4.1: their result is the mathematical integer, and one past the declared width is not a value. A document that means arithmetic modulo the width (a tick counter that wraps, a hash) or held to its bounds (a level, a remaining time) names that rule at the operation, with eight names of the expression vocabulary (docs/adr/0063):
+
+| Name | Value, for `T` of width `W` holding `[m, M]` |
+|---|---|
+| `wrappingAdd(a, b)`, `wrappingSub(a, b)`, `wrappingMul(a, b)`, `wrappingNeg(a)` | the exact result `e` reduced modulo 2^W into `[m, M]`: the `r` with `r ≡ e (mod 2^W)` (two's complement for a signed `T`) |
+| `saturatingAdd(a, b)`, `saturatingSub(a, b)`, `saturatingMul(a, b)`, `saturatingNeg(a)` | `max(m, min(M, e))` |
+
+Each is total: it never fails, in a `may-fail` body or anywhere else, so an algorithm built from them returns a plain value (`wrappingSub(now, last) >= timeout` is a `bool` on every backend). Its operands are evaluated as written, so `wrappingAdd(a + 1, b)` checks `a + 1` by §3.4.1 and wraps the sum. Division and remainder have no such form: `a / 0` has no exact result to reduce, so it would still fail.
+
+**Typing.** The operation's type `T` is its operands' one type: two operands of declared types have the same width and signedness, a literal operand takes the other's type and must fit it (`wrappingAdd(u, -1)` on an unsigned `u` is `expression/literal-out-of-range`; write `wrappingSub(u, 1)`), and an operation whose operands are literals alone has no width, which is its modulus, so it is refused. A real, a `bool`, a string, a byte string, an enum, a record, a list, a quantity or an optional value not proven present is not an operand. `saturatingNeg` takes a signed `T`, since of an unsigned value it is always 0. A wrong number of operands is `expression/argument-count-mismatch` at the name; every other refusal is `expression/type-mismatch` at the operand. The rules are judged once, before any backend renders.
+
+**Proof and fold.** The interval analysis of §3.4.1 gives each a transfer that is exact where it can be: a saturating value is its operands' exact range clamped to `T`, and a wrapping value is the exact range moved by one multiple of 2^W when the whole range lies in one window, and the whole type otherwise. `saturatingSub(x, 200) + 200` on a `uint8` is therefore proven, and `wrappingSub(x, 10) - 246` is proven only where a guard keeps `x <= 3`. A `<sce:const>` folds each to its definition, so a table can be built from wrapping products (`wrappingMul(i, 2654435761)`). Saturation does not associate, so no pass reorders a chain of them.
+
+**Lowering.** Rust writes the standard library's own operation (`u32::wrapping_sub(a, b)`, a `const fn`); every other backend calls the forge runtime's function for the width, named beside its checked one (C11 `sce_forge_wrapping_sub_u32`, C++ `SCE::Forge::Wrapping::sub`, Go `scealgorithm.WrappingSubUint32`, Kotlin `SceWrapping.sub`, Python `sce_algorithm.U32.wrapping_sub`, Swift `Wrapping.sub`, the Interpreter `SceStatic.U32.wrappingSub`, and `Saturating` / `saturating` for the other rule), because C promotes narrow types to `int` and leaves a signed overflow undefined, Kotlin computes narrow types in `Int`, and Python's integers do not overflow.
+
 #### Transpiler Architecture
 
 The expression transpiler uses a proper **AST-based pipeline**, not regex string replacement. This is necessary because target languages have different operator precedence rules — naive text substitution produces incorrect code for complex expressions.

@@ -59,6 +59,7 @@
 //   use explicit masking. Kotlin has `ushr` and Python promotes to big-int.
 
 use crate::forge::error::{ExprError, Spanned};
+use crate::forge::ring_ops::{self, OverflowRule, RingOp};
 use crate::forge::rust_optional;
 use crate::forge::types::{join_arith, join_int, CallReading, InferredType, OptionalElem, TypeCtx};
 use std::collections::HashMap;
@@ -854,6 +855,7 @@ fn resolve_names(ast: &mut TypedExpr, ctx: &TypeCtx<'_>, source: &str) -> Result
     reject_buffers_as_values(ast, source)?;
     reject_optional_misuse(ast, &ctx.proven, source)?;
     reject_call_argument_mismatches(ast, ctx, source)?;
+    reject_ill_typed_total_operations(ast, source)?;
     lower_bytes_eq(ast, ctx);
     Ok(())
 }
@@ -1827,8 +1829,10 @@ fn reject_out_of_range_literals(
                 None => Ok(()),
             }
         }
-        // Its operands are checked at the operation's own type.
-        ExprKind::Checked { left, right, .. } => {
+        // Its operands are checked at the operation's own type; a total
+        // operation's literal takes the type of its other operand, which is
+        // the operation's.
+        ExprKind::Checked { left, right, .. } | ExprKind::Total { left, right, .. } => {
             reject_out_of_range_literals(left, ast.ty, source)?;
             match right {
                 Some(right) => reject_out_of_range_literals(right, ast.ty, source),
@@ -2231,7 +2235,7 @@ fn lower_stateful_import_calls(ast: &mut TypedExpr, lowerings: &[ImportLowering]
                 lower_stateful_import_calls(len, lowerings);
             }
         }
-        ExprKind::Checked { left, right, .. } => {
+        ExprKind::Checked { left, right, .. } | ExprKind::Total { left, right, .. } => {
             lower_stateful_import_calls(left, lowerings);
             if let Some(right) = right {
                 lower_stateful_import_calls(right, lowerings);
@@ -2522,6 +2526,7 @@ fn shape_name(kind: &ExprKind) -> &'static str {
         ExprKind::Call { .. } => "call expression",
         ExprKind::BytesView { .. } => "bytes-view projection",
         ExprKind::Checked { .. } => "checked integer operation",
+        ExprKind::Total { .. } => "wrapping or saturating integer operation",
     }
 }
 
@@ -2589,7 +2594,7 @@ impl TypedExpr {
             ExprKind::BytesView { source, len } => {
                 std::iter::once(&**source).chain(len.as_deref()).collect()
             }
-            ExprKind::Checked { left, right, .. } => {
+            ExprKind::Checked { left, right, .. } | ExprKind::Total { left, right, .. } => {
                 std::iter::once(&**left).chain(right.as_deref()).collect()
             }
         }
@@ -2620,9 +2625,11 @@ impl TypedExpr {
             ExprKind::BytesView { source, len } => std::iter::once(&mut **source)
                 .chain(len.as_deref_mut())
                 .collect(),
-            ExprKind::Checked { left, right, .. } => std::iter::once(&mut **left)
-                .chain(right.as_deref_mut())
-                .collect(),
+            ExprKind::Checked { left, right, .. } | ExprKind::Total { left, right, .. } => {
+                std::iter::once(&mut **left)
+                    .chain(right.as_deref_mut())
+                    .collect()
+            }
         }
     }
 }
@@ -2753,6 +2760,24 @@ pub(crate) enum ExprKind {
     /// is checked at; `right` is `None` for a negation.
     Checked {
         op: CheckedOp,
+        left: Box<TypedExpr>,
+        right: Option<Box<TypedExpr>>,
+    },
+    /// A ring operation the author wrote under a rule that makes it total —
+    /// `wrappingSub(now, last)`, `saturatingAdd(level, 3)` (docs/adr/0063):
+    /// the exact result reduced into the node's type, the type both operands
+    /// share, modulo 2^W or held to the type's bounds. It never fails, in a
+    /// `may-fail` body or anywhere else.
+    ///
+    /// The parser builds it from a call of a vocabulary name
+    /// ([`crate::forge::ring_ops::VOCABULARY`]), so every pass reads the
+    /// operation the author named rather than recognising a call by its
+    /// callee. Unlike [`ExprKind::Checked`], which the pipeline writes over
+    /// the author's operators just before emission, it is in the tree from
+    /// the first pass. `right` is `None` for a negation.
+    Total {
+        op: RingOp,
+        rule: OverflowRule,
         left: Box<TypedExpr>,
         right: Option<Box<TypedExpr>>,
     },
@@ -2916,6 +2941,7 @@ pub(crate) fn check_integer_arithmetic(node: &mut TypedExpr, expected: InferredT
         | ExprKind::Call { .. }
         | ExprKind::BytesView { .. }
         | ExprKind::Checked { .. }
+        | ExprKind::Total { .. }
         | ExprKind::NumberLit(_)
         | ExprKind::StringLit { .. }
         | ExprKind::BytesLit { .. }
@@ -2951,6 +2977,149 @@ pub(crate) fn check_integer_arithmetic(node: &mut TypedExpr, expected: InferredT
         },
         other => other,
     };
+}
+
+/// `call` as the operation it names when its callee is a name of the
+/// vocabulary's total arithmetic (docs/adr/0063, section 2), and `call`
+/// unchanged otherwise. The operation takes its own number of operands, so a
+/// call with another number is refused here, at the callee, where the call
+/// is read.
+fn total_operation(call: TypedExpr) -> Result<TypedExpr, Refusal> {
+    let named = match &call.kind {
+        ExprKind::Call { callee, args, .. } => match &callee.kind {
+            ExprKind::Ident(name) => {
+                ring_ops::lookup(name).map(|(op, rule)| (op, rule, args.len(), callee.span.clone()))
+            }
+            _ => None,
+        },
+        _ => None,
+    };
+    let Some((op, rule, count, at)) = named else {
+        return Ok(call);
+    };
+    if count != op.arity() {
+        return Err(ExprError::ArgumentCount {
+            callee: ring_ops::name(op, rule).to_string(),
+            expected: op.arity(),
+            actual: count,
+        }
+        .at(at));
+    }
+    let TypedExpr {
+        kind: ExprKind::Call { args, .. },
+        ty,
+        span,
+    } = call
+    else {
+        unreachable!("matched as a call above");
+    };
+    let mut operands = args.into_iter().map(Box::new);
+    let left = operands
+        .next()
+        .expect("the operation's arity is at least one");
+    Ok(TypedExpr {
+        kind: ExprKind::Total {
+            op,
+            rule,
+            left,
+            right: operands.next(),
+        },
+        ty,
+        span,
+    })
+}
+
+/// The refusal of a total operation by an emitter that does not lower it yet:
+/// named as the author wrote it, so a document that uses it is refused by
+/// that backend rather than generated wrong.
+fn total_unlowered(op: RingOp, rule: OverflowRule, backend: &str) -> ExprError {
+    ExprError::UnsupportedConstruct {
+        construct: format!(
+            "{} on the {backend} backend (docs/adr/0063)",
+            ring_ops::name(op, rule)
+        ),
+        observed: None,
+    }
+}
+
+/// The type of a total operation over operands of types `left` and `right`
+/// (docs/adr/0063, section 3): the type its declared operands share, a
+/// literal taking it. `None` where the operation has none, which
+/// [`reject_ill_typed_total_operations`] says why.
+fn total_operand_type(left: InferredType, right: Option<InferredType>) -> Option<InferredType> {
+    use InferredType::{Int, UntypedInt};
+    match (left, right) {
+        (t @ Int { .. }, None) => Some(t),
+        (t @ Int { .. }, Some(UntypedInt)) | (UntypedInt, Some(t @ Int { .. })) => Some(t),
+        (l @ Int { .. }, Some(r)) if l == r => Some(l),
+        _ => None,
+    }
+}
+
+/// Refuse every total operation of `ast` that has no type, or whose type
+/// does not admit it (docs/adr/0063, section 3): an operand that is not an
+/// integer, two declared operands of different types, operands that are
+/// literals alone, and the saturating negation of an unsigned value. Each
+/// refusal names the operation as the author spelled it and stands at the
+/// operand it is about.
+pub(crate) fn reject_ill_typed_total_operations(
+    ast: &TypedExpr,
+    source: &str,
+) -> Result<(), Refusal> {
+    for child in ast.children() {
+        reject_ill_typed_total_operations(child, source)?;
+    }
+    let ExprKind::Total {
+        op,
+        rule,
+        left,
+        right,
+    } = &ast.kind
+    else {
+        return Ok(());
+    };
+    let name = ring_ops::name(*op, *rule);
+    let refused = |expected: String, operand: &TypedExpr| {
+        ExprError::TypeMismatch {
+            expected,
+            got: operand.ty.describe(),
+            observed: operand
+                .span
+                .clone()
+                .and_then(|span| source.get(span))
+                .map(str::to_string),
+        }
+        .at(operand.span.clone())
+    };
+    let integer =
+        |t: InferredType| matches!(t, InferredType::Int { .. } | InferredType::UntypedInt);
+    for operand in std::iter::once(&**left).chain(right.as_deref()) {
+        if !integer(operand.ty) {
+            return Err(refused(format!("an integer operand of {name}"), operand));
+        }
+    }
+    let Some(ty) = total_operand_type(left.ty, right.as_ref().map(|r| r.ty)) else {
+        return Err(match right {
+            Some(right) if left.ty != InferredType::UntypedInt => refused(
+                format!("{} like the other operand of {name}", left.ty.describe()),
+                right,
+            ),
+            _ => refused(
+                format!(
+                    "an operand of {name} of a declared integer type, whose width is the modulus"
+                ),
+                left,
+            ),
+        });
+    };
+    let (lo, _) = ty.int_bounds().expect("the operation's type is an integer");
+    if !ring_ops::admits(*op, *rule, lo) {
+        return Err(refused(
+            format!("a signed integer ({name} of an unsigned value is always 0)"),
+            left,
+        ));
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -4306,7 +4475,7 @@ impl<'a> Parser<'a> {
                     self.advance();
                     let args = self.parse_arguments(&Token::RParen)?;
                     self.expect(&Token::RParen)?;
-                    expr = self.node(
+                    expr = total_operation(self.node(
                         start,
                         ExprKind::Call {
                             callee: Box::new(expr),
@@ -4314,7 +4483,7 @@ impl<'a> Parser<'a> {
                             params: Vec::new(),
                             fails: false,
                         },
-                    );
+                    ))?;
                 }
                 _ => break,
             }
@@ -4451,7 +4620,7 @@ fn rename_identifiers(ast: &mut TypedExpr, renames: &HashMap<&str, &str>) {
                 rename_identifiers(len, renames);
             }
         }
-        ExprKind::Checked { left, right, .. } => {
+        ExprKind::Checked { left, right, .. } | ExprKind::Total { left, right, .. } => {
             rename_identifiers(left, renames);
             if let Some(right) = right {
                 rename_identifiers(right, renames);
@@ -4513,7 +4682,7 @@ fn export_go_member_properties(ast: &mut TypedExpr) {
                 export_go_member_properties(len);
             }
         }
-        ExprKind::Checked { left, right, .. } => {
+        ExprKind::Checked { left, right, .. } | ExprKind::Total { left, right, .. } => {
             export_go_member_properties(left);
             if let Some(right) = right {
                 export_go_member_properties(right);
@@ -5122,6 +5291,17 @@ pub(crate) fn infer_types(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) {
             }
             expr.ty
         }
+        // The type its declared operands share (docs/adr/0063, section 3);
+        // none where they share none, which the refusal of the operation
+        // says.
+        ExprKind::Total { left, right, .. } => {
+            infer_types(left, ctx);
+            if let Some(right) = right {
+                infer_types(right, ctx);
+            }
+            total_operand_type(left.ty, right.as_ref().map(|r| r.ty))
+                .unwrap_or(InferredType::Unknown)
+        }
     };
 }
 
@@ -5540,7 +5720,9 @@ fn real_to_int_builtin(callee: &TypedExpr, args: &[TypedExpr]) -> Option<RealToI
 /// bytes-comparison builtin; both lower to each backend's native idiom. Every
 /// other callable reaches a forge expression by being REGISTERED — a stateless
 /// cross-file import, an `<sce:helper>` declaration, or a stateful import's
-/// method — so `ctx.funcs` is the rest of the vocabulary.
+/// method — so `ctx.funcs` is the rest of the vocabulary. The eight wrapping
+/// and saturating operations (docs/adr/0063) are the vocabulary too, but are
+/// never calls past the parser ([`total_operation`]).
 const EXPR_BUILTINS: [&str; 4] = ["len", "eq", "round", "floor"];
 
 /// Refuse a call to a name nothing provides.
@@ -5624,6 +5806,13 @@ fn reject_unknown_callees(expr: &TypedExpr, ctx: &TypeCtx<'_>) -> Result<(), Ref
                 let mut available: Vec<String> =
                     ctx.funcs.keys().map(|k| (*k).to_string()).collect();
                 available.extend(EXPR_BUILTINS.iter().map(|b| (*b).to_string()));
+                // The parser has already turned a call of these into the
+                // operation it names, so only a misspelling reaches here.
+                available.extend(
+                    ring_ops::VOCABULARY
+                        .iter()
+                        .map(|(name, ..)| (*name).to_string()),
+                );
                 available.sort();
                 // Raised at the callee, not the call: the callee is the name
                 // `actual` reports, and the arguments are not the mistake.
@@ -6770,6 +6959,7 @@ fn cpp_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
         return Ok(spelled);
     }
     Ok(match &expr.kind {
+        ExprKind::Total { op, rule, .. } => return Err(total_unlowered(*op, *rule, "C++")),
         ExprKind::NumberLit(n) => portable_number_literal(n),
         ExprKind::StringLit { value, .. } => format!("\"{value}\""),
         // `std::vector<uint8_t>` has `operator==`, so the default
@@ -7375,6 +7565,7 @@ fn kotlin_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
         return kotlin_optional_form(form, expr);
     }
     Ok(match &expr.kind {
+        ExprKind::Total { op, rule, .. } => return Err(total_unlowered(*op, *rule, "Kotlin")),
         ExprKind::NumberLit(n) => portable_number_literal(n),
         ExprKind::StringLit { value, .. } => format!("\"{value}\""),
         // `"ack".toByteArray()` is byte-identical to the ASCII literal
@@ -8436,6 +8627,31 @@ fn rust_borrowed(node: &TypedExpr, text: String, elem: OptionalElem) -> String {
 
 fn rust_emit_value(expr: &TypedExpr) -> Result<String, Refusal> {
     Ok(match &expr.kind {
+        // docs/adr/0063: the standard library's own operation at the node's
+        // type, a `const fn` that never panics. Fully qualified, so a literal
+        // left operand takes the type too, where a method call on the literal
+        // would leave it ambiguous.
+        ExprKind::Total {
+            op,
+            rule,
+            left,
+            right,
+        } => {
+            let InferredType::Int { signed, bits } = expr.ty else {
+                return Err(total_unlowered(*op, *rule, "Rust").at(expr.span.clone()));
+            };
+            let mut operands = vec![emit_rust(left, expr.ty)?];
+            if let Some(right) = right {
+                operands.push(emit_rust(right, expr.ty)?);
+            }
+            format!(
+                "{}::{}_{}({})",
+                rust_int_type(signed, bits),
+                rule.helper(),
+                op.helper(),
+                operands.join(", ")
+            )
+        }
         ExprKind::NumberLit(n) => portable_number_literal(n),
         ExprKind::StringLit { value, .. } => format!("\"{value}\""),
         // `Vec<u8> == &[u8; N]` (and `== Vec<u8>`) compare length+content,
@@ -8946,6 +9162,9 @@ fn go_emit_node(expr: &TypedExpr) -> Result<String, Refusal> {
         return go_optional(form, expr);
     }
     Ok(match &expr.kind {
+        ExprKind::Total { op, rule, .. } => {
+            return Err(total_unlowered(*op, *rule, "Go").at(expr.span.clone()))
+        }
         ExprKind::NumberLit(n) => portable_number_literal(n),
         ExprKind::StringLit { value, .. } => format!("\"{value}\""),
         // Standalone fallback only — the bytes-equality Binary branch
@@ -9609,6 +9828,7 @@ fn python_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
         return python_optional(form, expr);
     }
     Ok(match &expr.kind {
+        ExprKind::Total { op, rule, .. } => return Err(total_unlowered(*op, *rule, "Python")),
         ExprKind::NumberLit(n) => portable_number_literal(n),
         ExprKind::StringLit { value, .. } => format!("'{value}'"),
         // `bytes == bytes` compares content, so the default `==`/`!=`
@@ -10187,6 +10407,7 @@ fn emit_js(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprError
         | None => {}
     }
     Ok(match &expr.kind {
+        ExprKind::Total { op, rule, .. } => return Err(total_unlowered(*op, *rule, "Interpreter")),
         ExprKind::NumberLit(n) => js_number_literal(n)?,
         // The author's own literal, in the quote the author chose: what the
         // lexer keeps is ECMAScript already.
@@ -10641,6 +10862,7 @@ fn c_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
         return c_optional(form, expr);
     }
     Ok(match &expr.kind {
+        ExprKind::Total { op, rule, .. } => return Err(total_unlowered(*op, *rule, "C11")),
         ExprKind::NumberLit(n) => portable_number_literal(n),
         ExprKind::StringLit { value, .. } => format!("\"{value}\""),
         // Standalone fallback — the bytes-equality Binary branch renders
@@ -14002,6 +14224,214 @@ mod tests {
         let err = transpile_lvalue("", ExprTarget::Cpp, &empty_ctx(), &empty_renames());
         assert!(err.is_err());
         assert!(err.unwrap_err().to_string().contains("empty"));
+    }
+
+    // ── Wrapping and saturating operations (docs/adr/0063) ──────
+
+    fn total_ctx() -> TypeCtx<'static> {
+        let mut ctx = TypeCtx::new();
+        ctx.insert_var("now", int(false, 32));
+        ctx.insert_var("last", int(false, 32));
+        ctx.insert_var("small", int(false, 8));
+        ctx.insert_var("delta", int(true, 32));
+        ctx.insert_var("ratio", float(64));
+        ctx.insert_var("ready", InferredType::Bool);
+        ctx
+    }
+
+    fn total(expr: &str, target: ExprTarget) -> Result<String, Refusal> {
+        transpile_typed(
+            expr,
+            target,
+            &total_ctx(),
+            &empty_renames(),
+            InferredType::Unknown,
+        )
+    }
+
+    /// A vocabulary name is the operation it names from the parse on, so no
+    /// pass reads it as a call of a function the document must declare.
+    #[test]
+    fn a_vocabulary_name_parses_to_the_operation_it_names() {
+        let ast = parse_to_ast("wrappingSub(now, last)").unwrap();
+        assert!(matches!(
+            ast.kind,
+            ExprKind::Total {
+                op: RingOp::Sub,
+                rule: OverflowRule::Wrapping,
+                right: Some(_),
+                ..
+            }
+        ));
+        let ast = parse_to_ast("saturatingNeg(delta)").unwrap();
+        assert!(matches!(
+            ast.kind,
+            ExprKind::Total {
+                op: RingOp::Neg,
+                rule: OverflowRule::Saturating,
+                right: None,
+                ..
+            }
+        ));
+        // Any other name is still a call.
+        let ast = parse_to_ast("wrappingDiv(now, last)").unwrap();
+        assert!(matches!(ast.kind, ExprKind::Call { .. }));
+    }
+
+    #[test]
+    fn a_total_operation_with_the_wrong_number_of_operands_is_refused_at_its_name() {
+        let refusal = parse_to_ast("wrappingAdd(now)").unwrap_err();
+        assert!(matches!(
+            refusal.error,
+            ExprError::ArgumentCount { ref callee, expected: 2, actual: 1 } if callee == "wrappingAdd"
+        ));
+        assert_eq!(refusal.span, Some(0..11));
+        let refusal = parse_to_ast("saturatingNeg(now, last)").unwrap_err();
+        assert!(matches!(
+            refusal.error,
+            ExprError::ArgumentCount {
+                expected: 1,
+                actual: 2,
+                ..
+            }
+        ));
+    }
+
+    /// The operation's type is its operands' one type; a literal takes it.
+    #[test]
+    fn a_total_operation_is_of_its_operands_type() {
+        let mut ctx_ast = parse_to_ast("wrappingSub(now, 1)").unwrap();
+        infer_types(&mut ctx_ast, &total_ctx());
+        assert_eq!(ctx_ast.ty, int(false, 32));
+        let mut ast = parse_to_ast("saturatingAdd(7, delta)").unwrap();
+        infer_types(&mut ast, &total_ctx());
+        assert_eq!(ast.ty, int(true, 32));
+    }
+
+    #[test]
+    fn rust_lowers_a_total_operation_to_the_standard_librarys() {
+        assert_eq!(
+            total("wrappingSub(now, last)", ExprTarget::Rust).unwrap(),
+            "u32::wrapping_sub(now, last)"
+        );
+        assert_eq!(
+            total(
+                "saturatingSub(1000, wrappingSub(now, last))",
+                ExprTarget::Rust
+            )
+            .unwrap(),
+            "u32::saturating_sub(1000, u32::wrapping_sub(now, last))"
+        );
+        assert_eq!(
+            total("wrappingNeg(small)", ExprTarget::Rust).unwrap(),
+            "u8::wrapping_neg(small)"
+        );
+        assert_eq!(
+            total("saturatingMul(delta, -3)", ExprTarget::Rust).unwrap(),
+            "i32::saturating_mul(delta, -3)"
+        );
+    }
+
+    fn refused(expr: &str) -> ExprError {
+        total(expr, ExprTarget::Rust).unwrap_err().error
+    }
+
+    #[test]
+    fn a_total_operation_of_two_widths_is_refused_naming_both() {
+        let ExprError::TypeMismatch {
+            expected,
+            got,
+            observed,
+        } = refused("wrappingAdd(now, small)")
+        else {
+            panic!("not a type mismatch");
+        };
+        assert_eq!(got, "uint8");
+        assert!(
+            expected.contains("uint32") && expected.contains("wrappingAdd"),
+            "{expected}"
+        );
+        assert_eq!(observed.as_deref(), Some("small"));
+    }
+
+    #[test]
+    fn a_total_operation_of_another_signedness_is_refused() {
+        assert!(matches!(
+            refused("saturatingSub(now, delta)"),
+            ExprError::TypeMismatch { ref got, .. } if got == "int32"
+        ));
+    }
+
+    #[test]
+    fn a_total_operation_on_anything_but_integers_is_refused() {
+        for (expr, got) in [
+            ("wrappingAdd(ratio, 1)", "float64"),
+            ("saturatingSub(ready, 1)", "bool"),
+            ("wrappingMul(now, 1.5)", "float literal"),
+        ] {
+            assert!(
+                matches!(refused(expr), ExprError::TypeMismatch { got: ref g, .. } if g == got),
+                "{expr}"
+            );
+        }
+    }
+
+    /// The width is the modulus: an operation of literals alone has none.
+    #[test]
+    fn a_total_operation_of_literals_alone_is_refused() {
+        for expr in [
+            "wrappingAdd(200, 100)",
+            "wrappingNeg(5)",
+            "saturatingSub(1 + 2, 3)",
+        ] {
+            assert!(
+                matches!(refused(expr), ExprError::TypeMismatch { got: ref g, .. } if g == "integer literal"),
+                "{expr}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_literal_operand_must_fit_the_operations_type() {
+        assert!(matches!(
+            refused("wrappingSub(small, 300)"),
+            ExprError::LiteralOutOfRange { ref literal, ref ty, .. } if literal == "300" && ty == "uint8"
+        ));
+        assert!(matches!(
+            refused("wrappingAdd(now, -1)"),
+            ExprError::LiteralOutOfRange { ref literal, .. } if literal == "-1"
+        ));
+    }
+
+    #[test]
+    fn the_saturating_negation_of_an_unsigned_value_is_refused() {
+        assert!(matches!(
+            refused("saturatingNeg(now)"),
+            ExprError::TypeMismatch { ref expected, ref got, .. }
+                if got == "uint32" && expected.contains("signed")
+        ));
+        assert!(total("saturatingNeg(delta)", ExprTarget::Rust).is_ok());
+        assert!(total("wrappingNeg(now)", ExprTarget::Rust).is_ok());
+    }
+
+    /// A `may-fail` body checks the operators the author wrote and leaves a
+    /// total operation total: only its operand is checked.
+    #[test]
+    fn a_may_fail_body_checks_the_operand_and_not_the_total_operation() {
+        let mut ctx = total_ctx();
+        ctx.receives_failures = true;
+        let text = transpile_typed(
+            "wrappingAdd(now + 1, last)",
+            ExprTarget::Rust,
+            &ctx,
+            &empty_renames(),
+            InferredType::Unknown,
+        )
+        .unwrap();
+        assert_eq!(
+            text,
+            "u32::wrapping_add(sce_forge_runtime::algorithm::add::<u32>(now, 1)?, last)"
+        );
     }
 
     // ── ECMAScript (the Interpreter's script engine) ────────────

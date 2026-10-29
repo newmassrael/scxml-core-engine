@@ -45,6 +45,7 @@ use crate::forge::error::{ExprError, GenerateError};
 use crate::forge::expr::{self, BinOp, ExprKind, TypedExpr, UnaryOp};
 use crate::forge::int_ranges::HazardKind;
 use crate::forge::model::{AlgorithmStmt, FoldBody, SceType};
+use crate::forge::ring_ops;
 use crate::forge::types::{InferredType, TypeCtx};
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -785,6 +786,8 @@ fn eval_expr(expr_text: &str, scope: &Scope) -> Result<EvalValue, ConstFoldKind>
     let text = expr_text.trim();
     let mut ast = expr::parse_to_ast(text).map_err(|refusal| map_expr_err(refusal.error))?;
     expr::infer_types(&mut ast, &scope.type_ctx());
+    expr::reject_ill_typed_total_operations(&ast, text)
+        .map_err(|refusal| map_expr_err(refusal.error))?;
     eval_node(&ast, scope, text)
 }
 
@@ -939,6 +942,38 @@ fn eval_node(node: &TypedExpr, scope: &Scope, text: &str) -> Result<EvalValue, C
         ExprKind::Checked { .. } => Err(ConstFoldKind::NotFoldable(
             "a checked integer operation is an emission node, not a fold-time value".to_string(),
         )),
+        // A wrapping or saturating operation is its exact result reduced
+        // into its type (docs/adr/0063, section 6), computed as written: it
+        // never fails, and a saturating one is never reassociated.
+        ExprKind::Total {
+            op,
+            rule,
+            left,
+            right,
+        } => {
+            let bounds = node
+                .ty
+                .int_bounds()
+                .expect("a total operation that typed has an integer type");
+            let operand = |side: &TypedExpr| -> Result<i128, ConstFoldKind> {
+                let v = require_int(eval_node(side, scope, text)?)?;
+                if !(bounds.0..=bounds.1).contains(&v) {
+                    return Err(map_expr_err(ExprError::LiteralOutOfRange {
+                        literal: v.to_string(),
+                        ty: node.ty.describe(),
+                        min: bounds.0.to_string(),
+                        max: bounds.1.to_string(),
+                    }));
+                }
+                Ok(v)
+            };
+            let a = operand(left)?;
+            let b = match right {
+                Some(right) => operand(right)?,
+                None => 0,
+            };
+            Ok(EvalValue::Int(ring_ops::apply(*op, *rule, bounds, a, b)))
+        }
     }
 }
 
@@ -1590,6 +1625,55 @@ mod tests {
             vec![ConstValue::I8(0x0F)],
             "`>>>` shifts the width's bits"
         );
+    }
+
+    /// A wrapping or saturating operation folds to its definition
+    /// (docs/adr/0063, section 6): Knuth's multiplicative hash, `i ×
+    /// 2654435761` modulo 2^32, is a table no checked product can build.
+    #[test]
+    fn a_total_operation_folds_to_its_reduced_exact_result() {
+        let out = evaluate_fold(
+            &fold_of(SceType::Uint32, 4, "wrappingMul(i, 2654435761)"),
+            &mut Budget::default(),
+            TEST_SITE,
+        )
+        .unwrap();
+        let expected: Vec<ConstValue> = (0u32..4)
+            .map(|i| ConstValue::U32(i.wrapping_mul(2_654_435_761)))
+            .collect();
+        assert_eq!(out, expected);
+        let out = evaluate_fold(
+            &fold_of(SceType::Int8, 3, "saturatingSub(-127, i)"),
+            &mut Budget::default(),
+            TEST_SITE,
+        )
+        .unwrap();
+        assert_eq!(
+            out,
+            vec![
+                ConstValue::I8(-127),
+                ConstValue::I8(-128),
+                ConstValue::I8(-128)
+            ]
+        );
+    }
+
+    /// The typing rules hold in a fold as everywhere: an operation of two
+    /// widths, or of literals alone, is refused rather than folded.
+    #[test]
+    fn an_ill_typed_total_operation_is_not_folded() {
+        for init in ["wrappingAdd(200, 100)", "saturatingNeg(i)"] {
+            match evaluate_fold(
+                &fold_of(SceType::Uint8, 1, init),
+                &mut Budget::default(),
+                TEST_SITE,
+            ) {
+                Err(GenerateError::ConstNotFoldable { detail, .. }) => {
+                    assert!(detail.contains("where"), "{init}: {detail}")
+                }
+                other => panic!("{init}: expected a refusal, got {other:?}"),
+            }
+        }
     }
 
     /// Nothing a slot cannot hold is truncated into it: not a stored value,

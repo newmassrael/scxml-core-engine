@@ -41,6 +41,7 @@ use crate::forge::model::{AlgorithmStmt, AlgorithmValueType};
 use crate::forge::narrowing::{
     after_algorithm_statement, loop_entry, proves_written, Chain, Facts,
 };
+use crate::forge::ring_ops::{self, RingOp};
 use crate::forge::types::{InferredType, TypeCtx};
 
 /// Why an operation can fail.
@@ -132,8 +133,9 @@ pub fn hazards(
     (!analysis.untyped.get()).then_some(analysis.found)
 }
 
-/// A closed integer range. Every width SCE declares fits in `i128` with room
-/// for the product of two of its values.
+/// A closed integer range. Every width SCE declares fits in `i128`, and so
+/// does the product of two of its values but for two `uint64` ones, whose
+/// corners [`arith`] holds at `i128`'s bound.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct Interval {
     lo: i128,
@@ -891,6 +893,30 @@ impl Analysis<'_, '_> {
                 };
                 Some(own.map_or(contract, |own| contract.clamp(own)))
             }
+            // A wrapping or saturating operation never fails (docs/adr/0063,
+            // section 5): its value is the image of its operands' ranges
+            // under the reduction it names, and only its operands can hold a
+            // hazard.
+            ExprKind::Total {
+                op,
+                rule,
+                left,
+                right,
+            } => {
+                let l = self.eval(left, expr, spelling, env);
+                let r = right
+                    .as_deref()
+                    .map(|right| self.eval(right, expr, spelling, env));
+                let own = own?;
+                let l = l.unwrap_or(own);
+                let r = match r {
+                    Some(r) => r.unwrap_or(own),
+                    None => Interval::point(0),
+                };
+                let (lo, hi) =
+                    ring_ops::image(*op, *rule, (own.lo, own.hi), (l.lo, l.hi), (r.lo, r.hi));
+                Some(Interval { lo, hi })
+            }
             // Each argument lands in its parameter's type, as a value lands
             // in a local's.
             // An index reads inside its collection only where it is at least
@@ -1128,25 +1154,16 @@ fn relate_guard(env: &mut Env, x: &TypedExpr, op: BinOp, r: &TypedExpr) {
     }
 }
 
-/// The exact range of `l op r` for `+ - *`.
+/// The exact range of `l op r` for `+ - *`, a superset of it where a
+/// product of two `uint64` ranges leaves `i128` ([`ring_ops::exact_range`]).
 fn arith(op: BinOp, l: Interval, r: Interval) -> Interval {
-    match op {
-        BinOp::Add => Interval {
-            lo: l.lo + r.lo,
-            hi: l.hi + r.hi,
-        },
-        BinOp::Sub => Interval {
-            lo: l.lo - r.hi,
-            hi: l.hi - r.lo,
-        },
-        _ => {
-            let products = [l.lo * r.lo, l.lo * r.hi, l.hi * r.lo, l.hi * r.hi];
-            Interval {
-                lo: *products.iter().min().unwrap_or(&0),
-                hi: *products.iter().max().unwrap_or(&0),
-            }
-        }
-    }
+    let op = match op {
+        BinOp::Add => RingOp::Add,
+        BinOp::Sub => RingOp::Sub,
+        _ => RingOp::Mul,
+    };
+    let (lo, hi) = ring_ops::exact_range(op, (l.lo, l.hi), (r.lo, r.hi));
+    Interval { lo, hi }
 }
 
 /// The exact range of the truncated quotient `l / r`, or `None` when the
@@ -1899,5 +1916,89 @@ mod tests {
             analyse(&[("x", SceType::Int8)], &[], &body),
             vec![("-x".to_string(), HazardKind::Overflow)]
         );
+    }
+
+    /// The request docs/adr/0063 answers: a tick counter that wraps, in a body
+    /// that does not declare `may-fail`. The subtraction is the case the
+    /// function exists for, and a total operation records no hazard.
+    #[test]
+    fn a_wrapping_subtraction_of_two_parameters_is_not_a_hazard() {
+        let params = [
+            ("now", SceType::Uint32),
+            ("last", SceType::Uint32),
+            ("period", SceType::Uint32),
+        ];
+        assert!(analyse(&params, &[], &[ret("wrappingSub(now, last) >= period")]).is_empty());
+        assert!(analyse_returning(
+            &params,
+            &[],
+            Some(SceType::Uint32),
+            &[ret("saturatingSub(period, wrappingSub(now, last))")]
+        )
+        .is_empty());
+        // The same subtraction as written can fail, which is why it is refused.
+        assert_eq!(
+            analyse(&params, &[], &[ret("now - last >= period")]),
+            vec![("now - last >= period".to_string(), HazardKind::Overflow)]
+        );
+    }
+
+    /// A hazard inside an operand is still reported: the operand is an
+    /// operation of its own.
+    #[test]
+    fn a_hazard_inside_a_total_operand_is_reported() {
+        let body = [ret("wrappingAdd(x + 1, 0)")];
+        assert_eq!(
+            analyse(&[("x", SceType::Uint8)], &[], &body),
+            vec![("wrappingAdd(x + 1, 0)".to_string(), HazardKind::Overflow)]
+        );
+        assert!(analyse(&[("x", SceType::Uint8)], &[], &[ret("wrappingAdd(x, 1)")]).is_empty());
+    }
+
+    /// A wrap that moves the whole range keeps it exact, so the value fits a
+    /// narrower place it lands in; a saturated one is clamped to its bounds.
+    #[test]
+    fn a_total_operation_keeps_the_exact_range_it_can() {
+        // x in 0..=3: x - 10 wraps every value into 246..=249, not a uint8.
+        let wrapped = [
+            if_(
+                "x <= 3",
+                vec![var("w", u8t(), "wrappingSub(x, 10) - 246"), ret("w")],
+            ),
+            ret("0"),
+        ];
+        assert!(analyse(&[("x", SceType::Uint8)], &[("w", SceType::Uint8)], &wrapped).is_empty());
+        // A range that crosses the wrap point is the whole type, and the
+        // subtraction below it can fail.
+        let crossing = [ret("wrappingSub(x, 10) - 246")];
+        assert_eq!(
+            analyse(&[("x", SceType::Uint8)], &[], &crossing),
+            vec![("wrappingSub(x, 10) - 246".to_string(), HazardKind::Overflow)]
+        );
+        // saturatingSub(x, 200) is 0..=55: adding 200 stays in uint8.
+        let clamped = [ret("saturatingSub(x, 200) + 200")];
+        assert!(analyse(&[("x", SceType::Uint8)], &[], &clamped).is_empty());
+    }
+
+    /// The exact range of a product of two `uint64` values passes `i128`; the
+    /// analysis holds it at `i128`'s bound rather than overflowing.
+    #[test]
+    fn a_product_of_two_uint64_values_is_judged_without_overflowing_the_analysis() {
+        let body = [ret("a * b")];
+        assert_eq!(
+            analyse(
+                &[("a", SceType::Uint64), ("b", SceType::Uint64)],
+                &[],
+                &body
+            ),
+            vec![("a * b".to_string(), HazardKind::Overflow)]
+        );
+        let total = [ret("wrappingMul(a, b)")];
+        assert!(analyse(
+            &[("a", SceType::Uint64), ("b", SceType::Uint64)],
+            &[],
+            &total
+        )
+        .is_empty());
     }
 }

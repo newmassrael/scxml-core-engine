@@ -319,6 +319,9 @@ fn emit_node(expr: &TypedExpr) -> Result<String, Refusal> {
         return swift_optional_form(form, expr);
     }
     Ok(match &expr.kind {
+        ExprKind::Total { op, rule, .. } => {
+            return Err(total_unlowered(*op, *rule, "Swift").at(expr.span.clone()))
+        }
         ExprKind::NumberLit(n) => portable_number_literal(n),
         ExprKind::StringLit { value, .. } => format!("\"{value}\""),
         ExprKind::BytesLit { bytes } => {
