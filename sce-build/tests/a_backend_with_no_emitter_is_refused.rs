@@ -232,24 +232,24 @@ fn an_algorithm_a_backend_writes_in_part_is_generated_and_the_rest_is_refused_by
 
 #[test]
 fn a_forge_document_is_refused_through_the_string_entry() {
-    // A kind no backend of this list writes, in whole or in part: a transform.
+    // A kind no backend of this list writes, in whole or in part: a validator.
     let document = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
-          version="1.0" sce:kind="transform" name="level_offset">
+          version="1.0" sce:kind="validator" name="level_range">
   <datamodel>
-    <data id="level" sce:type="int32" sce:direction="in"/>
-    <data id="offset" sce:type="int32" sce:direction="out" expr="level - 10"/>
+    <data id="level" sce:type="int32" sce:direction="in" sce:range-max="30"/>
+    <data id="valid" sce:type="bool" sce:direction="out"/>
   </datamodel></scxml>"#;
     for language in backends_with_no_emitter() {
         let error = compile_forge_from_string(
             document,
             DocumentLabel {
-                identifier: "level_offset",
-                diagnostic_label: "level_offset.scxml",
+                identifier: "level_range",
+                diagnostic_label: "level_range.scxml",
             },
             language,
         )
         .err()
-        .unwrap_or_else(|| panic!("{language:?} generated a transform it has no emitter for"));
+        .unwrap_or_else(|| panic!("{language:?} generated a validator it has no emitter for"));
         let text = format!("{error:?}");
         assert!(
             text.contains(language_wire_name(language)),
