@@ -21568,6 +21568,16 @@ fn render_broadcast_log_kotlin(
 /// (`WORDS = 1 + ceil(MAX_ENCODED_BYTES / 8)`, `SLOTS = RETENTION + 1`), so the
 /// slot width, the storage and the buffer cannot disagree.
 ///
+/// What the element's codec asks its caller for (its flag inputs, `uint8_t` each
+/// on `encode_to_buf` and `decode`, and the tag of a variant that has none of its
+/// own, the `uint8_t` that follows the flags on `decode`) is stored in context
+/// words between the length word and the bytes ([`broadcast_log_context_value`],
+/// over 64-bit words), taken by `publish` as a struct of `bool`s and a tag, and
+/// returned in the read result (ADR 0062 section 4). The header then states
+/// `CONTEXT_WORDS` and `WORDS = 1 + CONTEXT_WORDS + ceil(MAX_ENCODED_BYTES / 8)`;
+/// an element with no caller input has no context word and the header it always
+/// had.
+///
 /// The stamp is 64 bits, as in every row of the runtime, so
 /// [`judge_broadcast_log_stamp`] is not asked anything here (see
 /// [`render_broadcast_log_rust`]). The header uses the platform's `sce_atomic_*`
@@ -21592,10 +21602,11 @@ fn render_broadcast_log_c(
         )))
         .at_line(m.retention_line));
     }
-    // One word for the length, then the element's bytes at eight to a word: the
-    // arithmetic the header repeats in `WORDS`, here to refuse what a 32-bit
-    // count of words cannot hold.
-    let words = 1 + inputs.max_bytes.div_ceil(8);
+    // One word for the length, the context words of an element that asks its caller
+    // for something, then the element's bytes at eight to a word: the arithmetic the
+    // header repeats in `WORDS`, here to refuse what a 32-bit count of words cannot
+    // hold.
+    let words = 1 + u64::from(inputs.element.context_words(64)) + inputs.max_bytes.div_ceil(8);
     if words > u64::from(u32::MAX) {
         return Err(ForgeError::from(GenerateError::InvalidConfig(format!(
             "broadcast-log '{name}': the element '{element}' encodes to at most {bytes} bytes, \
@@ -21625,6 +21636,7 @@ fn render_broadcast_log_c(
         producers => inputs.producers,
         declared_progress => inputs.declared_progress,
         runtime_dep => "sce/forge/broadcast_log.h",
+        context => broadcast_log_context_value(&inputs.element, 64),
     };
     tmpl.render(ctx).map_err(|e| {
         ForgeError::from(GenerateError::TemplateRender(format!(

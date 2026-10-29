@@ -26,17 +26,27 @@
  *
  * Operations (the runtime's `sce_blog_*`, typed here over the element):
  *   {{ snake }}_publisher_acquire(log, &publisher)   takes the one place of the publisher
- *   {{ snake }}_publish(&publisher, &element)        wait-free; the entry's sequence number
+ *   {{ snake }}_publish(&publisher, &element{% if context.flags %}, &flags{% endif %}{% if context.has_tag %}, tag{% endif %})        wait-free; the entry's sequence number
  *   {{ snake }}_read(log, &reader, &out)             wait-free; an item, nothing new, or
  *                                                    how many entries were missed
  * A reader is `{{ snake }}_reader_oldest`, `{{ snake }}_reader_head` or
  * `{{ snake }}_reader_at`, and owns its cursor.
+{% if context.present %}
+ *
+ * The element's codec asks its caller for {% if context.flags %}{{ context.flags | length }} flag input(s){% endif %}{% if context.flags and context.has_tag %} and {% endif %}{% if context.has_tag %}a variant tag{% endif %}. Those are
+ * part of the entry: `{{ snake }}_publish` takes them, the log stores them in the entry's
+ * context words beside the bytes, and `{{ snake }}_read` returns them with the item, so
+ * every reader decodes an entry under what it was published under (ADR 0062 section 4).
+{% endif %}
  */
 
 #ifndef {{ guard }}
 #define {{ guard }}
 
 #include <stddef.h>
+{% if context.flags %}
+#include <stdbool.h>
+{% endif %}
 #include <stdint.h>
 
 /* `SCE_STATIC_ASSERT` for the size guard below. This header opens
@@ -65,11 +75,25 @@ extern "C" {
  * document when this header was generated. */
 #define {{ upper_name }}_MAX_ENCODED_BYTES ((size_t){{ max_bytes }}u)
 
+{% if context.present %}
+/* The words of an entry that hold what the element's codec asks its caller for
+ * (ADR 0062 section 4): {% if context.flags %}the flag inputs, one bit each in the order of the
+ * codec's signature{% endif %}{% if context.flags and context.has_tag %}, and then {% endif %}{% if context.has_tag %}one word that holds the variant's tag{% endif %}. */
+#define {{ upper_name }}_CONTEXT_WORDS ((uint32_t){{ context.context_words }}u)
+
+/* The 64-bit words an entry holds: one for the length of the encoded element,
+ * `{{ upper_name }}_CONTEXT_WORDS` for its context, then as many as
+ * `{{ upper_name }}_MAX_ENCODED_BYTES` bytes take at eight to a word, that is
+ * `1 + CONTEXT_WORDS + ceil(MAX_ENCODED_BYTES / 8)`. */
+#define {{ upper_name }}_WORDS \
+    ((uint32_t)(1u + {{ upper_name }}_CONTEXT_WORDS + {{ upper_name }}_MAX_ENCODED_BYTES / 8u + ({{ upper_name }}_MAX_ENCODED_BYTES % 8u != 0u ? 1u : 0u)))
+{% else %}
 /* The 64-bit words an entry holds: one for the length of the encoded element,
  * then as many as `{{ upper_name }}_MAX_ENCODED_BYTES` bytes take at eight to a word,
  * that is `1 + ceil(MAX_ENCODED_BYTES / 8)`. */
 #define {{ upper_name }}_WORDS \
     ((uint32_t)(1u + {{ upper_name }}_MAX_ENCODED_BYTES / 8u + ({{ upper_name }}_MAX_ENCODED_BYTES % 8u != 0u ? 1u : 0u)))
+{% endif %}
 
 /* The bytes of the buffer an element is encoded into and decoded from: the
  * bound, and at least one so that an element that encodes to nothing still has
@@ -100,6 +124,23 @@ typedef sce_blog_publisher_t {{ snake }}_publisher_t;
 /* A reader's position, which it owns and shares with nothing. */
 typedef sce_blog_reader_t {{ snake }}_reader_t;
 
+{% if context.flags %}
+/* The flag inputs the element's codec takes from its caller, which the log stores
+ * with each entry: what `{{ snake }}_publish` was given is what a reader gets back, and
+ * what the entry is decoded under. */
+typedef struct {
+{% for flag in context.flags %}
+    bool {{ flag.snake }};
+{% endfor %}
+} {{ snake }}_flags_t;
+
+/* A flag input as the codec takes it: one bit, in a byte that is 1 or 0. */
+static inline uint8_t {{ snake }}_flag_input(bool on)
+{
+    return (uint8_t)(on ? 1u : 0u);
+}
+
+{% endif %}
 /* What a typed publish did. */
 typedef enum {
     /* The element was encoded and published; `seq` is its sequence number. */
@@ -148,6 +189,18 @@ typedef struct {
     uint64_t skipped;
     /* Why the codec refused; meaningful for `{{ upper_name }}_READ_DECODE_FAILED`. */
     sce_forge_codec_status_t codec_status;
+{% if context.flags %}
+    /* The flag inputs the entry was published with, which it was decoded under.
+     * Meaningful for `{{ upper_name }}_READ_ITEM`, and set for `{{ upper_name }}_READ_DECODE_FAILED`
+     * to what the codec refused under. */
+    {{ snake }}_flags_t flags;
+{% endif %}
+{% if context.has_tag %}
+    /* The variant tag the entry was published with, which it was decoded under.
+     * Meaningful for `{{ upper_name }}_READ_ITEM`, and set for `{{ upper_name }}_READ_DECODE_FAILED`
+     * to what the codec refused under. */
+    uint8_t tag;
+{% endif %}
 } {{ snake }}_read_result_t;
 
 /* Builds an empty log. Returns zero, and builds nothing, for a shape the runtime
@@ -199,12 +252,20 @@ static inline {{ snake }}_reader_t {{ snake }}_reader_at(const {{ snake }}_t *lo
 /* Publishes `*element`: encodes it into a buffer of `{{ upper_name }}_MAX_ENCODED_BYTES` bytes, packs
  * its length and its bytes (little-endian, eight to a word) into
  * `{{ upper_name }}_WORDS` words, and hands them to the runtime, which never waits.
+{% if context.present %}
+ *
+ * {% if context.flags %}`*flags` are what the element's codec takes from its caller as flag inputs{% endif %}{% if context.flags and context.has_tag %}, and {% endif %}{% if context.has_tag %}`tag` is the variant tag its decode takes{% endif %}:
+ * they are encoded under here and stored in the entry's context words (after the length
+ * word, before the bytes), so that every reader decodes the entry under what it was
+ * published under. The log does not check that
+ * {% if context.has_tag %}`tag` is the tag of the arm `*element` holds{% else %}the flags agree with `*element`{% endif %}; the publisher gives what it knows, as every caller of this codec does.
+{% endif %}
  *
  * An element that encodes to more than `{{ upper_name }}_MAX_ENCODED_BYTES` bytes is refused by the
  * codec (SCE_FORGE_CODEC_BUFFER_OVERFLOW from its bounded writer) and nothing is
  * published: the codec never reports more bytes than the buffer it was given
  * holds, so the packing below never indexes past the entry. */
-static inline {{ snake }}_publish_result_t {{ snake }}_publish({{ snake }}_publisher_t *publisher, const {{ element_snake }}_t *element)
+static inline {{ snake }}_publish_result_t {{ snake }}_publish({{ snake }}_publisher_t *publisher, const {{ element_snake }}_t *element{% if context.flags %}, const {{ snake }}_flags_t *flags{% endif %}{% if context.has_tag %}, uint8_t tag{% endif %})
 {
     uint8_t bytes[{{ upper_name }}_BUFFER_BYTES] = {0};
     uint64_t entry[{{ upper_name }}_WORDS] = {0};
@@ -213,15 +274,23 @@ static inline {{ snake }}_publish_result_t {{ snake }}_publish({{ snake }}_publi
     {{ snake }}_publish_result_t result;
     result.status = {{ upper_name }}_PUBLISH_OK;
     result.seq = 0u;
-    result.codec_status = {{ element_snake }}_encode_to_buf(element, bytes, {{ upper_name }}_MAX_ENCODED_BYTES, &length);
+    result.codec_status = {{ element_snake }}_encode_to_buf(element, bytes, {{ upper_name }}_MAX_ENCODED_BYTES, &length{% for flag in context.flags %}, {{ snake }}_flag_input(flags->{{ flag.snake }}){% endfor %});
     if (result.codec_status != SCE_FORGE_CODEC_OK) {
         result.status = {{ upper_name }}_PUBLISH_ENCODE_FAILED;
         return result;
     }
     entry[0] = (uint64_t)length;
+{% for flag in context.flags %}
+    if (flags->{{ flag.snake }}) {
+        entry[1u + {{ flag.word }}u] |= UINT64_C(1) << {{ flag.shift }}u;
+    }
+{% endfor %}
+{% if context.has_tag %}
+    entry[1u + {{ context.tag_word }}u] = (uint64_t)tag;
+{% endif %}
 {% if max_bytes > 0 %}
     for (size_t index = 0u; index < length; index++) {
-        entry[1u + index / 8u] |= (uint64_t)bytes[index] << (8u * (index % 8u));
+        entry[{{ context.payload_start }}u + index / 8u] |= (uint64_t)bytes[index] << (8u * (index % 8u));
     }
 {% endif %}
     seq = sce_blog_publish(publisher, entry);
@@ -236,6 +305,11 @@ static inline {{ snake }}_publish_result_t {{ snake }}_publish({{ snake }}_publi
 /* Reads the entry at `reader`'s cursor and decodes it into `*out`. The runtime
  * answers an item only after the copy it made was checked against the slot, which
  * is what makes decoding it safe: a torn copy is `{{ upper_name }}_READ_LAGGED`, never decoded.
+{% if context.present %}
+ *
+ * The context the entry was published with is read from its context words, handed
+ * to the codec's decode ({% if context.flags %}the flag inputs{% endif %}{% if context.flags and context.has_tag %}, then {% endif %}{% if context.has_tag %}the tag{% endif %}) and returned in the result.
+{% endif %}
  *
  * A stored length above `{{ upper_name }}_MAX_ENCODED_BYTES` is not a length this log wrote, and is
  * `{{ upper_name }}_READ_BAD_LENGTH` and never a copy past the buffer. `*out` is meaningful only
@@ -254,6 +328,12 @@ static inline {{ snake }}_read_result_t {{ snake }}_read(const {{ snake }}_t *lo
     result.seq = 0u;
     result.skipped = 0u;
     result.codec_status = SCE_FORGE_CODEC_OK;
+{% for flag in context.flags %}
+    result.flags.{{ flag.snake }} = false;
+{% endfor %}
+{% if context.has_tag %}
+    result.tag = 0u;
+{% endif %}
     found = sce_blog_read(&log->core, reader, entry);
     if (found.status == SCE_BLOG_EMPTY) {
         result.status = {{ upper_name }}_READ_EMPTY;
@@ -273,11 +353,22 @@ static inline {{ snake }}_read_result_t {{ snake }}_read(const {{ snake }}_t *lo
     length = (size_t)stored;
 {% if max_bytes > 0 %}
     for (size_t index = 0u; index < length; index++) {
-        bytes[index] = (uint8_t)(entry[1u + index / 8u] >> (8u * (index % 8u)));
+        bytes[index] = (uint8_t)(entry[{{ context.payload_start }}u + index / 8u] >> (8u * (index % 8u)));
     }
 {% endif %}
+{% if context.present %}
+    /* What the entry was published under: the context words are written by the typed
+     * publish alone and a torn copy is never decoded, so a flag is a bit and the tag
+     * a byte. */
+{% endif %}
+{% for flag in context.flags %}
+    result.flags.{{ flag.snake }} = ((entry[1u + {{ flag.word }}u] >> {{ flag.shift }}u) & UINT64_C(1)) != 0u;
+{% endfor %}
+{% if context.has_tag %}
+    result.tag = (uint8_t)(entry[1u + {{ context.tag_word }}u] & UINT64_C(0xFF));
+{% endif %}
     cursor = sce_forge_cursor_init(bytes, length);
-    result.codec_status = {{ element_snake }}_decode(&cursor, out);
+    result.codec_status = {{ element_snake }}_decode(&cursor, out{% for flag in context.flags %}, {{ snake }}_flag_input(result.flags.{{ flag.snake }}){% endfor %}{% if context.has_tag %}, result.tag{% endif %});
     if (result.codec_status != SCE_FORGE_CODEC_OK) {
         result.status = {{ upper_name }}_READ_DECODE_FAILED;
     }

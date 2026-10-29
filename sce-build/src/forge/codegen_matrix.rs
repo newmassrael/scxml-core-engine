@@ -359,6 +359,7 @@ pub const BROADCAST_LOG_CONTEXT_BACKENDS: &[Language] = &[
     Language::Kotlin,
     Language::Python,
     Language::Go,
+    Language::C11,
 ];
 
 /// Whether the broadcast-log template of `lang` stores the context of an element
