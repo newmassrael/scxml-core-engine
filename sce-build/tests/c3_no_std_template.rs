@@ -471,17 +471,16 @@ fn rust_template_sizes_the_microstep_to_the_documents_state_tree() {
     // of the four atomic states a configuration holds, and two parents have a
     // history. The walks over the entry set run over a stack of three steps for
     // each of the four levels, one for each of the two histories and three of
-    // headroom: 17. Each history records one state, one of its parent's
-    // atomic children, so the records hold 2.
+    // headroom: 17. Every set of states the runtime keeps, the configuration
+    // and each history's record among them, is a bit vector of the twelve
+    // states, so the workspace and the run store are sized by that count.
+    // No row lists a state's children: the numbering is a pre-order walk, so
+    // they follow from each state's last descendant.
     let model = parse(
         include_str!("fixtures/no_std/parallel_history_probe.scxml"),
         "parallel_history_probe",
     );
-    let state_row = |parent: Option<u16>,
-                     kind: &str,
-                     last: u16,
-                     children: (u16, u16),
-                     initial: Option<u16>| {
+    let state_row = |parent: Option<u16>, kind: &str, last: u16, initial: Option<u16>| {
         let parent = match parent {
             Some(p) => format!("Some(StateId({p}))"),
             None => "None".to_string(),
@@ -490,21 +489,14 @@ fn rust_template_sizes_the_microstep_to_the_documents_state_tree() {
             Some(t) => format!("Some(TransitionId({t}))"),
             None => "None".to_string(),
         };
-        format!(
-            "StateRow {{ parent: {parent}, kind: StateKind::{kind}, last_descendant: StateId({last}), \
-             children: Span {{ start: {}, len: {} }}, initial: {initial} }},",
-            children.0, children.1
-        )
+        format!("StateRow::new({parent}, StateKind::{kind}, StateId({last}), {initial}),")
     };
     let transition_row = |source: Option<u16>, target: u16| {
         let source = match source {
             Some(s) => format!("Some(StateId({s}))"),
             None => "None".to_string(),
         };
-        format!(
-            "TransitionRow {{ source: {source}, targets: Span {{ start: {target}, len: 1 }}, \
-             internal: false, has_content: false }},"
-        )
+        format!("TransitionRow::new({source}, Span {{ start: {target}, len: 1 }}, false, false),")
     };
     for no_std in [false, true] {
         let code = generate(&model, &template_dir(), no_std).expect("render");
@@ -540,30 +532,28 @@ fn rust_template_sizes_the_microstep_to_the_documents_state_tree() {
             "emit (no_std={no_std}): `EVENTS` ends with the null event"
         );
         assert_eq!(
-            lines_starting(&code, "StateRow {"),
+            lines_starting(&code, "StateRow::new("),
             [
-                state_row(None, "Parallel", 11, (0, 3), None),
-                state_row(Some(0), "Compound", 4, (3, 3), Some(14)),
-                state_row(Some(1), "Atomic", 2, (6, 0), None),
-                state_row(Some(1), "Atomic", 3, (6, 0), None),
-                state_row(Some(1), "Atomic", 4, (6, 0), None),
-                state_row(Some(0), "Compound", 7, (6, 2), Some(15)),
-                state_row(Some(5), "Atomic", 6, (8, 0), None),
-                state_row(Some(5), "Atomic", 7, (8, 0), None),
-                state_row(Some(0), "Compound", 11, (8, 1), Some(16)),
-                state_row(Some(8), "Parallel", 11, (9, 2), None),
-                state_row(Some(9), "Atomic", 10, (11, 0), None),
-                state_row(Some(9), "Atomic", 11, (11, 0), None),
+                state_row(None, "Parallel", 11, None),
+                state_row(Some(0), "Compound", 4, Some(14)),
+                state_row(Some(1), "Atomic", 2, None),
+                state_row(Some(1), "Atomic", 3, None),
+                state_row(Some(1), "Atomic", 4, None),
+                state_row(Some(0), "Compound", 7, Some(15)),
+                state_row(Some(5), "Atomic", 6, None),
+                state_row(Some(5), "Atomic", 7, None),
+                state_row(Some(0), "Compound", 11, Some(16)),
+                state_row(Some(8), "Parallel", 11, None),
+                state_row(Some(9), "Atomic", 10, None),
+                state_row(Some(9), "Atomic", 11, None),
             ],
             "emit (no_std={no_std}): the state rows"
         );
         assert_eq!(
             lines_starting(&code, "HistoryRow {"),
             [
-                "HistoryRow { parent: StateId(1), deep: true, default: TransitionId(17), \
-                 record: Span { start: 0, len: 1 } },",
-                "HistoryRow { parent: StateId(5), deep: false, default: TransitionId(18), \
-                 record: Span { start: 1, len: 1 } },",
+                "HistoryRow { parent: StateId(1), default: TransitionId(17), deep: true },",
+                "HistoryRow { parent: StateId(5), default: TransitionId(18), deep: false },",
             ],
             "emit (no_std={no_std}): the history rows"
         );
@@ -594,7 +584,7 @@ fn rust_template_sizes_the_microstep_to_the_documents_state_tree() {
             None,
         ];
         assert_eq!(
-            lines_starting(&code, "TransitionRow {"),
+            lines_starting(&code, "TransitionRow::new("),
             sources
                 .iter()
                 .zip(0u16..)
@@ -603,28 +593,23 @@ fn rust_template_sizes_the_microstep_to_the_documents_state_tree() {
             "emit (no_std={no_std}): the transition rows"
         );
         for expected in [
-            "children: &[StateId(1), StateId(5), StateId(8), StateId(2), StateId(3), StateId(4), \
-             StateId(6), StateId(7), StateId(9), StateId(10), StateId(11)],",
-            "targets: &[Target::State(StateId(3)), Target::State(StateId(4)), \
-             Target::State(StateId(3)), Target::State(StateId(4)), Target::State(StateId(2)), \
-             Target::History(HistoryId(0)), Target::State(StateId(2)), Target::State(StateId(7)), \
-             Target::State(StateId(6)), Target::History(HistoryId(1)), \
-             Target::State(StateId(10)), Target::State(StateId(10)), Target::State(StateId(11)), \
-             Target::State(StateId(11)), Target::State(StateId(2)), Target::State(StateId(6)), \
-             Target::State(StateId(9)), Target::State(StateId(2)), Target::State(StateId(6)), \
-             Target::State(StateId(0))],",
-            "initial: TransitionId(19),",
-            "history_records: 2,",
-            "max_configuration: 9,",
-            "max_enabled: 4,",
-            "max_history_defaults: 2,",
-            "max_walk: 17,",
+            "targets: &[Target::state(StateId(3)), Target::state(StateId(4)), \
+             Target::state(StateId(3)), Target::state(StateId(4)), Target::state(StateId(2)), \
+             Target::history(HistoryId(0)), Target::state(StateId(2)), Target::state(StateId(7)), \
+             Target::state(StateId(6)), Target::history(HistoryId(1)), \
+             Target::state(StateId(10)), Target::state(StateId(10)), Target::state(StateId(11)), \
+             Target::state(StateId(11)), Target::state(StateId(2)), Target::state(StateId(6)), \
+             Target::state(StateId(9)), Target::state(StateId(2)), Target::state(StateId(6)), \
+             Target::state(StateId(0))],",
+            "initial: TransitionId(19),\n    }\n};",
             "pub const PARALLEL_HISTORY_PROBE_TABLES: ::sce_rust_runtime::DocumentTables = {",
             "const TABLES: &'static ::sce_rust_runtime::DocumentTables = \
              &PARALLEL_HISTORY_PROBE_TABLES;",
             "type Workspace = ::sce_rust_runtime::Workspace<\
-             { ::sce_rust_runtime::state_scratch(9) }, 4, 17, 2>;",
-            "type RunStore = ::sce_rust_runtime::RunStore<9, 2, 2>;",
+             { ::sce_rust_runtime::state_scratch(12) }, 4, 17, 2>;",
+            "type RunStore = ::sce_rust_runtime::RunStore<\
+             { ::sce_rust_runtime::state_words(12) }, \
+             { ::sce_rust_runtime::record_words(12, 2) }, 2>;",
             "pub type ParallelHistoryProbeConfiguration = \
              ::sce_rust_runtime::helpers::hierarchy::BoundedVec<ParallelHistoryProbeState, 9>;",
             "ParallelHistoryProbeHistory::HaDeep,\n        ParallelHistoryProbeHistory::HbShallow,\n    ];",
@@ -646,6 +631,16 @@ fn rust_template_sizes_the_microstep_to_the_documents_state_tree() {
             "type EntryWalk",
             "history_ha_deep",
             "history_hb_shallow",
+            // Fields the tables no longer hold: the children follow from the
+            // pre-order numbering, a history's record is a set of states, and
+            // the buffer sizes are the policy's types.
+            "children: &[",
+            "record: Span",
+            "history_records",
+            "max_configuration:",
+            "max_walk:",
+            "Target::State(",
+            "Target::History(",
         ] {
             assert!(
                 !code.contains(gone),
@@ -655,8 +650,9 @@ fn rust_template_sizes_the_microstep_to_the_documents_state_tree() {
     }
 
     // A flat machine holds one state and enables one transition, whatever the
-    // size of a constant the runtime might once have chosen; it has no
-    // history, so nothing to record and an uninhabited history type.
+    // size of a constant the runtime might once have chosen; its sets of
+    // states are bit vectors of its two states; it has no history, so no
+    // record and an uninhabited history type.
     let flat = generate(&parse(PLAIN_FSM, "plain_bounds"), &template_dir(), true)
         .expect("template render must succeed");
     assert_eq!(
@@ -664,29 +660,27 @@ fn rust_template_sizes_the_microstep_to_the_documents_state_tree() {
         ["S0 = 0,", "S1 = 1,"]
     );
     assert_eq!(
-        lines_starting(&flat, "StateRow {"),
+        lines_starting(&flat, "StateRow::new("),
         [
-            state_row(None, "Atomic", 0, (0, 0), None),
-            state_row(None, "Atomic", 1, (0, 0), None),
+            state_row(None, "Atomic", 0, None),
+            state_row(None, "Atomic", 1, None),
         ]
     );
     assert_eq!(
-        lines_starting(&flat, "TransitionRow {"),
+        lines_starting(&flat, "TransitionRow::new("),
         [transition_row(Some(0), 0), transition_row(None, 1)]
     );
     assert!(lines_starting(&flat, "HistoryRow {").is_empty());
     for expected in [
-        "children: &[],",
-        "targets: &[Target::State(StateId(1)), Target::State(StateId(0))],",
+        "targets: &[Target::state(StateId(1)), Target::state(StateId(0))],",
         "initial: TransitionId(1),",
-        "history_records: 0,",
-        "max_configuration: 1,",
-        "max_enabled: 1,",
-        "max_history_defaults: 0,",
-        "max_walk: 6,",
+        "pub type PlainBoundsConfiguration = \
+         ::sce_rust_runtime::helpers::hierarchy::BoundedVec<PlainBoundsState, 1>;",
         "type Workspace = ::sce_rust_runtime::Workspace<\
-         { ::sce_rust_runtime::state_scratch(1) }, 1, 6, 0>;",
-        "type RunStore = ::sce_rust_runtime::RunStore<1, 0, 0>;",
+         { ::sce_rust_runtime::state_scratch(2) }, 1, 6, 0>;",
+        "type RunStore = ::sce_rust_runtime::RunStore<\
+         { ::sce_rust_runtime::state_words(2) }, \
+         { ::sce_rust_runtime::record_words(2, 0) }, 0>;",
         "type History = sce_rust_runtime::NoHistory;",
         "const HISTORIES: &'static [Self::History] = &[];",
         "match history {}",

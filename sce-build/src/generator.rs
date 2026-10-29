@@ -2514,8 +2514,6 @@ fn rust_tables(
                 "parent": rust_optional_id("StateId", row.parent),
                 "kind": kind,
                 "last_descendant": row.last_descendant,
-                "children_start": row.children.start,
-                "children_len": row.children.len,
                 "initial": rust_optional_id("TransitionId", row.initial),
             })
         })
@@ -2529,8 +2527,6 @@ fn rust_tables(
                 "parent": row.parent,
                 "deep": row.deep,
                 "default": row.default,
-                "record_start": row.record.start,
-                "record_len": row.record.len,
             })
         })
         .collect();
@@ -2573,12 +2569,10 @@ fn rust_tables(
         .collect();
     Ok(serde_json::json!({
         "states": states,
-        "children": tables.children,
         "histories": histories,
         "transitions": transitions,
         "targets": targets,
         "initial": tables.initial,
-        "history_records": tables.history_records,
         "max_configuration": max_configuration,
         "max_enabled": max_enabled,
         "max_history_defaults": max_history_defaults,

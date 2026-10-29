@@ -18,7 +18,9 @@
 //!   ([`State::document_order`]). Document order is a pre-order walk of the
 //!   tree, so a parent's number is below each of its children's, and a state's
 //!   subtree is the contiguous range from its own number to
-//!   [`StateRow::last_descendant`]. Entry order is ascending order and exit
+//!   [`StateRow::last_descendant`]. Its children are therefore not stored: the
+//!   first is the number after its own, and each further one the number after
+//!   the subtree of the one before. Entry order is ascending order and exit
 //!   order descending. A model numbered otherwise is refused rather than
 //!   tabled, since a core reading its rows would answer wrongly in silence;
 //! - a `<history>`'s number (`HistoryId`) is its position among the
@@ -35,8 +37,11 @@
 //! - a target is as written: a token naming a `<history>` stays a history, for
 //!   the entry procedures to dereference at run time.
 //!
-//! Every number is a `u16`, so a document with more than 65,535 rows in any
-//! table is refused, and the refusal names the table.
+//! Every number is a `u16`. The runtime keeps the top bit of a target for
+//! whether it names a history and the largest `u16` for an absent state or
+//! transition, so a document with more than [`MAX_IDS`] states, histories or
+//! transitions, or more than [`MAX_TARGETS`] targets, is refused, and the
+//! refusal names the table.
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -45,8 +50,15 @@ use std::ops::Range;
 use crate::microstep_bounds::MicrostepBounds;
 use crate::model::{HistoryInfo, SCXMLModel, State};
 
-/// The most rows one table holds: its numbers are `u16`s.
-pub const MAX_ROWS: usize = u16::MAX as usize;
+/// The most states, histories or transitions one table numbers: every id
+/// below `1 << 15`, since a target keeps its top bit for whether it names a
+/// state or a history, and no id reaches the largest `u16`, which a row holds
+/// where a state or a transition is absent.
+pub const MAX_IDS: usize = 1 << 15;
+
+/// The most targets the pool holds: a transition names its targets as a
+/// [`Span`] of two `u16`s.
+pub const MAX_TARGETS: usize = u16::MAX as usize;
 
 /// A document's tables: every row the core reads, indexed by the numbers
 /// the module documentation defines.
@@ -54,9 +66,6 @@ pub const MAX_ROWS: usize = u16::MAX as usize;
 pub struct DocumentTables {
     /// One row per state, indexed by `StateId`.
     pub states: Vec<StateRow>,
-    /// The pool of `StateId`s that [`StateRow::children`] spans into, laid out
-    /// state by state in `StateId` order.
-    pub children: Vec<u16>,
     /// One row per `<history>`, indexed by `HistoryId`.
     pub histories: Vec<HistoryRow>,
     /// One row per transition, indexed by `TransitionId`.
@@ -66,11 +75,10 @@ pub struct DocumentTables {
     pub targets: Vec<TargetRef>,
     /// The `TransitionId` of the document's own initial transition.
     pub initial: u16,
-    /// The length of the pool the histories' records are kept in, which
-    /// [`HistoryRow::record`] spans into.
-    pub history_records: u16,
-    /// The bounds of the microstep's buffers, carried with the rows they
-    /// size.
+    /// The bounds of the microstep's buffers, carried with the rows whose
+    /// procedures they size. The tables themselves hold none of them: the
+    /// generator writes them as the sizes of the machine's workspace and
+    /// configuration types.
     pub bounds: MicrostepBounds,
 }
 
@@ -112,19 +120,22 @@ pub struct StateRow {
     /// `<scxml>` element. Always below this row's own number.
     pub parent: Option<u16>,
     pub kind: StateKind,
-    /// Its child states in document order, as a span of
-    /// [`DocumentTables::children`]. A `<history>` is not among them.
-    pub children: Span,
     /// The `TransitionId` of its initial transition: `Some` exactly for a
     /// [`StateKind::Compound`] state.
     pub initial: Option<u16>,
     /// The largest `StateId` in its subtree, its own when it has no child
     /// states: a state `s` is a proper descendant of this one exactly when
-    /// this row's number is below `s` and `s` is at most this.
+    /// this row's number is below `s` and `s` is at most this. Its child
+    /// states, which no row lists, follow from it: the first is this row's
+    /// number plus one, and each further one is one past the
+    /// `last_descendant` of the one before, up to this. A `<history>` is not
+    /// among them.
     pub last_descendant: u16,
 }
 
-/// One `<history>`.
+/// One `<history>`. What it records is kept by the engine as one set of the
+/// document's states, as every set the core keeps is, so its row says nothing
+/// of how many states that can be.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HistoryRow {
     /// The `<history>`'s id.
@@ -136,26 +147,6 @@ pub struct HistoryRow {
     pub deep: bool,
     /// The `TransitionId` of its default transition.
     pub default: u16,
-    /// Where its record is kept, as a span of a pool of
-    /// [`DocumentTables::history_records`] slots; the span is as long as the
-    /// most states it can record.
-    ///
-    /// When its parent is exited, a history records the states of the
-    /// configuration it stands for, and a configuration holds one child of a
-    /// compound state and every child of a `<parallel>`:
-    ///
-    /// - a shallow history records its parent's active children: one for a
-    ///   compound parent, all of them for a `<parallel>`;
-    /// - a deep history records the atomic states active below its parent. A
-    ///   configuration below a state holds the atomic states of one child's
-    ///   for a compound state and those of every child's for a `<parallel>`,
-    ///   so the count is the largest of its children's for a compound parent
-    ///   and the sum of them for a `<parallel>`, a state with no child states
-    ///   counting one;
-    ///
-    /// and neither records more states than one configuration holds, so each
-    /// is also at most [`MicrostepBounds::configuration`].
-    pub record: Span,
 }
 
 /// One transition: a written `<transition>`, a compound state's initial
@@ -212,7 +203,17 @@ pub enum Table {
     Histories,
     Transitions,
     Targets,
-    HistoryRecords,
+}
+
+impl Table {
+    /// The most rows the table holds: [`MAX_IDS`] for a table whose rows
+    /// are ids, [`MAX_TARGETS`] for the pool of targets.
+    pub const fn max_rows(self) -> usize {
+        match self {
+            Table::States | Table::Histories | Table::Transitions => MAX_IDS,
+            Table::Targets => MAX_TARGETS,
+        }
+    }
 }
 
 impl fmt::Display for Table {
@@ -222,7 +223,6 @@ impl fmt::Display for Table {
             Table::Histories => "<history> elements",
             Table::Transitions => "transitions (written, initial and history default)",
             Table::Targets => "transition targets",
-            Table::HistoryRecords => "history record slots",
         })
     }
 }
@@ -230,11 +230,11 @@ impl fmt::Display for Table {
 /// Why a model has no tables.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum TablesError {
-    /// A table would hold more rows than its `u16` numbers count.
+    /// A table would hold more rows than its numbers count.
     #[error(
         "the document has {count} {table}, and a table numbers at most {max} of them \
-         (a u16 each, ADR 0064)",
-        max = MAX_ROWS
+         (ADR 0064)",
+        max = .table.max_rows()
     )]
     TooMany { table: Table, count: usize },
     /// A reference names neither a state nor a `<history>` of the document.
@@ -250,8 +250,12 @@ pub enum TablesError {
     NotDocumentOrder { state: String },
 }
 
-/// `count` as a `u16`, or the refusal that names `table`.
+/// `count` as a `u16` when `table` holds that many rows, or the refusal that
+/// names `table`.
 fn fits(count: usize, table: Table) -> Result<u16, TablesError> {
+    if count > table.max_rows() {
+        return Err(TablesError::TooMany { table, count });
+    }
     u16::try_from(count).map_err(|_| TablesError::TooMany { table, count })
 }
 
@@ -358,9 +362,8 @@ impl DocumentTables {
         let written: usize = ordered.iter().map(|(_, s)| s.transitions.len()).sum();
         fits(written + compound + histories.len() + 1, Table::Transitions)?;
 
-        // The states, each with its parent and its children.
+        // The states, each with its parent.
         let mut states: Vec<StateRow> = Vec::with_capacity(ordered.len());
-        let mut children: Vec<u16> = Vec::new();
         for ((id, state), number) in ordered.iter().zip(0u16..) {
             let parent = match state.parent.as_deref() {
                 Some(parent) => {
@@ -374,22 +377,18 @@ impl DocumentTables {
                 }
                 None => None,
             };
-            let start = children.len();
-            for child in &state.children {
-                children.push(names.state(child, || format!("a child of state `{id}`"))?);
-            }
             states.push(StateRow {
                 id: (*id).to_string(),
                 parent,
                 kind: kind_of(state),
-                children: span(start, children.len(), Table::States)?,
                 initial: None,
                 last_descendant: number,
             });
         }
 
         // A subtree is the run of numbers from its root to its last
-        // descendant only if it holds as many states as that run does. Every
+        // descendant only if it holds as many states as that run does, and
+        // only then are its children where the runtime looks for them. Every
         // child is numbered above its parent (checked above), so a walk from
         // the last state back meets each child before its parent.
         let mut subtree: Vec<usize> = vec![1; states.len()];
@@ -410,7 +409,6 @@ impl DocumentTables {
             }
         }
 
-        let bounds = MicrostepBounds::of(model);
         let mut transitions: Vec<TransitionRow> = Vec::new();
         let mut targets: Vec<TargetRef> = Vec::new();
 
@@ -447,43 +445,10 @@ impl DocumentTables {
             });
         }
 
-        // How many atomic states one configuration holds below each state,
-        // the state itself counting one when it has no child states.
-        let mut atomic: Vec<usize> = vec![1; states.len()];
-        for (index, row) in states.iter().enumerate().rev() {
-            let below = children[row.children.range()]
-                .iter()
-                .map(|child| atomic[usize::from(*child)]);
-            let count = if row.children.len == 0 {
-                1
-            } else if row.kind == StateKind::Parallel {
-                below.sum::<usize>()
-            } else {
-                below.max().unwrap_or(1)
-            };
-            atomic[index] = count;
-        }
-
-        // One default transition for each `<history>`, and its record.
+        // One default transition for each `<history>`.
         let mut history_rows: Vec<HistoryRow> = Vec::with_capacity(histories.len());
-        let mut records = 0usize;
         for ((id, info), number) in histories.iter().zip(0u16..) {
             let parent = names.state(&info.parent, || format!("the parent of <history> `{id}`"))?;
-            let deep = info.history_type == "deep";
-            let parent_row = &states[usize::from(parent)];
-            let regions = &children[parent_row.children.range()];
-            let parallel = parent_row.kind == StateKind::Parallel;
-            let below = regions.iter().map(|child| atomic[usize::from(*child)]);
-            let recorded = match (deep, parallel) {
-                (true, true) => below.sum::<usize>(),
-                (true, false) => below.max().unwrap_or(0),
-                (false, true) => regions.len(),
-                (false, false) => regions.len().min(1),
-            }
-            .min(bounds.configuration);
-            let record = span(records, records + recorded, Table::HistoryRecords)?;
-            records += recorded;
-
             let default = fits(transitions.len(), Table::Transitions)?;
             let referrer = || format!("the default transition of <history> `{id}`");
             transitions.push(TransitionRow {
@@ -496,9 +461,8 @@ impl DocumentTables {
             history_rows.push(HistoryRow {
                 id: (*id).to_string(),
                 parent,
-                deep,
+                deep: info.history_type == "deep",
                 default,
-                record,
             });
         }
 
@@ -515,13 +479,11 @@ impl DocumentTables {
 
         Ok(Self {
             states,
-            children,
             histories: history_rows,
             transitions,
             targets,
             initial,
-            history_records: fits(records, Table::HistoryRecords)?,
-            bounds,
+            bounds: MicrostepBounds::of(model),
         })
     }
 
@@ -574,7 +536,6 @@ mod tests {
         id: &str,
         parent: Option<u16>,
         kind: StateKind,
-        children: (u16, u16),
         initial: Option<u16>,
         last_descendant: u16,
     ) -> StateRow {
@@ -582,13 +543,23 @@ mod tests {
             id: id.to_string(),
             parent,
             kind,
-            children: Span {
-                start: children.0,
-                len: children.1,
-            },
             initial,
             last_descendant,
         }
+    }
+
+    /// The child states of `state` as the runtime reads them from the rows:
+    /// the next number, then each number past the subtree of the one before,
+    /// up to the end of `state`'s subtree.
+    fn children_of(tables: &DocumentTables, state: u16) -> Vec<u16> {
+        let last = tables.states[usize::from(state)].last_descendant;
+        let mut children = Vec::new();
+        let mut next = state + 1;
+        while next <= last {
+            children.push(next);
+            next = tables.states[usize::from(next)].last_descendant + 1;
+        }
+        children
     }
 
     fn transition(
@@ -634,11 +605,10 @@ mod tests {
             tables,
             DocumentTables {
                 states: vec![
-                    row("idle", None, Atomic, (0, 0), None, 0),
-                    row("busy", None, Atomic, (0, 0), None, 1),
-                    row("done", None, Final, (0, 0), None, 2),
+                    row("idle", None, Atomic, None, 0),
+                    row("busy", None, Atomic, None, 1),
+                    row("done", None, Final, None, 2),
                 ],
-                children: vec![],
                 histories: vec![],
                 transitions: vec![
                     transition(Some(0), written(0), (0, 1), false, false),
@@ -648,7 +618,6 @@ mod tests {
                 ],
                 targets: vec![S(1), S(0), S(0)],
                 initial: 3,
-                history_records: 0,
                 bounds: MicrostepBounds::of(&model),
             }
         );
@@ -682,12 +651,11 @@ mod tests {
             tables,
             DocumentTables {
                 states: vec![
-                    row("outer", None, Compound, (0, 2), Some(3), 2),
-                    row("first", Some(0), Atomic, (2, 0), None, 1),
-                    row("second", Some(0), Atomic, (2, 0), None, 2),
-                    row("gone", None, Final, (2, 0), None, 3),
+                    row("outer", None, Compound, Some(3), 2),
+                    row("first", Some(0), Atomic, None, 1),
+                    row("second", Some(0), Atomic, None, 2),
+                    row("gone", None, Final, None, 3),
                 ],
-                children: vec![1, 2],
                 histories: vec![],
                 transitions: vec![
                     transition(Some(0), written(0), (0, 1), true, false),
@@ -698,16 +666,17 @@ mod tests {
                 ],
                 targets: vec![S(1), S(3), S(2), S(2), S(0)],
                 initial: 4,
-                history_records: 0,
                 bounds: MicrostepBounds::of(&model),
             }
         );
         assert_eq!(tables.transition_id("outer", 1), Some(1));
         assert_eq!(tables.transition_id("first", 0), Some(2));
+        assert_eq!(children_of(&tables, 0), [1u16, 2]);
+        assert!(children_of(&tables, 3).is_empty());
     }
 
     #[test]
-    fn histories_are_numbered_by_id_and_keep_records_their_parents_bound() {
+    fn histories_are_numbered_by_id_and_children_follow_from_the_subtrees() {
         // machine (compound, initial is the history `resume`)
         //   resume: deep history of machine, with content
         //   panel (parallel)
@@ -742,40 +711,32 @@ mod tests {
             tables,
             DocumentTables {
                 states: vec![
-                    row("machine", None, Compound, (0, 2), Some(2), 6),
-                    row("panel", Some(0), Parallel, (2, 2), None, 5),
-                    row("left", Some(1), Compound, (4, 2), Some(3), 4),
-                    row("l1", Some(2), Atomic, (6, 0), None, 3),
-                    row("l2", Some(2), Atomic, (6, 0), None, 4),
-                    row("right", Some(1), Atomic, (6, 0), None, 5),
-                    row("off", Some(0), Atomic, (6, 0), None, 6),
+                    row("machine", None, Compound, Some(2), 6),
+                    row("panel", Some(0), Parallel, None, 5),
+                    row("left", Some(1), Compound, Some(3), 4),
+                    row("l1", Some(2), Atomic, None, 3),
+                    row("l2", Some(2), Atomic, None, 4),
+                    row("right", Some(1), Atomic, None, 5),
+                    row("off", Some(0), Atomic, None, 6),
                 ],
-                children: vec![1, 6, 2, 5, 3, 4],
                 histories: vec![
-                    // Deep in a <parallel>: one leaf of left and right.
                     HistoryRow {
                         id: "everything".to_string(),
                         parent: 1,
                         deep: true,
                         default: 4,
-                        record: Span { start: 0, len: 2 },
                     },
-                    // Shallow in a <parallel>: both regions.
                     HistoryRow {
                         id: "regions".to_string(),
                         parent: 1,
                         deep: false,
                         default: 5,
-                        record: Span { start: 2, len: 2 },
                     },
-                    // Deep in a compound: the larger of panel's two leaves
-                    // and off's one.
                     HistoryRow {
                         id: "resume".to_string(),
                         parent: 0,
                         deep: true,
                         default: 6,
-                        record: Span { start: 4, len: 2 },
                     },
                 ],
                 transitions: vec![
@@ -808,29 +769,26 @@ mod tests {
                 ],
                 targets: vec![S(4), H(2), H(2), S(3), S(4), S(5), S(2), S(5), S(1), S(0),],
                 initial: 7,
-                history_records: 6,
                 bounds: MicrostepBounds::of(&model),
             }
         );
         assert_eq!(tables.history_id("resume"), Some(2));
         assert_eq!(tables.history_id("machine"), None);
-    }
-
-    #[test]
-    fn a_shallow_history_of_a_compound_records_one_state() {
-        let (_, tables) = tables_of(
-            r#">
-  <state id="a">
-    <history id="h"><transition target="a2"/></history>
-    <state id="a1"/>
-    <state id="a2"><state id="a2x"/><state id="a2y"/></state>
-  </state>
-"#,
-        );
-        assert_eq!(tables.histories.len(), 1);
-        assert!(!tables.histories[0].deep);
-        assert_eq!(tables.histories[0].record, Span { start: 0, len: 1 });
-        assert_eq!(tables.history_records, 1);
+        // No row lists a state's children: machine's are panel and, past
+        // panel's subtree, off; panel's regions are left and, past left's
+        // subtree, right; a history is none of them.
+        for (state, children) in [(0u16, vec![1u16, 6]), (1, vec![2, 5]), (2, vec![3, 4])] {
+            assert_eq!(children_of(&tables, state), children, "children of {state}");
+            let id = &tables.states[usize::from(state)].id;
+            let named: Vec<&str> = children
+                .iter()
+                .map(|child| tables.states[usize::from(*child)].id.as_str())
+                .collect();
+            assert_eq!(named, model.states[id].children, "children of `{id}`");
+        }
+        for leaf in [3, 4, 5, 6] {
+            assert!(children_of(&tables, leaf).is_empty(), "{leaf} is a leaf");
+        }
     }
 
     #[test]
@@ -840,7 +798,6 @@ mod tests {
             DocumentTables::of(&model),
             Ok(DocumentTables {
                 states: vec![],
-                children: vec![],
                 histories: vec![],
                 transitions: vec![transition(
                     None,
@@ -851,7 +808,6 @@ mod tests {
                 )],
                 targets: vec![],
                 initial: 0,
-                history_records: 0,
                 bounds: MicrostepBounds::of(&model),
             })
         );
@@ -946,36 +902,46 @@ mod tests {
     }
 
     #[test]
-    fn a_count_past_a_u16_names_its_table() {
-        for table in [
-            Table::States,
-            Table::Histories,
-            Table::Transitions,
-            Table::Targets,
-            Table::HistoryRecords,
+    fn a_count_past_what_its_table_numbers_names_its_table() {
+        for (table, max) in [
+            (Table::States, MAX_IDS),
+            (Table::Histories, MAX_IDS),
+            (Table::Transitions, MAX_IDS),
+            (Table::Targets, MAX_TARGETS),
         ] {
-            assert_eq!(fits(MAX_ROWS, table), Ok(u16::MAX));
+            assert_eq!(table.max_rows(), max, "{table}");
+            assert_eq!(fits(max, table), Ok(max as u16), "{table}");
             assert_eq!(
-                fits(MAX_ROWS + 1, table),
+                fits(max + 1, table),
                 Err(TablesError::TooMany {
                     table,
-                    count: MAX_ROWS + 1
+                    count: max + 1
                 })
             );
         }
+        // Every id leaves a target's top bit clear, and none is the largest
+        // `u16`, which stands for an absent state or transition.
+        assert_eq!(MAX_IDS - 1, usize::from(u16::MAX >> 1));
         let message = TablesError::TooMany {
             table: Table::Transitions,
+            count: 40_000,
+        }
+        .to_string();
+        assert!(message.contains("40000 transitions"), "{message}");
+        assert!(message.contains("32768"), "{message}");
+        let message = TablesError::TooMany {
+            table: Table::Targets,
             count: 70_000,
         }
         .to_string();
-        assert!(message.contains("70000 transitions"), "{message}");
+        assert!(message.contains("70000 transition targets"), "{message}");
         assert!(message.contains("65535"), "{message}");
     }
 
     #[test]
-    fn a_document_of_65536_states_is_refused_for_its_states() {
+    fn a_document_of_more_states_than_ids_is_refused_for_its_states() {
         let mut model = SCXMLModel::default();
-        for order in 0..=u32::from(u16::MAX) {
+        for order in 0..=(MAX_IDS as u32) {
             let id = format!("s{order}");
             model.states.insert(
                 id.clone(),
@@ -990,7 +956,7 @@ mod tests {
             DocumentTables::of(&model),
             Err(TablesError::TooMany {
                 table: Table::States,
-                count: MAX_ROWS + 1
+                count: MAX_IDS + 1
             })
         );
     }

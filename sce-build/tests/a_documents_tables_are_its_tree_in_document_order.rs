@@ -14,7 +14,10 @@
 //! `is_compound_state`, `get_initial_targets`, `get_history_default_targets`,
 //! `get_document_initial_targets`, `first_enabled_transition`'s targets,
 //! `transition_index`, `has_actions` and `is_internal`), so the tables answer
-//! what those methods answer.
+//! what those methods answer. No row lists a state's children; they are read
+//! from the pre-order numbering as the runtime reads them. And each document's
+//! rows, written as the runtime's own, pass the runtime's
+//! `DocumentTables::check`.
 
 mod common;
 
@@ -27,6 +30,7 @@ use sce_build::generator::Language;
 use sce_build::microstep_bounds::MicrostepBounds;
 use sce_build::model::SCXMLModel;
 use sce_build::parser::SCXMLParser;
+use sce_rust_runtime::helpers::tables as rt;
 
 /// The model the Rust backend renders `path` from, or `None` when the document
 /// does not parse or the generator refuses it: the corpus carries deliberate
@@ -64,6 +68,25 @@ fn is_proper_ancestor(tables: &DocumentTables, ancestor: usize, state: usize) ->
     false
 }
 
+/// The child states of `state` as the runtime reads them from the rows: the
+/// next number, then each number past the subtree of the one before, up to the
+/// end of `state`'s subtree.
+fn children_of(tables: &DocumentTables, state: usize) -> Vec<usize> {
+    let last = usize::from(tables.states[state].last_descendant);
+    let mut children = Vec::new();
+    let mut next = state + 1;
+    while next <= last {
+        children.push(next);
+        let subtree_end = usize::from(tables.states[next].last_descendant);
+        assert!(
+            subtree_end >= next,
+            "state {next}'s subtree ends before it, so the walk would not advance"
+        );
+        next = subtree_end + 1;
+    }
+    children
+}
+
 /// Every claim of the numbering, asked of one document's tables.
 fn holds(name: &str, model: &SCXMLModel, tables: &DocumentTables) {
     let states = tables.states.len();
@@ -99,16 +122,13 @@ fn holds(name: &str, model: &SCXMLModel, tables: &DocumentTables) {
             at("parent as in the model")
         );
 
-        // The children are `get_child_states`', in document order.
-        let range = row.children.range();
-        assert!(
-            range.end <= tables.children.len(),
-            "{}",
-            at("children in range")
-        );
-        let children: Vec<&str> = tables.children[range]
-            .iter()
-            .map(|c| tables.states[usize::from(*c)].id.as_str())
+        // No row lists the children: the runtime reads them from the
+        // pre-order numbering, the next number and then each number past the
+        // subtree of the one before, and they are `get_child_states`', in
+        // document order.
+        let children: Vec<&str> = children_of(tables, index)
+            .into_iter()
+            .map(|c| tables.states[c].id.as_str())
             .collect();
         assert_eq!(children, state.children, "{}", at("children"));
 
@@ -308,11 +328,10 @@ fn holds(name: &str, model: &SCXMLModel, tables: &DocumentTables) {
     );
 
     // Histories: in the order the History enum declares them, each with its
-    // default row and a record inside the pool.
+    // default row.
     let history_ids: Vec<&str> = model.history_states.keys().map(String::as_str).collect();
     let tabled: Vec<&str> = tables.histories.iter().map(|row| row.id.as_str()).collect();
     assert_eq!(tabled, history_ids, "{name}: histories in id order");
-    let mut record_end = 0usize;
     for (number, row) in tables.histories.iter().enumerate() {
         let info = &model.history_states[&row.id];
         assert_eq!(
@@ -347,22 +366,7 @@ fn holds(name: &str, model: &SCXMLModel, tables: &DocumentTables) {
             !info.default_actions.is_empty(),
             "{name}: default content"
         );
-        assert_eq!(
-            usize::from(row.record.start),
-            record_end,
-            "{name}: records laid out in order"
-        );
-        assert!(
-            usize::from(row.record.len) <= tables.bounds.configuration,
-            "{name}: a record is at most a configuration"
-        );
-        record_end = row.record.range().end;
     }
-    assert_eq!(
-        usize::from(tables.history_records),
-        record_end,
-        "{name}: record pool"
-    );
 
     // Every span is inside its pool.
     for row in &tables.transitions {
@@ -373,6 +377,86 @@ fn holds(name: &str, model: &SCXMLModel, tables: &DocumentTables) {
     }
 
     assert_eq!(tables.bounds, MicrostepBounds::of(model), "{name}: bounds");
+
+    // And the runtime, reading the rows as a generated machine states them,
+    // finds every rule it relies on kept.
+    assert_eq!(
+        runtime_tables(tables).check(),
+        Ok(()),
+        "{name}: runtime check"
+    );
+}
+
+/// `tables` as the runtime's `DocumentTables`, the rows a generated machine's
+/// constant states. The runtime's rows borrow for `'static`, so each pool is
+/// leaked, for the life of the test process.
+fn runtime_tables(tables: &DocumentTables) -> rt::DocumentTables {
+    let states: Vec<rt::StateRow> = tables
+        .states
+        .iter()
+        .map(|row| {
+            let kind = match row.kind {
+                StateKind::Atomic => rt::StateKind::Atomic,
+                StateKind::Compound => rt::StateKind::Compound,
+                StateKind::Parallel => rt::StateKind::Parallel,
+                StateKind::Final => rt::StateKind::Final,
+            };
+            rt::StateRow::new(
+                row.parent.map(rt::StateId),
+                kind,
+                rt::StateId(row.last_descendant),
+                row.initial.map(rt::TransitionId),
+            )
+        })
+        .collect();
+    let histories: Vec<rt::HistoryRow> = tables
+        .histories
+        .iter()
+        .map(|row| rt::HistoryRow {
+            parent: rt::StateId(row.parent),
+            default: rt::TransitionId(row.default),
+            deep: row.deep,
+        })
+        .collect();
+    let transitions: Vec<rt::TransitionRow> = tables
+        .transitions
+        .iter()
+        .map(|row| {
+            rt::TransitionRow::new(
+                row.source.map(rt::StateId),
+                rt::Span {
+                    start: row.targets.start,
+                    len: row.targets.len,
+                },
+                row.internal,
+                row.has_content,
+            )
+        })
+        .collect();
+    let targets: Vec<rt::Target> = tables
+        .targets
+        .iter()
+        .map(|target| match *target {
+            TargetRef::State(id) => rt::Target::state(rt::StateId(id)),
+            TargetRef::History(id) => rt::Target::history(rt::HistoryId(id)),
+        })
+        .collect();
+    rt::DocumentTables {
+        states: states.leak(),
+        histories: histories.leak(),
+        transitions: transitions.leak(),
+        targets: targets.leak(),
+        initial: rt::TransitionId(tables.initial),
+    }
+}
+
+#[test]
+fn the_generator_numbers_no_more_ids_than_the_runtime_reads() {
+    assert_eq!(
+        sce_build::document_tables::MAX_IDS,
+        rt::MAX_IDS,
+        "a table the generator accepts is one the runtime can number"
+    );
 }
 
 #[test]

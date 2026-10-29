@@ -136,7 +136,7 @@ pub enum {{ machine_name }}State {
 
 /// The document's `<history>` pseudo-states. A history is not a state — it is
 /// never in a configuration — so it is named apart from `{{ machine_name }}State`,
-/// and a target list names one as `Target::History`: the engine
+/// and a target list names one as `Target::history`: the engine
 /// dereferences it to what it recorded, or to its default. Each variant's
 /// discriminant is the number the runtime's tables know the history by.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -188,7 +188,9 @@ pub type {{ machine_name }}Configuration = ::sce_rust_runtime::helpers::hierarch
 /// the discriminant of its variant, and each transition by its row here — the
 /// written ones grouped by source state, then each compound state's initial
 /// transition, each history's default transition and the document's own
-/// initial transition. The last four fields size the microstep's buffers.
+/// initial transition. A state's children are not listed: the numbering is a
+/// pre-order walk, so they are the state's number plus one and each number past
+/// the subtree (`last_descendant`) of the child before.
 ///
 /// A `const` and not a `static`: `StatePolicy::TABLES` refers to it, and a
 /// constant may refer to a static only from Rust 1.83 on, past the toolchain
@@ -203,32 +205,23 @@ pub const {{ tables_ident }}: ::sce_rust_runtime::DocumentTables = {
         states: &[
 {% for row in tables.states %}
             // {{ loop.index0 }}: {{ row.id }}
-            StateRow { parent: {{ row.parent }}, kind: StateKind::{{ row.kind }}, last_descendant: StateId({{ row.last_descendant }}), children: Span { start: {{ row.children_start }}, len: {{ row.children_len }} }, initial: {{ row.initial }} },
+            StateRow::new({{ row.parent }}, StateKind::{{ row.kind }}, StateId({{ row.last_descendant }}), {{ row.initial }}),
 {% endfor %}
         ],
-        // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
-        // children, in document order — for a <parallel>, its regions — as the
-        // span its row names.
-        children: &[{% for child in tables.children %}StateId({{ child }}){{ ", " if not loop.last }}{% endfor %}],
         histories: &[
 {% for row in tables.histories %}
             // {{ loop.index0 }}: {{ row.id }}
-            HistoryRow { parent: StateId({{ row.parent }}), deep: {{ 'true' if row.deep else 'false' }}, default: TransitionId({{ row.default }}), record: Span { start: {{ row.record_start }}, len: {{ row.record_len }} } },
+            HistoryRow { parent: StateId({{ row.parent }}), default: TransitionId({{ row.default }}), deep: {{ 'true' if row.deep else 'false' }} },
 {% endfor %}
         ],
         transitions: &[
 {% for row in tables.transitions %}
             // {{ loop.index0 }}: {{ row.origin }}
-            TransitionRow { source: {{ row.source }}, targets: Span { start: {{ row.targets_start }}, len: {{ row.targets_len }} }, internal: {{ 'true' if row.internal else 'false' }}, has_content: {{ 'true' if row.has_content else 'false' }} },
+            TransitionRow::new({{ row.source }}, Span { start: {{ row.targets_start }}, len: {{ row.targets_len }} }, {{ 'true' if row.internal else 'false' }}, {{ 'true' if row.has_content else 'false' }}),
 {% endfor %}
         ],
-        targets: &[{% for target in tables.targets %}{% if target.history %}Target::History(HistoryId({{ target.id }})){% else %}Target::State(StateId({{ target.id }})){% endif %}{{ ", " if not loop.last }}{% endfor %}],
+        targets: &[{% for target in tables.targets %}{% if target.history %}Target::history(HistoryId({{ target.id }})){% else %}Target::state(StateId({{ target.id }})){% endif %}{{ ", " if not loop.last }}{% endfor %}],
         initial: TransitionId({{ tables.initial }}),
-        history_records: {{ tables.history_records }},
-        max_configuration: {{ tables.max_configuration }},
-        max_enabled: {{ tables.max_enabled }},
-        max_history_defaults: {{ tables.max_history_defaults }},
-        max_walk: {{ tables.max_walk }},
     }
 };
 {% if model.emitted_transition_table %}
@@ -1409,18 +1402,20 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
 
     // W3C SCXML 3.4: what this document's state tree bounds, read by the
     // generator and written here so every buffer of the runtime's microstep is
-    // this document's size and no larger, in both profiles. A configuration
-    // holds {{ tables.max_configuration }} state(s) at most; a selection enables {{ tables.max_enabled }} transition(s) at most,
-    // one from each atomic state of one; a microstep owes {{ tables.max_history_defaults }} history default(s) at
-    // most; and Appendix D's entry procedures, the effective targets and the
+    // this document's size and no larger, in both profiles. Every set of states
+    // the runtime keeps is a bit vector of this document's {{ tables.states | length }} state(s); a
+    // configuration holds {{ tables.max_configuration }} state(s) at most, the capacity of the
+    // `Configuration` a host reads; a selection enables {{ tables.max_enabled }} transition(s) at most, one from each atomic state
+    // of one configuration; a microstep owes {{ tables.max_history_defaults }} history default(s) at most;
+    // and Appendix D's entry procedures, the effective targets and the
     // completion check are run over a stack of steps and not by recursion, so a
     // call needs no depth the program has to assume: {{ tables.max_walk }} step(s) at most, three
     // for each level of the tree, one for each `<history>` and three of
     // headroom. The workspace is a local of the call that runs a macrostep; the
-    // run store, the configuration and the {{ tables.history_records }} state(s) the histories record
-    // together, is the engine's.
-    type Workspace = ::sce_rust_runtime::Workspace<{ ::sce_rust_runtime::state_scratch({{ tables.max_configuration }}) }, {{ tables.max_enabled }}, {{ tables.max_walk }}, {{ tables.max_history_defaults }}>;
-    type RunStore = ::sce_rust_runtime::RunStore<{{ tables.max_configuration }}, {{ tables.history_records }}, {{ tables.histories | length }}>;
+    // run store, the configuration and what each of the {{ tables.histories | length }} `<history>`
+    // element(s) recorded, one such set each, is the engine's.
+    type Workspace = ::sce_rust_runtime::Workspace<{ ::sce_rust_runtime::state_scratch({{ tables.states | length }}) }, {{ tables.max_enabled }}, {{ tables.max_walk }}, {{ tables.max_history_defaults }}>;
+    type RunStore = ::sce_rust_runtime::RunStore<{ ::sce_rust_runtime::state_words({{ tables.states | length }}) }, { ::sce_rust_runtime::record_words({{ tables.states | length }}, {{ tables.histories | length }}) }, {{ tables.histories | length }}>;
     type Configuration = {{ machine_name }}Configuration;
 
     // W3C SCXML feature flags
@@ -1467,10 +1462,10 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
 {% endif %}
     }
 
-    // The document's structure — each state's parent, kind, children and
-    // initial transition, each history's parent and default, document order —
-    // is read from `TABLES` by the trait's own methods (docs/adr/0064), so none
-    // of it is written here a second time.
+    // The document's structure — each state's parent, kind, subtree and
+    // initial transition, and so its children, each history's parent and
+    // default, document order — is read from `TABLES` by the trait's own
+    // methods (docs/adr/0064), so none of it is written here a second time.
 
     fn get_event_name(event: Self::Event) -> &'static str {
         match event {
