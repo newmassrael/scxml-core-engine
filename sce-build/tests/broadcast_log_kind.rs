@@ -3025,27 +3025,186 @@ fn cpp_reads_a_deploy_key_retention_from_the_target_machines_limits() {
 }
 
 #[test]
-fn cpp_refuses_an_element_that_asks_the_caller_for_more_and_names_its_template() {
-    // The C++ codec's `decode` takes the flag input as a parameter, which a log
-    // has none to give.
+fn cpp_stores_the_flag_inputs_an_element_asks_its_caller_for() {
+    // The codec `event_record` takes the flag input `S` from its caller on `encode` and
+    // `decode`, as a `std::uint8_t` after the sink or the cursor. The log stores it in a
+    // context word of the entry, takes it on `publish` as a `bool` of a struct, and gives
+    // it back with the item, so that every reader decodes the entry under what it was
+    // published under. The element is a `uint8` and an optional `uint8`: 2 bytes, an entry
+    // of 1 length word, 1 context word and 1 word of bytes.
     let xml = event_ring();
     let codec = flag_input_codec();
-    let located = compile_documents(
-        Language::Cpp,
-        &[("event_ring.scxml", &xml), ("event_record.scxml", &codec)],
+    let code = generated_cpp_log(
+        compile_documents(
+            Language::Cpp,
+            &[("event_ring.scxml", &xml), ("event_record.scxml", &codec)],
+        )
+        .expect("a log stores the flag input its element asks for"),
+    );
+    assert_holds(
+        &code,
+        &[
+            "inline constexpr std::size_t MAX_ENCODED_BYTES = 2;",
+            "inline constexpr std::size_t CONTEXT_WORDS = 1;",
+            "inline constexpr std::size_t WORDS = 1 + CONTEXT_WORDS + (MAX_ENCODED_BYTES + 7) / 8;",
+            "struct EventRingFlags {\n    bool s = false;\n};",
+            "[[nodiscard]] constexpr std::uint8_t flag_input(bool on) noexcept {",
+            "    EventRecordType element;\n    EventRingFlags flags;\n};",
+            "[[nodiscard]] inline EventRingPublished publish(EventRingPublisher &publisher, \
+             const EventRecordType &element, const EventRingFlags &flags) noexcept {",
+            "element.encode(sink, flag_input(flags.s))",
+            "if (flags.s) {\n        entry[1 + 0] |= std::uint64_t{1} << 0;\n    }",
+            "entry[2 + index / 8] |= static_cast<std::uint64_t>(bytes[index]) << (8 * (index % 8));",
+            "bytes[index] = static_cast<std::uint8_t>(entry[2 + index / 8] >> (8 * (index % 8)));",
+            "EventRingFlags flags{};",
+            "flags.s = ((entry[1 + 0] >> 0) & std::uint64_t{1}) != 0;",
+            "EventRecordType::decode(cursor, flag_input(flags.s))",
+            "return EventRingItem{answer.seq, std::move(*element), flags};",
+        ],
+    );
+    assert!(
+        !code.contains("std::uint8_t tag"),
+        "the element has no tag:\n{code}"
+    );
+    // The flag is stored before the bytes are packed, and the bits are read back before
+    // the decode that is given them.
+    let stored = code
+        .find("if (flags.s) {")
+        .expect("the flag is stored in the entry");
+    let packed = code
+        .find("entry[2 + index / 8] |=")
+        .expect("the bytes are packed");
+    assert!(stored < packed, "the flag word comes first:\n{code}");
+    let read_back = code
+        .find("flags.s = ((entry[")
+        .expect("the flag is read back from the entry");
+    let decoded = code
+        .find("EventRecordType::decode(cursor")
+        .expect("the element is decoded");
+    assert!(
+        read_back < decoded,
+        "the decode is given the flag stored with the entry:\n{code}"
+    );
+}
+
+#[test]
+fn cpp_stores_the_flags_and_the_tag_of_an_element_in_context_words_of_their_own() {
+    // Two flag inputs fit one word; the tag takes the next. The bytes follow the
+    // length word and the two context words, so they start at word 3. The codec takes
+    // the flags and then the tag on `decode`, and only the flags on `encode`.
+    let facts = BroadcastLogElementFacts {
+        caller_flag_inputs: vec!["S".to_string(), "T".to_string()],
+        caller_variant_tag: true,
+        ..BroadcastLogElementFacts::default()
+    };
+    let code = compile_single_cpp(&event_ring(), &resolution_options(None, 4, facts))
+        .expect("a log stores the flags and the tag its element asks for");
+    assert_holds(
+        &code,
+        &[
+            "inline constexpr std::size_t CONTEXT_WORDS = 2;",
+            "inline constexpr std::size_t WORDS = 1 + CONTEXT_WORDS + (MAX_ENCODED_BYTES + 7) / 8;",
+            "struct EventRingFlags {\n    bool s = false;\n    bool t = false;\n};",
+            "    EventRecordType element;\n    EventRingFlags flags;\n    std::uint8_t tag;\n};",
+            "[[nodiscard]] inline EventRingPublished publish(EventRingPublisher &publisher, \
+             const EventRecordType &element, const EventRingFlags &flags, std::uint8_t tag) \
+             noexcept {",
+            "element.encode(sink, flag_input(flags.s), flag_input(flags.t))",
+            "if (flags.s) {\n        entry[1 + 0] |= std::uint64_t{1} << 0;\n    }",
+            "if (flags.t) {\n        entry[1 + 0] |= std::uint64_t{1} << 1;\n    }",
+            "entry[1 + 1] = static_cast<std::uint64_t>(tag);",
+            "entry[3 + index / 8] |= static_cast<std::uint64_t>(bytes[index]) << (8 * (index % 8));",
+            "bytes[index] = static_cast<std::uint8_t>(entry[3 + index / 8] >> (8 * (index % 8)));",
+            "flags.s = ((entry[1 + 0] >> 0) & std::uint64_t{1}) != 0;",
+            "flags.t = ((entry[1 + 0] >> 1) & std::uint64_t{1}) != 0;",
+            "const auto tag = static_cast<std::uint8_t>(entry[1 + 1] & std::uint64_t{0xFF});",
+            "EventRecordType::decode(cursor, flag_input(flags.s), flag_input(flags.t), tag)",
+            "return EventRingItem{answer.seq, std::move(*element), flags, tag};",
+        ],
+    );
+}
+
+#[test]
+fn cpp_takes_a_tag_alone_as_one_context_word_and_the_signature_takes_no_flags() {
+    let facts = BroadcastLogElementFacts {
+        caller_variant_tag: true,
+        ..BroadcastLogElementFacts::default()
+    };
+    let code = compile_single_cpp(&event_ring(), &resolution_options(None, 4, facts))
+        .expect("a log stores the tag its element asks for");
+    assert_holds(
+        &code,
+        &[
+            "inline constexpr std::size_t CONTEXT_WORDS = 1;",
+            "    EventRecordType element;\n    std::uint8_t tag;\n};",
+            "[[nodiscard]] inline EventRingPublished publish(EventRingPublisher &publisher, \
+             const EventRecordType &element, std::uint8_t tag) noexcept {",
+            "element.encode(sink)",
+            "entry[1 + 0] = static_cast<std::uint64_t>(tag);",
+            "entry[2 + index / 8] |= static_cast<std::uint64_t>(bytes[index]) << (8 * (index % 8));",
+            "const auto tag = static_cast<std::uint8_t>(entry[1 + 0] & std::uint64_t{0xFF});",
+            "EventRecordType::decode(cursor, tag)",
+            "return EventRingItem{answer.seq, std::move(*element), tag};",
+        ],
+    );
+    assert!(
+        !code.contains("Flags") && !code.contains("flag_input"),
+        "the element has no flag input:\n{code}"
+    );
+}
+
+#[test]
+fn cpp_keeps_sixty_four_flags_to_a_word_and_starts_the_next_word_at_the_sixty_fifth() {
+    // C++'s context words are `std::uint64_t`: flag 63 is the last bit of the first
+    // context word (written with `std::uint64_t{1} << 63`, which a `std::uint64_t`
+    // holds whole) and flag 64 the first bit of the second.
+    let facts = BroadcastLogElementFacts {
+        caller_flag_inputs: (0..65).map(|index| format!("f{index}")).collect(),
+        ..BroadcastLogElementFacts::default()
+    };
+    let code = compile_single_cpp(&event_ring(), &resolution_options(None, 4, facts))
+        .expect("a log stores 65 flag inputs");
+    assert_holds(
+        &code,
+        &[
+            "inline constexpr std::size_t CONTEXT_WORDS = 2;",
+            "    bool f0 = false;\n",
+            "    bool f64 = false;\n};",
+            "if (flags.f0) {\n        entry[1 + 0] |= std::uint64_t{1} << 0;\n    }",
+            "if (flags.f63) {\n        entry[1 + 0] |= std::uint64_t{1} << 63;\n    }",
+            "if (flags.f64) {\n        entry[1 + 1] |= std::uint64_t{1} << 0;\n    }",
+            "flags.f63 = ((entry[1 + 0] >> 63) & std::uint64_t{1}) != 0;",
+            "flags.f64 = ((entry[1 + 1] >> 0) & std::uint64_t{1}) != 0;",
+            "entry[3 + index / 8] |= static_cast<std::uint64_t>(bytes[index]) << (8 * (index % 8));",
+        ],
+    );
+}
+
+#[test]
+fn a_cpp_element_with_no_caller_input_has_the_entry_and_the_signatures_it_always_had() {
+    let code = compile_single_cpp(
+        &event_ring(),
+        &resolution_options(None, 4, BroadcastLogElementFacts::default()),
     )
-    .err()
-    .unwrap_or_else(|| panic!("a log has no flag input to give, so the set is refused"));
-    assert!(
-        row_text(&located, &xml).contains("<sce:element-type>event_record<"),
-        "the refusal is placed on the element-type row"
+    .expect("an element with no caller input is generated");
+    assert!(!code.contains("CONTEXT_WORDS"), "{code}");
+    assert!(!code.contains("Flags"), "{code}");
+    assert!(!code.contains("flag_input"), "{code}");
+    assert!(!code.contains("std::uint8_t tag"), "{code}");
+    assert_holds(
+        &code,
+        &[
+            "inline constexpr std::size_t WORDS = 1 + (MAX_ENCODED_BYTES + 7) / 8;",
+            "    EventRecordType element;\n};",
+            "[[nodiscard]] inline EventRingPublished publish(EventRingPublisher &publisher, \
+             const EventRecordType &element) noexcept {",
+            "element.encode(sink)",
+            "entry[1 + index / 8] |= static_cast<std::uint64_t>(bytes[index]) << (8 * (index % 8));",
+            "bytes[index] = static_cast<std::uint8_t>(entry[1 + index / 8] >> (8 * (index % 8)));",
+            "EventRecordType::decode(cursor);",
+            "return EventRingItem{answer.seq, std::move(*element)};",
+        ],
     );
-    let detail = invalid_config(located);
-    assert!(
-        detail.contains("the element 'event_record' cannot be stored by the C++ template"),
-        "{detail}"
-    );
-    assert!(detail.contains("flag input(s) S"), "{detail}");
 }
 
 #[test]
@@ -3064,12 +3223,12 @@ fn cpp_holds_a_cbor_element_with_a_string_entry_because_its_decoded_value_owns_t
         facts.refusal_for(Language::Rust).is_some(),
         "Rust's decoded form borrows, so the same element is refused there"
     );
-    // What a caller must give is refused whatever the entries are.
+    // What a caller must give is stored with the entry, so a tag adds no refusal.
     let tag = BroadcastLogElementFacts {
         caller_variant_tag: true,
         ..facts
     };
-    assert!(tag.refusal_for(Language::Cpp).is_some());
+    assert_eq!(tag.refusal_for(Language::Cpp), None);
 
     // The same element, as the document set sees it: the string entry is read
     // from the codec and the log is generated where Rust refuses it.
