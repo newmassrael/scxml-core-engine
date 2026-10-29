@@ -232,24 +232,27 @@ fn an_algorithm_a_backend_writes_in_part_is_generated_and_the_rest_is_refused_by
 
 #[test]
 fn a_forge_document_is_refused_through_the_string_entry() {
-    // A kind no backend of this list writes, in whole or in part: a condition.
+    // A kind no backend of this list writes, in whole or in part: a lookup.
     let document = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
-          version="1.0" sce:kind="condition" name="in_range">
+          version="1.0" sce:kind="lookup" name="gear_code">
   <datamodel>
-    <data id="rpm" sce:type="uint32" sce:direction="in"/>
-    <data id="result" sce:type="bool" sce:direction="out" expr="rpm &gt;= 10"/>
+    <data id="gear" sce:type="uint8" sce:direction="in"/>
+    <data id="code" sce:type="int32" sce:direction="out"/>
+    <data id="mapping" sce:on-miss="error">
+      <sce:entry key="1" value="100"/>
+    </data>
   </datamodel></scxml>"#;
     for language in backends_with_no_emitter() {
         let error = compile_forge_from_string(
             document,
             DocumentLabel {
-                identifier: "in_range",
-                diagnostic_label: "in_range.scxml",
+                identifier: "gear_code",
+                diagnostic_label: "gear_code.scxml",
             },
             language,
         )
         .err()
-        .unwrap_or_else(|| panic!("{language:?} generated a condition it has no emitter for"));
+        .unwrap_or_else(|| panic!("{language:?} generated a lookup it has no emitter for"));
         let text = format!("{error:?}");
         assert!(
             text.contains(language_wire_name(language)),
