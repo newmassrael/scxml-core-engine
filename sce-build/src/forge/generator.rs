@@ -24501,7 +24501,8 @@ fn swift_algorithm_refusal(m: &AlgorithmModel, construct: &str) -> String {
 /// Swift lowers a body of scalars and records: parameters and a return of a number,
 /// a `bool`, a string or a record of an event schema the Swift backend writes
 /// ([`swift_event_schema_unlowered`]), a `list<T>` of those as a read-only parameter
-/// that `<sce:foreach>` walks, and locals of the same, written by `<sce:var>`,
+/// that `<sce:foreach>` walks, a byte string as a read-only parameter whose length and
+/// bytes are read, and locals of the same, written by `<sce:var>`,
 /// `<sce:assign>`, `<sce:if>` and `<sce:return>`. Each construct past
 /// those is named here until its spelling is written, which is what
 /// [`crate::forge::codegen_matrix::ships_in_part`] promises of an in-part backend:
@@ -24509,7 +24510,8 @@ fn swift_algorithm_refusal(m: &AlgorithmModel, construct: &str) -> String {
 /// is lowered: the function `throws`, and each integer operation is checked.
 fn swift_algorithm_unlowered(m: &AlgorithmModel, imports: &[SwiftImport]) -> Option<String> {
     // A number, a `bool`, a string or a value of an enum; a byte string is held in
-    // `[UInt8]`, whose view, buffer and owned forms are not spelled yet. A record is
+    // `[UInt8]`, which a parameter reads (`lowered_param`) and whose view, buffer and
+    // owned forms are not spelled yet. A record is
     // the struct of its schema's unit, which the check of the imports below has
     // already held to fields Swift writes, and an enum is the unit of its document,
     // which that check has held to one Swift writes.
@@ -24530,6 +24532,11 @@ fn swift_algorithm_unlowered(m: &AlgorithmModel, imports: &[SwiftImport]) -> Opt
             ListElemType::Scalar(ty) => !matches!(ty, SceType::Bytes | SceType::Enum(_)),
             ListElemType::Record { .. } => true,
         })
+    }
+    // A byte string is a read-only parameter, the `[UInt8]` its length and bytes are
+    // read from; it is no local, element or return here.
+    fn lowered_param(ty: &AlgorithmValueType) -> bool {
+        lowered(ty) || ty.scalar().is_some_and(|ty| matches!(ty, SceType::Bytes))
     }
     // A parameter and a local are named as the author wrote them, so one Swift
     // reserves cannot be either.
@@ -24639,7 +24646,7 @@ fn swift_algorithm_unlowered(m: &AlgorithmModel, imports: &[SwiftImport]) -> Opt
         .signature
         .params
         .iter()
-        .find(|p| !lowered(&p.sce_type) && !lowered_list(&p.sce_type))
+        .find(|p| !lowered_param(&p.sce_type) && !lowered_list(&p.sce_type))
     {
         return Some(format!(
             "the <sce:param name=\"{}\"> of {}",

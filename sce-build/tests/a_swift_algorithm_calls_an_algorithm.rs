@@ -62,14 +62,50 @@ fn a_callee_that_may_fail_has_its_failure_passed_on() {
     );
 }
 
+const DOCUMENT_HEAD: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" sce:kind="algorithm""#;
+
 #[test]
 fn a_caller_is_refused_for_what_its_callee_holds() {
-    // `utf8_within` calls `utf8_length`, which takes a byte string, which Swift does not
-    // write yet: the caller would name a unit that does not exist.
-    let refusal = swift_of("stdlib/text/utf8_within.scxml")
-        .expect_err("a caller of an algorithm Swift does not write is refused");
+    // The callee carries a `<sce:test-vector>`, which Swift does not write yet, so no
+    // unit is written for it: the caller would name a unit that does not exist.
+    let dir = tempfile::tempdir().expect("tempdir");
+    std::fs::copy(
+        repo_root().join("tests/forge/resources/algorithm_crc16.scxml"),
+        dir.path().join("crc16.scxml"),
+    )
+    .expect("copy the callee");
+    std::fs::write(
+        dir.path().join("calls_crc16.scxml"),
+        format!(
+            r#"{DOCUMENT_HEAD} name="calls_crc16" version="1.0">
+  <sce:import kind="algorithm" src="crc16.scxml" as="crc"/>
+  <sce:signature>
+    <sce:param name="data" type="bytes"/>
+    <sce:return type="uint16"/>
+  </sce:signature>
+  <sce:body>
+    <sce:return expr="crc(data)"/>
+  </sce:body>
+</scxml>
+"#
+        ),
+    )
+    .expect("write the caller");
+    let output = compile_forge_file(
+        &dir.path().join("calls_crc16.scxml"),
+        Language::Swift,
+        &[],
+        &ForgeCompileOptions::default(),
+    );
+    let refusal = format!(
+        "{:?}",
+        output
+            .err()
+            .expect("a caller of an algorithm Swift does not write is refused")
+    );
     assert!(
-        refusal.contains("an algorithm that holds"),
+        refusal.contains("an algorithm that"),
         "the refusal names that it is the callee: {refusal}"
     );
     assert!(
