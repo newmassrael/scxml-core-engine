@@ -289,6 +289,17 @@ target_include_directories(content_line_runtime_test_c PRIVATE "${RUNTIME_INCLUD
 target_compile_options(content_line_runtime_test_c PRIVATE -Wall -Wextra -Wpedantic -Werror)
 add_test(NAME content_line_runtime_c COMMAND content_line_runtime_test_c)
 
+# The runtime's wrapping and saturating integer helpers on their own
+# (sce/forge/algorithm.h, docs/adr/0063) against their definition, under the
+# same -Werror bar and the conversion warnings a bare-metal consumer builds
+# with: the helpers convert only where they say so. What a generated algorithm
+# does with them is the conformance fixtures' (docs/adr/0063, section 9).
+add_executable(total_arith_runtime_test_c "${CMAKE_CURRENT_SOURCE_DIR}/total_arith_runtime_test.c")
+target_include_directories(total_arith_runtime_test_c PRIVATE "${RUNTIME_INCLUDE_DIR}")
+target_compile_options(total_arith_runtime_test_c PRIVATE
+    -Wall -Wextra -Wpedantic -Werror -Wconversion -Wsign-conversion)
+add_test(NAME total_arith_runtime_c COMMAND total_arith_runtime_test_c)
+
 # ---------------------------------------------------------------------------
 # The queue kind (SCE Protocol-Synthesis RFC §synth-5-P)
 # ---------------------------------------------------------------------------
