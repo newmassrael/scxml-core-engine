@@ -448,6 +448,14 @@ name = "broadcast_history_format"
 path = "tests/broadcast_history_format.rs"
 required-features = ["cli"]
 
+# The specialised broadcast-log checker held equal to the general search on
+# simulated, corrupted and shrunk histories, on every fixture, and through
+# `sce-codegen check-broadcast-history --method` on the real binary.
+[[test]]
+name = "broadcast_history_differential"
+path = "tests/broadcast_history_differential.rs"
+required-features = ["cli"]
+
 # `sce-codegen diagram` on the binary: files named by state, a refusal
 # that writes nothing, and the written set checkable for drift.
 [[test]]
