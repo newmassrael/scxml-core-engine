@@ -252,8 +252,10 @@ the command `sce-codegen check-broadcast-history`, so that every backend's job a
   function of time whose steps lie inside the publish intervals, and each read constrains only the value of `h` at one
   instant of its own interval (`h = r` for `Empty`, `h > r + R` for the late `Lagged`, and so on). That is a system of
   precedence constraints between instants and is solved without a search of permutations. It is an optimisation, not a
-  second definition: it is admitted only while a differential test holds it equal to the general search on random and
-  on adversarially shrunk histories, and the general search remains for any history the specialisation declines.
+  second definition: it is a theorem with a proof ("What the specialised checker landed"), it is admitted only while a
+  differential test holds it equal to the general search on random, corrupted and adversarially shrunk histories,
+  `check` asks it first, and the general search remains the definition and decides any history the specialisation
+  declines.
 - **The value check.** `Item(r, v)` must carry exactly the `r`-th published value. The conformance recorders publish
   values whose words are all a function of the sequence number, so a torn copy that passed validation shows as words
   that do not agree (the test that fails when the second stamp load is removed, §6).
@@ -578,6 +580,74 @@ those schedules; an order that were not caught would not be shown safe. The muta
 measurement: the selector hands its arguments to `cargo test`, and Miri is `cargo miri test`. Giving the selector a Miri
 runner would let CI judge it, and is not built.
 
+### What the specialised checker landed (2026-10-29)
+
+- **The theorem.** `sce-build/src/broadcast_history/specialised.rs` decides a history of the one-producer log without a
+  search. Write `x < y` for `x.returned <= y.invoked`, the order the general search keeps (it places an operation next
+  only while no unplaced operation has returned at or before the instant it was invoked), `R` for the retention and `P`
+  for the number of publishes. Every operation but a publish is an *observer*: a reader's open, read or head, and the
+  publisher's head. For an observer `x`, `A(x)` is the set of `h` in `0..=P` at which the sequential log of section 2
+  gives `x` the result it was observed to give (it is always an interval, and the module gives it in closed form for
+  each call and outcome); `c_x` is the number of publishes that precede `x`, `d_x` the number that `x` does not precede,
+  and `L_x = max(lo_x, c_x)`, `U_x = min(hi_x, d_x)` with `A(x) = [lo_x, hi_x]`. **A well-formed history is linearizable
+  if and only if (I) `L_x <= U_x` for every observer `x`, and (II) `L_x <= U_y` for every pair of observers `x < y`.**
+- **The proof**, in the module's documentation, is short. Necessity: take a linearization and let `g(x)` be the number of
+  publishes before `x`; they are a prefix of the publishes, which contains the `c_x` that precede `x` and is contained in
+  the `d_x` that `x` does not precede, so `g(x)` is in `[c_x, d_x]` and in `A(x)`, which is (I), and `x < y` gives
+  `g(x) <= g(y)`, which is (II). Sufficiency: give `y` the greatest of `L_y` and of every `L_x` with `x < y`; (I) and (II)
+  bound it by `U_y`, `<` is transitive so it never decreases along `<`, and ordering the observers by that number, each
+  group by `returned`, with publish `j` after group `j`, is a total order that extends `<` and gives every operation the
+  `h` it needs. The two properties the proof leans on are that `<` is transitive and that the publishes are chained by
+  program order, and the second is exactly "one producer".
+- **The procedure.** (I) is a test of each observer alone, with `c_x` and `d_x` found by binary search on the publish
+  intervals, which increase. (II) is one sweep over the observers in order of invocation with a pointer into the same
+  observers in order of return: the greatest `L_x` among those already returned at the instant `y` was invoked is what `y`
+  must not be forced above. The cost is two sorts, `O(n log n)` for `n` operations, and no state is explored.
+- **What it declines, and why that is all.** Two things, typed (`Declined`): a history that is not well formed (the
+  hypothesis of the theorem; the general search then answers `Malformed` with the same message, since both run the one
+  check), and an operation whose call and outcome have no row in the table, which no well-formed history has and which is
+  there so that a call added to the history type is declined until the table is extended and is never guessed at. The
+  cases a reader would expect to be declined are not: several readers are more observers; a reader's cursor is always
+  determined, because the general search itself takes it from the readings the reader recorded and a read before an open is
+  malformed; a `head` is an observer whose `A(x)` is one point; a second publisher is not a history of this type and a
+  publish in a reader's list is malformed.
+- **What it reports.** `check_specialised` returns `Linearizable`, `NotLinearizable(Unplaceable)` or `Declined`.
+  `Unplaceable` names the first observer, in order of invocation, that fails: because no `h` gives it its result, because
+  the result and the clock do not meet (`ClockWindow`), or because an observer that returned before it was invoked needs
+  more entries than it can have seen (`Overtaken`); it also carries, per participant, the position of the first operation
+  that cannot be placed, which is what `deepest` means in the general search's verdict. `check` keeps its signature and
+  its class on every history: it asks the specialised checker and falls back to `check_general` on a decline, and a
+  `NotLinearizable` that the specialised checker gave has `explored: 0` (it explored no state). `judge(history, Ask)` says
+  which method decided, and `sce-codegen check-broadcast-history --method auto|general|specialised` chooses: the default
+  is `auto`, `general` runs the definition alone, `specialised` refuses a history it declines and names the reason
+  (a malformed history is reported as malformed under all three). A refusal by the specialised checker reads "reader 0's
+  operation 1 cannot be placed: ...", where the general search's reads "the search explored N states".
+- **The differential test**, `sce-build/tests/broadcast_history_differential.rs`, with one seeded SplitMix64 and no
+  dependency: 3000 histories (4 retentions by 3 reader counts by 250) produced by running the sequential log in a random
+  order with random interval widths, both checkers answering `Linearizable`; 2750 histories (11 corrupting changes by 250)
+  each with one change (a wrong item value, an item at the wrong entry, a cursor, a lag count off by one, a return at or
+  before the invocation, an empty where there was something, an item the window had dropped, a publish duplicated, a wrong
+  head, an operation missing, an interval moved to the instant another operation returned or was invoked), both checkers
+  giving the same class; 150 histories the general search refuses, shrunk by delta debugging with the two checkers
+  compared on every history met on the way and on the 1-minimal result; a checker made blind to item values, to show that
+  a disagreement is found and shrunk (to at least a publish, an open and an item); the shrinker's own test on a structural
+  predicate; three histories of 2,000, 5,000 and 10,000 operations that only the specialised checker can decide, one wrong
+  value in each found and named; and every fixture, through both checkers and through the command under each `--method`.
+  A unit test in the module holds each closed form of `A(x)` equal to the sequential log's own `admits` at every `h`, for
+  small numbers and at the edge of `u64` (17,820 comparisons).
+- **What the test shows, and what it does not.** It shows that the two checkers give the same class (linearizable, not
+  linearizable, malformed) on histories of at most fifteen operations, three readers, a retention of 1 to 4, and intervals
+  that overlap their neighbours by up to six steps of a clock that moves four per operation, after one corrupting change.
+  It does not show what the generator does not write: more readers, a retention above 4, two changes at once, histories
+  longer than the general search can finish; the proof is what says the equality holds there. It compares classes, not
+  explanations: `explored` and `deepest` differ between the methods by construction. And it cannot show that the definition
+  is right: the proof is of the specialised checker against the code of the general search, so a defect that the general
+  search and the closed forms share (a misreading of section 2) is carried to both. That is the work of the fixtures, which
+  hold the two answers the TLA+ model found, and of the model itself.
+- **Not run.** The change was written with nothing built: the module, its unit tests, the differential test and the command
+  have not been compiled or run, and neither the running time of the differential file (the aim is about ten seconds in a
+  debug build) nor the counts it asserts have been observed.
+
 ### What is still undone
 
 - **The generated code for the other languages.** Rust's template landed (step 6b). The C11, C++, Go, Kotlin and Python
@@ -588,7 +658,12 @@ runner would let CI judge it, and is not built.
 - **Generated mutation coverage** of the Rust template and its renderer, in the existing `.cases` form.
 - **Element forms the Rust template refuses**: a codec that takes flag inputs or a variant tag from its caller, and a CBOR map
   with a string or byte-string entry. A typed diagnostic for an unresolved deploy limit.
-- **The specialised checker** of section 5 and its differential test.
+- **The specialised checker, run.** It landed (see its section) and was written with nothing built: its unit tests, the
+  differential test and the command's `--method` flag have not been compiled or run, so the first run is the check of
+  every number and of the claim that the whole differential file fits about ten seconds in a debug build. The stress runs
+  of the six rows still write short histories, a limit the general search imposed and the specialised checker does not;
+  lengthening them is a change to each recorder, with a round of CI to read after it. No mutation case guards
+  `specialised.rs` yet.
 - **The narrow-stamp row and the load/store-only row** of section 4.
 - **The differential run against the downstream consumer's own ring** (section 6, layer 5), which needs that ring's cases.
 - **The new RFC section** beside §synth-5-P, and a round of CI that judges the nine Rust cases after the strengthened
