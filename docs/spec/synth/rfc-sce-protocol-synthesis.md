@@ -3843,6 +3843,177 @@ detail is SCE_MESH.md's deploy schema.
   nesting that is too deep, a reply that can exceed a `u32`, or two objects that
   would generate one type
 
+### 5.S New kind: `broadcast-log`
+
+**Status.** Decided 2026-10-28 (ADR 0062, accepted by the owner the same day);
+every backend but Swift lowers it. The ADR holds the derivations, the
+verification record and the landing order; this section states the contract a
+document and a reader of one may rely on.
+
+**Problem.** `queue` (§5.P) is the cell *consumed once x refuse the writer*:
+a pop consumes, `consumers=many` is competing consumers, and a push into a
+full queue returns `Full`. A producer that publishes a stream every one of
+several readers reads at its own pace, and that keeps the last N entries
+rather than refusing, is a different abstract data type: a **log**, an
+append-only sequence read by position, in which reading removes nothing. It
+cannot be a `queue` with an overflow attribute: overwriting a consumed queue
+makes the producer advance the consumer's end, so the head becomes a location
+two contexts write, which destroys what makes the Lamport row wait-free on
+loads and stores alone. `queue` therefore gains no attribute, and a document
+that writes `sce:on-full` on its root is refused as
+`validation/unknown-sce-attribute`, and written on `<sce:bounded>` it is
+refused by the schema (§6.1).
+
+**Admission (`SCE_FORGE.md` §10).** All three axes hold, the third judged on
+the domains the contract serves and not on how many consumers have asked.
+- *Domain alignment*: a concurrency primitive of the family of `queue`.
+- *Futamura compatibility*: element type, producer cardinality, retention,
+  stamp width and required progress are build-time; only the head and the
+  slot contents are runtime.
+- *Cross-domain reuse*: embedded telemetry (an interrupt handler publishes
+  samples, a logger and a monitor each read every one), network observability
+  (diagnostic readers follow a session's events without stalling it), game
+  networking (a late joiner resumes from the oldest retained), robotics (a
+  controller, a logger and a safety monitor read one sensor stream, none able
+  to slow it).
+
+**Specification.** A bounded log of retention `R >= 1` over `E` is `(h,
+entries)`: `h` entries have ever been published, `entries : [0, h) -> E`, and
+only the window `[max(0, h - R), h)` is retained. A *reader* is a handle that
+owns a cursor `r <= h` and a running total `lost`; it is part of the object
+and its state is not shared.
+
+```
+publish(e)      : entries[h] = e ; h' = h + 1 ; returns h      -- never refuses, never waits
+read(reader r)  : r in window  -> Item(r, entries[r]),   cursor' = r + 1
+                  r = h        -> Empty
+                  r < h - R    -> Lagged{skipped = (h - R) - r}, cursor' = h - R
+head()          : h
+reader_oldest() : cursor = max(0, h - R)    reader_head() : cursor = h    reader_at(n) : cursor = min(n, h)
+```
+
+- *Loss is a value.* The count of what a reader missed is `Lagged.skipped`
+  per read, the reader's own `lost` total, and `head()`. The log keeps no
+  count of overwrites: an overwrite no reader suffered is no fact about any
+  reader, and a shared count would put every reader's write into the
+  producer's progress. In the theory of channels this is a lossy channel
+  (Abdulla and Jonsson 1996; Cécé, Finkel and Iyer 1996) whose loss is fixed by
+  the bound and reported to the receiver.
+- *Readers need no registration.* A cursor is the reader's own value, so the
+  producer never learns how many readers exist.
+- *Retention is `R`, the slot count is `R + 1`.* The slot being overwritten is
+  in flux and cannot be promised to a reader.
+- A batch read is `n` reads in sequence and promises no more; a `Lagged` ends
+  it where it was found.
+
+**Proposal.** New `ForgeKind::BroadcastLog`.
+
+```xml
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="broadcast-log" name="event_ring" version="1.0">
+  <sce:element-type>event_record</sce:element-type>
+  <sce:producers>one</sce:producers>
+  <sce:progress>wait-free</sce:progress>
+  <sce:retention entries="1023"/>      <!-- or source="deploy" key="machines.<m>.limits.<k>" -->
+</scxml>
+```
+
+Every element is required and none has a default, as for `queue`.
+`<sce:retention>` takes the §5.L `CapacitySource` forms. `<sce:element-type>`
+resolves as in §5.L, and the element's encoded size must be a build-time
+constant: a slot is a length word and the element's wire bytes, packed
+little-endian into fixed words, and the log stores bytes and never a value, so
+an entry has no destructor to run when overwritten.
+`<sce:producers>many</sce:producers>` parses and is refused.
+
+**Algorithm.** One producer, a ring of `R + 1` slots each holding a sequence
+stamp and the entry's words, and a sequence-locked read (a seqlock whose
+stamp carries the sequence number, so a reader cannot mistake a later lap for
+its own). The producer stores `busy(n)`, fences, stores the words relaxed,
+stores `done(n)` and then `head = n + 1`; a reader loads `head`, answers
+`Empty` or the range `Lagged`, and otherwise copies the slot's words between
+two loads of its stamp: equal stamps are an `Item`, unequal ones are `Lagged`
+with `head` reloaded. Publish and read are wait-free, a failed validation is
+the answer and is not retried, and the algorithm needs no read-modify-write
+atomic. Memory ordering is not authorable. Two orders are part of the
+contract's proof and not a style: the busy stamp is a release store and the
+second stamp load is an acquire load; the first version of the protocol had
+both relaxed and was refused twice by the memory-model checker.
+
+*Stamp width.* The stamp is 64 bits where the target has 64-bit atomic loads
+and stores. A narrower stamp wraps; the deploy then states the longest pause
+a reader may have as `machines.<m>.queues.<name>.min_wrap_ops`, the generator
+refuses a missing or insufficient figure, and `R + 1` must be a power of two so
+that the slot index stays continuous across the wrap. A reader within
+`2^(w-1) - (R + 1)` publishes of its cursor is exact.
+
+**Progress and backends.** Progress is declared, checked and never silently
+weakened: a declaration the backend cannot meet is
+`broadcast-log/progress-unreachable-on-backend`. C11, C++, Go, Kotlin and Rust
+give `wait-free`; Python keeps the ring under one lock and gives `blocking`.
+Rust also has the form for a target with loads and stores only (a narrow
+stamp, the once-only publisher taken by ownership). Swift is refused by
+`broadcast-log/runtime-missing` until it has a forge runtime. The algorithm
+lives once per language in `sce_forge_runtime` (`SCE_FORGE.md` §2.1); the
+generated module is typed over the element.
+
+**Generated interface.** Every backend emits the constants `RETENTION`,
+`SLOTS`, `MAX_ENCODED_BYTES`, `WORDS` and `DECLARED_PROGRESS`, the log type,
+the publisher handle taken once, and `publish(publisher, element)` (returns the
+sequence number; an element that encodes to more than `MAX_ENCODED_BYTES` is
+refused by the codec and nothing is published) and `read(log, reader)`, whose
+answer is `Item{seq, element}`, `Empty` or `Lagged{skipped}`. A stored length
+above `MAX_ENCODED_BYTES` is a codec error and never an out-of-bounds read.
+Which element forms a given language's template holds is a matter of its
+borrowing model: a codec that takes flag inputs or a variant tag from its
+caller, and a CBOR map entry of text or bytes, are refused where the decoded
+form borrows its input (Rust), and held where it owns its bytes.
+
+**Verification** (ADR 0062 §6; each layer answers a different question and none
+stands in for another):
+1. A TLA+ model with a refinement mapping onto the abstract log, one
+   configuration per bound, and a second model of the wrapped stamp
+   (`docs/formal/BroadcastLog.tla`, `BroadcastLogWrapped.tla`).
+2. The memory-model checkers that prove the ordering: loom for Rust, GenMC for
+   C and C++, Lincheck for Kotlin, the race detector for Go, and Miri for the
+   Rust runtime. ThreadSanitizer is not run on the log: every slot access is
+   atomic, so it sees no race to report on a weakened order.
+3. The history checker, `sce-codegen check-broadcast-history`. Its definition
+   is the Wing and Gong search over the sequential log with each reader's
+   cursor in the object state; for one producer it asks first a specialised
+   solver, justified by a theorem and held equal to the search by a
+   differential test, and the search decides what the solver declines.
+4. Mutation cases for each protocol decision, in the existing `.cases` form,
+   each judged by the layer that owns the decision.
+5. A reference that is not ours: the first consumer's own ring, judged by the
+   same checker.
+
+**Diagnostics:**
+- `broadcast-log/element-type-not-a-kind` — the element names no codec or
+  procedure-state document in the build
+- `broadcast-log/element-size-unbounded` — the element's encoded size is not a
+  build-time constant
+- `broadcast-log/producers-many-unsupported` — `producers` is `many`
+- `broadcast-log/progress-unreachable` and `.../progress-unreachable-on-backend`
+  — the declared progress exceeds what the kind or the backend gives
+- `broadcast-log/wrap-bound-unstated` and `.../wrap-bound-below-deploy-minimum`
+  — a stamp narrower than 64 bits with no sufficient wrap bound in the deploy
+- `broadcast-log/slots-not-a-divisor-of-the-stamp-space` — a narrow stamp and
+  a retention for which `R + 1` is not a power of two
+- `broadcast-log/runtime-missing` — the language has no template over its
+  runtime row yet
+
+**Refused, and the condition for revisiting it.**
+- `producers=many`: a claimed but unpublished sequence number is a hole that
+  readers can neither return nor skip. Revisited when a second independent
+  consumer needs several producers and states the progress it accepts for
+  readers.
+- A gated writer (backpressure, a log that never loses): a different contract
+  with a reader registry and a producer that waits or is refused, so a
+  different kind and not a flag on this one.
+- *Consumed once x forget the oldest*: not offered. The log with one reader is
+  its replacement, and it reports what it lost.
+
 ---
 
 ## §6 Cross-cutting concerns
