@@ -1018,6 +1018,13 @@ name = "a_c11_codec_holds_what_may_be_absent_in_the_optional_type"
 path = "tests/a_c11_codec_holds_what_may_be_absent_in_the_optional_type.rs"
 required-features = ["cli"]
 
+# The same shape for a field that `sce:present-if` gates. It runs `sce-codegen
+# generate`, so it carries the `cli` gate.
+[[test]]
+name = "a_c11_codec_holds_a_gated_field_in_the_optional_type"
+path = "tests/a_c11_codec_holds_a_gated_field_in_the_optional_type.rs"
+required-features = ["cli"]
+
 # The standard refusal has no variant for no refusal, and the parent keeps its last
 # refusal as an optional record (docs/adr/0055, step 11). It runs `sce-codegen`, so
 # it carries the `cli` gate.
