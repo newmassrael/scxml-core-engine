@@ -160,6 +160,67 @@ fn a_known_name_on_an_element_that_does_not_take_it_is_refused_in_a_forge_docume
     assert!(message.contains("sce:window on <datamodel>"), "{message}");
 }
 
+/// The full-queue policy a downstream consumer first asked of `queue`
+/// (`sce:on-full`, ADR 0062) is not one: a queue is consumed once and refuses
+/// a push into a full one, and the kind that forgets its oldest entry is
+/// `broadcast-log`. So a document that writes the attribute on either kind's
+/// root is refused where it is written, as a name no document of the tree
+/// uses (`validation/unknown-sce-attribute`), and neither parser has to know
+/// the name to refuse it.
+#[test]
+fn an_overflow_policy_written_on_a_queue_or_a_broadcast_log_is_refused() {
+    let queue = |extra: &str| {
+        format!(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
+             <scxml xmlns=\"http://www.w3.org/2005/07/scxml\"\n\
+             \x20      xmlns:sce=\"http://sce.dev/ext\"\n\
+             \x20      sce:kind=\"queue\"\n\
+             {extra}\
+             \x20      name=\"probe\" version=\"1.0\">\n\
+             \x20 <sce:element-type>rx_event</sce:element-type>\n\
+             \x20 <sce:producers>one</sce:producers>\n\
+             \x20 <sce:consumers>one</sce:consumers>\n\
+             \x20 <sce:progress>wait-free</sce:progress>\n\
+             \x20 <sce:bounded capacity=\"8\"/>\n\
+             </scxml>\n"
+        )
+    };
+    let log = |extra: &str| {
+        format!(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
+             <scxml xmlns=\"http://www.w3.org/2005/07/scxml\"\n\
+             \x20      xmlns:sce=\"http://sce.dev/ext\"\n\
+             \x20      sce:kind=\"broadcast-log\"\n\
+             {extra}\
+             \x20      name=\"probe\" version=\"1.0\">\n\
+             \x20 <sce:element-type>rx_event</sce:element-type>\n\
+             \x20 <sce:producers>one</sce:producers>\n\
+             \x20 <sce:progress>wait-free</sce:progress>\n\
+             \x20 <sce:retention entries=\"7\"/>\n\
+             </scxml>\n"
+        )
+    };
+    let written = "       sce:on-full=\"overwrite-oldest\"\n";
+    for (kind, build) in [
+        ("queue", &queue as &dyn Fn(&str) -> String),
+        ("broadcast-log", &log as &dyn Fn(&str) -> String),
+    ] {
+        assert_eq!(
+            parse(&build(""), kind),
+            Ok(()),
+            "the {kind} document parses without the attribute"
+        );
+        let (code, line, message) = parse(&build(written), kind)
+            .expect_err("an overflow policy written on the root is refused");
+        assert_eq!(
+            (code.as_str(), line),
+            (UNKNOWN_NAME, Some(5)),
+            "{kind}: {message}"
+        );
+        assert!(message.contains("sce:on-full"), "{kind}: {message}");
+    }
+}
+
 /// Whether an element under `node` is this parse's to judge — outside every
 /// carried value and every SCE element (the module header says why).
 fn judged_by_this_parse(node: &roxmltree::Node) -> bool {
