@@ -232,21 +232,24 @@ fn an_algorithm_a_backend_writes_in_part_is_generated_and_the_rest_is_refused_by
 
 #[test]
 fn a_forge_document_is_refused_through_the_string_entry() {
+    // A kind no backend of this list writes, in whole or in part: a condition.
     let document = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
-          version="1.0" sce:kind="enum" name="shade" sce:underlying-type="uint8">
-  <datamodel><data id="variants"><sce:variant name="light" value="1"/>
-  <sce:variant name="dark" value="2"/></data></datamodel></scxml>"#;
+          version="1.0" sce:kind="condition" name="in_range">
+  <datamodel>
+    <data id="rpm" sce:type="uint32" sce:direction="in"/>
+    <data id="result" sce:type="bool" sce:direction="out" expr="rpm &gt;= 10"/>
+  </datamodel></scxml>"#;
     for language in backends_with_no_emitter() {
         let error = compile_forge_from_string(
             document,
             DocumentLabel {
-                identifier: "shade",
-                diagnostic_label: "shade.scxml",
+                identifier: "in_range",
+                diagnostic_label: "in_range.scxml",
             },
             language,
         )
         .err()
-        .unwrap_or_else(|| panic!("{language:?} generated an enum it has no emitter for"));
+        .unwrap_or_else(|| panic!("{language:?} generated a condition it has no emitter for"));
         let text = format!("{error:?}");
         assert!(
             text.contains(language_wire_name(language)),
