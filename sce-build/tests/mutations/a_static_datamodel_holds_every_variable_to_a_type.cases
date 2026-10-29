@@ -448,7 +448,7 @@ PY
 
 mutation_case "a Go machine's imports are not read from its text" <<'PY'
 edit("sce-build/src/generator.rs",
-     "    if unimported.is_empty() && named.len() == static_lowering.imports.len() {\n        return Ok(first);\n    }\n",
+     "    if unimported.is_empty() && named.len() == base_imports.len() {\n        return Ok(first);\n    }\n",
      "    if true {\n        return Ok(first);\n    }\n")
 PY
 
