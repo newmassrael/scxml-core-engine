@@ -94,11 +94,11 @@ fn a_schema_swift_does_not_write_is_named_as_the_reason() {
 }
 
 #[test]
-fn a_list_of_records_is_refused_by_the_list() {
-    let refusal = swift_of(&format!("{FIXTURES}/algorithm_ledger_add.scxml"))
-        .expect_err("a list is not lowered for Swift yet");
+fn an_optional_record_return_is_refused_by_the_return() {
+    let refusal = swift_of(&format!("{FIXTURES}/algorithm_item_pick_first.scxml"))
+        .expect_err("an optional record is not lowered for Swift yet");
     assert!(
-        refusal.contains("Swift") && refusal.contains("list<record:Entry>"),
+        refusal.contains("Swift") && refusal.contains("optional<record:Item>"),
         "{refusal}"
     );
 }
