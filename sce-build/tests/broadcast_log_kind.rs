@@ -582,6 +582,278 @@ fn an_element_type_that_names_no_document_is_refused_with_the_documents_there_ar
     }
 }
 
+// --- Cross-document: the element's encoded size ---
+
+/// A codec document with the imports and the fields the test writes.
+fn codec_with(name: &str, imports: &str, fields: &str) -> String {
+    format!(
+        r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="{name}" version="1.0">
+  {imports}
+  <datamodel>
+    {fields}
+  </datamodel>
+</scxml>"##
+    )
+}
+
+/// The documents written to one directory and compiled for `language` in the
+/// order given, so that a document placed first is the first one generated.
+fn compile_documents(
+    language: Language,
+    documents: &[(&str, &String)],
+) -> Result<Vec<(String, sce_build::generator::GeneratedOutput)>, Located<ForgeError>> {
+    let dir = tempdir().expect("tempdir");
+    let paths: Vec<PathBuf> = documents
+        .iter()
+        .map(|(file, text)| {
+            let path = dir.path().join(file);
+            fs::write(&path, text).expect("write document");
+            path
+        })
+        .collect();
+    let forge_files: Vec<&Path> = paths.iter().map(PathBuf::as_path).collect();
+    compile_scxml_with_imports(
+        &[],
+        &forge_files,
+        &sce_build::find_template_dir_for(language),
+        language,
+        &options_for(language),
+        None,
+    )
+}
+
+/// What a refusal of `broadcast-log/element-size-unbounded` says, once its code,
+/// its row and the names it carries are checked: the reason it gives.
+fn unbounded_reason(
+    located: Located<ForgeError>,
+    log_xml: &str,
+    element: &str,
+    element_kind: &str,
+) -> String {
+    assert!(
+        row_text(&located, log_xml).contains("<sce:element-type>"),
+        "the refusal is placed on the element-type row"
+    );
+    let codes: Vec<DiagnosticCode> = located
+        .error
+        .to_diagnostics()
+        .iter()
+        .map(|d| d.code)
+        .collect();
+    assert!(
+        matches!(
+            codes.as_slice(),
+            [DiagnosticCode::BroadcastLogElementSizeUnbounded]
+        ),
+        "{codes:?}"
+    );
+    match validation(located).0 {
+        ValidationError::BroadcastLogElementSizeUnbounded {
+            log_name,
+            element_type,
+            element_kind: kind,
+            reason,
+        } => {
+            assert_eq!(log_name, "event_ring");
+            assert_eq!(element_type, element);
+            assert_eq!(kind, element_kind);
+            reason
+        }
+        other => panic!("expected BroadcastLogElementSizeUnbounded, got {other:?}"),
+    }
+}
+
+/// The codes of the refusal `result` is, which must be one.
+fn refusal_codes(
+    result: Result<Vec<(String, sce_build::generator::GeneratedOutput)>, Located<ForgeError>>,
+) -> Vec<DiagnosticCode> {
+    result
+        .err()
+        .unwrap_or_else(|| panic!("no runtime has a broadcast-log row yet, so the set is refused"))
+        .error
+        .to_diagnostics()
+        .iter()
+        .map(|d| d.code)
+        .collect()
+}
+
+const UNBOUNDED_FIELDS: &str = r#"<data id="head" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <data id="payload" sce:type="bytes" sce:byte="1" sce:bit-size="tail"/>"#;
+
+const BOUNDED_FIELDS: &str = r#"<data id="head" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <data id="payload" sce:type="bytes" sce:byte="1" sce:bit-size="tail" sce:max-size="64"/>"#;
+
+fn event_ring() -> String {
+    simple_doc(
+        "event_ring",
+        "one",
+        "wait-free",
+        r#"<sce:retention entries="7"/>"#,
+    )
+}
+
+#[test]
+fn an_element_with_a_payload_no_declaration_bounds_is_refused_on_the_element_type_row() {
+    let xml = event_ring();
+    let codec = codec_with("event_record", "", UNBOUNDED_FIELDS);
+    let located = compile_documents(
+        Language::Rust,
+        &[("event_ring.scxml", &xml), ("event_record.scxml", &codec)],
+    )
+    .err()
+    .unwrap_or_else(|| panic!("the payload has no bound, so the set is refused"));
+    assert!(
+        row_text(&located, &xml).contains("<sce:element-type>event_record<"),
+        "the refusal is placed on the element-type row"
+    );
+    let reason = unbounded_reason(located, &xml, "event_record", "codec");
+    assert!(reason.contains("'payload'"), "{reason}");
+    assert!(reason.contains("sce:max-size"), "{reason}");
+}
+
+#[test]
+fn the_size_refusal_is_the_same_on_every_language() {
+    let xml = event_ring();
+    let codec = codec_with("event_record", "", UNBOUNDED_FIELDS);
+    for language in Language::ALL
+        .iter()
+        .copied()
+        .filter(|language| *language != Language::Swift)
+    {
+        let wire = sce_build::forge::codegen_matrix::language_wire_name(language);
+        let located = compile_documents(
+            language,
+            &[("event_ring.scxml", &xml), ("event_record.scxml", &codec)],
+        )
+        .err()
+        .unwrap_or_else(|| panic!("{wire}: the payload has no bound, so the set is refused"));
+        let reason = unbounded_reason(located, &xml, "event_record", "codec");
+        assert!(reason.contains("'payload'"), "{wire}: {reason}");
+    }
+}
+
+#[test]
+fn a_procedure_has_no_wire_form_and_is_refused_as_an_element() {
+    let procedure = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="procedure" name="frame_record" version="1.0" initial="run">
+  <datamodel>
+    <data id="serial" sce:type="uint32" sce:direction="in"/>
+    <data id="checksum" sce:type="uint64" sce:direction="internal" expr="0"/>
+  </datamodel>
+  <state id="run">
+    <transition target="done"/>
+  </state>
+  <final id="done"/>
+</scxml>"##
+        .to_string();
+    let xml = event_ring().replace("event_record", "frame_record");
+    let located = compile_documents(
+        Language::Rust,
+        &[
+            ("event_ring.scxml", &xml),
+            ("frame_record.scxml", &procedure),
+        ],
+    )
+    .err()
+    .unwrap_or_else(|| panic!("a procedure has no encoded size, so the set is refused"));
+    let reason = unbounded_reason(located, &xml, "frame_record", "procedure");
+    assert!(reason.contains("no wire form"), "{reason}");
+}
+
+#[test]
+fn an_element_that_embeds_a_codec_with_no_bound_is_refused_through_the_embed() {
+    let xml = event_ring();
+    let parent = codec_with(
+        "event_record",
+        r#"<sce:import src="payload_body.scxml" kind="codec" as="payload_body"/>"#,
+        r#"<sce:field id="tag" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:embed id="body" type="payload_body" sce:byte="1"/>"#,
+    );
+    let body = codec_with(
+        "payload_body",
+        "",
+        r#"<data id="blob" sce:type="bytes" sce:byte="0" sce:bit-size="tail"/>"#,
+    );
+    let located = compile_documents(
+        Language::Rust,
+        &[
+            ("event_ring.scxml", &xml),
+            ("event_record.scxml", &parent),
+            ("payload_body.scxml", &body),
+        ],
+    )
+    .err()
+    .unwrap_or_else(|| panic!("the embedded body has no bound, so the set is refused"));
+    let reason = unbounded_reason(located, &xml, "event_record", "codec");
+    assert!(reason.contains("'body'"), "{reason}");
+    assert!(reason.contains("payload_body"), "{reason}");
+    assert!(reason.contains("'blob'"), "{reason}");
+}
+
+#[test]
+fn an_element_whose_every_field_is_bounded_is_not_refused_for_its_size() {
+    // Reached the missing runtime instead: the one refusal a valid document
+    // has while no language has a row.
+    let xml = event_ring();
+    for (name, codec) in [
+        ("a fixed record", codec_doc("event_record")),
+        (
+            "a payload with a max-size",
+            codec_with("event_record", "", BOUNDED_FIELDS),
+        ),
+    ] {
+        let codes = refusal_codes(compile_documents(
+            Language::Rust,
+            &[("event_ring.scxml", &xml), ("event_record.scxml", &codec)],
+        ));
+        assert!(
+            matches!(
+                codes.as_slice(),
+                [DiagnosticCode::BroadcastLogRuntimeMissing]
+            ),
+            "{name}: {codes:?}"
+        );
+    }
+}
+
+#[test]
+fn an_element_that_embeds_a_bounded_codec_is_not_refused_for_its_size() {
+    // The embedded codec is resolved through the element's own import, so a
+    // bound that lives one document away is found and not guessed at.
+    let xml = event_ring();
+    let parent = codec_with(
+        "event_record",
+        r#"<sce:import src="payload_body.scxml" kind="codec" as="payload_body"/>"#,
+        r#"<sce:field id="tag" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:embed id="body" type="payload_body" sce:byte="1"/>"#,
+    );
+    let body = codec_with(
+        "payload_body",
+        "",
+        r#"<data id="blob" sce:type="bytes" sce:byte="0" sce:bit-size="tail" sce:max-size="16"/>"#,
+    );
+    let codes = refusal_codes(compile_documents(
+        Language::Rust,
+        &[
+            ("event_ring.scxml", &xml),
+            ("event_record.scxml", &parent),
+            ("payload_body.scxml", &body),
+        ],
+    ));
+    assert!(
+        matches!(
+            codes.as_slice(),
+            [DiagnosticCode::BroadcastLogRuntimeMissing]
+        ),
+        "{codes:?}"
+    );
+}
+
 // --- Generation: every language refuses by name while none has the row ---
 
 fn options_for(language: Language) -> ForgeCompileOptions {

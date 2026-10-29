@@ -4412,8 +4412,13 @@ fn compile_document_set(
     validate_queue_cross_refs(&queues_for_xref, &element_type_candidates)?;
     // A broadcast log stores the bytes of the element document's own wire
     // form, so its element type resolves against the same candidates (ADR
-    // 0062 §3).
-    validate_broadcast_log_cross_refs(&broadcast_logs_for_xref, &element_type_candidates)?;
+    // 0062 §3), and that form must have a largest size (ADR 0062 §4), read
+    // through the element documents' own imports.
+    validate_broadcast_log_cross_refs(
+        &broadcast_logs_for_xref,
+        &element_type_candidates,
+        &element_import_sources,
+    )?;
 
     // ── Deploy-aware cross-doc link validators ──
     //
@@ -5360,6 +5365,59 @@ fn with_resolved_import_codec<T>(
     })();
     visited.remove(&visit_key);
     result
+}
+
+/// A codec with each of its imports resolved for the size bound of
+/// [`forge::codec_size`] (ADR 0062, section 4): a codec import to the codec it
+/// names, itself resolved, and an enum import to the length of the longest text
+/// of its variants. The alias lookup, the re-parse, the kind check and the cycle
+/// guard are [`with_resolved_import_codec`]'s; an import that cannot be read, is
+/// another kind or closes a cycle is left out, and the bound refuses a codec that
+/// needs it.
+fn sized_codec(
+    cm: &forge::model::CodecModel,
+    imports: &[forge::model::ForgeImport],
+    base_dir: &Path,
+    visited: &mut HashSet<PathBuf>,
+) -> forge::codec_size::SizedCodec {
+    use forge::codec_size::{SizedCodec, SizedImport};
+
+    let mut resolved = std::collections::BTreeMap::new();
+    for import in imports {
+        let entry = match import.kind {
+            forge::model::ForgeKind::Codec => {
+                with_resolved_import_codec(&import.alias, imports, base_dir, visited, |inner| {
+                    Some(SizedImport::Codec(Box::new(sized_codec(
+                        inner.model,
+                        inner.imports,
+                        inner.base_dir,
+                        inner.visited,
+                    ))))
+                })
+            }
+            forge::model::ForgeKind::Enum => forge::import_source::parse_quietly(base_dir, import)
+                .and_then(|parsed| match parsed.document {
+                    forge::model::ForgeDocument::Enum(model) => Some(model),
+                    _ => None,
+                })
+                .map(|model| SizedImport::Enum {
+                    longest_text: model
+                        .variants
+                        .iter()
+                        .map(|variant| variant.wire_text().len() as u64)
+                        .max()
+                        .unwrap_or(0),
+                }),
+            _ => None,
+        };
+        if let Some(entry) = entry {
+            resolved.insert(import.alias.clone(), entry);
+        }
+    }
+    SizedCodec {
+        model: cm.clone(),
+        imports: resolved,
+    }
 }
 
 /// Owned→borrowed projection round: transitive `as_borrowed`-fallibility
@@ -6996,12 +7054,22 @@ fn validate_queue_cross_refs(
 /// element-type row. An empty `logs` is a no-op, which is every build with no
 /// broadcast-log document.
 ///
-/// `broadcast-log/element-size-unbounded` is declared and not raised here: it
-/// needs the element's encoded size as a constant of the build, which the codec
-/// model does not yet expose (ADR 0062, "What step 3 landed").
+/// `broadcast-log/element-size-unbounded` is raised here too, on the same row,
+/// once the element resolves: a slot holds the element's wire bytes as a fixed
+/// number of words (ADR 0062, section 4), so the element needs the largest
+/// encoded size that [`forge::codec_size::largest_encoded_bytes`] gives, and a
+/// document with none is refused with the reason it gives. The check reads the
+/// documents and no language, so it holds for every language and for `check`.
+/// `element_import_sources` is each element document's own imports and directory,
+/// which the size of an embedded body, a list entry or a variant arm is read
+/// through.
 fn validate_broadcast_log_cross_refs(
     logs: &[(String, forge::model::BroadcastLogModel)],
     element_type_candidates: &std::collections::HashMap<String, forge::model::ForgeDocument>,
+    element_import_sources: &std::collections::HashMap<
+        String,
+        (Vec<forge::model::ForgeImport>, PathBuf),
+    >,
 ) -> Result<(), forge::error::Located<forge::error::ForgeError>> {
     use forge::error::{Located, ValidationError};
 
@@ -7009,12 +7077,39 @@ fn validate_broadcast_log_cross_refs(
     element_type_names.sort();
 
     for (diag_label, log) in logs {
-        if !element_type_candidates.contains_key(log.element_type.as_str()) {
+        let Some(element) = element_type_candidates.get(log.element_type.as_str()) else {
             return Err(Located::new(
                 ValidationError::BroadcastLogElementTypeNotAKind {
                     log_name: log.name.clone(),
                     element_type: log.element_type.clone(),
                     candidates: element_type_names.clone(),
+                }
+                .into(),
+                diag_label.clone(),
+                log.element_type_line,
+                None,
+            ));
+        };
+        let bound = match element {
+            forge::model::ForgeDocument::Codec(codec) => {
+                // A codec with no recorded sources has no imports to resolve.
+                let (imports, base_dir) = element_import_sources
+                    .get(log.element_type.as_str())
+                    .map_or((&[][..], Path::new(".")), |(imports, base_dir)| {
+                        (imports.as_slice(), base_dir.as_path())
+                    });
+                let sized = sized_codec(codec, imports, base_dir, &mut HashSet::new());
+                forge::codec_size::largest_encoded_bytes(&sized)
+            }
+            other => Err(forge::codec_size::Unbounded::no_wire_form(other.kind())),
+        };
+        if let Err(unbounded) = bound {
+            return Err(Located::new(
+                ValidationError::BroadcastLogElementSizeUnbounded {
+                    log_name: log.name.clone(),
+                    element_type: log.element_type.clone(),
+                    element_kind: element.kind().to_string(),
+                    reason: unbounded.to_string(),
                 }
                 .into(),
                 diag_label.clone(),

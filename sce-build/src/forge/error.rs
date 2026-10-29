@@ -3337,9 +3337,11 @@ pub enum ValidationError {
     /// element's bytes as a fixed number of words (ADR 0062 §4), so an element
     /// whose size varies has no slot to live in.
     ///
-    /// Declared with the rest of the kind's refusals; the cross-document pass
-    /// that reads an element's encoded size is the step that gives the codec
-    /// model a build-time size to read (ADR 0062, "What step 3 landed").
+    /// Raised by the cross-document pass beside
+    /// `broadcast-log/element-type-not-a-kind`, on the element-type row, from
+    /// [`crate::forge::codec_size::largest_encoded_bytes`]: `reason` is that
+    /// refusal's own text, which names the field and the declaration it lacks
+    /// (ADR 0062, "What step 6a landed").
     #[error(
         "broadcast-log '{log_name}': the encoded size of element-type '{element_type}' ({element_kind} kind) is not a build-time constant: {reason}. \
          ADR 0062 §4: a slot holds the element's wire bytes as a fixed number of words. \
