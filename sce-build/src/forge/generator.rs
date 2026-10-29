@@ -14557,10 +14557,10 @@ fn streaming_fixed_enum_conversion(
         ),
         Language::Go => (
             format!(
-                "_enumV, _enumOk := {from}({carrier_read})\n{indent}\
-                 if !_enumOk {{\n{indent}\treturn nil, codec.ErrUndeclaredEnumValue\n{indent}}}\n{indent}"
+                "_enumV := {from}({carrier_read})\n{indent}\
+                 if !_enumV.IsPresent() {{\n{indent}\treturn nil, codec.ErrUndeclaredEnumValue\n{indent}}}\n{indent}"
             ),
-            "_enumV".to_string(),
+            "_enumV.Proven()".to_string(),
         ),
         Language::C11 => (
             format!(

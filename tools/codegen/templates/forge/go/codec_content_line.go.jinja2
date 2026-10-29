@@ -14,7 +14,7 @@
 {% if x.enum_is_open %}
 {{ indent }}{{ "pv" if x.param is defined else "v" }} := {{ x.enum_from }}({{ x.carrier_type }}({{ raw }}))
 {% else %}
-{{ indent }}{{ "pv" if x.param is defined else "v" }}, ok := {{ x.enum_from }}({{ x.carrier_type }}({{ raw }}))
+{{ indent }}{{ "pv" if x.param is defined else "v" }}, ok := {{ x.enum_from }}({{ x.carrier_type }}({{ raw }})).Get()
 {{ indent }}if !ok {
 {{ indent }}	return nil, codec.ErrLineBadValue
 {{ indent }}}

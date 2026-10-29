@@ -32,6 +32,7 @@ import (
 
 	sce "github.com/newmassrael/sce-go-runtime"
 	scealgorithm "github.com/newmassrael/sce-forge-runtime/algorithm"
+	"github.com/newmassrael/sce-forge-runtime/optional"
 	sce_hlc_receive "github.com/newmassrael/sce-go-tests/integration/static_datamodel/hlc_receive"
 	sce_hlc_send "github.com/newmassrael/sce-go-tests/integration/static_datamodel/hlc_send"
 	sce_hlc_timestamp "github.com/newmassrael/sce-go-tests/integration/static_datamodel/hlc_timestamp"
@@ -1499,14 +1500,14 @@ func (v RecordListRefusalEnum) ToUnderlying() uint8 {
 	return uint8(v)
 }
 
-// RecordListRefusalEnumFromUnderlying returns the variant that declares raw, and false for a
-// number no variant declares.
-func RecordListRefusalEnumFromUnderlying(raw uint8) (RecordListRefusalEnum, bool) {
+// RecordListRefusalEnumFromUnderlying returns the variant that declares raw, and the absent
+// value for a number no variant declares.
+func RecordListRefusalEnumFromUnderlying(raw uint8) optional.Of[RecordListRefusalEnum] {
 	switch raw {
 	case 1, 2, 3, 4, 5, 6, 7, 8:
-		return RecordListRefusalEnum(raw), true
+		return optional.Some(RecordListRefusalEnum(raw))
 	}
-	return 0, false
+	return optional.None[RecordListRefusalEnum]()
 }
 
 // ToSaved is this value as a saved state writes it.
@@ -1568,14 +1569,14 @@ func (v RecordListCommandEnum) ToUnderlying() uint8 {
 	return uint8(v)
 }
 
-// RecordListCommandEnumFromUnderlying returns the variant that declares raw, and false for a
-// number no variant declares.
-func RecordListCommandEnumFromUnderlying(raw uint8) (RecordListCommandEnum, bool) {
+// RecordListCommandEnumFromUnderlying returns the variant that declares raw, and the absent
+// value for a number no variant declares.
+func RecordListCommandEnumFromUnderlying(raw uint8) optional.Of[RecordListCommandEnum] {
 	switch raw {
 	case 0, 1, 2:
-		return RecordListCommandEnum(raw), true
+		return optional.Some(RecordListCommandEnum(raw))
 	}
-	return 0, false
+	return optional.None[RecordListCommandEnum]()
 }
 
 // ToSaved is this value as a saved state writes it.

@@ -32,6 +32,7 @@ import (
 
 	sce "github.com/newmassrael/sce-go-runtime"
 	scealgorithm "github.com/newmassrael/sce-forge-runtime/algorithm"
+	"github.com/newmassrael/sce-forge-runtime/optional"
 )
 
 // Ensure imports are used
@@ -228,14 +229,14 @@ func (v StaticSchemaPendingSignalLevelEnum) ToUnderlying() uint8 {
 	return uint8(v)
 }
 
-// StaticSchemaPendingSignalLevelEnumFromUnderlying returns the variant that declares raw, and false for a
-// number no variant declares.
-func StaticSchemaPendingSignalLevelEnumFromUnderlying(raw uint8) (StaticSchemaPendingSignalLevelEnum, bool) {
+// StaticSchemaPendingSignalLevelEnumFromUnderlying returns the variant that declares raw, and the absent
+// value for a number no variant declares.
+func StaticSchemaPendingSignalLevelEnumFromUnderlying(raw uint8) optional.Of[StaticSchemaPendingSignalLevelEnum] {
 	switch raw {
 	case 0, 1, 2:
-		return StaticSchemaPendingSignalLevelEnum(raw), true
+		return optional.Some(StaticSchemaPendingSignalLevelEnum(raw))
 	}
-	return 0, false
+	return optional.None[StaticSchemaPendingSignalLevelEnum]()
 }
 
 // ToSaved is this value as a saved state writes it.

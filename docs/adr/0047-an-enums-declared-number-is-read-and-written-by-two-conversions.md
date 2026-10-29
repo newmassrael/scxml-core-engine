@@ -104,7 +104,7 @@ same two accessors, so a statechart and an algorithm lower the two calls alike:
 | Rust | `T::to_underlying(v)` | `T::from_underlying(n)` → `Option` |
 | Kotlin | `(T::toUnderlying)(v)` | `T.fromUnderlying(n)` → `T?` |
 | C++ | `to_underlying(v)` (an algorithm), `<T>ToUnderlying(v)` (a machine) | `from_underlying(n)`, `<T>FromUnderlying(n)` → `std::optional` |
-| Go | `T.ToUnderlying(v)` | `<T>FromUnderlying(n)` → `(T, bool)` |
+| Go | `T.ToUnderlying(v)` | `<T>FromUnderlying(n)` → `optional.Of[T]` (it answered `(T, bool)` until ADR 0055, section 5, 2026-10-29) |
 | Python | `T.to_underlying(v)` | `T.from_underlying(n)` → `Optional` |
 | C11 | `<doc>_to_underlying(v)` (an algorithm), `<doc>_number(v)` (a machine) | `<doc>_from_number(n)` and its `_take` |
 | Interpreter | `SceStatic.number(table, v)` | `SceStatic.variant(table, n)`, which throws |

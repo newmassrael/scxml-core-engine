@@ -32,6 +32,7 @@ import (
 
 	sce "github.com/newmassrael/sce-go-runtime"
 	scealgorithm "github.com/newmassrael/sce-forge-runtime/algorithm"
+	"github.com/newmassrael/sce-forge-runtime/optional"
 	sce_hlc_receive "github.com/newmassrael/sce-go-tests/integration/static_datamodel/hlc_receive"
 	sce_hlc_send "github.com/newmassrael/sce-go-tests/integration/static_datamodel/hlc_send"
 	sce_hlc_timestamp "github.com/newmassrael/sce-go-tests/integration/static_datamodel/hlc_timestamp"
@@ -1499,14 +1500,14 @@ func (v RecordListParentSceSynthInvokeListRefusalEnum) ToUnderlying() uint8 {
 	return uint8(v)
 }
 
-// RecordListParentSceSynthInvokeListRefusalEnumFromUnderlying returns the variant that declares raw, and false for a
-// number no variant declares.
-func RecordListParentSceSynthInvokeListRefusalEnumFromUnderlying(raw uint8) (RecordListParentSceSynthInvokeListRefusalEnum, bool) {
+// RecordListParentSceSynthInvokeListRefusalEnumFromUnderlying returns the variant that declares raw, and the absent
+// value for a number no variant declares.
+func RecordListParentSceSynthInvokeListRefusalEnumFromUnderlying(raw uint8) optional.Of[RecordListParentSceSynthInvokeListRefusalEnum] {
 	switch raw {
 	case 1, 2, 3, 4, 5, 6, 7, 8:
-		return RecordListParentSceSynthInvokeListRefusalEnum(raw), true
+		return optional.Some(RecordListParentSceSynthInvokeListRefusalEnum(raw))
 	}
-	return 0, false
+	return optional.None[RecordListParentSceSynthInvokeListRefusalEnum]()
 }
 
 // ToSaved is this value as a saved state writes it.
@@ -1568,14 +1569,14 @@ func (v RecordListParentSceSynthInvokeListCommandEnum) ToUnderlying() uint8 {
 	return uint8(v)
 }
 
-// RecordListParentSceSynthInvokeListCommandEnumFromUnderlying returns the variant that declares raw, and false for a
-// number no variant declares.
-func RecordListParentSceSynthInvokeListCommandEnumFromUnderlying(raw uint8) (RecordListParentSceSynthInvokeListCommandEnum, bool) {
+// RecordListParentSceSynthInvokeListCommandEnumFromUnderlying returns the variant that declares raw, and the absent
+// value for a number no variant declares.
+func RecordListParentSceSynthInvokeListCommandEnumFromUnderlying(raw uint8) optional.Of[RecordListParentSceSynthInvokeListCommandEnum] {
 	switch raw {
 	case 0, 1, 2:
-		return RecordListParentSceSynthInvokeListCommandEnum(raw), true
+		return optional.Some(RecordListParentSceSynthInvokeListCommandEnum(raw))
 	}
-	return 0, false
+	return optional.None[RecordListParentSceSynthInvokeListCommandEnum]()
 }
 
 // ToSaved is this value as a saved state writes it.

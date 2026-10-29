@@ -32,6 +32,7 @@ import (
 
 	sce "github.com/newmassrael/sce-go-runtime"
 	scealgorithm "github.com/newmassrael/sce-forge-runtime/algorithm"
+	"github.com/newmassrael/sce-forge-runtime/optional"
 )
 
 // Ensure imports are used
@@ -227,14 +228,14 @@ func (v StaticWholePayloadViewModeEnum) ToUnderlying() uint8 {
 	return uint8(v)
 }
 
-// StaticWholePayloadViewModeEnumFromUnderlying returns the variant that declares raw, and false for a
-// number no variant declares.
-func StaticWholePayloadViewModeEnumFromUnderlying(raw uint8) (StaticWholePayloadViewModeEnum, bool) {
+// StaticWholePayloadViewModeEnumFromUnderlying returns the variant that declares raw, and the absent
+// value for a number no variant declares.
+func StaticWholePayloadViewModeEnumFromUnderlying(raw uint8) optional.Of[StaticWholePayloadViewModeEnum] {
 	switch raw {
 	case 0, 1, 2, 3:
-		return StaticWholePayloadViewModeEnum(raw), true
+		return optional.Some(StaticWholePayloadViewModeEnum(raw))
 	}
-	return 0, false
+	return optional.None[StaticWholePayloadViewModeEnum]()
 }
 
 // ToSaved is this value as a saved state writes it.

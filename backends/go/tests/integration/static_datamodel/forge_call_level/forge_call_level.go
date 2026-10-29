@@ -8,6 +8,8 @@
 
 package forge_call_level
 
+import "github.com/newmassrael/sce-forge-runtime/optional"
+
 type ForgeCallLevel uint8
 
 const (
@@ -20,27 +22,29 @@ func (v ForgeCallLevel) ToUnderlying() uint8 {
 	return uint8(v)
 }
 
-// DeclaredName returns the name the document declares for this value, and
-// false for a value no variant names — one the type can hold whether or not
-// its set is open, since a defined integer type holds every carrier value.
-func (v ForgeCallLevel) DeclaredName() (string, bool) {
+// DeclaredName returns the name the document declares for this value, and the
+// absent value for a value no variant names — one the type can hold whether or
+// not its set is open, since a defined integer type holds every carrier value.
+// It is an optional value as every generated answer that may be absent is
+// (docs/adr/0055, section 5).
+func (v ForgeCallLevel) DeclaredName() optional.Of[string] {
 	switch v {
 	case ForgeCallLevelLight:
-		return "light", true
+		return optional.Some("light")
 	case ForgeCallLevelHeavy:
-		return "heavy", true
+		return optional.Some("heavy")
 	}
-	return "", false
+	return optional.None[string]()
 }
 
-// ForgeCallLevelFromUnderlying returns the variant raw declares, and false
-// when raw declares none — the declared set is closed.
-func ForgeCallLevelFromUnderlying(raw uint8) (ForgeCallLevel, bool) {
+// ForgeCallLevelFromUnderlying returns the variant raw declares, and the absent
+// value when raw declares none — the declared set is closed.
+func ForgeCallLevelFromUnderlying(raw uint8) optional.Of[ForgeCallLevel] {
 	switch raw {
 	case 10:
-		return ForgeCallLevelLight, true
+		return optional.Some(ForgeCallLevelLight)
 	case 20:
-		return ForgeCallLevelHeavy, true
+		return optional.Some(ForgeCallLevelHeavy)
 	}
-	return 0, false
+	return optional.None[ForgeCallLevel]()
 }

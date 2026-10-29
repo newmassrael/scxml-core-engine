@@ -5818,31 +5818,11 @@ pub(crate) fn found_wrapper(target: ExprTarget) -> Option<&'static str> {
     }
 }
 
-/// The Go runtime's reading of a value that may not have been found, as the
-/// `Outcome` a call that may fail answers ([`found_wrapper`]): the value and the
-/// flag an enum's `FromUnderlying` answers.
+/// The Go runtime's reading of the optional value a reading that may not have
+/// found anything answers (`optional.Of`, docs/adr/0055 section 5), as the
+/// `Outcome` a call that may fail answers ([`found_wrapper`]): what an enum's
+/// `FromUnderlying` and a lookup whose miss is an error both answer.
 const GO_FOUND: &str = "scealgorithm.Found";
-
-/// The Go runtime's reading of the optional a lookup whose miss is an error
-/// answers (`optional.Of`, docs/adr/0055 section 5), as the same `Outcome`.
-const GO_FOUND_OPTIONAL: &str = "scealgorithm.FoundOptional";
-
-/// [`found_wrapper`] for a lookup whose miss is an error ([`CallReading::Found`]).
-/// It differs from the enum conversion's only where the backend's lookup answers
-/// an optional of the forge runtime and not the shape its enum's conversion does:
-/// Go's lookup answers `optional.Of`, its enum's conversion a value and a flag.
-pub(crate) fn lookup_found_wrapper(target: ExprTarget) -> Option<&'static str> {
-    match target {
-        ExprTarget::Go => Some(GO_FOUND_OPTIONAL),
-        ExprTarget::Rust
-        | ExprTarget::Kotlin
-        | ExprTarget::Cpp
-        | ExprTarget::Python
-        | ExprTarget::Swift
-        | ExprTarget::C
-        | ExprTarget::Js => found_wrapper(target),
-    }
-}
 
 /// Lower each conversion of an imported enum (`<alias>.toNumber(value)`,
 /// `<alias>.fromNumber(number)`) to the functions the context spells the enum's
@@ -6019,7 +5999,7 @@ fn lower_call_readings(expr: &mut TypedExpr, ctx: &TypeCtx<'_>, target: ExprTarg
     match reading {
         CallReading::Value => {}
         CallReading::Found => {
-            if let Some(wrapper) = lookup_found_wrapper(target).filter(|_| fails) {
+            if let Some(wrapper) = found_wrapper(target).filter(|_| fails) {
                 wrap_in_found(expr, wrapper);
             }
         }
@@ -9471,13 +9451,8 @@ pub(crate) fn pass_failure_on(
         // holds): it answers an `Outcome`, whose type `TakeOutcome` infers.
         // ... and so does the runtime's reading of a value that may not have been
         // found ([`found_wrapper`]), the variant a number declares among them,
-        // whose type is the enum's, which the lattice does not carry either; the
-        // reading of a lookup's optional ([`lookup_found_wrapper`]) answers the same.
-        ExprTarget::Go
-            if symbol.starts_with(STATE_ADAPTER_PREFIX)
-                || symbol == GO_FOUND
-                || symbol == GO_FOUND_OPTIONAL =>
-        {
+        // whose type is the enum's, which the lattice does not carry either.
+        ExprTarget::Go if symbol.starts_with(STATE_ADAPTER_PREFIX) || symbol == GO_FOUND => {
             format!("scealgorithm.TakeOutcome(&sceFailure, {call})")
         }
         ExprTarget::Go => {
@@ -14859,7 +14834,7 @@ mod tests {
             ),
             (
                 ExprTarget::Go,
-                "scealgorithm.TakeOutcome(&sceFailure, scealgorithm.FoundOptional(t_find(",
+                "scealgorithm.TakeOutcome(&sceFailure, scealgorithm.Found(t_find(",
             ),
             (ExprTarget::Python, "sce_algorithm.found(t_find("),
         ] {

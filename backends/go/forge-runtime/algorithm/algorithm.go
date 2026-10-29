@@ -177,26 +177,18 @@ type Outcome[T any] struct {
 }
 
 // Found is the value a reading found, as an Outcome, or an OutOfRange failure
-// when ok says it found none: the variant an enum's FromUnderlying found for a
+// when the reading found none: the variant an enum's FromUnderlying found for a
 // number, which is what `<alias>.fromNumber(n)` answers (SCE_FORGE.md 4.12),
 // and the value a lookup whose miss is an error found for a key. A number
 // outside the enum and a key outside the table fail as an index outside a
-// collection does. Its arguments are the two results of the reading, handed on
-// as they are.
-func Found[T any](value T, ok bool) Outcome[T] {
+// collection does. The reading answers the forge runtime's optional
+// (`optional.Of`, docs/adr/0055 section 5), handed on as it is.
+func Found[T any](o optional.Of[T]) Outcome[T] {
+	value, ok := o.Get()
 	if !ok {
 		return Outcome[T]{Value: value, Err: OutOfRange}
 	}
 	return Outcome[T]{Value: value}
-}
-
-// FoundOptional is Found for a reading that answers the forge runtime's
-// optional (`optional.Of`, docs/adr/0055 section 5): the value where it is
-// present, and an OutOfRange failure where it is absent. It is what a lookup
-// whose miss is an error answers, so the call that reads one is an Outcome as
-// any call that may fail is.
-func FoundOptional[T any](o optional.Of[T]) Outcome[T] {
-	return Found(o.Get())
 }
 
 // TakeOutcome is Take for an Outcome: the value, or its zero with the failure

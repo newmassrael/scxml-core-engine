@@ -4333,7 +4333,7 @@ raise. Every machine that holds an enum declares the two accessors on its own ty
 for it, by the names and shapes of the enum document's own (`to_underlying` /
 `from_underlying` on Rust, Python and, as `<T>ToUnderlying` / `<T>FromUnderlying`,
 C++; `toUnderlying` / `fromUnderlying` on Kotlin; `ToUnderlying` / `<T>FromUnderlying`
-on Go; `<doc>_number` and the `<doc>_from_number` family on C11), so a statechart and
+on Go, whose `<T>FromUnderlying` answers the runtime's `optional.Of[<T>]`; `<doc>_number` and the `<doc>_from_number` family on C11), so a statechart and
 an algorithm lower the two calls alike, and a reading that answers no variant is
 turned into the failure by the runtime's `found`; the Interpreter reads the
 library's table of the enum's names and numbers (`SceStatic.number`,
@@ -8448,7 +8448,7 @@ Rust `declared_name()`, Kotlin `declaredName()`, Python
 `declared_name()`, Go `DeclaredName()`, C++ `declared_name(v)` and C11
 `<snake_name>_declared_name(v)`. A value no variant names has no
 declared name, and each backend says so in its own absent form — Rust
-`None`, Kotlin and Python `null`/`None`, Go `("", false)`, C++
+`None`, Kotlin and Python `null`/`None`, Go the absent `optional.Of[string]`, C++
 `nullptr`, C11 `NULL`. On Rust, Kotlin and Python that absence exists
 only for an open set (`sce:strict-variants="false"`), since only an
 open set's generated type can hold such a value; a closed set's

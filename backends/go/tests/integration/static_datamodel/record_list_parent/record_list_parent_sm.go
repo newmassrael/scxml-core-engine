@@ -874,14 +874,14 @@ func (v RecordListParentRecordCommandEnum) ToUnderlying() uint8 {
 	return uint8(v)
 }
 
-// RecordListParentRecordCommandEnumFromUnderlying returns the variant that declares raw, and false for a
-// number no variant declares.
-func RecordListParentRecordCommandEnumFromUnderlying(raw uint8) (RecordListParentRecordCommandEnum, bool) {
+// RecordListParentRecordCommandEnumFromUnderlying returns the variant that declares raw, and the absent
+// value for a number no variant declares.
+func RecordListParentRecordCommandEnumFromUnderlying(raw uint8) optional.Of[RecordListParentRecordCommandEnum] {
 	switch raw {
 	case 0, 1, 2:
-		return RecordListParentRecordCommandEnum(raw), true
+		return optional.Some(RecordListParentRecordCommandEnum(raw))
 	}
-	return 0, false
+	return optional.None[RecordListParentRecordCommandEnum]()
 }
 
 // ToSaved is this value as a saved state writes it.
@@ -948,14 +948,14 @@ func (v RecordListParentRecordRefusalEnum) ToUnderlying() uint8 {
 	return uint8(v)
 }
 
-// RecordListParentRecordRefusalEnumFromUnderlying returns the variant that declares raw, and false for a
-// number no variant declares.
-func RecordListParentRecordRefusalEnumFromUnderlying(raw uint8) (RecordListParentRecordRefusalEnum, bool) {
+// RecordListParentRecordRefusalEnumFromUnderlying returns the variant that declares raw, and the absent
+// value for a number no variant declares.
+func RecordListParentRecordRefusalEnumFromUnderlying(raw uint8) optional.Of[RecordListParentRecordRefusalEnum] {
 	switch raw {
 	case 1, 2, 3, 4, 5, 6, 7, 8:
-		return RecordListParentRecordRefusalEnum(raw), true
+		return optional.Some(RecordListParentRecordRefusalEnum(raw))
 	}
-	return 0, false
+	return optional.None[RecordListParentRecordRefusalEnum]()
 }
 
 // ToSaved is this value as a saved state writes it.

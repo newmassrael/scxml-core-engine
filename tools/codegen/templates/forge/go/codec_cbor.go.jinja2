@@ -34,7 +34,7 @@
 {% if e.enum_is_open %}
 			v := {{ e.enum_from_underlying }}({{ e.carrier_type }}(raw))
 {% else %}
-			v, ok := {{ e.enum_from_underlying }}({{ e.carrier_type }}(raw))
+			v, ok := {{ e.enum_from_underlying }}({{ e.carrier_type }}(raw)).Get()
 			if !ok {
 				return nil, codec.ErrUndeclaredEnumValue
 			}

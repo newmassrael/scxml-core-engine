@@ -8,6 +8,8 @@
 
 package forge_call_status
 
+import "github.com/newmassrael/sce-forge-runtime/optional"
+
 type ForgeCallStatus uint8
 
 const (
@@ -21,31 +23,33 @@ func (v ForgeCallStatus) ToUnderlying() uint8 {
 	return uint8(v)
 }
 
-// DeclaredName returns the name the document declares for this value, and
-// false for a value no variant names — one the type can hold whether or not
-// its set is open, since a defined integer type holds every carrier value.
-func (v ForgeCallStatus) DeclaredName() (string, bool) {
+// DeclaredName returns the name the document declares for this value, and the
+// absent value for a value no variant names — one the type can hold whether or
+// not its set is open, since a defined integer type holds every carrier value.
+// It is an optional value as every generated answer that may be absent is
+// (docs/adr/0055, section 5).
+func (v ForgeCallStatus) DeclaredName() optional.Of[string] {
 	switch v {
 	case ForgeCallStatusOpen:
-		return "open", true
+		return optional.Some("open")
 	case ForgeCallStatusHeld:
-		return "held", true
+		return optional.Some("held")
 	case ForgeCallStatusDone:
-		return "done", true
+		return optional.Some("done")
 	}
-	return "", false
+	return optional.None[string]()
 }
 
-// ForgeCallStatusFromUnderlying returns the variant raw declares, and false
-// when raw declares none — the declared set is closed.
-func ForgeCallStatusFromUnderlying(raw uint8) (ForgeCallStatus, bool) {
+// ForgeCallStatusFromUnderlying returns the variant raw declares, and the absent
+// value when raw declares none — the declared set is closed.
+func ForgeCallStatusFromUnderlying(raw uint8) optional.Of[ForgeCallStatus] {
 	switch raw {
 	case 1:
-		return ForgeCallStatusOpen, true
+		return optional.Some(ForgeCallStatusOpen)
 	case 2:
-		return ForgeCallStatusHeld, true
+		return optional.Some(ForgeCallStatusHeld)
 	case 3:
-		return ForgeCallStatusDone, true
+		return optional.Some(ForgeCallStatusDone)
 	}
-	return 0, false
+	return optional.None[ForgeCallStatus]()
 }

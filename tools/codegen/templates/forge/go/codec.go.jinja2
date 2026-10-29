@@ -18,7 +18,7 @@
 {% if field.is_enum and field.enum_is_open %}
 	{{ field.id }} := {{ field.enum_from_underlying }}({{ field.decode_expr }})
 {%- elif field.is_enum %}
-	{{ field.id }}, ok := {{ field.enum_from_underlying }}({{ field.decode_expr }})
+	{{ field.id }}, ok := {{ field.enum_from_underlying }}({{ field.decode_expr }}).Get()
 	if !ok {
 		return nil, codec.ErrUndeclaredEnumValue
 	}

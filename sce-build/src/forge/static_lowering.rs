@@ -875,6 +875,13 @@ pub trait StaticTarget {
     fn optional_import(&self) -> Option<String> {
         None
     }
+    /// Whether the definition of an enum names the runtime's optional type, so that
+    /// a unit that defines one imports it whether or not it holds an optional
+    /// value: Go's `<Enum>FromUnderlying` answers `optional.Of[<Enum>]`
+    /// (docs/adr/0055, section 5). `false` for a target whose enum names none.
+    fn enum_def_names_optional(&self) -> bool {
+        false
+    }
     /// Whether this target lowers an optional record, `optional<record:X>`
     /// (docs/adr/0055, step 9): a variable that starts absent, a record taken
     /// whole into it — from a record by name, a payload, an element of a list or
@@ -4986,6 +4993,11 @@ pub fn lower(
     if rewrites.host_optional.get() {
         imports.extend(target.optional_import());
     }
+    // An enum's definition names the optional type where the target answers a number
+    // it declares as one, whether or not the machine holds an optional value.
+    if target.enum_def_names_optional() && !declarations.enums.is_empty() {
+        imports.extend(target.optional_import());
+    }
     let payload_events_by_alias: std::collections::BTreeMap<String, String> = records
         .iter()
         .map(|(alias, schema)| (alias.clone(), schema.event_name.clone()))
@@ -8329,9 +8341,9 @@ impl StaticTarget for GoTarget<'_> {
              func (v {ty}) String() string {{\n\tswitch v {{\n{names}\t}}\n\treturn \"\"\n}}\n\n\
              // ToUnderlying is the number the enum document declares for the value.\n\
              func (v {ty}) ToUnderlying() {carrier} {{\n\treturn {carrier}(v)\n}}\n\n\
-             // {ty}FromUnderlying returns the variant that declares raw, and false for a\n\
-             // number no variant declares.\n\
-             func {ty}FromUnderlying(raw {carrier}) ({ty}, bool) {{\n\tswitch raw {{\n\tcase {}:\n\t\treturn {ty}(raw), true\n\t}}\n\treturn 0, false\n}}\n\n\
+             // {ty}FromUnderlying returns the variant that declares raw, and the absent\n\
+             // value for a number no variant declares.\n\
+             func {ty}FromUnderlying(raw {carrier}) optional.Of[{ty}] {{\n\tswitch raw {{\n\tcase {}:\n\t\treturn optional.Some({ty}(raw))\n\t}}\n\treturn optional.None[{ty}]()\n}}\n\n\
              // ToSaved is this value as a saved state writes it.\n\
              func (v {ty}) ToSaved() any {{\n\treturn v.String()\n}}\n\n\
              // {ty}FromSaved is the value a saved state holds, refused unless it is a variant.\n\
@@ -8341,6 +8353,10 @@ impl StaticTarget for GoTarget<'_> {
     }
     fn enum_number_symbols(&self, ty: &str, _model: &EnumModel) -> (String, String) {
         (format!("{ty}.ToUnderlying"), format!("{ty}FromUnderlying"))
+    }
+    // `<Enum>FromUnderlying` answers an `optional.Of`.
+    fn enum_def_names_optional(&self) -> bool {
+        true
     }
     fn list_type(&self, elem: &SceType) -> String {
         format!("[]{}", crate::forge::generator::go_type(elem))

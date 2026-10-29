@@ -515,7 +515,7 @@ type StaticHostClockNowResult struct {
 
 // Wire is the JSON `done.invoke.now` carries this record as.
 func (r StaticHostClockNowResult) Wire() string {
-	return sce.PayloadJSON(sce.Pair("error", r.Error), sce.Pair("utc_ms", r.UtcMs), sce.Pair("monotonic_ms", r.MonotonicMs))
+	return sce.PayloadJSON(sce.Pair("error", r.Error), sce.Pair("utc_ms", sce.Int64PayloadText(r.UtcMs)), sce.Pair("monotonic_ms", sce.Int64PayloadText(r.MonotonicMs)))
 }
 
 // StaticHostClockZoneResult is `sce:result`: the record the host completes `<invoke id="zone">`

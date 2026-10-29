@@ -8,6 +8,8 @@
 
 package enum_item_status
 
+import "github.com/newmassrael/sce-forge-runtime/optional"
+
 type EnumItemStatus uint8
 
 const (
@@ -21,31 +23,33 @@ func (v EnumItemStatus) ToUnderlying() uint8 {
 	return uint8(v)
 }
 
-// DeclaredName returns the name the document declares for this value, and
-// false for a value no variant names — one the type can hold whether or not
-// its set is open, since a defined integer type holds every carrier value.
-func (v EnumItemStatus) DeclaredName() (string, bool) {
+// DeclaredName returns the name the document declares for this value, and the
+// absent value for a value no variant names — one the type can hold whether or
+// not its set is open, since a defined integer type holds every carrier value.
+// It is an optional value as every generated answer that may be absent is
+// (docs/adr/0055, section 5).
+func (v EnumItemStatus) DeclaredName() optional.Of[string] {
 	switch v {
 	case EnumItemStatusOpen:
-		return "open", true
+		return optional.Some("open")
 	case EnumItemStatusInProgress:
-		return "in_progress", true
+		return optional.Some("in_progress")
 	case EnumItemStatusDone:
-		return "done", true
+		return optional.Some("done")
 	}
-	return "", false
+	return optional.None[string]()
 }
 
-// EnumItemStatusFromUnderlying returns the variant raw declares, and false
-// when raw declares none — the declared set is closed.
-func EnumItemStatusFromUnderlying(raw uint8) (EnumItemStatus, bool) {
+// EnumItemStatusFromUnderlying returns the variant raw declares, and the absent
+// value when raw declares none — the declared set is closed.
+func EnumItemStatusFromUnderlying(raw uint8) optional.Of[EnumItemStatus] {
 	switch raw {
 	case 2:
-		return EnumItemStatusOpen, true
+		return optional.Some(EnumItemStatusOpen)
 	case 5:
-		return EnumItemStatusInProgress, true
+		return optional.Some(EnumItemStatusInProgress)
 	case 7:
-		return EnumItemStatusDone, true
+		return optional.Some(EnumItemStatusDone)
 	}
-	return 0, false
+	return optional.None[EnumItemStatus]()
 }

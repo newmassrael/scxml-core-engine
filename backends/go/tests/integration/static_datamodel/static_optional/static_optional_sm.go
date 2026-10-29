@@ -284,14 +284,14 @@ func (v StaticOptionalStatusEnum) ToUnderlying() uint8 {
 	return uint8(v)
 }
 
-// StaticOptionalStatusEnumFromUnderlying returns the variant that declares raw, and false for a
-// number no variant declares.
-func StaticOptionalStatusEnumFromUnderlying(raw uint8) (StaticOptionalStatusEnum, bool) {
+// StaticOptionalStatusEnumFromUnderlying returns the variant that declares raw, and the absent
+// value for a number no variant declares.
+func StaticOptionalStatusEnumFromUnderlying(raw uint8) optional.Of[StaticOptionalStatusEnum] {
 	switch raw {
 	case 2, 5, 7:
-		return StaticOptionalStatusEnum(raw), true
+		return optional.Some(StaticOptionalStatusEnum(raw))
 	}
-	return 0, false
+	return optional.None[StaticOptionalStatusEnum]()
 }
 
 // ToSaved is this value as a saved state writes it.

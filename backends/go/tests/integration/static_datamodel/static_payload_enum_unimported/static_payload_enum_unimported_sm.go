@@ -239,14 +239,14 @@ func (v StaticPayloadEnumUnimportedWhyEnum) ToUnderlying() uint8 {
 	return uint8(v)
 }
 
-// StaticPayloadEnumUnimportedWhyEnumFromUnderlying returns the variant that declares raw, and false for a
-// number no variant declares.
-func StaticPayloadEnumUnimportedWhyEnumFromUnderlying(raw uint8) (StaticPayloadEnumUnimportedWhyEnum, bool) {
+// StaticPayloadEnumUnimportedWhyEnumFromUnderlying returns the variant that declares raw, and the absent
+// value for a number no variant declares.
+func StaticPayloadEnumUnimportedWhyEnumFromUnderlying(raw uint8) optional.Of[StaticPayloadEnumUnimportedWhyEnum] {
 	switch raw {
 	case 1, 2, 3, 4, 5, 6, 7, 8:
-		return StaticPayloadEnumUnimportedWhyEnum(raw), true
+		return optional.Some(StaticPayloadEnumUnimportedWhyEnum(raw))
 	}
-	return 0, false
+	return optional.None[StaticPayloadEnumUnimportedWhyEnum]()
 }
 
 // ToSaved is this value as a saved state writes it.
@@ -308,14 +308,14 @@ func (v StaticPayloadEnumUnimportedRecordCommandEnum) ToUnderlying() uint8 {
 	return uint8(v)
 }
 
-// StaticPayloadEnumUnimportedRecordCommandEnumFromUnderlying returns the variant that declares raw, and false for a
-// number no variant declares.
-func StaticPayloadEnumUnimportedRecordCommandEnumFromUnderlying(raw uint8) (StaticPayloadEnumUnimportedRecordCommandEnum, bool) {
+// StaticPayloadEnumUnimportedRecordCommandEnumFromUnderlying returns the variant that declares raw, and the absent
+// value for a number no variant declares.
+func StaticPayloadEnumUnimportedRecordCommandEnumFromUnderlying(raw uint8) optional.Of[StaticPayloadEnumUnimportedRecordCommandEnum] {
 	switch raw {
 	case 0, 1, 2:
-		return StaticPayloadEnumUnimportedRecordCommandEnum(raw), true
+		return optional.Some(StaticPayloadEnumUnimportedRecordCommandEnum(raw))
 	}
-	return 0, false
+	return optional.None[StaticPayloadEnumUnimportedRecordCommandEnum]()
 }
 
 // ToSaved is this value as a saved state writes it.

@@ -32,6 +32,7 @@ import (
 
 	sce "github.com/newmassrael/sce-go-runtime"
 	scealgorithm "github.com/newmassrael/sce-forge-runtime/algorithm"
+	"github.com/newmassrael/sce-forge-runtime/optional"
 )
 
 // Ensure imports are used
@@ -191,14 +192,14 @@ func (v StaticOptionalUnwidenedStatusEnum) ToUnderlying() uint8 {
 	return uint8(v)
 }
 
-// StaticOptionalUnwidenedStatusEnumFromUnderlying returns the variant that declares raw, and false for a
-// number no variant declares.
-func StaticOptionalUnwidenedStatusEnumFromUnderlying(raw uint8) (StaticOptionalUnwidenedStatusEnum, bool) {
+// StaticOptionalUnwidenedStatusEnumFromUnderlying returns the variant that declares raw, and the absent
+// value for a number no variant declares.
+func StaticOptionalUnwidenedStatusEnumFromUnderlying(raw uint8) optional.Of[StaticOptionalUnwidenedStatusEnum] {
 	switch raw {
 	case 2, 5, 7:
-		return StaticOptionalUnwidenedStatusEnum(raw), true
+		return optional.Some(StaticOptionalUnwidenedStatusEnum(raw))
 	}
-	return 0, false
+	return optional.None[StaticOptionalUnwidenedStatusEnum]()
 }
 
 // ToSaved is this value as a saved state writes it.

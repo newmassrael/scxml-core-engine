@@ -32,6 +32,7 @@ import (
 
 	sce "github.com/newmassrael/sce-go-runtime"
 	scealgorithm "github.com/newmassrael/sce-forge-runtime/algorithm"
+	"github.com/newmassrael/sce-forge-runtime/optional"
 	sce_enum_item_status "github.com/newmassrael/sce-go-tests/integration/static_datamodel/enum_item_status"
 	sce_item_status_count "github.com/newmassrael/sce-go-tests/integration/static_datamodel/item_status_count"
 	sce_item_status_of "github.com/newmassrael/sce-go-tests/integration/static_datamodel/item_status_of"
@@ -267,14 +268,14 @@ func (v StaticStateAlgorithmEnumStatusEnum) ToUnderlying() uint8 {
 	return uint8(v)
 }
 
-// StaticStateAlgorithmEnumStatusEnumFromUnderlying returns the variant that declares raw, and false for a
-// number no variant declares.
-func StaticStateAlgorithmEnumStatusEnumFromUnderlying(raw uint8) (StaticStateAlgorithmEnumStatusEnum, bool) {
+// StaticStateAlgorithmEnumStatusEnumFromUnderlying returns the variant that declares raw, and the absent
+// value for a number no variant declares.
+func StaticStateAlgorithmEnumStatusEnumFromUnderlying(raw uint8) optional.Of[StaticStateAlgorithmEnumStatusEnum] {
 	switch raw {
 	case 2, 5, 7:
-		return StaticStateAlgorithmEnumStatusEnum(raw), true
+		return optional.Some(StaticStateAlgorithmEnumStatusEnum(raw))
 	}
-	return 0, false
+	return optional.None[StaticStateAlgorithmEnumStatusEnum]()
 }
 
 // ToSaved is this value as a saved state writes it.

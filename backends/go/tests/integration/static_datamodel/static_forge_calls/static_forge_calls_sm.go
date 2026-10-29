@@ -32,6 +32,7 @@ import (
 
 	sce "github.com/newmassrael/sce-go-runtime"
 	scealgorithm "github.com/newmassrael/sce-forge-runtime/algorithm"
+	"github.com/newmassrael/sce-forge-runtime/optional"
 	sce_forge_call_code "github.com/newmassrael/sce-go-tests/integration/static_datamodel/forge_call_code"
 	sce_forge_call_high "github.com/newmassrael/sce-go-tests/integration/static_datamodel/forge_call_high"
 	sce_forge_call_level "github.com/newmassrael/sce-go-tests/integration/static_datamodel/forge_call_level"
@@ -211,14 +212,14 @@ func (v StaticForgeCallsStatusEnum) ToUnderlying() uint8 {
 	return uint8(v)
 }
 
-// StaticForgeCallsStatusEnumFromUnderlying returns the variant that declares raw, and false for a
-// number no variant declares.
-func StaticForgeCallsStatusEnumFromUnderlying(raw uint8) (StaticForgeCallsStatusEnum, bool) {
+// StaticForgeCallsStatusEnumFromUnderlying returns the variant that declares raw, and the absent
+// value for a number no variant declares.
+func StaticForgeCallsStatusEnumFromUnderlying(raw uint8) optional.Of[StaticForgeCallsStatusEnum] {
 	switch raw {
 	case 1, 2, 3:
-		return StaticForgeCallsStatusEnum(raw), true
+		return optional.Some(StaticForgeCallsStatusEnum(raw))
 	}
-	return 0, false
+	return optional.None[StaticForgeCallsStatusEnum]()
 }
 
 // ToSaved is this value as a saved state writes it.
@@ -267,14 +268,14 @@ func (v StaticForgeCallsLevelEnum) ToUnderlying() uint8 {
 	return uint8(v)
 }
 
-// StaticForgeCallsLevelEnumFromUnderlying returns the variant that declares raw, and false for a
-// number no variant declares.
-func StaticForgeCallsLevelEnumFromUnderlying(raw uint8) (StaticForgeCallsLevelEnum, bool) {
+// StaticForgeCallsLevelEnumFromUnderlying returns the variant that declares raw, and the absent
+// value for a number no variant declares.
+func StaticForgeCallsLevelEnumFromUnderlying(raw uint8) optional.Of[StaticForgeCallsLevelEnum] {
 	switch raw {
 	case 10, 20:
-		return StaticForgeCallsLevelEnum(raw), true
+		return optional.Some(StaticForgeCallsLevelEnum(raw))
 	}
-	return 0, false
+	return optional.None[StaticForgeCallsLevelEnum]()
 }
 
 // ToSaved is this value as a saved state writes it.
@@ -1347,7 +1348,7 @@ func (p *StaticForgeCallsPolicy) ExecuteTransitionContent(source StaticForgeCall
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.TakeOutcome(&sceFailure, scealgorithm.FoundOptional(sce_forge_call_code.LookupCode(p.vGear))); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticForgeCallsEventErrorExecution, "<assign location='code'>: an integer operation overflowed or failed")); return true }; p.vCode = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.TakeOutcome(&sceFailure, scealgorithm.Found(sce_forge_call_code.LookupCode(p.vGear))); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticForgeCallsEventErrorExecution, "<assign location='code'>: an integer operation overflowed or failed")); return true }; p.vCode = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1407,7 +1408,7 @@ func (p *StaticForgeCallsPolicy) ExecuteTransitionContent(source StaticForgeCall
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := StaticForgeCallsLevelEnumFromDocument(scealgorithm.TakeOutcome(&sceFailure, scealgorithm.FoundOptional(sce_forge_call_weight.LookupWeight(StaticForgeCallsStatusEnumToDocument(p.vPhase))))); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticForgeCallsEventErrorExecution, "<assign location='weight'>: an integer operation overflowed or failed")); return true }; p.vWeight = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := StaticForgeCallsLevelEnumFromDocument(scealgorithm.TakeOutcome(&sceFailure, scealgorithm.Found(sce_forge_call_weight.LookupWeight(StaticForgeCallsStatusEnumToDocument(p.vPhase))))); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticForgeCallsEventErrorExecution, "<assign location='weight'>: an integer operation overflowed or failed")); return true }; p.vWeight = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

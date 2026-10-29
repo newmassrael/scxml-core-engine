@@ -49,7 +49,7 @@
 		}
 {% elif field.enum_document is defined %}
 		// A value of an enum reads back as the name its document declares.
-		if declared, ok := payload.{{ field.name | to_pascal_case }}.DeclaredName(); !ok || declared != spec.Fields[{{ loop.index0 }}].stringValue(t) {
+		if declared, ok := payload.{{ field.name | to_pascal_case }}.DeclaredName().Get(); !ok || declared != spec.Fields[{{ loop.index0 }}].stringValue(t) {
 			t.Errorf("{{ f.name }}.{{ field.name }} = %q, want %q",
 				declared, spec.Fields[{{ loop.index0 }}].stringValue(t))
 		}

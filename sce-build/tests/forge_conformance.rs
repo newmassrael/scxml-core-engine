@@ -19004,9 +19004,22 @@ fn forge_go_enum_validator_runtime() {
     }
     assert_eq!(seen.len(), 2, "mode and validator each emit a package");
 
+    // An enum answers a number it declares as the runtime's optional value
+    // (docs/adr/0055, section 5), so its package needs the forge runtime.
+    let runtime_path =
+        backend_runtime_dir("backends/go/forge-runtime").expect("the Go forge runtime");
     std::fs::write(
         proj_dir.join("go.mod"),
-        format!("module {GOLDEN_GO_MODULE_PREFIX}\n\ngo 1.22\n"),
+        format!(
+            "module {GOLDEN_GO_MODULE_PREFIX}\n\
+             \n\
+             go 1.22\n\
+             \n\
+             require github.com/newmassrael/sce-forge-runtime v0.0.0\n\
+             \n\
+             replace github.com/newmassrael/sce-forge-runtime => {}\n",
+            runtime_path.display(),
+        ),
     )
     .expect("write go.mod");
 

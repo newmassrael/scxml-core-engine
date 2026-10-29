@@ -32,6 +32,7 @@ import (
 
 	sce "github.com/newmassrael/sce-go-runtime"
 	scealgorithm "github.com/newmassrael/sce-forge-runtime/algorithm"
+	"github.com/newmassrael/sce-forge-runtime/optional"
 )
 
 // Ensure imports are used
@@ -221,14 +222,14 @@ func (v StaticInvokeTreeSceSynthInvokeWorkerViewModeEnum) ToUnderlying() uint8 {
 	return uint8(v)
 }
 
-// StaticInvokeTreeSceSynthInvokeWorkerViewModeEnumFromUnderlying returns the variant that declares raw, and false for a
-// number no variant declares.
-func StaticInvokeTreeSceSynthInvokeWorkerViewModeEnumFromUnderlying(raw uint8) (StaticInvokeTreeSceSynthInvokeWorkerViewModeEnum, bool) {
+// StaticInvokeTreeSceSynthInvokeWorkerViewModeEnumFromUnderlying returns the variant that declares raw, and the absent
+// value for a number no variant declares.
+func StaticInvokeTreeSceSynthInvokeWorkerViewModeEnumFromUnderlying(raw uint8) optional.Of[StaticInvokeTreeSceSynthInvokeWorkerViewModeEnum] {
 	switch raw {
 	case 0, 1, 2, 3:
-		return StaticInvokeTreeSceSynthInvokeWorkerViewModeEnum(raw), true
+		return optional.Some(StaticInvokeTreeSceSynthInvokeWorkerViewModeEnum(raw))
 	}
-	return 0, false
+	return optional.None[StaticInvokeTreeSceSynthInvokeWorkerViewModeEnum]()
 }
 
 // ToSaved is this value as a saved state writes it.
@@ -766,7 +767,7 @@ type StaticInvokeTreeSceSynthInvokeWorkerClockResult struct {
 
 // Wire is the JSON `done.invoke.clock` carries this record as.
 func (r StaticInvokeTreeSceSynthInvokeWorkerClockResult) Wire() string {
-	return sce.PayloadJSON(sce.Pair("error", r.Error), sce.Pair("utc_ms", r.UtcMs), sce.Pair("monotonic_ms", r.MonotonicMs))
+	return sce.PayloadJSON(sce.Pair("error", r.Error), sce.Pair("utc_ms", sce.Int64PayloadText(r.UtcMs)), sce.Pair("monotonic_ms", sce.Int64PayloadText(r.MonotonicMs)))
 }
 
 // StaticInvokeTreeSceSynthInvokeWorkerSceHostClockNowInvoker is the host side of this document's typed

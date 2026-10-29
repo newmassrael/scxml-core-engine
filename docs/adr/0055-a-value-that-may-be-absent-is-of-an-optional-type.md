@@ -1342,13 +1342,29 @@ documents, not observed from a backend.
     `SCE_FORGE.md` named `*V`, which disagreed with each other and with this section. The table calls
     `lookup.Find` of the Go forge runtime (a hit is `Some`, a miss `None`, so a value that is the
     zero of its type is a present value), and a statechart or an algorithm that calls it reads the
-    answer through `scealgorithm.FoundOptional`, which turns an absent value into the `out-of-range`
-    failure as `scealgorithm.Found` does for the value and flag an enum's `FromUnderlying` answers
-    (`expr::lookup_found_wrapper`). A lookup whose miss is a default is unchanged. Tests:
-    `tests/forge/expected/lookup_*.go`, `a_statechart_calls_the_forge_kinds_that_are_functions`, and
-    the tests of `lookup.Find` and `FoundOptional` in the Go forge runtime. Left as it is: an enum's
-    `FromUnderlying` of a closed set, which answers a value and a flag, is a conversion of a number
-    and not a value that may be absent; whether it too answers `optional.Of` is not decided here.
+    answer through `scealgorithm.Found`, which turns an absent value into the `out-of-range` failure.
+    A lookup whose miss is a default is unchanged. Tests: `tests/forge/expected/lookup_*.go`,
+    `a_statechart_calls_the_forge_kinds_that_are_functions`, and the tests of `lookup.Find` and
+    `Found` in the Go forge runtime.
+
+    **The enum's conversion and its declared name answer `optional.Of` too** (decided 2026-10-29,
+    under the standing rule: the most long-term correct structure, cost set aside). The same
+    partial reading was spelled `(V, bool)` by a closed enum's `<Enum>FromUnderlying` (the forge
+    kind's template and the copy a statechart's unit defines) and by `DeclaredName`, while every
+    other backend answers its optional type, so Go had two spellings of one answer. A number no
+    variant declares and a value no variant names are now the absent value. `scealgorithm.Found`
+    takes the optional alone (the `(value, ok)` form is gone), so an enum's `fromNumber` and a
+    lookup are read by one function, and the codecs and the conformance harnesses read the
+    conversion through `Get()` or `IsPresent()` and `Proven()`. An enum document's package
+    imports `optional`, and a statechart's unit imports it wherever it defines an enum
+    (`StaticTarget::enum_def_names_optional`). The boundary of the rule: an answer a generated
+    surface gives for a document (a forge kind's function, a statechart's host interface) is
+    `optional.Of`; the engine's own interfaces (`Policy.GetStateFromName`, the queues, the
+    content-line reader's internals) are Go's `v, ok`, which is not an `optional<T>` of any
+    document and is what a Go reader of that code expects. Tests: `sce-build/tests/forge_conformance.rs`
+    (the Go enum, codec and validator runs, which compile and run the emitted packages), the Go
+    integration packages of `static_datamodel`, and `TestAReadingThatFoundNothingIsOutOfRange`
+    of the Go forge runtime.
 14. **C11 codecs on `sce_optional_<elem>_t`** (implemented): the same for C11's `<name>_present` members. Tests:
     the C11 conformance cases, unchanged in their bytes.
     As built, an entry that may be absent is the struct `sce/forge/optional.h` declares for its

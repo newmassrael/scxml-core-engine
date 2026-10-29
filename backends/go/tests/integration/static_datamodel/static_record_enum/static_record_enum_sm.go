@@ -32,6 +32,7 @@ import (
 
 	sce "github.com/newmassrael/sce-go-runtime"
 	scealgorithm "github.com/newmassrael/sce-forge-runtime/algorithm"
+	"github.com/newmassrael/sce-forge-runtime/optional"
 )
 
 // Ensure imports are used
@@ -218,14 +219,14 @@ func (v StaticRecordEnumViewModeEnum) ToUnderlying() uint8 {
 	return uint8(v)
 }
 
-// StaticRecordEnumViewModeEnumFromUnderlying returns the variant that declares raw, and false for a
-// number no variant declares.
-func StaticRecordEnumViewModeEnumFromUnderlying(raw uint8) (StaticRecordEnumViewModeEnum, bool) {
+// StaticRecordEnumViewModeEnumFromUnderlying returns the variant that declares raw, and the absent
+// value for a number no variant declares.
+func StaticRecordEnumViewModeEnumFromUnderlying(raw uint8) optional.Of[StaticRecordEnumViewModeEnum] {
 	switch raw {
 	case 0, 1, 2, 3:
-		return StaticRecordEnumViewModeEnum(raw), true
+		return optional.Some(StaticRecordEnumViewModeEnum(raw))
 	}
-	return 0, false
+	return optional.None[StaticRecordEnumViewModeEnum]()
 }
 
 // ToSaved is this value as a saved state writes it.
