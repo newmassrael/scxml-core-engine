@@ -197,9 +197,9 @@ it can express, which is why §6 keeps the two layers.
 Properties, each of which is checked (§6):
 
 - **Wait-free** publish and read, in `O(W)` steps. The algorithm needs no read-modify-write atomic: loads and stores of
-  the stamp width and of one word. The Rust row below adds one, an 8-bit swap that takes the publisher's place, and
-  needs 64-bit atomics; the form for a target with only loads and stores, with a narrow stamp and the once-only handle
-  by ownership, is not built (see "What step 4 landed"). Wait-freedom of read holds because a failed validation is not retried:
+  the stamp width and of one word. The Rust 64-bit row adds one, an 8-bit swap that takes the publisher's place, and
+  needs 64-bit atomics; the form for a target with only loads and stores keeps a narrow stamp and takes the once-only
+  handle by ownership (see "What the narrow and load/store-only rows landed"). Wait-freedom of read holds because a failed validation is not retried:
   a mismatch *is* the answer, `Lagged`. A single producer is what makes this true; with several, a claimed but
   unpublished sequence number is a hole that readers can neither return nor skip (§8).
 - **Why `R + 1` slots.** A reader that has seen `h - r <= R` and found the slot reused did so because the producer began
@@ -207,13 +207,14 @@ Properties, each of which is checked (§6):
   `h' - R > r`, so `skipped >= 1` and the answer agrees with the specification. With `R` slots there would be a state in
   which the entry the specification retains is the one being overwritten.
 - **Stamp width.** The stamp is 64-bit where the target has 64-bit atomic loads and stores, and the sequence stays below
-  `2^63` (292 years at a billion publishes per second). A target without them uses a 32-bit stamp, which wraps after
-  `2^31` publishes and would let a reader that stopped reading for that long mistake a later lap for its own. That
+  `2^63` (292 years at a billion publishes per second). A target without them uses a 32-bit stamp, which wraps and
+  would let a reader that stopped reading for about `2^31` publishes mistake a later lap for its own (the exact
+  bound is `2^(w-1)` less the slots, and is proved in "What the narrow and load/store-only rows landed"). That
   hazard is not decidable from the document, so it is handled as `queue` handles 32-bit SCQ entries: the deploy states
-  the wrap bound it guarantees (`queues.<q>.min_wrap_ops` generalised to name a log) and a missing or insufficient
+  the longest pause it relies on (`queues.<q>.min_wrap_ops` generalised to name a log) and a missing or insufficient
   figure is a refusal, not a silent weakening. The slot index `n mod S` must stay continuous across the stamp's wrap,
   so `S` must divide `2^w`; the narrow-stamp form refuses a retention for which `R + 1` is not a power of two.
-- **Per backend.** Rust: `AtomicU64` words (`AtomicU32` under a narrow stamp) and `core::sync::atomic::fence`; `Copy`
+- **Per backend.** Rust: `AtomicU64` words (a 32-bit word in a pointer-width atomic under a narrow stamp) and `core::sync::atomic::fence`; `Copy`
   element bytes; the producer handle is unique by ownership (`split`), the reader handle is `Clone`. C11 and C++:
   `stdatomic.h` and `<atomic>`, the same fences. Go: `sync/atomic`, sequentially consistent, hence at least as strong.
   Kotlin: the atomic array and fences the queue rows use (confirmed against `commonMain` when the row is written; a
@@ -864,12 +865,154 @@ runner would let CI judge it, and is not built.
   conformance target have been compiled or run, and the generated header has not been through the interface-standard gate at
   C++17. The generated header has no mutation case of its own.
 
+### What the narrow and load/store-only rows landed (2026-10-29)
+
+Two Rust rows that no code had, and the model that justifies them. Which target gets which row:
+
+| Target | Atomics the target has | Row (module of `sce-forge-runtime`) | Stamp | One publisher by |
+|---|---|---|---|---|
+| x86-64, AArch64, RISC-V 64 with `A` | 64-bit compare-and-swap (`target_has_atomic = "64"`) | `broadcast_log` | 64 bits | the 8-bit swap (`publisher()`), or `split` |
+| Cortex-M3 and up, RISC-V 32 with `A`, ESP32 | 32-bit compare-and-swap, not 64 | `broadcast_log_narrow` | 32 bits | the 8-bit swap, or `split` |
+| Cortex-M0, RISC-V 32 without `A` | loads and stores only | `broadcast_log_narrow` | 32 bits | `split`, or the `unsafe` `publisher_unchecked` for a `static` |
+| AVR, MSP430 | a 16-bit pointer | none | | |
+
+The generator reads the target as the Rust queue does: `devices.<d>.target` through `target_atomics::rmw_width`, or
+`platform.atomic_rmw_width`; a width of 64, or a deploy that states neither, keeps the 64-bit row and its generated
+text is byte-identical to what it was; 32 and 0 give the narrow row. The runtime module is present where its atomics
+are (`cfg`), and the generated module carries a `compile_error!` under the negation of the same `cfg`, which a test
+reads out of `forge-runtime/src/lib.rs`, as for the 64-bit row.
+
+- **One implementation, generic over the width.** `forge-runtime/src/broadcast_log_core.rs` holds the algorithm once,
+  over a sealed trait `Lane`: the atomic cell the stamp, the head and the words are kept in, the payload word, and the
+  width `w` of the stamp. `Wide` is the 64-bit row (`AtomicU64`, `u64` words) and `Narrow<B>` a stamp of `B` bits in a
+  pointer-width `AtomicUsize` over `u32` words. `broadcast_log` is an alias of the log over `Wide`, so its public names,
+  the loom models of the 64-bit row and its unit tests are unchanged; `broadcast_log_narrow` is the alias over
+  `Narrow<32>`. `B` is a parameter so that a model can use a stamp of two or three bits and reach the wrap in a few
+  publishes, which a 32-bit stamp cannot do in a run of any length a model has. The cell is `AtomicUsize` and not
+  `AtomicU32` because `cfg(target_has_atomic = "32")` means compare-and-swap, and the atomics of a load-and-store target
+  are not nameable by a stable `cfg`; `AtomicUsize` is what the Lamport ring has used on every target. The price is the
+  16-bit pointer, which has no row.
+- **A sequence number is a count modulo `2^w`.** Nothing in shared memory is wider than the stamp, so the log cannot tell
+  a reader the count itself. `head()`, `Reader::cursor()`, `Read::Item { seq }` and what `publish` returns are residues
+  modulo `2^w`, the same for every handle; for the 64-bit row the count never reaches `2^64` and they are the counts.
+  The first form of this argument had each handle keep its own 64-bit count; the residue is that count's low bits, and
+  every handle reports the residue so that the handles agree. Three consequences are decided and tested. A narrow
+  publisher has no horizon to stop at.
+  `reader_at(seq)` reads `seq` modulo `2^w` as an entry the caller got from this log: fewer than `K = 2^(w-1)` entries
+  behind the head it is taken as it is, and anything else (which is what a position past the head looks like) is the
+  head. And `reader_oldest()` has to tell a log that published fewer than `RETENTION` entries (the oldest retained is
+  entry 0) from one that published more and wrapped (it is `RETENTION` behind the head), which a residue cannot say:
+  it asks the last slot. That slot is first written by the publish of entry `RETENTION`, so a stamp of `UNWRITTEN`
+  there means at most `RETENTION` entries were published and the cursor is 0, and any other stamp means at least that
+  many, and the cursor is `(head - RETENTION) mod 2^w`. `UNWRITTEN` is 1 in a narrow lane, an odd stamp that no write
+  into the last slot produces (the last slot holds the entries `n = S - 1 (mod S)`, stamped `2S - 1` and `0` modulo
+  `2S`, and `2S` divides `2^w`); 0 in the 64-bit lane, where no stamp is 0.
+- **The theorem.** Let `M = 2^w`, `K = M / 2` and `S = R + 1` with `S` dividing `K` (a narrow log keeps a power of two of
+  slots, at most `K`, and refuses another at its `new`). Let `H(t)` be the publishes completed at time `t` and `B(t)` the
+  publishes begun (the busy stamp of entry `B - 1` stored). A read of a reader whose cursor stands for the count `c`,
+  with its last shared access at `t_e`, is *within the bound* when `c <= H` and `B(t_e) - c <= K`. A read within the
+  bound answers as the specification of section 2 does at its linearization point: `Empty` only at the head, `Item` only
+  with entry `c` whole and in the window, and `Lagged` with the exact count and the cursor at the oldest retained.
+  *Proof.* (a) The head extension is exact: `H - c <= B - c <= K < M`, so `(head - cursor) mod M = H - c`, which gives
+  `Empty` (distance 0) and the range `Lagged` (distance at least `S`) their exact value, and the reload after a
+  mismatch likewise. (b) For two entries `n, n'` of one slot, `done(n) = done(n')` exactly when `n = n' (mod K)`
+  (`2n + 2 = 2n' + 2 mod 2K`; `n - n'` is a multiple of `S`, which divides `K`). A stamp equal to `done(c)` is the store
+  of `done(c)` and no other: another store of that value is `done(c + jS)` with `jS` a positive multiple of `K`, and it
+  follows the busy store of entry `c + jS >= c + K`, so `B >= c + K + 1`, against `B(t_e) - c <= K`. So the comparison of
+  stamps means what it meant with no wrap, and the 64-bit proof of the seqlock read, which uses only "equal means the
+  same store", carries over. (c) A stamp that is not `done(c)` is a later store than it (the load of `head` that put
+  `c` in the window synchronizes with the release store of `done(c)`'s publish), so the busy stamp of entry `c + S` has
+  been stored; that publish began after `head` reached `c + S`, the stamp load that saw it is an acquire, and the reload
+  sees `H >= c + S`: the lag is `H - c - R >= 1`, exact by (a). (d) The first load of `head` is the last instant at which
+  `c` was certainly in the window, and `R + 1` slots make that agree with the validation, as section 5 argues for the
+  64-bit row; nothing there depends on the width. *QED.*
+- **What a deploy states.** The hypothesis is about distance, and a deploy reasons about time. A read leaves the cursor
+  within `R` of the head it loaded (`Item`: `c + 1 > H - R`; `Lagged`: exactly `H - R`; `Empty`: `H`), and one publish may
+  be in flight, so if the publisher begins at most `P` publishes between a reader's load of the head in one read and its
+  last access of the next, then `B(t_e) - c <= P + S`. The hypothesis therefore holds when `P <= K - S`: that `P` is
+  `machines.<m>.queues.<log>.min_wrap_ops`, and `broadcast_log_longest_pause_ops` is the bound it is judged against. This
+  corrects the bound the step that wrote `judge_broadcast_log_stamp` took, `K` itself (the stamp's capacity), which is the
+  bound of the distance and not of the pause: a pause of exactly `K` leaves the reader `K + S` behind. The three
+  refusals are unchanged; the `bound` they carry is `K - S`, and their message still says the stamp "tells `bound`
+  publishes apart", which is now the usable part of what it tells apart (the wording is for a follow-up; a message change
+  moves the diagnostic's pinned id). A deploy states nothing of a 64-bit stamp, whose count never reaches `2^63`.
+- **The bound and the divisor are needed, not merely sufficient.** Without the bound: with `w = 3` and 2 slots, a reader at
+  entry 0 that loaded the head with entry 0 published and was then held while the publisher began entries 1 to 4 finds
+  `done(4) = 10 mod 8 = 2 = done(0)` in the slot of entry 0, copies entry 4, and the stamps agree: the entry of a lap on,
+  handed as entry 0. Without the divisor: with 3 slots over 8 stamp values, a reader opened after the head wrapped
+  holds a cursor of `n mod 8` and reads slot `(n mod 8) mod 3`, which is not the publisher's `n mod 3` (for `n = 8`:
+  slot 0, against slot 2). The model finds both, and the loom model of the first fails when the hypothesis is broken.
+- **Outside the bound the answer is defined and wrong in a bounded way, not undefined.** The reader cannot know it has
+  broken the hypothesis, so what it does is the arithmetic of its cursor modulo `2^w`: its cursor is always right modulo
+  `2^w` (`Empty` leaves it at the head's residue, `Lagged` at the oldest retained entry's); a reader exactly `2^w`
+  behind is told `Empty`, and one more behind is told a `skipped` short by a multiple of `2^w`; a mismatch with a head
+  that looks nearer than the window (a head that wrapped since the reader's cursor was valid) is read as one lap
+  further behind, so a lag is never reported as skipping nothing; and a copy that validated while the reader was `K` or
+  more behind is the entry a later lap wrote, handed as the one wanted. Four unit tests of `broadcast_log_core.rs` assert
+  each outcome, from `a_reader_one_stamp_space_behind_is_told_empty_and_keeps_its_place` to
+  `a_head_that_wrapped_during_a_mismatch_still_gives_a_lag_of_at_least_one`, with the arithmetic in their comments.
+- **The model.** `docs/formal/BroadcastLogWrapped.tla` is the protocol over a stamp of `StampBits` bits (3 here, so
+  `M = 8` and `K = 4`), with the head, the stamps and the cursors reduced modulo `M`, the reader's distance taken modulo
+  `M`, and two history variables the specification is stated over (`n`, the publisher's completed count, and `ab`, the
+  count the reader's cursor stands for). The wrap bound is `EnforceBound`: while it is on, a reader starts a read only
+  when the newest publish begun is at most `K` past its cursor, and the publisher does not begin a publish that would put
+  it further past the cursor of a reader inside a read: the theorem's hypothesis, at every instant. A reader opens at
+  the head or, with `OpenMode = "oldest"`, by the two reads of the last slot and the head. The invariants are the
+  existing model's (`AnswerRefines` with the exact gap added, `CursorNotPastHead`, `LostIsNonNegative`) and two more:
+  `SlotIndexContinuous` and `OpenRefines`. `scripts/formal/check.sh` runs five configurations. Expected outcomes
+  (not observed by the author, who could not run TLC): `BroadcastLogWrapped.cfg` (2 slots), `_r3.cfg` (4 slots, as many
+  as `K`) and `_oldest.cfg` hold every invariant, with an *estimate* of 10^5 to 10^6 distinct states each and a run of
+  seconds to a few minutes; `BroadcastLogWrapped_without_bound.cfg` (the bound switched off) violates `AnswerRefines`,
+  with the entry of a lap on handed as the one wanted; `BroadcastLogWrapped_non_divisor.cfg` (3 slots over 8) violates
+  `SlotIndexContinuous` when a reader opens at a head whose count has passed 8. A model that cannot say no proves
+  nothing, so the last two are the checks that it can.
+- **The loom models.** `tests/loom_broadcast_log_narrow.rs`, registered in `Cargo.toml` and run by the forge-rust gate
+  beside the others, under the same three preemptions and the same shim, over a log of 2 slots and a **3-bit stamp**
+  (`Narrow<3>`): five models, each starting from a log that already published six or seven entries on one thread, so
+  that three more cross the head's wrap at 8 and the stamps' repeat at 4. Each reader keeps its own full count beside
+  the log's cursor and every answer is held against the exact specification, through a count of what the publisher has
+  completed that the reader reads before and after each call; the premise of the theorem holds in them by
+  construction (at most three entries are published after a cursor is set). The fifth breaks it and must fail
+  (`#[should_panic]`). The memory orders are one text for both rows, so the nine cases of the 64-bit casefile mutate both
+  and remain the 64-bit models' to kill; the mutation
+  casefile `a_narrow_broadcast_log_reads_its_head_modulo_the_stamp_space.cases` adds eight cases for what a 64-bit count
+  cannot show (the head read modulo the stamp space, the cursor and the stamp truncated, the test for a young log),
+  and says in its header which four it does not claim and why (the slot-count check is a compile-time refusal whose
+  oracle is the `non_divisor` configuration, and so is the slot index; the lap added to a lag from a wrapped head and
+  `reader_at` are held by unit tests, which the loom command does not run). `a_broadcast_log_orders_every_slot_hand_over.cases`
+  was re-aimed at `broadcast_log_core.rs`, where the protocol now is.
+- **What is generated.** The Rust renderer chooses the row from the target, after the refusals every language shares
+  (`resolve_broadcast_log_render_inputs`, which also hands it the three new fields of the resolution, so no other renderer
+  reads them), judges the log with
+  `judge_broadcast_log_stamp` at the width the row keeps (`BROADCAST_LOG_NARROW_STAMP_BITS`, held equal to the runtime's
+  `STAMP_BITS` by a test) and resolves `machines.<m>.queues.<log>.min_wrap_ops` for it, through
+  `BroadcastLogResolution` (new fields: `atomic_rmw_width`, `target`, `min_wrap_ops`, filled from the deploy as the
+  queue's resolution is). The narrow module states the pause the stamp covers, packs the entry in 32-bit words (four
+  bytes to a word), and says in its header which of `publisher()` and `split()` the target has. A target the table does
+  not know with no width beside it, and a width that contradicts the triple, are refused as `generate/invalid-config`,
+  where the queue has typed codes naming a queue: no diagnostic code was added. `sce-build/tests/broadcast_log_kind.rs`
+  holds the row choice, the three refusals through the renderer and through the set compile with a deploy, and the
+  `compile_error!`'s gate; `backends/rust/forge-conformance` generates a narrow log and an ownership log from this
+  crate's own documents and reads them back on the host, through `publisher()`, `split()` and a `static`.
+- **The Miri gate and the thread tests.** `broadcast_log_threads.rs` and the unit tests of `broadcast_log::` are written against
+  the names of the 64-bit row, which are unchanged (the alias, `publisher()`, `reader_oldest()`, `head()`, `RETENTION`).
+  `reader_oldest()` now reads the last slot's stamp before the head, which the first thread test tolerates by
+  construction: it takes `start` from the cursor it got, and a reader opened on a stale stamp is simply lapped by the first
+  read. The gate's filter `--lib broadcast_log::` selects the 64-bit row's tests and not `broadcast_log_core::` or
+  `broadcast_log_narrow::`; widening it to `broadcast_log` would put the generic and narrow unit tests under Miri.
+- **Not run.** The change was written with nothing built and nothing model-checked: not the unit tests, loom, TLC, the
+  generation tests, the conformance crate, clippy, the mutation round, or the builds of the runtime for
+  `thumbv6m-none-eabi` and `thumbv7em-none-eabihf`. The generic code is type-checked there only as far as the
+  `no_std` gate builds it; nothing instantiates it for a load-and-store target. The first thing to read is TLC on the two
+  refused configurations and loom on `outside_the_bound_a_later_lap_is_mistaken_for_the_readers_own`: if either passes,
+  the model is not able to say no.
+
 ### What is still undone
 
 - **The generated code for the other languages.** Every backend but Swift has its template: Rust's (step 6b), and Python's,
   Kotlin's, Go's, C11's and C++'s (step 7). Swift is refused by name (`broadcast-log/runtime-missing`) until it has a forge
-  runtime. The rows with a narrower stamp, and the form for a target with only loads and stores, are not built, so
-  `judge_broadcast_log_stamp` and the deploy's wrap bound still have no caller.
+  runtime. The narrow rows of the other languages, which each template will need on a target without 64-bit atomics, are
+  not built: Rust's are (see "What the narrow and load/store-only rows landed").
 - **Generated mutation coverage** of the Rust template and its renderer, in the existing `.cases` form.
 - **Element forms the Rust template refuses**: a codec that takes flag inputs or a variant tag from its caller, and a CBOR map
   with a string or byte-string entry. A typed diagnostic for an unresolved deploy limit.
@@ -879,7 +1022,8 @@ runner would let CI judge it, and is not built.
   of the six rows still write short histories, a limit the general search imposed and the specialised checker does not;
   lengthening them is a change to each recorder, with a round of CI to read after it. No mutation case guards
   `specialised.rs` yet.
-- **The narrow-stamp row and the load/store-only row** of section 4.
+- **Running what the narrow rows' change was written without**: loom, TLC, the unit and generation tests, the ARMv6-M and
+  ARMv7-M builds of the runtime, and the casefile's mutation round. None was run (see the section above).
 - **The differential run against the downstream consumer's own ring** (section 6, layer 5), which needs that ring's cases.
 - **The new RFC section** beside §synth-5-P, and a round of CI that judges the nine Rust cases after the strengthened
   window assertion (the next round has not been read).

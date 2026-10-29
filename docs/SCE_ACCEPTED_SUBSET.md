@@ -535,12 +535,19 @@ CBOR or content-line string or byte string, `max-count` on a `<sce:repeat>`) and
 every codec it embeds, repeats, chains or dispatches to has one; the refusal names
 the field and the declaration that is missing, on the `<sce:element-type>` row,
 for every language and for `check`. A stamp narrower than 64 bits asks the
-deploy for `queues.<log>.min_wrap_ops` (`broadcast-log/wrap-bound-unstated`,
-`broadcast-log/wrap-bound-below-deploy-minimum`) and a retention one less than a
-power of two (`broadcast-log/slots-not-a-divisor-of-the-stamp-space`). Those
-three are judged where the target and the deploy are in hand, in the change that
-gives a language a row with such a stamp; no row keeps one yet (the Rust row's
-stamp is 64 bits), so no language judges them today.
+deploy for `queues.<log>.min_wrap_ops`, the longest pause in publishes the design
+relies on (`broadcast-log/wrap-bound-unstated`,
+`broadcast-log/wrap-bound-below-deploy-minimum`, whose bound is half the stamp space
+less the log's slots) and a retention one less than a power of two
+(`broadcast-log/slots-not-a-divisor-of-the-stamp-space`). Rust judges them where the
+deploy gives a target without 64-bit atomics: a device whose `target` triple, or a
+machine whose `platform.atomic_rmw_width`, is 32 or 0 is generated over
+`sce_forge_runtime::broadcast_log_narrow` (a 32-bit stamp, 32-bit words), and the
+Rust renderer asks the three of it; a deploy that states no target, or a width of 64,
+keeps the 64-bit row and asks nothing. A triple the generator does not know with no
+width beside it, and a width that contradicts the triple, are refused
+(`generate/invalid-config`). The other languages keep one row each and judge none of
+them.
 
 `feature-model` is a declaration (ADR 0057 §2): its `<sce:feature
 name="…" requires="…"/>` children name the features of a product line and
