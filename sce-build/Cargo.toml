@@ -1073,6 +1073,14 @@ name = "a_kotlin_machine_holds_an_optional_record"
 path = "tests/a_kotlin_machine_holds_an_optional_record.rs"
 required-features = ["cli"]
 
+# The Swift backend's spelling of a value that may be absent in a statechart
+# (docs/adr/0055): a record's and a payload's field, and a `<param>` that carries
+# one. It runs `sce-codegen generate`, so it carries the `cli` gate.
+[[test]]
+name = "a_swift_machine_holds_a_value_that_may_be_absent"
+path = "tests/a_swift_machine_holds_a_value_that_may_be_absent.rs"
+required-features = ["cli"]
+
 # The Kotlin backend's spelling of every optional element in an algorithm
 # (docs/adr/0055, step 9): a slot, a local and a record's optional text and enum
 # fields, and a statechart's call that crosses them. It runs `sce-codegen generate`
