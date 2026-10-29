@@ -324,6 +324,34 @@ val generateBroadcastLogFixtures by tasks.registering(GenerateFixtureSet::class)
     outputDir.set(layout.buildDirectory.dir("generated/broadcast_log/kotlin"))
 }
 
+// The logs over elements whose codec asks its caller for what its wire form does
+// not carry (ADR 0062, "Caller inputs are part of the element"): one flag input,
+// and a variant whose tag the caller gives. The six documents are shared by every
+// backend's conformance lane, so they are in
+// tests/forge/conformance/broadcast_log_context/ and not in the resources, whose
+// documents the generated trees' source hash reads. The two arms of the variant
+// and the flagged element come before what imports them. The generated files
+// are in packages of their own (com.sce.generated.<document>), so they sit beside
+// the other logs' without a clash.
+val generateBroadcastLogContextFixtures by tasks.registering(GenerateFixtureSet::class) {
+    dependsOn(":buildSceCodegen")
+    sceCodegen.set(rootProject.layout.projectDirectory.file(sceCodegenRelative))
+    resourceDir.set(
+        rootProject.layout.projectDirectory.dir("tests/forge/conformance/broadcast_log_context"),
+    )
+    fixtures.set(
+        listOf(
+            "broadcast_log_conformance_flagged_event",
+            "broadcast_log_conformance_flagged",
+            "broadcast_log_conformance_choice_small",
+            "broadcast_log_conformance_choice_large",
+            "broadcast_log_conformance_choice",
+            "broadcast_log_conformance_chosen",
+        ),
+    )
+    outputDir.set(layout.buildDirectory.dir("generated/broadcast_log_context/kotlin"))
+}
+
 kotlin {
     jvmToolchain(17)
     jvm()
@@ -347,6 +375,7 @@ kotlin {
             kotlin.srcDir(generateRoundTripFixtures.map { it.outputDir })
             kotlin.srcDir(generateQueueFixtures.map { it.outputDir })
             kotlin.srcDir(generateBroadcastLogFixtures.map { it.outputDir })
+            kotlin.srcDir(generateBroadcastLogContextFixtures.map { it.outputDir })
         }
     }
 }

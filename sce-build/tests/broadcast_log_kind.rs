@@ -3331,25 +3331,161 @@ fn kotlin_holds_the_cbor_element_that_rust_refuses_for_borrowing_its_buffer() {
 }
 
 #[test]
-fn what_a_caller_must_give_is_refused_for_kotlin_by_name() {
+fn kotlin_stores_the_flag_inputs_an_element_asks_its_caller_for() {
+    // The codec `event_record` takes the flag input `S` from its caller on `encode` and
+    // `decode`, as an `UByte` after the sink and the cursor. The log stores it in a
+    // context word of the entry, takes it on `publish` as a Boolean, and gives it back
+    // with the item, so that every reader decodes the entry under what it was published
+    // under. The element is a `uint8` and an optional `uint8`: 2 bytes, an entry of 1
+    // length word, 1 context word and 1 word of bytes.
     let xml = event_ring();
     let codec = flag_input_codec();
-    let located = compile_documents(
-        Language::Kotlin,
-        &[("event_ring.scxml", &xml), ("event_record.scxml", &codec)],
+    let code = generated_kotlin_log(
+        compile_documents(
+            Language::Kotlin,
+            &[("event_ring.scxml", &xml), ("event_record.scxml", &codec)],
+        )
+        .expect("a log stores the flag input its element asks for"),
+    );
+    assert_holds(
+        &code,
+        &[
+            "const val MAX_ENCODED_BYTES: Int = 2",
+            "const val CONTEXT_WORDS: Int = 1",
+            "const val WORDS: Int = 1 + CONTEXT_WORDS + (MAX_ENCODED_BYTES + 7) / 8",
+            "data class EventRingFlags(",
+            "    val S: Boolean",
+            "        val flags: EventRingFlags",
+            "fun publish(publisher: EventRingPublisher, element: EventRecord, flags: EventRingFlags): EventRingPublish {",
+            "val refused = element.encode(sink, flagInput(flags.S))",
+            "entry[1 + 0] = entry[1 + 0] or ((if (flags.S) 1L else 0L) shl 0)",
+            "val word = 2 + index / 8",
+            "bytes[index] = (entry[2 + index / 8] ushr (8 * (index % 8))).toByte()",
+            "S = ((entry[1 + 0] ushr 0) and 1L) == 1L",
+            "val element = EventRecord.decode(SceCursor(bytes), flagInput(flags.S))",
+            "return EventRingRead.Item(",
+            "private fun flagInput(on: Boolean): UByte = if (on) 1.toUByte() else 0.toUByte()",
+        ],
+    );
+    assert!(
+        !code.contains("tag: UByte"),
+        "the element has no tag:\n{code}"
+    );
+}
+
+#[test]
+fn kotlin_stores_the_flags_and_the_tag_of_an_element_in_context_words_of_their_own() {
+    // Two flag inputs fit one word; the tag takes the next. The bytes follow the
+    // length word and the two context words, so they start at word 3. The codec takes
+    // the flags and then the tag on `decode`, and only the flags on `encode`.
+    let facts = BroadcastLogElementFacts {
+        caller_flag_inputs: vec!["S".to_string(), "T".to_string()],
+        caller_variant_tag: true,
+        ..BroadcastLogElementFacts::default()
+    };
+    let code = compile_single_kotlin(&event_ring(), &resolution_options(None, 4, facts))
+        .expect("a log stores the flags and the tag its element asks for");
+    assert_holds(
+        &code,
+        &[
+            "const val CONTEXT_WORDS: Int = 2",
+            "const val WORDS: Int = 1 + CONTEXT_WORDS + (MAX_ENCODED_BYTES + 7) / 8",
+            "    val S: Boolean,",
+            "    val T: Boolean",
+            "        val flags: EventRingFlags,",
+            "        val tag: UByte",
+            "fun publish(publisher: EventRingPublisher, element: EventRecord, flags: EventRingFlags, tag: UByte): EventRingPublish {",
+            "val refused = element.encode(sink, flagInput(flags.S), flagInput(flags.T))",
+            "entry[1 + 0] = entry[1 + 0] or ((if (flags.S) 1L else 0L) shl 0)",
+            "entry[1 + 0] = entry[1 + 0] or ((if (flags.T) 1L else 0L) shl 1)",
+            "entry[1 + 1] = tag.toLong()",
+            "val word = 3 + index / 8",
+            "bytes[index] = (entry[3 + index / 8] ushr (8 * (index % 8))).toByte()",
+            "val tag = entry[1 + 1].toUByte()",
+            "EventRecord.decode(SceCursor(bytes), flagInput(flags.S), flagInput(flags.T), tag)",
+            "        flags,",
+            "        tag,",
+        ],
+    );
+}
+
+#[test]
+fn a_tag_alone_is_one_context_word_and_the_kotlin_signature_takes_no_flags() {
+    let facts = BroadcastLogElementFacts {
+        caller_variant_tag: true,
+        ..BroadcastLogElementFacts::default()
+    };
+    let code = compile_single_kotlin(&event_ring(), &resolution_options(None, 4, facts))
+        .expect("a log stores the tag its element asks for");
+    assert_holds(
+        &code,
+        &[
+            "const val CONTEXT_WORDS: Int = 1",
+            "fun publish(publisher: EventRingPublisher, element: EventRecord, tag: UByte): EventRingPublish {",
+            "        val tag: UByte",
+            "val refused = element.encode(sink)",
+            "entry[1 + 0] = tag.toLong()",
+            "val word = 2 + index / 8",
+            "val tag = entry[1 + 0].toUByte()",
+            "EventRecord.decode(SceCursor(bytes), tag)",
+        ],
+    );
+    assert!(
+        !code.contains("Flags"),
+        "the element has no flag input:\n{code}"
+    );
+    assert!(
+        !code.contains("flagInput"),
+        "no flag is converted for the codec:\n{code}"
+    );
+}
+
+#[test]
+fn kotlin_carries_flags_past_a_64_bit_word_into_the_next_context_word() {
+    // 65 flags need two flag words of 64 bits (the 64th flag is the sign bit of the
+    // first), and the tag a third; the bytes then start at word 4.
+    let facts = BroadcastLogElementFacts {
+        caller_flag_inputs: (0..65).map(|index| format!("f{index}")).collect(),
+        caller_variant_tag: true,
+        ..BroadcastLogElementFacts::default()
+    };
+    let code = compile_single_kotlin(&event_ring(), &resolution_options(None, 4, facts))
+        .expect("a log stores as many flags as its element asks for");
+    assert_holds(
+        &code,
+        &[
+            "const val CONTEXT_WORDS: Int = 3",
+            "entry[1 + 0] = entry[1 + 0] or ((if (flags.f63) 1L else 0L) shl 63)",
+            "entry[1 + 1] = entry[1 + 1] or ((if (flags.f64) 1L else 0L) shl 0)",
+            "entry[1 + 2] = tag.toLong()",
+            "val word = 4 + index / 8",
+            "f63 = ((entry[1 + 0] ushr 63) and 1L) == 1L,",
+            "f64 = ((entry[1 + 1] ushr 0) and 1L) == 1L",
+        ],
+    );
+}
+
+#[test]
+fn a_kotlin_element_with_no_caller_input_has_the_entry_and_the_signatures_it_always_had() {
+    let code = compile_single_kotlin(
+        &event_ring(),
+        &resolution_options(None, 4, BroadcastLogElementFacts::default()),
     )
-    .err()
-    .unwrap_or_else(|| panic!("a log has no flag input to give, so the set is refused"));
-    assert!(
-        row_text(&located, &xml).contains("<sce:element-type>event_record<"),
-        "the refusal is placed on the element-type row"
+    .expect("an element with no caller input is generated");
+    assert!(!code.contains("CONTEXT_WORDS"), "{code}");
+    assert!(!code.contains("Flags"), "{code}");
+    assert!(!code.contains("flagInput"), "{code}");
+    assert_holds(
+        &code,
+        &[
+            "const val WORDS: Int = 1 + (MAX_ENCODED_BYTES + 7) / 8",
+            "data class Item(val seq: Long, val element: EventRecord) : EventRingRead",
+            "fun publish(publisher: EventRingPublisher, element: EventRecord): EventRingPublish {",
+            "val word = 1 + index / 8",
+            "bytes[index] = (entry[1 + index / 8] ushr (8 * (index % 8))).toByte()",
+            "return EventRingRead.Item(seq, element)",
+        ],
     );
-    let detail = invalid_config(located);
-    assert!(
-        detail.contains("the element 'event_record' cannot be stored by the Kotlin template"),
-        "{detail}"
-    );
-    assert!(detail.contains("flag input(s) S"), "{detail}");
 }
 
 #[test]
