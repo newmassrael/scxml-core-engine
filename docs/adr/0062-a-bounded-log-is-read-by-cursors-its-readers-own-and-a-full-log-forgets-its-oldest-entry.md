@@ -235,6 +235,35 @@ Properties, each of which is checked (§6):
   reader loads it. Neither choice is visible to a document or to the history checker.
 - **Cardinality is enforced by construction where the language can, and by the same once-only handle as the other
   rows where it cannot.** Two publishers would break the stamp protocol silently, so a second `producer()` is an error.
+- **Caller inputs are part of the element (decided 2026-10-29).** A codec may ask its caller for what its wire form does
+  not carry: one or more single-bit **flag inputs** (`<sce:flag-input>`, which gate fields through `sce:present-if`), and,
+  for a variant that has no tag field of its own, the **tag** that selects the arm on decode. The first revisions of this
+  ADR refused such an element, on the ground that a log's `publish` and `read` call `encode` and `decode` with a sink and
+  a cursor alone. That was the cheap answer and not the right one. An entry of a log must mean the same to every reader
+  at every time (§2: all readers read the one sequence; Kreps's replay: the same log gives the same result), so what its
+  bytes are decoded under cannot be supplied by whoever reads, and cannot be recovered from the publisher's context after
+  the fact. It is a part of the entry, and the abstract element type of §2 is
+  `E = Inputs x Value`, where `Inputs` is the product of the codec's caller inputs (the unit type for a codec that has
+  none). Nothing else in §2 changes: it is stated over an arbitrary `E`, the protocol of this section moves opaque
+  words, and the TLA+ model, the memory-model checkers and the history checker are untouched.
+  - **The slot.** `[length][context words][payload words]`. The context words are the flags, one bit each in declaration
+    order, bit `i` of the flags in bit `i mod w` of word `i div w`, `ceil(n / w)` words for `n` flags of `w`-bit words,
+    followed, when the variant takes its tag from the caller, by one word that holds the tag. Every number is a
+    build-time constant of the element (a flag input is one bit, which the parser fixes; a tag is a `u8`), so the entry
+    is still a fixed number of words and `broadcast-log/element-size-unbounded` stays sound. An element with no caller
+    input has no context word, and its slot, its constants and its API are exactly what they were.
+  - **The typed API.** `publish` takes the flags (as booleans, never the codec's own integer, so that the value the
+    codec encodes under and the value stored are one value) and the tag where the element has them; `read` returns them
+    with the entry, so a reader sees under what an entry was published. Both are in the item the way the element is.
+    An element with no caller input has the signatures it had.
+  - **What the log does not do** for a tag: it does not derive the tag from the value. The codec's `encode` takes no tag
+    (the active arm is the value's own discriminant), and no generated codec exposes the tag of its active arm; the
+    publisher supplies the tag its value corresponds to, as every caller of such a codec does, and a reader receives
+    exactly the pair that was published. Deriving it would remove the redundancy and is the better end state; it needs
+    each codec backend to expose the arm's tag, and is a change to the codecs and not to the log.
+  - **What stays refused.** A CBOR map entry of text or bytes in Rust, because the decoded form borrows the slot's copy
+    (below, "Element forms the Rust template refuses"): the remedy is an owned form bounded by `sce:max-size`, a change to
+    that codec's generator.
 
 ### 5. The correctness criterion
 
