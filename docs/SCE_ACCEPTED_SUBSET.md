@@ -4051,7 +4051,11 @@ transition's or `<if>`/`<elseif>`'s `cond` that fails is false (W3C SCXML
 session to raise in, so one that could fail is refused where it is written.
 `level + 3` on a `uint8` at 253 therefore leaves `level` at 253 on every
 backend — `sce-build/tests/fixtures/static_datamodel/static_overflow.scxml`
-holds each backend to it.
+holds each backend to it. An operation that names its rule does not fail
+(§3.4.1, the expression vocabulary): `wrappingAdd(ticks, 1)` on a `uint8` at
+255 writes 0, `saturatingSub(fuel, 1)` at 0 writes 0, and neither raises
+`error.execution` — `static_wrapping_counter.scxml` beside it holds every
+engine to that.
 
 **A 32-bit real.** `sce:type="float32"` holds a variable in the single-precision
 type the backend has — `float` in C and C++, `Float` in Kotlin, `f32` in Rust,
@@ -5271,7 +5275,7 @@ generator lowers for Go — asked of it, not listed — and one per algorithm th
 machines import, read from their `<sce:import kind="algorithm">`, and
 `backends/go/tests/integration/static_datamodel/static_scenarios_test.go`
 replays the scenarios `static_counter`, `static_counter_bound`,
-`static_overflow`, `static_block_ends`, `static_payload`, `static_payload_enum`, `static_enum`,
+`static_overflow`, `static_wrapping_counter`, `static_block_ends`, `static_payload`, `static_payload_enum`, `static_enum`,
 `static_list`, `static_foreach`, `static_real`, `static_real32`, `static_block_ends_list`,
 `static_record_fields`, `static_record_list`, `static_record_enum`,
 `static_record_real`, `static_record_real32`, `static_record`, `sync_client`, `static_donedata` (the done event's pairs are
@@ -5348,7 +5352,7 @@ their `<sce:import kind="algorithm">`, and `scripts/gates/w3c-python.sh` runs it
 before pytest, and
 `backends/python/tests/integration/static_datamodel/test_static_scenarios.py`
 replays the scenarios `static_counter`, `static_counter_bound`,
-`static_overflow`, `static_block_ends`, `static_payload`, `static_payload_enum`, `static_enum`,
+`static_overflow`, `static_wrapping_counter`, `static_block_ends`, `static_payload`, `static_payload_enum`, `static_enum`,
 `static_list`, `static_foreach`, `static_real`, `static_real32`, `static_block_ends_list`,
 `static_record_fields`, `static_record_list`, `static_record_enum`,
 `static_record_real`, `static_record_real32`, `static_record`, `sync_client`, `static_send_params`, `static_donedata` (the
@@ -5502,7 +5506,7 @@ meaning they have everywhere (5.9.1). `In("id")` in a lowered expression is the
 machine's own `<machine>_in_state(sm, <ENUMERATOR>)`, which the template writes
 from the call, as it does for a guard that is only `In()`.
 `backends/c/tests/integration/test_static_scalars.c` replays the scenarios
-`static_counter`, `static_counter_bound`, `static_overflow`,
+`static_counter`, `static_counter_bound`, `static_overflow`, `static_wrapping_counter`,
 `static_block_ends`, `static_list`, `static_foreach`, `static_real` (a real is a
 `double` field, compared as the 64 bits it is), `static_real32` (a `float` field,
 widened to the `double` it is and compared the same way), `static_block_ends_list`,

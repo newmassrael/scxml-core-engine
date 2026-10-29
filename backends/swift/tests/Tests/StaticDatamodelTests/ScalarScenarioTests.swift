@@ -59,6 +59,18 @@ private func overflow() -> Machine {
     )
 }
 
+private func wrappingCounter() -> Machine {
+    let policy = StaticWrappingCounterPolicy()
+    return drive(
+        policy,
+        variables: [
+            "ticks": { integer(policy.ticks) },
+            "fuel": { integer(policy.fuel) },
+            "refusals": { integer(policy.refusals) },
+        ]
+    )
+}
+
 private func stringCapacity() -> Machine {
     let policy = StaticStringCapacityPolicy()
     return drive(
@@ -796,6 +808,12 @@ private func recordBytes() -> Machine {
 // statement writes nothing, `error.execution` is raised, and the block ends.
 @Test func anOverflowingOperationFailsInsteadOfWrapping() {
     replay("static_overflow", overflow())
+}
+
+// A wrapping or a saturating integer operation never fails: the counter wraps past
+// its width, the level holds at its bound, and neither raises `error.execution`.
+@Test func aWrappingOrSaturatingOperationRaisesNothing() {
+    replay("static_wrapping_counter", wrappingCounter())
 }
 
 // A string variable holds no more than its bound, counted in UTF-8 bytes: the text

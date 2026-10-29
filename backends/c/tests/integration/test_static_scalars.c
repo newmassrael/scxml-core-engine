@@ -26,6 +26,10 @@
 //     failure, not a wrapped value (SCE_FORGE.md §3.4.1) — the variable keeps
 //     what it held, `error.execution` is raised, and a guard over the
 //     overflowing sum is false.
+//   * `static_wrapping_counter`: a wrapping or a saturating integer operation
+//     never fails (docs/adr/0063) — a `uint8` counter wraps past 255 to 0, a
+//     `uint8` level holds at 0, a guard over a wrapping difference is true, and
+//     none raises `error.execution`.
 //   * `static_block_ends`: an error ends the block it stands in (§scxml-4.9) —
 //     the statements after a failed `<assign>`, after a failed `<if>` cond, or
 //     inside a branch that failed do not run, while the next block does.
@@ -206,6 +210,7 @@
 #include "static_whole_payload_sm.h"
 #include "static_wire_enum_sm.h"
 #include "static_wire_wide_sm.h"
+#include "static_wrapping_counter_sm.h"
 #include "sync_client_sm.h"
 #include "todo_peer_sm.h"
 
@@ -880,6 +885,22 @@ static const variable_t overflow_variables[] = {
     {"refusals", static_overflow_read_refusals},
 };
 STATIC_SCENARIO(static_overflow, overflow_states, overflow_variables, NULL, no_lists, no_records)
+
+// static_wrapping_counter
+VARIABLE_READER(static_wrapping_counter, ticks)
+VARIABLE_READER(static_wrapping_counter, fuel)
+VARIABLE_READER(static_wrapping_counter, refusals)
+static const name_value_t wrapping_counter_states[] = {
+    {"counting", STATIC_WRAPPING_COUNTER_STATE_COUNTING},
+    {"near", STATIC_WRAPPING_COUNTER_STATE_NEAR},
+};
+static const variable_t wrapping_counter_variables[] = {
+    {"ticks", static_wrapping_counter_read_ticks},
+    {"fuel", static_wrapping_counter_read_fuel},
+    {"refusals", static_wrapping_counter_read_refusals},
+};
+STATIC_SCENARIO(static_wrapping_counter, wrapping_counter_states, wrapping_counter_variables, NULL, no_lists,
+                no_records)
 
 // static_block_ends
 VARIABLE_READER(static_block_ends, a)
@@ -3626,6 +3647,7 @@ int main(void) {
     bad |= static_event_arrival_scenario("static_event_arrival", 8);
     bad |= static_event_wildcard_scenario("static_event_wildcard", 9);
     bad |= static_overflow_scenario("static_overflow", 5);
+    bad |= static_wrapping_counter_scenario("static_wrapping_counter", 8);
     bad |= static_block_ends_scenario("static_block_ends", 5);
     bad |= static_list_scenario("static_list", 11);
     bad |= static_list_index_scenario("static_list_index", 24);

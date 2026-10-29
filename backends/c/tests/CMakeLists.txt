@@ -2477,7 +2477,8 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     # header-only half, reached by its include directory.
     foreach(_STATIC_SCALAR_MACHINE static_counter static_event_arrival static_event_wildcard static_overflow
                                    static_block_ends static_foreach static_block_ends_list static_string_capacity
-                                   static_bytes static_donedata_content static_real static_real32)
+                                   static_bytes static_donedata_content static_real static_real32
+                                   static_wrapping_counter)
         sce_generate_static_integration_c_test(${_STATIC_SCALAR_MACHINE}
             "${SCE_C_INTEGRATION_GENERATED_DIR}"
             SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/${_STATIC_SCALAR_MACHINE}.scxml"
@@ -3157,6 +3158,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         ${INTEGRATION_C_TEST_static_event_arrival_SOURCES}
         ${INTEGRATION_C_TEST_static_event_wildcard_SOURCES}
         ${INTEGRATION_C_TEST_static_overflow_SOURCES}
+        ${INTEGRATION_C_TEST_static_wrapping_counter_SOURCES}
         ${INTEGRATION_C_TEST_static_block_ends_SOURCES}
         ${INTEGRATION_C_TEST_static_foreach_SOURCES}
         ${INTEGRATION_C_TEST_static_real_SOURCES}

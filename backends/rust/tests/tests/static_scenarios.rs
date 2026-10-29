@@ -212,6 +212,9 @@ use sce_rust_tests::integration::static_datamodel::static_wire_enum_sm::{
 use sce_rust_tests::integration::static_datamodel::static_wire_wide_sm::{
     StaticWireWidePersist, StaticWireWidePolicy,
 };
+use sce_rust_tests::integration::static_datamodel::static_wrapping_counter_sm::{
+    StaticWrappingCounterPersist, StaticWrappingCounterPolicy,
+};
 use sce_rust_tests::integration::static_datamodel::sync_client_sm::{
     SyncClientPersist, SyncClientPolicy,
 };
@@ -373,6 +376,17 @@ fn static_overflow_keeps_its_value_and_says_so() {
         |engine| engine.save().expect("saves"),
         include_str!(
             "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_overflow.json"
+        ),
+    );
+}
+
+#[test]
+fn static_wrapping_counter_wraps_and_saturates_and_raises_nothing() {
+    replay(
+        Engine::new(StaticWrappingCounterPolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_wrapping_counter.json"
         ),
     );
 }

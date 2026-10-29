@@ -1,0 +1,25 @@
+{
+  "machine": "static_wrapping_counter",
+  "about": "A wrapping or saturating integer operation never fails: `ticks` is a uint8 from 254 stepped by `wrappingAdd`, so 255 + 1 is 0; `fuel` is a uint8 from 2 stepped down by `saturatingSub`, so 0 - 1 is 0; and the guard `wrappingSub(ticks, 250) < 10` is 7 at 1, so `probe` ends the machine. None raises error.execution, so `refusals` stays 0. Expected values are derived from the document and the definition of the operations (docs/adr/0063, section 1), not observed from a backend.",
+  "steps": [
+    { "note": "the variables start at their declared values",
+      "expect": { "state": "counting", "variables": { "ticks": 254, "fuel": 2, "refusals": 0 } } },
+
+    { "note": "254 + 1 fits a uint8",
+      "event": "tick", "expect": { "state": "counting", "variables": { "ticks": 255, "fuel": 2, "refusals": 0 } } },
+    { "note": "255 + 1 wraps to 0 and raises nothing",
+      "event": "tick", "expect": { "state": "counting", "variables": { "ticks": 0, "fuel": 2, "refusals": 0 } } },
+    { "note": "and the count goes on from the wrap",
+      "event": "tick", "expect": { "state": "counting", "variables": { "ticks": 1, "fuel": 2, "refusals": 0 } } },
+
+    { "note": "2 - 1 fits a uint8",
+      "event": "burn", "expect": { "state": "counting", "variables": { "ticks": 1, "fuel": 1, "refusals": 0 } } },
+    { "note": "1 - 1 is the bound itself",
+      "event": "burn", "expect": { "state": "counting", "variables": { "ticks": 1, "fuel": 0, "refusals": 0 } } },
+    { "note": "0 - 1 saturates at 0 and raises nothing",
+      "event": "burn", "expect": { "state": "counting", "variables": { "ticks": 1, "fuel": 0, "refusals": 0 } } },
+
+    { "note": "wrappingSub(1, 250) is 7 (mod 256), below 10, so the guard is true, raises nothing, and takes the transition into the final `near`; a machine that ended has no state to read",
+      "event": "probe", "expect": { "ended": true } }
+  ]
+}

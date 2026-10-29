@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  The wrapping and saturating integer operations under datamodel="sce-static"
+  (SCE_FORGE.md §3.4.2, docs/adr/0063): each is total, so it never fails, the
+  statement it stands in always writes, and a condition it stands in is never
+  false for want of a value. Where `static_overflow` keeps its value and says
+  so, this machine wraps or holds at the bound and raises nothing.
+
+  `tick` steps `ticks` (a uint8 from 254) by `wrappingAdd`: 255, then 0, then 1.
+  `burn` steps `fuel` (a uint8 from 2) down by `saturatingSub`: 1, 0, and 0
+  again. `probe` is guarded by `wrappingSub(ticks, 250) < 10`, which at 1 is
+  7 (mod 256), where a checked `ticks - 250` would fail. `refusals` counts the
+  error.execution events the document answers, and stays 0.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="counting" datamodel="sce-static" name="static_wrapping_counter">
+  <datamodel>
+    <data id="ticks" sce:type="uint8" expr="254" sce:direction="out"/>
+    <data id="fuel" sce:type="uint8" expr="2" sce:direction="out"/>
+    <data id="refusals" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="counting">
+    <transition event="tick" type="internal">
+      <assign location="ticks" expr="wrappingAdd(ticks, 1)"/>
+    </transition>
+    <transition event="burn" type="internal">
+      <assign location="fuel" expr="saturatingSub(fuel, 1)"/>
+    </transition>
+    <transition event="probe" cond="wrappingSub(ticks, 250) &lt; 10" target="near"/>
+    <transition event="error.execution" type="internal">
+      <assign location="refusals" expr="refusals + 1"/>
+    </transition>
+  </state>
+  <final id="near"/>
+</scxml>

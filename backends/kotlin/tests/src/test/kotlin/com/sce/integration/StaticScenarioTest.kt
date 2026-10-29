@@ -98,6 +98,7 @@ import com.sce.integration.static_timers.StaticTimersStateMachine
 import com.sce.integration.static_whole_payload.StaticWholePayloadStateMachine
 import com.sce.integration.static_wire_wide.StaticWireWideStateMachine
 import com.sce.integration.static_wire_enum.StaticWireEnumStateMachine
+import com.sce.integration.static_wrapping_counter.StaticWrappingCounterStateMachine
 import com.sce.integration.presence_peer.PresencePeerStateMachine
 import com.sce.integration.record_list.RecordListStateMachine
 import com.sce.integration.record_list_parent.RecordListParentStateMachine
@@ -421,6 +422,23 @@ class StaticScenarioTest {
         try {
             replay(
                 scenario("static_overflow"),
+                send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
+                tick = { sm.tick() },
+                save = { sm.save() },
+                ended = { sm.isInFinalState },
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    @Test
+    fun staticWrappingCounterWrapsAndSaturatesAndRaisesNothing() {
+        val sm = StaticWrappingCounterStateMachine()
+        sm.initialize()
+        try {
+            replay(
+                scenario("static_wrapping_counter"),
                 send = { name, data -> sm.sendEventByName(name, EventMetadata(data = data)) },
                 tick = { sm.tick() },
                 save = { sm.save() },

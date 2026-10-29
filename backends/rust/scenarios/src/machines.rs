@@ -268,6 +268,7 @@ scenarios! {
     "static_whole_payload" => static_whole_payload_sm::{StaticWholePayloadPolicy, StaticWholePayloadPersist};
     "static_wire_enum" => static_wire_enum_sm::{StaticWireEnumPolicy, StaticWireEnumPersist};
     "static_wire_wide" => static_wire_wide_sm::{StaticWireWidePolicy, StaticWireWidePersist};
+    "static_wrapping_counter" => static_wrapping_counter_sm::{StaticWrappingCounterPolicy, StaticWrappingCounterPersist};
     "sync_client" => sync_client_sm::{SyncClientPolicy, SyncClientPersist};
     "todo_peer_alice" => todo_peer_sm::{TodoPeerPolicy, TodoPeerPersist};
     "todo_peer_bob" => todo_peer_sm::{TodoPeerPolicy, TodoPeerPersist};

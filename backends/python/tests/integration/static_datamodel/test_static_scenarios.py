@@ -547,6 +547,12 @@ def test_an_overflowing_operation_fails_instead_of_wrapping() -> None:
     replay("static_overflow")
 
 
+# A wrapping or a saturating integer operation never fails: the counter wraps past
+# its width, the level holds at its bound, and neither raises error.execution.
+def test_a_wrapping_or_saturating_operation_raises_nothing() -> None:
+    replay("static_wrapping_counter")
+
+
 # An error ends the block it stands in (W3C SCXML 4.9): the statements after a
 # failed `<assign>`, after a failed `<if>` cond, or inside a branch that failed
 # do not run, while the next block does.

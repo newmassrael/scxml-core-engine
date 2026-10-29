@@ -107,6 +107,7 @@ import (
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_whole_payload"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_wire_enum"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_wire_wide"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/static_wrapping_counter"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/sync_client"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/todo_peer"
 )
@@ -993,6 +994,19 @@ func TestAnOverflowingOperationFailsInsteadOfWrapping(t *testing.T) {
 	policy.SessionID = sce.GenerateSessionID()
 	replay(t, "static_overflow", drive[static_overflow.StaticOverflowState, static_overflow.StaticOverflowEvent](&policy, map[string]func() any{
 		"level":    func() any { return policy.Level() },
+		"refusals": func() any { return policy.Refusals() },
+	}))
+}
+
+// A wrapping or a saturating integer operation never fails (docs/adr/0063):
+// the counter wraps past its width, the level holds at its bound, a guard over
+// a wrapping difference is true, and none raises `error.execution`.
+func TestAWrappingOrSaturatingOperationRaisesNothing(t *testing.T) {
+	policy := static_wrapping_counter.NewStaticWrappingCounterPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	replay(t, "static_wrapping_counter", drive[static_wrapping_counter.StaticWrappingCounterState, static_wrapping_counter.StaticWrappingCounterEvent](&policy, map[string]func() any{
+		"ticks":    func() any { return policy.Ticks() },
+		"fuel":     func() any { return policy.Fuel() },
 		"refusals": func() any { return policy.Refusals() },
 	}))
 }
