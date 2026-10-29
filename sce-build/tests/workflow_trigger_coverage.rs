@@ -363,6 +363,12 @@ const UNFILTERABLE_GATES: &[&str] = &[
     // directory no C++ lane's filter needs to name, and the lane that would show it
     // is the one that dies of it without a test failing.
     "a_cpp_test_unit_compiles_a_bounded_number_of_machines",
+    // Asks `git ls-files` for every tracked `*.scxml` and holds the tables of
+    // each document the generator accepts to the numbering the Rust runtime's
+    // Appendix D core relies on (ADR 0064). The document whose tree breaks
+    // that numbering is one an author adds next, in any directory, and the
+    // lanes that run `sce-build`'s suites filter on paths that do not name it.
+    "a_documents_tables_are_its_tree_in_document_order",
     "workflow_trigger_coverage",
 ];
 

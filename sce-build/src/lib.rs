@@ -82,6 +82,10 @@ pub mod design_surface;
 /// by hierarchy and where each transition is described. Renderers draw
 /// from it; the completeness and described-once properties are tested on it.
 pub mod diagram;
+/// A document's state tree as the rows the Rust runtime's one Appendix D core
+/// reads: its states, histories and transitions numbered in document order, and
+/// their targets, children and history records as spans of shared pools.
+pub mod document_tables;
 /// The W3C SCXML ECMAScript datamodel — parsed, then emitted as Lua. It replaces the
 /// string-rewriting transformer whose entry point could not fail; see the
 /// module docs for what that signature cost.

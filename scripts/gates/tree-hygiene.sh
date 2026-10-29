@@ -161,6 +161,13 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 # does not know is a NEW kind, in a tree a filter over today's files would not
 # name.
 #
+# `a_documents_tables_are_its_tree_in_document_order` parses every committed
+# `*.scxml` the generator accepts and holds its tables (ADR 0064) to the
+# numbering the Rust runtime's Appendix D core relies on: states in document
+# order, each subtree one contiguous run, every row agreeing with the model the
+# generated structural methods are emitted from. The document whose tree breaks
+# that is one an author writes next, in any directory.
+#
 # `ffi` is here so that SOMETHING in the Rust lanes compiles the C
 # surface. It is off by default and `clippy-check.yml` runs `--workspace
 # --all-targets` without `--all-features`, so without this no Rust lane
@@ -233,4 +240,5 @@ cargo test -p sce-build --features cli,ffi \
     --test no_conformance_document_declares_the_transition_function \
     --test a_regeneration_removes_what_it_no_longer_writes \
     --test a_cpp_test_unit_compiles_a_bounded_number_of_machines \
+    --test a_documents_tables_are_its_tree_in_document_order \
     || sce_gate_fail "tree-wide hygiene gates"
